@@ -77,11 +77,12 @@ Findings are sorted by severity within each section. File:line references use
   mount point. It rejects cookie-bearing state-changing requests whose
   `Origin`/`Referer` doesn't match the request host; Bearer-token clients
   (mobile) are exempt.
-- **B3. No rate limiting / brute-force protection.** `auth.usecase.logIn`
-  has zero throttling. A bot can hammer `/api/connect/auth.v1.AuthService/LogIn`
-  at unlimited speed. scrypt slows each attempt, but that just makes it a
-  DoS vector too. Needs an IP/user-based rate limiter (e.g. a `login_attempts`
-  table or an in-memory token bucket).
+- **B3.~~No rate limiting / brute-force protection.~~** ✅ *Fixed.* Added
+  `server/common/rateLimit.ts` (in-memory sliding 60s window) and
+  `enforceAuthRateLimit` in `auth/handler.ts` that caps login/signup at
+  `AUTH_RATE_LIMIT` (10) attempts/min per client IP, throwing
+  `Code.ResourceExhausted`. Note: in-process only — multi-replica deploys
+  would need a shared store.
 - **B4. Tokens are stateless and non-revocable.** A signed token lives for
   30 days (`auth.constants.ts:6`) and there is no server-side session store
   or token version. `logOut` only clears the cookie — a stolen token

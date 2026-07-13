@@ -17,3 +17,6 @@ export const DATA_DIRECTORY =
 
 /** Loose sanity check for email addresses: something@something.tld, no whitespace. */
 export const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+/** Max login/signup attempts per key (IP or email) per 60s window. */
+export const AUTH_RATE_LIMIT = 10;
