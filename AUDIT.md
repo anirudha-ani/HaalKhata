@@ -285,10 +285,12 @@ Findings are sorted by severity within each section. File:line references use
   logs unexpected (non-UsecaseError) exceptions with the RPC method name and
   a per-request id before rethrowing. All five handlers pass `context`
   through.
-- **U15. No tests outside domain math.** 21 tests, all in `domain/`. Zero
-  tests for usecases, repos, handlers, or the auth token sign/verify round
-  trip. The `verifyToken`/`createToken` pair is security-critical and
-  untested.
+- **U15.~~No tests outside domain math.~~** ✅ *Partly fixed.* Added
+  `auth/usecase/auth.test.ts` — 6 tests covering the token sign/verify
+  round trip, version embedding, signature tamper rejection, user-id
+  tamper rejection, bogus-signature rejection, and malformed-token
+  rejection. Usecase/repo/handler tests are still a gap (deferred — they
+  need a test DB harness).
 - **U16. `plan.txt` is committed** and references "v3 — supersedes v2" and
   a decision log. It's 227 lines of planning prose that will rot. Move it
   to `docs/` or delete it; the README already covers the architecture.
