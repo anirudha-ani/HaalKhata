@@ -40,7 +40,7 @@ export const authHandler: ServiceImpl<typeof AuthService> = {
   /** Creates (or claims) an account, then starts a web session via cookie. */
   async signUp(request, handlerContext) {
     enforceAuthRateLimit(handlerContext);
-    const result = await runUsecase(() => auth.signUp(request));
+    const result = await runUsecase(() => auth.signUp(request), handlerContext);
     setSessionCookie(handlerContext, result.token);
     return result;
   },
@@ -48,25 +48,25 @@ export const authHandler: ServiceImpl<typeof AuthService> = {
   /** Verifies credentials, then starts a web session via cookie. */
   async logIn(request, handlerContext) {
     enforceAuthRateLimit(handlerContext);
-    const result = await runUsecase(() => auth.logIn(request));
+    const result = await runUsecase(() => auth.logIn(request), handlerContext);
     setSessionCookie(handlerContext, result.token);
     return result;
   },
 
   /** Ends the web session by expiring the session cookie and revoking the token. */
   async logOut(_request, handlerContext) {
-    await runUsecase(async () => auth.logOut(await requireUser(handlerContext)));
+    await runUsecase(async () => auth.logOut(await requireUser(handlerContext)), handlerContext);
     clearSessionCookie(handlerContext);
     return {};
   },
 
   /** Returns the calling user's profile. */
   async getMe(_request, handlerContext) {
-    return runUsecase(async () => auth.getMe(await requireUser(handlerContext)));
+    return runUsecase(async () => auth.getMe(await requireUser(handlerContext)), handlerContext);
   },
 
   /** Updates the calling user's name and/or default currency. */
   async updateProfile(request, handlerContext) {
-    return runUsecase(async () => auth.updateProfile(await requireUser(handlerContext), request));
+    return runUsecase(async () => auth.updateProfile(await requireUser(handlerContext), request), handlerContext);
   },
 };

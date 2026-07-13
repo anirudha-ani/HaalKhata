@@ -279,11 +279,12 @@ Findings are sorted by severity within each section. File:line references use
   row matches the signup email. Actually — wait, the lookup *is* by email,
   so the emails match by construction. This one's fine. (Leaving the note
   to show it was checked.)
-- **U14. No error boundary or structured logging.** `runUsecase`
-  (`context.ts:76`) rethrows non-`UsecaseError` exceptions unchanged. There
-  is no `console.error`, no request id, no structured log. In production
-  you'll get stack traces in stdout with no correlation. Add a logging
-  layer (pino) and an error reporter.
+- **U14.~~No error boundary or structured logging.~~** ✅ *Fixed.* Added
+  `server/common/logger.ts` (JSON-line `logEvent`/`logError` to stdout/stderr
+  with timestamp + context). `runUsecase` now takes the handler context and
+  logs unexpected (non-UsecaseError) exceptions with the RPC method name and
+  a per-request id before rethrowing. All five handlers pass `context`
+  through.
 - **U15. No tests outside domain math.** 21 tests, all in `domain/`. Zero
   tests for usecases, repos, handlers, or the auth token sign/verify round
   trip. The `verifyToken`/`createToken` pair is security-critical and

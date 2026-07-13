@@ -4,6 +4,7 @@ import { Code, ConnectError, type HandlerContext } from "@connectrpc/connect";
 import { tokenVersion, verifyToken } from "@/server/auth/usecase/auth.usecase";
 import { findUserTokenVersion } from "@/server/auth/repo/users.repo";
 import { UsecaseError } from "@/server/common/errors";
+import { logError } from "@/server/common/logger";
 import { CODE_MAP, COOKIE_MAX_AGE, SESSION_COOKIE, sessionCookieAttributes } from "./connect.constants";
 
 /**
@@ -80,14 +81,20 @@ export function clearSessionCookie(handlerContext: HandlerContext): void {
 
 /**
  * Runs a usecase call and maps UsecaseError codes onto Connect codes.
+ * Unexpected (non-UsecaseError) exceptions are logged with the RPC method
+ * name and a random request id before rethrowing, so production deploys
+ * aren't flying blind with stack traces in stdout and no correlation.
  *
  * @param operation - Usecase invocation to execute.
+ * @param handlerContext - Connect context for the current RPC (used for the
+ *   method name in logs); omitted by non-RPC callers.
  * @returns Whatever operation resolves to.
- * @throws ConnectError translated from any UsecaseError thrown by the operation;
- *   other errors are rethrown unchanged.
+ * @throws ConnectError translated from any UsecaseError thrown by the
+ *   operation; other errors are logged then rethrown unchanged.
  */
 export async function runUsecase<UsecaseResult>(
   operation: () => UsecaseResult | Promise<UsecaseResult>,
+  handlerContext?: HandlerContext,
 ): Promise<UsecaseResult> {
   try {
     return await operation();
@@ -95,6 +102,10 @@ export async function runUsecase<UsecaseResult>(
     if (error instanceof UsecaseError) {
       throw new ConnectError(error.message, CODE_MAP[error.code]);
     }
+    logError(error, {
+      rpc: handlerContext?.method.name ?? "unknown",
+      requestId: crypto.randomUUID(),
+    });
     throw error;
   }
 }
