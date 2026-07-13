@@ -9,7 +9,7 @@ import { requireUser, runUsecase } from "@/server/api/connect/context";
 export const receiptHandler: ServiceImpl<typeof ReceiptService> = {
   /** Parses an uploaded receipt image into structured line items for the signed-in user. */
   async parseReceipt(request, handlerContext) {
-    requireUser(handlerContext);
+    await requireUser(handlerContext);
     return runUsecase(() => parseReceipt(request.image, request.mediaType));
   },
 };

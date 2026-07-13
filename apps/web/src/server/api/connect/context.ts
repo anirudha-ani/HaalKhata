@@ -1,27 +1,29 @@
 /** Per-request Connect plumbing: caller auth (bearer/cookie), session cookies, UsecaseError → ConnectError mapping. */
 
 import { Code, ConnectError, type HandlerContext } from "@connectrpc/connect";
-import { verifyToken } from "@/server/auth/usecase/auth.usecase";
+import { tokenVersion, verifyToken } from "@/server/auth/usecase/auth.usecase";
+import { findUserTokenVersion } from "@/server/auth/repo/users.repo";
 import { UsecaseError } from "@/server/common/errors";
 import { CODE_MAP, COOKIE_MAX_AGE, SESSION_COOKIE, sessionCookieAttributes } from "./connect.constants";
 
 /**
- * Extracts the authenticated user id from request headers: Bearer header
- * (mobile) first, session cookie (web) second.
+ * Extracts the bearer token string from request headers: Authorization header
+ * (mobile) first, session cookie (web) second. Returns null when no credential
+ * is present. Does NOT verify the token — callers pair this with verifyToken.
  *
  * @param headers - Incoming request headers to inspect for credentials.
- * @returns The verified user id, or null when no valid credential is present.
+ * @returns The raw token string, or null when no credential is present.
  */
-export function userIdFromHeaders(headers: Headers): string | null {
+export function tokenFromHeaders(headers: Headers): string | null {
   const authorizationHeader = headers.get("authorization");
   if (authorizationHeader?.toLowerCase().startsWith("bearer ")) {
-    return verifyToken(authorizationHeader.slice(7).trim());
+    return authorizationHeader.slice(7).trim();
   }
   const cookies = headers.get("cookie");
   if (cookies) {
     for (const cookiePart of cookies.split(";")) {
       const [cookieName, ...valueParts] = cookiePart.trim().split("=");
-      if (cookieName === SESSION_COOKIE) return verifyToken(valueParts.join("="));
+      if (cookieName === SESSION_COOKIE) return valueParts.join("=");
     }
   }
   return null;
@@ -29,14 +31,25 @@ export function userIdFromHeaders(headers: Headers): string | null {
 
 /**
  * Returns the calling user's id, rejecting the request when unauthenticated.
+ * The bearer token's embedded version is checked against the user's current
+ * `token_version` so that logout / password change revokes outstanding tokens.
  *
  * @param handlerContext - Connect handler context for the current request.
  * @returns The verified user id.
- * @throws ConnectError with Code.Unauthenticated when no valid credential is present.
+ * @throws ConnectError with Code.Unauthenticated when no valid credential is
+ *   present or the token version no longer matches the user row.
  */
-export function requireUser(handlerContext: HandlerContext): string {
-  const userId = userIdFromHeaders(handlerContext.requestHeader);
-  if (!userId) throw new ConnectError("sign in to continue", Code.Unauthenticated);
+export async function requireUser(handlerContext: HandlerContext): Promise<string> {
+  const token = tokenFromHeaders(handlerContext.requestHeader);
+  const userId = token ? verifyToken(token) : null;
+  if (!userId || !token) {
+    throw new ConnectError("sign in to continue", Code.Unauthenticated);
+  }
+  const embeddedVersion = tokenVersion(token);
+  const currentVersion = await findUserTokenVersion(userId);
+  if (currentVersion === undefined || currentVersion !== embeddedVersion) {
+    throw new ConnectError("session expired, please sign in again", Code.Unauthenticated);
+  }
   return userId;
 }
 

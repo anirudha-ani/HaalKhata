@@ -83,12 +83,13 @@ Findings are sorted by severity within each section. File:line references use
   `AUTH_RATE_LIMIT` (10) attempts/min per client IP, throwing
   `Code.ResourceExhausted`. Note: in-process only — multi-replica deploys
   would need a shared store.
-- **B4. Tokens are stateless and non-revocable.** A signed token lives for
-  30 days (`auth.constants.ts:6`) and there is no server-side session store
-  or token version. `logOut` only clears the cookie — a stolen token
-  remains valid until expiry. Password change also doesn't invalidate
-  outstanding tokens. Consider a `token_version` column on `users` baked
-  into the token payload.
+- **B4.~~Tokens are stateless and non-revocable.~~** ✅ *Fixed.* Added a
+  `token_version` column to `users` (migration `1783900800000`); tokens now
+  embed the version at issue time (`userId.version.expiry.signature`).
+  `requireUser` reads the current row version and rejects mismatched tokens.
+  `logOut` bumps the version, revoking all outstanding tokens. (Password
+  change could bump too — see B6 follow-up.)
+- **B21.~~No migration for `token_version`…~~** ✅ *Merged into B4.*
 - **B5. `SESSION_SECRET` defaults to empty in `.env.example`.**
   `docker-compose.yml:31` passes `SESSION_SECRET: ${SESSION_SECRET:-}`
   (empty string). The fallback in `auth.usecase.ts:71` writes a dev secret
@@ -175,8 +176,8 @@ Findings are sorted by severity within each section. File:line references use
   isn't validated to sum to `expenses.amount_cents` at the DB level. A
   partial write (bug in `insertChildren`) leaves the ledger unbalanced
   silently.
-- **B21. No migration for a `token_version` / `password_changed_at`** —
-  see B4.
+- **B21.~~No migration for a `token_version` / `password_changed_at`~~** —
+  ✅ *Done as part of B4.*
 
 ### Frontend
 - **B22. Query cache never persisted.** `Providers.tsx` uses a single

@@ -53,19 +53,20 @@ export const authHandler: ServiceImpl<typeof AuthService> = {
     return result;
   },
 
-  /** Ends the web session by expiring the session cookie. */
+  /** Ends the web session by expiring the session cookie and revoking the token. */
   async logOut(_request, handlerContext) {
+    await runUsecase(async () => auth.logOut(await requireUser(handlerContext)));
     clearSessionCookie(handlerContext);
     return {};
   },
 
   /** Returns the calling user's profile. */
   async getMe(_request, handlerContext) {
-    return runUsecase(() => auth.getMe(requireUser(handlerContext)));
+    return runUsecase(async () => auth.getMe(await requireUser(handlerContext)));
   },
 
   /** Updates the calling user's name and/or default currency. */
   async updateProfile(request, handlerContext) {
-    return runUsecase(() => auth.updateProfile(requireUser(handlerContext), request));
+    return runUsecase(async () => auth.updateProfile(await requireUser(handlerContext), request));
   },
 };

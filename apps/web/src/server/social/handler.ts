@@ -13,29 +13,29 @@ import { requireUser, runUsecase } from "@/server/api/connect/context";
 export const socialHandler: ServiceImpl<typeof SocialService> = {
   /** Adds a friend by email, creating a shadow user if needed. */
   async addFriend(request, context) {
-    return runUsecase(() => social.addFriend(requireUser(context), request));
+    return runUsecase(async () => social.addFriend(await requireUser(context), request));
   },
 
   /** Lists the caller's friends (with net balances). */
   async listFriends(_request, context) {
-    return runUsecase(async () => ({ friends: await social.listFriends(requireUser(context)) }));
+    return runUsecase(async () => ({ friends: await social.listFriends(await requireUser(context)) }));
   },
 
   /** Lists the activity feed, scoped to one group when groupId is set. */
   async listActivity(request, context) {
     return runUsecase(async () => ({
-      events: await social.listActivity(requireUser(context), request.groupId || undefined),
+      events: await social.listActivity(await requireUser(context), request.groupId || undefined),
     }));
   },
 
   /** Lists the caller's notifications together with the unread count. */
   async listNotifications(_request, context) {
-    return runUsecase(() => social.listNotifications(requireUser(context)));
+    return runUsecase(async () => social.listNotifications(await requireUser(context)));
   },
 
   /** Marks all of the caller's notifications as read. */
   async markNotificationsRead(_request, context) {
-    await runUsecase(() => social.markNotificationsRead(requireUser(context)));
+    await runUsecase(async () => social.markNotificationsRead(await requireUser(context)));
     return {};
   },
 };

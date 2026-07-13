@@ -4,6 +4,7 @@ import crypto from "node:crypto";
 import fileSystem from "node:fs";
 import path from "node:path";
 import {
+  bumpTokenVersion,
   claimUser,
   findUserByEmail,
   findUserById,
@@ -90,22 +91,27 @@ function sign(payload: string): string {
 }
 
 /**
- * Issues a signed bearer token for a user.
+ * Issues a signed bearer token for a user. The user's current token_version is
+ * embedded so the token can be invalidated by bumping the version.
  *
  * @param userId - Id of the user the token authenticates.
- * @returns Token of the form "userId.expiry.signature", valid for TOKEN_LIFETIME_SECONDS.
+ * @param tokenVersion - Current token_version of the user, baked into the payload.
+ * @returns Token of the form "userId.version.expiry.signature", valid for TOKEN_LIFETIME_SECONDS.
  */
-export function createToken(userId: string): string {
+export function createToken(userId: string, tokenVersion: number): string {
   const expiresAtSeconds = Math.floor(Date.now() / 1000) + TOKEN_LIFETIME_SECONDS;
-  const payload = `${userId}.${expiresAtSeconds}`;
+  const payload = `${userId}.${tokenVersion}.${expiresAtSeconds}`;
   return `${payload}.${sign(payload)}`;
 }
 
 /**
- * Returns the user id for a valid, unexpired token; null otherwise.
+ * Returns the user id and embedded token version for a structurally valid,
+ * unexpired, correctly-signed token, without consulting the database. Callers
+ * must then verify the embedded version still matches the user's current row.
  *
- * @param token - Bearer token of the form "userId.expiry.signature".
- * @returns The embedded user id, or null when the signature or expiry check fails.
+ * @param token - Bearer token of the form "userId.version.expiry.signature".
+ * @returns The embedded user id and token version, or null when the signature
+ *   or expiry check fails.
  */
 export function verifyToken(token: string): string | null {
   const lastDot = token.lastIndexOf(".");
@@ -116,9 +122,23 @@ export function verifyToken(token: string): string | null {
   const givenBuffer = Buffer.from(givenSignature);
   const expectedBuffer = Buffer.from(expectedSignature);
   if (givenBuffer.length !== expectedBuffer.length || !crypto.timingSafeEqual(givenBuffer, expectedBuffer)) return null;
-  const [userId, expiresAtText] = payload.split(".");
-  if (!userId || Number(expiresAtText) < Date.now() / 1000) return null;
+  const [userId, versionText, expiresAtText] = payload.split(".");
+  if (!userId || versionText === undefined || Number(expiresAtText) < Date.now() / 1000) return null;
   return userId;
+}
+
+/**
+ * Extracts the embedded token_version from a token string (without verifying
+ * the signature). Used after verifyToken to compare against the DB row.
+ *
+ * @param token - Bearer token of the form "userId.version.expiry.signature".
+ * @returns The embedded version number, or NaN when the token is malformed.
+ */
+export function tokenVersion(token: string): number {
+  const firstDot = token.indexOf(".");
+  const secondDot = token.indexOf(".", firstDot + 1);
+  if (firstDot <= 0 || secondDot <= firstDot) return Number.NaN;
+  return Number(token.slice(firstDot + 1, secondDot));
 }
 
 // --- flows -----------------------------------------------------------------
@@ -156,7 +176,7 @@ export async function signUp(input: { email: string; name: string; password: str
       passwordHash: hashPassword(input.password),
     });
   }
-  return { user: toUser(user), token: createToken(user.id) };
+  return { user: toUser(user), token: createToken(user.id, user.token_version) };
 }
 
 /**
@@ -172,7 +192,7 @@ export async function logIn(input: { email: string; password: string }) {
   if (!user || user.password_hash === null || !verifyPassword(input.password, user.password_hash)) {
     throw new UsecaseError("unauthenticated", "invalid email or password");
   }
-  return { user: toUser(user), token: createToken(user.id) };
+  return { user: toUser(user), token: createToken(user.id, user.token_version) };
 }
 
 /**
@@ -186,6 +206,15 @@ export async function getMe(userId: string) {
   const user = await findUserById(userId);
   if (!user) throw new UsecaseError("unauthenticated", "account no longer exists");
   return toUser(user);
+}
+
+/**
+ * Revokes the caller's outstanding bearer tokens by bumping token_version.
+ *
+ * @param userId - Id of the authenticated caller signing out.
+ */
+export async function logOut(userId: string): Promise<void> {
+  await bumpTokenVersion(userId);
 }
 
 /**

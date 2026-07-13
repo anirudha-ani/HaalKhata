@@ -13,6 +13,8 @@ export interface UserRow {
   default_currency: string;
   /** scrypt "salt:hash" string; null marks a shadow user who has not registered yet. */
   password_hash: string | null;
+  /** Monotonic counter baked into issued tokens; bumping it invalidates outstanding tokens. */
+  token_version: number;
   created_at: string;
 }
 
@@ -94,6 +96,31 @@ export async function claimUser(
     passwordHash,
     userId,
   ]);
+}
+
+/**
+ * Fetches only the current token_version for a user (cheap read used on every
+ * authenticated request to validate the bearer token's embedded version).
+ *
+ * @param userId - Primary key of the user to check.
+ * @returns The current token_version, or undefined when the user does not exist.
+ */
+export async function findUserTokenVersion(userId: string): Promise<number | undefined> {
+  const versionRow = await queryOne<{ token_version: number }>(
+    `SELECT token_version FROM users WHERE id = $1`,
+    [userId],
+  );
+  return versionRow?.token_version;
+}
+
+/**
+ * Increments the user's token_version, invalidating every bearer token issued
+ * before this point (logout everywhere / password change).
+ *
+ * @param userId - Primary key of the user whose tokens are being revoked.
+ */
+export async function bumpTokenVersion(userId: string): Promise<void> {
+  await execute(`UPDATE users SET token_version = token_version + 1 WHERE id = $1`, [userId]);
 }
 
 /**

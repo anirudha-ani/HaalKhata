@@ -13,21 +13,21 @@ import { requireUser, runUsecase } from "@/server/api/connect/context";
  */
 export const expenseHandler: ServiceImpl<typeof ExpenseService> = {
   async createExpense(request, context) {
-    return runUsecase(() => expenses.createExpense(requireUser(context), request));
+    return runUsecase(async () => expenses.createExpense(await requireUser(context), request));
   },
 
   async updateExpense(request, context) {
     if (!request.expense) {
       throw new ConnectError("expense payload is required", Code.InvalidArgument);
     }
-    return runUsecase(() =>
-      expenses.updateExpense(requireUser(context), request.expenseId, request.expense!),
+    return runUsecase(async () =>
+      expenses.updateExpense(await requireUser(context), request.expenseId, request.expense!),
     );
   },
 
   async listExpenses(request, context) {
-    return runUsecase(() =>
-      expenses.listExpenses(requireUser(context), {
+    return runUsecase(async () =>
+      expenses.listExpenses(await requireUser(context), {
         groupId: request.groupId || undefined,
         withUserId: request.withUserId || undefined,
       }),
@@ -35,29 +35,29 @@ export const expenseHandler: ServiceImpl<typeof ExpenseService> = {
   },
 
   async getExpense(request, context) {
-    return runUsecase(() => expenses.getExpense(requireUser(context), request.expenseId));
+    return runUsecase(async () => expenses.getExpense(await requireUser(context), request.expenseId));
   },
 
   async deleteExpense(request, context) {
-    await runUsecase(() => expenses.deleteExpense(requireUser(context), request.expenseId));
+    await runUsecase(async () => expenses.deleteExpense(await requireUser(context), request.expenseId));
     return {};
   },
 
   async addComment(request, context) {
-    return runUsecase(() =>
-      expenses.addComment(requireUser(context), request.expenseId, request.body),
+    return runUsecase(async () =>
+      expenses.addComment(await requireUser(context), request.expenseId, request.body),
     );
   },
 
   async recordSettlement(request, context) {
-    return runUsecase(() => expenses.recordSettlement(requireUser(context), request));
+    return runUsecase(async () => expenses.recordSettlement(await requireUser(context), request));
   },
 
   async getGroupBalances(request, context) {
-    return runUsecase(() => balances.getGroupBalances(requireUser(context), request.groupId));
+    return runUsecase(async () => balances.getGroupBalances(await requireUser(context), request.groupId));
   },
 
   async getOverallBalances(_request, context) {
-    return runUsecase(() => balances.getOverallBalances(requireUser(context)));
+    return runUsecase(async () => balances.getOverallBalances(await requireUser(context)));
   },
 };
