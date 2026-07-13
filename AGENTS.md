@@ -7,9 +7,10 @@ before adding a domain or touching the server layer.
 
 A Splitwise-style expense splitter. Schema-first monorepo: the API contract
 lives in `/proto` (ConnectRPC + Protobuf); `buf` generates TypeScript used by
-both server handlers and the web client. Single Next.js app serves the UI
-(App Router) and the Connect API (`/api/connect/*`). Postgres via `pg`, no
-ORM. Self-hosted Docker deploy.
+the server handlers, the web client, and the mobile app. Single Next.js app
+serves the UI (App Router) and the Connect API (`/api/connect/*`). Postgres
+via `pg`, no ORM. Self-hosted Docker deploy. An Expo (React Native) app in
+`apps/mobile` consumes the same API with bearer-token auth.
 
 ## Repo layout
 
@@ -30,6 +31,13 @@ apps/web/                    Next.js app
   src/lib/                   shared client/server utilities (api/, money/, auth/)
   src/components/            shell, ui primitives, providers, modals
   migrations/                plain SQL, node-pg-migrate (history in pgmigrations)
+apps/mobile/                 Expo (React Native) app — @haalkhata/mobile
+  app/                       expo-router routes — THIN (the page.tsx role)
+  src/screens/<route>/       per-route fan-out mirroring the web pattern:
+                               components/<XScreen>/ (+hooks/), constants/, utils/
+  src/components/            ui primitives, shell (tabs/headers), modals, providers
+  src/lib/                   api/ (Connect transport + bearer session), money/,
+                             theme/ (design tokens), encoding/, polyfills/
 ```
 
 ## Layering rules (enforced by ESLint)
@@ -180,8 +188,31 @@ All four must pass before committing.
 | `pnpm test`     | vitest unit tests (domain math + auth tokens)   |
 | `pnpm proto:lint`| buf lint + breaking                            |
 | `pnpm doctor`   | react-doctor scan                               |
+| `pnpm typecheck:mobile` / `lint:mobile` / `test:mobile` | same gates for apps/mobile |
 
-Run `pnpm typecheck && pnpm lint && pnpm test` before every commit.
+Run `pnpm typecheck && pnpm lint && pnpm test` before every commit (the
+`:mobile` variants when touching apps/mobile).
+
+## Mobile app (apps/mobile)
+
+Expo SDK 57 + expo-router. The same conventions apply — thin route files in
+`app/` mount screen orchestrators from `src/screens/<route>/components/
+<XScreen>/`, all server calls live in `useXAPI` hooks composed by `useX`,
+constants sit in route-scoped `constants/` folders, pure helpers in `utils/`
+with colocated tests. Mobile-specific rules:
+
+- **Auth is bearer-token**, not cookies: LogIn/SignUp return `token`, stored
+  in SecureStore (`src/lib/api/session.ts`) and attached by a transport
+  interceptor. `Code.Unauthenticated` clears the session; the `(app)/_layout`
+  gate redirects to /login. The server's CSRF guard exempts bearer clients.
+- **Design tokens** come from `src/lib/theme/theme.ts` (the web's globals.css
+  palette). No inline hex colors in screens.
+- **Query keys and money helpers are copies of the web files** — keep
+  `lib/api/queryKeys.ts` and `lib/money/*` byte-identical with
+  `apps/web/src/lib/...` when either side changes.
+- Dev: `pnpm dev:mobile` (Expo Go). The API base URL derives from the Metro
+  host (port 3000) or `EXPO_PUBLIC_API_URL`. Native-module versions must
+  match the SDK — check with `npx expo install --check`.
 
 ## Common pitfalls
 

@@ -69,7 +69,7 @@ export function useScan(initialGroupId: string) {
 
   // Draft (items stay null until a receipt has been parsed).
   const [merchant, setMerchant] = useState("");
-  const [date, setDate] = useState(todayISO());
+  const [date, setDate] = useState(() => todayISO());
   const [items, setItems] = useState<DraftItem[] | null>(null);
   const [taxInput, setTaxInput] = useState("0.00");
   const [tipInput, setTipInput] = useState("0.00");

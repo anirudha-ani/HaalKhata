@@ -9,9 +9,8 @@ tip split proportionally.
 ## Architecture
 
 Schema-first monorepo. The API contract lives in `/proto` (ConnectRPC +
-Protobuf); `buf` generates the TypeScript used by both the server handlers
-and the web client. A future native mobile app regenerates a Swift/Kotlin
-client from the same protos and calls the same `/api/connect/*` endpoints.
+Protobuf); `buf` generates the TypeScript used by the server handlers, the
+web client, and the React Native app — one contract, no drift.
 
 ```
 proto/<domain>/v1/          the contract, one module per domain
@@ -26,6 +25,10 @@ apps/web/                   Next.js app
   src/server/api/connect/   transport context + routes.ts wiring
   src/pages/api/connect/    endpoint mount
   src/app/<route>/          thin page.tsx → components/<Page>/ + hooks/
+apps/mobile/                Expo (React Native) app — same features, same API
+  app/                      expo-router routes (thin, the page.tsx role)
+  src/screens/<route>/      per-route fan-out: components/<XScreen>/ + hooks/
+  src/lib/ src/components/  Connect transport (bearer auth), theme, shared UI
 ```
 
 Layering: handlers have no SQL and no business logic; usecases have no SQL
@@ -58,6 +61,17 @@ Pending migrations apply automatically on boot and the receipt scanner
 falls back to a mock provider — no further configuration needed for a demo.
 Using your own Postgres instead of the compose service? Set `DATABASE_URL`
 in `apps/web/.env`.
+
+### Mobile app (Expo)
+
+```sh
+pnpm dev:mobile          # expo start — scan the QR with Expo Go
+```
+
+The app signs in with bearer tokens against the same `/api/connect`
+endpoints. In dev it targets port 3000 on the machine running Metro, so
+start the web server with `next dev -H 0.0.0.0` (or set
+`EXPO_PUBLIC_API_URL=https://your-server`) when testing from a phone.
 
 ## Schema & migrations
 
@@ -106,6 +120,8 @@ pnpm lint        # eslint (incl. layering import rules)
 pnpm test        # vitest — split math & balance domain tests
 pnpm proto:lint  # buf lint
 pnpm doctor      # react-doctor scan
+
+pnpm typecheck:mobile && pnpm lint:mobile && pnpm test:mobile   # same, for apps/mobile
 ```
 
 See `docs/plan.txt` for the full architecture plan and delivery phases.
