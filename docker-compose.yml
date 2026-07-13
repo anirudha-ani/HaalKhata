@@ -1,0 +1,41 @@
+# Self-hosted deployment: `docker compose up -d --build`.
+# Local dev only needs the database: `docker compose up -d db` + `pnpm dev`.
+# Secrets come from a `.env` file next to this one (see .env.example).
+services:
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: haalkhata
+      POSTGRES_USER: haalkhata
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-haalkhata}
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:5432:5432" # loopback only; lets `pnpm dev` on the host reach it
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U haalkhata -d haalkhata"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  web:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://haalkhata:${POSTGRES_PASSWORD:-haalkhata}@db:5432/haalkhata
+      # REQUIRED in production — without it sessions reset on every restart.
+      SESSION_SECRET: ${SESSION_SECRET:-}
+      RECEIPT_AI_PROVIDERS: ${RECEIPT_AI_PROVIDERS:-local,anthropic,mock}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      LOCAL_AI_BASE_URL: ${LOCAL_AI_BASE_URL:-}
+      LOCAL_AI_API_KEY: ${LOCAL_AI_API_KEY:-}
+      LOCAL_AI_MODEL: ${LOCAL_AI_MODEL:-qwen2.5vl}
+    ports:
+      - "3000:3000"
+
+volumes:
+  db-data:

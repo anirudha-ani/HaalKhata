@@ -1,0 +1,12 @@
+{
+  "name": "@haalkhata/protogen",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Generated TypeScript from /proto — the API contract. Do not edit by hand; run `pnpm gen` at the repo root.",
+  "exports": {
+    "./*": "./src/*.ts"
+  },
+  "dependencies": {
+    "@bufbuild/protobuf": "^2.12.1"
+  }
+}

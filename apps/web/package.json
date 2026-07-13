@@ -1,0 +1,45 @@
+{
+  "name": "@haalkhata/web",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev -H 127.0.0.1",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint src",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "db:migrate": "DATABASE_URL=\"${DATABASE_URL:-postgres://haalkhata:haalkhata@localhost:5432/haalkhata}\" node-pg-migrate up -m migrations",
+    "db:down": "DATABASE_URL=\"${DATABASE_URL:-postgres://haalkhata:haalkhata@localhost:5432/haalkhata}\" node-pg-migrate down -m migrations",
+    "db:new": "node-pg-migrate create -m migrations --migration-file-language sql"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.110.0",
+    "@bufbuild/protobuf": "^2.12.1",
+    "@connectrpc/connect": "^2.1.2",
+    "@connectrpc/connect-next": "^2.1.2",
+    "@connectrpc/connect-node": "^2.1.2",
+    "@connectrpc/connect-web": "^2.1.2",
+    "@haalkhata/protogen": "workspace:*",
+    "@tanstack/react-query": "^5.90.5",
+    "lucide-react": "^1.23.0",
+    "next": "^15.3.4",
+    "node-pg-migrate": "^8.0.4",
+    "pg": "^8.22.0",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0"
+  },
+  "devDependencies": {
+    "@eslint/eslintrc": "^3.3.5",
+    "@tailwindcss/postcss": "^4.1.10",
+    "@types/node": "^24.0.0",
+    "@types/pg": "^8.20.0",
+    "@types/react": "^19.1.8",
+    "@types/react-dom": "^19.1.6",
+    "eslint": "^9",
+    "eslint-config-next": "^15.3.4",
+    "tailwindcss": "^4.1.10",
+    "typescript": "^5.8.3",
+    "vitest": "^3.2.4"
+  }
+}

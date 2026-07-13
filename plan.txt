@@ -1,0 +1,227 @@
+# HaalKhata — Splitwise Clone: Architecture Plan (v3)
+
+## Context
+
+Greenfield build. Goal: a fully web-hosted Splitwise clone — responsive on
+mobile and desktop browsers — with an AI feature that turns an uploaded
+receipt photo into itemized line items (with tax + tip) that can be assigned
+to people. Supports one-off spending and groups (trips, home, etc.), all core
+Splitwise features, and a clean schema-first API contract so a native mobile
+app can reuse the backend later. Direct payment settlement is deferred;
+recording settlements is in.
+
+**Decisions locked with the user (v3 — supersedes v2):**
+- **No vendor lock-in, full control (v3).** Deploy target is a self-hosted
+  Docker host (any VPS), NOT Vercel. Managed services are allowed only
+  behind swappable interfaces or a plain connection string.
+- **Database: Postgres from day one (v3 — replaces SQLite).** No SQLite
+  anywhere. Local dev and prod both run vanilla Postgres (dev via
+  `docker compose up db` or any local Postgres; prod via the compose file).
+  The repo layer stays the only place SQL lives; the driver is `pg`
+  (node-postgres), no ORM.
+- **Schema as versioned SQL migrations (v3.1).** The schema is defined in
+  plain `.sql` files under `apps/web/migrations/` run by node-pg-migrate
+  (history table `pgmigrations`). Pending migrations auto-apply once per
+  process on boot (db.ts), so dev and Docker stay zero-step; the CLI
+  (`pnpm db:new`, `pnpm db:migrate`, `pnpm db:down`) is for authoring and
+  rollback. No inline DDL in code.
+- **Backend: Node/TypeScript inside Next.js** (no Go, no Fly.io). One
+  language, one deploy artifact (Next standalone output in Docker).
+- **API contract: ConnectRPC + Protobuf stays.** `.proto` files remain the
+  single source of truth; `buf` + `protoc-gen-es` generate the TypeScript
+  messages and service descriptors used by BOTH the server handlers and the
+  web client. A future mobile app regenerates a Swift/Kotlin client from the
+  identical protos and calls the same `/api/connect/*` endpoints — one
+  contract, no drift, no rewrite.
+- **Storage:** repository layer (`/repo`) owns ALL SQL — Postgres via `pg`,
+  async throughout. Because no SQL leaks outside `/repo`, changing hosts is
+  a `DATABASE_URL` change; there is nothing provider-specific to migrate.
+- **Auth:** email + password with signed bearer tokens. Login RPC sets an
+  httpOnly cookie (web) and returns the token in the response body (mobile).
+  Every RPC accepts either the cookie or `Authorization: Bearer`.
+- **AI receipt parsing: no vendor lock.** Provider abstraction with
+  config-driven ordering: self-hosted vision box (OpenAI-compatible, e.g.
+  Ollama/vLLM + Qwen2.5-VL behind Cloudflare Tunnel) → cloud API (Claude
+  vision) → mock provider (deterministic demo data so the flow always works).
+  Dev default: cloud-first. Prod: local-first with cloud fallback.
+- **Notifications:** in-app notifications now; Web Push (VAPID) + email
+  (Resend) are a later phase (need keys/infra).
+
+## Goal / Deliverable
+
+A working app where a real user can: sign up / log in, create groups and add
+members by email (even before they sign up — "shadow users" claim their
+account at signup), add expenses with any split type (equal, exact amounts,
+percentages, shares, itemized), record multiple payers, scan a receipt photo
+into an editable itemized draft and tap-assign items to people (tax + tip
+split proportionally), see who owes whom per group and overall, simplify
+debts (min cash flow), record settlements, comment on expenses, see an
+activity feed and in-app notifications — responsive on mobile + desktop,
+installable PWA shell.
+
+Explicitly NOT in v1: payment rails, FX conversion, native mobile app
+(contract-ready only), SMS, Web Push/email delivery.
+
+## 1. Architecture Overview
+
+```
+Browser (mobile + desktop)                       future native app
+   │  typed Connect client (gen TS)                 │  generated Swift/Kotlin client
+   ▼                                                ▼
+/api/connect/*  ── ConnectRPC over HTTP (JSON/binary) ── one contract from /proto
+   │
+   ▼
+apps/web/src/server/api/connect/   handlers: transport concerns ONLY
+   │                               (decode, auth context, map errors)
+   ▼
+apps/web/src/server/usecase/       ALL business logic (split math, balances,
+   │                               debt simplification, validation, activity)
+   ▼
+apps/web/src/server/repo/          ALL SQL (Postgres via pg)
+```
+
+Layering rules (enforced by review):
+- `api/connect` handlers: no SQL, no business logic. Decode request → call
+  usecase → encode response. `routes.ts` wires services to the router.
+- `usecase`: pure TypeScript business logic. No SQL, no transport types
+  beyond the generated proto messages. Domain math (splits, balances,
+  simplify) lives in `usecase/domain/` as pure functions — unit tested.
+- `repo`: SQL only. No business decisions.
+
+## 2. Repo Layout (monorepo, npm workspaces)
+
+```
+/proto/<domain>/v1/           one module per domain: common/, auth/, group/,
+                              expense/, receipt/, social/ — THE contract
+                              (buf lint + breaking)
+/buf.yaml /buf.gen.yaml       codegen → packages/protogen
+/packages/protogen/                @haalkhata/protogen — generated TS (messages +
+                              service descriptors), consumed by web now,
+                              mobile later
+/apps/web/                    Next.js app (App Router UI + Connect endpoint)
+  src/server/                 domain-first fan-out mirroring /proto modules:
+    common/                   db.ts, errors.ts (shared infra, no domain deps)
+    <domain>/                 auth/ group/ expense/ receipt/ social/, each:
+      repo/                     ALL SQL for the domain
+      usecase/                  ALL logic (+ expense/domain/ pure math)
+      handler.ts                thin Connect handler
+    api/connect/              context.ts (auth/cookies/error map), routes.ts
+  src/pages/api/connect/      [[...connect]].ts — mount point only
+  src/app/<route>/            UI (structure below)
+  src/lib/                    shared client/server utilities, by concern:
+    api/                        connect.ts (transport + typed clients), queryKeys.ts
+    money/                      money.ts (formatting) + money.constants.ts
+    auth/                       session.server.ts (server-component session guard)
+  src/components/             shared UI, by role (each folder owns its *.constants.ts):
+    ui/                         presentational primitives (Avatar, Modal, Money, …)
+    shell/                      authed app chrome (AppShell + hooks/)
+    modals/                     shared feature modals (SettleUpModal)
+    providers/                  app-wide providers + PWA bootstrap
+```
+
+## 3. Frontend structure (per route)
+
+```
+src/app/<route>/
+├── page.tsx                  # THIN orchestrator: params, providers, render
+├── loading.tsx               # Route-level loading UI
+├── types/ constants/ hooks/ utils/   # Route-scoped; tests colocated in utils/
+└── components/
+    └── <PageComponent>/
+        ├── <PageComponent>.tsx   # component orchestrator: ONE composite hook,
+        │                         # assembles sub-trees, owns fallbacks
+        ├── hooks/                # useXAPI (all React Query calls), useXState,
+        │                         # useXHandlers, composed by useX
+        ├── utils/                # pure helpers
+        └── components/           # sub-components repeating this structure
+```
+
+- Data: TanStack Query wrapping the typed Connect client (`useXAPI` hooks own
+  every query/mutation; components never call the client directly).
+- Tooling: ESLint (flat config + next + typescript rules), react-doctor scan,
+  vitest for domain/unit tests, `buf lint` + `buf breaking` for the contract.
+- Naming/docs (mandated 2026-07-12): every identifier ≥ 4 characters, no
+  abbreviations (enforced by eslint `id-length`; DB-column/proto property
+  names exempt); every file has a header doc comment; every exported symbol
+  and non-trivial internal function carries JSDoc (@param/@returns).
+- Constants (mandated 2026-07-12): never inline between functions. Server:
+  one `<domain>.constants.ts` per domain (auth, group, expense, receipt,
+  common/db, api/connect). Frontend: route-scoped constants in the route's
+  `constants/` folder; shared constants in the owning folder's
+  `*.constants.ts` (e.g. components/ui/ui.constants.ts, lib/money/money.constants.ts).
+  Live objects (handlers, provider impls, clients) are not constants and
+  stay where they are.
+
+## 4. Data Model (integer cents everywhere, soft-delete on expenses)
+
+users (shadow users: password_hash NULL, claimable at signup) · friendships ·
+groups · group_members · expenses (group_id NULL ⇒ one-off; split_type:
+equal|exact|percent|shares|itemized; tax/tip cents for itemized) ·
+expense_payers (multi-payer) · expense_splits · expense_items ·
+expense_item_assignments · settlements · comments · activity · notifications.
+
+Balances are computed, not stored (derive from splits + payers −
+settlements). Single currency per group; currency code stored.
+
+## 5. Core Domain Logic (usecase/domain — pure, unit-tested)
+
+- `allocate(total, weights)` — largest-remainder allocation; splits always
+  reconcile to the exact cent total, deterministic remainder assignment.
+- Split calculators: equal / exact (validate sum) / percent (basis points,
+  sum=10000) / shares / itemized (Σ assigned items + proportional tax + tip).
+- Pairwise balances: per-expense net (paid − owed) matched deterministically
+  into debtor→creditor entries; settlements subtract; normalize per pair.
+- Simplify debts: greedy min-cash-flow over net balances.
+
+## 6. AI Receipt Pipeline (usecase/receipt + provider adapters)
+
+Upload photo → `ParseReceipt` RPC → provider failover chain (config env
+`RECEIPT_AI_PROVIDERS`, default `anthropic,local,mock`; prod
+`local,anthropic,mock`) → normalized `ParsedReceipt {merchant, date,
+currency, items[], subtotal, tax, tip, total}` → editable review/assign UI →
+saved as `split_type=itemized` expense. AI output is never auto-committed.
+Local provider speaks the OpenAI-compatible vision wire format (swap base
+URL); cloud provider uses the Claude API with a strict JSON schema.
+
+## 7. Delivery Phases
+
+- **Phase 0 — Foundations:** monorepo, buf codegen wired, Postgres schema
+  (bootstrap on startup), auth (signup/login/claim shadow accounts), Connect
+  endpoint mounted, app shell + login, ESLint/vitest/react-doctor.
+- **Phase 1 — Expense engine:** groups + members, expenses (all split
+  types, multi-payer), balances + simplify, settlements, activity feed.
+- **Phase 2 — AI receipt itemization:** ParseReceipt + failover providers,
+  review/assign UI, itemized save.
+- **Phase 3 — Social & polish:** friends + one-off expenses, comments,
+  notifications (in-app), dashboard, PWA manifest + service worker,
+  responsive pass at mobile/desktop viewports.
+- **Phase 4 (later, needs infra/keys):** Web Push (VAPID — open standard),
+  email behind an `EmailProvider` interface (Nodemailer/SMTP; any provider
+  is config, not code), cron reminders/digest via system cron on the host,
+  realtime via Connect server-streaming/SSE from our own server. No
+  Supabase, no Resend SDK, no Vercel.
+
+## 7b. Deployment (self-hosted Docker)
+
+- `Dockerfile` (repo root): multi-stage — pnpm install → `buf generate` →
+  `next build` with `output: "standalone"` → slim runtime image running
+  `node apps/web/server.js`. No native modules (pg is pure JS).
+- `docker-compose.yml` (repo root): `db` (postgres:17-alpine, named volume,
+  healthcheck) + `web` (built image, `DATABASE_URL` pointing at `db`,
+  port 3000). Secrets come from the host `.env` (see `.env.example`).
+- Local dev: `docker compose up -d db` then `pnpm dev` — or point
+  `DATABASE_URL` at any Postgres you already run. Pending migrations from
+  `apps/web/migrations/` apply automatically on boot; the runtime image
+  ships the migrations folder so containers self-migrate on start.
+- TLS/domain: any reverse proxy on the host (Caddy/nginx/Traefik) — out of
+  scope for this repo.
+
+## 8. Verification
+
+- vitest unit tests: every split type reconciles to the exact total
+  (rounding property cases), pairwise balances, simplify-debts.
+- `buf lint` + generated code compiles; `tsc --noEmit`; ESLint clean;
+  react-doctor scan.
+- End-to-end: scripted Connect JSON calls (signup → group → expenses of each
+  type → balances → settle → assert zeroed) against a running dev server.
+- Manual responsive check at mobile + desktop viewports.

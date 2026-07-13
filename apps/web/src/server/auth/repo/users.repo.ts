@@ -1,0 +1,118 @@
+/** All SQL for the users table: insert, lookups, shadow-user claim, profile updates. */
+
+import { execute, newId, query, queryOne } from "@/server/common/db";
+
+/** One row of the users table. Field names mirror the SQL column names. */
+export interface UserRow {
+  id: string;
+  email: string;
+  name: string;
+  /** Hex color (e.g. "#c73e2e") used as the user's avatar background. */
+  avatar_color: string;
+  /** ISO 4217 code preselected as the currency for the user's new expenses. */
+  default_currency: string;
+  /** scrypt "salt:hash" string; null marks a shadow user who has not registered yet. */
+  password_hash: string | null;
+  created_at: string;
+}
+
+/**
+ * Inserts a new users row with a freshly generated id.
+ *
+ * @param input - Column values for the new user; defaultCurrency falls back to "USD",
+ *   and a null passwordHash creates a claimable shadow user.
+ * @returns The inserted row.
+ */
+export async function insertUser(input: {
+  email: string;
+  name: string;
+  avatarColor: string;
+  passwordHash: string | null;
+  defaultCurrency?: string;
+}): Promise<UserRow> {
+  const rows = await query<UserRow>(
+    `INSERT INTO users (id, email, name, avatar_color, default_currency, password_hash)
+     VALUES ($1, $2, $3, $4, $5, $6)
+     RETURNING *`,
+    [
+      newId(),
+      input.email,
+      input.name,
+      input.avatarColor,
+      input.defaultCurrency ?? "USD",
+      input.passwordHash,
+    ],
+  );
+  return rows[0];
+}
+
+/**
+ * Looks a user up by primary key.
+ *
+ * @param userId - Primary key of the user to fetch.
+ * @returns The matching row, or undefined when no such user exists.
+ */
+export async function findUserById(userId: string): Promise<UserRow | undefined> {
+  return queryOne<UserRow>(`SELECT * FROM users WHERE id = $1`, [userId]);
+}
+
+/**
+ * Looks a user up by email address, case-insensitively.
+ *
+ * @param email - Email address to match, in any casing.
+ * @returns The matching row, or undefined when no such user exists.
+ */
+export async function findUserByEmail(email: string): Promise<UserRow | undefined> {
+  return queryOne<UserRow>(`SELECT * FROM users WHERE lower(email) = lower($1)`, [email]);
+}
+
+/**
+ * Fetches every user whose id appears in the given list.
+ *
+ * @param userIds - Primary keys of the users to fetch.
+ * @returns The matching rows in no guaranteed order; unknown ids are silently skipped.
+ */
+export async function findUsersByIds(userIds: string[]): Promise<UserRow[]> {
+  if (userIds.length === 0) return [];
+  return query<UserRow>(`SELECT * FROM users WHERE id = ANY($1::text[])`, [userIds]);
+}
+
+/**
+ * A shadow user registers: sets name + password on the existing row.
+ *
+ * @param userId - Primary key of the shadow user's existing row.
+ * @param name - Display name chosen at registration.
+ * @param passwordHash - scrypt "salt:hash" string for the newly chosen password.
+ */
+export async function claimUser(
+  userId: string,
+  name: string,
+  passwordHash: string,
+): Promise<void> {
+  await execute(`UPDATE users SET name = $1, password_hash = $2 WHERE id = $3`, [
+    name,
+    passwordHash,
+    userId,
+  ]);
+}
+
+/**
+ * Updates only the profile columns present in fields, leaving the rest untouched.
+ *
+ * @param userId - Primary key of the user to update.
+ * @param fields - New values; only properties that are defined get written.
+ */
+export async function updateUserProfile(
+  userId: string,
+  fields: { name?: string; defaultCurrency?: string },
+): Promise<void> {
+  if (fields.name !== undefined) {
+    await execute(`UPDATE users SET name = $1 WHERE id = $2`, [fields.name, userId]);
+  }
+  if (fields.defaultCurrency !== undefined) {
+    await execute(`UPDATE users SET default_currency = $1 WHERE id = $2`, [
+      fields.defaultCurrency,
+      userId,
+    ]);
+  }
+}

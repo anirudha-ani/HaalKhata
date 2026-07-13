@@ -1,0 +1,40 @@
+syntax = "proto3";
+
+package receipt.v1;
+
+// AI receipt itemization. The server tries configured providers in order
+// (self-hosted vision box, cloud API, mock) and returns a normalized draft
+// that the user reviews before it becomes an itemized expense — AI output
+// is never auto-committed.
+service ReceiptService {
+  rpc ParseReceipt(ParseReceiptRequest) returns (ParseReceiptResponse);
+}
+
+message ParseReceiptRequest {
+  bytes image = 1;
+  string media_type = 2; // image/jpeg | image/png | image/webp | image/gif
+}
+
+message ParsedReceiptItem {
+  string name = 1;
+  int32 quantity = 2;
+  int32 unit_price_cents = 3;
+  int32 total_cents = 4;
+}
+
+message ParsedReceipt {
+  string merchant = 1;
+  string date = 2; // YYYY-MM-DD or empty
+  string currency = 3;
+  repeated ParsedReceiptItem items = 4;
+  int32 subtotal_cents = 5;
+  int32 tax_cents = 6;
+  int32 tip_cents = 7;
+  int32 total_cents = 8;
+}
+
+message ParseReceiptResponse {
+  ParsedReceipt receipt = 1;
+  // Which provider produced the result: "local" | "anthropic" | "mock".
+  string provider = 2;
+}

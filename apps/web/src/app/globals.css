@@ -1,0 +1,59 @@
+@import "tailwindcss";
+
+/*
+ * HaalKhata design tokens — "fresh ledger" theme.
+ * হালখাতা is the Bengali tradition of opening a new ledger book: red covers,
+ * cream paper. Vermillion is the brand accent; money semantics use
+ * emerald (owed to you) and burnt amber (you owe).
+ */
+@theme {
+  --color-paper: #faf6ef;
+  --color-card: #fffdf9;
+  --color-ink: #292217;
+  --color-ink-soft: #857a68;
+  --color-line: #eae1d1;
+
+  --color-brand-50: #fdf1ee;
+  --color-brand-100: #fadfd8;
+  --color-brand-200: #f2b9ac;
+  --color-brand-500: #c74a33;
+  --color-brand-600: #b03a25;
+  --color-brand-700: #92301f;
+  --color-brand-800: #6f2517;
+
+  --color-pos-50: #ebf7f1;
+  --color-pos-600: #0e7f58;
+  --color-pos-700: #0b6647;
+
+  --color-neg-50: #fbf3e7;
+  --color-neg-600: #b45309;
+  --color-neg-700: #92400e;
+
+  --font-display: "Iowan Old Style", Georgia, "Times New Roman", serif;
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, sans-serif;
+}
+
+body {
+  background-color: var(--color-paper);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+h1,
+h2,
+h3 {
+  font-family: var(--font-display);
+}
+
+/* Ruled-paper flourish for list containers */
+.ledger-lines {
+  background-image: repeating-linear-gradient(
+    to bottom,
+    transparent 0,
+    transparent 47px,
+    var(--color-line) 47px,
+    var(--color-line) 48px
+  );
+}

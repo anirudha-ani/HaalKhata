@@ -1,0 +1,58 @@
+syntax = "proto3";
+
+package social.v1;
+
+import "google/protobuf/empty.proto";
+import "common/v1/common.proto";
+
+// Friends, the activity feed and in-app notifications.
+service SocialService {
+  // Add a friend by email; creates a claimable shadow user if needed.
+  rpc AddFriend(AddFriendRequest) returns (common.v1.User);
+  rpc ListFriends(google.protobuf.Empty) returns (ListFriendsResponse);
+  rpc ListActivity(ListActivityRequest) returns (ListActivityResponse);
+  rpc ListNotifications(google.protobuf.Empty) returns (ListNotificationsResponse);
+  rpc MarkNotificationsRead(google.protobuf.Empty) returns (google.protobuf.Empty);
+}
+
+message AddFriendRequest {
+  string email = 1;
+  string name = 2; // optional display name for shadow users
+}
+
+message ListFriendsResponse {
+  repeated common.v1.CounterpartyBalance friends = 1;
+}
+
+message ListActivityRequest {
+  string group_id = 1; // empty = everything visible to the caller
+}
+
+message ActivityEvent {
+  string id = 1;
+  string group_id = 2;
+  common.v1.User actor = 3;
+  string type = 4;    // expense_added | expense_deleted | settlement | member_added | group_created | comment
+  string message = 5; // pre-rendered, human-readable
+  string link = 6;    // app path, e.g. /expenses/<id>
+  string created_at = 7;
+}
+
+message ListActivityResponse {
+  repeated ActivityEvent events = 1;
+}
+
+message Notification {
+  string id = 1;
+  string type = 2;
+  string title = 3;
+  string body = 4;
+  string link = 5;
+  bool read = 6;
+  string created_at = 7;
+}
+
+message ListNotificationsResponse {
+  repeated Notification notifications = 1;
+  int32 unread_count = 2;
+}

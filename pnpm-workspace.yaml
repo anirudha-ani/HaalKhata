@@ -1,0 +1,11 @@
+packages:
+  - "apps/*"
+  - "packages/*"
+
+# Native/postinstall packages allowed to run build scripts
+allowBuilds:
+  "@bufbuild/buf": true
+  esbuild: true
+  sharp: true
+  unrs-resolver: true
+  "@tailwindcss/oxide": true

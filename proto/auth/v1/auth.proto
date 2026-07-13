@@ -1,0 +1,38 @@
+syntax = "proto3";
+
+package auth.v1;
+
+import "google/protobuf/empty.proto";
+import "common/v1/common.proto";
+
+// Email + password auth. LogIn/SignUp return a bearer token for mobile
+// clients and additionally set an httpOnly session cookie for browsers.
+service AuthService {
+  rpc SignUp(SignUpRequest) returns (AuthResponse);
+  rpc LogIn(LogInRequest) returns (AuthResponse);
+  rpc LogOut(google.protobuf.Empty) returns (google.protobuf.Empty);
+  rpc GetMe(google.protobuf.Empty) returns (common.v1.User);
+  rpc UpdateProfile(UpdateProfileRequest) returns (common.v1.User);
+}
+
+message SignUpRequest {
+  string email = 1;
+  string name = 2;
+  string password = 3;
+}
+
+message LogInRequest {
+  string email = 1;
+  string password = 2;
+}
+
+message AuthResponse {
+  common.v1.User user = 1;
+  // Bearer token; pass as "Authorization: Bearer <token>" on future calls.
+  string token = 2;
+}
+
+message UpdateProfileRequest {
+  string name = 1;
+  string default_currency = 2;
+}

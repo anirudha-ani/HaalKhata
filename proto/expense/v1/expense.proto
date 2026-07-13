@@ -1,0 +1,171 @@
+syntax = "proto3";
+
+package expense.v1;
+
+import "google/protobuf/empty.proto";
+import "common/v1/common.proto";
+
+// Expenses, settlements and balances. All money is integer cents in the
+// expense's currency; splits always reconcile to the exact total.
+service ExpenseService {
+  rpc CreateExpense(CreateExpenseRequest) returns (Expense);
+  rpc UpdateExpense(UpdateExpenseRequest) returns (Expense);
+  rpc ListExpenses(ListExpensesRequest) returns (ListExpensesResponse);
+  rpc GetExpense(GetExpenseRequest) returns (GetExpenseResponse);
+  rpc DeleteExpense(DeleteExpenseRequest) returns (google.protobuf.Empty);
+  rpc AddComment(AddCommentRequest) returns (Comment);
+
+  rpc RecordSettlement(RecordSettlementRequest) returns (Settlement);
+  rpc GetGroupBalances(GetGroupBalancesRequest) returns (BalancesResponse);
+  rpc GetOverallBalances(google.protobuf.Empty) returns (OverallBalancesResponse);
+}
+
+message Payer {
+  string user_id = 1;
+  int32 amount_cents = 2;
+}
+
+message Split {
+  string user_id = 1;
+  int32 owed_cents = 2;
+}
+
+// Per-participant input for the chosen split type. Only the field matching
+// the split type is read: exact -> amount_cents, percent -> percent_bp
+// (basis points, must sum to 10000), shares -> shares. equal ignores all.
+message SplitSpec {
+  string user_id = 1;
+  int32 amount_cents = 2;
+  int32 percent_bp = 3;
+  int32 shares = 4;
+}
+
+message ItemAssignment {
+  string user_id = 1;
+  int32 weight = 2;
+}
+
+message ExpenseItem {
+  string id = 1;
+  string name = 2;
+  int32 quantity = 3;
+  int32 total_cents = 4;
+  repeated ItemAssignment assignments = 5;
+}
+
+message Expense {
+  string id = 1;
+  string group_id = 2; // empty = one-off (non-group) expense
+  string description = 3;
+  int32 amount_cents = 4;
+  string currency = 5;
+  string category = 6;
+  string expense_date = 7; // YYYY-MM-DD
+  string split_type = 8;   // equal | exact | percent | shares | itemized
+  string notes = 9;
+  string created_by = 10;
+  string created_at = 11;
+  repeated Payer payers = 12;
+  repeated Split splits = 13;
+  repeated ExpenseItem items = 14;
+  int32 tax_cents = 15;
+  int32 tip_cents = 16;
+}
+
+message CreateExpenseRequest {
+  string group_id = 1; // empty = one-off
+  string description = 2;
+  int32 amount_cents = 3;
+  string currency = 4;
+  string category = 5;
+  string expense_date = 6;
+  string split_type = 7;
+  string notes = 8;
+  repeated Payer payers = 9;       // must sum to amount_cents
+  repeated SplitSpec split_specs = 10;
+  repeated ExpenseItem items = 11; // itemized only; ids may be empty
+  int32 tax_cents = 12;            // itemized only
+  int32 tip_cents = 13;            // itemized only
+}
+
+message UpdateExpenseRequest {
+  string expense_id = 1;
+  CreateExpenseRequest expense = 2;
+}
+
+message ListExpensesRequest {
+  // Exactly one of these; both empty = all expenses involving the caller.
+  string group_id = 1;
+  string with_user_id = 2; // one-off expenses with this user
+}
+
+message ListExpensesResponse {
+  repeated Expense expenses = 1;
+  repeated common.v1.User users = 2; // everyone referenced by the expenses
+}
+
+message GetExpenseRequest {
+  string expense_id = 1;
+}
+
+message Comment {
+  string id = 1;
+  string expense_id = 2;
+  common.v1.User author = 3;
+  string body = 4;
+  string created_at = 5;
+}
+
+message GetExpenseResponse {
+  Expense expense = 1;
+  repeated Comment comments = 2;
+  repeated common.v1.User users = 3;
+}
+
+message DeleteExpenseRequest {
+  string expense_id = 1;
+}
+
+message AddCommentRequest {
+  string expense_id = 1;
+  string body = 2;
+}
+
+message RecordSettlementRequest {
+  string group_id = 1; // empty = one-off
+  string to_user_id = 2;
+  int32 amount_cents = 3;
+  string currency = 4;
+  string method = 5; // cash | bank | bkash | other
+  string note = 6;
+}
+
+message Settlement {
+  string id = 1;
+  string group_id = 2;
+  string from_user_id = 3;
+  string to_user_id = 4;
+  int32 amount_cents = 5;
+  string currency = 6;
+  string method = 7;
+  string note = 8;
+  string created_at = 9;
+}
+
+message GetGroupBalancesRequest {
+  string group_id = 1;
+}
+
+message BalancesResponse {
+  repeated common.v1.NetBalance nets = 1;
+  // Raw pairwise debts derived from expenses minus settlements.
+  repeated common.v1.Debt debts = 2;
+  // Min-cash-flow simplification of the same balances.
+  repeated common.v1.Debt simplified = 3;
+}
+
+message OverallBalancesResponse {
+  int32 you_owe_cents = 1;
+  int32 owed_to_you_cents = 2;
+  repeated common.v1.CounterpartyBalance counterparties = 3;
+}

@@ -1,2 +1,98 @@
-# HaalKhata
-An AI application to split bills and manage personal finance
+# হালখাতা HaalKhata
+
+A Splitwise-style expense splitter — groups, one-off expenses, every split
+type (equal / exact / percent / shares / itemized), multi-payer, balances
+with min-cash-flow debt simplification, recorded settlements, and an **AI
+receipt scanner** that turns a photo into assignable line items with tax +
+tip split proportionally.
+
+## Architecture
+
+Schema-first monorepo. The API contract lives in `/proto` (ConnectRPC +
+Protobuf); `buf` generates the TypeScript used by both the server handlers
+and the web client. A future native mobile app regenerates a Swift/Kotlin
+client from the same protos and calls the same `/api/connect/*` endpoints.
+
+```
+proto/<domain>/v1/          the contract, one module per domain
+                            (common, auth, group, expense, receipt, social)
+packages/protogen/               @haalkhata/protogen — generated TS (do not edit)
+apps/web/                   Next.js app
+  src/server/<domain>/      per-proto fan-out (auth, group, expense, …), each:
+    repo/                     ALL SQL (Postgres via pg, no ORM)
+    usecase/                  ALL business logic (+ expense/domain/ pure math)
+    handler.ts                thin Connect handler
+  src/server/common/        db + shared errors
+  src/server/api/connect/   transport context + routes.ts wiring
+  src/pages/api/connect/    endpoint mount
+  src/app/<route>/          thin page.tsx → components/<Page>/ + hooks/
+```
+
+Layering: handlers have no SQL and no business logic; usecases have no SQL
+and no transport; repos have SQL only. UI data access goes through TanStack
+Query hooks (`useXAPI`) wrapping the typed Connect client.
+
+## Run it
+
+```sh
+pnpm install
+pnpm gen                 # buf generate → packages/protogen
+docker compose up -d db  # Postgres 17 on localhost:5432 (or use your own)
+pnpm dev                 # http://localhost:3000
+```
+
+Pending migrations apply automatically on boot and the receipt scanner
+falls back to a mock provider — no further configuration needed for a demo.
+Using your own Postgres instead of the compose service? Set `DATABASE_URL`
+in `apps/web/.env`.
+
+## Schema & migrations
+
+The schema lives in plain SQL under `apps/web/migrations/` (node-pg-migrate,
+history tracked in the `pgmigrations` table). The app applies pending
+migrations once per process on startup, so dev and Docker never need a
+manual migrate step. To change the schema:
+
+```sh
+pnpm db:new add_expense_receipts   # scaffolds migrations/<ts>_add-expense-receipts.sql
+# edit the file: SQL under "-- Up Migration", inverse under "-- Down Migration"
+pnpm db:migrate                    # apply now (or just restart the app)
+pnpm db:down                       # roll back the most recent migration
+```
+
+Never edit an applied migration — add a new one.
+
+## Deploy (self-hosted Docker)
+
+Everything runs on any box with Docker — no managed platform, no vendor
+lock-in:
+
+```sh
+cp .env.example .env     # set POSTGRES_PASSWORD + SESSION_SECRET
+docker compose up -d --build
+```
+
+That builds the Next.js standalone image and starts it with Postgres 17
+(data in the `db-data` volume, app on port 3000). Put your usual reverse
+proxy (Caddy/nginx/Traefik) in front for TLS.
+
+### Receipt AI providers (optional)
+
+Copy `apps/web/.env.example` → `apps/web/.env` and set:
+
+- `ANTHROPIC_API_KEY` — cloud vision (Claude)
+- `LOCAL_AI_BASE_URL` / `LOCAL_AI_MODEL` — self-hosted OpenAI-compatible
+  vision box (e.g. Ollama + Qwen2.5-VL behind a Cloudflare Tunnel)
+- `RECEIPT_AI_PROVIDERS` — failover order; prod: `local,anthropic,mock`
+
+## Quality gates
+
+```sh
+pnpm typecheck   # tsc --noEmit
+pnpm lint        # eslint (incl. layering import rules)
+pnpm test        # vitest — split math & balance domain tests
+pnpm proto:lint  # buf lint
+pnpm doctor      # react-doctor scan
+```
+
+See `plan.txt` for the full architecture plan and delivery phases.

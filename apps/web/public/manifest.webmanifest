@@ -1,0 +1,14 @@
+{
+  "name": "HaalKhata",
+  "short_name": "HaalKhata",
+  "description": "Split expenses with friends — groups, receipts, balances.",
+  "start_url": "/dashboard",
+  "display": "standalone",
+  "background_color": "#faf6ef",
+  "theme_color": "#b03a25",
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
