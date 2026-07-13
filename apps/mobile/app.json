@@ -1,0 +1,40 @@
+{
+  "expo": {
+    "name": "HaalKhata",
+    "slug": "haalkhata",
+    "version": "0.1.0",
+    "scheme": "haalkhata",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "icon": "./assets/icon.png",
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "backgroundColor": "#faf6ef",
+      "resizeMode": "contain"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.haalkhata.app"
+    },
+    "android": {
+      "package": "com.haalkhata.app",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#b03a25"
+      },
+      "edgeToEdgeEnabled": true
+    },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      [
+        "expo-image-picker",
+        {
+          "cameraPermission": "HaalKhata uses the camera to scan receipts into itemized expenses.",
+          "photosPermission": "HaalKhata uses your photos to pick a receipt to itemize."
+        }
+      ]
+    ]
+  }
+}

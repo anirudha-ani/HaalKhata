@@ -2,6 +2,12 @@ packages:
   - "apps/*"
   - "packages/*"
 
+# The registry mirror used in dev lags npm by a few days; browserslist asks
+# for a caniuse-lite build the mirror doesn't have yet. Pure data package —
+# pinning one release back is harmless.
+overrides:
+  caniuse-lite: 1.0.30001800
+
 # Native/postinstall packages allowed to run build scripts
 allowBuilds:
   "@bufbuild/buf": true
