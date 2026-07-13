@@ -82,7 +82,35 @@ export interface ExpenseWrite {
 }
 
 /**
- * Inserts the payer, split and item (+assignment) child rows for an expense.
+ * Builds a multi-row `VALUES` clause and its params for a set of rows, e.g.
+ * `VALUES ($1, $2), ($3, $4), ...` for `[{a:1,b:2},{a:3,b:4}]`.
+ *
+ * @param rows - Row objects to flatten into placeholders.
+ * @param columns - Keys to read from each row, in order.
+ * @returns `{ clause, params }` ready to splice into an INSERT, or null when
+ *   `rows` is empty (caller skips the statement).
+ */
+function multiRowValues<RowType extends Record<string, unknown>>(
+  rows: RowType[],
+  columns: (keyof RowType)[],
+): { clause: string; params: unknown[] } | null {
+  if (rows.length === 0) return null;
+  const placeholders: string[] = [];
+  const params: unknown[] = [];
+  let placeholderIndex = 1;
+  for (const currentRow of rows) {
+    const rowPlaceholders = columns.map((column) => {
+      params.push(currentRow[column]);
+      return `$${placeholderIndex++}`;
+    });
+    placeholders.push(`(${rowPlaceholders.join(", ")})`);
+  }
+  return { clause: placeholders.join(", "), params };
+}
+
+/**
+ * Inserts the payer, split and item (+assignment) child rows for an expense
+ * using multi-row VALUES inserts (one statement per table, not one per row).
  * Must run inside the caller's transaction so partial writes cannot persist.
  *
  * @param client - Transaction-scoped client; every statement must use it.
@@ -94,28 +122,56 @@ async function insertChildren(
   expenseId: string,
   input: ExpenseWrite,
 ): Promise<void> {
-  for (const payer of input.payers) {
+  const payersValues = multiRowValues(
+    input.payers,
+    ["userId", "amountCents"] as const,
+  );
+  if (payersValues) {
     await client.query(
-      `INSERT INTO expense_payers (expense_id, user_id, amount_cents) VALUES ($1, $2, $3)`,
-      [expenseId, payer.userId, payer.amountCents],
+      `INSERT INTO expense_payers (expense_id, user_id, amount_cents) VALUES ${payersValues.clause}`,
+      [expenseId, ...payersValues.params],
     );
   }
-  for (const split of input.splits) {
+
+  const splitsValues = multiRowValues(
+    input.splits,
+    ["userId", "owedCents"] as const,
+  );
+  if (splitsValues) {
     await client.query(
-      `INSERT INTO expense_splits (expense_id, user_id, owed_cents) VALUES ($1, $2, $3)`,
-      [expenseId, split.userId, split.owedCents],
+      `INSERT INTO expense_splits (expense_id, user_id, owed_cents) VALUES ${splitsValues.clause}`,
+      [expenseId, ...splitsValues.params],
     );
   }
-  for (const item of input.items) {
-    const itemId = newId();
+
+  // Items + assignments: items are multi-row, then assignments reference the
+  // freshly generated item ids.
+  const itemRows = input.items.map((item) => ({
+    id: newId(),
+    expenseId,
+    name: item.name,
+    quantity: item.quantity,
+    totalCents: item.totalCents,
+  }));
+  if (itemRows.length > 0) {
+    const itemsValues = multiRowValues(itemRows, ["id", "expenseId", "name", "quantity", "totalCents"] as const);
     await client.query(
-      `INSERT INTO expense_items (id, expense_id, name, quantity, total_cents) VALUES ($1, $2, $3, $4, $5)`,
-      [itemId, expenseId, item.name, item.quantity, item.totalCents],
+      `INSERT INTO expense_items (id, expense_id, name, quantity, total_cents) VALUES ${itemsValues!.clause}`,
+      itemsValues!.params,
     );
-    for (const assignment of item.assignments) {
+
+    const assignmentRows = input.items.flatMap((item, itemIndex) =>
+      item.assignments.map((assignment) => ({
+        itemId: itemRows[itemIndex].id,
+        userId: assignment.userId,
+        weight: assignment.weight,
+      })),
+    );
+    const assignmentsValues = multiRowValues(assignmentRows, ["itemId", "userId", "weight"] as const);
+    if (assignmentsValues) {
       await client.query(
-        `INSERT INTO expense_item_assignments (item_id, user_id, weight) VALUES ($1, $2, $3)`,
-        [itemId, assignment.userId, assignment.weight],
+        `INSERT INTO expense_item_assignments (item_id, user_id, weight) VALUES ${assignmentsValues.clause}`,
+        assignmentsValues.params,
       );
     }
   }

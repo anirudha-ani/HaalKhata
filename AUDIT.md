@@ -252,10 +252,11 @@ Findings are sorted by severity within each section. File:line references use
   per row** (`expenses.repo.ts:266`). With the missing
   `expense_payers(user_id)` index (B15), this is a full scan × per-row
   probe.
-- **U10. `insertChildren` runs one INSERT per row** (`expenses.repo.ts:92`)
-  in a `for` loop. For an itemized receipt with 30 items × 4 assignments,
-  that's 120+ round-trips inside the transaction. Use multi-row `VALUES`
-  or `UNNEST`.
+- **U10.~~`insertChildren` runs one INSERT per row~~** ✅ *Fixed.*
+  Replaced the per-row `for` loops with a `multiRowValues` helper that
+  builds `VALUES ($1,$2), ($3,$4), …` clauses. Payers, splits, items, and
+  assignments are each inserted in a single statement, cutting a 30-item
+  receipt from ~120 round-trips to 3.
 
 ### Structural / maintainability
 - **U11. The entire `data/` directory is gitignored but `DATA_DIRECTORY`
