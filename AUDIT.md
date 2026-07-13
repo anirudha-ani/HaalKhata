@@ -236,11 +236,13 @@ Findings are sorted by severity within each section. File:line references use
   `listMembersByGroupIds` (one query for all groups' members) and
   `userNetInGroups` (batched net computation); `listGroups` now does 2
   batched calls instead of 2N per-group queries.
-- **U7. `getOverallBalances` loads every expense + child rows for the user
-  into memory** (`balance.usecase.ts:108` `listExpensesInvolvingUser` →
-  `loadExpenseChildren`). For a user with years of history, this is
-  unbounded. Balances should be materialized (a `balances` table updated
-  by trigger or usecase) rather than recomputed from scratch each call.
+- **U7. `getOverallBalances` loads every expense + child rows into memory.**
+  ⏸ *Deferred (correctness-critical).* The balance is derived from *all*
+  expenses minus settlements; capping the query would make balances wrong.
+  The proper fix is a materialized `balances` table updated by trigger or
+  usecase — a larger refactor deferred for now. U6 mitigated the dashboard
+  path; the overall-balance RPC is only called on the dashboard/friends
+  pages, not per-request.
 - **U8. `simplifyDebts` re-sorts the creditor/debtor arrays on every
   iteration** (`balances.ts:151`). O(n² log n). Fine for small groups,
   ugly for a 50-person trip. Use a heap.
