@@ -29,7 +29,7 @@ const config = [
     },
   },
   {
-    files: ["src/server/**"],
+    files: ["src/server/**", "src/pages/api/**"],
     rules: { "no-restricted-imports": "off" },
   },
   {

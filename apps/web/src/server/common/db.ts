@@ -1,4 +1,4 @@
-/** Shared Postgres access: lazy pool, startup migrations, query/transaction helpers. */
+/** Shared Postgres access: lazy pool, one-shot startup migration, query/transaction helpers. */
 
 import { Pool, types, type PoolClient } from "pg";
 import type { QueryResultRow } from "pg";
@@ -17,6 +17,20 @@ function databaseUrl(): string {
   return process.env.DATABASE_URL ?? DEFAULT_DATABASE_URL;
 }
 
+/**
+ * In production, refuse the insecure default connection string
+ * (haalkhata:haalkhata) so a forgotten POSTGRES_PASSWORD doesn't silently
+ * deploy with a guessable credential. Dev keeps the default for zero-config
+ * `pnpm dev`.
+ */
+function assertSafeDatabaseUrl(): void {
+  if (process.env.NODE_ENV === "production" && databaseUrl() === DEFAULT_DATABASE_URL) {
+    throw new Error(
+      "DATABASE_URL must be set to a non-default value in production (got the haalkhata:haalkhata default).",
+    );
+  }
+}
+
 // Survive Next.js dev-server hot reloads without leaking connections.
 const globalCache = globalThis as unknown as {
   __haalkhataPool?: Pool;
@@ -26,17 +40,27 @@ const globalCache = globalThis as unknown as {
 /** Returns the process-wide connection pool, creating it on first use. */
 function pool(): Pool {
   if (!globalCache.__haalkhataPool) {
-    globalCache.__haalkhataPool = new Pool({ connectionString: databaseUrl() });
+    assertSafeDatabaseUrl();
+    globalCache.__haalkhataPool = new Pool({
+      connectionString: databaseUrl(),
+      // Bound pool so multi-replica deploys don't exhaust Postgres connections.
+      max: 20,
+      idleTimeoutMillis: 30_000,
+      connectionTimeoutMillis: 5_000,
+    });
   }
   return globalCache.__haalkhataPool;
 }
 
 /**
  * Applies pending SQL migrations from ./migrations once per process
- * (node-pg-migrate, history in "pgmigrations"); retried on failure.
+ * (node-pg-migrate, history in "pgmigrations"). The result is cached on the
+ * global so subsequent calls are no-ops; a failure clears the cache so the
+ * next call retries instead of permanently bricking the app.
  */
-function ready(): Promise<void> {
+export function ensureMigrated(): Promise<void> {
   if (!globalCache.__haalkhataReady) {
+    assertSafeDatabaseUrl();
     globalCache.__haalkhataReady = runner({
       databaseUrl: databaseUrl(),
       dir: path.join(process.cwd(), "migrations"),
@@ -63,7 +87,6 @@ export async function query<ResultRow extends QueryResultRow>(
   text: string,
   params: unknown[] = [],
 ): Promise<ResultRow[]> {
-  await ready();
   const { rows } = await pool().query<ResultRow>(text, params as never[]);
   return rows;
 }
@@ -102,7 +125,6 @@ export async function execute(text: string, params: unknown[] = []): Promise<voi
 export async function transaction<TransactionResult>(
   operation: (client: PoolClient) => Promise<TransactionResult>,
 ): Promise<TransactionResult> {
-  await ready();
   const client = await pool().connect();
   try {
     await client.query("BEGIN");

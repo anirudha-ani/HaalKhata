@@ -206,40 +206,29 @@ Findings are sorted by severity within each section. File:line references use
 ## The Ugly
 
 ### Operational landmines
-- **U1. Auto-migrate on boot in production.** `db.ts:38` runs
-  `node-pg-migrate up` inside `ready()`, which is awaited on the *first
-  query of every process*. This means:
-  - A failed migration bricks the app (queries throw forever; the
-    `globalCache.__haalkhataReady` is reset on error so it retries —
-    hammering the DB).
-  - Two replicas starting simultaneously race on `pgmigrations` (the table
-    is not `FOR UPDATE` locked; node-pg-migrate uses a transaction but
-    that's not a cross-process lock).
-  - There's no "block startup until migrated" mode — the app serves
-    requests during migration.
-  Migrations belong in the deploy pipeline (a `pnpm db:migrate` step before
-  `node server.js`), not lazily on the first request.
-- **U2. The `ready()` migration is awaited on every `query()` call.**
-  `db.ts:66` — `await ready()` runs before every single query. After the
-  first success it's a resolved-promise cache hit (cheap), but it still
-  adds a microtask to the hot path of *every* SQL statement. Move it to
-  startup-only.
-- **U3. `globalCache` pool hack.** `db.ts:21` stashes the Pool on
-  `globalThis` to survive HMR. This is the standard Next.js workaround, but
-  it means **the migration runner and the pool can drift in separate
-  dev-server compilations** — you can end up with two Pools pointing at the
-  same DB. Also, `Pool` has no `idleTimeoutMillis` / `max` config — it uses
-  node-postgres defaults (10 connections). Under load with multiple
-  replicas, you'll exhaust Postgres `max_connections`.
+- **U1.~~Auto-migrate on boot in production.~~** ✅ *Fixed (mitigated).*
+  Migrations now run via an explicit `ensureMigrated()` invoked once at
+  module load in the connect mount point, awaited before the first request
+  is served — not lazily on the first query. The global cache still makes
+  it once-per-process. (A true deploy-pipeline migrate step is still
+  preferable for zero-downtime deploys; this is the pragmatic Next.js fix.)
+- **U2.~~The `ready()` migration is awaited on every `query()` call.~~**
+  ✅ *Fixed.* `query()` and `transaction()` no longer await `ready()` —
+  the migration wait happens once at mount-time; the hot path is now a
+  direct `pool().query()`.
+- **U3.~~`globalCache` pool hack / no pool config.~~** ✅ *Fixed.* The Pool
+  is now created with `max: 20`, `idleTimeoutMillis: 30s`,
+  `connectionTimeoutMillis: 5s` so multi-replica deploys don't exhaust
+  Postgres `max_connections` and idle connections are reaped. (The
+  `globalThis` cache is retained — it's the standard Next HMR workaround.)
 - **U4. `docker-compose.yml` exposes web on `0.0.0.0:3000` with no TLS
   terminator configured.** The README says "put Caddy/nginx in front" but
   nothing enforces it. A user who runs `docker compose up` and visits
   `http://<server-ip>:3000` is sending session cookies in plaintext (B1).
-- **U5. `POSTGRES_PASSWORD` defaults to `haalkhata`** in compose
-  (`docker-compose.yml:11`) and `DEFAULT_DATABASE_URL` hardcodes
-  `haalkhata:haalkhata` (`db.constants.ts:3`). If someone forgets to set
-  the env var, they get an insecure-by-default DB. The app should refuse
-  to start in production with the default password.
+- **U5.~~`POSTGRES_PASSWORD` defaults to `haalkhata`~~** ✅ *Fixed.*
+  `assertSafeDatabaseUrl()` in `db.ts` throws when `NODE_ENV === "production"`
+  and the connection string is the `haalkhata:haalkhata` default, so a
+  forgotten `POSTGRES_PASSWORD` fails fast instead of deploying insecure-by-default.
 
 ### Performance
 - **U6. `listGroups` is an N+1 query storm.**
