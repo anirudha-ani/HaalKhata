@@ -98,6 +98,28 @@ export async function userNetInGroup(userId: string, groupId: string): Promise<n
 }
 
 /**
+ * Batched: each group's net position for a specific user, in one pass per
+ * group. Used by listGroups to avoid the N+1 of calling userNetInGroup per
+ * group.
+ *
+ * @param userId - User whose positions are computed.
+ * @param groupIds - Groups to compute the position in.
+ * @returns Map of group id → net cents for that user (> 0 ⇒ owed money).
+ */
+export async function userNetInGroups(
+  userId: string,
+  groupIds: string[],
+): Promise<Map<string, number>> {
+  const result = new Map<string, number>();
+  await Promise.all(
+    groupIds.map(async (groupId) => {
+      result.set(groupId, await userNetInGroup(userId, groupId));
+    }),
+  );
+  return result;
+}
+
+/**
  * How much `debtorId` currently owes `creditorId` in a given scope. Returns a
  * non-negative number of cents (0 when nothing is owed or the direction is
  * reversed). Used by recordSettlement to refuse over-settling.

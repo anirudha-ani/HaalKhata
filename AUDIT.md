@@ -232,12 +232,10 @@ Findings are sorted by severity within each section. File:line references use
   forgotten `POSTGRES_PASSWORD` fails fast instead of deploying insecure-by-default.
 
 ### Performance
-- **U6. `listGroups` is an N+1 query storm.**
-  `group.usecase.ts:64` does `Promise.all(groups.map(g => listMembers +
-  userNetInGroup))`. For a user with 20 groups, that's 20 × (1 members
-  query + 4 balance queries: expenses, children, settlements, isMember) =
-  ~100 queries per dashboard load. Needs a batched `listMembersByGroupIds`
-  and a batched balance computation.
+- **U6.~~`listGroups` is an N+1 query storm.~~** ✅ *Fixed.* Added
+  `listMembersByGroupIds` (one query for all groups' members) and
+  `userNetInGroups` (batched net computation); `listGroups` now does 2
+  batched calls instead of 2N per-group queries.
 - **U7. `getOverallBalances` loads every expense + child rows for the user
   into memory** (`balance.usecase.ts:108` `listExpensesInvolvingUser` →
   `loadExpenseChildren`). For a user with years of history, this is

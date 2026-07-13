@@ -7,6 +7,7 @@ import {
   isMember,
   listGroupsByUser,
   listMembers,
+  listMembersByGroupIds,
   memberRole,
   removeMember,
 } from "@/server/group/repo/groups.repo";
@@ -15,7 +16,7 @@ import { insertFriendship } from "@/server/social/repo/friendships.repo";
 import { insertActivity } from "@/server/social/repo/activity.repo";
 import { insertNotifications } from "@/server/social/repo/notifications.repo";
 import { findOrCreateUserByEmail } from "@/server/auth/usecase/auth.usecase";
-import { userNetInGroup } from "@/server/expense/usecase/balance.usecase";
+import { userNetInGroup, userNetInGroups } from "@/server/expense/usecase/balance.usecase";
 import { denied, invalid, notFound } from "@/server/common/errors";
 import { GROUP_TYPES, OWNER_ROLE } from "@/server/group/group.constants";
 import { toGroup, toMember } from "./group.mapper";
@@ -82,19 +83,16 @@ export async function createGroup(
  */
 export async function listGroups(userId: string) {
   const groups = await listGroupsByUser(userId);
-  return Promise.all(
-    groups.map(async (group) => {
-      const [members, yourNetCents] = await Promise.all([
-        listMembers(group.id),
-        userNetInGroup(userId, group.id),
-      ]);
-      return {
-        group: toGroup(group, members),
-        memberCount: members.length,
-        yourNetCents,
-      };
-    }),
-  );
+  const groupIds = groups.map((group) => group.id);
+  const [membersByGroup, netByGroup] = await Promise.all([
+    listMembersByGroupIds(groupIds),
+    userNetInGroups(userId, groupIds),
+  ]);
+  return groups.map((group) => ({
+    group: toGroup(group, membersByGroup.get(group.id) ?? []),
+    memberCount: (membersByGroup.get(group.id) ?? []).length,
+    yourNetCents: netByGroup.get(group.id) ?? 0,
+  }));
 }
 
 /**

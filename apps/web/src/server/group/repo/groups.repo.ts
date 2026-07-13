@@ -89,6 +89,31 @@ export async function listMembers(groupId: string): Promise<MemberRow[]> {
 }
 
 /**
+ * Batch-loads members for many groups in one query, keyed by group id.
+ * Avoids the N+1 of calling listMembers per group in listGroups.
+ *
+ * @param groupIds - Ids of the groups whose members to fetch.
+ * @returns Map of group id → member rows (oldest joiner first).
+ */
+export async function listMembersByGroupIds(groupIds: string[]): Promise<Map<string, MemberRow[]>> {
+  const result = new Map<string, MemberRow[]>();
+  if (groupIds.length === 0) return result;
+  const rows = await query<MemberRow & { group_id: string }>(
+    `SELECT users.*, group_members.group_id, group_members.role FROM users
+     JOIN group_members ON group_members.user_id = users.id
+     WHERE group_members.group_id = ANY($1::text[])
+     ORDER BY group_members.joined_at ASC`,
+    [groupIds],
+  );
+  for (const memberRow of rows) {
+    const list = result.get(memberRow.group_id) ?? [];
+    list.push(memberRow);
+    result.set(memberRow.group_id, list);
+  }
+  return result;
+}
+
+/**
  * Adds a user to a group; a no-op if the membership already exists.
  *
  * @param groupId - Id of the group to add the user to.
