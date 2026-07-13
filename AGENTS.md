@@ -1,0 +1,211 @@
+# AGENTS.md
+
+Guide for AI agents (and human contributors) working on HaalKhata. Read this
+before adding a domain or touching the server layer.
+
+## What this is
+
+A Splitwise-style expense splitter. Schema-first monorepo: the API contract
+lives in `/proto` (ConnectRPC + Protobuf); `buf` generates TypeScript used by
+both server handlers and the web client. Single Next.js app serves the UI
+(App Router) and the Connect API (`/api/connect/*`). Postgres via `pg`, no
+ORM. Self-hosted Docker deploy.
+
+## Repo layout
+
+```
+proto/<domain>/v1/           THE contract — one module per domain
+buf.yaml / buf.gen.yaml      codegen → packages/protogen (regenerated, gitignored)
+packages/protogen/           @haalkhata/protogen — generated TS (do NOT edit, do NOT commit)
+apps/web/                    Next.js app
+  src/server/<domain>/       per-domain fan-out mirroring /proto:
+    repo/                      ALL SQL (Postgres via pg). No business logic.
+    usecase/                   ALL business logic. No SQL, no transport types.
+    handler.ts                 thin Connect handler. No SQL, no business logic.
+    <domain>.constants.ts      constants for this domain
+  src/server/common/         db, errors, logger, rateLimit (shared infra)
+  src/server/api/connect/    context.ts (auth/cookies/error map), routes.ts, csrf.ts
+  src/pages/api/connect/     [[...connect]].ts — mount point only
+  src/app/<route>/           UI (thin page.tsx → components/<Page>/ + hooks/)
+  src/lib/                   shared client/server utilities (api/, money/, auth/)
+  src/components/            shell, ui primitives, providers, modals
+  migrations/                plain SQL, node-pg-migrate (history in pgmigrations)
+```
+
+## Layering rules (enforced by ESLint)
+
+- `api/connect` handlers: decode request → call usecase → encode response.
+  No SQL, no business logic. `routes.ts` wires services to the router.
+- `usecase`: pure TypeScript business logic. No SQL, no transport types
+  beyond generated proto messages. Domain math lives in `usecase/domain/`.
+- `repo`: SQL only. No business decisions.
+- UI must NOT import `@/server/*/repo/*` or `@/server/common/db` — go
+  through a usecase (server) or the Connect client (browser). The eslint
+  `no-restricted-imports` rule enforces this; `src/pages/api/**` and
+  `src/server/**` are exempt.
+
+## Conventions (mandated, enforced)
+
+- **Integer cents everywhere.** No floats for money. `int32` cents in proto,
+  `INTEGER` columns in Postgres, `allocate()` in `domain/money.ts`.
+- **Server-recomputed splits.** Never trust client-supplied split amounts;
+  recompute from the raw spec in the usecase.
+- **Transactions where they matter.** `insertExpense` / `replaceExpense` /
+  `insertGroup` / `insertNotifications` run inside `transaction()` with
+  ROLLBACK on throw.
+- **Parameterized SQL everywhere.** `$1` placeholders, never string concat.
+- **Identifiers ≥ 4 characters**, no abbreviations (eslint `id-length`).
+  DB-column and proto property names are exempt.
+- **Every file has a header doc comment; every exported symbol and
+  non-trivial internal function carries JSDoc (`@param`/`@returns`).**
+- **Constants never inline between functions.** Server: one
+  `<domain>.constants.ts` per domain. Frontend: route-scoped `constants/`
+  or the owning folder's `*.constants.ts`.
+- **Soft-delete on expenses** (set `deleted_at`); balances filter
+  `deleted_at IS NULL`.
+- **Auto-migrate on boot** runs once at module load in the connect mount
+  point — never edit an applied migration, add a new one.
+
+## How to add a new domain
+
+Example: adding a `budgets` domain. Follow every step; do not skip.
+
+### 1. Define the contract
+
+Create `proto/budgets/v1/budgets.proto`:
+
+```proto
+syntax = "proto3";
+package budgets.v1;
+import "google/protobuf/empty.proto";
+import "common/v1/common.proto";
+
+service BudgetService {
+  rpc CreateBudget(CreateBudgetRequest) returns (Budget);
+  rpc ListBudgets(google.protobuf.Empty) returns (ListBudgetsResponse);
+}
+
+message Budget {
+  string id = 1;
+  string name = 2;
+  int32 limit_cents = 3;
+  // …
+}
+// … request/response messages
+```
+
+Then **regenerate**:
+
+```sh
+pnpm gen    # buf generate → packages/protogen/src/budgets/v1/budgets_pb.ts
+```
+
+The generated file is gitignored — never commit it, never edit it.
+
+### 2. Add the migration
+
+```sh
+pnpm db:new add_budgets_table   # scaffolds migrations/<ts>_add-budgets-table.sql
+```
+
+Edit the file: SQL under `-- Up Migration`, inverse under `-- Down Migration`.
+Add `CHECK` constraints for any money/quantity columns and indexes for the
+read paths you'll add. Never edit an applied migration.
+
+### 3. Repo layer: `src/server/budgets/repo/budgets.repo.ts`
+
+SQL only. Define a `<Entity>Row` interface (column names mirror SQL), then
+`insertBudget` / `findBudgetById` / `listBudgets` etc. Use `query`,
+`queryOne`, `execute`, `transaction`, `newId` from `@/server/common/db`.
+No business logic, no validation beyond what the DB enforces.
+
+### 4. Usecase layer: `src/server/budgets/usecase/budget.usecase.ts`
+
+All business logic. Import repo functions and the generated proto types.
+Throw `UsecaseError` (via `invalid`/`notFound`/`denied` from
+`@/server/common/errors`) on validation/auth failures — `runUsecase` maps
+these to Connect codes. No SQL, no transport types beyond proto messages.
+
+Authorisation belongs here: check membership/ownership before mutating
+(see `assertGroupOwner` in `group.usecase.ts` and `assertCanModify` in
+`expense.usecase.ts`).
+
+### 5. Constants: `src/server/budgets/budgets.constants.ts`
+
+Allowlists, limits, patterns for the domain — e.g. `BUDGET_TYPES`,
+`MAX_BUDGETS_PER_GROUP`. Never inline between functions.
+
+### 6. Handler: `src/server/budgets/handler.ts`
+
+Thin `ServiceImpl<typeof BudgetService>`. Each method:
+`runUsecase(async () => budget.createBudget(await requireUser(context), request), context)`.
+No SQL, no business logic. `requireUser` is async (awaits a token-version
+DB read) — always `await` it. Pass `context` to `runUsecase` so unexpected
+errors get logged with the RPC name.
+
+### 7. Register the service: `src/server/api/connect/routes.ts`
+
+```ts
+import { BudgetService } from "@haalkhata/protogen/budgets/v1/budgets_pb";
+import { budgetHandler } from "@/server/budgets/handler";
+// …
+router.service(BudgetService, budgetHandler);
+```
+
+### 8. UI: `src/app/<route>/`
+
+Thin `page.tsx` → `components/<Page>/` → `hooks/useXAPI` (TanStack Query
+wrapping the typed Connect client from `@/lib/api/connect`). Add query keys
+to `@/lib/api/queryKeys.ts`. Components never call the Connect client
+directly — only through a `useXAPI` hook. Add a `loading.tsx` for the route.
+
+### 9. Verify
+
+```sh
+pnpm typecheck   # tsc --noEmit
+pnpm lint        # eslint (incl. layering import rules)
+pnpm test        # vitest — add domain-math tests in usecase/domain/ if relevant
+pnpm proto:lint  # buf lint
+```
+
+All four must pass before committing.
+
+## Quality gates
+
+| Command         | What it checks                                  |
+|-----------------|-------------------------------------------------|
+| `pnpm gen`      | buf generate → packages/protogen                |
+| `pnpm typecheck`| tsc --noEmit                                    |
+| `pnpm lint`     | eslint (layering + id-length + next rules)      |
+| `pnpm test`     | vitest unit tests (domain math + auth tokens)   |
+| `pnpm proto:lint`| buf lint + breaking                            |
+| `pnpm doctor`   | react-doctor scan                               |
+
+Run `pnpm typecheck && pnpm lint && pnpm test` before every commit.
+
+## Common pitfalls
+
+- **Don't `await requireUser()`** — wait, DO `await` it. It's async (reads
+  `token_version` from the DB). Forgetting `await` passes a Promise to the
+  usecase and silently breaks auth.
+- **Don't trust client split amounts** — recompute in the usecase.
+- **Don't add a `for` loop of `INSERT`s** — use the `multiRowValues` helper
+  in `expenses.repo.ts` for bulk inserts.
+- **Don't run migrations inside `query()`** — migrations run once at mount
+  time via `ensureMigrated()`; the query hot path is just `pool().query()`.
+- **Don't commit `packages/protogen/src/`** — it's gitignored and
+  regenerated by `pnpm gen` (and by the Docker build).
+- **Don't forget `Secure`/`SameSite=Lax`** — session cookies go through
+  `sessionCookieAttributes()`; never build a Set-Cookie header by hand.
+- **Production guardrails** — the app refuses to boot if `SESSION_SECRET`
+  is unset or `DATABASE_URL` is the `haalkhata:haalkhata` default in
+  `NODE_ENV=production`. Don't weaken these.
+
+## Deploy
+
+Self-hosted Docker. `docker compose up -d --build` builds the Next.js
+standalone image and starts it with Postgres 17. The web port is bound to
+`127.0.0.1:3000` — put a TLS-terminating reverse proxy (Caddy/nginx/Traefik)
+in front and expose 443 there. Migrations apply automatically on container
+start. Set `POSTGRES_PASSWORD` and `SESSION_SECRET` in `.env` before first
+boot.

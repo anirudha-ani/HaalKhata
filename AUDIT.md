@@ -298,10 +298,11 @@ Findings are sorted by severity within each section. File:line references use
   regenerate them; the README's setup already lists `pnpm gen` as step 1.
 - **U18.~~`node_modules` previously committed~~** ✅ *Verified.* `git ls-files | grep node_modules`
   returns 0 — the earlier `.gitignore` fix fully untracked it.
-- **U19. No `AGENTS.md` / `CONTRIBUTING.md`.** The README is good, but
-  there's no guide for an AI agent or new contributor on *how* to add a
-  domain (new proto → regen → handler → usecase → repo → route → page).
-  The `plan.txt` has it but it's not discoverable. ⏸ *Deferred (docs-only).*
+- **U19.~~No `AGENTS.md` / `CONTRIBUTING.md`.~~** ✅ *Fixed.* Added
+  `AGENTS.md` at the repo root documenting the repo layout, layering rules,
+  conventions, a 9-step "how to add a new domain" walkthrough
+  (proto → regen → repo → usecase → constants → handler → routes → UI →
+  verify), quality gates, common pitfalls, and deploy notes.
 
 ### Frontend ugliness
 - **U20.~~The service worker caches `/dashboard` at install time~~** ✅
