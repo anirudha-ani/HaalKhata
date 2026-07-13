@@ -3,6 +3,8 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { invalid } from "@/server/common/errors";
 import {
+  ANTHROPIC_MODEL,
+  IMAGE_MAGIC_BYTES,
   IMAGE_MEDIA_TYPES,
   MAX_IMAGE_BYTES,
   PROMPT,
@@ -89,6 +91,56 @@ function normalize(rawOutput: unknown): ParsedReceiptData {
 
 // --- providers ---------------------------------------------------------------
 
+/**
+ * Parses a JSON string with a clear error message on failure, instead of the
+ * opaque "Unexpected token..." that JSON.parse throws. Used for all provider
+ * output so the failover-chain error log stays readable.
+ *
+ * @param text - Raw text the provider returned.
+ * @param providerName - Name used in the thrown error for debugging.
+ * @returns The parsed value.
+ * @throws Error with a descriptive message when the text is not valid JSON.
+ */
+function safeJsonParse(text: string, providerName: string): unknown {
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw new Error(`${providerName} returned non-JSON output (length ${text.length})`);
+  }
+}
+
+/**
+ * Extracts the first balanced `{ ... }` JSON object from text that may contain
+ * markdown fences, prose, or trailing commentary. Tracks brace depth so nested
+ * objects and `}` inside strings are handled better than a naive indexOf/lastIndexOf.
+ *
+ * @param text - Raw text potentially containing a JSON object.
+ * @returns The extracted object string, or the original text if no braces found.
+ */
+function extractJsonObject(text: string): string {
+  const startIndex = text.indexOf("{");
+  if (startIndex === -1) return text;
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let index = startIndex; index < text.length; index++) {
+    const character = text[index];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (character === "\\") escaped = true;
+      else if (character === '"') inString = false;
+      continue;
+    }
+    if (character === '"') inString = true;
+    else if (character === "{") depth++;
+    else if (character === "}") {
+      depth--;
+      if (depth === 0) return text.slice(startIndex, index + 1);
+    }
+  }
+  return text.slice(startIndex);
+}
+
 /** Anthropic vision model with structured (JSON-schema) output; needs ANTHROPIC_API_KEY. */
 const anthropicProvider: Provider = {
   name: "anthropic",
@@ -96,7 +148,7 @@ const anthropicProvider: Provider = {
   async parse(imageBase64, mediaType) {
     const client = new Anthropic({ timeout: 90_000, maxRetries: 1 });
     const response = await client.messages.create({
-      model: "claude-opus-4-8",
+      model: ANTHROPIC_MODEL,
       max_tokens: 8192,
       output_config: { format: { type: "json_schema", schema: RECEIPT_JSON_SCHEMA } },
       messages: [
@@ -113,7 +165,7 @@ const anthropicProvider: Provider = {
       throw new Error("cloud provider declined to process this image");
     }
     const text = response.content.find((contentBlock) => contentBlock.type === "text")?.text ?? "";
-    return normalize(JSON.parse(text));
+    return normalize(safeJsonParse(text, "anthropic"));
   },
 };
 
@@ -151,8 +203,8 @@ const localProvider: Provider = {
       choices?: { message?: { content?: string } }[];
     };
     const text = data.choices?.[0]?.message?.content ?? "";
-    const jsonText = text.slice(text.indexOf("{"), text.lastIndexOf("}") + 1);
-    return normalize(JSON.parse(jsonText));
+    const jsonText = extractJsonObject(text);
+    return normalize(safeJsonParse(jsonText, "local"));
   },
 };
 
@@ -218,6 +270,14 @@ export async function parseReceipt(
   if (image.length > MAX_IMAGE_BYTES) invalid("image is too large (max 8 MB)");
   if (!IMAGE_MEDIA_TYPES.includes(mediaType as ImageMediaType)) {
     invalid("unsupported image type — use JPEG, PNG, WebP or GIF");
+  }
+  // Verify the actual bytes match the declared media type so a mislabeled or
+  // malicious upload (e.g. an SVG with embedded script) can't slip through.
+  const expectedMagic = IMAGE_MAGIC_BYTES[mediaType as ImageMediaType];
+  for (let index = 0; index < expectedMagic.length; index++) {
+    if (image[index] !== expectedMagic[index]) {
+      invalid("image bytes do not match the declared media type");
+    }
   }
 
   const chain = providerChain();

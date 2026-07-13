@@ -184,26 +184,22 @@ Findings are sorted by severity within each section. File:line references use
   "Try again" + "Back to dashboard" instead of Next's default error page.
 
 ### AI / Receipt
-- **B26. Anthropic model name is a non-existent snapshot.**
-  `receipt.usecase.ts:99` uses `"claude-opus-4-8"`. The SDK's `Model` union
-  lists `claude-opus-4-8` (so it typechecks), but there's no date-stamped
-  alias and Anthropic deprecates snapshots aggressively. This will 404 one
-  day with no warning. Pin to a dated alias or read from env.
-- **B27. `JSON.parse(text)` on provider output is unguarded.**
-  `receipt.usecase.ts:116,155` — if the LLM returns non-JSON (it does,
-  often), `JSON.parse` throws and the provider fails over. That's the
-  intended behavior, but the error message swallowed is
-  `"Unexpected token..."` which is useless for debugging. Wrap with a
-  clearer error.
-- **B28. `localProvider` extracts JSON by `indexOf("{")`/`lastIndexOf("}")`
-  (`receipt.usecase.ts:154`).** This breaks on JSON containing nested `}`
-  in strings, or markdown-wrapped ```json fences with trailing text.
-  Brittle.
-- **B29. No image content sniffing.** `mediaType` is trusted from the
-  client (`receipt.handler.ts:13`). A client can send
-  `mediaType: "image/jpeg"` with a PNG body, or an SVG with embedded
-  script. The providers may reject it, but the 8MB cap is the only guard.
-  Validate the magic bytes.
+- **B26.~~Anthropic model name is a non-existent snapshot.~~** ✅ *Fixed.*
+  Model moved to `ANTHROPIC_MODEL` constant (env-configurable, defaults to
+  `claude-opus-4-8`); a deprecated alias can now be swapped via env without
+  a code change.
+- **B27.~~`JSON.parse(text)` on provider output is unguarded.~~** ✅
+  *Fixed.* Added `safeJsonParse(text, providerName)` that throws a clear
+  `<provider> returned non-JSON output (length N)` error instead of the
+  opaque `Unexpected token...`. Both providers use it.
+- **B28.~~`localProvider` extracts JSON by indexOf/lastIndexOf.~~** ✅
+  *Fixed.* Replaced with `extractJsonObject(text)` which tracks brace
+  depth and string context, so nested objects and `}` inside JSON strings
+  no longer break extraction.
+- **B29.~~No image content sniffing.~~** ✅ *Fixed.* Added
+  `IMAGE_MAGIC_BYTES` map in `receipt.constants.ts`; `parseReceipt` now
+  checks the first few bytes against the declared media type and rejects
+  mismatches before any provider call.
 
 ---
 

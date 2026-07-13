@@ -7,6 +7,24 @@ export type ImageMediaType = (typeof IMAGE_MEDIA_TYPES)[number];
 /** Upper bound on uploaded image size (8 MB). */
 export const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
 
+/**
+ * Anthropic model used by the cloud provider. Configurable via env so a
+ * deprecated snapshot alias can be swapped without a code change.
+ */
+export const ANTHROPIC_MODEL = process.env.ANTHROPIC_MODEL ?? "claude-opus-4-8";
+
+/**
+ * Magic-byte signatures for each accepted image format, used to verify the
+ * client-supplied mediaType matches the actual bytes (defense against a
+ * mislabeled or malicious upload).
+ */
+export const IMAGE_MAGIC_BYTES: Record<ImageMediaType, number[]> = {
+  "image/jpeg": [0xff, 0xd8, 0xff],
+  "image/png": [0x89, 0x50, 0x4e, 0x47],
+  "image/webp": [0x52, 0x49, 0x46, 0x46], // "RIFF" (WebP container)
+  "image/gif": [0x47, 0x49, 0x46], // "GIF"
+};
+
 /** JSON schema the cloud provider's structured output must conform to. */
 export const RECEIPT_JSON_SCHEMA = {
   type: "object",
