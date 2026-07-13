@@ -26,7 +26,13 @@ export interface ComputedSplit {
 export interface ItemInput {
   name: string;
   totalCents: number;
-  /** Who consumed this item; `weight` sets each person's relative portion of it. */
+  /**
+   * Who consumed this item; `weight` sets each person's relative portion of it.
+   * Weights are integer ratios (the DB column and proto field are both
+   * integer): a 2:1 split is expressed as weight 2 and 1, never 0.5 and 0.25.
+   * `allocate()` treats them as float ratios internally, but callers should
+   * pass whole numbers to stay faithful to the stored schema.
+   */
   assignments: { userId: string; weight: number }[];
 }
 

@@ -148,11 +148,11 @@ Findings are sorted by severity within each section. File:line references use
   `expense_items.total_cents`, `expense_items.quantity > 0`,
   `expense_item_assignments.weight > 0`, and `settlements.amount_cents > 0`.
   Validation still lives in the usecase, but the DB now backstops it.
-- **B17. `expense_item_assignments.weight` is `INTEGER`.** The domain treats
-  weights as ratios (`allocate` uses them as float ratios in
-  `money.ts:31`), but the column is integer. Fractional weights (1.5) are
-  impossible, and integer weights force `totalCents * weight / sum` float
-  math that's fine but undocumented.
+- **B17.~~`expense_item_assignments.weight` is `INTEGER`.~~** ✅
+  *Documented.* The proto field is `int32` and the column is `INTEGER`, so
+  the integer type is faithful to the contract. Added a doc comment to
+  `ItemInput.assignments.weight` clarifying weights are integer ratios
+  (2:1, not 0.5:0.25); `allocate()` handles them as float ratios internally.
 - **B18.~~`activity.group_id` has no FK.~~** ✅ *Fixed.* Added the FK
   with `ON DELETE SET NULL` so deleting a group leaves the feed row intact
   but no dangling reference remains.
