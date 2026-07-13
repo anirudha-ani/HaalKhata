@@ -26,6 +26,7 @@ import {
   computeSplits,
   SplitError,
 } from "../domain/splits";
+import { amountOwed } from "./balance.usecase";
 import { denied, invalid, notFound } from "@/server/common/errors";
 import { toUser } from "@/server/auth/usecase/user.mapper";
 import { SPLIT_TYPES } from "@/server/expense/expense.constants";
@@ -530,6 +531,19 @@ export async function recordSettlement(
     currency = group.currency;
   }
   if (!currency) currency = (await findUserById(userId))?.default_currency ?? "USD";
+
+  // Refuse to record a settlement larger than what the caller actually owes
+  // the recipient in this scope — otherwise a user could flip the balance so
+  // the recipient now owes them (settlement-as-attack).
+  const outstandingCents = await amountOwed(userId, request.toUserId, groupId);
+  if (outstandingCents <= 0) {
+    invalid("you don't owe this person anything in this scope");
+  }
+  if (request.amountCents > outstandingCents) {
+    invalid(
+      `settlement (${formatMoney(request.amountCents, currency)}) exceeds what you owe (${formatMoney(outstandingCents, currency)})`,
+    );
+  }
 
   const settlement = await insertSettlement({
     groupId,

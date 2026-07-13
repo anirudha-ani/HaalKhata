@@ -110,11 +110,11 @@ Findings are sorted by severity within each section. File:line references use
   requires `expense.created_by === userId`; `updateExpense` and
   `deleteExpense` now use it. Viewing (`getExpense`) still allows any
   participant. For group expenses the creator must also still be a member.
-- **B9. Settlement records have no balance guard.** `recordSettlement`
-  (`expense.usecase.ts:483`) lets a user record an *arbitrary* payment from
-  themselves to anyone else — even if no debt exists, or for more than they
-  owe. This flips the balance so the "creditor" now owes the attacker.
-  Splitwise requires the settlement to be ≤ the outstanding debt.
+- **B9.~~Settlement records have no balance guard.~~** ✅ *Fixed.* Added
+  `amountOwed(debtor, creditor, groupId)` to `balance.usecase` (works in
+  group or global scope). `recordSettlement` now rejects a settlement when
+  the caller owes the recipient nothing, or for more than they owe —
+  preventing the balance-flip attack.
 - **B10.~~`addMemberByEmail` lets any member invite anyone.~~** ✅ *Fixed.*
   `addMemberByEmail` now also goes through `assertGroupOwner`, so only the
   group owner can invite new members.

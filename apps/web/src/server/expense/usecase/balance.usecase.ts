@@ -98,6 +98,28 @@ export async function userNetInGroup(userId: string, groupId: string): Promise<n
 }
 
 /**
+ * How much `debtorId` currently owes `creditorId` in a given scope. Returns a
+ * non-negative number of cents (0 when nothing is owed or the direction is
+ * reversed). Used by recordSettlement to refuse over-settling.
+ *
+ * @param debtorId - User who would be paying.
+ * @param creditorId - User who would be receiving.
+ * @param groupId - Group scope, or null for the global (all expenses + one-off) scope.
+ * @returns Non-negative cents the debtor owes the creditor in that scope.
+ */
+export async function amountOwed(
+  debtorId: string,
+  creditorId: string,
+  groupId: string | null,
+): Promise<number> {
+  const entries = groupId === null ? await userLedger(debtorId) : await groupLedger(groupId);
+  for (const entry of entries) {
+    if (entry.from === debtorId && entry.to === creditorId) return entry.amountCents;
+  }
+  return 0;
+}
+
+/**
  * Builds the user's global ledger: pairwise entries between the user and
  * everyone else, across all their expenses and settlements (groups + one-off).
  *
