@@ -293,10 +293,10 @@ Findings are sorted by severity within each section. File:line references use
   need a test DB harness).
 - **U16.~~`plan.txt` is committed~~** ✅ *Fixed.* Moved to `docs/plan.txt`
   (out of the repo root); README and `.dockerignore` references updated.
-- **U17. Generated protogen is committed to git** (the staged files include
-  `packages/protogen/src/**/*.ts`). This bloats the repo and causes merge
-  conflicts on every proto change. The Dockerfile regenerates it anyway
-  (`Dockerfile:16`). Add `packages/protogen/src/` to `.gitignore`.
+- **U17.~~Generated protogen is committed to git~~** ✅ *Fixed.* Added
+  `packages/protogen/src/` to `.gitignore` and `git rm --cached` the 6
+  generated files. `pnpm gen` (and the Docker `pnpm gen` build step)
+  regenerate them; the README's setup already lists `pnpm gen` as step 1.
 - **U18. `pnpm-lock.yaml` + a staged `node_modules/` untracking fix in the
   last commit** (`git log` shows "Fix .gitignore: unanchor node_modules")
   suggests `node_modules` was previously committed. Verify
