@@ -29,7 +29,7 @@ import {
 import { amountOwed } from "./balance.usecase";
 import { denied, invalid, notFound } from "@/server/common/errors";
 import { toUser } from "@/server/auth/usecase/user.mapper";
-import { SPLIT_TYPES, ISO_DATE_PATTERN, MAX_EXPENSE_PARTICIPANTS } from "@/server/expense/expense.constants";
+import { SPLIT_TYPES, ISO_DATE_PATTERN, MAX_EXPENSE_PARTICIPANTS, EXPENSE_CATEGORIES, SETTLEMENT_METHODS, MAX_COMMENT_LENGTH } from "@/server/expense/expense.constants";
 import { toExpense, toSettlement } from "./expense.mapper";
 
 /**
@@ -181,7 +181,7 @@ async function buildExpenseWrite(
     description,
     amountCents,
     currency,
-    category: request.category || "general",
+    category: EXPENSE_CATEGORIES.has(request.category) ? request.category : "general",
     expenseDate: normalizeExpenseDate(request.expenseDate),
     splitType: request.splitType,
     notes: request.notes,
@@ -492,6 +492,9 @@ export async function addComment(userId: string, expenseId: string, body: string
   await assertCanTouch(userId, expenseRow);
   const trimmed = body.trim();
   if (trimmed.length === 0) invalid("comment cannot be empty");
+  if (trimmed.length > MAX_COMMENT_LENGTH) {
+    invalid(`comment is too long (max ${MAX_COMMENT_LENGTH} characters)`);
+  }
   const comment = await insertComment(expenseId, userId, trimmed);
   const author = (await findUserById(userId))!;
 
@@ -581,7 +584,7 @@ export async function recordSettlement(
     toUser: request.toUserId,
     amountCents: request.amountCents,
     currency,
-    method: request.method || "cash",
+    method: SETTLEMENT_METHODS.has(request.method) ? request.method : "cash",
     note: request.note,
   });
 

@@ -128,13 +128,13 @@ Findings are sorted by severity within each section. File:line references use
   now rejects requests with more than `MAX_EXPENSE_PARTICIPANTS` (100) payers,
   split specs, or items, and a description > 200 chars. Bounds the per-request
   SQL fan-out in `insertChildren`. (See U10 for the bulk-insert follow-up.)
-- **B13. `category` and `method` are free-text.** `request.category ||
-  "general"` and `request.method || "cash"` are stored verbatim with no
-  allowlist, despite `GROUP_TYPES` and split-type sets existing elsewhere.
-  Minor, but it means the schema can't be queried consistently by category.
-- **B14. Comment body has no max length.** `addComment`
-  (`expense.usecase.ts:439`) only checks non-empty. A 10MB comment will be
-  stored and broadcast.
+- **B13.~~`category` and `method` are free-text.~~** ✅ *Fixed.* Added
+  `EXPENSE_CATEGORIES` and `SETTLEMENT_METHODS` allowlists in
+  `expense.constants.ts`; `buildExpenseWrite` and `recordSettlement` now
+  coerce unknown values to `"general"` / `"cash"` instead of storing
+  arbitrary strings.
+- **B14.~~Comment body has no max length.~~** ✅ *Fixed.* `addComment` now
+  rejects trimmed bodies longer than `MAX_COMMENT_LENGTH` (2000 chars).
 
 ### Data model
 - **B15. Missing indexes.** The migration creates indexes on
