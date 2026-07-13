@@ -1,4 +1,4 @@
-# HaalKhata — Splitwise Clone: Architecture Plan (v3)
+# HaalKhata — Splitwise Clone: Architecture Plan (v4)
 
 ## Context
 
@@ -225,3 +225,65 @@ URL); cloud provider uses the Claude API with a strict JSON schema.
 - End-to-end: scripted Connect JSON calls (signup → group → expenses of each
   type → balances → settle → assert zeroed) against a running dev server.
 - Manual responsive check at mobile + desktop viewports.
+
+## 9. Native mobile app (v4 — 2026-07-13)
+
+React Native app under `apps/mobile` (`@haalkhata/mobile`), reusing the
+existing contract and backend unchanged — the "future native app" leg of the
+architecture diagram, realized with React Native instead of Swift/Kotlin so
+the generated TypeScript in `packages/protogen` is shared as-is.
+
+**Decisions:**
+- **Expo (managed) + expo-router.** File-based routing mirrors the web's
+  App Router structure one-to-one; TypeScript throughout; Metro configured
+  for the pnpm monorepo (workspace root watchFolders).
+- **Same contract, same transport.** `@connectrpc/connect-web`'s Connect
+  transport over JSON against `<server>/api/connect` — identical RPCs the
+  browser calls. `TextEncoder`/`TextDecoder` polyfilled at the entry point.
+  The API base URL comes from `EXPO_PUBLIC_API_URL`, falling back in dev to
+  the Metro host (so a device on the LAN reaches the dev server).
+- **Bearer-token auth.** LogIn/SignUp already return a token for mobile
+  clients; it is kept in `expo-secure-store`, attached via a transport
+  interceptor (`Authorization: Bearer`), and cleared on `unauthenticated`
+  errors. The CSRF guard exempts bearer clients — no cookies involved.
+- **Same data layer.** TanStack Query with the shared query-key registry
+  and money-mutation invalidation set; cache persisted to AsyncStorage
+  (parity with the web's localStorage persistence, offline-first startup).
+- **Same structure conventions.** Route files in `app/` are thin
+  orchestrators (the `page.tsx` role); each screen lives in
+  `src/screens/<route>/components/<XScreen>/` with `hooks/` (useXAPI =
+  all React Query calls, composed by useX), route-scoped `constants/` and
+  pure `utils/` — the exact per-route pattern from §3. Shared UI in
+  `src/components/ui|modals|providers`, client libs in `src/lib/api|money|theme`.
+- **Same design language.** The "fresh ledger" tokens from globals.css
+  (paper/card/ink/line, vermillion brand, pos/neg money semantics) live in
+  `src/lib/theme/theme.ts`; StyleSheet-based styling, serif display type,
+  lucide-react-native icons (same icon set as web).
+
+```
+apps/mobile/
+  app/                        expo-router routes — THIN (mirror of page.tsx)
+    _layout.tsx               providers + root stack
+    login.tsx                 public auth screen
+    (app)/_layout.tsx         session gate + authed stack
+    (app)/(tabs)/_layout.tsx  bottom tabs: Home·Groups·Add·Scan·Friends
+    (app)/(tabs)/<tab>.tsx    dashboard | groups | scan | friends | activity
+    (app)/groups/[id].tsx     pushed detail screens
+    (app)/expenses/new.tsx    (+ [id].tsx), account.tsx
+  src/
+    screens/<route>/          per-route fan-out (components/hooks/constants/utils)
+    components/ui|modals|providers
+    lib/api/                  connect.ts (transport+clients), session.ts, queryKeys.ts
+    lib/money/ lib/theme/
+```
+
+**Feature parity v1:** login/signup, dashboard (summary, people, recent
+activity, settle-up), groups (list/create/detail/invite/balances/simplify),
+expenses (all non-itemized split types, multi-payer, edit, delete,
+comments), friends (add/one-off/settle), activity feed with notification
+badge + mark-read, account (profile, currency, sign out), receipt scan
+(camera or library → AI draft → assign → save itemized).
+
+**Verification:** `pnpm --filter @haalkhata/mobile typecheck | lint | test`
+(vitest on pure utils); manual run via `pnpm dev:mobile` (Expo Go) against
+the local dev server.
