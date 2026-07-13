@@ -169,9 +169,13 @@ Findings are sorted by severity within each section. File:line references use
   ✅ *Done as part of B4.*
 
 ### Frontend
-- **B22. Query cache never persisted.** ⏸ *Deferred.* Requires adding
-  `@tanstack/query-persist-client-core` + a storage persister dependency;
-  skipped to avoid an unprompted new dep. Worth revisiting for the PWA story.
+- **B22.~~Query cache never persisted.~~** ✅ *Fixed.* Added
+  `@tanstack/query-sync-storage-persister` + `@tanstack/query-persist-client-core`
+  and wired `persistQueryClient` with a `createSyncStoragePersister` in
+  `Providers.tsx`. The cache survives PWA reloads so users see last-known
+  data immediately instead of loading spinners. `gcTime` bumped to 24h;
+  `staleTime` unchanged so entries still refetch on mount. A `CACHE_BUSTER`
+  constant discards persisted entries on incompatible query-shape changes.
 - **B23.~~`useShellData` polls notifications every 30s~~** ✅ *Fixed.*
   Added `refetchIntervalInBackground: false` so polling pauses when the
   tab is hidden.
