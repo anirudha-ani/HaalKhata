@@ -9,6 +9,20 @@ export const SESSION_COOKIE = "hk_token";
 /** Session cookie lifetime in seconds (30 days), matching the token lifetime. */
 export const COOKIE_MAX_AGE = 60 * 60 * 24 * 30;
 
+/**
+ * Builds the Set-Cookie attribute string for the session token. The `Secure`
+ * flag is added only in production so dev over plain HTTP (localhost) still
+ * works; production must run behind a TLS-terminating reverse proxy.
+ *
+ * @param token - Session token value, or empty string to clear the cookie.
+ * @param maxAge - Lifetime in seconds; pass 0 to expire immediately.
+ * @returns The full `hk_token=...; ...` attribute string for Set-Cookie.
+ */
+export function sessionCookieAttributes(token: string, maxAge: number): string {
+  const secure = process.env.NODE_ENV === "production" ? "; Secure" : "";
+  return `${SESSION_COOKIE}=${token}; Path=/; HttpOnly; SameSite=Lax${secure}; Max-Age=${maxAge}`;
+}
+
 /** Lookup from UsecaseErrorCode to the equivalent Connect status code. */
 export const CODE_MAP: Record<UsecaseErrorCode, Code> = {
   invalid_argument: Code.InvalidArgument,

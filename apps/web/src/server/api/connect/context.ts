@@ -3,7 +3,7 @@
 import { Code, ConnectError, type HandlerContext } from "@connectrpc/connect";
 import { verifyToken } from "@/server/auth/usecase/auth.usecase";
 import { UsecaseError } from "@/server/common/errors";
-import { CODE_MAP, COOKIE_MAX_AGE, SESSION_COOKIE } from "./connect.constants";
+import { CODE_MAP, COOKIE_MAX_AGE, SESSION_COOKIE, sessionCookieAttributes } from "./connect.constants";
 
 /**
  * Extracts the authenticated user id from request headers: Bearer header
@@ -49,7 +49,7 @@ export function requireUser(handlerContext: HandlerContext): string {
 export function setSessionCookie(handlerContext: HandlerContext, token: string): void {
   handlerContext.responseHeader.append(
     "set-cookie",
-    `${SESSION_COOKIE}=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${COOKIE_MAX_AGE}`,
+    sessionCookieAttributes(token, COOKIE_MAX_AGE),
   );
 }
 
@@ -61,7 +61,7 @@ export function setSessionCookie(handlerContext: HandlerContext, token: string):
 export function clearSessionCookie(handlerContext: HandlerContext): void {
   handlerContext.responseHeader.append(
     "set-cookie",
-    `${SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`,
+    sessionCookieAttributes("", 0),
   );
 }
 

@@ -68,11 +68,10 @@ Findings are sorted by severity within each section. File:line references use
 ## The Bad
 
 ### Security — Session & Auth
-- **B1. Session cookie not `Secure`.** `context.ts:52` sets
-  `HttpOnly; SameSite=Lax` but omits `Secure`, so the cookie is transmitted
-  over plain HTTP. The README says "put a reverse proxy for TLS," but a
-  misconfigured proxy (or someone testing on a LAN) leaks session tokens.
-  Add `Secure` and gate it on `NODE_ENV === "production"`.
+- **B1.~~Session cookie not `Secure`.~~** ✅ *Fixed.* Cookie attributes
+  now go through `sessionCookieAttributes()` (`connect.constants.ts`) which
+  appends `Secure` only when `NODE_ENV === "production"`, so plain-HTTP dev
+  on localhost still works while prod (behind TLS) gets the flag.
 - **B2. No CSRF protection for the cookie path.** ConnectRPC JSON-over-HTTP
   with `Content-Type: application/json` is not vulnerable to classic HTML
   form CSRF, but the endpoint also accepts `application/proto`. SameSite=Lax
