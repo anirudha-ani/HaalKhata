@@ -2,6 +2,7 @@
 
 import { createClient } from "@connectrpc/connect";
 import { createConnectTransport } from "@connectrpc/connect-web";
+import { ConnectError } from "@connectrpc/connect";
 import { AuthService } from "@haalkhata/protogen/auth/v1/auth_pb";
 import { GroupService } from "@haalkhata/protogen/group/v1/group_pb";
 import { ExpenseService } from "@haalkhata/protogen/expense/v1/expense_pb";
@@ -30,9 +31,11 @@ export const socialClient = createClient(SocialService, transport);
  *   or a generic fallback when the value is not an `Error`.
  */
 export function errorMessage(error: unknown): string {
-  if (error instanceof Error) {
-    // ConnectError messages look like "[invalid_argument] the actual text"
-    return error.message.replace(/^\[[a-z_]+\]\s*/, "");
+  if (error instanceof ConnectError) {
+    // ConnectError.rawMessage is the human text without the [code] prefix;
+    // .message is '[invalid_argument] ...' which we don't want to show users.
+    return error.rawMessage || "something went wrong";
   }
+  if (error instanceof Error) return error.message || "something went wrong";
   return "something went wrong";
 }

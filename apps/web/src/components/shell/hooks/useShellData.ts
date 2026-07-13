@@ -20,6 +20,7 @@ export function useShellData() {
     queryKey: queryKeys.notifications,
     queryFn: () => socialClient.listNotifications({}),
     refetchInterval: 30_000,
+    refetchIntervalInBackground: false,
   });
   return {
     currentUser: currentUserQuery.data,

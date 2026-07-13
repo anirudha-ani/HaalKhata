@@ -169,21 +169,19 @@ Findings are sorted by severity within each section. File:line references use
   ✅ *Done as part of B4.*
 
 ### Frontend
-- **B22. Query cache never persisted.** `Providers.tsx` uses a single
-  in-memory `QueryClient` with `staleTime: 10_000`. On mobile PWA reload
-  (especially after the SW serves a cached shell), the user sees a flash
-  of loading spinners every time. A `persistQueryClient` with localStorage
-  would help the PWA story.
-- **B23. `useShellData` polls notifications every 30s** forever
-  (`useShellData.ts:22`), even when the tab is hidden. TanStack Query
-  pauses on blur by default in v5, but `refetchInterval` keeps firing.
-  Add `refetchIntervalInBackground: false`.
-- **B24. `errorMessage` strips the Connect code prefix with a regex**
-  (`connect.ts:35`) — fragile. If Connect changes its bracket format, error
-  messages leak `[invalid_argument]` to the user.
-- **B25. No `<Suspense>`/error boundary above route segments.** Each route
-  has a `loading.tsx`, but a thrown error in a server component renders
-  Next's default error page with no "back to safety" link.
+- **B22. Query cache never persisted.** ⏸ *Deferred.* Requires adding
+  `@tanstack/query-persist-client-core` + a storage persister dependency;
+  skipped to avoid an unprompted new dep. Worth revisiting for the PWA story.
+- **B23.~~`useShellData` polls notifications every 30s~~** ✅ *Fixed.*
+  Added `refetchIntervalInBackground: false` so polling pauses when the
+  tab is hidden.
+- **B24.~~`errorMessage` strips the Connect code prefix with a regex~~**
+  ✅ *Fixed.* Now checks `error instanceof ConnectError` and uses the
+  structured `rawMessage` property instead of regex-stripping `.message`.
+- **B25.~~No `<Suspense>`/error boundary above route segments.~~** ✅
+  *Fixed.* Added `(app)/error.tsx` — a route-level error boundary that
+  catches unexpected throws, logs them, and renders a safe fallback with
+  "Try again" + "Back to dashboard" instead of Next's default error page.
 
 ### AI / Receipt
 - **B26. Anthropic model name is a non-existent snapshot.**
