@@ -282,10 +282,22 @@ export async function findOrCreateUserByEmail(
   if (!EMAIL_PATTERN.test(normalizedEmail)) invalid("please enter a valid email address");
   const existing = await findUserByEmail(normalizedEmail);
   if (existing) return existing;
-  return insertUser({
-    email: normalizedEmail,
-    name: name?.trim() || normalizedEmail.split("@")[0],
-    avatarColor: avatarColorFor(normalizedEmail),
-    passwordHash: null,
-  });
+  try {
+    return await insertUser({
+      email: normalizedEmail,
+      name: name?.trim() || normalizedEmail.split("@")[0],
+      avatarColor: avatarColorFor(normalizedEmail),
+      passwordHash: null,
+    });
+  } catch (error) {
+    // TOCTOU: a concurrent invite to the same email won the unique-index
+    // race (Postgres SQLSTATE 23505). Re-read the now-existing row instead
+    // of surfacing a 500 to the caller.
+    const databaseError = error as { code?: string };
+    if (databaseError.code === "23505") {
+      const concurrent = await findUserByEmail(normalizedEmail);
+      if (concurrent) return concurrent;
+    }
+    throw error;
+  }
 }

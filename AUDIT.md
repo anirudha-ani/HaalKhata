@@ -266,11 +266,11 @@ Findings are sorted by severity within each section. File:line references use
   *only* because the image runs as `node` and `/app` is writable. This is
   undocumented and fragile. In production `SESSION_SECRET` must be set,
   and the app should hard-fail instead of silently writing a secret file.
-- **U12. `findOrCreateUserByEmail` is a TOCTOU race.**
-  `auth.usecase.ts:220` does `findUserByEmail` then `insertUser`. Two
-  concurrent invites to the same email create two rows — the unique index
-  on `lower(email)` (`migration:15`) will throw a constraint violation
-  that bubbles up as a 500. Catch the unique violation and re-read.
+- **U12.~~`findOrCreateUserByEmail` is a TOCTOU race.~~** ✅ *Fixed.* The
+  `insertUser` call is now wrapped in a try/catch that detects Postgres
+  SQLSTATE `23505` (unique_violation) on `lower(email)` and re-reads the
+  now-existing row, so two concurrent invites to the same email no longer
+  surface a 500.
 - **U13. `claimUser` doesn't verify the shadow user's email matches.**
   Anyone who can guess a shadow user's id can claim it by signing up with
   a *different* email — `signUp` (`auth.usecase.ts:142`) looks up by
