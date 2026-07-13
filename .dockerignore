@@ -13,4 +13,4 @@ data
 **/*.tsbuildinfo
 Dockerfile
 docker-compose.yml
-plan.txt
+docs

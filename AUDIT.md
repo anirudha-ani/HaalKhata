@@ -291,9 +291,8 @@ Findings are sorted by severity within each section. File:line references use
   tamper rejection, bogus-signature rejection, and malformed-token
   rejection. Usecase/repo/handler tests are still a gap (deferred — they
   need a test DB harness).
-- **U16. `plan.txt` is committed** and references "v3 — supersedes v2" and
-  a decision log. It's 227 lines of planning prose that will rot. Move it
-  to `docs/` or delete it; the README already covers the architecture.
+- **U16.~~`plan.txt` is committed~~** ✅ *Fixed.* Moved to `docs/plan.txt`
+  (out of the repo root); README and `.dockerignore` references updated.
 - **U17. Generated protogen is committed to git** (the staged files include
   `packages/protogen/src/**/*.ts`). This bloats the repo and causes merge
   conflicts on every proto change. The Dockerfile regenerates it anyway

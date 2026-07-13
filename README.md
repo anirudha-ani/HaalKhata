@@ -95,4 +95,4 @@ pnpm proto:lint  # buf lint
 pnpm doctor      # react-doctor scan
 ```
 
-See `plan.txt` for the full architecture plan and delivery phases.
+See `docs/plan.txt` for the full architecture plan and delivery phases.
