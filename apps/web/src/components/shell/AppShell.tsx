@@ -56,8 +56,8 @@ export function AppShell({
     pathname === href || (pathname?.startsWith(`${href}/`) ?? false);
 
   return (
-    <div className="mx-auto flex min-h-dvh max-w-6xl">
-      {/* Desktop sidebar */}
+    <div className="flex min-h-dvh">
+      {/* Desktop sidebar — pinned to the viewport's left edge, not centered */}
       <aside className="sticky top-0 hidden h-dvh w-60 shrink-0 flex-col justify-between border-r border-line bg-card px-4 py-6 md:flex">
         <div className="space-y-6">
           <Logo />
@@ -109,7 +109,7 @@ export function AppShell({
         ) : null}
       </aside>
 
-      <div className="flex min-w-0 flex-1 flex-col">
+      <div className="mx-auto flex w-full min-w-0 max-w-6xl flex-1 flex-col">
         {/* Mobile header */}
         <header className="sticky top-0 z-40 flex items-center justify-between border-b border-line bg-card/95 px-4 py-3 backdrop-blur md:hidden">
           <Logo />
