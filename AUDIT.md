@@ -72,14 +72,11 @@ Findings are sorted by severity within each section. File:line references use
   now go through `sessionCookieAttributes()` (`connect.constants.ts`) which
   appends `Secure` only when `NODE_ENV === "production"`, so plain-HTTP dev
   on localhost still works while prod (behind TLS) gets the flag.
-- **B2. No CSRF protection for the cookie path.** ConnectRPC JSON-over-HTTP
-  with `Content-Type: application/json` is not vulnerable to classic HTML
-  form CSRF, but the endpoint also accepts `application/proto`. SameSite=Lax
-  partially mitigates, but there's no explicit CSRF token or
-  `Origin`/`Referer` check in `context.ts`. If the transport ever accepts
-  `Content-Type: application/x-www-form-urlencoded` or `text/plain` (some
-  Connect fallbacks do), this becomes exploitable. Add an `Origin` header
-  check.
+- **B2.~~No CSRF protection for the cookie path.~~** ✅ *Fixed.* Added
+  `csrfGuard` (`server/api/connect/csrf.ts`) wrapped around the Connect
+  mount point. It rejects cookie-bearing state-changing requests whose
+  `Origin`/`Referer` doesn't match the request host; Bearer-token clients
+  (mobile) are exempt.
 - **B3. No rate limiting / brute-force protection.** `auth.usecase.logIn`
   has zero throttling. A bot can hammer `/api/connect/auth.v1.AuthService/LogIn`
   at unlimited speed. scrypt slows each attempt, but that just makes it a
