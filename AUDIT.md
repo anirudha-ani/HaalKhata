@@ -90,15 +90,11 @@ Findings are sorted by severity within each section. File:line references use
   `logOut` bumps the version, revoking all outstanding tokens. (Password
   change could bump too — see B6 follow-up.)
 - **B21.~~No migration for `token_version`…~~** ✅ *Merged into B4.*
-- **B5. `SESSION_SECRET` defaults to empty in `.env.example`.**
-  `docker-compose.yml:31` passes `SESSION_SECRET: ${SESSION_SECRET:-}`
-  (empty string). The fallback in `auth.usecase.ts:71` writes a dev secret
-  to `data/.secret`, but in Docker `data/` isn't in the runtime image
-  (`.dockerignore` excludes it), so **every container start generates a new
-  secret and invalidates all sessions** — the README even admits this.
-  Worse: if `DATA_DIRECTORY` is unwritable, `secret()` throws at request
-  time. The app should refuse to boot in production without
-  `SESSION_SECRET`.
+- **B5.~~`SESSION_SECRET` defaults to empty in `.env.example`.~~** ✅
+  *Fixed.* `secret()` in `auth.usecase.ts` now throws when
+  `NODE_ENV === "production"` and `SESSION_SECRET` is unset, instead of
+  silently writing a dev secret file. The dev fallback (persisted
+  `data/.secret`) is unchanged.
 - **B6. No password complexity beyond length ≥ 6** (`auth.usecase.ts:140`).
   No breach-list check, no max length (DoS via huge scrypt input — scrypt
   has no built-in cap and a 1MB password will hang the event loop).

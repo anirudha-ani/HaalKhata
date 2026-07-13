@@ -66,14 +66,22 @@ function verifyPassword(password: string, storedHash: string): boolean {
 let cachedSecret: Buffer | null = null;
 
 /**
- * Returns the HMAC signing secret: SESSION_SECRET when set, otherwise a
- * dev fallback persisted under DATA_DIRECTORY so sessions survive restarts.
+ * Returns the HMAC signing secret: SESSION_SECRET when set, otherwise (dev
+ * only) a generated secret persisted under DATA_DIRECTORY so sessions survive
+ * restarts. In production the app refuses to start without SESSION_SECRET — a
+ * missing secret would otherwise silently rotate on every restart (or fail to
+ * write in a read-only container) and invalidate all sessions.
  */
 function secret(): Buffer {
   if (cachedSecret) return cachedSecret;
   if (process.env.SESSION_SECRET) {
     cachedSecret = Buffer.from(process.env.SESSION_SECRET, "utf8");
     return cachedSecret;
+  }
+  if (process.env.NODE_ENV === "production") {
+    throw new Error(
+      "SESSION_SECRET must be set in production (use `openssl rand -hex 32`).",
+    );
   }
   // Dev fallback: persist a generated secret so sessions survive restarts.
   const secretFilePath = path.join(DATA_DIRECTORY, ".secret");
