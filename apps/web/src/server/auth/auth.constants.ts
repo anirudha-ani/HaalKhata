@@ -20,3 +20,12 @@ export const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 /** Max login/signup attempts per key (IP or email) per 60s window. */
 export const AUTH_RATE_LIMIT = 10;
+
+/** Minimum password length accepted at signup. */
+export const PASSWORD_MIN_LENGTH = 6;
+/**
+ * Maximum password length accepted at signup. scrypt has no built-in input
+ * cap, so an unbounded password length is a CPU-DoS vector; 1024 bytes is
+ * far above any reasonable passphrase while keeping scrypt fast.
+ */
+export const PASSWORD_MAX_LENGTH = 1024;

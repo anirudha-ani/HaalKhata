@@ -95,9 +95,10 @@ Findings are sorted by severity within each section. File:line references use
   `NODE_ENV === "production"` and `SESSION_SECRET` is unset, instead of
   silently writing a dev secret file. The dev fallback (persisted
   `data/.secret`) is unchanged.
-- **B6. No password complexity beyond length ≥ 6** (`auth.usecase.ts:140`).
-  No breach-list check, no max length (DoS via huge scrypt input — scrypt
-  has no built-in cap and a 1MB password will hang the event loop).
+- **B6.~~No password complexity beyond length ≥ 6~~** ✅ *Fixed.* Added
+  `PASSWORD_MIN_LENGTH`/`PASSWORD_MAX_LENGTH` (1024) constants and a
+  `validatePassword` helper used at signup. Login also rejects oversized
+  passwords before running scrypt (CPU-DoS guard).
 
 ### Security — Authorization (IDOR / privilege)
 - **B7. Any group member can remove any other member.**

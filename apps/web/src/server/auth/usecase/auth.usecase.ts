@@ -17,6 +17,8 @@ import {
   AVATAR_PALETTE,
   DATA_DIRECTORY,
   EMAIL_PATTERN,
+  PASSWORD_MAX_LENGTH,
+  PASSWORD_MIN_LENGTH,
   TOKEN_LIFETIME_SECONDS,
 } from "@/server/auth/auth.constants";
 import { toUser } from "./user.mapper";
@@ -34,6 +36,19 @@ export function avatarColorFor(email: string): string {
 }
 
 // --- password hashing (scrypt) -------------------------------------------
+
+/**
+ * Validates password length bounds. scrypt has no built-in input cap, so a
+ * huge password is both a CPU-DoS vector and a likely mistake; too short is
+ * a weak account. Throws an invalid UsecaseError on violation.
+ *
+ * @param password - Plaintext password to validate.
+ * @throws UsecaseError "invalid_argument" when the password is too short or too long.
+ */
+function validatePassword(password: string): void {
+  if (password.length < PASSWORD_MIN_LENGTH) invalid("password must be at least 6 characters");
+  if (password.length > PASSWORD_MAX_LENGTH) invalid("password is too long");
+}
 
 /**
  * Hashes a plaintext password with scrypt and a random salt.
@@ -165,7 +180,7 @@ export async function signUp(input: { email: string; name: string; password: str
   const name = input.name.trim();
   if (!EMAIL_PATTERN.test(email)) invalid("please enter a valid email address");
   if (name.length === 0) invalid("name is required");
-  if (input.password.length < 6) invalid("password must be at least 6 characters");
+  validatePassword(input.password);
 
   const existing = await findUserByEmail(email);
   let user: UserRow;
@@ -197,7 +212,12 @@ export async function signUp(input: { email: string; name: string; password: str
  */
 export async function logIn(input: { email: string; password: string }) {
   const user = await findUserByEmail(input.email.trim().toLowerCase());
-  if (!user || user.password_hash === null || !verifyPassword(input.password, user.password_hash)) {
+  // Reject oversized passwords before running scrypt (CPU-DoS guard). An
+  // unknown email or a too-long password both produce the same generic error.
+  if (!user || user.password_hash === null || input.password.length > PASSWORD_MAX_LENGTH) {
+    throw new UsecaseError("unauthenticated", "invalid email or password");
+  }
+  if (!verifyPassword(input.password, user.password_hash)) {
     throw new UsecaseError("unauthenticated", "invalid email or password");
   }
   return { user: toUser(user), token: createToken(user.id, user.token_version) };
