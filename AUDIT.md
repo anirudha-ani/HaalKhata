@@ -221,10 +221,11 @@ Findings are sorted by severity within each section. File:line references use
   `connectionTimeoutMillis: 5s` so multi-replica deploys don't exhaust
   Postgres `max_connections` and idle connections are reaped. (The
   `globalThis` cache is retained — it's the standard Next HMR workaround.)
-- **U4. `docker-compose.yml` exposes web on `0.0.0.0:3000` with no TLS
-  terminator configured.** The README says "put Caddy/nginx in front" but
-  nothing enforces it. A user who runs `docker compose up` and visits
-  `http://<server-ip>:3000` is sending session cookies in plaintext (B1).
+- **U4.~~`docker-compose.yml` exposes web on `0.0.0.0:3000` with no TLS.~~**
+  ✅ *Fixed.* The web port is now bound to `127.0.0.1:3000` (loopback only)
+  with a comment directing operators to put a TLS-terminating reverse proxy
+  in front and expose 443 there. The Secure cookie flag (B1) now has a
+  credible deployment story.
 - **U5.~~`POSTGRES_PASSWORD` defaults to `haalkhata`~~** ✅ *Fixed.*
   `assertSafeDatabaseUrl()` in `db.ts` throws when `NODE_ENV === "production"`
   and the connection string is the `haalkhata:haalkhata` default, so a

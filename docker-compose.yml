@@ -35,7 +35,11 @@ services:
       LOCAL_AI_API_KEY: ${LOCAL_AI_API_KEY:-}
       LOCAL_AI_MODEL: ${LOCAL_AI_MODEL:-qwen2.5vl}
     ports:
-      - "3000:3000"
+      # Loopback only by default — put a TLS-terminating reverse proxy
+      # (Caddy/nginx/Traefik) in front and expose 443 there, not 3000 here.
+      # To serve directly on the LAN, change the bind to "3000:3000" but
+      # remember session cookies need TLS (the Secure flag is set in prod).
+      - "127.0.0.1:3000:3000"
 
 volumes:
   db-data:
