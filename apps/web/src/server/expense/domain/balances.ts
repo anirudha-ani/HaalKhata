@@ -130,34 +130,41 @@ export function netBalances(debts: LedgerEntry[]): Map<string, number> {
  * while producing at most (participants − 1) payments. Ties break by user
  * id for determinism.
  *
+ * Both arrays are sorted once (descending by amount, then by user id) and
+ * walked with index pointers — after each settlement the exhausted side's
+ * pointer advances. This is O(n log n) instead of the O(n² log n) of
+ * re-sorting every iteration.
+ *
  * @param netByUser - Net cents per user (> 0 ⇒ owed money), e.g. from `netBalances`.
  * @returns A short list of payments that settles all net positions.
  */
 export function simplifyDebts(netByUser: Map<string, number>): LedgerEntry[] {
-  const creditors = [...netByUser.entries()]
-    .filter(([, netAmount]) => netAmount > 0)
-    .map(([userId, netAmount]) => ({ userId, remainingCents: netAmount }));
-  const debtors = [...netByUser.entries()]
-    .filter(([, netAmount]) => netAmount < 0)
-    .map(([userId, netAmount]) => ({ userId, remainingCents: -netAmount }));
-
   const byAmountThenId = (
     first: { userId: string; remainingCents: number },
     second: { userId: string; remainingCents: number },
   ) => second.remainingCents - first.remainingCents || first.userId.localeCompare(second.userId);
 
+  const creditors = [...netByUser.entries()]
+    .filter(([, netAmount]) => netAmount > 0)
+    .map(([userId, netAmount]) => ({ userId, remainingCents: netAmount }))
+    .sort(byAmountThenId);
+  const debtors = [...netByUser.entries()]
+    .filter(([, netAmount]) => netAmount < 0)
+    .map(([userId, netAmount]) => ({ userId, remainingCents: -netAmount }))
+    .sort(byAmountThenId);
+
   const entries: LedgerEntry[] = [];
-  while (creditors.length > 0 && debtors.length > 0) {
-    creditors.sort(byAmountThenId);
-    debtors.sort(byAmountThenId);
-    const creditor = creditors[0];
-    const debtor = debtors[0];
+  let creditorIndex = 0;
+  let debtorIndex = 0;
+  while (creditorIndex < creditors.length && debtorIndex < debtors.length) {
+    const creditor = creditors[creditorIndex];
+    const debtor = debtors[debtorIndex];
     const amount = Math.min(creditor.remainingCents, debtor.remainingCents);
     entries.push({ from: debtor.userId, to: creditor.userId, amountCents: amount });
     creditor.remainingCents -= amount;
     debtor.remainingCents -= amount;
-    if (creditor.remainingCents === 0) creditors.shift();
-    if (debtor.remainingCents === 0) debtors.shift();
+    if (creditor.remainingCents === 0) creditorIndex++;
+    if (debtor.remainingCents === 0) debtorIndex++;
   }
   return entries;
 }

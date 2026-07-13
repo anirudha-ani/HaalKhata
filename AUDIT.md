@@ -243,9 +243,11 @@ Findings are sorted by severity within each section. File:line references use
   usecase — a larger refactor deferred for now. U6 mitigated the dashboard
   path; the overall-balance RPC is only called on the dashboard/friends
   pages, not per-request.
-- **U8. `simplifyDebts` re-sorts the creditor/debtor arrays on every
-  iteration** (`balances.ts:151`). O(n² log n). Fine for small groups,
-  ugly for a 50-person trip. Use a heap.
+- **U8.~~`simplifyDebts` re-sorts the arrays on every iteration~~** ✅
+  *Fixed.* Both arrays are now sorted once (descending by amount, ties by
+  user id) and walked with index pointers; the exhausted side's pointer
+  advances instead of re-sorting + shifting. O(n log n) instead of
+  O(n² log n). All 21 balance tests still pass (net-preservation holds).
 - **U9. `listExpensesInvolvingUser` uses correlated `EXISTS` subqueries
   per row** (`expenses.repo.ts:266`). With the missing
   `expense_payers(user_id)` index (B15), this is a full scan × per-row
