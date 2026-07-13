@@ -137,40 +137,34 @@ Findings are sorted by severity within each section. File:line references use
   rejects trimmed bodies longer than `MAX_COMMENT_LENGTH` (2000 chars).
 
 ### Data model
-- **B15. Missing indexes.** The migration creates indexes on
-  `expenses(group_id)`, `expense_splits(user_id)`, `expense_items(expense_id)`,
-  and `notifications(user_id, read_at)`. Missing:
-  - `expense_payers(user_id)` — `listExpensesInvolvingUser` does a
-    correlated `EXISTS` on it for every expense.
-  - `settlements(from_user)`, `settlements(to_user)`,
-    `settlements(group_id)` — used by the balance ledger queries.
-  - `group_members(user_id)` — `listGroupsByUser` joins on it.
-  - `activity(group_id)` and a GIN index on `activity(audience)` — the
-    `audience @> to_jsonb($1)` containment scan (`activity.repo.ts:68`)
-    is a full table scan today.
-  - `comments(expense_id)` — though the PK `(expense_id,user_id)` doesn't
-    exist on comments; the listing query filters by `expense_id` only.
-- **B16. No `CHECK` constraints.** `amount_cents`, `owed_cents`,
-  `weight`, `quantity` can all be negative in the DB. Validation lives only
-  in the usecase; a future bypass (or a direct SQL migration) corrupts
-  balances. Add `CHECK (amount_cents >= 0)` etc.
+- **B15.~~Missing indexes.~~** ✅ *Fixed.* Migration `1783987200000` adds:
+  `expense_payers(user_id)`, `settlements(from_user|to_user|group_id)`,
+  `group_members(user_id)`, `activity(group_id)`, a GIN index on
+  `activity(audience)` (fixes the `@> to_jsonb` containment full-scan),
+  and `comments(expense_id)`.
+- **B16.~~No `CHECK` constraints.~~** ✅ *Fixed.* Migration `1783987200000`
+  adds `CHECK (>= 0)` on `expenses.amount_cents/tax_cents/tip_cents`,
+  `expense_payers.amount_cents`, `expense_splits.owed_cents`,
+  `expense_items.total_cents`, `expense_items.quantity > 0`,
+  `expense_item_assignments.weight > 0`, and `settlements.amount_cents > 0`.
+  Validation still lives in the usecase, but the DB now backstops it.
 - **B17. `expense_item_assignments.weight` is `INTEGER`.** The domain treats
   weights as ratios (`allocate` uses them as float ratios in
   `money.ts:31`), but the column is integer. Fractional weights (1.5) are
   impossible, and integer weights force `totalCents * weight / sum` float
   math that's fine but undocumented.
-- **B18. `activity.group_id` has no FK.** Every other `group_id` column
-  references `groups(id)`, but `activity` (`migration:112`) drops the
-  constraint, presumably so group-deletion doesn't cascade. There's no
-  group deletion feature, so this is just an orphaned-row risk.
-- **B19. `friendships` has no `CHECK (user_id <> friend_id)`.** A user can
-  befriend themselves at the SQL level (the usecase guards it, but the
-  constraint doesn't).
-- **B20. `expense_payers` PK is `(expense_id, user_id)`.** This means a
-  user can only be one payer row per expense — fine — but `amount_cents`
-  isn't validated to sum to `expenses.amount_cents` at the DB level. A
-  partial write (bug in `insertChildren`) leaves the ledger unbalanced
-  silently.
+- **B18.~~`activity.group_id` has no FK.~~** ✅ *Fixed.* Added the FK
+  with `ON DELETE SET NULL` so deleting a group leaves the feed row intact
+  but no dangling reference remains.
+- **B19.~~`friendships` has no `CHECK (user_id <> friend_id)`.~~** ✅
+  *Fixed.* Migration `1783987200000` adds the constraint; the usecase guard
+  is now backed by the DB.
+- **B20.~~`expense_payers` sum not validated at DB level.~~** ✅
+  *Mitigated.* A DB-level aggregate constraint would require a trigger;
+  instead the usecase checks `paidCents === amountCents` before insert and
+  `insertChildren` runs inside a single transaction, so a partial write
+  rolls back. The new `CHECK (amount_cents >= 0)` (B16) backstops individual
+  rows. A trigger-based sum guard is deferred as low-value.
 - **B21.~~No migration for a `token_version` / `password_changed_at`~~** —
   ✅ *Done as part of B4.*
 
