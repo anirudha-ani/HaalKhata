@@ -8,6 +8,7 @@ import {
   claimUser,
   findUserByEmail,
   findUserById,
+  findUserByPhone,
   insertUser,
   updateUserProfile,
   type UserRow,
@@ -20,6 +21,7 @@ import {
   PASSWORD_MAX_LENGTH,
   PASSWORD_MIN_LENGTH,
   TOKEN_LIFETIME_SECONDS,
+  normalizePhone,
 } from "@/server/auth/auth.constants";
 import { toUser } from "./user.mapper";
 
@@ -168,57 +170,79 @@ export function tokenVersion(token: string): number {
 
 /**
  * Registers a new account, or lets a shadow user claim their existing row,
- * and issues a session token.
+ * and issues a session token. Exactly one of `email` or `phone` must be set;
+ * the other is left null on the new account (and can be added later via
+ * updateProfile once that supports it).
  *
- * @param input - Signup form values: email, display name, and plaintext password.
+ * @param input - Signup form values: email OR phone (E.164), display name, and plaintext password.
  * @returns The created (or claimed) user in proto shape plus a fresh session token.
- * @throws UsecaseError "invalid_argument" for a bad email, empty name, or short password.
- * @throws UsecaseError "already_exists" when a registered account already uses the email.
+ * @throws UsecaseError "invalid_argument" for a bad email/phone, empty name, or short password.
+ * @throws UsecaseError "already_exists" when a registered account already uses that email/phone.
  */
-export async function signUp(input: { email: string; name: string; password: string }) {
-  const email = input.email.trim().toLowerCase();
+export async function signUp(input: {
+  email: string;
+  phone: string;
+  name: string;
+  password: string;
+}) {
   const name = input.name.trim();
-  if (!EMAIL_PATTERN.test(email)) invalid("please enter a valid email address");
   if (name.length === 0) invalid("name is required");
   validatePassword(input.password);
 
-  const existing = await findUserByEmail(email);
+  const email = input.email.trim().toLowerCase();
+  const phone = normalizePhone(input.phone);
+  if (email.length === 0 && !phone) {
+    invalid("please enter a valid email address or phone number");
+  }
+  if (email.length > 0 && !EMAIL_PATTERN.test(email)) {
+    invalid("please enter a valid email address");
+  }
+  // Avatar color derives from whichever identifier is present.
+  const colorSeed = email || phone!;
+
+  // Look up an existing (shadow or registered) account by whichever
+  // identifier was supplied so a shadow user can claim their invited row.
+  const existing = email ? await findUserByEmail(email) : await findUserByPhone(phone!);
   let user: UserRow;
   if (existing) {
     if (existing.password_hash !== null) {
-      throw new UsecaseError("already_exists", "an account with this email already exists");
+      throw new UsecaseError("already_exists", "an account with this email or phone already exists");
     }
     // Shadow user invited earlier — claim the account (keeps expense history).
     await claimUser(existing.id, name, hashPassword(input.password));
     user = (await findUserById(existing.id))!;
   } else {
     user = await insertUser({
-      email,
+      email: email || null,
       name,
-      avatarColor: avatarColorFor(email),
+      avatarColor: avatarColorFor(colorSeed),
       passwordHash: hashPassword(input.password),
+      phone: phone ?? null,
     });
   }
   return { user: toUser(user), token: createToken(user.id, user.token_version) };
 }
 
 /**
- * Authenticates an existing account and issues a session token.
+ * Authenticates an existing account and issues a session token. Exactly one of
+ * `email` or `phone` must be set; the account is looked up by whichever is.
  *
- * @param input - Login form values: email and plaintext password.
+ * @param input - Login form values: email OR phone, and plaintext password.
  * @returns The authenticated user in proto shape plus a fresh session token.
- * @throws UsecaseError "unauthenticated" when the email is unknown, the account is an
+ * @throws UsecaseError "unauthenticated" when the identifier is unknown, the account is an
  *   unclaimed shadow user, or the password does not match.
  */
-export async function logIn(input: { email: string; password: string }) {
-  const user = await findUserByEmail(input.email.trim().toLowerCase());
+export async function logIn(input: { email: string; phone: string; password: string }) {
+  const email = input.email.trim().toLowerCase();
+  const phone = normalizePhone(input.phone);
+  const user = email ? await findUserByEmail(email) : phone ? await findUserByPhone(phone) : undefined;
   // Reject oversized passwords before running scrypt (CPU-DoS guard). An
-  // unknown email or a too-long password both produce the same generic error.
+  // unknown identifier or a too-long password both produce the same generic error.
   if (!user || user.password_hash === null || input.password.length > PASSWORD_MAX_LENGTH) {
-    throw new UsecaseError("unauthenticated", "invalid email or password");
+    throw new UsecaseError("unauthenticated", "invalid email/phone or password");
   }
   if (!verifyPassword(input.password, user.password_hash)) {
-    throw new UsecaseError("unauthenticated", "invalid email or password");
+    throw new UsecaseError("unauthenticated", "invalid email/phone or password");
   }
   return { user: toUser(user), token: createToken(user.id, user.token_version) };
 }

@@ -7,6 +7,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 process.env.SESSION_SECRET = "test-secret-key-for-vitest-0123456789abcdef";
 
 import { createToken, tokenVersion, verifyToken } from "./auth.usecase";
+import { normalizePhone } from "@/server/auth/auth.constants";
 
 describe("auth tokens", () => {
   beforeAll(() => {
@@ -52,5 +53,19 @@ describe("auth tokens", () => {
     expect(verifyToken("not-a-token")).toBeNull();
     expect(verifyToken("")).toBeNull();
     expect(verifyToken("a.b")).toBeNull();
+  });
+});
+
+describe("normalizePhone", () => {
+  it("accepts and canonicalizes a valid number to E.164", () => {
+    expect(normalizePhone("+8801712345678")).toBe("+8801712345678");
+    expect(normalizePhone(" +1 (415) 555-2671 ")).toBe("+14155552671");
+  });
+
+  it("rejects garbage and empty input", () => {
+    expect(normalizePhone("")).toBeNull();
+    expect(normalizePhone("   ")).toBeNull();
+    expect(normalizePhone("not-a-number")).toBeNull();
+    expect(normalizePhone("+999999999999")).toBeNull(); // invalid country/length
   });
 });

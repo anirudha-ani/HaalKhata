@@ -10,28 +10,46 @@ import { authClient, errorMessage } from "@/lib/api/connect";
 export type LoginMode = "login" | "signup";
 
 /**
+ * Splits a raw identifier string into `{ email, phone }` for the auth RPC. If
+ * the value contains an `@` it's treated as an email; otherwise it's sent as
+ * a phone (the server normalizes + validates it). Exactly one field is set.
+ *
+ * @param identifier - Raw user input from the identifier field.
+ * @returns `{ email, phone }` with exactly one populated.
+ */
+function splitIdentifier(identifier: string): { email: string; phone: string } {
+  const trimmed = identifier.trim();
+  return trimmed.includes("@")
+    ? { email: trimmed, phone: "" }
+    : { email: "", phone: trimmed };
+}
+
+/**
  * Manages the login page: the login/signup mode toggle, the credentials form
  * fields, and the mutation that signs in (or signs up) and then navigates to
- * the dashboard.
+ * the dashboard. The identifier field accepts either an email or a phone
+ * number; the server looks the account up by whichever was supplied.
  *
- * @returns An object with the current `mode` and `switchMode`, the `email`/
- *   `name`/`password` fields with setters, the last auth `error` message,
- *   `submit` to run the mutation, and `isPending` while it is in flight.
+ * @returns An object with the current `mode` and `switchMode`, the
+ *   `identifier`/`name`/`password` fields with setters, the last auth `error`
+ *   message, `submit` to run the mutation, and `isPending` while in flight.
  */
 export function useLogin() {
   const router = useRouter();
   const [mode, setMode] = useState<LoginMode>("login");
-  const [email, setEmail] = useState("");
+  const [identifier, setIdentifier] = useState("");
   const [name, setName] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
 
   /** Signs in or signs up depending on mode; on success goes to the dashboard. */
   const mutation = useMutation({
-    mutationFn: () =>
-      mode === "login"
-        ? authClient.logIn({ email, password })
-        : authClient.signUp({ email, name, password }),
+    mutationFn: () => {
+      const { email, phone } = splitIdentifier(identifier);
+      return mode === "login"
+        ? authClient.logIn({ email, phone, password })
+        : authClient.signUp({ email, phone, name, password });
+    },
     onSuccess: () => router.push("/dashboard"),
     onError: (mutationError) => setError(errorMessage(mutationError)),
   });
@@ -55,8 +73,8 @@ export function useLogin() {
   return {
     mode,
     switchMode,
-    email,
-    setEmail,
+    identifier,
+    setIdentifier,
     name,
     setName,
     password,

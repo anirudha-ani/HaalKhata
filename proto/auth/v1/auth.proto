@@ -7,6 +7,8 @@ import "common/v1/common.proto";
 
 // Email + password auth. LogIn/SignUp return a bearer token for mobile
 // clients and additionally set an httpOnly session cookie for browsers.
+// An account may register with an email, a phone (E.164), or both; LogIn
+// accepts whichever identifier the account has set.
 service AuthService {
   rpc SignUp(SignUpRequest) returns (AuthResponse);
   rpc LogIn(LogInRequest) returns (AuthResponse);
@@ -16,14 +18,19 @@ service AuthService {
 }
 
 message SignUpRequest {
+  // Exactly one of email / phone must be set.
   string email = 1;
-  string name = 2;
-  string password = 3;
+  string phone = 2; // E.164, e.g. "+8801712345678"
+  string name = 3;
+  string password = 4;
 }
 
 message LogInRequest {
+  // Exactly one of email / phone must be set. The server looks the account up
+  // by whichever field is non-empty.
   string email = 1;
-  string password = 2;
+  string phone = 2;
+  string password = 3;
 }
 
 message AuthResponse {

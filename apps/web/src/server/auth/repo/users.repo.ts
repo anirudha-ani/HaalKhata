@@ -5,7 +5,8 @@ import { execute, newId, query, queryOne } from "@/server/common/db";
 /** One row of the users table. Field names mirror the SQL column names. */
 export interface UserRow {
   id: string;
-  email: string;
+  /** Email address; null for a phone-only account. */
+  email: string | null;
   name: string;
   /** Hex color (e.g. "#c73e2e") used as the user's avatar background. */
   avatar_color: string;
@@ -13,6 +14,8 @@ export interface UserRow {
   default_currency: string;
   /** scrypt "salt:hash" string; null marks a shadow user who has not registered yet. */
   password_hash: string | null;
+  /** Phone number in E.164 (e.g. "+8801712345678"); null when the user has no phone. */
+  phone: string | null;
   /** Monotonic counter baked into issued tokens; bumping it invalidates outstanding tokens. */
   token_version: number;
   created_at: string;
@@ -22,19 +25,20 @@ export interface UserRow {
  * Inserts a new users row with a freshly generated id.
  *
  * @param input - Column values for the new user; defaultCurrency falls back to "USD",
- *   and a null passwordHash creates a claimable shadow user.
+ *   a null passwordHash creates a claimable shadow user, and phone is optional.
  * @returns The inserted row.
  */
 export async function insertUser(input: {
-  email: string;
+  email: string | null;
   name: string;
   avatarColor: string;
   passwordHash: string | null;
   defaultCurrency?: string;
+  phone?: string | null;
 }): Promise<UserRow> {
   const rows = await query<UserRow>(
-    `INSERT INTO users (id, email, name, avatar_color, default_currency, password_hash)
-     VALUES ($1, $2, $3, $4, $5, $6)
+    `INSERT INTO users (id, email, name, avatar_color, default_currency, password_hash, phone)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)
      RETURNING *`,
     [
       newId(),
@@ -43,6 +47,7 @@ export async function insertUser(input: {
       input.avatarColor,
       input.defaultCurrency ?? "USD",
       input.passwordHash,
+      input.phone ?? null,
     ],
   );
   return rows[0];
@@ -66,6 +71,16 @@ export async function findUserById(userId: string): Promise<UserRow | undefined>
  */
 export async function findUserByEmail(email: string): Promise<UserRow | undefined> {
   return queryOne<UserRow>(`SELECT * FROM users WHERE lower(email) = lower($1)`, [email]);
+}
+
+/**
+ * Looks a user up by phone number (E.164, exact match).
+ *
+ * @param phone - Phone number in E.164 form (e.g. "+8801712345678").
+ * @returns The matching row, or undefined when no such user exists.
+ */
+export async function findUserByPhone(phone: string): Promise<UserRow | undefined> {
+  return queryOne<UserRow>(`SELECT * FROM users WHERE phone = $1`, [phone]);
 }
 
 /**

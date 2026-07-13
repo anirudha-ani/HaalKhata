@@ -66,12 +66,12 @@ export function LoginPage() {
             ) : null}
             <input
               className={inputClass}
-              type="email"
-              placeholder="Email"
-              aria-label="Email"
-              value={login.email}
-              onChange={(event) => login.setEmail(event.target.value)}
-              autoComplete="email"
+              type="text"
+              placeholder="Email or phone"
+              aria-label="Email or phone"
+              value={login.identifier}
+              onChange={(event) => login.setIdentifier(event.target.value)}
+              autoComplete="username"
               required
             />
             <input
@@ -103,8 +103,8 @@ export function LoginPage() {
 
           {login.mode === "signup" ? (
             <p className="mt-4 text-xs leading-relaxed text-ink-soft">
-              Invited by a friend? Sign up with the same email and your shared
-              expenses will already be here.
+              Invited by a friend? Sign up with the same email or phone and
+              your shared expenses will already be here.
             </p>
           ) : null}
         </div>

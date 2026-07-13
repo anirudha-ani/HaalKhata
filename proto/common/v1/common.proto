@@ -2,9 +2,9 @@ syntax = "proto3";
 
 package common.v1;
 
-// A person. Users may be "shadow" users (invited by email, not yet
-// registered) — they participate in expenses like anyone else and claim
-// the account by signing up with the same email.
+// A person. Users may be "shadow" users (invited, not yet registered) — they
+// participate in expenses like anyone else and claim the account by signing
+// up with the same email or phone.
 message User {
   string id = 1;
   string email = 2;
@@ -14,6 +14,9 @@ message User {
   // ISO 4217 code, e.g. "USD", "BDT".
   string default_currency = 5;
   bool registered = 6;
+  // Phone number in E.164 format (e.g. "+8801712345678"); empty when unset.
+  // An account may have an email, a phone, or both; either can be used to log in.
+  string phone = 7;
 }
 
 // A pairwise debt: `from_user_id` owes `to_user_id`.
