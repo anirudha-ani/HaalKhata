@@ -7,6 +7,7 @@ import {
   isMember,
   listGroupsByUser,
   listMembers,
+  memberRole,
   removeMember,
 } from "@/server/group/repo/groups.repo";
 import { findUserById } from "@/server/auth/repo/users.repo";
@@ -16,8 +17,26 @@ import { insertNotifications } from "@/server/social/repo/notifications.repo";
 import { findOrCreateUserByEmail } from "@/server/auth/usecase/auth.usecase";
 import { userNetInGroup } from "@/server/expense/usecase/balance.usecase";
 import { denied, invalid, notFound } from "@/server/common/errors";
-import { GROUP_TYPES } from "@/server/group/group.constants";
+import { GROUP_TYPES, OWNER_ROLE } from "@/server/group/group.constants";
 import { toGroup, toMember } from "./group.mapper";
+
+/**
+ * Loads a group and asserts the caller is its owner; used for owner-only
+ * actions like inviting or removing members.
+ *
+ * @param groupId - Id of the group to load.
+ * @param userId - Id of the authenticated caller.
+ * @returns The loaded group row.
+ * @throws UsecaseError (not_found) when the group does not exist.
+ * @throws UsecaseError (permission_denied) when the caller is not the owner.
+ */
+async function assertGroupOwner(groupId: string, userId: string) {
+  const group = await findGroupById(groupId);
+  if (!group) notFound("group not found");
+  const role = await memberRole(groupId, userId);
+  if (role !== OWNER_ROLE) denied("only the group owner can do this");
+  return group;
+}
 
 /**
  * Creates a group owned by the caller and records a "group_created" activity
@@ -111,11 +130,7 @@ export async function addMemberByEmail(
   userId: string,
   input: { groupId: string; email: string; name?: string },
 ) {
-  const group = await findGroupById(input.groupId);
-  if (!group) notFound("group not found");
-  if (!(await isMember(input.groupId, userId))) {
-    denied("you are not a member of this group");
-  }
+  const group = await assertGroupOwner(input.groupId, userId);
 
   const user = await findOrCreateUserByEmail(input.email, input.name);
   if (await isMember(input.groupId, user.id)) {
@@ -161,10 +176,9 @@ export async function removeMemberFromGroup(
   userId: string,
   input: { groupId: string; userId: string },
 ) {
-  const group = await findGroupById(input.groupId);
-  if (!group) notFound("group not found");
-  if (!(await isMember(input.groupId, userId))) {
-    denied("you are not a member of this group");
+  await assertGroupOwner(input.groupId, userId);
+  if (input.userId === userId) {
+    invalid("owners cannot remove themselves; transfer ownership first");
   }
   if ((await userNetInGroup(input.userId, input.groupId)) !== 0) {
     invalid("cannot remove a member with an outstanding balance — settle up first");

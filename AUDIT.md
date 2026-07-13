@@ -101,11 +101,10 @@ Findings are sorted by severity within each section. File:line references use
   passwords before running scrypt (CPU-DoS guard).
 
 ### Security — Authorization (IDOR / privilege)
-- **B7. Any group member can remove any other member.**
-  `group.usecase.ts:160` (`removeMemberFromGroup`) only checks that the
-  *caller* is a member — not that they're the owner or an admin. A regular
-  member can kick the group creator. The `role` column exists but is never
-  consulted.
+- **B7.~~Any group member can remove any other member.~~** ✅ *Fixed.*
+  `removeMemberFromGroup` now calls `assertGroupOwner`, which checks the
+  caller's `role` is `"owner"` via the new `memberRole` repo helper.
+  Owners also can't remove themselves (prevents orphaned groups).
 - **B8. Any participant can edit/delete any expense.**
   `expense.usecase.ts:250` (`assertCanTouch`) grants write/delete to every
   payer, ower, or group member. There's no "only the creator can edit"
@@ -115,10 +114,9 @@ Findings are sorted by severity within each section. File:line references use
   themselves to anyone else — even if no debt exists, or for more than they
   owe. This flips the balance so the "creditor" now owes the attacker.
   Splitwise requires the settlement to be ≤ the outstanding debt.
-- **B10. `addMemberByEmail` lets any member invite anyone.**
-  `group.usecase.ts:110` — no owner/admin check. Combine with B8/B9 and a
-  malicious member can invite themselves into a group, add expenses, and
-  siphon balance.
+- **B10.~~`addMemberByEmail` lets any member invite anyone.~~** ✅ *Fixed.*
+  `addMemberByEmail` now also goes through `assertGroupOwner`, so only the
+  group owner can invite new members.
 
 ### Security — Input validation
 - **B11. `expense_date` is accepted as any string.** `buildExpenseWrite`

@@ -134,3 +134,18 @@ export async function isMember(groupId: string, userId: string): Promise<boolean
   );
   return membershipRow !== undefined;
 }
+
+/**
+ * Fetches a member's role in a group (e.g. "owner" or "member").
+ *
+ * @param groupId - Id of the group to check.
+ * @param userId - Id of the user whose role is being fetched.
+ * @returns The role string, or undefined when the user is not a member.
+ */
+export async function memberRole(groupId: string, userId: string): Promise<string | undefined> {
+  const roleRow = await queryOne<{ role: string }>(
+    `SELECT role FROM group_members WHERE group_id = $1 AND user_id = $2`,
+    [groupId, userId],
+  );
+  return roleRow?.role;
+}
