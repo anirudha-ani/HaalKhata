@@ -29,7 +29,7 @@ import {
 import { amountOwed } from "./balance.usecase";
 import { denied, invalid, notFound } from "@/server/common/errors";
 import { toUser } from "@/server/auth/usecase/user.mapper";
-import { SPLIT_TYPES } from "@/server/expense/expense.constants";
+import { SPLIT_TYPES, ISO_DATE_PATTERN, MAX_EXPENSE_PARTICIPANTS } from "@/server/expense/expense.constants";
 import { toExpense, toSettlement } from "./expense.mapper";
 
 /**
@@ -41,6 +41,24 @@ import { toExpense, toSettlement } from "./expense.mapper";
  */
 function formatMoney(cents: number, currency: string): string {
   return `${currency} ${(cents / 100).toFixed(2)}`;
+}
+
+/**
+ * Validates and normalizes an expense_date input. Returns today's date when
+ * empty, or rejects non-YYYY-MM-DD strings so bad input can't reach the DB.
+ *
+ * @param expenseDate - Raw date string from the request, or empty.
+ * @returns A valid YYYY-MM-DD date string.
+ * @throws UsecaseError "invalid_argument" when the date is not YYYY-MM-DD.
+ */
+function normalizeExpenseDate(expenseDate: string): string {
+  if (!expenseDate) return new Date().toISOString().slice(0, 10);
+  if (!ISO_DATE_PATTERN.test(expenseDate)) {
+    invalid("expense_date must be a YYYY-MM-DD string");
+  }
+  const parsed = new Date(`${expenseDate}T00:00:00Z`);
+  if (Number.isNaN(parsed.getTime())) invalid("expense_date is not a real calendar date");
+  return expenseDate;
 }
 
 /**
@@ -62,7 +80,19 @@ async function buildExpenseWrite(
 ): Promise<ExpenseWrite> {
   const description = request.description.trim();
   if (description.length === 0) invalid("description is required");
+  if (description.length > 200) invalid("description is too long (max 200 characters)");
   if (!SPLIT_TYPES.has(request.splitType)) invalid(`unknown split type "${request.splitType}"`);
+
+  // Cap input array sizes to bound the per-request SQL fan-out (DoS guard).
+  if (request.payers.length === 0 || request.payers.length > MAX_EXPENSE_PARTICIPANTS) {
+    invalid(`payers must be between 1 and ${MAX_EXPENSE_PARTICIPANTS}`);
+  }
+  if (request.splitSpecs.length > MAX_EXPENSE_PARTICIPANTS) {
+    invalid(`too many split specs (max ${MAX_EXPENSE_PARTICIPANTS})`);
+  }
+  if (request.items.length > MAX_EXPENSE_PARTICIPANTS) {
+    invalid(`too many line items (max ${MAX_EXPENSE_PARTICIPANTS})`);
+  }
 
   const groupId = request.groupId || null;
   let currency = request.currency;
@@ -152,7 +182,7 @@ async function buildExpenseWrite(
     amountCents,
     currency,
     category: request.category || "general",
-    expenseDate: request.expenseDate || new Date().toISOString().slice(0, 10),
+    expenseDate: normalizeExpenseDate(request.expenseDate),
     splitType: request.splitType,
     notes: request.notes,
     taxCents,

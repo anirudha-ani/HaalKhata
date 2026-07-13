@@ -120,15 +120,14 @@ Findings are sorted by severity within each section. File:line references use
   group owner can invite new members.
 
 ### Security — Input validation
-- **B11. `expense_date` is accepted as any string.** `buildExpenseWrite`
-  (`expense.usecase.ts:154`) does `request.expenseDate || today` with no
-  format validation. A client can send `"2099-12-31"` or `"not-a-date"`,
-  which lands in the DB as TEXT and breaks ordering / display downstream.
-- **B12. No upper bound on array sizes.** A `CreateExpenseRequest` with
-  10,000 payers or 10,000 items will run 10,000 sequential `INSERT`s inside
-  a transaction (`expenses.repo.ts:92` `insertChildren` — one query per
-  child row in a `for` loop). This is both a performance and a DoS issue.
-  Use `UNNEST` bulk inserts or cap `payers.length`/`items.length`.
+- **B11.~~`expense_date` is accepted as any string.~~** ✅ *Fixed.* Added
+  `normalizeExpenseDate` in `expense.usecase` that validates the
+  `YYYY-MM-DD` shape (`ISO_DATE_PATTERN`) and that the date is real,
+  rejecting garbage like `"not-a-date"`. Empty falls back to today.
+- **B12.~~No upper bound on array sizes.~~** ✅ *Fixed.* `buildExpenseWrite`
+  now rejects requests with more than `MAX_EXPENSE_PARTICIPANTS` (100) payers,
+  split specs, or items, and a description > 200 chars. Bounds the per-request
+  SQL fan-out in `insertChildren`. (See U10 for the bulk-insert follow-up.)
 - **B13. `category` and `method` are free-text.** `request.category ||
   "general"` and `request.method || "cash"` are stored verbatim with no
   allowlist, despite `GROUP_TYPES` and split-type sets existing elsewhere.
