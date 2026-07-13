@@ -240,8 +240,8 @@ export async function createExpense(userId: string, request: CreateExpenseReques
 }
 
 /**
- * Ensures the caller may read or modify an expense: group membership for
- * group expenses, otherwise being a participant (creator, payer, or ower).
+ * Ensures the caller may read an expense: group membership for group
+ * expenses, otherwise being a participant (creator, payer, or ower).
  *
  * @param userId - Authenticated caller to authorize.
  * @param expense - The expense row being accessed.
@@ -264,6 +264,25 @@ async function assertCanTouch(userId: string, expense: ExpenseRow): Promise<void
 }
 
 /**
+ * Ensures the caller may MODIFY an expense (edit or delete). Only the
+ * expense's creator may modify it — participants can still view. For group
+ * expenses the creator must additionally still be a member of the group.
+ *
+ * @param userId - Authenticated caller requesting the modification.
+ * @param expense - The expense row being modified.
+ * @throws UsecaseError (permission_denied) if the caller did not create the
+ *   expense, or (for group expenses) is no longer a member.
+ */
+async function assertCanModify(userId: string, expense: ExpenseRow): Promise<void> {
+  if (expense.created_by !== userId) {
+    denied("only the expense creator can edit or delete it");
+  }
+  if (expense.group_id && !(await isMember(expense.group_id, userId))) {
+    denied("you are no longer a member of this group");
+  }
+}
+
+/**
  * Replaces an expense with a freshly validated version (original creator is
  * preserved) and fans out an "updated" activity + notifications.
  *
@@ -281,7 +300,7 @@ export async function updateExpense(
 ) {
   const existing = await findExpenseById(expenseId);
   if (!existing || existing.deleted_at) notFound("expense not found");
-  await assertCanTouch(userId, existing);
+  await assertCanModify(userId, existing);
   const write = await buildExpenseWrite(userId, request);
   write.createdBy = existing.created_by;
   await replaceExpense(expenseId, write);
@@ -300,7 +319,7 @@ export async function updateExpense(
 export async function deleteExpense(userId: string, expenseId: string): Promise<void> {
   const existing = await findExpenseById(expenseId);
   if (!existing || existing.deleted_at) notFound("expense not found");
-  await assertCanTouch(userId, existing);
+  await assertCanModify(userId, existing);
   const children = await loadExpenseChildren([expenseId]);
   await softDeleteExpense(expenseId);
   await recordExpenseActivity(

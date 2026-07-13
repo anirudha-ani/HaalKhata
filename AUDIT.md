@@ -105,10 +105,11 @@ Findings are sorted by severity within each section. File:line references use
   `removeMemberFromGroup` now calls `assertGroupOwner`, which checks the
   caller's `role` is `"owner"` via the new `memberRole` repo helper.
   Owners also can't remove themselves (prevents orphaned groups).
-- **B8. Any participant can edit/delete any expense.**
-  `expense.usecase.ts:250` (`assertCanTouch`) grants write/delete to every
-  payer, ower, or group member. There's no "only the creator can edit"
-  rule. A participant can silently rewrite splits or delete the expense.
+- **B8.~~Any participant can edit/delete any expense.~~** ✅ *Fixed.* Added
+  `assertCanModify` (separate from the read-only `assertCanTouch`) that
+  requires `expense.created_by === userId`; `updateExpense` and
+  `deleteExpense` now use it. Viewing (`getExpense`) still allows any
+  participant. For group expenses the creator must also still be a member.
 - **B9. Settlement records have no balance guard.** `recordSettlement`
   (`expense.usecase.ts:483`) lets a user record an *arbitrary* payment from
   themselves to anyone else — even if no debt exists, or for more than they
