@@ -34,6 +34,19 @@ Query hooks (`useXAPI`) wrapping the typed Connect client.
 
 ## Run it
 
+### One-command setup (fresh box)
+
+```sh
+./install-deps.sh   # installs Node, pnpm, Docker, buf, deps + generates protogen
+./dev.sh            # starts db + web server at http://127.0.0.1:3000
+```
+
+`install-deps.sh` installs everything that's missing (skips what's already
+there); `dev.sh` starts the Postgres db and the Next.js dev server. Use
+`./dev.sh --clean` for a fresh database, `./dev.sh --down` to stop everything.
+
+### Manual setup
+
 ```sh
 pnpm install
 pnpm gen                 # buf generate → packages/protogen
