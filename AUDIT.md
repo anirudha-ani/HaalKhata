@@ -248,10 +248,11 @@ Findings are sorted by severity within each section. File:line references use
   user id) and walked with index pointers; the exhausted side's pointer
   advances instead of re-sorting + shifting. O(n log n) instead of
   O(n² log n). All 21 balance tests still pass (net-preservation holds).
-- **U9. `listExpensesInvolvingUser` uses correlated `EXISTS` subqueries
-  per row** (`expenses.repo.ts:266`). With the missing
-  `expense_payers(user_id)` index (B15), this is a full scan × per-row
-  probe.
+- **U9.~~`listExpensesInvolvingUser` uses correlated `EXISTS` subqueries~~**
+  ✅ *Mitigated by B15.* The new `expense_payers(user_id)` index turns the
+  per-row `EXISTS` probe from a full scan into an index lookup. The query
+  shape is unchanged but is now backed by indexes on both
+  `expense_splits(user_id)` and `expense_payers(user_id)`.
 - **U10.~~`insertChildren` runs one INSERT per row~~** ✅ *Fixed.*
   Replaced the per-row `for` loops with a `multiRowValues` helper that
   builds `VALUES ($1,$2), ($3,$4), …` clauses. Payers, splits, items, and
@@ -259,26 +260,20 @@ Findings are sorted by severity within each section. File:line references use
   receipt from ~120 round-trips to 3.
 
 ### Structural / maintainability
-- **U11. The entire `data/` directory is gitignored but `DATA_DIRECTORY`
-  defaults to `process.cwd()/data`** (`auth.constants.ts:16`). In the
-  Docker runtime image there's no `data/` (`.dockerignore` excludes it),
-  so the dev-secret fallback writes to `/app/data/.secret` — which works
-  *only* because the image runs as `node` and `/app` is writable. This is
-  undocumented and fragile. In production `SESSION_SECRET` must be set,
-  and the app should hard-fail instead of silently writing a secret file.
+- **U11.~~`data/` directory fragility.~~** ✅ *Fixed by B5.* In production
+  `secret()` now hard-fails when `SESSION_SECRET` is unset instead of
+  silently writing a dev-secret file to an undocumented `data/` path. The
+  dev fallback (persisted `data/.secret`) only runs outside production, so
+  the Docker read-only-`data/` concern is gone.
 - **U12.~~`findOrCreateUserByEmail` is a TOCTOU race.~~** ✅ *Fixed.* The
   `insertUser` call is now wrapped in a try/catch that detects Postgres
   SQLSTATE `23505` (unique_violation) on `lower(email)` and re-reads the
   now-existing row, so two concurrent invites to the same email no longer
   surface a 500.
-- **U13. `claimUser` doesn't verify the shadow user's email matches.**
-  Anyone who can guess a shadow user's id can claim it by signing up with
-  a *different* email — `signUp` (`auth.usecase.ts:142`) looks up by
-  email, finds the shadow row, and calls `claimUser(existing.id, ...)`,
-  overwriting the name + password but never checking that the email in the
-  row matches the signup email. Actually — wait, the lookup *is* by email,
-  so the emails match by construction. This one's fine. (Leaving the note
-  to show it was checked.)
+- **U13.~~`claimUser` doesn't verify the shadow user's email matches.~~**
+  ✅ *Non-issue (verified).* `signUp` looks the shadow row up *by email*
+  (`findUserByEmail`), so the claimed row's email matches the signup email
+  by construction. No fix needed.
 - **U14.~~No error boundary or structured logging.~~** ✅ *Fixed.* Added
   `server/common/logger.ts` (JSON-line `logEvent`/`logError` to stdout/stderr
   with timestamp + context). `runUsecase` now takes the handler context and
@@ -297,33 +292,35 @@ Findings are sorted by severity within each section. File:line references use
   `packages/protogen/src/` to `.gitignore` and `git rm --cached` the 6
   generated files. `pnpm gen` (and the Docker `pnpm gen` build step)
   regenerate them; the README's setup already lists `pnpm gen` as step 1.
-- **U18. `pnpm-lock.yaml` + a staged `node_modules/` untracking fix in the
-  last commit** (`git log` shows "Fix .gitignore: unanchor node_modules")
-  suggests `node_modules` was previously committed. Verify
-  `git ls-files | grep node_modules` is empty.
+- **U18.~~`node_modules` previously committed~~** ✅ *Verified.* `git ls-files | grep node_modules`
+  returns 0 — the earlier `.gitignore` fix fully untracked it.
 - **U19. No `AGENTS.md` / `CONTRIBUTING.md`.** The README is good, but
   there's no guide for an AI agent or new contributor on *how* to add a
   domain (new proto → regen → handler → usecase → repo → route → page).
-  The `plan.txt` has it but it's not discoverable.
+  The `plan.txt` has it but it's not discoverable. ⏸ *Deferred (docs-only).*
 
 ### Frontend ugliness
-- **U20. The service worker caches `/dashboard` at install time**
-  (`sw.js:3` `SHELL`). If the user is logged out, the SW caches the
-  login-redirect HTML for `/dashboard` and serves it forever, even after
-  login. The network-first fetch handler (`sw.js:24`) mitigates online, but
-  offline shows a stale redirect. Don't precache HTML routes; precache only
-  static assets.
-- **U21. `sw.js` has no version-bump discipline.** `CACHE = "haalkhata-v1"`
-  — when you deploy a new build, you must manually bump `v1`→`v2` or users
-  get stale assets. There's no build step that injects a hash. Tie the
-  cache name to the Next build id.
-- **U22. `AppShell` hardcodes `NAVIGATION_ITEMS.slice(0, 2)` and
-  `.slice(3)`** (`AppShell.tsx:139,149`) to skip the middle "add" button.
-  Brittle — reordering the constants array silently breaks the mobile nav.
-- **U23. No skeleton/optimistic updates.** Every mutation invalidates
-  `MONEY_KEYS` (`queryKeys.ts:52`) which is a broad prefix match —
-  refetches basically everything. There's no `onMutate` optimistic update,
-  so adding an expense shows a spinner then a full re-fetch.
+- **U20.~~The service worker caches `/dashboard` at install time~~** ✅
+  *Fixed.* `SHELL` now contains only static, content-hashed assets
+  (manifest + icons); HTML routes are excluded. Navigation requests use a
+  dedicated network-first handler with an offline fallback, so a logged-out
+  user no longer gets a stale authed shell.
+- **U21.~~`sw.js` has no version-bump discipline~~** ✅ *Fixed (mitigated).*
+  Once HTML is no longer precached (U20), the stale-asset problem largely
+  disappears: Next hashes its JS/CSS chunks, so a new deploy's HTML
+  references new hashes the SW never cached. The `CACHE_VERSION` constant
+  is now explicit with a comment, and `activate` still purges old versions.
+  A true build-id injection (via a route handler) is no longer needed.
+- **U22.~~`AppShell` hardcodes `NAVIGATION_ITEMS.slice(0, 2)` and `.slice(3)`~~**
+  ✅ *Fixed.* Replaced the brittle index slices with explicit
+  `MOBILE_LEFT_NAV` / `MOBILE_RIGHT_NAV` constants. This also fixes a real
+  bug the slicing caused: Scan (index 2) was dropped from the mobile nav
+  while Activity (index 4, redundant with the header bell) was included.
+  The mobile bottom nav now shows Home, Groups, [Add], Scan, Friends.
+- **U23. No skeleton/optimistic updates.** ⏸ *Deferred.* Every mutation
+  invalidates the broad `MONEY_KEYS` prefix and re-fetches. Optimistic
+  updates would smooth this but require per-mutation `onMutate` handlers —
+  a larger UX pass, deferred.
 
 ---
 

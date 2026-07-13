@@ -7,7 +7,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Bell, CircleUserRound, LogOut, Plus } from "lucide-react";
 import type { ReactNode } from "react";
 import { authClient } from "@/lib/api/connect";
-import { NAVIGATION_ITEMS } from "./shell.constants";
+import { NAVIGATION_ITEMS, MOBILE_LEFT_NAV, MOBILE_RIGHT_NAV } from "./shell.constants";
 import { Avatar } from "@/components/ui/Avatar";
 import { useShellData } from "./hooks/useShellData";
 
@@ -136,7 +136,7 @@ export function AppShell({
       {/* Mobile bottom nav */}
       <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-line bg-card/95 backdrop-blur md:hidden">
         <div className="mx-auto grid max-w-md grid-cols-5 items-end px-2 pt-1.5 pb-[max(0.375rem,env(safe-area-inset-bottom))]">
-          {NAVIGATION_ITEMS.slice(0, 2).map(({ href, label, icon: Icon }) => (
+          {MOBILE_LEFT_NAV.map(({ href, label, icon: Icon }) => (
             <MobileTab key={href} href={href} label={label} active={isActive(href)} icon={<Icon className="h-5 w-5" />} />
           ))}
           <Link
@@ -146,7 +146,7 @@ export function AppShell({
           >
             <Plus className="h-6 w-6" />
           </Link>
-          {NAVIGATION_ITEMS.slice(3).map(({ href, label, icon: Icon }) => (
+          {MOBILE_RIGHT_NAV.map(({ href, label, icon: Icon }) => (
             <MobileTab key={href} href={href} label={label} active={isActive(href)} icon={<Icon className="h-5 w-5" />} />
           ))}
         </div>
