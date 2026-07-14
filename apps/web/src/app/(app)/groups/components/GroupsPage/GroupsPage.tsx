@@ -105,7 +105,7 @@ export function GroupsPage() {
           >
             <input
               autoFocus
-              placeholder="Group name (e.g. Goa Trip)"
+              placeholder="Group name (e.g. Mymensingh Trip)"
               aria-label="Group name"
               value={groupsState.name}
               onChange={(event) => groupsState.setName(event.target.value)}
