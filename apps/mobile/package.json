@@ -4,9 +4,9 @@
   "private": true,
   "main": "index.ts",
   "scripts": {
-    "dev": "expo start",
-    "android": "expo start --android",
-    "ios": "expo start --ios",
+    "dev": "expo start --dev-client",
+    "android": "expo run:android",
+    "ios": "expo run:ios",
     "lint": "eslint app src index.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
@@ -23,6 +23,7 @@
     "@tanstack/react-query-persist-client": "^5.101.2",
     "expo": "~57.0.4",
     "expo-constants": "~57.0.3",
+    "expo-dev-client": "~57.0.0",
     "expo-image-picker": "~57.0.2",
     "expo-linking": "~57.0.2",
     "expo-router": "~57.0.4",

@@ -65,8 +65,14 @@ in `apps/web/.env`.
 ### Mobile app (Expo)
 
 ```sh
-pnpm dev:mobile          # expo start — scan the QR with Expo Go
+./dev.sh --mobile-android   # boot emulator + build/install dev client + Metro + web server
+./dev.sh --mobile-ios       # same for iOS simulator
 ```
+
+The first run builds and installs the dev client (several minutes).
+Subsequent runs reuse the emulator and installed app — Metro and the web
+server start instantly. The dev client (not Expo Go) connects to Metro
+automatically.
 
 The app signs in with bearer tokens against the same `/api/connect`
 endpoints. In dev it targets port 3000 on the machine running Metro, so

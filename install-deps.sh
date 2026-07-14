@@ -7,9 +7,13 @@
 #   3. Docker Engine + compose plugin (via the official get.docker.com script on Linux;
 #      macOS prints instructions for Docker Desktop)
 #   4. buf CLI (npm global — also available as a workspace devDependency)
-#   5. Workspace npm dependencies (pnpm install)
-#   6. Generated protobuf TypeScript (pnpm gen → packages/protogen/src)
-#   7. .env files copied from .env.example (repo root + apps/web) if absent
+#   5. JDK 17 (for Android Gradle builds — openjdk-17 on Linux, temurin@17 on macOS)
+#   6. Android SDK (verified via ANDROID_HOME or common install paths; prints
+#      instructions if missing — install Android Studio manually)
+#   7. Workspace npm dependencies (pnpm install)
+#   8. Generated protobuf TypeScript (pnpm gen → packages/protogen/src)
+#   9. apps/mobile native modules verified against Expo SDK (expo install --check)
+#   10. .env files copied from .env.example (repo root + apps/web) if absent
 #
 # Usage:
 #   ./install-deps.sh           install everything that's missing
@@ -184,7 +188,98 @@ install_buf() {
   ok "buf $(buf --version) ready"
 }
 
-# --- 5 & 6. workspace deps + protogen ------------------------------------------
+# --- 5. JDK 17 -----------------------------------------------------------------
+
+# Resolve the major version from `java -version`. Handles both modern
+# ("17.0.1") and legacy ("1.8.0") version strings.
+# @param $1  the first line of `java -version` output
+# @returns 0 and echoes the major version number
+java_major_version() {
+  local ver="$1"
+  local major
+  major="$(printf '%s' "$ver" | sed 's/.*"\([0-9]*\)\.\([0-9]*\)\..*/\1/')"
+  if [[ "$major" == "1" ]]; then
+    major="$(printf '%s' "$ver" | sed 's/.*"\([0-9]*\)\.\([0-9]*\)\..*/\2/')"
+  fi
+  printf '%s' "$major"
+}
+
+install_java() {
+  local os
+  os="$(os_name)"
+
+  if have java; then
+    local ver major
+    ver="$(java -version 2>&1 | head -1)"
+    major="$(java_major_version "$ver")"
+    if (( major >= 17 )); then
+      ok "JDK $major already installed ($(printf '%s' "$ver" | sed 's/^.*version "//; s/".*//'))"
+      return 0
+    fi
+    warn "JDK $major is too old (<17, required by Android Gradle Plugin); installing JDK 17"
+  fi
+
+  log "Installing JDK 17…"
+  case "$os" in
+    linux)
+      if have apt-get; then
+        sudo_if_needed apt-get update -qq
+        sudo_if_needed apt-get install -y openjdk-17-jdk
+      else
+        die "Unsupported Linux distro (no apt-get). Install OpenJDK 17 manually: https://adoptium.net/"
+      fi
+      ;;
+    macos)
+      have brew || die "Homebrew not found. Install it from https://brew.sh and re-run."
+      brew install --cask temurin@17
+      ;;
+    *)
+      die "Unsupported OS for JDK install. Install OpenJDK 17 manually: https://adoptium.net/"
+      ;;
+  esac
+
+  ver="$(java -version 2>&1 | head -1)"
+  ok "installed JDK ($(printf '%s' "$ver" | sed 's/^.*version "//; s/".*//'))"
+
+  if [[ -z "${JAVA_HOME:-}" ]]; then
+    warn "JAVA_HOME is not set. The dev.sh script resolves it automatically, but"
+    warn "for other tooling add it to your shell profile (~/.bashrc / ~/.zshrc)."
+  fi
+}
+
+# --- 6. Android SDK ------------------------------------------------------------
+
+# Verify the Android SDK is installed. Checks ANDROID_HOME / ANDROID_SDK_ROOT
+# env vars, then common install paths. This is warning-only (not fatal) —
+# the SDK is too large to install silently and requires Android Studio.
+check_android_sdk() {
+  if [[ -n "${ANDROID_HOME:-}" ]] && [[ -x "${ANDROID_HOME}/platform-tools/adb" ]]; then
+    ok "Android SDK found (ANDROID_HOME=${ANDROID_HOME})"
+    return 0
+  fi
+  if [[ -n "${ANDROID_SDK_ROOT:-}" ]] && [[ -x "${ANDROID_SDK_ROOT}/platform-tools/adb" ]]; then
+    ok "Android SDK found (ANDROID_SDK_ROOT=${ANDROID_SDK_ROOT})"
+    return 0
+  fi
+
+  local sdk_path
+  for sdk_path in \
+    "$HOME/Android/Sdk" \
+    "$HOME/Library/Android/sdk" \
+    "/opt/android-sdk"; do
+    if [[ -x "$sdk_path/platform-tools/adb" ]]; then
+      ok "Android SDK found at $sdk_path"
+      warn "Set ANDROID_HOME=$sdk_path in your shell profile (~/.bashrc / ~/.zshrc) for best results."
+      return 0
+    fi
+  done
+
+  warn "Android SDK not found. To use --mobile-android, install Android Studio:"
+  warn "    https://developer.android.com/studio"
+  warn "Then re-run './install-deps.sh' to verify."
+}
+
+# --- 7 & 8. workspace deps + protogen ------------------------------------------
 
 install_workspace() {
   cd "$(dirname "$0")"
@@ -209,7 +304,22 @@ install_workspace() {
   fi
 }
 
-# --- 7. .env files -------------------------------------------------------------
+# --- 9. mobile native module check ---------------------------------------------
+
+check_mobile_deps() {
+  cd "$(dirname "$0")"
+  if [[ ! -d apps/mobile ]]; then
+    return 0
+  fi
+  log "Verifying apps/mobile native modules against Expo SDK (expo install --check)…"
+  if (cd apps/mobile && pnpm exec expo install --check); then
+    ok "apps/mobile native modules are SDK-compatible"
+  else
+    warn "expo install --check reported an issue — run 'pnpm --filter @haalkhata/mobile exec expo install --check' to fix, then re-run ./install-deps.sh"
+  fi
+}
+
+# --- 10. .env files ------------------------------------------------------------
 
 setup_env_files() {
   cd "$(dirname "$0")"
@@ -230,7 +340,7 @@ setup_env_files() {
 # --- main ----------------------------------------------------------------------
 
 usage() {
-  sed -n '2,21p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,24p' "$0" | sed 's/^# \{0,1\}//'
   exit 0
 }
 
@@ -246,11 +356,16 @@ main() {
   install_pnpm
   install_docker
   install_buf
+  install_java
+  check_android_sdk
   install_workspace
+  check_mobile_deps
   setup_env_files
 
   echo
   ok "all set. Run './dev.sh' to start the database and web server."
+  printf "       (add --mobile-android or --mobile-ios to also boot the emulator/simulator,\n"
+  printf "        build+install the dev client, and start Metro alongside the web server)\n"
 }
 
 main "$@"

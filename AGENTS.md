@@ -210,9 +210,17 @@ with colocated tests. Mobile-specific rules:
 - **Query keys and money helpers are copies of the web files** — keep
   `lib/api/queryKeys.ts` and `lib/money/*` byte-identical with
   `apps/web/src/lib/...` when either side changes.
-- Dev: `pnpm dev:mobile` (Expo Go). The API base URL derives from the Metro
-  host (port 3000) or `EXPO_PUBLIC_API_URL`. Native-module versions must
-  match the SDK — check with `npx expo install --check`.
+- Dev: `./dev.sh --mobile-android` (or `--mobile-ios`) does the full
+  end-to-end flow: boots an emulator/simulator if none is running, builds +
+  installs the dev client via `expo prebuild` + `gradlew installDebug`
+  (Android) or `expo run:ios --no-bundler` (iOS) if the app is missing,
+  starts Metro in the background, launches the app, then starts the web
+  server in the foreground. Subsequent runs are instant — the emulator and
+  installed app are reused. Re-run with a clean `android/` (delete
+  `apps/mobile/android`) only when native dependencies change. The API base
+  URL derives from the Metro host (port 3000) or `EXPO_PUBLIC_API_URL`.
+  Native-module versions must match the SDK — check with
+  `npx expo install --check`.
 
 ## Common pitfalls
 
