@@ -9,6 +9,7 @@ import { Money } from "@/components/ui/Money";
 import { SettleUpModal } from "@/components/modals/SettleUpModal";
 import { Spinner } from "@/components/ui/Spinner";
 import { formatMoney } from "@/lib/money/money";
+import { getGreeting } from "@/lib/greeting";
 import { useDashboard } from "./hooks/useDashboard";
 
 /**
@@ -29,7 +30,7 @@ export function DashboardPage() {
       <header className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold">
-            {dashboard.me ? `Shubho din, ${dashboard.me.name.split(" ")[0]}` : "Welcome"}
+            {dashboard.me ? `${getGreeting()}, ${dashboard.me.name.split(" ")[0]}` : "Welcome"}
           </h1>
           <p className="mt-1 text-ink-soft">Here&apos;s where your ledger stands.</p>
         </div>

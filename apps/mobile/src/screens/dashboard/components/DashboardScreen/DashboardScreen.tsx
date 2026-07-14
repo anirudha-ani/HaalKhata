@@ -12,6 +12,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { Money } from "@/components/ui/Money";
 import { Spinner } from "@/components/ui/Spinner";
 import { formatMoney } from "@/lib/money/money";
+import { getGreeting } from "@/lib/greeting";
 import { colors, fonts, radii, spacing } from "@/lib/theme/theme";
 import { useDashboard } from "./hooks/useDashboard";
 
@@ -39,7 +40,7 @@ export function DashboardScreen() {
         <>
           <View>
             <Text style={styles.greeting}>
-              {dashboard.me ? `Shubho din, ${dashboard.me.name.split(" ")[0]}` : "Welcome"}
+              {dashboard.me ? `${getGreeting()}, ${dashboard.me.name.split(" ")[0]}` : "Welcome"}
             </Text>
             <Text style={styles.greetingSub}>Here&apos;s where your ledger stands.</Text>
           </View>
