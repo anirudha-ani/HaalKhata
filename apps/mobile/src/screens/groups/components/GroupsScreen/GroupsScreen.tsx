@@ -107,7 +107,7 @@ export function GroupsScreen() {
             <TextField
               autoFocus
               onChangeText={groupsState.setName}
-              placeholder="Group name (e.g. Goa Trip)"
+              placeholder="Group name (e.g. Sundarban Trip)"
               value={groupsState.name}
             />
             <View style={styles.typeGrid}>
