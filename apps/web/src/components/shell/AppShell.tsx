@@ -15,10 +15,8 @@ import { useShellData } from "./hooks/useShellData";
 function Logo() {
   return (
     <Link href="/dashboard" className="flex items-baseline gap-2 px-1">
-      <span className="font-display text-2xl font-bold text-brand-600">হালখাতা</span>
-      <span className="hidden text-xs font-medium tracking-widest text-ink-soft uppercase lg:inline">
-        HaalKhata
-      </span>
+      <span className="font-display text-2xl font-bold text-brand-600">HaalKhata</span>
+      
     </Link>
   );
 }

@@ -20,10 +20,7 @@ export function LoginPage() {
     <main className="flex min-h-dvh items-center justify-center bg-paper px-4 py-10">
       <div className="w-full max-w-sm">
         <div className="mb-8 text-center">
-          <h1 className="font-display text-5xl font-bold text-brand-600">হালখাতা</h1>
-          <p className="mt-1 text-sm font-medium tracking-[0.25em] text-ink-soft uppercase">
-            HaalKhata
-          </p>
+          <h1 className="font-display text-5xl font-bold text-brand-600">HaalKhata</h1>
           <p className="mt-4 text-ink-soft">
             A fresh ledger for you and your friends — split expenses, scan
             receipts, settle up.

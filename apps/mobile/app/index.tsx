@@ -17,8 +17,7 @@ export default function Index() {
   if (!session.hydrated) {
     return (
       <View style={styles.container}>
-        <Text style={styles.wordmark}>হালখাতা</Text>
-        <Text style={styles.subtitle}>HAALKHATA</Text>
+        <Text style={styles.wordmark}>HAALKHATA</Text>
       </View>
     );
   }

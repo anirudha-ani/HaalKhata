@@ -22,8 +22,7 @@ export function ScreenHeader() {
   return (
     <View style={styles.header}>
       <View style={styles.wordmarkRow}>
-        <Text style={styles.wordmark}>হালখাতা</Text>
-        <Text style={styles.wordmarkLatin}>HAALKHATA</Text>
+        <Text style={styles.wordmark}>HAALKHATA</Text>
       </View>
       <View style={styles.actions}>
         <Pressable

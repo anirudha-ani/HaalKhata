@@ -36,8 +36,7 @@ export function LoginScreen() {
           keyboardShouldPersistTaps="handled"
         >
           <View style={styles.hero}>
-            <Text style={styles.wordmark}>হালখাতা</Text>
-            <Text style={styles.subtitle}>HAALKHATA</Text>
+            <Text style={styles.wordmark}>HAALKHATA</Text>
             <Text style={styles.tagline}>
               A fresh ledger for you and your friends — split expenses, scan
               receipts, settle up.
