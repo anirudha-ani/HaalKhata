@@ -21,7 +21,8 @@ packages/shared/            @haalkhata/shared — hand-written TS used by both
 apps/web/                   Next.js app
   src/server/<domain>/      per-proto fan-out (auth, group, expense, …), each:
     repo/                     ALL SQL (Postgres via pg, no ORM)
-    usecase/                  ALL business logic (+ expense/domain/ pure math)
+    usecase/                  ALL business logic (balances math in expense/domain/;
+                              split math in @haalkhata/shared/expense/)
     handler.ts                thin Connect handler
   src/server/common/        db + shared errors
   src/server/api/connect/   transport context + routes.ts wiring

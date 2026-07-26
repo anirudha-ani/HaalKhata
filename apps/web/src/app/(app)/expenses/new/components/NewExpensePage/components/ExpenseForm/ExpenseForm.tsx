@@ -3,6 +3,7 @@
 
 import Link from "next/link";
 import { CATEGORIES } from "@haalkhata/shared/money/money.constants";
+import { centsToInput } from "@haalkhata/shared/money/money";
 import type { ExpenseFormInitial } from "../../../../utils/initialValues";
 import { PayerEditor } from "../PayerEditor/PayerEditor";
 import { SplitEditor } from "../SplitEditor/SplitEditor";
@@ -93,12 +94,18 @@ export function ExpenseForm({
         <div className="grid grid-cols-2 gap-3">
           <label className="block text-sm font-medium text-ink-soft">
             Amount ({currency})
+            {/* Itemized totals are derived from the line items, so the field
+                becomes a read-only readout of items + tax + tip. */}
             <input
-              className={`${inputClass} mt-1 text-lg tabular-nums`}
+              className={`${inputClass} mt-1 text-lg tabular-nums ${
+                form.isItemized ? "text-ink-soft" : ""
+              }`}
               type="text"
               inputMode="decimal"
               placeholder="0.00"
-              value={form.amount}
+              readOnly={form.isItemized}
+              title={form.isItemized ? "Calculated from the items below" : undefined}
+              value={form.isItemized ? centsToInput(form.totalCents ?? 0) : form.amount}
               onChange={(event) => form.setAmount(event.target.value)}
             />
           </label>
@@ -131,7 +138,7 @@ export function ExpenseForm({
       </section>
 
       <PayerEditor form={form} />
-      <SplitEditor form={form} />
+      <SplitEditor form={form} currency={currency} />
 
       <textarea
         className={`${inputClass} min-h-20 text-sm`}

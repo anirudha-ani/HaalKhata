@@ -1,6 +1,6 @@
 /** Pure split math: equal/exact/percent/shares and itemized receipts, always reconciling to the total. */
 
-import { allocate } from "./money";
+import { allocate } from "./allocate";
 
 /** Thrown when a split request is malformed (bad sums, duplicates, empty or negative input). */
 export class SplitError extends Error {}

@@ -21,6 +21,9 @@ packages/protogen/           @haalkhata/protogen — generated TS (do NOT edit, 
 packages/shared/             @haalkhata/shared — hand-written TS used by BOTH apps
   src/api/queryKeys.ts         query-key registry + MONEY_KEYS invalidation set
   src/money/                   money.ts, money.constants.ts (+ colocated tests)
+  src/expense/                 allocate.ts + splits.ts — cent-exact split math,
+                               run by the SERVER usecase and by the client for
+                               its live per-person preview (one implementation)
   src/greeting.ts              time-of-day greeting
 apps/web/                    Next.js app
   src/server/<domain>/       per-domain fan-out mirroring /proto:
@@ -49,7 +52,8 @@ apps/mobile/                 Expo (React Native) app — @haalkhata/mobile
 - `api/connect` handlers: decode request → call usecase → encode response.
   No SQL, no business logic. `routes.ts` wires services to the router.
 - `usecase`: pure TypeScript business logic. No SQL, no transport types
-  beyond generated proto messages. Domain math lives in `usecase/domain/`.
+  beyond generated proto messages. Balance math lives in `usecase/domain/`;
+  split math is in `@haalkhata/shared/expense/` (the client previews with it).
 - `repo`: SQL only. No business decisions.
 - UI must NOT import `@/server/*/repo/*` or `@/server/common/db` — go
   through a usecase (server) or the Connect client (browser). The eslint
@@ -59,7 +63,7 @@ apps/mobile/                 Expo (React Native) app — @haalkhata/mobile
 ## Conventions (mandated, enforced)
 
 - **Integer cents everywhere.** No floats for money. `int32` cents in proto,
-  `INTEGER` columns in Postgres, `allocate()` in `domain/money.ts`.
+  `INTEGER` columns in Postgres, `allocate()` in `@haalkhata/shared/expense/allocate.ts`.
 - **Server-recomputed splits.** Never trust client-supplied split amounts;
   recompute from the raw spec in the usecase.
 - **Transactions where they matter.** `insertExpense` / `replaceExpense` /
@@ -182,7 +186,7 @@ directly — only through a `useXAPI` hook. Add a `loading.tsx` for the route.
 ```sh
 pnpm typecheck   # tsc --noEmit
 pnpm lint        # eslint (incl. layering import rules)
-pnpm test        # vitest — add domain-math tests in usecase/domain/ if relevant
+pnpm test        # vitest — domain-math tests live beside the math they cover
 pnpm proto:lint  # buf lint
 ```
 

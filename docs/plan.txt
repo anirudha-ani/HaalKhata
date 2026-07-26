@@ -85,7 +85,8 @@ Layering rules (enforced by review):
   usecase → encode response. `routes.ts` wires services to the router.
 - `usecase`: pure TypeScript business logic. No SQL, no transport types
   beyond the generated proto messages. Domain math (splits, balances,
-  simplify) lives in `usecase/domain/` as pure functions — unit tested.
+  simplify) lives in `usecase/domain/` (balances) and
+  `@haalkhata/shared/expense/` (splits) as pure functions — unit tested.
 - `repo`: SQL only. No business decisions.
 
 ## 2. Repo Layout (monorepo, npm workspaces)
@@ -97,15 +98,15 @@ Layering rules (enforced by review):
 /buf.yaml /buf.gen.yaml       codegen → packages/protogen
 /packages/protogen/           @haalkhata/protogen — generated TS (messages +
                               service descriptors), consumed by web and mobile
-/packages/shared/             @haalkhata/shared — hand-written client code used
-                              by BOTH apps (see §2b): api/queryKeys.ts,
-                              money/money.ts + money.constants.ts, greeting.ts
+/packages/shared/             @haalkhata/shared — hand-written code used by BOTH
+                              apps (see §2b): api/queryKeys.ts, money/, greeting.ts,
+                              expense/ (split math, also used by the server)
 /apps/web/                    Next.js app (App Router UI + Connect endpoint)
   src/server/                 domain-first fan-out mirroring /proto modules:
     common/                   db.ts, errors.ts (shared infra, no domain deps)
     <domain>/                 auth/ group/ expense/ receipt/ social/, each:
       repo/                     ALL SQL for the domain
-      usecase/                  ALL logic (+ expense/domain/ pure math)
+      usecase/                  ALL logic (+ expense/domain/ balance math)
       handler.ts                thin Connect handler
     api/connect/              context.ts (auth/cookies/error map), routes.ts
   src/pages/api/connect/      [[...connect]].ts — mount point only
@@ -141,8 +142,20 @@ converting a discipline problem into a compiler problem.
   src/money/money.ts           formatMoney / parseMoneyInput / centsToInput / todayISO
   src/money/money.constants.ts CURRENCIES, CATEGORIES
   src/money/money.test.ts      colocated unit tests (vitest)
+  src/expense/allocate.ts      allocate() — largest-remainder cent allocation
+  src/expense/splits.ts        computeSplits / computeItemizedSplits (+ tests)
   src/greeting.ts              time-of-day greeting
 ```
+
+**Amendment (v5.1 — 2026-07-26):** the split math moved here from
+`apps/web/src/server/expense/domain/`. It is the one exception to "client
+code": the SERVER usecase imports it too. The reason is the itemized editor
+(§3b) — it shows a live per-person total as you fill the grid, and that figure
+has to be the figure that gets saved. Re-implementing largest-remainder
+allocation in the client would put cent-exact money logic in two places, which
+is exactly the drift this package exists to prevent. Balance math
+(`pairwiseBalances`, `simplifyDebts`) stays in `server/expense/domain/` — the
+client has no use for it.
 
 - Consumed as `@haalkhata/shared/<subpath>` (subpath exports mapping straight
   to `./src/*.ts`, exactly like `@haalkhata/protogen`). Raw TypeScript, no
@@ -188,6 +201,43 @@ src/app/<route>/
   `*.constants.ts` (e.g. components/ui/ui.constants.ts, lib/money/money.constants.ts).
   Live objects (handlers, provider impls, clients) are not constants and
   stay where they are.
+
+## 3b. Itemized split editor (v5.1 — 2026-07-26)
+
+Until now `split_type=itemized` could only be produced by the receipt scanner:
+the expense form offered equal/exact/percent/shares, and the line-item editor
+lived behind a photo upload on /scan. Splitting a bill by item without
+photographing a receipt was impossible. The form now has a fifth **Itemized**
+tab (`app/(app)/expenses/new/.../ItemizedEditor/`).
+
+**Shape: a grid, items × people.** Rows are line items (name + amount),
+columns are the people in the context, and a cell is that person's share of
+that item. Tax and Tip are rows in the same grid; a totals row runs along the
+bottom. This mirrors the one itemized UI its users call "nearly ideal" —
+Splitwise's web view — whose praised properties are tabular entry, single-screen
+person assignment, editable items, and tips as percentages.
+
+**Interaction decisions, from UX research on bill splitters:**
+- **New items arrive shared by everyone.** Splitting across the whole table is
+  the common case, so it costs zero taps and the user only touches exceptions.
+  Starting from an empty grid made a 10-item / 4-person bill cost ~40 taps.
+- **Cells are toggles, not inputs.** The binding constraint is cognitive load
+  (a receipt has 12–20 lines; working memory holds ~7), so the default mode is
+  tap-to-include, never type-a-number.
+- **Uneven shares are a mode, not the default.** A checkbox swaps the cells to
+  integer weight inputs for "she had two, he had one". Weights are the existing
+  `expense_item_assignments.weight` column — no schema change.
+- **Live per-person totals.** The bottom row shows what each person currently
+  owes, recomputed on every keystroke via the shared `computeItemizedSplits`
+  (§2b amendment) — the preview is the saved figure, not an approximation.
+- **Tip presets** (10/15/18/20% of the items subtotal) alongside the raw input.
+
+The Amount field at the top of the form becomes a read-only readout of
+items + tax + tip while this tab is active; the server independently recomputes
+that sum and rejects a mismatch.
+
+Editing an existing itemized expense is still blocked (unchanged) — the guard
+in NewExpensePage stands until the editor can round-trip saved items.
 
 ## 4. Data Model (integer cents everywhere, soft-delete on expenses)
 

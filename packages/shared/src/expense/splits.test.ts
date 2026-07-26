@@ -1,7 +1,7 @@
 /** Unit tests for the pure split math: allocate, equal/exact/percent/shares, itemized receipts. */
 
 import { describe, expect, it } from "vitest";
-import { allocate } from "./money";
+import { allocate } from "./allocate";
 import { computeItemizedSplits, computeSplits, SplitError } from "./splits";
 
 const sumOwedCents = (splits: { owedCents: number }[]) =>

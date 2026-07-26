@@ -2,7 +2,7 @@
 
 import type { Expense } from "@haalkhata/protogen/expense/v1/expense_pb";
 import { centsToInput, todayISO } from "@haalkhata/shared/money/money";
-import type { FormSplitType } from "./splitForm";
+import type { DraftLineItem, FormSplitType } from "./splitForm";
 
 /** Initial values for every field of the expense form. */
 export interface ExpenseFormInitial {
@@ -30,6 +30,12 @@ export interface ExpenseFormInitial {
   singlePayerId: string;
   /** Raw per-user paid-amount inputs for multi-payer mode, keyed by user id. */
   payerAmounts: Record<string, string>;
+  /** Line items for the itemized split mode; empty in every other mode. */
+  items: DraftLineItem[];
+  /** Raw tax money input for the itemized split mode. */
+  taxInput: string;
+  /** Raw tip money input for the itemized split mode. */
+  tipInput: string;
 }
 
 /**
@@ -66,6 +72,9 @@ export function buildInitialValues(
       multiPayer: false,
       singlePayerId: currentUserId,
       payerAmounts: {},
+      items: [],
+      taxInput: "",
+      tipInput: "",
     };
   }
 
@@ -93,5 +102,10 @@ export function buildInitialValues(
           expense.payers.map((payer) => [payer.userId, centsToInput(payer.amountCents)]),
         )
       : {},
+    // Editing an itemized expense is blocked upstream (NewExpensePage renders a
+    // guard), so the item editor always starts empty here.
+    items: [],
+    taxInput: "",
+    tipInput: "",
   };
 }

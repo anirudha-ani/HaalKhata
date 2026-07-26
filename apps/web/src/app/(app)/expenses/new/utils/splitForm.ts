@@ -1,9 +1,26 @@
 /** Pure helpers for the expense form — validation + request assembly. */
 
 import { parseMoneyInput } from "@haalkhata/shared/money/money";
+import { computeItemizedSplits } from "@haalkhata/shared/expense/splits";
 
-/** Split modes the form supports (itemized expenses are handled elsewhere). */
-export type FormSplitType = "equal" | "exact" | "percent" | "shares";
+/** Split modes the form supports. */
+export type FormSplitType = "equal" | "exact" | "percent" | "shares" | "itemized";
+
+/**
+ * One editable line item in the itemized split editor. `assignees` maps a user
+ * id to that person's share weight for this item — 1 means an even share, 2
+ * means a double share. A user id absent from the map is not on the item.
+ */
+export interface DraftLineItem {
+  /** Stable React key; not sent to the server. */
+  key: string;
+  /** Item name as typed; blank falls back to "Item" on submit. */
+  name: string;
+  /** Raw money input for the item's own total (e.g. "12.50"). */
+  total: string;
+  /** Share weight per assigned user id; every value is a positive integer. */
+  assignees: Record<string, number>;
+}
 
 /** Snapshot of the split-relevant form state used for validation and payload assembly. */
 export interface SplitFormState {
@@ -35,6 +52,9 @@ export interface SplitCheck {
  */
 export function checkSplit(state: SplitFormState): SplitCheck {
   const { splitType, totalCents, participantIds, inputs } = state;
+  // Itemized splits carry their own shape (line items, not a participant list
+  // with per-person values) and are validated by checkItemized instead.
+  if (splitType === "itemized") return { ok: true, message: "" };
   if (participantIds.length === 0) {
     return { ok: false, message: "pick at least one participant" };
   }
@@ -99,14 +119,20 @@ export function checkSplit(state: SplitFormState): SplitCheck {
  *   active split type populated (amountCents, percentBp, or shares).
  */
 export function buildSplitSpecs(state: SplitFormState) {
-  return state.participantIds.map((userId) => {
-    switch (state.splitType) {
+  // Destructured to a local const so the itemized narrowing below still holds
+  // inside the map callback (a property access would widen again).
+  const { splitType, participantIds, inputs } = state;
+  // Itemized expenses derive their splits server-side from the line items;
+  // no per-person specs are sent.
+  if (splitType === "itemized") return [];
+  return participantIds.map((userId) => {
+    switch (splitType) {
       case "equal":
         return { userId, amountCents: 0, percentBp: 0, shares: 0 };
       case "exact":
         return {
           userId,
-          amountCents: parseMoneyInput(state.inputs[userId] ?? "") ?? 0,
+          amountCents: parseMoneyInput(inputs[userId] ?? "") ?? 0,
           percentBp: 0,
           shares: 0,
         };
@@ -114,7 +140,7 @@ export function buildSplitSpecs(state: SplitFormState) {
         return {
           userId,
           amountCents: 0,
-          percentBp: Math.round((parseFloat(state.inputs[userId] ?? "") || 0) * 100),
+          percentBp: Math.round((parseFloat(inputs[userId] ?? "") || 0) * 100),
           shares: 0,
         };
       case "shares":
@@ -122,10 +148,115 @@ export function buildSplitSpecs(state: SplitFormState) {
           userId,
           amountCents: 0,
           percentBp: 0,
-          shares: parseInt(state.inputs[userId] ?? "", 10) || 0,
+          shares: parseInt(inputs[userId] ?? "", 10) || 0,
         };
     }
   });
+}
+
+/**
+ * Sums an itemized draft into the totals the form displays and submits. The
+ * server recomputes this same figure from the items it receives and rejects a
+ * mismatch, so the two must agree exactly.
+ *
+ * @param items - The draft line items.
+ * @param taxCents - Tax in integer cents.
+ * @param tipCents - Tip in integer cents.
+ * @returns The items subtotal and the grand total (items + tax + tip), in cents.
+ */
+export function itemizedTotals(
+  items: DraftLineItem[],
+  taxCents: number,
+  tipCents: number,
+): { itemsTotalCents: number; totalCents: number } {
+  const itemsTotalCents = items.reduce(
+    (runningTotal, item) => runningTotal + (parseMoneyInput(item.total) ?? 0),
+    0,
+  );
+  return { itemsTotalCents, totalCents: itemsTotalCents + taxCents + tipCents };
+}
+
+/**
+ * Validates an itemized draft: at least one line item, every item priced and
+ * assigned to somebody, and a positive items subtotal. Mirrors the server's
+ * `computeItemizedSplits` guards so the form fails fast with a friendlier
+ * message instead of round-tripping.
+ *
+ * @param items - The draft line items.
+ * @returns Whether the draft is valid, with a message when it is not.
+ */
+export function checkItemized(items: DraftLineItem[]): SplitCheck {
+  if (items.length === 0) return { ok: false, message: "add at least one item" };
+
+  const unpriced = items.filter((item) => (parseMoneyInput(item.total) ?? 0) <= 0).length;
+  if (unpriced > 0) {
+    return {
+      ok: false,
+      message: `${unpriced} item${unpriced === 1 ? "" : "s"} need${unpriced === 1 ? "s" : ""} an amount`,
+    };
+  }
+
+  const unassigned = items.filter(
+    (item) => Object.values(item.assignees).filter((weight) => weight > 0).length === 0,
+  ).length;
+  if (unassigned > 0) {
+    return {
+      ok: false,
+      message: `${unassigned} item${unassigned === 1 ? " is" : "s are"} unassigned`,
+    };
+  }
+
+  if (itemizedTotals(items, 0, 0).itemsTotalCents <= 0) {
+    return { ok: false, message: "items must add up to a positive amount" };
+  }
+  return { ok: true, message: "" };
+}
+
+/**
+ * Builds the ExpenseItem payload for the API from an itemized draft, dropping
+ * assignees whose weight is zero and defaulting a blank name to "Item".
+ *
+ * @param items - The draft line items (assumed already valid).
+ * @returns One API item per draft row, each with its positive-weight assignments.
+ */
+export function buildItemsPayload(items: DraftLineItem[]) {
+  return items.map((item) => ({
+    id: "",
+    name: item.name.trim() || "Item",
+    quantity: 1,
+    totalCents: parseMoneyInput(item.total) ?? 0,
+    assignments: Object.entries(item.assignees)
+      .filter(([, weight]) => weight > 0)
+      .map(([userId, weight]) => ({ userId, weight })),
+  }));
+}
+
+/**
+ * Computes what each person owes for an itemized draft, for the live preview
+ * row under the grid.
+ *
+ * This calls the very same `computeItemizedSplits` the server uses, so the
+ * previewed figures are the figures that will be saved — no second
+ * implementation of cent-exact allocation to drift out of sync. An incomplete
+ * draft (no items, nothing assigned yet) simply previews nothing.
+ *
+ * @param items - The draft line items.
+ * @param taxCents - Tax in integer cents.
+ * @param tipCents - Tip in integer cents.
+ * @returns Owed cents keyed by user id; empty while the draft is incomplete.
+ */
+export function previewItemizedShares(
+  items: DraftLineItem[],
+  taxCents: number,
+  tipCents: number,
+): Record<string, number> {
+  try {
+    const { splits } = computeItemizedSplits(buildItemsPayload(items), taxCents, tipCents);
+    return Object.fromEntries(splits.map((split) => [split.userId, split.owedCents]));
+  } catch {
+    // Draft not complete enough to allocate yet — checkItemized surfaces why.
+    return {};
+  }
 }
 
 /**

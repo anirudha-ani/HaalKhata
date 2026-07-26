@@ -25,7 +25,7 @@ import {
   computeItemizedSplits,
   computeSplits,
   SplitError,
-} from "../domain/splits";
+} from "@haalkhata/shared/expense/splits";
 import { amountOwed } from "./balance.usecase";
 import { denied, invalid, notFound } from "@/server/common/errors";
 import { toUser } from "@/server/auth/usecase/user.mapper";
