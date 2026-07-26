@@ -20,6 +20,7 @@ import {
   EMAIL_PATTERN,
   PASSWORD_MAX_LENGTH,
   PASSWORD_MIN_LENGTH,
+  PHONE_FORMAT_HINT,
   TOKEN_LIFETIME_SECONDS,
   normalizePhone,
 } from "@/server/auth/auth.constants";
@@ -192,7 +193,9 @@ export async function signUp(input: {
   const email = input.email.trim().toLowerCase();
   const phone = normalizePhone(input.phone);
   if (email.length === 0 && !phone) {
-    invalid("please enter a valid email address or phone number");
+    // The client routes one field into email-or-phone, so name whichever
+    // shape it actually tried to parse rather than a generic "invalid".
+    invalid(input.phone.trim() ? PHONE_FORMAT_HINT : "please enter an email address or phone number");
   }
   if (email.length > 0 && !EMAIL_PATTERN.test(email)) {
     invalid("please enter a valid email address");
@@ -320,6 +323,47 @@ export async function findOrCreateUserByEmail(
     const databaseError = error as { code?: string };
     if (databaseError.code === "23505") {
       const concurrent = await findUserByEmail(normalizedEmail);
+      if (concurrent) return concurrent;
+    }
+    throw error;
+  }
+}
+
+/**
+ * Finds a user by phone number or creates a claimable shadow user with no
+ * email. The phone-number counterpart of {@link findOrCreateUserByEmail};
+ * `users.email` is nullable and `chk_users_has_identifier` accepts a row that
+ * carries only a phone, so such an invite is claimed at signup exactly the
+ * way an email invite is.
+ *
+ * @param phone - Phone number in any format the user typed it.
+ * @param name - Optional display name for a newly created shadow user;
+ *   defaults to the normalized number.
+ * @returns The existing or newly created users row.
+ * @throws UsecaseError "invalid_argument" when the number is not a valid phone number.
+ */
+export async function findOrCreateUserByPhone(
+  phone: string,
+  name?: string,
+): Promise<UserRow> {
+  const normalizedPhone = normalizePhone(phone);
+  if (!normalizedPhone) invalid(PHONE_FORMAT_HINT);
+  const existing = await findUserByPhone(normalizedPhone);
+  if (existing) return existing;
+  try {
+    return await insertUser({
+      email: null,
+      phone: normalizedPhone,
+      name: name?.trim() || normalizedPhone,
+      avatarColor: avatarColorFor(normalizedPhone),
+      passwordHash: null,
+    });
+  } catch (error) {
+    // TOCTOU: a concurrent invite to the same number won the unique-index
+    // race (Postgres SQLSTATE 23505). Re-read rather than surfacing a 500.
+    const databaseError = error as { code?: string };
+    if (databaseError.code === "23505") {
+      const concurrent = await findUserByPhone(normalizedPhone);
       if (concurrent) return concurrent;
     }
     throw error;

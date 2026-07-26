@@ -1,4 +1,4 @@
-/** Friends screen UI: add-by-email form, per-friend balances, settle-up. */
+/** Friends screen UI: add-by-email-or-phone form, per-friend balances, settle-up. */
 
 import { useRouter } from "expo-router";
 import { Plus, UserPlus, Users } from "lucide-react-native";
@@ -15,7 +15,7 @@ import { colors, fonts, radii, spacing } from "@/lib/theme/theme";
 import { useFriends } from "./hooks/useFriends";
 
 /**
- * Renders the friends screen: an add-friend-by-email form, the list of
+ * Renders the friends screen: an add-friend form (email or phone), the list of
  * friends with their net balances and quick actions (one-off expense,
  * settle), and the settle-up sheet when a friend is selected.
  *
@@ -36,18 +36,20 @@ export function FriendsScreen() {
 
       <View>
         <View style={styles.addRow}>
+          {/* email-address keyboard, not phone-pad: it carries both letters
+              and digits, so one field serves either identifier. */}
           <TextInput
             autoCapitalize="none"
             keyboardType="email-address"
-            onChangeText={friendsState.setEmail}
-            placeholder="Add a friend by email"
+            onChangeText={friendsState.setIdentifier}
+            placeholder="Add a friend by email or phone"
             placeholderTextColor={colors.inkSoft}
             style={styles.addInput}
-            value={friendsState.email}
+            value={friendsState.identifier}
           />
           <Button
             busy={friendsState.isAdding}
-            disabled={friendsState.email.trim() === ""}
+            disabled={friendsState.identifier.trim() === ""}
             icon={<UserPlus color={colors.white} size={16} />}
             label="Add"
             onPress={friendsState.submitAdd}
@@ -56,7 +58,7 @@ export function FriendsScreen() {
         {friendsState.error ? <Text style={styles.error}>{friendsState.error}</Text> : null}
         <Text style={styles.hint}>
           Friends without an account yet are tracked as invited — everything is waiting for them
-          when they sign up with that email.
+          when they sign up with that email or number.
         </Text>
       </View>
 
@@ -64,7 +66,7 @@ export function FriendsScreen() {
         <Spinner label="Loading friends…" />
       ) : friendsState.friends.length === 0 ? (
         <EmptyState
-          hint="Add someone by email to split one-off expenses outside of groups."
+          hint="Add someone by email or phone to split one-off expenses outside of groups."
           icon={<Users color={colors.inkSoft} size={32} />}
           title="No friends yet"
         />

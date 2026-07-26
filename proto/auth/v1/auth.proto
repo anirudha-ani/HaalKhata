@@ -20,7 +20,7 @@ service AuthService {
 message SignUpRequest {
   // Exactly one of email / phone must be set.
   string email = 1;
-  string phone = 2; // E.164, e.g. "+8801712345678"
+  string phone = 2; // E.164, e.g. "+14155552671"
   string name = 3;
   string password = 4;
 }

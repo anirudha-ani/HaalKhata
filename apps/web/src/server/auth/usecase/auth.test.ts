@@ -58,8 +58,21 @@ describe("auth tokens", () => {
 
 describe("normalizePhone", () => {
   it("accepts and canonicalizes a valid number to E.164", () => {
-    expect(normalizePhone("+8801712345678")).toBe("+8801712345678");
+    expect(normalizePhone("+14155552671")).toBe("+14155552671");
     expect(normalizePhone(" +1 (415) 555-2671 ")).toBe("+14155552671");
+  });
+
+  it("accepts US national formats without a country code", () => {
+    // The whole point of DEFAULT_PHONE_REGION: before it was passed,
+    // libphonenumber-js rejected every one of these.
+    expect(normalizePhone("(617) 555-1212")).toBe("+16175551212");
+    expect(normalizePhone("617-555-1212")).toBe("+16175551212");
+    expect(normalizePhone("617.555.1212")).toBe("+16175551212");
+    expect(normalizePhone("6175551212")).toBe("+16175551212");
+  });
+
+  it("still honors explicitly international numbers", () => {
+    expect(normalizePhone("+44 7911 123456")).toBe("+447911123456");
   });
 
   it("rejects garbage and empty input", () => {
@@ -67,5 +80,6 @@ describe("normalizePhone", () => {
     expect(normalizePhone("   ")).toBeNull();
     expect(normalizePhone("not-a-number")).toBeNull();
     expect(normalizePhone("+999999999999")).toBeNull(); // invalid country/length
+    expect(normalizePhone("617-555")).toBeNull(); // too short for the default region
   });
 });

@@ -1,5 +1,5 @@
 "use client";
-/** Friends route UI: add-by-email form, per-friend balances, settle-up. */
+/** Friends route UI: add-by-email-or-phone form, per-friend balances, settle-up. */
 
 import Link from "next/link";
 import { Plus, UserPlus, Users } from "lucide-react";
@@ -11,7 +11,7 @@ import { Spinner } from "@/components/ui/Spinner";
 import { useFriends } from "./hooks/useFriends";
 
 /**
- * Renders the friends page: an add-friend-by-email form, the list of friends
+ * Renders the friends page: an add-friend form (email or phone), the list of friends
  * with their net balances and quick actions (one-off expense, settle), and the
  * settle-up modal when a friend is selected.
  *
@@ -33,13 +33,15 @@ export function FriendsPage() {
           friendsState.submitAdd();
         }}
       >
+        {/* Deliberately type="text": type="email" makes the browser reject a
+            phone number before the form is ever submitted. */}
         <input
-          type="email"
+          type="text"
           required
-          placeholder="Add a friend by email"
-          aria-label="Friend's email"
-          value={friendsState.email}
-          onChange={(event) => friendsState.setEmail(event.target.value)}
+          placeholder="Add a friend by email or phone"
+          aria-label="Friend's email or phone number"
+          value={friendsState.identifier}
+          onChange={(event) => friendsState.setIdentifier(event.target.value)}
           className="min-w-0 flex-1 rounded-xl border border-line bg-card px-3.5 py-3 focus:border-brand-500 focus:outline-none"
         />
         <button
@@ -56,14 +58,14 @@ export function FriendsPage() {
       ) : null}
       <p className="text-sm text-ink-soft">
         Friends without an account yet are tracked as invited — everything is
-        waiting for them when they sign up with that email.
+        waiting for them when they sign up with that email or number.
       </p>
 
       {friendsState.friends.length === 0 ? (
         <EmptyState
           icon={<Users />}
           title="No friends yet"
-          hint="Add someone by email to split one-off expenses outside of groups."
+          hint="Add someone by email or phone to split one-off expenses outside of groups."
         />
       ) : (
         <ul className="divide-y divide-line overflow-hidden rounded-2xl border border-line bg-card">

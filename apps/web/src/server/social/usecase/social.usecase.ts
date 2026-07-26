@@ -9,24 +9,43 @@ import {
   listNotificationsByUser,
   markAllRead,
 } from "@/server/social/repo/notifications.repo";
-import { findOrCreateUserByEmail } from "@/server/auth/usecase/auth.usecase";
+import {
+  findOrCreateUserByEmail,
+  findOrCreateUserByPhone,
+} from "@/server/auth/usecase/auth.usecase";
 import { getOverallBalances } from "@/server/expense/usecase/balance.usecase";
 import { denied, invalid } from "@/server/common/errors";
 import { toUser } from "@/server/auth/usecase/user.mapper";
 
 /**
- * Befriends the caller with the user behind the given email, creating a
- * shadow user when no account exists.
+ * Befriends the caller with the user behind the given email or phone number,
+ * creating a claimable shadow user when no account exists yet.
+ *
+ * Exactly one identifier must be supplied — clients present a single "email
+ * or phone" field and route the raw string with `splitIdentifier`, so both
+ * being set means a client bug rather than user input worth guessing at.
  *
  * @param userId - Id of the authenticated caller adding the friend.
- * @param input - The friend's email, plus an optional display name used when
- *   a shadow user must be created.
+ * @param input - The friend's email or phone (exactly one non-empty), plus an
+ *   optional display name used when a shadow user must be created.
  * @returns The friend as a user.v1 User message shape.
- * @throws UsecaseError (invalid_argument) when the email is the caller's own.
+ * @throws UsecaseError (invalid_argument) when neither or both identifiers are
+ *   given, the identifier is malformed, or it resolves to the caller.
  */
-export async function addFriend(userId: string, input: { email: string; name?: string }) {
-  const friend = await findOrCreateUserByEmail(input.email, input.name);
-  if (friend.id === userId) invalid("that's your own email");
+export async function addFriend(
+  userId: string,
+  input: { email: string; phone: string; name?: string },
+) {
+  const email = input.email.trim();
+  const phone = input.phone.trim();
+  if (email === "" && phone === "") invalid("enter an email address or phone number");
+  if (email !== "" && phone !== "") {
+    invalid("enter either an email address or a phone number, not both");
+  }
+  const friend = email
+    ? await findOrCreateUserByEmail(email, input.name)
+    : await findOrCreateUserByPhone(phone, input.name);
+  if (friend.id === userId) invalid("that's your own account");
   await insertFriendship(userId, friend.id);
   return toUser(friend);
 }

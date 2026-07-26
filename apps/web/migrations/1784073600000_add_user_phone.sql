@@ -2,7 +2,7 @@
 
 -- Adds an optional phone column to users. An account may have an email, a
 -- phone, or both; either can be used to log in. Phone is stored in E.164
--- (e.g. "+8801712345678") and is unique when present.
+-- (e.g. "+14155552671") and is unique when present.
 ALTER TABLE users ADD COLUMN IF NOT EXISTS phone TEXT;
 
 -- Unique index allowing multiple NULLs (existing rows have no phone) but

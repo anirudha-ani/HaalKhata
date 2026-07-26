@@ -3,26 +3,12 @@
 import { useMutation } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import { useState } from "react";
+import { splitIdentifier } from "@haalkhata/shared/auth/identifier";
 import { authClient, errorMessage } from "@/lib/api/connect";
 import { setSessionToken } from "@/lib/api/session";
 
 /** Which form the login screen is showing: sign in or create account. */
 export type LoginMode = "login" | "signup";
-
-/**
- * Splits a raw identifier string into `{ email, phone }` for the auth RPC. If
- * the value contains an `@` it's treated as an email; otherwise it's sent as
- * a phone (the server normalizes + validates it). Exactly one field is set.
- *
- * @param identifier - Raw user input from the identifier field.
- * @returns `{ email, phone }` with exactly one populated.
- */
-function splitIdentifier(identifier: string): { email: string; phone: string } {
-  const trimmed = identifier.trim();
-  return trimmed.includes("@")
-    ? { email: trimmed, phone: "" }
-    : { email: "", phone: trimmed };
-}
 
 /**
  * Manages the login screen: the login/signup mode toggle, the credentials

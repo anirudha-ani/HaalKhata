@@ -16,8 +16,10 @@ service SocialService {
 }
 
 message AddFriendRequest {
+  // Exactly one of email/phone identifies the friend; phone is E.164.
   string email = 1;
   string name = 2; // optional display name for shadow users
+  string phone = 3;
 }
 
 message ListFriendsResponse {

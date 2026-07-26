@@ -14,7 +14,7 @@ export interface UserRow {
   default_currency: string;
   /** scrypt "salt:hash" string; null marks a shadow user who has not registered yet. */
   password_hash: string | null;
-  /** Phone number in E.164 (e.g. "+8801712345678"); null when the user has no phone. */
+  /** Phone number in E.164 (e.g. "+14155552671"); null when the user has no phone. */
   phone: string | null;
   /** Monotonic counter baked into issued tokens; bumping it invalidates outstanding tokens. */
   token_version: number;
@@ -76,7 +76,7 @@ export async function findUserByEmail(email: string): Promise<UserRow | undefine
 /**
  * Looks a user up by phone number (E.164, exact match).
  *
- * @param phone - Phone number in E.164 form (e.g. "+8801712345678").
+ * @param phone - Phone number in E.164 form (e.g. "+14155552671").
  * @returns The matching row, or undefined when no such user exists.
  */
 export async function findUserByPhone(phone: string): Promise<UserRow | undefined> {

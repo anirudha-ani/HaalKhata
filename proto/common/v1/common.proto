@@ -14,7 +14,7 @@ message User {
   // ISO 4217 code, e.g. "USD", "BDT".
   string default_currency = 5;
   bool registered = 6;
-  // Phone number in E.164 format (e.g. "+8801712345678"); empty when unset.
+  // Phone number in E.164 format (e.g. "+14155552671"); empty when unset.
   // An account may have an email, a phone, or both; either can be used to log in.
   string phone = 7;
 }

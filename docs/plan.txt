@@ -36,9 +36,10 @@ recording settlements is in.
 - **Storage:** repository layer (`/repo`) owns ALL SQL — Postgres via `pg`,
   async throughout. Because no SQL leaks outside `/repo`, changing hosts is
   a `DATABASE_URL` change; there is nothing provider-specific to migrate.
-- **Auth:** email + password with signed bearer tokens. Login RPC sets an
-  httpOnly cookie (web) and returns the token in the response body (mobile).
-  Every RPC accepts either the cookie or `Authorization: Bearer`.
+- **Auth:** email *or phone* + password with signed bearer tokens (see §4b).
+  Login RPC sets an httpOnly cookie (web) and returns the token in the
+  response body (mobile). Every RPC accepts either the cookie or
+  `Authorization: Bearer`.
 - **AI receipt parsing: no vendor lock.** Provider abstraction with
   config-driven ordering: self-hosted vision box (OpenAI-compatible, e.g.
   Ollama/vLLM + Qwen2.5-VL behind Cloudflare Tunnel) → cloud API (Claude
@@ -249,6 +250,39 @@ expense_item_assignments · settlements · comments · activity · notifications
 
 Balances are computed, not stored (derive from splits + payers −
 settlements). Single currency per group; currency code stored.
+
+## 4b. Account identifiers: email OR phone (v5.2 — 2026-07-26)
+
+An account is reachable by **email, phone, or both** — the original
+email-only assumption is gone (migration `1784073600000_add_user_phone`).
+
+- `users.email` is nullable, `users.phone` is E.164 with a partial unique
+  index (`WHERE phone IS NOT NULL`, so multiple NULLs are fine), and a
+  `chk_users_has_identifier` CHECK guarantees at least one is present.
+- Phone is normalized with `libphonenumber-js` (`normalizePhone` in
+  `auth.constants.ts`) and only ever stored in E.164, so lookups are exact.
+- **US-first, not US-only.** `normalizePhone` passes
+  `DEFAULT_PHONE_REGION = "US"`, so national formats — `(617) 555-1212`,
+  `617-555-1212`, `6175551212` — resolve to +1. Any number written with an
+  explicit `+<country>` is still honored, so international users are never
+  blocked. Without that default argument libphonenumber-js accepts ONLY
+  `+`-prefixed input and silently rejects every national format, which is how
+  this shipped until 2026-07-26. Rejections now return `PHONE_FORMAT_HINT`,
+  which names the accepted shapes instead of a bare "invalid".
+- Auth RPCs take `email` and `phone` fields with exactly one populated; the
+  account is looked up by whichever was supplied.
+- **Shadow users may be phone-only.** Inviting someone by phone creates a
+  claimable row with NULL email, claimed at signup by that phone the same way
+  an email invite is (`findOrCreateUserByPhone`, mirroring the email path
+  including its unique-violation retry).
+- Clients present **one "email or phone" field**, not two. The raw string is
+  routed by `splitIdentifier` (`@haalkhata/shared/auth/identifier.ts`): an `@`
+  means email, anything else is sent as phone for the server to validate. It
+  lives in the shared package because login, signup and friend-invite on both
+  apps all need identical routing.
+
+Group invites (`AddMember`) remain email-only for now — the same treatment
+applies whenever that flow is revisited.
 
 ## 5. Core Domain Logic (usecase/domain — pure, unit-tested)
 

@@ -32,16 +32,29 @@ export const PASSWORD_MIN_LENGTH = 6;
 export const PASSWORD_MAX_LENGTH = 1024;
 
 /**
- * Normalizes and validates a phone number to E.164. Returns the canonical
- * `+<country><number>` form, or null when the input isn't a valid number.
+ * Region assumed when a phone number is typed without a country code. This is
+ * a US-first product, so "(617) 555-1212" and "6175551212" resolve to +1.
+ * A number written with an explicit `+<country>` is always honored regardless
+ * of this setting, so international users are never blocked by it.
+ */
+export const DEFAULT_PHONE_REGION = "US";
+
+/** Shown whenever a phone number fails to parse, so the caller knows the accepted shapes. */
+export const PHONE_FORMAT_HINT =
+  'please enter a valid phone number, e.g. "(617) 555-1212" or "+14155552671"';
+
+/**
+ * Normalizes and validates a phone number to E.164. Accepts national formats
+ * for {@link DEFAULT_PHONE_REGION} (punctuation and spacing are ignored) as
+ * well as any explicitly international `+<country>...` number.
  *
- * @param phone - Raw phone string from the client (may include spaces, dashes, etc).
- * @returns The E.164 form (e.g. "+8801712345678"), or null when invalid.
+ * @param phone - Raw phone string from the client (may include spaces, dashes, parentheses).
+ * @returns The E.164 form (e.g. "+14155552671"), or null when invalid.
  */
 export function normalizePhone(phone: string): string | null {
   const trimmed = phone.trim();
   if (trimmed.length === 0) return null;
-  const parsed = parsePhoneNumberFromString(trimmed);
+  const parsed = parsePhoneNumberFromString(trimmed, DEFAULT_PHONE_REGION);
   if (!parsed || !parsed.isValid()) return null;
   return parsed.number;
 }
