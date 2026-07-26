@@ -5,7 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { User } from "@haalkhata/protogen/common/v1/common_pb";
 import { errorMessage } from "@/lib/api/connect";
-import { centsToInput, parseMoneyInput, todayISO } from "@/lib/money/money";
+import { centsToInput, parseMoneyInput, todayISO } from "@haalkhata/shared/money/money";
 import { useScanAPI } from "./useScanAPI";
 
 /** One editable line item on the scanned-receipt draft. */

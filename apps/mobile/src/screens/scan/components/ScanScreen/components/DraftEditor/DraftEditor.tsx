@@ -5,7 +5,7 @@ import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { Avatar } from "@/components/ui/Avatar";
 import { Chip } from "@/components/ui/Chip";
 import { DateField } from "@/components/ui/DateField";
-import { formatMoney } from "@/lib/money/money";
+import { formatMoney } from "@haalkhata/shared/money/money";
 import { colors, radii, spacing } from "@/lib/theme/theme";
 import type { ScanController } from "../../hooks/useScan";
 

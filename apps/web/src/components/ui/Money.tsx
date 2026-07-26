@@ -1,6 +1,6 @@
 /** Formatted money amount, optionally colored by owed/owing sign. */
 
-import { formatMoney } from "@/lib/money/money";
+import { formatMoney } from "@haalkhata/shared/money/money";
 
 /**
  * Renders a formatted money amount with debt semantics: positive = owed to

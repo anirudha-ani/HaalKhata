@@ -5,7 +5,7 @@ import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { User } from "@haalkhata/protogen/common/v1/common_pb";
 import { errorMessage } from "@/lib/api/connect";
-import { parseMoneyInput } from "@/lib/money/money";
+import { parseMoneyInput } from "@haalkhata/shared/money/money";
 import {
   buildSplitSpecs,
   checkPayers,

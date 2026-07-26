@@ -11,8 +11,8 @@ import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Money } from "@/components/ui/Money";
 import { Spinner } from "@/components/ui/Spinner";
-import { formatMoney } from "@/lib/money/money";
-import { getGreeting } from "@/lib/greeting";
+import { formatMoney } from "@haalkhata/shared/money/money";
+import { getGreeting } from "@haalkhata/shared/greeting";
 import { colors, fonts, radii, spacing } from "@/lib/theme/theme";
 import { useDashboard } from "./hooks/useDashboard";
 

@@ -8,7 +8,7 @@ import { Modal } from "@/components/ui/Modal";
 import { Money } from "@/components/ui/Money";
 import { Spinner } from "@/components/ui/Spinner";
 import { errorMessage } from "@/lib/api/connect";
-import { formatMoney } from "@/lib/money/money";
+import { formatMoney } from "@haalkhata/shared/money/money";
 import { useExpenseDetail } from "./hooks/useExpenseDetail";
 
 /**

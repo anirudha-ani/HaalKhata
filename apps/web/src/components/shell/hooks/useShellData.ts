@@ -3,7 +3,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { authClient, socialClient } from "@/lib/api/connect";
-import { queryKeys } from "@/lib/api/queryKeys";
+import { queryKeys } from "@haalkhata/shared/api/queryKeys";
 
 /**
  * Fetches the data the shell chrome needs: the signed-in user's profile and

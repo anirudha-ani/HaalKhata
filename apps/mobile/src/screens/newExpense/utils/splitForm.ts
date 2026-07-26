@@ -1,6 +1,6 @@
 /** Pure helpers for the expense form — validation + request assembly. */
 
-import { parseMoneyInput } from "@/lib/money/money";
+import { parseMoneyInput } from "@haalkhata/shared/money/money";
 
 /** Split modes the form supports (itemized expenses are handled elsewhere). */
 export type FormSplitType = "equal" | "exact" | "percent" | "shares";

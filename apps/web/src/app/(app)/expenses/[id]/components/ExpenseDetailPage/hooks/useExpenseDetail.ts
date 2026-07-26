@@ -5,7 +5,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { authClient, errorMessage, expenseClient } from "@/lib/api/connect";
-import { MONEY_KEYS, queryKeys } from "@/lib/api/queryKeys";
+import { MONEY_KEYS, queryKeys } from "@haalkhata/shared/api/queryKeys";
 
 /**
  * Loads one expense (with its users and comments) and exposes the page's

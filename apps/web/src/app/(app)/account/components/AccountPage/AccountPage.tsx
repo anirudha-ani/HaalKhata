@@ -5,7 +5,7 @@ import { LogOut } from "lucide-react";
 import type { User } from "@haalkhata/protogen/common/v1/common_pb";
 import { Avatar } from "@/components/ui/Avatar";
 import { Spinner } from "@/components/ui/Spinner";
-import { CURRENCIES } from "@/lib/money/money.constants";
+import { CURRENCIES } from "@haalkhata/shared/money/money.constants";
 import { useAccountAPI, useProfileForm } from "./hooks/useAccount";
 
 /**

@@ -5,7 +5,7 @@ import type { User } from "@haalkhata/protogen/common/v1/common_pb";
 import { useRouter } from "expo-router";
 import { useState } from "react";
 import { authClient, errorMessage } from "@/lib/api/connect";
-import { queryKeys } from "@/lib/api/queryKeys";
+import { queryKeys } from "@haalkhata/shared/api/queryKeys";
 import { clearSession } from "@/lib/api/session";
 
 /**

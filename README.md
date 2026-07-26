@@ -15,7 +15,9 @@ web client, and the React Native app — one contract, no drift.
 ```
 proto/<domain>/v1/          the contract, one module per domain
                             (common, auth, group, expense, receipt, social)
-packages/protogen/               @haalkhata/protogen — generated TS (do not edit)
+packages/protogen/          @haalkhata/protogen — generated TS (do not edit)
+packages/shared/            @haalkhata/shared — hand-written TS used by both
+                            apps (query keys, money helpers, greeting)
 apps/web/                   Next.js app
   src/server/<domain>/      per-proto fan-out (auth, group, expense, …), each:
     repo/                     ALL SQL (Postgres via pg, no ORM)
@@ -128,6 +130,7 @@ pnpm proto:lint  # buf lint
 pnpm doctor      # react-doctor scan
 
 pnpm typecheck:mobile && pnpm lint:mobile && pnpm test:mobile   # same, for apps/mobile
+pnpm typecheck:shared && pnpm lint:shared && pnpm test:shared   # same, for packages/shared
 ```
 
 See `docs/plan.txt` for the full architecture plan and delivery phases.

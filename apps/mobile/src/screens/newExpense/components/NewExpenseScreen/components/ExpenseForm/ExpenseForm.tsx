@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/Button";
 import { Chip } from "@/components/ui/Chip";
 import { DateField } from "@/components/ui/DateField";
 import { TextField } from "@/components/ui/TextField";
-import { CATEGORIES } from "@/lib/money/money.constants";
+import { CATEGORIES } from "@haalkhata/shared/money/money.constants";
 import { colors, spacing } from "@/lib/theme/theme";
 import type { ExpenseFormInitial } from "../../../../utils/initialValues";
 import { useNewExpense } from "../../hooks/useNewExpense";

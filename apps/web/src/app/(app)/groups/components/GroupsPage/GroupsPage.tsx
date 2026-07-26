@@ -7,7 +7,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { Modal } from "@/components/ui/Modal";
 import { Money } from "@/components/ui/Money";
 import { Spinner } from "@/components/ui/Spinner";
-import { CURRENCIES } from "@/lib/money/money.constants";
+import { CURRENCIES } from "@haalkhata/shared/money/money.constants";
 import { GROUP_TYPES, groupEmoji } from "../../constants/groupTypes";
 import { useGroups } from "./hooks/useGroups";
 

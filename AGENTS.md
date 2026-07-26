@@ -18,6 +18,10 @@ via `pg`, no ORM. Self-hosted Docker deploy. An Expo (React Native) app in
 proto/<domain>/v1/           THE contract — one module per domain
 buf.yaml / buf.gen.yaml      codegen → packages/protogen (regenerated, gitignored)
 packages/protogen/           @haalkhata/protogen — generated TS (do NOT edit, do NOT commit)
+packages/shared/             @haalkhata/shared — hand-written TS used by BOTH apps
+  src/api/queryKeys.ts         query-key registry + MONEY_KEYS invalidation set
+  src/money/                   money.ts, money.constants.ts (+ colocated tests)
+  src/greeting.ts              time-of-day greeting
 apps/web/                    Next.js app
   src/server/<domain>/       per-domain fan-out mirroring /proto:
     repo/                      ALL SQL (Postgres via pg). No business logic.
@@ -28,7 +32,7 @@ apps/web/                    Next.js app
   src/server/api/connect/    context.ts (auth/cookies/error map), routes.ts, csrf.ts
   src/pages/api/connect/     [[...connect]].ts — mount point only
   src/app/<route>/           UI (thin page.tsx → components/<Page>/ + hooks/)
-  src/lib/                   shared client/server utilities (api/, money/, auth/)
+  src/lib/                   app-specific utilities (api/ transport, auth/ guard)
   src/components/            shell, ui primitives, providers, modals
   migrations/                plain SQL, node-pg-migrate (history in pgmigrations)
 apps/mobile/                 Expo (React Native) app — @haalkhata/mobile
@@ -36,7 +40,7 @@ apps/mobile/                 Expo (React Native) app — @haalkhata/mobile
   src/screens/<route>/       per-route fan-out mirroring the web pattern:
                                components/<XScreen>/ (+hooks/), constants/, utils/
   src/components/            ui primitives, shell (tabs/headers), modals, providers
-  src/lib/                   api/ (Connect transport + bearer session), money/,
+  src/lib/                   api/ (Connect transport + bearer session),
                              theme/ (design tokens), encoding/, polyfills/
 ```
 
@@ -73,6 +77,12 @@ apps/mobile/                 Expo (React Native) app — @haalkhata/mobile
   `deleted_at IS NULL`.
 - **Auto-migrate on boot** runs once at module load in the connect mount
   point — never edit an applied migration, add a new one.
+- **Cross-app client code goes in `@haalkhata/shared`, never duplicated.**
+  If web and mobile both need a helper, it belongs in `packages/shared/src/`.
+  Admission rule: pure TypeScript, no React / React Native / DOM / Node APIs,
+  and genuinely needed by both. UI primitives and the Connect transports stay
+  per-app (different renderers, cookie vs bearer auth). The package's eslint
+  config bans `window`/`document`/`process` to keep this honest.
 
 ## How to add a new domain
 
@@ -189,9 +199,11 @@ All four must pass before committing.
 | `pnpm proto:lint`| buf lint + breaking                            |
 | `pnpm doctor`   | react-doctor scan                               |
 | `pnpm typecheck:mobile` / `lint:mobile` / `test:mobile` | same gates for apps/mobile |
+| `pnpm typecheck:shared` / `lint:shared` / `test:shared` | same gates for packages/shared |
 
 Run `pnpm typecheck && pnpm lint && pnpm test` before every commit (the
-`:mobile` variants when touching apps/mobile).
+`:mobile` variants when touching apps/mobile). Touching `packages/shared`
+means running all three sets — it is compiled into both apps.
 
 ## Mobile app (apps/mobile)
 
@@ -207,9 +219,10 @@ with colocated tests. Mobile-specific rules:
   gate redirects to /login. The server's CSRF guard exempts bearer clients.
 - **Design tokens** come from `src/lib/theme/theme.ts` (the web's globals.css
   palette). No inline hex colors in screens.
-- **Query keys and money helpers are copies of the web files** — keep
-  `lib/api/queryKeys.ts` and `lib/money/*` byte-identical with
-  `apps/web/src/lib/...` when either side changes.
+- **Query keys and money helpers are imported, not copied.** They live in
+  `@haalkhata/shared` and are consumed identically by both apps. These were
+  duplicated files kept in sync by hand until 2026-07-26 — do not reintroduce
+  a local copy.
 - Dev: `./dev.sh --mobile-android` (or `--mobile-ios`) does the full
   end-to-end flow: boots an emulator/simulator if none is running, builds +
   installs the dev client via `expo prebuild` + `gradlew installDebug`

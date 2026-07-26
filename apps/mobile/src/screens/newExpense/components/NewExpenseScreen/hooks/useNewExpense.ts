@@ -4,7 +4,7 @@ import type { User } from "@haalkhata/protogen/common/v1/common_pb";
 import { useRouter } from "expo-router";
 import { useMemo, useState } from "react";
 import { errorMessage } from "@/lib/api/connect";
-import { parseMoneyInput } from "@/lib/money/money";
+import { parseMoneyInput } from "@haalkhata/shared/money/money";
 import type { ExpenseFormInitial } from "../../../utils/initialValues";
 import {
   buildSplitSpecs,

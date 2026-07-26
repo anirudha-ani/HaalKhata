@@ -7,7 +7,7 @@ import { ReceiptText } from "lucide-react-native";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Money } from "@/components/ui/Money";
-import { formatMoney } from "@/lib/money/money";
+import { formatMoney } from "@haalkhata/shared/money/money";
 import { colors, radii, spacing } from "@/lib/theme/theme";
 import { CATEGORY_EMOJI } from "../../../../constants/categoryEmoji";
 

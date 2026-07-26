@@ -3,7 +3,7 @@
 
 import { Plus, Trash2 } from "lucide-react";
 import { Avatar } from "@/components/ui/Avatar";
-import { formatMoney } from "@/lib/money/money";
+import { formatMoney } from "@haalkhata/shared/money/money";
 import type { ScanController } from "../../hooks/useScan";
 
 /** Shared input styling for the small editable cells in the draft. */

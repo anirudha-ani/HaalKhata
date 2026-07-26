@@ -3,7 +3,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
 import { socialClient } from "@/lib/api/connect";
-import { queryKeys } from "@/lib/api/queryKeys";
+import { queryKeys } from "@haalkhata/shared/api/queryKeys";
 
 /**
  * Loads the cross-group activity feed and the user's notifications, and marks

@@ -95,9 +95,11 @@ Layering rules (enforced by review):
                               expense/, receipt/, social/ — THE contract
                               (buf lint + breaking)
 /buf.yaml /buf.gen.yaml       codegen → packages/protogen
-/packages/protogen/                @haalkhata/protogen — generated TS (messages +
-                              service descriptors), consumed by web now,
-                              mobile later
+/packages/protogen/           @haalkhata/protogen — generated TS (messages +
+                              service descriptors), consumed by web and mobile
+/packages/shared/             @haalkhata/shared — hand-written client code used
+                              by BOTH apps (see §2b): api/queryKeys.ts,
+                              money/money.ts + money.constants.ts, greeting.ts
 /apps/web/                    Next.js app (App Router UI + Connect endpoint)
   src/server/                 domain-first fan-out mirroring /proto modules:
     common/                   db.ts, errors.ts (shared infra, no domain deps)
@@ -108,16 +110,51 @@ Layering rules (enforced by review):
     api/connect/              context.ts (auth/cookies/error map), routes.ts
   src/pages/api/connect/      [[...connect]].ts — mount point only
   src/app/<route>/            UI (structure below)
-  src/lib/                    shared client/server utilities, by concern:
-    api/                        connect.ts (transport + typed clients), queryKeys.ts
-    money/                      money.ts (formatting) + money.constants.ts
+  src/lib/                    app-SPECIFIC client/server utilities, by concern:
+    api/                        connect.ts (transport + typed clients)
     auth/                       session.server.ts (server-component session guard)
+                              (cross-app helpers live in @haalkhata/shared — §2b)
   src/components/             shared UI, by role (each folder owns its *.constants.ts):
     ui/                         presentational primitives (Avatar, Modal, Money, …)
     shell/                      authed app chrome (AppShell + hooks/)
     modals/                     shared feature modals (SettleUpModal)
     providers/                  app-wide providers + PWA bootstrap
 ```
+
+## 2b. Shared client package (v5 — 2026-07-26)
+
+`apps/web` and `apps/mobile` are both TypeScript clients of the same contract,
+so a class of client-side code is genuinely common to them: the React Query key
+registry, the cents-based money helpers, and the greeting helper. These were
+originally duplicated file-for-file, kept in sync by an AGENTS.md instruction
+telling humans to keep them byte-identical. Nothing enforced it, and silent
+drift in `queryKeys.ts` produces stale-cache bugs that are near-impossible to
+reproduce.
+
+**Decision:** the duplicated files move to `packages/shared`
+(`@haalkhata/shared`), a hand-written workspace package consumed by both apps —
+converting a discipline problem into a compiler problem.
+
+```
+/packages/shared/
+  src/api/queryKeys.ts         query-key registry + MONEY_KEYS invalidation set
+  src/money/money.ts           formatMoney / parseMoneyInput / centsToInput / todayISO
+  src/money/money.constants.ts CURRENCIES, CATEGORIES
+  src/money/money.test.ts      colocated unit tests (vitest)
+  src/greeting.ts              time-of-day greeting
+```
+
+- Consumed as `@haalkhata/shared/<subpath>` (subpath exports mapping straight
+  to `./src/*.ts`, exactly like `@haalkhata/protogen`). Raw TypeScript, no
+  build step — Next transpiles it via `transpilePackages`, Metro via the
+  existing workspace `watchFolders`.
+- **Admission rule:** only code that is (a) pure TypeScript, (b) free of React,
+  React Native, DOM and Node APIs, and (c) actually needed by both apps. UI
+  primitives stay per-app (they render to different renderers); the Connect
+  transports stay per-app (cookie auth vs bearer auth).
+- Its own quality gates (`typecheck` / `lint` / `test`) run from the root
+  alongside the app gates, so the shared code is held to the same
+  id-length + JSDoc conventions as everything else.
 
 ## 3. Frontend structure (per route)
 

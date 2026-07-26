@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { User } from "@haalkhata/protogen/common/v1/common_pb";
 import { authClient, errorMessage } from "@/lib/api/connect";
-import { queryKeys } from "@/lib/api/queryKeys";
+import { queryKeys } from "@haalkhata/shared/api/queryKeys";
 
 /**
  * Fetches the signed-in user via the getMe query.

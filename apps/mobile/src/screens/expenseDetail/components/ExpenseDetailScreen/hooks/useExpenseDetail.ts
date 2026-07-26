@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import { useState } from "react";
 import { authClient, errorMessage, expenseClient } from "@/lib/api/connect";
-import { MONEY_KEYS, queryKeys } from "@/lib/api/queryKeys";
+import { MONEY_KEYS, queryKeys } from "@haalkhata/shared/api/queryKeys";
 
 /**
  * Loads one expense (with its users and comments) and exposes the screen's

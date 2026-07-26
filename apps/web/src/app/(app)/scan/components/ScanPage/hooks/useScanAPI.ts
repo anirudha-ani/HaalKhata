@@ -5,7 +5,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { MessageInitShape } from "@bufbuild/protobuf";
 import type { CreateExpenseRequestSchema } from "@haalkhata/protogen/expense/v1/expense_pb";
 import { authClient, expenseClient, groupClient, receiptClient, socialClient } from "@/lib/api/connect";
-import { MONEY_KEYS, queryKeys } from "@/lib/api/queryKeys";
+import { MONEY_KEYS, queryKeys } from "@haalkhata/shared/api/queryKeys";
 
 /**
  * Wraps every server call the scan page makes: the signed-in user, groups and

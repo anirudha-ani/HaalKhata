@@ -1,7 +1,7 @@
 /** Pure assembly of the expense form's initial state (create + edit). */
 
 import type { Expense } from "@haalkhata/protogen/expense/v1/expense_pb";
-import { centsToInput, todayISO } from "@/lib/money/money";
+import { centsToInput, todayISO } from "@haalkhata/shared/money/money";
 import type { FormSplitType } from "./splitForm";
 
 /** Initial values for every field of the expense form. */

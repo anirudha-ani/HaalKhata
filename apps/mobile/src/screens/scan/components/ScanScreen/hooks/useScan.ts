@@ -5,7 +5,7 @@ import { useRouter } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
 import { useMemo, useState } from "react";
 import { errorMessage } from "@/lib/api/connect";
-import { centsToInput, parseMoneyInput, todayISO } from "@/lib/money/money";
+import { centsToInput, parseMoneyInput, todayISO } from "@haalkhata/shared/money/money";
 import { PICKER_OPTIONS } from "../../../constants/imagePicker";
 import { useScanAPI, type ReceiptPhotoInput } from "./useScanAPI";
 

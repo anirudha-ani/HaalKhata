@@ -10,7 +10,7 @@ import {
   receiptClient,
   socialClient,
 } from "@/lib/api/connect";
-import { MONEY_KEYS, queryKeys } from "@/lib/api/queryKeys";
+import { MONEY_KEYS, queryKeys } from "@haalkhata/shared/api/queryKeys";
 import { base64ToBytes } from "@/lib/encoding/encoding";
 
 /** A photo picked for scanning: its base64 payload and media type. */

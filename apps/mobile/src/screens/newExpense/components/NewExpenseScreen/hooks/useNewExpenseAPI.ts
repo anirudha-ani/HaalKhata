@@ -4,7 +4,7 @@ import type { MessageInitShape } from "@bufbuild/protobuf";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { CreateExpenseRequestSchema } from "@haalkhata/protogen/expense/v1/expense_pb";
 import { authClient, expenseClient, groupClient, socialClient } from "@/lib/api/connect";
-import { MONEY_KEYS, queryKeys } from "@/lib/api/queryKeys";
+import { MONEY_KEYS, queryKeys } from "@haalkhata/shared/api/queryKeys";
 
 /** Plain-object init shape of a CreateExpenseRequest proto message. */
 export type CreateExpenseInput = MessageInitShape<typeof CreateExpenseRequestSchema>;

@@ -7,7 +7,7 @@ import type { Expense } from "@haalkhata/protogen/expense/v1/expense_pb";
 import type { User } from "@haalkhata/protogen/common/v1/common_pb";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Money } from "@/components/ui/Money";
-import { formatMoney } from "@/lib/money/money";
+import { formatMoney } from "@haalkhata/shared/money/money";
 import { CATEGORY_EMOJI } from "../../../../constants/categoryEmoji";
 
 /**

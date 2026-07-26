@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/Button";
 import { Chip } from "@/components/ui/Chip";
 import { Spinner } from "@/components/ui/Spinner";
 import { TextField } from "@/components/ui/TextField";
-import { CURRENCIES } from "@/lib/money/money.constants";
+import { CURRENCIES } from "@haalkhata/shared/money/money.constants";
 import { colors, radii, spacing } from "@/lib/theme/theme";
 import { useAccountAPI, useProfileForm } from "./hooks/useAccount";
 

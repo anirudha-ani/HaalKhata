@@ -2,7 +2,7 @@
 /** New/edit expense form: context picker, basics (amount/date/category), payer + split editors, submit. */
 
 import Link from "next/link";
-import { CATEGORIES } from "@/lib/money/money.constants";
+import { CATEGORIES } from "@haalkhata/shared/money/money.constants";
 import type { ExpenseFormInitial } from "../../../../utils/initialValues";
 import { PayerEditor } from "../PayerEditor/PayerEditor";
 import { SplitEditor } from "../SplitEditor/SplitEditor";

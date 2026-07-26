@@ -5,7 +5,7 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { CounterpartyBalance } from "@haalkhata/protogen/common/v1/common_pb";
 import { authClient, errorMessage, socialClient } from "@/lib/api/connect";
-import { queryKeys } from "@/lib/api/queryKeys";
+import { queryKeys } from "@haalkhata/shared/api/queryKeys";
 
 /**
  * Provides all data and behavior the friends page needs: the signed-in user,

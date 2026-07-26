@@ -7,6 +7,7 @@ WORKDIR /app
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY apps/web/package.json apps/web/
 COPY packages/protogen/package.json packages/protogen/
+COPY packages/shared/package.json packages/shared/
 RUN pnpm install --frozen-lockfile
 
 COPY buf.yaml buf.gen.yaml ./

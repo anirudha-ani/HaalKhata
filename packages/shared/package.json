@@ -1,0 +1,21 @@
+{
+  "name": "@haalkhata/shared",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Hand-written TypeScript shared by apps/web and apps/mobile (query keys, money helpers, greeting). Pure TS only — no React, React Native, DOM or Node APIs.",
+  "exports": {
+    "./*": "./src/*.ts"
+  },
+  "scripts": {
+    "lint": "eslint src",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9",
+    "eslint": "^9",
+    "typescript": "^5.8.3",
+    "typescript-eslint": "^8.63.0",
+    "vitest": "^3.2.4"
+  }
+}

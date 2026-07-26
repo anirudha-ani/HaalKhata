@@ -11,7 +11,7 @@ import { Money } from "@/components/ui/Money";
 import { Sheet } from "@/components/ui/Sheet";
 import { Spinner } from "@/components/ui/Spinner";
 import { errorMessage } from "@/lib/api/connect";
-import { formatMoney } from "@/lib/money/money";
+import { formatMoney } from "@haalkhata/shared/money/money";
 import { colors, fonts, radii, spacing } from "@/lib/theme/theme";
 import { useExpenseDetail } from "./hooks/useExpenseDetail";
 

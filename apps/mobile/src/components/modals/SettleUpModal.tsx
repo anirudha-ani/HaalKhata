@@ -10,8 +10,8 @@ import { Chip } from "@/components/ui/Chip";
 import { Sheet } from "@/components/ui/Sheet";
 import { TextField } from "@/components/ui/TextField";
 import { errorMessage, expenseClient } from "@/lib/api/connect";
-import { MONEY_KEYS } from "@/lib/api/queryKeys";
-import { centsToInput, formatMoney, parseMoneyInput } from "@/lib/money/money";
+import { MONEY_KEYS } from "@haalkhata/shared/api/queryKeys";
+import { centsToInput, formatMoney, parseMoneyInput } from "@haalkhata/shared/money/money";
 import { colors, radii, spacing } from "@/lib/theme/theme";
 import { SETTLEMENT_METHODS } from "./modals.constants";
 
