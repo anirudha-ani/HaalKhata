@@ -523,15 +523,20 @@ export async function addComment(userId: string, expenseId: string, body: string
 }
 
 /**
- * Records a real-world payment from the caller to another user (group or
- * one-off), then fans out activity + a notification to the recipient. The
+ * Records a real-world payment between the caller and another user (group or
+ * one-off), then fans out activity + a notification to the other party. The
  * settlement's currency follows the group when one is given.
  *
- * @param userId - Authenticated caller who made the payment.
- * @param request - Settlement details: recipient, amount, optional group/currency/method/note.
+ * `received` says which way the money went. Both directions are needed: a
+ * balance in your favour can only be cleared by recording that they paid you,
+ * and before this existed such a balance had no way to be settled at all.
+ *
+ * @param userId - Authenticated caller recording the payment.
+ * @param request - Settlement details: the other person, amount, direction,
+ *   and optional group/currency/method/note.
  * @returns The stored settlement as a proto message init shape.
  * @throws UsecaseError on self-settlement, non-positive amounts, unknown
- *   recipient/group, or missing group membership.
+ *   counterparty/group, or missing group membership.
  */
 export async function recordSettlement(
   userId: string,
@@ -542,12 +547,16 @@ export async function recordSettlement(
     currency: string;
     method: string;
     note: string;
+    received?: boolean;
   },
 ) {
   if (request.toUserId === userId) invalid("you cannot settle with yourself");
   if (request.amountCents <= 0) invalid("amount must be positive");
   const recipient = await findUserById(request.toUserId);
   if (!recipient) notFound("recipient not found");
+  // Whoever is settling a debt is the payer; the other is the creditor.
+  const payerId = request.received ? request.toUserId : userId;
+  const creditorId = request.received ? userId : request.toUserId;
 
   const groupId = request.groupId || null;
   let currency = request.currency;
@@ -565,23 +574,30 @@ export async function recordSettlement(
   }
   if (!currency) currency = (await findUserById(userId))?.default_currency ?? "USD";
 
-  // Refuse to record a settlement larger than what the caller actually owes
-  // the recipient in this scope — otherwise a user could flip the balance so
-  // the recipient now owes them (settlement-as-attack).
-  const outstandingCents = await amountOwed(userId, request.toUserId, groupId);
+  // Refuse to record a settlement larger than the debt it is supposed to
+  // clear — otherwise it would flip the balance the other way
+  // (settlement-as-attack). The guard applies to whichever direction the
+  // payment is being recorded in.
+  const outstandingCents = await amountOwed(payerId, creditorId, groupId);
   if (outstandingCents <= 0) {
-    invalid("you don't owe this person anything in this scope");
+    invalid(
+      request.received
+        ? "this person doesn't owe you anything in this scope"
+        : "you don't owe this person anything in this scope",
+    );
   }
   if (request.amountCents > outstandingCents) {
     invalid(
-      `settlement (${formatMoney(request.amountCents, currency)}) exceeds what you owe (${formatMoney(outstandingCents, currency)})`,
+      `settlement (${formatMoney(request.amountCents, currency)}) exceeds what ${
+        request.received ? "they owe" : "you owe"
+      } (${formatMoney(outstandingCents, currency)})`,
     );
   }
 
   const settlement = await insertSettlement({
     groupId,
-    fromUser: userId,
-    toUser: request.toUserId,
+    fromUser: payerId,
+    toUser: creditorId,
     amountCents: request.amountCents,
     currency,
     method: SETTLEMENT_METHODS.has(request.method) ? request.method : "cash",
@@ -590,21 +606,28 @@ export async function recordSettlement(
 
   const actor = (await findUserById(userId))!;
   const group = groupId ? await findGroupById(groupId) : undefined;
+  // The feed states who actually paid whom, not who typed it in — otherwise a
+  // payment received reads as one made.
+  const payerName = request.received ? recipient.name : actor.name;
+  const creditorName = request.received ? actor.name : recipient.name;
+  const friendLink = `/friends/${request.toUserId}`;
   await insertActivity({
     groupId,
     actorId: userId,
     type: "settlement",
-    message: `${actor.name} paid ${recipient.name} ${formatMoney(request.amountCents, currency)}${group ? ` in "${group.name}"` : ""}`,
-    link: groupId ? `/groups/${groupId}` : "/friends",
+    message: `${payerName} paid ${creditorName} ${formatMoney(request.amountCents, currency)}${group ? ` in "${group.name}"` : ""}`,
+    link: groupId ? `/groups/${groupId}` : friendLink,
     audience: groupId
       ? (await listMembers(groupId)).map((member) => member.id)
       : [userId, request.toUserId],
   });
   await insertNotifications([request.toUserId], {
     type: "settlement",
-    title: `${actor.name} recorded a payment of ${formatMoney(request.amountCents, currency)} to you`,
+    title: request.received
+      ? `${actor.name} recorded your payment of ${formatMoney(request.amountCents, currency)}`
+      : `${actor.name} recorded a payment of ${formatMoney(request.amountCents, currency)} to you`,
     body: group ? group.name : "One-off settlement",
-    link: groupId ? `/groups/${groupId}` : "/friends",
+    link: groupId ? `/groups/${groupId}` : `/friends/${userId}`,
   });
   return toSettlement(settlement);
 }

@@ -64,4 +64,11 @@ export const expenseHandler: ServiceImpl<typeof ExpenseService> = {
   async getOverallBalances(_request, context) {
     return runUsecase(async () => balances.getOverallBalances(await requireUser(context)), context);
   },
+
+  async getFriendLedger(request, context) {
+    return runUsecase(
+      async () => balances.getFriendLedger(await requireUser(context), request.userId),
+      context,
+    );
+  },
 };

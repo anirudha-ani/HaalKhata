@@ -41,4 +41,13 @@ export const socialHandler: ServiceImpl<typeof SocialService> = {
     await runUsecase(async () => social.markNotificationsRead(await requireUser(context)), context);
     return {};
   },
+
+  /** Nudges someone who owes the caller money; rate-limited in the usecase. */
+  async sendReminder(request, context) {
+    await runUsecase(
+      async () => social.sendReminder(await requireUser(context), request.userId),
+      context,
+    );
+    return {};
+  },
 };

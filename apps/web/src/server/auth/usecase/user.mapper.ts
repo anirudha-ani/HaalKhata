@@ -19,5 +19,8 @@ export function toUser(userRow: UserRow) {
     defaultCurrency: userRow.default_currency,
     registered: userRow.password_hash !== null,
     phone: userRow.phone ?? "",
+    // Absent on a row straight out of an INSERT ... RETURNING *, which has no
+    // handles yet by definition.
+    paymentHandles: userRow.payment_handles ?? [],
   };
 }

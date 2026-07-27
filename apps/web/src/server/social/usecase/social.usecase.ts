@@ -6,14 +6,19 @@ import { listActivityForGroup, listActivityForUser } from "@/server/social/repo/
 import { isMember } from "@/server/group/repo/groups.repo";
 import {
   countUnread,
+  findLatestNotificationAt,
+  insertNotifications,
   listNotificationsByUser,
   markAllRead,
 } from "@/server/social/repo/notifications.repo";
+import { REMINDER_COOLDOWN_HOURS } from "@/server/social/social.constants";
+import { formatMoney } from "@haalkhata/shared/money/money";
+import { findPaymentMethod } from "@haalkhata/shared/payment/methods";
 import {
   findOrCreateUserByEmail,
   findOrCreateUserByPhone,
 } from "@/server/auth/usecase/auth.usecase";
-import { getOverallBalances } from "@/server/expense/usecase/balance.usecase";
+import { getOverallBalances, netWithUser } from "@/server/expense/usecase/balance.usecase";
 import { denied, invalid } from "@/server/common/errors";
 import { toUser } from "@/server/auth/usecase/user.mapper";
 
@@ -158,4 +163,59 @@ export async function markNotificationsRead(userId: string): Promise<void> {
  */
 export async function assertUserExists(userId: string): Promise<void> {
   if (!(await findUserById(userId))) denied("account no longer exists");
+}
+
+/**
+ * Nudges someone who owes the caller money, as an in-app notification that
+ * includes the caller's payment handles so the debtor knows where to send it.
+ *
+ * Two guards, both server-side because the client is not the party that
+ * suffers when they are missing: you can only remind somebody who actually
+ * owes you right now, and only once per {@link REMINDER_COOLDOWN_HOURS}. The
+ * previous reminder is its own cooldown record — no extra table needed.
+ *
+ * @param userId - Id of the authenticated caller sending the reminder.
+ * @param debtorId - Id of the person being reminded.
+ * @throws UsecaseError when reminding yourself, when they owe you nothing, or
+ *   while the cooldown is still running.
+ */
+export async function sendReminder(userId: string, debtorId: string): Promise<void> {
+  if (debtorId === userId) invalid("you cannot remind yourself");
+  const debtor = await findUserById(debtorId);
+  if (!debtor) denied("account no longer exists");
+
+  const netCents = await netWithUser(userId, debtorId);
+  if (netCents <= 0) invalid("they don't owe you anything right now");
+
+  const sender = (await findUserById(userId))!;
+  const link = `/friends/${userId}`;
+  const lastSentAt = await findLatestNotificationAt(debtorId, "reminder", link);
+  if (lastSentAt) {
+    const elapsedHours = (Date.now() - new Date(lastSentAt).getTime()) / 3_600_000;
+    if (elapsedHours < REMINDER_COOLDOWN_HOURS) {
+      invalid(
+        `you already reminded ${debtor.name} — you can send another in ${Math.ceil(
+          REMINDER_COOLDOWN_HOURS - elapsedHours,
+        )}h`,
+      );
+    }
+  }
+
+  // The nudge carries the sender's handles, because "where do I send it?" is
+  // the very next question and making the debtor ask defeats the reminder.
+  const payTo = (sender.payment_handles ?? [])
+    .filter((entry) => entry.handle)
+    .map((entry) => {
+      const method = findPaymentMethod(entry.method);
+      return `${method?.label ?? entry.method}: ${entry.handle}`;
+    })
+    .join(" · ");
+  const owed = formatMoney(netCents, sender.default_currency || "USD");
+
+  await insertNotifications([debtorId], {
+    type: "reminder",
+    title: `${sender.name} sent you a reminder`,
+    body: payTo ? `You owe ${owed} — pay via ${payTo}` : `You owe ${owed}`,
+    link,
+  });
 }

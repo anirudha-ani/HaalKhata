@@ -58,3 +58,9 @@ export function normalizePhone(phone: string): string | null {
   if (!parsed || !parsed.isValid()) return null;
   return parsed.number;
 }
+
+/**
+ * Maximum length of a payment handle. Generous next to a Venmo username or a
+ * $cashtag, but bounded — handles are stored verbatim and rendered as-is.
+ */
+export const MAX_PAYMENT_HANDLE_LENGTH = 120;

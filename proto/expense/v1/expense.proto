@@ -18,6 +18,7 @@ service ExpenseService {
   rpc RecordSettlement(RecordSettlementRequest) returns (Settlement);
   rpc GetGroupBalances(GetGroupBalancesRequest) returns (BalancesResponse);
   rpc GetOverallBalances(google.protobuf.Empty) returns (OverallBalancesResponse);
+  rpc GetFriendLedger(GetFriendLedgerRequest) returns (FriendLedgerResponse);
 }
 
 message Payer {
@@ -133,11 +134,16 @@ message AddCommentRequest {
 
 message RecordSettlementRequest {
   string group_id = 1; // empty = one-off
+  // The other person, whichever way the money moved.
   string to_user_id = 2;
   int32 amount_cents = 3;
   string currency = 4;
-  string method = 5; // cash | bank | bkash | other
+  string method = 5; // venmo | zelle | cashapp | paypal | cash | bank | other
   string note = 6;
+  // false (default) = you paid them; true = they paid you, and the settlement
+  // is stored the other way round. Recording money coming back to you is the
+  // only way to clear a balance in your favour.
+  bool received = 7;
 }
 
 message Settlement {
@@ -168,4 +174,44 @@ message OverallBalancesResponse {
   int32 you_owe_cents = 1;
   int32 owed_to_you_cents = 2;
   repeated common.v1.CounterpartyBalance counterparties = 3;
+}
+
+message GetFriendLedgerRequest {
+  string user_id = 1;
+}
+
+// One line of the shared history with a friend. Positive cents always mean
+// "in your favour", so the signs read the same way down the whole statement.
+message FriendLedgerEntry {
+  string kind = 1; // expense | settlement
+  string id = 2;
+  string date = 3; // YYYY-MM-DD
+  string description = 4;
+  string group_id = 5; // empty = one-off
+  string group_name = 6;
+  // The whole expense, or the amount that changed hands for a settlement.
+  int32 total_cents = 7;
+  // What this line did to the balance: > 0 = they owe you more.
+  int32 delta_cents = 8;
+  // The balance after this line, oldest to newest: > 0 = they owe you.
+  int32 balance_after_cents = 9;
+}
+
+message FriendGroupBalance {
+  string group_id = 1;
+  string group_name = 2;
+  int32 net_cents = 3; // > 0 = they owe you in this group
+}
+
+message FriendLedgerResponse {
+  common.v1.User friend = 1;
+  // Net across everything shared, groups included: > 0 = they owe you.
+  int32 net_cents = 2;
+  string currency = 3;
+  // Newest first, which is the reading order; balance_after_cents is
+  // accumulated oldest-first so the topmost entry carries the current net.
+  repeated FriendLedgerEntry entries = 4;
+  // Only the groups you actually share with this person, and only when the
+  // balance is spread across more than a single scope.
+  repeated FriendGroupBalance group_balances = 5;
 }

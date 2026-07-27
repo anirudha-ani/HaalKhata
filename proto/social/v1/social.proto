@@ -13,6 +13,14 @@ service SocialService {
   rpc ListActivity(ListActivityRequest) returns (ListActivityResponse);
   rpc ListNotifications(google.protobuf.Empty) returns (ListNotificationsResponse);
   rpc MarkNotificationsRead(google.protobuf.Empty) returns (google.protobuf.Empty);
+  // Nudges someone who owes the caller money. Rate-limited server-side so it
+  // cannot become a way to harass somebody.
+  rpc SendReminder(SendReminderRequest) returns (google.protobuf.Empty);
+}
+
+message SendReminderRequest {
+  // The person to remind; must currently owe the caller.
+  string user_id = 1;
 }
 
 message AddFriendRequest {

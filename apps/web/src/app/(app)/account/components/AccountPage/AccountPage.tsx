@@ -6,6 +6,7 @@ import type { User } from "@haalkhata/protogen/common/v1/common_pb";
 import { Avatar } from "@/components/ui/Avatar";
 import { Spinner } from "@/components/ui/Spinner";
 import { CURRENCIES } from "@haalkhata/shared/money/money.constants";
+import { HANDLE_METHODS } from "@haalkhata/shared/payment/methods";
 import { useAccountAPI, useProfileForm } from "./hooks/useAccount";
 
 /**
@@ -71,6 +72,26 @@ function ProfileForm({ me: currentUser }: { me: User }) {
             ))}
           </select>
         </label>
+        <fieldset className="space-y-2 border-t border-line pt-4">
+          <legend className="sr-only">Payment handles</legend>
+          <p className="text-sm font-medium">Get paid</p>
+          <p className="text-xs text-ink-soft">
+            Whoever owes you sees these when they settle up, so they can pay you without
+            asking where to send it. Leave one blank if you don&apos;t use it.
+          </p>
+          {HANDLE_METHODS.map((method) => (
+            <label key={method.key} className="flex items-center gap-3 text-sm">
+              <span className="w-24 shrink-0 text-ink-soft">{method.label}</span>
+              <input
+                value={form.handles[method.key] ?? ""}
+                onChange={(event) => form.setHandle(method.key, event.target.value)}
+                placeholder={method.handleLabel}
+                className="min-w-0 flex-1 rounded-xl border border-line bg-card px-3 py-2 focus:border-brand-500 focus:outline-none"
+              />
+            </label>
+          ))}
+        </fieldset>
+
         {form.message ? <p className="text-sm text-ink-soft">{form.message}</p> : null}
         <button
           type="submit"

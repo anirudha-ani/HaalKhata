@@ -13,11 +13,14 @@ import {
   updateUserProfile,
   type UserRow,
 } from "@/server/auth/repo/users.repo";
+import { replacePaymentHandles } from "@/server/auth/repo/paymentHandles.repo";
+import { PAYMENT_METHOD_KEYS } from "@haalkhata/shared/payment/methods";
 import { UsecaseError, invalid } from "@/server/common/errors";
 import {
   AVATAR_PALETTE,
   DATA_DIRECTORY,
   EMAIL_PATTERN,
+  MAX_PAYMENT_HANDLE_LENGTH,
   PASSWORD_MAX_LENGTH,
   PASSWORD_MIN_LENGTH,
   PHONE_FORMAT_HINT,
@@ -282,13 +285,28 @@ export async function logOut(userId: string): Promise<void> {
  */
 export async function updateProfile(
   userId: string,
-  input: { name: string; defaultCurrency: string },
+  input: {
+    name: string;
+    defaultCurrency: string;
+    paymentHandles?: { method: string; handle: string }[];
+  },
 ) {
   if (input.name.trim().length === 0) invalid("name is required");
   await updateUserProfile(userId, {
     name: input.name.trim(),
     defaultCurrency: input.defaultCurrency || undefined,
   });
+  if (input.paymentHandles) {
+    for (const entry of input.paymentHandles) {
+      if (!PAYMENT_METHOD_KEYS.includes(entry.method)) {
+        invalid(`unknown payment method "${entry.method}"`);
+      }
+      if (entry.handle.length > MAX_PAYMENT_HANDLE_LENGTH) {
+        invalid(`that ${entry.method} handle is too long`);
+      }
+    }
+    await replacePaymentHandles(userId, input.paymentHandles);
+  }
   return getMe(userId);
 }
 

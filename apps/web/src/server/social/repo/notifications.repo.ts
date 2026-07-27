@@ -60,6 +60,31 @@ export async function listNotificationsByUser(
 }
 
 /**
+ * When the newest notification of a given type was sent to a user with a
+ * given link. Used to enforce the reminder cooldown without a second table:
+ * the reminder itself is the record that it happened.
+ *
+ * @param userId - Recipient of the notification.
+ * @param type - Notification kind, e.g. "reminder".
+ * @param link - The in-app link the notification points at, which identifies
+ *   the sender for a reminder.
+ * @returns The newest matching created_at, or undefined when there is none.
+ */
+export async function findLatestNotificationAt(
+  userId: string,
+  type: string,
+  link: string,
+): Promise<string | undefined> {
+  const latest = await queryOne<{ created_at: string }>(
+    `SELECT created_at FROM notifications
+     WHERE user_id = $1 AND type = $2 AND link = $3
+     ORDER BY created_at DESC LIMIT 1`,
+    [userId, type, link],
+  );
+  return latest?.created_at;
+}
+
+/**
  * Counts a user's unread notifications.
  *
  * @param userId - Id of the user whose unread notifications to count.

@@ -41,10 +41,10 @@ recording settlements is in.
   response body (mobile). Every RPC accepts either the cookie or
   `Authorization: Bearer`.
 - **AI receipt parsing: no vendor lock.** Provider abstraction with
-  config-driven ordering: self-hosted vision box (OpenAI-compatible, e.g.
-  Ollama/vLLM + Qwen2.5-VL behind Cloudflare Tunnel) → cloud API (Claude
-  vision) → mock provider (deterministic demo data so the flow always works).
-  Dev default: cloud-first. Prod: local-first with cloud fallback.
+  config-driven ordering, plus a mock provider so the flow always works
+  without keys. Superseded by §6b — the deploy target has no GPU, so the
+  single real provider is an OpenAI-compatible endpoint pointed at OpenRouter
+  under a zero-data-retention policy, and the per-vendor SDKs are gone.
 - **Notifications:** in-app notifications now; Web Push (VAPID) + email
   (Resend) are a later phase (need keys/infra).
 
@@ -240,10 +240,244 @@ that sum and rejects a mismatch.
 Editing an existing itemized expense is still blocked (unchanged) — the guard
 in NewExpensePage stands until the editor can round-trip saved items.
 
+## 3c. Ad-hoc participants: "who's on this?" (v5.6 — 2026-07-26)
+
+The expense form and /scan both asked "Who is this with?" through a single
+`<select>` whose value was `g:<groupId>` or `f:<friendId>`. That made the cast
+of an expense **exactly one group or exactly one friend** — a dinner with three
+friends could not be entered at all without first creating a group. The server
+never had this limitation: `expenses.group_id` is nullable, `expense_splits` /
+`expense_payers` take any number of rows, and createExpense already
+auto-friends every participant of a one-off (§ expense.usecase). It was purely
+a client-side constraint.
+
+**How Splitwise models this** (researched 2026-07-26): the add-a-bill form has
+a token field labelled "With you and:" holding one chip per person, plus a
+group line that reads "No group" by default. Picking a group inserts it as a
+token; to make a one-off you *delete the group token and type names instead*.
+So group and ad-hoc cast are alternatives, not layers — which is also what our
+server enforces (a group expense validates that every participant is a member).
+
+**Our shape** — `components/people/PeoplePicker.tsx`, used by both routes:
+
+  Who's on this?
+  [You] [Sarah ×] [Mike ×]            ← chips; you are pinned, others removable
+  [ Add people ▾ ]                    ← disclosure over a searchable checkbox list
+  Group  [ No group ▾ ]               ← separate select; picking one takes over
+
+- **Chips, not a multi-select.** Selected people stay visible as removable
+  chips; the candidate list is a plain `<fieldset>` of checkboxes in a scroll
+  container with a filter box, per Roselli's "Under-Engineered Multi-Selects" —
+  no custom combobox, no ARIA to get wrong, and `<select multiple>` avoided
+  because it tests badly and hides the current selection.
+- **Group and people are exclusive.** Choosing a group replaces the cast with
+  its members (chips render non-removable, the Add-people disclosure hides);
+  choosing "No group" clears back to just you. This matches the server rule and
+  Splitwise's delete-the-token flow, and avoids Splitwise's own worst behaviour
+  — adding a non-member to a group bill silently splits it into two expenses.
+- **Filter appears only past 6 friends**; below that the list is short enough
+  to scan.
+
+**State**: `context: string` is replaced by `groupId: string` (""= none) and
+`friendIds: string[]` (ordered ad-hoc extras). `people` derives from whichever
+is set, always with the signed-in user first, resolved through a directory
+built from friends ∪ group members ∪ the edited expense's `users` — so a
+participant who is not in the friends list still renders.
+
+**Pruning is the correctness-critical part.** Removing a person must not leave
+them in the request: `submit` sends `payerAmounts` unfiltered and
+`buildItemsPayload` reads `items[].assignees` unfiltered, so a stale key would
+have been posted as a payer or an item assignment. Dropping a chip therefore
+prunes `checked`, `splitInputs`, `payerAmounts` and every item's `assignees`,
+and resets `singlePayerId` to you when the removed person was the payer.
+
+**Mobile** carries the same model through its four touchpoints (expense form
+and scan screen, hook + screen each). It has no room for a disclosure panel, so
+it keeps its existing `Chip` rows: the friends row becomes multi-select, the
+groups row stays single-select and re-tapping the selected group clears it.
+
+**Side effect: editing a one-off expense is fixed.** `buildInitialValues`
+previously mapped a non-group expense to `context: ""`, so the edit form loaded
+with a cast of just you and would have re-saved the expense as a solo one.
+Participants are now recovered from the expense's splits and payers.
+
+## 3d. Search and filtering (v5.7 — 2026-07-26)
+
+The participant picker (§3c) shipped with its filter box gated behind 6+
+friends, which is fine at 3 friends and unusable at 300. UX research settles
+the threshold question: Material draws the dropdown line at 6 options and
+Carbon at 3, but past roughly **15 options** the scan-and-scroll cost is high
+enough that a filterable text field is the right control, and for hundreds the
+guidance is search plus recency-ordered defaults plus paging rather than one
+long list.
+
+Shared pieces:
+- `components/ui/SearchField.tsx` — icon, `type="search"`, clear button.
+- `lib/search/filter.ts` — `searchTerms` + `matchesTerms`: whitespace-tokenised,
+  order-independent, so "test ani" finds "Ani Test" where a substring match on
+  the joined string would not. An all-digits term is matched against the
+  fields' digits, so "415 555" finds "+1 (415) 555-2671" however punctuated.
+  Unit-tested in `filter.test.ts`.
+
+Applied at:
+- **Add expense / scan picker** — search always present (name, email, phone),
+  at most `MAX_VISIBLE_FRIENDS` rows rendered with a "showing N of M" count,
+  autofocus only when the user opens the panel themselves (never on page load,
+  which would pop the mobile keyboard). Ordering is left exactly as
+  `listFriends` returns it — counterparties first, then alphabetical — which is
+  already the recency signal the research asks for, so no re-ranking.
+- **Friends** — name / email / phone, with a match count.
+- **Groups** — name and type, so "trip" pulls up every trip.
+- **Activity** — free text over the pre-rendered message and actor, plus
+  All / Expenses / Payments / Comments / Groups type buttons. The active button
+  is styled and a count shows when rows are hidden, since a filter that changes
+  what you see has to say so.
+
+## 3e. One grid for both bills; receipt shown beside it (v5.8 — 2026-07-26)
+
+/scan and the expense form's Itemized tab had drifted into two different UIs
+for the same job: the form had the items × people grid (§3b), while /scan still
+used per-item avatar chip rows with no uneven shares, no tip presets, no live
+per-person totals, and a single payer. Three changes close the gap.
+
+**One grid.** `components/expense/ItemGrid.tsx` is now the single implementation,
+driven by explicit props rather than a form controller, and used by both. It
+gains an optional leading **Qty** column (only /scan reads a quantity off the
+bill), so `DraftLineItem.quantity` is optional and `buildItemsPayload` saves
+`quantity ?? 1`. `ItemizedEditor` is a thin adapter over it. Because /scan now
+shares the draft type it also inherits `checkItemized`, `previewItemizedShares`
+and `checkPayers` — so its totals row runs the server's own allocator. Those
+helpers moved from `app/(app)/expenses/new/utils/splitForm.ts` to
+`lib/expense/splitForm.ts`: two routes need them, so they no longer live inside
+one route.
+
+Parsed rows now arrive **shared by everyone**, matching the grid's stated
+default, instead of every item starting unassigned. The mirror rule follows:
+adding a person to a scanned receipt puts them on every line, and you untick
+their exceptions.
+
+**The receipt sits next to the draft.** `ParseReceiptResponse` gained
+`bytes normalized_image` — the exact JPEG the provider was shown, i.e. the
+upload after EXIF rotation, downscaling and HEIC transcoding. Two reasons it
+has to come from the server rather than the local file: browsers cannot decode
+HEIC at all, so an iPhone receipt was previously unviewable; and this is the
+image the numbers were actually read from, which is the thing worth checking
+against. It is ~900 KB for a phone photo, never stored, and only round-trips to
+the person who uploaded it. Past `lg:` the page becomes two columns with the
+photo sticky, so it stays beside the grid all the way down.
+
+**Multiple payers.** /scan gets the expense form's payer editor — a "multiple
+people paid" toggle over per-person amount inputs, validated by the same
+`checkPayers`. Verified live end to end: HEIC → 923 KB JPEG → Zazie, 2 items →
+saved itemized, total 4345, payers 1448+2897, splits 1448/1448/1449.
+
+Mobile still has its own chip-based scan draft; it is unchanged and unaffected
+(the proto field is additive).
+
+## 3f. Friends as a ledger, not a list (v5.9 — 2026-07-26)
+
+The Friends tab showed a name, a net figure and a "+" — and nothing else. Two
+things were missing outright, both fatal in a ledger app:
+
+- **You could not settle when someone owed you.** `RecordSettlement` only ever
+  recorded caller → recipient, and the Settle button only rendered when
+  `netCents < 0`. With every friend owing you, the page had no settle action at
+  all. Recording "they paid me back" was impossible through any surface.
+- **There was no way to see the history with a person.** No route, no query —
+  just a total with nothing behind it. `listOneOffExpensesBetween` existed but
+  covered only non-group expenses and was never wired to a screen.
+
+**What a friend screen has to do** (Splitwise's own design, plus the ledger /
+statement conventions those apps inherit from accounting):
+1. Balance across *everything* shared, group expenses included — Splitwise's
+   friend screen totals across all groups, and settling the full amount settles
+   each group behind it.
+2. Every entry in one chronological list with a **running balance**: opening
+   position, each line's effect, closing position. This is the ledger
+   convention (statement with per-row running balance) and it is what makes a
+   disputed total checkable line by line.
+3. Each line says which direction it moved the balance and by how much — the
+   expense total alone is not enough, because your share of it is what counts.
+4. Settle in either direction, one action, prominent.
+5. Settled up is an affirmation, not an empty list. Splitwise shows a check
+   mark rather than a blank sheet, with the history still one click away.
+
+**Server.** New `GetFriendLedger` RPC on ExpenseService returning the friend,
+the net, per-group balances, and the merged entry list. A new repo query
+`listExpensesBetween` is `listOneOffExpensesBetween` without the
+`group_id IS NULL` clause, so shared group expenses count. Each entry's
+`delta_cents` comes from `expenseDebts` — the same per-expense pairwise
+attribution the balances already use — so the running balance lands exactly on
+the net that `getOverallBalances` reports rather than a second, subtly
+different number. Settlements between the two of you are folded into the same
+list.
+
+`RecordSettlementRequest` gains `bool received` (false = you paid them, the
+existing behaviour). When true the settlement is stored friend → you, and the
+"you cannot settle more than you owe" guard is checked in that direction
+instead — the guard exists so a settlement cannot flip a balance in your
+favour, and that reasoning holds symmetrically.
+
+**Client.** `/friends/[id]` is the new detail screen: balance headline, Settle
+up / Add expense actions, per-group breakdown when the friendship spans groups,
+and the running-balance ledger. The list page gets a totals header (owed to you
+/ you owe), rows that are links, and a settle action in both directions.
+
+## 3g. Settling: US rails, payment handles, reminders (v5.10 — 2026-07-26)
+
+`bkash` was still in the settlement methods — another leftover from the
+Bangladesh assumption §4b already cleared out of the identifiers. Methods are
+now `venmo | zelle | cashapp | paypal | cash | bank | other`, defined once in
+`packages/shared/src/payment/methods.ts` and imported by both the client
+picker and the server's validation set, so the two cannot drift.
+
+**Payment handles.** New `payment_handles(user_id, method, handle)` table —
+a table rather than columns on `users` because the set of P2P apps changes and
+adding one should be a constant, not a migration. Handles are stored verbatim:
+a $cashtag or Venmo username is an opaque identifier, not an address to
+normalize. They are attached in `users.repo`'s own lookups via a `USER_COLUMNS`
+fragment, not fetched separately, because the settle modal is reached from four
+screens with four different sources for the recipient and any one of them would
+otherwise silently lack them.
+
+**What each app can actually be handed** is modelled, not guessed:
+- Venmo — `venmo.com/<user>?txn=pay&amount=&note=`, amount and note prefill.
+- PayPal — `paypal.me/<name>/<amount>`, amount prefills.
+- Cash App — `cash.app/$<cashtag>`; **cannot** carry an amount, and the UI says so.
+- Zelle — no universal link exists (it lives inside each bank's app), so the
+  affordance is copy-the-handle and the UI says that too.
+Only https URLs are produced, never `venmo://` — a custom scheme shows a
+browser error when the app is missing, whereas the web URL redirects into the
+app when present and works without it.
+
+**The settle modal** leads with who pays whom and the outstanding amount, then
+the method picker (a dot marks the apps this person can actually be paid on),
+then the recipient's handle in a copy block with an Open button. It states
+plainly that recording a payment does not move money — this is a ledger, not a
+payment processor.
+
+The handle block appears **only when you are the one paying**. A first cut
+showed the payee's handle in both directions, reasoning that "record a payment
+received" should surface your own — which was wrong twice over: the money has
+already arrived so there is nobody to send anything to, and the Open button it
+produced pointed at `venmo.com/<you>?txn=pay`, i.e. pay yourself. Received mode
+now shows amount, method and note only, and says it is logging money already
+sent rather than telling you to move any.
+
+Telling somebody where to send money is the **reminder's** job instead: the
+notification carries the sender's handles, so the person who owes gets the
+Venmo username in the nudge itself rather than having to ask.
+
+**Reminders.** `SendReminder` posts an in-app notification to someone who owes
+you. Two guards, both server-side because the sender is not the party who
+suffers when they are missing: the debt must currently exist, and the same
+person cannot be reminded twice within `REMINDER_COOLDOWN_HOURS` (24). The
+previous reminder notification is its own cooldown record, so no extra table.
+
 ## 4. Data Model (integer cents everywhere, soft-delete on expenses)
 
 users (shadow users: password_hash NULL, claimable at signup) · friendships ·
-groups · group_members · expenses (group_id NULL ⇒ one-off; split_type:
+groups · group_members · payment_handles · expenses (group_id NULL ⇒ one-off; split_type:
 equal|exact|percent|shares|itemized; tax/tip cents for itemized) ·
 expense_payers (multi-payer) · expense_splits · expense_items ·
 expense_item_assignments · settlements · comments · activity · notifications.
@@ -297,12 +531,170 @@ applies whenever that flow is revisited.
 ## 6. AI Receipt Pipeline (usecase/receipt + provider adapters)
 
 Upload photo → `ParseReceipt` RPC → provider failover chain (config env
-`RECEIPT_AI_PROVIDERS`, default `anthropic,local,mock`; prod
-`local,anthropic,mock`) → normalized `ParsedReceipt {merchant, date,
+`RECEIPT_AI_PROVIDERS`, default `compatible,mock`) → normalized `ParsedReceipt {merchant, date,
 currency, items[], subtotal, tax, tip, total}` → editable review/assign UI →
 saved as `split_type=itemized` expense. AI output is never auto-committed.
-Local provider speaks the OpenAI-compatible vision wire format (swap base
-URL); cloud provider uses the Claude API with a strict JSON schema.
+The `compatible` provider speaks the OpenAI-compatible vision wire format
+(swap base URL); the `anthropic` provider uses the Claude API with a strict
+JSON schema.
+
+## 6b. Receipt provider + data retention (v5.3 — 2026-07-26)
+
+**The deploy target is a commodity VPS with no GPU.** That kills the original
+"self-hosted vision box" plan — Qwen2.5-VL needs ~16GB of VRAM we will not
+have. "No vendor lock-in" was always about swappable interfaces and a plain
+connection string; self-hosting Postgres is trivial, self-hosting a 7B VLM is
+a different category of problem. The provider must therefore be hosted.
+
+**Images are never stored.** Receipt bytes arrive over `ParseReceipt`, live in
+memory for one request, and are discarded — there is no image column in any
+table, no object store and no filesystem write. Only the extracted structured
+data is persisted. The entire privacy exposure is therefore transit plus
+whatever the model provider retains, which is what drives the decision below.
+
+**Decision: route tier one through OpenRouter with zero data retention
+enforced.** Receipts are other people's financial records. Of the available
+paths:
+
+- Anthropic ZDR needs a negotiated enterprise agreement and is not offered on
+  pay-as-you-go — closed to us at this size (default is 30-day log retention).
+- Gemini's paid tier does not train on inputs but still logs them for a
+  limited period; the free tier is used to improve Google's products and may
+  be read by reviewers — **never acceptable for this data**.
+- Self-hosting is closed by the deploy target.
+- OpenRouter can enforce ZDR account-wide, per model group, or per request,
+  routing only to zero-retention endpoints, with `data_collection: deny`
+  blocking providers that store or train on inputs.
+
+So the `local` provider is renamed **`compatible`** — it was never a
+local-model provider, it is an OpenAI-compatible one — and points at
+OpenRouter. Env: `COMPATIBLE_AI_BASE_URL` / `_API_KEY` / `_MODEL` / `_ZDR`.
+`_ZDR=true` adds `zdr: true` to the request body; it is opt-in because the
+field is OpenRouter-specific and a stricter OpenAI-compatible server could
+reject an unknown key. Enforcing ZDR account-wide in OpenRouter is the safer
+belt-and-braces setting since it fails closed.
+
+Caveats that stay true: the guarantee is the union of OpenRouter's setting and
+the destination endpoint's own policy (two parties to audit); ZDR eligibility
+is per endpoint, not per model, so the model pool shrinks; and ZDR constrains
+retention after processing, not the fact that the image left our server.
+
+**One provider, no vendor SDKs.** OpenRouter fronts every model worth using
+here — Claude and Gemini included — so the Anthropic SDK and its separate key
+were removed; picking a model is a `COMPATIBLE_AI_MODEL` change, and an
+escalation tier is a second model name through the same endpoint rather than a
+second client. Default order is `compatible,mock`, with `mock` last so an
+unconfigured dev environment still demos the flow.
+
+**Model: `google/gemini-3-flash-preview`,** chosen on price/performance across
+all 16 ZDR-eligible providers. The live OpenRouter catalogue (343 models) was
+filtered to vision + structured-output + ZDR-eligible (`?zdr=true` cuts it to
+224), leaving 100 candidates, then scored on Roboflow Vision Evals. Receipts
+need both document axes, so score = mean(Data Extraction, OCR).
+
+Efficient frontier — each row beats everything cheaper:
+
+  $/receipt  score  extract   ocr    $/extra pt  model
+   0.00154   81.40   78.3%   84.5%      base     qwen/qwen3.5-27b
+   0.00184   87.35   86.6%   88.1%    $0.00005   qwen/qwen3-vl-235b-a22b-instruct
+   0.00245   89.05   90.7%   87.4%    $0.00036   google/gemini-3.5-flash-lite
+   0.00315   92.25   96.9%   87.6%    $0.00022   google/gemini-3-flash-preview  <- chosen
+   0.00945   92.95   94.8%   91.1%    $0.00900   google/gemini-3.5-flash
+   0.01260   93.70   94.8%   92.6%    $0.00420   google/gemini-3.1-pro-preview
+
+The cliff sits immediately after this model: reaching it costs $0.00022 per
+quality point, the next step $0.00900 — 41x worse marginal value. It also holds
+the highest Data Extraction score on the whole board (96.9%), beating models
+17x its price, and extraction is our task.
+
+Everything expensive is dominated on mean score: `claude-opus-4.8` ($0.02750)
+and `claude-sonnet-5` ($0.01100) both score 90.70 — below this model's 92.25;
+`gpt-5.5` ($0.03150) scores 89.40; `kimi-k3` ($0.01650) 88.75. Paying ten times
+more buys a worse receipt reader.
+
+Accepted trade-off: OCR is 87.6% (mid-pack) against best-in-class extraction.
+The reconciliation check catches misread digits, and the escalation tier is
+chosen to cover exactly that gap.
+
+Escalation tier: **`anthropic/claude-sonnet-5`** ($0.01100, 91.7% OCR) — targets
+tier one's weak axis, from a different vendor so failures decorrelate rather
+than repeat. NOT `claude-opus-4.8` ($0.02750, 93.8% OCR): 2.5x the price for
+2.1 OCR points, and it only fires on reconciliation failure anyway.
+
+Budget: ~$2.40/month at 500 scans with 15% escalating. GA-only alternative if
+preview status is unacceptable: `gemini-3.5-flash-lite` ($0.00245, score 89.05).
+
+Considered and rejected: specialist OCR models (GLM-OCR, PaddleOCR-VL) beat
+every frontier VLM on raw OCR, but GLM-OCR is absent from OpenRouter and the
+GLM vision models present (including `z-ai/glm-5v-turbo`) lack structured-output
+support. Caveat: Gemini 3.x bills thinking tokens at the completion rate — keep
+reasoning effort minimal.
+
+Concrete proof that endpoint-level ZDR eligibility matters:
+`qwen/qwen3-vl-32b-instruct` is on OpenRouter but is **not** ZDR-eligible, and
+`anthropic/claude-fable-5` holds the board's best OCR (94.0%) yet requires
+30-day retention, so both are unusable here despite being strong document models.
+
+## 6d. Image normalization (v5.5 — 2026-07-26)
+
+**iPhones shoot HEIC by default and no vision API accepts it** — not Gemini,
+OpenAI or Anthropic. Rejecting it at the allowlist made the scanner unusable
+for the most common way a receipt gets photographed; allowing it through
+unchanged would only move the failure to the provider.
+
+**sharp cannot decode real iPhone HEIC.** It bundles libheif 1.23, whose
+security limits cap an `iref` box at 16 references; actual iPhone photos carry
+~48 (HDR gain map, depth map, thumbnails), so all 12 test files failed with
+"Security limit exceeded". libheif does not surface that limit through libvips,
+and sharp's `unlimited: true` does not reach it. HEIC decoding therefore goes
+through **`heic-convert`**, which bundles its own libheif without the cap and
+decoded 12/12 at full resolution — pure JS, no system dependency.
+
+`ffmpeg` also decodes these files and was rejected: it returns a half-size
+preview image rather than the primary one (1512x2016 against heic-convert's
+3024x4032), which is exactly the wrong trade for small receipt print, and it
+would add a system package to the image.
+
+Every upload is then normalized with `sharp` before any provider sees it
+(`normalizeToJpegBase64` in receipt.usecase.ts). Three things happen, and all
+of them matter for receipts:
+
+- **HEIC/HEIF becomes JPEG.** The reason the work exists.
+- **EXIF orientation is applied** (`.rotate()` with no argument). Phones record
+  rotation as metadata rather than rotating pixels; providers read pixels, so a
+  sideways receipt was being transcribed sideways.
+- **The long edge is capped at 2576px.** Anything larger is downsampled by the
+  model anyway, so sending it only costs upload time and tokens.
+
+This runs for every format, not just HEIC — the orientation fix and size cap
+are worth as much on a JPEG straight off a phone. Providers therefore always
+receive `image/jpeg`, which also removes a per-format branch from the adapters.
+
+**The client's declared media type is ignored.** Browsers have no MIME mapping
+for HEIC and report an empty string for it, so trusting `File.type` rejected
+valid iPhone photos before they reached the transcoder — the exact bug this
+section exists to fix, hit a second time from a different direction. The server
+now sniffs the format from the magic bytes (`detectImageFormat`), which is both
+more permissive (accepts files the browser could not name) and stricter (a
+`.png` full of script is recognised for what it is). `ParseReceiptRequest.media_type`
+is retained on the wire but documented as advisory.
+
+Detection is offset-aware: HEIC is an ISO base media file with `ftyp` at offset
+4 and a brand at offset 8, which a from-byte-zero magic comparison cannot
+express. The brand is checked against a still-image allowlist so HEIF video
+containers (`mp42`) are refused rather than handed to the transcoder.
+
+**Cost of the decision:** `sharp` is a native module, which contradicted the
+old "no native modules" line in §7b. That line was about deploy simplicity —
+no compiler in the image — and sharp's prebuilt binaries preserve it; §7b is
+amended rather than quietly falsified. Adds ~20MB to the image.
+
+Client-side notes: Chrome and Firefox cannot *decode* HEIC either, so the web
+picker shows a filename confirmation instead of a broken `<img>` for those
+files. On mobile, `PICKER_OPTIONS` sets `quality`, which makes expo-image-picker
+re-encode to JPEG — so the client now declares `image/jpeg` rather than
+forwarding `asset.mimeType`, which would have labelled already-converted bytes
+as HEIC and failed the server's own magic-byte check.
 
 ## 7. Delivery Phases
 
@@ -322,11 +714,58 @@ URL); cloud provider uses the Claude API with a strict JSON schema.
   realtime via Connect server-streaming/SSE from our own server. No
   Supabase, no Resend SDK, no Vercel.
 
+## 6e. The mock provider is not a fallback (v5.7 — 2026-07-26)
+
+Two separate faults made every scan return the mock's "Demo Diner":
+
+1. `dev.sh` started the server with `pnpm --filter @haalkhata/web exec next
+   dev`, which runs the Next binary directly and **skips the package's dev
+   script** — the only place `--env-file-if-exists=../../.env` is passed. The
+   server ran with none of .env set (confirmed from `/proc/<pid>/environ`): no
+   OpenRouter key, no SESSION_SECRET, and Postgres only via the built-in
+   default, which is why nothing else looked broken. dev.sh now invokes node
+   with the env file the same way the dev script does.
+2. `providerChain()` kept `mock` as a trailing fallback, so a missing key — or
+   a 401, or any provider error — silently produced a plausible fake receipt.
+
+The mock is now used **only when no real provider is configured at all**, never
+after one fails, and using it logs a warning. A misconfigured or failing
+provider surfaces as an error. Verified live both ways against OpenRouter with
+a real iPhone HEIC: correct key → `compatible`, merchant "Zazie", $43.45;
+deliberately broken key → throws the 401 rather than returning Demo Diner.
+
+## 6c. Configuration: one .env (v5.4 — 2026-07-26)
+
+There were two `.env` files — repo root for `docker compose` substitution, and
+`apps/web/.env` for Next's dev-time loader — because neither runtime can read
+the other's file. Six of seven variables were duplicated across them, including
+the API key, so a rotated secret had to be changed in two places or dev and
+prod would silently disagree.
+
+**Now a single `.env` at the repo root.** Compose reads it via `env_file:`;
+`pnpm dev` / `build` / `start` / `db:migrate` load it with Node's
+`--env-file-if-exists=../../.env` (Node 20.12+, no dotenv dependency). Real
+shell variables still take precedence over the file, so a one-off
+`DATABASE_URL=… pnpm dev` overrides it.
+
+The only value that legitimately differs between the two runtimes is
+`DATABASE_URL` — `localhost:5432` on the host, `db:5432` inside the compose
+network — so compose keeps a one-line `environment:` override, which beats
+`env_file:`. Side effect: `pnpm db:migrate` now reads the same connection
+string as the app, fixing a stale hardcoded fallback that no longer
+authenticated.
+
+**Production should use Docker secrets, not this file.** `SESSION_SECRET`,
+`POSTGRES_PASSWORD` and `COMPATIBLE_AI_API_KEY` belong in secrets; the `.env`
+is a dev convenience and a template for what a deployment must supply.
+
 ## 7b. Deployment (self-hosted Docker)
 
 - `Dockerfile` (repo root): multi-stage — pnpm install → `buf generate` →
   `next build` with `output: "standalone"` → slim runtime image running
-  `node apps/web/server.js`. No native modules (pg is pure JS).
+  `node apps/web/server.js`. One native module: `sharp`, which ships prebuilt
+  binaries (including musl for node:alpine) so the image still needs no build
+  toolchain — see §6d.
 - `docker-compose.yml` (repo root): `db` (postgres:17-alpine, named volume,
   healthcheck) + `web` (built image, `DATABASE_URL` pointing at `db`,
   port 3000). Secrets come from the host `.env` (see `.env.example`).

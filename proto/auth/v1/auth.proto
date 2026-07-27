@@ -42,4 +42,7 @@ message AuthResponse {
 message UpdateProfileRequest {
   string name = 1;
   string default_currency = 2;
+  // Replaces the caller's whole set of payment handles. An entry with an
+  // empty handle removes that method.
+  repeated common.v1.PaymentHandle payment_handles = 3;
 }

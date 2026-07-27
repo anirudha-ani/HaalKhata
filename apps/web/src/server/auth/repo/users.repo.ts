@@ -19,7 +19,23 @@ export interface UserRow {
   /** Monotonic counter baked into issued tokens; bumping it invalidates outstanding tokens. */
   token_version: number;
   created_at: string;
+  /** Where this person wants to be paid; empty array when they have set none. */
+  payment_handles: { method: string; handle: string }[];
 }
+
+/**
+ * Every users column plus the user's payment handles as a JSON array.
+ *
+ * Folded into the lookups themselves so a User is never handed out without
+ * them: the settle modal is reached from four different screens, each with a
+ * different source for the recipient, and threading a separate handle fetch
+ * through all four would guarantee one of them silently lacks it.
+ */
+const USER_COLUMNS = `usr.*, COALESCE((
+  SELECT json_agg(json_build_object('method', handles.method, 'handle', handles.handle)
+                  ORDER BY handles.method)
+  FROM payment_handles handles WHERE handles.user_id = usr.id
+), '[]'::json) AS payment_handles`;
 
 /**
  * Inserts a new users row with a freshly generated id.
@@ -60,7 +76,7 @@ export async function insertUser(input: {
  * @returns The matching row, or undefined when no such user exists.
  */
 export async function findUserById(userId: string): Promise<UserRow | undefined> {
-  return queryOne<UserRow>(`SELECT * FROM users WHERE id = $1`, [userId]);
+  return queryOne<UserRow>(`SELECT ${USER_COLUMNS} FROM users usr WHERE usr.id = $1`, [userId]);
 }
 
 /**
@@ -70,7 +86,9 @@ export async function findUserById(userId: string): Promise<UserRow | undefined>
  * @returns The matching row, or undefined when no such user exists.
  */
 export async function findUserByEmail(email: string): Promise<UserRow | undefined> {
-  return queryOne<UserRow>(`SELECT * FROM users WHERE lower(email) = lower($1)`, [email]);
+  return queryOne<UserRow>(`SELECT ${USER_COLUMNS} FROM users usr WHERE lower(usr.email) = lower($1)`, [
+    email,
+  ]);
 }
 
 /**
@@ -80,7 +98,7 @@ export async function findUserByEmail(email: string): Promise<UserRow | undefine
  * @returns The matching row, or undefined when no such user exists.
  */
 export async function findUserByPhone(phone: string): Promise<UserRow | undefined> {
-  return queryOne<UserRow>(`SELECT * FROM users WHERE phone = $1`, [phone]);
+  return queryOne<UserRow>(`SELECT ${USER_COLUMNS} FROM users usr WHERE usr.phone = $1`, [phone]);
 }
 
 /**
@@ -91,7 +109,9 @@ export async function findUserByPhone(phone: string): Promise<UserRow | undefine
  */
 export async function findUsersByIds(userIds: string[]): Promise<UserRow[]> {
   if (userIds.length === 0) return [];
-  return query<UserRow>(`SELECT * FROM users WHERE id = ANY($1::text[])`, [userIds]);
+  return query<UserRow>(`SELECT ${USER_COLUMNS} FROM users usr WHERE usr.id = ANY($1::text[])`, [
+    userIds,
+  ]);
 }
 
 /**

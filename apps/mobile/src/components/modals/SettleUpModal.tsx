@@ -13,7 +13,7 @@ import { errorMessage, expenseClient } from "@/lib/api/connect";
 import { MONEY_KEYS } from "@haalkhata/shared/api/queryKeys";
 import { centsToInput, formatMoney, parseMoneyInput } from "@haalkhata/shared/money/money";
 import { colors, radii, spacing } from "@/lib/theme/theme";
-import { SETTLEMENT_METHODS } from "./modals.constants";
+import { PAYMENT_METHODS } from "@haalkhata/shared/payment/methods";
 
 /**
  * Renders a sheet for recording a settlement payment: the signed-in user pays
@@ -97,12 +97,12 @@ export function SettleUpModal({
         />
 
         <View style={styles.methods}>
-          {SETTLEMENT_METHODS.map((methodOption) => (
+          {PAYMENT_METHODS.map((methodOption) => (
             <Chip
-              key={methodOption}
-              label={methodOption}
-              onPress={() => setMethod(methodOption)}
-              selected={method === methodOption}
+              key={methodOption.key}
+              label={methodOption.label}
+              onPress={() => setMethod(methodOption.key)}
+              selected={method === methodOption.key}
             />
           ))}
         </View>

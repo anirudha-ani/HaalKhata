@@ -17,6 +17,20 @@ message User {
   // Phone number in E.164 format (e.g. "+14155552671"); empty when unset.
   // An account may have an email, a phone, or both; either can be used to log in.
   string phone = 7;
+  // Where this person wants to be paid. Visible to anyone who shares an
+  // expense with them, which is exactly who needs it — settling is done in
+  // Venmo/Zelle/Cash App and this app only records that it happened.
+  repeated PaymentHandle payment_handles = 8;
+}
+
+// One "pay me here" identifier: a Venmo username, a Zelle email or phone, a
+// $cashtag, a PayPal.Me name.
+message PaymentHandle {
+  // Matches a settlement method key, e.g. "venmo" | "zelle" | "cashapp" | "paypal".
+  string method = 1;
+  // Stored exactly as typed — these are opaque identifiers, not addresses to
+  // normalize.
+  string handle = 2;
 }
 
 // A pairwise debt: `from_user_id` owes `to_user_id`.

@@ -1,16 +1,18 @@
 /** Balance business logic: builds group/user ledgers from repos and applies the domain balance math. */
 
 import {
+  listExpensesBetween,
   listExpensesByGroup,
   listExpensesInvolvingUser,
   loadExpenseChildren,
 } from "@/server/expense/repo/expenses.repo";
 import {
+  listSettlementsBetween,
   listSettlementsByGroup,
   listSettlementsInvolvingUser,
 } from "@/server/expense/repo/settlements.repo";
-import { isMember, listMembers } from "@/server/group/repo/groups.repo";
-import { findUsersByIds } from "@/server/auth/repo/users.repo";
+import { findGroupById, isMember, listMembers } from "@/server/group/repo/groups.repo";
+import { findUserById, findUsersByIds } from "@/server/auth/repo/users.repo";
 import {
   expenseDebts,
   netBalances,
@@ -230,4 +232,152 @@ export async function netWithUser(userId: string, otherUserId: string): Promise<
     if (entry.to === otherUserId) return -entry.amountCents;
   }
   return 0;
+}
+
+/**
+ * How much one expense moved the balance between two people.
+ *
+ * Reuses `expenseDebts` — the same per-expense attribution the balances
+ * themselves are built from — so the ledger's running total lands on exactly
+ * the figure {@link getOverallBalances} reports, instead of a second,
+ * plausible-but-different pairwise reckoning.
+ *
+ * @param debts - Pairwise debts produced by `expenseDebts` for one expense.
+ * @param userId - The viewer.
+ * @param otherUserId - The friend whose ledger this is.
+ * @returns Cents; > 0 ⇒ this expense left the friend owing the viewer more.
+ */
+function pairDelta(debts: LedgerEntry[], userId: string, otherUserId: string): number {
+  let delta = 0;
+  for (const debt of debts) {
+    if (debt.from === otherUserId && debt.to === userId) delta += debt.amountCents;
+    if (debt.from === userId && debt.to === otherUserId) delta -= debt.amountCents;
+  }
+  return delta;
+}
+
+/**
+ * The full shared history with one person: every expense you both appear on
+ * (group ones included, the way Splitwise totals a friendship) and every
+ * settlement either way, merged oldest-to-newest with a running balance, then
+ * returned newest-first for reading.
+ *
+ * Lines that moved nothing between the two of you — a group expense you were
+ * both on but which netted to zero across the pair — are dropped, because a
+ * statement row that changes no balance is noise.
+ *
+ * @param userId - Authenticated caller.
+ * @param friendId - The other person.
+ * @returns The friend, the net (> 0 ⇒ they owe you), the currency, the entries
+ *   newest-first, and the per-group breakdown.
+ * @throws UsecaseError (not_found) when the friend's user row is missing.
+ */
+export async function getFriendLedger(userId: string, friendId: string) {
+  const friend = await findUserById(friendId);
+  if (!friend) notFound("user not found");
+
+  const expenses = await listExpensesBetween(userId, friendId);
+  const children = await loadExpenseChildren(expenses.map((expense) => expense.id));
+  const settlements = await listSettlementsBetween(userId, friendId);
+
+  const groupNames = new Map<string, string>();
+  for (const groupId of new Set(
+    expenses.flatMap((expense) => (expense.group_id ? [expense.group_id] : [])),
+  )) {
+    const group = await findGroupById(groupId);
+    if (group) groupNames.set(groupId, group.name);
+  }
+
+  type Line = {
+    kind: string;
+    id: string;
+    date: string;
+    description: string;
+    groupId: string;
+    groupName: string;
+    totalCents: number;
+    deltaCents: number;
+    sortKey: string;
+  };
+  const lines: Line[] = [];
+
+  for (const expense of expenses) {
+    const debts = expenseDebts(
+      (children.payers.get(expense.id) ?? []).map((payer) => ({
+        userId: payer.user_id,
+        amountCents: payer.amount_cents,
+      })),
+      (children.splits.get(expense.id) ?? []).map((split) => ({
+        userId: split.user_id,
+        amountCents: split.owed_cents,
+      })),
+    );
+    const deltaCents = pairDelta(debts, userId, friendId);
+    if (deltaCents === 0) continue;
+    lines.push({
+      kind: "expense",
+      id: expense.id,
+      date: expense.expense_date,
+      description: expense.description,
+      groupId: expense.group_id ?? "",
+      groupName: expense.group_id ? (groupNames.get(expense.group_id) ?? "") : "",
+      totalCents: expense.amount_cents,
+      deltaCents,
+      sortKey: `${expense.expense_date}T${expense.created_at}`,
+    });
+  }
+
+  for (const settlement of settlements) {
+    // You paying them shrinks your debt, so it moves the balance in your
+    // favour exactly as an expense they owed you on would.
+    const paidByYou = settlement.from_user === userId;
+    lines.push({
+      kind: "settlement",
+      id: settlement.id,
+      date: settlement.created_at.slice(0, 10),
+      description: paidByYou ? "You paid" : `${friend.name} paid you`,
+      groupId: settlement.group_id ?? "",
+      groupName: settlement.group_id ? (groupNames.get(settlement.group_id) ?? "") : "",
+      totalCents: settlement.amount_cents,
+      deltaCents: paidByYou ? settlement.amount_cents : -settlement.amount_cents,
+      sortKey: `${settlement.created_at.slice(0, 10)}T${settlement.created_at}`,
+    });
+  }
+
+  lines.sort((first, second) => first.sortKey.localeCompare(second.sortKey));
+  let runningCents = 0;
+  const entries = lines.map((line) => {
+    runningCents += line.deltaCents;
+    return {
+      kind: line.kind,
+      id: line.id,
+      date: line.date,
+      description: line.description,
+      groupId: line.groupId,
+      groupName: line.groupName,
+      totalCents: line.totalCents,
+      deltaCents: line.deltaCents,
+      balanceAfterCents: runningCents,
+    };
+  });
+  entries.reverse();
+
+  const netByGroup = new Map<string, number>();
+  for (const line of lines) {
+    netByGroup.set(line.groupId, (netByGroup.get(line.groupId) ?? 0) + line.deltaCents);
+  }
+
+  return {
+    friend: toUser(friend),
+    netCents: runningCents,
+    currency: friend.default_currency || "USD",
+    entries,
+    groupBalances: [...netByGroup.entries()]
+      .filter(([, netCents]) => netCents !== 0)
+      .map(([groupId, netCents]) => ({
+        groupId,
+        groupName: groupId ? (groupNames.get(groupId) ?? "") : "",
+        netCents,
+      })),
+  };
 }

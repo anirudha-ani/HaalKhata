@@ -39,6 +39,12 @@ export const queryKeys = {
   /** The user's friends list. */
   friends: ["friends"] as const,
   /**
+   * The full shared history with one friend.
+   * @param friendId - The friend's identifier.
+   * @returns The query key tuple for that friendship's ledger.
+   */
+  friendLedger: (friendId: string) => ["friends", friendId, "ledger"] as const,
+  /**
    * The activity feed, optionally scoped to one group.
    * @param groupId - The group to scope to; omit for the global feed.
    * @returns The query key tuple for that activity feed.

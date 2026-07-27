@@ -26,8 +26,9 @@ export function useAccountAPI() {
  * (initializer, no sync effect).
  *
  * @param currentUser - The already-loaded signed-in user used to seed the form fields.
- * @returns Form field values (`name`, `currency`, `message`) with their setters,
- *   a `save` action with its `isSaving` flag, and a `signOut` action.
+ * @returns Form field values (`name`, `currency`, `handles`, `message`) with
+ *   their setters, a `save` action with its `isSaving` flag, and a `signOut`
+ *   action.
  */
 export function useProfileForm(currentUser: User) {
   const queryClient = useQueryClient();
@@ -35,9 +36,19 @@ export function useProfileForm(currentUser: User) {
   const [name, setName] = useState(currentUser.name);
   const [currency, setCurrency] = useState(currentUser.defaultCurrency || "USD");
   const [message, setMessage] = useState("");
+  const [handles, setHandles] = useState<Record<string, string>>(() =>
+    Object.fromEntries(
+      currentUser.paymentHandles.map((entry) => [entry.method, entry.handle]),
+    ),
+  );
 
   const save = useMutation({
-    mutationFn: () => authClient.updateProfile({ name, defaultCurrency: currency }),
+    mutationFn: () =>
+      authClient.updateProfile({
+        name,
+        defaultCurrency: currency,
+        paymentHandles: Object.entries(handles).map(([method, handle]) => ({ method, handle })),
+      }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.me });
       setMessage("Saved ✓");
@@ -57,6 +68,15 @@ export function useProfileForm(currentUser: User) {
     setName,
     currency,
     setCurrency,
+    handles,
+    /**
+     * Sets one payment handle in the draft.
+     *
+     * @param method - Payment method key, e.g. "venmo".
+     * @param handle - The handle as typed; blank removes it on save.
+     */
+    setHandle: (method: string, handle: string) =>
+      setHandles((current) => ({ ...current, [method]: handle })),
     message,
     save: () => {
       setMessage("");

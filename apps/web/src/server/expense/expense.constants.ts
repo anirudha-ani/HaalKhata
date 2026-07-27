@@ -1,5 +1,7 @@
 /** Expense domain constants. */
 
+import { PAYMENT_METHOD_KEYS } from "@haalkhata/shared/payment/methods";
+
 /** Split types the API accepts; mirrors the split calculators in domain/splits. */
 export const SPLIT_TYPES = new Set(["equal", "exact", "percent", "shares", "itemized"]);
 
@@ -15,7 +17,7 @@ export const EXPENSE_CATEGORIES = new Set([
 ]);
 
 /** Payment methods accepted for a settlement; anything else falls back to "cash". */
-export const SETTLEMENT_METHODS = new Set(["cash", "bank", "bkash", "card", "other"]);
+export const SETTLEMENT_METHODS = new Set(PAYMENT_METHOD_KEYS);
 
 /** Maximum comment body length accepted on addComment. */
 export const MAX_COMMENT_LENGTH = 2000;

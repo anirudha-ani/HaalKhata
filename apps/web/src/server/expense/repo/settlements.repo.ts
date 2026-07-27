@@ -66,6 +66,26 @@ export async function listSettlementsByGroup(groupId: string): Promise<Settlemen
 }
 
 /**
+ * Lists every settlement between two users, in either direction and in any
+ * scope (group or one-off), oldest first.
+ *
+ * @param firstUserId - One of the two people.
+ * @param secondUserId - The other person.
+ * @returns Settlement rows between the pair, in chronological order.
+ */
+export async function listSettlementsBetween(
+  firstUserId: string,
+  secondUserId: string,
+): Promise<SettlementRow[]> {
+  return query<SettlementRow>(
+    `SELECT * FROM settlements
+     WHERE (from_user = $1 AND to_user = $2) OR (from_user = $2 AND to_user = $1)
+     ORDER BY created_at ASC`,
+    [firstUserId, secondUserId],
+  );
+}
+
+/**
  * Lists every settlement the user paid or received, oldest first.
  *
  * @param userId - Id of the user involved as payer or recipient.

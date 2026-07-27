@@ -315,6 +315,33 @@ export async function listOneOffExpensesBetween(
 }
 
 /**
+ * Every expense both users participate in, group ones included.
+ *
+ * The friend ledger totals across all shared scopes the way Splitwise's friend
+ * screen does, so unlike {@link listOneOffExpensesBetween} this does not
+ * restrict to `group_id IS NULL`.
+ *
+ * @param firstUserId - One of the two participants.
+ * @param secondUserId - The other participant.
+ * @returns Non-deleted expense rows involving both users, newest first.
+ */
+export async function listExpensesBetween(
+  firstUserId: string,
+  secondUserId: string,
+): Promise<ExpenseRow[]> {
+  return query<ExpenseRow>(
+    `SELECT DISTINCT expense.* FROM expenses expense
+     WHERE expense.deleted_at IS NULL
+       AND EXISTS (SELECT 1 FROM expense_splits split WHERE split.expense_id = expense.id AND split.user_id = $1
+                   UNION SELECT 1 FROM expense_payers payer WHERE payer.expense_id = expense.id AND payer.user_id = $1)
+       AND EXISTS (SELECT 1 FROM expense_splits split WHERE split.expense_id = expense.id AND split.user_id = $2
+                   UNION SELECT 1 FROM expense_payers payer WHERE payer.expense_id = expense.id AND payer.user_id = $2)
+     ORDER BY expense.expense_date DESC, expense.created_at DESC`,
+    [firstUserId, secondUserId],
+  );
+}
+
+/**
  * Every non-deleted expense the user pays for or owes on (groups + one-off).
  *
  * @param userId - Id of the user whose expenses to list.
