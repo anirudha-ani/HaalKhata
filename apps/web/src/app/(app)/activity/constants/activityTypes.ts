@@ -1,63 +1,66 @@
 /** Activity-route constants: how each event kind looks, and the filter groups. */
 
+import type { GlyphName } from "../components/ActivityPage/components/ActivityGlyph/ActivityGlyph";
+
 /** How one kind of feed event is drawn. */
 export interface ActivityLook {
-  /** Emoji for the leading tile. */
-  emoji: string;
-  /** Tailwind classes for the tile: background and ring. */
+  /** Which hand-drawn glyph goes in the leading tile. */
+  glyph: GlyphName;
+  /** Tailwind classes for the tile: background, ring and the glyph's colour. */
   tile: string;
   /** Short caption under the sentence; the row's personality lives here. */
   tag: string;
-  /** Screen-reader name for the tile, since an emoji is not a label. */
+  /** Screen-reader name for the tile, since a drawing is not a label. */
   label: string;
 }
 
 /**
- * Emoji, tile and caption per event kind.
+ * Glyph, tile and caption per event kind.
  *
- * Emoji came back on purpose — the original problem was never that they were
- * emoji, it was that they were *wrong*: 💸 (money flying away) was drawn for
- * being paid, and flat 🧾 vs 🗑️ at 20px were two grey smudges. Both are fixed
- * here rather than avoided. Every glyph now sits on a semantic tinted tile, so
- * added-vs-deleted is carried by colour *and* mark, and 💸 appears only where
- * money genuinely leaves you.
+ * Custom SVG rather than emoji or an off-the-shelf icon set. Emoji are drawn
+ * by the OS, so the same feed looks like three different apps across
+ * platforms and their fixed colours fight the tile tint; a stock icon set is
+ * consistent but characterless. These are stroked in `currentColor`, so the
+ * tile decides the colour, and the semantics that were broken before stay
+ * fixed: money only flies away on a payment you *made*, and added vs deleted
+ * differ by both tint and drawing.
  */
 export const ACTIVITY_LOOK: Record<string, ActivityLook> = {
   expense_added: {
-    emoji: "🧾",
-    tile: "bg-brand-50 ring-1 ring-brand-100",
+    glyph: "receipt",
+    tile: "bg-brand-50 text-brand-600 ring-1 ring-brand-100",
     tag: "new damage",
     label: "Expense added",
   },
   expense_updated: {
-    emoji: "✏️",
-    tile: "bg-neg-50 ring-1 ring-neg-600/20",
+    glyph: "scribble",
+    tile: "bg-neg-50 text-neg-700 ring-1 ring-neg-600/20",
     tag: "edited, sneaky",
     label: "Expense updated",
   },
   // Muted tile: a deleted expense is inert history and must not read like the
   // thing that created it.
   expense_deleted: {
-    emoji: "🪦",
-    tile: "bg-card ring-1 ring-line grayscale",
+    glyph: "tombstone",
+    tile: "bg-card text-ink-soft ring-1 ring-line",
     tag: "rest in peace",
     label: "Expense deleted",
   },
   member_added: {
-    emoji: "🫂",
-    tile: "bg-brand-50 ring-1 ring-brand-100",
+    glyph: "highFive",
+    tile: "bg-brand-50 text-brand-600 ring-1 ring-brand-100",
     tag: "one of us",
     label: "Member added",
   },
   group_created: {
-    emoji: "🎉",
-    tile: "bg-ink/8 ring-1 ring-ink/10",
+    glyph: "partyPopper",
+    tile: "bg-ink/8 text-ink ring-1 ring-ink/10",
     tag: "the group chat is real",
     label: "Group created",
   },
   comment: {
-    emoji: "💬",
-    tile: "bg-paper ring-1 ring-line",
+    glyph: "speechSquiggle",
+    tile: "bg-paper text-ink-soft ring-1 ring-line",
     tag: "said something",
     label: "Comment",
   },
@@ -65,16 +68,16 @@ export const ACTIVITY_LOOK: Record<string, ActivityLook> = {
 
 /** Fallback for an event kind this build does not know about. */
 export const UNKNOWN_LOOK: ActivityLook = {
-  emoji: "📌",
-  tile: "bg-paper ring-1 ring-line",
+  glyph: "pin",
+  tile: "bg-paper text-ink-soft ring-1 ring-line",
   tag: "",
   label: "Activity",
 };
 
 /** Money arriving: the reader was paid. */
 export const INBOUND_LOOK: ActivityLook = {
-  emoji: "🤑",
-  tile: "bg-pos-50 ring-1 ring-pos-600/20",
+  glyph: "moneyBag",
+  tile: "bg-pos-50 text-pos-600 ring-1 ring-pos-600/20",
   tag: "secured the bag",
   label: "You were paid",
 };
@@ -82,12 +85,12 @@ export const INBOUND_LOOK: ActivityLook = {
 /**
  * Money leaving: the reader paid somebody.
  *
- * 💸 is finally correct here — this is the one place money actually flies away
- * from you, which is exactly what the glyph depicts.
+ * The winged note belongs here and only here — this is the one event where
+ * money actually flies away from you, which is what the drawing depicts.
  */
 export const OUTBOUND_LOOK: ActivityLook = {
-  emoji: "💸",
-  tile: "bg-paper ring-1 ring-line",
+  glyph: "cashWings",
+  tile: "bg-paper text-ink ring-1 ring-line",
   tag: "paid up",
   label: "You paid",
 };
@@ -101,7 +104,7 @@ export const OUTBOUND_LOOK: ActivityLook = {
  *
  * @param type - Event kind from the server.
  * @param inbound - Whether this event moved money toward the reader.
- * @returns The emoji, tile classes, caption and accessible label to draw.
+ * @returns The glyph, tile classes, caption and accessible label to draw.
  */
 export function activityLook(type: string, inbound: boolean): ActivityLook {
   if (type === "settlement") return inbound ? INBOUND_LOOK : OUTBOUND_LOOK;

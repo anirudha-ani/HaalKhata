@@ -481,22 +481,37 @@ permanently unreachable, and the page never said so. It also leaned entirely on
 one pre-rendered message string per row, which is why the UI could not be
 smart: it had no amount to right-align and no idea which direction money moved.
 
-**The icons were wrong, not the medium.** 💸 (money with wings) means money
-leaving; it was drawn for every settlement including ones where you were
-*paid*, i.e. the opposite of what happened. Flat 🧾 and 🗑️ at 20px are two grey
-smudges, so "added" and "deleted" read identically down the left edge. 📒 for a
-new group is a ledger binder, an object nobody associates with people.
+**Icons: three passes to get here.** The original emoji were wrong on the
+merits — 💸 (money flying away) was drawn for being *paid*, i.e. the opposite
+of what happened; flat 🧾 and 🗑️ at 20px are two grey smudges, so added and
+deleted read identically; 📒 for a new group is a ledger binder nobody
+associates with people.
 
-The first pass replaced all of it with lucide icons. That fixed the semantics
-but read as corporate, so the emoji came back — with the actual defects fixed
-rather than side-stepped. Every glyph now sits on a semantic tinted tile, so
-added (🧾 on brand) and deleted (🪦 on a muted greyscale tile) differ by colour
-*and* mark; 💸 appears only where money genuinely leaves you, and 🤑 where it
-arrives. Fintech guidance is that colour must never be the only signal — here
-it is tile *and* glyph *and* the amount's own sign, so the playful surface
-costs nothing in legibility. Each tile carries an aria-label, because an emoji
-is decoration and not a name, and a short caption ("secured the bag", "rest in
-peace") sits under the sentence where it cannot displace the facts.
+Pass two replaced them with lucide icons: semantically right, visually
+corporate. Pass three brought back the personality without the defects, as
+**custom SVG** in `ActivityGlyph` — a receipt with a torn hem, a headstone for
+a deleted expense, a cinched money bag for being paid, a paper plane for money
+sent, a party popper for a new group, a squiggle-filled speech bubble, a
+raised hand for someone joining.
+
+Drawn rather than picked, for reasons that survive argument: emoji are
+rendered by the OS, so the same feed looks like three different apps across
+platforms and their baked-in colours fight the tile tint; a stock icon set is
+consistent but characterless. These are stroked in `currentColor`, so the tile
+decides the colour and one file serves every tint.
+
+Two things the drawings must keep doing. Colour is never the only signal —
+added (receipt, brand tint) and deleted (headstone, muted) differ by tint
+*and* by drawing *and* by the amount's own sign. And each tile carries an
+`aria-label` while the SVG is `aria-hidden`, so a screen reader announces
+"Expense deleted" instead of describing a headstone.
+
+The outbound glyph was a winged banknote first. Rendered and inspected at tile
+size it collapsed into an unreadable blob — the note fills the 24px box and
+leaves no room for a legible wing — so it became a paper plane, which carries
+"sent" at any size while the caption and signed amount supply the "money"
+half. Every glyph in the set was rendered to a sheet and looked at before it
+shipped, which is the only way that defect was going to be caught.
 
 **Structured fields, additively.** activity gains `amount_cents`, `currency`
 and `credit_user_id` (for a settlement, who received). ActivityEvent exposes

@@ -10,6 +10,7 @@ import { Spinner } from "@/components/ui/Spinner";
 import { formatMoney } from "@haalkhata/shared/money/money";
 import { ACTIVITY_FILTERS, activityLook } from "../../constants/activityTypes";
 import { groupByDay, monthLabel, timeOfDay, withoutAmount } from "../../utils/activityFormat";
+import { ActivityGlyph } from "./components/ActivityGlyph/ActivityGlyph";
 import { useActivity } from "./hooks/useActivity";
 
 /** One event as the feed renders it, plus the day heading it falls under. */
@@ -96,7 +97,7 @@ export function ActivityPage() {
 
           {activity.visibleEvents.length === 0 ? (
             <p className="rounded-2xl border border-line bg-card px-4 py-8 text-center text-sm text-ink-soft">
-              Crickets. 🦗 Nothing matches that.
+              Crickets. Nothing matches that.
             </p>
           ) : (
             dayGroups.map((group) => (
@@ -127,7 +128,7 @@ export function ActivityPage() {
             </button>
           ) : activity.events.length > 0 ? (
             <p className="pb-2 text-center text-xs text-ink-soft">
-              You&apos;ve hit the bottom{activity.month ? ` of ${monthLabel(activity.month)}` : ""}. ✨
+              You&apos;ve hit the bottom{activity.month ? ` of ${monthLabel(activity.month)}` : ""}.
             </p>
           ) : null}
         </>
@@ -153,14 +154,14 @@ function ActivityRow({ event }: { event: FeedEvent }) {
       href={event.link || "#"}
       className="group flex items-center gap-3 rounded-xl border border-line bg-card px-3 py-2.5 transition-colors hover:border-brand-200 hover:shadow-sm"
     >
-      {/* The emoji is decoration; the tile carries an accessible name so a
-          screen reader announces the kind of event rather than a glyph. */}
+      {/* The drawing is decoration; the tile carries the accessible name so a
+          screen reader announces the kind of event, not the picture. */}
       <span
         role="img"
         aria-label={look.label}
-        className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-lg leading-none transition-transform group-hover:scale-110 ${look.tile}`}
+        className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl transition-transform duration-150 group-hover:-rotate-6 group-hover:scale-110 ${look.tile}`}
       >
-        {look.emoji}
+        <ActivityGlyph name={look.glyph} />
       </span>
 
       <span className="min-w-0 flex-1">
