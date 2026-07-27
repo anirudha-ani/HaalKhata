@@ -1,0 +1,103 @@
+# Production stack: `docker compose -f docker-compose.prod.yml up -d --wait`.
+#
+# Standalone rather than an override of docker-compose.yml. Compose merges list
+# keys by APPENDING, so an override cannot remove the dev file's published
+# ports — and silently publishing Postgres on a public interface is exactly the
+# mistake worth designing out. Here only Caddy publishes anything.
+#
+# Non-secret settings come from /srv/haalkhata/.env (compose reads a file named
+# .env from the directory holding this file — which is why deploy.sh cds there
+# first). Secrets are files under /srv/haalkhata/secrets/, never values here.
+name: haalkhata
+
+services:
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: haalkhata
+      POSTGRES_USER: haalkhata
+      # Read only at initdb. Rotating this later needs ALTER USER first — see
+      # ops/README.md; editing the file alone locks the app out of its own db.
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+    secrets:
+      - postgres_password
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U haalkhata -d haalkhata"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+    # No `ports`. The database is reachable only over the compose network.
+
+  web:
+    image: ghcr.io/anirudha-ani/haalkhata:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
+      # `mock` is deliberately dropped here. In development it keeps the scan
+      # flow demoable with no key; in production a fallback that invents
+      # plausible line items on someone's real receipt is worse than a visible
+      # failure. See plan.txt §6e.
+      RECEIPT_AI_PROVIDERS: compatible
+      COMPATIBLE_AI_BASE_URL: https://openrouter.ai/api/v1
+      COMPATIBLE_AI_MODEL: google/gemini-3-flash-preview
+      COMPATIBLE_AI_ZDR: "true"
+    secrets:
+      - session_secret
+      - postgres_password
+      - openrouter_api_key
+    # Verified: the app serves fine on a read-only rootfs. It imports
+    # next/image nowhere, so nothing writes to .next/cache/images. If that ever
+    # changes, add - /app/apps/web/.next/cache to tmpfs.
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    security_opt:
+      - "no-new-privileges:true"
+    healthcheck:
+      # busybox wget, present in node:24-alpine. /login is the cheapest route
+      # that exercises a real render.
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:3000/login"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    # No `ports`. Only Caddy reaches it, over the compose network.
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      - web
+    ports:
+      - "80:80"      # ACME HTTP-01 challenge + redirect to HTTPS
+      - "443:443"
+      - "443:443/udp" # HTTP/3
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data     # certificates live here — do not lose this volume
+      - caddy-config:/config
+    cap_drop: [ALL]
+    cap_add: [NET_BIND_SERVICE]
+    security_opt:
+      - "no-new-privileges:true"
+
+secrets:
+  session_secret:
+    file: /srv/haalkhata/secrets/session_secret
+  postgres_password:
+    file: /srv/haalkhata/secrets/postgres_password
+  openrouter_api_key:
+    file: /srv/haalkhata/secrets/openrouter_api_key
+
+volumes:
+  db-data:
+  caddy-data:
+  caddy-config:

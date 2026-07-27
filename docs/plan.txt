@@ -1108,6 +1108,35 @@ through `sessionUser()`, which checks the embedded `token_version` against the
 row and rejects tombstones, and returns the whole user so the layout can read
 `onboarded` from the same query.
 
+### Country picker on the phone field
+
+Onboarding asked for a phone number in one free-text box and leaned on
+`DEFAULT_PHONE_REGION` to fill in the missing country, so "4015379205" quietly
+became a US number and everyone outside the US had to know to type "+880"
+themselves. The fix is the control every product uses for this: country on the
+left, national number on the right.
+
+- `lib/phone/phone.ts` builds the country list from libphonenumber-js metadata
+  (already a dependency for the server's `normalizePhone`) rather than shipping
+  a hand-maintained table that would rot. Flags are derived from the ISO-3166
+  alpha-2 code by mapping letters to regional-indicator code points; names come
+  from `Intl.DisplayNames`, with the region code as the fallback.
+- `components/ui/PhoneField.tsx` is a searchable combobox, not a `<select>`: a
+  native select shows the same string collapsed as in its list, so 240 options
+  force a choice between an unreadable trigger and a list you cannot scan. The
+  listbox filters on country name, dial code and region code through the shared
+  `matchesTerms`, so "bang", "880" and "BD" all find Bangladesh.
+- The client composes E.164 and the server still validates it. No parsing rule
+  moves to the browser — `normalizePhone` stays authoritative, and an explicit
+  `+<country>` was always honoured there anyway.
+- Pasting a full "+8801…" into the number box re-derives the country instead of
+  concatenating onto the selected one, which is the failure mode of every
+  picker that treats the two halves as independent.
+
+Kept in `apps/web/src/lib/` rather than `@haalkhata/shared`: the admission rule
+is "genuinely needed by both apps", and mobile's phone fields have not moved to
+this control yet. It graduates when they do.
+
 ### Phone verification (tranche 4)
 
 Twilio Verify, last, because it needs an account set up. Two RPCs
@@ -1388,8 +1417,82 @@ is a dev convenience and a template for what a deployment must supply.
   `DATABASE_URL` at any Postgres you already run. Pending migrations from
   `apps/web/migrations/` apply automatically on boot; the runtime image
   ships the migrations folder so containers self-migrate on start.
-- TLS/domain: any reverse proxy on the host (Caddy/nginx/Traefik) — out of
-  scope for this repo.
+- TLS/domain: see §7c — no longer out of scope, the repo now carries its own
+  production compose file and Caddy config.
+
+## 7c. Production deployment (v5.19 — 2026-07-27)
+
+§7b describes the *dev* compose stack. Running it on a public box needs more
+than a reverse proxy bolted on, so production is now its own set of files,
+committed rather than improvised on the server.
+
+**Separate compose file, not an override.** `docker-compose.prod.yml` is
+standalone. Compose merges list keys by appending, so an override file cannot
+*remove* `docker-compose.yml`'s published ports — and silently publishing
+Postgres on a public interface is exactly the mistake worth designing out. The
+prod file publishes nothing but Caddy's 80/443; `db` and `web` are reachable
+only over the compose network.
+
+**Secrets are files, not environment.** `SESSION_SECRET`, `POSTGRES_PASSWORD`
+and `COMPATIBLE_AI_API_KEY` arrive as Docker secrets under `/run/secrets/`.
+The app reads `process.env`, so `ops/docker-entrypoint.sh` bridges the two and
+assembles `DATABASE_URL` there — meaning the password appears in no compose
+file, no image layer, and no `docker inspect` output. It does still reach the
+process environment, because that is what the app reads; closing that last gap
+means teaching `auth.usecase.ts` and `receipt.constants.ts` a `*_FILE`
+convention, which is worth doing but is not what stands between here and a
+deploy.
+
+**Misconfiguration fails closed.** If the entrypoint cannot read
+`postgres_password`, `DATABASE_URL` is never exported, the app falls back to
+`DEFAULT_DATABASE_URL`, and `assertSafeDatabaseUrl()` throws — production
+rejects the default credential (§AGENTS "Production guardrails"). A missing
+`SESSION_SECRET` throws for the same reason. The container then fails its
+healthcheck and `docker compose up -d --wait` fails the deploy, so a
+misconfigured release never becomes a running one.
+
+**The reverse proxy carries two load-bearing lines.** `Caddyfile` is not
+boilerplate:
+
+  - `header_up X-Forwarded-For {remote_host}` — `clientIp()` in
+    `auth/handler.ts` reads the *first* comma-separated value of
+    `X-Forwarded-For`, and Caddy by default *appends* the real peer to
+    whatever the client sent. Without the overwrite, a caller supplies their
+    own header, picks their own rate-limit bucket, rotates it freely, and
+    `AUTH_RATE_LIMIT` stops meaning anything.
+  - Host is deliberately *not* rewritten — `csrfGuard()` compares the `Origin`
+    header's host against `request.headers.host`. Caddy preserves Host by
+    default; nginx would need `proxy_set_header Host $host` or every browser
+    POST 403s.
+
+The CSP allows `'unsafe-inline'` in `script-src` because Next's App Router
+emits inline hydration scripts and per-request nonces need a `middleware.ts`
+the repo does not have. The four `accounts.google.com/gsi/*` entries are
+Google's documented requirement for the Sign In With Google button; drop any
+one and the button silently fails to render (§4c).
+
+**CI builds, the server only pulls.** `.github/workflows/ci.yml` runs the
+gates; `deploy.yml` builds the image on amd64, pushes it to GHCR, and hands
+the server a commit SHA over SSH. The deploy key is installed with a forced
+`command=` in `authorized_keys`, so it cannot open a shell, forward a port, or
+run anything but `deploy.sh` — which validates its argument is a bare 40-char
+SHA before touching anything. Rollback is the same command with an older SHA.
+
+`NEXT_PUBLIC_GOOGLE_CLIENT_ID` is inlined by `next build`, so it is a build
+arg fed from a repo *variable*, not a runtime value. Setting it only at
+runtime produces an image whose Google button never appears — and since
+`passwordAuthEnabled()` is false in production (§4c), that is a total lockout,
+not a degraded experience.
+
+**Host expectations.** Ubuntu 26.04 LTS or Debian 13; app and Postgres
+co-located on one box so the several balance queries per page never cross a
+network; `/etc/docker/daemon.json` caps log size, because `logEvent` writes a
+JSON line per unexpected error and the default json-file driver has no limit
+on a disk shared with the database.
+
+Full step-by-step runbook — server hardening, DNS, Google Console, secrets,
+backups and a restore drill — lives outside the repo as a deployment guide;
+this section records the decisions, not the keystrokes.
 
 ## 8. Verification
 

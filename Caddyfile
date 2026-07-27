@@ -1,0 +1,57 @@
+# Production reverse proxy. Lives at /srv/haalkhata/Caddyfile, mounted
+# read-only into the caddy container by docker-compose.prod.yml.
+#
+# Caddy obtains and renews Let's Encrypt certificates automatically; nothing
+# here needs a cron job or a renewal hook. Certificates live in the caddy-data
+# volume — do not delete it casually or you will re-issue from scratch and can
+# hit rate limits.
+
+{
+	# Let's Encrypt expiry and problem notices. Use an address you read.
+	email you@example.com
+}
+
+haalkhata.app, www.haalkhata.app {
+	encode zstd gzip
+
+	header {
+		# .app is an HSTS-preloaded TLD, so browsers already refuse plain HTTP
+		# here before any header of ours is read. This is belt and braces — and
+		# deliberately WITHOUT the `preload` token, which is painful to reverse
+		# and would buy nothing on a TLD that is already on the list.
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options    "nosniff"
+		X-Frame-Options           "DENY"
+		Referrer-Policy           "strict-origin-when-cross-origin"
+		Permissions-Policy        "geolocation=(), microphone=(), payment=(), usb=(), interest-cohort=()"
+
+		# script-src carries 'unsafe-inline' because Next's App Router emits
+		# inline hydration and RSC-payload scripts, and per-request nonces need
+		# a middleware.ts this app does not have. The rest of the policy still
+		# does real work: object-src none, frame-ancestors none, base-uri self,
+		# and exactly one third-party script origin.
+		#
+		# The four accounts.google.com/gsi/* entries are Google's documented
+		# requirement for the Sign In With Google button. Drop any one and the
+		# button silently fails to render — which, because password auth is off
+		# in production, is a total lockout rather than a degraded page.
+		Content-Security-Policy "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; img-src 'self' data: blob:; script-src 'self' 'unsafe-inline' https://accounts.google.com/gsi/client; style-src 'self' 'unsafe-inline' https://accounts.google.com/gsi/style; connect-src 'self' https://accounts.google.com/gsi/; frame-src https://accounts.google.com/gsi/; upgrade-insecure-requests"
+
+		-Server
+	}
+
+	reverse_proxy web:3000 {
+		# SECURITY-CRITICAL. clientIp() in auth/handler.ts reads the FIRST
+		# comma-separated value of X-Forwarded-For, and Caddy by default
+		# APPENDS the real peer to whatever the client sent. Without this
+		# overwrite a caller supplies their own X-Forwarded-For, picks their
+		# own rate-limit bucket, rotates it at will, and AUTH_RATE_LIMIT stops
+		# meaning anything.
+		header_up X-Forwarded-For {remote_host}
+
+		# Host is deliberately NOT rewritten: csrfGuard() compares the Origin
+		# header's host against request.headers.host. Caddy preserves Host by
+		# default. (nginx would need `proxy_set_header Host $host` or every
+		# browser POST 403s.)
+	}
+}

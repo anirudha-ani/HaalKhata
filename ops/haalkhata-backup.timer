@@ -1,0 +1,12 @@
+[Unit]
+Description=Nightly HaalKhata backup
+
+[Timer]
+# 03:17 rather than 03:00 — off the hour, so it does not contend with every
+# other cron job on the internet.
+OnCalendar=*-*-* 03:17:00 UTC
+# Runs on next boot if the machine was off when the timer was due.
+Persistent=true
+
+[Install]
+WantedBy=timers.target

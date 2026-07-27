@@ -9,6 +9,9 @@ import type { NextConfig } from "next";
  */
 const nextConfig: NextConfig = {
   output: "standalone",
+  // Don't announce the framework and version in a response header to every
+  // scanner that asks. Costs nothing; removes one free hint for an attacker.
+  poweredByHeader: false,
   transpilePackages: ["@haalkhata/protogen", "@haalkhata/shared"],
   // sharp is a native module (prebuilt .node binaries); bundling it breaks the
   // build, so it stays external and is required at runtime like pg.

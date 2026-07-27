@@ -260,9 +260,29 @@ with colocated tests. Mobile-specific rules:
 
 ## Deploy
 
-Self-hosted Docker. `docker compose up -d --build` builds the Next.js
-standalone image and starts it with Postgres 17. The web port is bound to
-`127.0.0.1:3000` — put a TLS-terminating reverse proxy (Caddy/nginx/Traefik)
-in front and expose 443 there. Migrations apply automatically on container
-start. Set `POSTGRES_PASSWORD` and `SESSION_SECRET` in `.env` before first
-boot.
+Self-hosted Docker, two stacks. Migrations apply automatically on container
+start in both.
+
+**Dev** — `docker compose up -d --build`. Postgres 17 plus the standalone
+image, web bound to `127.0.0.1:3000`, config from a plaintext `.env`. Set
+`POSTGRES_PASSWORD` and `SESSION_SECRET` there before first boot.
+
+**Production** — `docker compose -f docker-compose.prod.yml up -d --wait`,
+with `Caddyfile` in front for TLS. Secrets come from `/run/secrets/` via
+`ops/docker-entrypoint.sh`, never from `.env`. Only Caddy publishes ports.
+Built by `.github/workflows/deploy.yml` and pushed to GHCR; the server pulls a
+commit SHA over an SSH key restricted to `ops/deploy.sh` by a forced
+`command=`. See `ops/README.md` and `docs/plan.txt` §7c.
+
+Things not to break when touching deploy config:
+
+- **`header_up X-Forwarded-For {remote_host}` in the Caddyfile.** `clientIp()`
+  reads the first value of that header and Caddy appends by default, so
+  without the overwrite a caller picks their own rate-limit bucket.
+- **Don't rewrite `Host`.** `csrfGuard()` compares `Origin` against
+  `request.headers.host`; a proxy that rewrites Host 403s every browser POST.
+- **`NEXT_PUBLIC_GOOGLE_CLIENT_ID` is a build arg, not a runtime value.** It
+  is inlined by `next build`. Wrong at build time means a total sign-in
+  lockout, because password auth is off in production.
+- **Don't add `mock` to `RECEIPT_AI_PROVIDERS` in production.** A fallback
+  that invents line items on a real receipt is worse than a visible failure.

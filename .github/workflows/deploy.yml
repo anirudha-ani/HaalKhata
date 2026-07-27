@@ -1,0 +1,78 @@
+# Build the image on amd64, push it to GHCR, then hand the server one commit
+# SHA over SSH. The server pulls; it never builds.
+#
+# Required repo settings:
+#   Variable  NEXT_PUBLIC_GOOGLE_CLIENT_ID   the OAuth client id (NOT secret —
+#             it is inlined into the client bundle by design, and marking it
+#             secret only makes build logs harder to read)
+#   Secret    DEPLOY_SSH_KEY                 private half of the deploy key
+#   Secret    DEPLOY_KNOWN_HOSTS             `ssh-keyscan haalkhata.app`
+#   Environment `production`                 optional required-reviewer gate
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-production
+  # Never interrupt a half-finished deploy.
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # The only elevated scope in this file, and it is scoped to this job.
+      packages: write
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          # NEXT_PUBLIC_* is inlined by `next build`, so it has to be present
+          # HERE rather than at runtime. Supplying it only via the compose file
+          # produces an image whose Google button never appears — and since
+          # password auth is disabled in production, that is a total lockout.
+          build-args: |
+            NEXT_PUBLIC_GOOGLE_CLIENT_ID=${{ vars.NEXT_PUBLIC_GOOGLE_CLIENT_ID }}
+          tags: |
+            ghcr.io/anirudha-ani/haalkhata:${{ github.sha }}
+            ghcr.io/anirudha-ani/haalkhata:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    # Add required reviewers to this environment for an approval gate between
+    # merge and live, without changing how you commit.
+    environment: production
+    steps:
+      - name: Ship it
+        env:
+          KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$KEY"   > ~/.ssh/id_ed25519
+          printf '%s\n' "$HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/id_ed25519
+          # The sha is only an argument. authorized_keys pins the command, so
+          # this key cannot open a shell or run anything else.
+          ssh -i ~/.ssh/id_ed25519 deploy@haalkhata.app "${{ github.sha }}"

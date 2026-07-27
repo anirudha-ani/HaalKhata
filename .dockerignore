@@ -16,3 +16,17 @@ docker-compose.yml
 docs
 dev.sh
 install-deps.sh
+
+# expo prebuild + gradle output. Gitignored, so CI checkouts never have it —
+# but a local `docker build` ships it to the daemon and bakes it into the
+# builder layer via `COPY apps/ apps/`. Measured at 4.1 GB on a machine that
+# has run ./dev.sh --mobile-android.
+apps/mobile/android
+apps/mobile/ios
+
+# Production config: read from /srv/haalkhata on the server, never from the
+# image. Keeping them out of the context also keeps them out of layer cache.
+docker-compose.prod.yml
+Caddyfile
+.github
+AUDIT.md

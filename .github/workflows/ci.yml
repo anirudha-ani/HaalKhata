@@ -1,0 +1,66 @@
+# Quality gates. The same commands you run locally, across all three
+# workspaces, on every push and pull request.
+#
+# Supply chain: third-party actions are pinned to version tags below for
+# readability. A tag is MUTABLE — whoever controls the action's repo can
+# repoint v5 at new code that runs with this workflow's token. Before this
+# repo has anything worth stealing, swap each `@vN` for a full commit SHA:
+#
+#   gh api repos/actions/checkout/git/ref/tags/v5 --jq .object.sha
+#
+# dependabot.yml then keeps the pins current.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Least privilege: nothing in this workflow writes.
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          # buf breaking compares against main, which needs real history.
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.9.0
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # packages/protogen/src is gitignored; every job regenerates it.
+      - run: pnpm gen
+
+      - name: proto contract
+        run: |
+          pnpm proto:lint
+          pnpm exec buf breaking --against '.git#branch=main'
+
+      - name: web
+        run: pnpm typecheck && pnpm lint && pnpm test
+
+      - name: shared
+        run: pnpm typecheck:shared && pnpm lint:shared && pnpm test:shared
+
+      # The Expo app is not deployed yet, but it is still in the workspace and
+      # imports @haalkhata/shared and @haalkhata/protogen. Unchecked code rots,
+      # and a shared-package change that breaks it should fail here rather than
+      # be discovered months later. Delete this step if you drop apps/mobile.
+      - name: mobile
+        run: pnpm typecheck:mobile && pnpm lint:mobile && pnpm test:mobile

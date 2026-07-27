@@ -104,20 +104,56 @@ Never edit an applied migration — add a new one.
 ## Deploy (self-hosted Docker)
 
 Everything runs on any box with Docker — no managed platform, no vendor
-lock-in:
+lock-in.
+
+### Kick the tyres locally
 
 ```sh
 cp .env.example .env     # set POSTGRES_PASSWORD + SESSION_SECRET
 docker compose up -d --build
 ```
 
-For a real deployment prefer Docker secrets over a plaintext `.env` for
-`SESSION_SECRET`, `POSTGRES_PASSWORD` and `COMPATIBLE_AI_API_KEY`, and keep
-only non-secret settings in the file.
+Builds the standalone image and starts it with Postgres 17 (data in the
+`db-data` volume, app on `127.0.0.1:3000`). Plaintext `.env`, no TLS — fine
+for a local look, not a deployment.
 
-That builds the Next.js standalone image and starts it with Postgres 17
-(data in the `db-data` volume, app on port 3000). Put your usual reverse
-proxy (Caddy/nginx/Traefik) in front for TLS.
+### Production
+
+```sh
+docker compose -f docker-compose.prod.yml up -d --wait
+```
+
+A separate file rather than an override, because Compose merges list keys by
+appending and so an override cannot *remove* the dev file's published ports.
+What it adds:
+
+- **Caddy** in front, with automatic Let's Encrypt certificates, HSTS, a CSP
+  that admits the Google sign-in button, and `header_up X-Forwarded-For
+  {remote_host}` — without that overwrite a client can supply its own
+  `X-Forwarded-For` and defeat the auth rate limiter.
+- **Docker secrets** for `SESSION_SECRET`, `POSTGRES_PASSWORD` and
+  `COMPATIBLE_AI_API_KEY`. `ops/docker-entrypoint.sh` loads them from
+  `/run/secrets/` and assembles `DATABASE_URL`, so no secret appears in a
+  compose file, an image layer, or `docker inspect`.
+- **Nothing published but 80/443.** Postgres and the app are reachable only
+  over the compose network.
+- Read-only root filesystem, dropped capabilities, `no-new-privileges`.
+
+CI builds the image and pushes it to GHCR; the server only pulls. See
+[`ops/README.md`](ops/README.md) for server-side setup, secret rotation,
+backups and the restore drill, and `docs/plan.txt` §7c for why each piece is
+shaped the way it is.
+
+Two things worth knowing before you point a domain at it:
+
+- **Google is the only way in.** `passwordAuthEnabled()` is false when
+  `NODE_ENV=production`, so `SignUp`/`LogIn` are rejected.
+  `NEXT_PUBLIC_GOOGLE_CLIENT_ID` is inlined at **build** time — a wrong value
+  cannot be fixed by restarting with a corrected environment, only by
+  rebuilding.
+- **Misconfiguration fails closed.** A missing `SESSION_SECRET`, or a
+  `DATABASE_URL` left at the default, throws on boot rather than deploying
+  something insecure.
 
 ### Receipt AI providers (optional)
 

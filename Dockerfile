@@ -33,6 +33,15 @@ COPY --from=build --chown=node:node /app/apps/web/.next/static ./apps/web/.next/
 COPY --from=build --chown=node:node /app/apps/web/public ./apps/web/public
 # Pending migrations apply automatically on boot (db.ts); ship them.
 COPY --from=build --chown=node:node /app/apps/web/migrations ./apps/web/migrations
+
+# Reads Docker secrets from /run/secrets into the environment before starting
+# the app, so no secret value lives in a compose file or an image layer. A
+# no-op when no secrets are mounted, which is what keeps `docker run` of this
+# image usable for a smoke test.
+COPY ops/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+RUN chmod 755 /usr/local/bin/docker-entrypoint.sh
+
 USER node
 EXPOSE 3000
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
 CMD ["node", "apps/web/server.js"]
