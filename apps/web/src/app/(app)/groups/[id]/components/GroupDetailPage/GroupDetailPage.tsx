@@ -1,15 +1,15 @@
 "use client";
-/** Group detail orchestrator: header, members strip, expenses/balances tabs, invite and settle modals. */
+/** Group detail orchestrator: header, members strip, expenses/balances tabs, add-people and settle modals. */
 
 import Link from "next/link";
 import { Plus, ScanLine, UserPlus } from "lucide-react";
 import { Avatar } from "@/components/ui/Avatar";
-import { Modal } from "@/components/ui/Modal";
 import { SettleUpModal } from "@/components/modals/SettleUpModal";
 import { Spinner } from "@/components/ui/Spinner";
 import { errorMessage } from "@/lib/api/connect";
 import { useHydrated } from "@/lib/hooks/useHydrated";
 import { groupEmoji } from "../../../constants/groupTypes";
+import { AddPeopleModal } from "./components/AddPeopleModal/AddPeopleModal";
 import { BalancesPanel } from "./components/BalancesPanel/BalancesPanel";
 import { ExpenseList } from "./components/ExpenseList/ExpenseList";
 import { TABS } from "../../constants/tabs";
@@ -17,8 +17,8 @@ import { useGroupDetail } from "./hooks/useGroupDetail";
 
 /**
  * Renders a single group's page: header with scan/add-expense actions, the
- * member avatar strip with an invite button, the expenses/balances tab
- * switcher, and the invite and settle-up modals.
+ * member avatar strip with an add-people button, the expenses/balances tab
+ * switcher, and the add-people and settle-up modals.
  *
  * @returns The group detail content, a spinner while loading, or a not-found
  *   message when the group cannot be fetched.
@@ -91,10 +91,10 @@ export function GroupDetailPage({
         </p>
         <button
           type="button"
-          onClick={() => groupDetail.setAddingMember(true)}
+          onClick={() => groupDetail.setAddingPeople(true)}
           className="flex shrink-0 items-center gap-1.5 rounded-lg border border-line px-3 py-1.5 text-xs font-semibold text-ink-soft hover:border-brand-200 hover:text-brand-600"
         >
-          <UserPlus className="h-3.5 w-3.5" /> Invite
+          <UserPlus className="h-3.5 w-3.5" /> Add people
         </button>
       </div>
 
@@ -133,41 +133,20 @@ export function GroupDetailPage({
         />
       )}
 
-      {groupDetail.addingMember ? (
-        <Modal title="Invite to group" onClose={() => groupDetail.setAddingMember(false)}>
-          <form
-            className="space-y-4"
-            onSubmit={(event) => {
-              event.preventDefault();
-              groupDetail.submitMember();
-            }}
-          >
-            <p className="text-sm text-ink-soft">
-              Invite by email — if they don&apos;t have an account yet, their
-              share is tracked and waiting when they sign up.
-            </p>
-            <input
-              autoFocus
-              type="email"
-              required
-              placeholder="friend@example.com"
-              aria-label="Email to invite"
-              value={groupDetail.memberEmail}
-              onChange={(event) => groupDetail.setMemberEmail(event.target.value)}
-              className="w-full rounded-xl border border-line bg-card px-3.5 py-3 focus:border-brand-500 focus:outline-none"
-            />
-            {groupDetail.memberError ? (
-              <p className="text-sm text-brand-600">{groupDetail.memberError}</p>
-            ) : null}
-            <button
-              type="submit"
-              disabled={groupDetail.addMember.isPending}
-              className="w-full rounded-xl bg-brand-600 py-3 font-semibold text-white hover:bg-brand-700 disabled:opacity-50"
-            >
-              {groupDetail.addMember.isPending ? "Adding…" : "Add member"}
-            </button>
-          </form>
-        </Modal>
+      {groupDetail.addingPeople ? (
+        <AddPeopleModal
+          groupName={groupDetail.group.name}
+          candidates={groupDetail.candidates}
+          pickedIds={groupDetail.pickedIds}
+          onToggle={groupDetail.togglePicked}
+          identifier={groupDetail.identifier}
+          onIdentifierChange={groupDetail.setIdentifier}
+          error={groupDetail.peopleError}
+          canSubmit={groupDetail.canAddPeople}
+          isPending={groupDetail.addMembers.isPending}
+          onSubmit={groupDetail.submitPeople}
+          onClose={() => groupDetail.setAddingPeople(false)}
+        />
       ) : null}
 
       {groupDetail.settleWith ? (

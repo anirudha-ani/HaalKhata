@@ -3,6 +3,7 @@
 import { useRouter } from "expo-router";
 import { Plus, UsersRound } from "lucide-react-native";
 import { Pressable, StyleSheet, Text, View } from "react-native";
+import { PersonChecklist } from "@/components/people/PersonChecklist";
 import { Screen } from "@/components/shell/Screen";
 import { ScreenHeader } from "@/components/shell/ScreenHeader";
 import { Button } from "@/components/ui/Button";
@@ -145,6 +146,25 @@ export function GroupsScreen() {
                 ))}
               </View>
             </View>
+            {/* Members at creation, so a new group is not born empty and then
+                needing a second trip through a separate add-people sheet. */}
+            {groupsState.friends.length > 0 ? (
+              <View style={styles.memberBlock}>
+                <Text style={styles.memberLabel}>
+                  Who&apos;s in?{" "}
+                  <Text style={styles.memberHint}>
+                    {groupsState.memberIds.length > 0
+                      ? `${groupsState.memberIds.length} selected`
+                      : "optional — you can add people later"}
+                  </Text>
+                </Text>
+                <PersonChecklist
+                  onToggle={groupsState.toggleMember}
+                  people={groupsState.friends}
+                  selectedIds={groupsState.memberIds}
+                />
+              </View>
+            ) : null}
             {groupsState.error ? <Text style={styles.error}>{groupsState.error}</Text> : null}
             <Button
               busy={groupsState.isCreating}
@@ -228,6 +248,18 @@ const styles = StyleSheet.create({
   },
   form: {
     gap: spacing.lg,
+  },
+  memberBlock: {
+    gap: spacing.sm,
+  },
+  memberHint: {
+    color: colors.inkSoft,
+    fontWeight: "400",
+  },
+  memberLabel: {
+    color: colors.ink,
+    fontSize: 14,
+    fontWeight: "500",
   },
   title: {
     color: colors.ink,

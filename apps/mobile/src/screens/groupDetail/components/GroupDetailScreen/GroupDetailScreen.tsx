@@ -1,9 +1,10 @@
-/** Group detail orchestrator: header, members strip, expenses/balances tabs, invite and settle sheets. */
+/** Group detail orchestrator: header, members strip, expenses/balances tabs, add-people and settle sheets. */
 
 import { useRouter } from "expo-router";
 import { Plus, ScanLine, UserPlus } from "lucide-react-native";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { SettleUpModal } from "@/components/modals/SettleUpModal";
+import { PersonChecklist } from "@/components/people/PersonChecklist";
 import { DetailHeader } from "@/components/shell/DetailHeader";
 import { Screen } from "@/components/shell/Screen";
 import { Avatar } from "@/components/ui/Avatar";
@@ -22,8 +23,8 @@ import { useGroupDetail } from "./hooks/useGroupDetail";
 
 /**
  * Renders a single group's screen: header with scan/add-expense actions, the
- * member avatar strip with an invite button, the expenses/balances tab
- * switcher, and the invite and settle-up sheets.
+ * member avatar strip with an add-people button, the expenses/balances tab
+ * switcher, and the add-people and settle-up sheets.
  *
  * @returns The group detail content, a spinner while loading, or a not-found
  *   message when the group cannot be fetched.
@@ -121,8 +122,8 @@ export function GroupDetailScreen({
         <Button
           compact
           icon={<UserPlus color={colors.inkSoft} size={14} />}
-          label="Invite"
-          onPress={() => groupDetail.setAddingMember(true)}
+          label="Add people"
+          onPress={() => groupDetail.setAddingPeople(true)}
           variant="outline"
         />
       </View>
@@ -149,29 +150,55 @@ export function GroupDetailScreen({
         />
       )}
 
-      {groupDetail.addingMember ? (
-        <Sheet onClose={() => groupDetail.setAddingMember(false)} title="Invite to group">
-          <View style={styles.inviteForm}>
-            <Text style={styles.inviteHint}>
-              Invite by email — if they don&apos;t have an account yet, their share is tracked and
-              waiting when they sign up.
-            </Text>
+      {groupDetail.addingPeople ? (
+        <Sheet
+          onClose={() => groupDetail.setAddingPeople(false)}
+          title={`Add people to ${groupDetail.group.name}`}
+        >
+          {/* People you already know come first; typing an address is the
+              fallback for the one person who is new. */}
+          <View style={styles.addForm}>
+            {groupDetail.candidates.length > 0 ? (
+              <>
+                <Text style={styles.addLabel}>
+                  Your people
+                  {groupDetail.pickedIds.length > 0
+                    ? ` · ${groupDetail.pickedIds.length} selected`
+                    : ""}
+                </Text>
+                <PersonChecklist
+                  onToggle={groupDetail.togglePicked}
+                  people={groupDetail.candidates}
+                  selectedIds={groupDetail.pickedIds}
+                />
+              </>
+            ) : (
+              <Text style={styles.addHint}>
+                Everyone on your friends list is already here. Add somebody new below.
+              </Text>
+            )}
+
             <TextField
               autoCapitalize="none"
-              autoFocus
               keyboardType="email-address"
-              onChangeText={groupDetail.setMemberEmail}
-              placeholder="friend@example.com"
-              value={groupDetail.memberEmail}
+              label="Not on the list?"
+              onChangeText={groupDetail.setIdentifier}
+              placeholder="Email or phone number"
+              value={groupDetail.identifier}
             />
-            {groupDetail.memberError ? (
-              <Text style={styles.inviteError}>{groupDetail.memberError}</Text>
+            <Text style={styles.addHint}>
+              If they don&apos;t have an account yet, their share is tracked and waiting when they
+              sign up.
+            </Text>
+
+            {groupDetail.peopleError ? (
+              <Text style={styles.addError}>{groupDetail.peopleError}</Text>
             ) : null}
             <Button
-              busy={groupDetail.addMember.isPending}
-              disabled={groupDetail.memberEmail.trim() === ""}
-              label="Add member"
-              onPress={groupDetail.submitMember}
+              busy={groupDetail.addMembers.isPending}
+              disabled={!groupDetail.canAddPeople}
+              label="Add to group"
+              onPress={groupDetail.submitPeople}
             />
           </View>
         </Sheet>
@@ -191,6 +218,25 @@ export function GroupDetailScreen({
 }
 
 const styles = StyleSheet.create({
+  addError: {
+    color: colors.brand600,
+    fontSize: 14,
+  },
+  addForm: {
+    gap: spacing.lg,
+  },
+  addHint: {
+    color: colors.inkSoft,
+    fontSize: 13,
+    lineHeight: 18,
+    marginTop: -spacing.sm,
+  },
+  addLabel: {
+    color: colors.ink,
+    fontSize: 14,
+    fontWeight: "500",
+    marginBottom: -spacing.sm,
+  },
   groupEmoji: {
     fontSize: 28,
   },
@@ -235,18 +281,6 @@ const styles = StyleSheet.create({
   headerIconButtonPrimary: {
     backgroundColor: colors.brand600,
     borderColor: colors.brand600,
-  },
-  inviteError: {
-    color: colors.brand600,
-    fontSize: 14,
-  },
-  inviteForm: {
-    gap: spacing.lg,
-  },
-  inviteHint: {
-    color: colors.inkSoft,
-    fontSize: 14,
-    lineHeight: 20,
   },
   memberAvatars: {
     flexDirection: "row",

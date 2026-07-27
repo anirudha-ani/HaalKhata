@@ -4,6 +4,7 @@
 import Link from "next/link";
 import { Plus, UsersRound } from "lucide-react";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { FriendChecklist } from "@/components/people/FriendChecklist";
 import { Modal } from "@/components/ui/Modal";
 import { Money } from "@/components/ui/Money";
 import { SearchField } from "@/components/ui/SearchField";
@@ -165,6 +166,30 @@ export function GroupsPage() {
                 ))}
               </select>
             </label>
+
+            {/* Members at creation, so a new group is not born empty and then
+                needing a second trip through a separate invite dialog. */}
+            {groupsState.friends.length > 0 ? (
+              <div className="space-y-2">
+                <p className="text-sm font-medium">
+                  Who&apos;s in?{" "}
+                  <span className="font-normal text-ink-soft">
+                    {groupsState.memberIds.length > 0
+                      ? `${groupsState.memberIds.length} selected`
+                      : "optional — you can add people later"}
+                  </span>
+                </p>
+                <div className="rounded-xl border border-line bg-paper p-2">
+                  <FriendChecklist
+                    people={groupsState.friends}
+                    selectedIds={groupsState.memberIds}
+                    onToggle={groupsState.toggleMember}
+                    legend="People to add to this group"
+                  />
+                </div>
+              </div>
+            ) : null}
+
             {groupsState.error ? <p className="text-sm text-brand-600">{groupsState.error}</p> : null}
             <button
               type="submit"

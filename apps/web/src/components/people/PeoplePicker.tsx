@@ -3,12 +3,10 @@
 
 import Link from "next/link";
 import { ChevronDown, UserPlus, X } from "lucide-react";
-import { useId, useMemo, useState } from "react";
+import { useId, useState } from "react";
 import type { User } from "@haalkhata/protogen/common/v1/common_pb";
 import { Avatar } from "@/components/ui/Avatar";
-import { SearchField } from "@/components/ui/SearchField";
-import { matchesTerms, searchTerms } from "@/lib/search/filter";
-import { MAX_VISIBLE_FRIENDS, SCROLLING_LIST_THRESHOLD } from "./people.constants";
+import { FriendChecklist } from "./FriendChecklist";
 
 /** A group as this picker needs it — enough to label one option. */
 export interface PickerGroup {
@@ -65,7 +63,6 @@ export function PeoplePicker({
   // once there is a cast, so the chips are not pushed off screen. Read once —
   // reacting to `people` would make the panel jump on every selection.
   const [isOpen, setIsOpen] = useState(() => people.length <= 1 && groupId === "");
-  const [query, setQuery] = useState("");
   // Focus the search box only when the user opens the panel themselves —
   // autofocusing on the initial render would pop the keyboard open the moment
   // the Add expense page loads.
@@ -73,20 +70,6 @@ export function PeoplePicker({
 
   const isGroupExpense = groupId !== "";
   const selectedGroupName = groups.find((group) => group.id === groupId)?.name ?? "";
-
-  // `friends` arrives from listFriends already ordered by relevance —
-  // everyone you have expenses with first, then the rest alphabetically — so
-  // the people most likely to be picked are at the top before a single
-  // keystroke. Filtering preserves that order rather than re-ranking.
-  const matchingFriends = useMemo(() => {
-    const terms = searchTerms(query);
-    if (terms.length === 0) return friends;
-    return friends.filter((friend) =>
-      matchesTerms(terms, friend.name, friend.email, friend.phone),
-    );
-  }, [friends, query]);
-  const visibleFriends = matchingFriends.slice(0, MAX_VISIBLE_FRIENDS);
-  const hiddenCount = matchingFriends.length - visibleFriends.length;
 
   if (groups.length === 0 && friends.length === 0) {
     return (
@@ -180,51 +163,14 @@ export function PeoplePicker({
             </button>
 
             {isOpen ? (
-              <div className="space-y-2 rounded-xl border border-line bg-paper p-2">
-                <SearchField
+              <div className="rounded-xl border border-line bg-paper p-2">
+                <FriendChecklist
+                  people={friends}
+                  selectedIds={friendIds}
+                  onToggle={onToggleFriend}
+                  legend="Friends on this expense"
                   autoFocus={focusSearch}
-                  value={query}
-                  onChange={setQuery}
-                  placeholder="Search by name, email or phone"
-                  label="Search friends"
                 />
-                {/* A plain checkbox group: familiar, keyboard-navigable, and
-                    it keeps the current selection visible — none of which a
-                    <select multiple> or a custom combobox manages. */}
-                <fieldset
-                  className={
-                    friends.length > SCROLLING_LIST_THRESHOLD ? "max-h-64 overflow-y-auto" : ""
-                  }
-                >
-                  <legend className="sr-only">Friends on this expense</legend>
-                  {visibleFriends.map((friend) => (
-                    <label
-                      key={friend.id}
-                      className="flex cursor-pointer items-center gap-2.5 rounded-lg px-2 py-2 hover:bg-card"
-                    >
-                      <input
-                        type="checkbox"
-                        checked={friendIds.includes(friend.id)}
-                        onChange={() => onToggleFriend(friend.id)}
-                        className="h-4 w-4 accent-brand-600"
-                      />
-                      <Avatar user={friend} size="sm" />
-                      <span className="min-w-0 flex-1 truncate text-sm font-medium">
-                        {friend.name}
-                      </span>
-                    </label>
-                  ))}
-                </fieldset>
-                {matchingFriends.length === 0 ? (
-                  <p className="px-2 pb-1 text-sm text-ink-soft">
-                    No friends match “{query}”.
-                  </p>
-                ) : hiddenCount > 0 ? (
-                  <p className="px-2 pb-1 text-xs text-ink-soft">
-                    Showing {visibleFriends.length} of {matchingFriends.length} — keep typing to
-                    narrow it down.
-                  </p>
-                ) : null}
               </div>
             ) : null}
           </>

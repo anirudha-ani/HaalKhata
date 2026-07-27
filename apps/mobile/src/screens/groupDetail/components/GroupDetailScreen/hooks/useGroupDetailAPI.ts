@@ -1,18 +1,19 @@
-/** TanStack Query bindings for group detail: me, group, expenses, balances, add-member. */
+/** TanStack Query bindings for group detail: me, group, friends, expenses, balances, add-members. */
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { authClient, expenseClient, groupClient } from "@/lib/api/connect";
+import { authClient, expenseClient, groupClient, socialClient } from "@/lib/api/connect";
 import { queryKeys } from "@haalkhata/shared/api/queryKeys";
 
 /**
  * Wraps every server call the group detail screen makes: the signed-in user,
- * the group (with members), its expenses, its balances, and the add-member
- * mutation (which refreshes the group and the group list on success).
+ * the group (with members), the caller's friends (for the add-people picker),
+ * the group's expenses, its balances, and the add-members mutation (which
+ * refreshes the group, the group list and the friends list on success).
  *
  * @param groupId - Identifier of the group being viewed.
- * @returns An object with `me`, `group`, `groupError`, `expenses`, `balances`,
- *   an `isLoading` flag covering the group and expense queries,
- *   `refresh`/`isRefreshing` for pull-to-refresh, and the `addMember` mutation.
+ * @returns An object with `me`, `group`, `groupError`, `friends`, `expenses`,
+ *   `balances`, an `isLoading` flag covering the group and expense queries,
+ *   `refresh`/`isRefreshing` for pull-to-refresh, and the `addMembers` mutation.
  */
 export function useGroupDetailAPI(groupId: string) {
   const queryClient = useQueryClient();
@@ -31,13 +32,23 @@ export function useGroupDetailAPI(groupId: string) {
     queryFn: () => expenseClient.getGroupBalances({ groupId }),
   });
 
-  /** Invites a member by email; on success refreshes this group and the group list. */
-  const addMember = useMutation({
-    mutationFn: (input: { email: string; name: string }) =>
-      groupClient.addMember({ groupId, ...input }),
+  const friends = useQuery({
+    queryKey: queryKeys.friends,
+    queryFn: () => socialClient.listFriends({}),
+  });
+
+  /**
+   * Adds people by id plus an optional email/phone newcomer; on success
+   * refreshes this group, the group list, and the friends list — adding
+   * somebody also befriends them.
+   */
+  const addMembers = useMutation({
+    mutationFn: (input: { userIds: string[]; email: string; phone: string }) =>
+      groupClient.addMembers({ groupId, name: "", ...input }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.group(groupId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.groups });
+      queryClient.invalidateQueries({ queryKey: queryKeys.friends });
     },
   });
 
@@ -52,11 +63,12 @@ export function useGroupDetailAPI(groupId: string) {
     me: currentUser.data,
     group: group.data,
     groupError: group.error,
+    friends: (friends.data?.friends ?? []).flatMap((friend) => (friend.user ? [friend.user] : [])),
     expenses: expenses.data,
     balances: balances.data,
     isLoading: group.isLoading || expenses.isLoading,
     refresh,
     isRefreshing: group.isRefetching || expenses.isRefetching || balances.isRefetching,
-    addMember,
+    addMembers,
   };
 }

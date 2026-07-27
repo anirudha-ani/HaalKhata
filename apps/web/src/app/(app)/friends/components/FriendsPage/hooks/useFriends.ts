@@ -5,7 +5,7 @@ import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { CounterpartyBalance } from "@haalkhata/protogen/common/v1/common_pb";
 import { splitIdentifier } from "@haalkhata/shared/auth/identifier";
-import { matchesTerms, searchTerms } from "@/lib/search/filter";
+import { matchesTerms, searchTerms } from "@haalkhata/shared/search/filter";
 import { authClient, errorMessage, socialClient } from "@/lib/api/connect";
 import { queryKeys } from "@haalkhata/shared/api/queryKeys";
 

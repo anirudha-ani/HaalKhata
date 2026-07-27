@@ -1,8 +1,9 @@
-/** Composite hook for group detail: API plus tab, invite, and settle state. */
+/** Composite hook for group detail: API plus tab, add-people, and settle state. */
 
 import type { User } from "@haalkhata/protogen/common/v1/common_pb";
 import { useState } from "react";
 import { errorMessage } from "@/lib/api/connect";
+import { splitIdentifier } from "@haalkhata/shared/auth/identifier";
 import { useGroupDetailAPI } from "./useGroupDetailAPI";
 
 /** The two tabs available on the group detail screen. */
@@ -10,39 +11,27 @@ export type GroupTab = "expenses" | "balances";
 
 /**
  * Combines the group detail API bindings with the screen's UI state: the
- * active tab, the invite-member sheet form, the simplified-debts toggle, the
+ * active tab, the add-people sheet form, the simplified-debts toggle, the
  * settle-up target, and a member lookup map.
  *
  * @param groupId - Identifier of the group being viewed.
  * @returns Everything from {@link useGroupDetailAPI} plus `tab`/`setTab`,
- *   `addingMember`/`setAddingMember` and the `memberEmail` invite form with
- *   `submitMember` and `memberError`, `simplified`/`setSimplified` for the
- *   debts view, `settleWith`/`setSettleWith` for the settle-up sheet, and
- *   `userById` mapping member ids to users.
+ *   `addingPeople`/`setAddingPeople` and the add-people form (`pickedIds`,
+ *   `togglePicked`, `identifier`/`setIdentifier`, `submitPeople`,
+ *   `peopleError`, `canAddPeople`), `candidates` (friends not already in the
+ *   group), `simplified`/`setSimplified` for the debts view,
+ *   `settleWith`/`setSettleWith` for the settle-up sheet, and `userById`
+ *   mapping member ids to users.
  */
 export function useGroupDetail(groupId: string) {
   const groupDetailAPI = useGroupDetailAPI(groupId);
   const [activeTab, setActiveTab] = useState<GroupTab>("expenses");
-  const [addingMember, setAddingMember] = useState(false);
-  const [memberEmail, setMemberEmail] = useState("");
-  const [memberError, setMemberError] = useState("");
+  const [addingPeople, setAddingPeople] = useState(false);
+  const [pickedIds, setPickedIds] = useState<string[]>([]);
+  const [identifier, setIdentifier] = useState("");
+  const [peopleError, setPeopleError] = useState("");
   const [simplified, setSimplified] = useState(false);
   const [settleWith, setSettleWith] = useState<{ user: User; cents: number } | null>(null);
-
-  /** Invites the typed email as a member; on success clears and closes the sheet. */
-  const submitMember = () => {
-    setMemberError("");
-    groupDetailAPI.addMember.mutate(
-      { email: memberEmail, name: "" },
-      {
-        onSuccess: () => {
-          setMemberEmail("");
-          setAddingMember(false);
-        },
-        onError: (mutationError) => setMemberError(errorMessage(mutationError)),
-      },
-    );
-  };
 
   // Lookup map so panels can resolve a member's User from a bare user id.
   const userById = new Map(
@@ -51,16 +40,53 @@ export function useGroupDetail(groupId: string) {
     ),
   );
 
+  // Current members are not candidates — offering a checkbox that can only
+  // produce "already in this group" is a control that exists to be refused.
+  const candidates = groupDetailAPI.friends.filter((friend) => !userById.has(friend.id));
+
+  /** Adds or removes somebody from the pending selection. */
+  const togglePicked = (userId: string) => {
+    setPickedIds((current) =>
+      current.includes(userId)
+        ? current.filter((pickedId) => pickedId !== userId)
+        : [...current, userId],
+    );
+  };
+
+  /** Adds the checked people plus the typed email/phone, then closes the sheet. */
+  const submitPeople = () => {
+    setPeopleError("");
+    const trimmed = identifier.trim();
+    groupDetailAPI.addMembers.mutate(
+      {
+        userIds: pickedIds,
+        ...(trimmed === "" ? { email: "", phone: "" } : splitIdentifier(trimmed)),
+      },
+      {
+        onSuccess: () => {
+          setPickedIds([]);
+          setIdentifier("");
+          setAddingPeople(false);
+        },
+        onError: (mutationError) => setPeopleError(errorMessage(mutationError)),
+      },
+    );
+  };
+
   return {
     ...groupDetailAPI,
     tab: activeTab,
     setTab: setActiveTab,
-    addingMember,
-    setAddingMember,
-    memberEmail,
-    setMemberEmail,
-    memberError,
-    submitMember,
+    addingPeople,
+    setAddingPeople,
+    candidates,
+    pickedIds,
+    togglePicked,
+    identifier,
+    setIdentifier,
+    peopleError,
+    submitPeople,
+    canAddPeople: pickedIds.length > 0 || identifier.trim() !== "",
     simplified,
     setSimplified,
     settleWith,

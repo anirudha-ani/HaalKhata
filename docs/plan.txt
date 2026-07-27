@@ -147,6 +147,7 @@ converting a discipline problem into a compiler problem.
   src/money/money.test.ts      colocated unit tests (vitest)
   src/expense/allocate.ts      allocate() — largest-remainder cent allocation
   src/expense/splits.ts        computeSplits / computeItemizedSplits (+ tests)
+  src/search/filter.ts         searchTerms / matchesTerms (+ tests)
   src/greeting.ts              time-of-day greeting
 ```
 
@@ -315,10 +316,12 @@ long list.
 
 Shared pieces:
 - `components/ui/SearchField.tsx` — icon, `type="search"`, clear button.
-- `lib/search/filter.ts` — `searchTerms` + `matchesTerms`: whitespace-tokenised,
-  order-independent, so "test ani" finds "Ani Test" where a substring match on
-  the joined string would not. An all-digits term is matched against the
-  fields' digits, so "415 555" finds "+1 (415) 555-2671" however punctuated.
+- `@haalkhata/shared/search/filter` — `searchTerms` + `matchesTerms`:
+  whitespace-tokenised, order-independent, so "test ani" finds "Ani Test" where
+  a substring match on the joined string would not. An all-digits term is
+  matched against the fields' digits, so "415 555" finds "+1 (415) 555-2671"
+  however punctuated. (Started in `apps/web/src/lib/search/`; moved to the
+  shared package in §3i when the mobile member picker needed the same rules.)
   Unit-tested in `filter.test.ts`.
 
 Applied at:
@@ -562,6 +565,69 @@ months. Selecting one scopes both the query and the pagination.
 **Date grouping** by Today / Yesterday / full date, so scanning is by when
 rather than by row.
 
+## 3i. Group membership: pick people, don't invite them (v5.12 — 2026-07-27)
+
+Group membership was **email-only**. The one control on a group was "Invite",
+and it opened a single email input — so putting three existing friends in a
+trip meant typing three addresses you already had on file, one modal at a
+time, and the group you had just created sat there with one member in it.
+§4b already flagged this ("Group invites remain email-only for now — the same
+treatment applies whenever that flow is revisited"). This is that revisit.
+
+Every other app in this space treats an email invite as the **fallback**, not
+the primary path: you pick from the people you already know, and typing an
+address is what you do for the one person who is new. The picker for that
+already exists here — `PeoplePicker` on the expense form — so the fix is
+mostly to stop having two answers to "who are these people?".
+
+**Contract.** `AddMember(email)` → `AddMembers`, batched:
+
+```proto
+rpc AddMembers(AddMembersRequest) returns (AddMembersResponse);
+message AddMembersRequest {
+  string group_id = 1;
+  repeated string user_ids = 2;  // people you already know — added outright
+  string email = 3;              // \  the one newcomer, exactly one of the
+  string phone = 4;              // /  two, following §4b's identifier split
+  string name = 5;               // optional display name for a shadow user
+}
+message AddMembersResponse { repeated Member added = 1; }
+```
+
+`CreateGroupRequest` gains the same `repeated string member_ids`, so a group
+is born populated rather than empty-then-invited.
+
+**Who you are allowed to add.** A bare id is not authorization: without a
+check, any user id would be enough to enrol a stranger in your group and start
+attributing debts to them. The server admits an id only if it is in
+`connectedUserIds(caller)` = explicit friendships ∪ **anyone you already share
+a group with**. The second half is what keeps the guard aligned with what the
+client actually offers: friendships are symmetric, but two people who met as
+members of someone else's group have no friendship row between them, and
+`listFriends` surfaces them anyway once they share an expense. Guarding on
+friendship alone would show a name in the picker that the server then refuses.
+
+**Batch semantics.** Adding is idempotent per person: someone already in the
+group is *skipped*, not an error, so one already-member cannot fail the other
+four. The call fails only when nothing at all would happen — nobody picked, or
+every person picked is already in. One `member_added` event is written for the
+whole batch ("Ani added Rifat, Tanvir and Sadia"), not one per person, because
+a feed that reports a single action three times is noise.
+
+**UI.** "Invite" becomes **Add people**, and the modal is the same shape in
+both places it appears (new-group form, group detail):
+
+```
+  Search  [ name, email or phone      ]
+  ☑ Rifat        ☐ Tanvir       ☐ Sadia      ← friends, minus current members
+  ── Not on the list? ─────────────────
+  [ email or phone            ]  ← the fallback, below the fold
+```
+
+`FriendChecklist` (`components/people/`) is that middle block, extracted from
+`PeoplePicker` so all three callers share one search, one 50-row cap, and one
+overflow hint rather than three copies that drift.
+
 ## 4. Data Model (integer cents everywhere, soft-delete on expenses)
 
 users (shadow users: password_hash NULL, claimable at signup) · friendships ·
@@ -603,8 +669,9 @@ email-only assumption is gone (migration `1784073600000_add_user_phone`).
   lives in the shared package because login, signup and friend-invite on both
   apps all need identical routing.
 
-Group invites (`AddMember`) remain email-only for now — the same treatment
-applies whenever that flow is revisited.
+Group invites took this treatment in §3i: `AddMembers` accepts the same
+`email`/`phone` pair, and it is now the fallback behind picking people you
+already know rather than the only way in.
 
 ## 5. Core Domain Logic (usecase/domain — pure, unit-tested)
 

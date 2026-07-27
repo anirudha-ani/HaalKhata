@@ -5,7 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { socialClient } from "@/lib/api/connect";
 import { queryKeys } from "@haalkhata/shared/api/queryKeys";
-import { matchesTerms, searchTerms } from "@/lib/search/filter";
+import { matchesTerms, searchTerms } from "@haalkhata/shared/search/filter";
 import { ACTIVITY_FILTERS, type ActivityFilter } from "../../../constants/activityTypes";
 
 /**

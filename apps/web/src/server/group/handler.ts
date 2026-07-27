@@ -26,9 +26,9 @@ export const groupHandler: ServiceImpl<typeof GroupService> = {
     return runUsecase(async () => groups.getGroup(await requireUser(context), request.groupId), context);
   },
 
-  /** Adds a member to a group by email, creating a shadow user if needed. */
-  async addMember(request, context) {
-    return runUsecase(async () => groups.addMemberByEmail(await requireUser(context), request), context);
+  /** Adds people by id, plus one optional email/phone newcomer as a shadow user. */
+  async addMembers(request, context) {
+    return runUsecase(async () => groups.addMembers(await requireUser(context), request), context);
   },
 
   /** Removes a member from a group; refused while the member has a balance. */

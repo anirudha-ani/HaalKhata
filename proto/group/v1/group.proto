@@ -9,9 +9,10 @@ service GroupService {
   rpc CreateGroup(CreateGroupRequest) returns (Group);
   rpc ListGroups(google.protobuf.Empty) returns (ListGroupsResponse);
   rpc GetGroup(GetGroupRequest) returns (Group);
-  // Adds a member by email. If no account exists a shadow user is created
-  // (claimable later by signing up with that email).
-  rpc AddMember(AddMemberRequest) returns (Member);
+  // Adds people to a group in one call. Anyone you already know goes in by
+  // id; email/phone is the fallback for somebody new, who gets a shadow user
+  // (claimable later by signing up with that email or number).
+  rpc AddMembers(AddMembersRequest) returns (AddMembersResponse);
   rpc RemoveMember(RemoveMemberRequest) returns (google.protobuf.Empty);
 }
 
@@ -34,6 +35,9 @@ message CreateGroupRequest {
   string name = 1;
   string type = 2;
   string currency = 3;
+  // People to enrol alongside the creator, so a group can be born populated
+  // instead of empty-then-invited. Same authorization rule as AddMembers.
+  repeated string member_ids = 4;
 }
 
 message GroupSummary {
@@ -51,10 +55,28 @@ message GetGroupRequest {
   string group_id = 1;
 }
 
-message AddMemberRequest {
+message AddMembersRequest {
   string group_id = 1;
-  string email = 2;
-  string name = 3; // optional display name for shadow users
+  // Ids of people the caller already knows. Each must be an existing friend
+  // or someone the caller already shares a group with — a bare id is not
+  // authorization, or a stranger's id would be enough to enrol them in your
+  // group and start attributing debts to them.
+  repeated string user_ids = 2;
+  // Email of somebody not on that list yet; a shadow user is created when no
+  // account matches. At most one of email/phone, following the identifier
+  // split in §4b.
+  string email = 3;
+  // Phone as the alternative to email: E.164, or a US national format.
+  string phone = 4;
+  // Optional display name used when a shadow user must be created.
+  string name = 5;
+}
+
+message AddMembersResponse {
+  // Only the people this call actually added. Someone already in the group is
+  // skipped rather than failing the batch, so one stale checkbox cannot lose
+  // the other four additions.
+  repeated Member added = 1;
 }
 
 message RemoveMemberRequest {

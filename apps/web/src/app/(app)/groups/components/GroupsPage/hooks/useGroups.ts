@@ -4,7 +4,7 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { errorMessage } from "@/lib/api/connect";
-import { matchesTerms, searchTerms } from "@/lib/search/filter";
+import { matchesTerms, searchTerms } from "@haalkhata/shared/search/filter";
 import { useGroupsAPI } from "./useGroupsAPI";
 
 /**
@@ -14,8 +14,9 @@ import { useGroupsAPI } from "./useGroupsAPI";
  * @returns Everything from {@link useGroupsAPI} plus `visibleGroups` (those
  *   matching `query`) and the `query`/`setQuery` search state,
  *   `creating`/`setCreating` (modal visibility), the `name`/`type`/`currency`
- *   form fields with setters, the last create `error` message, `submitCreate`
- *   to run the mutation, and `isCreating` while it is pending.
+ *   form fields with setters, `memberIds`/`toggleMember` for the people picked
+ *   to join at creation, the last create `error` message, `submitCreate` to
+ *   run the mutation, and `isCreating` while it is pending.
  */
 export function useGroups() {
   const groupsAPI = useGroupsAPI();
@@ -25,17 +26,28 @@ export function useGroups() {
   const [name, setName] = useState("");
   const [type, setType] = useState("trip");
   const [currency, setCurrency] = useState("USD");
+  const [memberIds, setMemberIds] = useState<string[]>([]);
   const [error, setError] = useState("");
+
+  /** Adds or removes somebody from the set enrolled when the group is created. */
+  const toggleMember = (userId: string) => {
+    setMemberIds((current) =>
+      current.includes(userId)
+        ? current.filter((memberId) => memberId !== userId)
+        : [...current, userId],
+    );
+  };
 
   /** Creates the group; on success closes the modal and navigates to its detail page. */
   const submitCreate = () => {
     setError("");
     groupsAPI.createGroup.mutate(
-      { name, type, currency },
+      { name, type, currency, memberIds },
       {
         onSuccess: (group) => {
           setCreating(false);
           setName("");
+          setMemberIds([]);
           router.push(`/groups/${group.id}`);
         },
         onError: (mutationError) => setError(errorMessage(mutationError)),
@@ -65,6 +77,8 @@ export function useGroups() {
     setType,
     currency,
     setCurrency,
+    memberIds,
+    toggleMember,
     error,
     submitCreate,
     isCreating: groupsAPI.createGroup.isPending,

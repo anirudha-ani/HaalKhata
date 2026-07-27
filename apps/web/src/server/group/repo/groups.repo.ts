@@ -114,6 +114,26 @@ export async function listMembersByGroupIds(groupIds: string[]): Promise<Map<str
 }
 
 /**
+ * Lists the ids of everyone who shares at least one group with the given
+ * user. Used alongside explicit friendships to decide who that user is
+ * allowed to enrol in a group: two people who met as members of somebody
+ * else's group have no friendship row between them, but they do know each
+ * other, and the friends list shows them once they share an expense.
+ *
+ * @param userId - Id of the user whose co-members to look up.
+ * @returns Distinct user ids sharing a group with them, excluding themselves.
+ */
+export async function listCoMemberIds(userId: string): Promise<string[]> {
+  const coMemberRows = await query<{ user_id: string }>(
+    `SELECT DISTINCT theirs.user_id FROM group_members AS mine
+     JOIN group_members AS theirs ON theirs.group_id = mine.group_id
+     WHERE mine.user_id = $1 AND theirs.user_id <> $1`,
+    [userId],
+  );
+  return coMemberRows.map((coMemberRow) => coMemberRow.user_id);
+}
+
+/**
  * Adds a user to a group; a no-op if the membership already exists.
  *
  * @param groupId - Id of the group to add the user to.
