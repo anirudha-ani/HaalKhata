@@ -123,29 +123,36 @@ function CashGrinGlyph() {
  * *received*, where it said the opposite of what happened. Direction is
  * resolved per viewer now, so it can only land on a payment you made.
  *
- * Wings are horizontal, filled, and attached at the note's mid-height. Every
- * upright variant — lobes above the top corners, however pointed or notched —
- * read unmistakably as bunny ears: two vertical shapes flanking a rectangle is
- * a face with ears, and no amount of feather detail overrides that at 24px.
- * Swept back and level, the same shapes read as flight. Filled rather than
- * outlined because thin strokes disappear at this size.
+ * Two constraints, both learned by rendering it at 24px:
+ *
+ * Wings must be **horizontal**, attached at the note's mid-height and swept
+ * back. Every variant with lobes above the top corners read as bunny ears,
+ * however pointed or feathered — two vertical shapes flanking a rectangle is a
+ * face with ears, and no detail overrides that at this size.
+ *
+ * And they must be **outlined**, not filled. Solid wings were legible in
+ * isolation but sat in a column of outline glyphs as a dark blob, which is a
+ * style mismatch the eye reads as "mushy" long before it reads the shape. The
+ * interior feather line is what separates a wing from a generic lobe.
  */
 function WingedCashGlyph() {
   return (
     <>
-      <path
-        {...SOLID}
-        d="M7.2 10.8C4.4 9.6 1.4 10.4.8 12c-.4 1.1 1 1.6 2.4 1.5-.6.8.4 1.6 1.8 1.4 1.3-.2 2.3-1 2.4-1.9z"
-      />
-      <path
-        {...SOLID}
-        d="M16.8 10.8c2.8-1.2 5.8-.4 6.4 1.2.4 1.1-1 1.6-2.4 1.5.6.8-.4 1.6-1.8 1.4-1.3-.2-2.3-1-2.4-1.9z"
-      />
-      <rect {...STROKE} x="6.8" y="8.6" width="10.4" height="7" rx="1.5" />
+      <rect {...STROKE} x="7.6" y="8.8" width="8.8" height="6.6" rx="1.4" />
       {/* A "$" rather than the usual portrait oval: this tile is neutral, so
           the glyph has to say "money" without help from the tint. */}
-      <path {...FINE} d="M12 9.7v4.8" />
-      <path {...FINE} d="M10.5 10.8c.5-.8 2.6-.8 3.1 0s-2.6 1.2-3.1 2 1.5 1.3 3.1.7" />
+      <path {...FINE} d="M12 9.9v4.4" />
+      <path {...FINE} d="M10.6 10.9c.4-.7 2.4-.7 2.8 0s-2.4 1-2.8 1.8 1.4 1.2 2.8.6" />
+      <path
+        {...STROKE}
+        d="M7.6 10.8C5 8.4 1.6 8.2.7 10.2c-.6 1.3 1.3 2.4 3.4 2.4-1 1 .2 2.2 2.1 2.2 1.3 0 2.2-.6 2.6-1.2z"
+      />
+      <path {...FINE} d="M2.6 10.6c1.6.4 3.2 1.4 4.4 2.6" />
+      <path
+        {...STROKE}
+        d="M16.4 10.8c2.6-2.4 6-2.6 6.9-.6.6 1.3-1.3 2.4-3.4 2.4 1 1-.2 2.2-2.1 2.2-1.3 0-2.2-.6-2.6-1.2z"
+      />
+      <path {...FINE} d="M21.4 10.6c-1.6.4-3.2 1.4-4.4 2.6" />
     </>
   );
 }

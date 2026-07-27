@@ -511,11 +511,21 @@ exactly what 💸 depicts, and the original defect was never the drawing — it 
 showing it for money *received*, where it said the opposite of what happened.
 With direction resolved per viewer it can only land on a payment you made.
 
-Getting it legible took twelve rendered variants. Every design with wings above
-the note's top corners read as **bunny ears**, however pointed or notched the
-feathers were: two vertical shapes flanking a rectangle is a face with ears,
-and no detail overrides that at 24px. Horizontal wings, filled rather than
-outlined, attached at mid-height and swept back, read as flight immediately.
+Getting it legible took sixteen rendered variants and two separate lessons.
+
+Every design with wings above the note's top corners read as **bunny ears**,
+however pointed or notched the feathers were: two vertical shapes flanking a
+rectangle is a face with ears, and no detail overrides that at 24px. Wings have
+to be horizontal, attached at mid-height and swept back.
+
+Solid wings then read fine *in isolation* and still looked wrong *in the
+column* — a filled mass among eight outline glyphs is a style mismatch the eye
+calls "mushy" before it ever parses the shape. Outlined wings at the set's own
+stroke weight fixed it, with an interior feather line to separate a wing from a
+generic lobe. The lesson generalises: judge a glyph next to its neighbours, not
+on its own, and the harness now renders a reference glyph alongside for exactly
+that.
+
 The note wears a "$" instead of the usual portrait oval because that tile is
 neutral-coloured and the glyph has to say "money" without help from the tint.
 
