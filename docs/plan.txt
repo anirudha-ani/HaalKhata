@@ -506,19 +506,22 @@ added (receipt, brand tint) and deleted (headstone, muted) differ by tint
 `aria-label` while the SVG is `aria-hidden`, so a screen reader announces
 "Expense deleted" instead of describing a headstone.
 
-The outbound glyph took three attempts, and the winged banknote won in the
-end — correctly. A winged note is exactly what 💸 depicts; the original sin was
-never the drawing, it was showing it for money *received*, where it said the
-opposite of what happened. Now that direction is resolved per viewer it can
-only appear on a payment you made, so drawing and event agree.
+The winged banknote is the outbound glyph, which is right: a winged note is
+exactly what 💸 depicts, and the original defect was never the drawing — it was
+showing it for money *received*, where it said the opposite of what happened.
+With direction resolved per viewer it can only land on a payment you made.
 
-Getting it legible took the harness. A single wing was tried twice and
-collapsed into a blob at 24px — the note eats the width and leaves the wing too
-few pixels to have a shape — which sent it via a paper plane and a sobbing face
-before landing on a *symmetrical pair* of wings, where the silhouette itself
-carries the meaning. The note wears a "$" rather than the usual portrait oval,
-because that tile is neutral-coloured and the glyph has to say "money" without
-help from the tint.
+Getting it legible took twelve rendered variants. Every design with wings above
+the note's top corners read as **bunny ears**, however pointed or notched the
+feathers were: two vertical shapes flanking a rectangle is a face with ears,
+and no detail overrides that at 24px. Horizontal wings, filled rather than
+outlined, attached at mid-height and swept back, read as flight immediately.
+The note wears a "$" instead of the usual portrait oval because that tile is
+neutral-coloured and the glyph has to say "money" without help from the tint.
+
+No captions. An earlier pass put a quip under each row ("new damage", "secured
+the bag"); it repeated what the sentence already said and pushed the timestamp
+around for nothing. The metadata line is the actor and the time.
 
 The harness renders at true size (40px tile) with a 3x row beside it. An
 earlier pass previewed at 66px and shipped a tear fused to a face outline and

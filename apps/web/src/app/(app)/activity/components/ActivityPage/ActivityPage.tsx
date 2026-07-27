@@ -171,12 +171,6 @@ function ActivityRow({ event }: { event: FeedEvent }) {
         <span className="mt-0.5 flex items-center gap-1.5 text-xs text-ink-soft">
           {event.actor ? <Avatar user={event.actor} size="xsmall" /> : null}
           {when}
-          {look.tag ? (
-            <>
-              <span aria-hidden="true">·</span>
-              <span className="truncate font-medium">{look.tag}</span>
-            </>
-          ) : null}
         </span>
       </span>
 

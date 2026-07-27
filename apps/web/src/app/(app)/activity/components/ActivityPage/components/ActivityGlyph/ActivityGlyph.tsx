@@ -120,31 +120,32 @@ function CashGrinGlyph() {
  * A banknote with wings, mid-getaway — you paid somebody.
  *
  * This is what 💸 always depicted; the original sin was showing it for money
- * *received*, where it said the opposite of what happened. With direction
- * resolved per viewer it only ever appears on a payment you made, so the
- * drawing and the event finally agree.
+ * *received*, where it said the opposite of what happened. Direction is
+ * resolved per viewer now, so it can only land on a payment you made.
  *
- * Wings on both sides, not one. A single wing was tried twice and collapsed
- * into a blob at 24px — the note eats the width and leaves the wing too few
- * pixels to have a shape. A symmetrical pair reads at a glance because the
- * silhouette itself is the signal.
+ * Wings are horizontal, filled, and attached at the note's mid-height. Every
+ * upright variant — lobes above the top corners, however pointed or notched —
+ * read unmistakably as bunny ears: two vertical shapes flanking a rectangle is
+ * a face with ears, and no amount of feather detail overrides that at 24px.
+ * Swept back and level, the same shapes read as flight. Filled rather than
+ * outlined because thin strokes disappear at this size.
  */
 function WingedCashGlyph() {
   return (
     <>
-      <rect {...STROKE} x="7.6" y="9.6" width="8.8" height="6.4" rx="1.3" />
-      {/* A "$" rather than the usual portrait oval: the tile is neutral here,
-          so the glyph has to say "money" without help from colour. */}
-      <path {...FINE} d="M12 10.6v4.8" />
-      <path {...FINE} d="M10.6 11.6c.4-.7 2.4-.7 2.8 0s-2.4 1.1-2.8 1.9 1.4 1.2 2.8.6" />
       <path
-        {...STROKE}
-        d="M7.6 10.8C5.2 7.2 2.2 5.8 1 7.4c-1 1.4.8 3.6 3.3 4.5-1.1.7-.5 1.9 1.1 2.1s2.2-.5 2.2-.5z"
+        {...SOLID}
+        d="M7.2 10.8C4.4 9.6 1.4 10.4.8 12c-.4 1.1 1 1.6 2.4 1.5-.6.8.4 1.6 1.8 1.4 1.3-.2 2.3-1 2.4-1.9z"
       />
       <path
-        {...STROKE}
-        d="M16.4 10.8c2.4-3.6 5.4-5 6.6-3.4 1 1.4-.8 3.6-3.3 4.5 1.1.7.5 1.9-1.1 2.1s-2.2-.5-2.2-.5z"
+        {...SOLID}
+        d="M16.8 10.8c2.8-1.2 5.8-.4 6.4 1.2.4 1.1-1 1.6-2.4 1.5.6.8-.4 1.6-1.8 1.4-1.3-.2-2.3-1-2.4-1.9z"
       />
+      <rect {...STROKE} x="6.8" y="8.6" width="10.4" height="7" rx="1.5" />
+      {/* A "$" rather than the usual portrait oval: this tile is neutral, so
+          the glyph has to say "money" without help from the tint. */}
+      <path {...FINE} d="M12 9.7v4.8" />
+      <path {...FINE} d="M10.5 10.8c.5-.8 2.6-.8 3.1 0s-2.6 1.2-3.1 2 1.5 1.3 3.1.7" />
     </>
   );
 }
