@@ -795,6 +795,55 @@ match the parser, which would only prove the parser agrees with itself.
 because the phone is tested over plain http and that is exactly where these
 features are needed.
 
+## 3m. The shell is a frame, not a page (v5.18 — 2026-07-27)
+
+Reported: on a phone the header and bottom bar "jiggle" — drifting with
+sideways scrolling and bouncing on vertical. Two separate causes, one fix.
+
+**`sticky` only pins one axis.** The mobile header was `sticky top-0`, which
+pins vertically and nothing else, so the moment anything made the document
+scroll horizontally the header slid along with it. **`fixed` is re-laid-out**
+against the visual viewport, which iOS changes continuously while it animates
+the URL bar and during momentum scroll — so the bottom nav bounced. Both are
+symptoms of the same thing: the bars were overlays on a scrolling document.
+
+**They are now rows of a frame that does not scroll.** The shell is `h-svh
+overflow-hidden`; the header and nav are ordinary `shrink-0` flex children;
+`<main>` is the single `overflow-y-auto` element. An element that is not
+inside the scrolling box cannot be moved by scrolling it — no sticky, no
+fixed, nothing to recompute per frame. This is also what makes it feel like an
+app rather than a web page: iOS leaves its URL bar alone when the document
+never scrolls.
+
+**`svh`, not `dvh`** — the first attempt used `dvh` and put the nav *behind*
+the address bar, which on iOS lives at the bottom of the screen. `dvh` is the
+viewport as it currently stands, and Safari reports that at its **large**
+value when the document cannot scroll, because it is expecting a scroll (that
+will never come) to retract the chrome. `svh` is the height with browser UI
+fully shown, so the bar always ends above it. Nothing is given up by taking
+the "small" viewport here: this document never scrolls, so the chrome was
+never going to retract anyway.
+
+Details that make it hold:
+- `min-h-0` on `<main>`. A flex child will not shrink below its content
+  height without it, so the frame would grow and the document would scroll
+  after all — the exact bug, reintroduced one level down.
+- `overscroll-contain` on `<main>` plus `overscroll-behavior: none` on
+  html/body: stops the rubber-band at the end of a list from handing the
+  scroll to the document, and kills pull-to-refresh, both of which drag the
+  whole frame.
+- The scroller is full width with `max-w-6xl` on the content *inside* it, so
+  the desktop scrollbar sits at the edge of the content area instead of
+  floating mid-screen.
+- `relative z-10` on the bars — not to overlay the scroller, which they no
+  longer do, but because the add button is pulled 20px above the bar by
+  `-mt-5` and must paint over whatever scrolls past.
+- `bg-card/95 backdrop-blur` became solid `bg-card`. The translucency existed
+  because the bars overlaid content; now that nothing passes beneath them it
+  bought only a per-frame blur composite, which is itself a source of jank.
+
+`pb-24` on main is gone — it existed solely to clear the fixed nav.
+
 ## 4. Data Model (integer cents everywhere, soft-delete on expenses)
 
 users (shadow users: password_hash NULL, claimable at signup) · friendships ·

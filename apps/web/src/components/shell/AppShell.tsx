@@ -54,9 +54,23 @@ export function AppShell({
     pathname === href || (pathname?.startsWith(`${href}/`) ?? false);
 
   return (
-    <div className="flex min-h-dvh">
+    // The shell is exactly one viewport tall and does not scroll; only <main>
+    // does. That is what makes the bars solid: a `sticky` header only pins
+    // vertically, so any sideways scroll drags it along, and a `fixed` footer
+    // is re-laid-out every time iOS animates its URL bar. Neither can happen
+    // to an element that simply is not inside the scrolling box.
+    //
+    // `svh`, not `dvh`. iOS puts its address bar at the *bottom*, and `dvh`
+    // is the viewport as it currently stands — which Safari reports at its
+    // large value when the document cannot scroll, since it expects the bar
+    // to retract on a scroll that will never come. The nav then sits in the
+    // strip underneath the address bar. `svh` is the height with browser UI
+    // fully shown, so the bar always ends above it. Nothing is lost by the
+    // "small" viewport here: this document never scrolls, so the chrome was
+    // never going to retract anyway.
+    <div className="flex h-svh overflow-hidden">
       {/* Desktop sidebar — pinned to the viewport's left edge, not centered */}
-      <aside className="sticky top-0 hidden h-dvh w-60 shrink-0 flex-col justify-between border-r border-line bg-card px-4 py-6 md:flex">
+      <aside className="hidden h-full w-60 shrink-0 flex-col justify-between overflow-y-auto border-r border-line bg-card px-4 py-6 md:flex">
         <div className="space-y-6">
           <Logo />
           <nav className="space-y-1">
@@ -107,9 +121,12 @@ export function AppShell({
         ) : null}
       </aside>
 
-      <div className="mx-auto flex w-full min-w-0 max-w-6xl flex-1 flex-col">
-        {/* Mobile header */}
-        <header className="sticky top-0 z-40 flex items-center justify-between border-b border-line bg-card/95 px-4 py-3 backdrop-blur md:hidden">
+      {/* Full width, so the scrollbar lands at the edge of the content area
+          rather than floating mid-screen; the max-width lives on the content
+          inside the scroller instead. */}
+      <div className="flex min-w-0 flex-1 flex-col">
+        {/* Mobile header — a flex row of the frame, not a sticky overlay. */}
+        <header className="relative z-10 flex shrink-0 items-center justify-between border-b border-line bg-card px-4 py-3 md:hidden">
           <Logo />
           <div className="flex items-center gap-1">
             <Link href="/activity" className="relative rounded-full p-2 text-ink-soft">
@@ -128,27 +145,38 @@ export function AppShell({
           </div>
         </header>
 
-        <main className="flex-1 px-4 py-6 pb-24 md:px-8 md:pb-8">{children}</main>
-      </div>
+        {/* The only scrolling element. `min-h-0` lets it actually shrink
+            inside the flex column — without it a flex child refuses to go
+            below its content height and the page scrolls instead.
+            `overscroll-contain` keeps the rubber-band at the end of a list
+            from handing the scroll to the document, which is what made the
+            whole frame bounce. */}
+        <main className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-6 md:px-8">
+          <div className="mx-auto w-full max-w-6xl">{children}</div>
+        </main>
 
-      {/* Mobile bottom nav */}
-      <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-line bg-card/95 backdrop-blur md:hidden">
-        <div className="mx-auto grid max-w-md grid-cols-5 items-end px-2 pt-1.5 pb-[max(0.375rem,env(safe-area-inset-bottom))]">
-          {MOBILE_LEFT_NAV.map(({ href, label, icon: Icon }) => (
-            <MobileTab key={href} href={href} label={label} active={isActive(href)} icon={<Icon className="h-5 w-5" />} />
-          ))}
-          <Link
-            href="/expenses/new"
-            aria-label="Add expense"
-            className="mx-auto -mt-5 flex h-13 w-13 items-center justify-center rounded-full bg-brand-600 text-white shadow-lg shadow-brand-600/30"
-          >
-            <Plus className="h-6 w-6" />
-          </Link>
-          {MOBILE_RIGHT_NAV.map(({ href, label, icon: Icon }) => (
-            <MobileTab key={href} href={href} label={label} active={isActive(href)} icon={<Icon className="h-5 w-5" />} />
-          ))}
-        </div>
-      </nav>
+        {/* Mobile bottom nav — likewise a row of the frame, never fixed.
+            `relative z-10` is not about overlaying the scroller (it no longer
+            does) but about the add button, which is pulled 20px above the bar
+            by `-mt-5` and has to paint over whatever is scrolling past. */}
+        <nav className="relative z-10 shrink-0 border-t border-line bg-card md:hidden">
+          <div className="mx-auto grid max-w-md grid-cols-5 items-end px-2 pt-1.5 pb-[max(0.375rem,env(safe-area-inset-bottom))]">
+            {MOBILE_LEFT_NAV.map(({ href, label, icon: Icon }) => (
+              <MobileTab key={href} href={href} label={label} active={isActive(href)} icon={<Icon className="h-5 w-5" />} />
+            ))}
+            <Link
+              href="/expenses/new"
+              aria-label="Add expense"
+              className="mx-auto -mt-5 flex h-13 w-13 items-center justify-center rounded-full bg-brand-600 text-white shadow-lg shadow-brand-600/30"
+            >
+              <Plus className="h-6 w-6" />
+            </Link>
+            {MOBILE_RIGHT_NAV.map(({ href, label, icon: Icon }) => (
+              <MobileTab key={href} href={href} label={label} active={isActive(href)} icon={<Icon className="h-5 w-5" />} />
+            ))}
+          </div>
+        </nav>
+      </div>
     </div>
   );
 }

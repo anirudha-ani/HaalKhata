@@ -34,11 +34,25 @@
     "Helvetica Neue", Arial, sans-serif;
 }
 
+/*
+ * Pull-to-refresh and the rubber-band at the top of the document both drag
+ * the whole frame — including the app bars — down and back. Inside the app
+ * shell nothing scrolls at document level anyway, so there is nothing to
+ * refresh by pulling; this makes that explicit for every browser.
+ */
+html {
+  overscroll-behavior: none;
+}
+
 body {
   background-color: var(--color-paper);
   color: var(--color-ink);
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
+  /* The shell sizes itself to exactly one viewport, so the document never
+     needs to scroll. Belt and braces against a stray tall child turning the
+     page itself into a scroller and taking the bars with it. */
+  overscroll-behavior: none;
 }
 
 h1,
