@@ -30,6 +30,7 @@ import {
   PHONE_FORMAT_HINT,
   TOKEN_LIFETIME_SECONDS,
   normalizePhone,
+  passwordAuthEnabled,
 } from "@/server/auth/auth.constants";
 import { toUser } from "./user.mapper";
 
@@ -177,6 +178,20 @@ export function tokenVersion(token: string): number {
 // --- flows -----------------------------------------------------------------
 
 /**
+ * Rejects the password flows on a production deploy, where Google is the only
+ * way in. Enforced here rather than by hiding the form: the RPCs stay mounted
+ * and reachable by anyone willing to POST at them, so the UI gate alone would
+ * be decoration.
+ *
+ * @throws UsecaseError "permission_denied" when running in production.
+ */
+function requirePasswordAuthEnabled(): void {
+  if (!passwordAuthEnabled()) {
+    throw new UsecaseError("permission_denied", "sign in with Google to continue");
+  }
+}
+
+/**
  * Registers a new account, or lets a shadow user claim their existing row,
  * and issues a session token. Exactly one of `email` or `phone` must be set;
  * the other is left null on the new account (and can be added later via
@@ -193,6 +208,7 @@ export async function signUp(input: {
   name: string;
   password: string;
 }) {
+  requirePasswordAuthEnabled();
   const name = input.name.trim();
   if (name.length === 0) invalid("name is required");
   validatePassword(input.password);
@@ -246,6 +262,7 @@ export async function signUp(input: {
  *   unclaimed shadow user, or the password does not match.
  */
 export async function logIn(input: { email: string; phone: string; password: string }) {
+  requirePasswordAuthEnabled();
   const email = input.email.trim().toLowerCase();
   const phone = normalizePhone(input.phone);
   const user = email ? await findUserByEmail(email) : phone ? await findUserByPhone(phone) : undefined;

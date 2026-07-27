@@ -949,8 +949,26 @@ message LogInWithGoogleRequest { string id_token = 1; }
 
 `SignUpRequest` / `LogInRequest` keep their `phone` fields — removing them
 is a breaking change for any shipped mobile build, and an unused proto field
-costs nothing — but no client populates them any more, and the login screen
-stops routing through `splitIdentifier`.
+costs nothing.
+
+**Password auth is kept in development and closed in production.** Seeded
+dev accounts stay reachable without a Google round trip, while a real deploy
+admits Google only. Two halves, and only one of them matters:
+
+- `passwordAuthEnabled()` in `auth.constants.ts` gates `signUp` and `logIn`
+  in the **usecase**, before any lookup. This is the enforcing side: the RPCs
+  stay mounted and reachable by anyone willing to POST at them, so a hidden
+  form on its own would be decoration.
+- `PASSWORD_AUTH_ENABLED` in the login route's constants hides the form.
+  Duplicated rather than imported because the server module reaches for
+  `node:path` and cannot enter a client bundle. Since it resolves to a
+  literal at build time, the whole block is dead-code eliminated from a
+  production bundle — verified by grepping the built chunks for its strings.
+
+Consequence for `apps/mobile`, which still signs in with a password: its
+login breaks against a production server until it gets the Google flow. Not
+an issue while the app is unreleased, but it is the reason mobile Google
+sign-in cannot lag indefinitely.
 
 **Schema.** `users.google_sub TEXT` with a partial unique index
 (`WHERE google_sub IS NOT NULL`), plus `users.merged_into TEXT` for merge

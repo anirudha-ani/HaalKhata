@@ -3,6 +3,7 @@
 
 import { useLogin } from "./hooks/useLogin";
 import { useGoogleSignIn } from "./hooks/useGoogleSignIn";
+import { PASSWORD_AUTH_ENABLED } from "@/app/login/constants/googleSignIn";
 
 /** Shared styling for the credential text inputs. */
 const inputClass =
@@ -37,7 +38,7 @@ export function LoginPage() {
 
         <div className="rounded-2xl border border-line bg-card p-6 shadow-sm">
           {googleIsConfigured ? (
-            <div className="mb-5 flex flex-col gap-3">
+            <div className="flex flex-col gap-3">
               <div ref={setButtonElement} className="flex justify-center [color-scheme:light]" />
               {googleIsPending ? (
                 <p className="text-center text-sm text-ink-soft">Opening your ledger…</p>
@@ -45,14 +46,25 @@ export function LoginPage() {
               {googleError ? (
                 <p className="text-center text-sm text-brand-600">{googleError}</p>
               ) : null}
-              <div className="flex items-center gap-3 text-xs text-ink-soft">
-                <span className="h-px flex-1 bg-line" />
-                or use a password
-                <span className="h-px flex-1 bg-line" />
-              </div>
             </div>
           ) : null}
 
+          {!googleIsConfigured && !PASSWORD_AUTH_ENABLED ? (
+            <p className="text-center text-sm text-ink-soft">
+              Sign-in is not configured on this server yet.
+            </p>
+          ) : null}
+
+          {googleIsConfigured && PASSWORD_AUTH_ENABLED ? (
+            <div className="my-5 flex items-center gap-3 text-xs text-ink-soft">
+              <span className="h-px flex-1 bg-line" />
+              or use a password
+              <span className="h-px flex-1 bg-line" />
+            </div>
+          ) : null}
+
+          {PASSWORD_AUTH_ENABLED ? (
+            <>
           <div className="mb-5 grid grid-cols-2 rounded-xl bg-paper p-1 text-sm font-semibold">
             {(["login", "signup"] as const).map((modeOption) => (
               <button
@@ -128,6 +140,8 @@ export function LoginPage() {
               Invited by a friend? Sign up with the same email or phone and
               your shared expenses will already be here.
             </p>
+          ) : null}
+            </>
           ) : null}
         </div>
       </div>

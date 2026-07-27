@@ -30,6 +30,20 @@ export const AUTH_RATE_LIMIT = 10;
  */
 export const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID ?? "";
 
+/**
+ * Whether email/phone + password sign-in is accepted. Google is the only way
+ * into a production deploy; the password flows survive in development so
+ * seeded accounts stay reachable without a Google round trip.
+ *
+ * Read at call time rather than captured in a module-level constant so tests
+ * can exercise both sides of the switch.
+ *
+ * @returns True outside production, where SignUp/LogIn still work.
+ */
+export function passwordAuthEnabled(): boolean {
+  return process.env.NODE_ENV !== "production";
+}
+
 /** Minimum password length accepted at signup. */
 export const PASSWORD_MIN_LENGTH = 6;
 /**

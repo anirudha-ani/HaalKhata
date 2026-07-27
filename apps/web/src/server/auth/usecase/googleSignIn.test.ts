@@ -1,6 +1,6 @@
 /** Unit tests for the Google ID-token sign-in branches: link, claim, create, reject. */
 
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { UserRow } from "@/server/auth/repo/users.repo";
 
 // Inside vi.hoisted because `import` is evaluated before any plain statement in
@@ -37,7 +37,7 @@ vi.mock("@/server/auth/repo/paymentHandles.repo", () => ({
   replacePaymentHandles: vi.fn(),
 }));
 
-import { logInWithGoogle } from "./auth.usecase";
+import { logIn, logInWithGoogle, signUp } from "./auth.usecase";
 import {
   findUserByEmail,
   findUserByGoogleSub,
@@ -173,6 +173,17 @@ describe("logInWithGoogle", () => {
     await expect(logInWithGoogle("id-token")).rejects.toThrow(/could not verify/);
   });
 
+  it("stays available in production, unlike the password flows", async () => {
+    const previous = process.env.NODE_ENV;
+    vi.stubEnv("NODE_ENV", "production");
+    googleReturns(VERIFIED);
+    vi.mocked(findUserByGoogleSub).mockResolvedValue(userRow({ google_sub: "google-sub-123" }));
+
+    await expect(logInWithGoogle("id-token")).resolves.toBeDefined();
+
+    vi.stubEnv("NODE_ENV", previous ?? "test");
+  });
+
   it("recovers from a concurrent-signin unique violation instead of throwing", async () => {
     googleReturns(VERIFIED);
     vi.mocked(findUserByGoogleSub)
@@ -184,5 +195,46 @@ describe("logInWithGoogle", () => {
     const result = await logInWithGoogle("id-token");
 
     expect(result.user.id).toBe("user-1");
+  });
+});
+
+describe("password auth is production-gated", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it("rejects logIn in production without reaching the database", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+
+    await expect(logIn({ email: "a@b.com", phone: "", password: "hunter22" })).rejects.toThrow(
+      /sign in with Google/,
+    );
+    // The guard runs before any lookup: hiding the form is decoration, this is
+    // what actually closes the endpoint.
+    expect(findUserByEmail).not.toHaveBeenCalled();
+  });
+
+  it("rejects signUp in production without reaching the database", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+
+    await expect(
+      signUp({ email: "a@b.com", phone: "", name: "Ani", password: "hunter22" }),
+    ).rejects.toThrow(/sign in with Google/);
+    expect(insertUser).not.toHaveBeenCalled();
+  });
+
+  it("still allows logIn outside production", async () => {
+    vi.stubEnv("NODE_ENV", "development");
+    vi.mocked(findUserByEmail).mockResolvedValue(undefined);
+
+    // Past the gate, so it fails on credentials rather than on policy.
+    await expect(logIn({ email: "a@b.com", phone: "", password: "hunter22" })).rejects.toThrow(
+      /invalid email\/phone or password/,
+    );
+    expect(findUserByEmail).toHaveBeenCalled();
   });
 });

@@ -9,6 +9,18 @@ export const GOOGLE_SCRIPT_ELEMENT_ID = "google-identity-services";
 /** OAuth client id the browser renders the button for; set at build time. */
 export const GOOGLE_CLIENT_ID = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID ?? "";
 
+/**
+ * Whether to offer the email/phone + password form. Google is the only way
+ * into production; the password form stays in development so seeded accounts
+ * remain reachable.
+ *
+ * Mirrors `passwordAuthEnabled()` in the server's auth.constants — kept
+ * separate because that module reaches for node:path and cannot be pulled into
+ * a client bundle. The server is the enforcing side; this only decides whether
+ * a control that would be rejected anyway is worth rendering.
+ */
+export const PASSWORD_AUTH_ENABLED = process.env.NODE_ENV !== "production";
+
 /** Rendering options for Google's own button, which it draws into our div. */
 export const GOOGLE_BUTTON_OPTIONS = {
   theme: "outline",
