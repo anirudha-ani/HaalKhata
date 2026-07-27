@@ -8,6 +8,7 @@ import { Modal } from "@/components/ui/Modal";
 import { Money } from "@/components/ui/Money";
 import { Spinner } from "@/components/ui/Spinner";
 import { errorMessage } from "@/lib/api/connect";
+import { useHydrated } from "@/lib/hooks/useHydrated";
 import { formatMoney } from "@haalkhata/shared/money/money";
 import { useExpenseDetail } from "./hooks/useExpenseDetail";
 
@@ -23,8 +24,9 @@ import { useExpenseDetail } from "./hooks/useExpenseDetail";
  */
 export function ExpenseDetailPage({ expenseId }: { expenseId: string }) {
   const expenseDetail = useExpenseDetail(expenseId);
+  const hydrated = useHydrated();
 
-  if (expenseDetail.isLoading) return <Spinner label="Loading expense…" />;
+  if (!hydrated || expenseDetail.isLoading) return <Spinner label="Loading expense…" />;
   const expense = expenseDetail.detail?.expense;
   if (!expense) {
     return (

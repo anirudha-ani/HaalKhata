@@ -8,6 +8,7 @@ import { Modal } from "@/components/ui/Modal";
 import { Money } from "@/components/ui/Money";
 import { SearchField } from "@/components/ui/SearchField";
 import { Spinner } from "@/components/ui/Spinner";
+import { useHydrated } from "@/lib/hooks/useHydrated";
 import { CURRENCIES } from "@haalkhata/shared/money/money.constants";
 import { GROUP_TYPES, groupEmoji } from "../../constants/groupTypes";
 import { useGroups } from "./hooks/useGroups";
@@ -20,7 +21,8 @@ import { useGroups } from "./hooks/useGroups";
  */
 export function GroupsPage() {
   const groupsState = useGroups();
-  if (groupsState.isLoading) return <Spinner label="Loading groups…" />;
+  const hydrated = useHydrated();
+  if (!hydrated || groupsState.isLoading) return <Spinner label="Loading groups…" />;
 
   return (
     <div className="space-y-6">

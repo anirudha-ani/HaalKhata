@@ -35,7 +35,8 @@ apps/web/                    Next.js app
   src/server/api/connect/    context.ts (auth/cookies/error map), routes.ts, csrf.ts
   src/pages/api/connect/     [[...connect]].ts — mount point only
   src/app/<route>/           UI (thin page.tsx → components/<Page>/ + hooks/)
-  src/lib/                   app-specific utilities (api/ transport, auth/ guard)
+  src/lib/                   app-specific utilities (api/ transport, auth/ guard,
+                             hooks/ cross-route React hooks)
   src/components/            shell, ui primitives, providers, modals
   migrations/                plain SQL, node-pg-migrate (history in pgmigrations)
 apps/mobile/                 Expo (React Native) app — @haalkhata/mobile

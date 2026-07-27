@@ -5,6 +5,7 @@ import { LogOut } from "lucide-react";
 import type { User } from "@haalkhata/protogen/common/v1/common_pb";
 import { Avatar } from "@/components/ui/Avatar";
 import { Spinner } from "@/components/ui/Spinner";
+import { useHydrated } from "@/lib/hooks/useHydrated";
 import { CURRENCIES } from "@haalkhata/shared/money/money.constants";
 import { HANDLE_METHODS } from "@haalkhata/shared/payment/methods";
 import { useAccountAPI, useProfileForm } from "./hooks/useAccount";
@@ -17,7 +18,8 @@ import { useAccountAPI, useProfileForm } from "./hooks/useAccount";
  */
 export function AccountPage() {
   const { me: currentUser, isLoading } = useAccountAPI();
-  if (isLoading || !currentUser) return <Spinner />;
+  const hydrated = useHydrated();
+  if (!hydrated || isLoading || !currentUser) return <Spinner />;
   return <ProfileForm me={currentUser} />;
 }
 

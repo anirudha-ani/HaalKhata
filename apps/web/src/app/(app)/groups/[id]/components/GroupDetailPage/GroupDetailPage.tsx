@@ -8,6 +8,7 @@ import { Modal } from "@/components/ui/Modal";
 import { SettleUpModal } from "@/components/modals/SettleUpModal";
 import { Spinner } from "@/components/ui/Spinner";
 import { errorMessage } from "@/lib/api/connect";
+import { useHydrated } from "@/lib/hooks/useHydrated";
 import { groupEmoji } from "../../../constants/groupTypes";
 import { BalancesPanel } from "./components/BalancesPanel/BalancesPanel";
 import { ExpenseList } from "./components/ExpenseList/ExpenseList";
@@ -29,8 +30,9 @@ export function GroupDetailPage({
   groupId: string;
 }) {
   const groupDetail = useGroupDetail(groupId);
+  const hydrated = useHydrated();
 
-  if (groupDetail.isLoading) return <Spinner label="Loading group…" />;
+  if (!hydrated || groupDetail.isLoading) return <Spinner label="Loading group…" />;
   if (!groupDetail.group) {
     return (
       <p className="rounded-2xl border border-line bg-card p-6 text-ink-soft">

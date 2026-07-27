@@ -8,6 +8,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { Money } from "@/components/ui/Money";
 import { SettleUpModal } from "@/components/modals/SettleUpModal";
 import { Spinner } from "@/components/ui/Spinner";
+import { useHydrated } from "@/lib/hooks/useHydrated";
 import { formatMoney } from "@haalkhata/shared/money/money";
 import { getGreeting } from "@haalkhata/shared/greeting";
 import { useDashboard } from "./hooks/useDashboard";
@@ -21,7 +22,8 @@ import { useDashboard } from "./hooks/useDashboard";
  */
 export function DashboardPage() {
   const dashboard = useDashboard();
-  if (dashboard.isLoading) return <Spinner label="Opening your ledger…" />;
+  const hydrated = useHydrated();
+  if (!hydrated || dashboard.isLoading) return <Spinner label="Opening your ledger…" />;
 
   const currency = dashboard.me?.defaultCurrency ?? "USD";
 

@@ -8,6 +8,7 @@ import { Money } from "@/components/ui/Money";
 import { SettleUpModal } from "@/components/modals/SettleUpModal";
 import { Spinner } from "@/components/ui/Spinner";
 import { errorMessage } from "@/lib/api/connect";
+import { useHydrated } from "@/lib/hooks/useHydrated";
 import { formatMoney } from "@haalkhata/shared/money/money";
 import { useFriendLedger } from "./hooks/useFriendLedger";
 
@@ -30,8 +31,9 @@ export function FriendDetailPage({
   friendId: string;
 }) {
   const view = useFriendLedger(friendId);
+  const hydrated = useHydrated();
 
-  if (view.isLoading) return <Spinner label="Loading…" />;
+  if (!hydrated || view.isLoading) return <Spinner label="Loading…" />;
   if (view.error || !view.ledger?.friend) {
     return (
       <div className="mx-auto max-w-2xl rounded-2xl border border-line bg-card p-6">

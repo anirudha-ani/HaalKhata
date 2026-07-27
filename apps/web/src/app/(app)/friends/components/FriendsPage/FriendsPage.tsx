@@ -9,6 +9,7 @@ import { Money } from "@/components/ui/Money";
 import { SearchField } from "@/components/ui/SearchField";
 import { SettleUpModal } from "@/components/modals/SettleUpModal";
 import { Spinner } from "@/components/ui/Spinner";
+import { useHydrated } from "@/lib/hooks/useHydrated";
 import { useFriends } from "./hooks/useFriends";
 
 /**
@@ -23,7 +24,8 @@ import { useFriends } from "./hooks/useFriends";
  */
 export function FriendsPage() {
   const friendsState = useFriends();
-  if (friendsState.isLoading) return <Spinner label="Loading friends…" />;
+  const hydrated = useHydrated();
+  if (!hydrated || friendsState.isLoading) return <Spinner label="Loading friends…" />;
   const currency = friendsState.me?.defaultCurrency ?? "USD";
   const settleTarget = friendsState.settleWith;
 

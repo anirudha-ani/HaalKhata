@@ -3,6 +3,7 @@
 
 import Link from "next/link";
 import { Spinner } from "@/components/ui/Spinner";
+import { useHydrated } from "@/lib/hooks/useHydrated";
 import { buildInitialValues } from "../../utils/initialValues";
 import { ExpenseForm } from "./components/ExpenseForm/ExpenseForm";
 import { useNewExpenseAPI } from "./hooks/useNewExpenseAPI";
@@ -29,8 +30,9 @@ export function NewExpensePage({
   editExpenseId: string;
 }) {
   const expenseAPI = useNewExpenseAPI(editExpenseId);
+  const hydrated = useHydrated();
 
-  if (expenseAPI.isLoading || !expenseAPI.me) return <Spinner />;
+  if (!hydrated || expenseAPI.isLoading || !expenseAPI.me) return <Spinner />;
 
   if (expenseAPI.editing?.expense?.splitType === "itemized") {
     return (

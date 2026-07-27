@@ -115,6 +115,8 @@ Layering rules (enforced by review):
   src/lib/                    app-SPECIFIC client/server utilities, by concern:
     api/                        connect.ts (transport + typed clients)
     auth/                       session.server.ts (server-component session guard)
+    hooks/                      cross-route React hooks (useHydrated: gates the
+                                persisted-cache branch so hydration matches SSR)
                               (cross-app helpers live in @haalkhata/shared — §2b)
   src/components/             shared UI, by role (each folder owns its *.constants.ts):
     ui/                         presentational primitives (Avatar, Modal, Money, …)

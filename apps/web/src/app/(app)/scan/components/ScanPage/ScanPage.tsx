@@ -6,6 +6,7 @@
 import { FileImage, ScanLine, Upload } from "lucide-react";
 import { PeoplePicker } from "@/components/people/PeoplePicker";
 import { Spinner } from "@/components/ui/Spinner";
+import { useHydrated } from "@/lib/hooks/useHydrated";
 import { DraftEditor } from "./components/DraftEditor/DraftEditor";
 import { useScan } from "./hooks/useScan";
 
@@ -28,8 +29,9 @@ export function ScanPage({
   initialFriendId?: string;
 }) {
   const scan = useScan(initialGroupId, initialFriendId);
+  const hydrated = useHydrated();
 
-  if (scan.isLoading) return <Spinner />;
+  if (!hydrated || scan.isLoading) return <Spinner />;
 
   const hasDraft = scan.items !== null;
   // The server's normalized JPEG once parsed (the only renderable form of an
