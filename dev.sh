@@ -12,6 +12,7 @@
 #
 # Usage:
 #   ./dev.sh                   start db (if down) + web server in the foreground
+#   ./dev.sh --lan             also listen on the LAN, for a phone on the same Wi-Fi
 #   ./dev.sh --clean           tear down db + drop its volume, then start fresh
 #   ./dev.sh --down            stop db (and any compose services)
 #   ./dev.sh --mobile-android  ensure emulator + dev client, start Metro, launch app
@@ -458,6 +459,39 @@ launch_ios_app() {
   ok "dev client launched on simulator"
 }
 
+# --- LAN helpers ---------------------------------------------------------------
+
+# Find this machine's address on the local network, for the URL to type into a
+# phone. Only used to print a hint — binding to 0.0.0.0 is what actually makes
+# the server reachable, so a failure here is not fatal.
+# @returns 0 and echoes the first non-loopback IPv4 address, or 1 if none found.
+lan_address() {
+  local address=""
+  case "$(uname -s)" in
+    Darwin*)
+      # en0 is Wi-Fi on laptops, en1 on some desktops; take whichever answers.
+      local interface
+      for interface in en0 en1 en2; do
+        address="$(ipconfig getifaddr "$interface" 2>/dev/null || true)"
+        [[ -n "$address" ]] && break
+      done
+      ;;
+    *)
+      if have ip; then
+        # "scope global" drops loopback and link-local; docker0 and friends are
+        # filtered out by name so the printed URL is the one a phone can use.
+        address="$(ip -4 -o addr show scope global 2>/dev/null \
+          | grep -vE '\b(docker|br-|veth|virbr)' \
+          | awk '{print $4}' | cut -d/ -f1 | head -1)"
+      elif have hostname; then
+        address="$(hostname -I 2>/dev/null | awk '{print $1}')"
+      fi
+      ;;
+  esac
+  [[ -z "$address" ]] && return 1
+  printf '%s' "$address"
+}
+
 # --- mobile orchestration ------------------------------------------------------
 
 # Run the full mobile dev flow for the given platform:
@@ -515,17 +549,19 @@ start_mobile() {
 # --- main ----------------------------------------------------------------------
 
 usage() {
-  sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,21p' "$0" | sed 's/^# \{0,1\}//'
   exit 0
 }
 
 main() {
   local mode="start"
   local mobile_platform=""
+  local lan=0
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --clean)          mode="clean" ;;
       --down)           mode="down" ;;
+      --lan)            lan=1 ;;
       --mobile-android) mobile_platform="android" ;;
       --mobile-ios)     mobile_platform="ios" ;;
       --help|-h)        usage ;;
@@ -556,16 +592,42 @@ main() {
   fi
 
   echo
-  # When running with mobile, bind the web server to 0.0.0.0 so the
-  # emulator/simulator can reach it. The Android emulator routes to the
-  # host's 127.0.0.1 via 10.0.2.2, so the server must accept non-localhost
-  # connections. iOS simulator shares the host's network stack and also
-  # benefits from 0.0.0.0.
+  # The default 127.0.0.1 bind accepts connections from this machine and
+  # nothing else, which is the right default for a dev server holding a real
+  # session cookie. Two things need more: the Android emulator, which routes to
+  # the host's 127.0.0.1 via 10.0.2.2 and so needs the server to accept
+  # non-localhost connections (the iOS simulator shares the host's stack but is
+  # no worse off), and --lan, for a real phone on the same Wi-Fi.
   local web_host="127.0.0.1"
-  if [[ -n "$mobile_platform" ]]; then
+  if [[ -n "$mobile_platform" || "$lan" -eq 1 ]]; then
     web_host="0.0.0.0"
+  fi
+
+  if [[ "$web_host" == "0.0.0.0" ]]; then
     log "starting web dev server — http://0.0.0.0:3000  (Ctrl-C to stop)"
-    warn "web server is on 0.0.0.0:3000 — reachable from the emulator/simulator"
+    if [[ "$lan" -eq 1 ]]; then
+      local address
+      if address="$(lan_address)"; then
+        ok "open http://${address}:3000 on a device on the same network"
+      else
+        warn "could not detect this machine's LAN address — find it with 'ip addr' or 'ifconfig'"
+      fi
+      # Said plainly because --lan exposes a logged-in session to the whole
+      # network: anyone who can reach the port gets the app, and on a café or
+      # office network that is not a small set of people.
+      warn "the dev server is now reachable by anything on this network"
+      # Two things behave differently off localhost, and both look like bugs if
+      # you do not know to expect them.
+      warn "http://<ip> is not a secure context: the service worker will not register (no PWA/offline)"
+      warn "Next logs a cross-origin warning for /_next/* — set allowedDevOrigins in next.config.ts to silence it"
+      # A bind is necessary but not sufficient; a host firewall drops the
+      # connection with the same symptom as no server at all.
+      if have ufw && ufw status 2>/dev/null | grep -q "Status: active"; then
+        warn "ufw is active — 'sudo ufw allow 3000/tcp' if the phone still cannot connect"
+      fi
+    else
+      warn "web server is on 0.0.0.0:3000 — reachable from the emulator/simulator"
+    fi
   else
     log "starting web dev server — http://127.0.0.1:3000  (Ctrl-C to stop)"
   fi
