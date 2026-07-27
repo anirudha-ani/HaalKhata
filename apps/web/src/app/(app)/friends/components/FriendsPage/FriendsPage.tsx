@@ -2,7 +2,7 @@
 /** Friends route: overall position, searchable friend list linking into each ledger, add-by-email-or-phone. */
 
 import Link from "next/link";
-import { ChevronRight, HandCoins, UserPlus, Users, Wallet } from "lucide-react";
+import { ChevronRight, HandCoins, Handshake, UserPlus, Wallet } from "lucide-react";
 import { Avatar } from "@/components/ui/Avatar";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Money } from "@/components/ui/Money";
@@ -103,7 +103,7 @@ export function FriendsPage() {
 
       {friendsState.friends.length === 0 ? (
         <EmptyState
-          icon={<Users />}
+          icon={<Handshake />}
           title="No friends yet"
           hint="Add someone by email or phone to split one-off expenses outside of groups."
         />

@@ -2,7 +2,7 @@
 /** Groups route UI: group summary cards and the new-group modal. */
 
 import Link from "next/link";
-import { Plus, UsersRound } from "lucide-react";
+import { Plus, Users } from "lucide-react";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { FriendChecklist } from "@/components/people/FriendChecklist";
 import { Modal } from "@/components/ui/Modal";
@@ -40,7 +40,7 @@ export function GroupsPage() {
 
       {groupsState.groups.length === 0 ? (
         <EmptyState
-          icon={<UsersRound />}
+          icon={<Users />}
           title="No groups yet"
           hint="Start a group for a trip, your flat, or anything you share costs on."
           action={

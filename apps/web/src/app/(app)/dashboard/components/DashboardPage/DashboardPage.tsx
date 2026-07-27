@@ -2,7 +2,7 @@
 /** Dashboard page: balance summary, per-person balances with settle-up, recent activity. */
 
 import Link from "next/link";
-import { Plus, UsersRound } from "lucide-react";
+import { Plus, Wallet } from "lucide-react";
 import { Avatar } from "@/components/ui/Avatar";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Money } from "@/components/ui/Money";
@@ -106,7 +106,7 @@ export function DashboardPage() {
           </ul>
         ) : (
           <EmptyState
-            icon={<UsersRound />}
+            icon={<Wallet />}
             title="No balances yet"
             hint="Add an expense with a friend or create a group to get started."
             action={
