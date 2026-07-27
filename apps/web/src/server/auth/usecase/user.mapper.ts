@@ -17,6 +17,7 @@ export function toUser(userRow: UserRow) {
     email: userRow.email ?? "",
     name: userRow.name,
     avatarColor: userRow.avatar_color,
+    avatarUrl: userRow.avatar_url ?? "",
     defaultCurrency: userRow.default_currency,
     // A Google account has no password, so password_hash alone would read
     // every one of them as an unclaimed invite.

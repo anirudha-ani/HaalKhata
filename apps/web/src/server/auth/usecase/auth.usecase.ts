@@ -14,6 +14,7 @@ import {
   insertUser,
   linkGoogleAccount,
   markOnboarded,
+  setAvatarUrl,
   updateUserProfile,
   type UserRow,
 } from "@/server/auth/repo/users.repo";
@@ -319,8 +320,9 @@ function googleClient(): OAuth2Client {
  * minted for a different app sign in here.
  *
  * @param idToken - Raw JWT credential produced by Google Identity Services.
- * @returns The stable account id, the verified email, and the display name
- *   Google holds (empty string when the account has none).
+ * @returns The stable account id, the verified email, the display name Google
+ *   holds, and the profile picture URL — the last two empty when absent, which
+ *   Google documents as always possible.
  * @throws UsecaseError "unauthenticated" when verification fails, the token
  *   carries no email, or that email is unverified.
  */
@@ -328,6 +330,7 @@ async function verifyGoogleIdToken(idToken: string): Promise<{
   googleSub: string;
   email: string;
   name: string;
+  picture: string;
 }> {
   // Resolved before the try: a missing GOOGLE_CLIENT_ID is a server
   // misconfiguration, and rewrapping it as "could not verify" would send an
@@ -359,6 +362,7 @@ async function verifyGoogleIdToken(idToken: string): Promise<{
     googleSub: claims.sub,
     email: claims.email.trim().toLowerCase(),
     name: claims.name?.trim() ?? "",
+    picture: claims.picture?.trim() ?? "",
   };
 }
 
@@ -396,6 +400,7 @@ export async function logInWithGoogle(idToken: string) {
           avatarColor: avatarColorFor(claims.email),
           passwordHash: null,
           googleSub: claims.googleSub,
+          avatarUrl: claims.picture || null,
         });
       } catch (error) {
         // TOCTOU: a concurrent sign-in (double-clicked button, two tabs) won
@@ -408,6 +413,16 @@ export async function logInWithGoogle(idToken: string) {
       }
     }
   }
+
+  // Applied after all three branches so a changed Google photo follows the
+  // person on their next sign-in, not only when their row was first created.
+  // These URLs are not contractually stable, so one stored and never refreshed
+  // eventually points at nothing.
+  if (claims.picture && claims.picture !== user.avatar_url) {
+    await setAvatarUrl(user.id, claims.picture);
+    user = { ...user, avatar_url: claims.picture };
+  }
+
   return { user: toUser(user), token: createToken(user.id, user.token_version) };
 }
 

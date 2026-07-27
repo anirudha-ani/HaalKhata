@@ -26,6 +26,11 @@ message User {
   // about the caller themselves; it is meaningless on anyone else and the UI
   // must not read it off another user.
   bool onboarded = 9;
+  // Profile picture URL from the person's Google account; empty when they have
+  // none. Clients must keep the initials-on-avatar_color rendering as the
+  // fallback: it is empty for everyone who was invited rather than signed in,
+  // and Google documents the claim as never guaranteed even for those who did.
+  string avatar_url = 10;
 }
 
 // One "pay me here" identifier: a Venmo username, a Zelle email or phone, a

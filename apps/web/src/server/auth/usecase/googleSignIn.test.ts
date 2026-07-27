@@ -30,6 +30,8 @@ vi.mock("@/server/auth/repo/users.repo", () => ({
   findUserByPhone: vi.fn(),
   insertUser: vi.fn(),
   linkGoogleAccount: vi.fn(),
+  markOnboarded: vi.fn(),
+  setAvatarUrl: vi.fn(),
   updateUserProfile: vi.fn(),
 }));
 
@@ -44,6 +46,7 @@ import {
   findUserById,
   insertUser,
   linkGoogleAccount,
+  setAvatarUrl,
 } from "@/server/auth/repo/users.repo";
 
 /**
@@ -59,6 +62,7 @@ function userRow(overrides: Partial<UserRow> = {}): UserRow {
     email: "anirudha@example.com",
     name: "Anirudha",
     avatar_color: "#c73e2e",
+    avatar_url: null,
     default_currency: "USD",
     password_hash: null,
     phone: null,
@@ -184,6 +188,60 @@ describe("logInWithGoogle", () => {
     await expect(logInWithGoogle("id-token")).resolves.toBeDefined();
 
     vi.stubEnv("NODE_ENV", previous ?? "test");
+  });
+
+  it("stores the profile picture on a new account", async () => {
+    googleReturns({ ...VERIFIED, picture: "https://lh3.googleusercontent.com/a/photo" });
+    vi.mocked(findUserByGoogleSub).mockResolvedValue(undefined);
+    vi.mocked(findUserByEmail).mockResolvedValue(undefined);
+    vi.mocked(insertUser).mockResolvedValue(
+      userRow({ google_sub: "google-sub-123", avatar_url: "https://lh3.googleusercontent.com/a/photo" }),
+    );
+
+    const result = await logInWithGoogle("id-token");
+
+    expect(insertUser).toHaveBeenCalledWith(
+      expect.objectContaining({ avatarUrl: "https://lh3.googleusercontent.com/a/photo" }),
+    );
+    expect(result.user.avatarUrl).toBe("https://lh3.googleusercontent.com/a/photo");
+  });
+
+  it("refreshes a changed picture on an existing account", async () => {
+    googleReturns({ ...VERIFIED, picture: "https://lh3.googleusercontent.com/a/new" });
+    vi.mocked(findUserByGoogleSub).mockResolvedValue(
+      userRow({ google_sub: "google-sub-123", avatar_url: "https://lh3.googleusercontent.com/a/old" }),
+    );
+
+    const result = await logInWithGoogle("id-token");
+
+    expect(setAvatarUrl).toHaveBeenCalledWith("user-1", "https://lh3.googleusercontent.com/a/new");
+    // Returned without a re-read, so the client sees the new one immediately.
+    expect(result.user.avatarUrl).toBe("https://lh3.googleusercontent.com/a/new");
+  });
+
+  it("leaves an unchanged picture alone", async () => {
+    googleReturns({ ...VERIFIED, picture: "https://lh3.googleusercontent.com/a/same" });
+    vi.mocked(findUserByGoogleSub).mockResolvedValue(
+      userRow({ google_sub: "google-sub-123", avatar_url: "https://lh3.googleusercontent.com/a/same" }),
+    );
+
+    await logInWithGoogle("id-token");
+
+    expect(setAvatarUrl).not.toHaveBeenCalled();
+  });
+
+  it("never clears a stored picture when the claim is absent", async () => {
+    // Google documents `picture` as not guaranteed; a token without one must
+    // not wipe a photo the account already had.
+    googleReturns(VERIFIED);
+    vi.mocked(findUserByGoogleSub).mockResolvedValue(
+      userRow({ google_sub: "google-sub-123", avatar_url: "https://lh3.googleusercontent.com/a/kept" }),
+    );
+
+    const result = await logInWithGoogle("id-token");
+
+    expect(setAvatarUrl).not.toHaveBeenCalled();
+    expect(result.user.avatarUrl).toBe("https://lh3.googleusercontent.com/a/kept");
   });
 
   it("recovers from a concurrent-signin unique violation instead of throwing", async () => {

@@ -54,6 +54,7 @@ function userRow(overrides: Partial<UserRow> = {}): UserRow {
     email: "me@example.com",
     name: "Anirudha",
     avatar_color: "#c73e2e",
+    avatar_url: null,
     default_currency: "USD",
     password_hash: null,
     phone: null,

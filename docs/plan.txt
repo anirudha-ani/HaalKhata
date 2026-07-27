@@ -1137,6 +1137,30 @@ Kept in `apps/web/src/lib/` rather than `@haalkhata/shared`: the admission rule
 is "genuinely needed by both apps", and mobile's phone fields have not moved to
 this control yet. It graduates when they do.
 
+### Profile pictures (2026-07-27)
+
+`users.avatar_url`, taken from the ID token's `picture` claim. **No Google
+Console change**: `picture` belongs to the `profile` scope, which sign-in
+already requests for `name` — the claim was arriving on every sign-in and
+being discarded. No new scope, no consent change, no new authorized origin
+(JavaScript origins govern where the button runs, not where images load).
+
+It is a hotlink to Google's CDN, not a stored image. This app persists no
+blobs at all — receipt photos are processed and deliberately never written —
+and one optional avatar is not worth becoming the first thing that does.
+Uploads would mean a storage layer, resizing, deletion and moderation.
+
+**Initials remain the real fallback, not a legacy path.** `avatar_url` is
+empty for everyone invited rather than signed in, Google documents the claim
+as never guaranteed, and the URLs are not contractually stable — so `Avatar`
+also falls back on an image that fails to load. Refreshed on every sign-in
+when it differs, since a URL stored once and never updated eventually 404s;
+an absent claim never clears a stored one.
+
+`<img>` rather than `next/image`, to avoid a `remotePatterns` entry for a
+32px square. The one real argument the other way is that next/image would
+hide viewers' IPs from Google; `referrerPolicy="no-referrer"` limits the rest.
+
 ### Phone verification (tranche 4)
 
 Twilio Verify, last, because it needs an account set up. Two RPCs

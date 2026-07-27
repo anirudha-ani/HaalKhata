@@ -10,6 +10,8 @@ export interface UserRow {
   name: string;
   /** Hex color (e.g. "#c73e2e") used as the user's avatar background. */
   avatar_color: string;
+  /** Google profile picture URL; null when the person has none. */
+  avatar_url: string | null;
   /** ISO 4217 code preselected as the currency for the user's new expenses. */
   default_currency: string;
   /** scrypt "salt:hash" string; null marks a shadow user who has not registered yet. */
@@ -58,10 +60,11 @@ export async function insertUser(input: {
   defaultCurrency?: string;
   phone?: string | null;
   googleSub?: string | null;
+  avatarUrl?: string | null;
 }): Promise<UserRow> {
   const rows = await query<UserRow>(
-    `INSERT INTO users (id, email, name, avatar_color, default_currency, password_hash, phone, google_sub)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+    `INSERT INTO users (id, email, name, avatar_color, default_currency, password_hash, phone, google_sub, avatar_url)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
      RETURNING *`,
     [
       newId(),
@@ -72,9 +75,24 @@ export async function insertUser(input: {
       input.passwordHash,
       input.phone ?? null,
       input.googleSub ?? null,
+      input.avatarUrl ?? null,
     ],
   );
   return rows[0];
+}
+
+/**
+ * Updates the stored Google profile picture URL.
+ *
+ * Called whenever a sign-in reports a URL different from the stored one, so a
+ * changed Google photo follows the person here instead of leaving a link that
+ * quietly 404s.
+ *
+ * @param userId - Account to update.
+ * @param avatarUrl - New picture URL.
+ */
+export async function setAvatarUrl(userId: string, avatarUrl: string): Promise<void> {
+  await execute(`UPDATE users SET avatar_url = $1 WHERE id = $2`, [avatarUrl, userId]);
 }
 
 /**
