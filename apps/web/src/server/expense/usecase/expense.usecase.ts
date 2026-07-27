@@ -235,6 +235,8 @@ async function recordExpenseActivity(
     message: `${actor.name} ${verb} "${write.description}" (${formatMoney(write.amountCents, write.currency)})${locationSuffix}`,
     link: verb === "deleted" ? (write.groupId ? `/groups/${write.groupId}` : "/friends") : `/expenses/${expenseId}`,
     audience,
+    amountCents: write.amountCents,
+    currency: write.currency,
   });
   await insertNotifications(
     involvedUserIds(write).filter((recipientId) => recipientId !== actorId),
@@ -620,6 +622,11 @@ export async function recordSettlement(
     audience: groupId
       ? (await listMembers(groupId)).map((member) => member.id)
       : [userId, request.toUserId],
+    amountCents: request.amountCents,
+    currency,
+    // Who received the money, so each reader's feed can say whether it came
+    // to them — the same row is inbound for one party and outbound for the other.
+    creditUserId: creditorId,
   });
   await insertNotifications([request.toUserId], {
     type: "settlement",

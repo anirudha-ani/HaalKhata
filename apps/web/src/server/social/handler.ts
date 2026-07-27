@@ -24,9 +24,13 @@ export const socialHandler: ServiceImpl<typeof SocialService> = {
   /** Lists the activity feed, scoped to one group when groupId is set. */
   async listActivity(request, context) {
     return runUsecase(
-      async () => ({
-        events: await social.listActivity(await requireUser(context), request.groupId || undefined),
-      }),
+      async () =>
+        social.listActivity(await requireUser(context), {
+          groupId: request.groupId || undefined,
+          cursor: request.cursor,
+          limit: request.limit,
+          month: request.month,
+        }),
       context,
     );
   },

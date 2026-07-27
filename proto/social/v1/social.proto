@@ -36,20 +36,43 @@ message ListFriendsResponse {
 
 message ListActivityRequest {
   string group_id = 1; // empty = everything visible to the caller
+  // Opaque cursor from the previous response's next_cursor; empty starts at
+  // the newest event. Keyset rather than offset, so rows inserted while you
+  // page cannot shift the window and duplicate or skip an entry.
+  string cursor = 2;
+  // Page size; the server clamps it to a sane maximum.
+  int32 limit = 3;
+  // "YYYY-MM" to restrict the feed to one calendar month; empty for all time.
+  string month = 4;
 }
 
 message ActivityEvent {
   string id = 1;
   string group_id = 2;
   common.v1.User actor = 3;
-  string type = 4;    // expense_added | expense_deleted | settlement | member_added | group_created | comment
+  string type = 4;    // expense_added | expense_updated | expense_deleted | settlement | member_added | group_created | comment
   string message = 5; // pre-rendered, human-readable
   string link = 6;    // app path, e.g. /expenses/<id>
   string created_at = 7;
+  // The money this event concerned; 0 when it concerned none.
+  int32 amount_cents = 8;
+  string currency = 9;
+  // Whether this event moved money toward the reader — settlements only.
+  // Computed per viewer, so the same row is inbound for one person and not
+  // for the other; without it the UI cannot tell "you were paid" from "you
+  // paid" and would show one icon for both.
+  bool inbound = 10;
 }
 
 message ListActivityResponse {
   repeated ActivityEvent events = 1;
+  // Pass back as `cursor` for the next page; empty when the feed is exhausted.
+  string next_cursor = 2;
+  // Months ("YYYY-MM", newest first) that actually contain activity, for the
+  // filter — an open date picker would offer thousands of empty months.
+  // Reflects the group scope but not the month filter, so the control does
+  // not erase its own options.
+  repeated string months = 3;
 }
 
 message Notification {

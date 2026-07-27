@@ -45,11 +45,15 @@ export const queryKeys = {
    */
   friendLedger: (friendId: string) => ["friends", friendId, "ledger"] as const,
   /**
-   * The activity feed, optionally scoped to one group.
+   * The activity feed, optionally scoped to one group and one month.
    * @param groupId - The group to scope to; omit for the global feed.
+   * @param month - "YYYY-MM" to scope to one month; omit for all time. Part
+   *   of the key so changing months starts a fresh paginated list instead of
+   *   appending to the previous month's pages.
    * @returns The query key tuple for that activity feed.
    */
-  activity: (groupId?: string) => ["activity", groupId ?? ""] as const,
+  activity: (groupId?: string, month?: string) =>
+    ["activity", groupId ?? "", month ?? ""] as const,
   /** The user's notification list and unread count. */
   notifications: ["notifications"] as const,
 };

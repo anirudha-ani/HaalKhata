@@ -1,31 +1,45 @@
 "use client";
-/** Activity data: activity + notification queries; marks notifications read on visit. */
+/** Activity data: paginated feed + notifications; marks notifications read on visit. */
 
 import { useEffect, useMemo, useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { socialClient } from "@/lib/api/connect";
 import { queryKeys } from "@haalkhata/shared/api/queryKeys";
 import { matchesTerms, searchTerms } from "@/lib/search/filter";
-import { ACTIVITY_FILTERS, type ActivityFilter } from "../../../constants/typeEmoji";
+import { ACTIVITY_FILTERS, type ActivityFilter } from "../../../constants/activityTypes";
 
 /**
- * Loads the cross-group activity feed and the user's notifications, marks all
- * notifications as read once on mount (clearing the unread badge), and holds
- * the feed's search text and type filter.
+ * Loads the activity feed a page at a time, plus the user's notifications,
+ * and marks all notifications read once on mount (clearing the unread badge).
  *
- * @returns `events` (every feed entry), `visibleEvents` (those matching the
- *   search and type filter), the `query`/`setQuery` and `filter`/`setFilter`
- *   state, `notifications`, and `isLoading` for the activity query.
+ * Pagination is keyset, driven by the server's `next_cursor`. The month
+ * filter is part of the query key, so switching months starts a fresh
+ * paginated list rather than appending to the previous month's.
+ *
+ * Search and the type filter run client-side over the pages already loaded —
+ * they narrow what you fetched, they do not re-query — so the row count is
+ * always stated against the loaded set rather than implying a total.
+ *
+ * @returns `events` (everything loaded), `visibleEvents` (after search and
+ *   type filter), the `query`/`filter`/`month` state with setters, the
+ *   `months` available, `loadMore`/`hasMore`/`isLoadingMore`, `notifications`
+ *   and `isLoading`.
  */
 export function useActivity() {
   const queryClient = useQueryClient();
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<ActivityFilter>("all");
+  const [month, setMonth] = useState("");
 
-  const activity = useQuery({
-    queryKey: queryKeys.activity(),
-    queryFn: () => socialClient.listActivity({ groupId: "" }),
+  const activity = useInfiniteQuery({
+    queryKey: queryKeys.activity(undefined, month),
+    initialPageParam: "",
+    queryFn: ({ pageParam }) =>
+      socialClient.listActivity({ groupId: "", cursor: pageParam, month }),
+    // An empty cursor means the server has nothing further.
+    getNextPageParam: (lastPage) => lastPage.nextCursor || undefined,
   });
+
   const notifications = useQuery({
     queryKey: queryKeys.notifications,
     queryFn: () => socialClient.listNotifications({}),
@@ -42,28 +56,46 @@ export function useActivity() {
     markReadNow();
   }, [markReadNow]);
 
-  const events = activity.data?.events ?? [];
+  const events = useMemo(
+    () => (activity.data?.pages ?? []).flatMap((page) => page.events),
+    [activity.data],
+  );
+
+  // Months come from the newest page: every page carries the same list, and
+  // the first one is present as soon as anything has loaded.
+  const months = activity.data?.pages[0]?.months ?? [];
+
   // The feed message is pre-rendered server-side and already contains the
   // description, amount and group name, so searching it plus the actor covers
   // "that dinner with Ani" without any extra fields.
   const visibleEvents = useMemo(() => {
-    const allEvents = activity.data?.events ?? [];
     const kinds = ACTIVITY_FILTERS.find((entry) => entry.value === filter)?.types ?? [];
     const terms = searchTerms(query);
-    return allEvents.filter(
+    return events.filter(
       (event) =>
         (kinds.length === 0 || kinds.includes(event.type)) &&
         matchesTerms(terms, event.message, event.actor?.name, event.type),
     );
-  }, [activity.data, query, filter]);
+  }, [events, query, filter]);
 
   return {
     events,
     visibleEvents,
+    months,
     query,
     setQuery,
     filter,
     setFilter,
+    month,
+    /**
+     * Switches the month window. Passing "" returns to the whole history.
+     *
+     * @param next - A "YYYY-MM" key, or "" for all time.
+     */
+    setMonth: (next: string) => setMonth(next),
+    hasMore: activity.hasNextPage,
+    isLoadingMore: activity.isFetchingNextPage,
+    loadMore: () => activity.fetchNextPage(),
     notifications: notifications.data?.notifications ?? [],
     isLoading: activity.isLoading,
   };

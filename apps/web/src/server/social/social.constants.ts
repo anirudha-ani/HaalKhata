@@ -7,3 +7,9 @@
  * rather than left to the UI.
  */
 export const REMINDER_COOLDOWN_HOURS = 24;
+
+/** Events per activity page when the client does not ask for a size. */
+export const ACTIVITY_PAGE_SIZE = 25;
+
+/** Hard ceiling on an activity page, so a client cannot ask for the whole table. */
+export const MAX_ACTIVITY_PAGE_SIZE = 100;

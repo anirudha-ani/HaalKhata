@@ -1,20 +1,26 @@
 "use client";
-/** Activity page: cross-group event feed with per-type icons and actor avatars. */
+/** Activity page: searchable, filterable, day-grouped feed with keyset pagination. */
 
 import Link from "next/link";
-import { Bell } from "lucide-react";
+import { Bell, ChevronDown } from "lucide-react";
 import { Avatar } from "@/components/ui/Avatar";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { SearchField } from "@/components/ui/SearchField";
 import { Spinner } from "@/components/ui/Spinner";
-import { ACTIVITY_FILTERS, TYPE_EMOJI } from "../../constants/typeEmoji";
+import { formatMoney } from "@haalkhata/shared/money/money";
+import { ACTIVITY_FILTERS, activityLook } from "../../constants/activityTypes";
+import { groupByDay, monthLabel, timeOfDay, withoutAmount } from "../../utils/activityFormat";
 import { useActivity } from "./hooks/useActivity";
 
+/** One event as the feed renders it, plus the day heading it falls under. */
+type FeedEvent = ReturnType<typeof useActivity>["visibleEvents"][number];
+
 /**
- * Renders the activity feed: a spinner while loading, an empty state when
- * there are no events, otherwise a search box, the type filter buttons, and a
- * linked list of matching events with per-type emoji, actor avatar, message,
- * and date.
+ * Renders the activity feed: search, type filters, a month window, and the
+ * events grouped by day with a Load more button.
+ *
+ * Load more rather than infinite scroll: an audit trail is task-driven
+ * reading, where an explicit control beats content that appears on its own.
  *
  * @returns The activity page content.
  */
@@ -22,11 +28,34 @@ export function ActivityPage() {
   const activity = useActivity();
   if (activity.isLoading) return <Spinner label="Loading activity…" />;
 
-  return (
-    <div className="space-y-6">
-      <h1 className="text-3xl font-bold">Activity</h1>
+  const dayGroups = groupByDay(activity.visibleEvents, new Date());
+  const isFiltered =
+    activity.query !== "" || activity.filter !== "all" || activity.month !== "";
 
-      {activity.events.length === 0 ? (
+  return (
+    <div className="mx-auto max-w-3xl space-y-5">
+      <header className="flex flex-wrap items-end justify-between gap-3">
+        <h1 className="text-3xl font-bold">Activity</h1>
+        {activity.months.length > 0 ? (
+          <label className="flex items-center gap-2 text-sm text-ink-soft">
+            Month
+            <select
+              value={activity.month}
+              onChange={(event) => activity.setMonth(event.target.value)}
+              className="rounded-xl border border-line bg-card px-3 py-2 text-sm text-ink focus:border-brand-500 focus:outline-none"
+            >
+              <option value="">All time</option>
+              {activity.months.map((monthKey) => (
+                <option key={monthKey} value={monthKey}>
+                  {monthLabel(monthKey)}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
+      </header>
+
+      {activity.events.length === 0 && !isFiltered ? (
         <EmptyState
           icon={<Bell />}
           title="Nothing yet"
@@ -39,16 +68,17 @@ export function ActivityPage() {
             onChange={activity.setQuery}
             placeholder="Search activity"
           />
+
           {/* Filter state has to stay visible while it hides rows, so the
               active button is styled, not just remembered. */}
-          <div className="flex flex-wrap gap-1.5">
+          <div className="flex flex-wrap items-center gap-1.5">
             {ACTIVITY_FILTERS.map((entry) => (
               <button
                 key={entry.value}
                 type="button"
                 aria-pressed={activity.filter === entry.value}
                 onClick={() => activity.setFilter(entry.value)}
-                className={`rounded-full border px-3 py-1.5 text-xs font-medium ${
+                className={`rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
                   activity.filter === entry.value
                     ? "border-brand-600 bg-brand-50 text-brand-700"
                     : "border-line text-ink-soft hover:border-brand-200"
@@ -58,35 +88,101 @@ export function ActivityPage() {
               </button>
             ))}
             {activity.visibleEvents.length !== activity.events.length ? (
-              <span className="ml-auto self-center text-sm text-ink-soft tabular-nums">
-                {activity.visibleEvents.length} of {activity.events.length}
+              <span className="ml-auto text-sm text-ink-soft tabular-nums">
+                {activity.visibleEvents.length} of {activity.events.length} loaded
               </span>
             ) : null}
           </div>
+
           {activity.visibleEvents.length === 0 ? (
-            <p className="rounded-xl border border-line bg-card px-4 py-6 text-center text-sm text-ink-soft">
+            <p className="rounded-2xl border border-line bg-card px-4 py-8 text-center text-sm text-ink-soft">
               Nothing matches that.
             </p>
+          ) : (
+            dayGroups.map((group) => (
+              <section key={group.heading}>
+                <h2 className="px-1 pt-3 pb-1.5 text-xs font-semibold tracking-wide text-ink-soft uppercase">
+                  {group.heading}
+                </h2>
+                <ul className="space-y-1.5">
+                  {group.events.map((event) => (
+                    <li key={event.id}>
+                      <ActivityRow event={event} />
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            ))
+          )}
+
+          {activity.hasMore ? (
+            <button
+              type="button"
+              onClick={activity.loadMore}
+              disabled={activity.isLoadingMore}
+              className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-line bg-card py-3 text-sm font-semibold text-ink-soft hover:border-brand-200 hover:text-brand-600 disabled:opacity-50"
+            >
+              <ChevronDown className="h-4 w-4" />
+              {activity.isLoadingMore ? "Loading…" : "Load more"}
+            </button>
+          ) : activity.events.length > 0 ? (
+            <p className="pb-2 text-center text-xs text-ink-soft">
+              That&apos;s everything{activity.month ? ` for ${monthLabel(activity.month)}` : ""}.
+            </p>
           ) : null}
-        <ul className="space-y-2">
-          {activity.visibleEvents.map((event) => (
-            <li key={event.id}>
-              <Link
-                href={event.link || "#"}
-                className="flex items-center gap-3 rounded-xl border border-line bg-card px-4 py-3 hover:border-brand-200"
-              >
-                <span className="text-xl">{TYPE_EMOJI[event.type] ?? "📌"}</span>
-                {event.actor ? <Avatar user={event.actor} size="sm" /> : null}
-                <span className="min-w-0 flex-1 text-sm">{event.message}</span>
-                <span className="shrink-0 text-xs text-ink-soft">
-                  {event.createdAt.slice(0, 10)}
-                </span>
-              </Link>
-            </li>
-          ))}
-        </ul>
         </>
       )}
     </div>
+  );
+}
+
+/**
+ * Renders one feed row: the type tile, the sentence, its context line, and
+ * the amount as a right-aligned figure.
+ *
+ * @param props - Component props.
+ * @returns The row.
+ */
+function ActivityRow({ event }: { event: FeedEvent }) {
+  const look = activityLook(event.type, event.inbound);
+  const Icon = look.icon;
+  const isSettlement = event.type === "settlement";
+  const when = timeOfDay(event.createdAt);
+
+  return (
+    <Link
+      href={event.link || "#"}
+      className="flex items-center gap-3 rounded-xl border border-line bg-card px-3 py-2.5 transition-colors hover:border-brand-200"
+    >
+      <span
+        className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${look.tile}`}
+      >
+        <Icon className="h-4.5 w-4.5" />
+      </span>
+
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-sm">
+          {withoutAmount(event.message, event.amountCents, event.currency)}
+        </span>
+        <span className="mt-0.5 flex items-center gap-1.5 text-xs text-ink-soft">
+          {event.actor ? <Avatar user={event.actor} size="xsmall" /> : null}
+          {when}
+        </span>
+      </span>
+
+      {event.amountCents > 0 ? (
+        <span
+          className={`shrink-0 text-sm font-semibold tabular-nums ${
+            isSettlement ? (event.inbound ? "text-pos-700" : "text-ink") : "text-ink-soft"
+          }`}
+        >
+          {/* Signed only for settlements, where the direction is the point.
+              An expense's amount is the whole bill, not your share, so a sign
+              would claim something untrue. */}
+          {isSettlement ? (event.inbound ? "+" : "−") : ""}
+          {formatMoney(event.amountCents, event.currency || "USD")}
+        </span>
+      ) : null}
+    </Link>
   );
 }

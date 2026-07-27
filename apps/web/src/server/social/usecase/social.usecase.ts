@@ -2,7 +2,7 @@
 
 import { insertFriendship, listFriendIds } from "@/server/social/repo/friendships.repo";
 import { findUserById, findUsersByIds } from "@/server/auth/repo/users.repo";
-import { listActivityForGroup, listActivityForUser } from "@/server/social/repo/activity.repo";
+import { listActivityMonths, listActivityPage } from "@/server/social/repo/activity.repo";
 import { isMember } from "@/server/group/repo/groups.repo";
 import {
   countUnread,
@@ -11,7 +11,11 @@ import {
   listNotificationsByUser,
   markAllRead,
 } from "@/server/social/repo/notifications.repo";
-import { REMINDER_COOLDOWN_HOURS } from "@/server/social/social.constants";
+import {
+  ACTIVITY_PAGE_SIZE,
+  MAX_ACTIVITY_PAGE_SIZE,
+  REMINDER_COOLDOWN_HOURS,
+} from "@/server/social/social.constants";
 import { formatMoney } from "@haalkhata/shared/money/money";
 import { findPaymentMethod } from "@haalkhata/shared/payment/methods";
 import {
@@ -80,44 +84,69 @@ export async function listFriends(userId: string) {
 }
 
 /**
- * Lists activity feed events, either the caller's personal feed (events
- * whose audience includes them) or a single group's feed. Events whose actor
- * no longer resolves to a user are dropped.
+ * Lists one page of activity feed events, either the caller's personal feed
+ * (events whose audience includes them) or a single group's. Events whose
+ * actor no longer resolves to a user are dropped.
+ *
+ * `inbound` is resolved here rather than stored, because the same settlement
+ * row is money arriving for one reader and money leaving for the other.
  *
  * @param userId - Id of the authenticated caller reading the feed.
- * @param groupId - When set, restricts the feed to this group.
- * @returns Feed events as social.v1 ActivityEvent message shapes, newest
- *   first.
+ * @param options - `groupId` restricts to one group; `cursor` continues a
+ *   previous page; `limit` is the page size (clamped); `month` ("YYYY-MM")
+ *   restricts to one calendar month.
+ * @returns The events newest first, the cursor for the next page (empty when
+ *   exhausted), and the months that contain activity in this scope.
  * @throws UsecaseError (permission_denied) when groupId is set but the
  *   caller is not a member of that group.
  */
-export async function listActivity(userId: string, groupId?: string) {
+export async function listActivity(
+  userId: string,
+  options: { groupId?: string; cursor?: string; limit?: number; month?: string } = {},
+) {
+  const groupId = options.groupId;
   if (groupId && !(await isMember(groupId, userId))) {
     denied("you are not a member of this group");
   }
-  const activityRows = groupId
-    ? await listActivityForGroup(groupId)
-    : await listActivityForUser(userId);
-  const actors = new Map(
-    (
-      await findUsersByIds([...new Set(activityRows.map((activityRow) => activityRow.actor_id))])
-    ).map((actorUser) => [actorUser.id, actorUser]),
+  const scope = groupId ? { groupId } : { userId };
+  const limit = Math.min(
+    Math.max(options.limit && options.limit > 0 ? options.limit : ACTIVITY_PAGE_SIZE, 1),
+    MAX_ACTIVITY_PAGE_SIZE,
   );
-  return activityRows.flatMap((activityRow) => {
-    const actor = actors.get(activityRow.actor_id);
-    if (!actor) return [];
-    return [
-      {
-        id: activityRow.id,
-        groupId: activityRow.group_id ?? "",
-        actor: toUser(actor),
-        type: activityRow.type,
-        message: activityRow.message,
-        link: activityRow.link,
-        createdAt: activityRow.created_at,
-      },
-    ];
-  });
+
+  const [page, months] = await Promise.all([
+    listActivityPage(scope, { limit, cursor: options.cursor ?? "", month: options.month ?? "" }),
+    listActivityMonths(scope),
+  ]);
+
+  const actors = new Map(
+    (await findUsersByIds([...new Set(page.rows.map((activityRow) => activityRow.actor_id))])).map(
+      (actorUser) => [actorUser.id, actorUser],
+    ),
+  );
+
+  return {
+    events: page.rows.flatMap((activityRow) => {
+      const actor = actors.get(activityRow.actor_id);
+      if (!actor) return [];
+      return [
+        {
+          id: activityRow.id,
+          groupId: activityRow.group_id ?? "",
+          actor: toUser(actor),
+          type: activityRow.type,
+          message: activityRow.message,
+          link: activityRow.link,
+          createdAt: activityRow.created_at,
+          amountCents: activityRow.amount_cents,
+          currency: activityRow.currency,
+          inbound: activityRow.credit_user_id === userId,
+        },
+      ];
+    }),
+    nextCursor: page.nextCursor,
+    months,
+  };
 }
 
 /**

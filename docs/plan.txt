@@ -474,6 +474,50 @@ suffers when they are missing: the debt must currently exist, and the same
 person cannot be reminded twice within `REMINDER_COOLDOWN_HOURS` (24). The
 previous reminder notification is its own cooldown record, so no extra table.
 
+## 3h. Activity: paginated, filterable, legible (v5.11 — 2026-07-26)
+
+The feed was a hard `LIMIT 50` with no cursor and no offset — event 51 was
+permanently unreachable, and the page never said so. It also leaned entirely on
+one pre-rendered message string per row, which is why the UI could not be
+smart: it had no amount to right-align and no idea which direction money moved.
+
+**Why emoji were the wrong call.** 💸 (money with wings) means money leaving.
+It was rendered for every settlement including ones where you were *paid*,
+which reads as the opposite of what happened. 🧾 and 🗑️ are both mid-grey at
+small sizes, so "added" and "deleted" looked identical down the left edge —
+colour is doing no work when the glyph carries it. And 📒 for a new group is a
+ledger binder, an object nobody associates with people. Emoji also render
+differently per platform, so none of this is controllable. Replaced with lucide
+icons on tinted round tiles, each with a semantic colour: added (receipt,
+brand), updated (pencil, amber), deleted (trash, negative), settlement
+(arrow-down-left positive when the money came to you, arrow-up-right neutral
+when it left), member added (user-plus), group created (users-round), comment
+(message-square). Fintech guidance is explicit that transaction rows want
+purposeful iconography and semantic colour rather than decoration, and that
+colour must not be the only signal — hence icon *and* tint *and* the amount's
+own sign.
+
+**Structured fields, additively.** activity gains `amount_cents`, `currency`
+and `credit_user_id` (for a settlement, who received). ActivityEvent exposes
+`amount_cents`, `currency` and `inbound`, the last computed per viewer, which
+is what makes the settlement arrow point the right way. The pre-rendered
+message stays — it is still the accessible sentence — but the amount is lifted
+out of it and set right-aligned in tabular figures.
+
+**Pagination: keyset, with a Load more button.** `(created_at, id)` descending
+as the cursor, because OFFSET drifts when rows are inserted while you page.
+Load more rather than infinite scroll — the research consensus is that infinite
+scroll suits discovery feeds while an explicit control suits task-driven lists,
+and a ledger you are auditing is the latter. `next_cursor` is empty when the
+feed is exhausted.
+
+**Month filter** built from `months`, the list of months that actually contain
+activity, newest first — an open date picker would offer thousands of empty
+months. Selecting one scopes both the query and the pagination.
+
+**Date grouping** by Today / Yesterday / full date, so scanning is by when
+rather than by row.
+
 ## 4. Data Model (integer cents everywhere, soft-delete on expenses)
 
 users (shadow users: password_hash NULL, claimable at signup) · friendships ·
