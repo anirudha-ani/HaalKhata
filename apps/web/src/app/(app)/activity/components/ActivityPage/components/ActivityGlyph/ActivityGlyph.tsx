@@ -117,42 +117,48 @@ function CashGrinGlyph() {
 }
 
 /**
- * A banknote with wings, mid-getaway — you paid somebody.
+ * A banknote tilted into flight, a wing off each opposite corner — you paid
+ * somebody.
  *
  * This is what 💸 always depicted; the original sin was showing it for money
  * *received*, where it said the opposite of what happened. Direction is
  * resolved per viewer now, so it can only land on a payment you made.
  *
- * Two constraints, both learned by rendering it at 24px:
+ * Three things were learned by rendering, in order:
  *
- * Wings must be **horizontal**, attached at the note's mid-height and swept
- * back. Every variant with lobes above the top corners read as bunny ears,
- * however pointed or feathered — two vertical shapes flanking a rectangle is a
- * face with ears, and no detail overrides that at this size.
+ * Wings above the note's top corners always read as **bunny ears** — two
+ * vertical shapes flanking a rectangle is a face with ears, and pointing or
+ * feathering them does not override that at 24px. They belong on opposite
+ * corners of a diagonal, which is also how the emoji composes it.
  *
- * And they must be **outlined**, not filled. Solid wings were legible in
- * isolation but sat in a column of outline glyphs as a dark blob, which is a
- * style mismatch the eye reads as "mushy" long before it reads the shape. The
- * interior feather line is what separates a wing from a generic lobe.
+ * Filled wings read fine alone and wrong in the column: a solid mass among
+ * outline glyphs is a style mismatch the eye calls "mushy" before it parses
+ * any shape.
+ *
+ * And detail loses to size. Feathered fans, radiating strokes and stacked
+ * quills all turned to noise or looked like insect legs. Every other glyph in
+ * this set is one big circle plus two or three marks; this one has to be a
+ * note plus a "$" plus two wings, and nothing more, or it reads busier than
+ * everything beside it. The currency band went for that reason.
  */
 function WingedCashGlyph() {
   return (
     <>
-      <rect {...STROKE} x="7.6" y="8.8" width="8.8" height="6.6" rx="1.4" />
-      {/* A "$" rather than the usual portrait oval: this tile is neutral, so
-          the glyph has to say "money" without help from the tint. */}
-      <path {...FINE} d="M12 9.9v4.4" />
-      <path {...FINE} d="M10.6 10.9c.4-.7 2.4-.7 2.8 0s-2.4 1-2.8 1.8 1.4 1.2 2.8.6" />
+      <g transform="rotate(-24 12 12)">
+        <rect {...STROKE} x="6.6" y="8.6" width="12.4" height="7.6" rx="1.4" />
+        {/* A "$" rather than the usual portrait oval: this tile is neutral, so
+            the glyph has to say "money" without help from the tint. */}
+        <path {...FINE} d="M12.8 10.1v4.6" />
+        <path {...FINE} d="M11.4 11.2c.5-.7 2.5-.7 3 0s-2.5 1-3 1.7 1.4 1.1 3 .6" />
+      </g>
       <path
         {...STROKE}
-        d="M7.6 10.8C5 8.4 1.6 8.2.7 10.2c-.6 1.3 1.3 2.4 3.4 2.4-1 1 .2 2.2 2.1 2.2 1.3 0 2.2-.6 2.6-1.2z"
+        d="M7.6 7C5.8 4 3 1.6 1.4 2.6c-.9.6-.1 2 1.2 3.1-1 .3-.5 1.5.9 2 1.2.4 2.5.3 3.1-.2z"
       />
-      <path {...FINE} d="M2.6 10.6c1.6.4 3.2 1.4 4.4 2.6" />
       <path
         {...STROKE}
-        d="M16.4 10.8c2.6-2.4 6-2.6 6.9-.6.6 1.3-1.3 2.4-3.4 2.4 1 1-.2 2.2-2.1 2.2-1.3 0-2.2-.6-2.6-1.2z"
+        d="M16.4 17c1.8 3 4.6 5.4 6.2 4.4.9-.6.1-2-1.2-3.1 1-.3.5-1.5-.9-2-1.2-.4-2.5-.3-3.1.2z"
       />
-      <path {...FINE} d="M21.4 10.6c-1.6.4-3.2 1.4-4.4 2.6" />
     </>
   );
 }
