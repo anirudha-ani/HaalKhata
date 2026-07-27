@@ -43,6 +43,10 @@ function EyeDot({ x: eyeX, y: eyeY, r: radius = 1 }: { x: number; y: number; r?:
 /**
  * A "$" sized to survive the real render.
  *
+ * The S starts at the top *right* and sweeps left. Drawing it left-to-right —
+ * which is the intuitive way to write the path — produces a mirrored "Ƨ", and
+ * at 24px that is subtle enough to ship twice before anyone catches it.
+ *
  * These are used as eyes, not as floating decoration beside the face. Two
  * 3.6-unit signs parked in the corners at 20px came out as illegible specks;
  * the same mark centred in an eye socket reads, because it is what the eye is.
@@ -54,7 +58,7 @@ function Dollar({ x: originX, y: originY, scale = 1 }: { x: number; y: number; s
   return (
     <g transform={`translate(${originX} ${originY}) scale(${scale})`}>
       <path {...FINE} d="M0 -3v6" />
-      <path {...FINE} d="M-1.7 -1.3c.5-1 2.9-1 3.4 0s-2.9 1.5-3.4 2.6 1.7 1.6 3.4.9" />
+      <path {...FINE} d="M1.7 -1.3c-.5-1-2.9-1-3.4 0s2.9 1.5 3.4 2.6-1.7 1.6-3.4.9" />
     </g>
   );
 }
@@ -139,7 +143,7 @@ function WingedCoinGlyph() {
     <>
       <circle {...STROKE} cx="12" cy="12" r="4.6" />
       <path {...FINE} d="M12 9.1v5.8" />
-      <path {...FINE} d="M10.2 10.5c.5-.8 3.1-.8 3.6 0s-3.1 1.2-3.6 2.1 1.8 1.4 3.6.7" />
+      <path {...FINE} d="M13.8 10.5c-.5-.8-3.1-.8-3.6 0s3.1 1.2 3.6 2.1-1.8 1.4-3.6.7" />
       <path
         {...STROKE}
         d="M7.8 10C5.6 6.8 2.4 4.6 1.1 6c-.8.9.4 2.3 2.1 3.1-1 .5-.3 1.7 1.4 2 1.2.2 2.4-.2 2.9-.7z"
