@@ -6,6 +6,7 @@ import * as ImagePicker from "expo-image-picker";
 import { useMemo, useState } from "react";
 import { errorMessage } from "@/lib/api/connect";
 import { centsToInput, parseMoneyInput, todayISO } from "@haalkhata/shared/money/money";
+import { nextDraftKey } from "@haalkhata/shared/expense/draftKey";
 import { PICKER_OPTIONS } from "../../../constants/imagePicker";
 import { useScanAPI, type ReceiptPhotoInput } from "./useScanAPI";
 
@@ -27,19 +28,6 @@ export interface DraftItem {
 export interface ReceiptPhoto extends ReceiptPhotoInput {
   /** Local file URI used to render the preview image. */
   uri: string;
-}
-
-/** Monotonic counter behind {@link nextDraftKey} (Hermes has no crypto.randomUUID). */
-let draftKeySequence = 0;
-
-/**
- * Returns a stable client-side key for a new draft item row.
- *
- * @returns A unique key string for this app session.
- */
-function nextDraftKey(): string {
-  draftKeySequence += 1;
-  return `draft-${draftKeySequence}`;
 }
 
 /**

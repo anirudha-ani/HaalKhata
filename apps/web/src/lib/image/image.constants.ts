@@ -22,3 +22,11 @@ export const UPLOAD_JPEG_QUALITY = 0.85;
  * make it bigger.
  */
 export const SKIP_RESIZE_BELOW_BYTES = 512 * 1024;
+
+/**
+ * How much of the file head to read when looking for the EXIF orientation
+ * tag. It lives in the first APP1 segment, well inside the first 64 KB; a
+ * thumbnail can make that segment large, so this is generous rather than
+ * tight — it is one slice of an already-in-memory file.
+ */
+export const EXIF_SCAN_BYTES = 128 * 1024;

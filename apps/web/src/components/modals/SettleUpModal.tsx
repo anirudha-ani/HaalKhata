@@ -6,6 +6,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Check, Copy, ExternalLink } from "lucide-react";
 import type { User } from "@haalkhata/protogen/common/v1/common_pb";
 import { errorMessage, expenseClient } from "@/lib/api/connect";
+import { copyText } from "@/lib/clipboard/copyText";
 import { centsToInput, formatMoney, parseMoneyInput } from "@haalkhata/shared/money/money";
 import { MONEY_KEYS } from "@haalkhata/shared/api/queryKeys";
 import { PAYMENT_METHODS, findPaymentMethod, paymentLink } from "@haalkhata/shared/payment/methods";
@@ -85,9 +86,14 @@ export function SettleUpModal({
   const amountCents = parseMoneyInput(amount) ?? 0;
   const link = paymentLink(methodKey, handle, amountCents, note);
 
-  /** Copies the recipient's handle and flips the button to a confirmation. */
+  /**
+   * Copies the recipient's handle and flips the button to a confirmation.
+   * Only confirms on success: `navigator.clipboard` is absent outside a
+   * secure context, so a phone on plain http takes the fallback path, and
+   * saying "Copied" when nothing was copied is worse than saying nothing.
+   */
   const copyHandle = async () => {
-    await navigator.clipboard.writeText(handle);
+    if (!(await copyText(handle))) return;
     setCopied(true);
     window.setTimeout(() => setCopied(false), 1500);
   };

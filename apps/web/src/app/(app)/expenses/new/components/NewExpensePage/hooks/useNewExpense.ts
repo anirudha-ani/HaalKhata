@@ -7,6 +7,7 @@ import type { User } from "@haalkhata/protogen/common/v1/common_pb";
 import { errorMessage } from "@/lib/api/connect";
 import { prepareReceiptImage } from "@/lib/image/receiptImage";
 import { centsToInput, parseMoneyInput } from "@haalkhata/shared/money/money";
+import { nextDraftKey } from "@haalkhata/shared/expense/draftKey";
 import {
   buildItemsPayload,
   buildSplitSpecs,
@@ -219,7 +220,7 @@ export function useNewExpense(
     setItems((current) => [
       ...current,
       {
-        key: crypto.randomUUID(),
+        key: nextDraftKey(),
         name: "",
         total: "",
         assignees: Object.fromEntries(people.map((person) => [person.id, 1])),
@@ -330,7 +331,7 @@ export function useNewExpense(
         const everyone = Object.fromEntries(people.map((person) => [person.id, 1]));
         setItems(
           receipt.items.map((item) => ({
-            key: crypto.randomUUID(),
+            key: nextDraftKey(),
             name: item.name,
             quantity: item.quantity,
             total: centsToInput(item.totalCents),

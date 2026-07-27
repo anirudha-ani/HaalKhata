@@ -1,6 +1,8 @@
 /** Shrinks a receipt photo in the browser so a phone uploads kilobytes, not megabytes. */
 
+import { orientationTransform, readJpegOrientation } from "./exifOrientation";
 import {
+  EXIF_SCAN_BYTES,
   MAX_UPLOAD_EDGE_PIXELS,
   SKIP_RESIZE_BELOW_BYTES,
   UPLOAD_JPEG_QUALITY,
@@ -72,8 +74,11 @@ export function shouldResize(file: File): boolean {
  * That covers HEIC (undecodable), an unavailable canvas, a re-encode that
  * came out larger, and any browser that lacks `createImageBitmap`.
  *
- * EXIF rotation is baked in via `imageOrientation: "from-image"`, so the
- * bytes are already upright. The server rotates too; it just becomes a no-op.
+ * Rotation is applied from the EXIF tag we read ourselves rather than via
+ * `imageOrientation: "from-image"`, which Safari only honours from 16.4. On
+ * an older iPhone that option is silently ignored, and since the re-encode
+ * drops the EXIF block the server loses its chance to rotate too — the
+ * receipt would arrive sideways with nothing left to say it was.
  *
  * @param file - The photo the user chose or captured.
  * @returns A smaller JPEG File, or the original when shrinking is impossible
@@ -85,18 +90,32 @@ export async function prepareReceiptImage(file: File): Promise<File> {
 
   let bitmap: ImageBitmap | undefined;
   try {
-    bitmap = await createImageBitmap(file, { imageOrientation: "from-image" });
+    const header = new Uint8Array(await file.slice(0, EXIF_SCAN_BYTES).arrayBuffer());
+    const turn = orientationTransform(readJpegOrientation(header));
+
+    // "none" so the browser applies nothing and the transform below is the
+    // only thing acting on the pixels — otherwise a browser that does honour
+    // the tag would rotate it a second time.
+    bitmap = await createImageBitmap(file, { imageOrientation: "none" });
     const target = scaledSize({ width: bitmap.width, height: bitmap.height }, MAX_UPLOAD_EDGE_PIXELS);
     // Already small enough in pixels; its bytes are just a generous encode,
-    // and re-encoding to chase that risks coming out worse.
+    // and re-encoding to chase that risks coming out worse. Nothing to do
+    // about rotation either — the untouched file keeps its EXIF for the
+    // server to act on.
     if (!target) return file;
 
     const canvas = document.createElement("canvas");
-    canvas.width = target.width;
-    canvas.height = target.height;
+    // A quarter turn swaps the axes, so the canvas takes the drawn size
+    // transposed or the image is cropped to its own corner.
+    canvas.width = turn.swapsAxes ? target.height : target.width;
+    canvas.height = turn.swapsAxes ? target.width : target.height;
     const context = canvas.getContext("2d");
     if (!context) return file;
-    context.drawImage(bitmap, 0, 0, target.width, target.height);
+
+    context.translate(canvas.width / 2, canvas.height / 2);
+    if (turn.rotate !== 0) context.rotate((turn.rotate * Math.PI) / 180);
+    if (turn.mirrored) context.scale(-1, 1);
+    context.drawImage(bitmap, -target.width / 2, -target.height / 2, target.width, target.height);
 
     const blob = await new Promise<Blob | null>((resolve) =>
       canvas.toBlob(resolve, "image/jpeg", UPLOAD_JPEG_QUALITY),

@@ -751,6 +751,50 @@ the pure resize logic has unit tests (12), and compiling Tailwind against the
 real sources confirms all 19 new utilities actually generate. That last one
 matters because a mistyped Tailwind class is not an error, it is silence.
 
+## 3l. Secure-context APIs, and a phone on plain http (v5.17 — 2026-07-27)
+
+Reported from mobile Safari: building an itemized bill from a photo died with
+"crypto.randomUUID is not a function".
+
+**The cause is the URL, not the browser.** `crypto.randomUUID` belongs to Web
+Crypto, which browsers expose only in a **secure context**. `localhost` is
+treated as one; `http://192.168.x.x:3000` — how you reach a dev server from a
+phone on the same wifi — is not. So `crypto` exists and `randomUUID` does not,
+and the itemized editor threw the moment it built a row. It never appeared on
+a desktop because a desktop hits localhost.
+
+**Fixed by not needing it.** `DraftLineItem.key` is documented "not sent to
+the server" and `buildItemsPayload` emits `id: ""` for every row, so the key
+only has to be distinct among the rows of one draft in one session. A counter
+does that. `nextDraftKey` moves to `@haalkhata/shared/expense/draftKey` —
+mobile had already written the identical counter for its own reason (Hermes
+has never implemented `randomUUID`), so the shared package now holds one
+implementation and the comment explaining both engines.
+
+**The same class of bug, one modal over.** `navigator.clipboard` is also
+secure-context-only, so "copy their Venmo handle" — a phone action if ever
+there was one — threw on the same URL. `lib/clipboard/copyText.ts` tries the
+modern API and falls back to `document.execCommand("copy")` over an offscreen
+textarea. It reports success, and the button only flips to "Copied" when the
+copy actually happened; claiming success after a silent failure is worse than
+saying nothing. (`serviceWorker` is also gated, but its registration was
+already behind a feature check and a `.catch()`, so it just no-ops.)
+
+**A rotation bug this pass was about to ship.** §3k's client-side resize used
+`createImageBitmap(file, { imageOrientation: "from-image" })`, which Safari
+only honours from **16.4**. On an older iPhone the option is ignored, and
+because the canvas re-encode drops the EXIF block the server loses its chance
+to rotate too — the receipt would have arrived sideways with nothing left to
+say it was. `lib/image/exifOrientation.ts` now reads tag 0x0112 out of the
+JPEG directly and applies the turn on the canvas, with `imageOrientation:
+"none"` so a browser that *does* honour the tag cannot rotate it twice.
+Fixtures are real JPEGs emitted by sharp rather than bytes hand-assembled to
+match the parser, which would only prove the parser agrees with itself.
+
+**Rule going forward:** anything gated on a secure context needs a fallback,
+because the phone is tested over plain http and that is exactly where these
+features are needed.
+
 ## 4. Data Model (integer cents everywhere, soft-delete on expenses)
 
 users (shadow users: password_hash NULL, claimable at signup) · friendships ·
