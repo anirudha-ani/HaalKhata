@@ -40,16 +40,22 @@ function EyeDot({ x: eyeX, y: eyeY, r: radius = 1 }: { x: number; y: number; r?:
   return <circle cx={eyeX} cy={eyeY} r={radius} fill="currentColor" />;
 }
 
-/** A "$" small enough to read at 24px: a bar through an S. */
-function Dollar({ x: originX, y: originY }: { x: number; y: number }) {
+/**
+ * A "$" sized to survive the real render.
+ *
+ * These are used as eyes, not as floating decoration beside the face. Two
+ * 3.6-unit signs parked in the corners at 20px came out as illegible specks;
+ * the same mark centred in an eye socket reads, because it is what the eye is.
+ *
+ * @param props - Centre point and scale of the sign.
+ * @returns The dollar sign.
+ */
+function Dollar({ x: originX, y: originY, scale = 1 }: { x: number; y: number; scale?: number }) {
   return (
-    <>
-      <path {...FINE} d={`M${originX} ${originY}v3.6`} />
-      <path
-        {...FINE}
-        d={`M${originX - 1.1} ${originY + 0.7}c.4-.6 1.8-.6 2.2 0s-1.8 1-2.2 1.6 1.1 1.1 2.2.6`}
-      />
-    </>
+    <g transform={`translate(${originX} ${originY}) scale(${scale})`}>
+      <path {...FINE} d="M0 -3v6" />
+      <path {...FINE} d="M-1.7 -1.3c.5-1 2.9-1 3.4 0s-2.9 1.5-3.4 2.6 1.7 1.6 3.4.9" />
+    </g>
   );
 }
 
@@ -98,28 +104,32 @@ function SkullGlyph() {
   );
 }
 
-/** Delighted face flanked by dollar signs — you got paid. */
+/** Dollar-sign eyes over a huge grin — you got paid. */
 function CashGrinGlyph() {
   return (
     <>
-      <circle {...STROKE} cx="12" cy="12.6" r="7.8" />
-      <path {...STROKE} d="M8.4 10.6c.6-.9 1.7-.9 2.3 0M13.3 10.6c.6-.9 1.7-.9 2.3 0" />
-      <path {...SOLID} d="M8.2 14c.6 2 2 3.1 3.8 3.1s3.2-1.1 3.8-3.1z" />
-      <Dollar x={3.4} y={6.4} />
-      <Dollar x={20.6} y={4.4} />
+      <circle {...STROKE} cx="12" cy="12" r="8.4" />
+      <Dollar x={8.6} y={10} scale={0.85} />
+      <Dollar x={15.4} y={10} scale={0.85} />
+      <path {...SOLID} d="M7.4 14.6c.7 2.4 2.4 3.7 4.6 3.7s3.9-1.3 4.6-3.7z" />
     </>
   );
 }
 
-/** Sobbing, while a dollar makes its escape — you paid somebody. */
+/**
+ * Sobbing — you paid somebody.
+ *
+ * The tear was a filled droplet first. At 20px it merged with the face's own
+ * outline into an unreadable smudge, so it is two streaks now: thin shapes
+ * that keep their gap from the outline at any size.
+ */
 function SobbingGlyph() {
   return (
     <>
-      <circle {...STROKE} cx="11" cy="13" r="7.4" />
-      <path {...STROKE} d="M7.4 10.6c.7-.9 1.8-.9 2.5 0M12.7 10.6c.7-.9 1.8-.9 2.5 0" />
-      <ellipse {...FINE} cx="11" cy="16" rx="2.2" ry="1.7" />
-      <path {...SOLID} d="M7.6 12.8c-.7 1.7-1.3 2.7-.5 3.4s1.7-.1 1.5-1.2-.7-1.5-1-2.2z" />
-      <Dollar x={19.4} y={3.2} />
+      <circle {...STROKE} cx="12" cy="12" r="8.4" />
+      <path {...STROKE} d="M7.6 10c.9-1.1 2.2-1.1 3.1 0M13.3 10c.9-1.1 2.2-1.1 3.1 0" />
+      <path {...FINE} d="M9.1 11.8v3.4M14.9 11.8v2.6" />
+      <ellipse {...FINE} cx="12" cy="16.9" rx="2.6" ry="2" />
     </>
   );
 }
@@ -218,7 +228,7 @@ const GLYPHS: Record<GlyphName, () => React.JSX.Element> = {
  */
 export function ActivityGlyph({
   name,
-  className = "h-5 w-5",
+  className = "h-6 w-6",
 }: {
   /** Which glyph to draw. */
   name: GlyphName;

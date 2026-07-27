@@ -159,7 +159,7 @@ function ActivityRow({ event }: { event: FeedEvent }) {
       <span
         role="img"
         aria-label={look.label}
-        className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl transition-transform duration-150 group-hover:-rotate-6 group-hover:scale-110 ${look.tile}`}
+        className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl transition-transform duration-150 group-hover:-rotate-6 group-hover:scale-110 ${look.tile}`}
       >
         <ActivityGlyph name={look.glyph} />
       </span>

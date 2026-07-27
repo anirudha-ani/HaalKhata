@@ -42,7 +42,7 @@ export const ACTIVITY_LOOK: Record<string, ActivityLook> = {
   // thing that created it.
   expense_deleted: {
     glyph: "skull",
-    tile: "bg-card text-ink-soft ring-1 ring-line",
+    tile: "bg-card text-ink/70 ring-1 ring-line",
     tag: "gone. reduced to atoms",
     label: "Expense deleted",
   },
