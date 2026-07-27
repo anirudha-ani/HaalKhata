@@ -635,6 +635,55 @@ both places it appears (new-group form, group detail):
 `PeoplePicker` so all three callers share one search, one 50-row cap, and one
 overflow hint rather than three copies that drift.
 
+## 3j. Scanning is not a kind of expense (v5.13 — 2026-07-27)
+
+/scan and /expenses/new were separate destinations, each with its own nav
+entry, its own route, its own controller and its own API hook. §3e had already
+noticed they were converging and made them share `ItemGrid` — but sharing a
+component while staying two pages left the split intact where it was most
+visible: a group header carried **two buttons**, "Scan receipt" and "Add
+expense", for what is one act with two ways of filling in the form.
+
+Scanning a receipt is not a *kind* of expense. It is a faster way to populate
+the same expense — the saved row is identical either way (`split_type =
+itemized`, which the Itemized tab already produces by hand). So the receipt
+becomes an input to the expense form rather than a parallel route.
+
+**One page.** `/expenses/new` opens with a receipt dropzone above the form:
+
+```
+  [ 📷  Scan a receipt — items, tax and tip fill themselves in ]
+  Who's on this?  ...
+  What was it for?  ...
+```
+
+Picking a photo reveals "Itemize with AI"; parsing fills description (merchant),
+date, tax, tip and the item rows, flips the split to **Itemized**, and turns
+the page two-column past `lg:` with the photo sticky beside the grid. Every
+control below is the form's own — `ItemizedEditor` and `PayerEditor`, not
+copies of them. `DraftEditor` is deleted: it was the payer editor and the item
+grid rebuilt against a second controller.
+
+**Tap count is unchanged.** /scan also required tapping its upload zone, so
+"Add expense → dropzone → camera" is exactly as many taps as "Scan → dropzone
+→ camera" was. Nothing got slower; a destination got removed.
+
+**Deletions.** `useScan`, `useScanAPI`, `ScanPage`, `DraftEditor`. The `parse`
+mutation moves into `useNewExpenseAPI` — the rest of `useScanAPI` was already
+a duplicate of it (same me/groups/friends, same create). `/scan` stays as a
+redirect so existing links and bookmarks keep working, forwarding `?group` /
+`?friend`.
+
+**Nav.** The Scan entry is gone from the sidebar and the mobile bottom bar;
+Activity takes the freed mobile slot, which keeps the 5-column grid at 2 +
+add + 2 and stops Activity being reachable only via the header bell. The
+"Scan receipt" buttons on group detail, friend detail and the dashboard
+collapse into the "Add expense" they now duplicate.
+
+**Mobile app unaffected.** apps/mobile keeps its own scan tab: its expense
+form has no itemized editor at all (§3e), so folding scan into it there means
+porting the item grid to React Native first. Tracked, not done here.
+
 ## 4. Data Model (integer cents everywhere, soft-delete on expenses)
 
 users (shadow users: password_hash NULL, claimable at signup) · friendships ·

@@ -2,7 +2,7 @@
 /** Dashboard page: balance summary, per-person balances with settle-up, recent activity. */
 
 import Link from "next/link";
-import { Plus, ScanLine, UsersRound } from "lucide-react";
+import { Plus, UsersRound } from "lucide-react";
 import { Avatar } from "@/components/ui/Avatar";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Money } from "@/components/ui/Money";
@@ -36,20 +36,14 @@ export function DashboardPage() {
           </h1>
           <p className="mt-1 text-ink-soft">Here&apos;s where your ledger stands.</p>
         </div>
-        <div className="flex gap-2">
-          <Link
-            href="/scan"
-            className="flex items-center gap-2 rounded-xl border border-line bg-card px-4 py-2.5 text-sm font-semibold hover:border-brand-200"
-          >
-            <ScanLine className="h-4 w-4 text-brand-600" /> Scan receipt
-          </Link>
-          <Link
-            href="/expenses/new"
-            className="flex items-center gap-2 rounded-xl bg-brand-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-brand-700"
-          >
-            <Plus className="h-4 w-4" /> Add expense
-          </Link>
-        </div>
+        {/* Scanning a receipt is one of the ways to fill this form in, so it
+            is not a second button beside it. */}
+        <Link
+          href="/expenses/new"
+          className="flex items-center gap-2 rounded-xl bg-brand-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-brand-700"
+        >
+          <Plus className="h-4 w-4" /> Add expense
+        </Link>
       </header>
 
       {/* Balance summary */}

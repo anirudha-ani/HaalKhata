@@ -2,7 +2,7 @@
 /** Group detail orchestrator: header, members strip, expenses/balances tabs, add-people and settle modals. */
 
 import Link from "next/link";
-import { Plus, ScanLine, UserPlus } from "lucide-react";
+import { Plus, UserPlus } from "lucide-react";
 import { Avatar } from "@/components/ui/Avatar";
 import { SettleUpModal } from "@/components/modals/SettleUpModal";
 import { Spinner } from "@/components/ui/Spinner";
@@ -16,7 +16,7 @@ import { TABS } from "../../constants/tabs";
 import { useGroupDetail } from "./hooks/useGroupDetail";
 
 /**
- * Renders a single group's page: header with scan/add-expense actions, the
+ * Renders a single group's page: header with the add-expense action, the
  * member avatar strip with an add-people button, the expenses/balances tab
  * switcher, and the add-people and settle-up modals.
  *
@@ -55,22 +55,15 @@ export function GroupDetailPage({
             </p>
           </div>
         </div>
-        <div className="flex gap-2">
-          <Link
-            href={`/scan?group=${groupId}`}
-            className="flex items-center gap-2 rounded-xl border border-line bg-card px-3.5 py-2.5 text-sm font-semibold hover:border-brand-200"
-          >
-            <ScanLine className="h-4 w-4 text-brand-600" />
-            <span className="hidden sm:inline">Scan receipt</span>
-          </Link>
-          <Link
-            href={`/expenses/new?group=${groupId}`}
-            className="flex items-center gap-2 rounded-xl bg-brand-600 px-3.5 py-2.5 text-sm font-semibold text-white hover:bg-brand-700"
-          >
-            <Plus className="h-4 w-4" />
-            <span className="hidden sm:inline">Add expense</span>
-          </Link>
-        </div>
+        {/* One button, not two: scanning a receipt is how you fill the expense
+            form in, so "Scan receipt" was a second door to the same room. */}
+        <Link
+          href={`/expenses/new?group=${groupId}`}
+          className="flex items-center gap-2 rounded-xl bg-brand-600 px-3.5 py-2.5 text-sm font-semibold text-white hover:bg-brand-700"
+        >
+          <Plus className="h-4 w-4" />
+          Add expense
+        </Link>
       </header>
 
       {/* Members strip */}

@@ -6,7 +6,9 @@ import {
   buildSplitSpecs,
   checkItemized,
   checkSplit,
+  includeInEveryItem,
   itemizedTotals,
+  shareEveryItemWith,
   type DraftLineItem,
 } from "@/lib/expense/splitForm";
 
@@ -106,5 +108,64 @@ describe("itemized mode in the shared split helpers", () => {
 
   it("buildSplitSpecs sends no per-person specs", () => {
     expect(buildSplitSpecs(state)).toEqual([]);
+  });
+});
+
+describe("includeInEveryItem", () => {
+  it("puts a newcomer on every line without disturbing existing weights", () => {
+    const items = [
+      draftItem({ key: "a", assignees: { alice: 1 } }),
+      draftItem({ key: "b", assignees: { alice: 2, bobby: 1 } }),
+    ];
+    const next = includeInEveryItem(items, "carol");
+    expect(next[0].assignees).toEqual({ alice: 1, carol: 1 });
+    expect(next[1].assignees).toEqual({ alice: 2, bobby: 1, carol: 1 });
+  });
+
+  it("is the reason a receipt scanned before the cast still splits", () => {
+    // Scan first (only you on the expense), pick people after — every parsed
+    // line has to pick the newcomer up, or they owe nothing.
+    const scanned = [draftItem({ key: "a", assignees: { alice: 1 } })];
+    expect(checkItemized(scanned).ok).toBe(true);
+    const shared = includeInEveryItem(scanned, "bobby");
+    expect(Object.keys(shared[0].assignees).sort()).toEqual(["alice", "bobby"]);
+  });
+
+  it("does not demote somebody who already had a bigger share", () => {
+    const next = includeInEveryItem([draftItem({ assignees: { alice: 3 } })], "alice");
+    expect(next[0].assignees.alice).toBe(3);
+  });
+
+  it("leaves the original items untouched", () => {
+    const items = [draftItem({ assignees: { alice: 1 } })];
+    includeInEveryItem(items, "bobby");
+    expect(items[0].assignees).toEqual({ alice: 1 });
+  });
+});
+
+describe("shareEveryItemWith", () => {
+  it("replaces the whole cast rather than merging into it", () => {
+    const items = [draftItem({ assignees: { alice: 1, bobby: 2 } })];
+    expect(shareEveryItemWith(items, ["carol", "dave"])[0].assignees).toEqual({
+      carol: 1,
+      dave: 1,
+    });
+  });
+
+  it("ignores duplicates and blank ids", () => {
+    const next = shareEveryItemWith([draftItem()], ["carol", "carol", ""]);
+    expect(next[0].assignees).toEqual({ carol: 1 });
+  });
+
+  it("leaves an empty roster with nothing assigned, which checkItemized rejects", () => {
+    const next = shareEveryItemWith([draftItem()], []);
+    expect(next[0].assignees).toEqual({});
+    expect(checkItemized(next).ok).toBe(false);
+  });
+
+  it("gives each item its own assignee object, so editing one does not edit the rest", () => {
+    const next = shareEveryItemWith([draftItem({ key: "a" }), draftItem({ key: "b" })], ["carol"]);
+    next[0].assignees.carol = 5;
+    expect(next[1].assignees.carol).toBe(1);
   });
 });

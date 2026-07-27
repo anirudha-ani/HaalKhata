@@ -2,7 +2,7 @@
 /** Friend detail: net balance, settle either way, and the full shared ledger with a running balance. */
 
 import Link from "next/link";
-import { ArrowLeft, Bell, Check, HandCoins, Plus, Receipt, Wallet } from "lucide-react";
+import { ArrowLeft, Bell, Check, HandCoins, Plus, Wallet } from "lucide-react";
 import { Avatar } from "@/components/ui/Avatar";
 import { Money } from "@/components/ui/Money";
 import { SettleUpModal } from "@/components/modals/SettleUpModal";
@@ -95,12 +95,6 @@ export function FriendDetailPage({
           className="flex items-center gap-2 rounded-xl bg-brand-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-brand-700"
         >
           <Plus className="h-4 w-4" /> Add expense
-        </Link>
-        <Link
-          href={`/scan?friend=${friend.id}`}
-          className="flex items-center gap-2 rounded-xl border border-line px-4 py-2.5 text-sm font-semibold text-ink-soft hover:border-brand-200 hover:text-brand-600"
-        >
-          <Receipt className="h-4 w-4" /> Scan a receipt
         </Link>
         {/* Both directions are always offered: the balance tells you which one
             you probably want, but recording the other is never blocked. */}

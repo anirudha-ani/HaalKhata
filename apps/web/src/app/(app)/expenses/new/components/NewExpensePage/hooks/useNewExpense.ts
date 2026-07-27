@@ -1,19 +1,21 @@
 "use client";
 /** Composite expense-form hook: field state, payer/split validation, submit. */
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { User } from "@haalkhata/protogen/common/v1/common_pb";
 import { errorMessage } from "@/lib/api/connect";
-import { parseMoneyInput } from "@haalkhata/shared/money/money";
+import { centsToInput, parseMoneyInput } from "@haalkhata/shared/money/money";
 import {
   buildItemsPayload,
   buildSplitSpecs,
   checkItemized,
   checkPayers,
   checkSplit,
+  includeInEveryItem,
   itemizedTotals,
   previewItemizedShares,
+  shareEveryItemWith,
   type DraftLineItem,
   type FormSplitType,
 } from "@/lib/expense/splitForm";
@@ -70,6 +72,13 @@ export function useNewExpense(
   const [tipInput, setTipInput] = useState(initial.tipInput);
   const [unevenShares, setUnevenShares] = useState(false);
   const [error, setError] = useState("");
+
+  // Receipt state. A scan is a way of filling this form in, not a separate
+  // kind of expense, so it lives on the same controller as everything else.
+  const [file, setFile] = useState<File | null>(null);
+  const [previewUrl, setPreviewUrl] = useState("");
+  const [receiptUrl, setReceiptUrl] = useState("");
+  const [provider, setProvider] = useState("");
 
   const selectedGroup = expenseAPI.groups.find(
     (groupSummary) => groupSummary.group?.id === groupId,
@@ -130,6 +139,13 @@ export function useNewExpense(
   /**
    * Adds or removes an ad-hoc participant.
    *
+   * Somebody joining goes onto every existing line item, which is the same
+   * "shared by everyone" default a new item gets, applied from the other
+   * direction — you untick their exceptions. This matters most when a receipt
+   * was scanned before the cast was picked, which is the natural order when
+   * the paper is in your hand: without it every parsed line would stay
+   * assigned to you alone and the newcomer would owe nothing.
+   *
    * @param userId - Id of the person to toggle on this expense.
    */
   const toggleFriend = (userId: string) => {
@@ -143,24 +159,35 @@ export function useNewExpense(
     // user has touched a participation checkbox — until then `checked` is
     // derived from `people` and already has them in.
     setCheckedOverride((current) => (current ? { ...current, [userId]: true } : current));
+    setItems((current) => includeInEveryItem(current, userId));
   };
 
   /**
    * Selects a group (or "" for a one-off). A group supplies the whole cast —
    * the server rejects a group expense with a non-member on it — so the
    * hand-picked people are dropped, along with every per-person value that
-   * referred to the old cast. Item rows survive; their assignees do not.
+   * referred to the old cast.
+   *
+   * Item rows survive and are re-shared across the incoming roster rather than
+   * left unassigned: attaching a scanned receipt to a group should not mean
+   * re-ticking every line by hand.
    *
    * @param nextGroupId - Id of the group to attach the expense to, "" for none.
    */
   const changeGroup = (nextGroupId: string) => {
+    const currentUserId = expenseAPI.me?.id ?? "";
+    const nextRoster = nextGroupId
+      ? (expenseAPI.groups
+          .find((groupSummary) => groupSummary.group?.id === nextGroupId)
+          ?.group?.members.flatMap((member) => (member.user ? [member.user.id] : [])) ?? [])
+      : [currentUserId];
     setGroupId(nextGroupId);
     setFriendIds([]);
     setCheckedOverride(null);
     setSplitInputs({});
     setPayerAmounts({});
-    setSinglePayerId(expenseAPI.me?.id ?? "");
-    setItems((current) => current.map((item) => ({ ...item, assignees: {} })));
+    setSinglePayerId(currentUserId);
+    setItems((current) => shareEveryItemWith(current, nextRoster));
   };
 
   // null override = default: everyone checked.
@@ -230,6 +257,88 @@ export function useNewExpense(
         return { ...item, assignees };
       }),
     );
+
+  useEffect(() => () => URL.revokeObjectURL(previewUrl), [previewUrl]);
+  useEffect(() => () => URL.revokeObjectURL(receiptUrl), [receiptUrl]);
+
+  /**
+   * Stores a newly chosen receipt photo and clears anything a previous scan
+   * produced, so a second photo cannot leave the first one's items behind.
+   *
+   * @param picked - The image file chosen or captured by the user.
+   */
+  const pickFile = (picked: File) => {
+    setFile(picked);
+    setPreviewUrl((previousUrl) => {
+      URL.revokeObjectURL(previousUrl);
+      return URL.createObjectURL(picked);
+    });
+    setReceiptUrl((previousUrl) => {
+      URL.revokeObjectURL(previousUrl);
+      return "";
+    });
+    setProvider("");
+    setError("");
+  };
+
+  /**
+   * Whether the browser can actually paint this file in an `<img>`. HEIC is
+   * accepted and transcoded server-side, but Chrome and Firefox cannot decode
+   * it, so rendering the object URL would show a broken-image icon for a file
+   * that is perfectly fine. Once parsed, `receiptUrl` (the server's JPEG)
+   * takes over and this no longer matters.
+   */
+  const isPreviewRenderable =
+    file !== null && !/^image\/hei[cf]$/i.test(file.type) && !/\.hei[cf]$/i.test(file.name);
+
+  /**
+   * Sends the chosen photo to the AI parser and pours the result into this
+   * form: merchant becomes the description, and the extracted lines become
+   * the itemized draft with the split switched to match.
+   */
+  const parseNow = () => {
+    if (!file) return;
+    setError("");
+    expenseAPI.parse.mutate(file, {
+      onSuccess: (result) => {
+        const receipt = result.receipt;
+        if (!receipt) return;
+        setProvider(result.provider);
+        // Only fill fields the user has not already written in — a scan
+        // should not overwrite what somebody deliberately typed first.
+        if (receipt.merchant) setDescription((current) => current || receipt.merchant);
+        if (receipt.date) setDate(receipt.date);
+        setTaxInput(centsToInput(receipt.taxCents));
+        setTipInput(centsToInput(receipt.tipCents));
+        // Parsed rows start shared by everyone: splitting the whole bill
+        // evenly is the common case, so it costs zero taps and the user only
+        // touches the exceptions.
+        const everyone = Object.fromEntries(people.map((person) => [person.id, 1]));
+        setItems(
+          receipt.items.map((item) => ({
+            key: crypto.randomUUID(),
+            name: item.name,
+            quantity: item.quantity,
+            total: centsToInput(item.totalCents),
+            assignees: { ...everyone },
+          })),
+        );
+        setSplitType("itemized");
+        // The server hands back the JPEG it actually showed the model — the
+        // upload after rotation, downscaling and HEIC transcoding. Showing
+        // that rather than the raw file is what makes an iPhone receipt
+        // viewable at all, and it is the image the numbers came from.
+        if (result.normalizedImage.length > 0) {
+          const blob = new Blob([result.normalizedImage as BlobPart], { type: "image/jpeg" });
+          setReceiptUrl((previousUrl) => {
+            URL.revokeObjectURL(previousUrl);
+            return URL.createObjectURL(blob);
+          });
+        }
+      },
+      onError: (mutationError) => setError(errorMessage(mutationError)),
+    });
+  };
 
   const taxCents = parseMoneyInput(taxInput) ?? 0;
   const tipCents = parseMoneyInput(tipInput) ?? 0;
@@ -364,6 +473,19 @@ export function useNewExpense(
     error,
     submit,
     isSaving: expenseAPI.create.isPending || expenseAPI.update.isPending,
+    // Receipt scanning.
+    file,
+    fileName: file?.name ?? "",
+    previewUrl,
+    receiptUrl,
+    isPreviewRenderable,
+    pickFile,
+    parseNow,
+    isParsing: expenseAPI.parse.isPending,
+    provider,
+    // A quantity column is only worth its width when a bill was actually read
+    // off paper; typed items have no quantity to show.
+    fromReceipt: provider !== "",
   };
 }
 

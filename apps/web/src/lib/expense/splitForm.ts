@@ -219,6 +219,54 @@ export function checkItemized(items: DraftLineItem[]): SplitCheck {
 }
 
 /**
+ * Puts one person on every line item at a single share, leaving everybody
+ * else's weights alone.
+ *
+ * This is the "shared by everyone" default applied from the other direction:
+ * a new item starts assigned to the whole cast, so a new *person* has to
+ * start assigned to the whole bill, and you untick their exceptions. It
+ * matters most for a scanned receipt, where the natural order is to photograph
+ * the bill first and pick the people after — without this every parsed line
+ * would stay assigned to whoever was on the expense at parse time.
+ *
+ * An existing positive weight is kept rather than reset to one, so this can
+ * never quietly demote somebody who was already down for two portions.
+ *
+ * @param items - The draft line items.
+ * @param userId - Id of the person joining the expense.
+ * @returns A new draft with that person on every item.
+ */
+export function includeInEveryItem(items: DraftLineItem[], userId: string): DraftLineItem[] {
+  return items.map((item) => ({
+    ...item,
+    assignees: { ...item.assignees, [userId]: Math.max(1, item.assignees[userId] ?? 0) },
+  }));
+}
+
+/**
+ * Replaces every item's assignees with exactly `userIds`, one share each.
+ *
+ * Used when the cast is swapped wholesale — picking a group takes over the
+ * participant list — so the rows survive but their old assignments cannot.
+ * Re-sharing across the incoming roster rather than clearing to nothing is
+ * what keeps "attach this scanned receipt to a group" from meaning "re-tick
+ * every line by hand".
+ *
+ * @param items - The draft line items.
+ * @param userIds - The incoming cast; duplicates and blanks are ignored.
+ * @returns A new draft with every item shared by exactly that cast.
+ */
+export function shareEveryItemWith(
+  items: DraftLineItem[],
+  userIds: string[],
+): DraftLineItem[] {
+  const shared = Object.fromEntries(
+    [...new Set(userIds)].filter((userId) => userId !== "").map((userId) => [userId, 1]),
+  );
+  return items.map((item) => ({ ...item, assignees: { ...shared } }));
+}
+
+/**
  * Builds the ExpenseItem payload for the API from an itemized draft, dropping
  * assignees whose weight is zero and defaulting a blank name to "Item".
  *

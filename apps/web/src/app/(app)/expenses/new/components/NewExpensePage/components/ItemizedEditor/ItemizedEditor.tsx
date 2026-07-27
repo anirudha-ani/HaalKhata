@@ -26,7 +26,10 @@ export function ItemizedEditor({
 }) {
   return (
     <div className="space-y-2">
+      {/* The quantity column only earns its width when the numbers were read
+          off paper; items typed by hand have no quantity to show. */}
       <ItemGrid
+        showQuantity={form.fromReceipt}
         items={form.items}
         people={form.people}
         currentUserId={form.me?.id ?? ""}

@@ -1,11 +1,12 @@
 "use client";
-/** New/edit expense form: context picker, basics (amount/date/category), payer + split editors, submit. */
+/** New/edit expense form: receipt scan, context picker, basics, payer + split editors, submit. */
 
 import { CATEGORIES } from "@haalkhata/shared/money/money.constants";
 import { centsToInput } from "@haalkhata/shared/money/money";
 import { PeoplePicker } from "@/components/people/PeoplePicker";
 import type { ExpenseFormInitial } from "../../../../utils/initialValues";
 import { PayerEditor } from "../PayerEditor/PayerEditor";
+import { ReceiptPanel } from "../ReceiptPanel/ReceiptPanel";
 import { SplitEditor } from "../SplitEditor/SplitEditor";
 import { useNewExpense } from "../../hooks/useNewExpense";
 import type { useNewExpenseAPI } from "../../hooks/useNewExpenseAPI";
@@ -15,9 +16,13 @@ const inputClass =
   "w-full rounded-xl border border-line bg-card px-3.5 py-3 focus:border-brand-500 focus:outline-none";
 
 /**
- * Renders the full expense form: the group/friend context picker, the basic
- * fields (description, amount, date, category), the payer and split editors,
- * optional notes, validation errors, and the submit button.
+ * Renders the full expense form: the receipt scanner, the group/friend
+ * context picker, the basic fields (description, amount, date, category), the
+ * payer and split editors, optional notes, validation errors, and submit.
+ *
+ * Scanning is part of this form rather than a route of its own, because a
+ * scanned receipt and a hand-entered itemized bill save the identical row —
+ * the photo just fills the fields in for you.
  *
  * @param props - Component props.
  * @returns The expense form for creating or editing an expense.
@@ -36,11 +41,12 @@ export function ExpenseForm({
 }) {
   const form = useNewExpense(expenseAPI, initial, editExpenseId);
   const currency = form.selectedGroup?.currency ?? form.me?.defaultCurrency ?? "USD";
+  // Once there is a photo to check the numbers against, it earns a column of
+  // its own — sticky, so it stays beside the item grid all the way down.
+  const hasReceipt = form.receiptUrl !== "";
 
-  return (
-    <div className="mx-auto max-w-xl space-y-6">
-      <h1 className="text-3xl font-bold">{form.isEdit ? "Edit expense" : "Add expense"}</h1>
-
+  const fields = (
+    <>
       <PeoplePicker
         me={form.me}
         people={form.people}
@@ -128,6 +134,30 @@ export function ExpenseForm({
       >
         {form.isSaving ? "Saving…" : form.isEdit ? "Save changes" : "Add expense"}
       </button>
+    </>
+  );
+
+  return (
+    <div className={`mx-auto space-y-6 ${hasReceipt ? "max-w-6xl" : "max-w-xl"}`}>
+      <h1 className="text-3xl font-bold">{form.isEdit ? "Edit expense" : "Add expense"}</h1>
+
+      {/* Editing cannot re-scan: an itemized expense is not editable here at
+          all (the page guards it), and re-parsing a photo over a saved
+          non-itemized expense would silently convert it. */}
+      {form.isEdit ? (
+        <div className="space-y-6">{fields}</div>
+      ) : (
+        <div
+          className={
+            hasReceipt ? "grid gap-6 lg:grid-cols-[minmax(0,26rem)_minmax(0,1fr)]" : "space-y-6"
+          }
+        >
+          <div className={hasReceipt ? "lg:sticky lg:top-6 lg:self-start" : ""}>
+            <ReceiptPanel form={form} />
+          </div>
+          <div className="space-y-6">{fields}</div>
+        </div>
+      )}
     </div>
   );
 }
