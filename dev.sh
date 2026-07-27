@@ -575,12 +575,17 @@ main() {
   # stopped by the EXIT trap; the db and emulator/simulator keep running.
   # `pnpm exec next dev` would run the Next binary directly and SKIP the
   # package's dev script — which is the only thing that passes
-  # --env-file-if-exists=../../.env. The server then starts with none of
-  # .env set: no OpenRouter key (receipt scanning silently falls back to the
-  # mock provider), no SESSION_SECRET, and Postgres only by the built-in
-  # default. Invoke node with the env file the same way the dev script does.
+  # --env-file-if-exists. The server then starts with none of .env set: no
+  # OpenRouter key (receipt scanning silently falls back to the mock
+  # provider), no SESSION_SECRET, and Postgres only by the built-in default.
+  # Invoke node with the env file the same way the dev script does.
+  #
+  # Absolute path deliberately. A relative "../../.env" does load — pnpm runs
+  # the command in apps/web — but pnpm first echoes Node's
+  # "../../.env not found" after resolving it from the workspace root, which
+  # reads exactly like the failure this line exists to prevent.
   pnpm --filter @haalkhata/web exec \
-    node --env-file-if-exists=../../.env node_modules/next/dist/bin/next dev -H "$web_host"
+    node --env-file-if-exists="$PWD/.env" node_modules/next/dist/bin/next dev -H "$web_host"
 }
 
 main "$@"
