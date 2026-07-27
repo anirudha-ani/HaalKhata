@@ -1,24 +1,20 @@
-/** Hand-drawn activity glyphs: one custom SVG per feed event kind. */
+/** Hand-drawn activity glyphs: one little face per feed event kind. */
 
 /** Every glyph this set can draw, keyed by the name an event look refers to. */
 export type GlyphName =
-  | "receipt"
-  | "scribble"
-  | "tombstone"
-  | "moneyBag"
-  | "cashWings"
-  | "highFive"
-  | "partyPopper"
-  | "speechSquiggle"
-  | "pin";
+  | "shockedReceipt"
+  | "sideEye"
+  | "skull"
+  | "cashGrin"
+  | "sobbing"
+  | "buddies"
+  | "partyHat"
+  | "yapping"
+  | "blank";
 
 /**
- * Shared drawing attributes.
- *
- * Everything is stroked in `currentColor` so the tile's text colour drives the
- * glyph and one SVG serves every tint. Round caps and joins plus a slightly
- * heavy stroke are what make these read as drawn rather than as a corporate
- * icon set — the lines are deliberately a little off-square.
+ * Outline attributes. Round caps plus a heavy-ish stroke are what make these
+ * read as drawn rather than as a stock icon set.
  */
 const STROKE = {
   fill: "none",
@@ -28,172 +24,194 @@ const STROKE = {
   strokeLinejoin: "round",
 } as const;
 
-/** A three-point sparkle, reused wherever a glyph needs a bit of glint. */
-function Sparkle({ x: originX, y: originY, size = 3 }: { x: number; y: number; size?: number }) {
+/** Lighter outline for facial features, so they sit inside the heavier body. */
+const FINE = { ...STROKE, strokeWidth: 1.4 } as const;
+
+/** Filled variant — cannot spread STROKE, whose `fill: none` would win. */
+const SOLID = {
+  fill: "currentColor",
+  stroke: "currentColor",
+  strokeWidth: 1.4,
+  strokeLinejoin: "round",
+} as const;
+
+/** A filled eye dot. */
+function EyeDot({ x: eyeX, y: eyeY, r: radius = 1 }: { x: number; y: number; r?: number }) {
+  return <circle cx={eyeX} cy={eyeY} r={radius} fill="currentColor" />;
+}
+
+/** A "$" small enough to read at 24px: a bar through an S. */
+function Dollar({ x: originX, y: originY }: { x: number; y: number }) {
   return (
-    <path
-      d={`M${originX} ${originY - size} Q${originX + size * 0.28} ${originY - size * 0.28} ${originX + size} ${originY}
-          Q${originX + size * 0.28} ${originY + size * 0.28} ${originX} ${originY + size}
-          Q${originX - size * 0.28} ${originY + size * 0.28} ${originX - size} ${originY}
-          Q${originX - size * 0.28} ${originY - size * 0.28} ${originX} ${originY - size} Z`}
-      fill="currentColor"
-      stroke="none"
-    />
+    <>
+      <path {...FINE} d={`M${originX} ${originY}v3.6`} />
+      <path
+        {...FINE}
+        d={`M${originX - 1.1} ${originY + 0.7}c.4-.6 1.8-.6 2.2 0s-1.8 1-2.2 1.6 1.1 1.1 2.2.6`}
+      />
+    </>
   );
 }
 
-/** Receipt with a torn zigzag hem — a new expense landed. */
-function ReceiptGlyph() {
+/** A receipt caught mid-scream — a new expense just landed. */
+function ShockedReceiptGlyph() {
   return (
     <>
       <path
         {...STROKE}
-        d="M6.4 4.6c0-.6.5-1 1-1h8.8c.6 0 1 .5 1 1v13.2l-1.8-1.2-1.7 1.2-1.8-1.2-1.7 1.2-1.8-1.2-1.9 1.2z"
+        d="M5.4 4.4c0-.6.5-1 1-1h11.2c.6 0 1 .5 1 1v14.4l-1.9-1.3-1.8 1.3-1.9-1.3-1.8 1.3-1.9-1.3-2 1.3z"
       />
-      <path {...STROKE} d="M9 8h6M9 11h4.2" />
-      <Sparkle x={18.6} y={5.6} size={2.1} />
+      <EyeDot x={9.4} y={8.4} r={1.25} />
+      <EyeDot x={14.6} y={8.4} r={1.25} />
+      <ellipse {...FINE} cx="12" cy="13.4" rx="2.6" ry="3.1" />
     </>
   );
 }
 
-/** Pencil over a wobbly underline — something was edited. */
-function ScribbleGlyph() {
+/** Hard side-eye with a raised brow — somebody edited an expense. */
+function SideEyeGlyph() {
   return (
     <>
-      <path {...STROKE} d="M15.6 4.3l3.4 3.4-8.6 8.6-4.2.8.8-4.2z" />
-      <path {...STROKE} d="M13.6 6.3l3.4 3.4" />
-      <path {...STROKE} d="M4.6 19.6c1.5-1.1 3-1.1 4.5 0s3 1.1 4.5 0 3-1.1 4.5 0" />
+      <circle {...STROKE} cx="12" cy="12" r="8" />
+      <circle {...FINE} cx="9.3" cy="10.6" r="2" />
+      <circle {...FINE} cx="15" cy="10.6" r="2" />
+      {/* Pupils jammed to the outer edge; that offset is the whole joke. */}
+      <EyeDot x={10.6} y={10.6} />
+      <EyeDot x={16.3} y={10.6} />
+      <path {...STROKE} d="M6.9 6.9c.9-.7 2-.8 2.9-.3" />
+      <path {...FINE} d="M9 16c1.4-.7 2.6-.7 3.4-.2s1.6.5 2.4-.2" />
     </>
   );
 }
 
-/** Headstone with grass — the expense is no longer with us. */
-function TombstoneGlyph() {
-  return (
-    <>
-      <path {...STROKE} d="M6.6 19.2V10a5.4 5.4 0 0 1 10.8 0v9.2z" />
-      <path {...STROKE} d="M12 8.6v5M9.8 10.6h4.4" />
-      <path {...STROKE} d="M3.6 19.4c.9 0 .9-1.4 1.8-1.4s.9 1.4 1.8 1.4" />
-      <path {...STROKE} d="M16.8 19.4c.9 0 .9-1.4 1.8-1.4s.9 1.4 1.8 1.4" />
-    </>
-  );
-}
-
-/** Cinched money bag, mid-glint — the bag has been secured. */
-function MoneyBagGlyph() {
-  return (
-    <>
-      <path {...STROKE} d="M9.2 3.6h5.6l-1.5 2.4h-2.6z" />
-      <path
-        {...STROKE}
-        d="M10.7 6c-2.6 1-4.9 3.9-4.9 7.4 0 4 2.6 6.6 6.2 6.6s6.2-2.6 6.2-6.6c0-3.5-2.3-6.4-4.9-7.4z"
-      />
-      <path {...STROKE} d="M12 10.2v6M13.7 11.4c-.4-.5-1-.7-1.7-.7-1 0-1.7.5-1.7 1.3s.7 1.1 1.7 1.3 1.7.6 1.7 1.4-.7 1.3-1.7 1.3c-.7 0-1.3-.2-1.7-.7" />
-      <Sparkle x={18.4} y={6.4} size={2.2} />
-      <Sparkle x={5.2} y={8.4} size={1.5} />
-    </>
-  );
-}
-
-/**
- * A banknote folded into a paper plane, mid-flight — money you sent.
- *
- * A winged note is the obvious metaphor and was tried first, but at 24px the
- * note fills the box and the wing collapses into an unreadable blob. A plane
- * carries "sent" at any size, and the row's caption and signed amount supply
- * the "money" half.
- */
-function CashWingsGlyph() {
-  return (
-    <>
-      <path {...STROKE} d="M21.4 3.6L9.6 20.8l-1.9-6.6z" />
-      <path {...STROKE} d="M21.4 3.6L2.6 10.9l5.1 3.3z" />
-      <path {...STROKE} d="M12.4 13.4l-1.5 3.4" />
-      <path {...STROKE} d="M2.2 15.4h3.4M3.4 18.6h4" />
-    </>
-  );
-}
-
-/** Two mismatched hands meeting — somebody joined. */
-function HighFiveGlyph() {
-  return (
-    <>
-      <path {...STROKE} d="M10.6 12.4V6.2a1.3 1.3 0 0 1 2.6 0v5" />
-      <path {...STROKE} d="M8.1 13.2V8.4a1.3 1.3 0 0 1 2.5 0v4" />
-      <path
-        {...STROKE}
-        d="M8.1 11.2c-1.5.3-2.3 1.4-2 2.9l.7 3.2c.4 1.8 1.9 3 3.8 3h2.1c2.2 0 3.9-1.7 3.9-3.9v-4.3a1.3 1.3 0 0 0-2.6 0"
-      />
-      <path {...STROKE} d="M17.8 6.2l1.6-1.4M19.4 9.4l2-.4" />
-    </>
-  );
-}
-
-/** Party popper mid-burst — a group exists now, and that is an event. */
-function PartyPopperGlyph() {
-  return (
-    <>
-      <path {...STROKE} d="M3.4 20.6l5.2-11.4 6.2 6.2z" />
-      <path {...STROKE} d="M8.6 9.2l6.2 6.2" />
-      <path {...STROKE} d="M13.6 8.2c.9-1.5 2.4-1.9 3.6-1.1" />
-      <path {...STROKE} d="M15.8 11.6c1.6-.7 3.2-.1 3.8 1.3" />
-      <circle cx="18.4" cy="4.4" r="1.1" fill="currentColor" stroke="none" />
-      <circle cx="21.2" cy="9.4" r=".9" fill="currentColor" stroke="none" />
-      <circle cx="13.4" cy="3.2" r=".8" fill="currentColor" stroke="none" />
-      <Sparkle x={21} y={4.2} size={1.6} />
-    </>
-  );
-}
-
-/** Speech bubble with a squiggle where the words would be. */
-function SpeechSquiggleGlyph() {
+/** A skull with X'd-out eyes — the expense is gone. */
+function SkullGlyph() {
   return (
     <>
       <path
         {...STROKE}
-        d="M4.6 10.4c0-3.2 3.3-5.6 7.4-5.6s7.4 2.4 7.4 5.6-3.3 5.6-7.4 5.6a10 10 0 0 1-2.3-.3l-4 2.3.9-3.4a5.4 5.4 0 0 1-2-4.2z"
+        d="M12 3.2c-4.5 0-7.5 2.9-7.5 6.8 0 2.1 1 3.6 2.1 4.4.5.4.8 1 .8 1.6v1.2c0 .8.6 1.4 1.4 1.4h6.4c.8 0 1.4-.6 1.4-1.4V16c0-.6.3-1.2.8-1.6 1.1-.8 2.1-2.3 2.1-4.4 0-3.9-3-6.8-7.5-6.8z"
       />
-      <path {...STROKE} d="M8.2 10.4c.8-.8 1.6-.8 2.4 0s1.6.8 2.4 0 1.6-.8 2.4 0" />
+      <path {...STROKE} d="M7.8 8.8l2.2 2.2M10 8.8l-2.2 2.2M14 8.8l2.2 2.2M16.2 8.8L14 11" />
+      <path {...FINE} d="M10 18.6v2.2M12 18.6v2.2M14 18.6v2.2" />
     </>
   );
 }
 
-/** Fallback: a slightly crooked pin for an event kind this build predates. */
-function PinGlyph() {
+/** Delighted face flanked by dollar signs — you got paid. */
+function CashGrinGlyph() {
   return (
     <>
-      <path {...STROKE} d="M12 21.2v-6.4" />
-      <path {...STROKE} d="M8.2 5.2h7.6l-1 4.2 2.2 3.2a1 1 0 0 1-.8 1.6H7.8a1 1 0 0 1-.8-1.6l2.2-3.2z" />
-      <path {...STROKE} d="M9.4 3.2h5.2" />
+      <circle {...STROKE} cx="12" cy="12.6" r="7.8" />
+      <path {...STROKE} d="M8.4 10.6c.6-.9 1.7-.9 2.3 0M13.3 10.6c.6-.9 1.7-.9 2.3 0" />
+      <path {...SOLID} d="M8.2 14c.6 2 2 3.1 3.8 3.1s3.2-1.1 3.8-3.1z" />
+      <Dollar x={3.4} y={6.4} />
+      <Dollar x={20.6} y={4.4} />
+    </>
+  );
+}
+
+/** Sobbing, while a dollar makes its escape — you paid somebody. */
+function SobbingGlyph() {
+  return (
+    <>
+      <circle {...STROKE} cx="11" cy="13" r="7.4" />
+      <path {...STROKE} d="M7.4 10.6c.7-.9 1.8-.9 2.5 0M12.7 10.6c.7-.9 1.8-.9 2.5 0" />
+      <ellipse {...FINE} cx="11" cy="16" rx="2.2" ry="1.7" />
+      <path {...SOLID} d="M7.6 12.8c-.7 1.7-1.3 2.7-.5 3.4s1.7-.1 1.5-1.2-.7-1.5-1-2.2z" />
+      <Dollar x={19.4} y={3.2} />
+    </>
+  );
+}
+
+/** Two faces, the newcomer winking — somebody joined. */
+function BuddiesGlyph() {
+  return (
+    <>
+      <circle {...STROKE} cx="15.4" cy="10.4" r="5" />
+      {/* One eye a closed line: the wink. */}
+      <path {...FINE} d="M13.6 9.6h1.4" />
+      <EyeDot x={17.4} y={9.4} r={0.9} />
+      <path {...FINE} d="M13.9 12.4c.9.9 2.1.9 3 0" />
+      <circle {...STROKE} cx="8.6" cy="14" r="5.4" />
+      <EyeDot x={7} y={13.2} r={0.95} />
+      <EyeDot x={10.2} y={13.2} r={0.95} />
+      <path {...FINE} d="M6.8 16.2c1 1 2.6 1 3.6 0" />
+    </>
+  );
+}
+
+/** Party hat and confetti — a group now exists, and that is an occasion. */
+function PartyHatGlyph() {
+  return (
+    <>
+      <circle {...STROKE} cx="12" cy="14.6" r="6.4" />
+      <path {...STROKE} d="M12 2.6l3.6 5.6H8.4z" />
+      <EyeDot x={9.9} y={13.6} />
+      <EyeDot x={14.1} y={13.6} />
+      <path {...SOLID} d="M8.9 16.4c.6 1.7 1.7 2.6 3.1 2.6s2.5-.9 3.1-2.6z" />
+      <EyeDot x={3.6} y={6.4} r={0.9} />
+      <EyeDot x={20.4} y={6.4} r={0.9} />
+      <EyeDot x={4.8} y={11} r={0.7} />
+      <EyeDot x={19.4} y={11.4} r={0.7} />
+    </>
+  );
+}
+
+/** A speech bubble mid-yap. */
+function YappingGlyph() {
+  return (
+    <>
+      <path
+        {...STROKE}
+        d="M4.2 10.2c0-3.3 3.5-5.8 7.8-5.8s7.8 2.5 7.8 5.8-3.5 5.8-7.8 5.8a11 11 0 0 1-2.4-.3l-4.2 2.4 1-3.5a5.6 5.6 0 0 1-2.2-4.4z"
+      />
+      <EyeDot x={9.4} y={8.8} r={0.9} />
+      <EyeDot x={14.6} y={8.8} r={0.9} />
+      <ellipse {...SOLID} cx="12" cy="12.2" rx="2.4" ry="1.7" />
+    </>
+  );
+}
+
+/** Fallback: a blank stare, for an event kind this build predates. */
+function BlankGlyph() {
+  return (
+    <>
+      <circle {...STROKE} cx="12" cy="12" r="8" />
+      <EyeDot x={9.4} y={10.4} r={0.95} />
+      <EyeDot x={14.6} y={10.4} r={0.95} />
+      <path {...STROKE} d="M9.2 15.4h5.6" />
     </>
   );
 }
 
 /** Every glyph, keyed by name. */
 const GLYPHS: Record<GlyphName, () => React.JSX.Element> = {
-  receipt: ReceiptGlyph,
-  scribble: ScribbleGlyph,
-  tombstone: TombstoneGlyph,
-  moneyBag: MoneyBagGlyph,
-  cashWings: CashWingsGlyph,
-  highFive: HighFiveGlyph,
-  partyPopper: PartyPopperGlyph,
-  speechSquiggle: SpeechSquiggleGlyph,
-  pin: PinGlyph,
+  shockedReceipt: ShockedReceiptGlyph,
+  sideEye: SideEyeGlyph,
+  skull: SkullGlyph,
+  cashGrin: CashGrinGlyph,
+  sobbing: SobbingGlyph,
+  buddies: BuddiesGlyph,
+  partyHat: PartyHatGlyph,
+  yapping: YappingGlyph,
+  blank: BlankGlyph,
 };
 
 /**
  * Draws one activity glyph.
  *
  * Custom SVG rather than emoji: emoji are rendered by the OS, so the same feed
- * looks like three different apps across Apple, Android and Windows, none of
- * them matching this one's line weight — and their colours fight the tile tint
- * they sit on. These inherit `currentColor`, so a glyph is whatever colour its
- * tile says it is.
+ * looks like three different apps across platforms, and their baked-in colours
+ * fight the tinted tile they sit on. These inherit `currentColor`, so a glyph
+ * is whatever colour its tile says it is.
+ *
+ * Nearly all of them are faces, and that is the point — an expression is the
+ * only thing that reliably makes a 24px drawing funny. A tidy outline of the
+ * object being described is perfectly legible and completely inert.
  *
  * Always `aria-hidden`: the tile that wraps it carries the accessible name, so
- * a screen reader hears "Expense deleted" rather than a description of a
- * headstone.
+ * a screen reader hears "Expense deleted" rather than a description of a skull.
  *
  * @param props - Component props.
  * @returns The SVG glyph.
@@ -207,7 +225,7 @@ export function ActivityGlyph({
   /** Sizing/colour classes; colour flows into the strokes via currentColor. */
   className?: string;
 }) {
-  const Glyph = GLYPHS[name] ?? PinGlyph;
+  const Glyph = GLYPHS[name] ?? BlankGlyph;
   return (
     <svg viewBox="0 0 24 24" className={className} aria-hidden="true" focusable="false">
       <Glyph />
