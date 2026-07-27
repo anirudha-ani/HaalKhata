@@ -8,6 +8,7 @@ import {
   checkSplit,
   includeInEveryItem,
   itemizedTotals,
+  percentOfItems,
   shareEveryItemWith,
   type DraftLineItem,
 } from "@/lib/expense/splitForm";
@@ -167,5 +168,35 @@ describe("shareEveryItemWith", () => {
     const next = shareEveryItemWith([draftItem({ key: "a" }), draftItem({ key: "b" })], ["carol"]);
     next[0].assignees.carol = 5;
     expect(next[1].assignees.carol).toBe(1);
+  });
+});
+
+describe("percentOfItems", () => {
+  it("reports an add-on against the pre-tax subtotal", () => {
+    expect(percentOfItems(890, 10000)).toBe("8.9%");
+  });
+
+  it("agrees with the tip presets, which use the same base", () => {
+    // applyTipPercent(18) on a 40.00 subtotal writes 7.20; the readout beside
+    // it has to say 18%, not 15.3% (which is what measuring against the
+    // 47.20 grand total would give).
+    const subtotal = 4000;
+    const tipCents = (subtotal * 18) / 100;
+    expect(percentOfItems(tipCents, subtotal)).toBe("18%");
+  });
+
+  it("keeps one decimal for the rates that are not round", () => {
+    expect(percentOfItems(888, 10000)).toBe("8.9%");
+    expect(percentOfItems(1000, 10000)).toBe("10%");
+  });
+
+  it("shows nothing when there is nothing to compare against", () => {
+    expect(percentOfItems(500, 0)).toBe("");
+    expect(percentOfItems(0, 10000)).toBe("");
+    expect(percentOfItems(-100, 10000)).toBe("");
+  });
+
+  it("does not hide a tax bigger than the bill", () => {
+    expect(percentOfItems(20000, 10000)).toBe("200%");
   });
 });

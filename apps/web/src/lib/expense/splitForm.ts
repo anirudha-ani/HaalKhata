@@ -219,6 +219,29 @@ export function checkItemized(items: DraftLineItem[]): SplitCheck {
 }
 
 /**
+ * Renders an add-on (tax or tip) as a percentage of the items subtotal, for
+ * display beside the amount.
+ *
+ * The base is the **pre-tax, pre-tip** subtotal, which is how both are
+ * reckoned on a real bill and — critically — the same base
+ * `applyTipPercent` uses. Measuring against the grand total instead would
+ * make tapping the 18% preset read back as 15.3%, so the control and the
+ * readout would contradict each other on screen.
+ *
+ * @param cents - The tax or tip amount in cents.
+ * @param itemsTotalCents - The items subtotal in cents.
+ * @returns The percentage to one decimal place with a trailing ".0" trimmed
+ *   ("18%", "8.9%"), or "" when there is nothing meaningful to show.
+ */
+export function percentOfItems(cents: number, itemsTotalCents: number): string {
+  if (cents <= 0 || itemsTotalCents <= 0) return "";
+  const percent = (cents / itemsTotalCents) * 100;
+  // One decimal: sales tax is rarely round, and dropping to whole numbers
+  // would report 8.875% tax as "9%" next to a figure that is visibly not 9%.
+  return `${percent.toFixed(1).replace(/\.0$/, "")}%`;
+}
+
+/**
  * Puts one person on every line item at a single share, leaving everybody
  * else's weights alone.
  *

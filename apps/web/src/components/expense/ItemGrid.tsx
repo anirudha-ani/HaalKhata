@@ -3,7 +3,8 @@
 
 import { Check, Plus, X } from "lucide-react";
 import type { User } from "@haalkhata/protogen/common/v1/common_pb";
-import { formatMoney } from "@haalkhata/shared/money/money";
+import { formatMoney, parseMoneyInput } from "@haalkhata/shared/money/money";
+import { percentOfItems } from "@/lib/expense/splitForm";
 import { Avatar } from "@/components/ui/Avatar";
 import { MAX_ASSIGNEE_WEIGHT, TIP_PERCENT_PRESETS } from "./itemGrid.constants";
 
@@ -64,6 +65,7 @@ export function ItemGrid({
   showQuantity = false,
   taxInput,
   tipInput,
+  itemsTotalCents,
   totalCents,
   shares,
   onUpdateItem,
@@ -90,6 +92,8 @@ export function ItemGrid({
   taxInput: string;
   /** Raw tip money input. */
   tipInput: string;
+  /** The items subtotal in cents — the base the tax/tip percentages read against. */
+  itemsTotalCents: number;
   /** Items + tax + tip, in cents, for the totals row. */
   totalCents: number;
   /** What each person currently owes, keyed by user id, in cents. */
@@ -111,6 +115,10 @@ export function ItemGrid({
 }) {
   const leadingColumns = showQuantity ? 3 : 2;
   const columnCount = leadingColumns + people.length + 1;
+  // What each add-on works out to as a rate. A bare "8.40" says nothing about
+  // whether it is the tax you expected; "8.9% of items" does.
+  const taxPercent = percentOfItems(parseMoneyInput(taxInput) ?? 0, itemsTotalCents);
+  const tipPercent = percentOfItems(parseMoneyInput(tipInput) ?? 0, itemsTotalCents);
 
   return (
     // People columns can outgrow the viewport; the grid scrolls, the page does not.
@@ -268,6 +276,11 @@ export function ItemGrid({
               />
             </td>
             <td className="pl-3 text-xs text-ink-soft" colSpan={columnCount - leadingColumns}>
+              {taxPercent ? (
+                <span className="mr-1.5 font-semibold text-ink tabular-nums">
+                  {taxPercent} of items
+                </span>
+              ) : null}
               split in proportion to each person&apos;s items
             </td>
           </tr>
@@ -288,7 +301,7 @@ export function ItemGrid({
               />
             </td>
             <td className="pl-3" colSpan={columnCount - leadingColumns}>
-              <span className="flex items-center gap-1.5">
+              <span className="flex flex-wrap items-center gap-1.5">
                 {TIP_PERCENT_PRESETS.map((percent) => (
                   <button
                     key={percent}
@@ -299,6 +312,11 @@ export function ItemGrid({
                     {percent}%
                   </button>
                 ))}
+                {tipPercent ? (
+                  <span className="text-xs font-semibold text-ink tabular-nums">
+                    {tipPercent} of items
+                  </span>
+                ) : null}
               </span>
             </td>
           </tr>

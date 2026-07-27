@@ -9,8 +9,8 @@ import type { NewExpenseController } from "../../hooks/useNewExpense";
  * form's draft, plus the uneven-shares checkbox that turns its cells from
  * on/off toggles into share-weight inputs.
  *
- * The grid is the same component the receipt scanner uses, so a bill split by
- * hand and a bill split from a photo behave identically.
+ * The same grid serves a bill typed in by hand and one read off a photo — the
+ * scanner fills this very draft (§3j), so the two cannot behave differently.
  *
  * @param props - Component props.
  * @returns The itemized editor section.
@@ -37,6 +37,7 @@ export function ItemizedEditor({
         unevenShares={form.unevenShares}
         taxInput={form.taxInput}
         tipInput={form.tipInput}
+        itemsTotalCents={form.itemsTotalCents}
         totalCents={form.totalCents ?? 0}
         shares={form.previewShares}
         onUpdateItem={form.updateItem}

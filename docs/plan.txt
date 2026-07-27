@@ -361,6 +361,17 @@ default, instead of every item starting unassigned. The mirror rule follows:
 adding a person to a scanned receipt puts them on every line, and you untick
 their exceptions.
 
+**Tax and tip show their rate** (v5.15 — 2026-07-27). A bare "7.26" says
+nothing about whether it is the tax you expected, so each add-on now reads out
+as a percentage beside its amount — "8.6% of items". The base is the pre-tax
+subtotal, which is both how a real bill reckons them and the base
+`applyTipPercent` already used: measuring against the grand total instead
+would make tapping the 18% preset read back as 15.3%, so the control and the
+readout would contradict each other on screen. `percentOfItems` is a pure
+helper in `lib/expense/splitForm.ts`; it shows nothing for a zero or absent
+amount rather than "0%", and does not clamp — a tax fat-fingered to ten times
+the bill reads "1000%", which is the point.
+
 **The receipt sits next to the draft.** `ParseReceiptResponse` gained
 `bytes normalized_image` — the exact JPEG the provider was shown, i.e. the
 upload after EXIF rotation, downscaling and HEIC transcoding. Two reasons it
