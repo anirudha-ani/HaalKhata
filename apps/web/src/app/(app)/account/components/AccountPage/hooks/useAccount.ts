@@ -43,7 +43,12 @@ export function useProfileForm(currentUser: User) {
   const router = useRouter();
   const [name, setName] = useState(currentUser.name);
   const [currency, setCurrency] = useState(currentUser.defaultCurrency || "USD");
+  // Confirmation and failure are separate values, not one string: they are
+  // shown in different places and must not look alike. A rejected phone
+  // rendered in the same muted grey as "Saved ✓" reads as a note about
+  // something that worked.
   const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
   // The stored number is E.164; split it so the field opens on the country it
   // was entered with rather than defaulting and looking wrong.
   const [region, setRegion] = useState<string>(
@@ -83,12 +88,15 @@ export function useProfileForm(currentUser: User) {
       return true;
     },
     onSuccess: (saved) => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.me });
       // No "Saved ✓" while a merge is waiting — the number is not on the
       // account until it is confirmed, and saying otherwise would be a lie.
       setMessage(saved ? "Saved ✓" : "");
     },
-    onError: (mutationError) => setMessage(errorMessage(mutationError)),
+    onError: (mutationError) => setError(errorMessage(mutationError)),
+    // Settled, not success: the profile write lands before the phone claim, so
+    // a rejected number still leaves a changed name or currency on the server
+    // that the cache would otherwise keep showing stale.
+    onSettled: () => queryClient.invalidateQueries({ queryKey: queryKeys.me }),
   });
 
   const confirmMerge = useMutation({
@@ -105,7 +113,11 @@ export function useProfileForm(currentUser: User) {
       queryClient.invalidateQueries({ queryKey: queryKeys.me });
       setMessage("Saved ✓");
     },
-    onError: (mutationError) => setMessage(errorMessage(mutationError)),
+    // Stays in the dialog. The row can be claimed by its rightful owner in the
+    // seconds between the preview and the answer, and that refusal has to be
+    // readable where the user is looking — writing it into the form behind the
+    // backdrop is the same as saying nothing.
+    onError: (mutationError) => setError(errorMessage(mutationError)),
   });
 
   /** Backs out of a merge, leaving both accounts untouched and the number unclaimed. */
@@ -116,6 +128,7 @@ export function useProfileForm(currentUser: User) {
     // belonged to somebody else.
     setNationalNumber("");
     setMessage("");
+    setError("");
   };
 
   /** Ends the session, clears every cached query, and returns to the login page. */
@@ -135,7 +148,10 @@ export function useProfileForm(currentUser: User) {
     nationalNumber,
     setNationalNumber,
     pendingMerge,
-    confirmMerge: () => confirmMerge.mutate(),
+    confirmMerge: () => {
+      setError("");
+      confirmMerge.mutate();
+    },
     declineMerge,
     handles,
     /**
@@ -147,8 +163,10 @@ export function useProfileForm(currentUser: User) {
     setHandle: (method: string, handle: string) =>
       setHandles((current) => ({ ...current, [method]: handle })),
     message,
+    error,
     save: () => {
       setMessage("");
+      setError("");
       save.mutate();
     },
     isSaving: save.isPending || confirmMerge.isPending,

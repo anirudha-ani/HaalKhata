@@ -75,9 +75,17 @@ function ProfileForm({ me: currentUser }: { me: User }) {
               onNationalNumberChange={form.setNationalNumber}
             />
           </div>
-          <p className="mt-1 text-xs font-normal text-ink-soft">
-            Only so friends can find you when they split something. Never used to sign in.
-          </p>
+          {/* Beside the field it is about, not with the save button at the
+              bottom of the form: a rejected number is something to correct
+              here, and "already on another account" makes no sense read under
+              the payment handles. */}
+          {form.error ? (
+            <p className="mt-1.5 text-sm font-medium text-brand-600">{form.error}</p>
+          ) : (
+            <p className="mt-1 text-xs font-normal text-ink-soft">
+              Only so friends can find you when they split something. Never used to sign in.
+            </p>
+          )}
         </div>
         <label className="block text-sm font-medium">
           Default currency
@@ -142,6 +150,13 @@ function ProfileForm({ me: currentUser }: { me: User }) {
               If you recognize these people, this history is yours and will move onto your
               account. If you don&apos;t, the number was probably reassigned — leave it off.
             </p>
+
+            {/* The dialog answers for itself. A refusal written into the form
+                behind the backdrop is a refusal nobody sees. */}
+            {form.error ? (
+              <p className="text-sm font-medium text-brand-600">{form.error}</p>
+            ) : null}
+
             <button
               type="button"
               onClick={form.confirmMerge}
