@@ -4,6 +4,9 @@
 import { LogOut } from "lucide-react";
 import type { User } from "@haalkhata/protogen/common/v1/common_pb";
 import { Avatar } from "@/components/ui/Avatar";
+import { MergePreview } from "@/components/account/MergePreview";
+import { Modal } from "@/components/ui/Modal";
+import { PhoneField } from "@/components/ui/PhoneField";
 import { Spinner } from "@/components/ui/Spinner";
 import { useHydrated } from "@/lib/hooks/useHydrated";
 import { CURRENCIES } from "@haalkhata/shared/money/money.constants";
@@ -62,6 +65,20 @@ function ProfileForm({ me: currentUser }: { me: User }) {
             className="mt-1 w-full rounded-xl border border-line bg-card px-3.5 py-2.5 focus:border-brand-500 focus:outline-none"
           />
         </label>
+        <div className="text-sm font-medium">
+          Phone number
+          <div className="mt-1">
+            <PhoneField
+              region={form.region}
+              nationalNumber={form.nationalNumber}
+              onRegionChange={form.setRegion}
+              onNationalNumberChange={form.setNationalNumber}
+            />
+          </div>
+          <p className="mt-1 text-xs font-normal text-ink-soft">
+            Only so friends can find you when they split something. Never used to sign in.
+          </p>
+        </div>
         <label className="block text-sm font-medium">
           Default currency
           <select
@@ -111,6 +128,39 @@ function ProfileForm({ me: currentUser }: { me: User }) {
       >
         <LogOut className="h-4 w-4" /> Sign out
       </button>
+
+      {/* A number can already belong to an invitation someone made. Nothing is
+          written until this is answered, so it is a decision, not a notice. */}
+      {form.pendingMerge ? (
+        <Modal title="Is this you?" onClose={form.declineMerge}>
+          <div className="space-y-4">
+            <p className="text-sm text-ink-soft">
+              Someone already added this number to shared expenses.
+            </p>
+            <MergePreview preview={form.pendingMerge} currency={form.currency} />
+            <p className="text-xs leading-relaxed text-ink-soft">
+              If you recognize these people, this history is yours and will move onto your
+              account. If you don&apos;t, the number was probably reassigned — leave it off.
+            </p>
+            <button
+              type="button"
+              onClick={form.confirmMerge}
+              disabled={form.isSaving}
+              className="w-full rounded-xl bg-brand-600 py-3 font-semibold text-white hover:bg-brand-700 disabled:opacity-50"
+            >
+              {form.isSaving ? "One moment…" : "Yes, that's me"}
+            </button>
+            <button
+              type="button"
+              onClick={form.declineMerge}
+              disabled={form.isSaving}
+              className="w-full rounded-xl border border-line py-3 text-sm font-semibold text-ink-soft hover:bg-paper disabled:opacity-50"
+            >
+              That&apos;s not me
+            </button>
+          </div>
+        </Modal>
+      ) : null}
     </div>
   );
 }

@@ -5,8 +5,10 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { User } from "@haalkhata/protogen/common/v1/common_pb";
+import type { MergePreview } from "@haalkhata/protogen/auth/v1/auth_pb";
 import { authClient, errorMessage } from "@/lib/api/connect";
-import { queryKeys } from "@haalkhata/shared/api/queryKeys";
+import { MONEY_KEYS, queryKeys } from "@haalkhata/shared/api/queryKeys";
+import { composeE164, DEFAULT_PHONE_REGION, splitE164 } from "@/lib/phone/phone";
 
 /**
  * Fetches the signed-in user via the getMe query.
@@ -25,10 +27,16 @@ export function useAccountAPI() {
  * Profile form state — mounted only once the current user is loaded
  * (initializer, no sync effect).
  *
+ * Phone goes through its own RPC rather than riding along on UpdateProfile,
+ * because claiming a number can turn up an unclaimed invitation holding it. In
+ * that case nothing is written until the user confirms what they would absorb,
+ * so `save` can finish in two ways: saved, or waiting on a merge.
+ *
  * @param currentUser - The already-loaded signed-in user used to seed the form fields.
- * @returns Form field values (`name`, `currency`, `handles`, `message`) with
- *   their setters, a `save` action with its `isSaving` flag, and a `signOut`
- *   action.
+ * @returns Form field values (`name`, `currency`, `region`, `nationalNumber`,
+ *   `handles`, `message`) with their setters, a `save` action with its
+ *   `isSaving` flag, the `pendingMerge` preview with `confirmMerge` /
+ *   `declineMerge`, and a `signOut` action.
  */
 export function useProfileForm(currentUser: User) {
   const queryClient = useQueryClient();
@@ -36,6 +44,16 @@ export function useProfileForm(currentUser: User) {
   const [name, setName] = useState(currentUser.name);
   const [currency, setCurrency] = useState(currentUser.defaultCurrency || "USD");
   const [message, setMessage] = useState("");
+  // The stored number is E.164; split it so the field opens on the country it
+  // was entered with rather than defaulting and looking wrong.
+  const [region, setRegion] = useState<string>(
+    () => splitE164(currentUser.phone)?.region ?? DEFAULT_PHONE_REGION,
+  );
+  const [nationalNumber, setNationalNumber] = useState(
+    () => splitE164(currentUser.phone)?.nationalNumber ?? "",
+  );
+  const [pendingMerge, setPendingMerge] = useState<MergePreview | undefined>();
+  const [mergeToken, setMergeToken] = useState("");
   const [handles, setHandles] = useState<Record<string, string>>(() =>
     Object.fromEntries(
       currentUser.paymentHandles.map((entry) => [entry.method, entry.handle]),
@@ -43,18 +61,62 @@ export function useProfileForm(currentUser: User) {
   );
 
   const save = useMutation({
-    mutationFn: () =>
-      authClient.updateProfile({
+    mutationFn: async () => {
+      await authClient.updateProfile({
         name,
         defaultCurrency: currency,
         paymentHandles: Object.entries(handles).map(([method, handle]) => ({ method, handle })),
-      }),
+      });
+      // Only send the phone when it actually changed. Comparing in E.164 is
+      // what makes that honest — the same number re-typed with different
+      // spacing has to count as unchanged, and re-claiming a number you
+      // already hold would otherwise round-trip for nothing.
+      const claimedPhone = composeE164(region, nationalNumber);
+      if (claimedPhone.length > 0 && claimedPhone !== currentUser.phone) {
+        const result = await authClient.setPhone({ phone: claimedPhone });
+        if (result.pendingMerge) {
+          setPendingMerge(result.pendingMerge);
+          setMergeToken(result.mergeToken);
+          return false;
+        }
+      }
+      return true;
+    },
+    onSuccess: (saved) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.me });
+      // No "Saved ✓" while a merge is waiting — the number is not on the
+      // account until it is confirmed, and saying otherwise would be a lie.
+      setMessage(saved ? "Saved ✓" : "");
+    },
+    onError: (mutationError) => setMessage(errorMessage(mutationError)),
+  });
+
+  const confirmMerge = useMutation({
+    mutationFn: () => authClient.confirmPhoneMerge({ mergeToken }),
     onSuccess: () => {
+      setPendingMerge(undefined);
+      setMergeToken("");
+      // Absorbing an account moves expenses, balances and friendships onto
+      // this one, so nothing money-shaped that is already cached is still
+      // true. Onboarding gets away without this by navigating away.
+      for (const moneyQueryKey of MONEY_KEYS) {
+        queryClient.invalidateQueries({ queryKey: moneyQueryKey });
+      }
       queryClient.invalidateQueries({ queryKey: queryKeys.me });
       setMessage("Saved ✓");
     },
     onError: (mutationError) => setMessage(errorMessage(mutationError)),
   });
+
+  /** Backs out of a merge, leaving both accounts untouched and the number unclaimed. */
+  const declineMerge = () => {
+    setPendingMerge(undefined);
+    setMergeToken("");
+    // The country was almost certainly right; it is the digits after it that
+    // belonged to somebody else.
+    setNationalNumber("");
+    setMessage("");
+  };
 
   /** Ends the session, clears every cached query, and returns to the login page. */
   const signOut = async () => {
@@ -68,6 +130,13 @@ export function useProfileForm(currentUser: User) {
     setName,
     currency,
     setCurrency,
+    region,
+    setRegion,
+    nationalNumber,
+    setNationalNumber,
+    pendingMerge,
+    confirmMerge: () => confirmMerge.mutate(),
+    declineMerge,
     handles,
     /**
      * Sets one payment handle in the draft.
@@ -82,7 +151,7 @@ export function useProfileForm(currentUser: User) {
       setMessage("");
       save.mutate();
     },
-    isSaving: save.isPending,
+    isSaving: save.isPending || confirmMerge.isPending,
     signOut,
   };
 }

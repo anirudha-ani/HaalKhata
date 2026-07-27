@@ -2,7 +2,8 @@
 /** First-run screen: name, currency, phone — plus the merge confirmation. */
 
 import { CURRENCIES } from "@haalkhata/shared/money/money.constants";
-import { formatMoney } from "@haalkhata/shared/money/money";
+import { MergePreview } from "@/components/account/MergePreview";
+import { PhoneField } from "@/components/ui/PhoneField";
 import { useOnboarding } from "./hooks/useOnboarding";
 
 /** Shared styling for the onboarding inputs. */
@@ -42,26 +43,7 @@ export function OnboardingPage() {
         <div className="rounded-2xl border border-line bg-card p-6 shadow-sm">
           {merge ? (
             <div className="flex flex-col gap-4">
-              <div className="rounded-xl border border-line bg-paper p-4">
-                <p className="font-display text-lg text-ink">{merge.name}</p>
-                <p className="mt-1 text-sm text-ink-soft">
-                  {merge.expenseCount} {merge.expenseCount === 1 ? "expense" : "expenses"}
-                  {merge.netCents !== 0 ? (
-                    <>
-                      {" · "}
-                      <span className={merge.netCents > 0 ? "text-pos-600" : "text-neg-600"}>
-                        {merge.netCents > 0 ? "owed " : "owes "}
-                        {formatMoney(Math.abs(merge.netCents), "USD")}
-                      </span>
-                    </>
-                  ) : null}
-                </p>
-                {merge.counterpartyNames.length > 0 ? (
-                  <p className="mt-2 text-sm text-ink-soft">
-                    Shared with {merge.counterpartyNames.join(", ")}
-                  </p>
-                ) : null}
-              </div>
+              <MergePreview preview={merge} currency={onboarding.currency || "USD"} />
 
               <p className="text-xs leading-relaxed text-ink-soft">
                 If you recognize these people, this history is yours and will move onto your
@@ -112,13 +94,11 @@ export function OnboardingPage() {
               <label className="mt-2 text-xs font-semibold uppercase tracking-wide text-ink-soft">
                 Phone number
               </label>
-              <input
-                className={inputClass}
-                type="tel"
-                placeholder="(617) 555-1212"
-                value={onboarding.phone}
-                onChange={(event) => onboarding.setPhone(event.target.value)}
-                autoComplete="tel"
+              <PhoneField
+                region={onboarding.region}
+                nationalNumber={onboarding.nationalNumber}
+                onRegionChange={onboarding.setRegion}
+                onNationalNumberChange={onboarding.setNationalNumber}
               />
               <p className="text-xs text-ink-soft">
                 Only so friends can find you when they split something. Never used to sign in.
