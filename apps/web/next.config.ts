@@ -10,7 +10,9 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   output: "standalone",
   transpilePackages: ["@haalkhata/protogen", "@haalkhata/shared"],
-  serverExternalPackages: ["pg", "node-pg-migrate"],
+  // sharp is a native module (prebuilt .node binaries); bundling it breaks the
+  // build, so it stays external and is required at runtime like pg.
+  serverExternalPackages: ["pg", "node-pg-migrate", "sharp"],
 };
 
 export default nextConfig;

@@ -13,7 +13,7 @@
 #   7. Workspace npm dependencies (pnpm install)
 #   8. Generated protobuf TypeScript (pnpm gen → packages/protogen/src)
 #   9. apps/mobile native modules verified against Expo SDK (expo install --check)
-#   10. .env files copied from .env.example (repo root + apps/web) if absent
+#   10. .env copied from .env.example (repo root) if absent
 #
 # Usage:
 #   ./install-deps.sh           install everything that's missing
@@ -319,8 +319,10 @@ check_mobile_deps() {
   fi
 }
 
-# --- 10. .env files ------------------------------------------------------------
+# --- 10. .env file -------------------------------------------------------------
 
+# One .env at the repo root serves both runtimes: docker compose reads it
+# directly, and `pnpm dev` loads it via node --env-file-if-exists.
 setup_env_files() {
   cd "$(dirname "$0")"
   if [[ ! -f .env ]] && [[ -f .env.example ]]; then
@@ -328,12 +330,6 @@ setup_env_files() {
     ok "created .env from .env.example (edit it to set POSTGRES_PASSWORD + SESSION_SECRET for prod)"
   elif [[ -f .env ]]; then
     ok ".env already exists"
-  fi
-  if [[ ! -f apps/web/.env ]] && [[ -f apps/web/.env.example ]]; then
-    cp apps/web/.env.example apps/web/.env
-    ok "created apps/web/.env from apps/web/.env.example"
-  elif [[ -f apps/web/.env ]]; then
-    ok "apps/web/.env already exists"
   fi
 }
 

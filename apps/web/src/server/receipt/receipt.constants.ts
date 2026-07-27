@@ -1,29 +1,94 @@
 /** Receipt domain constants: accepted image types, size limit, extraction schema + prompt. */
 
-/** Image formats accepted from clients (also the set the Anthropic API accepts). */
-export const IMAGE_MEDIA_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"] as const;
+/**
+ * Image formats accepted from clients. HEIC/HEIF are included because that is
+ * what iPhones shoot by default — no vision API accepts them, so they are
+ * transcoded to JPEG server-side before any provider sees them.
+ */
+export const IMAGE_MEDIA_TYPES = [
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "image/gif",
+  "image/heic",
+  "image/heif",
+] as const;
 export type ImageMediaType = (typeof IMAGE_MEDIA_TYPES)[number];
 
 /** Upper bound on uploaded image size (8 MB). */
 export const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
 
 /**
- * Anthropic model used by the cloud provider. Configurable via env so a
- * deprecated snapshot alias can be swapped without a code change.
+ * Longest edge, in pixels, sent to the vision provider. 2576px is the ceiling
+ * the current high-resolution models actually use; anything larger is
+ * downsampled on their side, so sending it only costs upload time.
  */
-export const ANTHROPIC_MODEL = process.env.ANTHROPIC_MODEL ?? "claude-opus-4-8";
+export const MAX_IMAGE_EDGE_PIXELS = 2576;
+
+/** JPEG quality for the transcode. High enough to keep small receipt print legible. */
+export const JPEG_QUALITY = 88;
+
+/** Request timeout for the vision provider, in milliseconds. */
+export const PROVIDER_TIMEOUT_MS = 90_000;
 
 /**
- * Magic-byte signatures for each accepted image format, used to verify the
- * client-supplied mediaType matches the actual bytes (defense against a
- * mislabeled or malicious upload).
+ * Configuration for the `compatible` provider — any endpoint speaking the
+ * OpenAI `/chat/completions` wire format. In production this points at
+ * OpenRouter, which fronts every model worth using here (including Claude and
+ * Gemini) behind one key, so no provider-specific SDK is needed.
  */
-export const IMAGE_MAGIC_BYTES: Record<ImageMediaType, number[]> = {
-  "image/jpeg": [0xff, 0xd8, 0xff],
-  "image/png": [0x89, 0x50, 0x4e, 0x47],
-  "image/webp": [0x52, 0x49, 0x46, 0x46], // "RIFF" (WebP container)
-  "image/gif": [0x47, 0x49, 0x46], // "GIF"
+export const COMPATIBLE_AI = {
+  /** Base URL without a trailing slash, e.g. "https://openrouter.ai/api/v1". */
+  baseUrl: (process.env.COMPATIBLE_AI_BASE_URL ?? "").replace(/\/$/, ""),
+  /** Bearer token for the endpoint; optional for an unauthenticated local box. */
+  apiKey: process.env.COMPATIBLE_AI_API_KEY ?? "",
+  /** Model identifier as the endpoint names it. */
+  model: process.env.COMPATIBLE_AI_MODEL ?? "",
+  /**
+   * Whether to request zero data retention. Adds `zdr: true` to the request
+   * body, which routes only to endpoints carrying a zero-retention policy.
+   *
+   * Opt-in because the field is OpenRouter-specific: a stricter
+   * OpenAI-compatible server could reject an unrecognized body key. Prefer
+   * also enforcing ZDR account-wide in OpenRouter, which fails closed if a
+   * request ever omits this.
+   */
+  zeroDataRetention: process.env.COMPATIBLE_AI_ZDR === "true",
+} as const;
+
+/** One acceptable byte pattern at a fixed offset within the file. */
+interface ImageSignature {
+  /** Byte offset the pattern starts at. */
+  offset: number;
+  /** Expected bytes at that offset. */
+  bytes: number[];
+}
+
+/**
+ * Magic-byte signatures per accepted format, used to verify the
+ * client-supplied mediaType matches the actual bytes (defense against a
+ * mislabeled or malicious upload). A format may list several alternatives;
+ * matching any one is enough.
+ *
+ * HEIC/HEIF are ISO base media files: the `ftyp` box sits at offset 4 and the
+ * brand that follows it at offset 8 varies by encoder. Hence the offset field
+ * — a from-byte-zero comparison cannot express this.
+ */
+export const IMAGE_SIGNATURES: Record<ImageMediaType, ImageSignature[]> = {
+  "image/jpeg": [{ offset: 0, bytes: [0xff, 0xd8, 0xff] }],
+  "image/png": [{ offset: 0, bytes: [0x89, 0x50, 0x4e, 0x47] }],
+  "image/webp": [{ offset: 0, bytes: [0x52, 0x49, 0x46, 0x46] }], // "RIFF"
+  "image/gif": [{ offset: 0, bytes: [0x47, 0x49, 0x46] }], // "GIF"
+  // "ftyp" at offset 4; brand at offset 8 differs between capture devices and
+  // converters, so accept the HEIF family rather than a single brand.
+  "image/heic": [{ offset: 4, bytes: [0x66, 0x74, 0x79, 0x70] }],
+  "image/heif": [{ offset: 4, bytes: [0x66, 0x74, 0x79, 0x70] }],
 };
+
+/** HEIF brands (offset 8) treated as still images we can transcode. */
+export const HEIF_BRANDS = [
+  "heic", "heix", "hevc", "hevx", "heim", "heis", "hevm", "hevs", "mif1", "msf1",
+];
 
 /** JSON schema the cloud provider's structured output must conform to. */
 export const RECEIPT_JSON_SCHEMA = {
@@ -62,5 +127,7 @@ export const RECEIPT_JSON_SCHEMA = {
 export const PROMPT = `Extract this receipt into the JSON schema. All money values are integer cents (e.g. $12.99 -> 1299). Rules:
 - Every purchasable line item goes in items; use total_cents = quantity * unit_price_cents when both are printed, otherwise put the printed line total in total_cents.
 - Do NOT include subtotal, tax, tip or total lines as items — they go in their own fields.
+- Fold modifiers and options ("with cream cheese", "add bacon", "extra shot") into the item they belong to: combine the names and give the combined line the full price. Never emit an item priced 0 with its price on a separate modifier line.
 - tax_cents covers all taxes combined; tip_cents covers tip/service charge; 0 when absent.
+- date MUST be exactly YYYY-MM-DD with no time. Convert whatever the receipt prints; read a 2-digit year as 20YY. Use "" if there is no readable date.
 - If a value is unreadable, use 0 (or "" for strings). Guess the currency from symbols or locale.`;

@@ -573,7 +573,14 @@ main() {
   # ensureMigrated(). The db keeps running after the server exits; use
   # ./dev.sh --down to stop it too. With --mobile-* the Metro bundler is
   # stopped by the EXIT trap; the db and emulator/simulator keep running.
-  pnpm --filter @haalkhata/web exec next dev -H "$web_host"
+  # `pnpm exec next dev` would run the Next binary directly and SKIP the
+  # package's dev script — which is the only thing that passes
+  # --env-file-if-exists=../../.env. The server then starts with none of
+  # .env set: no OpenRouter key (receipt scanning silently falls back to the
+  # mock provider), no SESSION_SECRET, and Postgres only by the built-in
+  # default. Invoke node with the env file the same way the dev script does.
+  pnpm --filter @haalkhata/web exec \
+    node --env-file-if-exists=../../.env node_modules/next/dist/bin/next dev -H "$web_host"
 }
 
 main "$@"

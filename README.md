@@ -62,8 +62,11 @@ pnpm dev                 # http://localhost:3000
 
 Pending migrations apply automatically on boot and the receipt scanner
 falls back to a mock provider — no further configuration needed for a demo.
+All configuration lives in a single `.env` at the repo root: `docker compose`
+reads it directly, and `pnpm dev` loads it via Node's `--env-file-if-exists`.
 Using your own Postgres instead of the compose service? Set `DATABASE_URL`
-in `apps/web/.env`.
+there. Real shell variables still win, so `DATABASE_URL=… pnpm dev` overrides
+the file for a one-off.
 
 ### Mobile app (Expo)
 
@@ -108,18 +111,30 @@ cp .env.example .env     # set POSTGRES_PASSWORD + SESSION_SECRET
 docker compose up -d --build
 ```
 
+For a real deployment prefer Docker secrets over a plaintext `.env` for
+`SESSION_SECRET`, `POSTGRES_PASSWORD` and `COMPATIBLE_AI_API_KEY`, and keep
+only non-secret settings in the file.
+
 That builds the Next.js standalone image and starts it with Postgres 17
 (data in the `db-data` volume, app on port 3000). Put your usual reverse
 proxy (Caddy/nginx/Traefik) in front for TLS.
 
 ### Receipt AI providers (optional)
 
-Copy `apps/web/.env.example` → `apps/web/.env` and set:
+Copy `.env.example` → `.env` and set:
 
-- `ANTHROPIC_API_KEY` — cloud vision (Claude)
-- `LOCAL_AI_BASE_URL` / `LOCAL_AI_MODEL` — self-hosted OpenAI-compatible
-  vision box (e.g. Ollama + Qwen2.5-VL behind a Cloudflare Tunnel)
-- `RECEIPT_AI_PROVIDERS` — failover order; prod: `local,anthropic,mock`
+- `COMPATIBLE_AI_BASE_URL` / `_API_KEY` / `_MODEL` — tier one: any endpoint
+  speaking the OpenAI `/chat/completions` wire format. Production is
+  OpenRouter; a Gemini compatibility endpoint or a self-hosted vision box work
+  the same way.
+- `COMPATIBLE_AI_ZDR=true` — request zero data retention, restricting routing
+  to zero-retention endpoints. Receipt images are never stored by HaalKhata,
+  so this hop is the entire privacy surface — also enforce ZDR account-wide in
+  OpenRouter, which fails closed.
+- `RECEIPT_AI_PROVIDERS` — failover order; default `compatible,mock`
+
+One key, one endpoint: OpenRouter fronts Claude, Gemini and everything else
+worth using here, so there is no provider-specific SDK in the codebase.
 
 ## Quality gates
 
