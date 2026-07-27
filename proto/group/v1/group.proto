@@ -11,7 +11,8 @@ service GroupService {
   rpc GetGroup(GetGroupRequest) returns (Group);
   // Adds people to a group in one call. Anyone you already know goes in by
   // id; email/phone is the fallback for somebody new, who gets a shadow user
-  // (claimable later by signing up with that email or number).
+  // (claimable later by signing up with that email or number). Any member may
+  // call this; only the owner may RemoveMember.
   rpc AddMembers(AddMembersRequest) returns (AddMembersResponse);
   rpc RemoveMember(RemoveMemberRequest) returns (google.protobuf.Empty);
 }

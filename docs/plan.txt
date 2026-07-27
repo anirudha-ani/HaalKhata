@@ -607,6 +607,13 @@ members of someone else's group have no friendship row between them, and
 `listFriends` surfaces them anyway once they share an expense. Guarding on
 friendship alone would show a name in the picker that the server then refuses.
 
+**Who may add.** Any member, not just the owner. A group is a shared ledger,
+and whoever notices somebody is missing from the dinner is rarely the person
+who happened to create the group — routing every addition through one account
+makes them a bottleneck for a change anyone present can see is correct.
+`RemoveMember` stays owner-only: it is the destructive direction, and it is
+already gated on the leaver's balance being settled.
+
 **Batch semantics.** Adding is idempotent per person: someone already in the
 group is *skipped*, not an error, so one already-member cannot fail the other
 four. The call fails only when nothing at all would happen — nobody picked, or

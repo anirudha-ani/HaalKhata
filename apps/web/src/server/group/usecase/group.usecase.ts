@@ -28,7 +28,7 @@ import { toGroup, toMember } from "./group.mapper";
 
 /**
  * Loads a group and asserts the caller is its owner; used for owner-only
- * actions like inviting or removing members.
+ * actions like removing a member.
  *
  * @param groupId - Id of the group to load.
  * @param userId - Id of the authenticated caller.
@@ -41,6 +41,29 @@ async function assertGroupOwner(groupId: string, userId: string) {
   if (!group) notFound("group not found");
   const role = await memberRole(groupId, userId);
   if (role !== OWNER_ROLE) denied("only the group owner can do this");
+  return group;
+}
+
+/**
+ * Loads a group and asserts the caller belongs to it.
+ *
+ * Adding people is a member action, not an owner one. A group is a shared
+ * ledger, and whoever notices that somebody is missing from the dinner is
+ * rarely the person who happened to create the group — routing every addition
+ * through one account makes them a bottleneck for a change anyone present can
+ * see is correct. Removal stays owner-only: it is the destructive direction,
+ * and it is already gated on a settled balance.
+ *
+ * @param groupId - Id of the group to load.
+ * @param userId - Id of the authenticated caller.
+ * @returns The loaded group row.
+ * @throws UsecaseError (not_found) when the group does not exist.
+ * @throws UsecaseError (permission_denied) when the caller is not a member.
+ */
+async function assertGroupMember(groupId: string, userId: string) {
+  const group = await findGroupById(groupId);
+  if (!group) notFound("group not found");
+  if (!(await isMember(groupId, userId))) denied("you are not a member of this group");
   return group;
 }
 
@@ -284,12 +307,14 @@ async function notifyAdded(
  * One event for the batch rather than one per person: a feed that reports a
  * single action three times is noise.
  *
+ * Open to any member, not just the owner — see {@link assertGroupMember}.
+ *
  * @param userId - Id of the authenticated caller performing the add.
  * @param input - Target group id, ids of people to add outright, and the
  *   optional email/phone (at most one) plus display name of a newcomer.
  * @returns `{ added }` — the people actually added, as Member message shapes.
  * @throws UsecaseError (not_found) when the group does not exist.
- * @throws UsecaseError (permission_denied) when the caller is not the owner,
+ * @throws UsecaseError (permission_denied) when the caller is not a member,
  *   or an id is somebody they neither have as a friend nor share a group with.
  * @throws UsecaseError (invalid_argument) when both email and phone are given,
  *   or when nobody was picked, or when everybody picked is already a member.
@@ -304,7 +329,7 @@ export async function addMembers(
     name?: string;
   },
 ) {
-  const group = await assertGroupOwner(input.groupId, userId);
+  const group = await assertGroupMember(input.groupId, userId);
 
   const pickedIds = input.userIds ?? [];
   await assertCanAdd(userId, pickedIds);
