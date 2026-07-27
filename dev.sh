@@ -584,8 +584,17 @@ main() {
   # the command in apps/web — but pnpm first echoes Node's
   # "../../.env not found" after resolving it from the workspace root, which
   # reads exactly like the failure this line exists to prevent.
+  #
+  # --turbopack because the webpack dev server cannot hot-replace a server
+  # module whose exports changed: delete a file, or rename/remove an export
+  # under src/server, and it keeps serving the old module until you restart
+  # ("X is not a function", "Attempted import error", and eventually a
+  # half-written .next that 500s everything). Turbopack tracks the module
+  # graph properly and survives those edits. `pnpm --filter @haalkhata/web
+  # dev:webpack` is the fallback if Turbopack ever misbehaves.
   pnpm --filter @haalkhata/web exec \
-    node --env-file-if-exists="$PWD/.env" node_modules/next/dist/bin/next dev -H "$web_host"
+    node --env-file-if-exists="$PWD/.env" node_modules/next/dist/bin/next dev \
+    --turbopack -H "$web_host"
 }
 
 main "$@"
