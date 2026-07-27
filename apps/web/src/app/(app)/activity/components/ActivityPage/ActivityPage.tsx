@@ -58,8 +58,8 @@ export function ActivityPage() {
       {activity.events.length === 0 && !isFiltered ? (
         <EmptyState
           icon={<Bell />}
-          title="Nothing yet"
-          hint="Expenses, payments and group changes involving you will show up here."
+          title="It's giving empty"
+          hint="Expenses, payments and group drama involving you will land here."
         />
       ) : (
         <>
@@ -96,7 +96,7 @@ export function ActivityPage() {
 
           {activity.visibleEvents.length === 0 ? (
             <p className="rounded-2xl border border-line bg-card px-4 py-8 text-center text-sm text-ink-soft">
-              Nothing matches that.
+              Crickets. 🦗 Nothing matches that.
             </p>
           ) : (
             dayGroups.map((group) => (
@@ -123,11 +123,11 @@ export function ActivityPage() {
               className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-line bg-card py-3 text-sm font-semibold text-ink-soft hover:border-brand-200 hover:text-brand-600 disabled:opacity-50"
             >
               <ChevronDown className="h-4 w-4" />
-              {activity.isLoadingMore ? "Loading…" : "Load more"}
+              {activity.isLoadingMore ? "Loading…" : "Show me more"}
             </button>
           ) : activity.events.length > 0 ? (
             <p className="pb-2 text-center text-xs text-ink-soft">
-              That&apos;s everything{activity.month ? ` for ${monthLabel(activity.month)}` : ""}.
+              You&apos;ve hit the bottom{activity.month ? ` of ${monthLabel(activity.month)}` : ""}. ✨
             </p>
           ) : null}
         </>
@@ -145,19 +145,22 @@ export function ActivityPage() {
  */
 function ActivityRow({ event }: { event: FeedEvent }) {
   const look = activityLook(event.type, event.inbound);
-  const Icon = look.icon;
   const isSettlement = event.type === "settlement";
   const when = timeOfDay(event.createdAt);
 
   return (
     <Link
       href={event.link || "#"}
-      className="flex items-center gap-3 rounded-xl border border-line bg-card px-3 py-2.5 transition-colors hover:border-brand-200"
+      className="group flex items-center gap-3 rounded-xl border border-line bg-card px-3 py-2.5 transition-colors hover:border-brand-200 hover:shadow-sm"
     >
+      {/* The emoji is decoration; the tile carries an accessible name so a
+          screen reader announces the kind of event rather than a glyph. */}
       <span
-        className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${look.tile}`}
+        role="img"
+        aria-label={look.label}
+        className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-lg leading-none transition-transform group-hover:scale-110 ${look.tile}`}
       >
-        <Icon className="h-4.5 w-4.5" />
+        {look.emoji}
       </span>
 
       <span className="min-w-0 flex-1">
@@ -167,6 +170,12 @@ function ActivityRow({ event }: { event: FeedEvent }) {
         <span className="mt-0.5 flex items-center gap-1.5 text-xs text-ink-soft">
           {event.actor ? <Avatar user={event.actor} size="xsmall" /> : null}
           {when}
+          {look.tag ? (
+            <>
+              <span aria-hidden="true">·</span>
+              <span className="truncate font-medium">{look.tag}</span>
+            </>
+          ) : null}
         </span>
       </span>
 
