@@ -18,6 +18,12 @@ export interface DraftLineItem {
   name: string;
   /** Raw money input for the item's own total (e.g. "12.50"). */
   total: string;
+  /**
+   * How many were bought. Only the receipt scanner reads this off the bill;
+   * hand-entered items leave it undefined and it saves as 1. It scales
+   * nothing — `total` is always the whole line, not the unit price.
+   */
+  quantity?: number;
   /** Share weight per assigned user id; every value is a positive integer. */
   assignees: Record<string, number>;
 }
@@ -223,7 +229,7 @@ export function buildItemsPayload(items: DraftLineItem[]) {
   return items.map((item) => ({
     id: "",
     name: item.name.trim() || "Item",
-    quantity: 1,
+    quantity: Math.max(1, item.quantity ?? 1),
     totalCents: parseMoneyInput(item.total) ?? 0,
     assignments: Object.entries(item.assignees)
       .filter(([, weight]) => weight > 0)

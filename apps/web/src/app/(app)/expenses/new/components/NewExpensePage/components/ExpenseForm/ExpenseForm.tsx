@@ -1,9 +1,9 @@
 "use client";
 /** New/edit expense form: context picker, basics (amount/date/category), payer + split editors, submit. */
 
-import Link from "next/link";
 import { CATEGORIES } from "@haalkhata/shared/money/money.constants";
 import { centsToInput } from "@haalkhata/shared/money/money";
+import { PeoplePicker } from "@/components/people/PeoplePicker";
 import type { ExpenseFormInitial } from "../../../../utils/initialValues";
 import { PayerEditor } from "../PayerEditor/PayerEditor";
 import { SplitEditor } from "../SplitEditor/SplitEditor";
@@ -41,47 +41,17 @@ export function ExpenseForm({
     <div className="mx-auto max-w-xl space-y-6">
       <h1 className="text-3xl font-bold">{form.isEdit ? "Edit expense" : "Add expense"}</h1>
 
-      <section className="space-y-3">
-        <select
-          value={form.context}
-          onChange={(event) => form.setContext(event.target.value)}
-          disabled={form.isEdit}
-          aria-label="Who is this with?"
-          className={inputClass}
-        >
-          <option value="" disabled>
-            Who is this with?
-          </option>
-          {form.groups.length > 0 ? (
-            <optgroup label="Groups">
-              {form.groups.map((summary) =>
-                summary.group ? (
-                  <option key={summary.group.id} value={`g:${summary.group.id}`}>
-                    {summary.group.name}
-                  </option>
-                ) : null,
-              )}
-            </optgroup>
-          ) : null}
-          {form.friends.length > 0 ? (
-            <optgroup label="Friends (one-off)">
-              {form.friends.map((friend) =>
-                friend.user ? (
-                  <option key={friend.user.id} value={`f:${friend.user.id}`}>
-                    {friend.user.name}
-                  </option>
-                ) : null,
-              )}
-            </optgroup>
-          ) : null}
-        </select>
-        {form.groups.length === 0 && form.friends.length === 0 ? (
-          <p className="text-sm text-ink-soft">
-            You need a <Link href="/groups" className="font-medium text-brand-600">group</Link> or a{" "}
-            <Link href="/friends" className="font-medium text-brand-600">friend</Link> first.
-          </p>
-        ) : null}
-      </section>
+      <PeoplePicker
+        me={form.me}
+        people={form.people}
+        friends={form.friends.flatMap((friendship) => (friendship.user ? [friendship.user] : []))}
+        groups={form.groups.flatMap((summary) => (summary.group ? [summary.group] : []))}
+        groupId={form.groupId}
+        friendIds={form.friendIds}
+        onGroupChange={form.setGroupId}
+        onToggleFriend={form.toggleFriend}
+        disabled={form.isEdit}
+      />
 
       <section className="space-y-3">
         <input

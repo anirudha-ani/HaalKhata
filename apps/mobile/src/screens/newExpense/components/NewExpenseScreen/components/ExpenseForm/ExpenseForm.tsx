@@ -40,31 +40,12 @@ export function ExpenseForm({
 
   return (
     <View style={styles.form}>
-      {/* Context picker */}
+      {/* Who's on this: any number of friends, or one group instead. */}
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>WHO IS THIS WITH?</Text>
-        {form.groups.length > 0 ? (
-          <View style={styles.contextGroup}>
-            <Text style={styles.contextLabel}>Groups</Text>
-            <View style={styles.chips}>
-              {form.groups.map((summary) =>
-                summary.group ? (
-                  <Chip
-                    key={summary.group.id}
-                    label={summary.group.name}
-                    onPress={() =>
-                      form.isEdit ? undefined : form.setContext(`g:${summary.group?.id}`)
-                    }
-                    selected={form.context === `g:${summary.group.id}`}
-                  />
-                ) : null,
-              )}
-            </View>
-          </View>
-        ) : null}
+        <Text style={styles.sectionTitle}>WHO&apos;S ON THIS?</Text>
         {form.friends.length > 0 ? (
           <View style={styles.contextGroup}>
-            <Text style={styles.contextLabel}>Friends (one-off)</Text>
+            <Text style={styles.contextLabel}>Tap everyone sharing this</Text>
             <View style={styles.chips}>
               {form.friends.map((friend) =>
                 friend.user ? (
@@ -72,9 +53,34 @@ export function ExpenseForm({
                     key={friend.user.id}
                     label={friend.user.name}
                     onPress={() =>
-                      form.isEdit ? undefined : form.setContext(`f:${friend.user?.id}`)
+                      form.isEdit ? undefined : form.toggleFriend(friend.user?.id ?? "")
                     }
-                    selected={form.context === `f:${friend.user.id}`}
+                    selected={form.friendIds.includes(friend.user.id)}
+                  />
+                ) : null,
+              )}
+            </View>
+          </View>
+        ) : null}
+        {form.groups.length > 0 ? (
+          <View style={styles.contextGroup}>
+            <Text style={styles.contextLabel}>…or a group — its members become the cast</Text>
+            <View style={styles.chips}>
+              {form.groups.map((summary) =>
+                summary.group ? (
+                  <Chip
+                    key={summary.group.id}
+                    label={summary.group.name}
+                    // Re-tapping the selected group clears it, which is the
+                    // only way back to a one-off with no extra control.
+                    onPress={() =>
+                      form.isEdit
+                        ? undefined
+                        : form.setGroupId(
+                            form.groupId === summary.group?.id ? "" : (summary.group?.id ?? ""),
+                          )
+                    }
+                    selected={form.groupId === summary.group.id}
                   />
                 ) : null,
               )}

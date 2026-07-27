@@ -8,7 +8,7 @@ import {
   checkSplit,
   itemizedTotals,
   type DraftLineItem,
-} from "./splitForm";
+} from "@/lib/expense/splitForm";
 
 /**
  * Builds a draft line item with sensible defaults for the fields a test

@@ -38,23 +38,9 @@ export function ScanScreen() {
         <Spinner />
       ) : (
         <>
-          {/* Context picker */}
+          {/* Who's on this: any number of friends, or one group instead. */}
           <View style={styles.contextSection}>
-            <Text style={styles.sectionLabel}>WHO IS THIS WITH?</Text>
-            {scan.groups.length > 0 ? (
-              <View style={styles.chipRow}>
-                {scan.groups.map((summary) =>
-                  summary.group ? (
-                    <Chip
-                      key={summary.group.id}
-                      label={summary.group.name}
-                      onPress={() => scan.setContext(`g:${summary.group?.id}`)}
-                      selected={scan.context === `g:${summary.group.id}`}
-                    />
-                  ) : null,
-                )}
-              </View>
-            ) : null}
+            <Text style={styles.sectionLabel}>WHO&apos;S ON THIS?</Text>
             {scan.friends.length > 0 ? (
               <View style={styles.chipRow}>
                 {scan.friends.map((friend) =>
@@ -62,12 +48,37 @@ export function ScanScreen() {
                     <Chip
                       key={friend.user.id}
                       label={friend.user.name}
-                      onPress={() => scan.setContext(`f:${friend.user?.id}`)}
-                      selected={scan.context === `f:${friend.user.id}`}
+                      onPress={() => scan.toggleFriend(friend.user?.id ?? "")}
+                      selected={scan.friendIds.includes(friend.user.id)}
                     />
                   ) : null,
                 )}
               </View>
+            ) : null}
+            {scan.groups.length > 0 ? (
+              <>
+                <Text style={styles.sectionHint}>
+                  …or put it in a group — its members become the whole cast.
+                </Text>
+                <View style={styles.chipRow}>
+                  {scan.groups.map((summary) =>
+                    summary.group ? (
+                      <Chip
+                        key={summary.group.id}
+                        label={summary.group.name}
+                        // Re-tapping the selected group clears it, which is the
+                        // only way back to a one-off with no extra control.
+                        onPress={() =>
+                          scan.setGroupId(
+                            scan.groupId === summary.group?.id ? "" : (summary.group?.id ?? ""),
+                          )
+                        }
+                        selected={scan.groupId === summary.group.id}
+                      />
+                    ) : null,
+                  )}
+                </View>
+              </>
             ) : null}
           </View>
 
@@ -131,8 +142,8 @@ export function ScanScreen() {
                   unassigned
                 </Text>
               ) : null}
-              {scan.context === "" ? (
-                <Text style={styles.warning}>choose a group or friend above</Text>
+              {!scan.hasParticipants ? (
+                <Text style={styles.warning}>add the people this receipt is with, above</Text>
               ) : null}
               <Button
                 busy={scan.isSaving}
@@ -204,6 +215,10 @@ const styles = StyleSheet.create({
   },
   saveSection: {
     gap: spacing.sm,
+  },
+  sectionHint: {
+    color: colors.inkSoft,
+    fontSize: 13,
   },
   sectionLabel: {
     color: colors.inkSoft,

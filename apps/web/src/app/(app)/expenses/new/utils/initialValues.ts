@@ -2,12 +2,14 @@
 
 import type { Expense } from "@haalkhata/protogen/expense/v1/expense_pb";
 import { centsToInput, todayISO } from "@haalkhata/shared/money/money";
-import type { DraftLineItem, FormSplitType } from "./splitForm";
+import type { DraftLineItem, FormSplitType } from "@/lib/expense/splitForm";
 
 /** Initial values for every field of the expense form. */
 export interface ExpenseFormInitial {
-  /** Selected context: "g:<groupId>", "f:<friendId>", or "" for none. */
-  context: string;
+  /** Selected group id, or "" for a one-off (non-group) expense. */
+  groupId: string;
+  /** Ids of the ad-hoc participants besides you; empty when a group is selected. */
+  friendIds: string[];
   /** Expense description text. */
   description: string;
   /** Raw amount input string (e.g. "12.50"), "" when empty. */
@@ -40,11 +42,11 @@ export interface ExpenseFormInitial {
 
 /**
  * Builds the expense form's initial state: creation defaults (optionally
- * preselecting a group or friend context) when no expense is given, otherwise
- * the field values of the expense being edited.
+ * preselecting a group or a friend) when no expense is given, otherwise the
+ * field values of the expense being edited.
  *
- * @param params - Route search params: `initialGroupId` / `initialFriendId`
- *   preselect the context ("" = none).
+ * @param params - Route search params: `initialGroupId` preselects a group,
+ *   `initialFriendId` seeds the one-off cast with that friend ("" = none).
  * @param currentUserId - Id of the signed-in user (default single payer).
  * @param expense - The expense being edited, or undefined when creating.
  * @returns The fully-resolved initial form values.
@@ -56,11 +58,9 @@ export function buildInitialValues(
 ): ExpenseFormInitial {
   if (!expense) {
     return {
-      context: params.initialGroupId
-        ? `g:${params.initialGroupId}`
-        : params.initialFriendId
-          ? `f:${params.initialFriendId}`
-          : "",
+      groupId: params.initialGroupId,
+      friendIds:
+        !params.initialGroupId && params.initialFriendId ? [params.initialFriendId] : [],
       description: "",
       amount: "",
       date: todayISO(),
@@ -79,8 +79,20 @@ export function buildInitialValues(
   }
 
   const multiPayer = expense.payers.length > 1;
+  // A one-off expense carries its cast nowhere but in its own rows, so recover
+  // it from the splits and payers. Without this the edit form would load with
+  // only you on it and quietly re-save the expense as a solo one.
+  const participantIds = [
+    ...new Set([
+      ...expense.splits.map((split) => split.userId),
+      ...expense.payers.map((payer) => payer.userId),
+    ]),
+  ];
   return {
-    context: expense.groupId ? `g:${expense.groupId}` : "",
+    groupId: expense.groupId,
+    friendIds: expense.groupId
+      ? []
+      : participantIds.filter((userId) => userId !== currentUserId),
     description: expense.description,
     amount: centsToInput(expense.amountCents),
     date: expense.expenseDate,

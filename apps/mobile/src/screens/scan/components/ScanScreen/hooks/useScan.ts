@@ -49,11 +49,12 @@ function nextDraftKey(): string {
  * itemized expense.
  *
  * @param initialGroupId - Group id from the ?group param; preselects that
- *   group in the "who is this with?" picker (empty string for none).
- * @returns Everything from {@link useScanAPI} plus the picker `context`, the
- *   picked `photo` and `pickPhoto` (camera or library), `parseNow`/`isParsing`
- *   for the AI step, the draft fields (`merchant`, `date`, `items`, `tax`,
- *   `tip`, `payerId`) with their editing helpers, derived totals
+ *   group in the "who's on this?" picker (empty string for none).
+ * @returns Everything from {@link useScanAPI} plus the picker state
+ *   (`groupId`/`setGroupId`, `friendIds`/`toggleFriend`), the picked `photo`
+ *   and `pickPhoto` (camera or library), `parseNow`/`isParsing` for the AI
+ *   step, the draft fields (`merchant`, `date`, `items`, `tax`, `tip`,
+ *   `payerId`) with their editing helpers, derived totals
  *   (`itemsTotalCents`, `taxCents`, `tipCents`, `grandTotalCents`),
  *   `unassignedCount`, the `people` who can be assigned, and
  *   `canSave`/`save`/`isSaving`/`error` for submission.
@@ -62,7 +63,8 @@ export function useScan(initialGroupId: string) {
   const scanAPI = useScanAPI();
   const router = useRouter();
 
-  const [context, setContext] = useState(initialGroupId ? `g:${initialGroupId}` : "");
+  const [groupId, setGroupId] = useState(initialGroupId);
+  const [friendIds, setFriendIds] = useState<string[]>([]);
   const [photo, setPhoto] = useState<ReceiptPhoto | null>(null);
   const [provider, setProvider] = useState("");
   const [error, setError] = useState("");
@@ -75,29 +77,71 @@ export function useScan(initialGroupId: string) {
   const [tipInput, setTipInput] = useState("0.00");
   const [payerId, setPayerId] = useState("");
 
-  // The picker encodes its choice as "g:<groupId>" or "f:<friendId>".
-  const groupId = context.startsWith("g:") ? context.slice(2) : "";
-  const friendId = context.startsWith("f:") ? context.slice(2) : "";
   const selectedGroup = scanAPI.groups.find(
     (groupSummary) => groupSummary.group?.id === groupId,
   )?.group;
 
-  /** Everyone items can be assigned to: group members, or you plus the chosen friend. */
+  /**
+   * Everyone items can be assigned to, you first: a group's whole roster when
+   * a group is selected, otherwise you plus the people picked by hand.
+   */
   const people: User[] = useMemo(() => {
-    if (selectedGroup) {
-      return selectedGroup.members.flatMap((member) => (member.user ? [member.user] : []));
-    }
-    if (friendId && scanAPI.me) {
-      const friend = scanAPI.friends.find(
-        (friendBalance) => friendBalance.user?.id === friendId,
-      )?.user;
-      return friend ? [scanAPI.me, friend] : [scanAPI.me];
-    }
-    return scanAPI.me ? [scanAPI.me] : [];
-  }, [selectedGroup, friendId, scanAPI.friends, scanAPI.me]);
+    const currentUser = scanAPI.me;
+    if (!currentUser) return [];
+    const others = selectedGroup
+      ? selectedGroup.members.flatMap((member) => (member.user ? [member.user] : []))
+      : friendIds.flatMap((userId) => {
+          const friend = scanAPI.friends.find(
+            (friendBalance) => friendBalance.user?.id === userId,
+          )?.user;
+          return friend ? [friend] : [];
+        });
+    return [currentUser, ...others.filter((person) => person.id !== currentUser.id)];
+  }, [selectedGroup, friendIds, scanAPI.friends, scanAPI.me]);
 
   // Defaults to the signed-in user until explicitly changed.
   const effectivePayerId = payerId || scanAPI.me?.id || "";
+
+  /**
+   * Adds or removes someone from a one-off receipt. Dropping a person also
+   * clears their item assignments and hands the payer role back to you, so a
+   * person no longer on the receipt cannot reach the request.
+   *
+   * @param userId - Id of the person to toggle on this receipt.
+   */
+  const toggleFriend = (userId: string) => {
+    if (!friendIds.includes(userId)) {
+      setFriendIds([...friendIds, userId]);
+      return;
+    }
+    setFriendIds(friendIds.filter((existingId) => existingId !== userId));
+    setItems((current) =>
+      current
+        ? current.map((item) => {
+            const { [userId]: _dropped, ...assignees } = item.assignees;
+            return { ...item, assignees };
+          })
+        : current,
+    );
+    setPayerId((current) => (current === userId ? "" : current));
+  };
+
+  /**
+   * Selects a group, or clears it by re-tapping the selected one. A group
+   * supplies the whole cast — the server rejects a group expense with a
+   * non-member on it — so the hand-picked people and every item assignment
+   * referring to them are cleared.
+   *
+   * @param nextGroupId - Id of the group to attach the receipt to, "" for none.
+   */
+  const changeGroup = (nextGroupId: string) => {
+    setGroupId(nextGroupId);
+    setFriendIds([]);
+    setPayerId("");
+    setItems((current) =>
+      current ? current.map((item) => ({ ...item, assignees: {} })) : current,
+    );
+  };
 
   /**
    * Captures or picks a receipt photo and resets any previously parsed draft.
@@ -125,7 +169,11 @@ export function useScan(initialGroupId: string) {
     setPhoto({
       uri: asset.uri,
       base64: asset.base64,
-      mediaType: asset.mimeType ?? "image/jpeg",
+      // Always JPEG: PICKER_OPTIONS sets `quality`, which makes the picker
+      // re-encode. Passing through asset.mimeType would label an iPhone photo
+      // "image/heic" while the bytes are already JPEG, and the server's
+      // magic-byte check would reject its own successfully converted image.
+      mediaType: "image/jpeg",
     });
     setItems(null);
     setProvider("");
@@ -241,9 +289,11 @@ export function useScan(initialGroupId: string) {
     (item) => !Object.values(item.assignees).some(Boolean),
   ).length;
 
-  // Saving requires a context, at least one priced item, no unassigned items, and a payer.
+  // Saving requires a group or at least one other person, at least one priced
+  // item, no unassigned items, and a payer.
+  const hasParticipants = groupId !== "" || friendIds.length > 0;
   const canSave =
-    context !== "" &&
+    hasParticipants &&
     items !== null &&
     items.length > 0 &&
     itemsTotalCents > 0 &&
@@ -287,8 +337,11 @@ export function useScan(initialGroupId: string) {
 
   return {
     ...scanAPI,
-    context,
-    setContext,
+    groupId,
+    setGroupId: changeGroup,
+    friendIds,
+    toggleFriend,
+    hasParticipants,
     photo,
     pickPhoto,
     parseNow,

@@ -16,9 +16,21 @@ import {
   previewItemizedShares,
   type DraftLineItem,
   type FormSplitType,
-} from "../../../utils/splitForm";
+} from "@/lib/expense/splitForm";
 import type { ExpenseFormInitial } from "../../../utils/initialValues";
 import type { useNewExpenseAPI } from "./useNewExpenseAPI";
+
+/**
+ * Returns a copy of `source` without `keyToDrop`.
+ *
+ * @param source - The record to copy.
+ * @param keyToDrop - Key to leave out of the copy.
+ * @returns A new record with every other entry of `source`.
+ */
+function omitKey<Value>(source: Record<string, Value>, keyToDrop: string): Record<string, Value> {
+  const { [keyToDrop]: _dropped, ...rest } = source;
+  return rest;
+}
 
 /**
  * Expense form state. All fields initialize from `initial` (built once from
@@ -38,7 +50,8 @@ export function useNewExpense(
 ) {
   const router = useRouter();
 
-  const [context, setContext] = useState(initial.context);
+  const [groupId, setGroupId] = useState(initial.groupId);
+  const [friendIds, setFriendIds] = useState(initial.friendIds);
   const [description, setDescription] = useState(initial.description);
   const [amount, setAmount] = useState(initial.amount);
   const [date, setDate] = useState(initial.date);
@@ -58,33 +71,95 @@ export function useNewExpense(
   const [unevenShares, setUnevenShares] = useState(false);
   const [error, setError] = useState("");
 
-  const groupId = context.startsWith("g:") ? context.slice(2) : "";
-  const friendId = context.startsWith("f:") ? context.slice(2) : "";
   const selectedGroup = expenseAPI.groups.find(
     (groupSummary) => groupSummary.group?.id === groupId,
   )?.group;
 
-  /** Everyone who can participate in the current context. */
-  const people: User[] = useMemo(() => {
-    if (selectedGroup) {
-      return selectedGroup.members.flatMap((member) => (member.user ? [member.user] : []));
+  /**
+   * Every user this form can name, so an ad-hoc participant still resolves
+   * when they are not in the friends list — group rosters and the edited
+   * expense's own users are equally valid sources.
+   */
+  const usersById = useMemo(() => {
+    const directory = new Map<string, User>();
+    for (const groupSummary of expenseAPI.groups) {
+      for (const member of groupSummary.group?.members ?? []) {
+        if (member.user) directory.set(member.user.id, member.user);
+      }
     }
-    if (friendId && expenseAPI.me) {
-      const friend = expenseAPI.friends.find(
-        (friendship) => friendship.user?.id === friendId,
-      )?.user;
-      return friend ? [expenseAPI.me, friend] : [expenseAPI.me];
+    for (const person of expenseAPI.editing?.users ?? []) directory.set(person.id, person);
+    for (const friendship of expenseAPI.friends) {
+      if (friendship.user) directory.set(friendship.user.id, friendship.user);
     }
-    return expenseAPI.me ? [expenseAPI.me] : [];
-  }, [selectedGroup, friendId, expenseAPI.friends, expenseAPI.me]);
+    return directory;
+  }, [expenseAPI.groups, expenseAPI.friends, expenseAPI.editing]);
 
-  // Changing the context resets participant selection to "everyone". Item
-  // rows survive, but their assignees refer to the old cast and are cleared.
-  const changeContext = (next: string) => {
-    setContext(next);
+  /**
+   * Everyone on this expense, you first: a group's whole roster when a group
+   * is selected, otherwise you plus the ad-hoc people picked by hand.
+   */
+  const people: User[] = useMemo(() => {
+    const currentUser = expenseAPI.me;
+    if (!currentUser) return [];
+    const others = selectedGroup
+      ? selectedGroup.members.flatMap((member) => (member.user ? [member.user] : []))
+      : friendIds.flatMap((userId) => {
+          const person = usersById.get(userId);
+          return person ? [person] : [];
+        });
+    return [currentUser, ...others.filter((person) => person.id !== currentUser.id)];
+  }, [selectedGroup, friendIds, usersById, expenseAPI.me]);
+
+  /**
+   * Drops one person from every per-user map. Without this a removed
+   * participant would still be posted: `submit` sends `payerAmounts` as-is and
+   * `buildItemsPayload` reads each item's `assignees` as-is.
+   *
+   * @param userId - Id of the person leaving the expense.
+   */
+  const forgetPerson = (userId: string) => {
+    setCheckedOverride((current) => (current ? omitKey(current, userId) : current));
+    setSplitInputs((current) => omitKey(current, userId));
+    setPayerAmounts((current) => omitKey(current, userId));
+    setItems((current) =>
+      current.map((item) => ({ ...item, assignees: omitKey(item.assignees, userId) })),
+    );
+    setSinglePayerId((current) => (current === userId ? (expenseAPI.me?.id ?? "") : current));
+  };
+
+  /**
+   * Adds or removes an ad-hoc participant.
+   *
+   * @param userId - Id of the person to toggle on this expense.
+   */
+  const toggleFriend = (userId: string) => {
+    if (friendIds.includes(userId)) {
+      setFriendIds(friendIds.filter((existingId) => existingId !== userId));
+      forgetPerson(userId);
+      return;
+    }
+    setFriendIds([...friendIds, userId]);
+    // Someone added to the expense shares it by default. Only needed once the
+    // user has touched a participation checkbox — until then `checked` is
+    // derived from `people` and already has them in.
+    setCheckedOverride((current) => (current ? { ...current, [userId]: true } : current));
+  };
+
+  /**
+   * Selects a group (or "" for a one-off). A group supplies the whole cast —
+   * the server rejects a group expense with a non-member on it — so the
+   * hand-picked people are dropped, along with every per-person value that
+   * referred to the old cast. Item rows survive; their assignees do not.
+   *
+   * @param nextGroupId - Id of the group to attach the expense to, "" for none.
+   */
+  const changeGroup = (nextGroupId: string) => {
+    setGroupId(nextGroupId);
+    setFriendIds([]);
     setCheckedOverride(null);
     setSplitInputs({});
     setPayerAmounts({});
+    setSinglePayerId(expenseAPI.me?.id ?? "");
     setItems((current) => current.map((item) => ({ ...item, assignees: {} })));
   };
 
@@ -183,8 +258,11 @@ export function useNewExpense(
     ? checkItemized(items)
     : checkSplit({ splitType, totalCents, participantIds, inputs: splitInputs });
   const payerCheck = checkPayers(totalCents, multiPayer, payerAmounts);
+  // A group, or at least one other person — mirrors exactly what the picker
+  // shows, so the button never disables for a reason that isn't on screen.
+  const hasParticipants = groupId !== "" || friendIds.length > 0;
   const canSubmit =
-    context !== "" &&
+    hasParticipants &&
     description.trim() !== "" &&
     totalCents !== null &&
     totalCents > 0 &&
@@ -234,8 +312,11 @@ export function useNewExpense(
     groups: expenseAPI.groups,
     friends: expenseAPI.friends,
     isEdit: editExpenseId !== "",
-    context,
-    setContext: changeContext,
+    groupId,
+    setGroupId: changeGroup,
+    friendIds,
+    toggleFriend,
+    hasParticipants,
     description,
     setDescription,
     amount,

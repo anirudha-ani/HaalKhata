@@ -1,85 +1,143 @@
 "use client";
-/** Composite hook for the scan flow: photo → parsed draft → item assignment → save as itemized expense. */
+/** Composite hook for the scan flow: photo → parsed draft → item grid → save as itemized expense. */
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { User } from "@haalkhata/protogen/common/v1/common_pb";
 import { errorMessage } from "@/lib/api/connect";
 import { centsToInput, parseMoneyInput, todayISO } from "@haalkhata/shared/money/money";
+import {
+  buildItemsPayload,
+  checkItemized,
+  checkPayers,
+  itemizedTotals,
+  previewItemizedShares,
+  type DraftLineItem,
+} from "@/lib/expense/splitForm";
 import { useScanAPI } from "./useScanAPI";
 
-/** One editable line item on the scanned-receipt draft. */
-export interface DraftItem {
-  /** stable client-side key (items have no server id until saved) */
-  key: string;
-  /** Item name as parsed from the receipt or typed by the user. */
-  name: string;
-  /** How many of this item were bought (minimum 1). */
-  quantity: number;
-  /** raw money input, e.g. "14.50" */
-  total: string;
-  /** Map of user id to whether that person shares this item. */
-  assignees: Record<string, boolean>;
-}
-
 /**
- * Drives the whole receipt-scanning flow: choosing who the expense is with,
+ * Drives the whole receipt-scanning flow: choosing who the receipt is with,
  * picking and previewing a photo, parsing it with AI into an editable draft
- * (items, tax, tip), assigning items to people, and saving everything as an
- * itemized expense.
+ * (items, tax, tip), assigning items to people in the same grid the expense
+ * form uses, and saving everything as an itemized expense.
  *
  * @param initialGroupId - Group id from the ?group search param; preselects
- *   that group in the "who is this with?" picker (empty string for none).
- * @returns Everything from {@link useScanAPI} plus the picker `context`, file
- *   `previewUrl` and `pickFile`, `parseNow`/`isParsing` for the AI step, the
- *   draft fields (`merchant`, `date`, `items`, `tax`, `tip`, `payerId`) with
- *   their editing helpers, derived totals (`itemsTotalCents`, `taxCents`,
- *   `tipCents`, `grandTotalCents`), `unassignedCount`, the `people` who can be
- *   assigned, and `canSave`/`save`/`isSaving`/`error` for submission.
+ *   that group in the "who's on this?" picker (empty string for none).
+ * @param initialFriendId - Friend id from the ?friend search param; seeds the
+ *   one-off cast with that person (empty string for none).
+ * @returns Everything from {@link useScanAPI} plus the picker state
+ *   (`groupId`/`setGroupId`, `friendIds`/`toggleFriend`), the upload
+ *   (`pickFile`, `previewUrl`, `receiptUrl`), `parseNow`/`isParsing` for the AI
+ *   step, the draft (`merchant`, `date`, `items`, `tax`, `tip`) with its
+ *   editing helpers, the payer state (`multiPayer`, `singlePayerId`,
+ *   `payerAmounts`), derived totals and `previewShares`, the `splitCheck` /
+ *   `payerCheck` validations, and `canSave`/`save`/`isSaving`/`error`.
  */
-export function useScan(initialGroupId: string) {
+export function useScan(initialGroupId: string, initialFriendId = "") {
   const scanAPI = useScanAPI();
   const router = useRouter();
 
-  const [context, setContext] = useState(initialGroupId ? `g:${initialGroupId}` : "");
+  const [groupId, setGroupId] = useState(initialGroupId);
+  const [friendIds, setFriendIds] = useState<string[]>(
+    !initialGroupId && initialFriendId ? [initialFriendId] : [],
+  );
   const [file, setFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState("");
+  const [receiptUrl, setReceiptUrl] = useState("");
   const [provider, setProvider] = useState("");
   const [error, setError] = useState("");
 
-  // draft (null until a receipt has been parsed)
+  // Draft (items stay null until a receipt has been parsed).
   const [merchant, setMerchant] = useState("");
   const [date, setDate] = useState(todayISO());
-  const [items, setItems] = useState<DraftItem[] | null>(null);
+  const [items, setItems] = useState<DraftLineItem[] | null>(null);
   const [taxInput, setTaxInput] = useState("0.00");
   const [tipInput, setTipInput] = useState("0.00");
-  const [payerId, setPayerId] = useState("");
+  const [unevenShares, setUnevenShares] = useState(false);
+  const [multiPayer, setMultiPayer] = useState(false);
+  const [singlePayerId, setSinglePayerId] = useState("");
+  const [payerAmounts, setPayerAmounts] = useState<Record<string, string>>({});
 
-  // The picker encodes its choice as "g:<groupId>" or "f:<friendId>".
-  const groupId = context.startsWith("g:") ? context.slice(2) : "";
-  const friendId = context.startsWith("f:") ? context.slice(2) : "";
   const selectedGroup = scanAPI.groups.find(
     (groupSummary) => groupSummary.group?.id === groupId,
   )?.group;
 
-  /** Everyone items can be assigned to: group members, or you plus the chosen friend. */
+  /**
+   * Everyone items can be assigned to, you first: a group's whole roster when
+   * a group is selected, otherwise you plus the people picked by hand.
+   */
   const people: User[] = useMemo(() => {
-    if (selectedGroup) {
-      return selectedGroup.members.flatMap((member) => (member.user ? [member.user] : []));
-    }
-    if (friendId && scanAPI.me) {
-      const friend = scanAPI.friends.find(
-        (friendBalance) => friendBalance.user?.id === friendId,
-      )?.user;
-      return friend ? [scanAPI.me, friend] : [scanAPI.me];
-    }
-    return scanAPI.me ? [scanAPI.me] : [];
-  }, [selectedGroup, friendId, scanAPI.friends, scanAPI.me]);
+    const currentUser = scanAPI.me;
+    if (!currentUser) return [];
+    const others = selectedGroup
+      ? selectedGroup.members.flatMap((member) => (member.user ? [member.user] : []))
+      : friendIds.flatMap((userId) => {
+          const friend = scanAPI.friends.find(
+            (friendBalance) => friendBalance.user?.id === userId,
+          )?.user;
+          return friend ? [friend] : [];
+        });
+    return [currentUser, ...others.filter((person) => person.id !== currentUser.id)];
+  }, [selectedGroup, friendIds, scanAPI.friends, scanAPI.me]);
 
   // Defaults to the signed-in user until explicitly changed.
-  const effectivePayerId = payerId || scanAPI.me?.id || "";
+  const effectivePayerId = singlePayerId || scanAPI.me?.id || "";
+
+  /**
+   * Adds or removes someone from a one-off receipt. Somebody joining goes onto
+   * every line, matching the grid's "new items are shared by everyone" default
+   * from the other direction — you untick their exceptions. Somebody leaving
+   * is scrubbed from every line and from the payer state, so a person no
+   * longer on the receipt cannot reach the request.
+   *
+   * @param userId - Id of the person to toggle on this receipt.
+   */
+  const toggleFriend = (userId: string) => {
+    if (!friendIds.includes(userId)) {
+      setFriendIds([...friendIds, userId]);
+      setItems((current) =>
+        current
+          ? current.map((item) => ({ ...item, assignees: { ...item.assignees, [userId]: 1 } }))
+          : current,
+      );
+      return;
+    }
+    setFriendIds(friendIds.filter((existingId) => existingId !== userId));
+    setItems((current) =>
+      current
+        ? current.map((item) => {
+            const { [userId]: _dropped, ...assignees } = item.assignees;
+            return { ...item, assignees };
+          })
+        : current,
+    );
+    setPayerAmounts((current) => {
+      const { [userId]: _dropped, ...rest } = current;
+      return rest;
+    });
+    setSinglePayerId((current) => (current === userId ? "" : current));
+  };
+
+  /**
+   * Selects a group (or "" for a one-off receipt). A group supplies the whole
+   * cast — the server rejects a group expense with a non-member on it — so the
+   * hand-picked people, their item assignments and their paid amounts go.
+   *
+   * @param nextGroupId - Id of the group to attach the receipt to, "" for none.
+   */
+  const changeGroup = (nextGroupId: string) => {
+    setGroupId(nextGroupId);
+    setFriendIds([]);
+    setSinglePayerId("");
+    setPayerAmounts({});
+    setItems((current) =>
+      current ? current.map((item) => ({ ...item, assignees: {} })) : current,
+    );
+  };
 
   useEffect(() => () => URL.revokeObjectURL(previewUrl), [previewUrl]);
+  useEffect(() => () => URL.revokeObjectURL(receiptUrl), [receiptUrl]);
 
   /**
    * Stores a newly chosen receipt photo, swaps the object-URL preview, and
@@ -93,10 +151,24 @@ export function useScan(initialGroupId: string) {
       URL.revokeObjectURL(previousUrl);
       return URL.createObjectURL(picked);
     });
+    setReceiptUrl((previousUrl) => {
+      URL.revokeObjectURL(previousUrl);
+      return "";
+    });
     setItems(null);
     setProvider("");
     setError("");
   };
+
+  /**
+   * Whether the browser can actually paint this file in an `<img>`. HEIC is
+   * accepted and transcoded server-side, but Chrome and Firefox cannot decode
+   * it, so rendering the object URL would show a broken-image icon for a file
+   * that is perfectly fine. Once parsed, `receiptUrl` (the server's JPEG)
+   * takes over and this no longer matters.
+   */
+  const isPreviewRenderable =
+    file !== null && !/^image\/hei[cf]$/i.test(file.type) && !/\.hei[cf]$/i.test(file.name);
 
   /** Sends the chosen photo to the AI parser and loads the result into the draft. */
   const parseNow = () => {
@@ -111,15 +183,30 @@ export function useScan(initialGroupId: string) {
         if (receipt.date) setDate(receipt.date);
         setTaxInput(centsToInput(receipt.taxCents));
         setTipInput(centsToInput(receipt.tipCents));
+        // Parsed rows start shared by everyone on the receipt: splitting the
+        // whole bill evenly is the common case, so it costs zero taps and the
+        // user only touches the exceptions.
+        const everyone = Object.fromEntries(people.map((person) => [person.id, 1]));
         setItems(
           receipt.items.map((item) => ({
             key: crypto.randomUUID(),
             name: item.name,
             quantity: item.quantity,
             total: centsToInput(item.totalCents),
-            assignees: {},
+            assignees: { ...everyone },
           })),
         );
+        // The server hands back the JPEG it actually showed the model — the
+        // upload after rotation, downscaling and HEIC transcoding. Showing that
+        // rather than the raw file is what makes an iPhone receipt viewable at
+        // all, and it is the image the extracted numbers came from.
+        if (result.normalizedImage.length > 0) {
+          const blob = new Blob([result.normalizedImage as BlobPart], { type: "image/jpeg" });
+          setReceiptUrl((previousUrl) => {
+            URL.revokeObjectURL(previousUrl);
+            return URL.createObjectURL(blob);
+          });
+        }
       },
       onError: (mutationError) => setError(errorMessage(mutationError)),
     });
@@ -131,7 +218,7 @@ export function useScan(initialGroupId: string) {
    * @param index - Position of the item in the draft.
    * @param patch - Fields to merge into that item.
    */
-  const updateItem = (index: number, patch: Partial<DraftItem>) => {
+  const updateItem = (index: number, patch: Partial<DraftLineItem>) => {
     setItems((current) =>
       current
         ? current.map((item, itemIndex) => (itemIndex === index ? { ...item, ...patch } : item))
@@ -140,38 +227,23 @@ export function useScan(initialGroupId: string) {
   };
 
   /**
-   * Toggles whether a person shares a draft item.
+   * Sets a person's share weight on one item. A weight of 0 (or less) takes
+   * them off the item entirely rather than storing a zero.
    *
    * @param index - Position of the item in the draft.
-   * @param userId - Id of the person to toggle on that item.
+   * @param userId - Id of the person whose weight is changing.
+   * @param weight - The new share weight; 0 or less removes the assignment.
    */
-  const toggleAssignee = (index: number, userId: string) => {
+  const setAssigneeWeight = (index: number, userId: string, weight: number) => {
     setItems((current) =>
       current
-        ? current.map((item, itemIndex) =>
-            itemIndex === index
-              ? {
-                  ...item,
-                  assignees: { ...item.assignees, [userId]: !item.assignees[userId] },
-                }
-              : item,
-          )
-        : current,
-    );
-  };
-
-  /**
-   * Assigns every draft item to a person (leaving other assignees untouched).
-   *
-   * @param userId - Id of the person to add to every item.
-   */
-  const assignAllTo = (userId: string) => {
-    setItems((current) =>
-      current
-        ? current.map((item) => ({
-            ...item,
-            assignees: { ...item.assignees, [userId]: true },
-          }))
+        ? current.map((item, itemIndex) => {
+            if (itemIndex !== index) return item;
+            const assignees = { ...item.assignees };
+            if (weight > 0) assignees[userId] = weight;
+            else delete assignees[userId];
+            return { ...item, assignees };
+          })
         : current,
     );
   };
@@ -187,61 +259,64 @@ export function useScan(initialGroupId: string) {
     );
   };
 
-  /** Appends a blank item row to the draft. */
+  /** Appends a blank item row, pre-shared by everyone on the receipt. */
   const addItem = () => {
     setItems((current) => [
       ...(current ?? []),
-      { key: crypto.randomUUID(), name: "", quantity: 1, total: "", assignees: {} },
+      {
+        key: crypto.randomUUID(),
+        name: "",
+        total: "",
+        assignees: Object.fromEntries(people.map((person) => [person.id, 1])),
+      },
     ]);
   };
 
-  // Derived totals: items subtotal plus the tax/tip inputs.
-  const itemsTotalCents = (items ?? []).reduce(
-    (sumCents, item) => sumCents + (parseMoneyInput(item.total) ?? 0),
-    0,
-  );
   const taxCents = parseMoneyInput(taxInput) ?? 0;
   const tipCents = parseMoneyInput(tipInput) ?? 0;
-  const grandTotalCents = itemsTotalCents + taxCents + tipCents;
+  const draftItems = items ?? [];
+  const { itemsTotalCents, totalCents } = itemizedTotals(draftItems, taxCents, tipCents);
+  // Live "what each person owes", from the very same allocator the server
+  // runs — so the totals row is exactly what gets saved.
+  const previewShares = previewItemizedShares(draftItems, taxCents, tipCents);
 
-  const unassignedCount = (items ?? []).filter(
-    (item) => !Object.values(item.assignees).some(Boolean),
-  ).length;
+  /**
+   * Sets the tip to a percentage of the items subtotal (before tax), the way
+   * tip is normally reckoned on a restaurant bill.
+   *
+   * @param percent - Tip percentage to apply, e.g. 18.
+   */
+  const applyTipPercent = (percent: number) =>
+    setTipInput(((itemsTotalCents * percent) / 100 / 100).toFixed(2));
 
-  // Saving requires a context, at least one priced item, no unassigned items, and a payer.
-  const canSave =
-    context !== "" &&
-    items !== null &&
-    items.length > 0 &&
-    itemsTotalCents > 0 &&
-    unassignedCount === 0 &&
-    effectivePayerId !== "";
+  const hasParticipants = groupId !== "" || friendIds.length > 0;
+  const splitCheck = checkItemized(draftItems);
+  const payerCheck = checkPayers(totalCents, multiPayer, payerAmounts);
+  const canSave = hasParticipants && items !== null && splitCheck.ok && payerCheck.ok;
 
   /** Saves the draft as an itemized expense and navigates to the new expense page. */
   const save = () => {
     if (!canSave || items === null) return;
     setError("");
+    const payers = multiPayer
+      ? Object.entries(payerAmounts)
+          .map(([userId, value]) => ({ userId, amountCents: parseMoneyInput(value) ?? 0 }))
+          .filter((payer) => payer.amountCents > 0)
+      : [{ userId: effectivePayerId, amountCents: totalCents }];
+
     scanAPI.create.mutate(
       {
         groupId,
         description: merchant.trim() || "Receipt",
-        amountCents: grandTotalCents,
+        amountCents: totalCents,
         currency: selectedGroup?.currency ?? scanAPI.me?.defaultCurrency ?? "USD",
         category: "food",
         expenseDate: date,
         splitType: "itemized",
         notes: "",
-        payers: [{ userId: effectivePayerId, amountCents: grandTotalCents }],
+        payers,
         splitSpecs: [],
-        items: items.map((item) => ({
-          id: "",
-          name: item.name.trim() || "Item",
-          quantity: item.quantity,
-          totalCents: parseMoneyInput(item.total) ?? 0,
-          assignments: Object.entries(item.assignees)
-            .filter(([, isAssigned]) => isAssigned)
-            .map(([userId]) => ({ userId, weight: 1 })),
-        })),
+        items: buildItemsPayload(items),
         taxCents,
         tipCents,
       },
@@ -254,10 +329,16 @@ export function useScan(initialGroupId: string) {
 
   return {
     ...scanAPI,
-    context,
-    setContext,
+    groupId,
+    setGroupId: changeGroup,
+    friendIds,
+    toggleFriend,
+    hasParticipants,
     file,
     previewUrl,
+    receiptUrl,
+    isPreviewRenderable,
+    fileName: file?.name ?? "",
     pickFile,
     parseNow,
     isParsing: scanAPI.parse.isPending,
@@ -268,23 +349,31 @@ export function useScan(initialGroupId: string) {
     setDate,
     items,
     updateItem,
-    toggleAssignee,
-    assignAllTo,
+    setAssigneeWeight,
     removeItem,
     addItem,
+    unevenShares,
+    setUnevenShares,
     tax: taxInput,
     setTax: setTaxInput,
     tip: tipInput,
     setTip: setTipInput,
-    payerId: effectivePayerId,
-    setPayerId,
+    applyTipPercent,
+    multiPayer,
+    setMultiPayer,
+    singlePayerId: effectivePayerId,
+    setSinglePayerId,
+    payerAmounts,
+    setPayerAmounts,
     people,
     selectedGroup,
     itemsTotalCents,
     taxCents,
     tipCents,
-    grandTotalCents,
-    unassignedCount,
+    totalCents,
+    previewShares,
+    splitCheck,
+    payerCheck,
     canSave,
     save,
     isSaving: scanAPI.create.isPending,
