@@ -54,21 +54,22 @@ export function AppShell({
     pathname === href || (pathname?.startsWith(`${href}/`) ?? false);
 
   return (
-    // The shell is exactly one viewport tall and does not scroll; only <main>
-    // does. That is what makes the bars solid: a `sticky` header only pins
-    // vertically, so any sideways scroll drags it along, and a `fixed` footer
-    // is re-laid-out every time iOS animates its URL bar. Neither can happen
-    // to an element that simply is not inside the scrolling box.
+    // The shell is pinned to the viewport and does not scroll; only <main>
+    // does. That is what makes the bars solid: a `sticky` header pins
+    // vertically and nothing else, so sideways scrolling drags it along, and
+    // a `fixed` bar is re-laid-out every time iOS animates its chrome. An
+    // element that is not inside the scrolling box cannot be moved by
+    // scrolling it.
     //
-    // `svh`, not `dvh`. iOS puts its address bar at the *bottom*, and `dvh`
-    // is the viewport as it currently stands — which Safari reports at its
-    // large value when the document cannot scroll, since it expects the bar
-    // to retract on a scroll that will never come. The nav then sits in the
-    // strip underneath the address bar. `svh` is the height with browser UI
-    // fully shown, so the bar always ends above it. Nothing is lost by the
-    // "small" viewport here: this document never scrolls, so the chrome was
-    // never going to retract anyway.
-    <div className="flex h-svh overflow-hidden">
+    // `fixed inset-0` rather than a height in `svh`/`dvh`, which was the
+    // first two attempts. Taking the shell out of flow leaves the document
+    // with no in-flow content at all, so it cannot scroll no matter what a
+    // page puts inside it — whereas a height only holds while every viewport
+    // unit resolves the way you expect, and iOS reports those differently
+    // depending on whether it thinks a scroll is still coming. It also puts
+    // the bottom bar where Safari puts any fixed element: above the address
+    // bar, not under it.
+    <div className="fixed inset-0 flex overflow-hidden">
       {/* Desktop sidebar — pinned to the viewport's left edge, not centered */}
       <aside className="hidden h-full w-60 shrink-0 flex-col justify-between overflow-y-auto border-r border-line bg-card px-4 py-6 md:flex">
         <div className="space-y-6">

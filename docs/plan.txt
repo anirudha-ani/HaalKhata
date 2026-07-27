@@ -807,22 +807,34 @@ against the visual viewport, which iOS changes continuously while it animates
 the URL bar and during momentum scroll — so the bottom nav bounced. Both are
 symptoms of the same thing: the bars were overlays on a scrolling document.
 
-**They are now rows of a frame that does not scroll.** The shell is `h-svh
-overflow-hidden`; the header and nav are ordinary `shrink-0` flex children;
-`<main>` is the single `overflow-y-auto` element. An element that is not
-inside the scrolling box cannot be moved by scrolling it — no sticky, no
-fixed, nothing to recompute per frame. This is also what makes it feel like an
-app rather than a web page: iOS leaves its URL bar alone when the document
-never scrolls.
+**They are now rows of a frame that does not scroll.** The shell is
+`fixed inset-0 overflow-hidden`; the header and nav are ordinary `shrink-0`
+flex children; `<main>` is the single `overflow-y-auto` element. An element
+that is not inside the scrolling box cannot be moved by scrolling it — no
+sticky, nothing to recompute per frame.
 
-**`svh`, not `dvh`** — the first attempt used `dvh` and put the nav *behind*
-the address bar, which on iOS lives at the bottom of the screen. `dvh` is the
-viewport as it currently stands, and Safari reports that at its **large**
-value when the document cannot scroll, because it is expecting a scroll (that
-will never come) to retract the chrome. `svh` is the height with browser UI
-fully shown, so the bar always ends above it. Nothing is given up by taking
-the "small" viewport here: this document never scrolls, so the chrome was
-never going to retract anyway.
+**Pinned, not sized — arrived at after two wrong turns.** The first attempt
+gave the shell `h-dvh`, and the nav ended up *behind* iOS's address bar, which
+lives at the bottom of the screen. The second used `h-svh`, and the bars went
+back to scrolling entirely. Both failures share a cause: a viewport height
+only holds the frame together while the unit resolves the way you expect, and
+iOS reports these differently depending on whether it believes a scroll is
+still coming — which is itself a function of whether the document can scroll.
+Circular, and not something to reason your way through from a spec.
+
+`position: fixed; inset: 0` sidesteps the question. It takes the shell out of
+flow, so the document has **no in-flow content at all** — `Providers` renders
+no wrapper and `RegisterServiceWorker` returns null, so `<body>` is left with
+literally nothing to scroll. No viewport unit is involved. It also puts the
+bottom bar exactly where Safari puts any fixed element: above the address bar
+rather than under it — which is the behaviour the *original* fixed nav already
+had. The original's problem was never its position, only that the visual
+viewport kept moving beneath it; a document that cannot scroll never moves it.
+
+Because nothing in the shell sets `transform`, `filter` or `backdrop-filter`
+(the blur came off with this change), a fixed ancestor does not become a
+containing block for fixed descendants, so `Modal` stays viewport-relative and
+escapes `<main>`'s overflow clipping as before.
 
 Details that make it hold:
 - `min-h-0` on `<main>`. A flex child will not shrink below its content
