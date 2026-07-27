@@ -45,15 +45,32 @@ export const queryKeys = {
    */
   friendLedger: (friendId: string) => ["friends", friendId, "ledger"] as const,
   /**
-   * The activity feed, optionally scoped to one group and one month.
+   * A single page of activity, for callers that just want the latest events
+   * (the dashboard's recent-activity strip).
+   * @param groupId - The group to scope to; omit for the global feed.
+   * @returns The query key tuple for that activity list.
+   */
+  activity: (groupId?: string) => ["activity", groupId ?? ""] as const,
+  /**
+   * The paginated activity feed.
+   *
+   * Deliberately a different key from {@link activity}, not a longer version
+   * of it: this one backs a `useInfiniteQuery`, whose cache entry is
+   * `{ pages, pageParams }`, while `activity` backs a plain `useQuery` whose
+   * entry is the raw response. Share a key between the two and whichever
+   * loads first wins — the infinite query then reads `data.pages` off a plain
+   * response and throws "Cannot read properties of undefined". The trailing
+   * marker makes the collision impossible while keeping the "activity" prefix
+   * so one invalidation still clears both.
+   *
    * @param groupId - The group to scope to; omit for the global feed.
    * @param month - "YYYY-MM" to scope to one month; omit for all time. Part
    *   of the key so changing months starts a fresh paginated list instead of
    *   appending to the previous month's pages.
-   * @returns The query key tuple for that activity feed.
+   * @returns The query key tuple for that paginated feed.
    */
-  activity: (groupId?: string, month?: string) =>
-    ["activity", groupId ?? "", month ?? ""] as const,
+  activityFeed: (groupId?: string, month?: string) =>
+    ["activity", groupId ?? "", month ?? "", "feed"] as const,
   /** The user's notification list and unread count. */
   notifications: ["notifications"] as const,
 };

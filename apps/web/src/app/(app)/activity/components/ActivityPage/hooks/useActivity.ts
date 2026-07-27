@@ -32,7 +32,9 @@ export function useActivity() {
   const [month, setMonth] = useState("");
 
   const activity = useInfiniteQuery({
-    queryKey: queryKeys.activity(undefined, month),
+    // activityFeed, not activity: the dashboard reads the same feed through a
+    // plain useQuery, and an infinite query cannot share its cache entry.
+    queryKey: queryKeys.activityFeed(undefined, month),
     initialPageParam: "",
     queryFn: ({ pageParam }) =>
       socialClient.listActivity({ groupId: "", cursor: pageParam, month }),
