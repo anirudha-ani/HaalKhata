@@ -14,6 +14,14 @@ COPY buf.yaml buf.gen.yaml ./
 COPY proto/ proto/
 COPY packages/ packages/
 COPY apps/ apps/
+
+# NEXT_PUBLIC_* is inlined into the client bundle by `next build`, so it has to
+# be present HERE rather than at runtime — supplying it only via env_file
+# produces an image whose Google button never appears. Not a secret: the value
+# ends up in the bundle by design, so a build arg is the right shape for it.
+ARG NEXT_PUBLIC_GOOGLE_CLIENT_ID=""
+ENV NEXT_PUBLIC_GOOGLE_CLIENT_ID=$NEXT_PUBLIC_GOOGLE_CLIENT_ID
+
 RUN pnpm gen && pnpm --filter @haalkhata/web build
 
 # Runtime: only the standalone server + static assets, no toolchain.

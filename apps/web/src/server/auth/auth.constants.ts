@@ -22,6 +22,14 @@ export const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 /** Max login/signup attempts per key (IP or email) per 60s window. */
 export const AUTH_RATE_LIMIT = 10;
 
+/**
+ * OAuth client id that a Google ID token must name as its audience. Only the
+ * client id is needed: the ID-token flow verifies a signed assertion the
+ * browser already holds, so there is no code-for-token exchange and therefore
+ * no client secret to deploy. Never add one here.
+ */
+export const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID ?? "";
+
 /** Minimum password length accepted at signup. */
 export const PASSWORD_MIN_LENGTH = 6;
 /**

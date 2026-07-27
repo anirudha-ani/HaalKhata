@@ -901,6 +901,178 @@ Group invites took this treatment in §3i: `AddMembers` accepts the same
 `email`/`phone` pair, and it is now the fallback behind picking people you
 already know rather than the only way in.
 
+**Phone as a login identifier is superseded by §4c** (Google is the only way
+in). Everything else here stands: phone still invites, still creates
+claimable shadow rows, still finds people, and is still normalized to E.164
+by `normalizePhone`. `splitIdentifier` survives for the invite flows and
+drops out of login only.
+
+## 4c. Google sign-in, onboarding, account merge (v5.14 — 2026-07-27)
+
+Email + password is a burden nobody wants to carry for an expense splitter.
+**Sign in with Google becomes the only way in.** §4b's identifier model is
+narrowed accordingly: phone stops being an *authentication* identifier and
+keeps its other two jobs — a field on your profile, and a way to invite or
+find people.
+
+**Why the ID-token flow, not OAuth redirect or an auth library.** The session
+layer here is hand-rolled and already correct: HMAC bearer tokens with
+`token_version` revocation, minted in Connect handlers, shared with the Expo
+app over `Authorization: Bearer`, cookie for web. Auth.js / better-auth want
+to own sessions, so adopting one means replacing working infrastructure to
+add one button. The full OAuth authorization-code flow buys Google API
+access tokens we have no use for, at the cost of a callback route outside
+the Connect mount, `state` handling, and a client secret to store and
+rotate. Google Identity Services hands the browser a signed **ID token**;
+the server verifies it against Google's JWKS and issues the same token it
+already issues. **No client secret is involved and none should be
+deployed** — only `GOOGLE_CLIENT_ID` (server, as the audience) and
+`NEXT_PUBLIC_GOOGLE_CLIENT_ID` (browser).
+
+Verification uses `google-auth-library` rather than hand-rolled JWT checks.
+This is the one place not to write our own crypto: a missed `aud` check
+means any Google app's token logs into ours.
+
+**Publishing.** Only non-sensitive scopes (`openid`, `email`, `profile`) are
+requested, so the OAuth client publishes to production with one button and
+no Google review — verification exists for sensitive/restricted scopes
+(Gmail, Drive, Calendar contents), which this never touches. Testing mode
+caps at 100 listed test users, so publishing is required before real use.
+A custom consent-screen logo is a separate brand review; skip it.
+
+**Contract.**
+
+```proto
+rpc LogInWithGoogle(LogInWithGoogleRequest) returns (AuthResponse);
+message LogInWithGoogleRequest { string id_token = 1; }
+```
+
+`SignUpRequest` / `LogInRequest` keep their `phone` fields — removing them
+is a breaking change for any shipped mobile build, and an unused proto field
+costs nothing — but no client populates them any more, and the login screen
+stops routing through `splitIdentifier`.
+
+**Schema.** `users.google_sub TEXT` with a partial unique index
+(`WHERE google_sub IS NOT NULL`), plus `users.merged_into TEXT` for merge
+tombstones. `password_hash` stays nullable and `chk_users_has_identifier` is
+satisfied by the email, so nothing else moves.
+
+**`registered` no longer means "has a password."** `toUser` derives it from
+`password_hash !== null`, which reads every Google-only account as an
+unclaimed shadow user. It becomes
+`password_hash !== null || google_sub !== null`, and `signUp`'s
+already-exists check widens the same way — otherwise someone who signed in
+with Google can be "claimed" through the password signup form.
+
+**Linking is only ever done on a verified email.** Google's `email_verified`
+claim is checked before matching an existing row; matching on an unverified
+address is account takeover, and Workspace-hosted domains are the case that
+bites. A shadow row whose name was defaulted to the email's local part takes
+Google's display name on link, but a name the person set themselves is never
+overwritten.
+
+### Onboarding (tranche 2)
+
+A Google account arrives with no phone, so nobody can find its owner by
+number — §4b's invite-by-phone path has nothing to match. A first-run flow
+collects phone, default currency, and payment handles. This is nearly free
+on the server: `UpdateProfile` already accepts everything except phone, so
+onboarding is a first-run wrapper over an existing RPC reusing the account
+page's components.
+
+`users.onboarded_at TIMESTAMPTZ` gates it; the `(app)` layout redirects
+while it is NULL. **Set it even when the user skips**, or the redirect is a
+loop. Every field is skippable — a mandatory wizard reintroduces exactly the
+friction that dropping passwords removed.
+
+### Account merge (tranche 3)
+
+Shadow rows are created by email **and** by phone (§4b), so one person can
+accumulate two of them before they ever sign up. Google sign-in claims the
+email one by verified-email match; the phone one is orphaned by
+construction. Three cases:
+
+- **Email shadow only** — matched at sign-in. Free, automatic, no merge.
+- **Phone shadow only** — the signing-in row is empty, so absorbing is
+  trivial.
+- **Both** — a full history-to-history merge. No ordering trick avoids it;
+  the person *becomes* the email row at sign-in, and that row already has
+  history. This is the default outcome, not an edge case.
+
+Adding a phone therefore resolves as: no holder → write; **unclaimed shadow
+row → merge**; registered account → reject. Rejection applies only to
+registered accounts, and its message must differ from the shadow case — "in
+use by another account" is wrong and confusing when the row holding it is
+the caller's own history.
+
+**The merge is one transaction.** Repointing the 13 FK columns is the easy
+half; the hazards are:
+
+- `expense_splits` / `expense_payers` PK `(expense_id, user_id)` and
+  `expense_item_assignments` PK `(item_id, user_id)` — both ghosts in one
+  expense. **Sum** `owed_cents` / `amount_cents` / `weight`; the allocation
+  counted the person twice and summing preserves the cent-exact total.
+- `group_members` PK `(group_id, user_id)` and `friendships` PK
+  `(user_id, friend_id)`, the latter in **both directions** — delete the
+  loser's overlapping rows first, repoint the rest, then delete `(A, A)`
+  self-loops.
+- `settlements` between the two rows — money "paid to oneself", never real.
+  Delete, and report the count; it legitimately moves the balance.
+- **`activity.audience` is a JSONB array of user ids, not a foreign key.**
+  It appears in no FK enumeration; miss it and the merged user's activity
+  feed silently breaks.
+- Splits on **soft-deleted** expenses repoint too, or restoring one breaks.
+
+Assert inside the transaction that the survivor's post-merge net equals
+old-A + old-P with removed self-settlements netting to zero — that assertion
+is what catches a mistake before it becomes wrong money. Tombstone the
+absorbed row via `merged_into` rather than deleting it, as insurance against
+an unenumerated reference.
+
+**Layering exception.** The merge spans users, expenses, groups and social
+tables in one transaction. Splitting its SQL across four domain repos to
+satisfy the per-domain rule would make it less safe, so it lives whole in
+`server/auth/repo/accountMerge.repo.ts` with orchestration and the balance
+assertion in `server/auth/usecase/accountMerge.usecase.ts`. Noted in
+AGENTS.md as a deliberate exception.
+
+**Preview and confirm is mandatory.** Phone entry is unverified until
+tranche 4, so the confirmation screen is the only guard on the merge: it
+names what would be absorbed ("4 expenses with Rahul and Priya, $87"). It
+is *also* the only defense against a hazard verification cannot cover —
+carriers recycle numbers, so proving control today does not prove control
+when the invites were made. Someone who does not recognize the counterparty
+names backs out and nothing merges.
+
+**Interim exposure, accepted knowingly:** until tranche 4, anyone who knows
+a phone number and guesses it was invited can absorb that ledger. Acceptable
+with nothing deployed; tranche 4 closes it.
+
+### Phone verification (tranche 4)
+
+Twilio Verify, last, because it needs an account set up. Two RPCs
+(`StartPhoneVerification`, `ConfirmPhoneVerification`) and **no new table** —
+Verify holds the pending code, so we never store or hash one. Verify also
+requires no A2P 10DLC registration or sender provisioning, which is the
+whole reason to use it over Programmable Messaging for OTP. ~$0.058 per
+verification (US), fired once per person, so cost is negligible.
+
+Because the code is consumed on check, `ConfirmPhoneVerification` cannot
+also be the merge confirm step. It returns the preview plus a short-lived
+`merge_token` signed with the existing `sign()` HMAC — same idiom as session
+tokens, no new table — which `ConfirmPhoneMerge` presents.
+
+**Rate-limit both RPCs, per user and per IP** (`rateLimitCheck`). OTP
+endpoints are the classic SMS-pumping target: attackers trigger codes to
+premium-rate numbers they profit from. Twilio's fraud guard helps; our own
+limit is what caps the bill.
+
+**Prevention worth taking whenever the invite flows are next touched:** ask
+for both identifiers at invite time and backfill the missing one, so the
+fork stops forming. If the email matches one row and the phone another, that
+is an unverified third-party claim that they are the same person — do not
+merge on it, but surface it in the preview.
+
 ## 5. Core Domain Logic (usecase/domain — pure, unit-tested)
 
 - `allocate(total, weights)` — largest-remainder allocation; splits always

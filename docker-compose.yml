@@ -20,7 +20,13 @@ services:
       retries: 10
 
   web:
-    build: .
+    build:
+      context: .
+      args:
+        # Baked into the client bundle at build time (see Dockerfile). Compose
+        # reads it from the root .env like every other value here; passing it
+        # through `environment:` instead would be too late to reach the bundle.
+        NEXT_PUBLIC_GOOGLE_CLIENT_ID: ${NEXT_PUBLIC_GOOGLE_CLIENT_ID:-}
     restart: unless-stopped
     depends_on:
       db:

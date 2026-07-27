@@ -16,6 +16,8 @@ export interface UserRow {
   password_hash: string | null;
   /** Phone number in E.164 (e.g. "+14155552671"); null when the user has no phone. */
   phone: string | null;
+  /** Google account id (the ID token's `sub`); null when never signed in with Google. */
+  google_sub: string | null;
   /** Monotonic counter baked into issued tokens; bumping it invalidates outstanding tokens. */
   token_version: number;
   created_at: string;
@@ -51,10 +53,11 @@ export async function insertUser(input: {
   passwordHash: string | null;
   defaultCurrency?: string;
   phone?: string | null;
+  googleSub?: string | null;
 }): Promise<UserRow> {
   const rows = await query<UserRow>(
-    `INSERT INTO users (id, email, name, avatar_color, default_currency, password_hash, phone)
-     VALUES ($1, $2, $3, $4, $5, $6, $7)
+    `INSERT INTO users (id, email, name, avatar_color, default_currency, password_hash, phone, google_sub)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
      RETURNING *`,
     [
       newId(),
@@ -64,6 +67,7 @@ export async function insertUser(input: {
       input.defaultCurrency ?? "USD",
       input.passwordHash,
       input.phone ?? null,
+      input.googleSub ?? null,
     ],
   );
   return rows[0];
@@ -99,6 +103,41 @@ export async function findUserByEmail(email: string): Promise<UserRow | undefine
  */
 export async function findUserByPhone(phone: string): Promise<UserRow | undefined> {
   return queryOne<UserRow>(`SELECT ${USER_COLUMNS} FROM users usr WHERE usr.phone = $1`, [phone]);
+}
+
+/**
+ * Looks a user up by their Google account id (the ID token's `sub` claim).
+ *
+ * @param googleSub - Google's stable per-account identifier.
+ * @returns The matching row, or undefined when no row is linked to that account.
+ */
+export async function findUserByGoogleSub(googleSub: string): Promise<UserRow | undefined> {
+  return queryOne<UserRow>(`SELECT ${USER_COLUMNS} FROM users usr WHERE usr.google_sub = $1`, [
+    googleSub,
+  ]);
+}
+
+/**
+ * Links a Google account to an existing row, optionally replacing a
+ * placeholder display name.
+ *
+ * An invitee who was never given a name got one derived from their email's
+ * local part, which Google can improve on; a name the person chose themselves
+ * must survive untouched. Passing an empty `name` leaves the column alone.
+ *
+ * @param userId - Primary key of the row to link.
+ * @param googleSub - Google's stable per-account identifier.
+ * @param name - Replacement display name, or "" to keep the existing one.
+ */
+export async function linkGoogleAccount(
+  userId: string,
+  googleSub: string,
+  name: string,
+): Promise<void> {
+  await execute(
+    `UPDATE users SET google_sub = $1, name = COALESCE(NULLIF($2, ''), name) WHERE id = $3`,
+    [googleSub, name, userId],
+  );
 }
 
 /**

@@ -2,6 +2,7 @@
 /** Login route UI: sign-in / create-account toggle and credentials form. */
 
 import { useLogin } from "./hooks/useLogin";
+import { useGoogleSignIn } from "./hooks/useGoogleSignIn";
 
 /** Shared styling for the credential text inputs. */
 const inputClass =
@@ -15,6 +16,14 @@ const inputClass =
  */
 export function LoginPage() {
   const login = useLogin();
+  // Destructured rather than kept as one object: passing a member to a `ref`
+  // prop makes the whole object read as ref-typed to the react-hooks lint rule.
+  const {
+    setButtonElement,
+    error: googleError,
+    isPending: googleIsPending,
+    isConfigured: googleIsConfigured,
+  } = useGoogleSignIn();
 
   return (
     <main className="flex min-h-dvh items-center justify-center bg-paper px-4 py-10">
@@ -28,6 +37,23 @@ export function LoginPage() {
         </div>
 
         <div className="rounded-2xl border border-line bg-card p-6 shadow-sm">
+          {googleIsConfigured ? (
+            <div className="mb-5 flex flex-col gap-3">
+              <div ref={setButtonElement} className="flex justify-center [color-scheme:light]" />
+              {googleIsPending ? (
+                <p className="text-center text-sm text-ink-soft">Opening your ledger…</p>
+              ) : null}
+              {googleError ? (
+                <p className="text-center text-sm text-brand-600">{googleError}</p>
+              ) : null}
+              <div className="flex items-center gap-3 text-xs text-ink-soft">
+                <span className="h-px flex-1 bg-line" />
+                or use a password
+                <span className="h-px flex-1 bg-line" />
+              </div>
+            </div>
+          ) : null}
+
           <div className="mb-5 grid grid-cols-2 rounded-xl bg-paper p-1 text-sm font-semibold">
             {(["login", "signup"] as const).map((modeOption) => (
               <button

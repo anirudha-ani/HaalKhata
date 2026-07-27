@@ -5,13 +5,16 @@ package auth.v1;
 import "google/protobuf/empty.proto";
 import "common/v1/common.proto";
 
-// Email + password auth. LogIn/SignUp return a bearer token for mobile
-// clients and additionally set an httpOnly session cookie for browsers.
-// An account may register with an email, a phone (E.164), or both; LogIn
-// accepts whichever identifier the account has set.
+// Authentication. LogInWithGoogle is the only way in for new clients; every
+// auth RPC returns a bearer token for mobile clients and additionally sets an
+// httpOnly session cookie for browsers.
+//
+// SignUp/LogIn are the retired email-or-phone + password flows, kept so an
+// already-shipped mobile build keeps working. No current client calls them.
 service AuthService {
   rpc SignUp(SignUpRequest) returns (AuthResponse);
   rpc LogIn(LogInRequest) returns (AuthResponse);
+  rpc LogInWithGoogle(LogInWithGoogleRequest) returns (AuthResponse);
   rpc LogOut(google.protobuf.Empty) returns (google.protobuf.Empty);
   rpc GetMe(google.protobuf.Empty) returns (common.v1.User);
   rpc UpdateProfile(UpdateProfileRequest) returns (common.v1.User);
@@ -31,6 +34,14 @@ message LogInRequest {
   string email = 1;
   string phone = 2;
   string password = 3;
+}
+
+message LogInWithGoogleRequest {
+  // The credential handed to the client by Google Identity Services. The
+  // server verifies it against Google's public keys and reads the account
+  // from the verified claims — the client is never trusted to report who it
+  // is, so there is no email or name field here on purpose.
+  string id_token = 1;
 }
 
 message AuthResponse {

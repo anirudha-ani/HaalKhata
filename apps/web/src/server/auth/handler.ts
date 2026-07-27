@@ -53,6 +53,17 @@ export const authHandler: ServiceImpl<typeof AuthService> = {
     return result;
   },
 
+  /** Verifies a Google ID token, then starts a web session via cookie. */
+  async logInWithGoogle(request, handlerContext) {
+    enforceAuthRateLimit(handlerContext);
+    const result = await runUsecase(
+      () => auth.logInWithGoogle(request.idToken),
+      handlerContext,
+    );
+    setSessionCookie(handlerContext, result.token);
+    return result;
+  },
+
   /** Ends the web session by expiring the session cookie and revoking the token. */
   async logOut(_request, handlerContext) {
     await runUsecase(async () => auth.logOut(await requireUser(handlerContext)), handlerContext);

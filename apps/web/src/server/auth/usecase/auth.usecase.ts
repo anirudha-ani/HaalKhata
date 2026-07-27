@@ -3,13 +3,16 @@
 import crypto from "node:crypto";
 import fileSystem from "node:fs";
 import path from "node:path";
+import { OAuth2Client } from "google-auth-library";
 import {
   bumpTokenVersion,
   claimUser,
   findUserByEmail,
+  findUserByGoogleSub,
   findUserById,
   findUserByPhone,
   insertUser,
+  linkGoogleAccount,
   updateUserProfile,
   type UserRow,
 } from "@/server/auth/repo/users.repo";
@@ -20,6 +23,7 @@ import {
   AVATAR_PALETTE,
   DATA_DIRECTORY,
   EMAIL_PATTERN,
+  GOOGLE_CLIENT_ID,
   MAX_PAYMENT_HANDLE_LENGTH,
   PASSWORD_MAX_LENGTH,
   PASSWORD_MIN_LENGTH,
@@ -211,7 +215,10 @@ export async function signUp(input: {
   const existing = email ? await findUserByEmail(email) : await findUserByPhone(phone!);
   let user: UserRow;
   if (existing) {
-    if (existing.password_hash !== null) {
+    // google_sub counts as claimed too — otherwise an account that signed in
+    // with Google (and so has no password) could be taken over through this
+    // form by anyone who knows the address.
+    if (existing.password_hash !== null || existing.google_sub !== null) {
       throw new UsecaseError("already_exists", "an account with this email or phone already exists");
     }
     // Shadow user invited earlier — claim the account (keeps expense history).
@@ -249,6 +256,127 @@ export async function logIn(input: { email: string; phone: string; password: str
   }
   if (!verifyPassword(input.password, user.password_hash)) {
     throw new UsecaseError("unauthenticated", "invalid email/phone or password");
+  }
+  return { user: toUser(user), token: createToken(user.id, user.token_version) };
+}
+
+// --- google sign-in --------------------------------------------------------
+
+let cachedGoogleClient: OAuth2Client | null = null;
+
+/**
+ * Returns the shared Google OAuth client, which caches Google's public keys
+ * across calls (a fresh client per request would refetch the JWKS every time).
+ *
+ * @returns The process-wide OAuth2Client.
+ * @throws UsecaseError "invalid_argument" when GOOGLE_CLIENT_ID is unset, so a
+ *   misconfigured deploy fails loudly on the first sign-in rather than
+ *   verifying tokens against an empty audience.
+ */
+function googleClient(): OAuth2Client {
+  if (GOOGLE_CLIENT_ID.length === 0) {
+    throw new UsecaseError("invalid_argument", "Google sign-in is not configured on this server");
+  }
+  if (!cachedGoogleClient) cachedGoogleClient = new OAuth2Client(GOOGLE_CLIENT_ID);
+  return cachedGoogleClient;
+}
+
+/**
+ * Verifies a Google ID token and returns only the claims we trust from it.
+ *
+ * The library checks the signature against Google's rotating public keys plus
+ * the issuer, audience and expiry; skipping any one of those would let a token
+ * minted for a different app sign in here.
+ *
+ * @param idToken - Raw JWT credential produced by Google Identity Services.
+ * @returns The stable account id, the verified email, and the display name
+ *   Google holds (empty string when the account has none).
+ * @throws UsecaseError "unauthenticated" when verification fails, the token
+ *   carries no email, or that email is unverified.
+ */
+async function verifyGoogleIdToken(idToken: string): Promise<{
+  googleSub: string;
+  email: string;
+  name: string;
+}> {
+  // Resolved before the try: a missing GOOGLE_CLIENT_ID is a server
+  // misconfiguration, and rewrapping it as "could not verify" would send an
+  // operator hunting for a client-side problem that does not exist.
+  const client = googleClient();
+  let claims;
+  try {
+    const ticket = await client.verifyIdToken({
+      idToken,
+      audience: GOOGLE_CLIENT_ID,
+    });
+    claims = ticket.getPayload();
+  } catch {
+    // Bad signature, wrong audience, expired — all indistinguishable to the
+    // caller on purpose, and none of them worth logging a stack trace over.
+    throw new UsecaseError("unauthenticated", "could not verify that Google account");
+  }
+  if (!claims?.sub || !claims.email) {
+    throw new UsecaseError("unauthenticated", "could not verify that Google account");
+  }
+  // Linking an existing row on an unverified address is account takeover:
+  // anyone able to put someone else's address on a Google account would
+  // inherit their ledger. Gmail is always verified; Workspace-hosted domains
+  // are the case this actually guards.
+  if (!claims.email_verified) {
+    throw new UsecaseError("unauthenticated", "that Google account's email is not verified");
+  }
+  return {
+    googleSub: claims.sub,
+    email: claims.email.trim().toLowerCase(),
+    name: claims.name?.trim() ?? "",
+  };
+}
+
+/**
+ * Signs a user in with a Google ID token, linking or creating the account as
+ * needed, and issues a session token.
+ *
+ * Three cases, in order: the Google account is already linked; its verified
+ * email matches an existing row (a registered account, or a shadow user who
+ * was invited earlier and now claims their expense history); or it is someone
+ * new.
+ *
+ * @param idToken - Raw JWT credential produced by Google Identity Services.
+ * @returns The signed-in user in proto shape plus a fresh session token.
+ * @throws UsecaseError "unauthenticated" when the token fails verification.
+ */
+export async function logInWithGoogle(idToken: string) {
+  const claims = await verifyGoogleIdToken(idToken);
+
+  let user = await findUserByGoogleSub(claims.googleSub);
+  if (!user) {
+    const existing = await findUserByEmail(claims.email);
+    if (existing) {
+      // Safe because the email is verified: this row is only reachable by
+      // whoever controls that mailbox. An unclaimed row also takes Google's
+      // display name, since its own is a local-part placeholder.
+      const unclaimed = existing.password_hash === null && existing.google_sub === null;
+      await linkGoogleAccount(existing.id, claims.googleSub, unclaimed ? claims.name : "");
+      user = (await findUserById(existing.id))!;
+    } else {
+      try {
+        user = await insertUser({
+          email: claims.email,
+          name: claims.name || claims.email.split("@")[0],
+          avatarColor: avatarColorFor(claims.email),
+          passwordHash: null,
+          googleSub: claims.googleSub,
+        });
+      } catch (error) {
+        // TOCTOU: a concurrent sign-in (double-clicked button, two tabs) won
+        // the unique-index race on email or google_sub. Re-read rather than
+        // surfacing a 500 for what is a successful sign-in either way.
+        const databaseError = error as { code?: string };
+        if (databaseError.code !== "23505") throw error;
+        user =
+          (await findUserByGoogleSub(claims.googleSub)) ?? (await findUserByEmail(claims.email))!;
+      }
+    }
   }
   return { user: toUser(user), token: createToken(user.id, user.token_version) };
 }
