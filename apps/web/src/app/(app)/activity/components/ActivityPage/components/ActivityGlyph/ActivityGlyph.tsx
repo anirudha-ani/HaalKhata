@@ -135,22 +135,27 @@ function CashGrinGlyph() {
  * here — so it sits in the column instead of fighting it, and the winged-sphere
  * silhouette is legible at any size because the outline alone carries it.
  *
- * The coin stays large enough for the "$" to survive: that sign is the only
- * thing saying "money", since this tile is neutral and lends no colour.
+ * The coin is r6 — close to the r7.8-8.4 circles the faces around it use, so
+ * it carries the same visual weight in the column rather than looking like a
+ * smaller sibling. The "$" is proportioned to it (0.63r tall, 0.39r wide);
+ * scaling the sign independently of the coin overflows the rim.
  */
 function WingedCoinGlyph() {
   return (
     <>
-      <circle {...STROKE} cx="12" cy="12" r="4.6" />
-      <path {...FINE} d="M12 9.1v5.8" />
-      <path {...FINE} d="M13.8 10.5c-.5-.8-3.1-.8-3.6 0s3.1 1.2 3.6 2.1-1.8 1.4-3.6.7" />
+      <circle {...STROKE} cx="12" cy="12" r="6" />
+      <path {...FINE} d="M12 8.22v7.56" />
       <path
-        {...STROKE}
-        d="M7.8 10C5.6 6.8 2.4 4.6 1.1 6c-.8.9.4 2.3 2.1 3.1-1 .5-.3 1.7 1.4 2 1.2.2 2.4-.2 2.9-.7z"
+        {...FINE}
+        d="M14.34 10.11c-0.66-1.06 -4.02-1.06 -4.68 0s4.02 1.55 4.68 2.72-2.34 1.81 -4.68 0.91"
       />
       <path
         {...STROKE}
-        d="M16.2 10c2.2-3.2 5.4-5.4 6.7-4 .8.9-.4 2.3-2.1 3.1 1 .5.3 1.7-1.4 2-1.2.2-2.4-.2-2.9-.7z"
+        d="M6.5 9.4C4 5.8 1.4 3.4.7 5.3c-.5 1.3 1.1 2.7 3 3.3-1.1.7-.2 2.1 1.8 2.3 1.3.2 2.4-.5 2.8-1.2z"
+      />
+      <path
+        {...STROKE}
+        d="M17.5 9.4c2.5-3.6 5.1-6 5.8-4.1.5 1.3-1.1 2.7-3 3.3 1.1.7.2 2.1-1.8 2.3-1.3.2-2.4-.5-2.8-1.2z"
       />
     </>
   );
