@@ -95,13 +95,16 @@ export function ExpenseForm({
             />
           </label>
         </div>
-        <div className="flex flex-wrap gap-1.5">
+        {/* Category chips scroll rather than wrap on a phone: wrapping eleven
+            of them costs three rows of vertical space above the split editor,
+            which is the part people came here to use. */}
+        <div className="-mx-4 flex gap-1.5 overflow-x-auto px-4 pb-1 sm:mx-0 sm:flex-wrap sm:px-0 sm:pb-0">
           {CATEGORIES.map((categoryOption) => (
             <button
               key={categoryOption}
               type="button"
               onClick={() => form.setCategory(categoryOption)}
-              className={`rounded-full border px-3 py-1.5 text-xs font-medium capitalize ${
+              className={`shrink-0 rounded-full border px-3.5 py-2 text-xs font-medium capitalize sm:py-1.5 ${
                 form.category === categoryOption
                   ? "border-brand-600 bg-brand-50 text-brand-700"
                   : "border-line text-ink-soft"
@@ -117,7 +120,7 @@ export function ExpenseForm({
       <SplitEditor form={form} currency={currency} />
 
       <textarea
-        className={`${inputClass} min-h-20 text-sm`}
+        className={`${inputClass} min-h-20 text-base sm:text-sm`}
         placeholder="Notes (optional)"
         aria-label="Notes"
         value={form.notes}
@@ -130,7 +133,7 @@ export function ExpenseForm({
         type="button"
         onClick={form.submit}
         disabled={!form.canSubmit || form.isSaving}
-        className="w-full rounded-xl bg-brand-600 py-3.5 font-semibold text-white transition-colors hover:bg-brand-700 disabled:opacity-40"
+        className="min-h-12 w-full rounded-xl bg-brand-600 py-3.5 font-semibold text-white transition-colors hover:bg-brand-700 disabled:opacity-40"
       >
         {form.isSaving ? "Saving…" : form.isEdit ? "Save changes" : "Add expense"}
       </button>

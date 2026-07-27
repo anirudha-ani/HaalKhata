@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { User } from "@haalkhata/protogen/common/v1/common_pb";
 import { errorMessage } from "@/lib/api/connect";
+import { prepareReceiptImage } from "@/lib/image/receiptImage";
 import { centsToInput, parseMoneyInput } from "@haalkhata/shared/money/money";
 import {
   buildItemsPayload,
@@ -79,6 +80,7 @@ export function useNewExpense(
   const [previewUrl, setPreviewUrl] = useState("");
   const [receiptUrl, setReceiptUrl] = useState("");
   const [provider, setProvider] = useState("");
+  const [isPreparing, setIsPreparing] = useState(false);
 
   const selectedGroup = expenseAPI.groups.find(
     (groupSummary) => groupSummary.group?.id === groupId,
@@ -265,20 +267,32 @@ export function useNewExpense(
    * Stores a newly chosen receipt photo and clears anything a previous scan
    * produced, so a second photo cannot leave the first one's items behind.
    *
+   * The photo is shrunk to upload size first ({@link prepareReceiptImage}).
+   * A phone shot is 3–12 MB, all of which would otherwise cross a mobile
+   * connection for the server to discard — and over 8 MB is rejected outright
+   * after the wait. `isPreparing` covers the decode, which is a visible pause
+   * on a 12-megapixel image and would otherwise look like a dead tap.
+   *
    * @param picked - The image file chosen or captured by the user.
    */
-  const pickFile = (picked: File) => {
-    setFile(picked);
-    setPreviewUrl((previousUrl) => {
-      URL.revokeObjectURL(previousUrl);
-      return URL.createObjectURL(picked);
-    });
+  const pickFile = async (picked: File) => {
+    setProvider("");
+    setError("");
     setReceiptUrl((previousUrl) => {
       URL.revokeObjectURL(previousUrl);
       return "";
     });
-    setProvider("");
-    setError("");
+    setIsPreparing(true);
+    try {
+      const prepared = await prepareReceiptImage(picked);
+      setFile(prepared);
+      setPreviewUrl((previousUrl) => {
+        URL.revokeObjectURL(previousUrl);
+        return URL.createObjectURL(prepared);
+      });
+    } finally {
+      setIsPreparing(false);
+    }
   };
 
   /**
@@ -480,6 +494,7 @@ export function useNewExpense(
     receiptUrl,
     isPreviewRenderable,
     pickFile,
+    isPreparing,
     parseNow,
     isParsing: expenseAPI.parse.isPending,
     provider,

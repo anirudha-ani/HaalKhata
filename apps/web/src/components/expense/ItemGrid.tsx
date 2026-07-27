@@ -22,9 +22,16 @@ export interface GridItem {
   assignees: Record<string, number>;
 }
 
-/** Shared input styling for the grid's editable cells. */
+/**
+ * Shared input styling for the grid's editable cells.
+ *
+ * `text-base` on phones is not a size preference: iOS Safari zooms the whole
+ * page when a focused input's font is under 16px, and the table's own
+ * `text-sm` is 14. The zoom then leaves the grid scrolled sideways with no
+ * way back. It drops to `text-sm` from `sm:` up, where no such rule applies.
+ */
 const cellClass =
-  "rounded-lg border border-line bg-paper px-2.5 py-1.5 focus:border-brand-500 focus:outline-none";
+  "rounded-lg border border-line bg-paper px-2.5 py-1.5 text-base focus:border-brand-500 focus:outline-none sm:text-sm";
 
 /**
  * Parses a share-weight cell into the weight to store. Blank, zero, or
@@ -129,7 +136,14 @@ export function ItemGrid({
               border 1px + input 10px ≈ 17px) so labels sit over their values. */}
           <tr className="border-b border-line text-xs text-ink-soft">
             {showQuantity ? <th className="py-2 pl-4 text-left font-medium">Qty</th> : null}
-            <th className={`py-2 text-left font-medium ${showQuantity ? "pl-1.5" : "pl-4"}`}>
+            {/* The name column is pinned: with four people the grid is wider
+                than a phone, and scrolling to reach a person's cell must not
+                take the item you are ticking off screen with it. */}
+            <th
+              className={`sticky left-0 z-10 bg-card py-2 text-left font-medium ${
+                showQuantity ? "pl-1.5" : "pl-4"
+              }`}
+            >
               Item
             </th>
             <th className="py-2 pr-4 text-right font-medium">Amount</th>
@@ -153,7 +167,11 @@ export function ItemGrid({
             return (
               <tr
                 key={item.key}
-                className={`border-b border-line/60 ${isUnassigned ? "bg-neg-50/40" : ""}`}
+                // The unassigned tint is solid, not a 40% wash: the pinned
+                // name cell has to be opaque or rows scroll visibly through
+                // it, and a translucent row beside an opaque cell reads as
+                // two different colours.
+                className={`border-b border-line/60 ${isUnassigned ? "bg-neg-50" : ""}`}
               >
                 {showQuantity ? (
                   <td className="py-1.5 pl-3">
@@ -167,18 +185,22 @@ export function ItemGrid({
                           quantity: Math.max(1, parseInt(event.target.value, 10) || 1),
                         })
                       }
-                      className={`${cellClass} w-12 text-center tabular-nums`}
+                      className={`${cellClass} h-10 w-12 text-center tabular-nums sm:h-auto`}
                     />
                   </td>
                 ) : null}
-                <td className="px-1.5 py-1.5">
+                <td
+                  className={`sticky left-0 z-10 px-1.5 py-1.5 ${
+                    isUnassigned ? "bg-neg-50" : "bg-card"
+                  }`}
+                >
                   <input
                     type="text"
                     placeholder="Item name"
                     aria-label={`Name for item ${index + 1}`}
                     value={item.name}
                     onChange={(event) => onUpdateItem(index, { name: event.target.value })}
-                    className={`${cellClass} w-full min-w-36`}
+                    className={`${cellClass} w-32 min-w-0 sm:w-full sm:min-w-36`}
                   />
                 </td>
                 <td className="px-1.5 py-1.5 text-right">
@@ -189,7 +211,7 @@ export function ItemGrid({
                     aria-label={`Amount for item ${index + 1}`}
                     value={item.total}
                     onChange={(event) => onUpdateItem(index, { total: event.target.value })}
-                    className={`${cellClass} w-20 text-right tabular-nums`}
+                    className={`${cellClass} h-10 w-20 text-right tabular-nums sm:h-auto`}
                   />
                 </td>
                 {people.map((person) => {
@@ -208,7 +230,7 @@ export function ItemGrid({
                           onChange={(event) =>
                             onSetWeight(index, person.id, parseWeightCell(event.target.value))
                           }
-                          className={`w-14 rounded-lg border py-1.5 text-center tabular-nums focus:outline-none ${
+                          className={`h-10 w-14 rounded-lg border text-base text-center tabular-nums focus:outline-none sm:h-8 sm:text-sm ${
                             isOnItem
                               ? "border-brand-500 bg-brand-50 font-semibold text-brand-700"
                               : "border-line bg-paper text-ink-soft placeholder:text-line"
@@ -222,7 +244,7 @@ export function ItemGrid({
                           aria-label={`${isOnItem ? "Remove" : "Add"} ${label} ${
                             isOnItem ? "from" : "to"
                           } item ${index + 1}`}
-                          className={`inline-flex h-8 w-14 items-center justify-center rounded-lg border transition-colors ${
+                          className={`inline-flex h-10 w-14 items-center justify-center rounded-lg border transition-colors sm:h-8 ${
                             isOnItem
                               ? "border-brand-500 bg-brand-50 text-brand-700"
                               : "border-line bg-paper text-line hover:border-brand-300"
@@ -239,7 +261,7 @@ export function ItemGrid({
                     type="button"
                     onClick={() => onRemoveItem(index)}
                     aria-label={`Remove item ${index + 1}`}
-                    className="rounded-md p-1 text-ink-soft hover:text-neg-600"
+                    className="rounded-md p-2 text-ink-soft hover:text-neg-600 sm:p-1"
                   >
                     <X className="h-4 w-4" />
                   </button>
@@ -261,7 +283,10 @@ export function ItemGrid({
           </tr>
 
           <tr className="border-b border-line/60">
-            <td className="py-1.5 pl-4 text-ink-soft" colSpan={leadingColumns - 1}>
+            <td
+              className="sticky left-0 z-10 bg-card py-1.5 pl-4 text-ink-soft"
+              colSpan={leadingColumns - 1}
+            >
               Tax
             </td>
             <td className="px-1.5 py-1.5 text-right">
@@ -272,7 +297,7 @@ export function ItemGrid({
                 aria-label="Tax"
                 value={taxInput}
                 onChange={(event) => onTaxChange(event.target.value)}
-                className={`${cellClass} w-20 text-right tabular-nums`}
+                className={`${cellClass} h-10 w-20 text-right tabular-nums sm:h-auto`}
               />
             </td>
             <td className="pl-3 text-xs text-ink-soft" colSpan={columnCount - leadingColumns}>
@@ -286,7 +311,10 @@ export function ItemGrid({
           </tr>
 
           <tr className="border-b border-line">
-            <td className="py-1.5 pl-4 text-ink-soft" colSpan={leadingColumns - 1}>
+            <td
+              className="sticky left-0 z-10 bg-card py-1.5 pl-4 text-ink-soft"
+              colSpan={leadingColumns - 1}
+            >
               Tip
             </td>
             <td className="px-1.5 py-1.5 text-right">
@@ -297,7 +325,7 @@ export function ItemGrid({
                 aria-label="Tip"
                 value={tipInput}
                 onChange={(event) => onTipChange(event.target.value)}
-                className={`${cellClass} w-20 text-right tabular-nums`}
+                className={`${cellClass} h-10 w-20 text-right tabular-nums sm:h-auto`}
               />
             </td>
             <td className="pl-3" colSpan={columnCount - leadingColumns}>
@@ -307,7 +335,7 @@ export function ItemGrid({
                     key={percent}
                     type="button"
                     onClick={() => onApplyTipPercent(percent)}
-                    className="rounded-full border border-line px-2 py-0.5 text-xs text-ink-soft hover:border-brand-500 hover:text-brand-700"
+                    className="rounded-full border border-line px-2.5 py-1.5 text-xs text-ink-soft hover:border-brand-500 hover:text-brand-700 sm:py-0.5"
                   >
                     {percent}%
                   </button>
@@ -322,7 +350,7 @@ export function ItemGrid({
           </tr>
 
           <tr className="bg-paper/60 font-semibold">
-            <td className="py-2 pl-4" colSpan={leadingColumns - 1}>
+            <td className="sticky left-0 z-10 bg-paper py-2 pl-4" colSpan={leadingColumns - 1}>
               Total
             </td>
             <td className="py-2 pr-4 text-right tabular-nums">

@@ -28,13 +28,15 @@ export function SplitEditor({
     <section className="space-y-3">
       <h2 className="text-sm font-semibold tracking-wide text-ink-soft uppercase">Split</h2>
 
-      <div className="grid grid-cols-5 rounded-xl bg-paper p-1 text-sm font-semibold ring-1 ring-line">
+      {/* text-xs on phones: five labels at text-sm overflow a 375px screen and
+          the tab strip starts scrolling sideways under your thumb. */}
+      <div className="grid grid-cols-5 rounded-xl bg-paper p-1 text-xs font-semibold ring-1 ring-line sm:text-sm">
         {SPLIT_TABS.map((splitTab) => (
           <button
             key={splitTab.value}
             type="button"
             onClick={() => form.setSplitType(splitTab.value)}
-            className={`rounded-lg py-2 transition-colors ${
+            className={`rounded-lg py-2.5 transition-colors sm:py-2 ${
               form.splitType === splitTab.value
                 ? "bg-card text-brand-700 shadow-sm"
                 : "text-ink-soft"
