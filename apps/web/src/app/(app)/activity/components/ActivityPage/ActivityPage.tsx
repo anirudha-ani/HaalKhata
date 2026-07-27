@@ -7,6 +7,7 @@ import { Avatar } from "@/components/ui/Avatar";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { SearchField } from "@/components/ui/SearchField";
 import { Spinner } from "@/components/ui/Spinner";
+import { useHydrated } from "@/lib/hooks/useHydrated";
 import { formatMoney } from "@haalkhata/shared/money/money";
 import { ACTIVITY_FILTERS, activityLook } from "../../constants/activityTypes";
 import { groupByDay, monthLabel, timeOfDay, withoutAmount } from "../../utils/activityFormat";
@@ -27,7 +28,8 @@ type FeedEvent = ReturnType<typeof useActivity>["visibleEvents"][number];
  */
 export function ActivityPage() {
   const activity = useActivity();
-  if (activity.isLoading) return <Spinner label="Loading activity…" />;
+  const hydrated = useHydrated();
+  if (!hydrated || activity.isLoading) return <Spinner label="Loading activity…" />;
 
   const dayGroups = groupByDay(activity.visibleEvents, new Date());
   const isFiltered =

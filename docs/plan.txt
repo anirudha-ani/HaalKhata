@@ -511,23 +511,23 @@ exactly what 💸 depicts, and the original defect was never the drawing — it 
 showing it for money *received*, where it said the opposite of what happened.
 With direction resolved per viewer it can only land on a payment you made.
 
-Getting it legible took twenty-eight rendered variants and three lessons, each
-only visible by looking at the thing.
+It is a **coin**, not a banknote, and that was the fix. Roughly thirty rendered
+variants of a winged note all failed for the same structural reason: a note is
+a rectangle, and a rectangle with wings has no good answer at 24px. Wings above
+its corners read as bunny ears; wings at its sides read as a bowtie; a diagonal
+composition matching the emoji needs feather detail the size cannot hold, and
+degrades into insect legs. A coin is a circle — the same base shape as every
+other glyph in this set — so it sits in the column instead of fighting it, and
+the winged-sphere silhouette (a golden snitch) is legible at any size because
+the outline alone carries it. The coin stays large enough for its "$" to
+survive, that sign being the only thing saying "money" on a neutral tile.
 
-**Wings above the note's top corners always read as bunny ears.** Two vertical
-shapes flanking a rectangle is a face with ears, and pointing, notching or
-feathering them does not override that at 24px. They belong on opposite corners
-of a diagonal — which is how the emoji itself composes it.
-
-**Filled wings read fine alone and wrong in the column.** A solid mass sitting
-among outline glyphs is a style mismatch the eye calls "mushy" before it parses
-any shape. A glyph has to be judged beside its neighbours, so the harness now
-renders a reference glyph alongside every candidate.
-
-**Detail loses to size.** Feathered fans, radiating strokes and stacked quills
-all became noise or read as insect legs. Every other glyph here is one big
-circle plus two or three marks; this one is a note, a "$" and two wings, and
-nothing else — the currency band was cut for exactly that reason.
+Two general lessons came out of the detour. **Judge a glyph beside its
+neighbours, not alone** — solid wings read fine in isolation and looked like a
+blob in the column, so the harness now renders a reference glyph alongside every
+candidate. And **detail loses to size**: every other glyph here is one big
+circle plus two or three marks, and anything busier reads as mush no matter how
+correct it is up close.
 
 No captions. An earlier pass put a quip under each row ("new damage", "secured
 the bag"); it repeated what the sentence already said and pushed the timestamp

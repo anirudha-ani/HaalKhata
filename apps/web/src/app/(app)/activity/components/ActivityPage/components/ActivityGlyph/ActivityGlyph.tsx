@@ -6,7 +6,7 @@ export type GlyphName =
   | "sideEye"
   | "skull"
   | "cashGrin"
-  | "wingedCash"
+  | "wingedCoin"
   | "buddies"
   | "partyHat"
   | "yapping"
@@ -117,47 +117,36 @@ function CashGrinGlyph() {
 }
 
 /**
- * A banknote tilted into flight, a wing off each opposite corner — you paid
- * somebody.
+ * A winged coin, snitch-style — you paid somebody.
  *
  * This is what 💸 always depicted; the original sin was showing it for money
  * *received*, where it said the opposite of what happened. Direction is
  * resolved per viewer now, so it can only land on a payment you made.
  *
- * Three things were learned by rendering, in order:
+ * A coin rather than a banknote, after roughly thirty rendered variants of the
+ * note failed. The note is a rectangle, and a rectangle with wings has no good
+ * answer at 24px: wings above its corners read as bunny ears, wings at its
+ * sides read as a bowtie, and a diagonal composition needs detail the size
+ * cannot hold. A coin is a circle — the same base shape as every other glyph
+ * here — so it sits in the column instead of fighting it, and the winged-sphere
+ * silhouette is legible at any size because the outline alone carries it.
  *
- * Wings above the note's top corners always read as **bunny ears** — two
- * vertical shapes flanking a rectangle is a face with ears, and pointing or
- * feathering them does not override that at 24px. They belong on opposite
- * corners of a diagonal, which is also how the emoji composes it.
- *
- * Filled wings read fine alone and wrong in the column: a solid mass among
- * outline glyphs is a style mismatch the eye calls "mushy" before it parses
- * any shape.
- *
- * And detail loses to size. Feathered fans, radiating strokes and stacked
- * quills all turned to noise or looked like insect legs. Every other glyph in
- * this set is one big circle plus two or three marks; this one has to be a
- * note plus a "$" plus two wings, and nothing more, or it reads busier than
- * everything beside it. The currency band went for that reason.
+ * The coin stays large enough for the "$" to survive: that sign is the only
+ * thing saying "money", since this tile is neutral and lends no colour.
  */
-function WingedCashGlyph() {
+function WingedCoinGlyph() {
   return (
     <>
-      <g transform="rotate(-24 12 12)">
-        <rect {...STROKE} x="6.6" y="8.6" width="12.4" height="7.6" rx="1.4" />
-        {/* A "$" rather than the usual portrait oval: this tile is neutral, so
-            the glyph has to say "money" without help from the tint. */}
-        <path {...FINE} d="M12.8 10.1v4.6" />
-        <path {...FINE} d="M11.4 11.2c.5-.7 2.5-.7 3 0s-2.5 1-3 1.7 1.4 1.1 3 .6" />
-      </g>
+      <circle {...STROKE} cx="12" cy="12" r="4.6" />
+      <path {...FINE} d="M12 9.1v5.8" />
+      <path {...FINE} d="M10.2 10.5c.5-.8 3.1-.8 3.6 0s-3.1 1.2-3.6 2.1 1.8 1.4 3.6.7" />
       <path
         {...STROKE}
-        d="M7.6 7C5.8 4 3 1.6 1.4 2.6c-.9.6-.1 2 1.2 3.1-1 .3-.5 1.5.9 2 1.2.4 2.5.3 3.1-.2z"
+        d="M7.8 10C5.6 6.8 2.4 4.6 1.1 6c-.8.9.4 2.3 2.1 3.1-1 .5-.3 1.7 1.4 2 1.2.2 2.4-.2 2.9-.7z"
       />
       <path
         {...STROKE}
-        d="M16.4 17c1.8 3 4.6 5.4 6.2 4.4.9-.6.1-2-1.2-3.1 1-.3.5-1.5-.9-2-1.2-.4-2.5-.3-3.1.2z"
+        d="M16.2 10c2.2-3.2 5.4-5.4 6.7-4 .8.9-.4 2.3-2.1 3.1 1 .5.3 1.7-1.4 2-1.2.2-2.4-.2-2.9-.7z"
       />
     </>
   );
@@ -230,7 +219,7 @@ const GLYPHS: Record<GlyphName, () => React.JSX.Element> = {
   sideEye: SideEyeGlyph,
   skull: SkullGlyph,
   cashGrin: CashGrinGlyph,
-  wingedCash: WingedCashGlyph,
+  wingedCoin: WingedCoinGlyph,
   buddies: BuddiesGlyph,
   partyHat: PartyHatGlyph,
   yapping: YappingGlyph,

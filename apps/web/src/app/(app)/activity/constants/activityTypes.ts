@@ -79,7 +79,7 @@ export const INBOUND_LOOK: ActivityLook = {
  * money actually flies away from you, which is what the drawing depicts.
  */
 export const OUTBOUND_LOOK: ActivityLook = {
-  glyph: "wingedCash",
+  glyph: "wingedCoin",
   tile: "bg-paper text-ink ring-1 ring-line",
   label: "You paid",
 };
