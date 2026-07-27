@@ -149,13 +149,17 @@ function WingedCoinGlyph() {
         {...FINE}
         d="M14.34 10.11c-0.66-1.06 -4.02-1.06 -4.68 0s4.02 1.55 4.68 2.72-2.34 1.81 -4.68 0.91"
       />
+      {/* Three lobes fanning off a swept leading edge. The lobes are cut into
+          the outline rather than drawn as interior feather lines: an internal
+          stroke is the first thing to disappear at 24px, whereas a notched
+          silhouette keeps its structure all the way down. */}
       <path
         {...STROKE}
-        d="M6.5 9.4C4 5.8 1.4 3.4.7 5.3c-.5 1.3 1.1 2.7 3 3.3-1.1.7-.2 2.1 1.8 2.3 1.3.2 2.4-.5 2.8-1.2z"
+        d="M6.8 9.6C5.6 5.8 3 2 1.4 3c-1 .6-.5 2.6.9 4.3-1.4.1-1.5 1.8.1 2.7-1 .6-.3 1.9 1.4 2 1.2.1 2.3-.6 3-2.4z"
       />
       <path
         {...STROKE}
-        d="M17.5 9.4c2.5-3.6 5.1-6 5.8-4.1.5 1.3-1.1 2.7-3 3.3 1.1.7.2 2.1-1.8 2.3-1.3.2-2.4-.5-2.8-1.2z"
+        d="M17.2 9.6c1.2-3.8 3.8-7.6 5.4-6.6 1 .6.5 2.6-.9 4.3 1.4.1 1.5 1.8-.1 2.7 1 .6.3 1.9-1.4 2-1.2.1-2.3-.6-3-2.4z"
       />
     </>
   );
