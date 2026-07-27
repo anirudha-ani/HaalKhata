@@ -122,25 +122,28 @@ async function insertChildren(
   expenseId: string,
   input: ExpenseWrite,
 ): Promise<void> {
+  // expense_id is part of every row, not a leading parameter: multiRowValues
+  // numbers placeholders per column, so prepending it to params would shift
+  // every value by one and leave the statement a column short.
   const payersValues = multiRowValues(
-    input.payers,
-    ["userId", "amountCents"] as const,
+    input.payers.map((payer) => ({ expenseId, ...payer })),
+    ["expenseId", "userId", "amountCents"] as const,
   );
   if (payersValues) {
     await client.query(
       `INSERT INTO expense_payers (expense_id, user_id, amount_cents) VALUES ${payersValues.clause}`,
-      [expenseId, ...payersValues.params],
+      payersValues.params,
     );
   }
 
   const splitsValues = multiRowValues(
-    input.splits,
-    ["userId", "owedCents"] as const,
+    input.splits.map((split) => ({ expenseId, ...split })),
+    ["expenseId", "userId", "owedCents"] as const,
   );
   if (splitsValues) {
     await client.query(
       `INSERT INTO expense_splits (expense_id, user_id, owed_cents) VALUES ${splitsValues.clause}`,
-      [expenseId, ...splitsValues.params],
+      splitsValues.params,
     );
   }
 
