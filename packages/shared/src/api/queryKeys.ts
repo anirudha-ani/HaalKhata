@@ -77,3 +77,10 @@ export const queryKeys = {
 
 /** Everything money-related that a new expense/settlement can change — invalidate these key prefixes after mutations. */
 export const MONEY_KEYS = [["groups"], ["expenses"], ["expense"], ["balances"], ["friends"], ["activity"], ["notifications"]];
+
+/**
+ * What a comment changes: it lands in the feed and notifies the other
+ * participants, but moves no money. Bare prefixes rather than built keys, so
+ * one pass also clears the group-scoped feeds a comment shows up in.
+ */
+export const FEED_KEYS = [["activity"], ["notifications"]];

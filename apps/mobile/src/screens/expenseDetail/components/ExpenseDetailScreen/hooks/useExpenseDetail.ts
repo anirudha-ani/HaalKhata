@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import { useState } from "react";
 import { authClient, errorMessage, expenseClient } from "@/lib/api/connect";
-import { MONEY_KEYS, queryKeys } from "@haalkhata/shared/api/queryKeys";
+import { FEED_KEYS, MONEY_KEYS, queryKeys } from "@haalkhata/shared/api/queryKeys";
 
 /**
  * Loads one expense (with its users and comments) and exposes the screen's
@@ -38,6 +38,10 @@ export function useExpenseDetail(expenseId: string) {
     onSuccess: () => {
       setComment("");
       queryClient.invalidateQueries({ queryKey: queryKeys.expense(expenseId) });
+      // A comment is a feed event too, so the cached activity list is now stale.
+      for (const feedQueryKey of FEED_KEYS) {
+        queryClient.invalidateQueries({ queryKey: feedQueryKey });
+      }
     },
     onError: (mutationError) => setError(errorMessage(mutationError)),
   });

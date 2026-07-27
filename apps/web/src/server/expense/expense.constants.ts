@@ -21,3 +21,10 @@ export const SETTLEMENT_METHODS = new Set(PAYMENT_METHOD_KEYS);
 
 /** Maximum comment body length accepted on addComment. */
 export const MAX_COMMENT_LENGTH = 2000;
+
+/**
+ * How much of a comment is quoted in the activity feed line and the
+ * notification body. A feed row is one truncated line, so this only has to be
+ * short enough to stay a preview and long enough to carry a whole short remark.
+ */
+export const COMMENT_PREVIEW_LENGTH = 120;

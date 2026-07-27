@@ -29,7 +29,7 @@ import {
 import { amountOwed } from "./balance.usecase";
 import { denied, invalid, notFound } from "@/server/common/errors";
 import { toUser } from "@/server/auth/usecase/user.mapper";
-import { SPLIT_TYPES, ISO_DATE_PATTERN, MAX_EXPENSE_PARTICIPANTS, EXPENSE_CATEGORIES, SETTLEMENT_METHODS, MAX_COMMENT_LENGTH } from "@/server/expense/expense.constants";
+import { SPLIT_TYPES, ISO_DATE_PATTERN, MAX_EXPENSE_PARTICIPANTS, EXPENSE_CATEGORIES, SETTLEMENT_METHODS, MAX_COMMENT_LENGTH, COMMENT_PREVIEW_LENGTH } from "@/server/expense/expense.constants";
 import { toExpense, toSettlement } from "./expense.mapper";
 
 /**
@@ -479,7 +479,8 @@ export async function getExpense(userId: string, expenseId: string) {
 }
 
 /**
- * Adds a comment to an expense and notifies the other participants.
+ * Adds a comment to an expense, records it in the activity feed, and notifies
+ * the other participants.
  *
  * @param userId - Authenticated caller writing the comment.
  * @param expenseId - Id of the expense being commented on.
@@ -506,12 +507,33 @@ export async function addComment(userId: string, expenseId: string, body: string
     ...(children.payers.get(expenseId) ?? []).map((payer) => payer.user_id),
     ...(children.splits.get(expenseId) ?? []).map((split) => split.user_id),
   ]);
+  const preview =
+    trimmed.length > COMMENT_PREVIEW_LENGTH
+      ? `${trimmed.slice(0, COMMENT_PREVIEW_LENGTH)}…`
+      : trimmed;
+
+  // The feed quotes the comment rather than just naming it: "Ani commented on
+  // X" tells a reader nothing about whether it is worth opening, and the feed
+  // searches over this message, so quoting makes comments findable by content.
+  await insertActivity({
+    groupId: expenseRow.group_id,
+    actorId: userId,
+    type: "comment",
+    message: `${author.name} commented on "${expenseRow.description}": ${preview}`,
+    link: `/expenses/${expenseId}`,
+    // A group's comments are the group's business — the commenter may be
+    // neither payer nor ower, and members who are not on the expense still
+    // read the thread. Off a group, only the participants can see it at all.
+    audience: expenseRow.group_id
+      ? (await listMembers(expenseRow.group_id)).map((member) => member.id)
+      : [...new Set([...involved, userId])],
+  });
   await insertNotifications(
     [...involved].filter((recipientId) => recipientId !== userId),
     {
       type: "comment",
       title: `${author.name} commented on "${expenseRow.description}"`,
-      body: trimmed.slice(0, 120),
+      body: preview,
       link: `/expenses/${expenseId}`,
     },
   );
