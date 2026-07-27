@@ -31,8 +31,7 @@ export function LoginPage() {
         <div className="mb-8 text-center">
           <h1 className="font-display text-5xl font-bold text-brand-600">HaalKhata</h1>
           <p className="mt-4 text-ink-soft">
-            A fresh ledger for you and your friends — split expenses, scan
-            receipts, settle up.
+            Camera eats first. The AI splits the rest.
           </p>
         </div>
 

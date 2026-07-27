@@ -38,8 +38,7 @@ export function LoginScreen() {
           <View style={styles.hero}>
             <Text style={styles.wordmark}>HAALKHATA</Text>
             <Text style={styles.tagline}>
-              A fresh ledger for you and your friends — split expenses, scan
-              receipts, settle up.
+              Camera eats first. The AI splits the rest.
             </Text>
           </View>
 
