@@ -63,6 +63,8 @@ function userRow(overrides: Partial<UserRow> = {}): UserRow {
     password_hash: null,
     phone: null,
     google_sub: null,
+    onboarded_at: null,
+    merged_into: null,
     token_version: 0,
     created_at: "2026-07-27T00:00:00.000Z",
     payment_handles: [],

@@ -1,0 +1,182 @@
+/**
+ * Setting a phone number, and the account merge that a collision triggers.
+ *
+ * The shape of this flow is driven by one fact: phone entry is NOT verified
+ * yet (Twilio is a later tranche). So a collision cannot silently absorb the
+ * other row — the caller is shown exactly what they would take on and has to
+ * confirm it. That preview is also the only possible defense against a
+ * recycled number, which even SMS verification could not provide: proving
+ * control of a number today says nothing about who held it when the invites
+ * were written.
+ */
+
+import {
+  findUserById,
+  findUserByPhone,
+  setUserPhone,
+  type UserRow,
+} from "@/server/auth/repo/users.repo";
+import { mergeAccounts, previewMerge } from "@/server/auth/repo/accountMerge.repo";
+import { UsecaseError, invalid } from "@/server/common/errors";
+import {
+  MERGE_TOKEN_LIFETIME_SECONDS,
+  PHONE_FORMAT_HINT,
+  normalizePhone,
+} from "@/server/auth/auth.constants";
+import { signPayload } from "./auth.usecase";
+import { toUser } from "./user.mapper";
+
+/** What SetPhone resolved to: either applied outright, or waiting on confirmation. */
+export interface SetPhoneResult {
+  /** Present when the number was free and written straight to the account. */
+  user?: ReturnType<typeof toUser>;
+  /** Present when an unclaimed invited row already holds the number. */
+  pendingMerge?: {
+    name: string;
+    expenseCount: number;
+    netCents: number;
+    counterpartyNames: string[];
+  };
+  /** Signed authorization for ConfirmPhoneMerge; empty unless pendingMerge is set. */
+  mergeToken: string;
+}
+
+/**
+ * Builds the signed token that carries a pending merge between the two RPCs.
+ *
+ * Server-side state would need a table and a sweeper; an HMAC over the exact
+ * triple being authorized needs neither, and reuses the signing key the
+ * session tokens already rely on. Binding all three of keeper, loser and
+ * phone means the token cannot be replayed to absorb a different row.
+ *
+ * @param keeperId - The caller's account.
+ * @param loserId - Row that would be absorbed.
+ * @param phone - E.164 number being claimed.
+ * @returns Token of the form "keeper.loser.phone.expiry.signature".
+ */
+function createMergeToken(keeperId: string, loserId: string, phone: string): string {
+  const expiresAt = Math.floor(Date.now() / 1000) + MERGE_TOKEN_LIFETIME_SECONDS;
+  const payload = `${keeperId}.${loserId}.${phone}.${expiresAt}`;
+  return `${payload}.${signPayload(payload)}`;
+}
+
+/**
+ * Verifies a merge token and returns what it authorizes.
+ *
+ * @param token - Token previously issued by {@link createMergeToken}.
+ * @param callerId - Authenticated caller, which must match the token's keeper.
+ * @returns The loser id and phone the token authorizes.
+ * @throws UsecaseError "invalid_argument" when the token is malformed,
+ *   expired, tampered with, or was issued to a different account.
+ */
+function readMergeToken(token: string, callerId: string): { loserId: string; phone: string } {
+  const lastDot = token.lastIndexOf(".");
+  if (lastDot <= 0) invalid("that confirmation is no longer valid, please try again");
+  const payload = token.slice(0, lastDot);
+  if (signPayload(payload) !== token.slice(lastDot + 1)) {
+    invalid("that confirmation is no longer valid, please try again");
+  }
+  const [keeperId, loserId, phone, expiresAt] = payload.split(".");
+  if (!keeperId || !loserId || !phone || Number(expiresAt) < Date.now() / 1000) {
+    invalid("that confirmation is no longer valid, please try again");
+  }
+  // Signature alone would let anyone replay someone else's token; the merge
+  // must land on the account that was shown the preview.
+  if (keeperId !== callerId) {
+    throw new UsecaseError("permission_denied", "that confirmation belongs to another account");
+  }
+  return { loserId, phone };
+}
+
+/**
+ * Resolves the state of a phone number the caller wants to claim.
+ *
+ * @param userId - Authenticated caller.
+ * @param rawPhone - Whatever the user typed.
+ * @returns The updated user, or a preview plus token when confirmation is needed.
+ * @throws UsecaseError "invalid_argument" for an unparseable number or one
+ *   already on the caller's own account.
+ * @throws UsecaseError "already_exists" when a registered account holds it.
+ */
+export async function setPhone(userId: string, rawPhone: string): Promise<SetPhoneResult> {
+  const phone = normalizePhone(rawPhone);
+  if (!phone) invalid(PHONE_FORMAT_HINT);
+
+  const holder = await findUserByPhone(phone);
+
+  // Free, or already ours: write it and move on. The common case.
+  if (!holder || holder.id === userId) {
+    await setUserPhone(userId, phone);
+    const refreshed = await findUserById(userId);
+    if (!refreshed) throw new UsecaseError("unauthenticated", "account no longer exists");
+    return { user: toUser(refreshed), mergeToken: "" };
+  }
+
+  // Held by a real account. Recycled number or a typo — either way a person
+  // has to sort it out, and absorbing someone's live account is never right.
+  if (isClaimed(holder)) {
+    throw new UsecaseError(
+      "already_exists",
+      "that number is already on another account — get in touch if it should be yours",
+    );
+  }
+
+  // Held by an unclaimed row someone was invited into. Almost certainly the
+  // caller's own history, but "almost certainly" is what the preview is for.
+  const preview = await previewMerge(holder.id);
+  if (!preview) throw new UsecaseError("not_found", "that invitation no longer exists");
+  return {
+    pendingMerge: {
+      name: preview.name,
+      expenseCount: preview.expense_count,
+      netCents: preview.net_cents,
+      counterpartyNames: preview.counterparty_names,
+    },
+    mergeToken: createMergeToken(userId, holder.id, phone),
+  };
+}
+
+/**
+ * Whether a row belongs to someone who has actually signed in, as opposed to
+ * an invitation waiting to be claimed.
+ *
+ * @param user - Row to classify.
+ * @returns True when either credential is set.
+ */
+function isClaimed(user: UserRow): boolean {
+  return user.password_hash !== null || user.google_sub !== null;
+}
+
+/**
+ * Performs the merge a previous SetPhone offered.
+ *
+ * The holder is re-read and re-checked rather than trusted from the token: the
+ * row could have been claimed by its rightful owner in the seconds since the
+ * preview, and absorbing it then would take a live account.
+ *
+ * @param userId - Authenticated caller, who keeps their account.
+ * @param mergeToken - Token handed back by {@link setPhone}.
+ * @returns The caller's account after absorbing the invited row.
+ * @throws UsecaseError "invalid_argument" when the token is stale or forged.
+ * @throws UsecaseError "already_exists" when the row was claimed in the meantime.
+ */
+export async function confirmPhoneMerge(userId: string, mergeToken: string) {
+  const { loserId, phone } = readMergeToken(mergeToken, userId);
+
+  const loser = await findUserById(loserId);
+  if (!loser || loser.merged_into !== null) {
+    throw new UsecaseError("not_found", "that invitation no longer exists");
+  }
+  if (isClaimed(loser)) {
+    throw new UsecaseError("already_exists", "that number is already on another account");
+  }
+  if (loser.phone !== phone) {
+    invalid("that confirmation is no longer valid, please try again");
+  }
+
+  await mergeAccounts(userId, loserId, phone);
+
+  const merged = await findUserById(userId);
+  if (!merged) throw new UsecaseError("unauthenticated", "account no longer exists");
+  return toUser(merged);
+}

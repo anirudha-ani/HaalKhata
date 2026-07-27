@@ -6,6 +6,15 @@ import { parsePhoneNumberFromString } from "libphonenumber-js";
 /** How long an issued bearer token stays valid, in seconds (30 days). */
 export const TOKEN_LIFETIME_SECONDS = 60 * 60 * 24 * 30;
 
+/**
+ * How long a pending account-merge confirmation stays valid, in seconds.
+ *
+ * Short on purpose: the token authorizes absorbing another row, and it is
+ * meant to be confirmed on the screen that issued it. Ten minutes covers
+ * someone reading the preview carefully and leaves nothing usable afterwards.
+ */
+export const MERGE_TOKEN_LIFETIME_SECONDS = 60 * 10;
+
 /** Fixed set of avatar background colors; one is picked deterministically per email. */
 export const AVATAR_PALETTE = [
   "#c73e2e", "#0f8a5f", "#b45309", "#1d4ed8",

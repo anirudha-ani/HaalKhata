@@ -1066,6 +1066,48 @@ names backs out and nothing merges.
 a phone number and guesses it was invited can absorb that ledger. Acceptable
 with nothing deployed; tranche 4 closes it.
 
+### As built (tranches 2 and 3, 2026-07-27)
+
+Two deviations from the sketch above, both deliberate:
+
+- **Phone is not a field on `UpdateProfile`.** Claiming a number can answer
+  with a merge preview instead of an updated user, and one RPC cannot return
+  two shapes. It became `SetPhone` → `SetPhoneResponse { user | pending_merge,
+  merge_token }` plus `ConfirmPhoneMerge`. `UpdateProfile` keeps name,
+  currency and handles.
+- **The merge token was needed a tranche early.** It exists to carry a
+  confirmation between two RPCs, which is just as necessary when the preview
+  comes from an unverified number as when it follows an SMS code. It is an
+  HMAC over `keeper.loser.phone.expiry` using the session signing key, so
+  there is no table and no sweeper, and it cannot be replayed against a
+  different row or by a different account.
+
+`ConfirmPhoneMerge` re-reads the row and re-checks it rather than trusting the
+token: the rightful owner may have signed in during the seconds the preview
+was on screen, and absorbing it then would take a live account.
+
+**A constraint that only a real database catches.** The merge hands the
+absorbed row's phone to the keeper and tombstones it. Done as two statements,
+the row is momentarily left with neither email nor phone nor `merged_into`,
+and `chk_users_has_identifier` rejects it — every merge fails. The mocked unit
+tests passed throughout; `accountMerge.integration.test.ts` (real Postgres,
+skips itself when none is reachable) failed on the first run and is the reason
+surrendering the phone and stamping `merged_into` are now one UPDATE.
+
+That test seeds every hazard simultaneously — two rows in one expense, one
+item assigned to both, overlapping group membership with mismatched roles,
+friendships in both directions plus the pair that would become a self-loop, a
+settlement between the two rows, a soft-deleted expense, a JSONB audience
+naming both — and finishes by asserting that no table anywhere still
+references the absorbed row.
+
+**`sessionUserId` was fixed while the layout guard was open.** It verified
+signature and expiry only, so a cookie invalidated by signing out everywhere
+still rendered the app shell before every RPC inside it failed. It now goes
+through `sessionUser()`, which checks the embedded `token_version` against the
+row and rejects tombstones, and returns the whole user so the layout can read
+`onboarded` from the same query.
+
 ### Phone verification (tranche 4)
 
 Twilio Verify, last, because it needs an account set up. Two RPCs

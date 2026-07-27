@@ -18,6 +18,16 @@ service AuthService {
   rpc LogOut(google.protobuf.Empty) returns (google.protobuf.Empty);
   rpc GetMe(google.protobuf.Empty) returns (common.v1.User);
   rpc UpdateProfile(UpdateProfileRequest) returns (common.v1.User);
+
+  // Phone is set through its own pair of RPCs rather than a field on
+  // UpdateProfile: the number may collide with a row someone was invited into,
+  // in which case the answer is a merge preview rather than an updated user,
+  // and UpdateProfile cannot return two shapes.
+  rpc SetPhone(SetPhoneRequest) returns (SetPhoneResponse);
+  rpc ConfirmPhoneMerge(ConfirmPhoneMergeRequest) returns (common.v1.User);
+
+  // Marks the first-run flow finished, including when it was skipped.
+  rpc CompleteOnboarding(google.protobuf.Empty) returns (common.v1.User);
 }
 
 message SignUpRequest {
@@ -48,6 +58,44 @@ message AuthResponse {
   common.v1.User user = 1;
   // Bearer token; pass as "Authorization: Bearer <token>" on future calls.
   string token = 2;
+}
+
+message SetPhoneRequest {
+  // Any format the user typed; normalized to E.164 server-side.
+  string phone = 1;
+}
+
+message SetPhoneResponse {
+  // Set when the number was free and simply written to the caller's account.
+  common.v1.User user = 1;
+  // Set instead when an unclaimed row created by an invite already holds this
+  // number. Nothing has changed yet — the caller confirms with merge_token.
+  MergePreview pending_merge = 2;
+  // Short-lived signed token naming the row that would be absorbed. Empty
+  // unless pending_merge is set.
+  string merge_token = 3;
+}
+
+// What a caller would take on by merging, shown before anything is written.
+// Phone entry is not verified yet, so this screen is the only guard on the
+// merge — and the only defense against a recycled number, which verification
+// could not cover either: proving control today says nothing about who held
+// the number when the invites were made.
+message MergePreview {
+  // How many undeleted expenses the absorbed row appears in.
+  int32 expense_count = 1;
+  // The absorbed row's net position in cents: positive means it is owed.
+  int32 net_cents = 2;
+  // Display names of the people it shares expenses with — the actual check,
+  // since someone who does not recognize them should back out.
+  repeated string counterparty_names = 3;
+  // Name the absorbed row carries, usually whatever the inviter typed.
+  string name = 4;
+}
+
+message ConfirmPhoneMergeRequest {
+  // The merge_token handed back by SetPhone.
+  string merge_token = 1;
 }
 
 message UpdateProfileRequest {

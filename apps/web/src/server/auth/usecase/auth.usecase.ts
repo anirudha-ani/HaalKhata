@@ -13,6 +13,7 @@ import {
   findUserByPhone,
   insertUser,
   linkGoogleAccount,
+  markOnboarded,
   updateUserProfile,
   type UserRow,
 } from "@/server/auth/repo/users.repo";
@@ -122,6 +123,18 @@ function secret(): Buffer {
 /** Computes the base64url HMAC-SHA256 signature for a token payload. */
 function sign(payload: string): string {
   return crypto.createHmac("sha256", secret()).update(payload).digest("base64url");
+}
+
+/**
+ * Signs an arbitrary payload with the session key, for short-lived tokens that
+ * are not sessions — currently the merge confirmation in accountMerge.usecase.
+ * Exported so those flows reuse this key rather than inventing a second one.
+ *
+ * @param payload - Exact string being authorized.
+ * @returns Its base64url HMAC-SHA256 signature.
+ */
+export function signPayload(payload: string): string {
+  return sign(payload);
 }
 
 /**
@@ -452,6 +465,40 @@ export async function updateProfile(
     }
     await replacePaymentHandles(userId, input.paymentHandles);
   }
+  return getMe(userId);
+}
+
+/**
+ * Resolves a raw session token to the user it belongs to, for server
+ * components that guard routes.
+ *
+ * Unlike bare {@link verifyToken}, this checks the embedded token_version
+ * against the row and rejects merge tombstones — so a signed-out-everywhere
+ * cookie stops rendering the app shell before every RPC inside it fails.
+ *
+ * @param token - Raw session token from the cookie.
+ * @returns The user in proto shape, or null when the token is not usable.
+ */
+export async function sessionUser(token: string) {
+  const userId = verifyToken(token);
+  if (!userId) return null;
+  const user = await findUserById(userId);
+  if (!user || user.merged_into !== null) return null;
+  if (user.token_version !== tokenVersion(token)) return null;
+  return toUser(user);
+}
+
+/**
+ * Marks the caller's first-run flow finished, including when they skipped
+ * every field. Deriving "done" from a filled-in profile column instead would
+ * re-prompt forever anyone who declined.
+ *
+ * @param userId - Id of the authenticated caller.
+ * @returns The refreshed user in proto shape.
+ * @throws UsecaseError "unauthenticated" when the account row no longer exists.
+ */
+export async function completeOnboarding(userId: string) {
+  await markOnboarded(userId);
   return getMe(userId);
 }
 

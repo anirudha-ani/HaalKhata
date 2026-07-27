@@ -25,5 +25,6 @@ export function toUser(userRow: UserRow) {
     // Absent on a row straight out of an INSERT ... RETURNING *, which has no
     // handles yet by definition.
     paymentHandles: userRow.payment_handles ?? [],
+    onboarded: userRow.onboarded_at !== null,
   };
 }

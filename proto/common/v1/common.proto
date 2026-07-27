@@ -15,12 +15,17 @@ message User {
   string default_currency = 5;
   bool registered = 6;
   // Phone number in E.164 format (e.g. "+14155552671"); empty when unset.
-  // An account may have an email, a phone, or both; either can be used to log in.
+  // An account may have an email, a phone, or both. Sign-in is Google only,
+  // so a phone identifies and reaches someone rather than authenticating them.
   string phone = 7;
   // Where this person wants to be paid. Visible to anyone who shares an
   // expense with them, which is exactly who needs it — settling is done in
   // Venmo/Zelle/Cash App and this app only records that it happened.
   repeated PaymentHandle payment_handles = 8;
+  // Whether this person has been through the first-run flow. Only ever true
+  // about the caller themselves; it is meaningless on anyone else and the UI
+  // must not read it off another user.
+  bool onboarded = 9;
 }
 
 // One "pay me here" identifier: a Venmo username, a Zelle email or phone, a

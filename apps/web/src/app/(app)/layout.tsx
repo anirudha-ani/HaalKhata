@@ -3,7 +3,7 @@
 import { redirect } from "next/navigation";
 import type { ReactNode } from "react";
 import { AppShell } from "@/components/shell/AppShell";
-import { sessionUserId } from "@/lib/auth/session.server";
+import { sessionUser } from "@/lib/auth/session.server";
 
 /**
  * Layout for every authenticated (app) route: redirects to /login when there
@@ -15,6 +15,11 @@ import { sessionUserId } from "@/lib/auth/session.server";
  * @returns The AppShell-wrapped page for signed-in users.
  */
 export default async function AppLayout({ children }: { children: ReactNode }) {
-  if (!(await sessionUserId())) redirect("/login");
+  const user = await sessionUser();
+  if (!user) redirect("/login");
+  // /onboarding lives outside this group precisely so this redirect cannot
+  // loop. `onboarded` is stamped even when every field is skipped, so nobody
+  // is sent back here twice.
+  if (!user.onboarded) redirect("/onboarding");
   return <AppShell>{children}</AppShell>;
 }

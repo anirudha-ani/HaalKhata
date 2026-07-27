@@ -18,6 +18,10 @@ export interface UserRow {
   phone: string | null;
   /** Google account id (the ID token's `sub`); null when never signed in with Google. */
   google_sub: string | null;
+  /** When the first-run flow finished; null means the app still redirects there. */
+  onboarded_at: string | null;
+  /** Id this row was absorbed into by an account merge; null for a live account. */
+  merged_into: string | null;
   /** Monotonic counter baked into issued tokens; bumping it invalidates outstanding tokens. */
   token_version: number;
   created_at: string;
@@ -90,9 +94,11 @@ export async function findUserById(userId: string): Promise<UserRow | undefined>
  * @returns The matching row, or undefined when no such user exists.
  */
 export async function findUserByEmail(email: string): Promise<UserRow | undefined> {
-  return queryOne<UserRow>(`SELECT ${USER_COLUMNS} FROM users usr WHERE lower(usr.email) = lower($1)`, [
-    email,
-  ]);
+  return queryOne<UserRow>(
+    `SELECT ${USER_COLUMNS} FROM users usr
+      WHERE lower(usr.email) = lower($1) AND usr.merged_into IS NULL`,
+    [email],
+  );
 }
 
 /**
@@ -102,7 +108,10 @@ export async function findUserByEmail(email: string): Promise<UserRow | undefine
  * @returns The matching row, or undefined when no such user exists.
  */
 export async function findUserByPhone(phone: string): Promise<UserRow | undefined> {
-  return queryOne<UserRow>(`SELECT ${USER_COLUMNS} FROM users usr WHERE usr.phone = $1`, [phone]);
+  return queryOne<UserRow>(
+    `SELECT ${USER_COLUMNS} FROM users usr WHERE usr.phone = $1 AND usr.merged_into IS NULL`,
+    [phone],
+  );
 }
 
 /**
@@ -112,9 +121,10 @@ export async function findUserByPhone(phone: string): Promise<UserRow | undefine
  * @returns The matching row, or undefined when no row is linked to that account.
  */
 export async function findUserByGoogleSub(googleSub: string): Promise<UserRow | undefined> {
-  return queryOne<UserRow>(`SELECT ${USER_COLUMNS} FROM users usr WHERE usr.google_sub = $1`, [
-    googleSub,
-  ]);
+  return queryOne<UserRow>(
+    `SELECT ${USER_COLUMNS} FROM users usr WHERE usr.google_sub = $1 AND usr.merged_into IS NULL`,
+    [googleSub],
+  );
 }
 
 /**
@@ -168,6 +178,33 @@ export async function claimUser(
   await execute(`UPDATE users SET name = $1, password_hash = $2 WHERE id = $3`, [
     name,
     passwordHash,
+    userId,
+  ]);
+}
+
+/**
+ * Writes a verified-by-policy phone number onto an account.
+ *
+ * Callers must have already resolved any collision: `users.phone` carries a
+ * partial unique index, so a number still held by another row is rejected by
+ * Postgres rather than silently overwritten.
+ *
+ * @param userId - Account to write to.
+ * @param phone - E.164 number, or null to clear it.
+ */
+export async function setUserPhone(userId: string, phone: string | null): Promise<void> {
+  await execute(`UPDATE users SET phone = $1 WHERE id = $2`, [phone, userId]);
+}
+
+/**
+ * Stamps the first-run flow as finished, including when it was skipped.
+ *
+ * Idempotent: the first stamp wins, so a double submit does not move the date.
+ *
+ * @param userId - Account that completed onboarding.
+ */
+export async function markOnboarded(userId: string): Promise<void> {
+  await execute(`UPDATE users SET onboarded_at = now() WHERE id = $1 AND onboarded_at IS NULL`, [
     userId,
   ]);
 }

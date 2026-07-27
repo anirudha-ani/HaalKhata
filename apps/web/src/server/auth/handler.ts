@@ -4,6 +4,7 @@ import type { ServiceImpl } from "@connectrpc/connect";
 import type { HandlerContext } from "@connectrpc/connect";
 import type { AuthService } from "@haalkhata/protogen/auth/v1/auth_pb";
 import * as auth from "@/server/auth/usecase/auth.usecase";
+import * as accountMerge from "@/server/auth/usecase/accountMerge.usecase";
 import { clearSessionCookie, requireUser, runUsecase, setSessionCookie } from "@/server/api/connect/context";
 import { rateLimitCheck } from "@/server/common/rateLimit";
 import { AUTH_RATE_LIMIT } from "@/server/auth/auth.constants";
@@ -79,5 +80,33 @@ export const authHandler: ServiceImpl<typeof AuthService> = {
   /** Updates the calling user's name and/or default currency. */
   async updateProfile(request, handlerContext) {
     return runUsecase(async () => auth.updateProfile(await requireUser(handlerContext), request), handlerContext);
+  },
+
+  /**
+   * Claims a phone number, or reports what merging would absorb when an
+   * unclaimed invitation already holds it.
+   */
+  async setPhone(request, handlerContext) {
+    return runUsecase(
+      async () => accountMerge.setPhone(await requireUser(handlerContext), request.phone),
+      handlerContext,
+    );
+  },
+
+  /** Carries out the merge that setPhone previewed. */
+  async confirmPhoneMerge(request, handlerContext) {
+    return runUsecase(
+      async () =>
+        accountMerge.confirmPhoneMerge(await requireUser(handlerContext), request.mergeToken),
+      handlerContext,
+    );
+  },
+
+  /** Marks the caller's first-run flow finished, skipped fields included. */
+  async completeOnboarding(_request, handlerContext) {
+    return runUsecase(
+      async () => auth.completeOnboarding(await requireUser(handlerContext)),
+      handlerContext,
+    );
   },
 };
