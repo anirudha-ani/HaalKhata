@@ -6,7 +6,7 @@ export type GlyphName =
   | "sideEye"
   | "skull"
   | "cashGrin"
-  | "sobbing"
+  | "wingedCash"
   | "buddies"
   | "partyHat"
   | "yapping"
@@ -117,19 +117,34 @@ function CashGrinGlyph() {
 }
 
 /**
- * Sobbing — you paid somebody.
+ * A banknote with wings, mid-getaway — you paid somebody.
  *
- * The tear was a filled droplet first. At 20px it merged with the face's own
- * outline into an unreadable smudge, so it is two streaks now: thin shapes
- * that keep their gap from the outline at any size.
+ * This is what 💸 always depicted; the original sin was showing it for money
+ * *received*, where it said the opposite of what happened. With direction
+ * resolved per viewer it only ever appears on a payment you made, so the
+ * drawing and the event finally agree.
+ *
+ * Wings on both sides, not one. A single wing was tried twice and collapsed
+ * into a blob at 24px — the note eats the width and leaves the wing too few
+ * pixels to have a shape. A symmetrical pair reads at a glance because the
+ * silhouette itself is the signal.
  */
-function SobbingGlyph() {
+function WingedCashGlyph() {
   return (
     <>
-      <circle {...STROKE} cx="12" cy="12" r="8.4" />
-      <path {...STROKE} d="M7.6 10c.9-1.1 2.2-1.1 3.1 0M13.3 10c.9-1.1 2.2-1.1 3.1 0" />
-      <path {...FINE} d="M9.1 11.8v3.4M14.9 11.8v2.6" />
-      <ellipse {...FINE} cx="12" cy="16.9" rx="2.6" ry="2" />
+      <rect {...STROKE} x="7.6" y="9.6" width="8.8" height="6.4" rx="1.3" />
+      {/* A "$" rather than the usual portrait oval: the tile is neutral here,
+          so the glyph has to say "money" without help from colour. */}
+      <path {...FINE} d="M12 10.6v4.8" />
+      <path {...FINE} d="M10.6 11.6c.4-.7 2.4-.7 2.8 0s-2.4 1.1-2.8 1.9 1.4 1.2 2.8.6" />
+      <path
+        {...STROKE}
+        d="M7.6 10.8C5.2 7.2 2.2 5.8 1 7.4c-1 1.4.8 3.6 3.3 4.5-1.1.7-.5 1.9 1.1 2.1s2.2-.5 2.2-.5z"
+      />
+      <path
+        {...STROKE}
+        d="M16.4 10.8c2.4-3.6 5.4-5 6.6-3.4 1 1.4-.8 3.6-3.3 4.5 1.1.7.5 1.9-1.1 2.1s-2.2-.5-2.2-.5z"
+      />
     </>
   );
 }
@@ -201,7 +216,7 @@ const GLYPHS: Record<GlyphName, () => React.JSX.Element> = {
   sideEye: SideEyeGlyph,
   skull: SkullGlyph,
   cashGrin: CashGrinGlyph,
-  sobbing: SobbingGlyph,
+  wingedCash: WingedCashGlyph,
   buddies: BuddiesGlyph,
   partyHat: PartyHatGlyph,
   yapping: YappingGlyph,

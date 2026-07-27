@@ -89,7 +89,7 @@ export const INBOUND_LOOK: ActivityLook = {
  * money actually flies away from you, which is what the drawing depicts.
  */
 export const OUTBOUND_LOOK: ActivityLook = {
-  glyph: "sobbing",
+  glyph: "wingedCash",
   tile: "bg-paper text-ink ring-1 ring-line",
   tag: "it hurt, but it’s done",
   label: "You paid",

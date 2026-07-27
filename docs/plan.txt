@@ -506,12 +506,25 @@ added (receipt, brand tint) and deleted (headstone, muted) differ by tint
 `aria-label` while the SVG is `aria-hidden`, so a screen reader announces
 "Expense deleted" instead of describing a headstone.
 
-The outbound glyph was a winged banknote first. Rendered and inspected at tile
-size it collapsed into an unreadable blob — the note fills the 24px box and
-leaves no room for a legible wing — so it became a paper plane, which carries
-"sent" at any size while the caption and signed amount supply the "money"
-half. Every glyph in the set was rendered to a sheet and looked at before it
-shipped, which is the only way that defect was going to be caught.
+The outbound glyph took three attempts, and the winged banknote won in the
+end — correctly. A winged note is exactly what 💸 depicts; the original sin was
+never the drawing, it was showing it for money *received*, where it said the
+opposite of what happened. Now that direction is resolved per viewer it can
+only appear on a payment you made, so drawing and event agree.
+
+Getting it legible took the harness. A single wing was tried twice and
+collapsed into a blob at 24px — the note eats the width and leaves the wing too
+few pixels to have a shape — which sent it via a paper plane and a sobbing face
+before landing on a *symmetrical pair* of wings, where the silhouette itself
+carries the meaning. The note wears a "$" rather than the usual portrait oval,
+because that tile is neutral-coloured and the glyph has to say "money" without
+help from the tint.
+
+The harness renders at true size (40px tile) with a 3x row beside it. An
+earlier pass previewed at 66px and shipped a tear fused to a face outline and
+dollar signs the size of specks; at half the size, details that looked fine
+simply stop existing. Shipped paths are checked byte-for-byte against the
+previewed ones.
 
 **Structured fields, additively.** activity gains `amount_cents`, `currency`
 and `credit_user_id` (for a settlement, who received). ActivityEvent exposes
