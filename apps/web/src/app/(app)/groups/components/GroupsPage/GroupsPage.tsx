@@ -6,6 +6,7 @@ import { Plus, UsersRound } from "lucide-react";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Modal } from "@/components/ui/Modal";
 import { Money } from "@/components/ui/Money";
+import { SearchField } from "@/components/ui/SearchField";
 import { Spinner } from "@/components/ui/Spinner";
 import { CURRENCIES } from "@haalkhata/shared/money/money.constants";
 import { GROUP_TYPES, groupEmoji } from "../../constants/groupTypes";
@@ -50,8 +51,27 @@ export function GroupsPage() {
           }
         />
       ) : (
+        <>
+          <div className="flex items-center gap-3">
+            <SearchField
+              className="flex-1"
+              value={groupsState.query}
+              onChange={groupsState.setQuery}
+              placeholder="Search groups by name or type"
+            />
+            {groupsState.query ? (
+              <span className="shrink-0 text-sm text-ink-soft tabular-nums">
+                {groupsState.visibleGroups.length} of {groupsState.groups.length}
+              </span>
+            ) : null}
+          </div>
+          {groupsState.visibleGroups.length === 0 ? (
+            <p className="rounded-2xl border border-line bg-card px-4 py-6 text-center text-sm text-ink-soft">
+              No groups match “{groupsState.query}”.
+            </p>
+          ) : (
         <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {groupsState.groups.map((summary) =>
+          {groupsState.visibleGroups.map((summary) =>
             summary.group ? (
               <li key={summary.group.id}>
                 <Link
@@ -92,6 +112,8 @@ export function GroupsPage() {
             ) : null,
           )}
         </ul>
+          )}
+        </>
       )}
 
       {groupsState.creating ? (
