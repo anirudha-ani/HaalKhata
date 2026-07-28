@@ -42,9 +42,13 @@ tar -C "$BASE" -c secrets \
   | age -r "$RECIPIENT" > "$OUT/secrets-$STAMP.tar.age"
 
 # --- offsite ----------------------------------------------------------------
-# A backup on the same disk as the database is not a backup. Point
-# backup-target.txt at a DigitalOcean Space (or any S3-compatible bucket) and
-# configure ~/.s3cfg before enabling the timer.
+# A backup on the same disk as the database is not a backup, and one in the
+# same cloud account is only half of one. Point backup-target.txt at an
+# S3-compatible bucket on a DIFFERENT provider and configure ~/.s3cfg first.
+#
+# Backblaze B2 (10 GB free) or Cloudflare R2 (10 GB free, no egress fees) both
+# hold these dumps for nothing — they are megabytes. DigitalOcean Spaces also
+# works but costs $5/mo minimum, which is most of a droplet.
 if [ -f "$BASE/backup-target.txt" ]; then
   TARGET=$(cat "$BASE/backup-target.txt")
   case "$TARGET" in
