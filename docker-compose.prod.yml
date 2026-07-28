@@ -20,6 +20,17 @@ services:
       # Read only at initdb. Rotating this later needs ALTER USER first — see
       # ops/README.md; editing the file alone locks the app out of its own db.
       POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+    # Sized for a 1 GB droplet. Postgres defaults to max_connections=100, and
+    # each idle backend costs a few MB — on a box where the whole budget is
+    # ~300 MB of fixed overhead, 100 possible backends is a latent OOM. The
+    # app's pool caps at 20 (db.ts), so 30 leaves room for psql and pg_dump.
+    command: >-
+      postgres
+      -c max_connections=30
+      -c shared_buffers=128MB
+      -c effective_cache_size=384MB
+      -c work_mem=4MB
+      -c maintenance_work_mem=32MB
     secrets:
       - postgres_password
     volumes:

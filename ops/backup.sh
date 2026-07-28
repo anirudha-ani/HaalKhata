@@ -42,10 +42,15 @@ tar -C "$BASE" -c secrets \
   | age -r "$RECIPIENT" > "$OUT/secrets-$STAMP.tar.age"
 
 # --- offsite ----------------------------------------------------------------
-# A backup on the same disk as the database is not a backup. Configure the
-# Storage Box (or any rsync target) before enabling the timer.
+# A backup on the same disk as the database is not a backup. Point
+# backup-target.txt at a DigitalOcean Space (or any S3-compatible bucket) and
+# configure ~/.s3cfg before enabling the timer.
 if [ -f "$BASE/backup-target.txt" ]; then
-  rsync -a --delete "$OUT/" "$(cat "$BASE/backup-target.txt")"
+  TARGET=$(cat "$BASE/backup-target.txt")
+  case "$TARGET" in
+    s3://*) s3cmd sync --delete-removed "$OUT/" "$TARGET" ;;
+    *)      rsync -a --delete "$OUT/" "$TARGET" ;;
+  esac
 else
   echo "warning: no backup-target.txt — backups are still only on this disk" >&2
 fi
