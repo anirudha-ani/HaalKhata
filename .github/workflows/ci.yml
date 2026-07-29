@@ -25,7 +25,11 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  check:
+  # This key is the status-check name branch protection matches on, and it is
+  # what shows in the PR checks list. If you rename it AFTER adding it as a
+  # required check, the rule waits forever for a check that no longer exists
+  # and every PR is blocked — so rename it here and update the ruleset together.
+  quality-gates:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -42,25 +46,58 @@ jobs:
           node-version: 24
           cache: pnpm
 
-      - run: pnpm install --frozen-lockfile
+      - name: Install dependencies — exactly as locked
+        run: pnpm install --frozen-lockfile
 
-      # packages/protogen/src is gitignored; every job regenerates it.
-      - run: pnpm gen
+      # packages/protogen/src is gitignored; every run regenerates it.
+      - name: Generate TypeScript from the .proto contract
+        run: pnpm gen
 
-      - name: proto contract
-        run: |
-          pnpm proto:lint
-          pnpm exec buf breaking --against '.git#branch=main'
+      - name: 'Contract: proto style rules (buf lint)'
+        run: pnpm proto:lint
 
-      - name: web
-        run: pnpm typecheck && pnpm lint && pnpm test
+      # Breaking-change detection is a PR-time question: does THIS change break
+      # the contract as it stands on the base branch? On a push to main there is
+      # nothing meaningful to compare — main against itself.
+      #
+      # `ref=origin/<base>`, not `branch=<base>`: actions/checkout leaves a
+      # detached HEAD with only remote-tracking refs, so no local branch exists
+      # for buf to resolve and it fails with "couldn't find remote ref main".
+      # It passes locally only because a developer's clone has a real `main`.
+      - name: 'Contract: no breaking API change vs base branch'
+        if: github.event_name == 'pull_request'
+        run: pnpm exec buf breaking --against '.git#ref=origin/${{ github.event.pull_request.base.ref }}'
 
-      - name: shared
-        run: pnpm typecheck:shared && pnpm lint:shared && pnpm test:shared
+      # Split one concern per step, so a red mark in the summary says WHICH
+      # gate failed without expanding anything. Chained with && they all shared
+      # one opaque name.
+      - name: 'Web: TypeScript compiles (tsc --noEmit)'
+        run: pnpm typecheck
+
+      - name: 'Web: lint rules (eslint)'
+        run: pnpm lint
+
+      - name: 'Web: unit tests (vitest)'
+        run: pnpm test
+
+      - name: 'Shared package: TypeScript compiles'
+        run: pnpm typecheck:shared
+
+      - name: 'Shared package: lint rules'
+        run: pnpm lint:shared
+
+      - name: 'Shared package: unit tests'
+        run: pnpm test:shared
 
       # The Expo app is not deployed yet, but it is still in the workspace and
       # imports @haalkhata/shared and @haalkhata/protogen. Unchecked code rots,
       # and a shared-package change that breaks it should fail here rather than
-      # be discovered months later. Delete this step if you drop apps/mobile.
-      - name: mobile
-        run: pnpm typecheck:mobile && pnpm lint:mobile && pnpm test:mobile
+      # be discovered months later. Delete these three if you drop apps/mobile.
+      - name: 'Mobile app (not deployed): TypeScript compiles'
+        run: pnpm typecheck:mobile
+
+      - name: 'Mobile app (not deployed): lint rules'
+        run: pnpm lint:mobile
+
+      - name: 'Mobile app (not deployed): unit tests'
+        run: pnpm test:mobile

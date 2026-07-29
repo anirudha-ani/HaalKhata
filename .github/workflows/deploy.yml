@@ -10,9 +10,17 @@
 #   Environment `production`                 optional required-reviewer gate
 name: Deploy
 
+# Releases deploy; merges do not. Publishing a release is the deliberate act
+# that ships to users, so `main` stays somewhere work can land without going
+# live. A DRAFT release fires nothing — only clicking Publish emits
+# `released`/`published`, which is exactly the gate we want.
+#
+# `github.sha` on a release event is the commit the tag points at, so the
+# deploy job still hands the server an immutable 40-char SHA and deploy.sh
+# needs no change. The tag is how a human named it; the SHA is what ships.
 on:
-  push:
-    branches: [main]
+  release:
+    types: [published]
   workflow_dispatch:
 
 permissions:
@@ -25,6 +33,10 @@ concurrency:
 
 jobs:
   build:
+    # A pre-release is a rehearsal, not a shipment. `types: [published]` fires
+    # for those too, so skip them explicitly. Drop this line if you ever want
+    # pre-releases to reach the droplet.
+    if: github.event_name == 'workflow_dispatch' || github.event.release.prerelease == false
     runs-on: ubuntu-latest
     permissions:
       contents: read
