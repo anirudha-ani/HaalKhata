@@ -1,7 +1,7 @@
 "use client";
 /** Account page: view/edit profile (name, default currency) and sign out. */
 
-import { LogOut } from "lucide-react";
+import { Check, LogOut } from "lucide-react";
 import type { User } from "@haalkhata/protogen/common/v1/common_pb";
 import { Avatar } from "@/components/ui/Avatar";
 import { MergePreview } from "@/components/account/MergePreview";
@@ -12,6 +12,69 @@ import { useHydrated } from "@/lib/hooks/useHydrated";
 import { CURRENCIES } from "@haalkhata/shared/money/money.constants";
 import { HANDLE_METHODS } from "@haalkhata/shared/payment/methods";
 import { useAccountAPI, useProfileForm } from "./hooks/useAccount";
+
+/** The two things a bank will accept as a Zelle identity. */
+const ZELLE_MODES = [
+  { key: "phone", label: "Phone" },
+  { key: "email", label: "Email" },
+] as const;
+
+/**
+ * Renders the Zelle handle field as a choice between a phone and an email,
+ * because a bank registers one or the other and Zelle matches the exact
+ * string. A single free-text box left people typing a bare "4015550147",
+ * which is ambiguous the moment anyone is outside the US; the phone side
+ * reuses {@link PhoneField} so a country code comes along by construction.
+ *
+ * @param props - Component props.
+ * @param props.form - The profile form state from {@link useProfileForm}.
+ * @returns The Zelle row of the payment handles fieldset.
+ */
+function ZelleField({ form }: { form: ReturnType<typeof useProfileForm> }) {
+  return (
+    <div className="space-y-2 text-sm">
+      <div className="flex items-center gap-3">
+        <span className="w-24 shrink-0 text-ink-soft">Zelle</span>
+        <div className="inline-flex rounded-lg bg-paper p-0.5 text-xs font-semibold">
+          {ZELLE_MODES.map((mode) => (
+            <button
+              key={mode.key}
+              type="button"
+              aria-pressed={form.zelleMode === mode.key}
+              onClick={() => form.setZelleMode(mode.key)}
+              className={`rounded-md px-2.5 py-1 transition-colors ${
+                form.zelleMode === mode.key
+                  ? "bg-card text-brand-700 shadow-sm"
+                  : "text-ink-soft hover:text-ink"
+              }`}
+            >
+              {mode.label}
+            </button>
+          ))}
+        </div>
+      </div>
+      {form.zelleMode === "phone" ? (
+        <PhoneField
+          region={form.zelleRegion}
+          nationalNumber={form.zelleNationalNumber}
+          onRegionChange={form.setZelleRegion}
+          onNationalNumberChange={form.setZelleNationalNumber}
+          label="Zelle phone number"
+        />
+      ) : (
+        <input
+          type="email"
+          inputMode="email"
+          value={form.handles.zelle ?? ""}
+          onChange={(event) => form.setHandle("zelle", event.target.value)}
+          placeholder="jordan@example.com"
+          aria-label="Zelle email address"
+          className="w-full rounded-xl border border-line bg-card px-3 py-2 focus:border-brand-500 focus:outline-none"
+        />
+      )}
+    </div>
+  );
+}
 
 /**
  * Renders the account screen: a spinner until the signed-in user is loaded,
@@ -106,26 +169,51 @@ function ProfileForm({ me: currentUser }: { me: User }) {
             Whoever owes you sees these when they settle up, so they can pay you without
             asking where to send it. Leave one blank if you don&apos;t use it.
           </p>
-          {HANDLE_METHODS.map((method) => (
-            <label key={method.key} className="flex items-center gap-3 text-sm">
-              <span className="w-24 shrink-0 text-ink-soft">{method.label}</span>
-              <input
-                value={form.handles[method.key] ?? ""}
-                onChange={(event) => form.setHandle(method.key, event.target.value)}
-                placeholder={method.handleLabel}
-                className="min-w-0 flex-1 rounded-xl border border-line bg-card px-3 py-2 focus:border-brand-500 focus:outline-none"
-              />
-            </label>
-          ))}
+          {HANDLE_METHODS.map((method) =>
+            method.key === "zelle" ? (
+              <ZelleField key={method.key} form={form} />
+            ) : (
+              <label key={method.key} className="flex items-center gap-3 text-sm">
+                <span className="w-24 shrink-0 text-ink-soft">{method.label}</span>
+                {/* The sigil is furniture, not something to type. Rendering it
+                    inside the border — with focus-within lighting the whole
+                    group — keeps it reading as one field while removing the
+                    question of whether it belongs in the value. */}
+                <span className="flex min-w-0 flex-1 items-center rounded-xl border border-line bg-card focus-within:border-brand-500">
+                  {method.handlePrefix ? (
+                    <span className="pl-3 text-ink-soft select-none">{method.handlePrefix}</span>
+                  ) : null}
+                  <input
+                    value={form.handles[method.key] ?? ""}
+                    onChange={(event) => form.setHandle(method.key, event.target.value)}
+                    placeholder={method.handleExample}
+                    aria-label={`${method.label} username`}
+                    className={`min-w-0 flex-1 bg-transparent py-2 pr-3 focus:outline-none ${
+                      method.handlePrefix ? "pl-0.5" : "pl-3"
+                    }`}
+                  />
+                </span>
+              </label>
+            ),
+          )}
         </fieldset>
 
-        {form.message ? <p className="text-sm text-ink-soft">{form.message}</p> : null}
+        {/* The status lives on the button that caused it. An earlier version
+            put "Saved ✓" in a paragraph above — which pushed the button down
+            the instant it appeared — and then in a floating toast, which was
+            a lot of furniture for one word. Here nothing moves: the button
+            keeps its box and only its colour and label change. */}
         <button
           type="submit"
           disabled={form.isSaving}
-          className="w-full rounded-xl bg-brand-600 py-3 font-semibold text-white hover:bg-brand-700 disabled:opacity-50"
+          className={`w-full rounded-xl py-3 font-semibold text-white transition-colors duration-300 disabled:opacity-70 ${
+            form.saved ? "bg-pos-600" : "bg-brand-600 hover:bg-brand-700"
+          }`}
         >
-          {form.isSaving ? "Saving…" : "Save changes"}
+          <span className="inline-flex items-center justify-center gap-2">
+            {form.saved ? <Check className="animate-pop-in h-5 w-5" /> : null}
+            {form.isSaving ? "Saving…" : form.saved ? "Saved" : "Save changes"}
+          </span>
         </button>
       </form>
 
@@ -176,6 +264,7 @@ function ProfileForm({ me: currentUser }: { me: User }) {
           </div>
         </Modal>
       ) : null}
+
     </div>
   );
 }

@@ -32,7 +32,14 @@ export function useGroupDetail(groupId: string) {
   const [identifier, setIdentifier] = useState("");
   const [peopleError, setPeopleError] = useState("");
   const [simplified, setSimplified] = useState(false);
-  const [settleWith, setSettleWith] = useState<{ user: User; cents: number } | null>(null);
+  // `received` rides along because the same modal records both directions:
+  // paying what you owe, and logging money that has arrived from someone who
+  // owed you. Without it the group page could only ever offer the first.
+  const [settleWith, setSettleWith] = useState<{
+    user: User;
+    cents: number;
+    received: boolean;
+  } | null>(null);
 
   // Lookup map so panels can resolve a member's User from a bare user id.
   const userById = new Map(

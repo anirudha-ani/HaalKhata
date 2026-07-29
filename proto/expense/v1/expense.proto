@@ -121,6 +121,23 @@ message GetExpenseResponse {
   Expense expense = 1;
   repeated Comment comments = 2;
   repeated common.v1.User users = 3;
+  // Who has touched this expense, oldest first. Read from the activity feed
+  // rather than stored on the expense: the feed already records every change,
+  // so a second source of truth would only be one that could disagree.
+  repeated ExpenseEvent history = 4;
+}
+
+// One recorded change to an expense, for the detail view's history line.
+//
+// Deliberately not social.v1.ActivityEvent: that carries a pre-rendered
+// message repeating the description and amount, both of which are already on
+// screen here, and importing it would tie the expense contract to the social
+// one for three fields.
+message ExpenseEvent {
+  common.v1.User actor = 1;
+  // expense_added | expense_updated
+  string type = 2;
+  string created_at = 3;
 }
 
 message DeleteExpenseRequest {

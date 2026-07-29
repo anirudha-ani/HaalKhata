@@ -419,7 +419,11 @@ export function useNewExpense(
       tipCents: isItemized ? tipCents : 0,
     };
 
-    const onSuccess = () => router.push(groupId ? `/groups/${groupId}` : "/friends");
+    // Land on the thing you just made, not on the list you started from.
+    // Both RPCs return the saved Expense, so the id is already here — and
+    // seeing the split it landed on is the confirmation that matters, far
+    // more than a group page where the new row is one line among many.
+    const onSuccess = (saved: { id: string }) => router.push(`/expenses/${saved.id}`);
     const onError = (mutationError: unknown) => setError(errorMessage(mutationError));
     if (editExpenseId) {
       expenseAPI.update.mutate(

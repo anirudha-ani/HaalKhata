@@ -9,7 +9,12 @@ import { errorMessage, expenseClient } from "@/lib/api/connect";
 import { copyText } from "@/lib/clipboard/copyText";
 import { centsToInput, formatMoney, parseMoneyInput } from "@haalkhata/shared/money/money";
 import { MONEY_KEYS } from "@haalkhata/shared/api/queryKeys";
-import { PAYMENT_METHODS, findPaymentMethod, paymentLink } from "@haalkhata/shared/payment/methods";
+import {
+  PAYMENT_METHODS,
+  displayHandle,
+  findPaymentMethod,
+  paymentLink,
+} from "@haalkhata/shared/payment/methods";
 import { Avatar } from "@/components/ui/Avatar";
 import { Modal } from "@/components/ui/Modal";
 
@@ -85,6 +90,10 @@ export function SettleUpModal({
     : (other.paymentHandles.find((entry) => entry.method === methodKey)?.handle ?? "");
   const amountCents = parseMoneyInput(amount) ?? 0;
   const link = paymentLink(methodKey, handle, amountCents, note);
+  // Storage keeps the bare identifier; the payer wants the form printed on a
+  // profile. "@jordan-lee" is what they will search for and what pastes
+  // cleanly into the app, so it is both what is shown and what gets copied.
+  const shownHandle = displayHandle(methodKey, handle);
 
   /**
    * Copies the recipient's handle and flips the button to a confirmation.
@@ -93,7 +102,7 @@ export function SettleUpModal({
    * saying "Copied" when nothing was copied is worse than saying nothing.
    */
   const copyHandle = async () => {
-    if (!(await copyText(handle))) return;
+    if (!(await copyText(shownHandle))) return;
     setCopied(true);
     window.setTimeout(() => setCopied(false), 1500);
   };
@@ -197,7 +206,7 @@ export function SettleUpModal({
               </p>
               <div className="flex items-center gap-2">
                 <code className="min-w-0 flex-1 truncate rounded-lg bg-card px-3 py-2 font-mono text-sm">
-                  {handle}
+                  {shownHandle}
                 </code>
                 <button
                   type="button"

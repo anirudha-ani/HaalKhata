@@ -19,7 +19,7 @@ import { findUserById, findUsersByIds } from "@/server/auth/repo/users.repo";
 import { insertFriendship } from "@/server/social/repo/friendships.repo";
 import { insertComment, listCommentsByExpense } from "@/server/expense/repo/comments.repo";
 import { insertSettlement } from "@/server/expense/repo/settlements.repo";
-import { insertActivity } from "@/server/social/repo/activity.repo";
+import { insertActivity, listActivityForExpense } from "@/server/social/repo/activity.repo";
 import { insertNotifications } from "@/server/social/repo/notifications.repo";
 import {
   computeItemizedSplits,
@@ -459,11 +459,19 @@ export async function getExpense(userId: string, expenseId: string) {
   await assertCanTouch(userId, expenseRow);
   const children = await loadExpenseChildren([expenseId]);
   const comments = await listCommentsByExpense(expenseId);
+  // The people to resolve are the comment authors AND whoever touched the
+  // expense, looked up together so the history does not cost a second round
+  // trip for a set that mostly overlaps.
+  const events = await listActivityForExpense(expenseId);
   const commentAuthors = new Map(
-    (await findUsersByIds([...new Set(comments.map((comment) => comment.user_id))])).map((user) => [
-      user.id,
-      user,
-    ]),
+    (
+      await findUsersByIds([
+        ...new Set([
+          ...comments.map((comment) => comment.user_id),
+          ...events.map((event) => event.actor_id),
+        ]),
+      ])
+    ).map((user) => [user.id, user]),
   );
   return {
     expense: toExpense(expenseRow, children),
@@ -475,6 +483,13 @@ export async function getExpense(userId: string, expenseId: string) {
       createdAt: comment.created_at,
     })),
     users: await usersReferenced([expenseRow], children),
+    history: events.map((event) => ({
+      actor: commentAuthors.get(event.actor_id)
+        ? toUser(commentAuthors.get(event.actor_id)!)
+        : undefined,
+      type: event.type,
+      createdAt: event.created_at,
+    })),
   };
 }
 
@@ -637,7 +652,16 @@ export async function recordSettlement(
   const friendLink = `/friends/${request.toUserId}`;
   await insertActivity({
     groupId,
-    actorId: userId,
+    // The payer, not whoever typed it in. A feed row's avatar restates the
+    // subject of its own sentence, and for a settlement that subject is the
+    // person who paid — the message right below already names them first.
+    // Recording a payment received put the recorder's face beside "someone
+    // else paid me", which reads as though they had paid themselves.
+    //
+    // Every other activity type has actor and subject as the same person, so
+    // this is the only place they can diverge. Who entered it is not lost:
+    // the notification below says "<name> recorded your payment".
+    actorId: payerId,
     type: "settlement",
     message: `${payerName} paid ${creditorName} ${formatMoney(request.amountCents, currency)}${group ? ` in "${group.name}"` : ""}`,
     link: groupId ? `/groups/${groupId}` : friendLink,

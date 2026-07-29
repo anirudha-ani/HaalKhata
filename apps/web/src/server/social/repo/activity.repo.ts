@@ -194,3 +194,27 @@ export async function listActivityMonths(scope: {
   );
   return rows.map((monthRow) => monthRow.month);
 }
+
+/**
+ * Every recorded change to one expense, oldest first.
+ *
+ * Matched on `link` rather than a foreign key because that is what ties an
+ * activity row to an expense in this schema — `insertActivity` writes
+ * `/expenses/<id>` for both the added and updated events. An exact equality
+ * match, not a LIKE, so it cannot collide with another row.
+ *
+ * Deletions are excluded by construction: their link points at the group or
+ * the friends list, since the expense they describe no longer has a page.
+ *
+ * @param expenseId - Expense whose history to read.
+ * @returns Activity rows for that expense, oldest first.
+ */
+export async function listActivityForExpense(expenseId: string): Promise<ActivityRow[]> {
+  return query<ActivityRow>(
+    `SELECT * FROM activity
+      WHERE link = $1
+        AND type IN ('expense_added', 'expense_updated')
+      ORDER BY created_at ASC, id ASC`,
+    [`/expenses/${expenseId}`],
+  );
+}

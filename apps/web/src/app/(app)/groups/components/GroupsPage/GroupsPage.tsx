@@ -11,7 +11,12 @@ import { SearchField } from "@/components/ui/SearchField";
 import { Spinner } from "@/components/ui/Spinner";
 import { useHydrated } from "@/lib/hooks/useHydrated";
 import { CURRENCIES } from "@haalkhata/shared/money/money.constants";
-import { GROUP_TYPES, groupEmoji } from "../../constants/groupTypes";
+import {
+  GROUP_BALANCE_FILTERS,
+  GROUP_TYPES,
+  groupEmoji,
+  noGroupsMessage,
+} from "../../constants/groupTypes";
 import { useGroups } from "./hooks/useGroups";
 
 /**
@@ -62,15 +67,37 @@ export function GroupsPage() {
               onChange={groupsState.setQuery}
               placeholder="Search groups by name or type"
             />
-            {groupsState.query ? (
+            {/* The count now has to account for the balance filter too, or it
+                would read as unfiltered while rows are being hidden. */}
+            {groupsState.query || groupsState.balance !== "all" ? (
               <span className="shrink-0 text-sm text-ink-soft tabular-nums">
                 {groupsState.visibleGroups.length} of {groupsState.groups.length}
               </span>
             ) : null}
           </div>
+
+          {/* Filter state stays visible while it hides rows, matching the
+              activity feed: the active button is styled, not just remembered. */}
+          <div className="flex flex-wrap items-center gap-1.5">
+            {GROUP_BALANCE_FILTERS.map((entry) => (
+              <button
+                key={entry.value}
+                type="button"
+                aria-pressed={groupsState.balance === entry.value}
+                onClick={() => groupsState.setBalance(entry.value)}
+                className={`rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
+                  groupsState.balance === entry.value
+                    ? "border-brand-600 bg-brand-50 text-brand-700"
+                    : "border-line text-ink-soft hover:border-brand-200"
+                }`}
+              >
+                {entry.label}
+              </button>
+            ))}
+          </div>
           {groupsState.visibleGroups.length === 0 ? (
             <p className="rounded-2xl border border-line bg-card px-4 py-6 text-center text-sm text-ink-soft">
-              No groups match “{groupsState.query}”.
+              {noGroupsMessage(groupsState.query, groupsState.balance)}
             </p>
           ) : (
         <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">

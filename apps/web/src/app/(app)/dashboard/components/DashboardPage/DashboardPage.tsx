@@ -11,6 +11,7 @@ import { Spinner } from "@/components/ui/Spinner";
 import { useHydrated } from "@/lib/hooks/useHydrated";
 import { formatMoney } from "@haalkhata/shared/money/money";
 import { getGreeting } from "@haalkhata/shared/greeting";
+import { groupEmoji } from "../../../groups/constants/groupTypes";
 import { useDashboard } from "./hooks/useDashboard";
 
 /**
@@ -120,6 +121,59 @@ export function DashboardPage() {
           />
         )}
       </section>
+
+      {/* Groups — the other half of "who do I owe": People answers it per
+          person, this answers it per shared pot. Compact rows rather than the
+          cards the groups page uses, because here it sits between two other
+          lists and has to read as a peer of them, not as that page inlined. */}
+      {dashboard.topGroups.length > 0 ? (
+        <section>
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="text-xl font-semibold">Groups</h2>
+            {dashboard.groups.length > dashboard.topGroups.length ? (
+              <Link href="/groups" className="text-sm font-medium text-brand-600">
+                See all {dashboard.groups.length}
+              </Link>
+            ) : null}
+          </div>
+          <ul className="divide-y divide-line overflow-hidden rounded-2xl border border-line bg-card">
+            {dashboard.topGroups.map((summary) =>
+              summary.group ? (
+                <li key={summary.group.id}>
+                  <Link
+                    href={`/groups/${summary.group.id}`}
+                    className="flex items-center gap-3 px-4 py-3 hover:bg-paper"
+                  >
+                    <span className="text-2xl">{groupEmoji(summary.group.type)}</span>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate font-medium">{summary.group.name}</p>
+                      <p className="text-xs text-ink-soft">
+                        {summary.memberCount} member{summary.memberCount === 1 ? "" : "s"}
+                        {summary.yourNetCents === 0
+                          ? " · settled up"
+                          : summary.yourNetCents > 0
+                            ? " · owed to you"
+                            : " · you owe"}
+                      </p>
+                    </div>
+                    {/* The group's own currency, not yours — a group settles in
+                        one currency and showing your default here would label
+                        the number with money it was never counted in. */}
+                    {summary.yourNetCents === 0 ? null : (
+                      <Money
+                        cents={summary.yourNetCents}
+                        currency={summary.group.currency}
+                        signed
+                        className="font-semibold"
+                      />
+                    )}
+                  </Link>
+                </li>
+              ) : null,
+            )}
+          </ul>
+        </section>
+      ) : null}
 
       {/* Recent activity */}
       {dashboard.recentActivity.length > 0 ? (

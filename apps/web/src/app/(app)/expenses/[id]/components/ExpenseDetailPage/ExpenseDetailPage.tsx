@@ -10,7 +10,28 @@ import { Spinner } from "@/components/ui/Spinner";
 import { errorMessage } from "@/lib/api/connect";
 import { useHydrated } from "@/lib/hooks/useHydrated";
 import { formatMoney } from "@haalkhata/shared/money/money";
+import { itemShareCents } from "@haalkhata/shared/expense/splits";
 import { useExpenseDetail } from "./hooks/useExpenseDetail";
+
+/**
+ * Formats an activity timestamp for the history list.
+ *
+ * Date and time both, because "edited" is only useful if you can tell whether
+ * it happened before or after the conversation you are having about it.
+ *
+ * @param isoTimestamp - Timestamp as stored (an ISO-8601 string).
+ * @returns A short local date and time, or the raw value if it will not parse.
+ */
+function formatEventTime(isoTimestamp: string): string {
+  const parsed = new Date(isoTimestamp);
+  if (Number.isNaN(parsed.getTime())) return isoTimestamp;
+  return parsed.toLocaleString(undefined, {
+    day: "numeric",
+    month: "short",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
 
 /**
  * Renders a single expense: header (description, date, category, amount),
@@ -67,14 +88,12 @@ export function ExpenseDetailPage({ expenseId }: { expenseId: string }) {
       </header>
 
       <div className="flex gap-2">
-        {expense.splitType !== "itemized" ? (
-          <Link
-            href={`/expenses/new?edit=${expense.id}`}
-            className="flex items-center gap-1.5 rounded-lg border border-line bg-card px-3 py-2 text-xs font-semibold text-ink-soft hover:border-brand-200"
-          >
-            <Pencil className="h-3.5 w-3.5" /> Edit
-          </Link>
-        ) : null}
+        <Link
+          href={`/expenses/new?edit=${expense.id}`}
+          className="flex items-center gap-1.5 rounded-lg border border-line bg-card px-3 py-2 text-xs font-semibold text-ink-soft hover:border-brand-200"
+        >
+          <Pencil className="h-3.5 w-3.5" /> Edit
+        </Link>
         <button
           type="button"
           onClick={() => expenseDetail.setConfirmingDelete(true)}
@@ -125,27 +144,54 @@ export function ExpenseDetailPage({ expenseId }: { expenseId: string }) {
             Receipt items
           </h2>
           <ul className="divide-y divide-line">
-            {expense.items.map((item) => (
-              <li key={item.id} className="flex items-center gap-3 py-2.5 text-sm">
-                <span className="min-w-0 flex-1 truncate">
-                  {item.quantity > 1 ? `${item.quantity}× ` : ""}
-                  {item.name}
-                </span>
-                <span className="flex -space-x-1.5">
-                  {item.assignments.map((assignment) =>
-                    expenseDetail.userById.get(assignment.userId) ? (
-                      <Avatar
-                        key={assignment.userId}
-                        user={expenseDetail.userById.get(assignment.userId)!}
-                        size="sm"
-                        ring
-                      />
-                    ) : null,
-                  )}
-                </span>
-                <Money cents={item.totalCents} currency={expense.currency} className="font-medium" />
-              </li>
-            ))}
+            {expense.items.map((item) => {
+              // Recomputed with the same allocate() the split itself used, so
+              // the figure on the line is the one that fed the stored total —
+              // rounding cent and all. null means you are not on this item,
+              // which is a different thing from owing nothing on it.
+              const myShare = expenseDetail.me
+                ? itemShareCents(item, expenseDetail.me.id)
+                : null;
+              return (
+                <li key={item.id} className="py-2.5 text-sm">
+                  <div className="flex items-center gap-3">
+                    <span className="min-w-0 flex-1 truncate">
+                      {item.quantity > 1 ? `${item.quantity}× ` : ""}
+                      {item.name}
+                    </span>
+                    <span className="flex -space-x-1.5">
+                      {item.assignments.map((assignment) =>
+                        expenseDetail.userById.get(assignment.userId) ? (
+                          <Avatar
+                            key={assignment.userId}
+                            user={expenseDetail.userById.get(assignment.userId)!}
+                            size="sm"
+                            ring
+                          />
+                        ) : null,
+                      )}
+                    </span>
+                    <Money
+                      cents={item.totalCents}
+                      currency={expense.currency}
+                      className="font-medium"
+                    />
+                  </div>
+                  {/* The question the avatars alone cannot answer: am I on this,
+                      and for how much. Stated rather than left to be worked out
+                      from a row of overlapping faces. */}
+                  <p className="mt-0.5 text-right text-xs">
+                    {myShare === null ? (
+                      <span className="text-ink-soft">not yours</span>
+                    ) : (
+                      <span className="font-medium text-pos-700">
+                        your share {formatMoney(myShare, expense.currency)}
+                      </span>
+                    )}
+                  </p>
+                </li>
+              );
+            })}
           </ul>
           {expense.taxCents > 0 || expense.tipCents > 0 ? (
             <p className="mt-3 border-t border-line pt-3 text-right text-sm text-ink-soft">
@@ -165,6 +211,38 @@ export function ExpenseDetailPage({ expenseId }: { expenseId: string }) {
         <p className="rounded-2xl border border-line bg-card p-4 text-sm whitespace-pre-wrap text-ink-soft">
           {expense.notes}
         </p>
+      ) : null}
+
+      {/* Only when something actually changed. Every expense has a creation
+          event, so rendering the history unconditionally would put a section
+          on every page to say "nothing has happened", which is noise. The
+          creation line is included once there IS an edit, because "edited"
+          only means something next to when it was made. */}
+      {expenseDetail.edits.length > 0 ? (
+        <section className="rounded-2xl border border-line bg-card p-4">
+          <h2 className="mb-2 text-xs font-semibold tracking-wide text-ink-soft uppercase">
+            History
+          </h2>
+          <ul className="space-y-1.5">
+            {expenseDetail.detail?.history.map((event, index) => (
+              <li
+                key={`${event.type}-${event.createdAt}-${index}`}
+                className="flex items-center gap-2 text-sm text-ink-soft"
+              >
+                {event.actor ? <Avatar user={event.actor} size="sm" /> : null}
+                <span className="min-w-0 flex-1 truncate">
+                  <span className="font-medium text-ink">
+                    {event.actor ? displayName(event.actor.id) : "Someone"}
+                  </span>{" "}
+                  {event.type === "expense_added" ? "created this" : "edited this"}
+                </span>
+                <time className="shrink-0 text-xs tabular-nums">
+                  {formatEventTime(event.createdAt)}
+                </time>
+              </li>
+            ))}
+          </ul>
+        </section>
       ) : null}
 
       {/* Comments */}

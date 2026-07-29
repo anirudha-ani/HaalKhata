@@ -1,7 +1,7 @@
 "use client";
 /** Account data + profile form state: getMe query, updateProfile mutation, sign-out. */
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { User } from "@haalkhata/protogen/common/v1/common_pb";
@@ -9,6 +9,14 @@ import type { MergePreview } from "@haalkhata/protogen/auth/v1/auth_pb";
 import { authClient, errorMessage } from "@/lib/api/connect";
 import { MONEY_KEYS, queryKeys } from "@haalkhata/shared/api/queryKeys";
 import { composeE164, DEFAULT_PHONE_REGION, splitE164 } from "@/lib/phone/phone";
+import { stripHandlePrefix } from "@haalkhata/shared/payment/methods";
+
+/**
+ * How long the save button holds its confirmed state before returning to
+ * "Save changes", in milliseconds. Long enough to read, short enough that a
+ * second save is never waiting on it.
+ */
+const SAVED_BADGE_MS = 1800;
 
 /**
  * Fetches the signed-in user via the getMe query.
@@ -20,7 +28,11 @@ export function useAccountAPI() {
     queryKey: queryKeys.me,
     queryFn: () => authClient.getMe({}),
   });
-  return { me: currentUserQuery.data, isLoading: currentUserQuery.isLoading };
+  // isPending, not isLoading: isLoading stays true for any fetch, so a
+  // background refetch after save would swap the whole form for a spinner and
+  // remount it — losing every unsaved keystroke. isPending is true only when
+  // there is no data at all, which is the one time a spinner is honest.
+  return { me: currentUserQuery.data, isLoading: currentUserQuery.isPending };
 }
 
 /**
@@ -65,12 +77,49 @@ export function useProfileForm(currentUser: User) {
     ),
   );
 
+  // Zelle is reached by whichever of a phone or an email the recipient
+  // registered with their bank, so the field is a choice rather than one box.
+  // The stored value is a plain string either way; the mode is inferred from
+  // it on open, so returning to the page shows the field it was filled in as.
+  const storedZelle = handles.zelle ?? "";
+  const [zelleMode, setZelleMode] = useState<"phone" | "email">(() =>
+    storedZelle.includes("@") || storedZelle === "" ? "email" : "phone",
+  );
+  const [zelleRegion, setZelleRegion] = useState<string>(
+    () => splitE164(storedZelle)?.region ?? DEFAULT_PHONE_REGION,
+  );
+  const [zelleNationalNumber, setZelleNationalNumber] = useState(
+    () => splitE164(storedZelle)?.nationalNumber ?? "",
+  );
+
+  /**
+   * The Zelle handle as it should be stored: E.164 in phone mode, the typed
+   * address in email mode. Composed at save time rather than mirrored into
+   * `handles` on every keystroke, so the two halves cannot drift apart.
+   */
+  const zelleHandle = (): string =>
+    zelleMode === "phone" ? composeE164(zelleRegion, zelleNationalNumber) : (handles.zelle ?? "");
+
+  // The confirmation clears itself. Setting it in a timer rather than
+  // synchronously in the effect body is deliberate — a synchronous setState
+  // there is a cascading render, which the lint rule correctly rejects.
+  useEffect(() => {
+    if (message === "") return;
+    const timer = window.setTimeout(() => setMessage(""), SAVED_BADGE_MS);
+    return () => window.clearTimeout(timer);
+  }, [message]);
+
   const save = useMutation({
     mutationFn: async () => {
       await authClient.updateProfile({
         name,
         defaultCurrency: currency,
-        paymentHandles: Object.entries(handles).map(([method, handle]) => ({ method, handle })),
+        // Normalize on the way out so storage is always the bare identifier,
+        // whatever was typed or pasted. The inputs render their sigil as
+        // static text, but a paste from a Venmo profile still carries one.
+        paymentHandles: Object.entries({ ...handles, zelle: zelleHandle() }).map(
+          ([method, handle]) => ({ method, handle: stripHandlePrefix(method, handle) }),
+        ),
       });
       // Only send the phone when it actually changed. Comparing in E.164 is
       // what makes that honest — the same number re-typed with different
@@ -154,6 +203,14 @@ export function useProfileForm(currentUser: User) {
     },
     declineMerge,
     handles,
+    /** True while the button shows its confirmed state. */
+    saved: message !== "",
+    zelleMode,
+    setZelleMode,
+    zelleRegion,
+    setZelleRegion,
+    zelleNationalNumber,
+    setZelleNationalNumber,
     /**
      * Sets one payment handle in the draft.
      *
