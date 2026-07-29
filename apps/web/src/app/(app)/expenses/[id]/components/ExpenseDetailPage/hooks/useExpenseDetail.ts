@@ -66,6 +66,14 @@ export function useExpenseDetail(expenseId: string) {
   return {
     me: currentUserQuery.data,
     detail: detailQuery.data,
+    /**
+     * Just the edits, so the page can decide whether a history is worth
+     * showing at all. Every expense has a creation event; only an edit makes
+     * the section say anything.
+     */
+    edits: (detailQuery.data?.history ?? []).filter(
+      (event) => event.type === "expense_updated",
+    ),
     detailError: detailQuery.error,
     isLoading: detailQuery.isLoading,
     userById,

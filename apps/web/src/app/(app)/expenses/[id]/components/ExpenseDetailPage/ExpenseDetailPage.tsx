@@ -14,6 +14,26 @@ import { itemShareCents } from "@haalkhata/shared/expense/splits";
 import { useExpenseDetail } from "./hooks/useExpenseDetail";
 
 /**
+ * Formats an activity timestamp for the history list.
+ *
+ * Date and time both, because "edited" is only useful if you can tell whether
+ * it happened before or after the conversation you are having about it.
+ *
+ * @param isoTimestamp - Timestamp as stored (an ISO-8601 string).
+ * @returns A short local date and time, or the raw value if it will not parse.
+ */
+function formatEventTime(isoTimestamp: string): string {
+  const parsed = new Date(isoTimestamp);
+  if (Number.isNaN(parsed.getTime())) return isoTimestamp;
+  return parsed.toLocaleString(undefined, {
+    day: "numeric",
+    month: "short",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+/**
  * Renders a single expense: header (description, date, category, amount),
  * edit/delete actions, payer and split breakdowns, receipt items when
  * itemized, notes, the comment thread with a composer, and a delete
@@ -191,6 +211,38 @@ export function ExpenseDetailPage({ expenseId }: { expenseId: string }) {
         <p className="rounded-2xl border border-line bg-card p-4 text-sm whitespace-pre-wrap text-ink-soft">
           {expense.notes}
         </p>
+      ) : null}
+
+      {/* Only when something actually changed. Every expense has a creation
+          event, so rendering the history unconditionally would put a section
+          on every page to say "nothing has happened", which is noise. The
+          creation line is included once there IS an edit, because "edited"
+          only means something next to when it was made. */}
+      {expenseDetail.edits.length > 0 ? (
+        <section className="rounded-2xl border border-line bg-card p-4">
+          <h2 className="mb-2 text-xs font-semibold tracking-wide text-ink-soft uppercase">
+            History
+          </h2>
+          <ul className="space-y-1.5">
+            {expenseDetail.detail?.history.map((event, index) => (
+              <li
+                key={`${event.type}-${event.createdAt}-${index}`}
+                className="flex items-center gap-2 text-sm text-ink-soft"
+              >
+                {event.actor ? <Avatar user={event.actor} size="sm" /> : null}
+                <span className="min-w-0 flex-1 truncate">
+                  <span className="font-medium text-ink">
+                    {event.actor ? displayName(event.actor.id) : "Someone"}
+                  </span>{" "}
+                  {event.type === "expense_added" ? "created this" : "edited this"}
+                </span>
+                <time className="shrink-0 text-xs tabular-nums">
+                  {formatEventTime(event.createdAt)}
+                </time>
+              </li>
+            ))}
+          </ul>
+        </section>
       ) : null}
 
       {/* Comments */}
