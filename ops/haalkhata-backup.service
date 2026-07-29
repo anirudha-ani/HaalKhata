@@ -5,5 +5,12 @@ Requires=docker.service
 
 [Service]
 Type=oneshot
-User=deploy
+# Runs as root, not deploy. backup.sh tars /srv/haalkhata/secrets, which is
+# 0700 root:root by design — a deploy-owned service cannot even traverse it,
+# and the failure is a one-line tar error buried in the journal while the
+# database half of the backup still succeeds. Root also needs no docker-group
+# membership to reach the daemon.
+#
+# Consequence: age's private key and ~/.s3cfg live in /root, not /home/deploy.
+User=root
 ExecStart=/srv/haalkhata/backup.sh
