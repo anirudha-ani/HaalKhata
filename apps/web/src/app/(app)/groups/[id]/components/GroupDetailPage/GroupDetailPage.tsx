@@ -122,7 +122,9 @@ export function GroupDetailPage({
           userById={groupDetail.userById}
           simplified={groupDetail.simplified}
           onToggleSimplified={groupDetail.setSimplified}
-          onSettle={(user, cents) => groupDetail.setSettleWith({ user, cents })}
+          onSettle={(user, cents, received) =>
+            groupDetail.setSettleWith({ user, cents, received })
+          }
         />
       )}
 
@@ -146,6 +148,7 @@ export function GroupDetailPage({
         <SettleUpModal
           to={groupDetail.settleWith.user}
           suggestedCents={groupDetail.settleWith.cents}
+          received={groupDetail.settleWith.received}
           currency={groupDetail.group.currency}
           groupId={groupId}
           onClose={() => groupDetail.setSettleWith(null)}
