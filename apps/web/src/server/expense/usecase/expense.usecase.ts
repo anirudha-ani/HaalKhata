@@ -652,7 +652,16 @@ export async function recordSettlement(
   const friendLink = `/friends/${request.toUserId}`;
   await insertActivity({
     groupId,
-    actorId: userId,
+    // The payer, not whoever typed it in. A feed row's avatar restates the
+    // subject of its own sentence, and for a settlement that subject is the
+    // person who paid — the message right below already names them first.
+    // Recording a payment received put the recorder's face beside "someone
+    // else paid me", which reads as though they had paid themselves.
+    //
+    // Every other activity type has actor and subject as the same person, so
+    // this is the only place they can diverge. Who entered it is not lost:
+    // the notification below says "<name> recorded your payment".
+    actorId: payerId,
     type: "settlement",
     message: `${payerName} paid ${creditorName} ${formatMoney(request.amountCents, currency)}${group ? ` in "${group.name}"` : ""}`,
     link: groupId ? `/groups/${groupId}` : friendLink,
