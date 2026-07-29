@@ -130,6 +130,33 @@ export function computeSplits(
  *   amounts, non-positive weights, duplicate assignees on one item, or a
  *   non-positive items total.
  */
+/**
+ * One person's share of a single receipt item, before tax and tip.
+ *
+ * The same `allocate` call `computeItemizedSplits` makes per item, so the
+ * number shown against a line matches the one that fed the stored split
+ * exactly — including which cent the largest-remainder rounding handed to whom.
+ * Recomputing it as `total / count` would be right most of the time and
+ * quietly wrong on the rows people query.
+ *
+ * Tax and tip are deliberately excluded: they are allocated once, in
+ * proportion to each person's whole subtotal, so there is no honest per-item
+ * figure for them. The difference between this and the split panel's total is
+ * exactly that allocation.
+ *
+ * @param item - The receipt item, with its assignments and weights.
+ * @param userId - Whose share to compute.
+ * @returns The share in cents, or null when that person is not on the item.
+ */
+export function itemShareCents(item: ItemInput, userId: string): number | null {
+  const index = item.assignments.findIndex((assignment) => assignment.userId === userId);
+  if (index === -1) return null;
+  return allocate(
+    item.totalCents,
+    item.assignments.map((assignment) => assignment.weight),
+  )[index];
+}
+
 export function computeItemizedSplits(
   items: ItemInput[],
   taxCents: number,

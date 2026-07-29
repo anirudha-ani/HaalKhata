@@ -2,7 +2,7 @@
 
 import { describe, expect, it } from "vitest";
 import { allocate } from "./allocate";
-import { computeItemizedSplits, computeSplits, SplitError } from "./splits";
+import { SplitError, computeItemizedSplits, computeSplits, itemShareCents } from "./splits";
 
 const sumOwedCents = (splits: { owedCents: number }[]) =>
   splits.reduce((runningTotal, split) => runningTotal + split.owedCents, 0);
@@ -141,6 +141,64 @@ describe("computeItemizedSplits", () => {
           taxCents +
           tipCents,
       );
+    }
+  });
+});
+
+describe("itemShareCents", () => {
+  const item = {
+    name: "Croque Madame",
+    totalCents: 3300,
+    assignments: [
+      { userId: "a", weight: 1 },
+      { userId: "b", weight: 1 },
+      { userId: "c", weight: 1 },
+    ],
+  };
+
+  it("splits an item evenly among everyone on it", () => {
+    expect(itemShareCents(item, "a")).toBe(1100);
+    expect(itemShareCents(item, "b")).toBe(1100);
+    expect(itemShareCents(item, "c")).toBe(1100);
+  });
+
+  it("returns null for somebody who is not on the item", () => {
+    // The distinction the detail page needs: "not on this" is not "owes 0".
+    expect(itemShareCents(item, "nobody")).toBeNull();
+  });
+
+  it("honours weights rather than assuming an even split", () => {
+    const shared = {
+      name: "Bottle",
+      totalCents: 3000,
+      assignments: [
+        { userId: "a", weight: 2 },
+        { userId: "b", weight: 1 },
+      ],
+    };
+    expect(itemShareCents(shared, "a")).toBe(2000);
+    expect(itemShareCents(shared, "b")).toBe(1000);
+  });
+
+  it("agrees with computeItemizedSplits to the cent when it does not divide", () => {
+    // 1000 / 3 is the case that exposes a naive divide: the shares must still
+    // sum to the item total, and each person must be shown the cent the split
+    // actually gave them.
+    const uneven = {
+      name: "Tea",
+      totalCents: 1000,
+      assignments: [
+        { userId: "a", weight: 1 },
+        { userId: "b", weight: 1 },
+        { userId: "c", weight: 1 },
+      ],
+    };
+    const shares = ["a", "b", "c"].map((userId) => itemShareCents(uneven, userId)!);
+    expect(shares.reduce((running, cents) => running + cents, 0)).toBe(1000);
+
+    const { splits } = computeItemizedSplits([uneven], 0, 0);
+    for (const split of splits) {
+      expect(itemShareCents(uneven, split.userId)).toBe(split.owedCents);
     }
   });
 });
