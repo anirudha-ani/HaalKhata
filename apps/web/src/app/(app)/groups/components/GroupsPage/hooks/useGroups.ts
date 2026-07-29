@@ -5,6 +5,10 @@ import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { errorMessage } from "@/lib/api/connect";
 import { matchesTerms, searchTerms } from "@haalkhata/shared/search/filter";
+import {
+  matchesBalanceFilter,
+  type GroupBalanceFilterOption,
+} from "../../../constants/groupTypes";
 import { useGroupsAPI } from "./useGroupsAPI";
 
 /**
@@ -22,6 +26,7 @@ export function useGroups() {
   const groupsAPI = useGroupsAPI();
   const router = useRouter();
   const [query, setQuery] = useState("");
+  const [balance, setBalance] = useState<GroupBalanceFilterOption["value"]>("all");
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState("");
   const [type, setType] = useState("trip");
@@ -56,19 +61,29 @@ export function useGroups() {
   };
 
   // Group type is searchable too, so "trip" pulls up every trip at once.
+  // The balance filter narrows further rather than replacing the search, so
+  // "goa" + "You owe" answers a question neither could on its own.
+  //
+  // Strictly greater/less than zero: a settled group belongs to neither side,
+  // and putting it in both would make the two filters overlap on exactly the
+  // rows a person is trying to hide.
   const visibleGroups = useMemo(() => {
     const terms = searchTerms(query);
-    if (terms.length === 0) return groupsAPI.groups;
-    return groupsAPI.groups.filter((summary) =>
-      matchesTerms(terms, summary.group?.name, summary.group?.type),
-    );
-  }, [groupsAPI.groups, query]);
+    return groupsAPI.groups.filter((summary) => {
+      if (terms.length > 0 && !matchesTerms(terms, summary.group?.name, summary.group?.type)) {
+        return false;
+      }
+      return matchesBalanceFilter(summary.yourNetCents, balance);
+    });
+  }, [groupsAPI.groups, query, balance]);
 
   return {
     ...groupsAPI,
     visibleGroups,
     query,
     setQuery,
+    balance,
+    setBalance,
     creating,
     setCreating,
     name,
