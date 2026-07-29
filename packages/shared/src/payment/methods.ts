@@ -6,8 +6,26 @@ export interface PaymentMethod {
   key: string;
   /** Name shown in the UI. */
   label: string;
-  /** What the handle is called in that app, used as the input's placeholder. */
-  handleLabel: string;
+  /**
+   * The fixed part of the handle, rendered as static text in front of the
+   * input rather than typed.
+   *
+   * Showing "@" as a placeholder left it ambiguous whether it should be typed,
+   * so half the handles stored it and half did not. Making it furniture
+   * removes the question: the field holds only the part that varies, and what
+   * is stored is always the bare identifier.
+   */
+  handlePrefix: string;
+
+  /**
+   * A worked example of the *editable* part, shown as the placeholder.
+   *
+   * An example rather than a description ("jordan-lee", not "username")
+   * because the question people have is what to type, and a sample answers it
+   * without being read as a label. Numbers use the 555 range reserved for
+   * fiction.
+   */
+  handleExample: string;
   /** Whether a handle is worth storing (cash and bank transfers have none). */
   takesHandle: boolean;
   /**
@@ -33,15 +51,22 @@ export const PAYMENT_METHODS: readonly PaymentMethod[] = [
   {
     key: "venmo",
     label: "Venmo",
-    handleLabel: "@username",
+    handlePrefix: "@",
+    handleExample: "jordan-lee",
     takesHandle: true,
     linkable: true,
     linkCarriesAmount: true,
   },
   {
     key: "zelle",
+    // No prefix: Zelle is reached by whichever of a phone or an email the
+    // recipient registered with their bank, so there is no fixed part. The
+    // account page offers a phone/email toggle instead, which is also how the
+    // phone gets a country code — Zelle matches the exact registered string,
+    // and a bare "4015550147" is ambiguous outside the US.
     label: "Zelle",
-    handleLabel: "email or phone",
+    handlePrefix: "",
+    handleExample: "",
     takesHandle: true,
     linkable: false,
     linkCarriesAmount: false,
@@ -49,15 +74,20 @@ export const PAYMENT_METHODS: readonly PaymentMethod[] = [
   {
     key: "cashapp",
     label: "Cash App",
-    handleLabel: "$cashtag",
+    handlePrefix: "$",
+    handleExample: "jordanlee",
     takesHandle: true,
     linkable: true,
     linkCarriesAmount: false,
   },
   {
     key: "paypal",
+    // The prefix is the whole URL stem, because that is what people copy off
+    // a PayPal profile. paymentLink builds paypal.me/<handle>, so storing the
+    // pasted URL would yield paypal.me/https://paypal.me/jordanlee.
     label: "PayPal",
-    handleLabel: "PayPal.Me name",
+    handlePrefix: "paypal.me/",
+    handleExample: "jordanlee",
     takesHandle: true,
     linkable: true,
     linkCarriesAmount: true,
@@ -65,7 +95,8 @@ export const PAYMENT_METHODS: readonly PaymentMethod[] = [
   {
     key: "cash",
     label: "Cash",
-    handleLabel: "",
+    handlePrefix: "",
+    handleExample: "",
     takesHandle: false,
     linkable: false,
     linkCarriesAmount: false,
@@ -73,7 +104,8 @@ export const PAYMENT_METHODS: readonly PaymentMethod[] = [
   {
     key: "bank",
     label: "Bank transfer",
-    handleLabel: "",
+    handlePrefix: "",
+    handleExample: "",
     takesHandle: false,
     linkable: false,
     linkCarriesAmount: false,
@@ -81,7 +113,8 @@ export const PAYMENT_METHODS: readonly PaymentMethod[] = [
   {
     key: "other",
     label: "Other",
-    handleLabel: "",
+    handlePrefix: "",
+    handleExample: "",
     takesHandle: false,
     linkable: false,
     linkCarriesAmount: false,
@@ -105,6 +138,53 @@ export function findPaymentMethod(methodKey: string): PaymentMethod | undefined 
 }
 
 /**
+ * Reduces whatever was typed or pasted to the bare identifier that gets
+ * stored — no sigil, no URL stem.
+ *
+ * The field shows its prefix as static text, so a careful user types only the
+ * bare part. This exists for the careless path: pasting `@jordan-lee` off a
+ * Venmo profile, or the whole `https://paypal.me/jordanlee` off a browser bar.
+ * Without it those become `@@jordan-lee` and `paypal.me/https://paypal.me/...`
+ * once the prefix is rendered back.
+ *
+ * Idempotent, so it is safe to run on already-clean values and on rows written
+ * before the prefix moved out of the input.
+ *
+ * @param methodKey - Which app the handle belongs to.
+ * @param typed - Whatever the user typed or pasted.
+ * @returns The bare identifier, trimmed.
+ */
+export function stripHandlePrefix(methodKey: string, typed: string): string {
+  let handle = typed.trim();
+  if (methodKey === "venmo") return handle.replace(/^@+/, "");
+  if (methodKey === "cashapp") return handle.replace(/^\$+/, "");
+  if (methodKey === "paypal") {
+    // Longest first: the scheme has to go before the bare host would match.
+    handle = handle.replace(/^https?:\/\//i, "");
+    handle = handle.replace(/^(?:www\.)?paypal\.me\//i, "");
+    return handle.replace(/\/+$/, "");
+  }
+  return handle;
+}
+
+/**
+ * The handle as a human should read it — prefix included.
+ *
+ * Storage keeps the bare identifier so it is unambiguous; the payer wants the
+ * form they would recognise on a profile, which is what this returns and what
+ * the copy button puts on the clipboard.
+ *
+ * @param methodKey - Which app the handle belongs to.
+ * @param handle - The stored handle, bare or otherwise.
+ * @returns Prefixed handle, or "" when there is no handle.
+ */
+export function displayHandle(methodKey: string, handle: string): string {
+  const bare = stripHandlePrefix(methodKey, handle);
+  if (bare === "") return "";
+  return `${findPaymentMethod(methodKey)?.handlePrefix ?? ""}${bare}`;
+}
+
+/**
  * Builds a link that opens the payer's app on the right person, prefilled as
  * far as that app allows.
  *
@@ -125,22 +205,24 @@ export function paymentLink(
   note: string,
 ): string {
   const method = findPaymentMethod(methodKey);
-  const trimmed = handle.trim();
-  if (!method?.linkable || trimmed === "") return "";
+  // Stored handles are bare, but rows written before the prefix became static
+  // text may still carry one — and a user can always paste. Normalising here
+  // keeps every link correct regardless of which.
+  const bare = stripHandlePrefix(methodKey, handle);
+  if (!method?.linkable || bare === "") return "";
   const amount = (amountCents / 100).toFixed(2);
 
   if (methodKey === "venmo") {
-    // Venmo takes the username without its leading "@".
     const parameters = new URLSearchParams({ txn: "pay", amount });
     if (note.trim()) parameters.set("note", note.trim());
-    return `https://venmo.com/${encodeURIComponent(trimmed.replace(/^@/, ""))}?${parameters}`;
+    return `https://venmo.com/${encodeURIComponent(bare)}?${parameters}`;
   }
   if (methodKey === "cashapp") {
     // The $cashtag link cannot carry an amount; the sender types it.
-    return `https://cash.app/$${encodeURIComponent(trimmed.replace(/^\$/, ""))}`;
+    return `https://cash.app/$${encodeURIComponent(bare)}`;
   }
   if (methodKey === "paypal") {
-    return `https://paypal.me/${encodeURIComponent(trimmed)}/${amount}`;
+    return `https://paypal.me/${encodeURIComponent(bare)}/${amount}`;
   }
   return "";
 }

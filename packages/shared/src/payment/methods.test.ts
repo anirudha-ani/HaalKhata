@@ -1,7 +1,13 @@
 /** Unit tests for the payment method registry and link builder. */
 
 import { describe, expect, test } from "vitest";
-import { findPaymentMethod, paymentLink, PAYMENT_METHOD_KEYS } from "./methods";
+import {
+  displayHandle,
+  findPaymentMethod,
+  paymentLink,
+  stripHandlePrefix,
+  PAYMENT_METHOD_KEYS,
+} from "./methods";
 
 describe("payment methods", () => {
   test("US-first keys, and nothing region-specific", () => {
@@ -59,5 +65,66 @@ describe("paymentLink", () => {
       const link = paymentLink(methodKey, "handle", 100, "note");
       if (link) expect(link.startsWith("https://")).toBe(true);
     }
+  });
+});
+
+describe("stripHandlePrefix", () => {
+  test("drops a sigil the user typed anyway", () => {
+    expect(stripHandlePrefix("venmo", "@jordan-lee")).toBe("jordan-lee");
+    expect(stripHandlePrefix("cashapp", "$jordanlee")).toBe("jordanlee");
+  });
+
+  test("leaves an already-bare handle alone, and is idempotent", () => {
+    expect(stripHandlePrefix("venmo", "jordan-lee")).toBe("jordan-lee");
+    const once = stripHandlePrefix("paypal", "https://paypal.me/jordanlee");
+    expect(stripHandlePrefix("paypal", once)).toBe(once);
+  });
+
+  test("unpicks every shape of a pasted PayPal.Me URL", () => {
+    // The realistic failure: copying the address bar rather than the name.
+    for (const pasted of [
+      "https://paypal.me/jordanlee",
+      "http://paypal.me/jordanlee",
+      "https://www.paypal.me/jordanlee",
+      "paypal.me/jordanlee",
+      "paypal.me/jordanlee/",
+    ]) {
+      expect(stripHandlePrefix("paypal", pasted)).toBe("jordanlee");
+    }
+  });
+
+  test("repeated sigils collapse rather than leaving one behind", () => {
+    expect(stripHandlePrefix("venmo", "@@jordan-lee")).toBe("jordan-lee");
+  });
+
+  test("zelle has no prefix to strip, so an email survives intact", () => {
+    expect(stripHandlePrefix("zelle", "me@example.com")).toBe("me@example.com");
+    expect(stripHandlePrefix("zelle", "+14015550147")).toBe("+14015550147");
+  });
+
+  test("trims surrounding whitespace from a paste", () => {
+    expect(stripHandlePrefix("venmo", "  @jordan-lee  ")).toBe("jordan-lee");
+  });
+});
+
+describe("displayHandle", () => {
+  test("puts the sigil back for the payer to recognize", () => {
+    expect(displayHandle("venmo", "jordan-lee")).toBe("@jordan-lee");
+    expect(displayHandle("cashapp", "jordanlee")).toBe("$jordanlee");
+    expect(displayHandle("paypal", "jordanlee")).toBe("paypal.me/jordanlee");
+  });
+
+  test("never doubles a prefix, whichever form was stored", () => {
+    expect(displayHandle("venmo", "@jordan-lee")).toBe("@jordan-lee");
+    expect(displayHandle("paypal", "https://paypal.me/jordanlee")).toBe("paypal.me/jordanlee");
+  });
+
+  test("an empty handle stays empty rather than becoming a bare sigil", () => {
+    expect(displayHandle("venmo", "")).toBe("");
+    expect(displayHandle("venmo", "   ")).toBe("");
+  });
+
+  test("zelle is shown exactly as registered", () => {
+    expect(displayHandle("zelle", "me@example.com")).toBe("me@example.com");
   });
 });
