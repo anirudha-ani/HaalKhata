@@ -60,3 +60,26 @@ export function matchesBalanceFilter(
   if (filter === "owe") return netCents < 0;
   return true;
 }
+
+/**
+ * What to say when the list is empty because something is filtering it.
+ *
+ * Has to name whichever control is actually hiding the rows. Reporting the
+ * search term unconditionally produced `No groups match “”.` — empty quotes —
+ * the moment a balance filter emptied the list on its own.
+ *
+ * @param query - Current search text; "" when not searching.
+ * @param filter - Active balance filter.
+ * @returns A sentence naming what is hiding the groups.
+ */
+export function noGroupsMessage(
+  query: string,
+  filter: GroupBalanceFilterOption["value"],
+): string {
+  const balancePhrase =
+    filter === "owed" ? "where anyone owes you" : filter === "owe" ? "where you owe anything" : "";
+  if (query && balancePhrase) return `No groups match “${query}” ${balancePhrase}.`;
+  if (query) return `No groups match “${query}”.`;
+  if (balancePhrase) return `No groups ${balancePhrase}.`;
+  return "No groups yet.";
+}

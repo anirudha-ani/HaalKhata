@@ -11,7 +11,12 @@ import { SearchField } from "@/components/ui/SearchField";
 import { Spinner } from "@/components/ui/Spinner";
 import { useHydrated } from "@/lib/hooks/useHydrated";
 import { CURRENCIES } from "@haalkhata/shared/money/money.constants";
-import { GROUP_BALANCE_FILTERS, GROUP_TYPES, groupEmoji } from "../../constants/groupTypes";
+import {
+  GROUP_BALANCE_FILTERS,
+  GROUP_TYPES,
+  groupEmoji,
+  noGroupsMessage,
+} from "../../constants/groupTypes";
 import { useGroups } from "./hooks/useGroups";
 
 /**
@@ -92,7 +97,7 @@ export function GroupsPage() {
           </div>
           {groupsState.visibleGroups.length === 0 ? (
             <p className="rounded-2xl border border-line bg-card px-4 py-6 text-center text-sm text-ink-soft">
-              No groups match “{groupsState.query}”.
+              {noGroupsMessage(groupsState.query, groupsState.balance)}
             </p>
           ) : (
         <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
