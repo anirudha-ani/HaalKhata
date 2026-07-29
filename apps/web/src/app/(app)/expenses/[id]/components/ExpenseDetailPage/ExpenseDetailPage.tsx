@@ -68,14 +68,12 @@ export function ExpenseDetailPage({ expenseId }: { expenseId: string }) {
       </header>
 
       <div className="flex gap-2">
-        {expense.splitType !== "itemized" ? (
-          <Link
-            href={`/expenses/new?edit=${expense.id}`}
-            className="flex items-center gap-1.5 rounded-lg border border-line bg-card px-3 py-2 text-xs font-semibold text-ink-soft hover:border-brand-200"
-          >
-            <Pencil className="h-3.5 w-3.5" /> Edit
-          </Link>
-        ) : null}
+        <Link
+          href={`/expenses/new?edit=${expense.id}`}
+          className="flex items-center gap-1.5 rounded-lg border border-line bg-card px-3 py-2 text-xs font-semibold text-ink-soft hover:border-brand-200"
+        >
+          <Pencil className="h-3.5 w-3.5" /> Edit
+        </Link>
         <button
           type="button"
           onClick={() => expenseDetail.setConfirmingDelete(true)}

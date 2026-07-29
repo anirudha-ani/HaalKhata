@@ -3,6 +3,7 @@
 import type { Expense } from "@haalkhata/protogen/expense/v1/expense_pb";
 import { centsToInput, todayISO } from "@haalkhata/shared/money/money";
 import type { DraftLineItem, FormSplitType } from "@/lib/expense/splitForm";
+import { nextDraftKey } from "@haalkhata/shared/expense/draftKey";
 
 /** Initial values for every field of the expense form. */
 export interface ExpenseFormInitial {
@@ -98,8 +99,7 @@ export function buildInitialValues(
     date: expense.expenseDate,
     category: expense.category,
     notes: expense.notes,
-    splitType:
-      expense.splitType === "itemized" ? "equal" : (expense.splitType as FormSplitType),
+    splitType: expense.splitType as FormSplitType,
     checked: Object.fromEntries(expense.splits.map((split) => [split.userId, true])),
     splitInputs:
       expense.splitType === "exact"
@@ -114,10 +114,26 @@ export function buildInitialValues(
           expense.payers.map((payer) => [payer.userId, centsToInput(payer.amountCents)]),
         )
       : {},
-    // Editing an itemized expense is blocked upstream (NewExpensePage renders a
-    // guard), so the item editor always starts empty here.
-    items: [],
-    taxInput: "",
-    tipInput: "",
+    // Rebuilt from the stored receipt so an itemized expense reopens as what
+    // it is. `key` is regenerated rather than reusing the server id: it exists
+    // only to keep React's list stable while editing, and the two ids serve
+    // different lifetimes — a row deleted and re-added should not resurrect an
+    // id the server still has.
+    //
+    // `total` goes back through centsToInput because the editor works in the
+    // money strings a person types, not cents.
+    items: expense.items.map((item) => ({
+      key: nextDraftKey(),
+      name: item.name,
+      total: centsToInput(item.totalCents),
+      quantity: item.quantity,
+      assignees: Object.fromEntries(
+        item.assignments.map((assignment) => [assignment.userId, assignment.weight]),
+      ),
+    })),
+    // Blank rather than "0.00" when there was none, so the field reads as empty
+    // instead of as a deliberate zero.
+    taxInput: expense.taxCents > 0 ? centsToInput(expense.taxCents) : "",
+    tipInput: expense.tipCents > 0 ? centsToInput(expense.tipCents) : "",
   };
 }

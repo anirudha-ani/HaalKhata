@@ -1,7 +1,6 @@
 "use client";
-/** New/edit expense orchestrator: loads data, guards itemized edits, mounts ExpenseForm. */
+/** New/edit expense orchestrator: loads data, mounts ExpenseForm. */
 
-import Link from "next/link";
 import { Spinner } from "@/components/ui/Spinner";
 import { useHydrated } from "@/lib/hooks/useHydrated";
 import { buildInitialValues } from "../../utils/initialValues";
@@ -11,8 +10,6 @@ import { useNewExpenseAPI } from "./hooks/useNewExpenseAPI";
 /**
  * Orchestrator: loads data, then mounts the form with fully-resolved initial
  * values (keyed by expense id so edit → create never reuses stale state).
- * Itemized (receipt) expenses cannot be edited here, so it renders a guard
- * screen linking back to the expense instead.
  *
  * @param props - Component props.
  * @returns The new/edit expense page content.
@@ -33,24 +30,6 @@ export function NewExpensePage({
   const hydrated = useHydrated();
 
   if (!hydrated || expenseAPI.isLoading || !expenseAPI.me) return <Spinner />;
-
-  if (expenseAPI.editing?.expense?.splitType === "itemized") {
-    return (
-      <div className="mx-auto max-w-xl rounded-2xl border border-line bg-card p-6">
-        <h1 className="text-xl font-semibold">Itemized expense</h1>
-        <p className="mt-2 text-ink-soft">
-          Itemized (receipt) expenses can&apos;t be edited here yet — delete it and
-          re-scan the receipt instead.
-        </p>
-        <Link
-          href={`/expenses/${expenseAPI.editing.expense.id}`}
-          className="mt-4 inline-block rounded-xl bg-brand-600 px-4 py-2.5 text-sm font-semibold text-white"
-        >
-          Back to expense
-        </Link>
-      </div>
-    );
-  }
 
   const initial = buildInitialValues(
     { initialGroupId, initialFriendId },
