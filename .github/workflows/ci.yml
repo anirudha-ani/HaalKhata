@@ -47,10 +47,20 @@ jobs:
       # packages/protogen/src is gitignored; every job regenerates it.
       - run: pnpm gen
 
-      - name: proto contract
-        run: |
-          pnpm proto:lint
-          pnpm exec buf breaking --against '.git#branch=main'
+      - name: proto lint
+        run: pnpm proto:lint
+
+      # Breaking-change detection is a PR-time question: does THIS change break
+      # the contract as it stands on the base branch? On a push to main there is
+      # nothing meaningful to compare — main against itself.
+      #
+      # `ref=origin/<base>`, not `branch=<base>`: actions/checkout leaves a
+      # detached HEAD with only remote-tracking refs, so no local branch exists
+      # for buf to resolve and it fails with "couldn't find remote ref main".
+      # It passes locally only because a developer's clone has a real `main`.
+      - name: proto breaking
+        if: github.event_name == 'pull_request'
+        run: pnpm exec buf breaking --against '.git#ref=origin/${{ github.event.pull_request.base.ref }}'
 
       - name: web
         run: pnpm typecheck && pnpm lint && pnpm test
