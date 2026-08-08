@@ -4,14 +4,23 @@ import {
   listExpensesBetween,
   listExpensesByGroup,
   listExpensesInvolvingUser,
+  listOneOffExpensesBetween,
   loadExpenseChildren,
+  type ExpenseChildren,
+  type ExpenseRow,
 } from "@/server/expense/repo/expenses.repo";
 import {
+  listOneOffSettlementsBetween,
   listSettlementsBetween,
   listSettlementsByGroup,
   listSettlementsInvolvingUser,
 } from "@/server/expense/repo/settlements.repo";
-import { findGroupById, isMember, listMembers } from "@/server/group/repo/groups.repo";
+import {
+  findGroupById,
+  isMember,
+  listGroupsByUser,
+  listMembers,
+} from "@/server/group/repo/groups.repo";
 import { findUserById, findUsersByIds } from "@/server/auth/repo/users.repo";
 import {
   expenseDebts,
@@ -20,20 +29,20 @@ import {
   simplifyDebts,
   type LedgerEntry,
 } from "../domain/balances";
+import { type ScopeDebt } from "../domain/settlementAllocation";
 import { denied, notFound } from "@/server/common/errors";
 import { toUser } from "@/server/auth/usecase/user.mapper";
 
 /**
- * Builds a group's pairwise ledger: per-expense debts netted against the
- * group's recorded settlements.
+ * Converts a batch of expenses (with their loaded children) into directed
+ * pairwise debts, one call to {@link expenseDebts} per expense.
  *
- * @param groupId - Id of the group whose ledger is built.
- * @returns Normalized pairwise entries (one per user pair, amount > 0).
+ * @param expenses - Expense rows to convert.
+ * @param children - Their payer/split child rows, from `loadExpenseChildren`.
+ * @returns Directed debts across all the expenses, unmerged.
  */
-async function groupLedger(groupId: string): Promise<LedgerEntry[]> {
-  const expenses = await listExpensesByGroup(groupId);
-  const children = await loadExpenseChildren(expenses.map((expense) => expense.id));
-  const debts = expenses.flatMap((expense) =>
+function debtsFromExpenses(expenses: ExpenseRow[], children: ExpenseChildren): LedgerEntry[] {
+  return expenses.flatMap((expense) =>
     expenseDebts(
       (children.payers.get(expense.id) ?? []).map((payer) => ({
         userId: payer.user_id,
@@ -45,12 +54,24 @@ async function groupLedger(groupId: string): Promise<LedgerEntry[]> {
       })),
     ),
   );
+}
+
+/**
+ * Builds a group's pairwise ledger: per-expense debts netted against the
+ * group's recorded settlements.
+ *
+ * @param groupId - Id of the group whose ledger is built.
+ * @returns Normalized pairwise entries (one per user pair, amount > 0).
+ */
+async function groupLedger(groupId: string): Promise<LedgerEntry[]> {
+  const expenses = await listExpensesByGroup(groupId);
+  const children = await loadExpenseChildren(expenses.map((expense) => expense.id));
   const settlements = (await listSettlementsByGroup(groupId)).map((settlement) => ({
     from: settlement.from_user,
     to: settlement.to_user,
     amountCents: settlement.amount_cents,
   }));
-  return pairwiseBalances(debts, settlements);
+  return pairwiseBalances(debtsFromExpenses(expenses, children), settlements);
 }
 
 /**
@@ -122,25 +143,22 @@ export async function userNetInGroups(
 }
 
 /**
- * How much `debtorId` currently owes `creditorId` in a given scope. Returns a
+ * How much `debtorId` currently owes `creditorId` inside one group. Returns a
  * non-negative number of cents (0 when nothing is owed or the direction is
- * reversed). Used by recordSettlement to refuse over-settling.
+ * reversed). Used by recordSettlement to refuse over-settling a group scope;
+ * the cross-scope equivalent is {@link owedByScope}.
  *
  * @param debtorId - User who would be paying.
  * @param creditorId - User who would be receiving.
- * @param groupId - Group scope, or null for the global (all expenses + one-off) scope.
- * @returns Non-negative cents the debtor owes the creditor in that scope.
+ * @param groupId - Group whose ledger is consulted.
+ * @returns Non-negative cents the debtor owes the creditor in that group.
  */
 export async function amountOwed(
   debtorId: string,
   creditorId: string,
-  groupId: string | null,
+  groupId: string,
 ): Promise<number> {
-  const entries = groupId === null ? await userLedger(debtorId) : await groupLedger(groupId);
-  for (const entry of entries) {
-    if (entry.from === debtorId && entry.to === creditorId) return entry.amountCents;
-  }
-  return 0;
+  return owedInEntries(await groupLedger(groupId), debtorId, creditorId);
 }
 
 /**
@@ -153,26 +171,75 @@ export async function amountOwed(
 async function userLedger(userId: string): Promise<LedgerEntry[]> {
   const expenses = await listExpensesInvolvingUser(userId);
   const children = await loadExpenseChildren(expenses.map((expense) => expense.id));
-  const debts = expenses.flatMap((expense) =>
-    expenseDebts(
-      (children.payers.get(expense.id) ?? []).map((payer) => ({
-        userId: payer.user_id,
-        amountCents: payer.amount_cents,
-      })),
-      (children.splits.get(expense.id) ?? []).map((split) => ({
-        userId: split.user_id,
-        amountCents: split.owed_cents,
-      })),
-    ),
-  );
   const settlements = (await listSettlementsInvolvingUser(userId)).map((settlement) => ({
     from: settlement.from_user,
     to: settlement.to_user,
     amountCents: settlement.amount_cents,
   }));
-  return pairwiseBalances(debts, settlements).filter(
+  return pairwiseBalances(debtsFromExpenses(expenses, children), settlements).filter(
     (debt) => debt.from === userId || debt.to === userId,
   );
+}
+
+/**
+ * Reads what one user owes another out of a normalized pairwise ledger.
+ *
+ * @param entries - Pairwise entries from {@link pairwiseBalances}.
+ * @param payerId - The user who would be paying.
+ * @param creditorId - The user who would be receiving.
+ * @returns Cents payer owes creditor in these entries; 0 when nothing or reversed.
+ */
+function owedInEntries(entries: LedgerEntry[], payerId: string, creditorId: string): number {
+  for (const entry of entries) {
+    if (entry.from === payerId && entry.to === creditorId) return entry.amountCents;
+  }
+  return 0;
+}
+
+/**
+ * Where a payer's debt to a creditor actually lives, scope by scope.
+ *
+ * Each scope — every shared group, plus the pair's one-off ledger — is
+ * computed independently from its own expenses and its own settlement rows,
+ * exactly the way that scope's balance page computes it. That identity is
+ * the point: a settlement recorded against a scope listed here moves the
+ * number the payer was looking at when they decided to pay.
+ *
+ * Scopes where the payer is owed (direction reversed) are not listed; a
+ * payment cannot pay down a debt that points the other way. Such scopes make
+ * the pair's global net smaller than the sum returned here, which is why
+ * over-settle guards must check against this sum, never the net.
+ *
+ * @param payerId - The user paying.
+ * @param creditorId - The user being paid.
+ * @returns Scopes with a positive payer→creditor debt; order is not meaningful.
+ */
+export async function owedByScope(payerId: string, creditorId: string): Promise<ScopeDebt[]> {
+  const scopes: ScopeDebt[] = [];
+
+  const oneOffExpenses = await listOneOffExpensesBetween(payerId, creditorId);
+  const children = await loadExpenseChildren(oneOffExpenses.map((expense) => expense.id));
+  const oneOffSettlements = (await listOneOffSettlementsBetween(payerId, creditorId)).map(
+    (settlement) => ({
+      from: settlement.from_user,
+      to: settlement.to_user,
+      amountCents: settlement.amount_cents,
+    }),
+  );
+  const oneOffCents = owedInEntries(
+    pairwiseBalances(debtsFromExpenses(oneOffExpenses, children), oneOffSettlements),
+    payerId,
+    creditorId,
+  );
+  if (oneOffCents > 0) scopes.push({ groupId: null, owedCents: oneOffCents });
+
+  const payerGroupIds = new Set((await listGroupsByUser(payerId)).map((group) => group.id));
+  for (const group of await listGroupsByUser(creditorId)) {
+    if (!payerGroupIds.has(group.id)) continue;
+    const owedCents = owedInEntries(await groupLedger(group.id), payerId, creditorId);
+    if (owedCents > 0) scopes.push({ groupId: group.id, owedCents });
+  }
+  return scopes;
 }
 
 /**
