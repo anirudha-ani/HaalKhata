@@ -1,6 +1,6 @@
 /** Constants for the authed app shell (sidebar + mobile nav). */
 
-import { Bell, Handshake, Home, Users } from "lucide-react";
+import { Bell, Handshake, Home, ReceiptText, Users } from "lucide-react";
 
 /**
  * Primary navigation destinations shown in the desktop sidebar. The mobile
@@ -21,6 +21,7 @@ import { Bell, Handshake, Home, Users } from "lucide-react";
 export const NAVIGATION_ITEMS = [
   { href: "/dashboard", label: "Home", icon: Home },
   { href: "/groups", label: "Groups", icon: Users },
+  { href: "/expenses", label: "Expenses", icon: ReceiptText },
   { href: "/friends", label: "Friends", icon: Handshake },
   { href: "/activity", label: "Activity", icon: Bell },
 ];
@@ -32,10 +33,16 @@ export const MOBILE_LEFT_NAV = [
 ];
 
 /**
- * Bottom-nav items to the RIGHT of the floating add button. Activity took the
- * slot Scan vacated, so it is no longer reachable only via the header bell.
+ * Bottom-nav items to the RIGHT of the floating add button.
+ *
+ * Expenses holds the slot Activity had, and Activity goes back to the header
+ * bell (which mobile keeps, unread badge and all). The trade: one-off
+ * expenses live nowhere else — without this tab they are reachable only
+ * through the friend they were shared with — while Activity has a second
+ * mobile entry point already. Keeping five columns also keeps the add button
+ * dead-center, which a sixth column would visibly break.
  */
 export const MOBILE_RIGHT_NAV = [
+  { href: "/expenses", label: "Expenses", icon: ReceiptText },
   { href: "/friends", label: "Friends", icon: Handshake },
-  { href: "/activity", label: "Activity", icon: Bell },
 ];

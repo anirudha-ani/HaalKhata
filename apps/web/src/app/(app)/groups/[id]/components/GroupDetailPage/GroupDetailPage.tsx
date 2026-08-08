@@ -11,7 +11,7 @@ import { useHydrated } from "@/lib/hooks/useHydrated";
 import { groupEmoji } from "../../../constants/groupTypes";
 import { AddPeopleModal } from "./components/AddPeopleModal/AddPeopleModal";
 import { BalancesPanel } from "./components/BalancesPanel/BalancesPanel";
-import { ExpenseList } from "./components/ExpenseList/ExpenseList";
+import { ExpenseList } from "@/components/expenses/ExpenseList";
 import { TABS } from "../../constants/tabs";
 import { useGroupDetail } from "./hooks/useGroupDetail";
 

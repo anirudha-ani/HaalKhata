@@ -8,7 +8,7 @@ import type { User } from "@haalkhata/protogen/common/v1/common_pb";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Money } from "@/components/ui/Money";
 import { formatMoney } from "@haalkhata/shared/money/money";
-import { CATEGORY_EMOJI } from "../../../../constants/categoryEmoji";
+import { CATEGORY_EMOJI } from "./categoryEmoji";
 
 /**
  * Group-agnostic expense list with a "your share" lens per row: each expense
@@ -22,6 +22,7 @@ export function ExpenseList({
   meId,
   userById,
   emptyHint,
+  groupNameById,
 }: {
   /** Expenses to render, newest-first as returned by the server. */
   expenses: Expense[];
@@ -31,6 +32,12 @@ export function ExpenseList({
   userById: Map<string, User>;
   /** Hint text for the empty state when there are no expenses. */
   emptyHint: string;
+  /**
+   * Group names keyed by id. When given, each row says which group it belongs
+   * to ("one-off" when none) — for lists that mix scopes, where a row's home
+   * is not implied by the page it is on. A single group's page omits this.
+   */
+  groupNameById?: Map<string, string>;
 }) {
   if (expenses.length === 0) {
     return <EmptyState icon={<ReceiptText />} title="No expenses yet" hint={emptyHint} />;
@@ -66,10 +73,17 @@ export function ExpenseList({
               <span className="text-xl">{CATEGORY_EMOJI[expense.category] ?? "🧾"}</span>
               <div className="min-w-0 flex-1">
                 <p className="truncate font-medium">{expense.description}</p>
-                <p className="text-xs text-ink-soft">
+                <p className="truncate text-xs text-ink-soft">
                   {expense.expenseDate} · {payerLabel}{" "}
                   {formatMoney(expense.amountCents, expense.currency)}
                   {expense.splitType === "itemized" ? " · itemized" : ""}
+                  {groupNameById
+                    ? ` · ${
+                        expense.groupId
+                          ? (groupNameById.get(expense.groupId) ?? "group")
+                          : "one-off"
+                      }`
+                    : ""}
                 </p>
               </div>
               <div className="text-right">
