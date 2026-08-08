@@ -103,6 +103,14 @@ message ListExpensesRequest {
 message ListExpensesResponse {
   repeated Expense expenses = 1;
   repeated common.v1.User users = 2; // everyone referenced by the expenses
+  // Ids of listed expenses with nothing pending for the CALLER: their balance
+  // in the expense's scope — the group, or the pair ledger with each other
+  // participant for a one-off — is zero. Viewer-relative, which is why it is
+  // a side list here and not a field on Expense. Scope-level on purpose:
+  // settlements pay down a scope's balance, not a specific expense, so while
+  // a scope still owes, singling out one of its expenses as "settled" would
+  // be an attribution the ledger never made.
+  repeated string settled_expense_ids = 3;
 }
 
 message GetExpenseRequest {

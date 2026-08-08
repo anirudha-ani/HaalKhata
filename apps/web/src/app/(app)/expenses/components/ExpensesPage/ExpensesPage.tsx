@@ -92,6 +92,7 @@ export function ExpensesPage() {
           userById={listState.userById}
           emptyHint=""
           groupNameById={listState.groupNameById}
+          settledIds={listState.settledIds}
         />
       )}
     </div>

@@ -2,7 +2,7 @@
 /** Expense list rows: category, payer summary, and your lent/borrowed net per expense. */
 
 import Link from "next/link";
-import { ReceiptText } from "lucide-react";
+import { Check, ReceiptText } from "lucide-react";
 import type { Expense } from "@haalkhata/protogen/expense/v1/expense_pb";
 import type { User } from "@haalkhata/protogen/common/v1/common_pb";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -23,6 +23,7 @@ export function ExpenseList({
   userById,
   emptyHint,
   groupNameById,
+  settledIds,
 }: {
   /** Expenses to render, newest-first as returned by the server. */
   expenses: Expense[];
@@ -33,11 +34,18 @@ export function ExpenseList({
   /** Hint text for the empty state when there are no expenses. */
   emptyHint: string;
   /**
-   * Group names keyed by id. When given, each row says which group it belongs
-   * to ("one-off" when none) — for lists that mix scopes, where a row's home
-   * is not implied by the page it is on. A single group's page omits this.
+   * Group names keyed by id. When given, each row carries a pill naming which
+   * group it belongs to ("one-off" when none) — for lists that mix scopes,
+   * where a row's home is not implied by the page it is on. A single group's
+   * page omits this.
    */
   groupNameById?: Map<string, string>;
+  /**
+   * Ids of expenses with nothing pending for the viewer (their balance in
+   * the expense's scope is zero). Rows in it trade the lent/borrowed label
+   * for a settled tick and mute the amount into history.
+   */
+  settledIds?: Set<string>;
 }) {
   if (expenses.length === 0) {
     return <EmptyState icon={<ReceiptText />} title="No expenses yet" hint={emptyHint} />;
@@ -64,6 +72,7 @@ export function ExpenseList({
               ? "you paid"
               : `${firstPayer} paid`;
 
+        const settled = settledIds?.has(expense.id) ?? false;
         return (
           <li key={expense.id}>
             <Link
@@ -73,22 +82,49 @@ export function ExpenseList({
               <span className="text-xl">{CATEGORY_EMOJI[expense.category] ?? "🧾"}</span>
               <div className="min-w-0 flex-1">
                 <p className="truncate font-medium">{expense.description}</p>
-                <p className="truncate text-xs text-ink-soft">
-                  {expense.expenseDate} · {payerLabel}{" "}
-                  {formatMoney(expense.amountCents, expense.currency)}
-                  {expense.splitType === "itemized" ? " · itemized" : ""}
-                  {groupNameById
-                    ? ` · ${
+                <p className="mt-0.5 flex items-center gap-1.5 text-xs text-ink-soft">
+                  {/* The row's home as a pill, not buried in the meta text —
+                      on a mixed list, where an expense lives is the first
+                      thing being scanned for. */}
+                  {groupNameById ? (
+                    <span
+                      className={`max-w-32 shrink-0 truncate rounded-full px-2 py-0.5 font-medium ${
                         expense.groupId
-                          ? (groupNameById.get(expense.groupId) ?? "group")
-                          : "one-off"
-                      }`
-                    : ""}
+                          ? "bg-brand-50 text-brand-700"
+                          : "bg-paper text-ink-soft"
+                      }`}
+                    >
+                      {expense.groupId
+                        ? (groupNameById.get(expense.groupId) ?? "group")
+                        : "one-off"}
+                    </span>
+                  ) : null}
+                  <span className="truncate">
+                    {expense.expenseDate} · {payerLabel}{" "}
+                    {formatMoney(expense.amountCents, expense.currency)}
+                    {expense.splitType === "itemized" ? " · itemized" : ""}
+                  </span>
                 </p>
               </div>
               <div className="text-right">
                 {myNet === 0 ? (
                   <span className="text-xs text-ink-soft">not involved / even</span>
+                ) : settled ? (
+                  <>
+                    {/* Nothing pending: the tick replaces the lent/borrowed
+                        call-to-worry and the amount goes muted — it is
+                        history now, not an open position. */}
+                    <p className="flex items-center justify-end gap-1 text-xs font-medium text-pos-600">
+                      <Check className="h-3.5 w-3.5" /> settled
+                    </p>
+                    {/* Unsigned on purpose: the sign colors say "money is
+                        pending", and nothing is. */}
+                    <Money
+                      cents={myNet}
+                      currency={expense.currency}
+                      className="text-sm font-semibold text-ink-soft"
+                    />
+                  </>
                 ) : (
                   <>
                     <p className={`text-xs ${myNet > 0 ? "text-pos-600" : "text-neg-600"}`}>

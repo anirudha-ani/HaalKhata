@@ -26,8 +26,9 @@ import {
   computeSplits,
   SplitError,
 } from "@haalkhata/shared/expense/splits";
-import { amountOwed, owedByScope } from "./balance.usecase";
+import { amountOwed, oneOffNetBetween, owedByScope, userNetInGroups } from "./balance.usecase";
 import { allocateSettlement } from "@/server/expense/domain/settlementAllocation";
+import { settledExpenseIds } from "@/server/expense/domain/settledExpenses";
 import { denied, invalid, notFound } from "@/server/common/errors";
 import { toUser } from "@/server/auth/usecase/user.mapper";
 import { SPLIT_TYPES, ISO_DATE_PATTERN, MAX_EXPENSE_PARTICIPANTS, EXPENSE_CATEGORIES, SETTLEMENT_METHODS, MAX_COMMENT_LENGTH, COMMENT_PREVIEW_LENGTH } from "@/server/expense/expense.constants";
@@ -429,9 +430,48 @@ export async function listExpenses(
     rows = await listExpensesInvolvingUser(userId);
   }
   const children = await loadExpenseChildren(rows.map((expenseRow) => expenseRow.id));
+
+  // Settledness inputs: the viewer's net per group scope, and per one-off
+  // counterparty. Which rows count as settled is decided by the pure
+  // settledExpenseIds — this block only gathers the ledger numbers it needs.
+  const participants = rows.map((expenseRow) => ({
+    id: expenseRow.id,
+    groupId: expenseRow.group_id ?? "",
+    participantIds: [
+      ...new Set([
+        ...(children.payers.get(expenseRow.id) ?? []).map((payer) => payer.user_id),
+        ...(children.splits.get(expenseRow.id) ?? []).map((split) => split.user_id),
+      ]),
+    ],
+  }));
+  const groupIds = [
+    ...new Set(rows.flatMap((expenseRow) => (expenseRow.group_id ? [expenseRow.group_id] : []))),
+  ];
+  const counterpartyIds = [
+    ...new Set(
+      participants
+        .filter((expense) => expense.groupId === "")
+        .flatMap((expense) => expense.participantIds)
+        .filter((participantId) => participantId !== userId),
+    ),
+  ];
+  const viewerNetByGroupId = await userNetInGroups(userId, groupIds);
+  const oneOffNetByUserId = new Map<string, number>();
+  await Promise.all(
+    counterpartyIds.map(async (counterpartyId) => {
+      oneOffNetByUserId.set(counterpartyId, await oneOffNetBetween(userId, counterpartyId));
+    }),
+  );
+
   return {
     expenses: rows.map((expenseRow) => toExpense(expenseRow, children)),
     users: await usersReferenced(rows, children),
+    settledExpenseIds: settledExpenseIds(
+      participants,
+      userId,
+      viewerNetByGroupId,
+      oneOffNetByUserId,
+    ),
   };
 }
 

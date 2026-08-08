@@ -113,6 +113,7 @@ export function GroupDetailPage({
           meId={groupDetail.me?.id}
           userById={groupDetail.userById}
           emptyHint="Add the first expense or scan a receipt to get this ledger going."
+          settledIds={new Set(groupDetail.expenses?.settledExpenseIds ?? [])}
         />
       ) : (
         <BalancesPanel
