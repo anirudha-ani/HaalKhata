@@ -1,6 +1,8 @@
 /** Unit tests for who a settlement's activity row is attributed to. */
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { PoolClient } from "pg";
+import type { SettlementRow } from "@/server/expense/repo/settlements.repo";
 
 vi.mock("@/server/expense/repo/expenses.repo", () => ({
   findExpenseById: vi.fn(),
@@ -26,20 +28,28 @@ vi.mock("@/server/expense/repo/comments.repo", () => ({
   insertComment: vi.fn(),
   listCommentsByExpense: vi.fn(),
 }));
-vi.mock("@/server/expense/repo/settlements.repo", () => ({ insertSettlement: vi.fn() }));
+vi.mock("@/server/expense/repo/settlements.repo", () => ({
+  insertSettlement: vi.fn(),
+  // The lock is orthogonal to attribution; run the operation directly. The
+  // client handed through is never dereferenced by the mocked insert.
+  withSettlementPairLock: vi.fn(
+    (first: string, second: string, operation: (client: PoolClient) => Promise<unknown>) =>
+      operation({} as PoolClient),
+  ),
+}));
 vi.mock("@/server/social/repo/activity.repo", () => ({
   insertActivity: vi.fn(),
   listActivityForExpense: vi.fn(),
 }));
 vi.mock("@/server/social/repo/notifications.repo", () => ({ insertNotifications: vi.fn() }));
-vi.mock("./balance.usecase", () => ({ amountOwed: vi.fn() }));
+vi.mock("./balance.usecase", () => ({ amountOwed: vi.fn(), owedByScope: vi.fn() }));
 
 import { recordSettlement } from "./expense.usecase";
 import { findUserById } from "@/server/auth/repo/users.repo";
 import { insertSettlement } from "@/server/expense/repo/settlements.repo";
 import { insertActivity } from "@/server/social/repo/activity.repo";
 import { insertNotifications } from "@/server/social/repo/notifications.repo";
-import { amountOwed } from "./balance.usecase";
+import { owedByScope } from "./balance.usecase";
 
 const RECORDER = "user-recorder";
 const OTHER = "user-other";
@@ -56,11 +66,25 @@ function resetRepos(): void {
   vi.mocked(findUserById).mockImplementation(
     async (userId: string) => PEOPLE[userId] as Awaited<ReturnType<typeof findUserById>>,
   );
-  // Comfortably above the amount settled, so the over-settlement guard passes
-  // and execution reaches insertActivity, which is what these tests inspect.
-  vi.mocked(amountOwed).mockResolvedValue(10_000);
-  vi.mocked(insertSettlement).mockResolvedValue(
-    {} as Awaited<ReturnType<typeof insertSettlement>>,
+  // The whole debt lives in the pair's one-off ledger, comfortably above the
+  // amount settled, so the guards pass and a single one-off row is recorded —
+  // which is what these attribution tests inspect.
+  vi.mocked(owedByScope).mockResolvedValue([{ groupId: null, owedCents: 10_000 }]);
+  // Echo the input back as the stored row: the activity fan-out reads the
+  // row's scope and amount, so a bare {} would silently test nothing.
+  vi.mocked(insertSettlement).mockImplementation(
+    async (input) =>
+      ({
+        id: "settlement-1",
+        group_id: input.groupId,
+        from_user: input.fromUser,
+        to_user: input.toUser,
+        amount_cents: input.amountCents,
+        currency: input.currency,
+        method: input.method,
+        note: input.note,
+        created_at: "2026-07-30T00:00:00Z",
+      }) as SettlementRow,
   );
   vi.mocked(insertNotifications).mockResolvedValue(undefined);
   vi.mocked(insertActivity).mockResolvedValue(undefined as never);

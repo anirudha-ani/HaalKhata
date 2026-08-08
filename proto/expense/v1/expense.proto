@@ -150,7 +150,14 @@ message AddCommentRequest {
 }
 
 message RecordSettlementRequest {
-  string group_id = 1; // empty = one-off
+  // Group to record the payment in. Empty = pay down balances across scopes:
+  // the server splits the amount over the scopes selected below (or every
+  // scope holding debt, when none are named) and stores one settlement row
+  // per scope, so every balance the pair can see moves together. A debt lives
+  // in exactly one scope and each scope's ledger reads only its own rows —
+  // recording a payment anywhere else would leave that ledger demanding
+  // money that already changed hands.
+  string group_id = 1;
   // The other person, whichever way the money moved.
   string to_user_id = 2;
   int32 amount_cents = 3;
@@ -161,6 +168,12 @@ message RecordSettlementRequest {
   // is stored the other way round. Recording money coming back to you is the
   // only way to clear a balance in your favour.
   bool received = 7;
+  // Which scopes this payment addresses, when group_id is empty: group ids,
+  // with "" naming the pair's one-off ledger. The payer picks these in the
+  // settle dialog (all on by default). Empty = every scope where the payer
+  // owes — which is also what clients predating this field send, so the
+  // default and the legacy behavior are the same thing.
+  repeated string scope_group_ids = 8;
 }
 
 message Settlement {
