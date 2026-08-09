@@ -94,6 +94,7 @@ describe.skipIf(!reachable)("simplified-edge settlement against Postgres", () =>
   let setSimplifyDebts: typeof import("@/server/group/usecase/group.usecase").setSimplifyDebts;
   let userNetInGroup: typeof import("./balance.usecase").userNetInGroup;
   let netWithUser: typeof import("./balance.usecase").netWithUser;
+  let listActivity: typeof import("@/server/social/usecase/social.usecase").listActivity;
   let closePool: () => Promise<void>;
 
   beforeAll(async () => {
@@ -115,6 +116,7 @@ describe.skipIf(!reachable)("simplified-edge settlement against Postgres", () =>
     ({ recordSettlement } = await import("./expense.usecase"));
     ({ setSimplifyDebts } = await import("@/server/group/usecase/group.usecase"));
     ({ userNetInGroup, netWithUser } = await import("./balance.usecase"));
+    ({ listActivity } = await import("@/server/social/usecase/social.usecase"));
 
     database = new Client({ connectionString: TEST_URL });
     await database.connect();
@@ -201,6 +203,24 @@ describe.skipIf(!reachable)("simplified-edge settlement against Postgres", () =>
     expect(await netWithUser(ALICE, CARA)).toBe(0);
     expect(await netWithUser(BOBBY, ALICE)).toBe(0);
     expect(await netWithUser(BOBBY, CARA)).toBe(0);
+  });
+
+  it("tells the pair about the payment — and nobody else, on either feed", async () => {
+    // Bob is a member of the group but not a party to Alice's payment to
+    // Cara. His personal feed and the group's tab must both skip it; the
+    // pair sees it in both. The group-structural events (the simplify
+    // announcement) stay visible to everyone.
+    for (const scope of [{}, { groupId: TRIP }]) {
+      const bobFeed = await listActivity(BOBBY, scope);
+      expect(bobFeed.events.some((event) => event.type === "settlement")).toBe(false);
+
+      const aliceFeed = await listActivity(ALICE, scope);
+      expect(aliceFeed.events.some((event) => event.type === "settlement")).toBe(true);
+      const caraFeed = await listActivity(CARA, scope);
+      expect(caraFeed.events.some((event) => event.type === "settlement")).toBe(true);
+    }
+    const bobGroupFeed = await listActivity(BOBBY, { groupId: TRIP });
+    expect(bobGroupFeed.events.some((event) => event.type === "simplify_debts")).toBe(true);
   });
 
   it("refuses any further recording on any route", async () => {

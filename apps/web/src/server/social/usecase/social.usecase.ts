@@ -128,7 +128,9 @@ export async function listActivity(
   if (groupId && !(await isMember(groupId, userId))) {
     denied("you are not a member of this group");
   }
-  const scope = groupId ? { groupId } : { userId };
+  // The viewer rides along in both scopes: a group id narrows the feed to
+  // one group, but what the viewer may see is always the audience's call.
+  const scope = groupId ? { userId, groupId } : { userId };
   const limit = Math.min(
     Math.max(options.limit && options.limit > 0 ? options.limit : ACTIVITY_PAGE_SIZE, 1),
     MAX_ACTIVITY_PAGE_SIZE,

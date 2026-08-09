@@ -14,7 +14,7 @@ import {
   type ExpenseRow,
   type ExpenseWrite,
 } from "@/server/expense/repo/expenses.repo";
-import { findGroupById, isMember, listMembers } from "@/server/group/repo/groups.repo";
+import { findGroupById, isMember } from "@/server/group/repo/groups.repo";
 import { findUserById, findUsersByIds } from "@/server/auth/repo/users.repo";
 import { insertFriendship } from "@/server/social/repo/friendships.repo";
 import { insertComment, listCommentsByExpense } from "@/server/expense/repo/comments.repo";
@@ -215,9 +215,8 @@ function involvedUserIds(write: ExpenseWrite): string[] {
 }
 
 /**
- * Fans out an expense change: one activity entry for the audience (group
- * members, or the participants for one-off expenses) plus a notification for
- * every participant except the actor.
+ * Fans out an expense change: one activity entry for its participants plus a
+ * notification for every participant except the actor.
  *
  * @param actorId - User who performed the change.
  * @param expenseId - Id of the affected expense (used for links).
@@ -233,9 +232,11 @@ async function recordExpenseActivity(
   const actor = (await findUserById(actorId))!;
   const group = write.groupId ? await findGroupById(write.groupId) : undefined;
   const locationSuffix = group ? ` in "${group.name}"` : "";
-  const audience = write.groupId
-    ? (await listMembers(write.groupId)).map((member) => member.id)
-    : involvedUserIds(write);
+  // The participants plus whoever recorded it — never the whole group. A
+  // transaction is announced to the people whose money it moved; a member
+  // who is not on the expense reads the group's ledger tabs, not a feed
+  // line about other people's dinner.
+  const audience = [...new Set([...involvedUserIds(write), actorId])];
   await insertActivity({
     groupId: write.groupId,
     actorId,
@@ -615,12 +616,12 @@ export async function addComment(userId: string, expenseId: string, body: string
     type: "comment",
     message: `${author.name} commented on "${expenseRow.description}": ${preview}`,
     link: `/expenses/${expenseId}`,
-    // A group's comments are the group's business — the commenter may be
-    // neither payer nor ower, and members who are not on the expense still
-    // read the thread. Off a group, only the participants can see it at all.
-    audience: expenseRow.group_id
-      ? (await listMembers(expenseRow.group_id)).map((member) => member.id)
-      : [...new Set([...involved, userId])],
+    // The thread follows its transaction: a comment is announced to the
+    // expense's participants (and its author, who may be neither payer nor
+    // ower) — the same people who saw the expense land in their feeds. A
+    // feed line about a conversation on somebody else's expense is noise
+    // with a name in it.
+    audience: [...new Set([...involved, userId])],
   });
   await insertNotifications(
     [...involved].filter((recipientId) => recipientId !== userId),
@@ -802,9 +803,10 @@ export async function recordSettlement(
   const creditorName = request.received ? actor.name : recipient.name;
   const friendLink = `/friends/${request.toUserId}`;
   // One feed row per portion, each in its own scope's voice: the slice that
-  // paid down a group says so and goes to that group's members; a one-off
-  // slice stays between the pair. The feed then reads exactly like the
-  // ledgers it narrates.
+  // paid down a group says so and carries that group's id, so it files under
+  // the group's activity tab for the two people it concerns. Every slice
+  // stays between the pair — a payment is the payer's and the receiver's
+  // line, not the room's.
   for (const settlement of settlements) {
     const group = settlement.group_id ? await findGroupById(settlement.group_id) : undefined;
     await insertActivity({
@@ -822,9 +824,9 @@ export async function recordSettlement(
       type: "settlement",
       message: `${payerName} paid ${creditorName} ${formatMoney(settlement.amount_cents, currency)}${group ? ` in "${group.name}"` : ""}`,
       link: settlement.group_id ? `/groups/${settlement.group_id}` : friendLink,
-      audience: settlement.group_id
-        ? (await listMembers(settlement.group_id)).map((member) => member.id)
-        : [userId, request.toUserId],
+      // The pair, never the room: if you are A, "B paid C" is B and C's
+      // feed line. The recorder is always one of the two.
+      audience: [...new Set([payerId, creditorId])],
       amountCents: settlement.amount_cents,
       currency,
       // Who received the money, so each reader's feed can say whether it came

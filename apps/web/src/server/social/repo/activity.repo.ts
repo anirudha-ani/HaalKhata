@@ -139,28 +139,33 @@ function feedWindow(params: {
  * Fetches `limit + 1` rows so "is there more?" is answered without a second
  * count query, then trims the extra before returning.
  *
- * @param scope - `userId` for a personal feed (audience containment) or
- *   `groupId` for one group's feed; exactly one is used.
+ * @param scope - The viewing user, and optionally a group to narrow to.
  * @param options - Page size, keyset cursor, and optional "YYYY-MM" month.
  * @returns The page's rows and the cursor that continues it.
  */
 export async function listActivityPage(
-  scope: { userId?: string; groupId?: string },
+  scope: { userId: string; groupId?: string },
   options: { limit: number; cursor: string; month: string },
 ): Promise<ActivityPage> {
-  // audience is a JSONB array; containment matches membership.
+  // audience (a JSONB array; containment matches membership) governs BOTH
+  // scopes: a group id narrows *where*, never *who may see*. A transaction
+  // between two other members does not become yours by opening the group's
+  // tab instead of your feed.
   const base = scope.groupId
-    ? { clause: "group_id = $1", value: scope.groupId }
-    : { clause: "audience @> to_jsonb($1::text)", value: scope.userId ?? "" };
-  const window = feedWindow({ ...options, nextPlaceholder: 2 });
-  const limitPlaceholder = 2 + window.values.length;
+    ? {
+        clause: "group_id = $1 AND audience @> to_jsonb($2::text)",
+        values: [scope.groupId, scope.userId],
+      }
+    : { clause: "audience @> to_jsonb($1::text)", values: [scope.userId] };
+  const window = feedWindow({ ...options, nextPlaceholder: base.values.length + 1 });
+  const limitPlaceholder = base.values.length + 1 + window.values.length;
 
   const rows = await query<ActivityRow>(
     `SELECT * FROM activity
      WHERE ${base.clause}${window.clause}
      ORDER BY created_at DESC, id DESC
      LIMIT $${limitPlaceholder}`,
-    [base.value, ...window.values, options.limit + 1],
+    [...base.values, ...window.values, options.limit + 1],
   );
 
   const hasMore = rows.length > options.limit;
@@ -176,21 +181,25 @@ export async function listActivityPage(
  * first. Drives the month filter, which would otherwise have to offer every
  * month since the epoch and be mostly empty.
  *
- * @param scope - `userId` for a personal feed or `groupId` for one group's.
+ * @param scope - The viewing user, and optionally a group to narrow to.
  * @returns Month keys in "YYYY-MM" form, newest first.
  */
 export async function listActivityMonths(scope: {
-  userId?: string;
+  userId: string;
   groupId?: string;
 }): Promise<string[]> {
+  // Same visibility rule as the pages themselves — see listActivityPage.
   const base = scope.groupId
-    ? { clause: "group_id = $1", value: scope.groupId }
-    : { clause: "audience @> to_jsonb($1::text)", value: scope.userId ?? "" };
+    ? {
+        clause: "group_id = $1 AND audience @> to_jsonb($2::text)",
+        values: [scope.groupId, scope.userId],
+      }
+    : { clause: "audience @> to_jsonb($1::text)", values: [scope.userId] };
   const rows = await query<{ month: string }>(
     `SELECT DISTINCT to_char(created_at, 'YYYY-MM') AS month
      FROM activity WHERE ${base.clause}
      ORDER BY month DESC`,
-    [base.value],
+    base.values,
   );
   return rows.map((monthRow) => monthRow.month);
 }

@@ -1623,3 +1623,24 @@ group-wide activity entry, and rewrites nothing — flipping modes only changes
 routing, so it is always safe. Turning it off after simplified payments can
 surface pairwise cycles that net to zero; the balances panel explains them
 rather than hiding them. RPC: `GroupService.SetSimplifyDebts` (additive).
+
+## §23 The feed is personal: transactions reach their participants only
+
+If you are A, "B paid C" is B and C's feed line — a transaction that moved
+none of your money does not show up in your activity, global or group tab.
+Enforced in the audience, which was already the read-path filter:
+
+- Write path: expense events (added/updated/deleted) and their comments are
+  announced to the expense's participants plus the actor; settlements to
+  the pair. Structural events (group_created, member_added, simplify_debts)
+  stay group-wide — those genuinely involve everyone.
+- Read path: the group-scoped feed query previously filtered by group_id
+  alone, showing members everything; it now requires audience containment
+  in both scopes — a group id narrows *where*, never *who may see*.
+- Data migration (1784764800000) trims historical wide audiences: expense
+  and comment rows join exactly via their /expenses/<id> link; settlement
+  rows use (actor, credit_user) where those differ, and fall back to the
+  amounts-backfill adjacency match against the settlements table.
+
+The group's ledger tabs (expenses list, balances) are unchanged — members
+still see the whole ledger; the feed is the personal narration of it.

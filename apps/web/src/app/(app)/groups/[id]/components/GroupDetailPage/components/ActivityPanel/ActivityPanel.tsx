@@ -8,12 +8,12 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { Spinner } from "@/components/ui/Spinner";
 
 /**
- * Renders the activity tab of a group: everything that happened in this
- * group — expenses added and edited, payments, people joining, the
- * simplify-debts switch — as the same day-grouped feed the global activity
- * page draws, scoped to one ledger. The feed is how a shared ledger stays
- * trustworthy: every number on the other two tabs got there through some
- * event listed here.
+ * Renders the activity tab of a group: what happened here *that concerns the
+ * viewer* — their expenses and payments, plus the group's structural events
+ * (people joining, settings) — as the same day-grouped feed the global
+ * activity page draws, scoped to one ledger. Transactions between two other
+ * members are their feed lines, not the room's; the server's audience rule
+ * enforces that, this panel just renders what it is given.
  *
  * @param props - Component props.
  * @returns The group's feed, a spinner while it loads, or an empty state.
@@ -43,7 +43,7 @@ export function ActivityPanel({
       <EmptyState
         icon={<Bell />}
         title="Nothing yet"
-        hint="Expenses, payments and people joining this group will show up here."
+        hint="Your expenses and payments in this group, and people joining it, will show up here."
       />
     );
   }

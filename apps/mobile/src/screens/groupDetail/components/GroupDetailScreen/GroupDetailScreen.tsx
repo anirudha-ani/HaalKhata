@@ -155,7 +155,7 @@ export function GroupDetailScreen({
         <Spinner label="Loading activity…" />
       ) : groupDetail.activityEvents.length === 0 ? (
         <EmptyState
-          hint="Expenses, payments and people joining this group will show up here."
+          hint="Your expenses and payments in this group, and people joining it, will show up here."
           icon={<Bell color={colors.inkSoft} size={32} />}
           title="Nothing yet"
         />
