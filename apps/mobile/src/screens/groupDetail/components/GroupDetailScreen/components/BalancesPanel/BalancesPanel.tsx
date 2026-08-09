@@ -3,10 +3,9 @@
 import type { User } from "@haalkhata/protogen/common/v1/common_pb";
 import type { BalancesResponse } from "@haalkhata/protogen/expense/v1/expense_pb";
 import { ArrowRight, Wand2 } from "lucide-react-native";
-import { StyleSheet, Text, View } from "react-native";
+import { StyleSheet, Switch, Text, View } from "react-native";
 import { Avatar } from "@/components/ui/Avatar";
 import { Button } from "@/components/ui/Button";
-import { Chip } from "@/components/ui/Chip";
 import { Money } from "@/components/ui/Money";
 import { colors, radii, spacing } from "@/lib/theme/theme";
 
@@ -94,34 +93,45 @@ export function BalancesPanel({
       </View>
 
       <View style={styles.section}>
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>
-            {simplified ? "SIMPLIFIED PAYMENTS" : "WHO OWES WHOM"}
-          </Text>
-          <Chip
-            icon={<Wand2 color={simplified ? colors.brand700 : colors.inkSoft} size={13} />}
-            label="Simplify debts"
-            onPress={() => {
-              if (!simplifyPending) onToggleSimplified(!simplified);
-            }}
-            selected={simplified}
+        {/* The mode gets a real switch with its state written out, not a
+            chip that reads as "maybe on?". It decides which debts exist —
+            here, on friend pages, on the dashboard — and which payments the
+            server accepts, for everyone in the group, so its state has to be
+            legible at a glance and said before it is flipped, not after. */}
+        <View style={[styles.modeCard, simplified ? styles.modeCardOn : null]}>
+          <Wand2 color={simplified ? colors.brand600 : colors.inkSoft} size={18} />
+          <View style={styles.modeText}>
+            <View style={styles.modeTitleRow}>
+              <Text style={styles.modeTitle}>Simplify debts</Text>
+              <Text style={[styles.modeState, simplified ? styles.modeStateOn : null]}>
+                {simplified ? "ON" : "OFF"}
+              </Text>
+            </View>
+            <Text style={styles.modeHint}>
+              {simplified
+                ? "Debts are combined into the fewest payments. Applies to everyone in this group."
+                : "Debts run person to person, exactly as shared. Turning this on combines them — for everyone in this group."}
+            </Text>
+          </View>
+          <Switch
+            accessibilityLabel="Simplify debts"
+            disabled={simplifyPending}
+            onValueChange={onToggleSimplified}
+            thumbColor="#ffffff"
+            trackColor={{ false: colors.line, true: colors.brand600 }}
+            value={simplified}
           />
         </View>
 
-        {/* The switch changes the group, not this screen: which debts exist
-            here, on friend pages, and on the dashboard — and which payments
-            the server will accept. Said before it is flipped, not after. */}
-        <Text style={styles.modeHint}>
-          {simplified
-            ? "On for everyone in this group: debts are rerouted so fewer payments settle the same balances."
-            : "Off: debts run between the people who shared each expense. Turning it on changes the view for everyone."}
+        <Text style={styles.sectionTitle}>
+          {simplified ? "SIMPLIFIED PAYMENTS" : "WHO OWES WHOM"}
         </Text>
 
         {cancelingLoop ? (
           <View style={styles.allSettled}>
             <Text style={styles.allSettledText}>
               These debts cancel out around a loop — everyone&apos;s overall position is zero.
-              Simplify debts to clear the view.
+              Turn Simplify debts on above to clear the view.
             </Text>
           </View>
         ) : null}
@@ -217,9 +227,47 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     overflow: "hidden",
   },
+  modeCard: {
+    alignItems: "center",
+    backgroundColor: colors.card,
+    borderColor: colors.line,
+    borderRadius: radii.lg,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: spacing.md,
+    padding: spacing.md,
+  },
+  modeCardOn: {
+    backgroundColor: colors.brand50,
+    borderColor: colors.brand200,
+  },
   modeHint: {
     color: colors.inkSoft,
     fontSize: 12,
+    marginTop: 2,
+  },
+  modeState: {
+    color: colors.inkSoft,
+    fontSize: 11,
+    fontWeight: "700",
+    letterSpacing: 1,
+  },
+  modeStateOn: {
+    color: colors.brand700,
+  },
+  modeText: {
+    flex: 1,
+    minWidth: 0,
+  },
+  modeTitle: {
+    color: colors.ink,
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  modeTitleRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: spacing.sm,
   },
   row: {
     alignItems: "center",
@@ -248,11 +296,6 @@ const styles = StyleSheet.create({
   },
   section: {
     gap: spacing.sm,
-  },
-  sectionHeader: {
-    alignItems: "center",
-    flexDirection: "row",
-    justifyContent: "space-between",
   },
   sectionTitle: {
     color: colors.inkSoft,

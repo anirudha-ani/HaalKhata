@@ -94,38 +94,66 @@ export function BalancesPanel({
       </section>
 
       <section>
-        <div className="mb-2 flex items-center justify-between">
-          <h3 className="text-sm font-semibold tracking-wide text-ink-soft uppercase">
-            {simplified ? "Simplified payments" : "Who owes whom"}
-          </h3>
-          <button
-            type="button"
-            disabled={simplifyPending}
-            onClick={() => onToggleSimplified(!simplified)}
-            className={`flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold disabled:opacity-50 ${
-              simplified
-                ? "border-brand-600 bg-brand-50 text-brand-700"
-                : "border-line text-ink-soft"
-            }`}
-          >
-            <Wand2 className="h-3.5 w-3.5" />
-            Simplify debts
-          </button>
+        {/* The mode gets a real switch with its state written out, not an
+            outlined chip that reads as "maybe on?". It decides which debts
+            exist — here, on friend pages, on the dashboard — and which
+            payments the server accepts, for everyone in the group, so its
+            state has to be legible at a glance and said before it is
+            flipped, not after. */}
+        <div
+          className={`mb-3 rounded-2xl border p-4 ${
+            simplified ? "border-brand-200 bg-brand-50" : "border-line bg-card"
+          }`}
+        >
+          <div className="flex items-center gap-3">
+            <Wand2
+              className={`h-5 w-5 shrink-0 ${simplified ? "text-brand-600" : "text-ink-soft"}`}
+            />
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-semibold">
+                Simplify debts{" "}
+                <span
+                  className={`ml-1 rounded-full px-2 py-0.5 text-[11px] font-bold tracking-wide uppercase ${
+                    simplified ? "bg-brand-600 text-white" : "bg-paper text-ink-soft"
+                  }`}
+                >
+                  {simplified ? "On" : "Off"}
+                </span>
+              </p>
+              <p className="mt-0.5 text-xs text-ink-soft">
+                {simplified
+                  ? "Debts are combined into the fewest payments, so you may pay a different person than you shared an expense with. Applies to everyone in this group."
+                  : "Debts run person to person, exactly as shared. Turning this on combines them into fewer payments — for everyone in this group."}
+              </p>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={simplified}
+              aria-label="Simplify debts"
+              disabled={simplifyPending}
+              onClick={() => onToggleSimplified(!simplified)}
+              className={`relative h-7 w-12 shrink-0 rounded-full transition-colors disabled:opacity-50 ${
+                simplified ? "bg-brand-600" : "bg-line"
+              }`}
+            >
+              <span
+                className={`absolute top-1 left-1 h-5 w-5 rounded-full bg-white shadow transition-transform ${
+                  simplified ? "translate-x-5" : ""
+                }`}
+              />
+            </button>
+          </div>
         </div>
 
-        {/* The switch changes the group, not this screen: which debts exist
-            here, on friend pages, and on the dashboard — and which payments
-            the server will accept. Said before it is flipped, not after. */}
-        <p className="mb-2 text-xs text-ink-soft">
-          {simplified
-            ? "On for everyone in this group: debts are rerouted so fewer payments settle the same balances. You may owe a different person than you shared an expense with."
-            : "Off: debts run between the people who actually shared each expense. Turning it on changes the view for everyone in the group."}
-        </p>
+        <h3 className="mb-2 text-sm font-semibold tracking-wide text-ink-soft uppercase">
+          {simplified ? "Simplified payments" : "Who owes whom"}
+        </h3>
 
         {cancelingLoop ? (
           <p className="mb-2 rounded-xl border border-dashed border-line bg-card px-4 py-2.5 text-xs text-ink-soft">
             These debts cancel out around a loop — everyone&apos;s overall position is zero.
-            Simplify debts to clear the view.
+            Turn Simplify debts on above to clear the view.
           </p>
         ) : null}
 
