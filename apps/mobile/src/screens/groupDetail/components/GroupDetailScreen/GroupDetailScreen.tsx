@@ -1,14 +1,16 @@
-/** Group detail orchestrator: header, members strip, expenses/balances tabs, add-people and settle sheets. */
+/** Group detail orchestrator: header, members strip, expenses/balances/activity tabs, add-people and settle sheets. */
 
 import { useRouter } from "expo-router";
-import { Plus, ScanLine, UserPlus } from "lucide-react-native";
+import { Bell, Plus, ScanLine, UserPlus } from "lucide-react-native";
 import { Pressable, StyleSheet, Text, View } from "react-native";
+import { ActivityList } from "@/components/activity/ActivityList";
 import { SettleUpModal } from "@/components/modals/SettleUpModal";
 import { PersonChecklist } from "@/components/people/PersonChecklist";
 import { DetailHeader } from "@/components/shell/DetailHeader";
 import { Screen } from "@/components/shell/Screen";
 import { Avatar } from "@/components/ui/Avatar";
 import { Button } from "@/components/ui/Button";
+import { EmptyState } from "@/components/ui/EmptyState";
 import { Segmented } from "@/components/ui/Segmented";
 import { Sheet } from "@/components/ui/Sheet";
 import { Spinner } from "@/components/ui/Spinner";
@@ -138,7 +140,7 @@ export function GroupDetailScreen({
           meId={groupDetail.me?.id}
           userById={groupDetail.userById}
         />
-      ) : (
+      ) : groupDetail.tab === "balances" ? (
         <BalancesPanel
           balances={groupDetail.balances}
           currency={groupDetail.group.currency}
@@ -149,6 +151,16 @@ export function GroupDetailScreen({
           simplifyPending={groupDetail.simplifyPending}
           userById={groupDetail.userById}
         />
+      ) : groupDetail.activityLoading ? (
+        <Spinner label="Loading activity…" />
+      ) : groupDetail.activityEvents.length === 0 ? (
+        <EmptyState
+          hint="Expenses, payments and people joining this group will show up here."
+          icon={<Bell color={colors.inkSoft} size={32} />}
+          title="Nothing yet"
+        />
+      ) : (
+        <ActivityList events={groupDetail.activityEvents} />
       )}
 
       {groupDetail.addingPeople ? (

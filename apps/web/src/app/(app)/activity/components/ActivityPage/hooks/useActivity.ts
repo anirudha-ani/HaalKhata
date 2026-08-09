@@ -6,7 +6,7 @@ import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tansta
 import { socialClient } from "@/lib/api/connect";
 import { queryKeys } from "@haalkhata/shared/api/queryKeys";
 import { matchesTerms, searchTerms } from "@haalkhata/shared/search/filter";
-import { ACTIVITY_FILTERS, type ActivityFilter } from "../../../constants/activityTypes";
+import { ACTIVITY_FILTERS, type ActivityFilter } from "@/components/activity/activityTypes";
 
 /**
  * Loads the activity feed a page at a time, plus the user's notifications,

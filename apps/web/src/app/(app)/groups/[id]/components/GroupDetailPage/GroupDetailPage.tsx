@@ -9,6 +9,7 @@ import { Spinner } from "@/components/ui/Spinner";
 import { errorMessage } from "@/lib/api/connect";
 import { useHydrated } from "@/lib/hooks/useHydrated";
 import { groupEmoji } from "../../../constants/groupTypes";
+import { ActivityPanel } from "./components/ActivityPanel/ActivityPanel";
 import { AddPeopleModal } from "./components/AddPeopleModal/AddPeopleModal";
 import { MembersModal } from "./components/MembersModal/MembersModal";
 import { BalancesPanel } from "./components/BalancesPanel/BalancesPanel";
@@ -101,7 +102,7 @@ export function GroupDetailPage({
       </div>
 
       {/* Tabs */}
-      <div className="grid grid-cols-2 rounded-xl bg-card p-1 text-sm font-semibold ring-1 ring-line">
+      <div className="grid grid-cols-3 rounded-xl bg-card p-1 text-sm font-semibold ring-1 ring-line">
         {TABS.map((tabOption) => (
           <button
             key={tabOption.value}
@@ -124,7 +125,7 @@ export function GroupDetailPage({
           emptyHint="Add the first expense or scan a receipt to get this ledger going."
           settledIds={new Set(groupDetail.expenses?.settledExpenseIds ?? [])}
         />
-      ) : (
+      ) : groupDetail.tab === "balances" ? (
         <BalancesPanel
           balances={groupDetail.balances}
           currency={groupDetail.group.currency}
@@ -136,6 +137,14 @@ export function GroupDetailPage({
           onSettle={(user, cents, received) =>
             groupDetail.setSettleWith({ user, cents, received })
           }
+        />
+      ) : (
+        <ActivityPanel
+          events={groupDetail.activityEvents}
+          isLoading={groupDetail.activityLoading}
+          hasMore={groupDetail.activityHasMore}
+          isLoadingMore={groupDetail.activityLoadingMore}
+          onLoadMore={groupDetail.loadMoreActivity}
         />
       )}
 

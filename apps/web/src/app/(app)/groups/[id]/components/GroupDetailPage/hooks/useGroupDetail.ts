@@ -7,8 +7,8 @@ import { errorMessage } from "@/lib/api/connect";
 import { splitIdentifier } from "@haalkhata/shared/auth/identifier";
 import { useGroupDetailAPI } from "./useGroupDetailAPI";
 
-/** The two tabs available on the group detail page. */
-export type GroupTab = "expenses" | "balances";
+/** The tabs available on the group detail page. */
+export type GroupTab = "expenses" | "balances" | "activity";
 
 /**
  * Combines the group detail API bindings with the page's UI state: the active

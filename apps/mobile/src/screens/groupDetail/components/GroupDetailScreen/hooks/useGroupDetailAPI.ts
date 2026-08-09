@@ -37,6 +37,13 @@ export function useGroupDetailAPI(groupId: string) {
     queryFn: () => socialClient.listFriends({}),
   });
 
+  // The group's own feed — same audience rule as everywhere: the server only
+  // returns events this member is allowed to see.
+  const activity = useQuery({
+    queryKey: queryKeys.activity(groupId),
+    queryFn: () => socialClient.listActivity({ groupId }),
+  });
+
   /**
    * Adds people by id plus an optional email/phone newcomer; on success
    * refreshes this group, the group list, and the friends list — adding
@@ -65,11 +72,12 @@ export function useGroupDetailAPI(groupId: string) {
     },
   });
 
-  /** Refetches the group, its expenses, and its balances (pull-to-refresh). */
+  /** Refetches the group, its expenses, balances and feed (pull-to-refresh). */
   const refresh = () => {
     void group.refetch();
     void expenses.refetch();
     void balances.refetch();
+    void activity.refetch();
   };
 
   return {
@@ -84,5 +92,7 @@ export function useGroupDetailAPI(groupId: string) {
     isRefreshing: group.isRefetching || expenses.isRefetching || balances.isRefetching,
     addMembers,
     setSimplify,
+    activityEvents: activity.data?.events ?? [],
+    activityLoading: activity.isLoading,
   };
 }

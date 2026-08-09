@@ -1,7 +1,7 @@
 "use client";
 /** TanStack Query bindings for group detail: me, group, friends, expenses, balances, add-members. */
 
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { authClient, expenseClient, groupClient, socialClient } from "@/lib/api/connect";
 import { MONEY_KEYS, queryKeys } from "@haalkhata/shared/api/queryKeys";
 
@@ -35,6 +35,17 @@ export function useGroupDetailAPI(groupId: string) {
   const friends = useQuery({
     queryKey: queryKeys.friends,
     queryFn: () => socialClient.listFriends({}),
+  });
+
+  // The group's own feed, paged the same way the global activity page pages
+  // (keyset, driven by next_cursor). Same audience rule as everywhere: the
+  // server only returns events this member is allowed to see.
+  const activity = useInfiniteQuery({
+    queryKey: queryKeys.activityFeed(groupId),
+    initialPageParam: "",
+    queryFn: ({ pageParam }) =>
+      socialClient.listActivity({ groupId, cursor: pageParam, month: "" }),
+    getNextPageParam: (lastPage) => lastPage.nextCursor || undefined,
   });
 
   /**
@@ -75,5 +86,10 @@ export function useGroupDetailAPI(groupId: string) {
     isLoading: group.isLoading || expenses.isLoading,
     addMembers,
     setSimplify,
+    activityEvents: (activity.data?.pages ?? []).flatMap((page) => page.events),
+    activityLoading: activity.isLoading,
+    activityHasMore: activity.hasNextPage,
+    activityLoadingMore: activity.isFetchingNextPage,
+    loadMoreActivity: () => void activity.fetchNextPage(),
   };
 }
