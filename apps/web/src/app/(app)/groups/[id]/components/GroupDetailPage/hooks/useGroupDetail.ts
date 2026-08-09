@@ -28,6 +28,7 @@ export function useGroupDetail(groupId: string) {
   const groupDetailAPI = useGroupDetailAPI(groupId);
   const [activeTab, setActiveTab] = useState<GroupTab>("expenses");
   const [addingPeople, setAddingPeople] = useState(false);
+  const [viewingMembers, setViewingMembers] = useState(false);
   const [pickedIds, setPickedIds] = useState<string[]>([]);
   const [identifier, setIdentifier] = useState("");
   const [peopleError, setPeopleError] = useState("");
@@ -87,6 +88,8 @@ export function useGroupDetail(groupId: string) {
     setTab: setActiveTab,
     addingPeople,
     setAddingPeople,
+    viewingMembers,
+    setViewingMembers,
     candidates,
     pickedIds,
     togglePicked,

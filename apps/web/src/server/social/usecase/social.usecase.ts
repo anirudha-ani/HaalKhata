@@ -3,7 +3,7 @@
 import { insertFriendship, listFriendIds } from "@/server/social/repo/friendships.repo";
 import { findUserById, findUsersByIds } from "@/server/auth/repo/users.repo";
 import { listActivityMonths, listActivityPage } from "@/server/social/repo/activity.repo";
-import { isMember } from "@/server/group/repo/groups.repo";
+import { isMember, listCoMemberIds } from "@/server/group/repo/groups.repo";
 import {
   countUnread,
   findLatestNotificationAt,
@@ -23,28 +23,48 @@ import {
   findOrCreateUserByPhone,
 } from "@/server/auth/usecase/auth.usecase";
 import { getOverallBalances, netWithUser } from "@/server/expense/usecase/balance.usecase";
-import { denied, invalid } from "@/server/common/errors";
+import { denied, invalid, notFound } from "@/server/common/errors";
 import { toUser } from "@/server/auth/usecase/user.mapper";
 
 /**
- * Befriends the caller with the user behind the given email or phone number,
- * creating a claimable shadow user when no account exists yet.
+ * Befriends the caller with the user behind the given email or phone number
+ * (creating a claimable shadow user when no account exists yet), or with an
+ * existing account by id when `input.userId` is set — the befriend-a-fellow-
+ * group-member path, which requires sharing a group with them.
  *
- * Exactly one identifier must be supplied — clients present a single "email
- * or phone" field and route the raw string with `splitIdentifier`, so both
- * being set means a client bug rather than user input worth guessing at.
+ * For email/phone, exactly one identifier must be supplied — clients present
+ * a single "email or phone" field and route the raw string with
+ * `splitIdentifier`, so both being set means a client bug rather than user
+ * input worth guessing at.
  *
  * @param userId - Id of the authenticated caller adding the friend.
- * @param input - The friend's email or phone (exactly one non-empty), plus an
- *   optional display name used when a shadow user must be created.
+ * @param input - The friend's user id, or their email or phone (exactly one
+ *   non-empty), plus an optional display name for a created shadow user.
  * @returns The friend as a user.v1 User message shape.
  * @throws UsecaseError (invalid_argument) when neither or both identifiers are
- *   given, the identifier is malformed, or it resolves to the caller.
+ *   given, the identifier is malformed, or it resolves to the caller;
+ *   (permission_denied) when adding by id without a shared group.
  */
 export async function addFriend(
   userId: string,
-  input: { email: string; phone: string; name?: string },
+  input: { email: string; phone: string; name?: string; userId?: string },
 ) {
+  // By id: befriending someone already on screen — a fellow group member —
+  // without retyping contact details. Gated on actually sharing a group,
+  // because a guessed or leaked id must not be enough to attach yourself to
+  // a stranger's ledger; membership is the introduction.
+  const targetId = input.userId?.trim() ?? "";
+  if (targetId !== "") {
+    if (targetId === userId) invalid("that's your own account");
+    const target = await findUserById(targetId);
+    if (!target) notFound("user not found");
+    if (!(await listCoMemberIds(userId)).includes(targetId)) {
+      denied("you can only add someone you share a group with this way");
+    }
+    await insertFriendship(userId, targetId);
+    return toUser(target);
+  }
+
   const email = input.email.trim();
   const phone = input.phone.trim();
   if (email === "" && phone === "") invalid("enter an email address or phone number");
