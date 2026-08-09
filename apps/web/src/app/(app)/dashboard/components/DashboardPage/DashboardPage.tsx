@@ -11,6 +11,7 @@ import { SettleUpModal } from "@/components/modals/SettleUpModal";
 import { Spinner } from "@/components/ui/Spinner";
 import { useHydrated } from "@/lib/hooks/useHydrated";
 import { formatMoney } from "@haalkhata/shared/money/money";
+import { localDate } from "@haalkhata/shared/time/localTime";
 import { getGreeting } from "@haalkhata/shared/greeting";
 import { groupEmoji } from "../../../groups/constants/groupTypes";
 import { useDashboard } from "./hooks/useDashboard";
@@ -201,7 +202,7 @@ export function DashboardPage() {
                   {event.actor ? <Avatar user={event.actor} size="sm" /> : null}
                   <span className="min-w-0 flex-1 truncate">{event.message}</span>
                   <span className="shrink-0 text-xs text-ink-soft">
-                    {event.createdAt.slice(0, 10)}
+                    {localDate(event.createdAt)}
                   </span>
                 </Link>
               </li>

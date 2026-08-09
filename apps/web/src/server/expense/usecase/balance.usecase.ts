@@ -453,6 +453,7 @@ export async function getFriendLedger(userId: string, friendId: string) {
     totalCents: number;
     deltaCents: number;
     sortKey: string;
+    createdAt: string;
   };
   const lines: Line[] = [];
 
@@ -479,6 +480,9 @@ export async function getFriendLedger(userId: string, friendId: string) {
       totalCents: expense.amount_cents,
       deltaCents,
       sortKey: `${expense.expense_date}T${expense.created_at}`,
+      // An expense's date is the calendar day the user picked, not a moment;
+      // there is nothing to convert, so no timestamp rides along.
+      createdAt: "",
     });
   }
 
@@ -489,6 +493,8 @@ export async function getFriendLedger(userId: string, friendId: string) {
     lines.push({
       kind: "settlement",
       id: settlement.id,
+      // The UTC day, kept as a fallback; the timestamp below is what the
+      // client renders, in the viewer's own timezone.
       date: settlement.created_at.slice(0, 10),
       description: paidByYou ? "You paid" : `${friend.name} paid you`,
       groupId: settlement.group_id ?? "",
@@ -496,6 +502,7 @@ export async function getFriendLedger(userId: string, friendId: string) {
       totalCents: settlement.amount_cents,
       deltaCents: paidByYou ? settlement.amount_cents : -settlement.amount_cents,
       sortKey: `${settlement.created_at.slice(0, 10)}T${settlement.created_at}`,
+      createdAt: settlement.created_at,
     });
   }
 
@@ -513,6 +520,7 @@ export async function getFriendLedger(userId: string, friendId: string) {
       totalCents: line.totalCents,
       deltaCents: line.deltaCents,
       balanceAfterCents: runningCents,
+      createdAt: line.createdAt,
     };
   });
   entries.reverse();

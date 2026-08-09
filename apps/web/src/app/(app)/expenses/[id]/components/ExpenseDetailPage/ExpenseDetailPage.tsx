@@ -12,28 +12,9 @@ import { Spinner } from "@/components/ui/Spinner";
 import { errorMessage } from "@/lib/api/connect";
 import { useHydrated } from "@/lib/hooks/useHydrated";
 import { formatMoney } from "@haalkhata/shared/money/money";
+import { localDateTime } from "@haalkhata/shared/time/localTime";
 import { itemShareCents } from "@haalkhata/shared/expense/splits";
 import { useExpenseDetail } from "./hooks/useExpenseDetail";
-
-/**
- * Formats an activity timestamp for the history list.
- *
- * Date and time both, because "edited" is only useful if you can tell whether
- * it happened before or after the conversation you are having about it.
- *
- * @param isoTimestamp - Timestamp as stored (an ISO-8601 string).
- * @returns A short local date and time, or the raw value if it will not parse.
- */
-function formatEventTime(isoTimestamp: string): string {
-  const parsed = new Date(isoTimestamp);
-  if (Number.isNaN(parsed.getTime())) return isoTimestamp;
-  return parsed.toLocaleString(undefined, {
-    day: "numeric",
-    month: "short",
-    hour: "numeric",
-    minute: "2-digit",
-  });
-}
 
 /**
  * Renders a single expense: header (description, date, category, amount),
@@ -303,7 +284,7 @@ export function ExpenseDetailPage({ expenseId }: { expenseId: string }) {
                   {event.type === "expense_added" ? "created this" : "edited this"}
                 </span>
                 <time className="shrink-0 text-xs tabular-nums">
-                  {formatEventTime(event.createdAt)}
+                  {localDateTime(event.createdAt)}
                 </time>
               </li>
             ))}
@@ -332,7 +313,7 @@ export function ExpenseDetailPage({ expenseId }: { expenseId: string }) {
                     {comment.author.name}
                   </PersonLink>
                 ) : null}{" "}
-                · {comment.createdAt.slice(0, 16).replace("T", " ")}
+                · {localDateTime(comment.createdAt)}
               </p>
               <p className="mt-0.5 text-sm whitespace-pre-wrap">{comment.body}</p>
             </div>

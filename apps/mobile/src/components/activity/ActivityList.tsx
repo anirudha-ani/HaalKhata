@@ -3,6 +3,7 @@
 import { useRouter } from "expo-router";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import type { ActivityEvent } from "@haalkhata/protogen/social/v1/social_pb";
+import { localDate } from "@haalkhata/shared/time/localTime";
 import { Avatar } from "@/components/ui/Avatar";
 import { colors, radii, spacing } from "@/lib/theme/theme";
 import { TYPE_EMOJI } from "./typeEmoji";
@@ -35,7 +36,7 @@ export function ActivityList({
           <Text numberOfLines={2} style={styles.message}>
             {event.message}
           </Text>
-          <Text style={styles.date}>{event.createdAt.slice(0, 10)}</Text>
+          <Text style={styles.date}>{localDate(event.createdAt)}</Text>
         </Pressable>
       ))}
     </View>

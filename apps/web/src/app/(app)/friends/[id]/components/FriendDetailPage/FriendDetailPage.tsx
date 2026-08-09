@@ -11,6 +11,7 @@ import { Spinner } from "@/components/ui/Spinner";
 import { errorMessage } from "@/lib/api/connect";
 import { useHydrated } from "@/lib/hooks/useHydrated";
 import { formatMoney } from "@haalkhata/shared/money/money";
+import { localDate } from "@haalkhata/shared/time/localTime";
 import { useFriendLedger } from "./hooks/useFriendLedger";
 
 /**
@@ -245,7 +246,10 @@ export function FriendDetailPage({
                 {entries.map((entry) => (
                   <tr key={`${entry.kind}-${entry.id}`} className="border-b border-line/60">
                     <td className="py-2.5 pl-4 text-xs whitespace-nowrap text-ink-soft tabular-nums">
-                      {entry.date}
+                      {/* A settlement is a moment, shown in the viewer's own
+                          timezone; an expense's date is the calendar day the
+                          user picked, which has no timezone to convert. */}
+                      {entry.createdAt ? localDate(entry.createdAt) : entry.date}
                     </td>
                     <td className="py-2.5 pl-3">
                       {entry.kind === "expense" ? (

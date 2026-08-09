@@ -60,6 +60,10 @@ function formatMoney(cents: number, currency: string): string {
  * @throws UsecaseError "invalid_argument" when the date is not YYYY-MM-DD.
  */
 function normalizeExpenseDate(expenseDate: string): string {
+  // Backstop for bare API callers only, and necessarily UTC — the server
+  // cannot know the caller's timezone. The forms always send the user's
+  // local today (todayISO), so this is not the path a person's "today"
+  // takes.
   if (!expenseDate) return new Date().toISOString().slice(0, 10);
   if (!ISO_DATE_PATTERN.test(expenseDate)) {
     invalid("expense_date must be a YYYY-MM-DD string");

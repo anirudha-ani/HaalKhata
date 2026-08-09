@@ -237,6 +237,11 @@ message FriendLedgerEntry {
   int32 delta_cents = 8;
   // The balance after this line, oldest to newest: > 0 = they owe you.
   int32 balance_after_cents = 9;
+  // Full timestamp for lines that record a moment (settlements); empty for
+  // expenses, whose `date` is the calendar day the user chose. The moment is
+  // stored in UTC, and only the client knows the viewer's timezone — so the
+  // client renders it, and `date` (the UTC day) is just the fallback.
+  string created_at = 10;
 }
 
 message FriendGroupBalance {

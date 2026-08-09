@@ -1644,3 +1644,30 @@ Enforced in the audience, which was already the read-path filter:
 
 The group's ledger tabs (expenses list, balances) are unchanged — members
 still see the whole ledger; the feed is the personal narration of it.
+
+## §24 Time: stored UTC, spoken local
+
+Storage was always UTC (TIMESTAMPTZ) — the display was the problem: pg's
+type parser passed Postgres's own text form ("2026-08-09 00:38:12+00") to
+browsers, several screens rendered its raw UTC date with .slice(0, 10), and
+the new-expense form prefilled UTC's today (tomorrow, for an evening user
+west of Greenwich).
+
+- Boundary: the TIMESTAMPTZ parser now emits ISO 8601 UTC ("…T…Z") — the
+  one shape every engine parses — so clients can always convert. Storage
+  unchanged; only the spelling.
+- Display: packages/shared time/localTime.ts (localDate, localDateTime)
+  renders in the viewer's timezone, year only when not current; used by the
+  activity lists, dashboards, expense detail comments/history, and the
+  friend ledger (whose settlement lines now carry created_at — additive
+  FriendLedgerEntry field — because only the client knows the timezone).
+- Input: todayISO() is the user's local calendar day now, not UTC's; that
+  prefills the expense forms and the scan flow. The server's empty-date
+  backstop stays UTC (it cannot know the caller's timezone) and is not the
+  path a person's "today" takes.
+- Calendar dates (expense_date) are deliberately untouched end to end: the
+  user picked a day, not a moment; there is nothing to convert.
+- Known coarseness: the activity month filter buckets by UTC month
+  server-side; events within hours of a month boundary can file under the
+  neighbouring month. Fixing it needs the viewer's timezone on the RPC —
+  deferred until someone actually trips on it.

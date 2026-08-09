@@ -12,6 +12,7 @@ import { Sheet } from "@/components/ui/Sheet";
 import { Spinner } from "@/components/ui/Spinner";
 import { errorMessage } from "@/lib/api/connect";
 import { formatMoney } from "@haalkhata/shared/money/money";
+import { localDateTime } from "@haalkhata/shared/time/localTime";
 import { colors, fonts, radii, spacing } from "@/lib/theme/theme";
 import { useExpenseDetail } from "./hooks/useExpenseDetail";
 
@@ -183,7 +184,7 @@ export function ExpenseDetailScreen({ expenseId }: { expenseId: string }) {
             <View style={styles.commentBody}>
               <Text style={styles.commentMeta}>
                 <Text style={styles.commentAuthor}>{comment.author?.name}</Text> ·{" "}
-                {comment.createdAt.slice(0, 16).replace("T", " ")}
+                {localDateTime(comment.createdAt)}
               </Text>
               <Text style={styles.commentText}>{comment.body}</Text>
             </View>

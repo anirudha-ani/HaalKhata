@@ -50,10 +50,15 @@ export function centsToInput(cents: number): string {
 }
 
 /**
- * Returns today's date as an ISO 8601 calendar date (UTC).
+ * Returns today's date as an ISO 8601 calendar date — the user's LOCAL
+ * today, not UTC's. This value prefills "when did this expense happen", and
+ * an evening user west of Greenwich is not having dinner tomorrow.
  *
- * @returns The current date formatted as "YYYY-MM-DD".
+ * @returns The current local date formatted as "YYYY-MM-DD".
  */
 export function todayISO(): string {
-  return new Date().toISOString().slice(0, 10);
+  const nowTime = new Date();
+  const month = String(nowTime.getMonth() + 1).padStart(2, "0");
+  const dayOfMonth = String(nowTime.getDate()).padStart(2, "0");
+  return `${nowTime.getFullYear()}-${month}-${dayOfMonth}`;
 }
