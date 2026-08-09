@@ -197,6 +197,31 @@ function owedInEntries(entries: LedgerEntry[], payerId: string, creditorId: stri
 }
 
 /**
+ * The viewer's net in the pair's one-off scope alone: one-off expenses
+ * between the two, netted against one-off settlement rows, group scopes
+ * excluded entirely. The one-off counterpart of {@link userNetInGroup}.
+ *
+ * @param userId - The viewer.
+ * @param otherUserId - The counterparty.
+ * @returns Net cents; > 0 ⇒ the other user owes the viewer one-off.
+ */
+export async function oneOffNetBetween(userId: string, otherUserId: string): Promise<number> {
+  const expenses = await listOneOffExpensesBetween(userId, otherUserId);
+  const children = await loadExpenseChildren(expenses.map((expense) => expense.id));
+  const settlements = (await listOneOffSettlementsBetween(userId, otherUserId)).map(
+    (settlement) => ({
+      from: settlement.from_user,
+      to: settlement.to_user,
+      amountCents: settlement.amount_cents,
+    }),
+  );
+  const entries = pairwiseBalances(debtsFromExpenses(expenses, children), settlements);
+  return (
+    owedInEntries(entries, otherUserId, userId) - owedInEntries(entries, userId, otherUserId)
+  );
+}
+
+/**
  * Where a payer's debt to a creditor actually lives, scope by scope.
  *
  * Each scope — every shared group, plus the pair's one-off ledger — is
