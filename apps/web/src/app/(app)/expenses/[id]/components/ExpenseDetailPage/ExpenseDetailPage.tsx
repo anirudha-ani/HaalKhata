@@ -4,6 +4,7 @@
 import Link from "next/link";
 import { Check, Pencil, Send, Trash2 } from "lucide-react";
 import { Avatar } from "@/components/ui/Avatar";
+import { PersonLink } from "@/components/people/PersonLink";
 import { settledStatus } from "@/components/expenses/settledStatus";
 import { Modal } from "@/components/ui/Modal";
 import { Money } from "@/components/ui/Money";
@@ -152,10 +153,16 @@ export function ExpenseDetailPage({ expenseId }: { expenseId: string }) {
           <ul className="space-y-2">
             {expense.payers.map((payer) => (
               <li key={payer.userId} className="flex items-center gap-2 text-sm">
-                {expenseDetail.userById.get(payer.userId) ? (
-                  <Avatar user={expenseDetail.userById.get(payer.userId)!} size="sm" />
-                ) : null}
-                <span className="min-w-0 flex-1 truncate">{displayName(payer.userId)}</span>
+                <PersonLink
+                  userId={payer.userId}
+                  meId={meId}
+                  className="flex min-w-0 flex-1 items-center gap-2"
+                >
+                  {expenseDetail.userById.get(payer.userId) ? (
+                    <Avatar user={expenseDetail.userById.get(payer.userId)!} size="sm" />
+                  ) : null}
+                  <span className="min-w-0 flex-1 truncate">{displayName(payer.userId)}</span>
+                </PersonLink>
                 <Money cents={payer.amountCents} currency={expense.currency} className="font-medium" />
               </li>
             ))}
@@ -168,10 +175,16 @@ export function ExpenseDetailPage({ expenseId }: { expenseId: string }) {
           <ul className="space-y-2">
             {expense.splits.map((split) => (
               <li key={split.userId} className="flex items-center gap-2 text-sm">
-                {expenseDetail.userById.get(split.userId) ? (
-                  <Avatar user={expenseDetail.userById.get(split.userId)!} size="sm" />
-                ) : null}
-                <span className="min-w-0 flex-1 truncate">{displayName(split.userId)}</span>
+                <PersonLink
+                  userId={split.userId}
+                  meId={meId}
+                  className="flex min-w-0 flex-1 items-center gap-2"
+                >
+                  {expenseDetail.userById.get(split.userId) ? (
+                    <Avatar user={expenseDetail.userById.get(split.userId)!} size="sm" />
+                  ) : null}
+                  <span className="min-w-0 flex-1 truncate">{displayName(split.userId)}</span>
+                </PersonLink>
                 <Money cents={split.owedCents} currency={expense.currency} className="font-medium" />
               </li>
             ))}
@@ -270,11 +283,23 @@ export function ExpenseDetailPage({ expenseId }: { expenseId: string }) {
                 key={`${event.type}-${event.createdAt}-${index}`}
                 className="flex items-center gap-2 text-sm text-ink-soft"
               >
-                {event.actor ? <Avatar user={event.actor} size="sm" /> : null}
+                {event.actor ? (
+                  <PersonLink userId={event.actor.id} meId={meId}>
+                    <Avatar user={event.actor} size="sm" />
+                  </PersonLink>
+                ) : null}
                 <span className="min-w-0 flex-1 truncate">
-                  <span className="font-medium text-ink">
-                    {event.actor ? displayName(event.actor.id) : "Someone"}
-                  </span>{" "}
+                  {event.actor ? (
+                    <PersonLink
+                      userId={event.actor.id}
+                      meId={meId}
+                      className="font-medium text-ink"
+                    >
+                      {displayName(event.actor.id)}
+                    </PersonLink>
+                  ) : (
+                    <span className="font-medium text-ink">Someone</span>
+                  )}{" "}
                   {event.type === "expense_added" ? "created this" : "edited this"}
                 </span>
                 <time className="shrink-0 text-xs tabular-nums">
@@ -291,11 +316,23 @@ export function ExpenseDetailPage({ expenseId }: { expenseId: string }) {
         <h2 className="text-sm font-semibold tracking-wide text-ink-soft uppercase">Comments</h2>
         {(expenseDetail.detail?.comments ?? []).map((comment) => (
           <div key={comment.id} className="flex gap-3 rounded-xl border border-line bg-card p-3">
-            {comment.author ? <Avatar user={comment.author} size="sm" /> : null}
+            {comment.author ? (
+              <PersonLink userId={comment.author.id} meId={meId}>
+                <Avatar user={comment.author} size="sm" />
+              </PersonLink>
+            ) : null}
             <div className="min-w-0 flex-1">
               <p className="text-xs text-ink-soft">
-                <span className="font-semibold text-ink">{comment.author?.name}</span> ·{" "}
-                {comment.createdAt.slice(0, 16).replace("T", " ")}
+                {comment.author ? (
+                  <PersonLink
+                    userId={comment.author.id}
+                    meId={meId}
+                    className="font-semibold text-ink"
+                  >
+                    {comment.author.name}
+                  </PersonLink>
+                ) : null}{" "}
+                · {comment.createdAt.slice(0, 16).replace("T", " ")}
               </p>
               <p className="mt-0.5 text-sm whitespace-pre-wrap">{comment.body}</p>
             </div>

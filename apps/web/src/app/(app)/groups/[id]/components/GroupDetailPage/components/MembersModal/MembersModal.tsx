@@ -9,6 +9,7 @@ import type { User } from "@haalkhata/protogen/common/v1/common_pb";
 import { errorMessage, socialClient } from "@/lib/api/connect";
 import { queryKeys } from "@haalkhata/shared/api/queryKeys";
 import { Avatar } from "@/components/ui/Avatar";
+import { PersonLink } from "@/components/people/PersonLink";
 import { Modal } from "@/components/ui/Modal";
 
 /**
@@ -64,16 +65,24 @@ export function MembersModal({
           const isFriend = friendIds.has(member.id) || addedIds.has(member.id);
           return (
             <li key={member.id} className="flex items-center gap-3 py-2.5">
-              <Avatar user={member} size="sm" />
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-medium">
-                  {member.name}
-                  {isMe ? <span className="ml-1.5 text-xs font-normal text-ink-soft">you</span> : null}
-                </p>
-                {member.email ? (
-                  <p className="truncate text-xs text-ink-soft">{member.email}</p>
-                ) : null}
-              </div>
+              <PersonLink
+                userId={member.id}
+                meId={meId}
+                className="flex min-w-0 flex-1 items-center gap-3"
+              >
+                <Avatar user={member} size="sm" />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-sm font-medium">
+                    {member.name}
+                    {isMe ? (
+                      <span className="ml-1.5 text-xs font-normal text-ink-soft">you</span>
+                    ) : null}
+                  </span>
+                  {member.email ? (
+                    <span className="block truncate text-xs text-ink-soft">{member.email}</span>
+                  ) : null}
+                </span>
+              </PersonLink>
               {isMe ? null : isFriend ? (
                 <Link
                   href={`/friends/${member.id}`}

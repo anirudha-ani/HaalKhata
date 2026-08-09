@@ -2,7 +2,7 @@
 /** Friend ledger data: the shared history query plus the settle-up modal's direction. */
 
 import { useState } from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { errorMessage, expenseClient, socialClient } from "@/lib/api/connect";
 import { queryKeys } from "@haalkhata/shared/api/queryKeys";
 
@@ -20,12 +20,25 @@ export type SettleDirection = "paid" | "received";
  *   driving the settle-up modal.
  */
 export function useFriendLedger(friendId: string) {
+  const queryClient = useQueryClient();
   const [settling, setSettling] = useState<SettleDirection | null>(null);
   const [reminderNote, setReminderNote] = useState("");
 
   const ledger = useQuery({
     queryKey: queryKeys.friendLedger(friendId),
     queryFn: () => expenseClient.getFriendLedger({ userId: friendId }),
+  });
+
+  // Befriending from this page: the ledger already shows any pair, so the
+  // page carries the button for the pairs that are not friends yet.
+  const addFriend = useMutation({
+    mutationFn: () =>
+      socialClient.addFriend({ email: "", phone: "", name: "", userId: friendId }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.friends });
+      queryClient.invalidateQueries({ queryKey: queryKeys.friendLedger(friendId) });
+    },
+    onError: (mutationError) => setReminderNote(errorMessage(mutationError)),
   });
 
   const remind = useMutation({
@@ -40,6 +53,8 @@ export function useFriendLedger(friendId: string) {
     ledger: ledger.data,
     isLoading: ledger.isLoading,
     error: ledger.error,
+    addFriend: () => addFriend.mutate(),
+    isAddingFriend: addFriend.isPending,
     reminderNote,
     isReminding: remind.isPending,
     sendReminder: () => {

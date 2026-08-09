@@ -2,7 +2,8 @@
 /** Friend detail: net balance, settle either way, and the full shared ledger with a running balance. */
 
 import Link from "next/link";
-import { ArrowLeft, Bell, Check, HandCoins, Plus, Wallet } from "lucide-react";
+import { ArrowLeft, Bell, Check, HandCoins, Plus, UserPlus, Wallet } from "lucide-react";
+import { groupEmoji } from "../../../../groups/constants/groupTypes";
 import { Avatar } from "@/components/ui/Avatar";
 import { Money } from "@/components/ui/Money";
 import { SettleUpModal } from "@/components/modals/SettleUpModal";
@@ -47,7 +48,18 @@ export function FriendDetailPage({
     );
   }
 
-  const { friend, netCents, currency, entries, groupBalances } = view.ledger;
+  // Defaults guard against a cached response from before these fields
+  // existed: the query renders its cache first, and an object built by the
+  // old generated class simply lacks the properties — undefined, not empty.
+  const {
+    friend,
+    netCents,
+    currency,
+    entries,
+    groupBalances,
+    isFriend = true,
+    mutualGroups = [],
+  } = view.ledger;
   const isSettled = netCents === 0;
   const theyOweYou = netCents > 0;
 
@@ -68,6 +80,34 @@ export function FriendDetailPage({
             {friend.email || friend.phone}
             {!friend.registered ? " · invited" : ""}
           </p>
+          {/* Where you know each other from — every shared group, settled
+              ones included, each a link. And when this page is showing a
+              pair rather than a friendship (any name anywhere links here),
+              the way to make it one is a tap, not a form. */}
+          {mutualGroups.length > 0 || !isFriend ? (
+            <p className="mt-1.5 flex flex-wrap items-center gap-1.5">
+              {mutualGroups.map((mutual) => (
+                <Link
+                  key={mutual.groupId}
+                  href={`/groups/${mutual.groupId}`}
+                  className="rounded-full bg-brand-50 px-2 py-0.5 text-xs font-medium text-brand-700 hover:bg-brand-100"
+                >
+                  {groupEmoji(mutual.groupType)} {mutual.groupName}
+                </Link>
+              ))}
+              {!isFriend ? (
+                <button
+                  type="button"
+                  disabled={view.isAddingFriend}
+                  onClick={view.addFriend}
+                  className="flex items-center gap-1 rounded-full bg-brand-600 px-2.5 py-0.5 text-xs font-semibold text-white hover:bg-brand-700 disabled:opacity-50"
+                >
+                  <UserPlus className="h-3 w-3" />
+                  {view.isAddingFriend ? "Adding…" : "Add friend"}
+                </button>
+              ) : null}
+            </p>
+          ) : null}
         </div>
         <div className="text-right">
           {isSettled ? (

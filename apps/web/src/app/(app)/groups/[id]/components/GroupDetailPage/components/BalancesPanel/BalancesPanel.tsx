@@ -6,6 +6,7 @@ import type { BalancesResponse } from "@haalkhata/protogen/expense/v1/expense_pb
 import type { User } from "@haalkhata/protogen/common/v1/common_pb";
 import { Avatar } from "@/components/ui/Avatar";
 import { Money } from "@/components/ui/Money";
+import { PersonLink } from "@/components/people/PersonLink";
 
 /**
  * Renders the balances tab of a group: every member's net position, then the
@@ -117,15 +118,21 @@ export function BalancesPanel({
                   key={`${debt.fromUserId}-${debt.toUserId}`}
                   className="flex items-center gap-3 rounded-xl border border-line bg-card px-4 py-3"
                 >
-                  <Avatar user={fromUser} size="sm" />
+                  <PersonLink userId={debt.fromUserId} meId={meId}>
+                    <Avatar user={fromUser} size="sm" />
+                  </PersonLink>
                   <ArrowRight className="h-4 w-4 shrink-0 text-ink-soft" />
-                  <Avatar user={toUser} size="sm" />
+                  <PersonLink userId={debt.toUserId} meId={meId}>
+                    <Avatar user={toUser} size="sm" />
+                  </PersonLink>
                   <p className="min-w-0 flex-1 truncate text-sm">
-                    <span className="font-medium">{mine ? "You" : fromUser.name}</span>
+                    <PersonLink userId={debt.fromUserId} meId={meId} className="font-medium">
+                      {mine ? "You" : fromUser.name}
+                    </PersonLink>
                     <span className="text-ink-soft"> owe{mine ? "" : "s"} </span>
-                    <span className="font-medium">
+                    <PersonLink userId={debt.toUserId} meId={meId} className="font-medium">
                       {debt.toUserId === meId ? "you" : toUser.name}
-                    </span>
+                    </PersonLink>
                   </p>
                   <Money cents={debt.amountCents} currency={currency} className="font-semibold" />
                   {/* Both directions, matching the friend page: a debt you owe

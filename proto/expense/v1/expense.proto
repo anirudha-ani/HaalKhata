@@ -245,6 +245,13 @@ message FriendGroupBalance {
   int32 net_cents = 3; // > 0 = they owe you in this group
 }
 
+// One group both people belong to, regardless of balance.
+message MutualGroup {
+  string group_id = 1;
+  string group_name = 2;
+  string group_type = 3;
+}
+
 message FriendLedgerResponse {
   common.v1.User friend = 1;
   // Net across everything shared, groups included: > 0 = they owe you.
@@ -256,4 +263,12 @@ message FriendLedgerResponse {
   // Only the groups you actually share with this person, and only when the
   // balance is spread across more than a single scope.
   repeated FriendGroupBalance group_balances = 5;
+  // Whether the CALLER has an explicit friendship with this person. The page
+  // works for any pair (this is what makes every name linkable), so it has
+  // to say which relationship it is showing.
+  bool is_friend = 6;
+  // Every group both belong to — unlike group_balances, a settled group
+  // still appears, because "where do I know this person from" is a different
+  // question from "where does money move between us".
+  repeated MutualGroup mutual_groups = 7;
 }

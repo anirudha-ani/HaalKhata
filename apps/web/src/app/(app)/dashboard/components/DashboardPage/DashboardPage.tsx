@@ -6,6 +6,7 @@ import { Plus, Wallet } from "lucide-react";
 import { Avatar } from "@/components/ui/Avatar";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Money } from "@/components/ui/Money";
+import { PersonLink } from "@/components/people/PersonLink";
 import { SettleUpModal } from "@/components/modals/SettleUpModal";
 import { Spinner } from "@/components/ui/Spinner";
 import { useHydrated } from "@/lib/hooks/useHydrated";
@@ -75,17 +76,23 @@ export function DashboardPage() {
             {dashboard.balances.counterparties.map((counterparty) =>
               counterparty.user ? (
                 <li key={counterparty.user.id} className="flex items-center gap-3 px-4 py-3">
-                  <Avatar user={counterparty.user} />
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate font-medium">{counterparty.user.name}</p>
-                    <p className="text-xs text-ink-soft">
-                      {counterparty.netCents === 0
-                        ? "settled up"
-                        : counterparty.netCents > 0
-                          ? "owes you"
-                          : "you owe"}
-                    </p>
-                  </div>
+                  <PersonLink
+                    userId={counterparty.user.id}
+                    meId={dashboard.me?.id}
+                    className="flex min-w-0 flex-1 items-center gap-3"
+                  >
+                    <Avatar user={counterparty.user} />
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate font-medium">{counterparty.user.name}</span>
+                      <span className="block text-xs text-ink-soft">
+                        {counterparty.netCents === 0
+                          ? "settled up"
+                          : counterparty.netCents > 0
+                            ? "owes you"
+                            : "you owe"}
+                      </span>
+                    </span>
+                  </PersonLink>
                   <Money
                     cents={counterparty.netCents}
                     currency={currency}

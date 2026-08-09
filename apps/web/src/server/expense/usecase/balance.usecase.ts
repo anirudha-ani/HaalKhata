@@ -30,6 +30,7 @@ import {
   type LedgerEntry,
 } from "../domain/balances";
 import { type ScopeDebt } from "../domain/settlementAllocation";
+import { listFriendIds } from "@/server/social/repo/friendships.repo";
 import { denied, notFound } from "@/server/common/errors";
 import { toUser } from "@/server/auth/usecase/user.mapper";
 
@@ -459,6 +460,20 @@ export async function getFriendLedger(userId: string, friendId: string) {
     netByGroup.set(line.groupId, (netByGroup.get(line.groupId) ?? 0) + line.deltaCents);
   }
 
+  // Relationship context, not balance context: which groups both belong to
+  // (settled ones included — "where do I know them from" is not "where does
+  // money move"), and whether an explicit friendship exists. The page shows
+  // any pair, so it has to say which relationship it is showing.
+  const friendGroupIds = new Set((await listGroupsByUser(friendId)).map((group) => group.id));
+  const mutualGroups = (await listGroupsByUser(userId))
+    .filter((group) => friendGroupIds.has(group.id))
+    .map((group) => ({
+      groupId: group.id,
+      groupName: group.name,
+      groupType: group.type,
+    }));
+  const isFriend = (await listFriendIds(userId)).includes(friendId);
+
   return {
     friend: toUser(friend),
     netCents: runningCents,
@@ -471,5 +486,7 @@ export async function getFriendLedger(userId: string, friendId: string) {
         groupName: groupId ? (groupNames.get(groupId) ?? "") : "",
         netCents,
       })),
+    isFriend,
+    mutualGroups,
   };
 }
