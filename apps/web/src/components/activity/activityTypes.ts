@@ -1,6 +1,6 @@
-/** Activity-route constants: how each event kind looks, and the filter groups. */
+/** Activity feed constants: how each event kind looks, and the filter groups. */
 
-import type { GlyphName } from "../components/ActivityPage/components/ActivityGlyph/ActivityGlyph";
+import type { GlyphName } from "./ActivityGlyph";
 
 /** How one kind of feed event is drawn. */
 export interface ActivityLook {

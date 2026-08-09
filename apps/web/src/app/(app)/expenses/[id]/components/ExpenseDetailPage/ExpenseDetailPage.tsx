@@ -2,36 +2,19 @@
 /** Expense detail page: payers, splits, receipt items, comments, and delete flow. */
 
 import Link from "next/link";
-import { Pencil, Send, Trash2 } from "lucide-react";
+import { Check, Pencil, Send, Trash2 } from "lucide-react";
 import { Avatar } from "@/components/ui/Avatar";
+import { PersonLink } from "@/components/people/PersonLink";
+import { settledStatus } from "@/components/expenses/settledStatus";
 import { Modal } from "@/components/ui/Modal";
 import { Money } from "@/components/ui/Money";
 import { Spinner } from "@/components/ui/Spinner";
 import { errorMessage } from "@/lib/api/connect";
 import { useHydrated } from "@/lib/hooks/useHydrated";
 import { formatMoney } from "@haalkhata/shared/money/money";
+import { localDateTime } from "@haalkhata/shared/time/localTime";
 import { itemShareCents } from "@haalkhata/shared/expense/splits";
 import { useExpenseDetail } from "./hooks/useExpenseDetail";
-
-/**
- * Formats an activity timestamp for the history list.
- *
- * Date and time both, because "edited" is only useful if you can tell whether
- * it happened before or after the conversation you are having about it.
- *
- * @param isoTimestamp - Timestamp as stored (an ISO-8601 string).
- * @returns A short local date and time, or the raw value if it will not parse.
- */
-function formatEventTime(isoTimestamp: string): string {
-  const parsed = new Date(isoTimestamp);
-  if (Number.isNaN(parsed.getTime())) return isoTimestamp;
-  return parsed.toLocaleString(undefined, {
-    day: "numeric",
-    month: "short",
-    hour: "numeric",
-    minute: "2-digit",
-  });
-}
 
 /**
  * Renders a single expense: header (description, date, category, amount),
@@ -63,6 +46,36 @@ export function ExpenseDetailPage({ expenseId }: { expenseId: string }) {
       ? "You"
       : (expenseDetail.userById.get(userId)?.name ?? "someone");
 
+  // The viewer's net on this expense, for the nothing-pending banner: the
+  // banner only makes sense when they had a stake, and its wording depends
+  // on which direction that stake pointed.
+  const meId = expenseDetail.me?.id;
+  const myPaidCents = expense.payers
+    .filter((payer) => payer.userId === meId)
+    .reduce((total, payer) => total + payer.amountCents, 0);
+  const myOwedCents = expense.splits
+    .filter((split) => split.userId === meId)
+    .reduce((total, split) => total + split.owedCents, 0);
+  const myNetCents = myPaidCents - myOwedCents;
+  // Same wording as the list rows, from the same function — the list's
+  // tooltip is invisible on phones, so this page is where the full sentence
+  // actually gets read.
+  const settled =
+    expenseDetail.detail?.settledForViewer && myNetCents !== 0
+      ? settledStatus(
+          myNetCents > 0,
+          expense.groupId !== "",
+          [
+            ...new Set(
+              [...expense.payers.map((payer) => payer.userId), ...expense.splits.map((split) => split.userId)]
+                .filter((participantId) => participantId !== meId)
+                .map((participantId) => expenseDetail.userById.get(participantId)?.name.split(" ")[0])
+                .filter((name): name is string => Boolean(name)),
+            ),
+          ],
+        )
+      : null;
+
   return (
     <div className="mx-auto max-w-2xl space-y-6">
       <header className="flex items-start justify-between gap-4">
@@ -86,6 +99,16 @@ export function ExpenseDetailPage({ expenseId }: { expenseId: string }) {
           {formatMoney(expense.amountCents, expense.currency)}
         </p>
       </header>
+
+      {/* The full nothing-pending sentence. On the list this rides as a
+          hover tooltip, which phones cannot see — the page every row taps
+          through to is where it actually gets read. */}
+      {settled ? (
+        <p className="flex items-start gap-2 rounded-2xl border border-pos-600/20 bg-pos-50 px-4 py-3 text-sm font-medium text-pos-700">
+          <Check className="mt-0.5 h-4 w-4 shrink-0" />
+          <span>{settled.explanation}</span>
+        </p>
+      ) : null}
 
       <div className="flex gap-2">
         <Link
@@ -111,10 +134,16 @@ export function ExpenseDetailPage({ expenseId }: { expenseId: string }) {
           <ul className="space-y-2">
             {expense.payers.map((payer) => (
               <li key={payer.userId} className="flex items-center gap-2 text-sm">
-                {expenseDetail.userById.get(payer.userId) ? (
-                  <Avatar user={expenseDetail.userById.get(payer.userId)!} size="sm" />
-                ) : null}
-                <span className="min-w-0 flex-1 truncate">{displayName(payer.userId)}</span>
+                <PersonLink
+                  userId={payer.userId}
+                  meId={meId}
+                  className="flex min-w-0 flex-1 items-center gap-2"
+                >
+                  {expenseDetail.userById.get(payer.userId) ? (
+                    <Avatar user={expenseDetail.userById.get(payer.userId)!} size="sm" />
+                  ) : null}
+                  <span className="min-w-0 flex-1 truncate">{displayName(payer.userId)}</span>
+                </PersonLink>
                 <Money cents={payer.amountCents} currency={expense.currency} className="font-medium" />
               </li>
             ))}
@@ -127,10 +156,16 @@ export function ExpenseDetailPage({ expenseId }: { expenseId: string }) {
           <ul className="space-y-2">
             {expense.splits.map((split) => (
               <li key={split.userId} className="flex items-center gap-2 text-sm">
-                {expenseDetail.userById.get(split.userId) ? (
-                  <Avatar user={expenseDetail.userById.get(split.userId)!} size="sm" />
-                ) : null}
-                <span className="min-w-0 flex-1 truncate">{displayName(split.userId)}</span>
+                <PersonLink
+                  userId={split.userId}
+                  meId={meId}
+                  className="flex min-w-0 flex-1 items-center gap-2"
+                >
+                  {expenseDetail.userById.get(split.userId) ? (
+                    <Avatar user={expenseDetail.userById.get(split.userId)!} size="sm" />
+                  ) : null}
+                  <span className="min-w-0 flex-1 truncate">{displayName(split.userId)}</span>
+                </PersonLink>
                 <Money cents={split.owedCents} currency={expense.currency} className="font-medium" />
               </li>
             ))}
@@ -229,15 +264,27 @@ export function ExpenseDetailPage({ expenseId }: { expenseId: string }) {
                 key={`${event.type}-${event.createdAt}-${index}`}
                 className="flex items-center gap-2 text-sm text-ink-soft"
               >
-                {event.actor ? <Avatar user={event.actor} size="sm" /> : null}
+                {event.actor ? (
+                  <PersonLink userId={event.actor.id} meId={meId}>
+                    <Avatar user={event.actor} size="sm" />
+                  </PersonLink>
+                ) : null}
                 <span className="min-w-0 flex-1 truncate">
-                  <span className="font-medium text-ink">
-                    {event.actor ? displayName(event.actor.id) : "Someone"}
-                  </span>{" "}
+                  {event.actor ? (
+                    <PersonLink
+                      userId={event.actor.id}
+                      meId={meId}
+                      className="font-medium text-ink"
+                    >
+                      {displayName(event.actor.id)}
+                    </PersonLink>
+                  ) : (
+                    <span className="font-medium text-ink">Someone</span>
+                  )}{" "}
                   {event.type === "expense_added" ? "created this" : "edited this"}
                 </span>
                 <time className="shrink-0 text-xs tabular-nums">
-                  {formatEventTime(event.createdAt)}
+                  {localDateTime(event.createdAt)}
                 </time>
               </li>
             ))}
@@ -250,11 +297,23 @@ export function ExpenseDetailPage({ expenseId }: { expenseId: string }) {
         <h2 className="text-sm font-semibold tracking-wide text-ink-soft uppercase">Comments</h2>
         {(expenseDetail.detail?.comments ?? []).map((comment) => (
           <div key={comment.id} className="flex gap-3 rounded-xl border border-line bg-card p-3">
-            {comment.author ? <Avatar user={comment.author} size="sm" /> : null}
+            {comment.author ? (
+              <PersonLink userId={comment.author.id} meId={meId}>
+                <Avatar user={comment.author} size="sm" />
+              </PersonLink>
+            ) : null}
             <div className="min-w-0 flex-1">
               <p className="text-xs text-ink-soft">
-                <span className="font-semibold text-ink">{comment.author?.name}</span> ·{" "}
-                {comment.createdAt.slice(0, 16).replace("T", " ")}
+                {comment.author ? (
+                  <PersonLink
+                    userId={comment.author.id}
+                    meId={meId}
+                    className="font-semibold text-ink"
+                  >
+                    {comment.author.name}
+                  </PersonLink>
+                ) : null}{" "}
+                · {localDateTime(comment.createdAt)}
               </p>
               <p className="mt-0.5 text-sm whitespace-pre-wrap">{comment.body}</p>
             </div>

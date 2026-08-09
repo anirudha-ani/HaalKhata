@@ -12,6 +12,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { Money } from "@/components/ui/Money";
 import { Spinner } from "@/components/ui/Spinner";
 import { formatMoney } from "@haalkhata/shared/money/money";
+import { localDate } from "@haalkhata/shared/time/localTime";
 import { getGreeting } from "@haalkhata/shared/greeting";
 import { colors, fonts, radii, spacing } from "@/lib/theme/theme";
 import { useDashboard } from "./hooks/useDashboard";
@@ -165,7 +166,7 @@ export function DashboardScreen() {
                     <Text numberOfLines={1} style={styles.activityMessage}>
                       {event.message}
                     </Text>
-                    <Text style={styles.activityDate}>{event.createdAt.slice(0, 10)}</Text>
+                    <Text style={styles.activityDate}>{localDate(event.createdAt)}</Text>
                   </Pressable>
                 ))}
               </View>

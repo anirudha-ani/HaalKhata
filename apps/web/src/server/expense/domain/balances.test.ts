@@ -115,4 +115,75 @@ describe("simplifyDebts", () => {
     ]);
     expect(simplifyDebts(netByUser).length).toBeLessThanOrEqual(netByUser.size - 1);
   });
+
+  it("returns nothing when everyone is settled", () => {
+    expect(simplifyDebts(new Map())).toEqual([]);
+    expect(
+      simplifyDebts(
+        new Map([
+          ["a", 0],
+          ["b", 0],
+        ]),
+      ),
+    ).toEqual([]);
+  });
+
+  it("emits no zero edges and at most one edge per pair", () => {
+    const edges = simplifyDebts(
+      new Map([
+        ["a", -1200],
+        ["b", -800],
+        ["c", 1200],
+        ["d", 800],
+      ]),
+    );
+    const seenPairs = new Set<string>();
+    for (const edge of edges) {
+      expect(edge.amountCents).toBeGreaterThan(0);
+      const pairKey = `${edge.from}|${edge.to}`;
+      expect(seenPairs.has(pairKey)).toBe(false);
+      seenPairs.add(pairKey);
+    }
+  });
+
+  it("breaks amount ties by user id, so the routing is stable across reads", () => {
+    // Two identical debtors and one creditor: the same input must always
+    // produce the same edges, because a guard validating a payment re-derives
+    // this routing and must land on the edge the page proposed.
+    expect(
+      simplifyDebts(
+        new Map([
+          ["debtor-b", -500],
+          ["debtor-a", -500],
+          ["creditor", 1000],
+        ]),
+      ),
+    ).toEqual([
+      { from: "debtor-a", to: "creditor", amountCents: 500 },
+      { from: "debtor-b", to: "creditor", amountCents: 500 },
+    ]);
+  });
+
+  it("a payment along a simplified edge shrinks that edge, not somebody else's", () => {
+    // The stability that makes partial settling safe: nets a −10/−4, c +14
+    // route as a→c 10, b→c 4; a paying 6 leaves a→c 4 and b→c 4 untouched.
+    const before = new Map([
+      ["a", -1000],
+      ["b", -400],
+      ["c", 1400],
+    ]);
+    expect(simplifyDebts(before)).toEqual([
+      { from: "a", to: "c", amountCents: 1000 },
+      { from: "b", to: "c", amountCents: 400 },
+    ]);
+    const afterPartial = new Map([
+      ["a", -400],
+      ["b", -400],
+      ["c", 800],
+    ]);
+    expect(simplifyDebts(afterPartial)).toEqual([
+      { from: "a", to: "c", amountCents: 400 },
+      { from: "b", to: "c", amountCents: 400 },
+    ]);
+  });
 });

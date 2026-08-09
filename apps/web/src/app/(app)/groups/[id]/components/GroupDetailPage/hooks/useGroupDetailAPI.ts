@@ -1,9 +1,9 @@
 "use client";
 /** TanStack Query bindings for group detail: me, group, friends, expenses, balances, add-members. */
 
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { authClient, expenseClient, groupClient, socialClient } from "@/lib/api/connect";
-import { queryKeys } from "@haalkhata/shared/api/queryKeys";
+import { MONEY_KEYS, queryKeys } from "@haalkhata/shared/api/queryKeys";
 
 /**
  * Wraps every server call the group detail page makes: the signed-in user, the
@@ -37,6 +37,17 @@ export function useGroupDetailAPI(groupId: string) {
     queryFn: () => socialClient.listFriends({}),
   });
 
+  // The group's own feed, paged the same way the global activity page pages
+  // (keyset, driven by next_cursor). Same audience rule as everywhere: the
+  // server only returns events this member is allowed to see.
+  const activity = useInfiniteQuery({
+    queryKey: queryKeys.activityFeed(groupId),
+    initialPageParam: "",
+    queryFn: ({ pageParam }) =>
+      socialClient.listActivity({ groupId, cursor: pageParam, month: "" }),
+    getNextPageParam: (lastPage) => lastPage.nextCursor || undefined,
+  });
+
   /**
    * Adds people by id plus an optional email/phone newcomer; on success
    * refreshes this group, the group list, and the friends list — adding
@@ -52,6 +63,19 @@ export function useGroupDetailAPI(groupId: string) {
     },
   });
 
+  /**
+   * Flips the group's simplify-debts mode. It changes which debts every
+   * money surface shows — this group's balances, friend ledgers, the
+   * dashboard — so success invalidates the whole money set, not just the
+   * group.
+   */
+  const setSimplify = useMutation({
+    mutationFn: (simplify: boolean) => groupClient.setSimplifyDebts({ groupId, simplify }),
+    onSuccess: () => {
+      for (const moneyKey of MONEY_KEYS) queryClient.invalidateQueries({ queryKey: moneyKey });
+    },
+  });
+
   return {
     me: currentUser.data,
     group: group.data,
@@ -61,5 +85,11 @@ export function useGroupDetailAPI(groupId: string) {
     balances: balances.data,
     isLoading: group.isLoading || expenses.isLoading,
     addMembers,
+    setSimplify,
+    activityEvents: (activity.data?.pages ?? []).flatMap((page) => page.events),
+    activityLoading: activity.isLoading,
+    activityHasMore: activity.hasNextPage,
+    activityLoadingMore: activity.isFetchingNextPage,
+    loadMoreActivity: () => void activity.fetchNextPage(),
   };
 }

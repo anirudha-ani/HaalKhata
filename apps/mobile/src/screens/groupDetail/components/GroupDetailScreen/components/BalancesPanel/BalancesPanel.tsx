@@ -3,10 +3,9 @@
 import type { User } from "@haalkhata/protogen/common/v1/common_pb";
 import type { BalancesResponse } from "@haalkhata/protogen/expense/v1/expense_pb";
 import { ArrowRight, Wand2 } from "lucide-react-native";
-import { StyleSheet, Text, View } from "react-native";
+import { StyleSheet, Switch, Text, View } from "react-native";
 import { Avatar } from "@/components/ui/Avatar";
 import { Button } from "@/components/ui/Button";
-import { Chip } from "@/components/ui/Chip";
 import { Money } from "@/components/ui/Money";
 import { colors, radii, spacing } from "@/lib/theme/theme";
 
@@ -23,6 +22,7 @@ export function BalancesPanel({
   meId,
   userById,
   simplified,
+  simplifyPending = false,
   onToggleSimplified,
   onSettle,
 }: {
@@ -34,8 +34,10 @@ export function BalancesPanel({
   meId: string | undefined;
   /** Lookup from user id to User for rendering names and avatars. */
   userById: Map<string, User>;
-  /** Whether the simplified (minimal-payments) debt list is shown instead of pairwise debts. */
+  /** The group's persisted simplify-debts mode; decides which debt list is live. */
   simplified: boolean;
+  /** True while a toggle of the mode is in flight; ignores taps meanwhile. */
+  simplifyPending?: boolean;
   /** Called with the desired state when the simplify-debts toggle is pressed. */
   onToggleSimplified: (value: boolean) => void;
   /** Called with the creditor and amount when the viewer taps Settle on a debt. */
@@ -43,6 +45,14 @@ export function BalancesPanel({
 }) {
   if (!balances) return null;
   const debts = simplified ? balances.simplified : balances.debts;
+  // Pairwise debts that survive while every net is zero can only be a loop —
+  // typically left behind by payments recorded while debts were simplified.
+  // Money-wise nobody owes anybody; without a word of explanation the list
+  // looks like outstanding debt, so it gets one.
+  const cancelingLoop =
+    !simplified &&
+    debts.length > 0 &&
+    balances.nets.every((position) => position.netCents === 0);
 
   return (
     <View style={styles.container}>
@@ -83,17 +93,48 @@ export function BalancesPanel({
       </View>
 
       <View style={styles.section}>
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>
-            {simplified ? "SIMPLIFIED PAYMENTS" : "WHO OWES WHOM"}
-          </Text>
-          <Chip
-            icon={<Wand2 color={simplified ? colors.brand700 : colors.inkSoft} size={13} />}
-            label="Simplify debts"
-            onPress={() => onToggleSimplified(!simplified)}
-            selected={simplified}
+        {/* The mode gets a real switch with its state written out, not a
+            chip that reads as "maybe on?". It decides which debts exist —
+            here, on friend pages, on the dashboard — and which payments the
+            server accepts, for everyone in the group, so its state has to be
+            legible at a glance and said before it is flipped, not after. */}
+        <View style={[styles.modeCard, simplified ? styles.modeCardOn : null]}>
+          <Wand2 color={simplified ? colors.brand600 : colors.inkSoft} size={18} />
+          <View style={styles.modeText}>
+            <View style={styles.modeTitleRow}>
+              <Text style={styles.modeTitle}>Simplify debts</Text>
+              <Text style={[styles.modeState, simplified ? styles.modeStateOn : null]}>
+                {simplified ? "ON" : "OFF"}
+              </Text>
+            </View>
+            <Text style={styles.modeHint}>
+              {simplified
+                ? "Debts are combined into the fewest payments. Applies to everyone in this group."
+                : "Debts run person to person, exactly as shared. Turning this on combines them — for everyone in this group."}
+            </Text>
+          </View>
+          <Switch
+            accessibilityLabel="Simplify debts"
+            disabled={simplifyPending}
+            onValueChange={onToggleSimplified}
+            thumbColor="#ffffff"
+            trackColor={{ false: colors.line, true: colors.brand600 }}
+            value={simplified}
           />
         </View>
+
+        <Text style={styles.sectionTitle}>
+          {simplified ? "SIMPLIFIED PAYMENTS" : "WHO OWES WHOM"}
+        </Text>
+
+        {cancelingLoop ? (
+          <View style={styles.allSettled}>
+            <Text style={styles.allSettledText}>
+              These debts cancel out around a loop — everyone&apos;s overall position is zero.
+              Turn Simplify debts on above to clear the view.
+            </Text>
+          </View>
+        ) : null}
 
         {debts.length === 0 ? (
           <View style={styles.allSettled}>
@@ -186,6 +227,48 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     overflow: "hidden",
   },
+  modeCard: {
+    alignItems: "center",
+    backgroundColor: colors.card,
+    borderColor: colors.line,
+    borderRadius: radii.lg,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: spacing.md,
+    padding: spacing.md,
+  },
+  modeCardOn: {
+    backgroundColor: colors.brand50,
+    borderColor: colors.brand200,
+  },
+  modeHint: {
+    color: colors.inkSoft,
+    fontSize: 12,
+    marginTop: 2,
+  },
+  modeState: {
+    color: colors.inkSoft,
+    fontSize: 11,
+    fontWeight: "700",
+    letterSpacing: 1,
+  },
+  modeStateOn: {
+    color: colors.brand700,
+  },
+  modeText: {
+    flex: 1,
+    minWidth: 0,
+  },
+  modeTitle: {
+    color: colors.ink,
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  modeTitleRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: spacing.sm,
+  },
   row: {
     alignItems: "center",
     flexDirection: "row",
@@ -213,11 +296,6 @@ const styles = StyleSheet.create({
   },
   section: {
     gap: spacing.sm,
-  },
-  sectionHeader: {
-    alignItems: "center",
-    flexDirection: "row",
-    justifyContent: "space-between",
   },
   sectionTitle: {
     color: colors.inkSoft,

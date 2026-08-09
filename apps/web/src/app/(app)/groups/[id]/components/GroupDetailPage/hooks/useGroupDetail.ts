@@ -7,8 +7,8 @@ import { errorMessage } from "@/lib/api/connect";
 import { splitIdentifier } from "@haalkhata/shared/auth/identifier";
 import { useGroupDetailAPI } from "./useGroupDetailAPI";
 
-/** The two tabs available on the group detail page. */
-export type GroupTab = "expenses" | "balances";
+/** The tabs available on the group detail page. */
+export type GroupTab = "expenses" | "balances" | "activity";
 
 /**
  * Combines the group detail API bindings with the page's UI state: the active
@@ -20,18 +20,18 @@ export type GroupTab = "expenses" | "balances";
  *   `addingPeople`/`setAddingPeople` and the add-people form (`pickedIds`,
  *   `togglePicked`, `identifier`/`setIdentifier`, `submitPeople`,
  *   `peopleError`, `canAddPeople`), `candidates` (friends not already in the
- *   group), `simplified`/`setSimplified` for the debts view,
- *   `settleWith`/`setSettleWith` for the settle-up modal, and `userById`
- *   mapping member ids to users.
+ *   group), `simplified`/`setSimplified`/`simplifyPending` for the group's
+ *   persisted simplify-debts mode, `settleWith`/`setSettleWith` for the
+ *   settle-up modal, and `userById` mapping member ids to users.
  */
 export function useGroupDetail(groupId: string) {
   const groupDetailAPI = useGroupDetailAPI(groupId);
   const [activeTab, setActiveTab] = useState<GroupTab>("expenses");
   const [addingPeople, setAddingPeople] = useState(false);
+  const [viewingMembers, setViewingMembers] = useState(false);
   const [pickedIds, setPickedIds] = useState<string[]>([]);
   const [identifier, setIdentifier] = useState("");
   const [peopleError, setPeopleError] = useState("");
-  const [simplified, setSimplified] = useState(false);
   // `received` rides along because the same modal records both directions:
   // paying what you owe, and logging money that has arrived from someone who
   // owed you. Without it the group page could only ever offer the first.
@@ -87,6 +87,8 @@ export function useGroupDetail(groupId: string) {
     setTab: setActiveTab,
     addingPeople,
     setAddingPeople,
+    viewingMembers,
+    setViewingMembers,
     candidates,
     pickedIds,
     togglePicked,
@@ -95,8 +97,13 @@ export function useGroupDetail(groupId: string) {
     peopleError,
     submitPeople,
     canAddPeople: pickedIds.length > 0 || identifier.trim() !== "",
-    simplified,
-    setSimplified,
+    // The persisted group mode, not view state: everyone in the group sees
+    // the same debts, and the server's settlement guards follow the same
+    // switch. (A cached Group from before the field existed simply lacks it —
+    // undefined reads as off until the refetch lands.)
+    simplified: groupDetailAPI.group?.simplifyDebts ?? false,
+    setSimplified: (value: boolean) => groupDetailAPI.setSimplify.mutate(value),
+    simplifyPending: groupDetailAPI.setSimplify.isPending,
     settleWith,
     setSettleWith,
     userById,

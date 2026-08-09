@@ -27,6 +27,8 @@ interface OwingScope {
   label: string;
   /** Cents outstanding in this scope in the payment's direction; always > 0. */
   owedCents: number;
+  /** True when the scope simplifies debts, i.e. this amount is a rerouted edge. */
+  simplified: boolean;
 }
 
 /**
@@ -105,11 +107,12 @@ export function SettleUpModal({
       scopeId: scope.groupId,
       label: scope.groupId ? scope.groupName || "Unnamed group" : "Not in any group",
       owedCents: Math.abs(scope.netCents),
+      simplified: scope.simplified,
     }));
 
-  // If the named group has nothing owed in this direction (already settled,
-  // or a simplified suggestion with no matching pairwise debt), fall back to
-  // everything rather than presenting a dead checklist.
+  // If the named group has nothing owed in this direction (someone else just
+  // settled it, or its debts got rerouted away by simplification), fall back
+  // to everything rather than presenting a dead checklist.
   const defaultCheckedIds =
     groupId && owingScopes.some((scope) => scope.scopeId === groupId)
       ? [groupId]
@@ -253,7 +256,17 @@ export function SettleUpModal({
                       onChange={() => toggleScope(scope.scopeId)}
                       className="h-4 w-4 accent-brand-600"
                     />
-                    <span className="min-w-0 flex-1 truncate">{scope.label}</span>
+                    <span className="min-w-0 flex-1 truncate">
+                      {scope.label}
+                      {/* The amount here is the group's rerouted edge, not your
+                          direct history with this person — worth a word, since
+                          it can differ from what you remember sharing. */}
+                      {scope.simplified ? (
+                        <span className="ml-1.5 rounded-full bg-card px-2 py-0.5 text-[11px] text-ink-soft">
+                          simplified
+                        </span>
+                      ) : null}
+                    </span>
                     <Money cents={scope.owedCents} currency={currency} className="font-medium" />
                   </label>
                 </li>

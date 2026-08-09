@@ -2,7 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { authClient, expenseClient, groupClient, socialClient } from "@/lib/api/connect";
-import { queryKeys } from "@haalkhata/shared/api/queryKeys";
+import { MONEY_KEYS, queryKeys } from "@haalkhata/shared/api/queryKeys";
 
 /**
  * Wraps every server call the group detail screen makes: the signed-in user,
@@ -37,6 +37,13 @@ export function useGroupDetailAPI(groupId: string) {
     queryFn: () => socialClient.listFriends({}),
   });
 
+  // The group's own feed — same audience rule as everywhere: the server only
+  // returns events this member is allowed to see.
+  const activity = useQuery({
+    queryKey: queryKeys.activity(groupId),
+    queryFn: () => socialClient.listActivity({ groupId }),
+  });
+
   /**
    * Adds people by id plus an optional email/phone newcomer; on success
    * refreshes this group, the group list, and the friends list — adding
@@ -52,11 +59,25 @@ export function useGroupDetailAPI(groupId: string) {
     },
   });
 
-  /** Refetches the group, its expenses, and its balances (pull-to-refresh). */
+  /**
+   * Flips the group's simplify-debts mode. It changes which debts every
+   * money surface shows — this group's balances, friend ledgers, the
+   * dashboard — so success invalidates the whole money set, not just the
+   * group.
+   */
+  const setSimplify = useMutation({
+    mutationFn: (simplify: boolean) => groupClient.setSimplifyDebts({ groupId, simplify }),
+    onSuccess: () => {
+      for (const moneyKey of MONEY_KEYS) queryClient.invalidateQueries({ queryKey: moneyKey });
+    },
+  });
+
+  /** Refetches the group, its expenses, balances and feed (pull-to-refresh). */
   const refresh = () => {
     void group.refetch();
     void expenses.refetch();
     void balances.refetch();
+    void activity.refetch();
   };
 
   return {
@@ -70,5 +91,8 @@ export function useGroupDetailAPI(groupId: string) {
     refresh,
     isRefreshing: group.isRefetching || expenses.isRefetching || balances.isRefetching,
     addMembers,
+    setSimplify,
+    activityEvents: activity.data?.events ?? [],
+    activityLoading: activity.isLoading,
   };
 }

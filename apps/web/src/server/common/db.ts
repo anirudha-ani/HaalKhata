@@ -8,7 +8,16 @@ import { DEFAULT_DATABASE_URL } from "@/server/common/db.constants";
 
 // Keep date/time columns as strings end-to-end (row types say `string`);
 // pg would otherwise hand back JS Date objects.
-types.setTypeParser(types.builtins.TIMESTAMPTZ, (value) => value);
+//
+// Timestamps are normalized to ISO 8601 UTC ("…T…Z") right here at the
+// boundary: Postgres's own text form ("2026-08-09 00:38:12.123456+00")
+// reaches browsers otherwise, where Date parsing of that shape is
+// engine-dependent — and a timestamp a client cannot parse cannot be shown
+// in the viewer's local time. Storage stays UTC; only the spelling changes.
+// Calendar dates (DATE, and TEXT columns like expense_date) stay as the
+// plain "YYYY-MM-DD" the user chose — they name a day, not a moment, and
+// converting them would shift them.
+types.setTypeParser(types.builtins.TIMESTAMPTZ, (value) => new Date(value).toISOString());
 types.setTypeParser(types.builtins.TIMESTAMP, (value) => value);
 types.setTypeParser(types.builtins.DATE, (value) => value);
 

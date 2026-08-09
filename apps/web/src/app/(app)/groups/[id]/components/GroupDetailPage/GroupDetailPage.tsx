@@ -9,7 +9,9 @@ import { Spinner } from "@/components/ui/Spinner";
 import { errorMessage } from "@/lib/api/connect";
 import { useHydrated } from "@/lib/hooks/useHydrated";
 import { groupEmoji } from "../../../constants/groupTypes";
+import { ActivityPanel } from "./components/ActivityPanel/ActivityPanel";
 import { AddPeopleModal } from "./components/AddPeopleModal/AddPeopleModal";
+import { MembersModal } from "./components/MembersModal/MembersModal";
 import { BalancesPanel } from "./components/BalancesPanel/BalancesPanel";
 import { ExpenseList } from "@/components/expenses/ExpenseList";
 import { TABS } from "../../constants/tabs";
@@ -66,22 +68,30 @@ export function GroupDetailPage({
         </Link>
       </header>
 
-      {/* Members strip */}
+      {/* Members strip. The avatars-and-names run is a button into the full
+          member list — a truncated line of first names is a summary, not a
+          way to reach anyone. */}
       <div className="flex items-center gap-2 overflow-x-auto rounded-2xl border border-line bg-card px-4 py-3">
-        <div className="flex -space-x-2">
-          {(groupDetail.group.members ?? []).map((member) =>
-            member.user ? <Avatar key={member.user.id} user={member.user} size="sm" ring /> : null,
-          )}
-        </div>
-        <p className="min-w-0 flex-1 truncate text-sm text-ink-soft">
-          {(groupDetail.group.members ?? [])
-            .flatMap((member) =>
-              member.user
-                ? [member.user.id === groupDetail.me?.id ? "You" : member.user.name.split(" ")[0]]
-                : [],
-            )
-            .join(", ")}
-        </p>
+        <button
+          type="button"
+          onClick={() => groupDetail.setViewingMembers(true)}
+          className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 text-left"
+        >
+          <span className="flex -space-x-2">
+            {(groupDetail.group.members ?? []).map((member) =>
+              member.user ? <Avatar key={member.user.id} user={member.user} size="sm" ring /> : null,
+            )}
+          </span>
+          <span className="min-w-0 flex-1 truncate text-sm text-ink-soft">
+            {(groupDetail.group.members ?? [])
+              .flatMap((member) =>
+                member.user
+                  ? [member.user.id === groupDetail.me?.id ? "You" : member.user.name.split(" ")[0]]
+                  : [],
+              )
+              .join(", ")}
+          </span>
+        </button>
         <button
           type="button"
           onClick={() => groupDetail.setAddingPeople(true)}
@@ -92,7 +102,7 @@ export function GroupDetailPage({
       </div>
 
       {/* Tabs */}
-      <div className="grid grid-cols-2 rounded-xl bg-card p-1 text-sm font-semibold ring-1 ring-line">
+      <div className="grid grid-cols-3 rounded-xl bg-card p-1 text-sm font-semibold ring-1 ring-line">
         {TABS.map((tabOption) => (
           <button
             key={tabOption.value}
@@ -115,19 +125,39 @@ export function GroupDetailPage({
           emptyHint="Add the first expense or scan a receipt to get this ledger going."
           settledIds={new Set(groupDetail.expenses?.settledExpenseIds ?? [])}
         />
-      ) : (
+      ) : groupDetail.tab === "balances" ? (
         <BalancesPanel
           balances={groupDetail.balances}
           currency={groupDetail.group.currency}
           meId={groupDetail.me?.id}
           userById={groupDetail.userById}
           simplified={groupDetail.simplified}
+          simplifyPending={groupDetail.simplifyPending}
           onToggleSimplified={groupDetail.setSimplified}
           onSettle={(user, cents, received) =>
             groupDetail.setSettleWith({ user, cents, received })
           }
         />
+      ) : (
+        <ActivityPanel
+          events={groupDetail.activityEvents}
+          isLoading={groupDetail.activityLoading}
+          hasMore={groupDetail.activityHasMore}
+          isLoadingMore={groupDetail.activityLoadingMore}
+          onLoadMore={groupDetail.loadMoreActivity}
+        />
       )}
+
+      {groupDetail.viewingMembers ? (
+        <MembersModal
+          members={(groupDetail.group.members ?? []).flatMap((member) =>
+            member.user ? [member.user] : [],
+          )}
+          meId={groupDetail.me?.id}
+          friendIds={new Set(groupDetail.friends.map((friend) => friend.id))}
+          onClose={() => groupDetail.setViewingMembers(false)}
+        />
+      ) : null}
 
       {groupDetail.addingPeople ? (
         <AddPeopleModal

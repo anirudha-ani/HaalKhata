@@ -133,6 +133,10 @@ message GetExpenseResponse {
   // rather than stored on the expense: the feed already records every change,
   // so a second source of truth would only be one that could disagree.
   repeated ExpenseEvent history = 4;
+  // True when nothing is pending for the CALLER from this expense's scope —
+  // same rule as ListExpensesResponse.settled_expense_ids, for one expense.
+  // Viewer-relative, hence on the response and not on Expense.
+  bool settled_for_viewer = 5;
 }
 
 // One recorded change to an expense, for the detail view's history line.
@@ -233,12 +237,29 @@ message FriendLedgerEntry {
   int32 delta_cents = 8;
   // The balance after this line, oldest to newest: > 0 = they owe you.
   int32 balance_after_cents = 9;
+  // Full timestamp for lines that record a moment (settlements); empty for
+  // expenses, whose `date` is the calendar day the user chose. The moment is
+  // stored in UTC, and only the client knows the viewer's timezone — so the
+  // client renders it, and `date` (the UTC day) is just the fallback.
+  string created_at = 10;
 }
 
 message FriendGroupBalance {
   string group_id = 1;
   string group_name = 2;
   int32 net_cents = 3; // > 0 = they owe you in this group
+  // True when this group simplifies debts, making net_cents the *routed*
+  // amount between the pair rather than their direct dealings — possibly
+  // zero while the pair's shared history is not, or vice versa. Surfaced so
+  // the UI can say why a group's number differs from the history.
+  bool simplified = 4;
+}
+
+// One group both people belong to, regardless of balance.
+message MutualGroup {
+  string group_id = 1;
+  string group_name = 2;
+  string group_type = 3;
 }
 
 message FriendLedgerResponse {
@@ -252,4 +273,12 @@ message FriendLedgerResponse {
   // Only the groups you actually share with this person, and only when the
   // balance is spread across more than a single scope.
   repeated FriendGroupBalance group_balances = 5;
+  // Whether the CALLER has an explicit friendship with this person. The page
+  // works for any pair (this is what makes every name linkable), so it has
+  // to say which relationship it is showing.
+  bool is_friend = 6;
+  // Every group both belong to — unlike group_balances, a settled group
+  // still appears, because "where do I know this person from" is a different
+  // question from "where does money move between us".
+  repeated MutualGroup mutual_groups = 7;
 }

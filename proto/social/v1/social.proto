@@ -24,10 +24,14 @@ message SendReminderRequest {
 }
 
 message AddFriendRequest {
-  // Exactly one of email/phone identifies the friend; phone is E.164.
+  // Exactly one of email/phone/user_id identifies the friend; phone is E.164.
   string email = 1;
   string name = 2; // optional display name for shadow users
   string phone = 3;
+  // An existing account by id — for befriending someone already on screen,
+  // like a fellow group member, without retyping contact details. The caller
+  // must share a group with them: an id is not an introduction, membership is.
+  string user_id = 4;
 }
 
 message ListFriendsResponse {

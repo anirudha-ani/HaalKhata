@@ -30,6 +30,7 @@ import {
   type LedgerEntry,
 } from "../domain/balances";
 import { type ScopeDebt } from "../domain/settlementAllocation";
+import { listFriendIds } from "@/server/social/repo/friendships.repo";
 import { denied, notFound } from "@/server/common/errors";
 import { toUser } from "@/server/auth/usecase/user.mapper";
 
@@ -72,6 +73,22 @@ async function groupLedger(groupId: string): Promise<LedgerEntry[]> {
     amountCents: settlement.amount_cents,
   }));
   return pairwiseBalances(debtsFromExpenses(expenses, children), settlements);
+}
+
+/**
+ * The debt graph a group actually routes payments along: the raw pairwise
+ * ledger, or — when the group simplifies debts — the min-cash-flow edges over
+ * the same nets. Every question of the form "who owes whom in this group"
+ * must read this one graph, guards and pages alike: the moment a page
+ * proposes a payment the guards reject (or the reverse), the same debt has
+ * two routings, and a debt with two live routings can be paid down twice.
+ *
+ * @param ledger - The group's normalized pairwise entries.
+ * @param simplify - The group's persisted simplify-debts mode.
+ * @returns The entries payments are validated and displayed against.
+ */
+function routeDebts(ledger: LedgerEntry[], simplify: boolean): LedgerEntry[] {
+  return simplify ? simplifyDebts(netBalances(ledger)) : ledger;
 }
 
 /**
@@ -143,10 +160,12 @@ export async function userNetInGroups(
 }
 
 /**
- * How much `debtorId` currently owes `creditorId` inside one group. Returns a
- * non-negative number of cents (0 when nothing is owed or the direction is
- * reversed). Used by recordSettlement to refuse over-settling a group scope;
- * the cross-scope equivalent is {@link owedByScope}.
+ * How much `debtorId` currently owes `creditorId` inside one group, along the
+ * route the group's mode prescribes — the pairwise debt, or the simplified
+ * edge when the group simplifies. Returns a non-negative number of cents (0
+ * when nothing is owed or the direction is reversed). Used by
+ * recordSettlement to refuse over-settling a group scope; the cross-scope
+ * equivalent is {@link owedByScope}.
  *
  * @param debtorId - User who would be paying.
  * @param creditorId - User who would be receiving.
@@ -158,27 +177,83 @@ export async function amountOwed(
   creditorId: string,
   groupId: string,
 ): Promise<number> {
-  return owedInEntries(await groupLedger(groupId), debtorId, creditorId);
+  const group = await findGroupById(groupId);
+  return owedInEntries(
+    routeDebts(await groupLedger(groupId), group?.simplify_debts ?? false),
+    debtorId,
+    creditorId,
+  );
 }
 
 /**
- * Builds the user's global ledger: pairwise entries between the user and
- * everyone else, across all their expenses and settlements (groups + one-off).
+ * The user's net position against every counterparty, scope by scope: the
+ * sum, over each scope the pair shares, of that scope's balance between them
+ * — routed the way that scope routes it. Groups that simplify debts
+ * contribute their simplified edge (which can point at a member the user
+ * never dealt with directly, and contribute nothing against someone their
+ * history says they owe — that debt was rerouted); every other scope
+ * contributes its pairwise net.
  *
- * @param userId - User whose ledger is built.
- * @returns Pairwise entries that involve the user, one per counterparty pair.
+ * This is the number the dashboard, friends list and reminders all show, and
+ * it has to be built from the same routed scopes the settlement guards check
+ * — a "you owe" on the dashboard that no payment is allowed to pay down is a
+ * contradiction on screen.
+ *
+ * The un-simplified scopes are not computed one scope at a time: pairwise
+ * netting is linear, so their sum equals one pass over everything except the
+ * simplified groups' rows. Only simplified groups need their own ledger read,
+ * because simplification is a whole-group computation, not a pair one.
+ *
+ * @param userId - User whose positions are computed.
+ * @returns Map of counterparty id → net cents (> 0 ⇒ they owe the user);
+ *   zero positions are omitted.
  */
-async function userLedger(userId: string): Promise<LedgerEntry[]> {
-  const expenses = await listExpensesInvolvingUser(userId);
-  const children = await loadExpenseChildren(expenses.map((expense) => expense.id));
-  const settlements = (await listSettlementsInvolvingUser(userId)).map((settlement) => ({
-    from: settlement.from_user,
-    to: settlement.to_user,
-    amountCents: settlement.amount_cents,
-  }));
-  return pairwiseBalances(debtsFromExpenses(expenses, children), settlements).filter(
-    (debt) => debt.from === userId || debt.to === userId,
+async function pairNetsForUser(userId: string): Promise<Map<string, number>> {
+  const groups = await listGroupsByUser(userId);
+  const simplifiedGroupIds = new Set(
+    groups.filter((group) => group.simplify_debts).map((group) => group.id),
   );
+
+  const expenses = (await listExpensesInvolvingUser(userId)).filter(
+    (expense) => !simplifiedGroupIds.has(expense.group_id ?? ""),
+  );
+  const children = await loadExpenseChildren(expenses.map((expense) => expense.id));
+  const settlements = (await listSettlementsInvolvingUser(userId))
+    .filter((settlement) => !simplifiedGroupIds.has(settlement.group_id ?? ""))
+    .map((settlement) => ({
+      from: settlement.from_user,
+      to: settlement.to_user,
+      amountCents: settlement.amount_cents,
+    }));
+
+  const netByCounterparty = new Map<string, number>(); // > 0 ⇒ they owe the user
+  const accumulate = (entry: LedgerEntry) => {
+    if (entry.from === userId) {
+      netByCounterparty.set(
+        entry.to,
+        (netByCounterparty.get(entry.to) ?? 0) - entry.amountCents,
+      );
+    } else if (entry.to === userId) {
+      netByCounterparty.set(
+        entry.from,
+        (netByCounterparty.get(entry.from) ?? 0) + entry.amountCents,
+      );
+    }
+  };
+  for (const entry of pairwiseBalances(debtsFromExpenses(expenses, children), settlements)) {
+    accumulate(entry);
+  }
+  for (const group of groups) {
+    if (!group.simplify_debts) continue;
+    for (const edge of routeDebts(await groupLedger(group.id), true)) accumulate(edge);
+  }
+
+  // A rerouted debt and a pairwise one can cancel exactly; a zero position is
+  // "nothing between you", which is expressed by absence.
+  for (const [counterpartyId, netCents] of [...netByCounterparty.entries()]) {
+    if (netCents === 0) netByCounterparty.delete(counterpartyId);
+  }
+  return netByCounterparty;
 }
 
 /**
@@ -261,7 +336,11 @@ export async function owedByScope(payerId: string, creditorId: string): Promise<
   const payerGroupIds = new Set((await listGroupsByUser(payerId)).map((group) => group.id));
   for (const group of await listGroupsByUser(creditorId)) {
     if (!payerGroupIds.has(group.id)) continue;
-    const owedCents = owedInEntries(await groupLedger(group.id), payerId, creditorId);
+    const owedCents = owedInEntries(
+      routeDebts(await groupLedger(group.id), group.simplify_debts),
+      payerId,
+      creditorId,
+    );
     if (owedCents > 0) scopes.push({ groupId: group.id, owedCents });
   }
   return scopes;
@@ -276,24 +355,12 @@ export async function owedByScope(payerId: string, creditorId: string): Promise<
  * @throws UsecaseError (not_found) if a counterparty's user row is missing.
  */
 export async function getOverallBalances(userId: string) {
-  const entries = await userLedger(userId);
+  const perCounterparty = await pairNetsForUser(userId);
   let youOweCents = 0;
   let owedToYouCents = 0;
-  const perCounterparty = new Map<string, number>(); // > 0 ⇒ they owe you
-  for (const entry of entries) {
-    if (entry.from === userId) {
-      youOweCents += entry.amountCents;
-      perCounterparty.set(
-        entry.to,
-        (perCounterparty.get(entry.to) ?? 0) - entry.amountCents,
-      );
-    } else {
-      owedToYouCents += entry.amountCents;
-      perCounterparty.set(
-        entry.from,
-        (perCounterparty.get(entry.from) ?? 0) + entry.amountCents,
-      );
-    }
+  for (const netCents of perCounterparty.values()) {
+    if (netCents < 0) youOweCents += -netCents;
+    else owedToYouCents += netCents;
   }
   const users = new Map(
     (await findUsersByIds([...perCounterparty.keys()])).map((user) => [user.id, user]),
@@ -319,11 +386,7 @@ export async function getOverallBalances(userId: string) {
  * @returns Net cents; > 0 ⇒ the other user owes the caller.
  */
 export async function netWithUser(userId: string, otherUserId: string): Promise<number> {
-  for (const entry of await userLedger(userId)) {
-    if (entry.from === otherUserId) return entry.amountCents;
-    if (entry.to === otherUserId) return -entry.amountCents;
-  }
-  return 0;
+  return (await pairNetsForUser(userId)).get(otherUserId) ?? 0;
 }
 
 /**
@@ -390,6 +453,7 @@ export async function getFriendLedger(userId: string, friendId: string) {
     totalCents: number;
     deltaCents: number;
     sortKey: string;
+    createdAt: string;
   };
   const lines: Line[] = [];
 
@@ -416,6 +480,9 @@ export async function getFriendLedger(userId: string, friendId: string) {
       totalCents: expense.amount_cents,
       deltaCents,
       sortKey: `${expense.expense_date}T${expense.created_at}`,
+      // An expense's date is the calendar day the user picked, not a moment;
+      // there is nothing to convert, so no timestamp rides along.
+      createdAt: "",
     });
   }
 
@@ -426,6 +493,8 @@ export async function getFriendLedger(userId: string, friendId: string) {
     lines.push({
       kind: "settlement",
       id: settlement.id,
+      // The UTC day, kept as a fallback; the timestamp below is what the
+      // client renders, in the viewer's own timezone.
       date: settlement.created_at.slice(0, 10),
       description: paidByYou ? "You paid" : `${friend.name} paid you`,
       groupId: settlement.group_id ?? "",
@@ -433,6 +502,7 @@ export async function getFriendLedger(userId: string, friendId: string) {
       totalCents: settlement.amount_cents,
       deltaCents: paidByYou ? settlement.amount_cents : -settlement.amount_cents,
       sortKey: `${settlement.created_at.slice(0, 10)}T${settlement.created_at}`,
+      createdAt: settlement.created_at,
     });
   }
 
@@ -450,6 +520,7 @@ export async function getFriendLedger(userId: string, friendId: string) {
       totalCents: line.totalCents,
       deltaCents: line.deltaCents,
       balanceAfterCents: runningCents,
+      createdAt: line.createdAt,
     };
   });
   entries.reverse();
@@ -459,17 +530,67 @@ export async function getFriendLedger(userId: string, friendId: string) {
     netByGroup.set(line.groupId, (netByGroup.get(line.groupId) ?? 0) + line.deltaCents);
   }
 
+  // Relationship context, not balance context: which groups both belong to
+  // (settled ones included — "where do I know them from" is not "where does
+  // money move"), and whether an explicit friendship exists. The page shows
+  // any pair, so it has to say which relationship it is showing.
+  const friendGroupIds = new Set((await listGroupsByUser(friendId)).map((group) => group.id));
+  const mutualGroupRows = (await listGroupsByUser(userId)).filter((group) =>
+    friendGroupIds.has(group.id),
+  );
+  const isFriend = (await listFriendIds(userId)).includes(friendId);
+
+  // Per-scope balances, each routed the way its scope routes debt. A group
+  // that simplifies debts contributes the simplified edge between the pair —
+  // possibly zero while their shared history is not (the debt was rerouted
+  // through others), or nonzero between two people who never shared an
+  // expense. Rows where either number is nonzero are kept, so a rerouted
+  // balance always has a line explaining where it went, and the headline is
+  // the sum of these rows — the same routed number the dashboard shows and
+  // the settlement guards enforce, not the raw history total.
+  const groupBalances: {
+    groupId: string;
+    groupName: string;
+    netCents: number;
+    simplified: boolean;
+  }[] = [];
+  for (const group of mutualGroupRows) {
+    if (!group.simplify_debts) continue;
+    const edges = simplifyDebts(netBalances(await groupLedger(group.id)));
+    const routedCents =
+      owedInEntries(edges, friendId, userId) - owedInEntries(edges, userId, friendId);
+    const historyCents = netByGroup.get(group.id) ?? 0;
+    netByGroup.delete(group.id);
+    if (routedCents !== 0 || historyCents !== 0) {
+      groupBalances.push({
+        groupId: group.id,
+        groupName: group.name,
+        netCents: routedCents,
+        simplified: true,
+      });
+    }
+  }
+  for (const [groupId, historyCents] of netByGroup) {
+    if (historyCents === 0) continue;
+    groupBalances.push({
+      groupId,
+      groupName: groupId ? (groupNames.get(groupId) ?? "") : "",
+      netCents: historyCents,
+      simplified: false,
+    });
+  }
+
   return {
     friend: toUser(friend),
-    netCents: runningCents,
+    netCents: groupBalances.reduce((running, scope) => running + scope.netCents, 0),
     currency: friend.default_currency || "USD",
     entries,
-    groupBalances: [...netByGroup.entries()]
-      .filter(([, netCents]) => netCents !== 0)
-      .map(([groupId, netCents]) => ({
-        groupId,
-        groupName: groupId ? (groupNames.get(groupId) ?? "") : "",
-        netCents,
-      })),
+    groupBalances,
+    isFriend,
+    mutualGroups: mutualGroupRows.map((group) => ({
+      groupId: group.id,
+      groupName: group.name,
+      groupType: group.type,
+    })),
   };
 }
