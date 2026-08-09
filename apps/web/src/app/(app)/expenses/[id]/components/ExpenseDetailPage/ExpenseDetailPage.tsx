@@ -2,8 +2,9 @@
 /** Expense detail page: payers, splits, receipt items, comments, and delete flow. */
 
 import Link from "next/link";
-import { Pencil, Send, Trash2 } from "lucide-react";
+import { Check, Pencil, Send, Trash2 } from "lucide-react";
 import { Avatar } from "@/components/ui/Avatar";
+import { settledStatus } from "@/components/expenses/settledStatus";
 import { Modal } from "@/components/ui/Modal";
 import { Money } from "@/components/ui/Money";
 import { Spinner } from "@/components/ui/Spinner";
@@ -63,6 +64,36 @@ export function ExpenseDetailPage({ expenseId }: { expenseId: string }) {
       ? "You"
       : (expenseDetail.userById.get(userId)?.name ?? "someone");
 
+  // The viewer's net on this expense, for the nothing-pending banner: the
+  // banner only makes sense when they had a stake, and its wording depends
+  // on which direction that stake pointed.
+  const meId = expenseDetail.me?.id;
+  const myPaidCents = expense.payers
+    .filter((payer) => payer.userId === meId)
+    .reduce((total, payer) => total + payer.amountCents, 0);
+  const myOwedCents = expense.splits
+    .filter((split) => split.userId === meId)
+    .reduce((total, split) => total + split.owedCents, 0);
+  const myNetCents = myPaidCents - myOwedCents;
+  // Same wording as the list rows, from the same function — the list's
+  // tooltip is invisible on phones, so this page is where the full sentence
+  // actually gets read.
+  const settled =
+    expenseDetail.detail?.settledForViewer && myNetCents !== 0
+      ? settledStatus(
+          myNetCents > 0,
+          expense.groupId !== "",
+          [
+            ...new Set(
+              [...expense.payers.map((payer) => payer.userId), ...expense.splits.map((split) => split.userId)]
+                .filter((participantId) => participantId !== meId)
+                .map((participantId) => expenseDetail.userById.get(participantId)?.name.split(" ")[0])
+                .filter((name): name is string => Boolean(name)),
+            ),
+          ],
+        )
+      : null;
+
   return (
     <div className="mx-auto max-w-2xl space-y-6">
       <header className="flex items-start justify-between gap-4">
@@ -86,6 +117,16 @@ export function ExpenseDetailPage({ expenseId }: { expenseId: string }) {
           {formatMoney(expense.amountCents, expense.currency)}
         </p>
       </header>
+
+      {/* The full nothing-pending sentence. On the list this rides as a
+          hover tooltip, which phones cannot see — the page every row taps
+          through to is where it actually gets read. */}
+      {settled ? (
+        <p className="flex items-start gap-2 rounded-2xl border border-pos-600/20 bg-pos-50 px-4 py-3 text-sm font-medium text-pos-700">
+          <Check className="mt-0.5 h-4 w-4 shrink-0" />
+          <span>{settled.explanation}</span>
+        </p>
+      ) : null}
 
       <div className="flex gap-2">
         <Link

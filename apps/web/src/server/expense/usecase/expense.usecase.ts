@@ -26,7 +26,13 @@ import {
   computeSplits,
   SplitError,
 } from "@haalkhata/shared/expense/splits";
-import { amountOwed, oneOffNetBetween, owedByScope, userNetInGroups } from "./balance.usecase";
+import {
+  amountOwed,
+  oneOffNetBetween,
+  owedByScope,
+  userNetInGroup,
+  userNetInGroups,
+} from "./balance.usecase";
 import { allocateSettlement } from "@/server/expense/domain/settlementAllocation";
 import { settledExpenseIds } from "@/server/expense/domain/settledExpenses";
 import { denied, invalid, notFound } from "@/server/common/errors";
@@ -514,7 +520,39 @@ export async function getExpense(userId: string, expenseId: string) {
       ])
     ).map((user) => [user.id, user]),
   );
+
+  // The same settledness rule the expense list applies, for this one expense,
+  // so the detail page and the row that linked to it can never disagree.
+  const participantIds = [
+    ...new Set([
+      ...(children.payers.get(expenseId) ?? []).map((payer) => payer.user_id),
+      ...(children.splits.get(expenseId) ?? []).map((split) => split.user_id),
+    ]),
+  ];
+  const viewerNetByGroupId = new Map<string, number>();
+  if (expenseRow.group_id) {
+    viewerNetByGroupId.set(expenseRow.group_id, await userNetInGroup(userId, expenseRow.group_id));
+  }
+  const oneOffNetByUserId = new Map<string, number>();
+  if (!expenseRow.group_id) {
+    await Promise.all(
+      participantIds
+        .filter((participantId) => participantId !== userId)
+        .map(async (participantId) => {
+          oneOffNetByUserId.set(participantId, await oneOffNetBetween(userId, participantId));
+        }),
+    );
+  }
+  const settledForViewer =
+    settledExpenseIds(
+      [{ id: expenseId, groupId: expenseRow.group_id ?? "", participantIds }],
+      userId,
+      viewerNetByGroupId,
+      oneOffNetByUserId,
+    ).length === 1;
+
   return {
+    settledForViewer,
     expense: toExpense(expenseRow, children),
     comments: comments.map((comment) => ({
       id: comment.id,

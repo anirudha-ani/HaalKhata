@@ -133,6 +133,10 @@ message GetExpenseResponse {
   // rather than stored on the expense: the feed already records every change,
   // so a second source of truth would only be one that could disagree.
   repeated ExpenseEvent history = 4;
+  // True when nothing is pending for the CALLER from this expense's scope —
+  // same rule as ListExpensesResponse.settled_expense_ids, for one expense.
+  // Viewer-relative, hence on the response and not on Expense.
+  bool settled_for_viewer = 5;
 }
 
 // One recorded change to an expense, for the detail view's history line.
