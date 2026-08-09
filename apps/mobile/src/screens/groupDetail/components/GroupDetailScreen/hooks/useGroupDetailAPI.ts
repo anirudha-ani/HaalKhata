@@ -2,7 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { authClient, expenseClient, groupClient, socialClient } from "@/lib/api/connect";
-import { queryKeys } from "@haalkhata/shared/api/queryKeys";
+import { MONEY_KEYS, queryKeys } from "@haalkhata/shared/api/queryKeys";
 
 /**
  * Wraps every server call the group detail screen makes: the signed-in user,
@@ -52,6 +52,19 @@ export function useGroupDetailAPI(groupId: string) {
     },
   });
 
+  /**
+   * Flips the group's simplify-debts mode. It changes which debts every
+   * money surface shows — this group's balances, friend ledgers, the
+   * dashboard — so success invalidates the whole money set, not just the
+   * group.
+   */
+  const setSimplify = useMutation({
+    mutationFn: (simplify: boolean) => groupClient.setSimplifyDebts({ groupId, simplify }),
+    onSuccess: () => {
+      for (const moneyKey of MONEY_KEYS) queryClient.invalidateQueries({ queryKey: moneyKey });
+    },
+  });
+
   /** Refetches the group, its expenses, and its balances (pull-to-refresh). */
   const refresh = () => {
     void group.refetch();
@@ -70,5 +83,6 @@ export function useGroupDetailAPI(groupId: string) {
     refresh,
     isRefreshing: group.isRefetching || expenses.isRefetching || balances.isRefetching,
     addMembers,
+    setSimplify,
   };
 }

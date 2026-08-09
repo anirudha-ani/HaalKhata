@@ -31,6 +31,18 @@ export const groupHandler: ServiceImpl<typeof GroupService> = {
     return runUsecase(async () => groups.addMembers(await requireUser(context), request), context);
   },
 
+  /** Turns debt simplification on or off for the whole group; any member may. */
+  async setSimplifyDebts(request, context) {
+    return runUsecase(
+      async () =>
+        groups.setSimplifyDebts(await requireUser(context), {
+          groupId: request.groupId,
+          simplify: request.simplify,
+        }),
+      context,
+    );
+  },
+
   /** Removes a member from a group; refused while the member has a balance. */
   async removeMember(request, context) {
     await runUsecase(

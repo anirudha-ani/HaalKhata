@@ -146,6 +146,7 @@ export function GroupDetailScreen({
           onSettle={(user, cents) => groupDetail.setSettleWith({ user, cents })}
           onToggleSimplified={groupDetail.setSimplified}
           simplified={groupDetail.simplified}
+          simplifyPending={groupDetail.simplifyPending}
           userById={groupDetail.userById}
         />
       )}

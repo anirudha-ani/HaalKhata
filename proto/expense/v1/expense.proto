@@ -243,6 +243,11 @@ message FriendGroupBalance {
   string group_id = 1;
   string group_name = 2;
   int32 net_cents = 3; // > 0 = they owe you in this group
+  // True when this group simplifies debts, making net_cents the *routed*
+  // amount between the pair rather than their direct dealings — possibly
+  // zero while the pair's shared history is not, or vice versa. Surfaced so
+  // the UI can say why a group's number differs from the history.
+  bool simplified = 4;
 }
 
 // One group both people belong to, regardless of balance.

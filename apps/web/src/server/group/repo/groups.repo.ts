@@ -14,6 +14,8 @@ export interface GroupRow {
   /** User id of the group's creator (also its initial owner). */
   created_by: string;
   created_at: string;
+  /** Whether the group's debts are routed as the min-cash-flow simplification. */
+  simplify_debts: boolean;
 }
 
 /** A group member: the user row joined with their group_members role. */
@@ -70,6 +72,16 @@ export async function listGroupsByUser(userId: string): Promise<GroupRow[]> {
      ORDER BY groups.created_at DESC`,
     [userId],
   );
+}
+
+/**
+ * Sets whether a group simplifies its debts.
+ *
+ * @param groupId - Id of the group whose mode is being set.
+ * @param simplify - The desired state of the simplify-debts mode.
+ */
+export async function updateSimplifyDebts(groupId: string, simplify: boolean): Promise<void> {
+  await execute(`UPDATE groups SET simplify_debts = $2 WHERE id = $1`, [groupId, simplify]);
 }
 
 /**

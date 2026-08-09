@@ -183,7 +183,7 @@ export function FriendDetailPage({
                 key={balance.groupId || "one-off"}
                 className="flex items-center justify-between px-4 py-2.5 text-sm"
               >
-                <span className="min-w-0 truncate">
+                <span className="flex min-w-0 items-center gap-1.5 truncate">
                   {balance.groupId ? (
                     <Link
                       href={`/groups/${balance.groupId}`}
@@ -194,6 +194,17 @@ export function FriendDetailPage({
                   ) : (
                     <span className="text-ink-soft">One-off expenses</span>
                   )}
+                  {/* A rerouted number needs its label: in a simplified group
+                      what you pay — and whom — is the group's shortest route,
+                      not necessarily who you shared the expense with. */}
+                  {balance.simplified ? (
+                    <span
+                      className="shrink-0 rounded-full bg-paper px-2 py-0.5 text-[11px] text-ink-soft"
+                      title="This group simplifies debts: balances are rerouted across the group so fewer payments settle everyone."
+                    >
+                      simplified
+                    </span>
+                  ) : null}
                 </span>
                 <Money
                   cents={balance.netCents}
@@ -285,7 +296,10 @@ export function FriendDetailPage({
         {entries.length > 0 ? (
           <p className="text-xs text-ink-soft">
             &ldquo;Change&rdquo; is what each line did to your balance; positive means it went in
-            your favour. The top row&apos;s balance is where you stand now.
+            your favour.{" "}
+            {groupBalances.some((balance) => balance.simplified)
+              ? "Groups marked “simplified” reroute debts across the whole group, so the balance up top can differ from this history's running total — the history is what you shared, the headline is what actually needs to move."
+              : "The top row's balance is where you stand now."}
           </p>
         ) : null}
       </section>

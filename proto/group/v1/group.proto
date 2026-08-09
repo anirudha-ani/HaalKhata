@@ -15,6 +15,13 @@ service GroupService {
   // call this; only the owner may RemoveMember.
   rpc AddMembers(AddMembersRequest) returns (AddMembersResponse);
   rpc RemoveMember(RemoveMemberRequest) returns (google.protobuf.Empty);
+  // Turns debt simplification on or off for the whole group. Any member may
+  // flip it (the same trust level as adding people): it is a routing mode
+  // over balances that stay fully derived, so it rewrites nothing and is
+  // always safe to change. The server's settlement guards follow the mode,
+  // which is why it must be a shared group fact and not a per-viewer view:
+  // two debt routings live at once would let one debt be paid down both.
+  rpc SetSimplifyDebts(SetSimplifyDebtsRequest) returns (Group);
 }
 
 message Member {
@@ -30,6 +37,11 @@ message Group {
   string created_by = 5;
   string created_at = 6;
   repeated Member members = 7;
+  // When true, this group's debts are routed as the min-cash-flow
+  // simplification of member nets rather than the raw pairwise graph —
+  // everywhere: the balances tab, friend ledgers, the dashboard, and what
+  // the settlement guards will accept.
+  bool simplify_debts = 8;
 }
 
 message CreateGroupRequest {
@@ -83,4 +95,11 @@ message AddMembersResponse {
 message RemoveMemberRequest {
   string group_id = 1;
   string user_id = 2;
+}
+
+message SetSimplifyDebtsRequest {
+  string group_id = 1;
+  // Desired state; setting the state it is already in is a no-op, not an
+  // error, so two members flipping it together cannot fail each other.
+  bool simplify = 2;
 }

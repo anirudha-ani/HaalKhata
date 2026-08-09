@@ -19,9 +19,9 @@ export type GroupTab = "expenses" | "balances";
  *   `addingPeople`/`setAddingPeople` and the add-people form (`pickedIds`,
  *   `togglePicked`, `identifier`/`setIdentifier`, `submitPeople`,
  *   `peopleError`, `canAddPeople`), `candidates` (friends not already in the
- *   group), `simplified`/`setSimplified` for the debts view,
- *   `settleWith`/`setSettleWith` for the settle-up sheet, and `userById`
- *   mapping member ids to users.
+ *   group), `simplified`/`setSimplified`/`simplifyPending` for the group's
+ *   persisted simplify-debts mode, `settleWith`/`setSettleWith` for the
+ *   settle-up sheet, and `userById` mapping member ids to users.
  */
 export function useGroupDetail(groupId: string) {
   const groupDetailAPI = useGroupDetailAPI(groupId);
@@ -30,7 +30,6 @@ export function useGroupDetail(groupId: string) {
   const [pickedIds, setPickedIds] = useState<string[]>([]);
   const [identifier, setIdentifier] = useState("");
   const [peopleError, setPeopleError] = useState("");
-  const [simplified, setSimplified] = useState(false);
   const [settleWith, setSettleWith] = useState<{ user: User; cents: number } | null>(null);
 
   // Lookup map so panels can resolve a member's User from a bare user id.
@@ -87,8 +86,13 @@ export function useGroupDetail(groupId: string) {
     peopleError,
     submitPeople,
     canAddPeople: pickedIds.length > 0 || identifier.trim() !== "",
-    simplified,
-    setSimplified,
+    // The persisted group mode, not view state: everyone in the group sees
+    // the same debts, and the server's settlement guards follow the same
+    // switch. (A cached Group from before the field existed simply lacks it —
+    // undefined reads as off until the refetch lands.)
+    simplified: groupDetailAPI.group?.simplifyDebts ?? false,
+    setSimplified: (value: boolean) => groupDetailAPI.setSimplify.mutate(value),
+    simplifyPending: groupDetailAPI.setSimplify.isPending,
     settleWith,
     setSettleWith,
     userById,

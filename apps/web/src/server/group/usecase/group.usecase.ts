@@ -11,6 +11,7 @@ import {
   listMembersByGroupIds,
   memberRole,
   removeMember,
+  updateSimplifyDebts,
 } from "@/server/group/repo/groups.repo";
 import type { UserRow } from "@/server/auth/repo/users.repo";
 import { findUserById, findUsersByIds } from "@/server/auth/repo/users.repo";
@@ -363,6 +364,48 @@ export async function addMembers(
   });
   await notifyAdded(actor, input.groupId, group.name, added);
   return { added: added.map((user) => toMember({ ...user, role: "member" })) };
+}
+
+/**
+ * Turns debt simplification on or off for a group.
+ *
+ * Member-level, like adding people: it is a shared ledger and this is a
+ * routing mode over balances that stay fully derived, so flipping it rewrites
+ * nothing and is always reversible. It still changes what everyone sees and
+ * which payments the settlement guards accept, so the change is announced in
+ * the group's feed rather than happening silently.
+ *
+ * Setting the state the group is already in is a no-op that skips the feed
+ * entry — two members flipping the switch together should not produce a
+ * duplicate announcement or an error.
+ *
+ * @param userId - Id of the authenticated caller flipping the mode.
+ * @param input - The group id and the desired state.
+ * @returns The group (with members) after the change.
+ * @throws UsecaseError (not_found) when the group does not exist.
+ * @throws UsecaseError (permission_denied) when the caller is not a member.
+ */
+export async function setSimplifyDebts(
+  userId: string,
+  input: { groupId: string; simplify: boolean },
+) {
+  const group = await assertGroupMember(input.groupId, userId);
+  if (group.simplify_debts !== input.simplify) {
+    await updateSimplifyDebts(input.groupId, input.simplify);
+    const actor = (await findUserById(userId))!;
+    const audience = (await listMembers(input.groupId)).map((member) => member.id);
+    await insertActivity({
+      groupId: input.groupId,
+      actorId: userId,
+      type: "simplify_debts",
+      message: input.simplify
+        ? `${actor.name} turned on debt simplification in "${group.name}" — fewer payments, same balances`
+        : `${actor.name} turned off debt simplification in "${group.name}" — debts show person to person again`,
+      link: `/groups/${input.groupId}`,
+      audience,
+    });
+  }
+  return toGroup((await findGroupById(input.groupId))!, await listMembers(input.groupId));
 }
 
 /**

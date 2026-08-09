@@ -30,5 +30,6 @@ export function toGroup(groupRow: GroupRow, members?: MemberRow[]) {
     createdBy: groupRow.created_by,
     createdAt: groupRow.created_at,
     members: members?.map(toMember) ?? [],
+    simplifyDebts: groupRow.simplify_debts,
   };
 }

@@ -21,6 +21,7 @@ export function BalancesPanel({
   meId,
   userById,
   simplified,
+  simplifyPending = false,
   onToggleSimplified,
   onSettle,
 }: {
@@ -32,8 +33,10 @@ export function BalancesPanel({
   meId: string | undefined;
   /** Lookup from user id to User for rendering names and avatars. */
   userById: Map<string, User>;
-  /** Whether the simplified (minimal-payments) debt list is shown instead of pairwise debts. */
+  /** The group's persisted simplify-debts mode; decides which debt list is live. */
   simplified: boolean;
+  /** True while a toggle of the mode is in flight; disables the switch. */
+  simplifyPending?: boolean;
   /** Called with the desired state when the simplify-debts toggle is pressed. */
   onToggleSimplified: (value: boolean) => void;
   /**
@@ -44,6 +47,14 @@ export function BalancesPanel({
 }) {
   if (!balances) return null;
   const debts = simplified ? balances.simplified : balances.debts;
+  // Pairwise debts that survive while every net is zero can only be a loop —
+  // typically left behind by payments recorded while debts were simplified.
+  // Money-wise nobody owes anybody; without a word of explanation the list
+  // looks like outstanding debt, so it gets one.
+  const cancelingLoop =
+    !simplified &&
+    debts.length > 0 &&
+    balances.nets.every((position) => position.netCents === 0);
 
   return (
     <div className="space-y-6">
@@ -89,8 +100,9 @@ export function BalancesPanel({
           </h3>
           <button
             type="button"
+            disabled={simplifyPending}
             onClick={() => onToggleSimplified(!simplified)}
-            className={`flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold ${
+            className={`flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold disabled:opacity-50 ${
               simplified
                 ? "border-brand-600 bg-brand-50 text-brand-700"
                 : "border-line text-ink-soft"
@@ -100,6 +112,22 @@ export function BalancesPanel({
             Simplify debts
           </button>
         </div>
+
+        {/* The switch changes the group, not this screen: which debts exist
+            here, on friend pages, and on the dashboard — and which payments
+            the server will accept. Said before it is flipped, not after. */}
+        <p className="mb-2 text-xs text-ink-soft">
+          {simplified
+            ? "On for everyone in this group: debts are rerouted so fewer payments settle the same balances. You may owe a different person than you shared an expense with."
+            : "Off: debts run between the people who actually shared each expense. Turning it on changes the view for everyone in the group."}
+        </p>
+
+        {cancelingLoop ? (
+          <p className="mb-2 rounded-xl border border-dashed border-line bg-card px-4 py-2.5 text-xs text-ink-soft">
+            These debts cancel out around a loop — everyone&apos;s overall position is zero.
+            Simplify debts to clear the view.
+          </p>
+        ) : null}
 
         {debts.length === 0 ? (
           <p className="rounded-2xl border border-dashed border-line bg-card px-4 py-6 text-center text-sm text-ink-soft">

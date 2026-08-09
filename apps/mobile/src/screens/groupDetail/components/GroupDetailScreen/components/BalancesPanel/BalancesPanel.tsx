@@ -23,6 +23,7 @@ export function BalancesPanel({
   meId,
   userById,
   simplified,
+  simplifyPending = false,
   onToggleSimplified,
   onSettle,
 }: {
@@ -34,8 +35,10 @@ export function BalancesPanel({
   meId: string | undefined;
   /** Lookup from user id to User for rendering names and avatars. */
   userById: Map<string, User>;
-  /** Whether the simplified (minimal-payments) debt list is shown instead of pairwise debts. */
+  /** The group's persisted simplify-debts mode; decides which debt list is live. */
   simplified: boolean;
+  /** True while a toggle of the mode is in flight; ignores taps meanwhile. */
+  simplifyPending?: boolean;
   /** Called with the desired state when the simplify-debts toggle is pressed. */
   onToggleSimplified: (value: boolean) => void;
   /** Called with the creditor and amount when the viewer taps Settle on a debt. */
@@ -43,6 +46,14 @@ export function BalancesPanel({
 }) {
   if (!balances) return null;
   const debts = simplified ? balances.simplified : balances.debts;
+  // Pairwise debts that survive while every net is zero can only be a loop —
+  // typically left behind by payments recorded while debts were simplified.
+  // Money-wise nobody owes anybody; without a word of explanation the list
+  // looks like outstanding debt, so it gets one.
+  const cancelingLoop =
+    !simplified &&
+    debts.length > 0 &&
+    balances.nets.every((position) => position.netCents === 0);
 
   return (
     <View style={styles.container}>
@@ -90,10 +101,30 @@ export function BalancesPanel({
           <Chip
             icon={<Wand2 color={simplified ? colors.brand700 : colors.inkSoft} size={13} />}
             label="Simplify debts"
-            onPress={() => onToggleSimplified(!simplified)}
+            onPress={() => {
+              if (!simplifyPending) onToggleSimplified(!simplified);
+            }}
             selected={simplified}
           />
         </View>
+
+        {/* The switch changes the group, not this screen: which debts exist
+            here, on friend pages, and on the dashboard — and which payments
+            the server will accept. Said before it is flipped, not after. */}
+        <Text style={styles.modeHint}>
+          {simplified
+            ? "On for everyone in this group: debts are rerouted so fewer payments settle the same balances."
+            : "Off: debts run between the people who shared each expense. Turning it on changes the view for everyone."}
+        </Text>
+
+        {cancelingLoop ? (
+          <View style={styles.allSettled}>
+            <Text style={styles.allSettledText}>
+              These debts cancel out around a loop — everyone&apos;s overall position is zero.
+              Simplify debts to clear the view.
+            </Text>
+          </View>
+        ) : null}
 
         {debts.length === 0 ? (
           <View style={styles.allSettled}>
@@ -185,6 +216,10 @@ const styles = StyleSheet.create({
     borderRadius: radii.lg,
     borderWidth: 1,
     overflow: "hidden",
+  },
+  modeHint: {
+    color: colors.inkSoft,
+    fontSize: 12,
   },
   row: {
     alignItems: "center",

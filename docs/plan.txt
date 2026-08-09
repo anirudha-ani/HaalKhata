@@ -1589,3 +1589,37 @@ badge + mark-read, account (profile, currency, sign out), receipt scan
 **Verification:** `pnpm --filter @haalkhata/mobile typecheck | lint | test`
 (vitest on pure utils); manual run via `pnpm dev:mobile` (Expo Go) against
 the local dev server.
+
+## §21 Simplify debts becomes a real group mode
+
+**Problem.** The "Simplify debts" toggle was client-side `useState` — not
+persisted, per-viewer, per-visit. Its settle buttons dead-ended: a simplified
+edge (A pays C for a debt that pairwise runs A→B→C) usually has no pairwise
+counterpart, so the settle modal found nothing owed and the server guards
+(`amountOwed`/`owedByScope`, both pairwise) would refuse anyway. And making
+those guards accept simplified edges *alongside* pairwise ones would let the
+same debt be paid down both routes — the friends/groups double-count all over
+again. Two debt graphs over the same nets can never both be live.
+
+**Design.** `groups.simplify_debts boolean` — a persisted, group-level mode,
+Splitwise semantics. Nets are identical in both modes; balances stay fully
+derived; settlement rows are unchanged. The mode only decides how a group
+scope *routes* debt between members — the raw pairwise graph, or the
+min-cash-flow graph over the same nets — and every consumer follows it:
+
+- `amountOwed` / `owedByScope` (settlement validation + allocation) read the
+  routed edge, so exactly one payment path exists per cent of debt, in either
+  mode, race-guarded by the existing per-pair lock.
+- `getFriendLedger` group rows, `getOverallBalances`, `netWithUser` route the
+  same way, so the dashboard, friends list, settle checklist and group page
+  can never disagree about who owes whom. Rerouted rows carry a `simplified`
+  flag (FriendGroupBalance.simplified) so the UI can say why.
+- The friend page's history stays the pair's true shared history; when a
+  simplified group makes the headline differ from the running total, the
+  caption says so instead of pretending.
+
+Toggling is member-level (same trust as AddMembers), idempotent, writes a
+group-wide activity entry, and rewrites nothing — flipping modes only changes
+routing, so it is always safe. Turning it off after simplified payments can
+surface pairwise cycles that net to zero; the balances panel explains them
+rather than hiding them. RPC: `GroupService.SetSimplifyDebts` (additive).

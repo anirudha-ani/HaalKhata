@@ -131,6 +131,7 @@ export function GroupDetailPage({
           meId={groupDetail.me?.id}
           userById={groupDetail.userById}
           simplified={groupDetail.simplified}
+          simplifyPending={groupDetail.simplifyPending}
           onToggleSimplified={groupDetail.setSimplified}
           onSettle={(user, cents, received) =>
             groupDetail.setSettleWith({ user, cents, received })
