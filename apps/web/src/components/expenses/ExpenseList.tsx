@@ -9,6 +9,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { Money } from "@/components/ui/Money";
 import { formatMoney } from "@haalkhata/shared/money/money";
 import { CATEGORY_EMOJI } from "./categoryEmoji";
+import { settledStatus } from "./settledStatus";
 
 /**
  * Group-agnostic expense list with a "your share" lens per row: each expense
@@ -43,7 +44,8 @@ export function ExpenseList({
   /**
    * Ids of expenses with nothing pending for the viewer (their balance in
    * the expense's scope is zero). Rows in it trade the lent/borrowed label
-   * for a settled tick and mute the amount into history.
+   * for the truthful state — "no one owes you here" / "you owe nothing
+   * here" — and mute the amount into history.
    */
   settledIds?: Set<string>;
 }) {
@@ -73,6 +75,21 @@ export function ExpenseList({
               : `${firstPayer} paid`;
 
         const settled = settledIds?.has(expense.id) ?? false;
+        // Everyone else on the expense, for the one-off wording — group rows
+        // speak of the group instead and never read this.
+        const otherFirstNames = settled
+          ? [
+              ...new Set(
+                [...expense.payers.map((payer) => payer.userId), ...expense.splits.map((split) => split.userId)]
+                  .filter((participantId) => participantId !== meId)
+                  .map((participantId) => userById.get(participantId)?.name.split(" ")[0])
+                  .filter((name): name is string => Boolean(name)),
+              ),
+            ]
+          : [];
+        const status = settled
+          ? settledStatus(myNet > 0, expense.groupId !== "", otherFirstNames)
+          : null;
         return (
           <li key={expense.id}>
             <Link
@@ -109,13 +126,19 @@ export function ExpenseList({
               <div className="text-right">
                 {myNet === 0 ? (
                   <span className="text-xs text-ink-soft">not involved / even</span>
-                ) : settled ? (
+                ) : status ? (
                   <>
-                    {/* Nothing pending: the tick replaces the lent/borrowed
-                        call-to-worry and the amount goes muted — it is
-                        history now, not an open position. */}
-                    <p className="flex items-center justify-end gap-1 text-xs font-medium text-pos-600">
-                      <Check className="h-3.5 w-3.5" /> settled
+                    {/* The state, not a verdict on the expense: "settled"
+                        here would claim this row was paid off, which the
+                        ledger never tracks — scopes reach zero, sometimes
+                        with no payment at all. So the label says what is
+                        true in the viewer's direction, and the tooltip
+                        carries the full sentence. */}
+                    <p
+                      title={status.explanation}
+                      className="flex items-center justify-end gap-1 text-xs font-medium text-pos-600"
+                    >
+                      <Check className="h-3.5 w-3.5 shrink-0" /> {status.label}
                     </p>
                     {/* Unsigned on purpose: the sign colors say "money is
                         pending", and nothing is. */}
