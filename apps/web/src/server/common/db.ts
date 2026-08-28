@@ -5,6 +5,7 @@ import type { QueryResultRow } from "pg";
 import path from "node:path";
 import { runner } from "node-pg-migrate";
 import { DEFAULT_DATABASE_URL } from "@/server/common/db.constants";
+import { logError } from "@/server/common/logger";
 
 // Keep date/time columns as strings end-to-end (row types say `string`);
 // pg would otherwise hand back JS Date objects.
@@ -50,13 +51,20 @@ const globalCache = globalThis as unknown as {
 function pool(): Pool {
   if (!globalCache.__haalkhataPool) {
     assertSafeDatabaseUrl();
-    globalCache.__haalkhataPool = new Pool({
+    const createdPool = new Pool({
       connectionString: databaseUrl(),
       // Bound pool so multi-replica deploys don't exhaust Postgres connections.
       max: 20,
       idleTimeoutMillis: 30_000,
       connectionTimeoutMillis: 5_000,
     });
+    // pg emits idle-client failures on the Pool. EventEmitter treats an
+    // unhandled "error" event as an uncaught exception, so this listener is
+    // required to survive routine database restarts and network failures.
+    createdPool.on("error", (error, client) => {
+      logError(error, { scope: "pg-pool-idle-client", clientPresent: Boolean(client) });
+    });
+    globalCache.__haalkhataPool = createdPool;
   }
   return globalCache.__haalkhataPool;
 }
