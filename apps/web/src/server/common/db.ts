@@ -8,6 +8,7 @@ import {
   DATABASE_URL_PROTOCOLS,
   DEFAULT_DATABASE_URL,
   MIN_DATABASE_PASSWORD_BYTES,
+  PLAINTEXT_DATABASE_HOSTS,
   WEAK_DATABASE_PASSWORDS,
 } from "@/server/common/db.constants";
 import { logError } from "@/server/common/logger";
@@ -33,43 +34,62 @@ function databaseUrl(): string {
 }
 
 /**
- * In production, parse the connection URL and reject absent, placeholder, or
- * short database passwords regardless of hostname or URL spelling. Comparing
- * one exact localhost URL cannot protect Compose, where the host is `db`.
+ * Parses the connection URL, requires certificate-verified TLS for any remote
+ * database, and rejects absent, placeholder, or short production passwords.
+ * Plaintext is confined to loopback, Unix sockets, and the bundled private
+ * Compose hostname (`db`).
  *
  * @param connectionString - PostgreSQL URL to validate.
- * @param environment - Runtime environment; only production is fail-closed.
- * @throws Error when a production URL is malformed or carries weak credentials.
+ * @param environment - Runtime environment; strict credential checks apply in production.
+ * @throws Error when the URL is malformed, a remote connection does not use
+ * certificate-verified TLS, or production credentials are weak.
  */
 export function assertSafeDatabaseUrl(
   connectionString: string = databaseUrl(),
   environment: string | undefined = process.env.NODE_ENV,
 ): void {
-  if (environment !== "production") return;
-
   let parsedUrl: URL;
   try {
     parsedUrl = new URL(connectionString);
   } catch {
-    throw new Error("DATABASE_URL must be a valid PostgreSQL URL in production");
+    throw new Error("DATABASE_URL must be a valid PostgreSQL URL");
   }
-  if (!DATABASE_URL_PROTOCOLS.has(parsedUrl.protocol) || !parsedUrl.username) {
-    throw new Error("DATABASE_URL must include PostgreSQL credentials in production");
+  if (!DATABASE_URL_PROTOCOLS.has(parsedUrl.protocol)) {
+    throw new Error("DATABASE_URL must use the postgres or postgresql protocol");
   }
 
-  let password: string;
-  try {
-    password = decodeURIComponent(parsedUrl.password);
-  } catch {
-    throw new Error("DATABASE_URL password must use valid URL encoding");
+  if (environment === "production") {
+    if (!parsedUrl.username) {
+      throw new Error("DATABASE_URL must include PostgreSQL credentials in production");
+    }
+
+    let password: string;
+    try {
+      password = decodeURIComponent(parsedUrl.password);
+    } catch {
+      throw new Error("DATABASE_URL password must use valid URL encoding");
+    }
+    if (
+      Buffer.byteLength(password, "utf8") < MIN_DATABASE_PASSWORD_BYTES ||
+      WEAK_DATABASE_PASSWORDS.has(password.toLowerCase())
+    ) {
+      throw new Error(
+        `DATABASE_URL must use a non-placeholder password of at least ${MIN_DATABASE_PASSWORD_BYTES} bytes in production`,
+      );
+    }
   }
-  if (
-    Buffer.byteLength(password, "utf8") < MIN_DATABASE_PASSWORD_BYTES ||
-    WEAK_DATABASE_PASSWORDS.has(password.toLowerCase())
-  ) {
-    throw new Error(
-      `DATABASE_URL must use a non-placeholder password of at least ${MIN_DATABASE_PASSWORD_BYTES} bytes in production`,
-    );
+
+  // pg-connection-string keeps the last duplicate query parameter, and a
+  // `host=` parameter overrides the URL hostname. Mirror both behaviors so a
+  // crafted URL cannot make validation inspect a different destination.
+  const queryHosts = parsedUrl.searchParams.getAll("host");
+  const effectiveHost = queryHosts.at(-1) ?? parsedUrl.hostname;
+  const isLocalSocket = effectiveHost.startsWith("/");
+  if (!isLocalSocket && !PLAINTEXT_DATABASE_HOSTS.has(effectiveHost.toLowerCase())) {
+    const sslModes = parsedUrl.searchParams.getAll("sslmode");
+    if (sslModes.at(-1)?.toLowerCase() !== "verify-full") {
+      throw new Error("remote DATABASE_URL must set sslmode=verify-full");
+    }
   }
 }
 

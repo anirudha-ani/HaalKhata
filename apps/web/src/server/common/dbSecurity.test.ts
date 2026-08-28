@@ -28,12 +28,34 @@ describe("assertSafeDatabaseUrl", () => {
     ).toThrow(/credentials/);
   });
 
-  it("keeps the weak local development default available", () => {
-    expect(() =>
-      assertSafeDatabaseUrl(
-        "postgres://haalkhata:change-me@localhost:5432/haalkhata",
-        "development",
-      ),
-    ).not.toThrow();
+  it.each([
+    "postgres://user:password@database.example/ledger",
+    "postgres://user:password@database.example/ledger?sslmode=disable",
+    "postgres://user:password@database.example/ledger?sslmode=no-verify",
+    "postgres://user:password@database.example/ledger?sslmode=require",
+    "postgres://user:password@database.example/ledger?sslmode=verify-full&sslmode=disable",
+    "postgres://user:password@localhost/ledger?host=database.example",
+  ])("rejects a remote database without certificate-verified TLS: %s", (connectionString) => {
+    expect(() => assertSafeDatabaseUrl(connectionString, "development")).toThrow(
+      /sslmode=verify-full/,
+    );
+  });
+
+  it.each([
+    "postgres://user:password@database.example/ledger?sslmode=verify-full",
+    "postgres://user:password@database.example/ledger?sslmode=disable&sslmode=verify-full",
+    "postgres://user:password@localhost/ledger?host=database.example&sslmode=verify-full",
+  ])("accepts a remote database with certificate-verified TLS: %s", (connectionString) => {
+    expect(() => assertSafeDatabaseUrl(connectionString, "development")).not.toThrow();
+  });
+
+  it.each([
+    "postgres://haalkhata:change-me@localhost:5432/haalkhata",
+    "postgres://haalkhata:change-me@127.0.0.1:5432/haalkhata",
+    "postgres://haalkhata:change-me@[::1]:5432/haalkhata",
+    "postgres://haalkhata:change-me@db:5432/haalkhata",
+    "postgres://haalkhata:change-me@localhost/haalkhata?host=%2Fvar%2Frun%2Fpostgresql",
+  ])("allows plaintext only for a local database transport: %s", (connectionString) => {
+    expect(() => assertSafeDatabaseUrl(connectionString, "development")).not.toThrow();
   });
 });

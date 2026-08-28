@@ -66,8 +66,10 @@ mock provider — no further configuration needed for a demo.
 All configuration lives in a single `.env` at the repo root: `docker compose`
 reads it directly, and `pnpm dev` loads it via Node's `--env-file-if-exists`.
 Using your own Postgres instead of the compose service? Set `DATABASE_URL`
-there. Real shell variables still win, so `DATABASE_URL=… pnpm dev` overrides
-the file for a one-off.
+there and append `?sslmode=verify-full` (or `&sslmode=verify-full` when the URL
+already has parameters). Remote database connections fail closed without
+certificate-verified TLS. Real shell variables still win, so
+`DATABASE_URL=… pnpm dev` overrides the file for a one-off.
 
 ### Mobile app (Expo)
 

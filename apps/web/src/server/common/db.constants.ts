@@ -19,3 +19,6 @@ export const WEAK_DATABASE_PASSWORDS = new Set([
 
 /** URL protocols accepted by node-postgres for PostgreSQL connections. */
 export const DATABASE_URL_PROTOCOLS = new Set(["postgres:", "postgresql:"]);
+
+/** Hosts reached only through loopback or the bundled private Compose network. */
+export const PLAINTEXT_DATABASE_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]", "db"]);
