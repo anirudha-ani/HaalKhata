@@ -185,16 +185,36 @@ export async function transaction<TransactionResult>(
   operation: (client: PoolClient) => Promise<TransactionResult>,
 ): Promise<TransactionResult> {
   const client = await pool().connect();
+  let releaseError: Error | undefined;
+  let transactionFailed = false;
   try {
     await client.query("BEGIN");
     const result = await operation(client);
     await client.query("COMMIT");
     return result;
   } catch (error) {
-    await client.query("ROLLBACK");
+    transactionFailed = true;
+    try {
+      await client.query("ROLLBACK");
+    } catch (rollbackError) {
+      // A client that cannot roll back may still be inside a transaction (or
+      // disconnected mid-command). Passing an error makes pg destroy it
+      // instead of lending contaminated state to the next request.
+      releaseError =
+        rollbackError instanceof Error ? rollbackError : new Error(String(rollbackError));
+    }
     throw error;
   } finally {
-    client.release();
+    try {
+      if (releaseError) client.release(releaseError);
+      else client.release();
+    } catch (releaseFailure) {
+      // On the success path a release failure is the request's only error.
+      // On the failure path, never let cleanup replace the real SQL/usecase
+      // error the caller needs for diagnosis.
+      if (!transactionFailed) throw releaseFailure;
+      logError(releaseFailure, { scope: "pg-transaction-release-after-failure" });
+    }
   }
 }
 
