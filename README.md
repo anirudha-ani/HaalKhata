@@ -127,6 +127,8 @@ for a local look, not a deployment.
 ### Production
 
 ```sh
+# deploy.sh normally writes IMAGE_TAG; for a manual bootstrap, set it to the
+# exact 40-character commit image published in GHCR.
 docker compose -f docker-compose.prod.yml up -d --wait
 ```
 

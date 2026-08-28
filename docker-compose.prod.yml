@@ -12,7 +12,7 @@ name: haalkhata
 
 services:
   db:
-    image: postgres:17-alpine
+    image: postgres:17-alpine@sha256:18cfe3ef5e6815560c98237d6216d1e5119702fb0f3894c8785dd58b8bbe5d73
     restart: unless-stopped
     environment:
       POSTGRES_DB: haalkhata
@@ -50,7 +50,9 @@ services:
     # No `ports`. The database is reachable only over the compose network.
 
   web:
-    image: ghcr.io/anirudha-ani/haalkhata:${IMAGE_TAG:-latest}
+    # deploy.sh writes an exact 40-character commit tag; never fall back to the
+    # mutable `latest` tag in production.
+    image: ghcr.io/anirudha-ani/haalkhata:${IMAGE_TAG:?set IMAGE_TAG to a deployed commit SHA}
     restart: unless-stopped
     depends_on:
       db:
@@ -95,7 +97,7 @@ services:
     # No `ports`. Only Caddy reaches it, over the compose network.
 
   caddy:
-    image: caddy:2-alpine
+    image: caddy:2-alpine@sha256:5f5c8640aae01df9654968d946d8f1a56c497f1dd5c5cda4cf95ab7c14d58648
     restart: unless-stopped
     environment:
       # Caddy uses this for certificate expiry and account problem notices.

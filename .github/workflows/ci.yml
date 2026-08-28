@@ -1,14 +1,9 @@
 # Quality gates. The same commands you run locally, across all three
 # workspaces, on every push and pull request.
 #
-# Supply chain: third-party actions are pinned to version tags below for
-# readability. A tag is MUTABLE — whoever controls the action's repo can
-# repoint v5 at new code that runs with this workflow's token. Before this
-# repo has anything worth stealing, swap each `@vN` for a full commit SHA:
-#
-#   gh api repos/actions/checkout/git/ref/tags/v5 --jq .object.sha
-#
-# dependabot.yml then keeps the pins current.
+# Supply chain: every third-party action is pinned to a full commit SHA. The
+# trailing version comments preserve readability and let Dependabot keep the
+# immutable pins current through reviewed pull requests.
 name: CI
 
 on:
@@ -30,18 +25,18 @@ jobs:
   # required check, the rule waits forever for a check that no longer exists
   # and every PR is blocked — so rename it here and update the ruleset together.
   quality-gates:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           # buf breaking compares against main, which needs real history.
           fetch-depth: 0
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
         with:
           version: 11.9.0
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
           node-version: 24
           cache: pnpm
