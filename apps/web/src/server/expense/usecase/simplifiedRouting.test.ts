@@ -65,6 +65,7 @@ import { listFriendIds } from "@/server/social/repo/friendships.repo";
 const ALICE = "user-alice";
 const BOBBY = "user-bob";
 const CARA = "user-cara";
+const STRANGER = "user-stranger";
 const TRIP = "group-trip";
 
 /** Whether the trip group simplifies debts in the scenario being run. */
@@ -281,6 +282,33 @@ describe("friend ledgers under simplification", () => {
     expect(ledger.groupBalances).toEqual([
       { groupId: TRIP, groupName: "Trip", netCents: -1000, simplified: false },
     ]);
+  });
+
+  it("returns the same not-found response for unrelated and nonexistent ids", async () => {
+    vi.mocked(listGroupsByUser).mockResolvedValue([]);
+
+    await expect(getFriendLedger(ALICE, STRANGER)).rejects.toMatchObject({
+      code: "not_found",
+      message: "friend ledger not found",
+    });
+
+    vi.mocked(findUserById).mockResolvedValueOnce(undefined);
+    await expect(getFriendLedger(ALICE, "missing-user")).rejects.toMatchObject({
+      code: "not_found",
+      message: "friend ledger not found",
+    });
+  });
+
+  it("allows an explicit friend even with no mutual group or history", async () => {
+    vi.mocked(listGroupsByUser).mockResolvedValue([]);
+    vi.mocked(listFriendIds).mockResolvedValue([STRANGER]);
+
+    const ledger = await getFriendLedger(ALICE, STRANGER);
+
+    expect(ledger.friend.id).toBe(STRANGER);
+    expect(ledger.entries).toEqual([]);
+    expect(ledger.mutualGroups).toEqual([]);
+    expect(ledger.isFriend).toBe(true);
   });
 });
 

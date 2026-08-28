@@ -439,11 +439,11 @@ function pairDelta(debts: LedgerEntry[], userId: string, otherUserId: string): n
  * @param friendId - The other person.
  * @returns The friend, the net (> 0 ⇒ they owe you), the currency, the entries
  *   newest-first, and the per-group breakdown.
- * @throws UsecaseError (not_found) when the friend's user row is missing.
+ * @throws UsecaseError (not_found) when the person is missing or has no
+ *   friendship, mutual group, or shared ledger history with the caller.
  */
 export async function getFriendLedger(userId: string, friendId: string) {
   const friend = await findUserById(friendId);
-  if (!friend) notFound("user not found");
 
   const expenses = await listExpensesBetween(userId, friendId);
   const children = await loadExpenseChildren(expenses.map((expense) => expense.id));
@@ -510,7 +510,7 @@ export async function getFriendLedger(userId: string, friendId: string) {
       // The UTC day, kept as a fallback; the timestamp below is what the
       // client renders, in the viewer's own timezone.
       date: settlement.created_at.slice(0, 10),
-      description: paidByYou ? "You paid" : `${friend.name} paid you`,
+      description: paidByYou ? "You paid" : `${friend?.name ?? ""} paid you`,
       groupId: settlement.group_id ?? "",
       groupName: settlement.group_id ? (groupNames.get(settlement.group_id) ?? "") : "",
       totalCents: settlement.amount_cents,
@@ -546,13 +546,17 @@ export async function getFriendLedger(userId: string, friendId: string) {
 
   // Relationship context, not balance context: which groups both belong to
   // (settled ones included — "where do I know them from" is not "where does
-  // money move"), and whether an explicit friendship exists. The page shows
-  // any pair, so it has to say which relationship it is showing.
+  // money move"), and whether an explicit friendship exists.
   const friendGroupIds = new Set((await listGroupsByUser(friendId)).map((group) => group.id));
   const mutualGroupRows = (await listGroupsByUser(userId)).filter((group) =>
     friendGroupIds.has(group.id),
   );
   const isFriend = (await listFriendIds(userId)).includes(friendId);
+  if (!friend || (!isFriend && mutualGroupRows.length === 0 && entries.length === 0)) {
+    // Identical for an unknown id and an existing unrelated account: callers
+    // cannot use this endpoint as a user-existence oracle.
+    notFound("friend ledger not found");
+  }
 
   // Per-scope balances, each routed the way its scope routes debt. A group
   // that simplifies debts contributes the simplified edge between the pair —
