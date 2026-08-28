@@ -1,6 +1,10 @@
 /** All SQL for the activity table (audience-scoped feed events). */
 
 import { execute, newId, query } from "@/server/common/db";
+import {
+  ACTIVITY_CURSOR_ID_PATTERN,
+  ACTIVITY_CURSOR_TIMESTAMP_PATTERN,
+} from "@/server/social/social.constants";
 
 /** A row from the activity table (column names mirror SQL). */
 export interface ActivityRow {
@@ -98,7 +102,19 @@ function encodeCursor(lastRow: ActivityRow): string {
 function decodeCursor(cursor: string): ActivityCursor | null {
   const separator = cursor.lastIndexOf("|");
   if (separator <= 0) return null;
-  return { createdAt: cursor.slice(0, separator), id: cursor.slice(separator + 1) };
+  const createdAt = cursor.slice(0, separator);
+  const cursorId = cursor.slice(separator + 1);
+  if (
+    !ACTIVITY_CURSOR_TIMESTAMP_PATTERN.test(createdAt) ||
+    !ACTIVITY_CURSOR_ID_PATTERN.test(cursorId)
+  ) {
+    return null;
+  }
+  const parsedTimestamp = new Date(createdAt);
+  if (Number.isNaN(parsedTimestamp.getTime()) || parsedTimestamp.toISOString() !== createdAt) {
+    return null;
+  }
+  return { createdAt, id: cursorId };
 }
 
 /**
