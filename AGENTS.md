@@ -256,10 +256,11 @@ with colocated tests. Mobile-specific rules:
 - **Don't forget `Secure`/`SameSite=Lax`** — session cookies go through
   `sessionCookieAttributes()`; never build a Set-Cookie header by hand.
 - **Production guardrails** — `/api/health` must exercise token signing,
-  migrations, and a live database query. The app refuses production database
-  work if `SESSION_SECRET` is unset or `DATABASE_URL` has missing, placeholder,
-  or shorter-than-16-byte credentials. Don't weaken these semantic checks into
-  exact URL comparisons; Compose and direct deployments use different hosts.
+  migrations, and a live database query. Token signing requires at least 32
+  decoded bytes of `SESSION_SECRET`; database work rejects `DATABASE_URL` with
+  missing, placeholder, or shorter-than-16-byte credentials. Don't weaken these
+  semantic checks into exact URL comparisons; Compose and direct deployments
+  use different hosts.
 
 ## Deploy
 

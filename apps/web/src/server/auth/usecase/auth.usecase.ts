@@ -28,9 +28,12 @@ import {
   GOOGLE_CLIENT_ID,
   MAX_PAYMENT_HANDLE_LENGTH,
   MAX_USER_NAME_LENGTH,
+  MIN_SESSION_SECRET_BYTES,
   PASSWORD_MAX_LENGTH,
   PASSWORD_MIN_LENGTH,
   PHONE_FORMAT_HINT,
+  SESSION_SECRET_BASE64_PATTERN,
+  SESSION_SECRET_HEX_PATTERN,
   TOKEN_LIFETIME_SECONDS,
   normalizePhone,
   passwordAuthEnabled,
@@ -96,17 +99,64 @@ function verifyPassword(password: string, storedHash: string): boolean {
 let cachedSecret: Buffer | null = null;
 
 /**
- * Returns the HMAC signing secret: SESSION_SECRET when set, otherwise (dev
- * only) a generated secret persisted under DATA_DIRECTORY so sessions survive
- * restarts. In production the readiness check invokes this function and
- * refuses to mark the container healthy without SESSION_SECRET — a missing
- * secret would otherwise silently rotate on every restart (or fail to write
- * in a read-only container) and invalidate all sessions.
+ * Strictly decodes standard Base64 without accepting Node's permissive
+ * truncation of malformed input.
+ *
+ * @param configuredSecret - Possible padded or unpadded Base64 text.
+ * @returns Decoded bytes for canonical Base64, otherwise null.
+ */
+function decodeCanonicalBase64(configuredSecret: string): Buffer | null {
+  if (
+    configuredSecret.length % 4 === 1 ||
+    !SESSION_SECRET_BASE64_PATTERN.test(configuredSecret)
+  ) {
+    return null;
+  }
+  const candidate = Buffer.from(configuredSecret, "base64");
+  const canonicalValue = candidate.toString("base64").replace(/=+$/, "");
+  return canonicalValue === configuredSecret.replace(/=+$/, "") ? candidate : null;
+}
+
+/**
+ * Decodes configured signing-key material and enforces a production length
+ * floor. Canonical hex and standard Base64 are decoded so operator guidance
+ * such as `openssl rand -hex 32` contributes the intended 256 random bits;
+ * other values remain supported as UTF-8 passphrases.
+ *
+ * @param configuredSecret - SESSION_SECRET value supplied by the operator.
+ * @param environment - Runtime environment; only production enforces the floor.
+ * @returns Bytes used as the HMAC key.
+ * @throws Error when production key material decodes to fewer than 32 bytes.
+ */
+export function decodeSessionSecret(
+  configuredSecret: string,
+  environment: string | undefined = process.env.NODE_ENV,
+): Buffer {
+  let decodedSecret: Buffer;
+  if (SESSION_SECRET_HEX_PATTERN.test(configuredSecret)) {
+    decodedSecret = Buffer.from(configuredSecret, "hex");
+  } else {
+    decodedSecret = decodeCanonicalBase64(configuredSecret) ?? Buffer.from(configuredSecret, "utf8");
+  }
+
+  if (environment === "production" && decodedSecret.byteLength < MIN_SESSION_SECRET_BYTES) {
+    throw new Error(
+      `SESSION_SECRET must contain at least ${MIN_SESSION_SECRET_BYTES} decoded bytes in production (use \`openssl rand -hex 32\`)`,
+    );
+  }
+  return decodedSecret;
+}
+
+/**
+ * Returns the decoded HMAC signing secret: SESSION_SECRET when set, otherwise
+ * (dev only) a generated secret persisted under DATA_DIRECTORY so sessions
+ * survive restarts. In production the readiness check invokes this function
+ * and refuses to mark the container healthy without at least 32 decoded bytes.
  */
 function secret(): Buffer {
   if (cachedSecret) return cachedSecret;
   if (process.env.SESSION_SECRET) {
-    cachedSecret = Buffer.from(process.env.SESSION_SECRET, "utf8");
+    cachedSecret = decodeSessionSecret(process.env.SESSION_SECRET);
     return cachedSecret;
   }
   if (process.env.NODE_ENV === "production") {
@@ -120,7 +170,10 @@ function secret(): Buffer {
   if (!fileSystem.existsSync(secretFilePath)) {
     fileSystem.writeFileSync(secretFilePath, crypto.randomBytes(32).toString("hex"), { mode: 0o600 });
   }
-  cachedSecret = Buffer.from(fileSystem.readFileSync(secretFilePath, "utf8").trim(), "utf8");
+  cachedSecret = decodeSessionSecret(
+    fileSystem.readFileSync(secretFilePath, "utf8").trim(),
+    "development",
+  );
   return cachedSecret;
 }
 

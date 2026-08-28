@@ -154,10 +154,11 @@ Two things worth knowing before you point a domain at it:
   `NEXT_PUBLIC_GOOGLE_CLIENT_ID` is inlined at **build** time — a wrong value
   cannot be fixed by restarting with a corrected environment, only by
   rebuilding.
-- **Readiness fails closed.** `/api/health` validates `SESSION_SECRET`, waits
-  for migrations, and performs a live database query. A missing secret or a
-  `DATABASE_URL` with a missing, placeholder, or shorter-than-16-byte password
-  keeps the container unhealthy and fails `docker compose up -d --wait`.
+- **Readiness fails closed.** `/api/health` requires at least 32 decoded bytes
+  of `SESSION_SECRET`, waits for migrations, and performs a live database query.
+  A missing/short secret or a `DATABASE_URL` with a missing, placeholder, or
+  shorter-than-16-byte password keeps the container unhealthy and fails
+  `docker compose up -d --wait`.
 
 ### Receipt AI providers (optional)
 

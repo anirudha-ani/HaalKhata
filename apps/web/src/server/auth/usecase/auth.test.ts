@@ -6,7 +6,13 @@ import { beforeAll, describe, expect, it } from "vitest";
 // touch the filesystem (the dev fallback writes data/.secret).
 process.env.SESSION_SECRET = "test-secret-key-for-vitest-0123456789abcdef";
 
-import { createToken, signPayload, tokenVersion, verifyToken } from "./auth.usecase";
+import {
+  createToken,
+  decodeSessionSecret,
+  signPayload,
+  tokenVersion,
+  verifyToken,
+} from "./auth.usecase";
 import { normalizePhone } from "@/server/auth/auth.constants";
 
 describe("auth tokens", () => {
@@ -68,6 +74,34 @@ describe("auth tokens", () => {
     const wrongPurposeToken = `${payload}.${signPayload("phone-merge", payload)}`;
 
     expect(verifyToken(wrongPurposeToken)).toBeNull();
+  });
+});
+
+describe("session signing secret", () => {
+  it("decodes 256-bit hex and Base64 key material", () => {
+    const keyMaterial = Buffer.from(Array.from({ length: 32 }, (_value, index) => index));
+
+    expect(decodeSessionSecret(keyMaterial.toString("hex"), "production")).toEqual(keyMaterial);
+    expect(decodeSessionSecret(keyMaterial.toString("base64"), "production")).toEqual(keyMaterial);
+    expect(
+      decodeSessionSecret(keyMaterial.toString("base64").replace(/=+$/, ""), "production"),
+    ).toEqual(keyMaterial);
+  });
+
+  it.each([
+    ["short UTF-8", "guessable-secret"],
+    ["128-bit hex", "ab".repeat(16)],
+    ["192-bit Base64", Buffer.alloc(24, 7).toString("base64")],
+  ])("rejects %s key material in production", (_label, configuredSecret) => {
+    expect(() => decodeSessionSecret(configuredSecret, "production")).toThrow(
+      "at least 32 decoded bytes",
+    );
+  });
+
+  it("keeps short explicit secrets available outside production", () => {
+    expect(decodeSessionSecret("local-test-secret", "development")).toEqual(
+      Buffer.from("local-test-secret"),
+    );
   });
 });
 

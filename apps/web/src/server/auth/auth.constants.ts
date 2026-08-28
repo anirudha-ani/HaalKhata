@@ -6,6 +6,15 @@ import { parsePhoneNumberFromString } from "libphonenumber-js";
 /** How long an issued bearer token stays valid, in seconds (30 days). */
 export const TOKEN_LIFETIME_SECONDS = 60 * 60 * 24 * 30;
 
+/** Minimum decoded HMAC key length accepted in production. */
+export const MIN_SESSION_SECRET_BYTES = 32;
+
+/** Canonical unprefixed hexadecimal key material. */
+export const SESSION_SECRET_HEX_PATTERN = /^(?:[0-9a-fA-F]{2})+$/;
+
+/** Canonical padded or unpadded standard Base64 key material. */
+export const SESSION_SECRET_BASE64_PATTERN = /^[A-Za-z0-9+/]+={0,2}$/;
+
 /**
  * How long a pending account-merge confirmation stays valid, in seconds.
  *
