@@ -7,6 +7,7 @@ import { csrfGuard } from "@/server/api/connect/csrf";
 import { ensureMigrated } from "@/server/common/db";
 import { CONNECT_READ_MAX_BYTES } from "@/server/api/connect/connect.constants";
 import { logError } from "@/server/common/logger";
+import { DIRECT_CLIENT_IP_HEADER } from "@/server/auth/clientIp";
 
 /** Next.js API handler that serves every registered Connect RPC under /api/connect. */
 const { handler } = nextJsApiRouter({
@@ -19,6 +20,9 @@ const { handler } = nextJsApiRouter({
  * Wraps the Connect handler with a CSRF guard and a one-shot migration wait.
  */
 export default async function connectHandler(request: NextApiRequest, response: NextApiResponse) {
+  // Always overwrite the internal header: direct deployments get the actual
+  // socket peer, and a caller cannot smuggle a fake fallback through Caddy.
+  request.headers[DIRECT_CLIENT_IP_HEADER] = request.socket?.remoteAddress ?? "";
   if (!csrfGuard(request, response)) return;
   try {
     // ensureMigrated caches a successful/in-flight run process-wide and clears

@@ -55,12 +55,13 @@ haalkhata.app, www.haalkhata.app {
 	}
 
 	reverse_proxy web:3000 {
-		# SECURITY-CRITICAL. clientIp() in auth/handler.ts reads the FIRST
+		# SECURITY-CRITICAL. clientIp() reads the FIRST
 		# comma-separated value of X-Forwarded-For, and Caddy by default
 		# APPENDS the real peer to whatever the client sent. Without this
 		# overwrite a caller supplies their own X-Forwarded-For, picks their
 		# own rate-limit bucket, rotates it at will, and AUTH_RATE_LIMIT stops
-		# meaning anything.
+		# meaning anything. docker-compose.prod.yml enables
+		# TRUST_PROXY_HEADERS only alongside this overwrite.
 		header_up X-Forwarded-For {remote_host}
 
 		# Host is deliberately NOT rewritten: csrfGuard() compares the Origin

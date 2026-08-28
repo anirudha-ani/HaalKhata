@@ -50,6 +50,8 @@ services:
         condition: service_healthy
     environment:
       NODE_ENV: production
+      # Safe only because this stack's Caddyfile overwrites X-Forwarded-For.
+      TRUST_PROXY_HEADERS: "true"
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
       TWILIO_API_KEY_SID: ${TWILIO_API_KEY_SID}
       TWILIO_VERIFY_SERVICE_SID: ${TWILIO_VERIFY_SERVICE_SID}

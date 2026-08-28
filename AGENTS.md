@@ -279,6 +279,8 @@ Things not to break when touching deploy config:
 - **`header_up X-Forwarded-For {remote_host}` in the Caddyfile.** `clientIp()`
   reads the first value of that header and Caddy appends by default, so
   without the overwrite a caller picks their own rate-limit bucket.
+  `TRUST_PROXY_HEADERS=true` belongs only in the same trusted-proxy stack;
+  direct deployments must leave it false and use the mount-injected peer IP.
 - **Don't rewrite `Host`.** `csrfGuard()` compares `Origin` against
   `request.headers.host`; a proxy that rewrites Host 403s every browser POST.
 - **`NEXT_PUBLIC_GOOGLE_CLIENT_ID` is a build arg, not a runtime value.** It

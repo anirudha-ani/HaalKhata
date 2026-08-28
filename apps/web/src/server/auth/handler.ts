@@ -9,19 +9,7 @@ import { clearSessionCookie, requireUser, runUsecase, setSessionCookie } from "@
 import { rateLimitCheck } from "@/server/common/rateLimit";
 import { AUTH_RATE_LIMIT, PHONE_VERIFICATION_RATE_LIMIT } from "@/server/auth/auth.constants";
 import { ConnectError, Code } from "@connectrpc/connect";
-
-/**
- * Extracts a best-effort client IP from request headers (x-forwarded-for
- * when behind a proxy, falling back to the connect-protocol peer).
- *
- * @param handlerContext - Connect handler context carrying request headers.
- * @returns The client IP string, or "unknown" when no IP header is present.
- */
-function clientIp(handlerContext: HandlerContext): string {
-  const forwarded = handlerContext.requestHeader.get("x-forwarded-for");
-  if (forwarded) return forwarded.split(",")[0].trim();
-  return handlerContext.requestHeader.get("x-real-ip") ?? "unknown";
-}
+import { clientIp } from "@/server/auth/clientIp";
 
 /**
  * Enforces the per-IP login/signup rate limit, throwing a ResourceExhausted
@@ -31,7 +19,7 @@ function clientIp(handlerContext: HandlerContext): string {
  * @throws ConnectError with Code.ResourceExhausted when rate-limited.
  */
 function enforceAuthRateLimit(handlerContext: HandlerContext): void {
-  if (!rateLimitCheck(`auth:${clientIp(handlerContext)}`, AUTH_RATE_LIMIT)) {
+  if (!rateLimitCheck(`auth:${clientIp(handlerContext.requestHeader)}`, AUTH_RATE_LIMIT)) {
     throw new ConnectError("too many attempts, please try again later", Code.ResourceExhausted);
   }
 }

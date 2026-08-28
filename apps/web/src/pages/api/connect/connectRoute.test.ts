@@ -40,7 +40,10 @@ describe("Connect route migration wait", () => {
     ensureMigratedMock
       .mockRejectedValueOnce(new Error("database starting"))
       .mockResolvedValueOnce(undefined);
-    const request = {} as NextApiRequest;
+    const request = {
+      headers: { "x-haalkhata-peer-ip": "attacker-value" },
+      socket: { remoteAddress: "127.0.0.1" },
+    } as unknown as NextApiRequest;
     const firstResponse = responseStub();
     const secondResponse = responseStub();
 
@@ -52,5 +55,6 @@ describe("Connect route migration wait", () => {
     await connectHandler(request, secondResponse);
     expect(ensureMigratedMock).toHaveBeenCalledTimes(2);
     expect(handlerMock).toHaveBeenCalledWith(request, secondResponse);
+    expect(request.headers["x-haalkhata-peer-ip"]).toBe("127.0.0.1");
   });
 });

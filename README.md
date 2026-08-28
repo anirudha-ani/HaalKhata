@@ -130,7 +130,9 @@ What it adds:
 - **Caddy** in front, with automatic Let's Encrypt certificates, HSTS, a CSP
   that admits the Google sign-in button, and `header_up X-Forwarded-For
   {remote_host}` — without that overwrite a client can supply its own
-  `X-Forwarded-For` and defeat the auth rate limiter.
+  `X-Forwarded-For` and defeat the auth rate limiter. The production stack
+  enables `TRUST_PROXY_HEADERS=true` only alongside that overwrite; direct
+  deployments ignore forwarded headers and use the socket peer.
 - **Docker secrets** for `SESSION_SECRET`, `POSTGRES_PASSWORD` and
   `COMPATIBLE_AI_API_KEY`. `ops/docker-entrypoint.sh` loads them from
   `/run/secrets/` and assembles `DATABASE_URL`, so no secret appears in a
