@@ -27,6 +27,11 @@ import {
   MAX_IMAGE_BYTES,
   MAX_IMAGE_EDGE_PIXELS,
   MAX_IMAGE_PIXELS,
+  MAX_PARSED_ITEMS,
+  MAX_PARSED_MONEY_CENTS,
+  MAX_PARSED_NAME_LENGTH,
+  MAX_PARSED_QUANTITY,
+  MAX_PROVIDER_RESPONSE_BYTES,
   PROMPT,
   PROVIDER_TIMEOUT_MS,
   RECEIPT_JSON_SCHEMA,
@@ -67,14 +72,6 @@ interface Provider {
 }
 
 /**
- * Accepts loosely-shaped provider output and normalizes it to safe integers:
- * clamps negatives, drops zero-total items, and derives missing unit prices,
- * subtotals and totals from what is present.
- *
- * @param rawOutput - Whatever JSON the provider produced (snake_case or camelCase keys).
- * @returns A fully populated ParsedReceiptData with consistent integer-cent amounts.
- */
-/**
  * Coerces whatever date string a model returned into the strict `YYYY-MM-DD`
  * the expense API requires, or "" when it cannot be read confidently.
  *
@@ -112,21 +109,44 @@ function toIsoDate(value: string): string {
   return "";
 }
 
-function normalize(rawOutput: unknown): ParsedReceiptData {
+/**
+ * Accepts loosely-shaped provider output and normalizes it as untrusted data:
+ * bounds arrays, strings, quantities and cents; clamps negatives; and derives
+ * missing unit prices, subtotals and totals from what is present.
+ *
+ * @param rawOutput - Whatever JSON the provider produced (snake_case or camelCase keys).
+ * @returns Fully populated, size-bounded receipt data.
+ */
+export function normalizeProviderOutput(rawOutput: unknown): ParsedReceiptData {
   const rawRecord = (typeof rawOutput === "object" && rawOutput !== null ? rawOutput : {}) as Record<string, unknown>;
-  const toNonNegativeInteger = (value: unknown): number =>
-    Number.isFinite(Number(value)) ? Math.max(0, Math.round(Number(value))) : 0;
-  const toTrimmedString = (value: unknown): string => (typeof value === "string" ? value.trim() : "");
+  const toBoundedInteger = (value: unknown, maximum: number): number =>
+    Number.isFinite(Number(value))
+      ? Math.min(maximum, Math.max(0, Math.round(Number(value))))
+      : 0;
+  const toBoundedString = (value: unknown, maximum: number): string =>
+    (typeof value === "string" ? value.trim() : "").slice(0, maximum);
 
   const items = (Array.isArray(rawRecord.items) ? rawRecord.items : [])
+    .slice(0, MAX_PARSED_ITEMS)
     .map((rawItem) => {
       const itemRecord = (typeof rawItem === "object" && rawItem !== null ? rawItem : {}) as Record<string, unknown>;
-      const quantity = Math.max(1, toNonNegativeInteger(itemRecord.quantity ?? itemRecord.qty ?? 1));
-      const unitPrice = toNonNegativeInteger(itemRecord.unit_price_cents ?? itemRecord.unitPriceCents);
-      let lineTotal = toNonNegativeInteger(itemRecord.total_cents ?? itemRecord.totalCents);
-      if (lineTotal === 0 && unitPrice > 0) lineTotal = unitPrice * quantity;
+      const quantity = Math.max(
+        1,
+        toBoundedInteger(itemRecord.quantity ?? itemRecord.qty ?? 1, MAX_PARSED_QUANTITY),
+      );
+      const unitPrice = toBoundedInteger(
+        itemRecord.unit_price_cents ?? itemRecord.unitPriceCents,
+        MAX_PARSED_MONEY_CENTS,
+      );
+      let lineTotal = toBoundedInteger(
+        itemRecord.total_cents ?? itemRecord.totalCents,
+        MAX_PARSED_MONEY_CENTS,
+      );
+      if (lineTotal === 0 && unitPrice > 0) {
+        lineTotal = Math.min(MAX_PARSED_MONEY_CENTS, unitPrice * quantity);
+      }
       return {
-        name: toTrimmedString(itemRecord.name) || "Item",
+        name: toBoundedString(itemRecord.name, MAX_PARSED_NAME_LENGTH) || "Item",
         quantity,
         unitPriceCents: unitPrice > 0 ? unitPrice : Math.round(lineTotal / quantity),
         totalCents: lineTotal,
@@ -140,17 +160,31 @@ function normalize(rawOutput: unknown): ParsedReceiptData {
     .filter((parsedItem) => parsedItem.totalCents > 0 || parsedItem.name !== "Item");
 
   const itemsTotal = items.reduce((runningTotal, parsedItem) => runningTotal + parsedItem.totalCents, 0);
-  const taxCents = toNonNegativeInteger(rawRecord.tax_cents ?? rawRecord.taxCents);
-  const tipCents = toNonNegativeInteger(rawRecord.tip_cents ?? rawRecord.tipCents);
-  let subtotal = toNonNegativeInteger(rawRecord.subtotal_cents ?? rawRecord.subtotalCents);
-  if (subtotal === 0) subtotal = itemsTotal;
-  let total = toNonNegativeInteger(rawRecord.total_cents ?? rawRecord.totalCents);
-  if (total === 0) total = subtotal + taxCents + tipCents;
+  const taxCents = toBoundedInteger(
+    rawRecord.tax_cents ?? rawRecord.taxCents,
+    MAX_PARSED_MONEY_CENTS,
+  );
+  const tipCents = toBoundedInteger(
+    rawRecord.tip_cents ?? rawRecord.tipCents,
+    MAX_PARSED_MONEY_CENTS,
+  );
+  let subtotal = toBoundedInteger(
+    rawRecord.subtotal_cents ?? rawRecord.subtotalCents,
+    MAX_PARSED_MONEY_CENTS,
+  );
+  if (subtotal === 0) subtotal = Math.min(MAX_PARSED_MONEY_CENTS, itemsTotal);
+  let total = toBoundedInteger(
+    rawRecord.total_cents ?? rawRecord.totalCents,
+    MAX_PARSED_MONEY_CENTS,
+  );
+  if (total === 0) {
+    total = Math.min(MAX_PARSED_MONEY_CENTS, subtotal + taxCents + tipCents);
+  }
 
   return {
-    merchant: toTrimmedString(rawRecord.merchant),
-    date: toIsoDate(toTrimmedString(rawRecord.date)),
-    currency: (toTrimmedString(rawRecord.currency) || "USD").toUpperCase().slice(0, 3),
+    merchant: toBoundedString(rawRecord.merchant, MAX_PARSED_NAME_LENGTH),
+    date: toIsoDate(toBoundedString(rawRecord.date, MAX_PARSED_NAME_LENGTH)),
+    currency: (toBoundedString(rawRecord.currency, 3) || "USD").toUpperCase(),
     items,
     subtotalCents: subtotal,
     taxCents,
@@ -177,6 +211,48 @@ function safeJsonParse(text: string, providerName: string): unknown {
   } catch {
     throw new Error(`${providerName} returned non-JSON output (length ${text.length})`);
   }
+}
+
+/**
+ * Reads a fetch response while enforcing a byte cap during streaming. The
+ * Content-Length check rejects obvious oversize responses immediately; the
+ * running count remains authoritative for missing or dishonest headers.
+ *
+ * @param response - Provider response to consume.
+ * @returns UTF-8 response text within the configured limit.
+ * @throws Error when the response exceeds the byte ceiling.
+ */
+export async function readProviderResponse(response: Response): Promise<string> {
+  const declaredLength = Number(response.headers.get("content-length"));
+  if (Number.isFinite(declaredLength) && declaredLength > MAX_PROVIDER_RESPONSE_BYTES) {
+    throw new Error(`provider response exceeds ${MAX_PROVIDER_RESPONSE_BYTES} bytes`);
+  }
+  if (!response.body) {
+    const text = await response.text();
+    if (Buffer.byteLength(text, "utf8") > MAX_PROVIDER_RESPONSE_BYTES) {
+      throw new Error(`provider response exceeds ${MAX_PROVIDER_RESPONSE_BYTES} bytes`);
+    }
+    return text;
+  }
+
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let totalBytes = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      totalBytes += value.byteLength;
+      if (totalBytes > MAX_PROVIDER_RESPONSE_BYTES) {
+        await reader.cancel();
+        throw new Error(`provider response exceeds ${MAX_PROVIDER_RESPONSE_BYTES} bytes`);
+      }
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  return Buffer.concat(chunks.map((chunk) => Buffer.from(chunk)), totalBytes).toString("utf8");
 }
 
 /**
@@ -259,21 +335,22 @@ const compatibleProvider: Provider = {
         ],
       }),
     });
+    const responseText = await readProviderResponse(response);
     if (!response.ok) {
       // Surface the body: a ZDR-enforced request to a model with no
       // zero-retention endpoint fails here, and "returned 404" alone would
       // send you hunting for a networking problem that doesn't exist.
-      const detail = (await response.text().catch(() => "")).slice(0, 300);
+      const detail = responseText.slice(0, 300);
       throw new Error(
         `compatible provider returned ${response.status}${detail ? `: ${detail}` : ""}`,
       );
     }
-    const data = (await response.json()) as {
+    const data = safeJsonParse(responseText, "compatible provider response") as {
       choices?: { message?: { content?: string } }[];
     };
     const text = data.choices?.[0]?.message?.content ?? "";
     const jsonText = extractJsonObject(text);
-    return normalize(safeJsonParse(jsonText, "compatible"));
+    return normalizeProviderOutput(safeJsonParse(jsonText, "compatible"));
   },
 };
 
@@ -282,7 +359,7 @@ const mockProvider: Provider = {
   name: "mock",
   available: () => true,
   async parse() {
-    return normalize({
+    return normalizeProviderOutput({
       merchant: "Demo Diner",
       date: new Date().toISOString().slice(0, 10),
       currency: "USD",
