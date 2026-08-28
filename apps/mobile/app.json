@@ -24,6 +24,7 @@
     },
     "android": {
       "package": "com.haalkhata.app",
+      "allowBackup": false,
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#b03a25"
