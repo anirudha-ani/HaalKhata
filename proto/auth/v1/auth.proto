@@ -15,6 +15,7 @@ import "common/v1/common.proto";
 service AuthService {
   rpc SignUp(SignUpRequest) returns (AuthResponse);
   rpc LogIn(LogInRequest) returns (AuthResponse);
+  rpc BeginGoogleSignIn(google.protobuf.Empty) returns (GoogleSignInChallenge);
   rpc LogInWithGoogle(LogInWithGoogleRequest) returns (AuthResponse);
   rpc LogOut(google.protobuf.Empty) returns (google.protobuf.Empty);
   rpc GetMe(google.protobuf.Empty) returns (common.v1.User);
@@ -45,6 +46,12 @@ message LogInRequest {
   string email = 1;
   string phone = 2;
   string password = 3;
+}
+
+message GoogleSignInChallenge {
+  // Server-issued, short-lived value that the client asks Google to copy into
+  // the ID token. The server accepts it exactly once before creating a session.
+  string nonce = 1;
 }
 
 message LogInWithGoogleRequest {

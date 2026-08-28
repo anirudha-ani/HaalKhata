@@ -75,6 +75,15 @@ export const PHONE_VERIFICATION_CODE_PATTERN = /^\d{4,10}$/;
  */
 export const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID ?? "";
 
+/** Entropy in each server-issued Google authentication nonce. */
+export const GOOGLE_SIGN_IN_NONCE_BYTES = 32;
+
+/** Base64url shape of a nonce produced from {@link GOOGLE_SIGN_IN_NONCE_BYTES}. */
+export const GOOGLE_SIGN_IN_NONCE_PATTERN = /^[A-Za-z0-9_-]{43}$/;
+
+/** Seconds before an unused Google authentication nonce is rejected. */
+export const GOOGLE_SIGN_IN_NONCE_LIFETIME_SECONDS = 60 * 5;
+
 /**
  * Whether email/phone + password sign-in is accepted. Google is the only way
  * into a production deploy; the password flows survive in development so

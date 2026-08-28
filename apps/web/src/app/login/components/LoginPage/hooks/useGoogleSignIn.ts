@@ -79,11 +79,12 @@ export function useGoogleSignIn() {
     if (!isConfigured || !buttonElement) return;
     let cancelled = false;
 
-    loadGoogleScript()
-      .then(() => {
+    Promise.all([loadGoogleScript(), authClient.beginGoogleSignIn({})])
+      .then(([_scriptReady, challenge]) => {
         if (cancelled || !window.google) return;
         window.google.accounts.id.initialize({
           client_id: GOOGLE_CLIENT_ID,
+          nonce: challenge.nonce,
           callback: (response) => {
             setError("");
             mutate(response.credential);
@@ -92,7 +93,7 @@ export function useGoogleSignIn() {
         window.google.accounts.id.renderButton(buttonElement, GOOGLE_BUTTON_OPTIONS);
       })
       .catch(() => {
-        if (!cancelled) setError("could not reach Google, please try again");
+        if (!cancelled) setError("could not start Google sign-in, please try again");
       });
 
     return () => {

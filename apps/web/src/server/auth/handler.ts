@@ -49,6 +49,12 @@ export const authHandler: ServiceImpl<typeof AuthService> = {
     return result;
   },
 
+  /** Creates a short-lived, single-use nonce for a Google ID-token request. */
+  async beginGoogleSignIn(_request, handlerContext) {
+    enforceAuthRateLimit(handlerContext);
+    return runUsecase(() => auth.beginGoogleSignIn(), handlerContext);
+  },
+
   /** Verifies a Google ID token, then starts a web session via cookie. */
   async logInWithGoogle(request, handlerContext) {
     enforceAuthRateLimit(handlerContext);

@@ -19,6 +19,10 @@ import {
   type UserRow,
 } from "@/server/auth/repo/users.repo";
 import { replacePaymentHandles } from "@/server/auth/repo/paymentHandles.repo";
+import {
+  consumeGoogleSignInNonce,
+  insertGoogleSignInNonce,
+} from "@/server/auth/repo/googleSignInNonces.repo";
 import { PAYMENT_METHOD_KEYS } from "@haalkhata/shared/payment/methods";
 import { UsecaseError, invalid } from "@/server/common/errors";
 import {
@@ -26,6 +30,9 @@ import {
   DATA_DIRECTORY,
   EMAIL_PATTERN,
   GOOGLE_CLIENT_ID,
+  GOOGLE_SIGN_IN_NONCE_BYTES,
+  GOOGLE_SIGN_IN_NONCE_LIFETIME_SECONDS,
+  GOOGLE_SIGN_IN_NONCE_PATTERN,
   MAX_PAYMENT_HANDLE_LENGTH,
   MAX_USER_NAME_LENGTH,
   MIN_SESSION_SECRET_BYTES,
@@ -405,6 +412,33 @@ function googleClient(): OAuth2Client {
 }
 
 /**
+ * Hashes a Google authentication nonce before it crosses the repository
+ * boundary, so a database read cannot reveal a still-usable raw challenge.
+ *
+ * @param nonce - Raw server-issued nonce.
+ * @returns Lowercase hexadecimal SHA-256 digest.
+ */
+function googleSignInNonceHash(nonce: string): string {
+  return crypto.createHash("sha256").update(nonce, "utf8").digest("hex");
+}
+
+/**
+ * Issues and persists a short-lived challenge for one Google sign-in attempt.
+ *
+ * @returns The raw nonce the client must include in Google's ID-token request.
+ * @throws UsecaseError "invalid_argument" when Google sign-in is not configured.
+ */
+export async function beginGoogleSignIn(): Promise<{ nonce: string }> {
+  googleClient();
+  const nonce = crypto.randomBytes(GOOGLE_SIGN_IN_NONCE_BYTES).toString("base64url");
+  await insertGoogleSignInNonce(
+    googleSignInNonceHash(nonce),
+    GOOGLE_SIGN_IN_NONCE_LIFETIME_SECONDS,
+  );
+  return { nonce };
+}
+
+/**
  * Verifies a Google ID token and returns only the claims we trust from it.
  *
  * The library checks the signature against Google's rotating public keys plus
@@ -413,8 +447,8 @@ function googleClient(): OAuth2Client {
  *
  * @param idToken - Raw JWT credential produced by Google Identity Services.
  * @returns The stable account id, the verified email, the display name Google
- *   holds, and the profile picture URL — the last two empty when absent, which
- *   Google documents as always possible.
+ *   holds, the profile picture URL, and the server-issued authentication nonce.
+ *   The name and picture are empty when absent, which Google documents as possible.
  * @throws UsecaseError "unauthenticated" when verification fails, the token
  *   carries no email, or that email is unverified.
  */
@@ -423,6 +457,7 @@ async function verifyGoogleIdToken(idToken: string): Promise<{
   email: string;
   name: string;
   picture: string;
+  nonce: string;
 }> {
   // Resolved before the try: a missing GOOGLE_CLIENT_ID is a server
   // misconfiguration, and rewrapping it as "could not verify" would send an
@@ -440,7 +475,12 @@ async function verifyGoogleIdToken(idToken: string): Promise<{
     // caller on purpose, and none of them worth logging a stack trace over.
     throw new UsecaseError("unauthenticated", "could not verify that Google account");
   }
-  if (!claims?.sub || !claims.email) {
+  if (
+    !claims?.sub ||
+    !claims.email ||
+    !claims.nonce ||
+    !GOOGLE_SIGN_IN_NONCE_PATTERN.test(claims.nonce)
+  ) {
     throw new UsecaseError("unauthenticated", "could not verify that Google account");
   }
   // Linking an existing row on an unverified address is account takeover:
@@ -455,6 +495,7 @@ async function verifyGoogleIdToken(idToken: string): Promise<{
     email: claims.email.trim().toLowerCase(),
     name: claims.name?.trim().slice(0, MAX_USER_NAME_LENGTH) ?? "",
     picture: claims.picture?.trim() ?? "",
+    nonce: claims.nonce,
   };
 }
 
@@ -473,6 +514,10 @@ async function verifyGoogleIdToken(idToken: string): Promise<{
  */
 export async function logInWithGoogle(idToken: string) {
   const claims = await verifyGoogleIdToken(idToken);
+  const nonceAccepted = await consumeGoogleSignInNonce(googleSignInNonceHash(claims.nonce));
+  if (!nonceAccepted) {
+    throw new UsecaseError("unauthenticated", "could not verify that Google account");
+  }
 
   let user = await findUserByGoogleSub(claims.googleSub);
   if (!user) {

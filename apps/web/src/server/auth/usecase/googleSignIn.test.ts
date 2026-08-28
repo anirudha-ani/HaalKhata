@@ -39,7 +39,22 @@ vi.mock("@/server/auth/repo/paymentHandles.repo", () => ({
   replacePaymentHandles: vi.fn(),
 }));
 
-import { logIn, logInWithGoogle, signUp, updateProfile } from "./auth.usecase";
+vi.mock("@/server/auth/repo/googleSignInNonces.repo", () => ({
+  consumeGoogleSignInNonce: vi.fn(),
+  insertGoogleSignInNonce: vi.fn(),
+}));
+
+import {
+  beginGoogleSignIn,
+  logIn,
+  logInWithGoogle,
+  signUp,
+  updateProfile,
+} from "./auth.usecase";
+import {
+  consumeGoogleSignInNonce,
+  insertGoogleSignInNonce,
+} from "@/server/auth/repo/googleSignInNonces.repo";
 import {
   findUserByEmail,
   findUserByGoogleSub,
@@ -49,7 +64,10 @@ import {
   setAvatarUrl,
   updateUserProfile,
 } from "@/server/auth/repo/users.repo";
-import { MAX_USER_NAME_LENGTH } from "@/server/auth/auth.constants";
+import {
+  GOOGLE_SIGN_IN_NONCE_LIFETIME_SECONDS,
+  MAX_USER_NAME_LENGTH,
+} from "@/server/auth/auth.constants";
 
 /**
  * Builds a users row with sensible defaults for the fields a test does not care
@@ -87,16 +105,49 @@ function googleReturns(payload: Record<string, unknown>): void {
   verifyIdTokenMock.mockResolvedValue({ getPayload: () => payload });
 }
 
+const GOOGLE_AUTH_NONCE = "n".repeat(43);
+
 const VERIFIED = {
   sub: "google-sub-123",
   email: "Anirudha@Example.com",
   email_verified: true,
   name: "Anirudha Paul",
+  nonce: GOOGLE_AUTH_NONCE,
 };
 
 describe("logInWithGoogle", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(consumeGoogleSignInNonce).mockResolvedValue(true);
+  });
+
+  it("issues a random challenge while persisting only its fixed-length hash", async () => {
+    const first = await beginGoogleSignIn();
+    const second = await beginGoogleSignIn();
+
+    expect(first.nonce).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    expect(second.nonce).not.toBe(first.nonce);
+    expect(insertGoogleSignInNonce).toHaveBeenCalledTimes(2);
+    const [storedHash, lifetimeSeconds] = vi.mocked(insertGoogleSignInNonce).mock.calls[0];
+    expect(storedHash).toMatch(/^[0-9a-f]{64}$/);
+    expect(storedHash).not.toContain(first.nonce);
+    expect(lifetimeSeconds).toBe(GOOGLE_SIGN_IN_NONCE_LIFETIME_SECONDS);
+  });
+
+  it("rejects an ID token with no server-issued nonce", async () => {
+    googleReturns({ ...VERIFIED, nonce: undefined });
+
+    await expect(logInWithGoogle("id-token")).rejects.toThrow(/could not verify/);
+    expect(consumeGoogleSignInNonce).not.toHaveBeenCalled();
+    expect(findUserByGoogleSub).not.toHaveBeenCalled();
+  });
+
+  it("atomically rejects an expired or already-used nonce", async () => {
+    googleReturns(VERIFIED);
+    vi.mocked(consumeGoogleSignInNonce).mockResolvedValue(false);
+
+    await expect(logInWithGoogle("id-token")).rejects.toThrow(/could not verify/);
+    expect(findUserByGoogleSub).not.toHaveBeenCalled();
   });
 
   it("returns the already-linked account without touching email lookup", async () => {

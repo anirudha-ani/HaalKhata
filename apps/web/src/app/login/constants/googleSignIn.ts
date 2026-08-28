@@ -47,6 +47,7 @@ export interface GoogleIdentityServices {
     id: {
       initialize(config: {
         client_id: string;
+        nonce: string;
         callback: (response: GoogleCredentialResponse) => void;
       }): void;
       renderButton(parent: HTMLElement, options: Record<string, unknown>): void;
