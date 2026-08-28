@@ -98,9 +98,10 @@ let cachedSecret: Buffer | null = null;
 /**
  * Returns the HMAC signing secret: SESSION_SECRET when set, otherwise (dev
  * only) a generated secret persisted under DATA_DIRECTORY so sessions survive
- * restarts. In production the app refuses to start without SESSION_SECRET — a
- * missing secret would otherwise silently rotate on every restart (or fail to
- * write in a read-only container) and invalidate all sessions.
+ * restarts. In production the readiness check invokes this function and
+ * refuses to mark the container healthy without SESSION_SECRET — a missing
+ * secret would otherwise silently rotate on every restart (or fail to write
+ * in a read-only container) and invalidate all sessions.
  */
 function secret(): Buffer {
   if (cachedSecret) return cachedSecret;

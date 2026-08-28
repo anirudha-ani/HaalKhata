@@ -78,9 +78,9 @@ services:
     security_opt:
       - "no-new-privileges:true"
     healthcheck:
-      # busybox wget, present in node:24-alpine. /login is the cheapest route
-      # that exercises a real render.
-      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:3000/login"]
+      # busybox wget is present in node:24-alpine. Readiness verifies the
+      # signing secret, applies migrations, and performs a live DB round-trip.
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:3000/api/health"]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -91,7 +91,8 @@ services:
     image: caddy:2-alpine
     restart: unless-stopped
     depends_on:
-      - web
+      web:
+        condition: service_healthy
     ports:
       - "80:80"      # ACME HTTP-01 challenge + redirect to HTTPS
       - "443:443"

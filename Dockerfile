@@ -31,7 +31,8 @@ WORKDIR /app
 COPY --from=build --chown=node:node /app/apps/web/.next/standalone ./
 COPY --from=build --chown=node:node /app/apps/web/.next/static ./apps/web/.next/static
 COPY --from=build --chown=node:node /app/apps/web/public ./apps/web/public
-# Pending migrations apply automatically on boot (db.ts); ship them.
+# The readiness endpoint applies pending migrations before reporting healthy;
+# ship them with the runtime image.
 COPY --from=build --chown=node:node /app/apps/web/migrations ./apps/web/migrations
 
 # Reads Docker secrets from /run/secrets into the environment before starting

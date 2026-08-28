@@ -60,8 +60,9 @@ docker compose up -d db  # Postgres 17 on localhost:5432 (or use your own)
 pnpm dev                 # http://localhost:3000
 ```
 
-Pending migrations apply automatically on boot and the receipt scanner
-falls back to a mock provider — no further configuration needed for a demo.
+Pending migrations apply automatically on the first API request (and during
+the production readiness check), while the receipt scanner falls back to a
+mock provider — no further configuration needed for a demo.
 All configuration lives in a single `.env` at the repo root: `docker compose`
 reads it directly, and `pnpm dev` loads it via Node's `--env-file-if-exists`.
 Using your own Postgres instead of the compose service? Set `DATABASE_URL`
@@ -153,9 +154,10 @@ Two things worth knowing before you point a domain at it:
   `NEXT_PUBLIC_GOOGLE_CLIENT_ID` is inlined at **build** time — a wrong value
   cannot be fixed by restarting with a corrected environment, only by
   rebuilding.
-- **Misconfiguration fails closed.** A missing `SESSION_SECRET`, or a
-  `DATABASE_URL` with a missing, placeholder, or shorter-than-16-byte
-  password, is rejected rather than deploying guessable credentials.
+- **Readiness fails closed.** `/api/health` validates `SESSION_SECRET`, waits
+  for migrations, and performs a live database query. A missing secret or a
+  `DATABASE_URL` with a missing, placeholder, or shorter-than-16-byte password
+  keeps the container unhealthy and fails `docker compose up -d --wait`.
 
 ### Receipt AI providers (optional)
 
