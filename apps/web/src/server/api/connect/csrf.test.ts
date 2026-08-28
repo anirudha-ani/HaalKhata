@@ -3,7 +3,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { NextApiRequest, NextApiResponse } from "next";
 import { SESSION_COOKIE } from "./connect.constants";
-import { tokenFromHeaders } from "./credentials";
+import { sessionTokenFromCookieHeader, tokenFromHeaders } from "./credentials";
 import { csrfGuard } from "./csrf";
 
 /** Builds the response methods used by the CSRF rejection path. */
@@ -49,5 +49,12 @@ describe("csrfGuard credential parsing", () => {
 
     expect(tokenFromHeaders(new Headers(request.headers as Record<string, string>))).toBe(bearerToken);
     expect(csrfGuard(request, responseStub())).toBe(true);
+  });
+
+  it("rejects duplicate session-cookie names instead of trusting their order", () => {
+    const duplicateHeader = `${SESSION_COOKIE}=attacker-token; ${SESSION_COOKIE}=victim-token`;
+
+    expect(sessionTokenFromCookieHeader(duplicateHeader)).toBeNull();
+    expect(tokenFromHeaders(new Headers({ cookie: duplicateHeader }))).toBeNull();
   });
 });

@@ -16,7 +16,8 @@ import { SESSION_COOKIE } from "@/server/api/connect/connect.constants";
  */
 export async function sessionUser() {
   const cookieStore = await cookies();
-  const token = cookieStore.get(SESSION_COOKIE)?.value;
+  const matchingCookies = cookieStore.getAll(SESSION_COOKIE);
+  const token = matchingCookies.length === 1 ? matchingCookies[0]?.value : undefined;
   if (!token) return null;
   return resolveSessionUser(token);
 }

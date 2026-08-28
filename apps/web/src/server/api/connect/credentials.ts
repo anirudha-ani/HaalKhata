@@ -18,6 +18,27 @@ export function bearerTokenFromAuthorization(
 }
 
 /**
+ * Extracts the one unambiguous session token from a Cookie header.
+ * Duplicate names are rejected instead of accepting proxy/browser-dependent
+ * ordering, which prevents cookie tossing from selecting an attacker value.
+ *
+ * @param cookieHeader - Raw Cookie request-header value.
+ * @returns The session token, or null when absent, empty, or duplicated.
+ */
+export function sessionTokenFromCookieHeader(
+  cookieHeader: string | null | undefined,
+): string | null {
+  let sessionToken: string | null = null;
+  for (const cookiePart of (cookieHeader ?? "").split(";")) {
+    const [cookieName, ...valueParts] = cookiePart.trim().split("=");
+    if (cookieName !== SESSION_COOKIE) continue;
+    if (sessionToken !== null) return null;
+    sessionToken = valueParts.join("=");
+  }
+  return sessionToken || null;
+}
+
+/**
  * Extracts the bearer token (mobile) first, then the session cookie (web).
  * This function does not verify the token; callers pair it with verifyToken.
  *
@@ -28,12 +49,5 @@ export function tokenFromHeaders(headers: Headers): string | null {
   const bearerToken = bearerTokenFromAuthorization(headers.get("authorization"));
   if (bearerToken) return bearerToken;
 
-  const cookies = headers.get("cookie");
-  if (cookies) {
-    for (const cookiePart of cookies.split(";")) {
-      const [cookieName, ...valueParts] = cookiePart.trim().split("=");
-      if (cookieName === SESSION_COOKIE) return valueParts.join("=");
-    }
-  }
-  return null;
+  return sessionTokenFromCookieHeader(headers.get("cookie"));
 }

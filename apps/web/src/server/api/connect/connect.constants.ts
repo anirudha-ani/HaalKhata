@@ -3,8 +3,13 @@
 import { Code } from "@connectrpc/connect";
 import type { UsecaseErrorCode } from "@/server/common/errors";
 
-/** Name of the HTTP cookie that carries the web client's session token. */
-export const SESSION_COOKIE = "hk_token";
+/**
+ * Name of the HTTP cookie that carries the web client's session token.
+ * Production uses the browser-enforced `__Host-` prefix; development keeps a
+ * plain name so LAN-hosted HTTP sessions continue to work.
+ */
+export const SESSION_COOKIE =
+  process.env.NODE_ENV === "production" ? "__Host-hk_token" : "hk_token";
 
 /** Session cookie lifetime in seconds (30 days), matching the token lifetime. */
 export const COOKIE_MAX_AGE = 60 * 60 * 24 * 30;
@@ -23,7 +28,7 @@ export const CONNECT_READ_MAX_BYTES = 12 * 1024 * 1024;
  *
  * @param token - Session token value, or empty string to clear the cookie.
  * @param maxAge - Lifetime in seconds; pass 0 to expire immediately.
- * @returns The full `hk_token=...; ...` attribute string for Set-Cookie.
+ * @returns The full session-cookie attribute string for Set-Cookie.
  */
 export function sessionCookieAttributes(token: string, maxAge: number): string {
   const secure = process.env.NODE_ENV === "production" ? "; Secure" : "";
