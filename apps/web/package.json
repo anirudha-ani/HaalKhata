@@ -23,8 +23,6 @@
     "@connectrpc/connect-web": "^2.1.2",
     "@haalkhata/protogen": "workspace:*",
     "@haalkhata/shared": "workspace:*",
-    "@tanstack/query-persist-client-core": "^5.101.2",
-    "@tanstack/query-sync-storage-persister": "^5.101.2",
     "@tanstack/react-query": "^5.90.5",
     "google-auth-library": "^10.9.1",
     "heic-decode": "^2.1.0",
