@@ -1,13 +1,11 @@
 /**
  * Setting a phone number, and the account merge that a collision triggers.
  *
- * The shape of this flow is driven by one fact: phone entry is NOT verified
- * yet (Twilio is a later tranche). So a collision cannot silently absorb the
- * other row — the caller is shown exactly what they would take on and has to
- * confirm it. That preview is also the only possible defense against a
- * recycled number, which even SMS verification could not provide: proving
- * control of a number today says nothing about who held it when the invites
- * were written.
+ * The flow first verifies current control of the number through the configured
+ * SMS provider. A collision still cannot silently absorb the other row: the
+ * caller is shown exactly what they would take on and has to confirm it. That
+ * preview protects against recycled numbers, because control today says
+ * nothing about who held the number when older invitations were written.
  */
 
 import {
@@ -128,14 +126,31 @@ export async function setPhone(
   }
   await confirmPhoneVerification(phone, verificationCode.trim());
 
-  const holder = await findUserByPhone(phone);
+  let holder = await findUserByPhone(phone);
 
   // Free, or already ours: write it and move on. The common case.
   if (!holder || holder.id === userId) {
-    await setUserPhone(userId, phone);
-    const refreshed = await findUserById(userId);
-    if (!refreshed) throw new UsecaseError("unauthenticated", "account no longer exists");
-    return { user: toPrivateUser(refreshed), mergeToken: "" };
+    try {
+      await setUserPhone(userId, phone);
+    } catch (error) {
+      // TOCTOU: another account may claim the partial-unique phone index
+      // between the lookup above and this update. Re-read the winner and feed
+      // it through the same claimed-account/merge-preview decisions below.
+      const databaseError = error as { code?: string };
+      if (databaseError.code !== "23505") throw error;
+      holder = await findUserByPhone(phone);
+      if (!holder) {
+        throw new UsecaseError(
+          "already_exists",
+          "that number changed while it was being claimed — please try again",
+        );
+      }
+    }
+    if (!holder || holder.id === userId) {
+      const refreshed = await findUserById(userId);
+      if (!refreshed) throw new UsecaseError("unauthenticated", "account no longer exists");
+      return { user: toPrivateUser(refreshed), mergeToken: "" };
+    }
   }
 
   // Held by a real account. Recycled number or a typo — either way a person

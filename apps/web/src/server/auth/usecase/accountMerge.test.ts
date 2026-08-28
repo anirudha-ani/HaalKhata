@@ -124,6 +124,51 @@ describe("setPhone", () => {
     expect(result.mergeToken).toBe("");
   });
 
+  it("turns a concurrent claimed-account unique race into a conflict", async () => {
+    const concurrentHolder = userRow({
+      id: "someone-else",
+      phone: PHONE,
+      google_sub: "google-sub-2",
+    });
+    vi.mocked(findUserByPhone)
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(concurrentHolder);
+    setUserPhoneMock.mockRejectedValueOnce(
+      Object.assign(new Error("duplicate phone"), { code: "23505" }),
+    );
+
+    await expect(setPhone(KEEPER, PHONE, "123456")).rejects.toMatchObject({
+      code: "already_exists",
+      message: expect.stringContaining("already on another account"),
+    });
+    expect(findUserByPhone).toHaveBeenCalledTimes(2);
+    expect(previewMergeMock).not.toHaveBeenCalled();
+  });
+
+  it("previews a concurrent unclaimed-invite unique race", async () => {
+    vi.mocked(findUserByPhone)
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(invitedRow);
+    setUserPhoneMock.mockRejectedValueOnce(
+      Object.assign(new Error("duplicate phone"), { code: "23505" }),
+    );
+
+    const result = await setPhone(KEEPER, PHONE, "123456");
+
+    expect(result.pendingMerge?.name).toBe("Ani");
+    expect(result.mergeToken).not.toBe("");
+    expect(previewMergeMock).toHaveBeenCalledWith(LOSER);
+  });
+
+  it("does not disguise unrelated database failures as phone conflicts", async () => {
+    vi.mocked(findUserByPhone).mockResolvedValue(undefined);
+    const databaseFailure = Object.assign(new Error("connection lost"), { code: "08006" });
+    setUserPhoneMock.mockRejectedValueOnce(databaseFailure);
+
+    await expect(setPhone(KEEPER, PHONE, "123456")).rejects.toBe(databaseFailure);
+    expect(findUserByPhone).toHaveBeenCalledTimes(1);
+  });
+
   it("normalizes a national format before looking for a holder", async () => {
     vi.mocked(findUserByPhone).mockResolvedValue(undefined);
 
