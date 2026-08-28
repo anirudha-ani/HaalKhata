@@ -24,7 +24,15 @@ cd /srv/haalkhata
 
 # IMAGE_TAG is read by docker-compose.prod.yml via compose's automatic .env
 # lookup, which is why every command here runs from this directory.
-sed -i "s|^IMAGE_TAG=.*|IMAGE_TAG=${TAG}|" .env
+if grep -q '^IMAGE_TAG=' .env; then
+  sed -i "s|^IMAGE_TAG=.*|IMAGE_TAG=${TAG}|" .env
+else
+  printf '\nIMAGE_TAG=%s\n' "$TAG" >> .env
+fi
+grep -qx "IMAGE_TAG=${TAG}" .env || {
+  echo "refusing: failed to persist IMAGE_TAG" >&2
+  exit 1
+}
 
 docker compose -f docker-compose.prod.yml pull web
 # --wait blocks on the healthcheck, so a release that boots but cannot serve
