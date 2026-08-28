@@ -70,6 +70,15 @@ describe("computeSplits", () => {
     ).toThrow(SplitError);
   });
 
+  it("percent: rejects negative basis points even when the total is 100%", () => {
+    expect(() =>
+      computeSplits("percent", 1000, [
+        { userId: "a", percentBp: -10000 },
+        { userId: "b", percentBp: 20000 },
+      ]),
+    ).toThrowError(new SplitError("percentages must be non-negative"));
+  });
+
   it("shares: proportional and exact", () => {
     const splits = computeSplits("shares", 700, [
       { userId: "a", shares: 2 },
