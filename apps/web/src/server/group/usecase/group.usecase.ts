@@ -25,8 +25,9 @@ import { insertActivity } from "@/server/social/repo/activity.repo";
 import { insertNotifications } from "@/server/social/repo/notifications.repo";
 import { userNetInGroup, userNetInGroups } from "@/server/expense/usecase/balance.usecase";
 import { denied, invalid, notFound } from "@/server/common/errors";
+import { normalizeCurrencyCode } from "@/server/common/validation";
 import { EMAIL_PATTERN, normalizePhone, PHONE_FORMAT_HINT } from "@/server/auth/auth.constants";
-import { GROUP_TYPES, OWNER_ROLE } from "@/server/group/group.constants";
+import { GROUP_TYPES, MAX_GROUP_NAME_LENGTH, OWNER_ROLE } from "@/server/group/group.constants";
 import { toGroup, toMember } from "./group.mapper";
 
 /**
@@ -219,9 +220,13 @@ export async function createGroup(
 ) {
   const name = input.name.trim();
   if (name.length === 0) invalid("group name is required");
+  if (name.length > MAX_GROUP_NAME_LENGTH) {
+    invalid(`group name is too long (max ${MAX_GROUP_NAME_LENGTH} characters)`);
+  }
   const type = GROUP_TYPES.has(input.type) ? input.type : "other";
-  const currency =
-    input.currency || (await findUserById(userId))?.default_currency || "USD";
+  const currency = normalizeCurrencyCode(
+    input.currency || (await findUserById(userId))?.default_currency || "USD",
+  );
   // Authorize before the insert, so a rejected member list does not leave an
   // orphan group behind.
   await assertCanAdd(userId, input.memberIds ?? []);

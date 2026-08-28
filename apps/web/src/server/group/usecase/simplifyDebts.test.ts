@@ -41,10 +41,11 @@ vi.mock("@/server/expense/usecase/balance.usecase", () => ({
   userNetInGroups: vi.fn(),
 }));
 
-import { addMembers, removeMemberFromGroup, setSimplifyDebts } from "./group.usecase";
+import { addMembers, createGroup, removeMemberFromGroup, setSimplifyDebts } from "./group.usecase";
 import {
   addMember,
   findGroupById,
+  insertGroup,
   isMember,
   listCoMemberIds,
   listMembers,
@@ -56,6 +57,7 @@ import { findUserByEmail, findUserById } from "@/server/auth/repo/users.repo";
 import { listFriendIds } from "@/server/social/repo/friendships.repo";
 import { insertActivity } from "@/server/social/repo/activity.repo";
 import { userNetInGroup } from "@/server/expense/usecase/balance.usecase";
+import { MAX_GROUP_NAME_LENGTH } from "@/server/group/group.constants";
 
 const MEMBER = "user-member";
 const OUTSIDER = "user-outsider";
@@ -123,6 +125,26 @@ describe("group membership authorization", () => {
       removeMemberFromGroup(MEMBER, { groupId: TRIP, userId: MEMBER }),
     ).rejects.toThrow(/transfer ownership/);
     expect(removeMember).not.toHaveBeenCalled();
+  });
+});
+
+describe("group persisted input bounds", () => {
+  it("rejects an oversized group name before insertion", async () => {
+    await expect(
+      createGroup(MEMBER, {
+        name: "G".repeat(MAX_GROUP_NAME_LENGTH + 1),
+        type: "trip",
+        currency: "USD",
+      }),
+    ).rejects.toThrow(/group name is too long/);
+    expect(insertGroup).not.toHaveBeenCalled();
+  });
+
+  it("rejects a malformed currency before insertion", async () => {
+    await expect(
+      createGroup(MEMBER, { name: "Trip", type: "trip", currency: "USDD" }),
+    ).rejects.toThrow(/three-letter code/);
+    expect(insertGroup).not.toHaveBeenCalled();
   });
 });
 

@@ -27,6 +27,7 @@ import {
   EMAIL_PATTERN,
   GOOGLE_CLIENT_ID,
   MAX_PAYMENT_HANDLE_LENGTH,
+  MAX_USER_NAME_LENGTH,
   PASSWORD_MAX_LENGTH,
   PASSWORD_MIN_LENGTH,
   PHONE_FORMAT_HINT,
@@ -34,6 +35,7 @@ import {
   normalizePhone,
   passwordAuthEnabled,
 } from "@/server/auth/auth.constants";
+import { normalizeCurrencyCode } from "@/server/common/validation";
 import { toUser } from "./user.mapper";
 
 /**
@@ -255,6 +257,9 @@ export async function signUp(input: {
   requirePasswordAuthEnabled();
   const name = input.name.trim();
   if (name.length === 0) invalid("name is required");
+  if (name.length > MAX_USER_NAME_LENGTH) {
+    invalid(`name is too long (max ${MAX_USER_NAME_LENGTH} characters)`);
+  }
   validatePassword(input.password);
 
   const email = input.email.trim().toLowerCase();
@@ -391,7 +396,7 @@ async function verifyGoogleIdToken(idToken: string): Promise<{
   return {
     googleSub: claims.sub,
     email: claims.email.trim().toLowerCase(),
-    name: claims.name?.trim() ?? "",
+    name: claims.name?.trim().slice(0, MAX_USER_NAME_LENGTH) ?? "",
     picture: claims.picture?.trim() ?? "",
   };
 }
@@ -494,10 +499,16 @@ export async function updateProfile(
     paymentHandles?: { method: string; handle: string }[];
   },
 ) {
-  if (input.name.trim().length === 0) invalid("name is required");
+  const name = input.name.trim();
+  if (name.length === 0) invalid("name is required");
+  if (name.length > MAX_USER_NAME_LENGTH) {
+    invalid(`name is too long (max ${MAX_USER_NAME_LENGTH} characters)`);
+  }
   await updateUserProfile(userId, {
-    name: input.name.trim(),
-    defaultCurrency: input.defaultCurrency || undefined,
+    name,
+    defaultCurrency: input.defaultCurrency
+      ? normalizeCurrencyCode(input.defaultCurrency)
+      : undefined,
   });
   if (input.paymentHandles) {
     for (const entry of input.paymentHandles) {
@@ -562,12 +573,16 @@ export async function findOrCreateUserByEmail(
 ): Promise<UserRow> {
   const normalizedEmail = email.trim().toLowerCase();
   if (!EMAIL_PATTERN.test(normalizedEmail)) invalid("please enter a valid email address");
+  const requestedName = name?.trim() ?? "";
+  if (requestedName.length > MAX_USER_NAME_LENGTH) {
+    invalid(`name is too long (max ${MAX_USER_NAME_LENGTH} characters)`);
+  }
   const existing = await findUserByEmail(normalizedEmail);
   if (existing) return existing;
   try {
     return await insertUser({
       email: normalizedEmail,
-      name: name?.trim() || normalizedEmail.split("@")[0],
+      name: requestedName || normalizedEmail.split("@")[0].slice(0, MAX_USER_NAME_LENGTH),
       avatarColor: avatarColorFor(normalizedEmail),
       passwordHash: null,
     });
@@ -603,13 +618,17 @@ export async function findOrCreateUserByPhone(
 ): Promise<UserRow> {
   const normalizedPhone = normalizePhone(phone);
   if (!normalizedPhone) invalid(PHONE_FORMAT_HINT);
+  const requestedName = name?.trim() ?? "";
+  if (requestedName.length > MAX_USER_NAME_LENGTH) {
+    invalid(`name is too long (max ${MAX_USER_NAME_LENGTH} characters)`);
+  }
   const existing = await findUserByPhone(normalizedPhone);
   if (existing) return existing;
   try {
     return await insertUser({
       email: null,
       phone: normalizedPhone,
-      name: name?.trim() || normalizedPhone,
+      name: requestedName || normalizedPhone,
       avatarColor: avatarColorFor(normalizedPhone),
       passwordHash: null,
     });

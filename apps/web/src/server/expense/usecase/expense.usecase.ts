@@ -41,8 +41,9 @@ import {
 import { allocateSettlement } from "@/server/expense/domain/settlementAllocation";
 import { settledExpenseIds } from "@/server/expense/domain/settledExpenses";
 import { denied, invalid, notFound } from "@/server/common/errors";
+import { normalizeCurrencyCode } from "@/server/common/validation";
 import { toUser } from "@/server/auth/usecase/user.mapper";
-import { SPLIT_TYPES, ISO_DATE_PATTERN, MAX_EXPENSE_PARTICIPANTS, MAX_ITEM_ASSIGNMENTS, MAX_MONEY_CENTS, EXPENSE_CATEGORIES, SETTLEMENT_METHODS, MAX_COMMENT_LENGTH, COMMENT_PREVIEW_LENGTH } from "@/server/expense/expense.constants";
+import { SPLIT_TYPES, ISO_DATE_PATTERN, MAX_EXPENSE_PARTICIPANTS, MAX_ITEM_ASSIGNMENTS, MAX_MONEY_CENTS, MAX_EXPENSE_NOTES_LENGTH, MAX_EXPENSE_ITEM_NAME_LENGTH, MAX_SETTLEMENT_NOTE_LENGTH, EXPENSE_CATEGORIES, SETTLEMENT_METHODS, MAX_COMMENT_LENGTH, COMMENT_PREVIEW_LENGTH } from "@/server/expense/expense.constants";
 import { toExpense, toSettlement } from "./expense.mapper";
 
 /**
@@ -98,6 +99,9 @@ async function buildExpenseWrite(
   const description = request.description.trim();
   if (description.length === 0) invalid("description is required");
   if (description.length > 200) invalid("description is too long (max 200 characters)");
+  if (request.notes.length > MAX_EXPENSE_NOTES_LENGTH) {
+    invalid(`notes are too long (max ${MAX_EXPENSE_NOTES_LENGTH} characters)`);
+  }
   if (!SPLIT_TYPES.has(request.splitType)) invalid(`unknown split type "${request.splitType}"`);
 
   // Cap input array sizes to bound the per-request SQL fan-out (DoS guard).
@@ -113,6 +117,9 @@ async function buildExpenseWrite(
   if (request.items.some((item) => item.assignments.length > MAX_ITEM_ASSIGNMENTS)) {
     invalid(`too many people assigned to one item (max ${MAX_ITEM_ASSIGNMENTS})`);
   }
+  if (request.items.some((item) => item.name.trim().length > MAX_EXPENSE_ITEM_NAME_LENGTH)) {
+    invalid(`item name is too long (max ${MAX_EXPENSE_ITEM_NAME_LENGTH} characters)`);
+  }
 
   const groupId = request.groupId || null;
   let groupMemberIds: Set<string> | null = null;
@@ -125,6 +132,7 @@ async function buildExpenseWrite(
     currency = group.currency;
   }
   if (!currency) currency = (await findUserById(userId))?.default_currency ?? "USD";
+  currency = normalizeCurrencyCode(currency);
 
   let amountCents: number;
   let taxCents = 0;
@@ -724,6 +732,9 @@ export async function recordSettlement(
   if (request.amountCents > MAX_MONEY_CENTS) {
     invalid(`amount is too large (max ${MAX_MONEY_CENTS} cents)`);
   }
+  if (request.note.length > MAX_SETTLEMENT_NOTE_LENGTH) {
+    invalid(`settlement note is too long (max ${MAX_SETTLEMENT_NOTE_LENGTH} characters)`);
+  }
   const recipient = await findUserById(request.toUserId);
   if (!recipient) notFound("recipient not found");
   // Whoever is settling a debt is the payer; the other is the creditor.
@@ -745,6 +756,7 @@ export async function recordSettlement(
     currency = group.currency;
   }
   if (!currency) currency = (await findUserById(userId))?.default_currency ?? "USD";
+  currency = normalizeCurrencyCode(currency);
   const method = SETTLEMENT_METHODS.has(request.method) ? request.method : "cash";
 
   // Validation + inserts inside the pair lock, so a concurrent recording of

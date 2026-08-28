@@ -75,11 +75,38 @@ import { insertActivity } from "@/server/social/repo/activity.repo";
 import { insertNotifications } from "@/server/social/repo/notifications.repo";
 import { listFriendIds } from "@/server/social/repo/friendships.repo";
 import { amountOwed } from "./balance.usecase";
+import {
+  MAX_EXPENSE_ITEM_NAME_LENGTH,
+  MAX_EXPENSE_NOTES_LENGTH,
+  MAX_SETTLEMENT_NOTE_LENGTH,
+} from "@/server/expense/expense.constants";
 
 const PAYER = "user-payer";
 const OWER = "user-ower";
 const OUTSIDER = "user-outsider";
 const GOA_TRIP = "group-goa";
+
+/** Builds a valid exact-split request for input-boundary tests. */
+function validExpenseRequest(
+  overrides: Record<string, unknown> = {},
+): CreateExpenseRequest {
+  return {
+    groupId: GOA_TRIP,
+    description: "Dinner",
+    amountCents: 1000,
+    currency: "USD",
+    category: "food",
+    expenseDate: "2026-08-09",
+    splitType: "exact",
+    notes: "",
+    payers: [{ userId: PAYER, amountCents: 1000 }],
+    splitSpecs: [{ userId: OWER, amountCents: 1000, percentBp: 0, shares: 0 }],
+    items: [],
+    taxCents: 0,
+    tipCents: 0,
+    ...overrides,
+  } as unknown as CreateExpenseRequest;
+}
 
 /** Every audience insertActivity received, in call order. */
 function audiences(): string[][] {
@@ -156,6 +183,56 @@ beforeEach(() => {
 });
 
 describe("who hears about a transaction", () => {
+  it("rejects oversized expense notes before persistence", async () => {
+    await expect(
+      createExpense(PAYER, validExpenseRequest({
+        notes: "N".repeat(MAX_EXPENSE_NOTES_LENGTH + 1),
+      })),
+    ).rejects.toThrow(/notes are too long/);
+    expect(insertExpense).not.toHaveBeenCalled();
+  });
+
+  it("rejects oversized item names before persistence", async () => {
+    await expect(
+      createExpense(PAYER, validExpenseRequest({
+        splitType: "itemized",
+        splitSpecs: [],
+        items: [{
+          name: "I".repeat(MAX_EXPENSE_ITEM_NAME_LENGTH + 1),
+          quantity: 1,
+          totalCents: 1000,
+          assignments: [{ userId: OWER, weight: 1 }],
+        }],
+      })),
+    ).rejects.toThrow(/item name is too long/);
+    expect(insertExpense).not.toHaveBeenCalled();
+  });
+
+  it("rejects malformed one-off expense currencies", async () => {
+    await expect(
+      createExpense(PAYER, validExpenseRequest({
+        groupId: "",
+        currency: "USDD",
+        splitSpecs: [{ userId: PAYER, amountCents: 1000, percentBp: 0, shares: 0 }],
+      })),
+    ).rejects.toThrow(/three-letter code/);
+    expect(insertExpense).not.toHaveBeenCalled();
+  });
+
+  it("rejects oversized settlement notes before persistence", async () => {
+    await expect(
+      recordSettlement(PAYER, {
+        groupId: GOA_TRIP,
+        toUserId: OWER,
+        amountCents: 1000,
+        currency: "USD",
+        method: "cash",
+        note: "N".repeat(MAX_SETTLEMENT_NOTE_LENGTH + 1),
+      }),
+    ).rejects.toThrow(/settlement note is too long/);
+    expect(insertSettlement).not.toHaveBeenCalled();
+  });
+
   it("rejects itemized totals that overflow a stored money field", async () => {
     await expect(
       createExpense(PAYER, {

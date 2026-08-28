@@ -34,6 +34,9 @@ export const AUTH_RATE_LIMIT = 10;
 /** Max phone-verification and merge attempts per account per minute. */
 export const PHONE_VERIFICATION_RATE_LIMIT = 5;
 
+/** Maximum persisted display-name length. Names are copied into fan-out rows. */
+export const MAX_USER_NAME_LENGTH = 120;
+
 /** Lowest signed int32 value representable by the MergePreview protobuf. */
 export const PROTO_INT32_MIN = -2_147_483_648;
 

@@ -39,7 +39,7 @@ vi.mock("@/server/auth/repo/paymentHandles.repo", () => ({
   replacePaymentHandles: vi.fn(),
 }));
 
-import { logIn, logInWithGoogle, signUp } from "./auth.usecase";
+import { logIn, logInWithGoogle, signUp, updateProfile } from "./auth.usecase";
 import {
   findUserByEmail,
   findUserByGoogleSub,
@@ -47,7 +47,9 @@ import {
   insertUser,
   linkGoogleAccount,
   setAvatarUrl,
+  updateUserProfile,
 } from "@/server/auth/repo/users.repo";
+import { MAX_USER_NAME_LENGTH } from "@/server/auth/auth.constants";
 
 /**
  * Builds a users row with sensible defaults for the fields a test does not care
@@ -155,6 +157,19 @@ describe("logInWithGoogle", () => {
         googleSub: "google-sub-123",
         passwordHash: null,
       }),
+    );
+  });
+
+  it("bounds a provider-owned Google display name before persistence", async () => {
+    googleReturns({ ...VERIFIED, name: "N".repeat(MAX_USER_NAME_LENGTH + 50) });
+    vi.mocked(findUserByGoogleSub).mockResolvedValue(undefined);
+    vi.mocked(findUserByEmail).mockResolvedValue(undefined);
+    vi.mocked(insertUser).mockResolvedValue(userRow({ google_sub: "google-sub-123" }));
+
+    await logInWithGoogle("id-token");
+
+    expect(insertUser).toHaveBeenCalledWith(
+      expect.objectContaining({ name: "N".repeat(MAX_USER_NAME_LENGTH) }),
     );
   });
 
@@ -296,5 +311,45 @@ describe("password auth is production-gated", () => {
       /invalid email\/phone or password/,
     );
     expect(findUserByEmail).toHaveBeenCalled();
+  });
+
+  it("rejects an oversized signup name before hashing or persistence", async () => {
+    vi.stubEnv("NODE_ENV", "development");
+
+    await expect(
+      signUp({
+        email: "a@b.com",
+        phone: "",
+        name: "N".repeat(MAX_USER_NAME_LENGTH + 1),
+        password: "hunter22",
+      }),
+    ).rejects.toThrow(/name is too long/);
+    expect(insertUser).not.toHaveBeenCalled();
+  });
+});
+
+describe("profile persisted input bounds", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(findUserById).mockResolvedValue(userRow());
+  });
+
+  it("rejects an oversized profile name before writing", async () => {
+    await expect(
+      updateProfile("user-1", {
+        name: "N".repeat(MAX_USER_NAME_LENGTH + 1),
+        defaultCurrency: "USD",
+      }),
+    ).rejects.toThrow(/name is too long/);
+    expect(updateUserProfile).not.toHaveBeenCalled();
+  });
+
+  it("normalizes a valid profile currency before writing", async () => {
+    await updateProfile("user-1", { name: " Ani ", defaultCurrency: " eur " });
+
+    expect(updateUserProfile).toHaveBeenCalledWith("user-1", {
+      name: "Ani",
+      defaultCurrency: "EUR",
+    });
   });
 });

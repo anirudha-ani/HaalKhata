@@ -21,6 +21,15 @@ export const MAX_ITEM_ASSIGNMENTS = 100;
  */
 export const MAX_MONEY_CENTS = 2_000_000_000;
 
+/** Maximum free-form expense notes length. */
+export const MAX_EXPENSE_NOTES_LENGTH = 2000;
+
+/** Maximum persisted receipt line-item name length. */
+export const MAX_EXPENSE_ITEM_NAME_LENGTH = 200;
+
+/** Maximum free-form settlement note length. */
+export const MAX_SETTLEMENT_NOTE_LENGTH = 1000;
+
 /** Expense categories the API accepts; anything else falls back to "general". */
 export const EXPENSE_CATEGORIES = new Set([
   "general", "food", "transport", "lodging", "utilities", "shopping", "entertainment", "other",
