@@ -112,9 +112,23 @@ describe.skipIf(!reachable)("mergeAccounts against Postgres", () => {
       `SELECT user_id, role FROM group_members WHERE group_id = 'grp-1' ORDER BY user_id`,
     );
     expect(rows).toEqual([
-      { user_id: KEEPER, role: "admin" },
+      { user_id: KEEPER, role: "owner" },
       { user_id: RAHUL, role: "member" },
     ]);
+  });
+
+  it("enforces authorization roles and distinct settlement parties in Postgres", async () => {
+    await expect(
+      database.query(`UPDATE group_members SET role = 'admin' WHERE group_id = 'grp-1'`),
+    ).rejects.toMatchObject({ constraint: "chk_group_members_role" });
+    await expect(
+      database.query(
+        `INSERT INTO settlements
+           (id, from_user, to_user, amount_cents, currency, method)
+         VALUES ('stl-self', $1, $1, 100, 'USD', 'cash')`,
+        [KEEPER],
+      ),
+    ).rejects.toMatchObject({ constraint: "chk_settlements_distinct_users" });
   });
 
   it("leaves no self-friendship and no duplicate friendship", async () => {
@@ -210,7 +224,7 @@ async function seed(database: Client): Promise<void> {
   );
   await database.query(
     `INSERT INTO group_members (group_id, user_id, role) VALUES
-       ('grp-1', $1, 'member'), ('grp-1', $2, 'admin'), ('grp-1', $3, 'member')`,
+       ('grp-1', $1, 'member'), ('grp-1', $2, 'owner'), ('grp-1', $3, 'member')`,
     [KEEPER, LOSER, RAHUL],
   );
 
@@ -295,7 +309,8 @@ async function seed(database: Client): Promise<void> {
     [LOSER],
   );
   await database.query(
-    `INSERT INTO notifications (id, user_id, type, title) VALUES ('ntf-1', $1, 'expense', 'New expense')`,
+    `INSERT INTO notifications (id, user_id, type, title)
+     VALUES ('ntf-1', $1, 'expense_added', 'New expense')`,
     [LOSER],
   );
 }

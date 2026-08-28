@@ -59,7 +59,7 @@ async function seed(database: Client): Promise<void> {
   ]);
   await database.query(
     `INSERT INTO group_members (group_id, user_id, role) VALUES
-       ('grp-1', $1, 'member'), ('grp-1', $2, 'admin')`,
+       ('grp-1', $1, 'member'), ('grp-1', $2, 'owner')`,
     [DEBTOR, CREDITOR],
   );
   await database.query(

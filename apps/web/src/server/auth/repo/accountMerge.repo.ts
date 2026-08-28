@@ -232,14 +232,14 @@ export async function mergeAccounts(
     );
 
     // --- group membership --------------------------------------------------
-    // Carry the stronger role across before dropping the duplicate, or someone
-    // who was an admin as the invited row silently loses it.
+    // Carry the stronger role across before dropping the duplicate, or a group
+    // creator represented by the invited row silently loses ownership.
     await client.query(
-      `UPDATE group_members keeper SET role = 'admin'
+      `UPDATE group_members keeper SET role = 'owner'
          FROM group_members loser
         WHERE keeper.user_id = $1 AND loser.user_id = $2
           AND keeper.group_id = loser.group_id
-          AND loser.role = 'admin' AND keeper.role <> 'admin'`,
+          AND loser.role = 'owner' AND keeper.role <> 'owner'`,
       [keeperId, loserId],
     );
     await client.query(
@@ -296,7 +296,16 @@ export async function mergeAccounts(
       ]);
     }
 
-    // --- settlements: repoint, then drop money paid to oneself --------------
+    // --- settlements: remove cross-row payments, then repoint ----------------
+    // Once the identities merge, payments between them become self-payments.
+    // Delete them first so chk_settlements_distinct_users remains true after
+    // every individual UPDATE statement, not only by transaction end.
+    const selfSettlements = await client.query(
+      `DELETE FROM settlements
+        WHERE (from_user = $1 AND to_user = $2)
+           OR (from_user = $2 AND to_user = $1)`,
+      [keeperId, loserId],
+    );
     await client.query(`UPDATE settlements SET from_user = $1 WHERE from_user = $2`, [
       keeperId,
       loserId,
@@ -305,13 +314,6 @@ export async function mergeAccounts(
       keeperId,
       loserId,
     ]);
-    // Scoped to the keeper rather than `from_user = to_user`, so a pre-existing
-    // oddity elsewhere in the table is not swept up by this merge.
-    const selfSettlements = await client.query(
-      `DELETE FROM settlements WHERE from_user = $1 AND to_user = $1`,
-      [keeperId],
-    );
-
     // --- activity.audience: a JSONB array, not a foreign key ----------------
     // Missing this leaves dangling ids inside the arrays and silently breaks
     // the merged user's feed, since the feed query is an @> containment test.
