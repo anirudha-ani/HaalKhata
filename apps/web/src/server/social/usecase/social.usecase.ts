@@ -1,7 +1,13 @@
 /** Social business logic: friends (friendships ∪ expense counterparties), activity feed, notifications. */
 
 import { insertFriendship, listFriendIds } from "@/server/social/repo/friendships.repo";
-import { findUserById, findUsersByIds } from "@/server/auth/repo/users.repo";
+import {
+  findUserByEmail,
+  findUserById,
+  findUserByPhone,
+  findUsersByIds,
+  type UserRow,
+} from "@/server/auth/repo/users.repo";
 import { listActivityMonths, listActivityPage } from "@/server/social/repo/activity.repo";
 import { isMember, listCoMemberIds } from "@/server/group/repo/groups.repo";
 import {
@@ -18,19 +24,15 @@ import {
 } from "@/server/social/social.constants";
 import { formatMoney } from "@haalkhata/shared/money/money";
 import { findPaymentMethod } from "@haalkhata/shared/payment/methods";
-import {
-  findOrCreateUserByEmail,
-  findOrCreateUserByPhone,
-} from "@/server/auth/usecase/auth.usecase";
 import { getOverallBalances, netWithUser } from "@/server/expense/usecase/balance.usecase";
 import { denied, invalid, notFound } from "@/server/common/errors";
 import { toUser } from "@/server/auth/usecase/user.mapper";
+import { EMAIL_PATTERN, normalizePhone, PHONE_FORMAT_HINT } from "@/server/auth/auth.constants";
 
 /**
- * Befriends the caller with the user behind the given email or phone number
- * (creating a claimable shadow user when no account exists yet), or with an
- * existing account by id when `input.userId` is set — the befriend-a-fellow-
- * group-member path, which requires sharing a group with them.
+ * Befriends the caller with an existing fellow group member identified by id,
+ * email, or phone. Contact lookup is only an alternate identifier: it does not
+ * create accounts and cannot bypass the shared-group authorization check.
  *
  * For email/phone, exactly one identifier must be supplied — clients present
  * a single "email or phone" field and route the raw string with
@@ -39,11 +41,11 @@ import { toUser } from "@/server/auth/usecase/user.mapper";
  *
  * @param userId - Id of the authenticated caller adding the friend.
  * @param input - The friend's user id, or their email or phone (exactly one
- *   non-empty), plus an optional display name for a created shadow user.
+ *   non-empty). The legacy name field is ignored.
  * @returns The friend as a user.v1 User message shape.
  * @throws UsecaseError (invalid_argument) when neither or both identifiers are
  *   given, the identifier is malformed, or it resolves to the caller;
- *   (permission_denied) when adding by id without a shared group.
+ *   (permission_denied) when the target is absent or does not share a group.
  */
 export async function addFriend(
   userId: string,
@@ -71,9 +73,19 @@ export async function addFriend(
   if (email !== "" && phone !== "") {
     invalid("enter either an email address or a phone number, not both");
   }
-  const friend = email
-    ? await findOrCreateUserByEmail(email, input.name)
-    : await findOrCreateUserByPhone(phone, input.name);
+  let friend: UserRow | undefined;
+  if (email) {
+    if (!EMAIL_PATTERN.test(email)) invalid("please enter a valid email address");
+    friend = await findUserByEmail(email);
+  } else {
+    const normalizedPhone = normalizePhone(phone);
+    if (!normalizedPhone) invalid(PHONE_FORMAT_HINT);
+    friend = await findUserByPhone(normalizedPhone);
+  }
+  const coMemberIds = await listCoMemberIds(userId);
+  if (!friend || !coMemberIds.includes(friend.id)) {
+    denied("you can only add someone you share a group with");
+  }
   if (friend.id === userId) invalid("that's your own account");
   await insertFriendship(userId, friend.id);
   return toUser(friend);
