@@ -34,6 +34,12 @@ export const AUTH_RATE_LIMIT = 10;
 /** Max phone-verification and merge attempts per account per minute. */
 export const PHONE_VERIFICATION_RATE_LIMIT = 5;
 
+/** Lowest signed int32 value representable by the MergePreview protobuf. */
+export const PROTO_INT32_MIN = -2_147_483_648;
+
+/** Highest signed int32 value representable by the MergePreview protobuf. */
+export const PROTO_INT32_MAX = 2_147_483_647;
+
 /** Timeout for each call to the external phone-verification provider. */
 export const PHONE_VERIFICATION_TIMEOUT_MS = 10_000;
 

@@ -14,6 +14,13 @@ export const MAX_EXPENSE_PARTICIPANTS = 100;
 /** Maximum assignees on one itemized line item (DoS and SQL parameter guard). */
 export const MAX_ITEM_ASSIGNMENTS = 100;
 
+/**
+ * Largest monetary value accepted for one stored field or transaction.
+ * This stays below PostgreSQL/protobuf signed-int32 limits and leaves a small
+ * margin so downstream formatting and arithmetic never approach overflow.
+ */
+export const MAX_MONEY_CENTS = 2_000_000_000;
+
 /** Expense categories the API accepts; anything else falls back to "general". */
 export const EXPENSE_CATEGORIES = new Set([
   "general", "food", "transport", "lodging", "utilities", "shopping", "entertainment", "other",

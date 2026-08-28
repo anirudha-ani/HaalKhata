@@ -97,7 +97,7 @@ describe("setPhone", () => {
     previewMergeMock.mockResolvedValue({
       name: "Ani",
       expense_count: 4,
-      net_cents: -8700,
+      net_cents: "-8700",
       counterparty_names: ["Rahul", "Priya"],
     });
   });
@@ -159,6 +159,21 @@ describe("setPhone", () => {
     expect(result.mergeToken).not.toBe("");
   });
 
+  it("rejects a merge preview whose aggregate cannot fit its protobuf field", async () => {
+    vi.mocked(findUserByPhone).mockResolvedValue(invitedRow);
+    previewMergeMock.mockResolvedValue({
+      name: "Ani",
+      expense_count: 4,
+      net_cents: "4000000000",
+      counterparty_names: ["Rahul"],
+    });
+
+    await expect(setPhone(KEEPER, PHONE, "123456")).rejects.toMatchObject({
+      code: "invalid_argument",
+      message: "that account balance is too large to preview safely",
+    });
+  });
+
   it("refuses a number held by a Google account", async () => {
     vi.mocked(findUserByPhone).mockResolvedValue(
       userRow({ id: "someone-else", phone: PHONE, google_sub: "google-sub-2" }),
@@ -188,7 +203,7 @@ describe("confirmPhoneMerge", () => {
     previewMergeMock.mockResolvedValue({
       name: "Ani",
       expense_count: 4,
-      net_cents: -8700,
+      net_cents: "-8700",
       counterparty_names: ["Rahul"],
     });
   });

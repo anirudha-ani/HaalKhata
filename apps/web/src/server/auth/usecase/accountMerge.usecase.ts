@@ -21,6 +21,8 @@ import { UsecaseError, invalid } from "@/server/common/errors";
 import {
   MERGE_TOKEN_LIFETIME_SECONDS,
   PHONE_FORMAT_HINT,
+  PROTO_INT32_MAX,
+  PROTO_INT32_MIN,
   normalizePhone,
 } from "@/server/auth/auth.constants";
 import { signPayload, verifyPayloadSignature } from "./auth.usecase";
@@ -149,11 +151,19 @@ export async function setPhone(
   // caller's own history, but "almost certainly" is what the preview is for.
   const preview = await previewMerge(holder.id);
   if (!preview) throw new UsecaseError("not_found", "that invitation no longer exists");
+  const netCents = Number(preview.net_cents);
+  if (
+    !Number.isSafeInteger(netCents) ||
+    netCents < PROTO_INT32_MIN ||
+    netCents > PROTO_INT32_MAX
+  ) {
+    invalid("that account balance is too large to preview safely");
+  }
   return {
     pendingMerge: {
       name: preview.name,
       expenseCount: preview.expense_count,
-      netCents: preview.net_cents,
+      netCents,
       counterpartyNames: preview.counterparty_names,
     },
     mergeToken: createMergeToken(userId, holder.id, phone),

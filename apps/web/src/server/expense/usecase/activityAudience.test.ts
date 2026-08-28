@@ -156,6 +156,74 @@ beforeEach(() => {
 });
 
 describe("who hears about a transaction", () => {
+  it("rejects itemized totals that overflow a stored money field", async () => {
+    await expect(
+      createExpense(PAYER, {
+        groupId: GOA_TRIP,
+        description: "Overflowing receipt",
+        amountCents: 0,
+        currency: "USD",
+        category: "food",
+        expenseDate: "2026-08-09",
+        splitType: "itemized",
+        notes: "",
+        payers: [{ userId: PAYER, amountCents: 2_000_000_000 }],
+        splitSpecs: [],
+        items: [
+          {
+            name: "First item",
+            quantity: 1,
+            totalCents: 1_500_000_000,
+            assignments: [{ userId: PAYER, weight: 1 }],
+          },
+          {
+            name: "Second item",
+            quantity: 1,
+            totalCents: 1_500_000_000,
+            assignments: [{ userId: PAYER, weight: 1 }],
+          },
+        ],
+        taxCents: 0,
+        tipCents: 0,
+      } as unknown as CreateExpenseRequest),
+    ).rejects.toMatchObject({
+      code: "invalid_argument",
+      message: "amount is too large (max 2000000000 cents)",
+    });
+    expect(insertExpense).not.toHaveBeenCalled();
+  });
+
+  it("requires an itemized request to state its computed total", async () => {
+    await expect(
+      createExpense(PAYER, {
+        groupId: GOA_TRIP,
+        description: "Missing total",
+        amountCents: 0,
+        currency: "USD",
+        category: "food",
+        expenseDate: "2026-08-09",
+        splitType: "itemized",
+        notes: "",
+        payers: [{ userId: PAYER, amountCents: 1000 }],
+        splitSpecs: [],
+        items: [
+          {
+            name: "Meal",
+            quantity: 1,
+            totalCents: 1000,
+            assignments: [{ userId: PAYER, weight: 1 }],
+          },
+        ],
+        taxCents: 0,
+        tipCents: 0,
+      } as unknown as CreateExpenseRequest),
+    ).rejects.toMatchObject({
+      code: "invalid_argument",
+      message: expect.stringContaining("do not match the stated total"),
+    });
+    expect(insertExpense).not.toHaveBeenCalled();
+  });
+
   it("rejects an item with more than the bounded assignment count", async () => {
     await expect(
       createExpense(PAYER, {

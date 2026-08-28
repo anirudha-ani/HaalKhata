@@ -23,8 +23,8 @@ export interface MergePreviewRow {
   name: string;
   /** Undeleted expenses the absorbed row participates in. */
   expense_count: number;
-  /** The absorbed row's net position in cents; positive means it is owed. */
-  net_cents: number;
+  /** Decimal bigint text for its net cents; positive means it is owed. */
+  net_cents: string;
   /** Names of people it shares expenses with. */
   counterparty_names: string[];
 }
@@ -85,7 +85,7 @@ export async function previewMerge(userId: string): Promise<MergePreviewRow | un
           LEFT JOIN expense_payers pay ON pay.expense_id = exp.id
          WHERE exp.deleted_at IS NULL
            AND (spl.user_id = $1 OR pay.user_id = $1)) AS expense_count,
-       (${NET_CENTS_SQL})::int AS net_cents,
+       (${NET_CENTS_SQL})::bigint AS net_cents,
        COALESCE((
          SELECT json_agg(DISTINCT other.name)
            FROM expense_splits mine

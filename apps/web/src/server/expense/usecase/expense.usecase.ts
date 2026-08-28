@@ -42,7 +42,7 @@ import { allocateSettlement } from "@/server/expense/domain/settlementAllocation
 import { settledExpenseIds } from "@/server/expense/domain/settledExpenses";
 import { denied, invalid, notFound } from "@/server/common/errors";
 import { toUser } from "@/server/auth/usecase/user.mapper";
-import { SPLIT_TYPES, ISO_DATE_PATTERN, MAX_EXPENSE_PARTICIPANTS, MAX_ITEM_ASSIGNMENTS, EXPENSE_CATEGORIES, SETTLEMENT_METHODS, MAX_COMMENT_LENGTH, COMMENT_PREVIEW_LENGTH } from "@/server/expense/expense.constants";
+import { SPLIT_TYPES, ISO_DATE_PATTERN, MAX_EXPENSE_PARTICIPANTS, MAX_ITEM_ASSIGNMENTS, MAX_MONEY_CENTS, EXPENSE_CATEGORIES, SETTLEMENT_METHODS, MAX_COMMENT_LENGTH, COMMENT_PREVIEW_LENGTH } from "@/server/expense/expense.constants";
 import { toExpense, toSettlement } from "./expense.mapper";
 
 /**
@@ -148,13 +148,19 @@ async function buildExpenseWrite(
       const computed = computeItemizedSplits(items, taxCents, tipCents);
       splits = computed.splits;
       amountCents = computed.totalCents;
-      if (request.amountCents > 0 && request.amountCents !== amountCents) {
+      if (amountCents > MAX_MONEY_CENTS) {
+        invalid(`amount is too large (max ${MAX_MONEY_CENTS} cents)`);
+      }
+      if (request.amountCents !== amountCents) {
         invalid(
           `items + tax + tip (${formatMoney(amountCents, currency)}) do not match the stated total (${formatMoney(request.amountCents, currency)})`,
         );
       }
     } else {
       amountCents = request.amountCents;
+      if (amountCents > MAX_MONEY_CENTS) {
+        invalid(`amount is too large (max ${MAX_MONEY_CENTS} cents)`);
+      }
       splits = computeSplits(
         request.splitType,
         amountCents,
@@ -715,6 +721,9 @@ export async function recordSettlement(
 ) {
   if (request.toUserId === userId) invalid("you cannot settle with yourself");
   if (request.amountCents <= 0) invalid("amount must be positive");
+  if (request.amountCents > MAX_MONEY_CENTS) {
+    invalid(`amount is too large (max ${MAX_MONEY_CENTS} cents)`);
+  }
   const recipient = await findUserById(request.toUserId);
   if (!recipient) notFound("recipient not found");
   // Whoever is settling a debt is the payer; the other is the creditor.
