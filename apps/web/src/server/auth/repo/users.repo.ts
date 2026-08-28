@@ -244,7 +244,7 @@ export async function findUserTokenVersion(userId: string): Promise<number | und
 
 /**
  * Increments the user's token_version, invalidating every bearer token issued
- * before this point (logout everywhere / password change).
+ * before this point (the current sign-out-everywhere behavior).
  *
  * @param userId - Primary key of the user whose tokens are being revoked.
  */

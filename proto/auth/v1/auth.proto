@@ -9,8 +9,9 @@ import "common/v1/common.proto";
 // auth RPC returns a bearer token for mobile clients and additionally sets an
 // httpOnly session cookie for browsers.
 //
-// SignUp/LogIn are the retired email-or-phone + password flows, kept so an
-// already-shipped mobile build keeps working. No current client calls them.
+// SignUp/LogIn are retired email-or-phone + password flows kept for local
+// development and seeded accounts. Production rejects both RPCs, and no
+// current client calls them.
 service AuthService {
   rpc SignUp(SignUpRequest) returns (AuthResponse);
   rpc LogIn(LogInRequest) returns (AuthResponse);

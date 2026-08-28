@@ -34,6 +34,7 @@ import {
   PHONE_FORMAT_HINT,
   SESSION_SECRET_BASE64_PATTERN,
   SESSION_SECRET_HEX_PATTERN,
+  SESSION_TOKEN_FORMAT,
   TOKEN_LIFETIME_SECONDS,
   normalizePhone,
   passwordAuthEnabled,
@@ -224,11 +225,12 @@ export function verifyPayloadSignature(
  *
  * @param userId - Id of the user the token authenticates.
  * @param tokenVersion - Current token_version of the user, baked into the payload.
- * @returns Token of the form "userId.version.expiry.signature", valid for TOKEN_LIFETIME_SECONDS.
+ * @returns Token of the form "v2.userId.version.expiry.signature", valid for
+ *   TOKEN_LIFETIME_SECONDS.
  */
 export function createToken(userId: string, tokenVersion: number): string {
   const expiresAtSeconds = Math.floor(Date.now() / 1000) + TOKEN_LIFETIME_SECONDS;
-  const payload = `${userId}.${tokenVersion}.${expiresAtSeconds}`;
+  const payload = `${SESSION_TOKEN_FORMAT}.${userId}.${tokenVersion}.${expiresAtSeconds}`;
   return `${payload}.${signPayload("session", payload)}`;
 }
 
@@ -237,7 +239,7 @@ export function createToken(userId: string, tokenVersion: number): string {
  * unexpired, correctly-signed token, without consulting the database. Callers
  * must then verify the embedded version still matches the user's current row.
  *
- * @param token - Bearer token of the form "userId.version.expiry.signature".
+ * @param token - Bearer token of the form "v2.userId.version.expiry.signature".
  * @returns The embedded user id and token version, or null when the signature
  *   or expiry check fails.
  */
@@ -247,11 +249,12 @@ export function verifyToken(token: string): string | null {
   const payload = token.slice(0, lastDot);
   if (!verifyPayloadSignature("session", payload, token.slice(lastDot + 1))) return null;
   const fields = payload.split(".");
-  if (fields.length !== 3) return null;
-  const [userId, versionText, expiresAtText] = fields;
+  if (fields.length !== 4) return null;
+  const [format, userId, versionText, expiresAtText] = fields;
   const version = Number(versionText);
   const expiresAt = Number(expiresAtText);
   if (
+    format !== SESSION_TOKEN_FORMAT ||
     !userId ||
     !Number.isSafeInteger(version) ||
     version < 0 ||
@@ -265,13 +268,13 @@ export function verifyToken(token: string): string | null {
  * Extracts the embedded token_version from a token string (without verifying
  * the signature). Used after verifyToken to compare against the DB row.
  *
- * @param token - Bearer token of the form "userId.version.expiry.signature".
+ * @param token - Bearer token of the form "v2.userId.version.expiry.signature".
  * @returns The embedded version number, or NaN when the token is malformed.
  */
 export function tokenVersion(token: string): number {
   const fields = token.split(".");
-  if (fields.length !== 4) return Number.NaN;
-  const version = Number(fields[1]);
+  if (fields.length !== 5 || fields[0] !== SESSION_TOKEN_FORMAT) return Number.NaN;
+  const version = Number(fields[2]);
   return Number.isSafeInteger(version) && version >= 0 ? version : Number.NaN;
 }
 

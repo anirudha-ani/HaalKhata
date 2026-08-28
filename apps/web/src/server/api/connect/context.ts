@@ -11,7 +11,7 @@ import { tokenFromHeaders } from "./credentials";
 /**
  * Returns the calling user's id, rejecting the request when unauthenticated.
  * The bearer token's embedded version is checked against the user's current
- * `token_version` so that logout / password change revokes outstanding tokens.
+ * `token_version` so that signing out revokes outstanding tokens.
  *
  * @param handlerContext - Connect handler context for the current request.
  * @returns The verified user id.

@@ -1,6 +1,6 @@
 /** Unit tests for the security-critical auth token sign/verify/version round trip. */
 
-import { beforeAll, describe, expect, it } from "vitest";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
 // Set the signing secret before the auth module reads it, so tests don't
 // touch the filesystem (the dev fallback writes data/.secret).
@@ -20,6 +20,10 @@ describe("auth tokens", () => {
     // Ensure a stable secret is loaded for the whole suite.
   });
 
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it("createToken → verifyToken round-trips the user id", () => {
     const token = createToken("user-123", 0);
     expect(verifyToken(token)).toBe("user-123");
@@ -28,6 +32,17 @@ describe("auth tokens", () => {
   it("embeds and exposes the token version", () => {
     const token = createToken("user-456", 7);
     expect(tokenVersion(token)).toBe(7);
+  });
+
+  it("has a seven-day absolute lifetime", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-28T00:00:00.000Z"));
+    const token = createToken("user-456", 0);
+
+    vi.setSystemTime(new Date("2026-09-03T23:59:59.000Z"));
+    expect(verifyToken(token)).toBe("user-456");
+    vi.setSystemTime(new Date("2026-09-04T00:00:00.000Z"));
+    expect(verifyToken(token)).toBeNull();
   });
 
   it("rejects a token with a tampered payload", () => {
@@ -62,7 +77,7 @@ describe("auth tokens", () => {
   });
 
   it("rejects signed tokens with non-finite numeric fields", () => {
-    const payload = "user-123.NaN.not-a-time";
+    const payload = "v2.user-123.NaN.not-a-time";
     const token = `${payload}.${signPayload("session", payload)}`;
 
     expect(verifyToken(token)).toBeNull();
@@ -70,10 +85,18 @@ describe("auth tokens", () => {
   });
 
   it("does not accept a signature created for another token purpose", () => {
-    const payload = `user-123.0.${Math.floor(Date.now() / 1000) + 3600}`;
+    const payload = `v2.user-123.0.${Math.floor(Date.now() / 1000) + 3600}`;
     const wrongPurposeToken = `${payload}.${signPayload("phone-merge", payload)}`;
 
     expect(verifyToken(wrongPurposeToken)).toBeNull();
+  });
+
+  it("rejects the legacy 30-day token format even with a valid signature", () => {
+    const legacyPayload = `user-123.0.${Math.floor(Date.now() / 1000) + 60 * 60 * 24 * 30}`;
+    const legacyToken = `${legacyPayload}.${signPayload("session", legacyPayload)}`;
+
+    expect(verifyToken(legacyToken)).toBeNull();
+    expect(tokenVersion(legacyToken)).toBeNaN();
   });
 });
 

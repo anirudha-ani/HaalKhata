@@ -2,6 +2,7 @@
 
 import { Code } from "@connectrpc/connect";
 import type { UsecaseErrorCode } from "@/server/common/errors";
+import { TOKEN_LIFETIME_SECONDS } from "@/server/auth/auth.constants";
 
 /**
  * Name of the HTTP cookie that carries the web client's session token.
@@ -11,8 +12,8 @@ import type { UsecaseErrorCode } from "@/server/common/errors";
 export const SESSION_COOKIE =
   process.env.NODE_ENV === "production" ? "__Host-hk_token" : "hk_token";
 
-/** Session cookie lifetime in seconds (30 days), matching the token lifetime. */
-export const COOKIE_MAX_AGE = 60 * 60 * 24 * 30;
+/** Session cookie lifetime in seconds, exactly matching the signed token. */
+export const COOKIE_MAX_AGE = TOKEN_LIFETIME_SECONDS;
 
 /**
  * Largest decoded Connect request accepted by the application. Receipt images

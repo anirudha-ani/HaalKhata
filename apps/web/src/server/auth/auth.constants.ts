@@ -3,8 +3,14 @@
 import path from "node:path";
 import { parsePhoneNumberFromString } from "libphonenumber-js";
 
-/** How long an issued bearer token stays valid, in seconds (30 days). */
-export const TOKEN_LIFETIME_SECONDS = 60 * 60 * 24 * 30;
+/**
+ * Absolute lifetime of an issued browser or mobile session token (seven days).
+ * Sign-out can revoke it sooner through the user's token version.
+ */
+export const TOKEN_LIFETIME_SECONDS = 60 * 60 * 24 * 7;
+
+/** Signed-session payload version; changing it deliberately invalidates legacy tokens. */
+export const SESSION_TOKEN_FORMAT = "v2";
 
 /** Minimum decoded HMAC key length accepted in production. */
 export const MIN_SESSION_SECRET_BYTES = 32;

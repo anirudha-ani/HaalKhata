@@ -1,6 +1,7 @@
 /** Security tests for browser session-cookie names and attributes. */
 
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { TOKEN_LIFETIME_SECONDS } from "@/server/auth/auth.constants";
 
 describe("session cookies", () => {
   afterEach(() => {
@@ -24,5 +25,12 @@ describe("session cookies", () => {
 
     expect(SESSION_COOKIE).toBe("hk_token");
     expect(sessionCookieAttributes("signed-token", 60)).not.toContain("; Secure");
+  });
+
+  it("expires the cookie with the signed token", async () => {
+    const { COOKIE_MAX_AGE } = await import("./connect.constants");
+
+    expect(COOKIE_MAX_AGE).toBe(TOKEN_LIFETIME_SECONDS);
+    expect(COOKIE_MAX_AGE).toBe(60 * 60 * 24 * 7);
   });
 });
