@@ -27,13 +27,17 @@ vi.mock("@/server/expense/repo/expenses.repo", () => ({
 vi.mock("@/server/group/repo/groups.repo", () => ({
   findGroupById: vi.fn(),
   isMember: vi.fn(),
+  listCoMemberIds: vi.fn(),
   listMembers: vi.fn(),
 }));
 vi.mock("@/server/auth/repo/users.repo", () => ({
   findUserById: vi.fn(),
   findUsersByIds: vi.fn(),
 }));
-vi.mock("@/server/social/repo/friendships.repo", () => ({ insertFriendship: vi.fn() }));
+vi.mock("@/server/social/repo/friendships.repo", () => ({
+  insertFriendship: vi.fn(),
+  listFriendIds: vi.fn(),
+}));
 vi.mock("@/server/expense/repo/comments.repo", () => ({
   insertComment: vi.fn(),
   listCommentsByExpense: vi.fn(),
@@ -54,7 +58,7 @@ vi.mock("./balance.usecase", () => ({ amountOwed: vi.fn(), owedByScope: vi.fn() 
 
 import { addComment, createExpense, recordSettlement, updateExpense } from "./expense.usecase";
 import { findUserById, findUsersByIds } from "@/server/auth/repo/users.repo";
-import { findGroupById, isMember } from "@/server/group/repo/groups.repo";
+import { findGroupById, isMember, listCoMemberIds } from "@/server/group/repo/groups.repo";
 import {
   findExpenseById,
   insertExpense,
@@ -64,6 +68,7 @@ import { insertComment } from "@/server/expense/repo/comments.repo";
 import { insertSettlement } from "@/server/expense/repo/settlements.repo";
 import { insertActivity } from "@/server/social/repo/activity.repo";
 import { insertNotifications } from "@/server/social/repo/notifications.repo";
+import { listFriendIds } from "@/server/social/repo/friendships.repo";
 import { amountOwed } from "./balance.usecase";
 
 const PAYER = "user-payer";
@@ -92,6 +97,8 @@ beforeEach(() => {
   // Everyone in these tests is a member — the point under test is that
   // membership alone no longer puts anyone in a transaction's audience.
   vi.mocked(isMember).mockResolvedValue(true);
+  vi.mocked(listFriendIds).mockResolvedValue([]);
+  vi.mocked(listCoMemberIds).mockResolvedValue([]);
   vi.mocked(insertExpense).mockResolvedValue("expense-1");
   // The stored expense, as createExpense's return path and addComment read it
   // back: Payer paid 1000, Ower owes 1000, inside the group.
@@ -139,6 +146,29 @@ beforeEach(() => {
 });
 
 describe("who hears about a transaction", () => {
+  it("rejects assigning one-off debt to an unrelated account", async () => {
+    await expect(
+      createExpense(PAYER, {
+        groupId: "",
+        description: "Fabricated debt",
+        amountCents: 500_000,
+        currency: "USD",
+        category: "general",
+        expenseDate: "2026-08-09",
+        splitType: "exact",
+        notes: "",
+        payers: [{ userId: PAYER, amountCents: 500_000 }],
+        splitSpecs: [
+          { userId: OUTSIDER, amountCents: 500_000, percentBp: 0, shares: 0 },
+        ],
+        items: [],
+        taxCents: 0,
+        tipCents: 0,
+      } as unknown as CreateExpenseRequest),
+    ).rejects.toMatchObject({ code: "permission_denied" });
+    expect(insertExpense).not.toHaveBeenCalled();
+  });
+
   it("rejects moving an expense to a different ledger scope", async () => {
     await expect(
       updateExpense(PAYER, "expense-1", {

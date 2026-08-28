@@ -14,9 +14,9 @@ import {
   type ExpenseRow,
   type ExpenseWrite,
 } from "@/server/expense/repo/expenses.repo";
-import { findGroupById, isMember } from "@/server/group/repo/groups.repo";
+import { findGroupById, isMember, listCoMemberIds } from "@/server/group/repo/groups.repo";
 import { findUserById, findUsersByIds } from "@/server/auth/repo/users.repo";
-import { insertFriendship } from "@/server/social/repo/friendships.repo";
+import { insertFriendship, listFriendIds } from "@/server/social/repo/friendships.repo";
 import { insertComment, listCommentsByExpense } from "@/server/expense/repo/comments.repo";
 import { insertSettlement, withSettlementPairLock } from "@/server/expense/repo/settlements.repo";
 import { insertActivity, listActivityForExpense } from "@/server/social/repo/activity.repo";
@@ -184,8 +184,16 @@ async function buildExpenseWrite(
         invalid("all participants must be group members");
       }
     }
-  } else if (!involved.includes(userId)) {
-    denied("you must be part of a one-off expense");
+  } else {
+    if (!involved.includes(userId)) denied("you must be part of a one-off expense");
+    const [friendIds, coMemberIds] = await Promise.all([
+      listFriendIds(userId),
+      listCoMemberIds(userId),
+    ]);
+    const connectedIds = new Set([...friendIds, ...coMemberIds, userId]);
+    if (involved.some((participantId) => !connectedIds.has(participantId))) {
+      denied("you can only split with people you already share a friendship or a group with");
+    }
   }
 
   return {
