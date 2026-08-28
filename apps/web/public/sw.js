@@ -59,6 +59,27 @@ self.addEventListener("fetch", (event) => {
 });
 
 /* Web Push scaffold (Phase 4 — needs VAPID keys + push_subscriptions). */
+
+/**
+ * Returns an origin-relative notification destination or a safe fallback.
+ * Push payloads and stored Notification.data are untrusted: requiring an
+ * initial single slash blocks absolute URLs, custom schemes and protocol-
+ * relative URLs, while URL parsing catches backslash and normalization tricks.
+ */
+function safeNotificationPath(candidate) {
+  const fallback = "/dashboard";
+  if (typeof candidate !== "string" || !candidate.startsWith("/") || candidate.startsWith("//")) {
+    return fallback;
+  }
+  try {
+    const destination = new URL(candidate, self.location.origin);
+    if (destination.origin !== self.location.origin) return fallback;
+    return `${destination.pathname}${destination.search}${destination.hash}`;
+  } catch {
+    return fallback;
+  }
+}
+
 self.addEventListener("push", (event) => {
   if (!event.data) return;
   const pushData = event.data.json();
@@ -66,12 +87,12 @@ self.addEventListener("push", (event) => {
     self.registration.showNotification(pushData.title ?? "HaalKhata", {
       body: pushData.body ?? "",
       icon: "/icon-192.png",
-      data: { link: pushData.link ?? "/dashboard" },
+      data: { link: safeNotificationPath(pushData.link) },
     }),
   );
 });
 
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
-  event.waitUntil(self.clients.openWindow(event.notification.data?.link ?? "/dashboard"));
+  event.waitUntil(self.clients.openWindow(safeNotificationPath(event.notification.data?.link)));
 });
