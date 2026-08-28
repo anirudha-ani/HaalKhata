@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { persistQueryClient } from "@tanstack/query-persist-client-core";
 import { createSyncStoragePersister } from "@tanstack/query-sync-storage-persister";
 import { useEffect, useState, type ReactNode } from "react";
+import { QUERY_CACHE_STORAGE_KEY } from "@/lib/api/queryCache";
 
 /**
  * Wraps the app in client-side providers: a single TanStack Query client (10s
@@ -45,7 +46,7 @@ export function Providers({
     // localStorage only exists in the browser; this effect never runs on the server.
     const localStoragePersister = createSyncStoragePersister({
       storage: window.localStorage,
-      key: "haalkhata-query-cache",
+      key: QUERY_CACHE_STORAGE_KEY,
     });
     const [unsubscribe] = persistQueryClient({
       queryClient,
