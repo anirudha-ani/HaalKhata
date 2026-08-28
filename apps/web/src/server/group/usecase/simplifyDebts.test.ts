@@ -67,7 +67,10 @@ import { listFriendIds } from "@/server/social/repo/friendships.repo";
 import { insertActivity } from "@/server/social/repo/activity.repo";
 import { userNetInGroup } from "@/server/expense/usecase/balance.usecase";
 import { lockGroupLedgers } from "@/server/common/ledgerLocks";
-import { MAX_GROUP_NAME_LENGTH } from "@/server/group/group.constants";
+import {
+  MAX_GROUP_MEMBER_IDS_PER_REQUEST,
+  MAX_GROUP_NAME_LENGTH,
+} from "@/server/group/group.constants";
 
 const MEMBER = "user-member";
 const OUTSIDER = "user-outsider";
@@ -141,6 +144,33 @@ describe("group membership authorization", () => {
 });
 
 describe("group persisted input bounds", () => {
+  it("rejects an oversized create member-id array before any database work", async () => {
+    await expect(
+      createGroup(MEMBER, {
+        name: "Trip",
+        type: "trip",
+        currency: "USD",
+        memberIds: Array.from(
+          { length: MAX_GROUP_MEMBER_IDS_PER_REQUEST + 1 },
+          (_value, index) => `user-${index}`,
+        ),
+      }),
+    ).rejects.toThrow(/too many members/);
+    expect(insertGroup).not.toHaveBeenCalled();
+    expect(listFriendIds).not.toHaveBeenCalled();
+  });
+
+  it("rejects an oversized add member-id array before loading the group", async () => {
+    await expect(
+      addMembers(MEMBER, {
+        groupId: TRIP,
+        userIds: Array(MAX_GROUP_MEMBER_IDS_PER_REQUEST + 1).fill(TARGET),
+      }),
+    ).rejects.toThrow(/too many members/);
+    expect(findGroupById).not.toHaveBeenCalled();
+    expect(addMember).not.toHaveBeenCalled();
+  });
+
   it("rejects an oversized group name before insertion", async () => {
     await expect(
       createGroup(MEMBER, {

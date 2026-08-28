@@ -28,7 +28,12 @@ import { userNetInGroup, userNetInGroups } from "@/server/expense/usecase/balanc
 import { denied, invalid, notFound } from "@/server/common/errors";
 import { normalizeCurrencyCode } from "@/server/common/validation";
 import { EMAIL_PATTERN, normalizePhone, PHONE_FORMAT_HINT } from "@/server/auth/auth.constants";
-import { GROUP_TYPES, MAX_GROUP_NAME_LENGTH, OWNER_ROLE } from "@/server/group/group.constants";
+import {
+  GROUP_TYPES,
+  MAX_GROUP_MEMBER_IDS_PER_REQUEST,
+  MAX_GROUP_NAME_LENGTH,
+  OWNER_ROLE,
+} from "@/server/group/group.constants";
 import { lockGroupLedgers, withLedgerTransaction } from "@/server/common/ledgerLocks";
 import { toGroup, toMember } from "./group.mapper";
 
@@ -106,6 +111,20 @@ async function connectedUserIds(userId: string): Promise<Set<string>> {
 function nameList(names: string[]): string {
   if (names.length <= 1) return names[0] ?? "";
   return `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+}
+
+/**
+ * Rejects oversized member-id arrays before authorization queries or writes.
+ * The raw count is intentional: duplicate identifiers still consume request
+ * parsing and iteration resources and therefore do not bypass the limit.
+ *
+ * @param memberIds - Raw identifiers supplied by the caller.
+ * @throws UsecaseError (invalid_argument) when the request exceeds the limit.
+ */
+function assertMemberIdCount(memberIds: string[]): void {
+  if (memberIds.length > MAX_GROUP_MEMBER_IDS_PER_REQUEST) {
+    invalid(`too many members (max ${MAX_GROUP_MEMBER_IDS_PER_REQUEST} per request)`);
+  }
 }
 
 /**
@@ -222,6 +241,7 @@ export async function createGroup(
   userId: string,
   input: { name: string; type: string; currency: string; memberIds?: string[] },
 ) {
+  assertMemberIdCount(input.memberIds ?? []);
   const name = input.name.trim();
   if (name.length === 0) invalid("group name is required");
   if (name.length > MAX_GROUP_NAME_LENGTH) {
@@ -349,11 +369,12 @@ export async function addMembers(
     name?: string;
   },
 ) {
-  const group = await assertGroupMember(input.groupId, userId);
-
   const pickedIds = input.userIds ?? [];
+  assertMemberIdCount(pickedIds);
+  const group = await assertGroupMember(input.groupId, userId);
   const invitee = await resolveInvitee(input);
   const candidateIds = [...pickedIds, ...(invitee ? [invitee.id] : [])];
+  assertMemberIdCount(candidateIds);
   if (candidateIds.length === 0) invalid("pick somebody to add");
   await assertCanAdd(userId, candidateIds);
 
