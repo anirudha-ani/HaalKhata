@@ -21,7 +21,9 @@ vi.mock("@/server/group/repo/groups.repo", () => ({
   updateSimplifyDebts: vi.fn(),
 }));
 vi.mock("@/server/auth/repo/users.repo", () => ({
+  findUserByEmail: vi.fn(),
   findUserById: vi.fn(),
+  findUserByPhone: vi.fn(),
   findUsersByIds: vi.fn(),
 }));
 vi.mock("@/server/social/repo/friendships.repo", () => ({
@@ -39,18 +41,25 @@ vi.mock("@/server/expense/usecase/balance.usecase", () => ({
   userNetInGroups: vi.fn(),
 }));
 
-import { setSimplifyDebts } from "./group.usecase";
+import { addMembers, removeMemberFromGroup, setSimplifyDebts } from "./group.usecase";
 import {
+  addMember,
   findGroupById,
   isMember,
+  listCoMemberIds,
   listMembers,
+  memberRole,
+  removeMember,
   updateSimplifyDebts,
 } from "@/server/group/repo/groups.repo";
-import { findUserById } from "@/server/auth/repo/users.repo";
+import { findUserByEmail, findUserById } from "@/server/auth/repo/users.repo";
+import { listFriendIds } from "@/server/social/repo/friendships.repo";
 import { insertActivity } from "@/server/social/repo/activity.repo";
+import { userNetInGroup } from "@/server/expense/usecase/balance.usecase";
 
 const MEMBER = "user-member";
 const OUTSIDER = "user-outsider";
+const TARGET = "user-target";
 const TRIP = "group-trip";
 
 /** The persisted mode the mocked repo reads and writes. */
@@ -73,6 +82,8 @@ beforeEach(() => {
       }) as GroupRow,
   );
   vi.mocked(isMember).mockImplementation(async (_groupId, userId) => userId === MEMBER);
+  vi.mocked(listCoMemberIds).mockResolvedValue([]);
+  vi.mocked(listFriendIds).mockResolvedValue([]);
   vi.mocked(listMembers).mockResolvedValue([
     { id: MEMBER, name: "Mem Ber", role: "owner" } as MemberRow,
     { id: "user-other", name: "Oth Er", role: "member" } as MemberRow,
@@ -84,6 +95,35 @@ beforeEach(() => {
     async (userId: string) => ({ id: userId, name: "Mem Ber" }) as UserRow,
   );
   vi.mocked(insertActivity).mockResolvedValue(undefined as never);
+});
+
+describe("group membership authorization", () => {
+  it("does not let a contact field bypass the connected-user check", async () => {
+    vi.mocked(findUserByEmail).mockResolvedValue({ id: TARGET } as UserRow);
+
+    await expect(
+      addMembers(MEMBER, { groupId: TRIP, email: "target@example.com" }),
+    ).rejects.toMatchObject({ code: "permission_denied" });
+    expect(addMember).not.toHaveBeenCalled();
+  });
+
+  it("lets a zero-balance non-owner leave a group", async () => {
+    vi.mocked(memberRole).mockResolvedValue("member");
+    vi.mocked(userNetInGroup).mockResolvedValue(0);
+
+    await removeMemberFromGroup(MEMBER, { groupId: TRIP, userId: MEMBER });
+
+    expect(removeMember).toHaveBeenCalledWith(TRIP, MEMBER);
+  });
+
+  it("still prevents the owner from leaving without transferring ownership", async () => {
+    vi.mocked(memberRole).mockResolvedValue("owner");
+
+    await expect(
+      removeMemberFromGroup(MEMBER, { groupId: TRIP, userId: MEMBER }),
+    ).rejects.toThrow(/transfer ownership/);
+    expect(removeMember).not.toHaveBeenCalled();
+  });
 });
 
 describe("setSimplifyDebts", () => {

@@ -1,4 +1,4 @@
-/** Group business logic: create/list/get, add-by-email (shadow users), balance-guarded member removal. */
+/** Group business logic: create/list/get, connected-member enrollment, balance-guarded removal. */
 
 import {
   addMember,
@@ -14,16 +14,18 @@ import {
   updateSimplifyDebts,
 } from "@/server/group/repo/groups.repo";
 import type { UserRow } from "@/server/auth/repo/users.repo";
-import { findUserById, findUsersByIds } from "@/server/auth/repo/users.repo";
+import {
+  findUserByEmail,
+  findUserById,
+  findUserByPhone,
+  findUsersByIds,
+} from "@/server/auth/repo/users.repo";
 import { insertFriendship, listFriendIds } from "@/server/social/repo/friendships.repo";
 import { insertActivity } from "@/server/social/repo/activity.repo";
 import { insertNotifications } from "@/server/social/repo/notifications.repo";
-import {
-  findOrCreateUserByEmail,
-  findOrCreateUserByPhone,
-} from "@/server/auth/usecase/auth.usecase";
 import { userNetInGroup, userNetInGroups } from "@/server/expense/usecase/balance.usecase";
 import { denied, invalid, notFound } from "@/server/common/errors";
+import { EMAIL_PATTERN, normalizePhone, PHONE_FORMAT_HINT } from "@/server/auth/auth.constants";
 import { GROUP_TYPES, OWNER_ROLE } from "@/server/group/group.constants";
 import { toGroup, toMember } from "./group.mapper";
 
@@ -104,12 +106,8 @@ function nameList(names: string[]): string {
 /**
  * Asserts the caller may enrol every one of these ids.
  *
- * Only ids that arrived *from the client* go through here. A person resolved
- * server-side from an email or phone the caller typed is authorized by that
- * act — checking them would reject the newcomer the invite exists to add.
- *
  * @param callerId - Id of the authenticated caller doing the adding.
- * @param userIds - Client-supplied user ids to authorize.
+ * @param userIds - User ids to authorize, including contact-resolved ids.
  * @throws UsecaseError (permission_denied) when an id is somebody the caller
  *   neither has as a friend nor shares a group with.
  */
@@ -128,9 +126,8 @@ async function assertCanAdd(callerId: string, userIds: string[]): Promise<void> 
  * Enrols people in a group: skips anyone already in, adds the rest, and
  * befriends the caller with each of them.
  *
- * Authorization is the caller's job ({@link assertCanAdd}) — by the time ids
- * reach here they may include a server-resolved invitee who is deliberately
- * exempt. Already-members are skipped rather than rejected so one stale
+ * Authorization is the caller's job ({@link assertCanAdd}). Already-members
+ * are skipped rather than rejected so one stale
  * checkbox cannot lose the rest of the batch; whether an empty result is an
  * error differs between creating and adding, so that is decided upstream too.
  *
@@ -167,8 +164,9 @@ async function enrollMembers(
 }
 
 /**
- * Resolves the optional email/phone invitee on an add-people request into a
- * user row, creating a claimable shadow user when no account matches.
+ * Resolves an optional email/phone to an existing account. Cold invites are
+ * deliberately rejected: without an acceptance flow, creating a shadow row
+ * would let the caller enrol a stranger who never consented.
  *
  * @param input - The raw email and phone fields, plus an optional display
  *   name for a shadow user. Both empty means nobody was invited.
@@ -185,8 +183,20 @@ async function resolveInvitee(input: {
   if (email !== "" && phone !== "") {
     invalid("enter either an email address or a phone number, not both");
   }
-  if (email !== "") return findOrCreateUserByEmail(email, input.name);
-  if (phone !== "") return findOrCreateUserByPhone(phone, input.name);
+  let invitee: UserRow | undefined;
+  if (email !== "") {
+    if (!EMAIL_PATTERN.test(email)) invalid("please enter a valid email address");
+    invitee = await findUserByEmail(email);
+  }
+  if (phone !== "") {
+    const normalizedPhone = normalizePhone(phone);
+    if (!normalizedPhone) invalid(PHONE_FORMAT_HINT);
+    invitee = await findUserByPhone(normalizedPhone);
+  }
+  if ((email !== "" || phone !== "") && !invitee) {
+    denied("you can only add people you already share a friendship or a group with");
+  }
+  if (invitee) return invitee;
   return undefined;
 }
 
@@ -300,9 +310,9 @@ async function notifyAdded(
 }
 
 /**
- * Adds people to a group in one call: existing friends and co-members by id,
- * plus at most one newcomer by email or phone, for whom a claimable shadow
- * user is created. Befriends the caller with everyone added, writes a single
+ * Adds connected people to a group in one call, by id or by an email/phone
+ * that resolves to an existing connected account. Befriends the caller with
+ * everyone added, writes a single
  * "member_added" activity event naming them all, and notifies each of them.
  *
  * One event for the batch rather than one per person: a feed that reports a
@@ -311,8 +321,8 @@ async function notifyAdded(
  * Open to any member, not just the owner — see {@link assertGroupMember}.
  *
  * @param userId - Id of the authenticated caller performing the add.
- * @param input - Target group id, ids of people to add outright, and the
- *   optional email/phone (at most one) plus display name of a newcomer.
+ * @param input - Target group id, ids of people to add, and an optional
+ *   email/phone (at most one) identifying an existing connected account.
  * @returns `{ added }` — the people actually added, as Member message shapes.
  * @throws UsecaseError (not_found) when the group does not exist.
  * @throws UsecaseError (permission_denied) when the caller is not a member,
@@ -333,12 +343,10 @@ export async function addMembers(
   const group = await assertGroupMember(input.groupId, userId);
 
   const pickedIds = input.userIds ?? [];
-  await assertCanAdd(userId, pickedIds);
-  // Resolved only after the picked ids pass: a rejected request must not leave
-  // a shadow user behind for somebody who was never added.
   const invitee = await resolveInvitee(input);
   const candidateIds = [...pickedIds, ...(invitee ? [invitee.id] : [])];
   if (candidateIds.length === 0) invalid("pick somebody to add");
+  await assertCanAdd(userId, candidateIds);
 
   const added = await enrollMembers(userId, input.groupId, candidateIds);
   if (added.length === 0) {
@@ -423,9 +431,12 @@ export async function removeMemberFromGroup(
   userId: string,
   input: { groupId: string; userId: string },
 ) {
-  await assertGroupOwner(input.groupId, userId);
   if (input.userId === userId) {
-    invalid("owners cannot remove themselves; transfer ownership first");
+    const role = await memberRole(input.groupId, userId);
+    if (!role) denied("you are not a member of this group");
+    if (role === OWNER_ROLE) invalid("owners cannot remove themselves; transfer ownership first");
+  } else {
+    await assertGroupOwner(input.groupId, userId);
   }
   if ((await userNetInGroup(input.userId, input.groupId)) !== 0) {
     invalid("cannot remove a member with an outstanding balance — settle up first");
