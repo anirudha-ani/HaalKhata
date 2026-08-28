@@ -5,6 +5,7 @@ Requires=docker.service
 
 [Service]
 Type=oneshot
+UMask=0077
 # Runs as root, not deploy. backup.sh tars /srv/haalkhata/secrets, which is
 # 0700 root:root by design — a deploy-owned service cannot even traverse it,
 # and the failure is a one-line tar error buried in the journal while the

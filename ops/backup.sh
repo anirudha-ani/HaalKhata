@@ -17,6 +17,7 @@
 #   grep 'public key' ~/.age-key.txt      # the recipient string
 #   echo 'age1...' > /srv/haalkhata/backup-recipient.txt
 set -euo pipefail
+umask 077
 
 BASE=/srv/haalkhata
 OUT="$BASE/backups"
@@ -28,7 +29,14 @@ DUMP_PARTIAL="$DUMP.partial"
 SECRETS="$OUT/secrets-$STAMP.tar.age"
 SECRETS_PARTIAL="$SECRETS.partial"
 
-mkdir -p "$OUT"
+if [ -L "$OUT" ]; then
+  echo "backup directory must not be a symbolic link" >&2
+  exit 1
+fi
+install -d -o root -g root -m 700 "$OUT"
+# Repair archives created before the restrictive umask was introduced.
+find "$OUT" -maxdepth 1 -type f \( -name '*.age' -o -name '*.age.partial' \) \
+  -exec chmod 600 -- {} +
 trap 'rm -f "$DUMP_PARTIAL" "$SECRETS_PARTIAL"' EXIT
 
 # --- database ---------------------------------------------------------------

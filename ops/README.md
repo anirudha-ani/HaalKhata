@@ -100,12 +100,11 @@ retention policy for the same reason.
 An untested backup is a hypothesis. Run this once now, and quarterly after:
 
 ```sh
-age -d -i ~/.age-key.txt backups/haalkhata-<stamp>.dump.age > /tmp/drill.dump
-
 docker compose -f docker-compose.prod.yml exec -T db \
   psql -U haalkhata -d postgres -c 'CREATE DATABASE drill'
-docker compose -f docker-compose.prod.yml exec -T db \
-  pg_restore -U haalkhata -d drill --no-owner < /tmp/drill.dump
+age -d -i ~/.age-key.txt backups/haalkhata-<stamp>.dump.age \
+  | docker compose -f docker-compose.prod.yml exec -T db \
+      pg_restore -U haalkhata -d drill --no-owner
 
 # Row counts should match production.
 docker compose -f docker-compose.prod.yml exec -T db psql -U haalkhata -d drill \
@@ -113,8 +112,12 @@ docker compose -f docker-compose.prod.yml exec -T db psql -U haalkhata -d drill 
 
 docker compose -f docker-compose.prod.yml exec -T db \
   psql -U haalkhata -d postgres -c 'DROP DATABASE drill'
-rm -f /tmp/drill.dump
 ```
+
+The decrypted dump is streamed directly into `pg_restore`; it is never written
+to a predictable path—or to disk at all. The backup service independently uses
+a `0077` umask and enforces a root-owned `0700` archive directory, so encrypted
+archives and partial files are created as `0600`.
 
 ## Rollback
 
