@@ -82,15 +82,16 @@ export function clearSessionCookie(handlerContext: HandlerContext): void {
 /**
  * Runs a usecase call and maps UsecaseError codes onto Connect codes.
  * Unexpected (non-UsecaseError) exceptions are logged with the RPC method
- * name and a random request id before rethrowing, so production deploys
- * aren't flying blind with stack traces in stdout and no correlation.
+ * name and a random request id. Clients receive only a generic Internal error
+ * carrying that correlation id; database/provider messages stay server-side.
  *
  * @param operation - Usecase invocation to execute.
  * @param handlerContext - Connect context for the current RPC (used for the
  *   method name in logs); omitted by non-RPC callers.
  * @returns Whatever operation resolves to.
  * @throws ConnectError translated from any UsecaseError thrown by the
- *   operation; other errors are logged then rethrown unchanged.
+ *   operation; existing ConnectErrors pass through; unexpected errors become
+ *   generic Internal responses after structured logging.
  */
 export async function runUsecase<UsecaseResult>(
   operation: () => UsecaseResult | Promise<UsecaseResult>,
@@ -102,10 +103,12 @@ export async function runUsecase<UsecaseResult>(
     if (error instanceof UsecaseError) {
       throw new ConnectError(error.message, CODE_MAP[error.code]);
     }
+    if (error instanceof ConnectError) throw error;
+    const requestId = crypto.randomUUID();
     logError(error, {
       rpc: handlerContext?.method.name ?? "unknown",
-      requestId: crypto.randomUUID(),
+      requestId,
     });
-    throw error;
+    throw new ConnectError(`internal server error (request ${requestId})`, Code.Internal);
   }
 }
