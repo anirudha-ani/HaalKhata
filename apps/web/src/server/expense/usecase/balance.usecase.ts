@@ -34,7 +34,7 @@ import {
 import { type ScopeDebt } from "../domain/settlementAllocation";
 import { listFriendIds } from "@/server/social/repo/friendships.repo";
 import { denied, notFound } from "@/server/common/errors";
-import { toUser } from "@/server/auth/usecase/user.mapper";
+import { toPublicUser } from "@/server/auth/usecase/user.mapper";
 
 /**
  * Converts a batch of expenses (with their loaded children) into directed
@@ -387,7 +387,7 @@ export async function getOverallBalances(userId: string) {
       .flatMap(([counterpartyId, netCents]) => {
         const user = users.get(counterpartyId);
         if (!user) notFound(`unknown user ${counterpartyId}`);
-        return [{ user: toUser(user), netCents }];
+        return [{ user: toPublicUser(user), netCents }];
       }),
   };
 }
@@ -595,7 +595,7 @@ export async function getFriendLedger(userId: string, friendId: string) {
   }
 
   return {
-    friend: toUser(friend),
+    friend: toPublicUser(friend),
     netCents: groupBalances.reduce((running, scope) => running + scope.netCents, 0),
     currency: friend.default_currency || "USD",
     entries,

@@ -42,7 +42,7 @@ import { allocateSettlement } from "@/server/expense/domain/settlementAllocation
 import { settledExpenseIds } from "@/server/expense/domain/settledExpenses";
 import { denied, invalid, notFound } from "@/server/common/errors";
 import { normalizeCurrencyCode } from "@/server/common/validation";
-import { toUser } from "@/server/auth/usecase/user.mapper";
+import { toPublicUser } from "@/server/auth/usecase/user.mapper";
 import { SPLIT_TYPES, ISO_DATE_PATTERN, MAX_EXPENSE_PARTICIPANTS, MAX_ITEM_ASSIGNMENTS, MAX_MONEY_CENTS, MAX_EXPENSE_NOTES_LENGTH, MAX_EXPENSE_ITEM_NAME_LENGTH, MAX_SETTLEMENT_NOTE_LENGTH, EXPENSE_CATEGORIES, SETTLEMENT_METHODS, MAX_COMMENT_LENGTH, COMMENT_PREVIEW_LENGTH } from "@/server/expense/expense.constants";
 import { toExpense, toSettlement } from "./expense.mapper";
 
@@ -451,7 +451,7 @@ async function usersReferenced(rows: ExpenseRow[], children: ExpenseChildren) {
     for (const payer of children.payers.get(expenseRow.id) ?? []) userIds.add(payer.user_id);
     for (const split of children.splits.get(expenseRow.id) ?? []) userIds.add(split.user_id);
   }
-  return (await findUsersByIds([...userIds])).map(toUser);
+  return (await findUsersByIds([...userIds])).map(toPublicUser);
 }
 
 /**
@@ -601,14 +601,16 @@ export async function getExpense(userId: string, expenseId: string) {
     comments: comments.map((comment) => ({
       id: comment.id,
       expenseId: comment.expense_id,
-      author: commentAuthors.get(comment.user_id) ? toUser(commentAuthors.get(comment.user_id)!) : undefined,
+      author: commentAuthors.get(comment.user_id)
+        ? toPublicUser(commentAuthors.get(comment.user_id)!)
+        : undefined,
       body: comment.body,
       createdAt: comment.created_at,
     })),
     users: await usersReferenced([expenseRow], children),
     history: events.map((event) => ({
       actor: commentAuthors.get(event.actor_id)
-        ? toUser(commentAuthors.get(event.actor_id)!)
+        ? toPublicUser(commentAuthors.get(event.actor_id)!)
         : undefined,
       type: event.type,
       createdAt: event.created_at,
@@ -678,7 +680,7 @@ export async function addComment(userId: string, expenseId: string, body: string
   return {
     id: comment.id,
     expenseId: comment.expense_id,
-    author: toUser(author),
+    author: toPublicUser(author),
     body: comment.body,
     createdAt: comment.created_at,
   };

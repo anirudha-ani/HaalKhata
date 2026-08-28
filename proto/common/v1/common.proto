@@ -7,6 +7,8 @@ package common.v1;
 // up with the same email or phone.
 message User {
   string id = 1;
+  // Private contact field populated only when the caller reads their own
+  // profile; empty in group, expense, friend, activity and ledger responses.
   string email = 2;
   string name = 3;
   // Deterministic accent color used for the avatar, e.g. "#0f8a5f".
@@ -14,7 +16,8 @@ message User {
   // ISO 4217 code, e.g. "USD", "BDT".
   string default_currency = 5;
   bool registered = 6;
-  // Phone number in E.164 format (e.g. "+14155552671"); empty when unset.
+  // Private phone number in E.164 format (e.g. "+14155552671"); populated only
+  // for the caller's own profile and empty in every public user projection.
   // An account may have an email, a phone, or both. Sign-in is Google only,
   // so a phone identifies and reaches someone rather than authenticating them.
   string phone = 7;

@@ -39,7 +39,7 @@ import {
   passwordAuthEnabled,
 } from "@/server/auth/auth.constants";
 import { normalizeCurrencyCode } from "@/server/common/validation";
-import { toUser } from "./user.mapper";
+import { toPrivateUser } from "./user.mapper";
 
 /**
  * Picks a stable avatar color for an email address by hashing it into the palette.
@@ -352,7 +352,7 @@ export async function signUp(input: {
       phone: phone ?? null,
     });
   }
-  return { user: toUser(user), token: createToken(user.id, user.token_version) };
+  return { user: toPrivateUser(user), token: createToken(user.id, user.token_version) };
 }
 
 /**
@@ -377,7 +377,7 @@ export async function logIn(input: { email: string; phone: string; password: str
   if (!verifyPassword(input.password, user.password_hash)) {
     throw new UsecaseError("unauthenticated", "invalid email/phone or password");
   }
-  return { user: toUser(user), token: createToken(user.id, user.token_version) };
+  return { user: toPrivateUser(user), token: createToken(user.id, user.token_version) };
 }
 
 // --- google sign-in --------------------------------------------------------
@@ -512,7 +512,7 @@ export async function logInWithGoogle(idToken: string) {
     user = { ...user, avatar_url: claims.picture };
   }
 
-  return { user: toUser(user), token: createToken(user.id, user.token_version) };
+  return { user: toPrivateUser(user), token: createToken(user.id, user.token_version) };
 }
 
 /**
@@ -525,7 +525,7 @@ export async function logInWithGoogle(idToken: string) {
 export async function getMe(userId: string) {
   const user = await findUserById(userId);
   if (!user) throw new UsecaseError("unauthenticated", "account no longer exists");
-  return toUser(user);
+  return toPrivateUser(user);
 }
 
 /**
@@ -595,7 +595,7 @@ export async function sessionUser(token: string) {
   const user = await findUserById(userId);
   if (!user || user.merged_into !== null) return null;
   if (user.token_version !== tokenVersion(token)) return null;
-  return toUser(user);
+  return toPrivateUser(user);
 }
 
 /**

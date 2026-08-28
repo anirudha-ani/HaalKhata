@@ -26,7 +26,7 @@ import {
   normalizePhone,
 } from "@/server/auth/auth.constants";
 import { signPayload, verifyPayloadSignature } from "./auth.usecase";
-import { toUser } from "./user.mapper";
+import { toPrivateUser } from "./user.mapper";
 import { confirmPhoneVerification, startPhoneVerification } from "./phoneVerification";
 
 /** What SetPhone resolved to: either applied outright, or waiting on confirmation. */
@@ -34,7 +34,7 @@ export interface SetPhoneResult {
   /** True when an SMS code was sent and no account data has been read or changed. */
   verificationSent?: boolean;
   /** Present when the number was free and written straight to the account. */
-  user?: ReturnType<typeof toUser>;
+  user?: ReturnType<typeof toPrivateUser>;
   /** Present when an unclaimed invited row already holds the number. */
   pendingMerge?: {
     name: string;
@@ -135,7 +135,7 @@ export async function setPhone(
     await setUserPhone(userId, phone);
     const refreshed = await findUserById(userId);
     if (!refreshed) throw new UsecaseError("unauthenticated", "account no longer exists");
-    return { user: toUser(refreshed), mergeToken: "" };
+    return { user: toPrivateUser(refreshed), mergeToken: "" };
   }
 
   // Held by a real account. Recycled number or a typo — either way a person
@@ -212,5 +212,5 @@ export async function confirmPhoneMerge(userId: string, mergeToken: string) {
 
   const merged = await findUserById(userId);
   if (!merged) throw new UsecaseError("unauthenticated", "account no longer exists");
-  return toUser(merged);
+  return toPrivateUser(merged);
 }

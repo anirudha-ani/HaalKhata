@@ -26,7 +26,7 @@ import { formatMoney } from "@haalkhata/shared/money/money";
 import { findPaymentMethod } from "@haalkhata/shared/payment/methods";
 import { getOverallBalances, netWithUser } from "@/server/expense/usecase/balance.usecase";
 import { denied, invalid, notFound } from "@/server/common/errors";
-import { toUser } from "@/server/auth/usecase/user.mapper";
+import { toPublicUser } from "@/server/auth/usecase/user.mapper";
 import { EMAIL_PATTERN, normalizePhone, PHONE_FORMAT_HINT } from "@/server/auth/auth.constants";
 
 /**
@@ -64,7 +64,7 @@ export async function addFriend(
       denied("you can only add someone you share a group with this way");
     }
     await insertFriendship(userId, targetId);
-    return toUser(target);
+    return toPublicUser(target);
   }
 
   const email = input.email.trim();
@@ -88,7 +88,7 @@ export async function addFriend(
   }
   if (friend.id === userId) invalid("that's your own account");
   await insertFriendship(userId, friend.id);
-  return toUser(friend);
+  return toPublicUser(friend);
 }
 
 /**
@@ -111,7 +111,7 @@ export async function listFriends(userId: string) {
     ...counterparties,
     ...remainingFriends
       .sort((firstUser, secondUser) => firstUser.name.localeCompare(secondUser.name))
-      .map((friendUser) => ({ user: toUser(friendUser), netCents: 0 })),
+      .map((friendUser) => ({ user: toPublicUser(friendUser), netCents: 0 })),
   ];
 }
 
@@ -167,7 +167,7 @@ export async function listActivity(
         {
           id: activityRow.id,
           groupId: activityRow.group_id ?? "",
-          actor: toUser(actor),
+          actor: toPublicUser(actor),
           type: activityRow.type,
           message: activityRow.message,
           link: activityRow.link,
