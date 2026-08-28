@@ -12,6 +12,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { Money } from "@/components/ui/Money";
 import { Spinner } from "@/components/ui/Spinner";
 import { formatMoney } from "@haalkhata/shared/money/money";
+import { safeActivityPath } from "@haalkhata/shared/navigation/activityPath";
 import { localDate } from "@haalkhata/shared/time/localTime";
 import { getGreeting } from "@haalkhata/shared/greeting";
 import { colors, fonts, radii, spacing } from "@/lib/theme/theme";
@@ -159,7 +160,7 @@ export function DashboardScreen() {
                 {dashboard.recentActivity.map((event) => (
                   <Pressable
                     key={event.id}
-                    onPress={() => router.push((event.link || "/activity") as never)}
+                    onPress={() => router.push(safeActivityPath(event.link))}
                     style={styles.activityRow}
                   >
                     {event.actor ? <Avatar size="sm" user={event.actor} /> : null}

@@ -23,6 +23,7 @@ import {
   REMINDER_COOLDOWN_HOURS,
 } from "@/server/social/social.constants";
 import { formatMoney } from "@haalkhata/shared/money/money";
+import { safeActivityPath } from "@haalkhata/shared/navigation/activityPath";
 import { findPaymentMethod } from "@haalkhata/shared/payment/methods";
 import { getOverallBalances, netWithUser } from "@/server/expense/usecase/balance.usecase";
 import { denied, invalid, notFound } from "@/server/common/errors";
@@ -170,7 +171,7 @@ export async function listActivity(
           actor: toPublicUser(actor),
           type: activityRow.type,
           message: activityRow.message,
-          link: activityRow.link,
+          link: safeActivityPath(activityRow.link),
           createdAt: activityRow.created_at,
           amountCents: activityRow.amount_cents,
           currency: activityRow.currency,

@@ -11,6 +11,7 @@ import { SettleUpModal } from "@/components/modals/SettleUpModal";
 import { Spinner } from "@/components/ui/Spinner";
 import { useHydrated } from "@/lib/hooks/useHydrated";
 import { formatMoney } from "@haalkhata/shared/money/money";
+import { safeActivityPath } from "@haalkhata/shared/navigation/activityPath";
 import { localDate } from "@haalkhata/shared/time/localTime";
 import { getGreeting } from "@haalkhata/shared/greeting";
 import { groupEmoji } from "../../../groups/constants/groupTypes";
@@ -196,7 +197,7 @@ export function DashboardPage() {
             {dashboard.recentActivity.map((event) => (
               <li key={event.id}>
                 <Link
-                  href={event.link || "/activity"}
+                  href={safeActivityPath(event.link)}
                   className="flex items-center gap-3 rounded-xl border border-line bg-card px-4 py-3 text-sm hover:border-brand-200"
                 >
                   {event.actor ? <Avatar user={event.actor} size="sm" /> : null}

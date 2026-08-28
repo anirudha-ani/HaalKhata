@@ -5,6 +5,7 @@ import Link from "next/link";
 import type { ActivityEvent } from "@haalkhata/protogen/social/v1/social_pb";
 import { Avatar } from "@/components/ui/Avatar";
 import { formatMoney } from "@haalkhata/shared/money/money";
+import { safeActivityPath } from "@haalkhata/shared/navigation/activityPath";
 import { activityLook } from "./activityTypes";
 import { groupByDay, timeOfDay, withoutAmount } from "./activityFormat";
 import { ActivityGlyph } from "./ActivityGlyph";
@@ -61,7 +62,7 @@ function ActivityRow({ event }: { event: ActivityEvent }) {
 
   return (
     <Link
-      href={event.link || "#"}
+      href={safeActivityPath(event.link)}
       className="group flex items-center gap-3 rounded-xl border border-line bg-card px-3 py-2.5 transition-colors hover:border-brand-200 hover:shadow-sm"
     >
       {/* The drawing is decoration; the tile carries the accessible name so a

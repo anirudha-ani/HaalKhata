@@ -4,6 +4,7 @@ import { useRouter } from "expo-router";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import type { ActivityEvent } from "@haalkhata/protogen/social/v1/social_pb";
 import { localDate } from "@haalkhata/shared/time/localTime";
+import { safeActivityPath } from "@haalkhata/shared/navigation/activityPath";
 import { Avatar } from "@/components/ui/Avatar";
 import { colors, radii, spacing } from "@/lib/theme/theme";
 import { TYPE_EMOJI } from "./typeEmoji";
@@ -28,7 +29,7 @@ export function ActivityList({
       {events.map((event) => (
         <Pressable
           key={event.id}
-          onPress={() => (event.link ? router.push(event.link as never) : undefined)}
+          onPress={() => router.push(safeActivityPath(event.link))}
           style={({ pressed }) => [styles.row, pressed ? styles.rowPressed : null]}
         >
           <Text style={styles.emoji}>{TYPE_EMOJI[event.type] ?? "📌"}</Text>
