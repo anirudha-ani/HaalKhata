@@ -26,7 +26,20 @@ export const socialHandler: ServiceImpl<typeof SocialService> = {
 
   /** Lists the caller's friends (with net balances). */
   async listFriends(_request, context) {
-    return runUsecase(async () => social.listFriends(await requireUser(context)), context);
+    // ListFriends computes the same full-ledger aggregate as
+    // GetOverallBalances, so both endpoints deliberately consume the same
+    // per-account bucket instead of allowing one to bypass the other.
+    return runUsecase(
+      async () =>
+        social.listFriends(
+          await requireRateLimitedUser(
+            context,
+            "get-overall-balances",
+            RPC_RATE_LIMITS.getOverallBalances,
+          ),
+        ),
+      context,
+    );
   },
 
   /** Accepts or declines one request addressed to the caller. */
