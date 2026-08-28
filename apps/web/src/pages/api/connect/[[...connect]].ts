@@ -5,9 +5,14 @@ import { nextJsApiRouter } from "@connectrpc/connect-next";
 import routes from "@/server/api/connect/routes";
 import { csrfGuard } from "@/server/api/connect/csrf";
 import { ensureMigrated } from "@/server/common/db";
+import { CONNECT_READ_MAX_BYTES } from "@/server/api/connect/connect.constants";
 
 /** Next.js API handler that serves every registered Connect RPC under /api/connect. */
-const { handler } = nextJsApiRouter({ routes, prefix: "/api/connect" });
+const { handler } = nextJsApiRouter({
+  routes,
+  prefix: "/api/connect",
+  readMaxBytes: CONNECT_READ_MAX_BYTES,
+});
 
 // Run pending migrations once per process before serving the first request.
 // Cached on the global so subsequent requests skip it. This keeps migrations

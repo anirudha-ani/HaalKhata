@@ -10,6 +10,13 @@ export const SESSION_COOKIE = "hk_token";
 export const COOKIE_MAX_AGE = 60 * 60 * 24 * 30;
 
 /**
+ * Largest decoded Connect request accepted by the application. Receipt images
+ * are capped at 8 MiB; 12 MiB leaves room for protobuf/JSON base64 overhead
+ * while rejecting bodies before a handler or authentication lookup runs.
+ */
+export const CONNECT_READ_MAX_BYTES = 12 * 1024 * 1024;
+
+/**
  * Builds the Set-Cookie attribute string for the session token. The `Secure`
  * flag is added only in production so dev over plain HTTP (localhost) still
  * works; production must run behind a TLS-terminating reverse proxy.

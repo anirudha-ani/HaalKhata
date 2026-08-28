@@ -14,6 +14,13 @@
 haalkhata.app, www.haalkhata.app {
 	encode zstd gzip
 
+	# Reject oversized bodies at the public edge before proxying them into the
+	# 1 GB application host. The app independently enforces a 12 MiB decoded
+	# Connect-message limit; this slightly larger wire cap leaves framing room.
+	request_body {
+		max_size 16MB
+	}
+
 	header {
 		# .app is an HSTS-preloaded TLD, so browsers already refuse plain HTTP
 		# here before any header of ours is read. This is belt and braces — and
