@@ -143,6 +143,8 @@ What it adds:
 - **Nothing published but 80/443.** Postgres and the app are reachable only
   over the compose network.
 - Read-only root filesystem, dropped capabilities, `no-new-privileges`.
+- CSP, HSTS, clickjacking, MIME-sniffing, referrer, and permissions headers
+  ship in the Next.js app itself, so alternate reverse proxies retain them.
 
 CI builds the image and pushes it to GHCR; the server only pulls. See
 [`ops/README.md`](ops/README.md) for server-side setup, secret rotation,
