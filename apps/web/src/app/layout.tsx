@@ -22,6 +22,9 @@ export const viewport: Viewport = {
   viewportFit: "cover",
 };
 
+/** Forces every document render to receive the request's fresh CSP nonce. */
+export const dynamic = "force-dynamic";
+
 /**
  * Root layout for every route: renders the HTML/body shell, wraps the app in
  * the TanStack Query provider, and registers the service worker.
