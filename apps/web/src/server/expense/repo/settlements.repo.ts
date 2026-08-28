@@ -1,7 +1,8 @@
 /** All SQL for the settlements table. */
 
 import type { PoolClient } from "pg";
-import { newId, query, transaction } from "@/server/common/db";
+import { newId, query, queryOne } from "@/server/common/db";
+import { lockPairLedgers, withLedgerTransaction } from "@/server/common/ledgerLocks";
 
 /** One row of the settlements table (column names mirror SQL). */
 export interface SettlementRow {
@@ -18,6 +19,8 @@ export interface SettlementRow {
   method: string;
   note: string;
   created_at: string;
+  /** Monotonic order shared with expenses for mutation-safety checks. */
+  ledger_event_order: string;
 }
 
 /**
@@ -44,14 +47,53 @@ export async function withSettlementPairLock<Outcome>(
   secondUserId: string,
   operation: (client: PoolClient) => Promise<Outcome>,
 ): Promise<Outcome> {
-  const [lowUserId, highUserId] =
-    firstUserId < secondUserId ? [firstUserId, secondUserId] : [secondUserId, firstUserId];
-  return transaction(async (client) => {
-    await client.query(`SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, [
-      `settlement:${lowUserId}|${highUserId}`,
-    ]);
+  return withLedgerTransaction(async (client) => {
+    await lockPairLedgers(client, [firstUserId, secondUserId]);
     return operation(client);
   });
+}
+
+/**
+ * Reports whether a scope has settlement history recorded after an expense.
+ * Earlier payments cannot have paid a later expense, so they do not make that
+ * new expense immutable.
+ *
+ * @param groupId - Group scope, or null for one-off pair scopes.
+ * @param participantIds - One-off expense participants; ignored for a group.
+ * @param expenseEventOrder - Monotonic creation order of the expense being changed.
+ * @param client - Transaction client holding the matching ledger lock.
+ * @returns True when a later settlement exists in the addressed scope.
+ */
+export async function scopeHasSettlements(
+  groupId: string | null,
+  participantIds: string[],
+  expenseEventOrder: string,
+  client: PoolClient,
+): Promise<boolean> {
+  if (groupId) {
+    return (
+      (await queryOne(
+        `SELECT 1 AS matched FROM settlements
+          WHERE group_id = $1 AND ledger_event_order > $2
+          LIMIT 1`,
+        [groupId, expenseEventOrder],
+        client,
+      )) !== undefined
+    );
+  }
+  if (participantIds.length < 2) return false;
+  return (
+    (await queryOne(
+      `SELECT 1 AS matched FROM settlements
+        WHERE group_id IS NULL
+          AND from_user = ANY($1::text[])
+          AND to_user = ANY($1::text[])
+          AND ledger_event_order > $2
+        LIMIT 1`,
+      [[...new Set(participantIds)], expenseEventOrder],
+      client,
+    )) !== undefined
+  );
 }
 
 /**

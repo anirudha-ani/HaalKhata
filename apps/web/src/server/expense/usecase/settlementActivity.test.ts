@@ -17,6 +17,7 @@ vi.mock("@/server/expense/repo/expenses.repo", () => ({
 vi.mock("@/server/group/repo/groups.repo", () => ({
   findGroupById: vi.fn(),
   isMember: vi.fn(),
+  listGroupsByUser: vi.fn(),
   listMembers: vi.fn(),
 }));
 vi.mock("@/server/auth/repo/users.repo", () => ({
@@ -30,11 +31,20 @@ vi.mock("@/server/expense/repo/comments.repo", () => ({
 }));
 vi.mock("@/server/expense/repo/settlements.repo", () => ({
   insertSettlement: vi.fn(),
+  scopeHasSettlements: vi.fn(),
   // The lock is orthogonal to attribution; run the operation directly. The
   // client handed through is never dereferenced by the mocked insert.
   withSettlementPairLock: vi.fn(
     (first: string, second: string, operation: (client: PoolClient) => Promise<unknown>) =>
       operation({} as PoolClient),
+  ),
+}));
+vi.mock("@/server/common/ledgerLocks", () => ({
+  lockExpenseLedger: vi.fn(),
+  lockGroupLedgers: vi.fn(),
+  lockPairLedgers: vi.fn(),
+  withLedgerTransaction: vi.fn(
+    (operation: (client: PoolClient) => Promise<unknown>) => operation({} as PoolClient),
   ),
 }));
 vi.mock("@/server/social/repo/activity.repo", () => ({
@@ -46,6 +56,7 @@ vi.mock("./balance.usecase", () => ({ amountOwed: vi.fn(), owedByScope: vi.fn() 
 
 import { recordSettlement } from "./expense.usecase";
 import { findUserById } from "@/server/auth/repo/users.repo";
+import { listGroupsByUser } from "@/server/group/repo/groups.repo";
 import { insertSettlement } from "@/server/expense/repo/settlements.repo";
 import { insertActivity } from "@/server/social/repo/activity.repo";
 import { insertNotifications } from "@/server/social/repo/notifications.repo";
@@ -66,6 +77,7 @@ function resetRepos(): void {
   vi.mocked(findUserById).mockImplementation(
     async (userId: string) => PEOPLE[userId] as Awaited<ReturnType<typeof findUserById>>,
   );
+  vi.mocked(listGroupsByUser).mockResolvedValue([]);
   // The whole debt lives in the pair's one-off ledger, comfortably above the
   // amount settled, so the guards pass and a single one-off row is recorded —
   // which is what these attribution tests inspect.

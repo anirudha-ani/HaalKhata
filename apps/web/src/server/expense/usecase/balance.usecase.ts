@@ -133,10 +133,15 @@ export async function getGroupBalances(userId: string, groupId: string) {
  *
  * @param userId - User whose position is computed.
  * @param groupId - Group to compute the position in.
+ * @param client - Optional transaction client holding the group-ledger lock.
  * @returns Net cents; > 0 ⇒ the user is owed money in this group.
  */
-export async function userNetInGroup(userId: string, groupId: string): Promise<number> {
-  return netBalances(await groupLedger(groupId)).get(userId) ?? 0;
+export async function userNetInGroup(
+  userId: string,
+  groupId: string,
+  client?: PoolClient,
+): Promise<number> {
+  return netBalances(await groupLedger(groupId, client)).get(userId) ?? 0;
 }
 
 /**

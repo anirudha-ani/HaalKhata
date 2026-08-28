@@ -87,24 +87,36 @@ export async function listGroupsByUser(
  *
  * @param groupId - Id of the group whose mode is being set.
  * @param simplify - The desired state of the simplify-debts mode.
+ * @param client - Optional transaction client holding the group-ledger lock.
+ * @returns A promise that resolves after the mode is persisted.
  */
-export async function updateSimplifyDebts(groupId: string, simplify: boolean): Promise<void> {
-  await execute(`UPDATE groups SET simplify_debts = $2 WHERE id = $1`, [groupId, simplify]);
+export async function updateSimplifyDebts(
+  groupId: string,
+  simplify: boolean,
+  client?: PoolClient,
+): Promise<void> {
+  await execute(
+    `UPDATE groups SET simplify_debts = $2 WHERE id = $1`,
+    [groupId, simplify],
+    client,
+  );
 }
 
 /**
  * Lists a group's members (user rows plus their role), oldest joiner first.
  *
  * @param groupId - Id of the group whose members to fetch.
+ * @param client - Optional transaction client for a lock-protected read.
  * @returns Member rows ordered by join time ascending.
  */
-export async function listMembers(groupId: string): Promise<MemberRow[]> {
+export async function listMembers(groupId: string, client?: PoolClient): Promise<MemberRow[]> {
   return query<MemberRow>(
     `SELECT users.*, group_members.role FROM users
      JOIN group_members ON group_members.user_id = users.id
      WHERE group_members.group_id = $1
      ORDER BY group_members.joined_at ASC`,
     [groupId],
+    client,
   );
 }
 
@@ -177,12 +189,19 @@ export async function addMember(
  *
  * @param groupId - Id of the group to remove the user from.
  * @param userId - Id of the user being removed.
+ * @param client - Transaction client holding the group-ledger lock.
+ * @returns A promise that resolves after the membership is removed.
  */
-export async function removeMember(groupId: string, userId: string): Promise<void> {
-  await execute(`DELETE FROM group_members WHERE group_id = $1 AND user_id = $2`, [
-    groupId,
-    userId,
-  ]);
+export async function removeMember(
+  groupId: string,
+  userId: string,
+  client?: PoolClient,
+): Promise<void> {
+  await execute(
+    `DELETE FROM group_members WHERE group_id = $1 AND user_id = $2`,
+    [groupId, userId],
+    client,
+  );
 }
 
 /**
@@ -190,12 +209,18 @@ export async function removeMember(groupId: string, userId: string): Promise<voi
  *
  * @param groupId - Id of the group to check.
  * @param userId - Id of the user whose membership is being checked.
+ * @param client - Optional transaction client for a lock-protected check.
  * @returns True when a membership row exists.
  */
-export async function isMember(groupId: string, userId: string): Promise<boolean> {
+export async function isMember(
+  groupId: string,
+  userId: string,
+  client?: PoolClient,
+): Promise<boolean> {
   const membershipRow = await queryOne(
     `SELECT 1 AS matched FROM group_members WHERE group_id = $1 AND user_id = $2`,
     [groupId, userId],
+    client,
   );
   return membershipRow !== undefined;
 }
@@ -205,12 +230,18 @@ export async function isMember(groupId: string, userId: string): Promise<boolean
  *
  * @param groupId - Id of the group to check.
  * @param userId - Id of the user whose role is being fetched.
+ * @param client - Optional transaction client for a lock-protected check.
  * @returns The role string, or undefined when the user is not a member.
  */
-export async function memberRole(groupId: string, userId: string): Promise<string | undefined> {
+export async function memberRole(
+  groupId: string,
+  userId: string,
+  client?: PoolClient,
+): Promise<string | undefined> {
   const roleRow = await queryOne<{ role: string }>(
     `SELECT role FROM group_members WHERE group_id = $1 AND user_id = $2`,
     [groupId, userId],
+    client,
   );
   return roleRow?.role;
 }

@@ -112,6 +112,7 @@ function expenseRow(expenseId: string, description: string): ExpenseRow {
     tip_cents: 0,
     created_by: BOBBY,
     created_at: "2026-08-01T10:00:00Z",
+    ledger_event_order: "1",
     deleted_at: null,
   };
 }
@@ -228,6 +229,7 @@ function recordTripSettlement(fromUser: string, toUser: string, amountCents: num
     method: "cash",
     note: "",
     created_at: "2026-08-02T00:00:00Z",
+    ledger_event_order: "2",
   });
 }
 

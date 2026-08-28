@@ -1,5 +1,6 @@
 /** Group business logic: create/list/get, connected-member enrollment, balance-guarded removal. */
 
+import type { PoolClient } from "pg";
 import {
   addMember,
   findGroupById,
@@ -28,6 +29,7 @@ import { denied, invalid, notFound } from "@/server/common/errors";
 import { normalizeCurrencyCode } from "@/server/common/validation";
 import { EMAIL_PATTERN, normalizePhone, PHONE_FORMAT_HINT } from "@/server/auth/auth.constants";
 import { GROUP_TYPES, MAX_GROUP_NAME_LENGTH, OWNER_ROLE } from "@/server/group/group.constants";
+import { lockGroupLedgers, withLedgerTransaction } from "@/server/common/ledgerLocks";
 import { toGroup, toMember } from "./group.mapper";
 
 /**
@@ -36,14 +38,15 @@ import { toGroup, toMember } from "./group.mapper";
  *
  * @param groupId - Id of the group to load.
  * @param userId - Id of the authenticated caller.
+ * @param client - Optional transaction client holding the group-ledger lock.
  * @returns The loaded group row.
  * @throws UsecaseError (not_found) when the group does not exist.
  * @throws UsecaseError (permission_denied) when the caller is not the owner.
  */
-async function assertGroupOwner(groupId: string, userId: string) {
-  const group = await findGroupById(groupId);
+async function assertGroupOwner(groupId: string, userId: string, client?: PoolClient) {
+  const group = await findGroupById(groupId, client);
   if (!group) notFound("group not found");
-  const role = await memberRole(groupId, userId);
+  const role = await memberRole(groupId, userId, client);
   if (role !== OWNER_ROLE) denied("only the group owner can do this");
   return group;
 }
@@ -60,14 +63,15 @@ async function assertGroupOwner(groupId: string, userId: string) {
  *
  * @param groupId - Id of the group to load.
  * @param userId - Id of the authenticated caller.
+ * @param client - Optional transaction client holding the group-ledger lock.
  * @returns The loaded group row.
  * @throws UsecaseError (not_found) when the group does not exist.
  * @throws UsecaseError (permission_denied) when the caller is not a member.
  */
-async function assertGroupMember(groupId: string, userId: string) {
-  const group = await findGroupById(groupId);
+async function assertGroupMember(groupId: string, userId: string, client?: PoolClient) {
+  const group = await findGroupById(groupId, client);
   if (!group) notFound("group not found");
-  if (!(await isMember(groupId, userId))) denied("you are not a member of this group");
+  if (!(await isMember(groupId, userId, client))) denied("you are not a member of this group");
   return group;
 }
 
@@ -402,20 +406,30 @@ export async function setSimplifyDebts(
   userId: string,
   input: { groupId: string; simplify: boolean },
 ) {
-  const group = await assertGroupMember(input.groupId, userId);
-  if (group.simplify_debts !== input.simplify) {
-    await updateSimplifyDebts(input.groupId, input.simplify);
+  const change = await withLedgerTransaction(async (client) => {
+    await lockGroupLedgers(client, [input.groupId]);
+    const group = await assertGroupMember(input.groupId, userId, client);
+    if (group.simplify_debts === input.simplify) {
+      return { changed: false, group, audience: [] as string[] };
+    }
+    await updateSimplifyDebts(input.groupId, input.simplify, client);
+    return {
+      changed: true,
+      group,
+      audience: (await listMembers(input.groupId, client)).map((member) => member.id),
+    };
+  });
+  if (change.changed) {
     const actor = (await findUserById(userId))!;
-    const audience = (await listMembers(input.groupId)).map((member) => member.id);
     await insertActivity({
       groupId: input.groupId,
       actorId: userId,
       type: "simplify_debts",
       message: input.simplify
-        ? `${actor.name} turned on debt simplification in "${group.name}" — fewer payments, same balances`
-        : `${actor.name} turned off debt simplification in "${group.name}" — debts show person to person again`,
+        ? `${actor.name} turned on debt simplification in "${change.group.name}" — fewer payments, same balances`
+        : `${actor.name} turned off debt simplification in "${change.group.name}" — debts show person to person again`,
       link: `/groups/${input.groupId}`,
-      audience,
+      audience: change.audience,
     });
   }
   return toGroup((await findGroupById(input.groupId))!, await listMembers(input.groupId));
@@ -436,15 +450,20 @@ export async function removeMemberFromGroup(
   userId: string,
   input: { groupId: string; userId: string },
 ) {
-  if (input.userId === userId) {
-    const role = await memberRole(input.groupId, userId);
-    if (!role) denied("you are not a member of this group");
-    if (role === OWNER_ROLE) invalid("owners cannot remove themselves; transfer ownership first");
-  } else {
-    await assertGroupOwner(input.groupId, userId);
-  }
-  if ((await userNetInGroup(input.userId, input.groupId)) !== 0) {
-    invalid("cannot remove a member with an outstanding balance — settle up first");
-  }
-  await removeMember(input.groupId, input.userId);
+  await withLedgerTransaction(async (client) => {
+    await lockGroupLedgers(client, [input.groupId]);
+    if (input.userId === userId) {
+      const role = await memberRole(input.groupId, userId, client);
+      if (!role) denied("you are not a member of this group");
+      if (role === OWNER_ROLE) {
+        invalid("owners cannot remove themselves; transfer ownership first");
+      }
+    } else {
+      await assertGroupOwner(input.groupId, userId, client);
+    }
+    if ((await userNetInGroup(input.userId, input.groupId, client)) !== 0) {
+      invalid("cannot remove a member with an outstanding balance — settle up first");
+    }
+    await removeMember(input.groupId, input.userId, client);
+  });
 }

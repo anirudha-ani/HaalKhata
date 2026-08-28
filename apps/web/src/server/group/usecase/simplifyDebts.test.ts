@@ -4,8 +4,11 @@
  */
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { PoolClient } from "pg";
 import type { GroupRow, MemberRow } from "@/server/group/repo/groups.repo";
 import type { UserRow } from "@/server/auth/repo/users.repo";
+
+const { transactionClient } = vi.hoisted(() => ({ transactionClient: {} as PoolClient }));
 
 vi.mock("@/server/group/repo/groups.repo", () => ({
   addMember: vi.fn(),
@@ -40,6 +43,12 @@ vi.mock("@/server/expense/usecase/balance.usecase", () => ({
   userNetInGroup: vi.fn(),
   userNetInGroups: vi.fn(),
 }));
+vi.mock("@/server/common/ledgerLocks", () => ({
+  lockGroupLedgers: vi.fn(),
+  withLedgerTransaction: vi.fn(
+    (operation: (client: PoolClient) => Promise<unknown>) => operation(transactionClient),
+  ),
+}));
 
 import { addMembers, createGroup, removeMemberFromGroup, setSimplifyDebts } from "./group.usecase";
 import {
@@ -57,6 +66,7 @@ import { findUserByEmail, findUserById } from "@/server/auth/repo/users.repo";
 import { listFriendIds } from "@/server/social/repo/friendships.repo";
 import { insertActivity } from "@/server/social/repo/activity.repo";
 import { userNetInGroup } from "@/server/expense/usecase/balance.usecase";
+import { lockGroupLedgers } from "@/server/common/ledgerLocks";
 import { MAX_GROUP_NAME_LENGTH } from "@/server/group/group.constants";
 
 const MEMBER = "user-member";
@@ -115,7 +125,9 @@ describe("group membership authorization", () => {
 
     await removeMemberFromGroup(MEMBER, { groupId: TRIP, userId: MEMBER });
 
-    expect(removeMember).toHaveBeenCalledWith(TRIP, MEMBER);
+    expect(lockGroupLedgers).toHaveBeenCalledWith(transactionClient, [TRIP]);
+    expect(userNetInGroup).toHaveBeenCalledWith(MEMBER, TRIP, transactionClient);
+    expect(removeMember).toHaveBeenCalledWith(TRIP, MEMBER, transactionClient);
   });
 
   it("still prevents the owner from leaving without transferring ownership", async () => {
@@ -158,7 +170,8 @@ describe("setSimplifyDebts", () => {
 
   it("persists the flip and announces it to the whole group", async () => {
     const group = await setSimplifyDebts(MEMBER, { groupId: TRIP, simplify: true });
-    expect(updateSimplifyDebts).toHaveBeenCalledWith(TRIP, true);
+    expect(lockGroupLedgers).toHaveBeenCalledWith(transactionClient, [TRIP]);
+    expect(updateSimplifyDebts).toHaveBeenCalledWith(TRIP, true, transactionClient);
     expect(group.simplifyDebts).toBe(true);
 
     // The mode changes what everyone sees and which payments the server

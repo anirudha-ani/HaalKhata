@@ -1,6 +1,7 @@
 /** Expense business logic: validation + authoritative splits, comments, settlements, activity/notification fan-out. */
 
 import type { CreateExpenseRequest } from "@haalkhata/protogen/expense/v1/expense_pb";
+import type { PoolClient } from "pg";
 import {
   findExpenseById,
   insertExpense,
@@ -18,12 +19,17 @@ import {
   findGroupById,
   isMember,
   listCoMemberIds,
+  listGroupsByUser,
   listMembers,
 } from "@/server/group/repo/groups.repo";
 import { findUserById, findUsersByIds } from "@/server/auth/repo/users.repo";
 import { insertFriendship, listFriendIds } from "@/server/social/repo/friendships.repo";
 import { insertComment, listCommentsByExpense } from "@/server/expense/repo/comments.repo";
-import { insertSettlement, withSettlementPairLock } from "@/server/expense/repo/settlements.repo";
+import {
+  insertSettlement,
+  scopeHasSettlements,
+  withSettlementPairLock,
+} from "@/server/expense/repo/settlements.repo";
 import { insertActivity, listActivityForExpense } from "@/server/social/repo/activity.repo";
 import { insertNotifications } from "@/server/social/repo/notifications.repo";
 import {
@@ -41,6 +47,12 @@ import {
 import { allocateSettlement } from "@/server/expense/domain/settlementAllocation";
 import { settledExpenseIds } from "@/server/expense/domain/settledExpenses";
 import { denied, invalid, notFound } from "@/server/common/errors";
+import {
+  lockExpenseLedger,
+  lockGroupLedgers,
+  lockPairLedgers,
+  withLedgerTransaction,
+} from "@/server/common/ledgerLocks";
 import { normalizeCurrencyCode } from "@/server/common/validation";
 import { toPublicUser } from "@/server/auth/usecase/user.mapper";
 import { SPLIT_TYPES, ISO_DATE_PATTERN, MAX_EXPENSE_PARTICIPANTS, MAX_ITEM_ASSIGNMENTS, MAX_MONEY_CENTS, MAX_EXPENSE_NOTES_LENGTH, MAX_EXPENSE_ITEM_NAME_LENGTH, MAX_SETTLEMENT_NOTE_LENGTH, EXPENSE_CATEGORIES, SETTLEMENT_METHODS, MAX_COMMENT_LENGTH, COMMENT_PREVIEW_LENGTH } from "@/server/expense/expense.constants";
@@ -255,6 +267,97 @@ function involvedUserIds(write: ExpenseWrite): string[] {
 }
 
 /**
+ * Collects everyone referenced by an already-stored expense.
+ *
+ * @param expense - Parent expense row.
+ * @param children - Child rows loaded for that expense.
+ * @returns Distinct creator, payer, and ower ids.
+ */
+function storedParticipantIds(expense: ExpenseRow, children: ExpenseChildren): string[] {
+  return [
+    ...new Set([
+      expense.created_by,
+      ...(children.payers.get(expense.id) ?? []).map((payer) => payer.user_id),
+      ...(children.splits.get(expense.id) ?? []).map((split) => split.user_id),
+    ]),
+  ];
+}
+
+/**
+ * Rechecks group membership after acquiring the group-ledger lock.
+ *
+ * @param groupId - Locked group scope.
+ * @param actorId - Caller creating or replacing the expense.
+ * @param participantIds - Everyone whose balance the expense will affect.
+ * @param client - Transaction client holding the group-ledger lock.
+ * @returns A promise that resolves when every membership is valid.
+ */
+async function assertLockedGroupParticipants(
+  groupId: string,
+  actorId: string,
+  participantIds: string[],
+  client: PoolClient,
+): Promise<void> {
+  const memberIds = new Set((await listMembers(groupId, client)).map((member) => member.id));
+  if (!memberIds.has(actorId)) denied("you are not a member of this group");
+  if (participantIds.some((participantId) => !memberIds.has(participantId))) {
+    invalid("all participants must be group members");
+  }
+}
+
+/**
+ * Prevents historical settlements from being detached from the debt they paid.
+ *
+ * @param groupId - Group scope, or null for the participants' one-off scope.
+ * @param participantIds - Participants in the old and replacement expense.
+ * @param expenseEventOrder - Monotonic creation order of the expense being changed.
+ * @param client - Transaction client holding every matching ledger lock.
+ * @returns A promise that resolves when no later settlement can be orphaned.
+ */
+async function assertExpenseScopeMutable(
+  groupId: string | null,
+  participantIds: string[],
+  expenseEventOrder: string,
+  client: PoolClient,
+): Promise<void> {
+  if (await scopeHasSettlements(groupId, participantIds, expenseEventOrder, client)) {
+    invalid("settled ledger expenses cannot be edited or deleted; add a correction instead");
+  }
+}
+
+/**
+ * Rebuilds the write shape used for deletion activity from stored rows.
+ *
+ * @param expense - Stored parent row.
+ * @param children - Stored child rows.
+ * @returns Expense contents suitable for the activity fan-out.
+ */
+function storedExpenseWrite(expense: ExpenseRow, children: ExpenseChildren): ExpenseWrite {
+  return {
+    groupId: expense.group_id,
+    description: expense.description,
+    amountCents: expense.amount_cents,
+    currency: expense.currency,
+    category: expense.category,
+    expenseDate: expense.expense_date,
+    splitType: expense.split_type,
+    notes: expense.notes,
+    taxCents: expense.tax_cents,
+    tipCents: expense.tip_cents,
+    createdBy: expense.created_by,
+    payers: (children.payers.get(expense.id) ?? []).map((payer) => ({
+      userId: payer.user_id,
+      amountCents: payer.amount_cents,
+    })),
+    splits: (children.splits.get(expense.id) ?? []).map((split) => ({
+      userId: split.user_id,
+      owedCents: split.owed_cents,
+    })),
+    items: [],
+  };
+}
+
+/**
  * Fans out an expense change: one activity entry for its participants plus a
  * notification for every participant except the actor.
  *
@@ -310,7 +413,16 @@ async function recordExpenseActivity(
  */
 export async function createExpense(userId: string, request: CreateExpenseRequest) {
   const write = await buildExpenseWrite(userId, request);
-  const expenseId = await insertExpense(write);
+  const participantIds = involvedUserIds(write);
+  const expenseId = await withLedgerTransaction(async (client) => {
+    if (write.groupId) {
+      await lockGroupLedgers(client, [write.groupId]);
+      await assertLockedGroupParticipants(write.groupId, userId, participantIds, client);
+    } else {
+      await lockPairLedgers(client, participantIds);
+    }
+    return insertExpense(write, client);
+  });
   // One-off expenses imply a friend connection between all participants.
   if (!write.groupId) {
     for (const participantId of involvedUserIds(write)) {
@@ -352,14 +464,19 @@ async function assertCanTouch(userId: string, expense: ExpenseRow): Promise<void
  *
  * @param userId - Authenticated caller requesting the modification.
  * @param expense - The expense row being modified.
+ * @param client - Optional transaction client holding the expense's ledger lock.
  * @throws UsecaseError (permission_denied) if the caller did not create the
  *   expense, or (for group expenses) is no longer a member.
  */
-async function assertCanModify(userId: string, expense: ExpenseRow): Promise<void> {
+async function assertCanModify(
+  userId: string,
+  expense: ExpenseRow,
+  client?: PoolClient,
+): Promise<void> {
   if (expense.created_by !== userId) {
     denied("only the expense creator can edit or delete it");
   }
-  if (expense.group_id && !(await isMember(expense.group_id, userId))) {
+  if (expense.group_id && !(await isMember(expense.group_id, userId, client))) {
     denied("you are no longer a member of this group");
   }
 }
@@ -387,8 +504,38 @@ export async function updateExpense(
     invalid("an expense cannot be moved between groups; delete it and create it in the right group");
   }
   const write = await buildExpenseWrite(userId, request);
-  write.createdBy = existing.created_by;
-  await replaceExpense(expenseId, write);
+  await withLedgerTransaction(async (client) => {
+    await lockExpenseLedger(client, expenseId);
+    const current = await findExpenseById(expenseId, client);
+    if (!current || current.deleted_at) notFound("expense not found");
+    await assertCanModify(userId, current, client);
+    if ((request.groupId || null) !== current.group_id) {
+      invalid("an expense cannot be moved between groups; delete it and create it in the right group");
+    }
+    const children = await loadExpenseChildren([expenseId], client);
+    const participantIds = [
+      ...new Set([...storedParticipantIds(current, children), ...involvedUserIds(write)]),
+    ];
+    if (current.group_id) {
+      await lockGroupLedgers(client, [current.group_id]);
+      await assertLockedGroupParticipants(
+        current.group_id,
+        userId,
+        involvedUserIds(write),
+        client,
+      );
+    } else {
+      await lockPairLedgers(client, participantIds);
+    }
+    await assertExpenseScopeMutable(
+      current.group_id,
+      participantIds,
+      current.ledger_event_order,
+      client,
+    );
+    write.createdBy = current.created_by;
+    await replaceExpense(expenseId, write, client);
+  });
   await recordExpenseActivity(userId, expenseId, write, "updated");
   return getExpenseProto(expenseId);
 }
@@ -402,38 +549,28 @@ export async function updateExpense(
  * @throws UsecaseError if the expense is missing/deleted or the caller lacks access.
  */
 export async function deleteExpense(userId: string, expenseId: string): Promise<void> {
-  const existing = await findExpenseById(expenseId);
-  if (!existing || existing.deleted_at) notFound("expense not found");
-  await assertCanModify(userId, existing);
-  const children = await loadExpenseChildren([expenseId]);
-  await softDeleteExpense(expenseId);
-  await recordExpenseActivity(
-    userId,
-    expenseId,
-    {
-      groupId: existing.group_id,
-      description: existing.description,
-      amountCents: existing.amount_cents,
-      currency: existing.currency,
-      category: existing.category,
-      expenseDate: existing.expense_date,
-      splitType: existing.split_type,
-      notes: existing.notes,
-      taxCents: existing.tax_cents,
-      tipCents: existing.tip_cents,
-      createdBy: existing.created_by,
-      payers: (children.payers.get(expenseId) ?? []).map((payer) => ({
-        userId: payer.user_id,
-        amountCents: payer.amount_cents,
-      })),
-      splits: (children.splits.get(expenseId) ?? []).map((split) => ({
-        userId: split.user_id,
-        owedCents: split.owed_cents,
-      })),
-      items: [],
-    },
-    "deleted",
-  );
+  const deletedWrite = await withLedgerTransaction(async (client) => {
+    await lockExpenseLedger(client, expenseId);
+    const existing = await findExpenseById(expenseId, client);
+    if (!existing || existing.deleted_at) notFound("expense not found");
+    await assertCanModify(userId, existing, client);
+    const children = await loadExpenseChildren([expenseId], client);
+    const participantIds = storedParticipantIds(existing, children);
+    if (existing.group_id) {
+      await lockGroupLedgers(client, [existing.group_id]);
+    } else {
+      await lockPairLedgers(client, participantIds);
+    }
+    await assertExpenseScopeMutable(
+      existing.group_id,
+      participantIds,
+      existing.ledger_event_order,
+      client,
+    );
+    await softDeleteExpense(expenseId, client);
+    return storedExpenseWrite(existing, children);
+  });
+  await recordExpenseActivity(userId, expenseId, deletedWrite, "deleted");
 }
 
 /**
@@ -700,9 +837,10 @@ export async function addComment(userId: string, expenseId: string, body: string
  * group's balance too, instead of leaving the group demanding money that
  * already changed hands and double-counting anyone who obliges.
  *
- * All validation and inserts run under a per-pair advisory lock: the
- * over-settle guard is a read followed by writes, and without the lock two
- * concurrent recordings both see the same outstanding debt and both land.
+ * All validation and inserts run under a per-pair advisory lock plus every
+ * affected group-ledger lock: the over-settle guard is a read followed by
+ * writes, and without the locks concurrent settlements or expense changes
+ * can both validate against debt that the other operation is replacing.
  *
  * `received` says which way the money went. Both directions are needed: a
  * balance in your favour can only be cleared by recording that they paid you.
@@ -773,6 +911,12 @@ export async function recordSettlement(
     // The cap is what the payer owes in the addressed scope(s), never the
     // pair's net: a debt pointing the other way cannot absorb a payment.
     if (groupId) {
+      await lockGroupLedgers(client, [groupId]);
+      const callerIsMember = await isMember(groupId, userId, client);
+      const recipientIsMember = await isMember(groupId, request.toUserId, client);
+      if (!callerIsMember || !recipientIsMember) {
+        denied("both people must be members of the group");
+      }
       const outstandingCents = await amountOwed(payerId, creditorId, groupId, client);
       if (outstandingCents <= 0) {
         invalid(
@@ -809,9 +953,20 @@ export async function recordSettlement(
     // amounts — keeps the guards authoritative: a stale checkbox for a
     // balance someone else just settled contributes nothing here, and the
     // refusal below says so instead of double-recording.
+    // Lock the union, rather than only today's intersection: if membership
+    // changes while the pair lock is held, no newly shared group is used
+    // unless its group lock was selected from this snapshot.
+    const payerGroups = await listGroupsByUser(payerId, client);
+    const creditorGroups = await listGroupsByUser(creditorId, client);
+    const lockedGroupIds = new Set(
+      [...payerGroups, ...creditorGroups].map((group) => group.id),
+    );
+    await lockGroupLedgers(client, [...lockedGroupIds]);
     const selection = new Set(request.scopeGroupIds ?? []);
     const scopes = (await owedByScope(payerId, creditorId, client)).filter(
-      (scope) => selection.size === 0 || selection.has(scope.groupId ?? ""),
+      (scope) =>
+        (scope.groupId === null || lockedGroupIds.has(scope.groupId)) &&
+        (selection.size === 0 || selection.has(scope.groupId ?? "")),
     );
     const totalOwedCents = scopes.reduce((running, scope) => running + scope.owedCents, 0);
     if (totalOwedCents <= 0) {

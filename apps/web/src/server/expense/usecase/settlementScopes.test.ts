@@ -19,6 +19,7 @@ vi.mock("@/server/expense/repo/expenses.repo", () => ({
 vi.mock("@/server/group/repo/groups.repo", () => ({
   findGroupById: vi.fn(),
   isMember: vi.fn(),
+  listGroupsByUser: vi.fn(),
   listMembers: vi.fn(),
 }));
 vi.mock("@/server/auth/repo/users.repo", () => ({
@@ -32,9 +33,18 @@ vi.mock("@/server/expense/repo/comments.repo", () => ({
 }));
 vi.mock("@/server/expense/repo/settlements.repo", () => ({
   insertSettlement: vi.fn(),
+  scopeHasSettlements: vi.fn(),
   withSettlementPairLock: vi.fn(
     (first: string, second: string, operation: (client: PoolClient) => Promise<unknown>) =>
       operation(transactionClient),
+  ),
+}));
+vi.mock("@/server/common/ledgerLocks", () => ({
+  lockExpenseLedger: vi.fn(),
+  lockGroupLedgers: vi.fn(),
+  lockPairLedgers: vi.fn(),
+  withLedgerTransaction: vi.fn(
+    (operation: (client: PoolClient) => Promise<unknown>) => operation(transactionClient),
   ),
 }));
 vi.mock("@/server/social/repo/activity.repo", () => ({
@@ -46,11 +56,16 @@ vi.mock("./balance.usecase", () => ({ amountOwed: vi.fn(), owedByScope: vi.fn() 
 
 import { recordSettlement } from "./expense.usecase";
 import { findUserById } from "@/server/auth/repo/users.repo";
-import { findGroupById, listMembers } from "@/server/group/repo/groups.repo";
+import {
+  findGroupById,
+  listGroupsByUser,
+  listMembers,
+} from "@/server/group/repo/groups.repo";
 import { insertSettlement } from "@/server/expense/repo/settlements.repo";
 import { insertActivity } from "@/server/social/repo/activity.repo";
 import { insertNotifications } from "@/server/social/repo/notifications.repo";
 import { owedByScope } from "./balance.usecase";
+import { lockGroupLedgers } from "@/server/common/ledgerLocks";
 
 const PAYER = "user-payer";
 const CREDITOR = "user-creditor";
@@ -68,6 +83,9 @@ function armRepos(): void {
       ReturnType<typeof findGroupById>
     >;
   });
+  vi.mocked(listGroupsByUser).mockResolvedValue([
+    { id: "goa", name: "Goa", currency: "USD" },
+  ] as never);
   vi.mocked(listMembers).mockResolvedValue([]);
   vi.mocked(insertSettlement).mockImplementation(
     async (input) =>
@@ -116,6 +134,7 @@ describe("recordSettlement — rows land in the scope holding the debt", () => {
     // never saw it, kept demanding the money, and accepted a second payment.
     vi.mocked(owedByScope).mockResolvedValue([{ groupId: "goa", owedCents: 10652 }]);
     const inserted = await settle(10652);
+    expect(lockGroupLedgers).toHaveBeenCalledWith(transactionClient, ["goa"]);
     expect(owedByScope).toHaveBeenCalledWith(PAYER, CREDITOR, transactionClient);
     expect(inserted).toHaveLength(1);
     expect(inserted[0].groupId).toBe("goa");

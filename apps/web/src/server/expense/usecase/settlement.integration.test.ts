@@ -83,6 +83,12 @@ const reachable = await databaseReachable();
 describe.skipIf(!reachable)("recordSettlement against Postgres", () => {
   let database: Client;
   let recordSettlement: typeof import("./expense.usecase").recordSettlement;
+  let createExpense: typeof import("./expense.usecase").createExpense;
+  let deleteExpense: typeof import("./expense.usecase").deleteExpense;
+  let updateExpense: typeof import("./expense.usecase").updateExpense;
+  let removeMemberFromGroup: typeof import(
+    "@/server/group/usecase/group.usecase"
+  ).removeMemberFromGroup;
   let userNetInGroup: typeof import("./balance.usecase").userNetInGroup;
   let netWithUser: typeof import("./balance.usecase").netWithUser;
   let closePool: () => Promise<void>;
@@ -103,7 +109,10 @@ describe.skipIf(!reachable)("recordSettlement against Postgres", () => {
       const cache = globalThis as unknown as { __haalkhataPool?: { end(): Promise<void> } };
       await cache.__haalkhataPool?.end();
     };
-    ({ recordSettlement } = await import("./expense.usecase"));
+    ({ createExpense, deleteExpense, recordSettlement, updateExpense } = await import(
+      "./expense.usecase"
+    ));
+    ({ removeMemberFromGroup } = await import("@/server/group/usecase/group.usecase"));
     ({ userNetInGroup, netWithUser } = await import("./balance.usecase"));
 
     database = new Client({ connectionString: TEST_URL });
@@ -157,6 +166,74 @@ describe.skipIf(!reachable)("recordSettlement against Postgres", () => {
     expect(await netWithUser(DEBTOR, CREDITOR)).toBe(0);
   });
 
+  it("keeps the paid debt immutable after settlement", async () => {
+    await expect(deleteExpense(CREDITOR, "exp-1")).rejects.toThrow(/add a correction instead/);
+    await expect(
+      updateExpense(CREDITOR, "exp-1", {
+        groupId: "grp-1",
+        description: "Campsite corrected",
+        amountCents: 10_000,
+        currency: "USD",
+        category: "general",
+        expenseDate: "2026-07-28",
+        splitType: "exact",
+        notes: "",
+        payers: [{ userId: CREDITOR, amountCents: 10_000 }],
+        splitSpecs: [
+          { userId: DEBTOR, amountCents: 5000, percentBp: 0, shares: 0 },
+          { userId: CREDITOR, amountCents: 5000, percentBp: 0, shares: 0 },
+        ],
+        items: [],
+        taxCents: 0,
+        tipCents: 0,
+      } as never),
+    ).rejects.toThrow(/add a correction instead/);
+
+    const { rows } = await database.query(
+      `SELECT description, deleted_at FROM expenses WHERE id = 'exp-1'`,
+    );
+    expect(rows).toEqual([{ description: "Campsite", deleted_at: null }]);
+  });
+
+  it("still allows correction of an expense created after an older settlement", async () => {
+    const laterExpense = await createExpense(CREDITOR, {
+      groupId: "grp-1",
+      description: "Personal snack",
+      amountCents: 250,
+      currency: "USD",
+      category: "food",
+      expenseDate: "2026-07-29",
+      splitType: "exact",
+      notes: "",
+      payers: [{ userId: CREDITOR, amountCents: 250 }],
+      splitSpecs: [{ userId: CREDITOR, amountCents: 250, percentBp: 0, shares: 0 }],
+      items: [],
+      taxCents: 0,
+      tipCents: 0,
+    } as never);
+
+    await updateExpense(CREDITOR, laterExpense.id, {
+      groupId: "grp-1",
+      description: "Personal snack corrected",
+      amountCents: 250,
+      currency: "USD",
+      category: "food",
+      expenseDate: "2026-07-29",
+      splitType: "exact",
+      notes: "",
+      payers: [{ userId: CREDITOR, amountCents: 250 }],
+      splitSpecs: [{ userId: CREDITOR, amountCents: 250, percentBp: 0, shares: 0 }],
+      items: [],
+      taxCents: 0,
+      tipCents: 0,
+    } as never);
+
+    const { rows } = await database.query(`SELECT description FROM expenses WHERE id = $1`, [
+      laterExpense.id,
+    ]);
+    expect(rows).toEqual([{ description: "Personal snack corrected" }]);
+  });
+
   it("refuses a later recording of the already-settled debt from any page", async () => {
     await expect(
       recordSettlement(DEBTOR, {
@@ -185,5 +262,36 @@ describe.skipIf(!reachable)("recordSettlement against Postgres", () => {
       `SELECT count(*)::int AS settlement_rows FROM activity WHERE type = 'settlement'`,
     );
     expect(rows[0].settlement_rows).toBe(1);
+  });
+
+  it("serializes member removal against a new expense for that member", async () => {
+    const outcomes = await Promise.allSettled([
+      removeMemberFromGroup(CREDITOR, { groupId: "grp-1", userId: DEBTOR }),
+      createExpense(CREDITOR, {
+        groupId: "grp-1",
+        description: "Late fee",
+        amountCents: 100,
+        currency: "USD",
+        category: "general",
+        expenseDate: "2026-07-29",
+        splitType: "exact",
+        notes: "",
+        payers: [{ userId: CREDITOR, amountCents: 100 }],
+        splitSpecs: [{ userId: DEBTOR, amountCents: 100, percentBp: 0, shares: 0 }],
+        items: [],
+        taxCents: 0,
+        tipCents: 0,
+      } as never),
+    ]);
+
+    expect(outcomes.filter((outcome) => outcome.status === "fulfilled")).toHaveLength(1);
+    const membership = await database.query(
+      `SELECT 1 FROM group_members WHERE group_id = 'grp-1' AND user_id = $1`,
+      [DEBTOR],
+    );
+    const expense = await database.query(
+      `SELECT 1 FROM expenses WHERE group_id = 'grp-1' AND description = 'Late fee'`,
+    );
+    expect(membership.rowCount).toBe(expense.rowCount);
   });
 });

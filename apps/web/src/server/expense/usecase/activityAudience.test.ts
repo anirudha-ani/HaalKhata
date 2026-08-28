@@ -14,6 +14,8 @@ import type { UserRow } from "@/server/auth/repo/users.repo";
 import type { GroupRow } from "@/server/group/repo/groups.repo";
 import type { CommentRow } from "@/server/expense/repo/comments.repo";
 
+const { transactionClient } = vi.hoisted(() => ({ transactionClient: {} as PoolClient }));
+
 vi.mock("@/server/expense/repo/expenses.repo", () => ({
   findExpenseById: vi.fn(),
   insertExpense: vi.fn(),
@@ -28,6 +30,7 @@ vi.mock("@/server/group/repo/groups.repo", () => ({
   findGroupById: vi.fn(),
   isMember: vi.fn(),
   listCoMemberIds: vi.fn(),
+  listGroupsByUser: vi.fn(),
   listMembers: vi.fn(),
 }));
 vi.mock("@/server/auth/repo/users.repo", () => ({
@@ -44,9 +47,18 @@ vi.mock("@/server/expense/repo/comments.repo", () => ({
 }));
 vi.mock("@/server/expense/repo/settlements.repo", () => ({
   insertSettlement: vi.fn(),
+  scopeHasSettlements: vi.fn(),
   withSettlementPairLock: vi.fn(
     (first: string, second: string, operation: (client: PoolClient) => Promise<unknown>) =>
-      operation({} as PoolClient),
+      operation(transactionClient),
+  ),
+}));
+vi.mock("@/server/common/ledgerLocks", () => ({
+  lockExpenseLedger: vi.fn(),
+  lockGroupLedgers: vi.fn(),
+  lockPairLedgers: vi.fn(),
+  withLedgerTransaction: vi.fn(
+    (operation: (client: PoolClient) => Promise<unknown>) => operation(transactionClient),
   ),
 }));
 vi.mock("@/server/social/repo/activity.repo", () => ({
@@ -56,21 +68,38 @@ vi.mock("@/server/social/repo/activity.repo", () => ({
 vi.mock("@/server/social/repo/notifications.repo", () => ({ insertNotifications: vi.fn() }));
 vi.mock("./balance.usecase", () => ({ amountOwed: vi.fn(), owedByScope: vi.fn() }));
 
-import { addComment, createExpense, recordSettlement, updateExpense } from "./expense.usecase";
+import {
+  addComment,
+  createExpense,
+  deleteExpense,
+  recordSettlement,
+  updateExpense,
+} from "./expense.usecase";
 import { findUserById, findUsersByIds } from "@/server/auth/repo/users.repo";
 import {
   findGroupById,
   isMember,
   listCoMemberIds,
+  listGroupsByUser,
   listMembers,
 } from "@/server/group/repo/groups.repo";
 import {
   findExpenseById,
   insertExpense,
   loadExpenseChildren,
+  replaceExpense,
+  softDeleteExpense,
 } from "@/server/expense/repo/expenses.repo";
 import { insertComment } from "@/server/expense/repo/comments.repo";
-import { insertSettlement } from "@/server/expense/repo/settlements.repo";
+import {
+  insertSettlement,
+  scopeHasSettlements,
+} from "@/server/expense/repo/settlements.repo";
+import {
+  lockExpenseLedger,
+  lockGroupLedgers,
+  lockPairLedgers,
+} from "@/server/common/ledgerLocks";
 import { insertActivity } from "@/server/social/repo/activity.repo";
 import { insertNotifications } from "@/server/social/repo/notifications.repo";
 import { listFriendIds } from "@/server/social/repo/friendships.repo";
@@ -136,6 +165,8 @@ beforeEach(() => {
   ] as never);
   vi.mocked(listFriendIds).mockResolvedValue([]);
   vi.mocked(listCoMemberIds).mockResolvedValue([]);
+  vi.mocked(listGroupsByUser).mockResolvedValue([]);
+  vi.mocked(scopeHasSettlements).mockResolvedValue(false);
   vi.mocked(insertExpense).mockResolvedValue("expense-1");
   // The stored expense, as createExpense's return path and addComment read it
   // back: Payer paid 1000, Ower owes 1000, inside the group.
@@ -153,6 +184,7 @@ beforeEach(() => {
     tip_cents: 0,
     created_by: PAYER,
     created_at: "2026-08-09T00:00:00Z",
+    ledger_event_order: "42",
     deleted_at: null,
   } as ExpenseRow);
   vi.mocked(loadExpenseChildren).mockResolvedValue({
@@ -381,6 +413,62 @@ describe("who hears about a transaction", () => {
     });
   });
 
+  it("refuses to edit an expense after its group ledger has a settlement", async () => {
+    vi.mocked(scopeHasSettlements).mockResolvedValue(true);
+
+    await expect(
+      updateExpense(PAYER, "expense-1", validExpenseRequest()),
+    ).rejects.toThrow(/add a correction instead/);
+
+    expect(lockExpenseLedger).toHaveBeenCalledWith(transactionClient, "expense-1");
+    expect(lockGroupLedgers).toHaveBeenCalledWith(transactionClient, [GOA_TRIP]);
+    expect(scopeHasSettlements).toHaveBeenCalledWith(
+      GOA_TRIP,
+      [PAYER, OWER],
+      "42",
+      transactionClient,
+    );
+    expect(replaceExpense).not.toHaveBeenCalled();
+  });
+
+  it("locks every affected one-off pair before checking settlement history", async () => {
+    vi.mocked(findExpenseById).mockResolvedValue({
+      ...(await findExpenseById("expense-1"))!,
+      group_id: null,
+    });
+    vi.mocked(listFriendIds).mockResolvedValue([OWER]);
+    vi.mocked(scopeHasSettlements).mockResolvedValue(true);
+
+    await expect(
+      updateExpense(PAYER, "expense-1", validExpenseRequest({ groupId: "" })),
+    ).rejects.toThrow(/add a correction instead/);
+
+    expect(lockPairLedgers).toHaveBeenCalledWith(transactionClient, [PAYER, OWER]);
+    expect(scopeHasSettlements).toHaveBeenCalledWith(
+      null,
+      [PAYER, OWER],
+      "42",
+      transactionClient,
+    );
+    expect(replaceExpense).not.toHaveBeenCalled();
+  });
+
+  it("refuses to delete an expense after its group ledger has a settlement", async () => {
+    vi.mocked(scopeHasSettlements).mockResolvedValue(true);
+
+    await expect(deleteExpense(PAYER, "expense-1")).rejects.toThrow(/add a correction instead/);
+
+    expect(lockExpenseLedger).toHaveBeenCalledWith(transactionClient, "expense-1");
+    expect(lockGroupLedgers).toHaveBeenCalledWith(transactionClient, [GOA_TRIP]);
+    expect(scopeHasSettlements).toHaveBeenCalledWith(
+      GOA_TRIP,
+      [PAYER, OWER],
+      "42",
+      transactionClient,
+    );
+    expect(softDeleteExpense).not.toHaveBeenCalled();
+  });
+
   it("a group expense is announced to its participants, not the whole group", async () => {
     await createExpense(PAYER, {
       groupId: GOA_TRIP,
@@ -399,6 +487,8 @@ describe("who hears about a transaction", () => {
     } as unknown as CreateExpenseRequest);
 
     expect(audiences()).toEqual([[OWER, PAYER].sort()]);
+    expect(lockGroupLedgers).toHaveBeenCalledWith(transactionClient, [GOA_TRIP]);
+    expect(insertExpense).toHaveBeenCalledWith(expect.any(Object), transactionClient);
   });
 
   it("a comment follows its expense's participants (plus the author)", async () => {
@@ -430,5 +520,7 @@ describe("who hears about a transaction", () => {
     const [audience] = audiences();
     expect(audience).toEqual([OWER, PAYER].sort());
     expect(audience).not.toContain(OUTSIDER);
+    expect(lockGroupLedgers).toHaveBeenCalledWith(transactionClient, [GOA_TRIP]);
+    expect(amountOwed).toHaveBeenCalledWith(PAYER, OWER, GOA_TRIP, transactionClient);
   });
 });

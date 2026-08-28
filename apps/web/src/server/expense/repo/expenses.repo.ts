@@ -23,6 +23,8 @@ export interface ExpenseRow {
   tip_cents: number;
   created_by: string;
   created_at: string;
+  /** Monotonic order shared with settlements for mutation-safety checks. */
+  ledger_event_order: string;
   /** Soft-delete timestamp; NULL ⇒ the expense is active. */
   deleted_at: string | null;
 }
@@ -184,12 +186,13 @@ async function insertChildren(
  * Inserts an expense and all its child rows in a single transaction.
  *
  * @param input - Validated expense to persist.
+ * @param client - Optional transaction client holding the expense scope lock.
  * @returns The generated id of the new expense.
  */
-export async function insertExpense(input: ExpenseWrite): Promise<string> {
+export async function insertExpense(input: ExpenseWrite, client?: PoolClient): Promise<string> {
   const expenseId = newId();
-  await transaction(async (client) => {
-    await client.query(
+  const persist = async (transactionClient: PoolClient) => {
+    await transactionClient.query(
       `INSERT INTO expenses
          (id, group_id, description, amount_cents, currency, category,
           expense_date, split_type, notes, tax_cents, tip_cents, created_by)
@@ -209,8 +212,10 @@ export async function insertExpense(input: ExpenseWrite): Promise<string> {
         input.createdBy,
       ],
     );
-    await insertChildren(client, expenseId, input);
-  });
+    await insertChildren(transactionClient, expenseId, input);
+  };
+  if (client) await persist(client);
+  else await transaction(persist);
   return expenseId;
 }
 
@@ -220,13 +225,15 @@ export async function insertExpense(input: ExpenseWrite): Promise<string> {
  *
  * @param expenseId - Id of the expense to overwrite.
  * @param input - Validated replacement expense.
+ * @param client - Optional transaction client holding the expense scope lock.
  */
 export async function replaceExpense(
   expenseId: string,
   input: ExpenseWrite,
+  client?: PoolClient,
 ): Promise<void> {
-  await transaction(async (client) => {
-    await client.query(
+  const persist = async (transactionClient: PoolClient) => {
+    await transactionClient.query(
       `UPDATE expenses SET
          group_id = $1, description = $2, amount_cents = $3, currency = $4,
          category = $5, expense_date = $6, split_type = $7, notes = $8,
@@ -246,35 +253,42 @@ export async function replaceExpense(
         expenseId,
       ],
     );
-    await client.query(
+    await transactionClient.query(
       `DELETE FROM expense_item_assignments WHERE item_id IN
          (SELECT id FROM expense_items WHERE expense_id = $1)`,
       [expenseId],
     );
-    await client.query(`DELETE FROM expense_items WHERE expense_id = $1`, [expenseId]);
-    await client.query(`DELETE FROM expense_payers WHERE expense_id = $1`, [expenseId]);
-    await client.query(`DELETE FROM expense_splits WHERE expense_id = $1`, [expenseId]);
-    await insertChildren(client, expenseId, input);
-  });
+    await transactionClient.query(`DELETE FROM expense_items WHERE expense_id = $1`, [expenseId]);
+    await transactionClient.query(`DELETE FROM expense_payers WHERE expense_id = $1`, [expenseId]);
+    await transactionClient.query(`DELETE FROM expense_splits WHERE expense_id = $1`, [expenseId]);
+    await insertChildren(transactionClient, expenseId, input);
+  };
+  if (client) await persist(client);
+  else await transaction(persist);
 }
 
 /**
  * Marks an expense deleted (sets deleted_at) without removing any rows.
  *
  * @param expenseId - Id of the expense to soft-delete.
+ * @param client - Optional transaction client holding the expense scope lock.
  */
-export async function softDeleteExpense(expenseId: string): Promise<void> {
-  await execute(`UPDATE expenses SET deleted_at = now() WHERE id = $1`, [expenseId]);
+export async function softDeleteExpense(expenseId: string, client?: PoolClient): Promise<void> {
+  await execute(`UPDATE expenses SET deleted_at = now() WHERE id = $1`, [expenseId], client);
 }
 
 /**
  * Fetches a single expense row, including soft-deleted ones.
  *
  * @param expenseId - Id of the expense to fetch.
+ * @param client - Optional transaction client for a lock-protected read.
  * @returns The matching row, or undefined if the id is unknown.
  */
-export async function findExpenseById(expenseId: string): Promise<ExpenseRow | undefined> {
-  return queryOne<ExpenseRow>(`SELECT * FROM expenses WHERE id = $1`, [expenseId]);
+export async function findExpenseById(
+  expenseId: string,
+  client?: PoolClient,
+): Promise<ExpenseRow | undefined> {
+  return queryOne<ExpenseRow>(`SELECT * FROM expenses WHERE id = $1`, [expenseId], client);
 }
 
 /**
