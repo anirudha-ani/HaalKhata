@@ -154,8 +154,8 @@ Two things worth knowing before you point a domain at it:
   cannot be fixed by restarting with a corrected environment, only by
   rebuilding.
 - **Misconfiguration fails closed.** A missing `SESSION_SECRET`, or a
-  `DATABASE_URL` left at the default, throws on boot rather than deploying
-  something insecure.
+  `DATABASE_URL` with a missing, placeholder, or shorter-than-16-byte
+  password, is rejected rather than deploying guessable credentials.
 
 ### Receipt AI providers (optional)
 

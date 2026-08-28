@@ -1,0 +1,39 @@
+/** Tests for production database credential guardrails. */
+
+import { describe, expect, it } from "vitest";
+import { assertSafeDatabaseUrl } from "./db";
+
+describe("assertSafeDatabaseUrl", () => {
+  it.each([
+    "postgres://haalkhata:haalkhata@db:5432/haalkhata",
+    "postgres://haalkhata:change-me@db:5432/haalkhata",
+    "postgres://haalkhata:short-secret@database.internal:5432/haalkhata",
+  ])("rejects weak production credentials regardless of host: %s", (connectionString) => {
+    expect(() => assertSafeDatabaseUrl(connectionString, "production")).toThrow(/password/);
+  });
+
+  it("accepts a sufficiently long URL-encoded production password", () => {
+    expect(() =>
+      assertSafeDatabaseUrl(
+        "postgresql://haalkhata:long-random%40password-0123456789@db:5432/haalkhata",
+        "production",
+      ),
+    ).not.toThrow();
+  });
+
+  it("rejects missing credentials and malformed production URLs", () => {
+    expect(() => assertSafeDatabaseUrl("not a URL", "production")).toThrow(/valid PostgreSQL URL/);
+    expect(() =>
+      assertSafeDatabaseUrl("postgres://db:5432/haalkhata", "production"),
+    ).toThrow(/credentials/);
+  });
+
+  it("keeps the weak local development default available", () => {
+    expect(() =>
+      assertSafeDatabaseUrl(
+        "postgres://haalkhata:change-me@localhost:5432/haalkhata",
+        "development",
+      ),
+    ).not.toThrow();
+  });
+});

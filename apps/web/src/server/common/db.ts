@@ -4,7 +4,12 @@ import { Pool, types, type PoolClient } from "pg";
 import type { QueryResultRow } from "pg";
 import path from "node:path";
 import { runner } from "node-pg-migrate";
-import { DEFAULT_DATABASE_URL } from "@/server/common/db.constants";
+import {
+  DATABASE_URL_PROTOCOLS,
+  DEFAULT_DATABASE_URL,
+  MIN_DATABASE_PASSWORD_BYTES,
+  WEAK_DATABASE_PASSWORDS,
+} from "@/server/common/db.constants";
 import { logError } from "@/server/common/logger";
 
 // Keep date/time columns as strings end-to-end (row types say `string`);
@@ -28,15 +33,42 @@ function databaseUrl(): string {
 }
 
 /**
- * In production, refuse the insecure default connection string
- * (haalkhata:haalkhata) so a forgotten POSTGRES_PASSWORD doesn't silently
- * deploy with a guessable credential. Dev keeps the default for zero-config
- * `pnpm dev`.
+ * In production, parse the connection URL and reject absent, placeholder, or
+ * short database passwords regardless of hostname or URL spelling. Comparing
+ * one exact localhost URL cannot protect Compose, where the host is `db`.
+ *
+ * @param connectionString - PostgreSQL URL to validate.
+ * @param environment - Runtime environment; only production is fail-closed.
+ * @throws Error when a production URL is malformed or carries weak credentials.
  */
-function assertSafeDatabaseUrl(): void {
-  if (process.env.NODE_ENV === "production" && databaseUrl() === DEFAULT_DATABASE_URL) {
+export function assertSafeDatabaseUrl(
+  connectionString: string = databaseUrl(),
+  environment: string | undefined = process.env.NODE_ENV,
+): void {
+  if (environment !== "production") return;
+
+  let parsedUrl: URL;
+  try {
+    parsedUrl = new URL(connectionString);
+  } catch {
+    throw new Error("DATABASE_URL must be a valid PostgreSQL URL in production");
+  }
+  if (!DATABASE_URL_PROTOCOLS.has(parsedUrl.protocol) || !parsedUrl.username) {
+    throw new Error("DATABASE_URL must include PostgreSQL credentials in production");
+  }
+
+  let password: string;
+  try {
+    password = decodeURIComponent(parsedUrl.password);
+  } catch {
+    throw new Error("DATABASE_URL password must use valid URL encoding");
+  }
+  if (
+    Buffer.byteLength(password, "utf8") < MIN_DATABASE_PASSWORD_BYTES ||
+    WEAK_DATABASE_PASSWORDS.has(password.toLowerCase())
+  ) {
     throw new Error(
-      "DATABASE_URL must be set to a non-default value in production (got the haalkhata:haalkhata default).",
+      `DATABASE_URL must use a non-placeholder password of at least ${MIN_DATABASE_PASSWORD_BYTES} bytes in production`,
     );
   }
 }
