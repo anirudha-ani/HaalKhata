@@ -51,6 +51,8 @@ services:
     environment:
       NODE_ENV: production
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
+      TWILIO_API_KEY_SID: ${TWILIO_API_KEY_SID}
+      TWILIO_VERIFY_SERVICE_SID: ${TWILIO_VERIFY_SERVICE_SID}
       # `mock` is deliberately dropped here. In development it keeps the scan
       # flow demoable with no key; in production a fallback that invents
       # plausible line items on someone's real receipt is worse than a visible
@@ -63,6 +65,7 @@ services:
       - session_secret
       - postgres_password
       - openrouter_api_key
+      - twilio_api_key_secret
     # Verified: the app serves fine on a read-only rootfs. It imports
     # next/image nowhere, so nothing writes to .next/cache/images. If that ever
     # changes, add - /app/apps/web/.next/cache to tmpfs.
@@ -107,6 +110,8 @@ secrets:
     file: /srv/haalkhata/secrets/postgres_password
   openrouter_api_key:
     file: /srv/haalkhata/secrets/openrouter_api_key
+  twilio_api_key_secret:
+    file: /srv/haalkhata/secrets/twilio_api_key_secret
 
 volumes:
   db-data:

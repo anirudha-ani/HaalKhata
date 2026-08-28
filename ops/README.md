@@ -35,13 +35,18 @@ sudo systemctl enable --now haalkhata-backup.timer
 
 ## Secrets
 
-Three files, referenced by `docker-compose.prod.yml`:
+Four files, referenced by `docker-compose.prod.yml`:
 
 ```
 /srv/haalkhata/secrets/session_secret        openssl rand -hex 32
 /srv/haalkhata/secrets/postgres_password     openssl rand -hex 24
 /srv/haalkhata/secrets/openrouter_api_key    from openrouter.ai
+/srv/haalkhata/secrets/twilio_api_key_secret from a restricted Twilio Verify API key
 ```
+
+Set `TWILIO_API_KEY_SID` and `TWILIO_VERIFY_SERVICE_SID` in `/srv/haalkhata/.env`.
+They identify the restricted key and Verify service but do not authenticate a
+request; only `twilio_api_key_secret` is mounted as a secret.
 
 The directory is `0700 root:root`; the files are `0444`. That looks
 backwards until you remember the containers run as non-root (`node` is 1000,

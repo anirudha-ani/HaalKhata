@@ -23,6 +23,7 @@ load_secret() {
 
 load_secret SESSION_SECRET        session_secret
 load_secret COMPATIBLE_AI_API_KEY openrouter_api_key
+load_secret TWILIO_API_KEY_SECRET twilio_api_key_secret
 load_secret POSTGRES_PASSWORD     postgres_password
 
 # Assembled here rather than written into docker-compose.prod.yml so the

@@ -63,9 +63,16 @@ message AuthResponse {
 message SetPhoneRequest {
   // Any format the user typed; normalized to E.164 server-side.
   string phone = 1;
+  // Empty on the first call, which sends an SMS code. Set to the received
+  // code on the second call; no phone data is exposed or changed before the
+  // provider confirms control of the number.
+  string verification_code = 2;
 }
 
 message SetPhoneResponse {
+  // True on the first call after the verification provider accepted the SMS
+  // request. The client should ask for the code and call SetPhone again.
+  bool verification_sent = 4;
   // Set when the number was free and simply written to the caller's account.
   common.v1.User user = 1;
   // Set instead when an unclaimed row created by an invite already holds this
@@ -76,11 +83,10 @@ message SetPhoneResponse {
   string merge_token = 3;
 }
 
-// What a caller would take on by merging, shown before anything is written.
-// Phone entry is not verified yet, so this screen is the only guard on the
-// merge — and the only defense against a recycled number, which verification
-// could not cover either: proving control today says nothing about who held
-// the number when the invites were made.
+// What a caller would take on by merging, shown after SMS verification but
+// before anything is written. Possession proves control today; this preview is
+// the additional defense against absorbing history created for a previous
+// holder of a recycled number.
 message MergePreview {
   // How many undeleted expenses the absorbed row appears in.
   int32 expense_count = 1;

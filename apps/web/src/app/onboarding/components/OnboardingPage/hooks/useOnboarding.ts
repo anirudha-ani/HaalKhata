@@ -40,6 +40,8 @@ export function useOnboarding() {
   const [error, setError] = useState("");
   const [pendingMerge, setPendingMerge] = useState<MergePreview | undefined>();
   const [mergeToken, setMergeToken] = useState("");
+  const [verificationPhone, setVerificationPhone] = useState("");
+  const [verificationCode, setVerificationCode] = useState("");
 
   // Seeded from the server exactly once, when the query first resolves. Using
   // state initializers would capture `undefined` on the loading render.
@@ -79,12 +81,24 @@ export function useOnboarding() {
       // re-typed with different spacing has to count as unchanged.
       const claimedPhone = composeE164(region, nationalNumber);
       if (claimedPhone.length > 0 && claimedPhone !== meQuery.data?.phone) {
-        const result = await authClient.setPhone({ phone: claimedPhone });
-        if (result.pendingMerge) {
-          setPendingMerge(result.pendingMerge);
-          setMergeToken(result.mergeToken);
-          return;
-        }
+        const result = await authClient.setPhone({ phone: claimedPhone, verificationCode: "" });
+        if (result.verificationSent) setVerificationPhone(claimedPhone);
+        return;
+      }
+      await finish();
+    },
+    onError: (mutationError) => setError(errorMessage(mutationError)),
+  });
+
+  const verifyPhone = useMutation({
+    mutationFn: () => authClient.setPhone({ phone: verificationPhone, verificationCode }),
+    onSuccess: async (result) => {
+      setVerificationPhone("");
+      setVerificationCode("");
+      if (result.pendingMerge) {
+        setPendingMerge(result.pendingMerge);
+        setMergeToken(result.mergeToken);
+        return;
       }
       await finish();
     },
@@ -129,10 +143,19 @@ export function useOnboarding() {
     setNationalNumber,
     error,
     pendingMerge,
+    verificationPhone,
+    verificationCode,
+    setVerificationCode,
+    verifyPhone: () => verifyPhone.mutate(),
+    cancelVerification: () => {
+      setVerificationPhone("");
+      setVerificationCode("");
+      setError("");
+    },
     confirmMerge: () => confirmMerge.mutate(),
     declineMerge,
     save: () => save.mutate(),
     skip: () => skip.mutate(),
-    isPending: save.isPending || confirmMerge.isPending || skip.isPending,
+    isPending: save.isPending || verifyPhone.isPending || confirmMerge.isPending || skip.isPending,
   };
 }

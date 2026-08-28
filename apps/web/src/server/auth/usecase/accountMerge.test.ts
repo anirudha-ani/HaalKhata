@@ -3,12 +3,20 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { UserRow } from "@/server/auth/repo/users.repo";
 
-const { setUserPhoneMock, mergeAccountsMock, previewMergeMock } = vi.hoisted(() => {
+const {
+  setUserPhoneMock,
+  mergeAccountsMock,
+  previewMergeMock,
+  startPhoneVerificationMock,
+  confirmPhoneVerificationMock,
+} = vi.hoisted(() => {
   process.env.SESSION_SECRET = "test-secret-key-for-vitest-0123456789abcdef";
   return {
     setUserPhoneMock: vi.fn(),
     mergeAccountsMock: vi.fn(),
     previewMergeMock: vi.fn(),
+    startPhoneVerificationMock: vi.fn(),
+    confirmPhoneVerificationMock: vi.fn(),
   };
 });
 
@@ -33,6 +41,11 @@ vi.mock("@/server/auth/repo/accountMerge.repo", () => ({
 
 vi.mock("@/server/auth/repo/paymentHandles.repo", () => ({
   replacePaymentHandles: vi.fn(),
+}));
+
+vi.mock("./phoneVerification", () => ({
+  startPhoneVerification: startPhoneVerificationMock,
+  confirmPhoneVerification: confirmPhoneVerificationMock,
 }));
 
 import { confirmPhoneMerge, setPhone } from "./accountMerge.usecase";
@@ -89,11 +102,22 @@ describe("setPhone", () => {
     });
   });
 
+  it("sends a code without looking up or changing the account", async () => {
+    const result = await setPhone(KEEPER, "(617) 555-1212", "");
+
+    expect(startPhoneVerificationMock).toHaveBeenCalledWith(PHONE);
+    expect(findUserByPhone).not.toHaveBeenCalled();
+    expect(setUserPhoneMock).not.toHaveBeenCalled();
+    expect(previewMergeMock).not.toHaveBeenCalled();
+    expect(result).toEqual({ verificationSent: true, mergeToken: "" });
+  });
+
   it("writes the number straight through when nothing holds it", async () => {
     vi.mocked(findUserByPhone).mockResolvedValue(undefined);
 
-    const result = await setPhone(KEEPER, "(617) 555-1212");
+    const result = await setPhone(KEEPER, "(617) 555-1212", "123456");
 
+    expect(confirmPhoneVerificationMock).toHaveBeenCalledWith(PHONE, "123456");
     expect(setUserPhoneMock).toHaveBeenCalledWith(KEEPER, PHONE);
     expect(result.user?.phone).toBe(PHONE);
     expect(result.pendingMerge).toBeUndefined();
@@ -103,7 +127,7 @@ describe("setPhone", () => {
   it("normalizes a national format before looking for a holder", async () => {
     vi.mocked(findUserByPhone).mockResolvedValue(undefined);
 
-    await setPhone(KEEPER, "617-555-1212");
+    await setPhone(KEEPER, "617-555-1212", "123456");
 
     expect(findUserByPhone).toHaveBeenCalledWith(PHONE);
   });
@@ -111,7 +135,7 @@ describe("setPhone", () => {
   it("is a no-op re-save when the caller already holds the number", async () => {
     vi.mocked(findUserByPhone).mockResolvedValue(userRow({ phone: PHONE }));
 
-    const result = await setPhone(KEEPER, PHONE);
+    const result = await setPhone(KEEPER, PHONE, "123456");
 
     expect(result.user).toBeDefined();
     expect(result.pendingMerge).toBeUndefined();
@@ -120,7 +144,7 @@ describe("setPhone", () => {
   it("previews rather than merges when an unclaimed invite holds it", async () => {
     vi.mocked(findUserByPhone).mockResolvedValue(invitedRow);
 
-    const result = await setPhone(KEEPER, PHONE);
+    const result = await setPhone(KEEPER, PHONE, "123456");
 
     // Nothing may be written before the caller has seen what they would take on.
     expect(setUserPhoneMock).not.toHaveBeenCalled();
@@ -140,7 +164,7 @@ describe("setPhone", () => {
       userRow({ id: "someone-else", phone: PHONE, google_sub: "google-sub-2" }),
     );
 
-    await expect(setPhone(KEEPER, PHONE)).rejects.toThrow(/already on another account/);
+    await expect(setPhone(KEEPER, PHONE, "123456")).rejects.toThrow(/already on another account/);
     expect(setUserPhoneMock).not.toHaveBeenCalled();
   });
 
@@ -149,11 +173,11 @@ describe("setPhone", () => {
       userRow({ id: "someone-else", phone: PHONE, google_sub: null, password_hash: "salt:hash" }),
     );
 
-    await expect(setPhone(KEEPER, PHONE)).rejects.toThrow(/already on another account/);
+    await expect(setPhone(KEEPER, PHONE, "123456")).rejects.toThrow(/already on another account/);
   });
 
   it("rejects an unparseable number before any lookup", async () => {
-    await expect(setPhone(KEEPER, "not-a-number")).rejects.toThrow(/valid phone number/);
+    await expect(setPhone(KEEPER, "not-a-number", "123456")).rejects.toThrow(/valid phone number/);
     expect(findUserByPhone).not.toHaveBeenCalled();
   });
 });
@@ -180,7 +204,7 @@ describe("confirmPhoneMerge", () => {
    */
   async function issueToken(): Promise<string> {
     vi.mocked(findUserByPhone).mockResolvedValue(invitedRow);
-    const result = await setPhone(KEEPER, PHONE);
+    const result = await setPhone(KEEPER, PHONE, "123456");
     return result.mergeToken;
   }
 

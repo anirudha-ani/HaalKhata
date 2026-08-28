@@ -25,9 +25,12 @@ import {
 } from "@/server/auth/auth.constants";
 import { signPayload } from "./auth.usecase";
 import { toUser } from "./user.mapper";
+import { confirmPhoneVerification, startPhoneVerification } from "./phoneVerification";
 
 /** What SetPhone resolved to: either applied outright, or waiting on confirmation. */
 export interface SetPhoneResult {
+  /** True when an SMS code was sent and no account data has been read or changed. */
+  verificationSent?: boolean;
   /** Present when the number was free and written straight to the account. */
   user?: ReturnType<typeof toUser>;
   /** Present when an unclaimed invited row already holds the number. */
@@ -93,14 +96,25 @@ function readMergeToken(token: string, callerId: string): { loserId: string; pho
  *
  * @param userId - Authenticated caller.
  * @param rawPhone - Whatever the user typed.
+ * @param verificationCode - Empty to send an SMS, or the code to confirm possession.
  * @returns The updated user, or a preview plus token when confirmation is needed.
  * @throws UsecaseError "invalid_argument" for an unparseable number or one
  *   already on the caller's own account.
  * @throws UsecaseError "already_exists" when a registered account holds it.
  */
-export async function setPhone(userId: string, rawPhone: string): Promise<SetPhoneResult> {
+export async function setPhone(
+  userId: string,
+  rawPhone: string,
+  verificationCode: string,
+): Promise<SetPhoneResult> {
   const phone = normalizePhone(rawPhone);
   if (!phone) invalid(PHONE_FORMAT_HINT);
+
+  if (verificationCode.trim() === "") {
+    await startPhoneVerification(phone);
+    return { verificationSent: true, mergeToken: "" };
+  }
+  await confirmPhoneVerification(phone, verificationCode.trim());
 
   const holder = await findUserByPhone(phone);
 

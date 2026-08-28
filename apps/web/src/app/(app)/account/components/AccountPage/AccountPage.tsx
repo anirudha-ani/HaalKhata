@@ -225,6 +225,35 @@ function ProfileForm({ me: currentUser }: { me: User }) {
         <LogOut className="h-4 w-4" /> Sign out
       </button>
 
+      {form.verificationPhone ? (
+        <Modal title="Verify your phone" onClose={form.cancelVerification}>
+          <div className="space-y-4">
+            <p className="text-sm text-ink-soft">
+              Enter the code sent to {form.verificationPhone}. No account data changes until the
+              code is confirmed.
+            </p>
+            <input
+              value={form.verificationCode}
+              onChange={(event) => form.setVerificationCode(event.target.value.replace(/\D/g, ""))}
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              maxLength={10}
+              aria-label="Verification code"
+              className="w-full rounded-xl border border-line bg-card px-3.5 py-3 text-center text-lg tracking-[0.35em] focus:border-brand-500 focus:outline-none"
+            />
+            {form.error ? <p className="text-sm text-brand-600">{form.error}</p> : null}
+            <button
+              type="button"
+              onClick={form.verifyPhone}
+              disabled={form.isSaving || form.verificationCode.length < 4}
+              className="w-full rounded-xl bg-brand-600 py-3 font-semibold text-white hover:bg-brand-700 disabled:opacity-50"
+            >
+              {form.isSaving ? "Verifying…" : "Verify phone"}
+            </button>
+          </div>
+        </Modal>
+      ) : null}
+
       {/* A number can already belong to an invitation someone made. Nothing is
           written until this is answered, so it is a decision, not a notice. */}
       {form.pendingMerge ? (

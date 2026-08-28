@@ -7,7 +7,7 @@ import * as auth from "@/server/auth/usecase/auth.usecase";
 import * as accountMerge from "@/server/auth/usecase/accountMerge.usecase";
 import { clearSessionCookie, requireUser, runUsecase, setSessionCookie } from "@/server/api/connect/context";
 import { rateLimitCheck } from "@/server/common/rateLimit";
-import { AUTH_RATE_LIMIT } from "@/server/auth/auth.constants";
+import { AUTH_RATE_LIMIT, PHONE_VERIFICATION_RATE_LIMIT } from "@/server/auth/auth.constants";
 import { ConnectError, Code } from "@connectrpc/connect";
 
 /**
@@ -33,6 +33,13 @@ function clientIp(handlerContext: HandlerContext): string {
 function enforceAuthRateLimit(handlerContext: HandlerContext): void {
   if (!rateLimitCheck(`auth:${clientIp(handlerContext)}`, AUTH_RATE_LIMIT)) {
     throw new ConnectError("too many attempts, please try again later", Code.ResourceExhausted);
+  }
+}
+
+/** Enforces a per-account limit on SMS sends, checks, and merge confirmations. */
+function enforcePhoneRateLimit(userId: string): void {
+  if (!rateLimitCheck(`phone:${userId}`, PHONE_VERIFICATION_RATE_LIMIT)) {
+    throw new ConnectError("too many verification attempts, please try again later", Code.ResourceExhausted);
   }
 }
 
@@ -87,17 +94,20 @@ export const authHandler: ServiceImpl<typeof AuthService> = {
    * unclaimed invitation already holds it.
    */
   async setPhone(request, handlerContext) {
+    const userId = await requireUser(handlerContext);
+    enforcePhoneRateLimit(userId);
     return runUsecase(
-      async () => accountMerge.setPhone(await requireUser(handlerContext), request.phone),
+      async () => accountMerge.setPhone(userId, request.phone, request.verificationCode),
       handlerContext,
     );
   },
 
   /** Carries out the merge that setPhone previewed. */
   async confirmPhoneMerge(request, handlerContext) {
+    const userId = await requireUser(handlerContext);
+    enforcePhoneRateLimit(userId);
     return runUsecase(
-      async () =>
-        accountMerge.confirmPhoneMerge(await requireUser(handlerContext), request.mergeToken),
+      async () => accountMerge.confirmPhoneMerge(userId, request.mergeToken),
       handlerContext,
     );
   },

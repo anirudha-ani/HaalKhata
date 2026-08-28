@@ -71,6 +71,8 @@ export function useProfileForm(currentUser: User) {
   );
   const [pendingMerge, setPendingMerge] = useState<MergePreview | undefined>();
   const [mergeToken, setMergeToken] = useState("");
+  const [verificationPhone, setVerificationPhone] = useState("");
+  const [verificationCode, setVerificationCode] = useState("");
   const [handles, setHandles] = useState<Record<string, string>>(() =>
     Object.fromEntries(
       currentUser.paymentHandles.map((entry) => [entry.method, entry.handle]),
@@ -127,12 +129,9 @@ export function useProfileForm(currentUser: User) {
       // already hold would otherwise round-trip for nothing.
       const claimedPhone = composeE164(region, nationalNumber);
       if (claimedPhone.length > 0 && claimedPhone !== currentUser.phone) {
-        const result = await authClient.setPhone({ phone: claimedPhone });
-        if (result.pendingMerge) {
-          setPendingMerge(result.pendingMerge);
-          setMergeToken(result.mergeToken);
-          return false;
-        }
+        const result = await authClient.setPhone({ phone: claimedPhone, verificationCode: "" });
+        if (result.verificationSent) setVerificationPhone(claimedPhone);
+        return false;
       }
       return true;
     },
@@ -146,6 +145,22 @@ export function useProfileForm(currentUser: User) {
     // a rejected number still leaves a changed name or currency on the server
     // that the cache would otherwise keep showing stale.
     onSettled: () => queryClient.invalidateQueries({ queryKey: queryKeys.me }),
+  });
+
+  const verifyPhone = useMutation({
+    mutationFn: () => authClient.setPhone({ phone: verificationPhone, verificationCode }),
+    onSuccess: (result) => {
+      setVerificationPhone("");
+      setVerificationCode("");
+      if (result.pendingMerge) {
+        setPendingMerge(result.pendingMerge);
+        setMergeToken(result.mergeToken);
+        return;
+      }
+      queryClient.invalidateQueries({ queryKey: queryKeys.me });
+      setMessage("Saved ✓");
+    },
+    onError: (mutationError) => setError(errorMessage(mutationError)),
   });
 
   const confirmMerge = useMutation({
@@ -197,6 +212,18 @@ export function useProfileForm(currentUser: User) {
     nationalNumber,
     setNationalNumber,
     pendingMerge,
+    verificationPhone,
+    verificationCode,
+    setVerificationCode,
+    verifyPhone: () => {
+      setError("");
+      verifyPhone.mutate();
+    },
+    cancelVerification: () => {
+      setVerificationPhone("");
+      setVerificationCode("");
+      setError("");
+    },
     confirmMerge: () => {
       setError("");
       confirmMerge.mutate();
@@ -226,7 +253,7 @@ export function useProfileForm(currentUser: User) {
       setError("");
       save.mutate();
     },
-    isSaving: save.isPending || confirmMerge.isPending,
+    isSaving: save.isPending || verifyPhone.isPending || confirmMerge.isPending,
     signOut,
   };
 }

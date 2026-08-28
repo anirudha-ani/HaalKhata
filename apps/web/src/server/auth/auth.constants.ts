@@ -31,6 +31,18 @@ export const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 /** Max login/signup attempts per key (IP or email) per 60s window. */
 export const AUTH_RATE_LIMIT = 10;
 
+/** Max phone-verification and merge attempts per account per minute. */
+export const PHONE_VERIFICATION_RATE_LIMIT = 5;
+
+/** Timeout for each call to the external phone-verification provider. */
+export const PHONE_VERIFICATION_TIMEOUT_MS = 10_000;
+
+/** Twilio Verify v2 base URL; fixed so user input can never influence the destination. */
+export const TWILIO_VERIFY_BASE_URL = "https://verify.twilio.com/v2";
+
+/** Verification codes are numeric and between four and ten digits. */
+export const PHONE_VERIFICATION_CODE_PATTERN = /^\d{4,10}$/;
+
 /**
  * OAuth client id that a Google ID token must name as its audience. Only the
  * client id is needed: the ID-token flow verifies a signed assertion the
