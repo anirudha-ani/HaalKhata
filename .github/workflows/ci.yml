@@ -69,7 +69,9 @@ jobs:
       # It passes locally only because a developer's clone has a real `main`.
       - name: 'Contract: no breaking API change vs base branch'
         if: github.event_name == 'pull_request'
-        run: pnpm exec buf breaking --against '.git#ref=origin/${{ github.event.pull_request.base.ref }}'
+        env:
+          PULL_REQUEST_BASE_REF: ${{ github.event.pull_request.base.ref }}
+        run: pnpm exec buf breaking --against ".git#ref=origin/${PULL_REQUEST_BASE_REF}"
 
       # Split one concern per step, so a red mark in the summary says WHICH
       # gate failed without expanding anything. Chained with && they all shared
