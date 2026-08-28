@@ -1,5 +1,6 @@
 /** All SQL for the groups and group_members tables. */
 
+import type { PoolClient } from "pg";
 import { execute, newId, query, queryOne, transaction } from "@/server/common/db";
 import type { UserRow } from "@/server/auth/repo/users.repo";
 
@@ -54,8 +55,11 @@ export async function insertGroup(input: {
  * @param groupId - Id of the group to fetch.
  * @returns The group row, or undefined when no group has that id.
  */
-export async function findGroupById(groupId: string): Promise<GroupRow | undefined> {
-  return queryOne<GroupRow>(`SELECT * FROM groups WHERE id = $1`, [groupId]);
+export async function findGroupById(
+  groupId: string,
+  client?: PoolClient,
+): Promise<GroupRow | undefined> {
+  return queryOne<GroupRow>(`SELECT * FROM groups WHERE id = $1`, [groupId], client);
 }
 
 /**
@@ -64,13 +68,17 @@ export async function findGroupById(groupId: string): Promise<GroupRow | undefin
  * @param userId - Id of the user whose memberships to look up.
  * @returns Group rows ordered by creation time descending.
  */
-export async function listGroupsByUser(userId: string): Promise<GroupRow[]> {
+export async function listGroupsByUser(
+  userId: string,
+  client?: PoolClient,
+): Promise<GroupRow[]> {
   return query<GroupRow>(
     `SELECT groups.* FROM groups
      JOIN group_members ON group_members.group_id = groups.id
      WHERE group_members.user_id = $1
      ORDER BY groups.created_at DESC`,
     [userId],
+    client,
   );
 }
 

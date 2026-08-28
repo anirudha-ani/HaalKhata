@@ -283,11 +283,15 @@ export async function findExpenseById(expenseId: string): Promise<ExpenseRow | u
  * @param groupId - Id of the group whose expenses to list.
  * @returns Expense rows ordered by expense date, then creation time, descending.
  */
-export async function listExpensesByGroup(groupId: string): Promise<ExpenseRow[]> {
+export async function listExpensesByGroup(
+  groupId: string,
+  client?: PoolClient,
+): Promise<ExpenseRow[]> {
   return query<ExpenseRow>(
     `SELECT * FROM expenses WHERE group_id = $1 AND deleted_at IS NULL
      ORDER BY expense_date DESC, created_at DESC`,
     [groupId],
+    client,
   );
 }
 
@@ -301,6 +305,7 @@ export async function listExpensesByGroup(groupId: string): Promise<ExpenseRow[]
 export async function listOneOffExpensesBetween(
   firstUserId: string,
   secondUserId: string,
+  client?: PoolClient,
 ): Promise<ExpenseRow[]> {
   return query<ExpenseRow>(
     `SELECT DISTINCT expense.* FROM expenses expense
@@ -311,6 +316,7 @@ export async function listOneOffExpensesBetween(
                    UNION SELECT 1 FROM expense_payers payer WHERE payer.expense_id = expense.id AND payer.user_id = $2)
      ORDER BY expense.expense_date DESC, expense.created_at DESC`,
     [firstUserId, secondUserId],
+    client,
   );
 }
 
@@ -371,7 +377,10 @@ export interface ExpenseChildren {
  * @param expenseIds - Ids of the expenses whose child rows are needed.
  * @returns Maps of expense id → child rows (empty maps for an empty input).
  */
-export async function loadExpenseChildren(expenseIds: string[]): Promise<ExpenseChildren> {
+export async function loadExpenseChildren(
+  expenseIds: string[],
+  client?: PoolClient,
+): Promise<ExpenseChildren> {
   const result: ExpenseChildren = {
     payers: new Map(),
     splits: new Map(),
@@ -380,15 +389,21 @@ export async function loadExpenseChildren(expenseIds: string[]): Promise<Expense
   if (expenseIds.length === 0) return result;
 
   const [payers, splits, items] = await Promise.all([
-    query<PayerRow>(`SELECT * FROM expense_payers WHERE expense_id = ANY($1::text[])`, [
-      expenseIds,
-    ]),
-    query<SplitRow>(`SELECT * FROM expense_splits WHERE expense_id = ANY($1::text[])`, [
-      expenseIds,
-    ]),
-    query<ItemRow>(`SELECT * FROM expense_items WHERE expense_id = ANY($1::text[])`, [
-      expenseIds,
-    ]),
+    query<PayerRow>(
+      `SELECT * FROM expense_payers WHERE expense_id = ANY($1::text[])`,
+      [expenseIds],
+      client,
+    ),
+    query<SplitRow>(
+      `SELECT * FROM expense_splits WHERE expense_id = ANY($1::text[])`,
+      [expenseIds],
+      client,
+    ),
+    query<ItemRow>(
+      `SELECT * FROM expense_items WHERE expense_id = ANY($1::text[])`,
+      [expenseIds],
+      client,
+    ),
   ]);
 
   for (const payerRow of payers) {
@@ -407,6 +422,7 @@ export async function loadExpenseChildren(expenseIds: string[]): Promise<Expense
     const assignments = await query<ItemAssignmentRow>(
       `SELECT * FROM expense_item_assignments WHERE item_id = ANY($1::text[])`,
       [items.map((item) => item.id)],
+      client,
     );
     for (const assignmentRow of assignments) {
       const list = assignmentsByItem.get(assignmentRow.item_id) ?? [];

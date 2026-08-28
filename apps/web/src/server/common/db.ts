@@ -90,13 +90,16 @@ export function ensureMigrated(): Promise<void> {
  *
  * @param text - SQL statement with $1-style placeholders.
  * @param params - Values bound to the statement's placeholders, in order.
+ * @param client - Existing transaction client; omitted to use the shared pool.
  * @returns All rows produced by the statement.
  */
 export async function query<ResultRow extends QueryResultRow>(
   text: string,
   params: unknown[] = [],
+  client?: PoolClient,
 ): Promise<ResultRow[]> {
-  const { rows } = await pool().query<ResultRow>(text, params as never[]);
+  const executor = client ?? pool();
+  const { rows } = await executor.query<ResultRow>(text, params as never[]);
   return rows;
 }
 
@@ -105,13 +108,15 @@ export async function query<ResultRow extends QueryResultRow>(
  *
  * @param text - SQL statement with $1-style placeholders.
  * @param params - Values bound to the statement's placeholders, in order.
+ * @param client - Existing transaction client; omitted to use the shared pool.
  * @returns The first resulting row, or undefined when nothing matches.
  */
 export async function queryOne<ResultRow extends QueryResultRow>(
   text: string,
   params: unknown[] = [],
+  client?: PoolClient,
 ): Promise<ResultRow | undefined> {
-  return (await query<ResultRow>(text, params))[0];
+  return (await query<ResultRow>(text, params, client))[0];
 }
 
 /**
@@ -119,9 +124,14 @@ export async function queryOne<ResultRow extends QueryResultRow>(
  *
  * @param text - SQL statement with $1-style placeholders.
  * @param params - Values bound to the statement's placeholders, in order.
+ * @param client - Existing transaction client; omitted to use the shared pool.
  */
-export async function execute(text: string, params: unknown[] = []): Promise<void> {
-  await query(text, params);
+export async function execute(
+  text: string,
+  params: unknown[] = [],
+  client?: PoolClient,
+): Promise<void> {
+  await query(text, params, client);
 }
 
 /**

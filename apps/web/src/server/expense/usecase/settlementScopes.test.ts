@@ -4,6 +4,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { PoolClient } from "pg";
 import type { SettlementRow } from "@/server/expense/repo/settlements.repo";
 
+const { transactionClient } = vi.hoisted(() => ({ transactionClient: {} as PoolClient }));
+
 vi.mock("@/server/expense/repo/expenses.repo", () => ({
   findExpenseById: vi.fn(),
   insertExpense: vi.fn(),
@@ -32,7 +34,7 @@ vi.mock("@/server/expense/repo/settlements.repo", () => ({
   insertSettlement: vi.fn(),
   withSettlementPairLock: vi.fn(
     (first: string, second: string, operation: (client: PoolClient) => Promise<unknown>) =>
-      operation({} as PoolClient),
+      operation(transactionClient),
   ),
 }));
 vi.mock("@/server/social/repo/activity.repo", () => ({
@@ -114,6 +116,7 @@ describe("recordSettlement — rows land in the scope holding the debt", () => {
     // never saw it, kept demanding the money, and accepted a second payment.
     vi.mocked(owedByScope).mockResolvedValue([{ groupId: "goa", owedCents: 10652 }]);
     const inserted = await settle(10652);
+    expect(owedByScope).toHaveBeenCalledWith(PAYER, CREDITOR, transactionClient);
     expect(inserted).toHaveLength(1);
     expect(inserted[0].groupId).toBe("goa");
   });

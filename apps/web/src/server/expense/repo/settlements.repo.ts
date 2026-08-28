@@ -29,15 +29,10 @@ export interface SettlementRow {
  * the lock two concurrent recordings both read the same outstanding debt,
  * both pass, and both insert — the pair ends up double-settled.
  *
- * Why the validation reads inside `operation` may still use the shared pool:
- * a previous writer's insert rides its lock transaction, so its rows become
- * visible at the same instant its lock releases. Whoever acquires the lock
- * next therefore reads a committed state that already includes every prior
- * settlement. Readers elsewhere never block — the lock is advisory and only
- * writers take it.
- *
- * Inserts inside `operation` must use the provided client so a multi-portion
- * settlement commits atomically with the lock window.
+ * Every validation read and insert inside `operation` must use the provided
+ * client. Borrowing from the shared pool while this transaction holds one
+ * connection lets enough concurrent settlements deadlock the pool waiting for
+ * second connections; one client also guarantees read-your-own-writes.
  *
  * @param firstUserId - One side of the pair, in either order.
  * @param secondUserId - The other side.
@@ -105,10 +100,14 @@ export async function insertSettlement(
  * @param groupId - Id of the group whose settlements to list.
  * @returns Settlement rows in chronological order.
  */
-export async function listSettlementsByGroup(groupId: string): Promise<SettlementRow[]> {
+export async function listSettlementsByGroup(
+  groupId: string,
+  client?: PoolClient,
+): Promise<SettlementRow[]> {
   return query<SettlementRow>(
     `SELECT * FROM settlements WHERE group_id = $1 ORDER BY created_at ASC`,
     [groupId],
+    client,
   );
 }
 
@@ -145,6 +144,7 @@ export async function listSettlementsBetween(
 export async function listOneOffSettlementsBetween(
   firstUserId: string,
   secondUserId: string,
+  client?: PoolClient,
 ): Promise<SettlementRow[]> {
   return query<SettlementRow>(
     `SELECT * FROM settlements
@@ -152,6 +152,7 @@ export async function listOneOffSettlementsBetween(
        AND ((from_user = $1 AND to_user = $2) OR (from_user = $2 AND to_user = $1))
      ORDER BY created_at ASC`,
     [firstUserId, secondUserId],
+    client,
   );
 }
 

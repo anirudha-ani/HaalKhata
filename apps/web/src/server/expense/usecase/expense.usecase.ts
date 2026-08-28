@@ -750,7 +750,7 @@ export async function recordSettlement(
     // The cap is what the payer owes in the addressed scope(s), never the
     // pair's net: a debt pointing the other way cannot absorb a payment.
     if (groupId) {
-      const outstandingCents = await amountOwed(payerId, creditorId, groupId);
+      const outstandingCents = await amountOwed(payerId, creditorId, groupId, client);
       if (outstandingCents <= 0) {
         invalid(
           request.received
@@ -787,7 +787,7 @@ export async function recordSettlement(
     // balance someone else just settled contributes nothing here, and the
     // refusal below says so instead of double-recording.
     const selection = new Set(request.scopeGroupIds ?? []);
-    const scopes = (await owedByScope(payerId, creditorId)).filter(
+    const scopes = (await owedByScope(payerId, creditorId, client)).filter(
       (scope) => selection.size === 0 || selection.has(scope.groupId ?? ""),
     );
     const totalOwedCents = scopes.reduce((running, scope) => running + scope.owedCents, 0);

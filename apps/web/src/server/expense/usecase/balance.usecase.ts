@@ -1,5 +1,7 @@
 /** Balance business logic: builds group/user ledgers from repos and applies the domain balance math. */
 
+import type { PoolClient } from "pg";
+
 import {
   listExpensesBetween,
   listExpensesByGroup,
@@ -64,10 +66,10 @@ function debtsFromExpenses(expenses: ExpenseRow[], children: ExpenseChildren): L
  * @param groupId - Id of the group whose ledger is built.
  * @returns Normalized pairwise entries (one per user pair, amount > 0).
  */
-async function groupLedger(groupId: string): Promise<LedgerEntry[]> {
-  const expenses = await listExpensesByGroup(groupId);
-  const children = await loadExpenseChildren(expenses.map((expense) => expense.id));
-  const settlements = (await listSettlementsByGroup(groupId)).map((settlement) => ({
+async function groupLedger(groupId: string, client?: PoolClient): Promise<LedgerEntry[]> {
+  const expenses = await listExpensesByGroup(groupId, client);
+  const children = await loadExpenseChildren(expenses.map((expense) => expense.id), client);
+  const settlements = (await listSettlementsByGroup(groupId, client)).map((settlement) => ({
     from: settlement.from_user,
     to: settlement.to_user,
     amountCents: settlement.amount_cents,
@@ -170,16 +172,18 @@ export async function userNetInGroups(
  * @param debtorId - User who would be paying.
  * @param creditorId - User who would be receiving.
  * @param groupId - Group whose ledger is consulted.
+ * @param client - Settlement transaction client; omitted for ordinary reads.
  * @returns Non-negative cents the debtor owes the creditor in that group.
  */
 export async function amountOwed(
   debtorId: string,
   creditorId: string,
   groupId: string,
+  client?: PoolClient,
 ): Promise<number> {
-  const group = await findGroupById(groupId);
+  const group = await findGroupById(groupId, client);
   return owedInEntries(
-    routeDebts(await groupLedger(groupId), group?.simplify_debts ?? false),
+    routeDebts(await groupLedger(groupId, client), group?.simplify_debts ?? false),
     debtorId,
     creditorId,
   );
@@ -312,14 +316,22 @@ export async function oneOffNetBetween(userId: string, otherUserId: string): Pro
  *
  * @param payerId - The user paying.
  * @param creditorId - The user being paid.
+ * @param client - Settlement transaction client; omitted for ordinary reads.
  * @returns Scopes with a positive payer→creditor debt; order is not meaningful.
  */
-export async function owedByScope(payerId: string, creditorId: string): Promise<ScopeDebt[]> {
+export async function owedByScope(
+  payerId: string,
+  creditorId: string,
+  client?: PoolClient,
+): Promise<ScopeDebt[]> {
   const scopes: ScopeDebt[] = [];
 
-  const oneOffExpenses = await listOneOffExpensesBetween(payerId, creditorId);
-  const children = await loadExpenseChildren(oneOffExpenses.map((expense) => expense.id));
-  const oneOffSettlements = (await listOneOffSettlementsBetween(payerId, creditorId)).map(
+  const oneOffExpenses = await listOneOffExpensesBetween(payerId, creditorId, client);
+  const children = await loadExpenseChildren(
+    oneOffExpenses.map((expense) => expense.id),
+    client,
+  );
+  const oneOffSettlements = (await listOneOffSettlementsBetween(payerId, creditorId, client)).map(
     (settlement) => ({
       from: settlement.from_user,
       to: settlement.to_user,
@@ -333,11 +345,13 @@ export async function owedByScope(payerId: string, creditorId: string): Promise<
   );
   if (oneOffCents > 0) scopes.push({ groupId: null, owedCents: oneOffCents });
 
-  const payerGroupIds = new Set((await listGroupsByUser(payerId)).map((group) => group.id));
-  for (const group of await listGroupsByUser(creditorId)) {
+  const payerGroupIds = new Set(
+    (await listGroupsByUser(payerId, client)).map((group) => group.id),
+  );
+  for (const group of await listGroupsByUser(creditorId, client)) {
     if (!payerGroupIds.has(group.id)) continue;
     const owedCents = owedInEntries(
-      routeDebts(await groupLedger(group.id), group.simplify_debts),
+      routeDebts(await groupLedger(group.id, client), group.simplify_debts),
       payerId,
       creditorId,
     );
