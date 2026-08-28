@@ -4,6 +4,7 @@ import type { ServiceImpl } from "@connectrpc/connect";
 import type { SocialService } from "@haalkhata/protogen/social/v1/social_pb";
 import * as social from "@/server/social/usecase/social.usecase";
 import { requireUser, runUsecase } from "@/server/api/connect/context";
+import { requireRateLimitedUser, RPC_RATE_LIMITS } from "@/server/api/connect/rpcRateLimit";
 
 /**
  * ConnectRPC implementation of SocialService. Each method authenticates the
@@ -11,9 +12,16 @@ import { requireUser, runUsecase } from "@/server/api/connect/context";
  * {@link runUsecase}, which maps UsecaseError to ConnectError.
  */
 export const socialHandler: ServiceImpl<typeof SocialService> = {
-  /** Adds a friend by email, creating a shadow user if needed. */
+  /** Adds an existing co-member as a friend. */
   async addFriend(request, context) {
-    return runUsecase(async () => social.addFriend(await requireUser(context), request), context);
+    return runUsecase(
+      async () =>
+        social.addFriend(
+          await requireRateLimitedUser(context, "add-friend", RPC_RATE_LIMITS.addFriend),
+          request,
+        ),
+      context,
+    );
   },
 
   /** Lists the caller's friends (with net balances). */
@@ -49,7 +57,15 @@ export const socialHandler: ServiceImpl<typeof SocialService> = {
   /** Nudges someone who owes the caller money; rate-limited in the usecase. */
   async sendReminder(request, context) {
     await runUsecase(
-      async () => social.sendReminder(await requireUser(context), request.userId),
+      async () =>
+        social.sendReminder(
+          await requireRateLimitedUser(
+            context,
+            "send-reminder",
+            RPC_RATE_LIMITS.sendReminder,
+          ),
+          request.userId,
+        ),
       context,
     );
     return {};

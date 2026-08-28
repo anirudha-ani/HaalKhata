@@ -4,6 +4,7 @@ import type { ServiceImpl } from "@connectrpc/connect";
 import type { GroupService } from "@haalkhata/protogen/group/v1/group_pb";
 import * as groups from "@/server/group/usecase/group.usecase";
 import { requireUser, runUsecase } from "@/server/api/connect/context";
+import { requireRateLimitedUser, RPC_RATE_LIMITS } from "@/server/api/connect/rpcRateLimit";
 
 /**
  * ConnectRPC implementation of GroupService. Each method authenticates the
@@ -26,9 +27,16 @@ export const groupHandler: ServiceImpl<typeof GroupService> = {
     return runUsecase(async () => groups.getGroup(await requireUser(context), request.groupId), context);
   },
 
-  /** Adds people by id, plus one optional email/phone newcomer as a shadow user. */
+  /** Adds an existing connected person by id, email, or phone. */
   async addMembers(request, context) {
-    return runUsecase(async () => groups.addMembers(await requireUser(context), request), context);
+    return runUsecase(
+      async () =>
+        groups.addMembers(
+          await requireRateLimitedUser(context, "add-members", RPC_RATE_LIMITS.addMembers),
+          request,
+        ),
+      context,
+    );
   },
 
   /** Turns debt simplification on or off for the whole group; any member may. */

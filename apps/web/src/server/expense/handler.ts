@@ -5,6 +5,7 @@ import type { ExpenseService } from "@haalkhata/protogen/expense/v1/expense_pb";
 import * as expenses from "@/server/expense/usecase/expense.usecase";
 import * as balances from "@/server/expense/usecase/balance.usecase";
 import { requireUser, runUsecase } from "@/server/api/connect/context";
+import { requireRateLimitedUser, RPC_RATE_LIMITS } from "@/server/api/connect/rpcRateLimit";
 
 /**
  * ConnectRPC implementation of ExpenseService. Every method only resolves the
@@ -13,7 +14,14 @@ import { requireUser, runUsecase } from "@/server/api/connect/context";
  */
 export const expenseHandler: ServiceImpl<typeof ExpenseService> = {
   async createExpense(request, context) {
-    return runUsecase(async () => expenses.createExpense(await requireUser(context), request), context);
+    return runUsecase(
+      async () =>
+        expenses.createExpense(
+          await requireRateLimitedUser(context, "create-expense", RPC_RATE_LIMITS.createExpense),
+          request,
+        ),
+      context,
+    );
   },
 
   async updateExpense(request, context) {
@@ -62,7 +70,17 @@ export const expenseHandler: ServiceImpl<typeof ExpenseService> = {
   },
 
   async getOverallBalances(_request, context) {
-    return runUsecase(async () => balances.getOverallBalances(await requireUser(context)), context);
+    return runUsecase(
+      async () =>
+        balances.getOverallBalances(
+          await requireRateLimitedUser(
+            context,
+            "get-overall-balances",
+            RPC_RATE_LIMITS.getOverallBalances,
+          ),
+        ),
+      context,
+    );
   },
 
   async getFriendLedger(request, context) {
