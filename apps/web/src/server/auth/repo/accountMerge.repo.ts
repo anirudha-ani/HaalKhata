@@ -54,6 +54,31 @@ const NET_CENTS_SQL = `
   - COALESCE((SELECT SUM(amount_cents) FROM settlements WHERE to_user = $1), 0)
 `;
 
+/** Exact table/parent/amount combinations that can be collapsed during a merge. */
+type SummedMergeTarget =
+  | readonly ["expense_splits", "expense_id", "owed_cents"]
+  | readonly ["expense_payers", "expense_id", "amount_cents"]
+  | readonly ["expense_item_assignments", "item_id", "weight"];
+
+/** Exact table/column pairs eligible for a collision-free direct repoint. */
+type DirectMergeTarget =
+  | readonly ["groups", "created_by"]
+  | readonly ["expenses", "created_by"]
+  | readonly ["comments", "user_id"]
+  | readonly ["activity", "actor_id"]
+  | readonly ["activity", "credit_user_id"]
+  | readonly ["notifications", "user_id"];
+
+/** Allowlisted direct repoints; these identifiers are interpolated into SQL. */
+const DIRECT_MERGE_TARGETS = [
+  ["groups", "created_by"],
+  ["expenses", "created_by"],
+  ["comments", "user_id"],
+  ["activity", "actor_id"],
+  ["activity", "credit_user_id"],
+  ["notifications", "user_id"],
+] as const satisfies readonly DirectMergeTarget[];
+
 /**
  * Reads the net position of a user within an open transaction.
  *
@@ -109,21 +134,18 @@ export async function previewMerge(userId: string): Promise<MergePreviewRow | un
  * violates the composite primary key.
  *
  * @param client - Transaction client.
- * @param table - Table to collapse.
- * @param parentColumn - The other half of the composite key (expense_id / item_id).
- * @param amountColumn - Numeric column to add together on collision.
+ * @param target - Allowlisted table, parent key, and amount-column tuple.
  * @param keeperId - Row that survives.
  * @param loserId - Row being absorbed.
  * @returns How many collisions were summed.
  */
 async function collapseSummed(
   client: PoolClient,
-  table: string,
-  parentColumn: string,
-  amountColumn: string,
+  target: SummedMergeTarget,
   keeperId: string,
   loserId: string,
 ): Promise<number> {
+  const [table, parentColumn, amountColumn] = target;
   const summed = await client.query(
     `UPDATE ${table} keeper
         SET ${amountColumn} = keeper.${amountColumn} + loser.${amountColumn}
@@ -191,13 +213,22 @@ export async function mergeAccounts(
 
     // --- amount tables: sum on collision -----------------------------------
     const duplicateSplitsSummed = await collapseSummed(
-      client, "expense_splits", "expense_id", "owed_cents", keeperId, loserId,
+      client,
+      ["expense_splits", "expense_id", "owed_cents"],
+      keeperId,
+      loserId,
     );
     await collapseSummed(
-      client, "expense_payers", "expense_id", "amount_cents", keeperId, loserId,
+      client,
+      ["expense_payers", "expense_id", "amount_cents"],
+      keeperId,
+      loserId,
     );
     await collapseSummed(
-      client, "expense_item_assignments", "item_id", "weight", keeperId, loserId,
+      client,
+      ["expense_item_assignments", "item_id", "weight"],
+      keeperId,
+      loserId,
     );
 
     // --- group membership --------------------------------------------------
@@ -258,14 +289,7 @@ export async function mergeAccounts(
     ]);
 
     // --- straight repoints, no collision possible ---------------------------
-    for (const [table, column] of [
-      ["groups", "created_by"],
-      ["expenses", "created_by"],
-      ["comments", "user_id"],
-      ["activity", "actor_id"],
-      ["activity", "credit_user_id"],
-      ["notifications", "user_id"],
-    ] as const) {
+    for (const [table, column] of DIRECT_MERGE_TARGETS) {
       await client.query(`UPDATE ${table} SET ${column} = $1 WHERE ${column} = $2`, [
         keeperId,
         loserId,
