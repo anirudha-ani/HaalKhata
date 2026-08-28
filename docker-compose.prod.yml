@@ -40,6 +40,13 @@ services:
       interval: 10s
       timeout: 3s
       retries: 10
+    # The official entrypoint starts as root only to repair volume ownership
+    # and drop to postgres. Keep exactly those capabilities; the database
+    # process inherits none after gosu changes uid.
+    cap_drop: [ALL]
+    cap_add: [CHOWN, DAC_OVERRIDE, FOWNER, SETGID, SETUID]
+    security_opt:
+      - "no-new-privileges:true"
     # No `ports`. The database is reachable only over the compose network.
 
   web:

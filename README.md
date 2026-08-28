@@ -146,7 +146,8 @@ What it adds:
   compose file, an image layer, or `docker inspect`.
 - **Nothing published but 80/443.** Postgres and the app are reachable only
   over the compose network.
-- Read-only root filesystem, dropped capabilities, `no-new-privileges`.
+- Read-only application root filesystem, minimal per-service capabilities, and
+  `no-new-privileges` across the production stack.
 - CSP, HSTS, clickjacking, MIME-sniffing, referrer, and permissions headers
   ship in the Next.js app itself, so alternate reverse proxies retain them.
 
