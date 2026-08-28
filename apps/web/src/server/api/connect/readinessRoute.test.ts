@@ -17,7 +17,7 @@ vi.mock("@/server/common/db", () => ({
 }));
 vi.mock("@/server/common/logger", () => ({ logError: logErrorMock }));
 
-import healthHandler from "./health";
+import healthHandler from "@/pages/api/health";
 
 /** Builds the response methods exercised by the readiness handler. */
 function responseStub(): NextApiResponse {
