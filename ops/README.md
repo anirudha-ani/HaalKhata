@@ -80,6 +80,16 @@ value, `up -d --force-recreate --wait web`, then revoke the old one upstream.
 Rotating `session_secret` invalidates every session immediately — that is the
 break-glass control if you ever suspect token theft.
 
+### Offsite backup retention
+
+`backup.sh` never deletes remote objects. Local archives rotate after 30 days,
+but mirroring those deletions would make the offsite copy unable to recover an
+older good backup after local corruption or delayed discovery. Configure the
+bucket itself with versioning/object lock when available and a lifecycle rule
+appropriate to your retention policy (for example, archive after 90 days and
+expire after one year). Filesystem/rsync targets need their own snapshot or
+retention policy for the same reason.
+
 ## Restore drill
 
 An untested backup is a hypothesis. Run this once now, and quarterly after:

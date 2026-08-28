@@ -67,8 +67,8 @@ mv "$SECRETS_PARTIAL" "$SECRETS"
 if [ -f "$BASE/backup-target.txt" ]; then
   TARGET=$(cat "$BASE/backup-target.txt")
   case "$TARGET" in
-    s3://*) s3cmd sync --delete-removed "$OUT/" "$TARGET" ;;
-    *)      rsync -a --delete "$OUT/" "$TARGET" ;;
+    s3://*) s3cmd sync "$OUT/" "$TARGET" ;;
+    *)      rsync -a "$OUT/" "$TARGET" ;;
   esac
 else
   echo "warning: no backup-target.txt — backups are still only on this disk" >&2
