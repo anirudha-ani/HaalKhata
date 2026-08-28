@@ -33,6 +33,22 @@ describe("friend request persistence", () => {
     database.queryOne.mockResolvedValueOnce({ requester_id: REQUESTER });
     await expect(insertFriendRequest(REQUESTER, RECIPIENT)).resolves.toBe(true);
 
+    expect(database.execute).toHaveBeenCalledWith(
+      expect.stringContaining("pg_advisory_xact_lock"),
+      [`friend-request-inbox:${REQUESTER}`],
+      transactionClient,
+    );
+    expect(database.execute).toHaveBeenCalledWith(
+      expect.stringContaining("pg_advisory_xact_lock"),
+      [`friend-request-inbox:${RECIPIENT}`],
+      transactionClient,
+    );
+    expect(database.queryOne).toHaveBeenCalledWith(
+      expect.stringContaining("usr.merged_into IS NULL"),
+      [REQUESTER, RECIPIENT, expect.any(Number)],
+      transactionClient,
+    );
+
     database.queryOne.mockResolvedValueOnce(undefined);
     await expect(insertFriendRequest(REQUESTER, RECIPIENT)).resolves.toBe(false);
   });
@@ -71,7 +87,7 @@ describe("friend request persistence", () => {
       transactionClient,
     );
     expect(database.execute).toHaveBeenCalledWith(
-      expect.stringContaining("VALUES ($1, $2), ($2, $1)"),
+      expect.stringMatching(/VALUES \(\$1::text, \$2::text\).*merged_into IS NULL/s),
       [REQUESTER, RECIPIENT],
       transactionClient,
     );

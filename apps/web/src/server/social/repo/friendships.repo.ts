@@ -47,7 +47,16 @@ export async function insertFriendship(
       transactionClient,
     );
     await execute(
-      `INSERT INTO friendships (user_id, friend_id) VALUES ($1, $2), ($2, $1)
+      `INSERT INTO friendships (user_id, friend_id)
+       SELECT pair.user_id, pair.friend_id
+         FROM (VALUES ($1::text, $2::text), ($2::text, $1::text)) AS pair(user_id, friend_id)
+        WHERE $1 <> $2
+          AND EXISTS (
+                SELECT 1 FROM users usr WHERE usr.id = $1 AND usr.merged_into IS NULL
+              )
+          AND EXISTS (
+                SELECT 1 FROM users usr WHERE usr.id = $2 AND usr.merged_into IS NULL
+              )
        ON CONFLICT DO NOTHING`,
       [userId, friendId],
       transactionClient,
@@ -102,13 +111,22 @@ export async function insertFriendRequest(
   client?: PoolClient,
 ): Promise<boolean> {
   const persist = async (transactionClient: PoolClient): Promise<boolean> => {
-    // Serialize capacity checks for one recipient. Without this lock, many
-    // distinct senders can all observe 99 rows and exceed the hard inbox cap.
-    await lockFriendRequestInboxes([recipientId], transactionClient);
+    // Serialize capacity checks for one recipient and account merges for both
+    // identities. Without the recipient lock, many distinct senders can all
+    // observe 99 rows and exceed the cap; without the requester lock, merging
+    // that account can race this insert and leave a request on its tombstone.
+    await lockFriendRequestInboxes([requesterId, recipientId], transactionClient);
     const inserted = await queryOne<{ requester_id: string }>(
       `INSERT INTO friend_requests (requester_id, recipient_id)
        SELECT $1, $2
-        WHERE NOT EXISTS (
+        WHERE $1 <> $2
+          AND EXISTS (
+                SELECT 1 FROM users usr WHERE usr.id = $1 AND usr.merged_into IS NULL
+              )
+          AND EXISTS (
+                SELECT 1 FROM users usr WHERE usr.id = $2 AND usr.merged_into IS NULL
+              )
+          AND NOT EXISTS (
                 SELECT 1 FROM friendships WHERE user_id = $1 AND friend_id = $2
               )
           AND (SELECT COUNT(*) FROM friend_requests WHERE recipient_id = $2) < $3
