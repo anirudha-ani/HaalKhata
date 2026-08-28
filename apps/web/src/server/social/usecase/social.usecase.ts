@@ -247,10 +247,6 @@ export async function sendReminder(userId: string, debtorId: string): Promise<vo
   const debtor = await findUserById(debtorId);
   if (!debtor) denied("account no longer exists");
 
-  const netCents = await netWithUser(userId, debtorId);
-  if (netCents <= 0) invalid("they don't owe you anything right now");
-
-  const sender = (await findUserById(userId))!;
   const link = `/friends/${userId}`;
   const lastSentAt = await findLatestNotificationAt(debtorId, "reminder", link);
   if (lastSentAt) {
@@ -263,6 +259,13 @@ export async function sendReminder(userId: string, debtorId: string): Promise<vo
       );
     }
   }
+
+  // A rejected cooldown is one indexed lookup. Only callers who may actually
+  // send another reminder pay for the full expense-and-settlement ledger walk.
+  const netCents = await netWithUser(userId, debtorId);
+  if (netCents <= 0) invalid("they don't owe you anything right now");
+
+  const sender = (await findUserById(userId))!;
 
   // The nudge carries the sender's handles, because "where do I send it?" is
   // the very next question and making the debtor ask defeats the reminder.
