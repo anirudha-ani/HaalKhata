@@ -31,6 +31,28 @@ export function toPublicUser(userRow: UserRow) {
 }
 
 /**
+ * Maps a friend-request sender without exposing contact, payment, currency,
+ * registration, or onboarding details before the recipient accepts.
+ *
+ * @param userRow - Requesting account shown to the request recipient.
+ * @returns Minimal identity fields needed to decide whether to accept.
+ */
+export function toFriendRequestUser(userRow: UserRow) {
+  return {
+    id: userRow.id,
+    email: "",
+    name: userRow.name,
+    avatarColor: userRow.avatar_color,
+    avatarUrl: userRow.avatar_url ?? "",
+    defaultCurrency: "",
+    registered: false,
+    phone: "",
+    paymentHandles: [],
+    onboarded: false,
+  };
+}
+
+/**
  * Maps a users table row to the caller's own common.v1.User shape, restoring
  * fields deliberately cleared by {@link toPublicUser}.
  *

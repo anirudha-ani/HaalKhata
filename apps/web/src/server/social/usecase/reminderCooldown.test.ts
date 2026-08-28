@@ -4,8 +4,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { UserRow } from "@/server/auth/repo/users.repo";
 
 vi.mock("@/server/social/repo/friendships.repo", () => ({
+  deleteFriendRequest: vi.fn(),
+  friendshipExists: vi.fn(),
+  insertFriendRequest: vi.fn(),
   insertFriendship: vi.fn(),
   listFriendIds: vi.fn(),
+  listIncomingFriendRequestIds: vi.fn(),
 }));
 vi.mock("@/server/auth/repo/users.repo", () => ({
   findUserByEmail: vi.fn(),

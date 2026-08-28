@@ -29,6 +29,7 @@ export function useFriends() {
   const [identifier, setIdentifier] = useState("");
   const [query, setQuery] = useState("");
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
   const [settleWith, setSettleWith] = useState<CounterpartyBalance | null>(null);
   const [showAdd, setShowAdd] = useState(false);
 
@@ -38,14 +39,23 @@ export function useFriends() {
     queryFn: () => socialClient.listFriends({}),
   });
 
-  /** Adds a friend by email or phone; on success clears the form and refreshes the list. */
+  /** Sends a friend request without revealing whether the identifier matched. */
   const addFriend = useMutation({
     mutationFn: () => socialClient.addFriend({ ...splitIdentifier(identifier), name: "" }),
     onSuccess: () => {
       setIdentifier("");
       setShowAdd(false);
+      setNotice("If an account matches, they’ll receive a friend request.");
       queryClient.invalidateQueries({ queryKey: queryKeys.friends });
     },
+    onError: (mutationError) => setError(errorMessage(mutationError)),
+  });
+
+  /** Accepts or declines one request addressed to the current user. */
+  const respondToRequest = useMutation({
+    mutationFn: (response: { userId: string; accept: boolean }) =>
+      socialClient.respondFriendRequest(response),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.friends }),
     onError: (mutationError) => setError(errorMessage(mutationError)),
   });
 
@@ -75,6 +85,7 @@ export function useFriends() {
   return {
     me: currentUser.data,
     friends: allFriends,
+    incomingRequests: friends.data?.incomingRequests ?? [],
     visibleFriends,
     owedToYouCents,
     youOweCents,
@@ -86,11 +97,18 @@ export function useFriends() {
     identifier,
     setIdentifier,
     error,
+    notice,
     submitAdd: () => {
       setError("");
+      setNotice("");
       addFriend.mutate();
     },
     isAdding: addFriend.isPending,
+    respondToRequest: (userId: string, accept: boolean) => {
+      setError("");
+      respondToRequest.mutate({ userId, accept });
+    },
+    respondingUserId: respondToRequest.isPending ? respondToRequest.variables?.userId : undefined,
     settleWith,
     setSettleWith,
   };

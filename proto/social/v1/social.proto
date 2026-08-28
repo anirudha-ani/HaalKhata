@@ -7,9 +7,13 @@ import "common/v1/common.proto";
 
 // Friends, the activity feed and in-app notifications.
 service SocialService {
-  // Add a friend by email; creates a claimable shadow user if needed.
+  // Sends a privacy-preserving friend request. The returned User is kept for
+  // wire compatibility and intentionally carries no target fields: callers
+  // must not learn whether an email, phone, or id resolved to an account.
   rpc AddFriend(AddFriendRequest) returns (common.v1.User);
   rpc ListFriends(google.protobuf.Empty) returns (ListFriendsResponse);
+  // Accepts or declines an incoming request; only the named recipient can act.
+  rpc RespondFriendRequest(RespondFriendRequestRequest) returns (google.protobuf.Empty);
   rpc ListActivity(ListActivityRequest) returns (ListActivityResponse);
   rpc ListNotifications(google.protobuf.Empty) returns (ListNotificationsResponse);
   rpc MarkNotificationsRead(google.protobuf.Empty) returns (google.protobuf.Empty);
@@ -24,18 +28,26 @@ message SendReminderRequest {
 }
 
 message AddFriendRequest {
-  // Exactly one of email/phone/user_id identifies the friend; phone is E.164.
+  // Exactly one of email/phone/user_id identifies the recipient; phone is E.164.
   string email = 1;
-  string name = 2; // optional display name for shadow users
+  string name = 2; // legacy field; ignored because shadow users are never created
   string phone = 3;
-  // An existing account by id — for befriending someone already on screen,
-  // like a fellow group member, without retyping contact details. The caller
-  // must share a group with them: an id is not an introduction, membership is.
+  // An existing account by id — for requesting someone already on screen.
   string user_id = 4;
+}
+
+message RespondFriendRequestRequest {
+  // Existing incoming request's sender. Unknown/non-incoming ids are rejected.
+  string user_id = 1;
+  // True accepts and creates the symmetric friendship; false declines it.
+  bool accept = 2;
 }
 
 message ListFriendsResponse {
   repeated common.v1.CounterpartyBalance friends = 1;
+  // Pending senders visible only to this recipient. Contact details and
+  // payment handles are withheld until the request is accepted.
+  repeated common.v1.User incoming_requests = 2;
 }
 
 message ListActivityRequest {

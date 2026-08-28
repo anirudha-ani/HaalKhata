@@ -12,7 +12,7 @@ import { requireRateLimitedUser, RPC_RATE_LIMITS } from "@/server/api/connect/rp
  * {@link runUsecase}, which maps UsecaseError to ConnectError.
  */
 export const socialHandler: ServiceImpl<typeof SocialService> = {
-  /** Adds an existing co-member as a friend. */
+  /** Sends a privacy-preserving friend request. */
   async addFriend(request, context) {
     return runUsecase(
       async () =>
@@ -26,7 +26,21 @@ export const socialHandler: ServiceImpl<typeof SocialService> = {
 
   /** Lists the caller's friends (with net balances). */
   async listFriends(_request, context) {
-    return runUsecase(async () => ({ friends: await social.listFriends(await requireUser(context)) }), context);
+    return runUsecase(async () => social.listFriends(await requireUser(context)), context);
+  },
+
+  /** Accepts or declines one request addressed to the caller. */
+  async respondFriendRequest(request, context) {
+    await runUsecase(
+      async () =>
+        social.respondFriendRequest(
+          await requireUser(context),
+          request.userId,
+          request.accept,
+        ),
+      context,
+    );
+    return {};
   },
 
   /** Lists the activity feed, scoped to one group when groupId is set. */

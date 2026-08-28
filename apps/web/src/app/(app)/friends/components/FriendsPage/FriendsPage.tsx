@@ -2,7 +2,15 @@
 /** Friends route: overall position, searchable friend list linking into each ledger, add-by-email-or-phone. */
 
 import Link from "next/link";
-import { ChevronRight, HandCoins, Handshake, UserPlus, Wallet } from "lucide-react";
+import {
+  Check,
+  ChevronRight,
+  HandCoins,
+  Handshake,
+  UserPlus,
+  Wallet,
+  X,
+} from "lucide-react";
 import { Avatar } from "@/components/ui/Avatar";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Money } from "@/components/ui/Money";
@@ -41,6 +49,39 @@ export function FriendsPage() {
           <UserPlus className="h-4 w-4" /> Add friend
         </button>
       </header>
+
+      {friendsState.incomingRequests.length > 0 ? (
+        <section className="space-y-3 rounded-2xl border border-line bg-card p-4">
+          <h2 className="font-semibold">Friend requests</h2>
+          <ul className="space-y-3">
+            {friendsState.incomingRequests.map((requester) => {
+              const responding = friendsState.respondingUserId === requester.id;
+              return (
+                <li key={requester.id} className="flex items-center gap-3">
+                  <Avatar user={requester} />
+                  <p className="min-w-0 flex-1 truncate font-medium">{requester.name}</p>
+                  <button
+                    type="button"
+                    disabled={responding}
+                    onClick={() => friendsState.respondToRequest(requester.id, false)}
+                    className="flex items-center gap-1 rounded-lg border border-line px-3 py-1.5 text-sm font-semibold text-ink-soft hover:text-neg-600 disabled:opacity-50"
+                  >
+                    <X className="h-3.5 w-3.5" /> Decline
+                  </button>
+                  <button
+                    type="button"
+                    disabled={responding}
+                    onClick={() => friendsState.respondToRequest(requester.id, true)}
+                    className="flex items-center gap-1 rounded-lg bg-brand-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-50"
+                  >
+                    <Check className="h-3.5 w-3.5" /> Accept
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      ) : null}
 
       {friendsState.friends.length > 0 ? (
         <div className="grid grid-cols-2 gap-3">
@@ -88,15 +129,18 @@ export function FriendsPage() {
               disabled={friendsState.isAdding}
               className="rounded-xl bg-brand-600 px-4 font-semibold text-white hover:bg-brand-700 disabled:opacity-50"
             >
-              {friendsState.isAdding ? "Adding…" : "Add"}
+              {friendsState.isAdding ? "Sending…" : "Send request"}
             </button>
           </form>
           {friendsState.error ? (
             <p className="text-sm font-medium text-brand-600">{friendsState.error}</p>
           ) : null}
+          {friendsState.notice ? (
+            <p className="text-sm font-medium text-pos-700">{friendsState.notice}</p>
+          ) : null}
           <p className="text-sm text-ink-soft">
-            Friends without an account yet are tracked as invited — everything is waiting for
-            them when they sign up with that email or number.
+            For privacy, we won’t reveal whether that identifier has an account. They must accept
+            before either of you is added as a friend.
           </p>
         </div>
       ) : null}
@@ -105,7 +149,7 @@ export function FriendsPage() {
         <EmptyState
           icon={<Handshake />}
           title="No friends yet"
-          hint="Add someone by email or phone to split one-off expenses outside of groups."
+          hint="Send a request by email or phone; they’ll appear here after accepting."
         />
       ) : (
         <>
@@ -114,7 +158,7 @@ export function FriendsPage() {
               className="flex-1"
               value={friendsState.query}
               onChange={friendsState.setQuery}
-              placeholder="Search friends by name, email or phone"
+              placeholder="Search friends by name"
             />
             {friendsState.query ? (
               <span className="shrink-0 text-sm text-ink-soft tabular-nums">

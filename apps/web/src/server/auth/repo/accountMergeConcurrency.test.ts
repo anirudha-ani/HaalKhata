@@ -30,6 +30,8 @@ beforeEach(() => {
 describe("account merge target locking", () => {
   it("aborts before any repoint when the invited row was claimed", async () => {
     vi.mocked(client.query)
+      .mockResolvedValueOnce({ rows: [] } as never)
+      .mockResolvedValueOnce({ rows: [] } as never)
       .mockResolvedValueOnce({ rows: [{ id: "keeper" }, { id: "loser" }] } as never)
       .mockResolvedValueOnce({ rows: [] } as never);
 
@@ -37,9 +39,24 @@ describe("account merge target locking", () => {
       "target changed",
     );
 
-    expect(client.query).toHaveBeenCalledTimes(2);
+    expect(client.query).toHaveBeenCalledTimes(4);
+    expect(client.query).toHaveBeenNthCalledWith(
+      1,
+      expect.stringContaining("pg_advisory_xact_lock"),
+      ["friend-request-inbox:keeper"],
+    );
     expect(client.query).toHaveBeenNthCalledWith(
       2,
+      expect.stringContaining("pg_advisory_xact_lock"),
+      ["friend-request-inbox:loser"],
+    );
+    expect(client.query).toHaveBeenNthCalledWith(
+      3,
+      expect.stringContaining("ORDER BY id FOR UPDATE"),
+      [["keeper", "loser"]],
+    );
+    expect(client.query).toHaveBeenNthCalledWith(
+      4,
       expect.stringContaining("password_hash IS NULL"),
       ["loser", "+16175551212"],
     );

@@ -8,7 +8,7 @@
  * one-way, money-touching operation harder to read and easier to get wrong.
  * It lives here whole, and nothing else reaches across domains this way.
  *
- * A user id lives in SIXTEEN places. Fourteen are foreign keys; the last two
+ * A user id lives in EIGHTEEN places. Sixteen are foreign keys; the last two
  * are not, and are invisible to any `REFERENCES users(id)` search:
  * `activity.audience` (a JSONB array) and `activity.credit_user_id` (untyped
  * TEXT, deliberately unconstrained so the feed survives a deleted user).
@@ -185,8 +185,17 @@ export async function mergeAccounts(
   phone: string,
 ): Promise<MergeOutcome> {
   return transaction(async (client) => {
-    // Lock both rows in a fixed order so two concurrent merges cannot
-    // interleave into a deadlock or a lost update.
+    // Friend-request writers take inbox locks before their INSERT acquires
+    // foreign-key locks on users. Merge must use that same lock order to avoid
+    // deadlocking with a concurrent send or accept. Sorting also keeps two
+    // concurrent merges from waiting on each other's second inbox.
+    for (const accountId of [keeperId, loserId].sort()) {
+      await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", [
+        `friend-request-inbox:${accountId}`,
+      ]);
+    }
+    // Lock both user rows in a fixed order after the inboxes. This prevents a
+    // claim, phone change, or competing merge from interleaving with repoints.
     await client.query(`SELECT id FROM users WHERE id = ANY($1::text[]) ORDER BY id FOR UPDATE`, [
       [keeperId, loserId].sort(),
     ]);
@@ -276,6 +285,42 @@ export async function mergeAccounts(
       keeperId,
       loserId,
     ]);
+
+    // --- pending friend requests -------------------------------------------
+    // Requests between the identities become self-requests after the merge
+    // and must disappear before the distinct-user check can reject a repoint.
+    await client.query(
+      `DELETE FROM friend_requests
+        WHERE (requester_id = $1 AND recipient_id = $2)
+           OR (requester_id = $2 AND recipient_id = $1)`,
+      [keeperId, loserId],
+    );
+    // Collapse same-direction duplicates before moving each side of the
+    // directed request. The keeper's existing request wins.
+    await client.query(
+      `DELETE FROM friend_requests loser
+        USING friend_requests keeper
+        WHERE loser.requester_id = $2
+          AND keeper.requester_id = $1
+          AND loser.recipient_id = keeper.recipient_id`,
+      [keeperId, loserId],
+    );
+    await client.query(
+      `UPDATE friend_requests SET requester_id = $1 WHERE requester_id = $2`,
+      [keeperId, loserId],
+    );
+    await client.query(
+      `DELETE FROM friend_requests loser
+        USING friend_requests keeper
+        WHERE loser.recipient_id = $2
+          AND keeper.recipient_id = $1
+          AND loser.requester_id = keeper.requester_id`,
+      [keeperId, loserId],
+    );
+    await client.query(
+      `UPDATE friend_requests SET recipient_id = $1 WHERE recipient_id = $2`,
+      [keeperId, loserId],
+    );
 
     // --- payment handles: the keeper's own choices win ----------------------
     await client.query(

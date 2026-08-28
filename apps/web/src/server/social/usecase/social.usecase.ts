@@ -1,6 +1,13 @@
 /** Social business logic: friends (friendships ∪ expense counterparties), activity feed, notifications. */
 
-import { insertFriendship, listFriendIds } from "@/server/social/repo/friendships.repo";
+import {
+  deleteFriendRequest,
+  friendshipExists,
+  insertFriendRequest,
+  insertFriendship,
+  listFriendIds,
+  listIncomingFriendRequestIds,
+} from "@/server/social/repo/friendships.repo";
 import {
   findUserByEmail,
   findUserById,
@@ -9,7 +16,7 @@ import {
   type UserRow,
 } from "@/server/auth/repo/users.repo";
 import { listActivityMonths, listActivityPage } from "@/server/social/repo/activity.repo";
-import { isMember, listCoMemberIds } from "@/server/group/repo/groups.repo";
+import { isMember } from "@/server/group/repo/groups.repo";
 import {
   countUnread,
   findLatestNotificationAt,
@@ -27,13 +34,15 @@ import { safeActivityPath } from "@haalkhata/shared/navigation/activityPath";
 import { findPaymentMethod } from "@haalkhata/shared/payment/methods";
 import { getOverallBalances, netWithUser } from "@/server/expense/usecase/balance.usecase";
 import { denied, invalid, notFound } from "@/server/common/errors";
-import { toPublicUser } from "@/server/auth/usecase/user.mapper";
+import { transaction } from "@/server/common/db";
+import { toFriendRequestUser, toPublicUser } from "@/server/auth/usecase/user.mapper";
 import { EMAIL_PATTERN, normalizePhone, PHONE_FORMAT_HINT } from "@/server/auth/auth.constants";
 
 /**
- * Befriends the caller with an existing fellow group member identified by id,
- * email, or phone. Contact lookup is only an alternate identifier: it does not
- * create accounts and cannot bypass the shared-group authorization check.
+ * Sends a friend request to an existing account identified by id, email, or
+ * phone. Every syntactically valid lookup receives the same empty response,
+ * whether or not an account exists, so this RPC cannot enumerate identities.
+ * No friendship exists until the recipient accepts.
  *
  * For email/phone, exactly one identifier must be supplied — clients present
  * a single "email or phone" field and route the raw string with
@@ -43,39 +52,28 @@ import { EMAIL_PATTERN, normalizePhone, PHONE_FORMAT_HINT } from "@/server/auth/
  * @param userId - Id of the authenticated caller adding the friend.
  * @param input - The friend's user id, or their email or phone (exactly one
  *   non-empty). The legacy name field is ignored.
- * @returns The friend as a user.v1 User message shape.
- * @throws UsecaseError (invalid_argument) when neither or both identifiers are
- *   given, the identifier is malformed, or it resolves to the caller;
- *   (permission_denied) when the target is absent or does not share a group.
+ * @returns An intentionally empty User-shaped acknowledgement.
+ * @throws UsecaseError (invalid_argument) when the request does not contain
+ *   exactly one identifier or when that identifier is malformed.
  */
 export async function addFriend(
   userId: string,
   input: { email: string; phone: string; name?: string; userId?: string },
 ) {
-  // By id: befriending someone already on screen — a fellow group member —
-  // without retyping contact details. Gated on actually sharing a group,
-  // because a guessed or leaked id must not be enough to attach yourself to
-  // a stranger's ledger; membership is the introduction.
   const targetId = input.userId?.trim() ?? "";
-  if (targetId !== "") {
-    if (targetId === userId) invalid("that's your own account");
-    const target = await findUserById(targetId);
-    if (!target) notFound("user not found");
-    if (!(await listCoMemberIds(userId)).includes(targetId)) {
-      denied("you can only add someone you share a group with this way");
-    }
-    await insertFriendship(userId, targetId);
-    return toPublicUser(target);
-  }
-
   const email = input.email.trim();
   const phone = input.phone.trim();
-  if (email === "" && phone === "") invalid("enter an email address or phone number");
-  if (email !== "" && phone !== "") {
-    invalid("enter either an email address or a phone number, not both");
+  const suppliedIdentifiers = [targetId, email, phone].filter(
+    (identifier) => identifier !== "",
+  );
+  if (suppliedIdentifiers.length !== 1) {
+    invalid("enter exactly one user id, email address, or phone number");
   }
+
   let friend: UserRow | undefined;
-  if (email) {
+  if (targetId) {
+    friend = await findUserById(targetId);
+  } else if (email) {
     if (!EMAIL_PATTERN.test(email)) invalid("please enter a valid email address");
     friend = await findUserByEmail(email);
   } else {
@@ -83,13 +81,35 @@ export async function addFriend(
     if (!normalizedPhone) invalid(PHONE_FORMAT_HINT);
     friend = await findUserByPhone(normalizedPhone);
   }
-  const coMemberIds = await listCoMemberIds(userId);
-  if (!friend || !coMemberIds.includes(friend.id)) {
-    denied("you can only add someone you share a group with");
+
+  // Missing, self, duplicate, and newly-created requests are deliberately
+  // indistinguishable to the caller. Only the recipient learns that a real
+  // request exists, through their private request list and notification.
+  if (
+    !friend ||
+    friend.id === userId ||
+    friend.merged_into !== null ||
+    (await friendshipExists(userId, friend.id))
+  ) {
+    return {};
   }
-  if (friend.id === userId) invalid("that's your own account");
-  await insertFriendship(userId, friend.id);
-  return toPublicUser(friend);
+  const requester = await findUserById(userId);
+  if (!requester) return {};
+  await transaction(async (client) => {
+    const inserted = await insertFriendRequest(userId, friend.id, client);
+    if (!inserted) return;
+    await insertNotifications(
+      [friend.id],
+      {
+        type: "friend_request",
+        title: `${requester.name} sent you a friend request`,
+        body: "Accept or decline it from Friends.",
+        link: "/friends",
+      },
+      client,
+    );
+  });
+  return {};
 }
 
 /**
@@ -102,18 +122,72 @@ export async function addFriend(
  *   friend owes the caller.
  */
 export async function listFriends(userId: string) {
-  const { counterparties } = await getOverallBalances(userId);
+  const [{ counterparties }, incomingRequestIds] = await Promise.all([
+    getOverallBalances(userId),
+    listIncomingFriendRequestIds(userId),
+  ]);
   const seenUserIds = new Set(counterparties.map((counterparty) => counterparty.user.id));
   const remainingFriendIds = (await listFriendIds(userId)).filter(
     (friendId) => !seenUserIds.has(friendId),
   );
-  const remainingFriends = await findUsersByIds(remainingFriendIds);
-  return [
-    ...counterparties,
-    ...remainingFriends
-      .sort((firstUser, secondUser) => firstUser.name.localeCompare(secondUser.name))
-      .map((friendUser) => ({ user: toPublicUser(friendUser), netCents: 0 })),
-  ];
+  const [remainingFriends, incomingRequesters] = await Promise.all([
+    findUsersByIds(remainingFriendIds),
+    findUsersByIds(incomingRequestIds),
+  ]);
+  const requesterById = new Map(
+    incomingRequesters
+      .filter((requester) => requester.merged_into === null)
+      .map((requester) => [requester.id, requester]),
+  );
+  return {
+    friends: [
+      ...counterparties,
+      ...remainingFriends
+        .sort((firstUser, secondUser) => firstUser.name.localeCompare(secondUser.name))
+        .map((friendUser) => ({ user: toPublicUser(friendUser), netCents: 0 })),
+    ],
+    incomingRequests: incomingRequestIds.flatMap((requesterId) => {
+      const requester = requesterById.get(requesterId);
+      return requester ? [toFriendRequestUser(requester)] : [];
+    }),
+  };
+}
+
+/**
+ * Accepts or declines a request addressed to the authenticated recipient.
+ * Acceptance consumes the request and creates both friendship rows in the
+ * same transaction; declining only consumes it.
+ *
+ * @param userId - Authenticated request recipient.
+ * @param requesterId - Account that sent the incoming request.
+ * @param accept - Whether to establish the friendship or decline it.
+ * @throws UsecaseError (not_found) when no matching incoming request exists.
+ */
+export async function respondFriendRequest(
+  userId: string,
+  requesterId: string,
+  accept: boolean,
+): Promise<void> {
+  if (!requesterId || requesterId === userId) notFound("friend request not found");
+  const recipient = accept ? await findUserById(userId) : undefined;
+  await transaction(async (client) => {
+    if (!(await deleteFriendRequest(requesterId, userId, client))) {
+      notFound("friend request not found");
+    }
+    if (!accept) return;
+    await insertFriendship(userId, requesterId, client);
+    if (!recipient) return;
+    await insertNotifications(
+      [requesterId],
+      {
+        type: "friend_request",
+        title: `${recipient.name} accepted your friend request`,
+        body: "You can now split one-off expenses together.",
+        link: "/friends",
+      },
+      client,
+    );
+  });
 }
 
 /**

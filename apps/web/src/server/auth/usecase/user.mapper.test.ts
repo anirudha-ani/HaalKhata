@@ -2,7 +2,7 @@
 
 import { describe, expect, it } from "vitest";
 import type { UserRow } from "@/server/auth/repo/users.repo";
-import { toPrivateUser, toPublicUser } from "./user.mapper";
+import { toFriendRequestUser, toPrivateUser, toPublicUser } from "./user.mapper";
 
 /** Fully populated row that makes accidental private-field disclosure visible. */
 const USER_ROW: UserRow = {
@@ -39,5 +39,20 @@ describe("user response projections", () => {
     expect(privateUser.email).toBe(USER_ROW.email);
     expect(privateUser.phone).toBe(USER_ROW.phone);
     expect(privateUser.onboarded).toBe(true);
+  });
+
+  it("shows only identity fields on an incoming friend request", () => {
+    const requestUser = toFriendRequestUser(USER_ROW);
+
+    expect(requestUser).toMatchObject({
+      id: USER_ROW.id,
+      name: USER_ROW.name,
+      avatarColor: USER_ROW.avatar_color,
+      avatarUrl: USER_ROW.avatar_url,
+    });
+    expect(requestUser.email).toBe("");
+    expect(requestUser.phone).toBe("");
+    expect(requestUser.defaultCurrency).toBe("");
+    expect(requestUser.paymentHandles).toEqual([]);
   });
 });

@@ -99,12 +99,16 @@ export function FriendDetailPage({
               {!isFriend ? (
                 <button
                   type="button"
-                  disabled={view.isAddingFriend}
+                  disabled={view.isAddingFriend || view.friendRequestSent}
                   onClick={view.addFriend}
                   className="flex items-center gap-1 rounded-full bg-brand-600 px-2.5 py-0.5 text-xs font-semibold text-white hover:bg-brand-700 disabled:opacity-50"
                 >
                   <UserPlus className="h-3 w-3" />
-                  {view.isAddingFriend ? "Adding…" : "Add friend"}
+                  {view.isAddingFriend
+                    ? "Sending…"
+                    : view.friendRequestSent
+                      ? "Requested"
+                      : "Request friendship"}
                 </button>
               ) : null}
             </p>

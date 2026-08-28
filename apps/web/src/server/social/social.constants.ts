@@ -8,6 +8,9 @@
  */
 export const REMINDER_COOLDOWN_HOURS = 24;
 
+/** Maximum unanswered friend requests retained for one recipient. */
+export const MAX_PENDING_FRIEND_REQUESTS = 100;
+
 /** Events per activity page when the client does not ask for a size. */
 export const ACTIVITY_PAGE_SIZE = 25;
 

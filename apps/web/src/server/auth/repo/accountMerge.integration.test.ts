@@ -4,9 +4,9 @@
  * The unit tests around it are all mocks, which prove the decision tree but
  * never execute a single statement. This one seeds every hazard the merge has
  * to handle simultaneously — double splits, overlapping memberships,
- * bidirectional friendships, a settlement between the two rows, a JSONB
- * audience, a soft-deleted expense — and checks what the database actually
- * contains afterwards.
+ * bidirectional friendships, pending friend requests, a settlement between
+ * the two rows, a JSONB audience, a soft-deleted expense — and checks what
+ * the database actually contains afterwards.
  *
  * Skips itself when no database is reachable, so it is safe in the suite.
  */
@@ -141,6 +141,18 @@ describe.skipIf(!reachable)("mergeAccounts against Postgres", () => {
     ]);
   });
 
+  it("repoints pending friend requests without duplicates or self-requests", async () => {
+    const { rows } = await database.query(
+      `SELECT requester_id, recipient_id
+         FROM friend_requests
+        ORDER BY requester_id, recipient_id`,
+    );
+    expect(rows).toEqual([
+      { requester_id: KEEPER, recipient_id: RAHUL },
+      { requester_id: RAHUL, recipient_id: KEEPER },
+    ]);
+  });
+
   it("deletes money paid between the two rows and repoints the rest", async () => {
     const { rows } = await database.query(
       `SELECT id, from_user, to_user FROM settlements ORDER BY id`,
@@ -188,6 +200,7 @@ describe.skipIf(!reachable)("mergeAccounts against Postgres", () => {
        + (SELECT COUNT(*) FROM expense_item_assignments WHERE user_id = $1)
        + (SELECT COUNT(*) FROM group_members WHERE user_id = $1)
        + (SELECT COUNT(*) FROM friendships WHERE user_id = $1 OR friend_id = $1)
+       + (SELECT COUNT(*) FROM friend_requests WHERE requester_id = $1 OR recipient_id = $1)
        + (SELECT COUNT(*) FROM settlements WHERE from_user = $1 OR to_user = $1)
        + (SELECT COUNT(*) FROM comments WHERE user_id = $1)
        + (SELECT COUNT(*) FROM activity WHERE actor_id = $1 OR credit_user_id = $1
@@ -290,6 +303,14 @@ async function seed(database: Client): Promise<void> {
   await database.query(
     `INSERT INTO friendships (user_id, friend_id) VALUES
        ($1, $3), ($3, $1), ($2, $3), ($3, $2), ($1, $2), ($2, $1)`,
+    [KEEPER, LOSER, RAHUL],
+  );
+
+  // Duplicate incoming and outgoing requests collapse onto the keeper; the
+  // two requests between keeper and loser disappear as self-requests.
+  await database.query(
+    `INSERT INTO friend_requests (requester_id, recipient_id) VALUES
+       ($1, $3), ($2, $3), ($3, $1), ($3, $2), ($1, $2), ($2, $1)`,
     [KEEPER, LOSER, RAHUL],
   );
 

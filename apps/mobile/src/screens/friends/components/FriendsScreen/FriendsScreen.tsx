@@ -51,22 +51,60 @@ export function FriendsScreen() {
             busy={friendsState.isAdding}
             disabled={friendsState.identifier.trim() === ""}
             icon={<UserPlus color={colors.white} size={16} />}
-            label="Add"
+            label="Send"
             onPress={friendsState.submitAdd}
           />
         </View>
         {friendsState.error ? <Text style={styles.error}>{friendsState.error}</Text> : null}
+        {friendsState.notice ? <Text style={styles.notice}>{friendsState.notice}</Text> : null}
         <Text style={styles.hint}>
-          Friends without an account yet are tracked as invited — everything is waiting for them
-          when they sign up with that email or number.
+          For privacy, we won’t reveal whether that identifier has an account. They must accept
+          before either of you is added as a friend.
         </Text>
       </View>
+
+      {friendsState.incomingRequests.length > 0 ? (
+        <View>
+          <Text style={styles.sectionTitle}>Friend requests</Text>
+          <View style={styles.listCard}>
+            {friendsState.incomingRequests.map((requester, index) => {
+              const responding = friendsState.respondingUserId === requester.id;
+              return (
+                <View
+                  key={requester.id}
+                  style={[styles.row, index > 0 ? styles.rowDivider : null]}
+                >
+                  <Avatar user={requester} />
+                  <Text numberOfLines={1} style={styles.requestName}>
+                    {requester.name}
+                  </Text>
+                  <View style={styles.requestActions}>
+                    <Button
+                      compact
+                      disabled={responding}
+                      label="Decline"
+                      onPress={() => friendsState.respondToRequest(requester.id, false)}
+                      variant="outline"
+                    />
+                    <Button
+                      compact
+                      busy={responding && friendsState.respondingAccept}
+                      label="Accept"
+                      onPress={() => friendsState.respondToRequest(requester.id, true)}
+                    />
+                  </View>
+                </View>
+              );
+            })}
+          </View>
+        </View>
+      ) : null}
 
       {friendsState.isLoading ? (
         <Spinner label="Loading friends…" />
       ) : friendsState.friends.length === 0 ? (
         <EmptyState
-          hint="Add someone by email or phone to split one-off expenses outside of groups."
+          hint="Send a request by email or phone; they’ll appear here after accepting."
           icon={<Users color={colors.inkSoft} size={32} />}
           title="No friends yet"
         />
@@ -172,6 +210,12 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     marginTop: spacing.sm,
   },
+  notice: {
+    color: colors.pos700,
+    fontSize: 14,
+    fontWeight: "500",
+    marginTop: spacing.sm,
+  },
   iconAction: {
     alignItems: "center",
     borderColor: colors.line,
@@ -221,6 +265,22 @@ const styles = StyleSheet.create({
     alignItems: "center",
     flexDirection: "row",
     gap: spacing.xs,
+  },
+  requestActions: {
+    flexDirection: "row",
+    gap: spacing.xs,
+  },
+  requestName: {
+    color: colors.ink,
+    flex: 1,
+    fontSize: 15,
+    fontWeight: "500",
+  },
+  sectionTitle: {
+    color: colors.ink,
+    fontSize: 17,
+    fontWeight: "600",
+    marginBottom: spacing.sm,
   },
   rowDivider: {
     borderTopColor: colors.line,

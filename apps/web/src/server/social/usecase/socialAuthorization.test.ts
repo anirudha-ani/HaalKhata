@@ -4,8 +4,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { UserRow } from "@/server/auth/repo/users.repo";
 
 vi.mock("@/server/social/repo/friendships.repo", () => ({
+  deleteFriendRequest: vi.fn(),
+  friendshipExists: vi.fn(),
+  insertFriendRequest: vi.fn(),
   insertFriendship: vi.fn(),
   listFriendIds: vi.fn(),
+  listIncomingFriendRequestIds: vi.fn(),
 }));
 vi.mock("@/server/auth/repo/users.repo", () => ({
   findUserByEmail: vi.fn(),
@@ -19,7 +23,9 @@ vi.mock("@/server/social/repo/activity.repo", () => ({
 }));
 vi.mock("@/server/group/repo/groups.repo", () => ({
   isMember: vi.fn(),
-  listCoMemberIds: vi.fn(),
+}));
+vi.mock("@/server/common/db", () => ({
+  transaction: vi.fn((operation) => operation({ query: vi.fn() })),
 }));
 vi.mock("@/server/social/repo/notifications.repo", () => ({
   countUnread: vi.fn(),
@@ -33,10 +39,15 @@ vi.mock("@/server/expense/usecase/balance.usecase", () => ({
   netWithUser: vi.fn(),
 }));
 
-import { findUserByEmail } from "@/server/auth/repo/users.repo";
-import { listCoMemberIds } from "@/server/group/repo/groups.repo";
-import { insertFriendship } from "@/server/social/repo/friendships.repo";
-import { addFriend } from "./social.usecase";
+import { findUserByEmail, findUserById } from "@/server/auth/repo/users.repo";
+import {
+  deleteFriendRequest,
+  friendshipExists,
+  insertFriendRequest,
+  insertFriendship,
+} from "@/server/social/repo/friendships.repo";
+import { insertNotifications } from "@/server/social/repo/notifications.repo";
+import { addFriend, respondFriendRequest } from "./social.usecase";
 
 const CALLER = "user-caller";
 const TARGET = "user-target";
@@ -62,34 +73,74 @@ const targetRow = {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  vi.mocked(listCoMemberIds).mockResolvedValue([]);
+  vi.mocked(findUserById).mockResolvedValue({ ...targetRow, id: CALLER, name: "Caller" });
+  vi.mocked(friendshipExists).mockResolvedValue(false);
+  vi.mocked(insertFriendRequest).mockResolvedValue(true);
 });
 
 describe("addFriend contact lookup", () => {
-  it("returns the same denial for a missing and an unrelated account", async () => {
+  it("returns the same empty acknowledgement for missing and existing accounts", async () => {
     vi.mocked(findUserByEmail).mockResolvedValue(undefined);
-    const missing = addFriend(CALLER, { email: TARGET_EMAIL, phone: "" });
-    await expect(missing).rejects.toMatchObject({
-      code: "permission_denied",
-      message: "you can only add someone you share a group with",
-    });
+    await expect(addFriend(CALLER, { email: TARGET_EMAIL, phone: "" })).resolves.toEqual({});
 
     vi.mocked(findUserByEmail).mockResolvedValue(targetRow);
-    const unrelated = addFriend(CALLER, { email: TARGET_EMAIL, phone: "" });
-    await expect(unrelated).rejects.toMatchObject({
-      code: "permission_denied",
-      message: "you can only add someone you share a group with",
-    });
+    await expect(addFriend(CALLER, { email: TARGET_EMAIL, phone: "" })).resolves.toEqual({});
+
     expect(insertFriendship).not.toHaveBeenCalled();
+    expect(insertFriendRequest).toHaveBeenCalledWith(CALLER, TARGET, expect.anything());
+    expect(insertNotifications).toHaveBeenCalledWith(
+      [TARGET],
+      expect.objectContaining({ type: "friend_request", link: "/friends" }),
+      expect.anything(),
+    );
   });
 
-  it("allows contact lookup only for an existing co-member", async () => {
+  it("does not reveal or notify a duplicate pending request", async () => {
     vi.mocked(findUserByEmail).mockResolvedValue(targetRow);
-    vi.mocked(listCoMemberIds).mockResolvedValue([TARGET]);
+    vi.mocked(insertFriendRequest).mockResolvedValue(false);
 
     const result = await addFriend(CALLER, { email: TARGET_EMAIL, phone: "" });
 
-    expect(insertFriendship).toHaveBeenCalledWith(CALLER, TARGET);
-    expect(result.id).toBe(TARGET);
+    expect(result).toEqual({});
+    expect(insertFriendship).not.toHaveBeenCalled();
+    expect(insertNotifications).not.toHaveBeenCalled();
+  });
+
+  it("does not create a pending request for an accepted friendship", async () => {
+    vi.mocked(findUserByEmail).mockResolvedValue(targetRow);
+    vi.mocked(friendshipExists).mockResolvedValue(true);
+
+    await expect(addFriend(CALLER, { email: TARGET_EMAIL, phone: "" })).resolves.toEqual({});
+
+    expect(insertFriendRequest).not.toHaveBeenCalled();
+    expect(insertNotifications).not.toHaveBeenCalled();
+  });
+});
+
+describe("respondFriendRequest", () => {
+  it("creates a friendship only after consuming the caller's incoming request", async () => {
+    vi.mocked(deleteFriendRequest).mockResolvedValue(true);
+
+    await respondFriendRequest(TARGET, CALLER, true);
+
+    expect(deleteFriendRequest).toHaveBeenCalledWith(CALLER, TARGET, expect.anything());
+    expect(insertFriendship).toHaveBeenCalledWith(TARGET, CALLER, expect.anything());
+  });
+
+  it("declines without creating friendship rows", async () => {
+    vi.mocked(deleteFriendRequest).mockResolvedValue(true);
+
+    await respondFriendRequest(TARGET, CALLER, false);
+
+    expect(insertFriendship).not.toHaveBeenCalled();
+  });
+
+  it("rejects ids that did not send an incoming request", async () => {
+    vi.mocked(deleteFriendRequest).mockResolvedValue(false);
+
+    await expect(respondFriendRequest(TARGET, CALLER, true)).rejects.toMatchObject({
+      code: "not_found",
+    });
+    expect(insertFriendship).not.toHaveBeenCalled();
   });
 });
