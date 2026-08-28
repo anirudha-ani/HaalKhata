@@ -23,8 +23,9 @@ recording settlements is in.
   plain `.sql` files under `apps/web/migrations/` run by node-pg-migrate
   (history table `pgmigrations`). Pending migrations auto-apply once per
   process on boot (db.ts), so dev and Docker stay zero-step; the CLI
-  (`pnpm db:new`, `pnpm db:migrate`, `pnpm db:down`) is for authoring and
-  rollback. No inline DDL in code.
+  (`pnpm db:new`, `pnpm db:migrate`) is for authoring and applying migrations.
+  Populated databases move forward only; recovery uses a verified backup or a
+  new corrective migration. No inline DDL in code.
 - **Backend: Node/TypeScript inside Next.js** (no Go, no Fly.io). One
   language, one deploy artifact (Next standalone output in Docker).
 - **API contract: ConnectRPC + Protobuf stays.** `.proto` files remain the

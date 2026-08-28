@@ -99,10 +99,12 @@ manual migrate step. To change the schema:
 pnpm db:new add_expense_receipts   # scaffolds migrations/<ts>_add-expense-receipts.sql
 # edit the file: SQL under "-- Up Migration", inverse under "-- Down Migration"
 pnpm db:migrate                    # apply now (or just restart the app)
-pnpm db:down                       # roll back the most recent migration
 ```
 
-Never edit an applied migration — add a new one.
+Never roll a populated database backward: historical down migrations can
+discard application data and merge audit records. Restore a verified backup
+for disaster recovery, or add a forward corrective migration. Never edit an
+applied migration — add a new one.
 
 ## Deploy (self-hosted Docker)
 

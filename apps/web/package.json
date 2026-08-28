@@ -12,7 +12,6 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "db:migrate": "node --env-file-if-exists=../../.env node_modules/node-pg-migrate/bin/node-pg-migrate.js up -m migrations",
-    "db:down": "node --env-file-if-exists=../../.env node_modules/node-pg-migrate/bin/node-pg-migrate.js down -m migrations",
     "db:new": "node-pg-migrate create -m migrations --migration-file-language sql"
   },
   "dependencies": {

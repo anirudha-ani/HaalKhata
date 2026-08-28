@@ -20,7 +20,6 @@
     "test": "pnpm --filter @haalkhata/web test",
     "typecheck": "pnpm --filter @haalkhata/web typecheck",
     "db:migrate": "pnpm --filter @haalkhata/web db:migrate",
-    "db:down": "pnpm --filter @haalkhata/web db:down",
     "db:new": "pnpm --filter @haalkhata/web db:new",
     "doctor": "pnpm dlx react-doctor@latest apps/web/src"
   },
