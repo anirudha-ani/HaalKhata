@@ -432,7 +432,9 @@ function providerChain(): { chain: Provider[]; unconfigured: string[] } {
 function detectImageFormat(image: Uint8Array): ImageMediaType | null {
   for (const mediaType of IMAGE_MEDIA_TYPES) {
     const matches = IMAGE_SIGNATURES[mediaType].some((signature) =>
-      signature.bytes.every((byte, index) => image[signature.offset + index] === byte),
+      signature.fragments.every((fragment) =>
+        fragment.bytes.every((byte, index) => image[fragment.offset + index] === byte),
+      ),
     );
     if (!matches) continue;
     // HEIF containers also hold video and image sequences; the brand at offset

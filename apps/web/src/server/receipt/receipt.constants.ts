@@ -83,12 +83,18 @@ export const COMPATIBLE_AI = {
   zeroDataRetention: process.env.COMPATIBLE_AI_ZDR === "true",
 } as const;
 
-/** One acceptable byte pattern at a fixed offset within the file. */
-interface ImageSignature {
+/** One required byte fragment at a fixed offset within the file. */
+interface ImageSignatureFragment {
   /** Byte offset the pattern starts at. */
   offset: number;
   /** Expected bytes at that offset. */
   bytes: number[];
+}
+
+/** One accepted signature, composed of fragments that must all match. */
+interface ImageSignature {
+  /** Required fragments for this signature alternative. */
+  fragments: ImageSignatureFragment[];
 }
 
 /**
@@ -102,14 +108,21 @@ interface ImageSignature {
  * — a from-byte-zero comparison cannot express this.
  */
 export const IMAGE_SIGNATURES: Record<ImageMediaType, ImageSignature[]> = {
-  "image/jpeg": [{ offset: 0, bytes: [0xff, 0xd8, 0xff] }],
-  "image/png": [{ offset: 0, bytes: [0x89, 0x50, 0x4e, 0x47] }],
-  "image/webp": [{ offset: 0, bytes: [0x52, 0x49, 0x46, 0x46] }], // "RIFF"
-  "image/gif": [{ offset: 0, bytes: [0x47, 0x49, 0x46] }], // "GIF"
+  "image/jpeg": [{ fragments: [{ offset: 0, bytes: [0xff, 0xd8, 0xff] }] }],
+  "image/png": [{ fragments: [{ offset: 0, bytes: [0x89, 0x50, 0x4e, 0x47] }] }],
+  "image/webp": [
+    {
+      fragments: [
+        { offset: 0, bytes: [0x52, 0x49, 0x46, 0x46] }, // "RIFF"
+        { offset: 8, bytes: [0x57, 0x45, 0x42, 0x50] }, // "WEBP"
+      ],
+    },
+  ],
+  "image/gif": [{ fragments: [{ offset: 0, bytes: [0x47, 0x49, 0x46] }] }], // "GIF"
   // "ftyp" at offset 4; brand at offset 8 differs between capture devices and
   // converters, so accept the HEIF family rather than a single brand.
-  "image/heic": [{ offset: 4, bytes: [0x66, 0x74, 0x79, 0x70] }],
-  "image/heif": [{ offset: 4, bytes: [0x66, 0x74, 0x79, 0x70] }],
+  "image/heic": [{ fragments: [{ offset: 4, bytes: [0x66, 0x74, 0x79, 0x70] }] }],
+  "image/heif": [{ fragments: [{ offset: 4, bytes: [0x66, 0x74, 0x79, 0x70] }] }],
 };
 
 /** HEIF brands (offset 8) treated as still images we can transcode. */

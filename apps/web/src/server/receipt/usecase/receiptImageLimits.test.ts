@@ -23,6 +23,15 @@ function pngBytes(): Uint8Array {
   return Uint8Array.from([0x89, 0x50, 0x4e, 0x47]);
 }
 
+/** Returns a RIFF header carrying the requested four-byte container brand. */
+function riffBytes(brand: "AVI " | "WEBP"): Uint8Array {
+  return Uint8Array.from([
+    0x52, 0x49, 0x46, 0x46,
+    0, 0, 0, 0,
+    ...brand.split("").map((character) => character.charCodeAt(0)),
+  ]);
+}
+
 /** Returns a minimal HEIC brand header for the server's format detector. */
 function heicBytes(): Uint8Array {
   return Uint8Array.from([
@@ -51,6 +60,18 @@ beforeEach(() => {
 });
 
 describe("receipt image decode limits", () => {
+  it("requires the WEBP brand instead of accepting every RIFF container", async () => {
+    await expect(parseReceipt(riffBytes("AVI "))).rejects.toThrow(/isn't a supported image/);
+
+    expect(sharpMock).not.toHaveBeenCalled();
+  });
+
+  it("accepts a RIFF container that carries the WEBP brand", async () => {
+    await parseReceipt(riffBytes("WEBP"));
+
+    expect(sharpMock).toHaveBeenCalledOnce();
+  });
+
   it("passes the explicit pixel ceiling to Sharp for ordinary images", async () => {
     await parseReceipt(pngBytes());
 
