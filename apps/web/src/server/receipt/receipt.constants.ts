@@ -19,6 +19,18 @@ export type ImageMediaType = (typeof IMAGE_MEDIA_TYPES)[number];
 export const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
 
 /**
+ * Maximum decoded pixel count (40 MP). Compressed byte size does not bound
+ * decoded memory: at four channels this ceiling is already about 160 MB.
+ */
+export const MAX_IMAGE_PIXELS = 40_000_000;
+
+/**
+ * HEIC decoding is memory-heavy and mostly synchronous. One conversion per
+ * server process prevents concurrent uploads from multiplying peak RGBA use.
+ */
+export const MAX_CONCURRENT_HEIC_DECODES = 1;
+
+/**
  * Longest edge, in pixels, sent to the vision provider. 2576px is the ceiling
  * the current high-resolution models actually use; anything larger is
  * downsampled on their side, so sending it only costs upload time.

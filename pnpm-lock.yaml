@@ -159,7 +159,7 @@ importers:
       google-auth-library:
         specifier: ^10.9.1
         version: 10.9.1
-      heic-convert:
+      heic-decode:
         specifier: ^2.1.0
         version: 2.1.0
       libphonenumber-js:
@@ -193,9 +193,6 @@ importers:
       '@tailwindcss/postcss':
         specifier: ^4.1.10
         version: 4.3.2
-      '@types/heic-convert':
-        specifier: ^2.1.1
-        version: 2.1.1
       '@types/node':
         specifier: ^24.0.0
         version: 24.13.2
@@ -2188,9 +2185,6 @@ packages:
   '@types/fast-text-encoding@1.0.3':
     resolution: {integrity: sha512-bbGJt6IyiuyAhPOX7htQDDzv2bDGJdWyd6X+e1BcdPzU3e5jyjOdB86LoTSoE80faY9v8Wt7/ix3Sp+coRJ03Q==}
 
-  '@types/heic-convert@2.1.1':
-    resolution: {integrity: sha512-+s14762Nf62z9zziIs7ItvAkSUCS3ls4Z5XPT9BlVve3Q3S4DAnf6qekffMTvEWycSUF+kulkGaSN65fK6eKvg==}
-
   '@types/istanbul-lib-coverage@2.0.6':
     resolution: {integrity: sha512-2QF/t/auWm0lsy8XtKVPG19v3sSOQlJe/YHZgfjb/KBBHOGSV+J2q/S671rcq9uTBrLAXmZpqJiaQbMT+zNU1w==}
 
@@ -3677,10 +3671,6 @@ packages:
     resolution: {integrity: sha512-T2UbfbBEF32wiepXIsMlTW9+dDYC6wMh/t/vYA4tuOMKqWz/n3vr1NFSxQiyP+zk2mXsoMA/i/7qV6LKut1t1A==}
     engines: {node: '>= 0.4'}
 
-  heic-convert@2.1.0:
-    resolution: {integrity: sha512-1qDuRvEHifTVAj3pFIgkqGgJIr0M3X7cxEPjEp0oG4mo8GFjq99DpCo8Eg3kg17Cy0MTjxpFdoBHOatj7ZVKtg==}
-    engines: {node: '>=12.0.0'}
-
   heic-decode@2.1.0:
     resolution: {integrity: sha512-0fB3O3WMk38+PScbHLVp66jcNhsZ/ErtQ6u2lMYu/YxXgbBtl+oKOhGQHa4RpvE68k8IzbWkABzHnyAIjR758A==}
     engines: {node: '>=8.0.0'}
@@ -3922,9 +3912,6 @@ packages:
   jiti@2.7.0:
     resolution: {integrity: sha512-AC/7JofJvZGrrneWNaEnJeOLUx+JlGt7tNa0wZiRPT4MY1wmfKjt2+6O2p2uz2+skll8OZZmJMNqeke7kKbNgQ==}
     hasBin: true
-
-  jpeg-js@0.4.4:
-    resolution: {integrity: sha512-WZzeDOEtTOBK4Mdsar0IqEU5sMr3vSV2RqkAIzUEV2BHnUfKGyswWFPFwK5EeDo93K3FohSHbLAjj0s1Wzd+dg==}
 
   js-tokens@4.0.0:
     resolution: {integrity: sha512-RdJUflcE3cUzKiMqQgsCu06FPu9UdIJO0beYbPhHN4k6apgJtifcoCtT9bcxOpYBtpD2kCM6Sbzg4CausW/PKQ==}
@@ -4540,10 +4527,6 @@ packages:
   pngjs@3.4.0:
     resolution: {integrity: sha512-NCrCHhWmnQklfH4MtJMRjZ2a8c80qXeMlQMv2uVp9ISJMTt562SbGd6n2oq0PaPgKm7Z6pL9E2UlLIhC+SHL3w==}
     engines: {node: '>=4.0.0'}
-
-  pngjs@6.0.0:
-    resolution: {integrity: sha512-TRzzuFRRmEoSW/p1KVAmiOgPco2Irlah+bGFCeNfJXxxYGwSw7YwAOAcd7X28K/m5bjBWKsC29KyoMfHbypayg==}
-    engines: {node: '>=12.13.0'}
 
   possible-typed-array-names@1.1.0:
     resolution: {integrity: sha512-/+5VFTchJDoVj3bhoqi6UeymcD00DAwb1nJwamzPvHEszJ4FpF6SNNbUbOS8yI56qHzdV8eK0qEfOSiodkTdxg==}
@@ -7502,8 +7485,6 @@ snapshots:
 
   '@types/fast-text-encoding@1.0.3': {}
 
-  '@types/heic-convert@2.1.1': {}
-
   '@types/istanbul-lib-coverage@2.0.6': {}
 
   '@types/istanbul-lib-report@3.0.3':
@@ -9377,12 +9358,6 @@ snapshots:
     dependencies:
       function-bind: 1.1.2
 
-  heic-convert@2.1.0:
-    dependencies:
-      heic-decode: 2.1.0
-      jpeg-js: 0.4.4
-      pngjs: 6.0.0
-
   heic-decode@2.1.0:
     dependencies:
       libheif-js: 1.19.8
@@ -9636,8 +9611,6 @@ snapshots:
   jimp-compact@0.16.1: {}
 
   jiti@2.7.0: {}
-
-  jpeg-js@0.4.4: {}
 
   js-tokens@4.0.0: {}
 
@@ -10297,8 +10270,6 @@ snapshots:
       xmlbuilder: 15.1.1
 
   pngjs@3.4.0: {}
-
-  pngjs@6.0.0: {}
 
   possible-typed-array-names@1.1.0: {}
 

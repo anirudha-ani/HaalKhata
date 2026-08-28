@@ -13,7 +13,7 @@
  * docs/plan.txt §6b).
  */
 
-import heicConvert from "heic-convert";
+import heicDecode from "heic-decode";
 import sharp from "sharp";
 import { invalid } from "@/server/common/errors";
 import { logEvent } from "@/server/common/logger";
@@ -23,13 +23,21 @@ import {
   IMAGE_MEDIA_TYPES,
   IMAGE_SIGNATURES,
   JPEG_QUALITY,
+  MAX_CONCURRENT_HEIC_DECODES,
   MAX_IMAGE_BYTES,
   MAX_IMAGE_EDGE_PIXELS,
+  MAX_IMAGE_PIXELS,
   PROMPT,
   PROVIDER_TIMEOUT_MS,
   RECEIPT_JSON_SCHEMA,
   type ImageMediaType,
 } from "@/server/receipt/receipt.constants";
+
+/** Number of HEIC decodes currently holding a process-local memory slot. */
+let activeHeicDecodes = 0;
+
+/** FIFO waiters for the bounded HEIC decode slot. */
+const heicDecodeWaiters: Array<() => void> = [];
 
 /** A receipt extracted from an image, with all money amounts as integer cents. */
 export interface ParsedReceiptData {
@@ -362,7 +370,59 @@ function detectImageFormat(image: Uint8Array): ImageMediaType | null {
 }
 
 /**
- * Decodes a HEIC/HEIF still to JPEG bytes.
+ * Runs a memory-heavy HEIC operation within the process-local concurrency cap.
+ *
+ * @param operation - Decode operation to run once a slot is available.
+ * @returns The operation's result.
+ */
+async function withHeicDecodeSlot<Result>(operation: () => Promise<Result>): Promise<Result> {
+  if (activeHeicDecodes < MAX_CONCURRENT_HEIC_DECODES) {
+    activeHeicDecodes++;
+  } else {
+    await new Promise<void>((resolve) => heicDecodeWaiters.push(resolve));
+  }
+  try {
+    return await operation();
+  } finally {
+    const nextWaiter = heicDecodeWaiters.shift();
+    if (nextWaiter) nextWaiter();
+    else activeHeicDecodes--;
+  }
+}
+
+/** Raw primary HEIC image ready for Sharp's raw-pixel input. */
+interface DecodedHeicImage {
+  /** Four-channel pixel bytes. */
+  data: Buffer;
+  /** Pixel width. */
+  width: number;
+  /** Pixel height. */
+  height: number;
+}
+
+/**
+ * Validates dimensions without multiplying attacker-controlled values first.
+ *
+ * @param width - Decoded image width.
+ * @param height - Decoded image height.
+ * @throws Error when dimensions are invalid or exceed the pixel ceiling.
+ */
+function assertSafeDimensions(width: number, height: number): void {
+  if (
+    !Number.isSafeInteger(width) ||
+    !Number.isSafeInteger(height) ||
+    width <= 0 ||
+    height <= 0 ||
+    width > Math.floor(MAX_IMAGE_PIXELS / height)
+  ) {
+    throw new Error(`image dimensions exceed the ${MAX_IMAGE_PIXELS}-pixel limit`);
+  }
+}
+
+/**
+ * Reads HEIC/HEIF metadata first, then decodes only when the primary image is
+ * within the pixel limit. This is the critical ordering: the one-shot decoder
+ * allocates width × height × 4 before returning dimensions to its caller.
  *
  * This does NOT go through sharp. sharp bundles libheif 1.23, whose security
  * limits cap an `iref` box at 16 references — and real iPhone photos carry ~48
@@ -370,18 +430,29 @@ function detectImageFormat(image: Uint8Array): ImageMediaType | null {
  * with "Security limit exceeded". libheif does not expose that limit through
  * libvips, so there is no option to relax.
  *
- * heic-convert bundles its own libheif build without that cap and decodes the
- * same files at full resolution. ffmpeg also decodes them, but returns a
- * half-size preview image rather than the primary one — worse for small
- * receipt print, and a system dependency besides.
+ * heic-decode uses the same alternate libheif build as heic-convert and
+ * decodes the same files at full resolution. ffmpeg also decodes them, but
+ * returns a half-size preview image rather than the primary one — worse for
+ * small receipt print, and a system dependency besides.
  *
  * @param image - Raw HEIC/HEIF bytes.
- * @returns Decoded JPEG bytes, orientation already applied to the pixels.
+ * @returns Decoded four-channel pixels, with orientation already applied.
  */
-async function decodeHeicToJpeg(image: Uint8Array): Promise<Buffer> {
-  return Buffer.from(
-    await heicConvert({ buffer: image, format: "JPEG", quality: 0.92 }),
-  );
+async function decodeHeic(image: Uint8Array): Promise<DecodedHeicImage> {
+  const images = await heicDecode.all({ buffer: image });
+  try {
+    const primaryImage = images[0];
+    if (!primaryImage) throw new Error("HEIF image not found");
+    assertSafeDimensions(primaryImage.width, primaryImage.height);
+    const decoded = await primaryImage.decode();
+    return {
+      data: Buffer.from(decoded.data.buffer, decoded.data.byteOffset, decoded.data.byteLength),
+      width: decoded.width,
+      height: decoded.height,
+    };
+  } finally {
+    images.dispose();
+  }
 }
 
 /**
@@ -409,21 +480,36 @@ async function decodeHeicToJpeg(image: Uint8Array): Promise<Buffer> {
  */
 async function normalizeToJpeg(image: Uint8Array, format: ImageMediaType): Promise<Buffer> {
   try {
-    const decoded =
-      format === "image/heic" || format === "image/heif"
-        ? await decodeHeicToJpeg(image)
-        : Buffer.from(image);
-    const jpeg = await sharp(decoded)
-      .rotate() // no argument = apply the EXIF orientation tag
-      .resize({
-        width: MAX_IMAGE_EDGE_PIXELS,
-        height: MAX_IMAGE_EDGE_PIXELS,
-        fit: "inside",
-        withoutEnlargement: true,
+    const isHeic = format === "image/heic" || format === "image/heif";
+    const transcode = async (): Promise<Buffer> => {
+      const decodedHeic = isHeic ? await decodeHeic(image) : null;
+      const decoded = decodedHeic?.data ?? Buffer.from(image);
+      return sharp(decoded, {
+        limitInputPixels: MAX_IMAGE_PIXELS,
+        ...(decodedHeic
+          ? {
+              raw: {
+                width: decodedHeic.width,
+                height: decodedHeic.height,
+                channels: 4 as const,
+              },
+            }
+          : {}),
       })
-      .jpeg({ quality: JPEG_QUALITY })
-      .toBuffer();
-    return jpeg;
+        .rotate() // no argument = apply the EXIF orientation tag
+        .resize({
+          width: MAX_IMAGE_EDGE_PIXELS,
+          height: MAX_IMAGE_EDGE_PIXELS,
+          fit: "inside",
+          withoutEnlargement: true,
+        })
+        .jpeg({ quality: JPEG_QUALITY })
+        .toBuffer();
+    };
+    // Hold the slot through Sharp's consumption of the raw RGBA buffer; a
+    // decode-only lock would let the next upload allocate while this one was
+    // still being compressed.
+    return isHeic ? await withHeicDecodeSlot(transcode) : await transcode();
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
     invalid(`could not read that image (${detail})`);
