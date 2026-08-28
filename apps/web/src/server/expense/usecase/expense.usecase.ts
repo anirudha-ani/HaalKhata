@@ -14,7 +14,12 @@ import {
   type ExpenseRow,
   type ExpenseWrite,
 } from "@/server/expense/repo/expenses.repo";
-import { findGroupById, isMember, listCoMemberIds } from "@/server/group/repo/groups.repo";
+import {
+  findGroupById,
+  isMember,
+  listCoMemberIds,
+  listMembers,
+} from "@/server/group/repo/groups.repo";
 import { findUserById, findUsersByIds } from "@/server/auth/repo/users.repo";
 import { insertFriendship, listFriendIds } from "@/server/social/repo/friendships.repo";
 import { insertComment, listCommentsByExpense } from "@/server/expense/repo/comments.repo";
@@ -37,7 +42,7 @@ import { allocateSettlement } from "@/server/expense/domain/settlementAllocation
 import { settledExpenseIds } from "@/server/expense/domain/settledExpenses";
 import { denied, invalid, notFound } from "@/server/common/errors";
 import { toUser } from "@/server/auth/usecase/user.mapper";
-import { SPLIT_TYPES, ISO_DATE_PATTERN, MAX_EXPENSE_PARTICIPANTS, EXPENSE_CATEGORIES, SETTLEMENT_METHODS, MAX_COMMENT_LENGTH, COMMENT_PREVIEW_LENGTH } from "@/server/expense/expense.constants";
+import { SPLIT_TYPES, ISO_DATE_PATTERN, MAX_EXPENSE_PARTICIPANTS, MAX_ITEM_ASSIGNMENTS, EXPENSE_CATEGORIES, SETTLEMENT_METHODS, MAX_COMMENT_LENGTH, COMMENT_PREVIEW_LENGTH } from "@/server/expense/expense.constants";
 import { toExpense, toSettlement } from "./expense.mapper";
 
 /**
@@ -105,13 +110,18 @@ async function buildExpenseWrite(
   if (request.items.length > MAX_EXPENSE_PARTICIPANTS) {
     invalid(`too many line items (max ${MAX_EXPENSE_PARTICIPANTS})`);
   }
+  if (request.items.some((item) => item.assignments.length > MAX_ITEM_ASSIGNMENTS)) {
+    invalid(`too many people assigned to one item (max ${MAX_ITEM_ASSIGNMENTS})`);
+  }
 
   const groupId = request.groupId || null;
+  let groupMemberIds: Set<string> | null = null;
   let currency = request.currency;
   if (groupId) {
     const group = await findGroupById(groupId);
     if (!group) notFound("group not found");
-    if (!(await isMember(groupId, userId))) denied("you are not a member of this group");
+    groupMemberIds = new Set((await listMembers(groupId)).map((member) => member.id));
+    if (!groupMemberIds.has(userId)) denied("you are not a member of this group");
     currency = group.currency;
   }
   if (!currency) currency = (await findUserById(userId))?.default_currency ?? "USD";
@@ -161,6 +171,10 @@ async function buildExpenseWrite(
     throw error;
   }
 
+  if (splits.length > MAX_EXPENSE_PARTICIPANTS) {
+    invalid(`too many participants (max ${MAX_EXPENSE_PARTICIPANTS})`);
+  }
+
   if (request.payers.length === 0) invalid("at least one payer is required");
   if (request.payers.some((payer) => payer.amountCents <= 0)) {
     invalid("each payer amount must be positive");
@@ -180,7 +194,7 @@ async function buildExpenseWrite(
   if (users.length !== involved.length) invalid("unknown participant");
   if (groupId) {
     for (const participantId of involved) {
-      if (!(await isMember(groupId, participantId))) {
+      if (!groupMemberIds?.has(participantId)) {
         invalid("all participants must be group members");
       }
     }

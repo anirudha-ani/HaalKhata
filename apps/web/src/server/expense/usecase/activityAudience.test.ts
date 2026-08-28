@@ -58,7 +58,12 @@ vi.mock("./balance.usecase", () => ({ amountOwed: vi.fn(), owedByScope: vi.fn() 
 
 import { addComment, createExpense, recordSettlement, updateExpense } from "./expense.usecase";
 import { findUserById, findUsersByIds } from "@/server/auth/repo/users.repo";
-import { findGroupById, isMember, listCoMemberIds } from "@/server/group/repo/groups.repo";
+import {
+  findGroupById,
+  isMember,
+  listCoMemberIds,
+  listMembers,
+} from "@/server/group/repo/groups.repo";
 import {
   findExpenseById,
   insertExpense,
@@ -97,6 +102,11 @@ beforeEach(() => {
   // Everyone in these tests is a member — the point under test is that
   // membership alone no longer puts anyone in a transaction's audience.
   vi.mocked(isMember).mockResolvedValue(true);
+  vi.mocked(listMembers).mockResolvedValue([
+    { id: PAYER },
+    { id: OWER },
+    { id: OUTSIDER },
+  ] as never);
   vi.mocked(listFriendIds).mockResolvedValue([]);
   vi.mocked(listCoMemberIds).mockResolvedValue([]);
   vi.mocked(insertExpense).mockResolvedValue("expense-1");
@@ -146,6 +156,40 @@ beforeEach(() => {
 });
 
 describe("who hears about a transaction", () => {
+  it("rejects an item with more than the bounded assignment count", async () => {
+    await expect(
+      createExpense(PAYER, {
+        groupId: GOA_TRIP,
+        description: "Oversized item",
+        amountCents: 1000,
+        currency: "USD",
+        category: "food",
+        expenseDate: "2026-08-09",
+        splitType: "itemized",
+        notes: "",
+        payers: [{ userId: PAYER, amountCents: 1000 }],
+        splitSpecs: [],
+        items: [
+          {
+            name: "Shared item",
+            quantity: 1,
+            totalCents: 1000,
+            assignments: Array.from({ length: 101 }, (_unusedValue, index) => ({
+              userId: `user-${index}`,
+              weight: 1,
+            })),
+          },
+        ],
+        taxCents: 0,
+        tipCents: 0,
+      } as unknown as CreateExpenseRequest),
+    ).rejects.toMatchObject({
+      code: "invalid_argument",
+      message: "too many people assigned to one item (max 100)",
+    });
+    expect(insertExpense).not.toHaveBeenCalled();
+  });
+
   it("rejects assigning one-off debt to an unrelated account", async () => {
     await expect(
       createExpense(PAYER, {

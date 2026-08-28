@@ -11,6 +11,9 @@ export const ISO_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 /** Maximum participants/payers/items allowed on a single expense (DoS guard). */
 export const MAX_EXPENSE_PARTICIPANTS = 100;
 
+/** Maximum assignees on one itemized line item (DoS and SQL parameter guard). */
+export const MAX_ITEM_ASSIGNMENTS = 100;
+
 /** Expense categories the API accepts; anything else falls back to "general". */
 export const EXPENSE_CATEGORIES = new Set([
   "general", "food", "transport", "lodging", "utilities", "shopping", "entertainment", "other",
