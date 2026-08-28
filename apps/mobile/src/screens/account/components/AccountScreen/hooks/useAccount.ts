@@ -6,6 +6,7 @@ import { useRouter } from "expo-router";
 import { useState } from "react";
 import { authClient, errorMessage } from "@/lib/api/connect";
 import { queryKeys } from "@haalkhata/shared/api/queryKeys";
+import { clearMobileQueryCache } from "@/lib/api/queryCache";
 import { clearSession } from "@/lib/api/session";
 
 /**
@@ -53,7 +54,7 @@ export function useProfileForm(currentUser: User) {
       // Offline or already revoked — the local session is cleared regardless.
     }
     await clearSession();
-    queryClient.clear();
+    await clearMobileQueryCache();
     router.replace("/login");
   };
 

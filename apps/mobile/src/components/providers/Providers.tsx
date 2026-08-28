@@ -2,11 +2,12 @@
 
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { createAsyncStoragePersister } from "@tanstack/query-async-storage-persister";
-import { focusManager, QueryClient } from "@tanstack/react-query";
+import { focusManager } from "@tanstack/react-query";
 import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client";
 import { useEffect, useState, type ReactNode } from "react";
 import { AppState } from "react-native";
 import { QUERY_CACHE_STORAGE_KEY } from "@/lib/api/api.constants";
+import { mobileQueryClient } from "@/lib/api/queryCache";
 import { hydrateSession } from "@/lib/api/session";
 
 /**
@@ -29,18 +30,6 @@ export function Providers({
   /** The app subtree that should have access to the providers. */
   children: ReactNode;
 }) {
-  const [queryClient] = useState(
-    () =>
-      new QueryClient({
-        defaultOptions: {
-          queries: {
-            staleTime: 10_000,
-            gcTime: 1000 * 60 * 60 * 24, // keep persisted cache for 24h
-            retry: 1,
-          },
-        },
-      }),
-  );
   const [persister] = useState(() =>
     createAsyncStoragePersister({ storage: AsyncStorage, key: QUERY_CACHE_STORAGE_KEY }),
   );
@@ -59,7 +48,7 @@ export function Providers({
 
   return (
     <PersistQueryClientProvider
-      client={queryClient}
+      client={mobileQueryClient}
       persistOptions={{ persister, buster: CACHE_BUSTER }}
     >
       {children}

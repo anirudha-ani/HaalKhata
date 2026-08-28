@@ -12,6 +12,7 @@ import { GroupService } from "@haalkhata/protogen/group/v1/group_pb";
 import { ReceiptService } from "@haalkhata/protogen/receipt/v1/receipt_pb";
 import { SocialService } from "@haalkhata/protogen/social/v1/social_pb";
 import { resolveApiBaseUrl } from "./api.constants";
+import { clearMobileQueryCache } from "./queryCache";
 import { clearSession, sessionToken } from "./session";
 
 /**
@@ -27,6 +28,12 @@ const authorization: Interceptor = (next) => async (request) => {
   } catch (error) {
     if (token && error instanceof ConnectError && error.code === Code.Unauthenticated) {
       await clearSession();
+      try {
+        await clearMobileQueryCache();
+      } catch {
+        // Memory was already cleared synchronously. Preserve the server's 401
+        // rather than replacing it with an AsyncStorage cleanup failure.
+      }
     }
     throw error;
   }
