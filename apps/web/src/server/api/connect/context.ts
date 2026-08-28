@@ -5,30 +5,8 @@ import { tokenVersion, verifyToken } from "@/server/auth/usecase/auth.usecase";
 import { findUserTokenVersion } from "@/server/auth/repo/users.repo";
 import { UsecaseError } from "@/server/common/errors";
 import { logError } from "@/server/common/logger";
-import { CODE_MAP, COOKIE_MAX_AGE, SESSION_COOKIE, sessionCookieAttributes } from "./connect.constants";
-
-/**
- * Extracts the bearer token string from request headers: Authorization header
- * (mobile) first, session cookie (web) second. Returns null when no credential
- * is present. Does NOT verify the token — callers pair this with verifyToken.
- *
- * @param headers - Incoming request headers to inspect for credentials.
- * @returns The raw token string, or null when no credential is present.
- */
-export function tokenFromHeaders(headers: Headers): string | null {
-  const authorizationHeader = headers.get("authorization");
-  if (authorizationHeader?.toLowerCase().startsWith("bearer ")) {
-    return authorizationHeader.slice(7).trim();
-  }
-  const cookies = headers.get("cookie");
-  if (cookies) {
-    for (const cookiePart of cookies.split(";")) {
-      const [cookieName, ...valueParts] = cookiePart.trim().split("=");
-      if (cookieName === SESSION_COOKIE) return valueParts.join("=");
-    }
-  }
-  return null;
-}
+import { CODE_MAP, COOKIE_MAX_AGE, sessionCookieAttributes } from "./connect.constants";
+import { tokenFromHeaders } from "./credentials";
 
 /**
  * Returns the calling user's id, rejecting the request when unauthenticated.
