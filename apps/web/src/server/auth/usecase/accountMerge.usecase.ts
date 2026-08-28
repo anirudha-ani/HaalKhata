@@ -23,7 +23,7 @@ import {
   PHONE_FORMAT_HINT,
   normalizePhone,
 } from "@/server/auth/auth.constants";
-import { signPayload } from "./auth.usecase";
+import { signPayload, verifyPayloadSignature } from "./auth.usecase";
 import { toUser } from "./user.mapper";
 import { confirmPhoneVerification, startPhoneVerification } from "./phoneVerification";
 
@@ -50,7 +50,8 @@ export interface SetPhoneResult {
  * Server-side state would need a table and a sweeper; an HMAC over the exact
  * triple being authorized needs neither, and reuses the signing key the
  * session tokens already rely on. Binding all three of keeper, loser and
- * phone means the token cannot be replayed to absorb a different row.
+ * phone means the token cannot be replayed to absorb a different row. The
+ * purpose prefix prevents it from validating as a session token or vice versa.
  *
  * @param keeperId - The caller's account.
  * @param loserId - Row that would be absorbed.
@@ -60,7 +61,7 @@ export interface SetPhoneResult {
 function createMergeToken(keeperId: string, loserId: string, phone: string): string {
   const expiresAt = Math.floor(Date.now() / 1000) + MERGE_TOKEN_LIFETIME_SECONDS;
   const payload = `${keeperId}.${loserId}.${phone}.${expiresAt}`;
-  return `${payload}.${signPayload(payload)}`;
+  return `${payload}.${signPayload("phone-merge", payload)}`;
 }
 
 /**
@@ -76,11 +77,20 @@ function readMergeToken(token: string, callerId: string): { loserId: string; pho
   const lastDot = token.lastIndexOf(".");
   if (lastDot <= 0) invalid("that confirmation is no longer valid, please try again");
   const payload = token.slice(0, lastDot);
-  if (signPayload(payload) !== token.slice(lastDot + 1)) {
+  if (!verifyPayloadSignature("phone-merge", payload, token.slice(lastDot + 1))) {
     invalid("that confirmation is no longer valid, please try again");
   }
-  const [keeperId, loserId, phone, expiresAt] = payload.split(".");
-  if (!keeperId || !loserId || !phone || Number(expiresAt) < Date.now() / 1000) {
+  const fields = payload.split(".");
+  if (fields.length !== 4) invalid("that confirmation is no longer valid, please try again");
+  const [keeperId, loserId, phone, expiresAtText] = fields;
+  const expiresAt = Number(expiresAtText);
+  if (
+    !keeperId ||
+    !loserId ||
+    !phone ||
+    !Number.isSafeInteger(expiresAt) ||
+    expiresAt <= Date.now() / 1000
+  ) {
     invalid("that confirmation is no longer valid, please try again");
   }
   // Signature alone would let anyone replay someone else's token; the merge

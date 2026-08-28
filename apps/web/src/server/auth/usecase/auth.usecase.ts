@@ -121,21 +121,45 @@ function secret(): Buffer {
   return cachedSecret;
 }
 
-/** Computes the base64url HMAC-SHA256 signature for a token payload. */
-function sign(payload: string): string {
-  return crypto.createHmac("sha256", secret()).update(payload).digest("base64url");
-}
+/** Security domain bound into each signed token class. */
+export type TokenPurpose = "session" | "phone-merge";
 
 /**
- * Signs an arbitrary payload with the session key, for short-lived tokens that
- * are not sessions — currently the merge confirmation in accountMerge.usecase.
- * Exported so those flows reuse this key rather than inventing a second one.
+ * Signs a purpose-bound payload. The NUL separator cannot appear in any token
+ * field, so one token class can never validate as another even with the same
+ * root secret.
  *
+ * @param purpose - Token domain being authorized.
  * @param payload - Exact string being authorized.
  * @returns Its base64url HMAC-SHA256 signature.
  */
-export function signPayload(payload: string): string {
-  return sign(payload);
+export function signPayload(purpose: TokenPurpose, payload: string): string {
+  return crypto
+    .createHmac("sha256", secret())
+    .update(`${purpose}\0${payload}`)
+    .digest("base64url");
+}
+
+/**
+ * Compares a purpose-bound signature in constant time.
+ *
+ * @param purpose - Token domain expected by the reader.
+ * @param payload - Exact signed payload.
+ * @param givenSignature - Base64url signature supplied with the token.
+ * @returns True only for a same-purpose, same-payload signature.
+ */
+export function verifyPayloadSignature(
+  purpose: TokenPurpose,
+  payload: string,
+  givenSignature: string,
+): boolean {
+  const expectedSignature = signPayload(purpose, payload);
+  const givenBuffer = Buffer.from(givenSignature);
+  const expectedBuffer = Buffer.from(expectedSignature);
+  return (
+    givenBuffer.length === expectedBuffer.length &&
+    crypto.timingSafeEqual(givenBuffer, expectedBuffer)
+  );
 }
 
 /**
@@ -149,7 +173,7 @@ export function signPayload(payload: string): string {
 export function createToken(userId: string, tokenVersion: number): string {
   const expiresAtSeconds = Math.floor(Date.now() / 1000) + TOKEN_LIFETIME_SECONDS;
   const payload = `${userId}.${tokenVersion}.${expiresAtSeconds}`;
-  return `${payload}.${sign(payload)}`;
+  return `${payload}.${signPayload("session", payload)}`;
 }
 
 /**
@@ -165,13 +189,19 @@ export function verifyToken(token: string): string | null {
   const lastDot = token.lastIndexOf(".");
   if (lastDot <= 0) return null;
   const payload = token.slice(0, lastDot);
-  const givenSignature = token.slice(lastDot + 1);
-  const expectedSignature = sign(payload);
-  const givenBuffer = Buffer.from(givenSignature);
-  const expectedBuffer = Buffer.from(expectedSignature);
-  if (givenBuffer.length !== expectedBuffer.length || !crypto.timingSafeEqual(givenBuffer, expectedBuffer)) return null;
-  const [userId, versionText, expiresAtText] = payload.split(".");
-  if (!userId || versionText === undefined || Number(expiresAtText) < Date.now() / 1000) return null;
+  if (!verifyPayloadSignature("session", payload, token.slice(lastDot + 1))) return null;
+  const fields = payload.split(".");
+  if (fields.length !== 3) return null;
+  const [userId, versionText, expiresAtText] = fields;
+  const version = Number(versionText);
+  const expiresAt = Number(expiresAtText);
+  if (
+    !userId ||
+    !Number.isSafeInteger(version) ||
+    version < 0 ||
+    !Number.isSafeInteger(expiresAt) ||
+    expiresAt <= Date.now() / 1000
+  ) return null;
   return userId;
 }
 
@@ -183,10 +213,10 @@ export function verifyToken(token: string): string | null {
  * @returns The embedded version number, or NaN when the token is malformed.
  */
 export function tokenVersion(token: string): number {
-  const firstDot = token.indexOf(".");
-  const secondDot = token.indexOf(".", firstDot + 1);
-  if (firstDot <= 0 || secondDot <= firstDot) return Number.NaN;
-  return Number(token.slice(firstDot + 1, secondDot));
+  const fields = token.split(".");
+  if (fields.length !== 4) return Number.NaN;
+  const version = Number(fields[1]);
+  return Number.isSafeInteger(version) && version >= 0 ? version : Number.NaN;
 }
 
 // --- flows -----------------------------------------------------------------

@@ -6,7 +6,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 // touch the filesystem (the dev fallback writes data/.secret).
 process.env.SESSION_SECRET = "test-secret-key-for-vitest-0123456789abcdef";
 
-import { createToken, tokenVersion, verifyToken } from "./auth.usecase";
+import { createToken, signPayload, tokenVersion, verifyToken } from "./auth.usecase";
 import { normalizePhone } from "@/server/auth/auth.constants";
 
 describe("auth tokens", () => {
@@ -53,6 +53,21 @@ describe("auth tokens", () => {
     expect(verifyToken("not-a-token")).toBeNull();
     expect(verifyToken("")).toBeNull();
     expect(verifyToken("a.b")).toBeNull();
+  });
+
+  it("rejects signed tokens with non-finite numeric fields", () => {
+    const payload = "user-123.NaN.not-a-time";
+    const token = `${payload}.${signPayload("session", payload)}`;
+
+    expect(verifyToken(token)).toBeNull();
+    expect(tokenVersion(token)).toBeNaN();
+  });
+
+  it("does not accept a signature created for another token purpose", () => {
+    const payload = `user-123.0.${Math.floor(Date.now() / 1000) + 3600}`;
+    const wrongPurposeToken = `${payload}.${signPayload("phone-merge", payload)}`;
+
+    expect(verifyToken(wrongPurposeToken)).toBeNull();
   });
 });
 
