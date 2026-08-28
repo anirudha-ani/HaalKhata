@@ -52,7 +52,7 @@ vi.mock("@/server/social/repo/activity.repo", () => ({
 vi.mock("@/server/social/repo/notifications.repo", () => ({ insertNotifications: vi.fn() }));
 vi.mock("./balance.usecase", () => ({ amountOwed: vi.fn(), owedByScope: vi.fn() }));
 
-import { addComment, createExpense, recordSettlement } from "./expense.usecase";
+import { addComment, createExpense, recordSettlement, updateExpense } from "./expense.usecase";
 import { findUserById, findUsersByIds } from "@/server/auth/repo/users.repo";
 import { findGroupById, isMember } from "@/server/group/repo/groups.repo";
 import {
@@ -139,6 +139,29 @@ beforeEach(() => {
 });
 
 describe("who hears about a transaction", () => {
+  it("rejects moving an expense to a different ledger scope", async () => {
+    await expect(
+      updateExpense(PAYER, "expense-1", {
+        groupId: "",
+        description: "Dinner",
+        amountCents: 1000,
+        currency: "USD",
+        category: "food",
+        expenseDate: "2026-08-09",
+        splitType: "exact",
+        notes: "",
+        payers: [{ userId: PAYER, amountCents: 1000 }],
+        splitSpecs: [{ userId: OWER, amountCents: 1000, percentBp: 0, shares: 0 }],
+        items: [],
+        taxCents: 0,
+        tipCents: 0,
+      } as unknown as CreateExpenseRequest),
+    ).rejects.toMatchObject({
+      code: "invalid_argument",
+      message: "an expense cannot be moved between groups; delete it and create it in the right group",
+    });
+  });
+
   it("a group expense is announced to its participants, not the whole group", async () => {
     await createExpense(PAYER, {
       groupId: GOA_TRIP,

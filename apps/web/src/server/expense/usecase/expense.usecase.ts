@@ -347,6 +347,9 @@ export async function updateExpense(
   const existing = await findExpenseById(expenseId);
   if (!existing || existing.deleted_at) notFound("expense not found");
   await assertCanModify(userId, existing);
+  if ((request.groupId || null) !== existing.group_id) {
+    invalid("an expense cannot be moved between groups; delete it and create it in the right group");
+  }
   const write = await buildExpenseWrite(userId, request);
   write.createdBy = existing.created_by;
   await replaceExpense(expenseId, write);
