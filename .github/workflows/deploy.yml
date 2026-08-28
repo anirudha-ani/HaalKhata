@@ -82,9 +82,9 @@ jobs:
           HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
         run: |
           install -m 700 -d ~/.ssh
+          install -m 600 /dev/null ~/.ssh/id_ed25519
           printf '%s\n' "$KEY"   > ~/.ssh/id_ed25519
           printf '%s\n' "$HOSTS" > ~/.ssh/known_hosts
-          chmod 600 ~/.ssh/id_ed25519
           # The sha is only an argument. authorized_keys pins the command, so
           # this key cannot open a shell or run anything else.
           ssh -i ~/.ssh/id_ed25519 deploy@haalkhata.app "${{ github.sha }}"
