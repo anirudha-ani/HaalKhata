@@ -48,6 +48,11 @@ Set `TWILIO_API_KEY_SID` and `TWILIO_VERIFY_SERVICE_SID` in `/srv/haalkhata/.env
 They identify the restricted key and Verify service but do not authenticate a
 request; only `twilio_api_key_secret` is mounted as a secret.
 
+Also set `ACME_EMAIL` in `/srv/haalkhata/.env` to a monitored operator address.
+Caddy registers that contact with the certificate authority for expiry and
+account problem notices, and the production Compose file refuses to start when
+it is absent.
+
 The directory is `0700 root:root`; the files are `0444`. That looks
 backwards until you remember the containers run as non-root (`node` is 1000,
 `postgres` is 999) and Compose bind-mounts these with their host permissions —

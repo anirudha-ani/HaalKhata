@@ -90,6 +90,9 @@ services:
   caddy:
     image: caddy:2-alpine
     restart: unless-stopped
+    environment:
+      # Caddy uses this for certificate expiry and account problem notices.
+      ACME_EMAIL: ${ACME_EMAIL:?set ACME_EMAIL in /srv/haalkhata/.env}
     depends_on:
       web:
         condition: service_healthy

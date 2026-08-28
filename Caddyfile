@@ -8,7 +8,7 @@
 
 {
 	# Let's Encrypt expiry and problem notices. Use an address you read.
-	email you@example.com
+	email {$ACME_EMAIL}
 }
 
 haalkhata.app, www.haalkhata.app {

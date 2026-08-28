@@ -155,8 +155,10 @@ CI builds the image and pushes it to GHCR; the server only pulls. See
 backups and the restore drill, and `docs/plan.txt` §7c for why each piece is
 shaped the way it is.
 
-Two things worth knowing before you point a domain at it:
+Three things worth knowing before you point a domain at it:
 
+- **Certificate notices need a real recipient.** Set `ACME_EMAIL` in
+  `/srv/haalkhata/.env`; the production stack refuses to start without it.
 - **Google is the only way in.** `passwordAuthEnabled()` is false when
   `NODE_ENV=production`, so `SignUp`/`LogIn` are rejected.
   `NEXT_PUBLIC_GOOGLE_CLIENT_ID` is inlined at **build** time — a wrong value
