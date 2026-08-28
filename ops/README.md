@@ -15,8 +15,9 @@ scp -r ops docker-compose.prod.yml Caddyfile deploy@haalkhata.app:/srv/haalkhata
 | `docker-entrypoint.sh` | *in the image* | Loads Docker secrets into the environment, assembles `DATABASE_URL` |
 | `deploy.sh` | `/srv/haalkhata/deploy.sh` | SSH forced command: pull a tag, restart, prune |
 | `backup.sh` | `/srv/haalkhata/backup.sh` | Nightly encrypted database **and secrets** backup |
+| `backup-failure.sh` | `/srv/haalkhata/backup-failure.sh` | Sends a critical backup-failure alert |
 | `daemon.json` | `/etc/docker/daemon.json` | Caps log size; enables live-restore |
-| `haalkhata-backup.{service,timer}` | `/etc/systemd/system/` | Runs `backup.sh` at 03:17 UTC |
+| `haalkhata-backup*.service`, `haalkhata-backup.timer` | `/etc/systemd/system/` | Runs and monitors `backup.sh` at 03:17 UTC |
 
 ## Install
 
@@ -27,10 +28,22 @@ sudo install -m 644 /srv/haalkhata/ops/daemon.json /etc/docker/daemon.json
 sudo systemctl restart docker
 
 # Backups
+sudo install -m 700 /srv/haalkhata/ops/backup.sh /srv/haalkhata/backup.sh
+sudo install -m 700 /srv/haalkhata/ops/backup-failure.sh /srv/haalkhata/backup-failure.sh
 sudo install -m 644 /srv/haalkhata/ops/haalkhata-backup.service /etc/systemd/system/
+sudo install -m 644 /srv/haalkhata/ops/haalkhata-backup-failure.service /etc/systemd/system/
 sudo install -m 644 /srv/haalkhata/ops/haalkhata-backup.timer   /etc/systemd/system/
+
+# Required: use a monitored HTTPS endpoint where an empty POST means failure.
+# Healthchecks.io users should put the check's /fail URL here.
+printf '%s\n' 'https://replace-with-your-monitored-failure-endpoint' \
+  | sudo tee /srv/haalkhata/backup-alert-url.txt >/dev/null
+sudo chmod 600 /srv/haalkhata/backup-alert-url.txt
+
 sudo systemctl daemon-reload
 sudo systemctl enable --now haalkhata-backup.timer
+# Send one test alert now; success is silent, failure is visible in the journal.
+sudo systemctl start haalkhata-backup-failure.service
 ```
 
 ## Secrets
@@ -94,6 +107,15 @@ bucket itself with versioning/object lock when available and a lifecycle rule
 appropriate to your retention policy (for example, archive after 90 days and
 expire after one year). Filesystem/rsync targets need their own snapshot or
 retention policy for the same reason.
+
+### Backup failure alerts
+
+`haalkhata-backup.service` invokes `haalkhata-backup-failure.service` whenever
+the backup exits unsuccessfully. The handler writes an `auth.crit` journal
+event and POSTs to the HTTPS URL in `/srv/haalkhata/backup-alert-url.txt`.
+Treat that URL as a secret: it is installed `0600`, is never copied into a
+container, and must point to an endpoint someone actually monitors. Re-run
+the manual alert command above after changing providers or rotating the URL.
 
 ## Restore drill
 

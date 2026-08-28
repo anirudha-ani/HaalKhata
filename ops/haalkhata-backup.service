@@ -2,6 +2,7 @@
 Description=HaalKhata encrypted database + secrets backup
 After=docker.service
 Requires=docker.service
+OnFailure=haalkhata-backup-failure.service
 
 [Service]
 Type=oneshot
