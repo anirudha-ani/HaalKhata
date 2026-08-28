@@ -154,8 +154,8 @@ async function collapseSummed(
  * @param loserId - The unclaimed row being absorbed.
  * @param phone - E.164 number to move onto the keeper.
  * @returns Counts of the corrections that were applied.
- * @throws Error when the post-merge net does not equal the sum of the two
- *   pre-merge nets, which rolls the whole thing back.
+ * @throws Error when the target changed after preview or when the post-merge
+ *   net does not equal the sum of the two pre-merge nets; either rolls back.
  */
 export async function mergeAccounts(
   keeperId: string,
@@ -168,6 +168,23 @@ export async function mergeAccounts(
     await client.query(`SELECT id FROM users WHERE id = ANY($1::text[]) ORDER BY id FOR UPDATE`, [
       [keeperId, loserId].sort(),
     ]);
+
+    // The usecase checked this before entering the transaction, but a rightful
+    // owner can claim the invited row in that gap. Re-read only after FOR
+    // UPDATE so no claim, phone change, or competing merge can commit between
+    // this assertion and the irreversible repoints below.
+    const eligibleTarget = await client.query<{ id: string }>(
+      `SELECT id FROM users
+        WHERE id = $1
+          AND password_hash IS NULL
+          AND google_sub IS NULL
+          AND merged_into IS NULL
+          AND phone = $2`,
+      [loserId, phone],
+    );
+    if (eligibleTarget.rows.length !== 1) {
+      throw new Error("account merge target changed while acquiring locks");
+    }
 
     const keeperNetBefore = await netCents(client, keeperId);
     const loserNetBefore = await netCents(client, loserId);
