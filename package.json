@@ -21,10 +21,11 @@
     "typecheck": "pnpm --filter @haalkhata/web typecheck",
     "db:migrate": "pnpm --filter @haalkhata/web db:migrate",
     "db:new": "pnpm --filter @haalkhata/web db:new",
-    "doctor": "pnpm dlx react-doctor@latest apps/web/src"
+    "doctor": "pnpm exec react-doctor apps/web/src --no-telemetry --no-supply-chain"
   },
   "devDependencies": {
-    "@bufbuild/buf": "^1.71.0",
-    "@bufbuild/protoc-gen-es": "^2.12.1"
+    "@bufbuild/buf": "1.71.0",
+    "@bufbuild/protoc-gen-es": "^2.12.1",
+    "react-doctor": "0.9.12"
   }
 }
