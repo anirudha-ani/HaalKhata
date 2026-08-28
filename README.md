@@ -84,7 +84,9 @@ automatically.
 The app signs in with bearer tokens against the same `/api/connect`
 endpoints. In dev it targets port 3000 on the machine running Metro, so
 start the web server with `next dev -H 0.0.0.0` (or set
-`EXPO_PUBLIC_API_URL=https://your-server`) when testing from a phone.
+`EXPO_PUBLIC_API_URL=https://your-server`) when testing from a phone. Release
+builds require an explicit HTTPS origin and reject plaintext bearer-token
+transport; Android release manifests also disable cleartext traffic.
 
 ## Schema & migrations
 

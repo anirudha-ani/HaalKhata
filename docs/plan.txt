@@ -1542,8 +1542,9 @@ the generated TypeScript in `packages/protogen` is shared as-is.
 - **Same contract, same transport.** `@connectrpc/connect-web`'s Connect
   transport over JSON against `<server>/api/connect` — identical RPCs the
   browser calls. `TextEncoder`/`TextDecoder` polyfilled at the entry point.
-  The API base URL comes from `EXPO_PUBLIC_API_URL`, falling back in dev to
-  the Metro host (so a device on the LAN reaches the dev server).
+  The API base URL comes from an HTTPS `EXPO_PUBLIC_API_URL` in release builds,
+  falling back only in dev to the Metro host (so a device on the LAN reaches
+  the dev server). Android release manifests reject cleartext traffic.
 - **Bearer-token auth.** LogIn/SignUp already return a token for mobile
   clients; it is kept in `expo-secure-store`, attached via a transport
   interceptor (`Authorization: Bearer`), and cleared on `unauthenticated`

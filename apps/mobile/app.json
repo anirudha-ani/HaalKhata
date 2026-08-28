@@ -15,7 +15,12 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.haalkhata.app"
+      "bundleIdentifier": "com.haalkhata.app",
+      "infoPlist": {
+        "NSAppTransportSecurity": {
+          "NSAllowsArbitraryLoads": false
+        }
+      }
     },
     "android": {
       "package": "com.haalkhata.app",
@@ -33,6 +38,14 @@
         {
           "cameraPermission": "HaalKhata uses the camera to scan receipts into itemized expenses.",
           "photosPermission": "HaalKhata uses your photos to pick a receipt to itemize."
+        }
+      ],
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "usesCleartextTraffic": false
+          }
         }
       ]
     ]

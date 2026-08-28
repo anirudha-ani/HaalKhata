@@ -237,7 +237,8 @@ with colocated tests. Mobile-specific rules:
   server in the foreground. Subsequent runs are instant — the emulator and
   installed app are reused. Re-run with a clean `android/` (delete
   `apps/mobile/android`) only when native dependencies change. The API base
-  URL derives from the Metro host (port 3000) or `EXPO_PUBLIC_API_URL`.
+  URL derives from the Metro host (port 3000) in development; release builds
+  require an HTTPS `EXPO_PUBLIC_API_URL` and native config blocks cleartext.
   Native-module versions must match the SDK — check with
   `npx expo install --check`.
 
