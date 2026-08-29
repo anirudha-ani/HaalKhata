@@ -241,7 +241,9 @@ export function GroupDetailScreen({
           title={`Add people to ${groupDetail.group.name}`}
         >
           {/* People you already know come first; typing an address is the
-              fallback for the one person who is new. */}
+              fallback for somebody you are connected with but who is not on
+              that list. It never creates an account — the server enrols only
+              people the caller already shares a friendship or a group with. */}
           <View style={styles.addForm}>
             {groupDetail.candidates.length > 0 ? (
               <>
@@ -259,7 +261,8 @@ export function GroupDetailScreen({
               </>
             ) : (
               <Text style={styles.addHint}>
-                Everyone on your friends list is already here. Add somebody new below.
+                Everyone on your friends list is already here. Know somebody from another group?
+                Add them below.
               </Text>
             )}
 
@@ -272,8 +275,9 @@ export function GroupDetailScreen({
               value={groupDetail.identifier}
             />
             <Text style={styles.addHint}>
-              If they don&apos;t have an account yet, their share is tracked and waiting when they
-              sign up.
+              Works for anyone already connected with you on HaalKhata — a friend, or someone you
+              share another group with. New here? Send them a friend request from Friends first;
+              once they accept, you can add them.
             </Text>
 
             {groupDetail.peopleError ? (

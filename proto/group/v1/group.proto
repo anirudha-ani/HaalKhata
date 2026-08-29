@@ -78,13 +78,17 @@ message AddMembersRequest {
   // group and start attributing debts to them. At most 100 identifiers are
   // accepted in one request.
   repeated string user_ids = 2;
-  // Email of somebody not on that list yet; a shadow user is created when no
-  // account matches. At most one of email/phone, following the identifier
-  // split in §4b.
+  // Email of somebody not on that list yet. It must resolve to an existing
+  // account the caller is already connected with (a friend, or a co-member
+  // of another group); no shadow user is created, and anything else is
+  // refused with the same generic denial as an unconnected id, so the field
+  // is not an account-existence oracle. At most one of email/phone,
+  // following the identifier split in §4b.
   string email = 3;
   // Phone as the alternative to email: E.164, or a US national format.
   string phone = 4;
-  // Optional display name used when a shadow user must be created.
+  // Display name for the shadow user that used to be created here. Ignored
+  // now; kept for wire compatibility.
   string name = 5;
 }
 

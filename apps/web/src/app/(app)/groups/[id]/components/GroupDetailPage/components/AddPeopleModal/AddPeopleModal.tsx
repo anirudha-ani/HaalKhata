@@ -1,5 +1,5 @@
 "use client";
-/** Add-people modal: pick from the people you know, invite a newcomer as fallback. */
+/** Add-people modal: pick from the people you know; an email or phone finds an already-connected account. */
 
 import Link from "next/link";
 import type { User } from "@haalkhata/protogen/common/v1/common_pb";
@@ -10,10 +10,16 @@ import { Modal } from "@/components/ui/Modal";
  * Renders the group's add-people form.
  *
  * The ordering is the whole point: people you already know come first as
- * checkboxes, and typing an address is the fallback underneath for the one
- * person who is new. This used to be the only path — a lone email box — so
- * putting three existing friends in a group meant typing three addresses the
- * app already had on file, one dialog at a time.
+ * checkboxes, and typing an address is the fallback underneath for somebody
+ * you are connected with but who is not on that list — a co-member of another
+ * group, say. This used to be the only path — a lone email box — so putting
+ * three existing friends in a group meant typing three addresses the app
+ * already had on file, one dialog at a time.
+ *
+ * The address does not create an account. The server enrols only people the
+ * caller already shares a friendship or a group with, and refuses anything
+ * else with one generic denial, so the field cannot be used to discover who
+ * has an account. Somebody genuinely new gets a friend request first.
  *
  * @param props - Component props.
  * @returns The modal.
@@ -87,7 +93,7 @@ export function AddPeopleModal({
             <Link href="/friends" className="font-medium text-brand-600">
               friends list
             </Link>{" "}
-            is already here. Add somebody new below.
+            is already here. Know somebody from another group? Add them below.
           </p>
         )}
 
@@ -106,8 +112,12 @@ export function AddPeopleModal({
             className="w-full rounded-xl border border-line bg-card px-3.5 py-3 focus:border-brand-500 focus:outline-none"
           />
           <p className="text-xs text-ink-soft">
-            If they don&apos;t have an account yet, their share is tracked and
-            waiting when they sign up.
+            Works for anyone already connected with you on HaalKhata — a friend, or someone you
+            share another group with. New here? Send them a{" "}
+            <Link href="/friends" className="font-medium text-brand-600">
+              friend request
+            </Link>{" "}
+            first; once they accept, you can add them.
           </p>
         </div>
 

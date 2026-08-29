@@ -651,6 +651,15 @@ both places it appears (new-group form, group detail):
 `PeoplePicker` so all three callers share one search, one 50-row cap, and one
 overflow hint rather than three copies that drift.
 
+**Revised 2026-08-29 (security audit H1/H2).** The fallback no longer creates
+a shadow user. An email or phone must resolve to an existing account the
+caller is already connected with — the same `connectedUserIds` rule as the
+picked ids — and anything else is refused with the same generic denial, so
+the field is not an account-existence oracle either. Somebody genuinely new
+is brought in by a friend request (§3f) that they accept first. Both clients
+say so under the field instead of promising a share "tracked and waiting when
+they sign up".
+
 ## 3j. Scanning is not a kind of expense (v5.13 — 2026-07-27)
 
 /scan and /expenses/new were separate destinations, each with its own nav

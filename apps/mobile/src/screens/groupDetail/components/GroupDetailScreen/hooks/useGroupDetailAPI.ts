@@ -46,9 +46,9 @@ export function useGroupDetailAPI(groupId: string) {
   });
 
   /**
-   * Adds people by id plus an optional email/phone newcomer; on success
-   * refreshes this group, the group list, and the friends list — adding
-   * somebody also befriends them.
+   * Adds people by id plus an optional email/phone that must resolve to an
+   * already-connected account; on success refreshes this group, the group
+   * list, and the friends list — adding somebody also befriends them.
    */
   const addMembers = useMutation({
     mutationFn: (input: { userIds: string[]; email: string; phone: string }) =>
