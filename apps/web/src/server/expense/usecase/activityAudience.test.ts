@@ -428,6 +428,24 @@ describe("who hears about a transaction", () => {
     });
   });
 
+  it("lets a participant who did not create the expense edit it", async () => {
+    await updateExpense(OWER, "expense-1", validExpenseRequest());
+
+    expect(replaceExpense).toHaveBeenCalledWith("expense-1", expect.anything(), transactionClient);
+  });
+
+  it("refuses edits from somebody who is not on the expense", async () => {
+    await expect(updateExpense(OUTSIDER, "expense-1", validExpenseRequest())).rejects.toThrow(
+      /only people on this expense can edit it/,
+    );
+    expect(replaceExpense).not.toHaveBeenCalled();
+  });
+
+  it("keeps deletion with the creator", async () => {
+    await expect(deleteExpense(OWER, "expense-1")).rejects.toThrow(/only the expense creator/);
+    expect(softDeleteExpense).not.toHaveBeenCalled();
+  });
+
   it("still edits an expense after its group ledger has a settlement", async () => {
     // A payment recorded against the scope is not a reason to freeze the
     // expense: the edit runs under the same group lock the settlement took,

@@ -1706,7 +1706,14 @@ thing.
   paid — pay less than your corrected share and you are owed the difference,
   more and you owe it. `GetExpenseResponse.has_later_settlement` tells the
   detail view a payment postdates the expense, so both clients hide Delete
-  and warn before an edit. Non-creators never see buttons the server denies.
+  and warn before an edit.
+- **Anyone on an expense may correct it.** Editing was creator-only, so a
+  participant who spotted the mistake had to ask whoever entered it. Now the
+  creator, every payer and everyone who owes a share may edit (the "updated"
+  activity reaches all of them); deletion stays with the creator, since it
+  is the destructive direction and leaves nothing behind to check. Both
+  clients show Edit to participants only and Delete to the creator only —
+  the buttons the server denies are never offered.
 - **Leaving a group is reachable.** RemoveMember lets a zero-balance
   non-owner remove themselves (§3i); the members list on both apps now has
   "Leave group" on your own row and "Remove" on every other row for the

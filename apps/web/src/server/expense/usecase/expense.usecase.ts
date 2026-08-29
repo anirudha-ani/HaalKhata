@@ -483,23 +483,52 @@ async function assertCanTouch(userId: string, expense: ExpenseRow): Promise<void
 }
 
 /**
- * Ensures the caller may MODIFY an expense (edit or delete). Only the
- * expense's creator may modify it — participants can still view. For group
- * expenses the creator must additionally still be a member of the group.
+ * Ensures the caller may EDIT an expense: anyone on it — its creator, a payer
+ * or somebody who owes a share — may correct it, since each of them can see
+ * the mistake and each is affected by it. For group expenses the editor must
+ * additionally still be a member of the group. Everyone on the expense hears
+ * about the edit through the "updated" activity fan-out.
  *
- * @param userId - Authenticated caller requesting the modification.
- * @param expense - The expense row being modified.
+ * @param userId - Authenticated caller requesting the edit.
+ * @param expense - The expense row being edited.
+ * @param children - Its payer and split rows, which name the participants.
+ * @param client - Optional transaction client holding the expense's ledger lock.
+ * @throws UsecaseError (permission_denied) if the caller is not on the
+ *   expense, or (for group expenses) is no longer a member.
+ */
+async function assertCanEdit(
+  userId: string,
+  expense: ExpenseRow,
+  children: ExpenseChildren,
+  client?: PoolClient,
+): Promise<void> {
+  if (!storedParticipantIds(expense, children).includes(userId)) {
+    denied("only people on this expense can edit it");
+  }
+  if (expense.group_id && !(await isMember(expense.group_id, userId, client))) {
+    denied("you are no longer a member of this group");
+  }
+}
+
+/**
+ * Ensures the caller may DELETE an expense. Deletion stays with the creator:
+ * it is the destructive direction, and unlike an edit it leaves nothing
+ * behind for the other participants to check. For group expenses the creator
+ * must additionally still be a member of the group.
+ *
+ * @param userId - Authenticated caller requesting the deletion.
+ * @param expense - The expense row being deleted.
  * @param client - Optional transaction client holding the expense's ledger lock.
  * @throws UsecaseError (permission_denied) if the caller did not create the
  *   expense, or (for group expenses) is no longer a member.
  */
-async function assertCanModify(
+async function assertCanDelete(
   userId: string,
   expense: ExpenseRow,
   client?: PoolClient,
 ): Promise<void> {
   if (expense.created_by !== userId) {
-    denied("only the expense creator can edit or delete it");
+    denied("only the expense creator can delete it");
   }
   if (expense.group_id && !(await isMember(expense.group_id, userId, client))) {
     denied("you are no longer a member of this group");
@@ -508,7 +537,8 @@ async function assertCanModify(
 
 /**
  * Replaces an expense with a freshly validated version (original creator is
- * preserved) and fans out an "updated" activity + notifications.
+ * preserved) and fans out an "updated" activity + notifications. Any
+ * participant may do this, not just the creator — see {@link assertCanEdit}.
  *
  * Allowed after a settlement in the scope: the edit runs under the ledger
  * lock, so it cannot race the settlement, and the derived balance rebalances
@@ -530,7 +560,7 @@ export async function updateExpense(
 ) {
   const existing = await findExpenseById(expenseId);
   if (!existing || existing.deleted_at) notFound("expense not found");
-  await assertCanModify(userId, existing);
+  await assertCanEdit(userId, existing, await loadExpenseChildren([expenseId]));
   if ((request.groupId || null) !== existing.group_id) {
     invalid("an expense cannot be moved between groups; delete it and create it in the right group");
   }
@@ -539,11 +569,11 @@ export async function updateExpense(
     await lockExpenseLedger(client, expenseId);
     const current = await findExpenseById(expenseId, client);
     if (!current || current.deleted_at) notFound("expense not found");
-    await assertCanModify(userId, current, client);
+    const children = await loadExpenseChildren([expenseId], client);
+    await assertCanEdit(userId, current, children, client);
     if ((request.groupId || null) !== current.group_id) {
       invalid("an expense cannot be moved between groups; delete it and create it in the right group");
     }
-    const children = await loadExpenseChildren([expenseId], client);
     const participantIds = [
       ...new Set([...storedParticipantIds(current, children), ...involvedUserIds(write)]),
     ];
@@ -579,7 +609,7 @@ export async function deleteExpense(userId: string, expenseId: string): Promise<
     await lockExpenseLedger(client, expenseId);
     const existing = await findExpenseById(expenseId, client);
     if (!existing || existing.deleted_at) notFound("expense not found");
-    await assertCanModify(userId, existing, client);
+    await assertCanDelete(userId, existing, client);
     const children = await loadExpenseChildren([expenseId], client);
     const participantIds = storedParticipantIds(existing, children);
     if (existing.group_id) {

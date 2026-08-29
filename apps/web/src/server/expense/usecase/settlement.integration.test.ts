@@ -195,16 +195,19 @@ describe.skipIf(!reachable)("recordSettlement against Postgres", () => {
         tipCents: 0,
       }) as never;
 
-    // Deleting would leave the debtor's 5000 payment explaining nothing.
+    // Deleting would leave the debtor's 5000 payment explaining nothing —
+    // and it is the creator's call in the first place.
     await expect(deleteExpense(CREDITOR, "exp-1")).rejects.toThrow(/cannot be deleted/);
+    await expect(deleteExpense(DEBTOR, "exp-1")).rejects.toThrow(/only the expense creator/);
     // The detail view is told up front, so the clients hide Delete and warn
     // before an edit rather than offering a control the server refuses.
     expect((await getExpense(CREDITOR, "exp-1")).hasLaterSettlement).toBe(true);
 
-    // Editing is the correction path: the payment stays, the balance moves.
-    // The debtor paid 5000 against a 5000 share; at a 4000 share they are
+    // Editing is the correction path, open to anyone on the expense — here
+    // the debtor, who did not create it. The payment stays, the balance
+    // moves: they paid 5000 against a 5000 share; at a 4000 share they are
     // owed the 1000 they overpaid …
-    await updateExpense(CREDITOR, "exp-1", campsite(8000));
+    await updateExpense(DEBTOR, "exp-1", campsite(8000));
     expect(await userNetInGroup(DEBTOR, "grp-1")).toBe(1000);
     // … and at a 6000 share they owe the extra 1000 instead.
     await updateExpense(CREDITOR, "exp-1", campsite(12_000));

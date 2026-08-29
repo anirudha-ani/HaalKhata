@@ -59,14 +59,22 @@ export function ExpenseDetailScreen({ expenseId }: { expenseId: string }) {
       ? "You"
       : (expenseDetail.userById.get(userId)?.name ?? "someone");
 
-  // Only the creator may change an expense. Once a payment has been recorded
-  // in its ledger after it, the server still allows edits — the derived
-  // balance rebalances against what was paid — but refuses deletion, which
-  // would leave that payment explaining nothing. (A cached response from
-  // before the flag existed simply lacks it, which reads as deletable until
-  // the refetch lands — the server still refuses either way.)
-  const isCreator = expense.createdBy === expenseDetail.me?.id;
+  // Anyone on the expense may correct it — creator, payer or ower — because
+  // each can see the mistake and each is affected by it. Deletion stays with
+  // the creator, and not once a payment has been recorded in the ledger after
+  // the expense: the server still allows edits then (the derived balance
+  // rebalances against what was paid) but refuses deletion, which would leave
+  // that payment explaining nothing. (A cached response from before the flag
+  // existed simply lacks it, which reads as deletable until the refetch lands
+  // — the server still refuses either way.)
+  const meId = expenseDetail.me?.id;
+  const isCreator = expense.createdBy === meId;
+  const isParticipant =
+    isCreator ||
+    expense.payers.some((payer) => payer.userId === meId) ||
+    expense.splits.some((split) => split.userId === meId);
   const hasLaterSettlement = expenseDetail.detail?.hasLaterSettlement === true;
+  const canDelete = isCreator && !hasLaterSettlement;
   // Itemized expenses have no mobile editor yet; the web form handles them.
   const canEditHere = expense.splitType !== "itemized";
 
@@ -88,7 +96,7 @@ export function ExpenseDetailScreen({ expenseId }: { expenseId: string }) {
         <Text style={styles.amount}>{formatMoney(expense.amountCents, expense.currency)}</Text>
       </View>
 
-      {isCreator && (canEditHere || !hasLaterSettlement) ? (
+      {isParticipant && (canEditHere || canDelete) ? (
         <View style={styles.actions}>
           {canEditHere ? (
             <Button
@@ -99,7 +107,7 @@ export function ExpenseDetailScreen({ expenseId }: { expenseId: string }) {
               variant="outline"
             />
           ) : null}
-          {hasLaterSettlement ? null : (
+          {canDelete ? (
             <Button
               compact
               icon={<Trash2 color={colors.inkSoft} size={14} />}
@@ -107,17 +115,17 @@ export function ExpenseDetailScreen({ expenseId }: { expenseId: string }) {
               onPress={() => expenseDetail.setConfirmingDelete(true)}
               variant="outline"
             />
-          )}
+          ) : null}
         </View>
       ) : null}
 
-      {isCreator && hasLaterSettlement ? (
+      {isParticipant && hasLaterSettlement ? (
         <View style={styles.settlementNoteCard}>
           <Lock color={colors.inkSoft} size={16} />
           <Text style={styles.settlementNoteText}>
-            Somebody has paid against this ledger since this expense was added. You can still
-            edit it — balances rebalance against what has already been paid — but it can no
-            longer be deleted.
+            Somebody has paid against this ledger since this expense was added. Editing it
+            rebalances what they owe — or are owed — against what has already been paid; it can
+            no longer be deleted.
           </Text>
         </View>
       ) : null}

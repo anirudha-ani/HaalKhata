@@ -58,14 +58,21 @@ export function ExpenseDetailPage({ expenseId }: { expenseId: string }) {
     .filter((split) => split.userId === meId)
     .reduce((total, split) => total + split.owedCents, 0);
   const myNetCents = myPaidCents - myOwedCents;
-  // Only the creator may change an expense. Once a payment has been recorded
-  // in its ledger after it, the server still allows edits — the derived
-  // balance rebalances against what was paid — but refuses deletion, which
-  // would leave that payment explaining nothing. (A cached response from
-  // before the flag existed simply lacks it, which reads as deletable until
-  // the refetch lands — the server still refuses either way.)
+  // Anyone on the expense may correct it — creator, payer or ower — because
+  // each can see the mistake and each is affected by it. Deletion stays with
+  // the creator, and not once a payment has been recorded in the ledger after
+  // the expense: the server still allows edits then (the derived balance
+  // rebalances against what was paid) but refuses deletion, which would leave
+  // that payment explaining nothing. (A cached response from before the flag
+  // existed simply lacks it, which reads as deletable until the refetch lands
+  // — the server still refuses either way.)
   const isCreator = expense.createdBy === meId;
+  const isParticipant =
+    isCreator ||
+    expense.payers.some((payer) => payer.userId === meId) ||
+    expense.splits.some((split) => split.userId === meId);
   const hasLaterSettlement = expenseDetail.detail?.hasLaterSettlement === true;
+  const canDelete = isCreator && !hasLaterSettlement;
   // Same wording as the list rows, from the same function — the list's
   // tooltip is invisible on phones, so this page is where the full sentence
   // actually gets read.
@@ -119,7 +126,7 @@ export function ExpenseDetailPage({ expenseId }: { expenseId: string }) {
         </p>
       ) : null}
 
-      {isCreator ? (
+      {isParticipant ? (
         <div className="flex gap-2">
           <Link
             href={`/expenses/new?edit=${expense.id}`}
@@ -127,7 +134,7 @@ export function ExpenseDetailPage({ expenseId }: { expenseId: string }) {
           >
             <Pencil className="h-3.5 w-3.5" /> Edit
           </Link>
-          {hasLaterSettlement ? null : (
+          {canDelete ? (
             <button
               type="button"
               onClick={() => expenseDetail.setConfirmingDelete(true)}
@@ -135,17 +142,17 @@ export function ExpenseDetailPage({ expenseId }: { expenseId: string }) {
             >
               <Trash2 className="h-3.5 w-3.5" /> Delete
             </button>
-          )}
+          ) : null}
         </div>
       ) : null}
 
-      {isCreator && hasLaterSettlement ? (
+      {isParticipant && hasLaterSettlement ? (
         <p className="flex items-start gap-2 rounded-2xl border border-line bg-card px-4 py-3 text-sm text-ink-soft">
           <Lock className="mt-0.5 h-4 w-4 shrink-0" />
           <span>
-            Somebody has paid against this ledger since this expense was added. You can still
-            edit it — balances rebalance against what has already been paid — but it can no
-            longer be deleted.
+            Somebody has paid against this ledger since this expense was added. Editing it
+            rebalances what they owe — or are owed — against what has already been paid; it can
+            no longer be deleted.
           </span>
         </p>
       ) : null}

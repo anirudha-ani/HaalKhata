@@ -9,6 +9,10 @@ import "common/v1/common.proto";
 // expense's currency; splits always reconcile to the exact total.
 service ExpenseService {
   rpc CreateExpense(CreateExpenseRequest) returns (Expense);
+  // Anyone on the expense — creator, payer or ower — may correct it; the
+  // "updated" activity tells the rest. Allowed after a settlement in the
+  // scope (the balance rebalances against what was paid). An expense cannot
+  // be moved between scopes.
   rpc UpdateExpense(UpdateExpenseRequest) returns (Expense);
   rpc ListExpenses(ListExpensesRequest) returns (ListExpensesResponse);
   rpc GetExpense(GetExpenseRequest) returns (GetExpenseResponse);
