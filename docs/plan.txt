@@ -1696,12 +1696,17 @@ screen, a promise the server no longer keeps stayed in the copy. This section
 records what was completed, so the contract and the two apps say the same
 thing.
 
-- **Settled expenses are locked, and the detail view knows it.**
-  `GetExpenseResponse.locked_by_settlement` carries the same predicate the
-  mutation paths enforce (a settlement in the scope postdating the expense).
-  Both clients show Edit/Delete only to the creator of an unlocked expense,
-  and otherwise explain and offer a correcting expense. Non-creators never
-  see the buttons the server always denied them.
+- **A settled expense can still be corrected; it just cannot be deleted.**
+  The audit asked for edits to be serialized against settlements and for
+  deletion of a settled expense to be refused; the first pass froze edits
+  too, which turned "B paid, then somebody spotted a mistake" into a fake
+  compensating expense (negative amounts are not allowed, so a refund had to
+  be modelled as an expense the other way round). Edits now run under the
+  ledger lock and the derived balance rebalances against what was already
+  paid — pay less than your corrected share and you are owed the difference,
+  more and you owe it. `GetExpenseResponse.has_later_settlement` tells the
+  detail view a payment postdates the expense, so both clients hide Delete
+  and warn before an edit. Non-creators never see buttons the server denies.
 - **Leaving a group is reachable.** RemoveMember lets a zero-balance
   non-owner remove themselves (§3i); the members list on both apps now has
   "Leave group" on your own row and "Remove" on every other row for the

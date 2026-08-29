@@ -428,47 +428,33 @@ describe("who hears about a transaction", () => {
     });
   });
 
-  it("refuses to edit an expense after its group ledger has a settlement", async () => {
+  it("still edits an expense after its group ledger has a settlement", async () => {
+    // A payment recorded against the scope is not a reason to freeze the
+    // expense: the edit runs under the same group lock the settlement took,
+    // and the derived balance simply rebalances against what was paid.
     vi.mocked(scopeHasSettlements).mockResolvedValue(true);
 
-    await expect(
-      updateExpense(PAYER, "expense-1", validExpenseRequest()),
-    ).rejects.toThrow(/add a correction instead/);
+    await updateExpense(PAYER, "expense-1", validExpenseRequest());
 
     expect(lockExpenseLedger).toHaveBeenCalledWith(transactionClient, "expense-1");
     expect(lockGroupLedgers).toHaveBeenCalledWith(transactionClient, [GOA_TRIP]);
-    expect(scopeHasSettlements).toHaveBeenCalledWith(
-      GOA_TRIP,
-      [PAYER, OWER],
-      "42",
-      transactionClient,
-    );
-    expect(replaceExpense).not.toHaveBeenCalled();
+    expect(replaceExpense).toHaveBeenCalledWith("expense-1", expect.anything(), transactionClient);
   });
 
-  it("locks every affected one-off pair before checking settlement history", async () => {
+  it("locks every affected one-off participant before replacing the expense", async () => {
     vi.mocked(findExpenseById).mockResolvedValue({
       ...(await findExpenseById("expense-1"))!,
       group_id: null,
     });
     vi.mocked(listFriendIds).mockResolvedValue([OWER]);
-    vi.mocked(scopeHasSettlements).mockResolvedValue(true);
 
-    await expect(
-      updateExpense(PAYER, "expense-1", validExpenseRequest({ groupId: "" })),
-    ).rejects.toThrow(/add a correction instead/);
+    await updateExpense(PAYER, "expense-1", validExpenseRequest({ groupId: "" }));
 
     expect(lockParticipantLedgers).toHaveBeenCalledWith(transactionClient, [PAYER, OWER]);
-    expect(scopeHasSettlements).toHaveBeenCalledWith(
-      null,
-      [PAYER, OWER],
-      "42",
-      transactionClient,
-    );
-    expect(replaceExpense).not.toHaveBeenCalled();
+    expect(replaceExpense).toHaveBeenCalledWith("expense-1", expect.anything(), transactionClient);
   });
 
-  it("tells the detail view when a later settlement has locked the expense", async () => {
+  it("tells the detail view when a later settlement was recorded against the expense", async () => {
     vi.mocked(listCommentsByExpense).mockResolvedValue([]);
     vi.mocked(listActivityForExpense).mockResolvedValue([]);
     vi.mocked(userNetInGroup).mockResolvedValue(0);
@@ -476,27 +462,27 @@ describe("who hears about a transaction", () => {
 
     const detail = await getExpense(PAYER, "expense-1");
 
-    // The same predicate the mutation paths apply under their lock, so the
-    // page and the server can never disagree about which expenses are
-    // frozen — read advisorily here, with no transaction client.
-    expect(detail.lockedBySettlement).toBe(true);
+    // The same predicate deleteExpense applies under its lock, so the page
+    // and the server can never disagree about which expenses can no longer
+    // be deleted — read advisorily here, with no transaction client.
+    expect(detail.hasLaterSettlement).toBe(true);
     expect(scopeHasSettlements).toHaveBeenCalledWith(GOA_TRIP, [PAYER, OWER], "42");
   });
 
-  it("reports an expense as editable while its scope has no later settlement", async () => {
+  it("reports no later settlement while the scope has none", async () => {
     vi.mocked(listCommentsByExpense).mockResolvedValue([]);
     vi.mocked(listActivityForExpense).mockResolvedValue([]);
     vi.mocked(userNetInGroup).mockResolvedValue(0);
 
     const detail = await getExpense(OWER, "expense-1");
 
-    expect(detail.lockedBySettlement).toBe(false);
+    expect(detail.hasLaterSettlement).toBe(false);
   });
 
   it("refuses to delete an expense after its group ledger has a settlement", async () => {
     vi.mocked(scopeHasSettlements).mockResolvedValue(true);
 
-    await expect(deleteExpense(PAYER, "expense-1")).rejects.toThrow(/add a correction instead/);
+    await expect(deleteExpense(PAYER, "expense-1")).rejects.toThrow(/cannot be deleted/);
 
     expect(lockExpenseLedger).toHaveBeenCalledWith(transactionClient, "expense-1");
     expect(lockGroupLedgers).toHaveBeenCalledWith(transactionClient, [GOA_TRIP]);

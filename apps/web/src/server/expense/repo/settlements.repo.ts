@@ -55,15 +55,15 @@ export async function withSettlementPairLock<Outcome>(
 
 /**
  * Reports whether a scope has settlement history recorded after an expense.
- * Earlier payments cannot have paid a later expense, so they do not make that
- * new expense immutable.
+ * Earlier payments cannot have paid a later expense, so they do not stop that
+ * new expense from being deleted.
  *
  * @param groupId - Group scope, or null for one-off pair scopes.
  * @param participantIds - One-off expense participants; ignored for a group.
  * @param expenseEventOrder - Monotonic creation order of the expense being changed.
  * @param client - Transaction client holding the matching ledger lock when
- *   the answer guards a mutation; omitted for an advisory read (the detail
- *   view), which the mutation paths recheck under their own lock.
+ *   the answer guards a deletion; omitted for an advisory read (the detail
+ *   view), which the delete path rechecks under its own lock.
  * @returns True when a later settlement exists in the addressed scope.
  */
 export async function scopeHasSettlements(

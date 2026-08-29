@@ -167,37 +167,57 @@ describe.skipIf(!reachable)("recordSettlement against Postgres", () => {
     expect(await netWithUser(DEBTOR, CREDITOR)).toBe(0);
   });
 
-  it("keeps the paid debt immutable after settlement", async () => {
-    await expect(deleteExpense(CREDITOR, "exp-1")).rejects.toThrow(/add a correction instead/);
-    await expect(
-      updateExpense(CREDITOR, "exp-1", {
+  it("refuses to delete the settled expense but lets an edit rebalance the payment", async () => {
+    /**
+     * The campsite expense with a replacement total, split evenly between
+     * the two members as it was recorded.
+     *
+     * @param totalCents - Replacement total; each member's share is half.
+     * @returns A full replacement request for exp-1.
+     */
+    const campsite = (totalCents: number) =>
+      ({
         groupId: "grp-1",
-        description: "Campsite corrected",
-        amountCents: 10_000,
+        description: "Campsite",
+        amountCents: totalCents,
         currency: "USD",
         category: "general",
         expenseDate: "2026-07-28",
         splitType: "exact",
         notes: "",
-        payers: [{ userId: CREDITOR, amountCents: 10_000 }],
+        payers: [{ userId: CREDITOR, amountCents: totalCents }],
         splitSpecs: [
-          { userId: DEBTOR, amountCents: 5000, percentBp: 0, shares: 0 },
-          { userId: CREDITOR, amountCents: 5000, percentBp: 0, shares: 0 },
+          { userId: DEBTOR, amountCents: totalCents / 2, percentBp: 0, shares: 0 },
+          { userId: CREDITOR, amountCents: totalCents / 2, percentBp: 0, shares: 0 },
         ],
         items: [],
         taxCents: 0,
         tipCents: 0,
-      } as never),
-    ).rejects.toThrow(/add a correction instead/);
+      }) as never;
 
+    // Deleting would leave the debtor's 5000 payment explaining nothing.
+    await expect(deleteExpense(CREDITOR, "exp-1")).rejects.toThrow(/cannot be deleted/);
+    // The detail view is told up front, so the clients hide Delete and warn
+    // before an edit rather than offering a control the server refuses.
+    expect((await getExpense(CREDITOR, "exp-1")).hasLaterSettlement).toBe(true);
+
+    // Editing is the correction path: the payment stays, the balance moves.
+    // The debtor paid 5000 against a 5000 share; at a 4000 share they are
+    // owed the 1000 they overpaid …
+    await updateExpense(CREDITOR, "exp-1", campsite(8000));
+    expect(await userNetInGroup(DEBTOR, "grp-1")).toBe(1000);
+    // … and at a 6000 share they owe the extra 1000 instead.
+    await updateExpense(CREDITOR, "exp-1", campsite(12_000));
+    expect(await userNetInGroup(DEBTOR, "grp-1")).toBe(-1000);
+
+    // Back to the recorded split, so the rest of the suite sees the settled
+    // ledger it expects.
+    await updateExpense(CREDITOR, "exp-1", campsite(10_000));
+    expect(await userNetInGroup(DEBTOR, "grp-1")).toBe(0);
     const { rows } = await database.query(
       `SELECT description, deleted_at FROM expenses WHERE id = 'exp-1'`,
     );
     expect(rows).toEqual([{ description: "Campsite", deleted_at: null }]);
-
-    // The detail view is told up front, so the clients hide edit/delete
-    // rather than offering a control the two calls above would refuse.
-    expect((await getExpense(CREDITOR, "exp-1")).lockedBySettlement).toBe(true);
   });
 
   it("still allows correction of an expense created after an older settlement", async () => {
@@ -237,7 +257,7 @@ describe.skipIf(!reachable)("recordSettlement against Postgres", () => {
       laterExpense.id,
     ]);
     expect(rows).toEqual([{ description: "Personal snack corrected" }]);
-    expect((await getExpense(CREDITOR, laterExpense.id)).lockedBySettlement).toBe(false);
+    expect((await getExpense(CREDITOR, laterExpense.id)).hasLaterSettlement).toBe(false);
   });
 
   it("refuses a later recording of the already-settled debt from any page", async () => {

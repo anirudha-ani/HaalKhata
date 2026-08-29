@@ -322,22 +322,31 @@ async function assertLockedGroupParticipants(
 }
 
 /**
- * Prevents historical settlements from being detached from the debt they paid.
+ * Refuses to delete an expense once a settlement postdates it in its scope.
+ *
+ * A later payment was made against the balance this expense created; deleting
+ * the expense would leave that payment explaining nothing — the payer would
+ * appear to be owed a refund with no visible reason. Editing is the correction
+ * path instead: it runs under the same ledger lock, so it cannot race a
+ * settlement, and the derived balance simply rebalances against what was
+ * paid.
  *
  * @param groupId - Group scope, or null for the participants' one-off scope.
- * @param participantIds - Participants in the old and replacement expense.
- * @param expenseEventOrder - Monotonic creation order of the expense being changed.
+ * @param participantIds - Participants of the expense being deleted.
+ * @param expenseEventOrder - Monotonic creation order of the expense being deleted.
  * @param client - Transaction client holding every matching ledger lock.
- * @returns A promise that resolves when no later settlement can be orphaned.
+ * @returns A promise that resolves when no later settlement would be orphaned.
  */
-async function assertExpenseScopeMutable(
+async function assertExpenseDeletable(
   groupId: string | null,
   participantIds: string[],
   expenseEventOrder: string,
   client: PoolClient,
 ): Promise<void> {
   if (await scopeHasSettlements(groupId, participantIds, expenseEventOrder, client)) {
-    invalid("settled ledger expenses cannot be edited or deleted; add a correction instead");
+    invalid(
+      "a payment was recorded after this expense, so it cannot be deleted; edit it to what it should have been instead",
+    );
   }
 }
 
@@ -501,6 +510,12 @@ async function assertCanModify(
  * Replaces an expense with a freshly validated version (original creator is
  * preserved) and fans out an "updated" activity + notifications.
  *
+ * Allowed after a settlement in the scope: the edit runs under the ledger
+ * lock, so it cannot race the settlement, and the derived balance rebalances
+ * against what was already paid — whoever paid more than their corrected
+ * share is owed the difference, whoever paid less owes it. Only deletion is
+ * refused then (see {@link deleteExpense}).
+ *
  * @param userId - Authenticated caller performing the update.
  * @param expenseId - Id of the expense to update.
  * @param request - Full replacement request (same shape as create).
@@ -543,12 +558,6 @@ export async function updateExpense(
     } else {
       await lockParticipantLedgers(client, participantIds);
     }
-    await assertExpenseScopeMutable(
-      current.group_id,
-      participantIds,
-      current.ledger_event_order,
-      client,
-    );
     write.createdBy = current.created_by;
     await replaceExpense(expenseId, write, client);
   });
@@ -562,7 +571,8 @@ export async function updateExpense(
  *
  * @param userId - Authenticated caller performing the deletion.
  * @param expenseId - Id of the expense to delete.
- * @throws UsecaseError if the expense is missing/deleted or the caller lacks access.
+ * @throws UsecaseError if the expense is missing/deleted, the caller lacks
+ *   access, or a settlement postdates the expense in its scope.
  */
 export async function deleteExpense(userId: string, expenseId: string): Promise<void> {
   const deletedWrite = await withLedgerTransaction(async (client) => {
@@ -577,7 +587,7 @@ export async function deleteExpense(userId: string, expenseId: string): Promise<
     } else {
       await lockParticipantLedgers(client, participantIds);
     }
-    await assertExpenseScopeMutable(
+    await assertExpenseDeletable(
       existing.group_id,
       participantIds,
       existing.ledger_event_order,
@@ -748,13 +758,12 @@ export async function getExpense(userId: string, expenseId: string) {
       oneOffNetByUserId,
     ).length === 1;
 
-  // The same rule updateExpense and deleteExpense enforce under the ledger
-  // lock, answered up front: once a settlement postdates this expense in its
-  // scope, changing it would detach that payment from the debt it paid. The
-  // detail view uses this to offer a correction instead of a control that
-  // the server would refuse. Read outside any lock — advisory, not
-  // authoritative; the mutation paths recheck under theirs.
-  const lockedBySettlement = await scopeHasSettlements(
+  // The same predicate deleteExpense enforces under the ledger lock, answered
+  // up front: a settlement postdating this expense in its scope means it can
+  // still be edited (the balance rebalances) but not deleted. The detail view
+  // hides Delete and warns before an edit. Read outside any lock — advisory,
+  // not authoritative; the delete path rechecks under its own.
+  const hasLaterSettlement = await scopeHasSettlements(
     expenseRow.group_id,
     storedParticipantIds(expenseRow, children),
     expenseRow.ledger_event_order,
@@ -762,7 +771,7 @@ export async function getExpense(userId: string, expenseId: string) {
 
   return {
     settledForViewer,
-    lockedBySettlement,
+    hasLaterSettlement,
     expense: toExpense(expenseRow, children),
     comments: comments.map((comment) => ({
       id: comment.id,

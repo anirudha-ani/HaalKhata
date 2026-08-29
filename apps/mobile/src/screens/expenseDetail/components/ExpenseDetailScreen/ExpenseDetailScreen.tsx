@@ -59,14 +59,16 @@ export function ExpenseDetailScreen({ expenseId }: { expenseId: string }) {
       ? "You"
       : (expenseDetail.userById.get(userId)?.name ?? "someone");
 
-  // Only the creator may change an expense, and not once a payment has been
-  // recorded in its ledger after it — the server refuses both, so the screen
-  // offers a correction instead of a button that fails. (A cached response
-  // from before the flag existed simply lacks it, which reads as unlocked
-  // until the refetch lands — the server still refuses either way.)
+  // Only the creator may change an expense. Once a payment has been recorded
+  // in its ledger after it, the server still allows edits — the derived
+  // balance rebalances against what was paid — but refuses deletion, which
+  // would leave that payment explaining nothing. (A cached response from
+  // before the flag existed simply lacks it, which reads as deletable until
+  // the refetch lands — the server still refuses either way.)
   const isCreator = expense.createdBy === expenseDetail.me?.id;
-  const lockedBySettlement = expenseDetail.detail?.lockedBySettlement === true;
-  const correctionPath = expense.groupId ? `/expenses/new?group=${expense.groupId}` : "/expenses/new";
+  const hasLaterSettlement = expenseDetail.detail?.hasLaterSettlement === true;
+  // Itemized expenses have no mobile editor yet; the web form handles them.
+  const canEditHere = expense.splitType !== "itemized";
 
   return (
     <Screen header={<DetailHeader title="Expense" />}>
@@ -86,9 +88,9 @@ export function ExpenseDetailScreen({ expenseId }: { expenseId: string }) {
         <Text style={styles.amount}>{formatMoney(expense.amountCents, expense.currency)}</Text>
       </View>
 
-      {isCreator && !lockedBySettlement ? (
+      {isCreator && (canEditHere || !hasLaterSettlement) ? (
         <View style={styles.actions}>
-          {expense.splitType !== "itemized" ? (
+          {canEditHere ? (
             <Button
               compact
               icon={<Pencil color={colors.inkSoft} size={14} />}
@@ -97,24 +99,25 @@ export function ExpenseDetailScreen({ expenseId }: { expenseId: string }) {
               variant="outline"
             />
           ) : null}
-          <Button
-            compact
-            icon={<Trash2 color={colors.inkSoft} size={14} />}
-            label="Delete"
-            onPress={() => expenseDetail.setConfirmingDelete(true)}
-            variant="outline"
-          />
+          {hasLaterSettlement ? null : (
+            <Button
+              compact
+              icon={<Trash2 color={colors.inkSoft} size={14} />}
+              label="Delete"
+              onPress={() => expenseDetail.setConfirmingDelete(true)}
+              variant="outline"
+            />
+          )}
         </View>
-      ) : isCreator ? (
-        <View style={styles.lockedCard}>
+      ) : null}
+
+      {isCreator && hasLaterSettlement ? (
+        <View style={styles.settlementNoteCard}>
           <Lock color={colors.inkSoft} size={16} />
-          <Text style={styles.lockedText}>
-            A payment was recorded in this ledger after this expense, so it can no longer be
-            edited or deleted.{" "}
-            <Text onPress={() => router.push(correctionPath)} style={styles.lockedLink}>
-              Add a correcting expense
-            </Text>{" "}
-            instead.
+          <Text style={styles.settlementNoteText}>
+            Somebody has paid against this ledger since this expense was added. You can still
+            edit it — balances rebalance against what has already been paid — but it can no
+            longer be deleted.
           </Text>
         </View>
       ) : null}
@@ -397,27 +400,6 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     paddingTop: spacing.sm,
   },
-  lockedCard: {
-    alignItems: "flex-start",
-    backgroundColor: colors.card,
-    borderColor: colors.line,
-    borderRadius: radii.lg,
-    borderWidth: 1,
-    flexDirection: "row",
-    gap: spacing.sm,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
-  },
-  lockedLink: {
-    color: colors.brand600,
-    fontWeight: "600",
-  },
-  lockedText: {
-    color: colors.inkSoft,
-    flex: 1,
-    fontSize: 14,
-    lineHeight: 20,
-  },
   meta: {
     color: colors.inkSoft,
     fontSize: 13,
@@ -462,6 +444,23 @@ const styles = StyleSheet.create({
   rowAmount: {
     fontSize: 14,
     fontWeight: "500",
+  },
+  settlementNoteCard: {
+    alignItems: "flex-start",
+    backgroundColor: colors.card,
+    borderColor: colors.line,
+    borderRadius: radii.lg,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: spacing.sm,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+  },
+  settlementNoteText: {
+    color: colors.inkSoft,
+    flex: 1,
+    fontSize: 14,
+    lineHeight: 20,
   },
   taxTip: {
     borderTopColor: colors.line,

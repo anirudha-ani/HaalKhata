@@ -12,6 +12,9 @@ service ExpenseService {
   rpc UpdateExpense(UpdateExpenseRequest) returns (Expense);
   rpc ListExpenses(ListExpensesRequest) returns (ListExpensesResponse);
   rpc GetExpense(GetExpenseRequest) returns (GetExpenseResponse);
+  // Creator only, and refused once a settlement postdates the expense in its
+  // scope: edit it to what it should have been instead (see
+  // GetExpenseResponse.has_later_settlement).
   rpc DeleteExpense(DeleteExpenseRequest) returns (google.protobuf.Empty);
   rpc AddComment(AddCommentRequest) returns (Comment);
 
@@ -138,13 +141,15 @@ message GetExpenseResponse {
   // Viewer-relative, hence on the response and not on Expense.
   bool settled_for_viewer = 5;
   // True when a settlement was recorded in this expense's scope after the
-  // expense was created. UpdateExpense and DeleteExpense refuse such an
-  // expense, because changing it would detach that payment from the debt it
-  // paid; clients should offer a correcting expense instead of edit/delete.
-  // Scope-level like settled_for_viewer, but not viewer-relative: the same
-  // answer for everyone, so it could live on Expense — it sits here because
-  // only the detail view acts on it.
-  bool locked_by_settlement = 6;
+  // expense was created. DeleteExpense refuses such an expense — the payment
+  // would be left explaining nothing — while UpdateExpense still works: the
+  // derived balance rebalances against what was already paid, so a
+  // participant who paid more than their corrected share is owed the
+  // difference and one who paid less owes it. Clients hide Delete and warn
+  // before an edit. Scope-level like settled_for_viewer, but not
+  // viewer-relative: the same answer for everyone, so it could live on
+  // Expense — it sits here because only the detail view acts on it.
+  bool has_later_settlement = 6;
 }
 
 // One recorded change to an expense, for the detail view's history line.
