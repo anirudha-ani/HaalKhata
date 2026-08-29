@@ -61,14 +61,16 @@ export async function withSettlementPairLock<Outcome>(
  * @param groupId - Group scope, or null for one-off pair scopes.
  * @param participantIds - One-off expense participants; ignored for a group.
  * @param expenseEventOrder - Monotonic creation order of the expense being changed.
- * @param client - Transaction client holding the matching ledger lock.
+ * @param client - Transaction client holding the matching ledger lock when
+ *   the answer guards a mutation; omitted for an advisory read (the detail
+ *   view), which the mutation paths recheck under their own lock.
  * @returns True when a later settlement exists in the addressed scope.
  */
 export async function scopeHasSettlements(
   groupId: string | null,
   participantIds: string[],
   expenseEventOrder: string,
-  client: PoolClient,
+  client?: PoolClient,
 ): Promise<boolean> {
   if (groupId) {
     return (

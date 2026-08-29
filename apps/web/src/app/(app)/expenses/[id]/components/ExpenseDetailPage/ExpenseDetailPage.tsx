@@ -2,7 +2,7 @@
 /** Expense detail page: payers, splits, receipt items, comments, and delete flow. */
 
 import Link from "next/link";
-import { Check, Pencil, Send, Trash2 } from "lucide-react";
+import { Check, Lock, Pencil, Send, Trash2 } from "lucide-react";
 import { Avatar } from "@/components/ui/Avatar";
 import { PersonLink } from "@/components/people/PersonLink";
 import { settledStatus } from "@/components/expenses/settledStatus";
@@ -57,6 +57,14 @@ export function ExpenseDetailPage({ expenseId }: { expenseId: string }) {
     .filter((split) => split.userId === meId)
     .reduce((total, split) => total + split.owedCents, 0);
   const myNetCents = myPaidCents - myOwedCents;
+  // Only the creator may change an expense, and not once a payment has been
+  // recorded in its ledger after it — the server refuses both, so the page
+  // offers a correction instead of a button that fails. (A cached response
+  // from before the flag existed simply lacks it, which reads as unlocked
+  // until the refetch lands — the server still refuses either way.)
+  const isCreator = expense.createdBy === meId;
+  const lockedBySettlement = expenseDetail.detail?.lockedBySettlement === true;
+  const correctionHref = expense.groupId ? `/expenses/new?group=${expense.groupId}` : "/expenses/new";
   // Same wording as the list rows, from the same function — the list's
   // tooltip is invisible on phones, so this page is where the full sentence
   // actually gets read.
@@ -110,21 +118,35 @@ export function ExpenseDetailPage({ expenseId }: { expenseId: string }) {
         </p>
       ) : null}
 
-      <div className="flex gap-2">
-        <Link
-          href={`/expenses/new?edit=${expense.id}`}
-          className="flex items-center gap-1.5 rounded-lg border border-line bg-card px-3 py-2 text-xs font-semibold text-ink-soft hover:border-brand-200"
-        >
-          <Pencil className="h-3.5 w-3.5" /> Edit
-        </Link>
-        <button
-          type="button"
-          onClick={() => expenseDetail.setConfirmingDelete(true)}
-          className="flex items-center gap-1.5 rounded-lg border border-line bg-card px-3 py-2 text-xs font-semibold text-ink-soft hover:border-brand-600 hover:text-brand-600"
-        >
-          <Trash2 className="h-3.5 w-3.5" /> Delete
-        </button>
-      </div>
+      {isCreator && !lockedBySettlement ? (
+        <div className="flex gap-2">
+          <Link
+            href={`/expenses/new?edit=${expense.id}`}
+            className="flex items-center gap-1.5 rounded-lg border border-line bg-card px-3 py-2 text-xs font-semibold text-ink-soft hover:border-brand-200"
+          >
+            <Pencil className="h-3.5 w-3.5" /> Edit
+          </Link>
+          <button
+            type="button"
+            onClick={() => expenseDetail.setConfirmingDelete(true)}
+            className="flex items-center gap-1.5 rounded-lg border border-line bg-card px-3 py-2 text-xs font-semibold text-ink-soft hover:border-brand-600 hover:text-brand-600"
+          >
+            <Trash2 className="h-3.5 w-3.5" /> Delete
+          </button>
+        </div>
+      ) : isCreator ? (
+        <p className="flex items-start gap-2 rounded-2xl border border-line bg-card px-4 py-3 text-sm text-ink-soft">
+          <Lock className="mt-0.5 h-4 w-4 shrink-0" />
+          <span>
+            A payment was recorded in this ledger after this expense, so it can no longer be
+            edited or deleted.{" "}
+            <Link href={correctionHref} className="font-medium text-brand-600">
+              Add a correcting expense
+            </Link>{" "}
+            instead.
+          </span>
+        </p>
+      ) : null}
 
       <section className="grid gap-4 sm:grid-cols-2">
         <div className="rounded-2xl border border-line bg-card p-4">

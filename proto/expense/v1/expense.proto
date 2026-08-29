@@ -137,6 +137,14 @@ message GetExpenseResponse {
   // same rule as ListExpensesResponse.settled_expense_ids, for one expense.
   // Viewer-relative, hence on the response and not on Expense.
   bool settled_for_viewer = 5;
+  // True when a settlement was recorded in this expense's scope after the
+  // expense was created. UpdateExpense and DeleteExpense refuse such an
+  // expense, because changing it would detach that payment from the debt it
+  // paid; clients should offer a correcting expense instead of edit/delete.
+  // Scope-level like settled_for_viewer, but not viewer-relative: the same
+  // answer for everyone, so it could live on Expense — it sits here because
+  // only the detail view acts on it.
+  bool locked_by_settlement = 6;
 }
 
 // One recorded change to an expense, for the detail view's history line.

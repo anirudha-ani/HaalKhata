@@ -732,8 +732,21 @@ export async function getExpense(userId: string, expenseId: string) {
       oneOffNetByUserId,
     ).length === 1;
 
+  // The same rule updateExpense and deleteExpense enforce under the ledger
+  // lock, answered up front: once a settlement postdates this expense in its
+  // scope, changing it would detach that payment from the debt it paid. The
+  // detail view uses this to offer a correction instead of a control that
+  // the server would refuse. Read outside any lock — advisory, not
+  // authoritative; the mutation paths recheck under theirs.
+  const lockedBySettlement = await scopeHasSettlements(
+    expenseRow.group_id,
+    storedParticipantIds(expenseRow, children),
+    expenseRow.ledger_event_order,
+  );
+
   return {
     settledForViewer,
+    lockedBySettlement,
     expense: toExpense(expenseRow, children),
     comments: comments.map((comment) => ({
       id: comment.id,

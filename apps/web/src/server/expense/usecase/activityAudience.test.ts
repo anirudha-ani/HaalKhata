@@ -66,12 +66,18 @@ vi.mock("@/server/social/repo/activity.repo", () => ({
   listActivityForExpense: vi.fn(),
 }));
 vi.mock("@/server/social/repo/notifications.repo", () => ({ insertNotifications: vi.fn() }));
-vi.mock("./balance.usecase", () => ({ amountOwed: vi.fn(), owedByScope: vi.fn() }));
+vi.mock("./balance.usecase", () => ({
+  amountOwed: vi.fn(),
+  oneOffNetBetween: vi.fn(),
+  owedByScope: vi.fn(),
+  userNetInGroup: vi.fn(),
+}));
 
 import {
   addComment,
   createExpense,
   deleteExpense,
+  getExpense,
   recordSettlement,
   updateExpense,
 } from "./expense.usecase";
@@ -90,7 +96,7 @@ import {
   replaceExpense,
   softDeleteExpense,
 } from "@/server/expense/repo/expenses.repo";
-import { insertComment } from "@/server/expense/repo/comments.repo";
+import { insertComment, listCommentsByExpense } from "@/server/expense/repo/comments.repo";
 import {
   insertSettlement,
   scopeHasSettlements,
@@ -100,10 +106,10 @@ import {
   lockGroupLedgers,
   lockPairLedgers,
 } from "@/server/common/ledgerLocks";
-import { insertActivity } from "@/server/social/repo/activity.repo";
+import { insertActivity, listActivityForExpense } from "@/server/social/repo/activity.repo";
 import { insertNotifications } from "@/server/social/repo/notifications.repo";
 import { listFriendIds } from "@/server/social/repo/friendships.repo";
-import { amountOwed } from "./balance.usecase";
+import { amountOwed, userNetInGroup } from "./balance.usecase";
 import {
   MAX_EXPENSE_ITEM_NAME_LENGTH,
   MAX_EXPENSE_NOTES_LENGTH,
@@ -451,6 +457,31 @@ describe("who hears about a transaction", () => {
       transactionClient,
     );
     expect(replaceExpense).not.toHaveBeenCalled();
+  });
+
+  it("tells the detail view when a later settlement has locked the expense", async () => {
+    vi.mocked(listCommentsByExpense).mockResolvedValue([]);
+    vi.mocked(listActivityForExpense).mockResolvedValue([]);
+    vi.mocked(userNetInGroup).mockResolvedValue(0);
+    vi.mocked(scopeHasSettlements).mockResolvedValue(true);
+
+    const detail = await getExpense(PAYER, "expense-1");
+
+    // The same predicate the mutation paths apply under their lock, so the
+    // page and the server can never disagree about which expenses are
+    // frozen — read advisorily here, with no transaction client.
+    expect(detail.lockedBySettlement).toBe(true);
+    expect(scopeHasSettlements).toHaveBeenCalledWith(GOA_TRIP, [PAYER, OWER], "42");
+  });
+
+  it("reports an expense as editable while its scope has no later settlement", async () => {
+    vi.mocked(listCommentsByExpense).mockResolvedValue([]);
+    vi.mocked(listActivityForExpense).mockResolvedValue([]);
+    vi.mocked(userNetInGroup).mockResolvedValue(0);
+
+    const detail = await getExpense(OWER, "expense-1");
+
+    expect(detail.lockedBySettlement).toBe(false);
   });
 
   it("refuses to delete an expense after its group ledger has a settlement", async () => {

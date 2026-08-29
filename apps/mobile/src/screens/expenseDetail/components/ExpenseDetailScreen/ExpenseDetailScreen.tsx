@@ -1,7 +1,7 @@
 /** Expense detail screen: payers, splits, receipt items, comments, and delete flow. */
 
 import { useRouter } from "expo-router";
-import { Pencil, Send, Trash2 } from "lucide-react-native";
+import { Lock, Pencil, Send, Trash2 } from "lucide-react-native";
 import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { DetailHeader } from "@/components/shell/DetailHeader";
 import { Screen } from "@/components/shell/Screen";
@@ -58,6 +58,15 @@ export function ExpenseDetailScreen({ expenseId }: { expenseId: string }) {
       ? "You"
       : (expenseDetail.userById.get(userId)?.name ?? "someone");
 
+  // Only the creator may change an expense, and not once a payment has been
+  // recorded in its ledger after it — the server refuses both, so the screen
+  // offers a correction instead of a button that fails. (A cached response
+  // from before the flag existed simply lacks it, which reads as unlocked
+  // until the refetch lands — the server still refuses either way.)
+  const isCreator = expense.createdBy === expenseDetail.me?.id;
+  const lockedBySettlement = expenseDetail.detail?.lockedBySettlement === true;
+  const correctionPath = expense.groupId ? `/expenses/new?group=${expense.groupId}` : "/expenses/new";
+
   return (
     <Screen header={<DetailHeader title="Expense" />}>
       <View style={styles.titleBlock}>
@@ -76,24 +85,38 @@ export function ExpenseDetailScreen({ expenseId }: { expenseId: string }) {
         <Text style={styles.amount}>{formatMoney(expense.amountCents, expense.currency)}</Text>
       </View>
 
-      <View style={styles.actions}>
-        {expense.splitType !== "itemized" ? (
+      {isCreator && !lockedBySettlement ? (
+        <View style={styles.actions}>
+          {expense.splitType !== "itemized" ? (
+            <Button
+              compact
+              icon={<Pencil color={colors.inkSoft} size={14} />}
+              label="Edit"
+              onPress={() => router.push(`/expenses/new?edit=${expense.id}`)}
+              variant="outline"
+            />
+          ) : null}
           <Button
             compact
-            icon={<Pencil color={colors.inkSoft} size={14} />}
-            label="Edit"
-            onPress={() => router.push(`/expenses/new?edit=${expense.id}`)}
+            icon={<Trash2 color={colors.inkSoft} size={14} />}
+            label="Delete"
+            onPress={() => expenseDetail.setConfirmingDelete(true)}
             variant="outline"
           />
-        ) : null}
-        <Button
-          compact
-          icon={<Trash2 color={colors.inkSoft} size={14} />}
-          label="Delete"
-          onPress={() => expenseDetail.setConfirmingDelete(true)}
-          variant="outline"
-        />
-      </View>
+        </View>
+      ) : isCreator ? (
+        <View style={styles.lockedCard}>
+          <Lock color={colors.inkSoft} size={16} />
+          <Text style={styles.lockedText}>
+            A payment was recorded in this ledger after this expense, so it can no longer be
+            edited or deleted.{" "}
+            <Text onPress={() => router.push(correctionPath)} style={styles.lockedLink}>
+              Add a correcting expense
+            </Text>{" "}
+            instead.
+          </Text>
+        </View>
+      ) : null}
 
       <View style={styles.breakdownCard}>
         <Text style={styles.cardTitle}>PAID BY</Text>
@@ -371,6 +394,27 @@ const styles = StyleSheet.create({
     borderTopColor: colors.line,
     borderTopWidth: 1,
     paddingTop: spacing.sm,
+  },
+  lockedCard: {
+    alignItems: "flex-start",
+    backgroundColor: colors.card,
+    borderColor: colors.line,
+    borderRadius: radii.lg,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: spacing.sm,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+  },
+  lockedLink: {
+    color: colors.brand600,
+    fontWeight: "600",
+  },
+  lockedText: {
+    color: colors.inkSoft,
+    flex: 1,
+    fontSize: 14,
+    lineHeight: 20,
   },
   meta: {
     color: colors.inkSoft,

@@ -85,6 +85,7 @@ describe.skipIf(!reachable)("recordSettlement against Postgres", () => {
   let recordSettlement: typeof import("./expense.usecase").recordSettlement;
   let createExpense: typeof import("./expense.usecase").createExpense;
   let deleteExpense: typeof import("./expense.usecase").deleteExpense;
+  let getExpense: typeof import("./expense.usecase").getExpense;
   let updateExpense: typeof import("./expense.usecase").updateExpense;
   let removeMemberFromGroup: typeof import(
     "@/server/group/usecase/group.usecase"
@@ -109,7 +110,7 @@ describe.skipIf(!reachable)("recordSettlement against Postgres", () => {
       const cache = globalThis as unknown as { __haalkhataPool?: { end(): Promise<void> } };
       await cache.__haalkhataPool?.end();
     };
-    ({ createExpense, deleteExpense, recordSettlement, updateExpense } = await import(
+    ({ createExpense, deleteExpense, getExpense, recordSettlement, updateExpense } = await import(
       "./expense.usecase"
     ));
     ({ removeMemberFromGroup } = await import("@/server/group/usecase/group.usecase"));
@@ -193,6 +194,10 @@ describe.skipIf(!reachable)("recordSettlement against Postgres", () => {
       `SELECT description, deleted_at FROM expenses WHERE id = 'exp-1'`,
     );
     expect(rows).toEqual([{ description: "Campsite", deleted_at: null }]);
+
+    // The detail view is told up front, so the clients hide edit/delete
+    // rather than offering a control the two calls above would refuse.
+    expect((await getExpense(CREDITOR, "exp-1")).lockedBySettlement).toBe(true);
   });
 
   it("still allows correction of an expense created after an older settlement", async () => {
@@ -232,6 +237,7 @@ describe.skipIf(!reachable)("recordSettlement against Postgres", () => {
       laterExpense.id,
     ]);
     expect(rows).toEqual([{ description: "Personal snack corrected" }]);
+    expect((await getExpense(CREDITOR, laterExpense.id)).lockedBySettlement).toBe(false);
   });
 
   it("refuses a later recording of the already-settled debt from any page", async () => {
