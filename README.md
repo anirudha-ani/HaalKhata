@@ -136,10 +136,12 @@ A separate file rather than an override, because Compose merges list keys by
 appending and so an override cannot *remove* the dev file's published ports.
 What it adds:
 
-- **Caddy** in front, with automatic Let's Encrypt certificates, HSTS, a CSP
-  that admits the Google sign-in button, and `header_up X-Forwarded-For
-  {remote_host}` — without that overwrite a client can supply its own
-  `X-Forwarded-For` and defeat the auth rate limiter. The production stack
+- **Caddy** in front, with automatic Let's Encrypt certificates, HSTS, and
+  `header_up X-Forwarded-For {remote_host}` (plus stripping `X-Real-IP`) —
+  without that overwrite a client can supply its own `X-Forwarded-For` and
+  defeat the auth rate limiter. The CSP and the other browser security
+  headers ship with the app itself (`next.config.ts` and `middleware.ts`),
+  so they survive a different proxy. The production stack
   enables `TRUST_PROXY_HEADERS=true` only alongside that overwrite; direct
   deployments ignore forwarded headers and use the socket peer.
 - **Docker secrets** for `SESSION_SECRET`, `POSTGRES_PASSWORD` and
