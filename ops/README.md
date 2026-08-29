@@ -119,7 +119,9 @@ the manual alert command above after changing providers or rotating the URL.
 
 ## Restore drill
 
-An untested backup is a hypothesis. Run this once now, and quarterly after:
+An untested backup is a hypothesis. Run this once now, and quarterly after.
+`backups/` is `0700 root`, so run the drill as root from `/srv/haalkhata`
+(`sudo -i`, then `cd /srv/haalkhata`):
 
 ```sh
 docker compose -f docker-compose.prod.yml exec -T db \

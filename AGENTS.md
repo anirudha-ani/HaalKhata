@@ -267,8 +267,10 @@ with colocated tests. Mobile-specific rules:
 
 ## Deploy
 
-Self-hosted Docker, two stacks. Migrations apply automatically on container
-start in both.
+Self-hosted Docker, two stacks. Migrations apply automatically in both, on
+the first API request or readiness probe after start (`ensureMigrated()`);
+the container itself does not run them at boot, and a failed run is retried
+on the next request rather than poisoning the process.
 
 **Dev** — `docker compose up -d --build`. Postgres 17 plus the standalone
 image, web bound to `127.0.0.1:3000`, config from a plaintext `.env`. Set
