@@ -17,9 +17,14 @@ WHERE membership.group_id = groups.id
 UPDATE groups SET type = 'other'
 WHERE type NOT IN ('trip', 'home', 'couple', 'other');
 
+-- The allowlist is everything the clients' category pickers offer (shared
+-- CATEGORIES) plus the two legacy values older rows carry; it must match
+-- EXPENSE_CATEGORIES in expense.constants.ts, or a picker choice the server
+-- accepts would be refused here.
 UPDATE expenses SET category = 'other'
 WHERE category NOT IN (
-  'general', 'food', 'transport', 'lodging', 'utilities', 'shopping', 'entertainment', 'other'
+  'general', 'food', 'groceries', 'transport', 'housing', 'lodging', 'utilities',
+  'entertainment', 'travel', 'shopping', 'health', 'other'
 );
 
 -- Exact faithfully represents the already-materialized owed_cents rows when a
@@ -59,7 +64,8 @@ ALTER TABLE groups ADD CONSTRAINT chk_groups_type
   CHECK (type IN ('trip', 'home', 'couple', 'other'));
 ALTER TABLE expenses ADD CONSTRAINT chk_expenses_category
   CHECK (category IN (
-    'general', 'food', 'transport', 'lodging', 'utilities', 'shopping', 'entertainment', 'other'
+    'general', 'food', 'groceries', 'transport', 'housing', 'lodging', 'utilities',
+    'entertainment', 'travel', 'shopping', 'health', 'other'
   ));
 ALTER TABLE expenses ADD CONSTRAINT chk_expenses_split_type
   CHECK (split_type IN ('equal', 'exact', 'percent', 'shares', 'itemized'));
@@ -83,6 +89,9 @@ ALTER TABLE notifications ADD CONSTRAINT chk_notifications_type
 
 -- Down Migration
 
+-- The self-settlement and unknown-payment-handle DELETEs above are not
+-- reversed: those rows were never valid and nothing could have displayed or
+-- paid them. Only the constraints come off.
 ALTER TABLE notifications DROP CONSTRAINT IF EXISTS chk_notifications_type;
 ALTER TABLE activity DROP CONSTRAINT IF EXISTS chk_activity_type;
 ALTER TABLE payment_handles DROP CONSTRAINT IF EXISTS chk_payment_handles_method;

@@ -230,6 +230,15 @@ describe("who hears about a transaction", () => {
     expect(insertExpense).not.toHaveBeenCalled();
   });
 
+  it("stores every category the pickers offer instead of flattening it", async () => {
+    // "groceries" is on the shared CATEGORIES list both apps render, but was
+    // missing from the server allowlist, so it was silently persisted as
+    // "general" — and the database CHECK then cemented the wrong list.
+    await createExpense(PAYER, validExpenseRequest({ category: "groceries" }));
+
+    expect(vi.mocked(insertExpense).mock.calls[0]?.[0]).toMatchObject({ category: "groceries" });
+  });
+
   it("rejects oversized item names before persistence", async () => {
     await expect(
       createExpense(PAYER, validExpenseRequest({

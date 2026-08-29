@@ -1,5 +1,6 @@
 /** Expense domain constants. */
 
+import { CATEGORIES } from "@haalkhata/shared/money/money.constants";
 import { PAYMENT_METHOD_KEYS } from "@haalkhata/shared/payment/methods";
 
 /** Split types the API accepts; mirrors the split calculators in domain/splits. */
@@ -30,10 +31,14 @@ export const MAX_EXPENSE_ITEM_NAME_LENGTH = 200;
 /** Maximum free-form settlement note length. */
 export const MAX_SETTLEMENT_NOTE_LENGTH = 1000;
 
-/** Expense categories the API accepts; anything else falls back to "general". */
-export const EXPENSE_CATEGORIES = new Set([
-  "general", "food", "transport", "lodging", "utilities", "shopping", "entertainment", "other",
-]);
+/**
+ * Expense categories the API accepts; anything else falls back to "general".
+ * Everything the clients' pickers offer (the shared CATEGORIES list) plus two
+ * legacy values older rows still carry. The database CHECK in
+ * 1788220800000_enforce_domain_constraints.sql lists the same set, so a
+ * choice the pickers offer is never silently stored as "general".
+ */
+export const EXPENSE_CATEGORIES = new Set([...CATEGORIES, "lodging", "other"]);
 
 /** Payment methods accepted for a settlement; anything else falls back to "cash". */
 export const SETTLEMENT_METHODS = new Set(PAYMENT_METHOD_KEYS);
