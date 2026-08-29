@@ -8,6 +8,7 @@ import { DateField } from "@/components/ui/DateField";
 import { formatMoney } from "@haalkhata/shared/money/money";
 import { colors, radii, spacing } from "@/lib/theme/theme";
 import type { ScanController } from "../../hooks/useScan";
+import { MAX_EXPENSE_ITEM_NAME_LENGTH } from "@haalkhata/shared/text/limits";
 
 /**
  * Editable AI draft: correct items, then tap people to assign them. Renders
@@ -80,6 +81,7 @@ export function DraftEditor({
                   value={String(item.quantity)}
                 />
                 <TextInput
+                  maxLength={MAX_EXPENSE_ITEM_NAME_LENGTH}
                   onChangeText={(text) => scan.updateItem(index, { name: text })}
                   placeholder="Item"
                   placeholderTextColor={colors.inkSoft}

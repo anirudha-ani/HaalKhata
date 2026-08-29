@@ -2,6 +2,7 @@
 
 import path from "node:path";
 import { parsePhoneNumberFromString } from "libphonenumber-js";
+import { MAX_USER_NAME_LENGTH } from "@haalkhata/shared/text/limits";
 
 /**
  * Absolute lifetime of an issued browser or mobile session token (seven days).
@@ -49,8 +50,12 @@ export const AUTH_RATE_LIMIT = 10;
 /** Max phone-verification and merge attempts per account per minute. */
 export const PHONE_VERIFICATION_RATE_LIMIT = 5;
 
-/** Maximum persisted display-name length. Names are copied into fan-out rows. */
-export const MAX_USER_NAME_LENGTH = 120;
+/**
+ * Maximum persisted display-name length. Names are copied into fan-out rows.
+ * Re-exported from the shared package so both clients bound their inputs to
+ * the value the server enforces.
+ */
+export { MAX_USER_NAME_LENGTH };
 
 /** Lowest signed int32 value representable by the MergePreview protobuf. */
 export const PROTO_INT32_MIN = -2_147_483_648;

@@ -7,6 +7,7 @@ import { formatMoney, parseMoneyInput } from "@haalkhata/shared/money/money";
 import { percentOfItems } from "@/lib/expense/splitForm";
 import { Avatar } from "@/components/ui/Avatar";
 import { MAX_ASSIGNEE_WEIGHT, TIP_PERCENT_PRESETS } from "./itemGrid.constants";
+import { MAX_EXPENSE_ITEM_NAME_LENGTH } from "@haalkhata/shared/text/limits";
 
 /** One editable line item, however the owning form stores the rest of its draft. */
 export interface GridItem {
@@ -198,6 +199,7 @@ export function ItemGrid({
                     type="text"
                     placeholder="Item name"
                     aria-label={`Name for item ${index + 1}`}
+                    maxLength={MAX_EXPENSE_ITEM_NAME_LENGTH}
                     value={item.name}
                     onChange={(event) => onUpdateItem(index, { name: event.target.value })}
                     className={`${cellClass} w-32 min-w-0 sm:w-full sm:min-w-36`}

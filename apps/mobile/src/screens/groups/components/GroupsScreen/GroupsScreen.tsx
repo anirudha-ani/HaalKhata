@@ -17,6 +17,7 @@ import { CURRENCIES } from "@haalkhata/shared/money/money.constants";
 import { colors, fonts, radii, spacing } from "@/lib/theme/theme";
 import { GROUP_TYPES, groupEmoji } from "../../constants/groupTypes";
 import { useGroups } from "./hooks/useGroups";
+import { MAX_GROUP_NAME_LENGTH } from "@haalkhata/shared/text/limits";
 
 /**
  * Renders the groups screen: a card list of group summaries (member count and
@@ -107,6 +108,7 @@ export function GroupsScreen() {
           <View style={styles.form}>
             <TextField
               autoFocus
+              maxLength={MAX_GROUP_NAME_LENGTH}
               onChangeText={groupsState.setName}
               placeholder="Group name (e.g. Sundarban Trip)"
               value={groupsState.name}

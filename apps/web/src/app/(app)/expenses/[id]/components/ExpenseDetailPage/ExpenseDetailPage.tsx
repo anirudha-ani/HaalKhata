@@ -15,6 +15,7 @@ import { formatMoney } from "@haalkhata/shared/money/money";
 import { localDateTime } from "@haalkhata/shared/time/localTime";
 import { itemShareCents } from "@haalkhata/shared/expense/splits";
 import { useExpenseDetail } from "./hooks/useExpenseDetail";
+import { MAX_COMMENT_LENGTH } from "@haalkhata/shared/text/limits";
 
 /**
  * Renders a single expense: header (description, date, category, amount),
@@ -351,6 +352,7 @@ export function ExpenseDetailPage({ expenseId }: { expenseId: string }) {
           <input
             value={expenseDetail.comment}
             onChange={(event) => expenseDetail.setComment(event.target.value)}
+            maxLength={MAX_COMMENT_LENGTH}
             placeholder="Add a comment…"
             aria-label="Add a comment"
             className="min-w-0 flex-1 rounded-xl border border-line bg-card px-3.5 py-2.5 text-sm focus:border-brand-500 focus:outline-none"

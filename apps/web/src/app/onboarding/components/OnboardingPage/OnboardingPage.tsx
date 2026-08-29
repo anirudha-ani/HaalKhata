@@ -5,6 +5,7 @@ import { CURRENCIES } from "@haalkhata/shared/money/money.constants";
 import { MergePreview } from "@/components/account/MergePreview";
 import { PhoneField } from "@/components/ui/PhoneField";
 import { useOnboarding } from "./hooks/useOnboarding";
+import { MAX_USER_NAME_LENGTH } from "@haalkhata/shared/text/limits";
 
 /** Shared styling for the onboarding inputs. */
 const inputClass =
@@ -123,6 +124,7 @@ export function OnboardingPage() {
                 className={inputClass}
                 value={onboarding.name}
                 onChange={(event) => onboarding.setName(event.target.value)}
+                maxLength={MAX_USER_NAME_LENGTH}
                 autoComplete="name"
                 required
               />

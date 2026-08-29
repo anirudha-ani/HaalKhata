@@ -13,6 +13,7 @@ import { useNewExpense } from "../../hooks/useNewExpense";
 import type { useNewExpenseAPI } from "../../hooks/useNewExpenseAPI";
 import { PayerEditor } from "../PayerEditor/PayerEditor";
 import { SplitEditor } from "../SplitEditor/SplitEditor";
+import { MAX_EXPENSE_DESCRIPTION_LENGTH, MAX_EXPENSE_NOTES_LENGTH } from "@haalkhata/shared/text/limits";
 
 /**
  * Renders the full expense form: the group/friend context picker, the basic
@@ -115,6 +116,7 @@ export function ExpenseForm({
       {/* Basics */}
       <View style={styles.section}>
         <TextField
+          maxLength={MAX_EXPENSE_DESCRIPTION_LENGTH}
           onChangeText={form.setDescription}
           placeholder="What was it for?"
           value={form.description}
@@ -149,6 +151,7 @@ export function ExpenseForm({
       <SplitEditor form={form} />
 
       <TextField
+        maxLength={MAX_EXPENSE_NOTES_LENGTH}
         multiline
         onChangeText={form.setNotes}
         placeholder="Notes (optional)"

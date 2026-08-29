@@ -10,6 +10,7 @@ import { ReceiptPanel } from "../ReceiptPanel/ReceiptPanel";
 import { SplitEditor } from "../SplitEditor/SplitEditor";
 import { useNewExpense } from "../../hooks/useNewExpense";
 import type { useNewExpenseAPI } from "../../hooks/useNewExpenseAPI";
+import { MAX_EXPENSE_DESCRIPTION_LENGTH, MAX_EXPENSE_NOTES_LENGTH } from "@haalkhata/shared/text/limits";
 
 /** Shared className for the text-style inputs and selects in this form. */
 const inputClass =
@@ -64,6 +65,7 @@ export function ExpenseForm({
           className={inputClass}
           placeholder="What was it for?"
           aria-label="Description"
+          maxLength={MAX_EXPENSE_DESCRIPTION_LENGTH}
           value={form.description}
           onChange={(event) => form.setDescription(event.target.value)}
         />
@@ -123,6 +125,7 @@ export function ExpenseForm({
         className={`${inputClass} min-h-20 text-base sm:text-sm`}
         placeholder="Notes (optional)"
         aria-label="Notes"
+        maxLength={MAX_EXPENSE_NOTES_LENGTH}
         value={form.notes}
         onChange={(event) => form.setNotes(event.target.value)}
       />

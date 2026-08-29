@@ -55,7 +55,21 @@ import {
 } from "@/server/common/ledgerLocks";
 import { normalizeCurrencyCode } from "@/server/common/validation";
 import { toPublicUser } from "@/server/auth/usecase/user.mapper";
-import { SPLIT_TYPES, ISO_DATE_PATTERN, MAX_EXPENSE_PARTICIPANTS, MAX_ITEM_ASSIGNMENTS, MAX_MONEY_CENTS, MAX_EXPENSE_NOTES_LENGTH, MAX_EXPENSE_ITEM_NAME_LENGTH, MAX_SETTLEMENT_NOTE_LENGTH, EXPENSE_CATEGORIES, SETTLEMENT_METHODS, MAX_COMMENT_LENGTH, COMMENT_PREVIEW_LENGTH } from "@/server/expense/expense.constants";
+import {
+  COMMENT_PREVIEW_LENGTH,
+  EXPENSE_CATEGORIES,
+  ISO_DATE_PATTERN,
+  MAX_COMMENT_LENGTH,
+  MAX_EXPENSE_DESCRIPTION_LENGTH,
+  MAX_EXPENSE_ITEM_NAME_LENGTH,
+  MAX_EXPENSE_NOTES_LENGTH,
+  MAX_EXPENSE_PARTICIPANTS,
+  MAX_ITEM_ASSIGNMENTS,
+  MAX_MONEY_CENTS,
+  MAX_SETTLEMENT_NOTE_LENGTH,
+  SETTLEMENT_METHODS,
+  SPLIT_TYPES,
+} from "@/server/expense/expense.constants";
 import { toExpense, toSettlement } from "./expense.mapper";
 
 /**
@@ -110,7 +124,9 @@ async function buildExpenseWrite(
 ): Promise<ExpenseWrite> {
   const description = request.description.trim();
   if (description.length === 0) invalid("description is required");
-  if (description.length > 200) invalid("description is too long (max 200 characters)");
+  if (description.length > MAX_EXPENSE_DESCRIPTION_LENGTH) {
+    invalid(`description is too long (max ${MAX_EXPENSE_DESCRIPTION_LENGTH} characters)`);
+  }
   if (request.notes.length > MAX_EXPENSE_NOTES_LENGTH) {
     invalid(`notes are too long (max ${MAX_EXPENSE_NOTES_LENGTH} characters)`);
   }

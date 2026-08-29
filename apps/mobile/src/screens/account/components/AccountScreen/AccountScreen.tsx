@@ -13,6 +13,7 @@ import { TextField } from "@/components/ui/TextField";
 import { CURRENCIES } from "@haalkhata/shared/money/money.constants";
 import { colors, radii, spacing } from "@/lib/theme/theme";
 import { useAccountAPI, useProfileForm } from "./hooks/useAccount";
+import { MAX_USER_NAME_LENGTH } from "@haalkhata/shared/text/limits";
 
 /**
  * Renders the account screen: a spinner until the signed-in user is loaded,
@@ -55,7 +56,12 @@ function ProfileForm({ me: currentUser }: { me: User }) {
       </View>
 
       <View style={styles.formCard}>
-        <TextField label="Display name" onChangeText={form.setName} value={form.name} />
+        <TextField
+          label="Display name"
+          maxLength={MAX_USER_NAME_LENGTH}
+          onChangeText={form.setName}
+          value={form.name}
+        />
         <View style={styles.currencyBlock}>
           <Text style={styles.currencyLabel}>Default currency</Text>
           <View style={styles.currencyChips}>

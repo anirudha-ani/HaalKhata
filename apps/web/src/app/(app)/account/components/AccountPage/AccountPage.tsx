@@ -12,6 +12,7 @@ import { useHydrated } from "@/lib/hooks/useHydrated";
 import { CURRENCIES } from "@haalkhata/shared/money/money.constants";
 import { HANDLE_METHODS } from "@haalkhata/shared/payment/methods";
 import { useAccountAPI, useProfileForm } from "./hooks/useAccount";
+import { MAX_USER_NAME_LENGTH } from "@haalkhata/shared/text/limits";
 
 /** The two things a bank will accept as a Zelle identity. */
 const ZELLE_MODES = [
@@ -124,6 +125,7 @@ function ProfileForm({ me: currentUser }: { me: User }) {
           <input
             value={form.name}
             onChange={(event) => form.setName(event.target.value)}
+            maxLength={MAX_USER_NAME_LENGTH}
             required
             className="mt-1 w-full rounded-xl border border-line bg-card px-3.5 py-2.5 focus:border-brand-500 focus:outline-none"
           />

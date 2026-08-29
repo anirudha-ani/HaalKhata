@@ -18,6 +18,7 @@ import {
 import { Avatar } from "@/components/ui/Avatar";
 import { Modal } from "@/components/ui/Modal";
 import { Money } from "@/components/ui/Money";
+import { MAX_SETTLEMENT_NOTE_LENGTH } from "@haalkhata/shared/text/limits";
 
 /** One balance the payment can pay down: a group's, or the pair's direct slate. */
 interface OwingScope {
@@ -383,6 +384,7 @@ export function SettleUpModal({
           type="text"
           placeholder="Note (optional)"
           aria-label="Note"
+          maxLength={MAX_SETTLEMENT_NOTE_LENGTH}
           value={note}
           onChange={(changeEvent) => setNote(changeEvent.target.value)}
           className="w-full rounded-xl border border-line bg-card px-3 py-2.5 text-sm focus:border-brand-500 focus:outline-none"

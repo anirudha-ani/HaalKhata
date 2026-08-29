@@ -1,6 +1,7 @@
 /** Group domain constants. */
 
 import { OWNER_ROLE } from "@haalkhata/shared/group/roles";
+import { MAX_GROUP_NAME_LENGTH } from "@haalkhata/shared/text/limits";
 
 /** Group categories the API accepts; anything else falls back to "other". */
 export const GROUP_TYPES = new Set(["trip", "home", "couple", "other"]);
@@ -12,8 +13,12 @@ export const GROUP_TYPES = new Set(["trip", "home", "couple", "other"]);
  */
 export { OWNER_ROLE };
 
-/** Maximum persisted group-name length. Names fan out into activity and notifications. */
-export const MAX_GROUP_NAME_LENGTH = 120;
+/**
+ * Maximum persisted group-name length. Names fan out into activity and
+ * notifications. Re-exported from the shared package so both clients bound
+ * their inputs to the value the server enforces.
+ */
+export { MAX_GROUP_NAME_LENGTH };
 
 /** Maximum member identifiers accepted by one create/add request. */
 export const MAX_GROUP_MEMBER_IDS_PER_REQUEST = 100;

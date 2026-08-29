@@ -14,6 +14,7 @@ import { MONEY_KEYS } from "@haalkhata/shared/api/queryKeys";
 import { centsToInput, formatMoney, parseMoneyInput } from "@haalkhata/shared/money/money";
 import { colors, radii, spacing } from "@/lib/theme/theme";
 import { PAYMENT_METHODS } from "@haalkhata/shared/payment/methods";
+import { MAX_SETTLEMENT_NOTE_LENGTH } from "@haalkhata/shared/text/limits";
 
 /**
  * Renders a sheet for recording a settlement payment: the signed-in user pays
@@ -107,7 +108,12 @@ export function SettleUpModal({
           ))}
         </View>
 
-        <TextField onChangeText={setNote} placeholder="Note (optional)" value={note} />
+        <TextField
+          maxLength={MAX_SETTLEMENT_NOTE_LENGTH}
+          onChangeText={setNote}
+          placeholder="Note (optional)"
+          value={note}
+        />
 
         {error ? <Text style={styles.error}>{error}</Text> : null}
 

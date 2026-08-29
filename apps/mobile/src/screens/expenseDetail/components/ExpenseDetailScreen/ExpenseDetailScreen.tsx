@@ -15,6 +15,7 @@ import { formatMoney } from "@haalkhata/shared/money/money";
 import { localDateTime } from "@haalkhata/shared/time/localTime";
 import { colors, fonts, radii, spacing } from "@/lib/theme/theme";
 import { useExpenseDetail } from "./hooks/useExpenseDetail";
+import { MAX_COMMENT_LENGTH } from "@haalkhata/shared/text/limits";
 
 /**
  * Renders a single expense: header (description, date, category, amount),
@@ -215,6 +216,7 @@ export function ExpenseDetailScreen({ expenseId }: { expenseId: string }) {
         ))}
         <View style={styles.composer}>
           <TextInput
+            maxLength={MAX_COMMENT_LENGTH}
             onChangeText={expenseDetail.setComment}
             placeholder="Add a comment…"
             placeholderTextColor={colors.inkSoft}

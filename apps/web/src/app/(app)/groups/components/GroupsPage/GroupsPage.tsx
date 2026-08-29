@@ -18,6 +18,7 @@ import {
   noGroupsMessage,
 } from "../../constants/groupTypes";
 import { useGroups } from "./hooks/useGroups";
+import { MAX_GROUP_NAME_LENGTH } from "@haalkhata/shared/text/limits";
 
 /**
  * Renders the groups page: a card grid of group summaries (member count and
@@ -161,6 +162,7 @@ export function GroupsPage() {
               aria-label="Group name"
               value={groupsState.name}
               onChange={(event) => groupsState.setName(event.target.value)}
+              maxLength={MAX_GROUP_NAME_LENGTH}
               required
               className="w-full rounded-xl border border-line bg-card px-3.5 py-3 focus:border-brand-500 focus:outline-none"
             />
