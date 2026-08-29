@@ -1686,3 +1686,52 @@ west of Greenwich).
   server-side; events within hours of a month boundary can file under the
   neighbouring month. Fixing it needs the viewer's timezone on the RPC —
   deferred until someone actually trips on it.
+
+## §25 Closing the client half of the security audit (2026-08-29)
+
+The 2026-08-23 audit (SECURITY-AUDIT.md) was worked through as one commit
+per finding. Reviewing those commits showed a pattern: the server rule
+landed, the clients did not — a control the server now refuses stayed on
+screen, a promise the server no longer keeps stayed in the copy. This section
+records what was completed, so the contract and the two apps say the same
+thing.
+
+- **Settled expenses are locked, and the detail view knows it.**
+  `GetExpenseResponse.locked_by_settlement` carries the same predicate the
+  mutation paths enforce (a settlement in the scope postdating the expense).
+  Both clients show Edit/Delete only to the creator of an unlocked expense,
+  and otherwise explain and offer a correcting expense. Non-creators never
+  see the buttons the server always denied them.
+- **Leaving a group is reachable.** RemoveMember lets a zero-balance
+  non-owner remove themselves (§3i); the members list on both apps now has
+  "Leave group" on your own row and "Remove" on every other row for the
+  owner. The shared `group/roles.ts` spells the owner role once.
+- **Add-people no longer promises a shadow account** (§3i, revised).
+- **Private contact fields stay private in the UI.** Search matches names
+  only; the friend header shows sign-in state instead of an empty line.
+- **Text bounds are one constant** — `@haalkhata/shared/text/limits.ts` —
+  re-exported by the server's domain constants and applied as `maxLength` on
+  every bounded input in both apps, so a client stops at exactly the length
+  the server (and the matching database CHECK) accepts.
+- **A refused ledger read is shown as refused.** The dashboard and friends
+  screens render the server's rate-limit message instead of a zero balance
+  or an empty friends list.
+- **Categories:** the server allowlist is the shared `CATEGORIES` list plus
+  the legacy `lodging`/`other`, and the database CHECK matches; picker
+  choices are stored verbatim instead of flattened to "general".
+
+Server-side corrections made in the same pass: one-off ledger locks are per
+participant rather than per pair (the pair set overflowed Postgres's shared
+lock table at large casts); the server-component session guard parses the
+Cookie header with the same duplicate-rejecting parser as Connect; the text
+and currency constraint migration normalizes legacy rows before adding its
+CHECKs; the backup-failure notifier is allowed AF_UNIX so `logger` no longer
+kills it before the HTTPS alert; and Caddy strips `X-Real-IP`.
+
+Still open from the audit, deliberately: the mobile app has no Google
+sign-in (password RPCs are disabled in production, so a release build cannot
+sign in — a feature, not a fix); ListGroups / ListExpenses /
+GetGroupBalances / GetFriendLedger are as expensive as the rate-limited
+reads and remain unlimited; and group-scope immutability is group-wide after
+any settlement — narrowing it needs a stored `simplified` flag on
+settlements.
