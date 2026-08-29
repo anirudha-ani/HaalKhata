@@ -9,7 +9,7 @@ vi.mock("@/server/common/db", () => ({
   queryOne: vi.fn(),
 }));
 vi.mock("@/server/common/ledgerLocks", () => ({
-  lockPairLedgers: vi.fn(),
+  lockParticipantLedgers: vi.fn(),
   withLedgerTransaction: vi.fn(),
 }));
 

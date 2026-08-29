@@ -56,7 +56,7 @@ vi.mock("@/server/expense/repo/settlements.repo", () => ({
 vi.mock("@/server/common/ledgerLocks", () => ({
   lockExpenseLedger: vi.fn(),
   lockGroupLedgers: vi.fn(),
-  lockPairLedgers: vi.fn(),
+  lockParticipantLedgers: vi.fn(),
   withLedgerTransaction: vi.fn(
     (operation: (client: PoolClient) => Promise<unknown>) => operation(transactionClient),
   ),
@@ -104,7 +104,7 @@ import {
 import {
   lockExpenseLedger,
   lockGroupLedgers,
-  lockPairLedgers,
+  lockParticipantLedgers,
 } from "@/server/common/ledgerLocks";
 import { insertActivity, listActivityForExpense } from "@/server/social/repo/activity.repo";
 import { insertNotifications } from "@/server/social/repo/notifications.repo";
@@ -449,7 +449,7 @@ describe("who hears about a transaction", () => {
       updateExpense(PAYER, "expense-1", validExpenseRequest({ groupId: "" })),
     ).rejects.toThrow(/add a correction instead/);
 
-    expect(lockPairLedgers).toHaveBeenCalledWith(transactionClient, [PAYER, OWER]);
+    expect(lockParticipantLedgers).toHaveBeenCalledWith(transactionClient, [PAYER, OWER]);
     expect(scopeHasSettlements).toHaveBeenCalledWith(
       null,
       [PAYER, OWER],

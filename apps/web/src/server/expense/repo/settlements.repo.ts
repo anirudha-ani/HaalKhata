@@ -2,7 +2,7 @@
 
 import type { PoolClient } from "pg";
 import { newId, query, queryOne } from "@/server/common/db";
-import { lockPairLedgers, withLedgerTransaction } from "@/server/common/ledgerLocks";
+import { lockParticipantLedgers, withLedgerTransaction } from "@/server/common/ledgerLocks";
 
 /** One row of the settlements table (column names mirror SQL). */
 export interface SettlementRow {
@@ -48,7 +48,7 @@ export async function withSettlementPairLock<Outcome>(
   operation: (client: PoolClient) => Promise<Outcome>,
 ): Promise<Outcome> {
   return withLedgerTransaction(async (client) => {
-    await lockPairLedgers(client, [firstUserId, secondUserId]);
+    await lockParticipantLedgers(client, [firstUserId, secondUserId]);
     return operation(client);
   });
 }

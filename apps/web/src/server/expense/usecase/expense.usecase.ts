@@ -50,7 +50,7 @@ import { denied, invalid, notFound } from "@/server/common/errors";
 import {
   lockExpenseLedger,
   lockGroupLedgers,
-  lockPairLedgers,
+  lockParticipantLedgers,
   withLedgerTransaction,
 } from "@/server/common/ledgerLocks";
 import { normalizeCurrencyCode } from "@/server/common/validation";
@@ -419,7 +419,7 @@ export async function createExpense(userId: string, request: CreateExpenseReques
       await lockGroupLedgers(client, [write.groupId]);
       await assertLockedGroupParticipants(write.groupId, userId, participantIds, client);
     } else {
-      await lockPairLedgers(client, participantIds);
+      await lockParticipantLedgers(client, participantIds);
     }
     return insertExpense(write, client);
   });
@@ -525,7 +525,7 @@ export async function updateExpense(
         client,
       );
     } else {
-      await lockPairLedgers(client, participantIds);
+      await lockParticipantLedgers(client, participantIds);
     }
     await assertExpenseScopeMutable(
       current.group_id,
@@ -559,7 +559,7 @@ export async function deleteExpense(userId: string, expenseId: string): Promise<
     if (existing.group_id) {
       await lockGroupLedgers(client, [existing.group_id]);
     } else {
-      await lockPairLedgers(client, participantIds);
+      await lockParticipantLedgers(client, participantIds);
     }
     await assertExpenseScopeMutable(
       existing.group_id,

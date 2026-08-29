@@ -2,7 +2,7 @@
 
 import { describe, expect, it, vi } from "vitest";
 import type { PoolClient } from "pg";
-import { lockGroupLedgers, lockPairLedgers } from "./ledgerLocks";
+import { lockGroupLedgers, lockParticipantLedgers } from "./ledgerLocks";
 
 /**
  * Builds a query-recording transaction client used to inspect lock keys.
@@ -23,15 +23,26 @@ describe("ledger advisory locks", () => {
     expect(client.query).toHaveBeenNthCalledWith(2, expect.any(String), ["ledger:group:group-z"]);
   });
 
-  it("locks every participant pair in deterministic order", async () => {
+  it("locks each participant once in deterministic order", async () => {
     const client = clientStub();
 
-    await lockPairLedgers(client, ["user-c", "user-a", "user-b"]);
+    await lockParticipantLedgers(client, ["user-c", "user-a", "user-b", "user-a"]);
 
     expect(vi.mocked(client.query).mock.calls.map((call) => call[1])).toEqual([
-      ["ledger:pair:user-a|user-b"],
-      ["ledger:pair:user-a|user-c"],
-      ["ledger:pair:user-b|user-c"],
+      ["ledger:participant:user-a"],
+      ["ledger:participant:user-b"],
+      ["ledger:participant:user-c"],
     ]);
+  });
+
+  it("grows linearly with the cast rather than per pair", async () => {
+    const client = clientStub();
+    const cast = Array.from({ length: 100 }, (_unused, index) => `user-${index}`);
+
+    await lockParticipantLedgers(client, cast);
+
+    // 100 locks, not the 4,950 a pair set would need — which is more than
+    // Postgres's shared lock table holds under the production settings.
+    expect(client.query).toHaveBeenCalledTimes(cast.length);
   });
 });
