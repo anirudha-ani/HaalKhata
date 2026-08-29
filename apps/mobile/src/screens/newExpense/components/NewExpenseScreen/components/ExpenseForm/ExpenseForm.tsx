@@ -40,21 +40,24 @@ export function ExpenseForm({
 
   return (
     <View style={styles.form}>
-      {/* Who's on this: any number of friends, or one group instead. */}
+      {/* Who's on this: any number of friends, or one group instead. Locked
+          while editing — the server pins a saved expense to its scope, so
+          the chips dim instead of looking tappable and doing nothing. */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>WHO&apos;S ON THIS?</Text>
         {form.friends.length > 0 ? (
           <View style={styles.contextGroup}>
-            <Text style={styles.contextLabel}>Tap everyone sharing this</Text>
+            <Text style={styles.contextLabel}>
+              {form.isEdit ? "Who's on this can't change once saved" : "Tap everyone sharing this"}
+            </Text>
             <View style={styles.chips}>
               {form.friends.map((friend) =>
                 friend.user ? (
                   <Chip
+                    disabled={form.isEdit}
                     key={friend.user.id}
                     label={friend.user.name}
-                    onPress={() =>
-                      form.isEdit ? undefined : form.toggleFriend(friend.user?.id ?? "")
-                    }
+                    onPress={() => form.toggleFriend(friend.user?.id ?? "")}
                     selected={form.friendIds.includes(friend.user.id)}
                   />
                 ) : null,
@@ -69,16 +72,15 @@ export function ExpenseForm({
               {form.groups.map((summary) =>
                 summary.group ? (
                   <Chip
+                    disabled={form.isEdit}
                     key={summary.group.id}
                     label={summary.group.name}
                     // Re-tapping the selected group clears it, which is the
                     // only way back to a one-off with no extra control.
                     onPress={() =>
-                      form.isEdit
-                        ? undefined
-                        : form.setGroupId(
-                            form.groupId === summary.group?.id ? "" : (summary.group?.id ?? ""),
-                          )
+                      form.setGroupId(
+                        form.groupId === summary.group?.id ? "" : (summary.group?.id ?? ""),
+                      )
                     }
                     selected={form.groupId === summary.group.id}
                   />
