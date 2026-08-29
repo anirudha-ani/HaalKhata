@@ -29,6 +29,7 @@ export function toExpense(expenseRow: ExpenseRow, children: ExpenseChildren) {
     createdAt: expenseRow.created_at,
     taxCents: expenseRow.tax_cents,
     tipCents: expenseRow.tip_cents,
+    deletedAt: expenseRow.deleted_at ?? "",
     payers: (children.payers.get(expenseRow.id) ?? []).map((payer) => ({
       userId: payer.user_id,
       amountCents: payer.amount_cents,

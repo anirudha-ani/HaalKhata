@@ -238,7 +238,7 @@ export async function listActivityForExpense(expenseId: string): Promise<Activit
   return query<ActivityRow>(
     `SELECT * FROM activity
       WHERE link = $1
-        AND type IN ('expense_added', 'expense_updated')
+        AND type IN ('expense_added', 'expense_updated', 'expense_deleted')
       ORDER BY created_at ASC, id ASC`,
     [`/expenses/${expenseId}`],
   );

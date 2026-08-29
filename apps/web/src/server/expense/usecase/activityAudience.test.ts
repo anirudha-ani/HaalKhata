@@ -497,20 +497,50 @@ describe("who hears about a transaction", () => {
     expect(detail.hasLaterSettlement).toBe(false);
   });
 
-  it("refuses to delete an expense after its group ledger has a settlement", async () => {
+  it("deletes an expense even after its group ledger has a settlement", async () => {
+    // Owed-to-zero is what delete means; the payment stays and the row stays
+    // visible, so the ledger explains the refund it now shows.
     vi.mocked(scopeHasSettlements).mockResolvedValue(true);
 
-    await expect(deleteExpense(PAYER, "expense-1")).rejects.toThrow(/cannot be deleted/);
+    await deleteExpense(PAYER, "expense-1");
 
     expect(lockExpenseLedger).toHaveBeenCalledWith(transactionClient, "expense-1");
     expect(lockGroupLedgers).toHaveBeenCalledWith(transactionClient, [GOA_TRIP]);
-    expect(scopeHasSettlements).toHaveBeenCalledWith(
-      GOA_TRIP,
-      [PAYER, OWER],
-      "42",
-      transactionClient,
+    expect(softDeleteExpense).toHaveBeenCalledWith("expense-1", transactionClient);
+    // The feed line links to the expense's own page, which still resolves.
+    expect(insertActivity).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "expense_deleted", link: "/expenses/expense-1" }),
     );
+  });
+
+  it("keeps a deleted expense readable, marked deleted, and closed to comments", async () => {
+    vi.mocked(findExpenseById).mockResolvedValue({
+      ...(await findExpenseById("expense-1"))!,
+      deleted_at: "2026-08-10T00:00:00Z",
+    });
+    vi.mocked(listCommentsByExpense).mockResolvedValue([]);
+    vi.mocked(listActivityForExpense).mockResolvedValue([]);
+    vi.mocked(userNetInGroup).mockResolvedValue(0);
+
+    const detail = await getExpense(OWER, "expense-1");
+
+    expect(detail.expense.deletedAt).toBe("2026-08-10T00:00:00Z");
+    await expect(addComment(OWER, "expense-1", "why?")).rejects.toThrow(/was deleted/);
+    await expect(updateExpense(PAYER, "expense-1", validExpenseRequest())).rejects.toThrow(
+      /expense not found/,
+    );
+  });
+
+  it("still refuses to delete an expense twice", async () => {
+    vi.mocked(findExpenseById).mockResolvedValue({
+      ...(await findExpenseById("expense-1"))!,
+      deleted_at: "2026-08-10T00:00:00Z",
+    });
+
+    await expect(deleteExpense(PAYER, "expense-1")).rejects.toThrow(/expense not found/);
+
     expect(softDeleteExpense).not.toHaveBeenCalled();
+    expect(insertActivity).not.toHaveBeenCalled();
   });
 
   it("a group expense is announced to its participants, not the whole group", async () => {

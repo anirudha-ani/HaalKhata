@@ -321,34 +321,6 @@ async function assertLockedGroupParticipants(
   }
 }
 
-/**
- * Refuses to delete an expense once a settlement postdates it in its scope.
- *
- * A later payment was made against the balance this expense created; deleting
- * the expense would leave that payment explaining nothing — the payer would
- * appear to be owed a refund with no visible reason. Editing is the correction
- * path instead: it runs under the same ledger lock, so it cannot race a
- * settlement, and the derived balance simply rebalances against what was
- * paid.
- *
- * @param groupId - Group scope, or null for the participants' one-off scope.
- * @param participantIds - Participants of the expense being deleted.
- * @param expenseEventOrder - Monotonic creation order of the expense being deleted.
- * @param client - Transaction client holding every matching ledger lock.
- * @returns A promise that resolves when no later settlement would be orphaned.
- */
-async function assertExpenseDeletable(
-  groupId: string | null,
-  participantIds: string[],
-  expenseEventOrder: string,
-  client: PoolClient,
-): Promise<void> {
-  if (await scopeHasSettlements(groupId, participantIds, expenseEventOrder, client)) {
-    invalid(
-      "a payment was recorded after this expense, so it cannot be deleted; edit it to what it should have been instead",
-    );
-  }
-}
 
 /**
  * Rebuilds the write shape used for deletion activity from stored rows.
@@ -410,7 +382,9 @@ async function recordExpenseActivity(
     actorId,
     type: `expense_${verb}`,
     message: `${actor.name} ${verb} "${write.description}" (${formatMoney(write.amountCents, write.currency)})${locationSuffix}`,
-    link: verb === "deleted" ? (write.groupId ? `/groups/${write.groupId}` : "/friends") : `/expenses/${expenseId}`,
+    // A deleted expense still has a page — it stays readable, marked deleted —
+    // and the detail view reads this row back as "deleted by X on Y".
+    link: `/expenses/${expenseId}`,
     audience,
     amountCents: write.amountCents,
     currency: write.currency,
@@ -421,7 +395,7 @@ async function recordExpenseActivity(
       type: `expense_${verb}`,
       title: `${actor.name} ${verb} "${write.description}"`,
       body: group ? group.name : "One-off expense",
-      link: verb === "deleted" ? "" : `/expenses/${expenseId}`,
+      link: `/expenses/${expenseId}`,
     },
   );
 }
@@ -543,8 +517,7 @@ async function assertCanDelete(
  * Allowed after a settlement in the scope: the edit runs under the ledger
  * lock, so it cannot race the settlement, and the derived balance rebalances
  * against what was already paid — whoever paid more than their corrected
- * share is owed the difference, whoever paid less owes it. Only deletion is
- * refused then (see {@link deleteExpense}).
+ * share is owed the difference, whoever paid less owes it.
  *
  * @param userId - Authenticated caller performing the update.
  * @param expenseId - Id of the expense to update.
@@ -599,10 +572,17 @@ export async function updateExpense(
  * Soft-deletes an expense and fans out a "deleted" activity + notifications
  * built from the expense's stored contents.
  *
+ * The row stays: it is returned by list and detail reads marked deleted, so
+ * history stays legible, but it contributes nothing to any balance from here
+ * on. Payments already recorded against it are not touched — deleting an
+ * expense somebody has paid for leaves them owed a refund, and the
+ * struck-through row is what explains it. The ledger locks are still taken
+ * so the deletion cannot race a settlement being validated against it.
+ *
  * @param userId - Authenticated caller performing the deletion.
  * @param expenseId - Id of the expense to delete.
- * @throws UsecaseError if the expense is missing/deleted, the caller lacks
- *   access, or a settlement postdates the expense in its scope.
+ * @throws UsecaseError if the expense is missing/already deleted or the
+ *   caller is not its creator.
  */
 export async function deleteExpense(userId: string, expenseId: string): Promise<void> {
   const deletedWrite = await withLedgerTransaction(async (client) => {
@@ -617,12 +597,6 @@ export async function deleteExpense(userId: string, expenseId: string): Promise<
     } else {
       await lockParticipantLedgers(client, participantIds);
     }
-    await assertExpenseDeletable(
-      existing.group_id,
-      participantIds,
-      existing.ledger_event_order,
-      client,
-    );
     await softDeleteExpense(expenseId, client);
     return storedExpenseWrite(existing, children);
   });
@@ -662,22 +636,27 @@ export async function listExpenses(
   filter: { groupId?: string; withUserId?: string },
 ) {
   let rows: ExpenseRow[];
+  // Deleted rows are listed too — struck through on every client — so a
+  // payment made against a since-deleted expense keeps the row that explains
+  // it. They contribute nothing to the balance math, which reads its own,
+  // deleted-excluded queries.
   if (filter.groupId) {
     if (!(await isMember(filter.groupId, userId))) {
       denied("you are not a member of this group");
     }
-    rows = await listExpensesByGroup(filter.groupId);
+    rows = await listExpensesByGroup(filter.groupId, undefined, true);
   } else if (filter.withUserId) {
-    rows = await listOneOffExpensesBetween(userId, filter.withUserId);
+    rows = await listOneOffExpensesBetween(userId, filter.withUserId, undefined, true);
   } else {
-    rows = await listExpensesInvolvingUser(userId);
+    rows = await listExpensesInvolvingUser(userId, true);
   }
   const children = await loadExpenseChildren(rows.map((expenseRow) => expenseRow.id));
 
   // Settledness inputs: the viewer's net per group scope, and per one-off
   // counterparty. Which rows count as settled is decided by the pure
   // settledExpenseIds — this block only gathers the ledger numbers it needs.
-  const participants = rows.map((expenseRow) => ({
+  // A deleted expense is never "settled": nothing was pending from it.
+  const participants = rows.filter((expenseRow) => !expenseRow.deleted_at).map((expenseRow) => ({
     id: expenseRow.id,
     groupId: expenseRow.group_id ?? "",
     participantIds: [
@@ -734,12 +713,15 @@ async function getExpenseProto(expenseId: string) {
  *
  * @param userId - Authenticated caller; must be allowed to view the expense.
  * @param expenseId - Id of the expense to fetch.
- * @returns The expense, its comments (with authors), and referenced users.
- * @throws UsecaseError if the expense is missing/deleted or the caller lacks access.
+ * @returns The expense (deleted ones included, marked by `deletedAt`), its
+ *   comments (with authors), and referenced users.
+ * @throws UsecaseError if the expense is missing or the caller lacks access.
  */
 export async function getExpense(userId: string, expenseId: string) {
   const expenseRow = await findExpenseById(expenseId);
-  if (!expenseRow || expenseRow.deleted_at) notFound("expense not found");
+  // A deleted expense still has a page: the feed line that announced the
+  // deletion links here, and the row explains any payment left behind.
+  if (!expenseRow) notFound("expense not found");
   await assertCanTouch(userId, expenseRow);
   const children = await loadExpenseChildren([expenseId]);
   const comments = await listCommentsByExpense(expenseId);
@@ -831,12 +813,15 @@ export async function getExpense(userId: string, expenseId: string) {
  * @param expenseId - Id of the expense being commented on.
  * @param body - Comment text; trimmed, must be non-empty.
  * @returns The stored comment (with author) as a proto message init shape.
- * @throws UsecaseError if the expense is missing/deleted, the caller lacks
+ * @throws UsecaseError if the expense is missing or deleted, the caller lacks
  *   access, or the comment is empty.
  */
 export async function addComment(userId: string, expenseId: string, body: string) {
   const expenseRow = await findExpenseById(expenseId);
-  if (!expenseRow || expenseRow.deleted_at) notFound("expense not found");
+  if (!expenseRow) notFound("expense not found");
+  // Readable history, not a live thread: the page stays, the conversation
+  // does not continue on something nobody can act on any more.
+  if (expenseRow.deleted_at) invalid("this expense was deleted and can no longer be commented on");
   await assertCanTouch(userId, expenseRow);
   const trimmed = body.trim();
   if (trimmed.length === 0) invalid("comment cannot be empty");

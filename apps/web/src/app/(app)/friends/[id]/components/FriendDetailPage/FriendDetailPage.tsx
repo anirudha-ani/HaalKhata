@@ -261,13 +261,24 @@ export function FriendDetailPage({
                       {entry.kind === "expense" ? (
                         <Link
                           href={`/expenses/${entry.id}`}
-                          className="font-medium hover:text-brand-600"
+                          className={`font-medium hover:text-brand-600 ${
+                            entry.deleted ? "text-ink-soft line-through" : ""
+                          }`}
                         >
                           {entry.description}
                         </Link>
                       ) : (
                         <span className="font-medium text-pos-700">{entry.description}</span>
                       )}
+                      {/* Struck through but kept: a deleted expense no longer
+                          moves the balance, and a payment made against it
+                          needs this row to explain why the balance leans the
+                          other way now. */}
+                      {entry.deleted ? (
+                        <span className="ml-2 rounded-full bg-paper px-2 py-0.5 text-[11px] text-ink-soft">
+                          deleted
+                        </span>
+                      ) : null}
                       {entry.groupName ? (
                         <span className="ml-2 rounded-full bg-paper px-2 py-0.5 text-[11px] text-ink-soft">
                           {entry.groupName}
@@ -281,11 +292,21 @@ export function FriendDetailPage({
                         total is context, your share of it is the movement. */}
                     <td
                       className={`py-2.5 pl-3 text-right font-semibold tabular-nums ${
-                        entry.deltaCents > 0 ? "text-pos-700" : "text-neg-600"
+                        entry.deleted
+                          ? "text-ink-soft"
+                          : entry.deltaCents > 0
+                            ? "text-pos-700"
+                            : "text-neg-600"
                       }`}
                     >
-                      {entry.deltaCents > 0 ? "+" : "−"}
-                      {formatMoney(Math.abs(entry.deltaCents), currency)}
+                      {entry.deleted ? (
+                        "—"
+                      ) : (
+                        <>
+                          {entry.deltaCents > 0 ? "+" : "−"}
+                          {formatMoney(Math.abs(entry.deltaCents), currency)}
+                        </>
+                      )}
                     </td>
                     <td className="py-2.5 pr-4 pl-3 text-right tabular-nums">
                       {formatMoney(Math.abs(entry.balanceAfterCents), currency)}

@@ -292,19 +292,26 @@ export async function findExpenseById(
 }
 
 /**
- * Lists a group's non-deleted expenses, newest first.
+ * Lists a group's expenses, newest first.
+ *
+ * Deleted rows are excluded by default, which is what every balance
+ * computation wants; display reads pass `includeDeleted` so a deleted
+ * expense stays visible, marked, in the group's history.
  *
  * @param groupId - Id of the group whose expenses to list.
+ * @param client - Optional transaction client holding the group-ledger lock.
+ * @param includeDeleted - Whether soft-deleted rows are returned too.
  * @returns Expense rows ordered by expense date, then creation time, descending.
  */
 export async function listExpensesByGroup(
   groupId: string,
   client?: PoolClient,
+  includeDeleted = false,
 ): Promise<ExpenseRow[]> {
   return query<ExpenseRow>(
-    `SELECT * FROM expenses WHERE group_id = $1 AND deleted_at IS NULL
+    `SELECT * FROM expenses WHERE group_id = $1 AND ($2::boolean OR deleted_at IS NULL)
      ORDER BY expense_date DESC, created_at DESC`,
-    [groupId],
+    [groupId, includeDeleted],
     client,
   );
 }
@@ -314,22 +321,25 @@ export async function listExpensesByGroup(
  *
  * @param firstUserId - One of the two participants.
  * @param secondUserId - The other participant.
- * @returns Non-deleted one-off expense rows involving both users, newest first.
+ * @param client - Optional transaction client holding the pair's ledger lock.
+ * @param includeDeleted - Whether soft-deleted rows are returned too (display only).
+ * @returns One-off expense rows involving both users, newest first.
  */
 export async function listOneOffExpensesBetween(
   firstUserId: string,
   secondUserId: string,
   client?: PoolClient,
+  includeDeleted = false,
 ): Promise<ExpenseRow[]> {
   return query<ExpenseRow>(
     `SELECT DISTINCT expense.* FROM expenses expense
-     WHERE expense.group_id IS NULL AND expense.deleted_at IS NULL
+     WHERE expense.group_id IS NULL AND ($3::boolean OR expense.deleted_at IS NULL)
        AND EXISTS (SELECT 1 FROM expense_splits split WHERE split.expense_id = expense.id AND split.user_id = $1
                    UNION SELECT 1 FROM expense_payers payer WHERE payer.expense_id = expense.id AND payer.user_id = $1)
        AND EXISTS (SELECT 1 FROM expense_splits split WHERE split.expense_id = expense.id AND split.user_id = $2
                    UNION SELECT 1 FROM expense_payers payer WHERE payer.expense_id = expense.id AND payer.user_id = $2)
      ORDER BY expense.expense_date DESC, expense.created_at DESC`,
-    [firstUserId, secondUserId],
+    [firstUserId, secondUserId, includeDeleted],
     client,
   );
 }
@@ -343,38 +353,44 @@ export async function listOneOffExpensesBetween(
  *
  * @param firstUserId - One of the two participants.
  * @param secondUserId - The other participant.
- * @returns Non-deleted expense rows involving both users, newest first.
+ * @param includeDeleted - Whether soft-deleted rows are returned too (display only).
+ * @returns Expense rows involving both users, newest first.
  */
 export async function listExpensesBetween(
   firstUserId: string,
   secondUserId: string,
+  includeDeleted = false,
 ): Promise<ExpenseRow[]> {
   return query<ExpenseRow>(
     `SELECT DISTINCT expense.* FROM expenses expense
-     WHERE expense.deleted_at IS NULL
+     WHERE ($3::boolean OR expense.deleted_at IS NULL)
        AND EXISTS (SELECT 1 FROM expense_splits split WHERE split.expense_id = expense.id AND split.user_id = $1
                    UNION SELECT 1 FROM expense_payers payer WHERE payer.expense_id = expense.id AND payer.user_id = $1)
        AND EXISTS (SELECT 1 FROM expense_splits split WHERE split.expense_id = expense.id AND split.user_id = $2
                    UNION SELECT 1 FROM expense_payers payer WHERE payer.expense_id = expense.id AND payer.user_id = $2)
      ORDER BY expense.expense_date DESC, expense.created_at DESC`,
-    [firstUserId, secondUserId],
+    [firstUserId, secondUserId, includeDeleted],
   );
 }
 
 /**
- * Every non-deleted expense the user pays for or owes on (groups + one-off).
+ * Every expense the user pays for or owes on (groups + one-off).
  *
  * @param userId - Id of the user whose expenses to list.
+ * @param includeDeleted - Whether soft-deleted rows are returned too (display only).
  * @returns Expense rows involving the user, newest first.
  */
-export async function listExpensesInvolvingUser(userId: string): Promise<ExpenseRow[]> {
+export async function listExpensesInvolvingUser(
+  userId: string,
+  includeDeleted = false,
+): Promise<ExpenseRow[]> {
   return query<ExpenseRow>(
     `SELECT DISTINCT expense.* FROM expenses expense
-     WHERE expense.deleted_at IS NULL
+     WHERE ($2::boolean OR expense.deleted_at IS NULL)
        AND EXISTS (SELECT 1 FROM expense_splits split WHERE split.expense_id = expense.id AND split.user_id = $1
                    UNION SELECT 1 FROM expense_payers payer WHERE payer.expense_id = expense.id AND payer.user_id = $1)
      ORDER BY expense.expense_date DESC, expense.created_at DESC`,
-    [userId],
+    [userId, includeDeleted],
   );
 }
 

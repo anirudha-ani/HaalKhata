@@ -65,6 +65,10 @@ export function useExpenseDetail(expenseId: string) {
   return {
     me: currentUserQuery.data,
     detail: detailQuery.data,
+    /** The deletion event when the expense has been deleted: who did it, and when. */
+    deletion: (detailQuery.data?.history ?? []).find(
+      (event) => event.type === "expense_deleted",
+    ),
     detailError: detailQuery.error,
     isLoading: detailQuery.isLoading,
     userById,

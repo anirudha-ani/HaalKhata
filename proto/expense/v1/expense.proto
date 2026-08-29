@@ -16,9 +16,11 @@ service ExpenseService {
   rpc UpdateExpense(UpdateExpenseRequest) returns (Expense);
   rpc ListExpenses(ListExpensesRequest) returns (ListExpensesResponse);
   rpc GetExpense(GetExpenseRequest) returns (GetExpenseResponse);
-  // Creator only, and refused once a settlement postdates the expense in its
-  // scope: edit it to what it should have been instead (see
-  // GetExpenseResponse.has_later_settlement).
+  // Creator only. A soft delete: the expense stops counting toward every
+  // balance but stays visible everywhere the ledger is shown, marked deleted
+  // (Expense.deleted_at), and payments already recorded against it stay on
+  // the ledger — so deleting a paid-for expense leaves the payer owed a
+  // refund, with the struck-through row explaining why.
   rpc DeleteExpense(DeleteExpenseRequest) returns (google.protobuf.Empty);
   rpc AddComment(AddCommentRequest) returns (Comment);
 
@@ -78,6 +80,11 @@ message Expense {
   repeated ExpenseItem items = 14;
   int32 tax_cents = 15;
   int32 tip_cents = 16;
+  // When the expense was deleted; empty while it is live. A deleted expense
+  // is still returned by list and detail reads so history stays legible, but
+  // contributes nothing to any balance, cannot be edited or commented on, and
+  // is never reported as settled.
+  string deleted_at = 17;
 }
 
 message CreateExpenseRequest {
@@ -145,13 +152,12 @@ message GetExpenseResponse {
   // Viewer-relative, hence on the response and not on Expense.
   bool settled_for_viewer = 5;
   // True when a settlement was recorded in this expense's scope after the
-  // expense was created. DeleteExpense refuses such an expense — the payment
-  // would be left explaining nothing — while UpdateExpense still works: the
+  // expense was created. Neither editing nor deleting is refused then; the
   // derived balance rebalances against what was already paid, so a
-  // participant who paid more than their corrected share is owed the
-  // difference and one who paid less owes it. Clients hide Delete and warn
-  // before an edit. Scope-level like settled_for_viewer, but not
-  // viewer-relative: the same answer for everyone, so it could live on
+  // participant who paid more than their corrected (or now-deleted) share
+  // is owed the difference and one who paid less owes it. Clients use this
+  // to warn before either change. Scope-level like settled_for_viewer, but
+  // not viewer-relative: the same answer for everyone, so it could live on
   // Expense — it sits here because only the detail view acts on it.
   bool has_later_settlement = 6;
 }
@@ -164,7 +170,7 @@ message GetExpenseResponse {
 // one for three fields.
 message ExpenseEvent {
   common.v1.User actor = 1;
-  // expense_added | expense_updated
+  // expense_added | expense_updated | expense_deleted
   string type = 2;
   string created_at = 3;
 }
@@ -259,6 +265,10 @@ message FriendLedgerEntry {
   // stored in UTC, and only the client knows the viewer's timezone — so the
   // client renders it, and `date` (the UTC day) is just the fallback.
   string created_at = 10;
+  // True for an expense line that has since been deleted. It stays in the
+  // history with delta_cents = 0 — it no longer moves the balance — so a
+  // payment made against it still has the row that explains it.
+  bool deleted = 11;
 }
 
 message FriendGroupBalance {

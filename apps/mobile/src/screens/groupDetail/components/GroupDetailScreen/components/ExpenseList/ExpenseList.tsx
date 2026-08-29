@@ -65,6 +65,10 @@ export function ExpenseList({
             : expense.payers[0]?.userId === meId
               ? "you paid"
               : `${firstPayer} paid`;
+        // A deleted expense stays in the list, struck through: it no longer
+        // moves any balance, but a payment made against it keeps the row
+        // that explains it.
+        const deleted = expense.deletedAt !== "";
 
         return (
           <Pressable
@@ -78,17 +82,23 @@ export function ExpenseList({
           >
             <Text style={styles.emoji}>{CATEGORY_EMOJI[expense.category] ?? "🧾"}</Text>
             <View style={styles.rowText}>
-              <Text numberOfLines={1} style={styles.description}>
+              <Text
+                numberOfLines={1}
+                style={[styles.description, deleted ? styles.descriptionDeleted : null]}
+              >
                 {expense.description}
               </Text>
               <Text numberOfLines={1} style={styles.meta}>
+                {deleted ? "deleted · " : ""}
                 {expense.expenseDate} · {payerLabel}{" "}
                 {formatMoney(expense.amountCents, expense.currency)}
                 {expense.splitType === "itemized" ? " · itemized" : ""}
               </Text>
             </View>
             <View style={styles.net}>
-              {myNet === 0 ? (
+              {deleted ? (
+                <Text style={styles.netNone}>no longer counts</Text>
+              ) : myNet === 0 ? (
                 <Text style={styles.netNone}>not involved / even</Text>
               ) : (
                 <>
@@ -121,6 +131,10 @@ const styles = StyleSheet.create({
     color: colors.ink,
     fontSize: 15,
     fontWeight: "500",
+  },
+  descriptionDeleted: {
+    color: colors.inkSoft,
+    textDecorationLine: "line-through",
   },
   emoji: {
     fontSize: 20,

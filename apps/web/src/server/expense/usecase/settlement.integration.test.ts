@@ -86,12 +86,14 @@ describe.skipIf(!reachable)("recordSettlement against Postgres", () => {
   let createExpense: typeof import("./expense.usecase").createExpense;
   let deleteExpense: typeof import("./expense.usecase").deleteExpense;
   let getExpense: typeof import("./expense.usecase").getExpense;
+  let listExpenses: typeof import("./expense.usecase").listExpenses;
   let updateExpense: typeof import("./expense.usecase").updateExpense;
   let removeMemberFromGroup: typeof import(
     "@/server/group/usecase/group.usecase"
   ).removeMemberFromGroup;
   let userNetInGroup: typeof import("./balance.usecase").userNetInGroup;
   let netWithUser: typeof import("./balance.usecase").netWithUser;
+  let getFriendLedger: typeof import("./balance.usecase").getFriendLedger;
   let closePool: () => Promise<void>;
 
   beforeAll(async () => {
@@ -110,11 +112,10 @@ describe.skipIf(!reachable)("recordSettlement against Postgres", () => {
       const cache = globalThis as unknown as { __haalkhataPool?: { end(): Promise<void> } };
       await cache.__haalkhataPool?.end();
     };
-    ({ createExpense, deleteExpense, getExpense, recordSettlement, updateExpense } = await import(
-      "./expense.usecase"
-    ));
+    ({ createExpense, deleteExpense, getExpense, listExpenses, recordSettlement, updateExpense } =
+      await import("./expense.usecase"));
     ({ removeMemberFromGroup } = await import("@/server/group/usecase/group.usecase"));
-    ({ userNetInGroup, netWithUser } = await import("./balance.usecase"));
+    ({ getFriendLedger, userNetInGroup, netWithUser } = await import("./balance.usecase"));
 
     database = new Client({ connectionString: TEST_URL });
     await database.connect();
@@ -195,12 +196,10 @@ describe.skipIf(!reachable)("recordSettlement against Postgres", () => {
         tipCents: 0,
       }) as never;
 
-    // Deleting would leave the debtor's 5000 payment explaining nothing —
-    // and it is the creator's call in the first place.
-    await expect(deleteExpense(CREDITOR, "exp-1")).rejects.toThrow(/cannot be deleted/);
+    // Deleting is the creator's call, not the debtor's.
     await expect(deleteExpense(DEBTOR, "exp-1")).rejects.toThrow(/only the expense creator/);
-    // The detail view is told up front, so the clients hide Delete and warn
-    // before an edit rather than offering a control the server refuses.
+    // The detail view is told a payment postdates the expense, so the
+    // clients warn before an edit or a delete that will rebalance it.
     expect((await getExpense(CREDITOR, "exp-1")).hasLaterSettlement).toBe(true);
 
     // Editing is the correction path, open to anyone on the expense — here
@@ -291,6 +290,59 @@ describe.skipIf(!reachable)("recordSettlement against Postgres", () => {
       `SELECT count(*)::int AS settlement_rows FROM activity WHERE type = 'settlement'`,
     );
     expect(rows[0].settlement_rows).toBe(1);
+  });
+
+  it("keeps a deleted expense visible while the payment made against it stays", async () => {
+    /**
+     * A settlement request between the pair inside the group.
+     *
+     * @param fromUserId - Who is recording that they paid.
+     * @param toUserId - Who received the money.
+     * @param amountCents - How much moved.
+     * @returns The request shape recordSettlement accepts.
+     */
+    const payment = (fromUserId: string, toUserId: string, amountCents: number) =>
+      [fromUserId, { groupId: "grp-1", toUserId, amountCents, currency: "USD", method: "cash", note: "" }] as const;
+
+    const snack = await createExpense(CREDITOR, {
+      groupId: "grp-1",
+      description: "Snack run",
+      amountCents: 3000,
+      currency: "USD",
+      category: "food",
+      expenseDate: "2026-07-30",
+      splitType: "exact",
+      notes: "",
+      payers: [{ userId: CREDITOR, amountCents: 3000 }],
+      splitSpecs: [{ userId: DEBTOR, amountCents: 3000, percentBp: 0, shares: 0 }],
+      items: [],
+      taxCents: 0,
+      tipCents: 0,
+    } as never);
+    await recordSettlement(...payment(DEBTOR, CREDITOR, 3000));
+    expect(await userNetInGroup(DEBTOR, "grp-1")).toBe(0);
+
+    await deleteExpense(CREDITOR, snack.id);
+
+    // Delete means owed-to-zero; the payment stays, so the debtor is now owed
+    // the 3000 they paid for an expense that no longer counts.
+    expect(await userNetInGroup(DEBTOR, "grp-1")).toBe(3000);
+    // … and every ledger surface still shows the row that explains why.
+    const listed = await listExpenses(DEBTOR, { groupId: "grp-1" });
+    expect(listed.expenses.find((expense) => expense.id === snack.id)?.deletedAt).not.toBe("");
+    expect(listed.settledExpenseIds).not.toContain(snack.id);
+    const detail = await getExpense(DEBTOR, snack.id);
+    expect(detail.expense.deletedAt).not.toBe("");
+    expect(detail.history.map((event) => event.type)).toContain("expense_deleted");
+    const ledgerLine = (await getFriendLedger(DEBTOR, CREDITOR)).entries.find(
+      (entry) => entry.kind === "expense" && entry.id === snack.id,
+    );
+    expect(ledgerLine).toMatchObject({ deleted: true, deltaCents: 0, totalCents: 3000 });
+
+    // The creditor refunds the 3000, so the rest of the suite sees the
+    // settled ledger it expects.
+    await recordSettlement(...payment(CREDITOR, DEBTOR, 3000));
+    expect(await userNetInGroup(DEBTOR, "grp-1")).toBe(0);
   });
 
   it("serializes member removal against a new expense for that member", async () => {

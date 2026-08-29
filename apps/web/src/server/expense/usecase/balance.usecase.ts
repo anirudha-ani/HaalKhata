@@ -438,7 +438,10 @@ function pairDelta(debts: LedgerEntry[], userId: string, otherUserId: string): n
  *
  * Lines that moved nothing between the two of you — a group expense you were
  * both on but which netted to zero across the pair — are dropped, because a
- * statement row that changes no balance is noise.
+ * statement row that changes no balance is noise. A deleted expense is the
+ * one exception: it stays as a line with a zero change, marked deleted, so a
+ * payment made against it before it was deleted keeps the row that explains
+ * why the balance now leans the other way.
  *
  * @param userId - Authenticated caller.
  * @param friendId - The other person.
@@ -450,7 +453,7 @@ function pairDelta(debts: LedgerEntry[], userId: string, otherUserId: string): n
 export async function getFriendLedger(userId: string, friendId: string) {
   const friend = await findUserById(friendId);
 
-  const expenses = await listExpensesBetween(userId, friendId);
+  const expenses = await listExpensesBetween(userId, friendId, true);
   const children = await loadExpenseChildren(expenses.map((expense) => expense.id));
   const settlements = await listSettlementsBetween(userId, friendId);
 
@@ -473,6 +476,7 @@ export async function getFriendLedger(userId: string, friendId: string) {
     deltaCents: number;
     sortKey: string;
     createdAt: string;
+    deleted: boolean;
   };
   const lines: Line[] = [];
 
@@ -487,8 +491,11 @@ export async function getFriendLedger(userId: string, friendId: string) {
         amountCents: split.owed_cents,
       })),
     );
-    const deltaCents = pairDelta(debts, userId, friendId);
-    if (deltaCents === 0) continue;
+    // What the line would move — or did move, until it was deleted. A row
+    // that never touched this pair is noise either way and stays out.
+    const liveDeltaCents = pairDelta(debts, userId, friendId);
+    if (liveDeltaCents === 0) continue;
+    const deleted = expense.deleted_at !== null;
     lines.push({
       kind: "expense",
       id: expense.id,
@@ -497,11 +504,13 @@ export async function getFriendLedger(userId: string, friendId: string) {
       groupId: expense.group_id ?? "",
       groupName: expense.group_id ? (groupNames.get(expense.group_id) ?? "") : "",
       totalCents: expense.amount_cents,
-      deltaCents,
+      // Deleted means owed-to-zero: the line stays, the movement does not.
+      deltaCents: deleted ? 0 : liveDeltaCents,
       sortKey: `${expense.expense_date}T${expense.created_at}`,
       // An expense's date is the calendar day the user picked, not a moment;
       // there is nothing to convert, so no timestamp rides along.
       createdAt: "",
+      deleted,
     });
   }
 
@@ -522,6 +531,7 @@ export async function getFriendLedger(userId: string, friendId: string) {
       deltaCents: paidByYou ? settlement.amount_cents : -settlement.amount_cents,
       sortKey: `${settlement.created_at.slice(0, 10)}T${settlement.created_at}`,
       createdAt: settlement.created_at,
+      deleted: false,
     });
   }
 
@@ -540,6 +550,7 @@ export async function getFriendLedger(userId: string, friendId: string) {
       deltaCents: line.deltaCents,
       balanceAfterCents: runningCents,
       createdAt: line.createdAt,
+      deleted: line.deleted,
     };
   });
   entries.reverse();

@@ -61,12 +61,11 @@ export function ExpenseDetailScreen({ expenseId }: { expenseId: string }) {
 
   // Anyone on the expense may correct it — creator, payer or ower — because
   // each can see the mistake and each is affected by it. Deletion stays with
-  // the creator, and not once a payment has been recorded in the ledger after
-  // the expense: the server still allows edits then (the derived balance
-  // rebalances against what was paid) but refuses deletion, which would leave
-  // that payment explaining nothing. (A cached response from before the flag
-  // existed simply lacks it, which reads as deletable until the refetch lands
-  // — the server still refuses either way.)
+  // the creator. Neither is refused once a payment has been recorded in the
+  // ledger after the expense: the derived balance rebalances against what
+  // was paid, so the screen warns rather than hides. A deleted expense is
+  // read-only history — no actions, no new comments — with the row kept so
+  // any payment made against it still has its explanation.
   const meId = expenseDetail.me?.id;
   const isCreator = expense.createdBy === meId;
   const isParticipant =
@@ -74,7 +73,8 @@ export function ExpenseDetailScreen({ expenseId }: { expenseId: string }) {
     expense.payers.some((payer) => payer.userId === meId) ||
     expense.splits.some((split) => split.userId === meId);
   const hasLaterSettlement = expenseDetail.detail?.hasLaterSettlement === true;
-  const canDelete = isCreator && !hasLaterSettlement;
+  const isDeleted = expense.deletedAt !== "";
+  const deletion = expenseDetail.deletion;
   // Itemized expenses have no mobile editor yet; the web form handles them.
   const canEditHere = expense.splitType !== "itemized";
 
@@ -82,7 +82,9 @@ export function ExpenseDetailScreen({ expenseId }: { expenseId: string }) {
     <Screen header={<DetailHeader title="Expense" />}>
       <View style={styles.titleBlock}>
         <View style={styles.titleText}>
-          <Text style={styles.title}>{expense.description}</Text>
+          <Text style={[styles.title, isDeleted ? styles.titleDeleted : null]}>
+            {expense.description}
+          </Text>
           <Text style={styles.meta}>
             {expense.expenseDate} · <Text style={styles.metaCapitalized}>{expense.category}</Text>
             {expense.groupId ? "" : " · one-off"}
@@ -96,7 +98,21 @@ export function ExpenseDetailScreen({ expenseId }: { expenseId: string }) {
         <Text style={styles.amount}>{formatMoney(expense.amountCents, expense.currency)}</Text>
       </View>
 
-      {isParticipant && (canEditHere || canDelete) ? (
+      {isDeleted ? (
+        <View style={styles.deletedCard}>
+          <Trash2 color={colors.inkSoft} size={16} />
+          <Text style={styles.deletedText}>
+            Deleted
+            {deletion?.actor
+              ? ` by ${deletion.actor.id === meId ? "you" : deletion.actor.name}`
+              : ""}{" "}
+            {localDateTime(deletion?.createdAt || expense.deletedAt)}. It no longer counts toward
+            anyone&apos;s balance; any payment made against it stays on the ledger.
+          </Text>
+        </View>
+      ) : null}
+
+      {isParticipant && !isDeleted && (canEditHere || isCreator) ? (
         <View style={styles.actions}>
           {canEditHere ? (
             <Button
@@ -107,7 +123,7 @@ export function ExpenseDetailScreen({ expenseId }: { expenseId: string }) {
               variant="outline"
             />
           ) : null}
-          {canDelete ? (
+          {isCreator ? (
             <Button
               compact
               icon={<Trash2 color={colors.inkSoft} size={14} />}
@@ -119,13 +135,13 @@ export function ExpenseDetailScreen({ expenseId }: { expenseId: string }) {
         </View>
       ) : null}
 
-      {isParticipant && hasLaterSettlement ? (
+      {isParticipant && !isDeleted && hasLaterSettlement ? (
         <View style={styles.settlementNoteCard}>
           <Lock color={colors.inkSoft} size={16} />
           <Text style={styles.settlementNoteText}>
-            Somebody has paid against this ledger since this expense was added. Editing it
-            rebalances what they owe — or are owed — against what has already been paid; it can
-            no longer be deleted.
+            Somebody has paid against this ledger since this expense was added. Editing or
+            deleting it rebalances what they owe — or are owed — against what has already been
+            paid.
           </Text>
         </View>
       ) : null}
@@ -225,29 +241,33 @@ export function ExpenseDetailScreen({ expenseId }: { expenseId: string }) {
             </View>
           </View>
         ))}
-        <View style={styles.composer}>
-          <TextInput
-            maxLength={MAX_COMMENT_LENGTH}
-            onChangeText={expenseDetail.setComment}
-            placeholder="Add a comment…"
-            placeholderTextColor={colors.inkSoft}
-            style={styles.composerInput}
-            value={expenseDetail.comment}
-          />
-          <Pressable
-            accessibilityLabel="Send comment"
-            disabled={expenseDetail.isCommenting || expenseDetail.comment.trim() === ""}
-            onPress={() => expenseDetail.submitComment()}
-            style={[
-              styles.composerSend,
-              expenseDetail.isCommenting || expenseDetail.comment.trim() === ""
-                ? styles.composerSendDisabled
-                : null,
-            ]}
-          >
-            <Send color={colors.white} size={16} />
-          </Pressable>
-        </View>
+        {isDeleted ? (
+          <Text style={styles.deletedText}>Comments are closed on a deleted expense.</Text>
+        ) : (
+          <View style={styles.composer}>
+            <TextInput
+              maxLength={MAX_COMMENT_LENGTH}
+              onChangeText={expenseDetail.setComment}
+              placeholder="Add a comment…"
+              placeholderTextColor={colors.inkSoft}
+              style={styles.composerInput}
+              value={expenseDetail.comment}
+            />
+            <Pressable
+              accessibilityLabel="Send comment"
+              disabled={expenseDetail.isCommenting || expenseDetail.comment.trim() === ""}
+              onPress={() => expenseDetail.submitComment()}
+              style={[
+                styles.composerSend,
+                expenseDetail.isCommenting || expenseDetail.comment.trim() === ""
+                  ? styles.composerSendDisabled
+                  : null,
+              ]}
+            >
+              <Send color={colors.white} size={16} />
+            </Pressable>
+          </View>
+        )}
       </View>
 
       {expenseDetail.error ? <Text style={styles.error}>{expenseDetail.error}</Text> : null}
@@ -257,7 +277,8 @@ export function ExpenseDetailScreen({ expenseId }: { expenseId: string }) {
           <View style={styles.deleteSheet}>
             <Text style={styles.deleteText}>
               “{expense.description}” ({formatMoney(expense.amountCents, expense.currency)}) will
-              be removed from everyone&apos;s balances.
+              stop counting toward anyone&apos;s balance. It stays visible, marked deleted, and any
+              payment already made against it stays on the ledger.
             </Text>
             <View style={styles.deleteActions}>
               <View style={styles.deleteAction}>
@@ -369,6 +390,23 @@ const styles = StyleSheet.create({
   deleteActions: {
     flexDirection: "row",
     gap: spacing.sm,
+  },
+  deletedCard: {
+    alignItems: "flex-start",
+    backgroundColor: colors.paper,
+    borderColor: colors.line,
+    borderRadius: radii.lg,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: spacing.sm,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+  },
+  deletedText: {
+    color: colors.inkSoft,
+    flex: 1,
+    fontSize: 14,
+    lineHeight: 20,
   },
   deleteSheet: {
     gap: spacing.lg,
@@ -488,6 +526,10 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: spacing.lg,
     justifyContent: "space-between",
+  },
+  titleDeleted: {
+    color: colors.inkSoft,
+    textDecorationLine: "line-through",
   },
   titleText: {
     flex: 1,

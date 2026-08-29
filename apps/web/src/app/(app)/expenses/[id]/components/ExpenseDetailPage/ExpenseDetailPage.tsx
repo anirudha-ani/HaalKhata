@@ -60,19 +60,19 @@ export function ExpenseDetailPage({ expenseId }: { expenseId: string }) {
   const myNetCents = myPaidCents - myOwedCents;
   // Anyone on the expense may correct it — creator, payer or ower — because
   // each can see the mistake and each is affected by it. Deletion stays with
-  // the creator, and not once a payment has been recorded in the ledger after
-  // the expense: the server still allows edits then (the derived balance
-  // rebalances against what was paid) but refuses deletion, which would leave
-  // that payment explaining nothing. (A cached response from before the flag
-  // existed simply lacks it, which reads as deletable until the refetch lands
-  // — the server still refuses either way.)
+  // the creator. Neither is refused once a payment has been recorded in the
+  // ledger after the expense: the derived balance rebalances against what
+  // was paid, so the page warns rather than hides. A deleted expense is
+  // read-only history — no actions, no new comments — with the row kept so
+  // any payment made against it still has its explanation.
   const isCreator = expense.createdBy === meId;
   const isParticipant =
     isCreator ||
     expense.payers.some((payer) => payer.userId === meId) ||
     expense.splits.some((split) => split.userId === meId);
   const hasLaterSettlement = expenseDetail.detail?.hasLaterSettlement === true;
-  const canDelete = isCreator && !hasLaterSettlement;
+  const isDeleted = expense.deletedAt !== "";
+  const deletion = expenseDetail.deletion;
   // Same wording as the list rows, from the same function — the list's
   // tooltip is invisible on phones, so this page is where the full sentence
   // actually gets read.
@@ -96,7 +96,9 @@ export function ExpenseDetailPage({ expenseId }: { expenseId: string }) {
     <div className="mx-auto max-w-2xl space-y-6">
       <header className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold sm:text-3xl">{expense.description}</h1>
+          <h1 className={`text-2xl font-bold sm:text-3xl ${isDeleted ? "text-ink-soft line-through" : ""}`}>
+            {expense.description}
+          </h1>
           <p className="mt-1 text-sm text-ink-soft">
             {expense.expenseDate} · <span className="capitalize">{expense.category}</span>
             {expense.groupId ? (
@@ -126,7 +128,21 @@ export function ExpenseDetailPage({ expenseId }: { expenseId: string }) {
         </p>
       ) : null}
 
-      {isParticipant ? (
+      {isDeleted ? (
+        <p className="flex items-start gap-2 rounded-2xl border border-line bg-paper px-4 py-3 text-sm text-ink-soft">
+          <Trash2 className="mt-0.5 h-4 w-4 shrink-0" />
+          <span>
+            Deleted
+            {deletion?.actor
+              ? ` by ${deletion.actor.id === meId ? "you" : deletion.actor.name}`
+              : ""}{" "}
+            {localDateTime(deletion?.createdAt || expense.deletedAt)}. It no longer counts toward
+            anyone&apos;s balance; any payment made against it stays on the ledger.
+          </span>
+        </p>
+      ) : null}
+
+      {isParticipant && !isDeleted ? (
         <div className="flex gap-2">
           <Link
             href={`/expenses/new?edit=${expense.id}`}
@@ -134,7 +150,7 @@ export function ExpenseDetailPage({ expenseId }: { expenseId: string }) {
           >
             <Pencil className="h-3.5 w-3.5" /> Edit
           </Link>
-          {canDelete ? (
+          {isCreator ? (
             <button
               type="button"
               onClick={() => expenseDetail.setConfirmingDelete(true)}
@@ -146,13 +162,13 @@ export function ExpenseDetailPage({ expenseId }: { expenseId: string }) {
         </div>
       ) : null}
 
-      {isParticipant && hasLaterSettlement ? (
+      {isParticipant && !isDeleted && hasLaterSettlement ? (
         <p className="flex items-start gap-2 rounded-2xl border border-line bg-card px-4 py-3 text-sm text-ink-soft">
           <Lock className="mt-0.5 h-4 w-4 shrink-0" />
           <span>
-            Somebody has paid against this ledger since this expense was added. Editing it
-            rebalances what they owe — or are owed — against what has already been paid; it can
-            no longer be deleted.
+            Somebody has paid against this ledger since this expense was added. Editing or
+            deleting it rebalances what they owe — or are owed — against what has already been
+            paid.
           </span>
         </p>
       ) : null}
@@ -284,7 +300,7 @@ export function ExpenseDetailPage({ expenseId }: { expenseId: string }) {
           on every page to say "nothing has happened", which is noise. The
           creation line is included once there IS an edit, because "edited"
           only means something next to when it was made. */}
-      {expenseDetail.edits.length > 0 ? (
+      {expenseDetail.changes.length > 0 ? (
         <section className="rounded-2xl border border-line bg-card p-4">
           <h2 className="mb-2 text-xs font-semibold tracking-wide text-ink-soft uppercase">
             History
@@ -312,7 +328,11 @@ export function ExpenseDetailPage({ expenseId }: { expenseId: string }) {
                   ) : (
                     <span className="font-medium text-ink">Someone</span>
                   )}{" "}
-                  {event.type === "expense_added" ? "created this" : "edited this"}
+                  {event.type === "expense_added"
+                    ? "created this"
+                    : event.type === "expense_deleted"
+                      ? "deleted this"
+                      : "edited this"}
                 </span>
                 <time className="shrink-0 text-xs tabular-nums">
                   {localDateTime(event.createdAt)}
@@ -350,30 +370,34 @@ export function ExpenseDetailPage({ expenseId }: { expenseId: string }) {
             </div>
           </div>
         ))}
-        <form
-          className="flex gap-2"
-          onSubmit={(event) => {
-            event.preventDefault();
-            expenseDetail.submitComment();
-          }}
-        >
-          <input
-            value={expenseDetail.comment}
-            onChange={(event) => expenseDetail.setComment(event.target.value)}
-            maxLength={MAX_COMMENT_LENGTH}
-            placeholder="Add a comment…"
-            aria-label="Add a comment"
-            className="min-w-0 flex-1 rounded-xl border border-line bg-card px-3.5 py-2.5 text-sm focus:border-brand-500 focus:outline-none"
-          />
-          <button
-            type="submit"
-            disabled={expenseDetail.isCommenting || expenseDetail.comment.trim() === ""}
-            aria-label="Send comment"
-            className="rounded-xl bg-brand-600 px-4 text-white hover:bg-brand-700 disabled:opacity-40"
+        {isDeleted ? (
+          <p className="text-xs text-ink-soft">Comments are closed on a deleted expense.</p>
+        ) : (
+          <form
+            className="flex gap-2"
+            onSubmit={(event) => {
+              event.preventDefault();
+              expenseDetail.submitComment();
+            }}
           >
-            <Send className="h-4 w-4" />
-          </button>
-        </form>
+            <input
+              value={expenseDetail.comment}
+              onChange={(event) => expenseDetail.setComment(event.target.value)}
+              maxLength={MAX_COMMENT_LENGTH}
+              placeholder="Add a comment…"
+              aria-label="Add a comment"
+              className="min-w-0 flex-1 rounded-xl border border-line bg-card px-3.5 py-2.5 text-sm focus:border-brand-500 focus:outline-none"
+            />
+            <button
+              type="submit"
+              disabled={expenseDetail.isCommenting || expenseDetail.comment.trim() === ""}
+              aria-label="Send comment"
+              className="rounded-xl bg-brand-600 px-4 text-white hover:bg-brand-700 disabled:opacity-40"
+            >
+              <Send className="h-4 w-4" />
+            </button>
+          </form>
+        )}
       </section>
 
       {expenseDetail.error ? (
@@ -383,8 +407,9 @@ export function ExpenseDetailPage({ expenseId }: { expenseId: string }) {
       {expenseDetail.confirmingDelete ? (
         <Modal title="Delete expense?" onClose={() => expenseDetail.setConfirmingDelete(false)}>
           <p className="text-sm text-ink-soft">
-            “{expense.description}” ({formatMoney(expense.amountCents, expense.currency)}) will be
-            removed from everyone&apos;s balances.
+            “{expense.description}” ({formatMoney(expense.amountCents, expense.currency)}) will stop
+            counting toward anyone&apos;s balance. It stays visible, marked deleted, and any payment
+            already made against it stays on the ledger.
           </p>
           <div className="mt-5 grid grid-cols-2 gap-2">
             <button
