@@ -2,6 +2,7 @@
 /** Composite hook for group detail: API plus tab, add-people, and settle state. */
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import type { User } from "@haalkhata/protogen/common/v1/common_pb";
 import { errorMessage } from "@/lib/api/connect";
 import { splitIdentifier } from "@haalkhata/shared/auth/identifier";
@@ -20,18 +21,22 @@ export type GroupTab = "expenses" | "balances" | "activity";
  *   `addingPeople`/`setAddingPeople` and the add-people form (`pickedIds`,
  *   `togglePicked`, `identifier`/`setIdentifier`, `submitPeople`,
  *   `peopleError`, `canAddPeople`), `candidates` (friends not already in the
- *   group), `simplified`/`setSimplified`/`simplifyPending` for the group's
+ *   group), the members modal (`viewingMembers`/`setViewingMembers`,
+ *   `removeMember`, `removingUserId`, `memberError`),
+ *   `simplified`/`setSimplified`/`simplifyPending` for the group's
  *   persisted simplify-debts mode, `settleWith`/`setSettleWith` for the
  *   settle-up modal, and `userById` mapping member ids to users.
  */
 export function useGroupDetail(groupId: string) {
   const groupDetailAPI = useGroupDetailAPI(groupId);
+  const router = useRouter();
   const [activeTab, setActiveTab] = useState<GroupTab>("expenses");
   const [addingPeople, setAddingPeople] = useState(false);
   const [viewingMembers, setViewingMembers] = useState(false);
   const [pickedIds, setPickedIds] = useState<string[]>([]);
   const [identifier, setIdentifier] = useState("");
   const [peopleError, setPeopleError] = useState("");
+  const [memberError, setMemberError] = useState("");
   // `received` rides along because the same modal records both directions:
   // paying what you owe, and logging money that has arrived from someone who
   // owed you. Without it the group page could only ever offer the first.
@@ -81,6 +86,27 @@ export function useGroupDetail(groupId: string) {
     );
   };
 
+  /**
+   * Removes one member — the caller's own id means leaving. The zero-balance
+   * gate lives on the server, whose message is the honest one to show; a
+   * successful leave navigates away, since this page is no longer the
+   * caller's to see.
+   *
+   * @param userId - The member to remove.
+   */
+  const removeMember = (userId: string) => {
+    setMemberError("");
+    groupDetailAPI.removeMember.mutate(userId, {
+      onSuccess: () => {
+        if (userId === groupDetailAPI.me?.id) {
+          setViewingMembers(false);
+          router.push("/groups");
+        }
+      },
+      onError: (mutationError) => setMemberError(errorMessage(mutationError)),
+    });
+  };
+
   return {
     ...groupDetailAPI,
     tab: activeTab,
@@ -89,6 +115,11 @@ export function useGroupDetail(groupId: string) {
     setAddingPeople,
     viewingMembers,
     setViewingMembers,
+    removeMember,
+    removingUserId: groupDetailAPI.removeMember.isPending
+      ? groupDetailAPI.removeMember.variables
+      : undefined,
+    memberError,
     candidates,
     pickedIds,
     togglePicked,

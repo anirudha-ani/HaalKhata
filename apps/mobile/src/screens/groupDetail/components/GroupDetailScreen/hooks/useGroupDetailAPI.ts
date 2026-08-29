@@ -1,4 +1,4 @@
-/** TanStack Query bindings for group detail: me, group, friends, expenses, balances, add-members. */
+/** TanStack Query bindings for group detail: me, group, friends, expenses, balances, add/remove members. */
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { authClient, expenseClient, groupClient, socialClient } from "@/lib/api/connect";
@@ -13,7 +13,8 @@ import { MONEY_KEYS, queryKeys } from "@haalkhata/shared/api/queryKeys";
  * @param groupId - Identifier of the group being viewed.
  * @returns An object with `me`, `group`, `groupError`, `friends`, `expenses`,
  *   `balances`, an `isLoading` flag covering the group and expense queries,
- *   `refresh`/`isRefreshing` for pull-to-refresh, and the `addMembers` mutation.
+ *   `refresh`/`isRefreshing` for pull-to-refresh, and the `addMembers` and
+ *   `removeMember` mutations.
  */
 export function useGroupDetailAPI(groupId: string) {
   const queryClient = useQueryClient();
@@ -60,6 +61,19 @@ export function useGroupDetailAPI(groupId: string) {
   });
 
   /**
+   * Removes one member: the caller leaving, or the owner removing somebody
+   * else. Membership decides what the caller may see and which balances the
+   * leaver was part of, so success invalidates the whole money set — the
+   * group list, this group, and every ledger — not just this group.
+   */
+  const removeMember = useMutation({
+    mutationFn: (userId: string) => groupClient.removeMember({ groupId, userId }),
+    onSuccess: () => {
+      for (const moneyKey of MONEY_KEYS) queryClient.invalidateQueries({ queryKey: moneyKey });
+    },
+  });
+
+  /**
    * Flips the group's simplify-debts mode. It changes which debts every
    * money surface shows — this group's balances, friend ledgers, the
    * dashboard — so success invalidates the whole money set, not just the
@@ -91,6 +105,7 @@ export function useGroupDetailAPI(groupId: string) {
     refresh,
     isRefreshing: group.isRefetching || expenses.isRefetching || balances.isRefetching,
     addMembers,
+    removeMember,
     setSimplify,
     activityEvents: activity.data?.events ?? [],
     activityLoading: activity.isLoading,

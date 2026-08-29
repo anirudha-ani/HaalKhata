@@ -150,11 +150,12 @@ export function GroupDetailPage({
 
       {groupDetail.viewingMembers ? (
         <MembersModal
-          members={(groupDetail.group.members ?? []).flatMap((member) =>
-            member.user ? [member.user] : [],
-          )}
+          members={groupDetail.group.members ?? []}
           meId={groupDetail.me?.id}
           friendIds={new Set(groupDetail.friends.map((friend) => friend.id))}
+          onRemove={groupDetail.removeMember}
+          removingUserId={groupDetail.removingUserId}
+          removeError={groupDetail.memberError}
           onClose={() => groupDetail.setViewingMembers(false)}
         />
       ) : null}

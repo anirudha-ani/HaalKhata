@@ -39,7 +39,7 @@ import { toGroup, toMember } from "./group.mapper";
 
 /**
  * Loads a group and asserts the caller is its owner; used for owner-only
- * actions like removing a member.
+ * actions like removing somebody else from the group.
  *
  * @param groupId - Id of the group to load.
  * @param userId - Id of the authenticated caller.
@@ -63,8 +63,10 @@ async function assertGroupOwner(groupId: string, userId: string, client?: PoolCl
  * ledger, and whoever notices that somebody is missing from the dinner is
  * rarely the person who happened to create the group — routing every addition
  * through one account makes them a bottleneck for a change anyone present can
- * see is correct. Removal stays owner-only: it is the destructive direction,
- * and it is already gated on a settled balance.
+ * see is correct. Removing somebody else stays owner-only: it is the
+ * destructive direction, and it is already gated on a settled balance. A
+ * non-owner may still remove themselves under the same gate — membership
+ * is consensual only if the person a co-member enrolled can walk out again.
  *
  * @param groupId - Id of the group to load.
  * @param userId - Id of the authenticated caller.

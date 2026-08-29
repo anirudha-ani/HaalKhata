@@ -623,8 +623,12 @@ friendship alone would show a name in the picker that the server then refuses.
 and whoever notices somebody is missing from the dinner is rarely the person
 who happened to create the group — routing every addition through one account
 makes them a bottleneck for a change anyone present can see is correct.
-`RemoveMember` stays owner-only: it is the destructive direction, and it is
-already gated on the leaver's balance being settled.
+`RemoveMember` is owner-only for removing *somebody else*: it is the
+destructive direction, and it is already gated on the leaver's balance being
+settled. A non-owner may remove *themselves* under the same zero-balance gate
+(2026-08-29, security audit H1): membership is consensual only if the person a
+co-member enrolled can walk out again. Both clients offer "Leave group" from
+the members list, and the owner gets "Remove" on every other row there.
 
 **Batch semantics.** Adding is idempotent per person: someone already in the
 group is *skipped*, not an error, so one already-member cannot fail the other
