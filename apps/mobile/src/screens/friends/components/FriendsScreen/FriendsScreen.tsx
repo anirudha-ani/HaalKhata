@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Money } from "@/components/ui/Money";
 import { Spinner } from "@/components/ui/Spinner";
+import { errorMessage } from "@/lib/api/connect";
 import { colors, fonts, radii, spacing } from "@/lib/theme/theme";
 import { useFriends } from "./hooks/useFriends";
 
@@ -102,6 +103,10 @@ export function FriendsScreen() {
 
       {friendsState.isLoading ? (
         <Spinner label="Loading friends…" />
+      ) : friendsState.friendsError ? (
+        <Text accessibilityRole="alert" style={styles.error}>
+          Couldn&apos;t load your friends — {errorMessage(friendsState.friendsError)}
+        </Text>
       ) : friendsState.friends.length === 0 ? (
         <EmptyState
           hint="Send a request by email or phone; they’ll appear here after accepting."

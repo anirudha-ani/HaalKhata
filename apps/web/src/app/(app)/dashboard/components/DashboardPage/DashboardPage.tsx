@@ -9,6 +9,7 @@ import { Money } from "@/components/ui/Money";
 import { PersonLink } from "@/components/people/PersonLink";
 import { SettleUpModal } from "@/components/modals/SettleUpModal";
 import { Spinner } from "@/components/ui/Spinner";
+import { errorMessage } from "@/lib/api/connect";
 import { useHydrated } from "@/lib/hooks/useHydrated";
 import { formatMoney } from "@haalkhata/shared/money/money";
 import { safeActivityPath } from "@haalkhata/shared/navigation/activityPath";
@@ -30,6 +31,9 @@ export function DashboardPage() {
   if (!hydrated || dashboard.isLoading) return <Spinner label="Opening your ledger…" />;
 
   const currency = dashboard.me?.defaultCurrency ?? "USD";
+  // A failed balance query (the RPC is rate-limited per account) must not
+  // read as a zero balance: the cards show a dash and the reason is stated.
+  const balancesFailed = Boolean(dashboard.balancesError);
 
   return (
     <div className="space-y-8">
@@ -50,21 +54,36 @@ export function DashboardPage() {
         </Link>
       </header>
 
+      {balancesFailed ? (
+        <p
+          role="alert"
+          className="rounded-2xl border border-neg-600/20 bg-neg-50 px-4 py-3 text-sm font-medium text-neg-700"
+        >
+          Couldn&apos;t load your balances — {errorMessage(dashboard.balancesError)}
+        </p>
+      ) : null}
+
       {/* Balance summary */}
       <section className="grid gap-3 sm:grid-cols-3">
         <SummaryCard
           label="You are owed"
-          value={formatMoney(dashboard.balances?.owedToYouCents ?? 0, currency)}
+          value={
+            balancesFailed ? "—" : formatMoney(dashboard.balances?.owedToYouCents ?? 0, currency)
+          }
           tone="pos"
         />
         <SummaryCard
           label="You owe"
-          value={formatMoney(dashboard.balances?.youOweCents ?? 0, currency)}
+          value={balancesFailed ? "—" : formatMoney(dashboard.balances?.youOweCents ?? 0, currency)}
           tone="neg"
         />
         <SummaryCard
           label="Net balance"
-          value={`${dashboard.netCents < 0 ? "−" : ""}${formatMoney(Math.abs(dashboard.netCents), currency)}`}
+          value={
+            balancesFailed
+              ? "—"
+              : `${dashboard.netCents < 0 ? "−" : ""}${formatMoney(Math.abs(dashboard.netCents), currency)}`
+          }
           tone={dashboard.netCents >= 0 ? "pos" : "neg"}
           strong
         />
@@ -73,7 +92,7 @@ export function DashboardPage() {
       {/* Per-person balances */}
       <section>
         <h2 className="mb-3 text-xl font-semibold">People</h2>
-        {dashboard.balances && dashboard.balances.counterparties.length > 0 ? (
+        {balancesFailed ? null : dashboard.balances && dashboard.balances.counterparties.length > 0 ? (
           <ul className="divide-y divide-line overflow-hidden rounded-2xl border border-line bg-card">
             {dashboard.balances.counterparties.map((counterparty) =>
               counterparty.user ? (

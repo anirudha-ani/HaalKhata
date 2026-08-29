@@ -18,7 +18,8 @@ import { queryKeys } from "@haalkhata/shared/api/queryKeys";
  * number, routed by `splitIdentifier` the same way the login form routes it.
  *
  * @returns An object exposing `me` (the signed-in user), `friends` (every
- *   counterparty balance) and `visibleFriends` (those matching `query`), the
+ *   counterparty balance) with `friendsError` when that query failed, and
+ *   `visibleFriends` (those matching `query`), the
  *   `query`/`setQuery` search state, `isLoading`/`isAdding` flags, the
  *   `identifier` form state with `setIdentifier` and `submitAdd`, the last
  *   add-friend `error` message, and `settleWith`/`setSettleWith` controlling
@@ -84,6 +85,10 @@ export function useFriends() {
   return {
     me: currentUser.data,
     friends: allFriends,
+    // Surfaced rather than swallowed: ListFriends shares the per-account
+    // rate limit with the overall balances, and a refused call must not
+    // render as "no friends yet".
+    friendsError: friends.error,
     incomingRequests: friends.data?.incomingRequests ?? [],
     visibleFriends,
     owedToYouCents,

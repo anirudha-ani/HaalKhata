@@ -17,6 +17,7 @@ import { Money } from "@/components/ui/Money";
 import { SearchField } from "@/components/ui/SearchField";
 import { SettleUpModal } from "@/components/modals/SettleUpModal";
 import { Spinner } from "@/components/ui/Spinner";
+import { errorMessage } from "@/lib/api/connect";
 import { useHydrated } from "@/lib/hooks/useHydrated";
 import { useFriends } from "./hooks/useFriends";
 
@@ -145,7 +146,14 @@ export function FriendsPage() {
         </div>
       ) : null}
 
-      {friendsState.friends.length === 0 ? (
+      {friendsState.friendsError ? (
+        <p
+          role="alert"
+          className="rounded-2xl border border-neg-600/20 bg-neg-50 px-4 py-6 text-center text-sm font-medium text-neg-700"
+        >
+          Couldn&apos;t load your friends — {errorMessage(friendsState.friendsError)}
+        </p>
+      ) : friendsState.friends.length === 0 ? (
         <EmptyState
           icon={<Handshake />}
           title="No friends yet"

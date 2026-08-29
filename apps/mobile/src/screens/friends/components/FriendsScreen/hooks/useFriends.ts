@@ -16,7 +16,8 @@ import { queryKeys } from "@haalkhata/shared/api/queryKeys";
  * number, routed by `splitIdentifier` the same way the login form routes it.
  *
  * @returns An object exposing `me` (the signed-in user), `friends`
- *   (counterparty balances), `isLoading`/`isAdding` flags,
+ *   (counterparty balances) with `friendsError` when that query failed,
+ *   `isLoading`/`isAdding` flags,
  *   `refresh`/`isRefreshing` for pull-to-refresh, the `identifier` form state
  *   with `setIdentifier` and `submitAdd`, the last add-friend `error` message,
  *   and `settleWith`/`setSettleWith` controlling the settle-up sheet.
@@ -56,6 +57,10 @@ export function useFriends() {
   return {
     me: currentUser.data,
     friends: friends.data?.friends ?? [],
+    // Surfaced rather than swallowed: ListFriends shares the per-account
+    // rate limit with the overall balances, and a refused call must not
+    // render as "no friends yet".
+    friendsError: friends.error,
     incomingRequests: friends.data?.incomingRequests ?? [],
     isLoading: friends.isLoading,
     refresh: () => void friends.refetch(),

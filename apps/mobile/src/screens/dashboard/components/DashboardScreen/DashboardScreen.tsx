@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Money } from "@/components/ui/Money";
 import { Spinner } from "@/components/ui/Spinner";
+import { errorMessage } from "@/lib/api/connect";
 import { formatMoney } from "@haalkhata/shared/money/money";
 import { safeActivityPath } from "@haalkhata/shared/navigation/activityPath";
 import { localDate } from "@haalkhata/shared/time/localTime";
@@ -29,6 +30,9 @@ export function DashboardScreen() {
   const dashboard = useDashboard();
   const router = useRouter();
   const currency = dashboard.me?.defaultCurrency ?? "USD";
+  // A failed balance query (the RPC is rate-limited per account) must not
+  // read as a zero balance: the cards show a dash and the reason is stated.
+  const balancesFailed = Boolean(dashboard.balancesError);
 
   return (
     <Screen
@@ -67,32 +71,51 @@ export function DashboardScreen() {
             </View>
           </View>
 
+          {balancesFailed ? (
+            <View accessibilityRole="alert" style={styles.errorCard}>
+              <Text style={styles.errorText}>
+                Couldn&apos;t load your balances — {errorMessage(dashboard.balancesError)}
+              </Text>
+            </View>
+          ) : null}
+
           {/* Balance summary */}
           <View style={styles.summary}>
             <View style={styles.summaryRow}>
               <SummaryCard
                 label="You are owed"
                 tone="pos"
-                value={formatMoney(dashboard.balances?.owedToYouCents ?? 0, currency)}
+                value={
+                  balancesFailed
+                    ? "—"
+                    : formatMoney(dashboard.balances?.owedToYouCents ?? 0, currency)
+                }
               />
               <SummaryCard
                 label="You owe"
                 tone="neg"
-                value={formatMoney(dashboard.balances?.youOweCents ?? 0, currency)}
+                value={
+                  balancesFailed ? "—" : formatMoney(dashboard.balances?.youOweCents ?? 0, currency)
+                }
               />
             </View>
             <SummaryCard
               label="Net balance"
               strong
               tone={dashboard.netCents >= 0 ? "pos" : "neg"}
-              value={`${dashboard.netCents < 0 ? "−" : ""}${formatMoney(Math.abs(dashboard.netCents), currency)}`}
+              value={
+                balancesFailed
+                  ? "—"
+                  : `${dashboard.netCents < 0 ? "−" : ""}${formatMoney(Math.abs(dashboard.netCents), currency)}`
+              }
             />
           </View>
 
           {/* Per-person balances */}
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>People</Text>
-            {dashboard.balances && dashboard.balances.counterparties.length > 0 ? (
+            {balancesFailed ? null : dashboard.balances &&
+              dashboard.balances.counterparties.length > 0 ? (
               <View style={styles.listCard}>
                 {dashboard.balances.counterparties.map((counterparty, index) =>
                   counterparty.user ? (
@@ -252,6 +275,19 @@ const styles = StyleSheet.create({
     gap: spacing.md,
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.md,
+  },
+  errorCard: {
+    backgroundColor: colors.neg50,
+    borderColor: colors.neg600,
+    borderRadius: radii.lg,
+    borderWidth: 1,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+  },
+  errorText: {
+    color: colors.neg700,
+    fontSize: 14,
+    fontWeight: "500",
   },
   greeting: {
     color: colors.ink,
