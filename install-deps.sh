@@ -308,13 +308,25 @@ check_android_sdk() {
 install_workspace() {
   cd "$(dirname "$0")"
 
+  local current_store recorded_store
+  current_store="$(pnpm store path)"
+  recorded_store="$(
+    sed -n 's/^[[:space:]]*"storeDir":[[:space:]]*"\([^"]*\)",[[:space:]]*$/\1/p' \
+      node_modules/.modules.yaml 2>/dev/null | head -1 || true
+  )"
+
   if [[ ! -f pnpm-lock.yaml ]]; then
     log "pnpm-lock.yaml missing — generating it with 'pnpm install'…"
   fi
-  if [[ ! -d node_modules ]] || [[ ! -d apps/web/node_modules ]]; then
+  if [[ ! -d node_modules ]] || [[ ! -d apps/web/node_modules ]] || [[ -z "$recorded_store" ]]; then
     log "Installing workspace dependencies (pnpm install)…"
     pnpm install
     ok "workspace dependencies installed"
+  elif [[ "$recorded_store" != "$current_store" ]]; then
+    warn "node_modules uses pnpm store '$recorded_store', but this environment uses '$current_store'."
+    log "Relinking workspace dependencies to the current pnpm store…"
+    pnpm install --force
+    ok "workspace dependencies relinked to $current_store"
   else
     ok "node_modules already present"
   fi
