@@ -62,13 +62,12 @@ export function useFriends() {
   const allFriends = friends.data?.friends ?? [];
   // Filtering keeps the server's order (people you have expenses with first,
   // then the rest alphabetically) rather than re-ranking by match quality.
+  // Names only: a friend's email and phone are private and arrive empty.
   const visibleFriends = useMemo(() => {
     const everyFriend = friends.data?.friends ?? [];
     const terms = searchTerms(query);
     if (terms.length === 0) return everyFriend;
-    return everyFriend.filter((friend) =>
-      matchesTerms(terms, friend.user?.name, friend.user?.email, friend.user?.phone),
-    );
+    return everyFriend.filter((friend) => matchesTerms(terms, friend.user?.name));
   }, [friends.data, query]);
 
   // Headline totals, so the page answers "where do I stand overall?" before

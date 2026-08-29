@@ -77,10 +77,12 @@ export function FriendDetailPage({
         <Avatar user={friend} size="lg" />
         <div className="min-w-0 flex-1">
           <h1 className="truncate text-2xl font-bold">{friend.name}</h1>
-          <p className="truncate text-sm text-ink-soft">
-            {friend.email || friend.phone}
-            {!friend.registered ? " · invited" : ""}
-          </p>
+          {/* Their email and phone are private — the server sends them empty
+              for anyone but yourself — so the only thing worth a line here is
+              whether they have signed in yet. */}
+          {!friend.registered ? (
+            <p className="truncate text-sm text-ink-soft">Invited — hasn&apos;t signed in yet</p>
+          ) : null}
           {/* Where you know each other from — every shared group, settled
               ones included, each a link. And when this page is showing a
               pair rather than a friendship (any name anywhere links here),

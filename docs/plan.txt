@@ -641,8 +641,8 @@ a feed that reports a single action three times is noise.
 both places it appears (new-group form, group detail):
 
 ```
-  Search  [ name, email or phone      ]
-  ☑ Rifat        ☐ Tanvir       ☐ Sadia      ← friends, minus current members
+  Search  [ name                      ]      ← names only: others' email and
+  ☑ Rifat        ☐ Tanvir       ☐ Sadia      ←   phone are private (2026-08-29)
   ── Not on the list? ─────────────────
   [ email or phone            ]  ← the fallback, below the fold
 ```

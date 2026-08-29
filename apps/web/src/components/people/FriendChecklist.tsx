@@ -22,6 +22,11 @@ import { MAX_VISIBLE_FRIENDS, SCROLLING_LIST_THRESHOLD } from "./people.constant
  * already returns people you have expenses with first, then the rest
  * alphabetically, so the likely picks are at the top before a keystroke.
  *
+ * Search matches names only. Other people's email and phone are private
+ * fields the server no longer sends in any list, so matching on them would
+ * be matching on empty strings — and promising it in the placeholder would
+ * be a lie.
+ *
  * @param props - Component props.
  * @returns The search field and checkbox list.
  */
@@ -31,7 +36,7 @@ export function FriendChecklist({
   onToggle,
   legend,
   searchLabel = "Search friends",
-  placeholder = "Search by name, email or phone",
+  placeholder = "Search by name",
   autoFocus = false,
 }: {
   /** Everyone selectable, in the order they should be offered. */
@@ -54,7 +59,7 @@ export function FriendChecklist({
   const matching = useMemo(() => {
     const terms = searchTerms(query);
     if (terms.length === 0) return people;
-    return people.filter((person) => matchesTerms(terms, person.name, person.email, person.phone));
+    return people.filter((person) => matchesTerms(terms, person.name));
   }, [people, query]);
   const visible = matching.slice(0, MAX_VISIBLE_FRIENDS);
   const hiddenCount = matching.length - visible.length;
