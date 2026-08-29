@@ -17,5 +17,7 @@ ProtectControlGroups=true
 LockPersonality=true
 MemoryDenyWriteExecute=true
 CapabilityBoundingSet=
-RestrictAddressFamilies=AF_INET AF_INET6
+# AF_UNIX is what `logger` needs to reach journald's /dev/log socket; without
+# it the notifier dies on its first line and never reaches the HTTPS alert.
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
 ExecStart=/srv/haalkhata/backup-failure.sh

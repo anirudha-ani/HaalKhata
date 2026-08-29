@@ -10,7 +10,9 @@ MESSAGE="HaalKhata nightly backup failed; inspect journalctl -u haalkhata-backup
 
 # The journal entry remains available even when DNS or the alert provider is
 # unavailable. auth.crit also reaches any host-level log forwarding facility.
-logger --priority auth.crit --tag haalkhata-backup -- "$MESSAGE"
+# Never fatal: a journald hiccup must not cost the operator the HTTPS alert,
+# which is the notification that actually reaches a phone.
+logger --priority auth.crit --tag haalkhata-backup -- "$MESSAGE" || true
 
 if [ ! -f "$ALERT_URL_FILE" ] || [ -L "$ALERT_URL_FILE" ]; then
   echo "backup alert URL is missing or unsafe: $ALERT_URL_FILE" >&2
@@ -28,7 +30,11 @@ case "$(stat -c %a "$ALERT_URL_FILE")" in
     ;;
 esac
 
-IFS= read -r ALERT_URL < "$ALERT_URL_FILE"
+# `read` returns non-zero on a final line without a trailing newline (an
+# editor or `echo -n` can produce one) even though it has filled ALERT_URL;
+# accept the line either way and let the pattern check below judge it.
+ALERT_URL=""
+IFS= read -r ALERT_URL < "$ALERT_URL_FILE" || [ -n "$ALERT_URL" ]
 if [[ ! "$ALERT_URL" =~ ^https://[^[:space:]\"\\]+$ ]]; then
   echo "backup alert URL must be a non-empty HTTPS URL without whitespace" >&2
   exit 1
