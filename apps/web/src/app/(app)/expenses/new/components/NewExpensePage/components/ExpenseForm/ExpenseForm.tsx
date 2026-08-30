@@ -57,7 +57,7 @@ export function ExpenseForm({
         friendIds={form.friendIds}
         onGroupChange={form.setGroupId}
         onToggleFriend={form.toggleFriend}
-        disabled={form.isEdit}
+        scopeLocked={form.isEdit}
       />
 
       <section className="space-y-3">

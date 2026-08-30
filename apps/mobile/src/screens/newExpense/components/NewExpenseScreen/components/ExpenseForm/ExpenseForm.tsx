@@ -41,21 +41,19 @@ export function ExpenseForm({
 
   return (
     <View style={styles.form}>
-      {/* Who's on this: any number of friends, or one group instead. Locked
-          while editing — the server pins a saved expense to its scope, so
-          the chips dim instead of looking tappable and doing nothing. */}
+      {/* Who's on this: any number of friends, or one group instead. While
+          editing, only the group choice is locked — the server pins a saved
+          expense to its scope because settlements live there — so the group
+          chips dim; people can still be added or removed. */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>WHO&apos;S ON THIS?</Text>
         {form.friends.length > 0 ? (
           <View style={styles.contextGroup}>
-            <Text style={styles.contextLabel}>
-              {form.isEdit ? "Who's on this can't change once saved" : "Tap everyone sharing this"}
-            </Text>
+            <Text style={styles.contextLabel}>Tap everyone sharing this</Text>
             <View style={styles.chips}>
               {form.friends.map((friend) =>
                 friend.user ? (
                   <Chip
-                    disabled={form.isEdit}
                     key={friend.user.id}
                     label={friend.user.name}
                     onPress={() => form.toggleFriend(friend.user?.id ?? "")}
@@ -68,7 +66,11 @@ export function ExpenseForm({
         ) : null}
         {form.groups.length > 0 ? (
           <View style={styles.contextGroup}>
-            <Text style={styles.contextLabel}>…or a group — its members become the cast</Text>
+            <Text style={styles.contextLabel}>
+              {form.isEdit
+                ? "…or a group — can't change once saved"
+                : "…or a group — its members become the cast"}
+            </Text>
             <View style={styles.chips}>
               {form.groups.map((summary) =>
                 summary.group ? (
