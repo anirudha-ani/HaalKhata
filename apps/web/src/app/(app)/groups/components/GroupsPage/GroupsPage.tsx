@@ -11,12 +11,8 @@ import { SearchField } from "@/components/ui/SearchField";
 import { Spinner } from "@/components/ui/Spinner";
 import { useHydrated } from "@/lib/hooks/useHydrated";
 import { CURRENCIES } from "@haalkhata/shared/money/money.constants";
-import {
-  GROUP_BALANCE_FILTERS,
-  GROUP_TYPES,
-  groupEmoji,
-  noGroupsMessage,
-} from "../../constants/groupTypes";
+import { GROUP_BALANCE_FILTERS, noGroupsMessage } from "@haalkhata/shared/group/balanceFilter";
+import { GROUP_TYPES, groupEmoji } from "../../constants/groupTypes";
 import { useGroups } from "./hooks/useGroups";
 import { MAX_GROUP_NAME_LENGTH } from "@haalkhata/shared/text/limits";
 

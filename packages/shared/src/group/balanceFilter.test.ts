@@ -5,7 +5,7 @@ import {
   GROUP_BALANCE_FILTERS,
   matchesBalanceFilter,
   noGroupsMessage,
-} from "./groupTypes";
+} from "./balanceFilter";
 
 describe("matchesBalanceFilter", () => {
   it("shows everything under 'all', whichever way the money points", () => {

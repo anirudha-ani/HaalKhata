@@ -10,9 +10,11 @@ import { Button } from "@/components/ui/Button";
 import { Chip } from "@/components/ui/Chip";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Money } from "@/components/ui/Money";
+import { SearchField } from "@/components/ui/SearchField";
 import { Sheet } from "@/components/ui/Sheet";
 import { Spinner } from "@/components/ui/Spinner";
 import { TextField } from "@/components/ui/TextField";
+import { GROUP_BALANCE_FILTERS, noGroupsMessage } from "@haalkhata/shared/group/balanceFilter";
 import { CURRENCIES } from "@haalkhata/shared/money/money.constants";
 import { colors, fonts, radii, spacing } from "@/lib/theme/theme";
 import { GROUP_TYPES, groupEmoji } from "../../constants/groupTypes";
@@ -20,9 +22,9 @@ import { useGroups } from "./hooks/useGroups";
 import { MAX_GROUP_NAME_LENGTH } from "@haalkhata/shared/text/limits";
 
 /**
- * Renders the groups screen: a card list of group summaries (member count and
- * your net balance per group) and a bottom-sheet form for creating a new
- * group.
+ * Renders the groups screen: a searchable, balance-filterable card list of
+ * group summaries (member count and your net balance per group) and a
+ * bottom-sheet form for creating a new group.
  *
  * @returns The groups screen content, with a spinner while the list loads.
  */
@@ -62,8 +64,46 @@ export function GroupsScreen() {
           title="No groups yet"
         />
       ) : (
+        <>
+          <View style={styles.searchRow}>
+            <View style={styles.searchField}>
+              <SearchField
+                onChange={groupsState.setQuery}
+                placeholder="Search groups by name or type"
+                value={groupsState.query}
+              />
+            </View>
+            {/* The count has to account for the balance filter too, or it
+                would read as unfiltered while rows are being hidden. */}
+            {groupsState.query || groupsState.balance !== "all" ? (
+              <Text style={styles.searchCount}>
+                {groupsState.visibleGroups.length} of {groupsState.groups.length}
+              </Text>
+            ) : null}
+          </View>
+
+          {/* Filter state stays visible while it hides rows, matching the
+              activity feed: the active chip is styled, not just remembered. */}
+          <View style={styles.filterChips}>
+            {GROUP_BALANCE_FILTERS.map((entry) => (
+              <Chip
+                key={entry.value}
+                label={entry.label}
+                onPress={() => groupsState.setBalance(entry.value)}
+                selected={groupsState.balance === entry.value}
+              />
+            ))}
+          </View>
+
+          {groupsState.visibleGroups.length === 0 ? (
+            <View style={styles.noMatchCard}>
+              <Text style={styles.noMatchText}>
+                {noGroupsMessage(groupsState.query, groupsState.balance)}
+              </Text>
+            </View>
+          ) : (
         <View style={styles.cards}>
-          {groupsState.groups.map((summary) =>
+          {groupsState.visibleGroups.map((summary) =>
             summary.group ? (
               <Pressable
                 key={summary.group.id}
@@ -101,6 +141,8 @@ export function GroupsScreen() {
             ) : null,
           )}
         </View>
+          )}
+        </>
       )}
 
       {groupsState.creating ? (
@@ -248,6 +290,11 @@ const styles = StyleSheet.create({
     color: colors.brand600,
     fontSize: 14,
   },
+  filterChips: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: spacing.sm,
+  },
   form: {
     gap: spacing.lg,
   },
@@ -262,6 +309,31 @@ const styles = StyleSheet.create({
     color: colors.ink,
     fontSize: 14,
     fontWeight: "500",
+  },
+  noMatchCard: {
+    backgroundColor: colors.card,
+    borderColor: colors.line,
+    borderRadius: radii.lg,
+    borderWidth: 1,
+    padding: spacing.xl,
+  },
+  noMatchText: {
+    color: colors.inkSoft,
+    fontSize: 14,
+    textAlign: "center",
+  },
+  searchCount: {
+    color: colors.inkSoft,
+    fontSize: 13,
+    fontVariant: ["tabular-nums"],
+  },
+  searchField: {
+    flex: 1,
+  },
+  searchRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: spacing.md,
   },
   title: {
     color: colors.ink,
