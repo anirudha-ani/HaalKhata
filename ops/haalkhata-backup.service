@@ -13,6 +13,10 @@ UMask=0077
 # database half of the backup still succeeds. Root also needs no docker-group
 # membership to reach the daemon.
 #
-# Consequence: age's private key and ~/.s3cfg live in /root, not /home/deploy.
+# Consequence: ~/.s3cfg (the offsite upload credential) lives in /root, not
+# /home/deploy. age's PRIVATE key does not live on this box at all — only the
+# public recipient (backup-recipient.txt) is here; the private half stays
+# with the recovery custodian, off-host, and is brought in only for an
+# attended restore (see backup.sh).
 User=root
 ExecStart=/srv/haalkhata/backup.sh

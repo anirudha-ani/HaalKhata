@@ -41,6 +41,14 @@ jobs:
           node-version: 24
           cache: pnpm
 
+      # Runs before anything is built: a leaked credential in the tree or
+      # in history on the way to a protected branch fails the gate here.
+      # fetch-depth: 0 above is what lets it see history, not only HEAD.
+      - name: 'Secrets: nothing committed that looks like a credential'
+        uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7 # v2.3.9
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Install dependencies — exactly as locked
         run: pnpm install --frozen-lockfile
 

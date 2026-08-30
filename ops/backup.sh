@@ -72,14 +72,42 @@ mv "$SECRETS_PARTIAL" "$SECRETS"
 # Backblaze B2 (10 GB free) or Cloudflare R2 (10 GB free, no egress fees) both
 # hold these dumps for nothing — they are megabytes. DigitalOcean Spaces also
 # works but costs $5/mo minimum, which is most of a droplet.
-if [ -f "$BASE/backup-target.txt" ]; then
+#
+# Offsite is mandatory. A run that only wrote to this disk is not a backup,
+# and reporting it as one is how a disk loss takes the database and every
+# copy of it together. No target ⇒ the run FAILS, which trips OnFailure and
+# the alert. The only way to run local-only is to say so, in writing, with a
+# backup-local-only.txt beside the target file — and even then it is a
+# warning in the journal every night, not silence.
+if [ ! -f "$BASE/backup-target.txt" ]; then
+  if [ -f "$BASE/backup-local-only.txt" ]; then
+    echo "warning: backup-local-only.txt is set — backups are ONLY on this disk" >&2
+  else
+    echo "no backup-target.txt: refusing to report a same-disk backup as a backup" >&2
+    exit 1
+  fi
+else
   TARGET=$(cat "$BASE/backup-target.txt")
   case "$TARGET" in
     s3://*) s3cmd sync "$OUT/" "$TARGET" ;;
     *)      rsync -a "$OUT/" "$TARGET" ;;
   esac
-else
-  echo "warning: no backup-target.txt — backups are still only on this disk" >&2
+
+  # Verify, don't trust: the upload tool's exit status says it ran, not that
+  # tonight's two archives are actually at the remote. List each one back
+  # and compare sizes; a missing or short object fails the run.
+  for archive in "$DUMP" "$SECRETS"; do
+    name=$(basename "$archive")
+    local_size=$(stat -c %s "$archive")
+    case "$TARGET" in
+      s3://*) remote_size=$(s3cmd ls "$TARGET/$name" | awk '{print $3}' | head -n1) ;;
+      *)      remote_size=$(rsync --list-only "$TARGET/$name" | awk '{print $2}' | tr -d , | head -n1) ;;
+    esac
+    if [ "${remote_size:-0}" != "$local_size" ]; then
+      echo "offsite copy of $name is missing or short (local $local_size, remote ${remote_size:-none})" >&2
+      exit 1
+    fi
+  done
 fi
 
 find "$OUT" -name '*.age' -mtime +30 -delete
