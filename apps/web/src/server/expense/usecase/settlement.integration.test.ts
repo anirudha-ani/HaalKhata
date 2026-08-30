@@ -96,6 +96,7 @@ describe.skipIf(!reachable)("recordSettlement against Postgres", () => {
   let userNetInGroups: typeof import("./balance.usecase").userNetInGroups;
   let netWithUser: typeof import("./balance.usecase").netWithUser;
   let getFriendLedger: typeof import("./balance.usecase").getFriendLedger;
+  let sendReminder: typeof import("@/server/social/usecase/social.usecase").sendReminder;
   let closePool: () => Promise<void>;
 
   beforeAll(async () => {
@@ -124,6 +125,7 @@ describe.skipIf(!reachable)("recordSettlement against Postgres", () => {
       updateExpense,
     } = await import("./expense.usecase"));
     ({ removeMemberFromGroup } = await import("@/server/group/usecase/group.usecase"));
+    ({ sendReminder } = await import("@/server/social/usecase/social.usecase"));
     ({ getFriendLedger, userNetInGroup, userNetInGroups, netWithUser } = await import(
       "./balance.usecase"
     ));
@@ -510,5 +512,22 @@ describe.skipIf(!reachable)("recordSettlement against Postgres", () => {
     const batched = await userNetInGroups(DEBTOR, ["grp-1", "grp-missing"]);
     expect(batched.get("grp-1")).toBe(await userNetInGroup(DEBTOR, "grp-1"));
     expect(batched.get("grp-missing")).toBe(0);
+  });
+
+  it("delivers exactly one reminder under a concurrent burst at the cooldown boundary", async () => {
+    // M-05: the debtor still owes on the retried lunch. Three sends at once
+    // must all serialize behind the pair's lock; the first commits, the
+    // others see it and are refused by the cooldown.
+    const outcomes = await Promise.allSettled([
+      sendReminder(CREDITOR, DEBTOR),
+      sendReminder(CREDITOR, DEBTOR),
+      sendReminder(CREDITOR, DEBTOR),
+    ]);
+    expect(outcomes.filter((outcome) => outcome.status === "fulfilled")).toHaveLength(1);
+    const delivered = await database.query(
+      `SELECT count(*) AS total FROM notifications WHERE type = 'reminder' AND user_id = $1`,
+      [DEBTOR],
+    );
+    expect(Number(delivered.rows[0].total)).toBe(1);
   });
 });

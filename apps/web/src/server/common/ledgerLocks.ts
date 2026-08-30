@@ -6,6 +6,7 @@ import {
   EXPENSE_LEDGER_LOCK_PREFIX,
   GROUP_LEDGER_LOCK_PREFIX,
   PARTICIPANT_LEDGER_LOCK_PREFIX,
+  REMINDER_LOCK_PREFIX,
 } from "@/server/common/ledgerLocks.constants";
 
 /**
@@ -71,6 +72,23 @@ export async function lockParticipantLedgers(
  */
 export async function lockExpenseLedger(client: PoolClient, expenseId: string): Promise<void> {
   await acquireKeys(client, [`${EXPENSE_LEDGER_LOCK_PREFIX}${expenseId}`]);
+}
+
+/**
+ * Serializes reminders from one person to another, so the cooldown check
+ * and the insert that follows it cannot interleave with a concurrent send.
+ *
+ * @param client - Existing transaction client.
+ * @param senderId - Who is reminding.
+ * @param debtorId - Who is being reminded.
+ * @returns A promise that resolves after the pair's reminder lock is held.
+ */
+export async function lockReminder(
+  client: PoolClient,
+  senderId: string,
+  debtorId: string,
+): Promise<void> {
+  await acquireKeys(client, [`${REMINDER_LOCK_PREFIX}${senderId}:${debtorId}`]);
 }
 
 /**

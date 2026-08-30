@@ -13,3 +13,6 @@ export const PARTICIPANT_LEDGER_LOCK_PREFIX = "ledger:participant:";
 
 /** Advisory-lock namespace for serializing mutations of one expense row. */
 export const EXPENSE_LEDGER_LOCK_PREFIX = "ledger:expense:";
+
+/** Advisory-lock key prefix serializing reminders from one person to another. */
+export const REMINDER_LOCK_PREFIX = "reminder:";

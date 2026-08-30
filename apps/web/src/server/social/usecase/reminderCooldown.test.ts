@@ -1,5 +1,6 @@
 /** Regression tests for cheap reminder guards running before ledger computation. */
 
+import type { PoolClient } from "pg";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { UserRow } from "@/server/auth/repo/users.repo";
 
@@ -36,6 +37,13 @@ vi.mock("@/server/expense/usecase/balance.usecase", () => ({
   getOverallBalances: vi.fn(),
   netWithUser: vi.fn(),
 }));
+const { transactionClient } = vi.hoisted(() => ({ transactionClient: {} as PoolClient }));
+vi.mock("@/server/common/ledgerLocks", () => ({
+  lockReminder: vi.fn(),
+  withLedgerTransaction: vi.fn(
+    (operation: (client: PoolClient) => Promise<unknown>) => operation(transactionClient),
+  ),
+}));
 
 import { findUserById } from "@/server/auth/repo/users.repo";
 import {
@@ -43,6 +51,7 @@ import {
   insertNotifications,
 } from "@/server/social/repo/notifications.repo";
 import { netWithUser } from "@/server/expense/usecase/balance.usecase";
+import { lockReminder } from "@/server/common/ledgerLocks";
 import { sendReminder } from "./social.usecase";
 
 const SENDER_ID = "user-sender";
@@ -91,6 +100,7 @@ describe("reminder cooldown ordering", () => {
       DEBTOR_ID,
       "reminder",
       `/friends/${SENDER_ID}`,
+      transactionClient,
     );
     expect(netWithUser).not.toHaveBeenCalled();
     expect(insertNotifications).not.toHaveBeenCalled();
@@ -103,6 +113,29 @@ describe("reminder cooldown ordering", () => {
     const ledgerOrder = vi.mocked(netWithUser).mock.invocationCallOrder[0];
     expect(cooldownOrder).toBeLessThan(ledgerOrder);
     expect(insertNotifications).toHaveBeenCalledTimes(1);
+  });
+
+  it("checks and inserts on one transaction, behind the pair's lock", async () => {
+    // M-05: a check-then-insert across two connections lets concurrent sends
+    // all pass the check. The lock is taken first, and every step after it
+    // rides the same client.
+    await sendReminder(SENDER_ID, DEBTOR_ID);
+
+    expect(lockReminder).toHaveBeenCalledWith(transactionClient, SENDER_ID, DEBTOR_ID);
+    const lockOrder = vi.mocked(lockReminder).mock.invocationCallOrder[0];
+    const cooldownOrder = vi.mocked(findLatestNotificationAt).mock.invocationCallOrder[0];
+    expect(lockOrder).toBeLessThan(cooldownOrder);
+    expect(findLatestNotificationAt).toHaveBeenCalledWith(
+      DEBTOR_ID,
+      "reminder",
+      `/friends/${SENDER_ID}`,
+      transactionClient,
+    );
+    expect(insertNotifications).toHaveBeenCalledWith(
+      [DEBTOR_ID],
+      expect.objectContaining({ type: "reminder" }),
+      transactionClient,
+    );
   });
 
   it("names every currency owed, and never nets one against another", async () => {

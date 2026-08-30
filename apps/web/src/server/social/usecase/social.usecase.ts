@@ -17,6 +17,7 @@ import {
 } from "@/server/auth/repo/users.repo";
 import { listActivityMonths, listActivityPage } from "@/server/social/repo/activity.repo";
 import { isMember } from "@/server/group/repo/groups.repo";
+import { lockReminder, withLedgerTransaction } from "@/server/common/ledgerLocks";
 import {
   countUnread,
   findLatestNotificationAt,
@@ -323,28 +324,33 @@ export async function sendReminder(userId: string, debtorId: string): Promise<vo
   if (!debtor) denied("account no longer exists");
 
   const link = `/friends/${userId}`;
-  const lastSentAt = await findLatestNotificationAt(debtorId, "reminder", link);
-  if (lastSentAt) {
-    const elapsedHours = (Date.now() - new Date(lastSentAt).getTime()) / 3_600_000;
-    if (elapsedHours < REMINDER_COOLDOWN_HOURS) {
-      invalid(
-        `you already reminded ${debtor.name} — you can send another in ${Math.ceil(
-          REMINDER_COOLDOWN_HOURS - elapsedHours,
-        )}h`,
-      );
-    }
-  }
-
-  // A rejected cooldown is one indexed lookup. Only callers who may actually
-  // send another reminder pay for the full expense-and-settlement ledger walk.
-  // Per currency: the nudge names each amount in its own currency, and a
-  // dollar they owe is not cancelled by a euro they are owed.
-  const owedBuckets = [...(await netWithUser(userId, debtorId)).entries()].filter(
-    ([, cents]) => cents > 0,
-  );
-  if (owedBuckets.length === 0) invalid("they don't owe you anything right now");
-
   const sender = (await findUserById(userId))!;
+  // The cooldown check and the insert it guards run on one transaction
+  // behind an advisory lock on the (sender, debtor) pair: without it, ten
+  // concurrent sends all read "no previous reminder" before any commits,
+  // and the cooldown exists precisely to stop that.
+  await withLedgerTransaction(async (client) => {
+    await lockReminder(client, userId, debtorId);
+    const lastSentAt = await findLatestNotificationAt(debtorId, "reminder", link, client);
+    if (lastSentAt) {
+      const elapsedHours = (Date.now() - new Date(lastSentAt).getTime()) / 3_600_000;
+      if (elapsedHours < REMINDER_COOLDOWN_HOURS) {
+        invalid(
+          `you already reminded ${debtor.name} — you can send another in ${Math.ceil(
+            REMINDER_COOLDOWN_HOURS - elapsedHours,
+          )}h`,
+        );
+      }
+    }
+
+    // A rejected cooldown is one indexed lookup. Only callers who may actually
+    // send another reminder pay for the full expense-and-settlement ledger walk.
+    // Per currency: the nudge names each amount in its own currency, and a
+    // dollar they owe is not cancelled by a euro they are owed.
+    const owedBuckets = [...(await netWithUser(userId, debtorId)).entries()].filter(
+      ([, cents]) => cents > 0,
+    );
+    if (owedBuckets.length === 0) invalid("they don't owe you anything right now");
 
   // The nudge carries the sender's handles, because "where do I send it?" is
   // the very next question and making the debtor ask defeats the reminder.
@@ -355,12 +361,17 @@ export async function sendReminder(userId: string, debtorId: string): Promise<vo
       return `${method?.label ?? entry.method}: ${entry.handle}`;
     })
     .join(" · ");
-  const owed = owedBuckets.map(([currency, cents]) => formatMoney(cents, currency)).join(" and ");
+    const owed = owedBuckets.map(([currency, cents]) => formatMoney(cents, currency)).join(" and ");
 
-  await insertNotifications([debtorId], {
-    type: "reminder",
-    title: `${sender.name} sent you a reminder`,
-    body: payTo ? `You owe ${owed} — pay via ${payTo}` : `You owe ${owed}`,
-    link,
+    await insertNotifications(
+      [debtorId],
+      {
+        type: "reminder",
+        title: `${sender.name} sent you a reminder`,
+        body: payTo ? `You owe ${owed} — pay via ${payTo}` : `You owe ${owed}`,
+        link,
+      },
+      client,
+    );
   });
 }

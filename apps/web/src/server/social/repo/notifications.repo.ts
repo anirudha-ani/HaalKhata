@@ -80,12 +80,14 @@ export async function findLatestNotificationAt(
   userId: string,
   type: string,
   link: string,
+  client?: PoolClient,
 ): Promise<string | undefined> {
   const latest = await queryOne<{ created_at: string }>(
     `SELECT created_at FROM notifications
      WHERE user_id = $1 AND type = $2 AND link = $3
      ORDER BY created_at DESC LIMIT 1`,
     [userId, type, link],
+    client,
   );
   return latest?.created_at;
 }
