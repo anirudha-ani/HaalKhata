@@ -480,11 +480,39 @@ describe("who hears about a transaction", () => {
 
     const detail = await getExpense(PAYER, "expense-1");
 
-    // The same predicate deleteExpense applies under its lock, so the page
-    // and the server can never disagree about which expenses can no longer
-    // be deleted — read advisorily here, with no transaction client.
+    // Read advisorily, with no transaction client, and narrowed to payments
+    // between the expense's own participants because the mocked group does
+    // not simplify debts.
     expect(detail.hasLaterSettlement).toBe(true);
-    expect(scopeHasSettlements).toHaveBeenCalledWith(GOA_TRIP, [PAYER, OWER], "42");
+    expect(scopeHasSettlements).toHaveBeenCalledWith(
+      GOA_TRIP,
+      [PAYER, OWER],
+      "42",
+      undefined,
+      true,
+    );
+  });
+
+  it("counts any later group payment when the group simplifies debts", async () => {
+    vi.mocked(findGroupById).mockResolvedValue({
+      id: GOA_TRIP,
+      name: "Goa",
+      currency: "USD",
+      simplify_debts: true,
+    } as never);
+    vi.mocked(listCommentsByExpense).mockResolvedValue([]);
+    vi.mocked(listActivityForExpense).mockResolvedValue([]);
+    vi.mocked(userNetInGroup).mockResolvedValue(0);
+
+    await getExpense(PAYER, "expense-1");
+
+    expect(scopeHasSettlements).toHaveBeenCalledWith(
+      GOA_TRIP,
+      [PAYER, OWER],
+      "42",
+      undefined,
+      false,
+    );
   });
 
   it("reports no later settlement while the scope has none", async () => {

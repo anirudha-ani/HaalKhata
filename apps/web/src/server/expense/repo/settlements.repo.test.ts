@@ -30,8 +30,22 @@ describe("settlement history mutation guard", () => {
 
     const [statement, values, client] = vi.mocked(queryOne).mock.calls[0];
     expect(statement).toContain("group_id = $1 AND ledger_event_order > $2");
-    expect(values).toEqual(["group-trip", EVENT_ORDER]);
+    expect(values).toEqual(["group-trip", EVENT_ORDER, false, []]);
     expect(client).toBe(transactionClient);
+  });
+
+  it("narrows a group scope to the expense's own participants when asked", async () => {
+    await scopeHasSettlements(
+      "group-trip",
+      ["user-a", "user-a", "user-b"],
+      EVENT_ORDER,
+      transactionClient,
+      true,
+    );
+
+    const [statement, values] = vi.mocked(queryOne).mock.calls[0];
+    expect(statement).toContain("from_user = ANY($4::text[]) OR to_user = ANY($4::text[])");
+    expect(values).toEqual(["group-trip", EVENT_ORDER, true, ["user-a", "user-b"]]);
   });
 
   it("checks later one-off settlements between any affected participants", async () => {

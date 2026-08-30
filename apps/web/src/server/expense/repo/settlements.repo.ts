@@ -59,11 +59,17 @@ export async function withSettlementPairLock<Outcome>(
  * new expense from being deleted.
  *
  * @param groupId - Group scope, or null for one-off pair scopes.
- * @param participantIds - One-off expense participants; ignored for a group.
+ * @param participantIds - The expense's participants. Always applied to a
+ *   one-off scope; applied to a group scope only when `groupParticipantsOnly`
+ *   is set.
  * @param expenseEventOrder - Monotonic creation order of the expense being changed.
  * @param client - Transaction client holding the matching ledger lock when
- *   the answer guards a deletion; omitted for an advisory read (the detail
- *   view), which the delete path rechecks under its own lock.
+ *   the answer guards a mutation; omitted for an advisory read.
+ * @param groupParticipantsOnly - In a group scope, count only settlements
+ *   that involve one of the expense's participants. Right for a group whose
+ *   debts are pairwise; wrong for a simplified group, where a payment between
+ *   two members who were never on the expense can still be routed debt from
+ *   it — callers pass false there and accept the wider answer.
  * @returns True when a later settlement exists in the addressed scope.
  */
 export async function scopeHasSettlements(
@@ -71,14 +77,16 @@ export async function scopeHasSettlements(
   participantIds: string[],
   expenseEventOrder: string,
   client?: PoolClient,
+  groupParticipantsOnly = false,
 ): Promise<boolean> {
   if (groupId) {
     return (
       (await queryOne(
         `SELECT 1 AS matched FROM settlements
           WHERE group_id = $1 AND ledger_event_order > $2
+            AND ($3::boolean IS FALSE OR from_user = ANY($4::text[]) OR to_user = ANY($4::text[]))
           LIMIT 1`,
-        [groupId, expenseEventOrder],
+        [groupId, expenseEventOrder, groupParticipantsOnly, [...new Set(participantIds)]],
         client,
       )) !== undefined
     );

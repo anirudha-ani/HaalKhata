@@ -770,15 +770,19 @@ export async function getExpense(userId: string, expenseId: string) {
       oneOffNetByUserId,
     ).length === 1;
 
-  // The same predicate deleteExpense enforces under the ledger lock, answered
-  // up front: a settlement postdating this expense in its scope means it can
-  // still be edited (the balance rebalances) but not deleted. The detail view
-  // hides Delete and warns before an edit. Read outside any lock — advisory,
-  // not authoritative; the delete path rechecks under its own.
+  // Whether a payment postdates this expense in its scope, so the detail view
+  // can warn that an edit or a delete will rebalance against it. Advisory
+  // only. In a pairwise group only payments between the expense's own
+  // participants count — a settlement between two unrelated members says
+  // nothing about this expense — while a simplified group routes debt across
+  // everyone, so there any later payment might have been for it.
+  const scopeGroup = expenseRow.group_id ? await findGroupById(expenseRow.group_id) : undefined;
   const hasLaterSettlement = await scopeHasSettlements(
     expenseRow.group_id,
     storedParticipantIds(expenseRow, children),
     expenseRow.ledger_event_order,
+    undefined,
+    scopeGroup ? !scopeGroup.simplify_debts : false,
   );
 
   return {
