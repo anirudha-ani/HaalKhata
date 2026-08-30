@@ -77,7 +77,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(findUserById).mockImplementation(async (userId) => userRow(userId));
   vi.mocked(findLatestNotificationAt).mockResolvedValue(undefined);
-  vi.mocked(netWithUser).mockResolvedValue(500);
+  vi.mocked(netWithUser).mockResolvedValue(new Map([["USD", 500]]));
   vi.mocked(insertNotifications).mockResolvedValue(undefined);
 });
 
@@ -103,5 +103,25 @@ describe("reminder cooldown ordering", () => {
     const ledgerOrder = vi.mocked(netWithUser).mock.invocationCallOrder[0];
     expect(cooldownOrder).toBeLessThan(ledgerOrder);
     expect(insertNotifications).toHaveBeenCalledTimes(1);
+  });
+
+  it("names every currency owed, and never nets one against another", async () => {
+    // They owe 500 USD and are owed 700 EUR: the dollar debt stands on its
+    // own, and the nudge says exactly what is owed in what.
+    vi.mocked(netWithUser).mockResolvedValue(
+      new Map([
+        ["USD", 500],
+        ["EUR", -700],
+      ]),
+    );
+    await sendReminder(SENDER_ID, DEBTOR_ID);
+    const [, notification] = vi.mocked(insertNotifications).mock.calls[0];
+    expect(notification.body).toMatch(/5\.00/);
+    expect(notification.body).not.toMatch(/7\.00/);
+  });
+
+  it("refuses when the only positive position is in a currency they are owed in", async () => {
+    vi.mocked(netWithUser).mockResolvedValue(new Map([["EUR", -700]]));
+    await expect(sendReminder(SENDER_ID, DEBTOR_ID)).rejects.toThrow(/don't owe you anything/);
   });
 });

@@ -23,8 +23,8 @@ export interface MergePreviewRow {
   name: string;
   /** Undeleted expenses the absorbed row participates in. */
   expense_count: number;
-  /** Decimal bigint text for its net cents; positive means it is owed. */
-  net_cents: string;
+  /** Its net cents per currency; positive means it is owed. Zero buckets are absent. */
+  nets: Record<string, number>;
   /** Names of people it shares expenses with. */
   counterparty_names: string[];
 }
@@ -38,20 +38,40 @@ export interface MergeOutcome {
 }
 
 /**
- * Net position in cents for one user, from raw rows.
+ * Net position per currency for one user, from raw rows, as a JSON object
+ * of currency → cents with zero buckets left out.
  *
  * Used only as a before/after invariant inside the merge, so it deliberately
  * does NOT filter `deleted_at` and does not have to agree with the product's
  * balance definition in `expense/domain/balances.ts`. What matters is that the
  * same arithmetic is applied on both sides of the merge: including soft-deleted
  * expenses means a split that failed to repoint shows up as a mismatch instead
- * of hiding behind the filter.
+ * of hiding behind the filter. Per currency for the same reason the product
+ * is: a dollar and a euro cannot cancel, so they must not be summed here
+ * either.
  */
 const NET_CENTS_SQL = `
-  COALESCE((SELECT SUM(amount_cents) FROM expense_payers WHERE user_id = $1), 0)
-  - COALESCE((SELECT SUM(owed_cents) FROM expense_splits WHERE user_id = $1), 0)
-  + COALESCE((SELECT SUM(amount_cents) FROM settlements WHERE from_user = $1), 0)
-  - COALESCE((SELECT SUM(amount_cents) FROM settlements WHERE to_user = $1), 0)
+  COALESCE((
+    SELECT json_object_agg(currency, net)
+      FROM (
+        SELECT currency, SUM(delta)::bigint AS net
+          FROM (
+            SELECT exp.currency, pay.amount_cents AS delta
+              FROM expense_payers pay JOIN expenses exp ON exp.id = pay.expense_id
+             WHERE pay.user_id = $1
+            UNION ALL
+            SELECT exp.currency, -spl.owed_cents
+              FROM expense_splits spl JOIN expenses exp ON exp.id = spl.expense_id
+             WHERE spl.user_id = $1
+            UNION ALL
+            SELECT currency, amount_cents FROM settlements WHERE from_user = $1
+            UNION ALL
+            SELECT currency, -amount_cents FROM settlements WHERE to_user = $1
+          ) movements
+         GROUP BY currency
+        HAVING SUM(delta) <> 0
+      ) nets
+  ), '{}'::json)
 `;
 
 /** Exact table/parent/amount combinations that can be collapsed during a merge. */
@@ -92,14 +112,48 @@ const DIRECT_MERGE_TARGETS = [
  *
  * @param client - The transaction's client; must be the same one the merge uses.
  * @param userId - User whose net to compute.
- * @returns Net cents under {@link NET_CENTS_SQL}.
+ * @returns Net cents per currency under {@link NET_CENTS_SQL}.
  */
-async function netCents(client: PoolClient, userId: string): Promise<number> {
-  const { rows } = await client.query<{ net: string }>(
+async function netCents(client: PoolClient, userId: string): Promise<Record<string, number>> {
+  const { rows } = await client.query<{ net: Record<string, number> | null }>(
     `SELECT (${NET_CENTS_SQL}) AS net`,
     [userId],
   );
-  return Number(rows[0]?.net ?? 0);
+  return rows[0]?.net ?? {};
+}
+
+/**
+ * Adds two per-currency positions.
+ *
+ * @param first - Cents per currency.
+ * @param second - Cents per currency.
+ * @returns Their sum per currency, zero buckets removed.
+ */
+function addNets(
+  first: Record<string, number>,
+  second: Record<string, number>,
+): Record<string, number> {
+  const combined: Record<string, number> = {};
+  for (const [currency, cents] of [...Object.entries(first), ...Object.entries(second)]) {
+    const total = (combined[currency] ?? 0) + Number(cents);
+    if (total === 0) delete combined[currency];
+    else combined[currency] = total;
+  }
+  return combined;
+}
+
+/**
+ * Whether two per-currency positions are identical.
+ *
+ * @param first - Cents per currency.
+ * @param second - Cents per currency.
+ * @returns True when every bucket matches.
+ */
+function sameNets(first: Record<string, number>, second: Record<string, number>): boolean {
+  const currencies = new Set([...Object.keys(first), ...Object.keys(second)]);
+  return [...currencies].every(
+    (currency) => Number(first[currency] ?? 0) === Number(second[currency] ?? 0),
+  );
 }
 
 /**
@@ -118,7 +172,7 @@ export async function previewMerge(userId: string): Promise<MergePreviewRow | un
           LEFT JOIN expense_payers pay ON pay.expense_id = exp.id
          WHERE exp.deleted_at IS NULL
            AND (spl.user_id = $1 OR pay.user_id = $1)) AS expense_count,
-       (${NET_CENTS_SQL})::bigint AS net_cents,
+       (${NET_CENTS_SQL}) AS nets,
        COALESCE((
          SELECT json_agg(DISTINCT other.name)
            FROM expense_splits mine
@@ -406,10 +460,10 @@ export async function mergeAccounts(
     // them must not move the combined total. Anything else means a reference
     // was missed or an amount double-counted, and the rollback is the point.
     const keeperNetAfter = await netCents(client, keeperId);
-    const expected = keeperNetBefore + loserNetBefore;
-    if (keeperNetAfter !== expected) {
+    const expected = addNets(keeperNetBefore, loserNetBefore);
+    if (!sameNets(keeperNetAfter, expected)) {
       throw new Error(
-        `account merge would change the balance: expected ${expected} cents, got ${keeperNetAfter}`,
+        `account merge would change the balance: expected ${JSON.stringify(expected)}, got ${JSON.stringify(keeperNetAfter)}`,
       );
     }
 

@@ -132,7 +132,7 @@ describe("recordSettlement — rows land in the scope holding the debt", () => {
     // The production incident: the debt existed only in a group; the payment
     // was recorded from the friends tab with no scope, so the group ledger
     // never saw it, kept demanding the money, and accepted a second payment.
-    vi.mocked(owedByScope).mockResolvedValue([{ groupId: "goa", owedCents: 10652 }]);
+    vi.mocked(owedByScope).mockResolvedValue([{ groupId: "goa", currency: "USD", owedCents: 10652 }]);
     const inserted = await settle(10652);
     expect(lockGroupLedgers).toHaveBeenCalledWith(transactionClient, ["goa"]);
     expect(owedByScope).toHaveBeenCalledWith(PAYER, CREDITOR, transactionClient);
@@ -142,8 +142,8 @@ describe("recordSettlement — rows land in the scope holding the debt", () => {
 
   it("splits a bundled payment into one row per scope, direct slate first", async () => {
     vi.mocked(owedByScope).mockResolvedValue([
-      { groupId: "goa", owedCents: 8000 },
-      { groupId: null, owedCents: 2000 },
+      { groupId: "goa", currency: "USD", owedCents: 8000 },
+      { groupId: null, currency: "USD", owedCents: 2000 },
     ]);
     const inserted = await settle(10_000);
     expect(inserted.map((input) => [input.groupId, input.amountCents])).toEqual([
@@ -154,8 +154,8 @@ describe("recordSettlement — rows land in the scope holding the debt", () => {
 
   it("honors a partial selection: unchecked scopes are untouched", async () => {
     vi.mocked(owedByScope).mockResolvedValue([
-      { groupId: "goa", owedCents: 8000 },
-      { groupId: null, owedCents: 2000 },
+      { groupId: "goa", currency: "USD", owedCents: 8000 },
+      { groupId: null, currency: "USD", owedCents: 2000 },
     ]);
     // Only the group is checked; the direct slate must not absorb a cent.
     const inserted = await settle(8000, ["goa"]);
@@ -166,8 +166,8 @@ describe("recordSettlement — rows land in the scope holding the debt", () => {
 
   it("caps the payment at the selected scopes, not everything owed", async () => {
     vi.mocked(owedByScope).mockResolvedValue([
-      { groupId: "goa", owedCents: 8000 },
-      { groupId: null, owedCents: 2000 },
+      { groupId: "goa", currency: "USD", owedCents: 8000 },
+      { groupId: null, currency: "USD", owedCents: 2000 },
     ]);
     // 10k is owed overall, but only the 2k direct slate is selected.
     await expect(settle(5000, [""])).rejects.toThrow(/exceeds what you owe/);
@@ -184,8 +184,8 @@ describe("recordSettlement — rows land in the scope holding the debt", () => {
 
   it("writes one activity row per portion, each in its scope's voice", async () => {
     vi.mocked(owedByScope).mockResolvedValue([
-      { groupId: "goa", owedCents: 8000 },
-      { groupId: null, owedCents: 2000 },
+      { groupId: "goa", currency: "USD", owedCents: 8000 },
+      { groupId: null, currency: "USD", owedCents: 2000 },
     ]);
     await settle(10_000);
     const messages = vi
@@ -199,8 +199,8 @@ describe("recordSettlement — rows land in the scope holding the debt", () => {
 
   it("notifies once, for the whole payment", async () => {
     vi.mocked(owedByScope).mockResolvedValue([
-      { groupId: "goa", owedCents: 8000 },
-      { groupId: null, owedCents: 2000 },
+      { groupId: "goa", currency: "USD", owedCents: 8000 },
+      { groupId: null, currency: "USD", owedCents: 2000 },
     ]);
     await settle(10_000);
     expect(vi.mocked(insertNotifications)).toHaveBeenCalledTimes(1);
@@ -211,7 +211,7 @@ describe("recordSettlement — rows land in the scope holding the debt", () => {
   it("every insert goes through the pair lock's client", async () => {
     // The guard reads then writes; a write outside the lock window would
     // reopen the race this design exists to close.
-    vi.mocked(owedByScope).mockResolvedValue([{ groupId: "goa", owedCents: 5000 }]);
+    vi.mocked(owedByScope).mockResolvedValue([{ groupId: "goa", currency: "USD", owedCents: 5000 }]);
     await settle(5000);
     for (const call of vi.mocked(insertSettlement).mock.calls) {
       expect(call[1]).toBeDefined();

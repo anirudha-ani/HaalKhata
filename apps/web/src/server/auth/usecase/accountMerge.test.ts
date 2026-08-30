@@ -97,7 +97,7 @@ describe("setPhone", () => {
     previewMergeMock.mockResolvedValue({
       name: "Ani",
       expense_count: 4,
-      net_cents: "-8700",
+      nets: { USD: -8700 },
       counterparty_names: ["Rahul", "Priya"],
     });
   });
@@ -199,6 +199,7 @@ describe("setPhone", () => {
       name: "Ani",
       expenseCount: 4,
       netCents: -8700,
+      nets: [{ currency: "USD", cents: -8700 }],
       counterpartyNames: ["Rahul", "Priya"],
     });
     expect(result.mergeToken).not.toBe("");
@@ -209,7 +210,7 @@ describe("setPhone", () => {
     previewMergeMock.mockResolvedValue({
       name: "Ani",
       expense_count: 4,
-      net_cents: "4000000000",
+      nets: { USD: 4000000000 },
       counterparty_names: ["Rahul"],
     });
 
@@ -248,7 +249,7 @@ describe("confirmPhoneMerge", () => {
     previewMergeMock.mockResolvedValue({
       name: "Ani",
       expense_count: 4,
-      net_cents: "-8700",
+      nets: { USD: -8700 },
       counterparty_names: ["Rahul"],
     });
   });

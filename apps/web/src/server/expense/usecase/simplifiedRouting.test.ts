@@ -254,7 +254,7 @@ describe("the settlement guards route with the group's mode", () => {
   });
 
   it("owedByScope offers the simplified edge and only that", async () => {
-    expect(await owedByScope(ALICE, CARA)).toEqual([{ groupId: TRIP, owedCents: 1000 }]);
+    expect(await owedByScope(ALICE, CARA)).toEqual([{ groupId: TRIP, currency: "USD", owedCents: 1000 }]);
     expect(await owedByScope(ALICE, BOBBY)).toEqual([]);
   });
 });
@@ -265,7 +265,7 @@ describe("friend ledgers under simplification", () => {
     expect(ledger.netCents).toBe(-1000);
     expect(ledger.entries).toEqual([]);
     expect(ledger.groupBalances).toEqual([
-      { groupId: TRIP, groupName: "Trip", netCents: -1000, simplified: true },
+      { groupId: TRIP, groupName: "Trip", currency: "USD", netCents: -1000, simplified: true },
     ]);
   });
 
@@ -277,7 +277,7 @@ describe("friend ledgers under simplification", () => {
     // …but the routed balance is zero, and the row stays to say why.
     expect(ledger.netCents).toBe(0);
     expect(ledger.groupBalances).toEqual([
-      { groupId: TRIP, groupName: "Trip", netCents: 0, simplified: true },
+      { groupId: TRIP, groupName: "Trip", currency: "USD", netCents: 0, simplified: true },
     ]);
   });
 
@@ -286,7 +286,7 @@ describe("friend ledgers under simplification", () => {
     const ledger = await getFriendLedger(ALICE, BOBBY);
     expect(ledger.netCents).toBe(-1000);
     expect(ledger.groupBalances).toEqual([
-      { groupId: TRIP, groupName: "Trip", netCents: -1000, simplified: false },
+      { groupId: TRIP, groupName: "Trip", currency: "USD", netCents: -1000, simplified: false },
     ]);
   });
 
@@ -329,9 +329,9 @@ describe("overall balances under simplification", () => {
   });
 
   it("the middle of the chain nets to nothing against everyone", async () => {
-    expect(await netWithUser(BOBBY, ALICE)).toBe(0);
-    expect(await netWithUser(BOBBY, CARA)).toBe(0);
-    expect(await netWithUser(CARA, ALICE)).toBe(1000);
+    expect((await netWithUser(BOBBY, ALICE)).get("USD") ?? 0).toBe(0);
+    expect((await netWithUser(BOBBY, CARA)).get("USD") ?? 0).toBe(0);
+    expect((await netWithUser(CARA, ALICE)).get("USD") ?? 0).toBe(1000);
   });
 
   it("pairwise mode shows the historical counterparty again", async () => {

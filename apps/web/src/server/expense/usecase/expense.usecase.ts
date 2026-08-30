@@ -42,13 +42,13 @@ import {
 } from "@haalkhata/shared/expense/splits";
 import {
   amountOwed,
-  oneOffNetBetween,
+  oneOffNetsBetween,
   owedByScope,
   userNetInGroup,
   userNetInGroups,
 } from "./balance.usecase";
 import { allocateSettlement } from "@/server/expense/domain/settlementAllocation";
-import { settledExpenseIds } from "@/server/expense/domain/settledExpenses";
+import { oneOffPairKey, settledExpenseIds } from "@/server/expense/domain/settledExpenses";
 import { denied, invalid, notFound } from "@/server/common/errors";
 import {
   lockExpenseLedger,
@@ -688,6 +688,7 @@ export async function listExpenses(
   const participants = rows.filter((expenseRow) => !expenseRow.deleted_at).map((expenseRow) => ({
     id: expenseRow.id,
     groupId: expenseRow.group_id ?? "",
+    currency: expenseRow.currency,
     participantIds: [
       ...new Set([
         ...(children.payers.get(expenseRow.id) ?? []).map((payer) => payer.user_id),
@@ -707,10 +708,14 @@ export async function listExpenses(
     ),
   ];
   const viewerNetByGroupId = await userNetInGroups(userId, groupIds);
-  const oneOffNetByUserId = new Map<string, number>();
+  // One-off slates are per currency, so the settledness lookup is keyed on
+  // the counterparty and the expense's currency.
+  const oneOffNetByPair = new Map<string, number>();
   await Promise.all(
     counterpartyIds.map(async (counterpartyId) => {
-      oneOffNetByUserId.set(counterpartyId, await oneOffNetBetween(userId, counterpartyId));
+      for (const [currency, cents] of await oneOffNetsBetween(userId, counterpartyId)) {
+        oneOffNetByPair.set(oneOffPairKey(counterpartyId, currency), cents);
+      }
     }),
   );
 
@@ -721,7 +726,7 @@ export async function listExpenses(
       participants,
       userId,
       viewerNetByGroupId,
-      oneOffNetByUserId,
+      oneOffNetByPair,
     ),
   };
 }
@@ -781,22 +786,31 @@ export async function getExpense(userId: string, expenseId: string) {
   if (expenseRow.group_id) {
     viewerNetByGroupId.set(expenseRow.group_id, await userNetInGroup(userId, expenseRow.group_id));
   }
-  const oneOffNetByUserId = new Map<string, number>();
+  const oneOffNetByPair = new Map<string, number>();
   if (!expenseRow.group_id) {
     await Promise.all(
       participantIds
         .filter((participantId) => participantId !== userId)
         .map(async (participantId) => {
-          oneOffNetByUserId.set(participantId, await oneOffNetBetween(userId, participantId));
+          for (const [currency, cents] of await oneOffNetsBetween(userId, participantId)) {
+            oneOffNetByPair.set(oneOffPairKey(participantId, currency), cents);
+          }
         }),
     );
   }
   const settledForViewer =
     settledExpenseIds(
-      [{ id: expenseId, groupId: expenseRow.group_id ?? "", participantIds }],
+      [
+        {
+          id: expenseId,
+          groupId: expenseRow.group_id ?? "",
+          currency: expenseRow.currency,
+          participantIds,
+        },
+      ],
       userId,
       viewerNetByGroupId,
-      oneOffNetByUserId,
+      oneOffNetByPair,
     ).length === 1;
 
   // Whether a payment postdates this expense in its scope, so the detail view
@@ -992,6 +1006,12 @@ export async function recordSettlement(
     if (!callerIsMember || !recipientIsMember) {
       denied("both people must be members of the group");
     }
+    // A group settles in its own currency. A payment stated in another one
+    // is refused, not relabelled: the amount would be wrong by an exchange
+    // rate nobody entered.
+    if (request.currency && normalizeCurrencyCode(request.currency) !== group.currency) {
+      invalid(`this group settles in ${group.currency}, not ${normalizeCurrencyCode(request.currency)}`);
+    }
     currency = group.currency;
   }
   if (!currency) currency = (await findUserById(userId))?.default_currency ?? "USD";
@@ -1091,17 +1111,31 @@ export async function recordSettlement(
     );
     await lockGroupLedgers(client, [...lockedGroupIds]);
     const selection = new Set(request.scopeGroupIds ?? []);
-    const scopes = (await owedByScope(payerId, creditorId, client)).filter(
+    const selected = (await owedByScope(payerId, creditorId, client)).filter(
       (scope) =>
         (scope.groupId === null || lockedGroupIds.has(scope.groupId)) &&
         (selection.size === 0 || selection.has(scope.groupId ?? "")),
     );
+    // A payment moves in one currency and can only pay down balances in
+    // that currency. A balance the payer picked by name in another currency
+    // is refused rather than converted — there is no rate to convert at;
+    // balances not picked by name in other currencies are simply not
+    // addressed, the way a euro debt is not addressed by a dollar payment.
+    const foreign = selected.find(
+      (scope) => scope.currency !== currency && selection.has(scope.groupId ?? ""),
+    );
+    if (foreign) {
+      invalid(
+        `that balance is in ${foreign.currency} — settle it in ${foreign.currency}, not ${currency}`,
+      );
+    }
+    const scopes = selected.filter((scope) => scope.currency === currency);
     const totalOwedCents = scopes.reduce((running, scope) => running + scope.owedCents, 0);
     if (totalOwedCents <= 0) {
       invalid(
         request.received
-          ? "this person doesn't owe you anything in the selected balances"
-          : "you don't owe this person anything in the selected balances",
+          ? `this person doesn't owe you anything in the selected ${currency} balances`
+          : `you don't owe this person anything in the selected ${currency} balances`,
       );
     }
     if (request.amountCents > totalOwedCents) {
@@ -1120,7 +1154,7 @@ export async function recordSettlement(
             fromUser: payerId,
             toUser: creditorId,
             amountCents: portion.amountCents,
-            currency,
+            currency: portion.currency,
             method,
             note: request.note,
             // The row itself names who typed it in: a payment is a claim

@@ -144,7 +144,7 @@ export async function listFriends(userId: string) {
       ...counterparties,
       ...remainingFriends
         .sort((firstUser, secondUser) => firstUser.name.localeCompare(secondUser.name))
-        .map((friendUser) => ({ user: toPublicUser(friendUser), netCents: 0 })),
+        .map((friendUser) => ({ user: toPublicUser(friendUser), netCents: 0, balances: [] })),
     ],
     incomingRequests: incomingRequestIds.flatMap((requesterId) => {
       const requester = requesterById.get(requesterId);
@@ -337,8 +337,12 @@ export async function sendReminder(userId: string, debtorId: string): Promise<vo
 
   // A rejected cooldown is one indexed lookup. Only callers who may actually
   // send another reminder pay for the full expense-and-settlement ledger walk.
-  const netCents = await netWithUser(userId, debtorId);
-  if (netCents <= 0) invalid("they don't owe you anything right now");
+  // Per currency: the nudge names each amount in its own currency, and a
+  // dollar they owe is not cancelled by a euro they are owed.
+  const owedBuckets = [...(await netWithUser(userId, debtorId)).entries()].filter(
+    ([, cents]) => cents > 0,
+  );
+  if (owedBuckets.length === 0) invalid("they don't owe you anything right now");
 
   const sender = (await findUserById(userId))!;
 
@@ -351,7 +355,7 @@ export async function sendReminder(userId: string, debtorId: string): Promise<vo
       return `${method?.label ?? entry.method}: ${entry.handle}`;
     })
     .join(" · ");
-  const owed = formatMoney(netCents, sender.default_currency || "USD");
+  const owed = owedBuckets.map(([currency, cents]) => formatMoney(cents, currency)).join(" and ");
 
   await insertNotifications([debtorId], {
     type: "reminder",

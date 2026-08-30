@@ -59,9 +59,21 @@ message NetBalance {
   int32 net_cents = 2;
 }
 
+// One amount in one currency. Balances are kept per currency and never added
+// across currencies — a dollar and a euro are not the same cent, and nothing
+// here converts.
+message CurrencyAmount {
+  string currency = 1;
+  int32 cents = 2;
+}
+
 // Overall position against one person across groups and one-off expenses.
-// net_cents > 0 means they owe you.
 message CounterpartyBalance {
   User user = 1;
+  // The position in the caller's default currency only, kept for older
+  // clients: > 0 means they owe you. `balances` is the whole picture.
   int32 net_cents = 2;
+  // The position in every currency the pair has dealings in, non-zero
+  // buckets only: cents > 0 means they owe you that much of that currency.
+  repeated CurrencyAmount balances = 3;
 }

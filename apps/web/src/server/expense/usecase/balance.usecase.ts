@@ -16,6 +16,7 @@ import {
   listSettlementsBetween,
   listSettlementsByGroup,
   listSettlementsInvolvingUser,
+  type SettlementRow,
 } from "@/server/expense/repo/settlements.repo";
 import {
   findGroupById,
@@ -35,6 +36,90 @@ import { type ScopeDebt } from "../domain/settlementAllocation";
 import { listFriendIds } from "@/server/social/repo/friendships.repo";
 import { denied, notFound } from "@/server/common/errors";
 import { toPublicUser } from "@/server/auth/usecase/user.mapper";
+
+/**
+ * Cents per ISO 4217 code. A balance between two people is one number per
+ * currency and never one number overall: nothing here converts, so a dollar
+ * owed and a euro owed stay two facts. Zero buckets are omitted.
+ */
+export type CurrencyCents = Map<string, number>;
+
+/**
+ * Adds cents into one currency's bucket, dropping the bucket when it lands on
+ * zero so "nothing between you" is expressed by absence.
+ *
+ * @param buckets - The map to update.
+ * @param currency - ISO 4217 code.
+ * @param cents - Signed cents to add.
+ */
+function addCents(buckets: CurrencyCents, currency: string, cents: number): void {
+  const total = (buckets.get(currency) ?? 0) + cents;
+  if (total === 0) buckets.delete(currency);
+  else buckets.set(currency, total);
+}
+
+/**
+ * Lists the buckets as proto CurrencyAmount init shapes, the default currency
+ * first and the rest alphabetically, so every client renders them in the
+ * same order.
+ *
+ * @param buckets - Cents per currency.
+ * @param defaultCurrency - The caller's default currency, listed first.
+ * @returns The non-zero buckets.
+ */
+export function currencyAmounts(
+  buckets: CurrencyCents,
+  defaultCurrency: string,
+): { currency: string; cents: number }[] {
+  return [...buckets.entries()]
+    .filter(([, cents]) => cents !== 0)
+    .sort(([first], [second]) =>
+      first === defaultCurrency ? -1 : second === defaultCurrency ? 1 : first.localeCompare(second),
+    )
+    .map(([currency, cents]) => ({ currency, cents }));
+}
+
+/**
+ * Builds one pairwise ledger per currency from mixed rows. Every expense and
+ * settlement carries its own currency, and a ledger only makes sense within
+ * one: netting a euro expense against a dollar payment would be netting
+ * nothing against nothing.
+ *
+ * @param expenses - Expense rows of any currency.
+ * @param children - Their payer/split rows.
+ * @param settlements - Settlement rows of any currency.
+ * @returns Normalized pairwise entries per currency.
+ */
+function ledgersByCurrency(
+  expenses: ExpenseRow[],
+  children: ExpenseChildren,
+  settlements: SettlementRow[],
+): Map<string, LedgerEntry[]> {
+  const currencies = new Set([
+    ...expenses.map((expense) => expense.currency),
+    ...settlements.map((settlement) => settlement.currency),
+  ]);
+  const ledgers = new Map<string, LedgerEntry[]>();
+  for (const currency of currencies) {
+    ledgers.set(
+      currency,
+      pairwiseBalances(
+        debtsFromExpenses(
+          expenses.filter((expense) => expense.currency === currency),
+          children,
+        ),
+        settlements
+          .filter((settlement) => settlement.currency === currency)
+          .map((settlement) => ({
+            from: settlement.from_user,
+            to: settlement.to_user,
+            amountCents: settlement.amount_cents,
+          })),
+      ),
+    );
+  }
+  return ledgers;
+}
 
 /**
  * Converts a batch of expenses (with their loaded children) into directed
@@ -213,11 +298,15 @@ export async function amountOwed(
  * simplified groups' rows. Only simplified groups need their own ledger read,
  * because simplification is a whole-group computation, not a pair one.
  *
+ * Per currency throughout: a group's rows are all in its currency, a one-off
+ * expense carries its own, and a position against one person is one bucket
+ * per currency, never a sum across them.
+ *
  * @param userId - User whose positions are computed.
- * @returns Map of counterparty id → net cents (> 0 ⇒ they owe the user);
- *   zero positions are omitted.
+ * @returns Map of counterparty id → cents per currency (> 0 ⇒ they owe the
+ *   user); counterparties with nothing outstanding in any currency are omitted.
  */
-async function pairNetsForUser(userId: string): Promise<Map<string, number>> {
+async function pairNetsForUser(userId: string): Promise<Map<string, CurrencyCents>> {
   const groups = await listGroupsByUser(userId);
   const simplifiedGroupIds = new Set(
     groups.filter((group) => group.simplify_debts).map((group) => group.id),
@@ -227,40 +316,33 @@ async function pairNetsForUser(userId: string): Promise<Map<string, number>> {
     (expense) => !simplifiedGroupIds.has(expense.group_id ?? ""),
   );
   const children = await loadExpenseChildren(expenses.map((expense) => expense.id));
-  const settlements = (await listSettlementsInvolvingUser(userId))
-    .filter((settlement) => !simplifiedGroupIds.has(settlement.group_id ?? ""))
-    .map((settlement) => ({
-      from: settlement.from_user,
-      to: settlement.to_user,
-      amountCents: settlement.amount_cents,
-    }));
+  const settlements = (await listSettlementsInvolvingUser(userId)).filter(
+    (settlement) => !simplifiedGroupIds.has(settlement.group_id ?? ""),
+  );
 
-  const netByCounterparty = new Map<string, number>(); // > 0 ⇒ they owe the user
-  const accumulate = (entry: LedgerEntry) => {
-    if (entry.from === userId) {
-      netByCounterparty.set(
-        entry.to,
-        (netByCounterparty.get(entry.to) ?? 0) - entry.amountCents,
-      );
-    } else if (entry.to === userId) {
-      netByCounterparty.set(
-        entry.from,
-        (netByCounterparty.get(entry.from) ?? 0) + entry.amountCents,
-      );
-    }
+  const netByCounterparty = new Map<string, CurrencyCents>(); // > 0 ⇒ they owe the user
+  const accumulate = (currency: string, entry: LedgerEntry) => {
+    const counterpartyId =
+      entry.from === userId ? entry.to : entry.to === userId ? entry.from : null;
+    if (counterpartyId === null) return;
+    const buckets = netByCounterparty.get(counterpartyId) ?? new Map<string, number>();
+    addCents(buckets, currency, entry.from === userId ? -entry.amountCents : entry.amountCents);
+    netByCounterparty.set(counterpartyId, buckets);
   };
-  for (const entry of pairwiseBalances(debtsFromExpenses(expenses, children), settlements)) {
-    accumulate(entry);
+  for (const [currency, ledger] of ledgersByCurrency(expenses, children, settlements)) {
+    for (const entry of ledger) accumulate(currency, entry);
   }
   for (const group of groups) {
     if (!group.simplify_debts) continue;
-    for (const edge of routeDebts(await groupLedger(group.id), true)) accumulate(edge);
+    for (const edge of routeDebts(await groupLedger(group.id), true)) {
+      accumulate(group.currency, edge);
+    }
   }
 
   // A rerouted debt and a pairwise one can cancel exactly; a zero position is
   // "nothing between you", which is expressed by absence.
-  for (const [counterpartyId, netCents] of [...netByCounterparty.entries()]) {
-    if (netCents === 0) netByCounterparty.delete(counterpartyId);
+  for (const [counterpartyId, buckets] of [...netByCounterparty.entries()]) {
+    if (buckets.size === 0) netByCounterparty.delete(counterpartyId);
   }
   return netByCounterparty;
 }
@@ -281,28 +363,30 @@ function owedInEntries(entries: LedgerEntry[], payerId: string, creditorId: stri
 }
 
 /**
- * The viewer's net in the pair's one-off scope alone: one-off expenses
- * between the two, netted against one-off settlement rows, group scopes
- * excluded entirely. The one-off counterpart of {@link userNetInGroup}.
+ * The viewer's net in the pair's one-off scope alone, per currency: one-off
+ * expenses between the two, netted against one-off settlement rows, group
+ * scopes excluded entirely. The one-off counterpart of {@link userNetInGroup}.
  *
  * @param userId - The viewer.
  * @param otherUserId - The counterparty.
- * @returns Net cents; > 0 ⇒ the other user owes the viewer one-off.
+ * @returns Cents per currency; > 0 ⇒ the other user owes the viewer one-off.
  */
-export async function oneOffNetBetween(userId: string, otherUserId: string): Promise<number> {
+export async function oneOffNetsBetween(
+  userId: string,
+  otherUserId: string,
+): Promise<CurrencyCents> {
   const expenses = await listOneOffExpensesBetween(userId, otherUserId);
   const children = await loadExpenseChildren(expenses.map((expense) => expense.id));
-  const settlements = (await listOneOffSettlementsBetween(userId, otherUserId)).map(
-    (settlement) => ({
-      from: settlement.from_user,
-      to: settlement.to_user,
-      amountCents: settlement.amount_cents,
-    }),
-  );
-  const entries = pairwiseBalances(debtsFromExpenses(expenses, children), settlements);
-  return (
-    owedInEntries(entries, otherUserId, userId) - owedInEntries(entries, userId, otherUserId)
-  );
+  const settlements = await listOneOffSettlementsBetween(userId, otherUserId);
+  const nets: CurrencyCents = new Map();
+  for (const [currency, entries] of ledgersByCurrency(expenses, children, settlements)) {
+    addCents(
+      nets,
+      currency,
+      owedInEntries(entries, otherUserId, userId) - owedInEntries(entries, userId, otherUserId),
+    );
+  }
+  return nets;
 }
 
 /**
@@ -318,6 +402,9 @@ export async function oneOffNetBetween(userId: string, otherUserId: string): Pro
  * payment cannot pay down a debt that points the other way. Such scopes make
  * the pair's global net smaller than the sum returned here, which is why
  * over-settle guards must check against this sum, never the net.
+ *
+ * Every scope is one currency: a group's, or — for the one-off ledger, which
+ * holds a slate per currency — one entry per currency owed.
  *
  * @param payerId - The user paying.
  * @param creditorId - The user being paid.
@@ -336,19 +423,15 @@ export async function owedByScope(
     oneOffExpenses.map((expense) => expense.id),
     client,
   );
-  const oneOffSettlements = (await listOneOffSettlementsBetween(payerId, creditorId, client)).map(
-    (settlement) => ({
-      from: settlement.from_user,
-      to: settlement.to_user,
-      amountCents: settlement.amount_cents,
-    }),
-  );
-  const oneOffCents = owedInEntries(
-    pairwiseBalances(debtsFromExpenses(oneOffExpenses, children), oneOffSettlements),
-    payerId,
-    creditorId,
-  );
-  if (oneOffCents > 0) scopes.push({ groupId: null, owedCents: oneOffCents });
+  const oneOffSettlements = await listOneOffSettlementsBetween(payerId, creditorId, client);
+  for (const [currency, entries] of ledgersByCurrency(
+    oneOffExpenses,
+    children,
+    oneOffSettlements,
+  )) {
+    const oneOffCents = owedInEntries(entries, payerId, creditorId);
+    if (oneOffCents > 0) scopes.push({ groupId: null, currency, owedCents: oneOffCents });
+  }
 
   const payerGroupIds = new Set(
     (await listGroupsByUser(payerId, client)).map((group) => group.id),
@@ -360,52 +443,89 @@ export async function owedByScope(
       payerId,
       creditorId,
     );
-    if (owedCents > 0) scopes.push({ groupId: group.id, owedCents });
+    if (owedCents > 0) scopes.push({ groupId: group.id, currency: group.currency, owedCents });
   }
   return scopes;
 }
 
 /**
- * The caller's overall position: total owed by them, total owed to them, and
- * a per-counterparty breakdown sorted by size.
+ * The largest single bucket a position holds, for ordering counterparties by
+ * how much attention they need. Across currencies the magnitudes are not
+ * comparable, so this is a display order and nothing more.
+ *
+ * @param buckets - Cents per currency.
+ * @returns The largest absolute amount in any one currency.
+ */
+function largestBucket(buckets: CurrencyCents): number {
+  return Math.max(0, ...[...buckets.values()].map((cents) => Math.abs(cents)));
+}
+
+/**
+ * The caller's overall position: totals owed by them and to them, per
+ * currency, and a per-counterparty breakdown sorted by size. The legacy
+ * scalar totals and `netCents` report the caller's default currency alone.
  *
  * @param userId - Authenticated caller.
- * @returns Totals plus one entry per counterparty (positive net ⇒ they owe the caller).
+ * @returns Totals per currency plus one entry per counterparty with their
+ *   balances per currency (positive ⇒ they owe the caller).
  * @throws UsecaseError (not_found) if a counterparty's user row is missing.
  */
 export async function getOverallBalances(userId: string) {
   const perCounterparty = await pairNetsForUser(userId);
-  let youOweCents = 0;
-  let owedToYouCents = 0;
-  for (const netCents of perCounterparty.values()) {
-    if (netCents < 0) youOweCents += -netCents;
-    else owedToYouCents += netCents;
+  const defaultCurrency = (await findUserById(userId))?.default_currency || "USD";
+  const totals = new Map<string, { youOweCents: number; owedToYouCents: number }>();
+  for (const buckets of perCounterparty.values()) {
+    for (const [currency, netCents] of buckets) {
+      const total = totals.get(currency) ?? { youOweCents: 0, owedToYouCents: 0 };
+      if (netCents < 0) total.youOweCents += -netCents;
+      else total.owedToYouCents += netCents;
+      totals.set(currency, total);
+    }
   }
   const users = new Map(
     (await findUsersByIds([...perCounterparty.keys()])).map((user) => [user.id, user]),
   );
+  const defaultTotals = totals.get(defaultCurrency) ?? { youOweCents: 0, owedToYouCents: 0 };
   return {
-    youOweCents,
-    owedToYouCents,
+    youOweCents: defaultTotals.youOweCents,
+    owedToYouCents: defaultTotals.owedToYouCents,
+    totals: [...totals.entries()]
+      .sort(([first], [second]) =>
+        first === defaultCurrency
+          ? -1
+          : second === defaultCurrency
+            ? 1
+            : first.localeCompare(second),
+      )
+      .map(([currency, total]) => ({ currency, ...total })),
     counterparties: [...perCounterparty.entries()]
-      .sort(([, firstNet], [, secondNet]) => Math.abs(secondNet) - Math.abs(firstNet))
-      .flatMap(([counterpartyId, netCents]) => {
+      .sort(
+        ([, firstBuckets], [, secondBuckets]) =>
+          largestBucket(secondBuckets) - largestBucket(firstBuckets),
+      )
+      .flatMap(([counterpartyId, buckets]) => {
         const user = users.get(counterpartyId);
         if (!user) notFound(`unknown user ${counterpartyId}`);
-        return [{ user: toPublicUser(user), netCents }];
+        return [
+          {
+            user: toPublicUser(user),
+            netCents: buckets.get(defaultCurrency) ?? 0,
+            balances: currencyAmounts(buckets, defaultCurrency),
+          },
+        ];
       }),
   };
 }
 
 /**
- * Net position between the caller and one other user.
+ * Net position between the caller and one other user, per currency.
  *
  * @param userId - Authenticated caller.
  * @param otherUserId - The counterparty to measure against.
- * @returns Net cents; > 0 ⇒ the other user owes the caller.
+ * @returns Cents per currency; > 0 ⇒ the other user owes the caller.
  */
-export async function netWithUser(userId: string, otherUserId: string): Promise<number> {
-  return (await pairNetsForUser(userId)).get(otherUserId) ?? 0;
+export async function netWithUser(userId: string, otherUserId: string): Promise<CurrencyCents> {
+  return (await pairNetsForUser(userId)).get(otherUserId) ?? new Map();
 }
 
 /**
@@ -443,15 +563,20 @@ function pairDelta(debts: LedgerEntry[], userId: string, otherUserId: string): n
  * payment made against it before it was deleted keeps the row that explains
  * why the balance now leans the other way.
  *
+ * Everything runs per currency: each line carries its own, the running
+ * balance continues that currency's column, and the headline is one net per
+ * currency — never a sum across them.
+ *
  * @param userId - Authenticated caller.
  * @param friendId - The other person.
- * @returns The friend, the net (> 0 ⇒ they owe you), the currency, the entries
- *   newest-first, and the per-group breakdown.
+ * @returns The friend, the nets per currency (> 0 ⇒ they owe you), the
+ *   entries newest-first, and the per-scope breakdown.
  * @throws UsecaseError (not_found) when the person is missing or has no
  *   friendship, mutual group, or shared ledger history with the caller.
  */
 export async function getFriendLedger(userId: string, friendId: string) {
   const friend = await findUserById(friendId);
+  const defaultCurrency = (await findUserById(userId))?.default_currency || "USD";
 
   const expenses = await listExpensesBetween(userId, friendId, true);
   const children = await loadExpenseChildren(expenses.map((expense) => expense.id));
@@ -472,6 +597,7 @@ export async function getFriendLedger(userId: string, friendId: string) {
     description: string;
     groupId: string;
     groupName: string;
+    currency: string;
     totalCents: number;
     deltaCents: number;
     sortKey: string;
@@ -504,6 +630,7 @@ export async function getFriendLedger(userId: string, friendId: string) {
       description: expense.description,
       groupId: expense.group_id ?? "",
       groupName: expense.group_id ? (groupNames.get(expense.group_id) ?? "") : "",
+      currency: expense.currency,
       totalCents: expense.amount_cents,
       // Deleted means owed-to-zero: the line stays, the movement does not.
       deltaCents: deleted ? 0 : liveDeltaCents,
@@ -532,6 +659,7 @@ export async function getFriendLedger(userId: string, friendId: string) {
       description: paidByYou ? "You paid" : `${friend?.name ?? ""} paid you`,
       groupId: settlement.group_id ?? "",
       groupName: settlement.group_id ? (groupNames.get(settlement.group_id) ?? "") : "",
+      currency: settlement.currency,
       totalCents: settlement.amount_cents,
       deltaCents: deleted ? 0 : paidByYou ? settlement.amount_cents : -settlement.amount_cents,
       sortKey: `${settlement.created_at.slice(0, 10)}T${settlement.created_at}`,
@@ -545,9 +673,12 @@ export async function getFriendLedger(userId: string, friendId: string) {
   }
 
   lines.sort((first, second) => first.sortKey.localeCompare(second.sortKey));
-  let runningCents = 0;
+  // One running column per currency: a euro line continues the euro balance
+  // and leaves the dollar one where it was.
+  const runningByCurrency = new Map<string, number>();
   const entries = lines.map((line) => {
-    runningCents += line.deltaCents;
+    const runningCents = (runningByCurrency.get(line.currency) ?? 0) + line.deltaCents;
+    runningByCurrency.set(line.currency, runningCents);
     return {
       kind: line.kind,
       id: line.id,
@@ -555,6 +686,7 @@ export async function getFriendLedger(userId: string, friendId: string) {
       description: line.description,
       groupId: line.groupId,
       groupName: line.groupName,
+      currency: line.currency,
       totalCents: line.totalCents,
       deltaCents: line.deltaCents,
       balanceAfterCents: runningCents,
@@ -565,9 +697,13 @@ export async function getFriendLedger(userId: string, friendId: string) {
   });
   entries.reverse();
 
-  const netByGroup = new Map<string, number>();
+  // The pair's history per scope and currency: `<groupId>|<currency>`, with
+  // the one-off slate keyed on "" — one entry per currency it holds.
+  const scopeKey = (groupId: string, currency: string) => `${groupId}|${currency}`;
+  const netByScope = new Map<string, number>();
   for (const line of lines) {
-    netByGroup.set(line.groupId, (netByGroup.get(line.groupId) ?? 0) + line.deltaCents);
+    const scope = scopeKey(line.groupId, line.currency);
+    netByScope.set(scope, (netByScope.get(scope) ?? 0) + line.deltaCents);
   }
 
   // Relationship context, not balance context: which groups both belong to
@@ -595,6 +731,7 @@ export async function getFriendLedger(userId: string, friendId: string) {
   const groupBalances: {
     groupId: string;
     groupName: string;
+    currency: string;
     netCents: number;
     simplified: boolean;
   }[] = [];
@@ -603,31 +740,40 @@ export async function getFriendLedger(userId: string, friendId: string) {
     const edges = simplifyDebts(netBalances(await groupLedger(group.id)));
     const routedCents =
       owedInEntries(edges, friendId, userId) - owedInEntries(edges, userId, friendId);
-    const historyCents = netByGroup.get(group.id) ?? 0;
-    netByGroup.delete(group.id);
+    const historyCents = netByScope.get(scopeKey(group.id, group.currency)) ?? 0;
+    netByScope.delete(scopeKey(group.id, group.currency));
     if (routedCents !== 0 || historyCents !== 0) {
       groupBalances.push({
         groupId: group.id,
         groupName: group.name,
+        currency: group.currency,
         netCents: routedCents,
         simplified: true,
       });
     }
   }
-  for (const [groupId, historyCents] of netByGroup) {
+  for (const [scope, historyCents] of netByScope) {
     if (historyCents === 0) continue;
+    const [groupId, currency] = scope.split("|");
     groupBalances.push({
       groupId,
       groupName: groupId ? (groupNames.get(groupId) ?? "") : "",
+      currency,
       netCents: historyCents,
       simplified: false,
     });
   }
+  // The headline: one net per currency, each the sum of that currency's
+  // scopes — the same routed numbers the dashboard shows and the settlement
+  // guards enforce.
+  const nets: CurrencyCents = new Map();
+  for (const scope of groupBalances) addCents(nets, scope.currency, scope.netCents);
 
   return {
     friend: toPublicUser(friend),
-    netCents: groupBalances.reduce((running, scope) => running + scope.netCents, 0),
-    currency: friend.default_currency || "USD",
+    netCents: nets.get(defaultCurrency) ?? 0,
+    currency: defaultCurrency,
+    nets: currencyAmounts(nets, defaultCurrency),
     entries,
     groupBalances,
     isFriend,

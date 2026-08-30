@@ -200,9 +200,9 @@ describe.skipIf(!reachable)("simplified-edge settlement against Postgres", () =>
     for (const member of [ALICE, BOBBY, CARA]) {
       expect(await userNetInGroup(member, TRIP)).toBe(0);
     }
-    expect(await netWithUser(ALICE, CARA)).toBe(0);
-    expect(await netWithUser(BOBBY, ALICE)).toBe(0);
-    expect(await netWithUser(BOBBY, CARA)).toBe(0);
+    expect(await netWithUser(ALICE, CARA)).toEqual(new Map());
+    expect(await netWithUser(BOBBY, ALICE)).toEqual(new Map());
+    expect(await netWithUser(BOBBY, CARA)).toEqual(new Map());
   });
 
   it("tells the pair about the payment — and nobody else, on either feed", async () => {

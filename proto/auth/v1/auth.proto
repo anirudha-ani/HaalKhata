@@ -98,13 +98,17 @@ message SetPhoneResponse {
 message MergePreview {
   // How many undeleted expenses the absorbed row appears in.
   int32 expense_count = 1;
-  // The absorbed row's net position in cents: positive means it is owed.
+  // The absorbed row's net position in the caller's default currency only,
+  // kept for older clients: positive means it is owed. `nets` is the whole
+  // picture.
   int32 net_cents = 2;
   // Display names of the people it shares expenses with — the actual check,
   // since someone who does not recognize them should back out.
   repeated string counterparty_names = 3;
   // Name the absorbed row carries, usually whatever the inviter typed.
   string name = 4;
+  // The absorbed row's net position per currency, non-zero buckets only.
+  repeated common.v1.CurrencyAmount nets = 5;
 }
 
 message ConfirmPhoneMergeRequest {

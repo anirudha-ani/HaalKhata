@@ -214,6 +214,11 @@ message RecordSettlementRequest {
   // The other person, whichever way the money moved.
   string to_user_id = 2;
   int32 amount_cents = 3;
+  // The currency the money moved in. A group payment is always in the
+  // group's currency (a different one is refused); a cross-scope payment
+  // pays down only balances in this currency, and a selected scope in
+  // another currency is refused rather than converted. Empty = the caller's
+  // default currency.
   string currency = 4;
   string method = 5; // venmo | zelle | cashapp | paypal | cash | bank | other
   string note = 6;
@@ -261,10 +266,22 @@ message BalancesResponse {
   repeated common.v1.Debt simplified = 3;
 }
 
+// Totals in one currency across every counterparty.
+message CurrencyTotals {
+  string currency = 1;
+  int32 you_owe_cents = 2;
+  int32 owed_to_you_cents = 3;
+}
+
 message OverallBalancesResponse {
+  // Totals in the caller's default currency only, kept for older clients;
+  // `totals` carries every currency.
   int32 you_owe_cents = 1;
   int32 owed_to_you_cents = 2;
   repeated common.v1.CounterpartyBalance counterparties = 3;
+  // One entry per currency with anything outstanding, the caller's default
+  // first. Never summed across currencies.
+  repeated CurrencyTotals totals = 4;
 }
 
 message GetFriendLedgerRequest {
@@ -301,6 +318,10 @@ message FriendLedgerEntry {
   // Either person may record a payment either way round, so the statement
   // names the asserter on every payment line. Empty for expense lines.
   string recorded_by_name = 12;
+  // ISO 4217 code of total_cents, delta_cents and balance_after_cents. The
+  // running balance runs per currency: a euro line continues the euro
+  // column, not the dollar one.
+  string currency = 13;
 }
 
 message FriendGroupBalance {
@@ -312,6 +333,10 @@ message FriendGroupBalance {
   // zero while the pair's shared history is not, or vice versa. Surfaced so
   // the UI can say why a group's number differs from the history.
   bool simplified = 4;
+  // ISO 4217 code of net_cents: a group's own currency, or, for the one-off
+  // slate (group_id empty), the currency of that bucket — the pair's direct
+  // dealings are one entry per currency.
+  string currency = 5;
 }
 
 // One group both people belong to, regardless of balance.
@@ -323,9 +348,13 @@ message MutualGroup {
 
 message FriendLedgerResponse {
   common.v1.User friend = 1;
-  // Net across everything shared, groups included: > 0 = they owe you.
+  // The net in the caller's default currency only (`currency`), kept for
+  // older clients: > 0 = they owe you. `nets` is the whole picture.
   int32 net_cents = 2;
   string currency = 3;
+  // Net across everything shared, groups included, one entry per currency
+  // with anything outstanding: cents > 0 = they owe you.
+  repeated common.v1.CurrencyAmount nets = 9;
   // Newest first, which is the reading order; balance_after_cents is
   // accumulated oldest-first so the topmost entry carries the current net.
   repeated FriendLedgerEntry entries = 4;

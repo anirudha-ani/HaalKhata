@@ -81,7 +81,7 @@ function resetRepos(): void {
   // The whole debt lives in the pair's one-off ledger, comfortably above the
   // amount settled, so the guards pass and a single one-off row is recorded —
   // which is what these attribution tests inspect.
-  vi.mocked(owedByScope).mockResolvedValue([{ groupId: null, owedCents: 10_000 }]);
+  vi.mocked(owedByScope).mockResolvedValue([{ groupId: null, currency: "USD", owedCents: 10_000 }]);
   // Echo the input back as the stored row: the activity fan-out reads the
   // row's scope and amount, so a bare {} would silently test nothing.
   vi.mocked(insertSettlement).mockImplementation(

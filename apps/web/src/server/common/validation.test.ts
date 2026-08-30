@@ -11,4 +11,9 @@ describe("normalizeCurrencyCode", () => {
   it.each(["", "US", "USDD", "U$D", "１２３"])('rejects invalid currency code "%s"', (value) => {
     expect(() => normalizeCurrencyCode(value)).toThrow(/three-letter code/);
   });
+
+  it("rejects a well-formed code the product does not support", () => {
+    // Shape alone let ZZZ through, and with it a balance nobody could settle.
+    expect(() => normalizeCurrencyCode("ZZZ")).toThrow(/not supported/);
+  });
 });

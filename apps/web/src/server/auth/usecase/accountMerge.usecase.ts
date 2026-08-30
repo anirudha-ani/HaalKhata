@@ -38,6 +38,7 @@ export interface SetPhoneResult {
     name: string;
     expenseCount: number;
     netCents: number;
+    nets: { currency: string; cents: number }[];
     counterpartyNames: string[];
   };
   /** Signed authorization for ConfirmPhoneMerge; empty unless pendingMerge is set. */
@@ -166,19 +167,26 @@ export async function setPhone(
   // caller's own history, but "almost certainly" is what the preview is for.
   const preview = await previewMerge(holder.id);
   if (!preview) throw new UsecaseError("not_found", "that invitation no longer exists");
-  const netCents = Number(preview.net_cents);
-  if (
-    !Number.isSafeInteger(netCents) ||
-    netCents < PROTO_INT32_MIN ||
-    netCents > PROTO_INT32_MAX
-  ) {
-    invalid("that account balance is too large to preview safely");
-  }
+  // One bucket per currency, each checked against the wire's int32 before
+  // it is promised to a client.
+  const nets = Object.entries(preview.nets ?? {}).map(([currency, cents]) => {
+    const netCents = Number(cents);
+    if (
+      !Number.isSafeInteger(netCents) ||
+      netCents < PROTO_INT32_MIN ||
+      netCents > PROTO_INT32_MAX
+    ) {
+      invalid("that account balance is too large to preview safely");
+    }
+    return { currency, cents: netCents };
+  });
+  const defaultCurrency = (await findUserById(userId))?.default_currency || "USD";
   return {
     pendingMerge: {
       name: preview.name,
       expenseCount: preview.expense_count,
-      netCents,
+      netCents: nets.find((bucket) => bucket.currency === defaultCurrency)?.cents ?? 0,
+      nets,
       counterpartyNames: preview.counterparty_names,
     },
     mergeToken: createMergeToken(userId, holder.id, phone),

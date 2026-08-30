@@ -173,7 +173,7 @@ describe.skipIf(!reachable)("recordSettlement against Postgres", () => {
     // The other half of the incident: a friends-tab settlement used to leave
     // the group still demanding the money. One recording must zero both.
     expect(await userNetInGroup(DEBTOR, "grp-1")).toBe(0);
-    expect(await netWithUser(DEBTOR, CREDITOR)).toBe(0);
+    expect(await netWithUser(DEBTOR, CREDITOR)).toEqual(new Map());
   });
 
   it("refuses to delete the settled expense but lets an edit rebalance the payment", async () => {
