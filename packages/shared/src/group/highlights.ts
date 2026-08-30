@@ -1,6 +1,10 @@
 /** Which groups the dashboard lists, and in what order. */
 
-import type { GroupSummary } from "@haalkhata/protogen/group/v1/group_pb";
+/** The one field the ordering reads off a group summary. */
+export interface HighlightableGroup {
+  /** The viewer's net position in the group; positive means owed to them. */
+  yourNetCents: number;
+}
 
 /** How many groups the dashboard shows before deferring to the groups page. */
 export const DASHBOARD_GROUP_LIMIT = 4;
@@ -15,14 +19,18 @@ export const DASHBOARD_GROUP_LIMIT = 4;
  * while there is room rather than filtered out — the dashboard says how you
  * stand, and "nothing outstanding" is part of that.
  *
+ * Structurally typed so the generated GroupSummary never has to be imported
+ * here — this package is shared by both apps and stays free of the proto
+ * package.
+ *
  * @param summaries - Group summaries as the server returned them.
  * @param limit - Most groups to return.
  * @returns At most `limit` summaries, most demanding first.
  */
-export function groupHighlights(
-  summaries: readonly GroupSummary[],
+export function groupHighlights<Summary extends HighlightableGroup>(
+  summaries: readonly Summary[],
   limit: number = DASHBOARD_GROUP_LIMIT,
-): GroupSummary[] {
+): Summary[] {
   return [...summaries]
     .sort((left, right) => Math.abs(right.yourNetCents) - Math.abs(left.yourNetCents))
     .slice(0, limit);

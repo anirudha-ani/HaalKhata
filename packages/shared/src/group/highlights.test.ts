@@ -1,22 +1,25 @@
 /** Unit tests for the dashboard's group ordering and cap. */
 
 import { describe, expect, it } from "vitest";
-import type { GroupSummary } from "@haalkhata/protogen/group/v1/group_pb";
-import { DASHBOARD_GROUP_LIMIT, groupHighlights } from "./groupHighlights";
+import { DASHBOARD_GROUP_LIMIT, groupHighlights } from "./highlights";
+
+/** The slice of a group summary these tests care about. */
+interface Summary {
+  /** Group name, used to assert ordering readably. */
+  name: string;
+  /** The viewer's net position in the group. */
+  yourNetCents: number;
+}
 
 /**
  * Builds a group summary with only the fields the ordering looks at.
  *
  * @param name - Group name, used to assert ordering readably.
  * @param yourNetCents - The viewer's net position in the group.
- * @returns A GroupSummary for {@link groupHighlights}.
+ * @returns A summary for {@link groupHighlights}.
  */
-function summary(name: string, yourNetCents: number): GroupSummary {
-  return {
-    group: { id: name, name, type: "trip", currency: "USD" },
-    memberCount: 3,
-    yourNetCents,
-  } as GroupSummary;
+function summary(name: string, yourNetCents: number): Summary {
+  return { name, yourNetCents };
 }
 
 /**
@@ -25,8 +28,8 @@ function summary(name: string, yourNetCents: number): GroupSummary {
  * @param summaries - Result of {@link groupHighlights}.
  * @returns The group names.
  */
-function names(summaries: GroupSummary[]): string[] {
-  return summaries.map((entry) => entry.group!.name);
+function names(summaries: Summary[]): string[] {
+  return summaries.map((entry) => entry.name);
 }
 
 describe("groupHighlights", () => {

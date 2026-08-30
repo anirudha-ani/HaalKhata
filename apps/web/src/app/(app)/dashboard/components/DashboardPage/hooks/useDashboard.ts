@@ -3,7 +3,7 @@
 
 import { useMemo, useState } from "react";
 import type { CounterpartyBalance } from "@haalkhata/protogen/common/v1/common_pb";
-import { groupHighlights } from "../../../utils/groupHighlights";
+import { groupHighlights } from "@haalkhata/shared/group/highlights";
 import { useDashboardAPI } from "./useDashboardAPI";
 
 /**

@@ -1,4 +1,4 @@
-/** Dashboard screen: balance summary, per-person balances with settle-up, recent activity. */
+/** Dashboard screen: balance summary, per-person balances with settle-up, group highlights, recent activity. */
 
 import { Link, useRouter } from "expo-router";
 import { Plus, UsersRound } from "lucide-react-native";
@@ -18,12 +18,13 @@ import { safeActivityPath } from "@haalkhata/shared/navigation/activityPath";
 import { localDate } from "@haalkhata/shared/time/localTime";
 import { getGreeting } from "@haalkhata/shared/greeting";
 import { colors, fonts, radii, spacing } from "@/lib/theme/theme";
+import { groupEmoji } from "../../../groups/constants/groupTypes";
 import { useDashboard } from "./hooks/useDashboard";
 
 /**
  * Renders the dashboard: greeting header with quick actions, the three-card
- * balance summary, per-person balances with a settle-up flow, and the most
- * recent activity entries.
+ * balance summary, per-person balances with a settle-up flow, the groups
+ * that most need attention, and the most recent activity entries.
  *
  * @returns The dashboard screen content (spinner while loading).
  */
@@ -170,6 +171,64 @@ export function DashboardScreen() {
             )}
           </View>
 
+          {/* Groups — the other half of "who do I owe": People answers it per
+              person, this answers it per shared pot. Compact rows rather than
+              the cards the groups screen uses, because here it sits between
+              two other lists and has to read as a peer of them. */}
+          {dashboard.topGroups.length > 0 ? (
+            <View style={styles.section}>
+              <View style={styles.sectionHeader}>
+                <Text style={styles.sectionTitle}>Groups</Text>
+                {dashboard.groups.length > dashboard.topGroups.length ? (
+                  <Link href="/groups" style={styles.sectionLink}>
+                    See all {dashboard.groups.length}
+                  </Link>
+                ) : null}
+              </View>
+              <View style={styles.listCard}>
+                {dashboard.topGroups.map((summary, index) =>
+                  summary.group ? (
+                    <Pressable
+                      key={summary.group.id}
+                      onPress={() => router.push(`/groups/${summary.group?.id}`)}
+                      style={({ pressed }) => [
+                        styles.groupRow,
+                        index > 0 ? styles.rowDivider : null,
+                        pressed ? styles.groupRowPressed : null,
+                      ]}
+                    >
+                      <Text style={styles.groupEmoji}>{groupEmoji(summary.group.type)}</Text>
+                      <View style={styles.personText}>
+                        <Text numberOfLines={1} style={styles.personName}>
+                          {summary.group.name}
+                        </Text>
+                        <Text style={styles.personHint}>
+                          {summary.memberCount} member{summary.memberCount === 1 ? "" : "s"}
+                          {summary.yourNetCents === 0
+                            ? " · settled up"
+                            : summary.yourNetCents > 0
+                              ? " · owed to you"
+                              : " · you owe"}
+                        </Text>
+                      </View>
+                      {/* The group's own currency, not yours — a group settles
+                          in one currency and showing your default here would
+                          label the number with money it was never counted in. */}
+                      {summary.yourNetCents === 0 ? null : (
+                        <Money
+                          cents={summary.yourNetCents}
+                          currency={summary.group.currency}
+                          signed
+                          style={styles.personAmount}
+                        />
+                      )}
+                    </Pressable>
+                  ) : null,
+                )}
+              </View>
+            </View>
+          ) : null}
+
           {/* Recent activity */}
           {dashboard.recentActivity.length > 0 ? (
             <View style={styles.section}>
@@ -288,6 +347,19 @@ const styles = StyleSheet.create({
     color: colors.neg700,
     fontSize: 14,
     fontWeight: "500",
+  },
+  groupEmoji: {
+    fontSize: 22,
+  },
+  groupRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: spacing.md,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+  },
+  groupRowPressed: {
+    backgroundColor: colors.paper,
   },
   greeting: {
     color: colors.ink,
