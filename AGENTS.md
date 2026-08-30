@@ -219,6 +219,11 @@ Expo SDK 57 + expo-router. The same conventions apply — thin route files in
 constants sit in route-scoped `constants/` folders, pure helpers in `utils/`
 with colocated tests. Mobile-specific rules:
 
+- **Feature parity is total.** Every user-facing capability on the web
+  exists on mobile — a feature that lands on one app and is "tracked" for
+  the other is a gap, not a plan (docs/plan.txt §27). Pure logic both apps
+  need (filters, wording, formatting, phone helpers) goes in
+  `packages/shared` with its tests, never written twice.
 - **Auth is bearer-token**, not cookies: LogInWithGoogle (production) or
   LogIn/SignUp (development only) return `token`, stored
   in SecureStore (`src/lib/api/session.ts`) and attached by a transport

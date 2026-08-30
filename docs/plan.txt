@@ -1582,11 +1582,13 @@ apps/mobile/
   app/                        expo-router routes — THIN (mirror of page.tsx)
     _layout.tsx               providers + root stack
     login.tsx                 public auth screen
-    (app)/_layout.tsx         session gate + authed stack
-    (app)/(tabs)/_layout.tsx  bottom tabs: Home·Groups·Add·Scan·Friends
-    (app)/(tabs)/<tab>.tsx    dashboard | groups | scan | friends | activity
-    (app)/groups/[id].tsx     pushed detail screens
-    (app)/expenses/new.tsx    (+ [id].tsx), account.tsx
+    onboarding.tsx            first-run flow (outside (app), so the gate cannot loop)
+    (app)/_layout.tsx         session + onboarding gate, authed stack
+    (app)/(tabs)/_layout.tsx  bottom tabs: Home·Groups·Add·Expenses·Friends
+    (app)/(tabs)/<tab>.tsx    dashboard | groups | expenses | friends
+    (app)/groups/[id].tsx     pushed detail screens: groups, expenses, friends/[id]
+    (app)/expenses/new.tsx    (+ [id].tsx), friends/[id].tsx, account.tsx, activity.tsx
+    (app)/scan.tsx            redirect into /expenses/new (scanning lives in the form)
   src/
     screens/<route>/          per-route fan-out (components/hooks/constants/utils)
     components/ui|modals|providers
@@ -1599,7 +1601,8 @@ activity, settle-up), groups (list/create/detail/invite/balances/simplify),
 expenses (all non-itemized split types, multi-payer, edit, delete,
 comments), friends (add/one-off/settle), activity feed with notification
 badge + mark-read, account (profile, currency, sign out), receipt scan
-(camera or library → AI draft → assign → save itemized).
+(camera or library → AI draft → assign → save itemized). §27 closes the
+gap to 100%: everything the web can do, the app can do.
 
 **Verification:** `pnpm --filter @haalkhata/mobile typecheck | lint | test`
 (vitest on pure utils); manual run via `pnpm dev:mobile` (Expo Go) against
@@ -1772,8 +1775,8 @@ user more than they protect. Eight were found; all eight are done.
 - **A mistaken payment can be removed.** `DeleteSettlement` is the same
   visible soft delete expenses got: either person on the payment may remove
   it, the friend-ledger line stays struck through with a zero change, the
-  debt it paid down comes back, and the other person is told. Web only for
-  now — mobile has no per-payment surface yet.
+  debt it paid down comes back, and the other person is told. Web first;
+  mobile caught up in §27 with the friend ledger screen.
 - **Editing an expense can change who is on it.** Only the group/one-off
   scope is pinned (settlements live there); the server always accepted a
   changed cast, and now both pickers allow it.
@@ -1797,3 +1800,68 @@ request they accept first (the cost of closing the account-existence oracle;
 an invite link would soften it), an expense still cannot move between
 groups, leaving a group still needs a zero balance, and receipt scanning
 stays at five a minute.
+
+## §27 Mobile parity: nothing is web-only (2026-08-29)
+
+The rule, stated and enforced: the mobile app has every user-facing
+capability the web app has. A feature landing on one and "tracked" for the
+other is a gap, not a plan. The friction pass's DeleteSettlement UI was the
+last such note; this pass took the whole inventory — every web route, every
+RPC the web calls, every control on each page — against the app, and closed
+all of it. Pure logic that both apps needed moved into `@haalkhata/shared`
+with its tests rather than being written twice: `expense/settledStatus`,
+`expense/scopeFilter`, `group/balanceFilter`, `group/highlights`,
+`activity/format`, `activity/filters`, `phone/phone`.
+
+What the app gained, one commit each:
+
+- **Settle up in both directions, across every balance.** The sheet records
+  "they paid me" as well as "I paid them", lists each scope where money is
+  owed as a checklist (fed by GetFriendLedger, so it cannot disagree with the
+  friend screen), sends `scopeGroupIds` and an empty `groupId` like the web,
+  and shows the recipient's handle for the chosen app — copy (expo-clipboard)
+  or open. Friends offers Settle either way; a group's balances tab gains
+  "Record" on debts owed to the viewer.
+- **Friend ledger screen** (`/friends/[id]`): net balance, invited marker,
+  mutual groups, Request friendship, Add expense, I paid / paid me, Send a
+  reminder, the per-group breakdown with the simplified marker, and the full
+  history with running balance — deleted expenses and removed payments struck
+  through with zero change, a two-tap Remove on live payments
+  (DeleteSettlement). `PersonLink` makes every person on screen open it:
+  friends rows (which also gained search and the owed/owe headline), the
+  dashboard's People, expense breakdowns, comment authors, balances avatars,
+  and the members sheet, which now offers Ledger / Request per row.
+- **All-expenses screen** with search and All / One-off / per-group scope
+  chips, taking the Expenses tab slot as on web. The expense list is shared
+  (`components/expenses/ExpenseList`) and shows group/one-off pills and the
+  settled state.
+- **Scanning lives in the expense form.** A receipt panel at the top of a
+  new expense fills description, date, tax, tip and items (shared by
+  everyone, split switched to Items); the separate scan screen is deleted and
+  `/scan` redirects, exactly as the web did in §3j. Adding a person joins
+  them to every line; attaching a group re-shares every line.
+- **Searchable people picker** in the form: participant chips, "Add people"
+  over the shared `PersonChecklist`, the group chips locked while editing.
+- **Activity feed** with keyset paging, search, type filters, a month window,
+  day grouping, time of day and amounts (signed and tinted only for
+  settlements, inbound vs outbound tiles). The group's activity tab pages the
+  same way.
+- **Groups search and balance filter**, and **group highlights on the
+  dashboard** (top four by absolute balance, "See all N").
+- **Expense detail**: history of edits, your share of each receipt item, and
+  the nothing-pending banner.
+- **Account**: phone number with country picker, SMS verification and the
+  merge preview; Venmo / Cash App / PayPal / Zelle handles (Zelle as phone or
+  email). This also fixed a real bug: the old save sent UpdateProfile without
+  `paymentHandles`, which the server treats as "replace with nothing", so a
+  name change on the phone erased every handle set on the web.
+- **First-run onboarding** (`/onboarding`, gated by the authed layout on
+  `me.onboarded`; the profile is re-read into the cache before navigating so
+  the gate cannot bounce the user back).
+
+Native modules added: expo-clipboard (settle sheet copy). The dev client
+needs a rebuild, as after the Google sign-in change.
+
+Deliberately still different, because the platform is: the web's PWA
+service worker and install prompt, its desktop sidebar, and hand-drawn SVG
+feed glyphs (mobile draws emoji tiles with the same inbound/outbound rule).
