@@ -1,4 +1,4 @@
-/** Editable itemized-draft state shared by the receipt scan flow and the expense form. */
+/** Editable itemized-draft state for the expense form's Items split, typed or read off a receipt. */
 
 import { useState } from "react";
 import { nextDraftKey } from "@haalkhata/shared/expense/draftKey";
@@ -111,6 +111,17 @@ export function useItemDraft(initial: { items: DraftItem[] | null; tax: string; 
     /** Clears every assignment, e.g. when the cast is replaced by a group's roster. */
     clearAssignees: () => {
       mapItems((item) => ({ ...item, assignees: {} }));
+    },
+    /**
+     * Re-shares every line across exactly the given people, replacing what
+     * was there — attaching a scanned receipt to a group should not mean
+     * re-ticking every line by hand.
+     *
+     * @param userIds - The new cast; every line is assigned to all of them.
+     */
+    shareEveryItemWith: (userIds: string[]) => {
+      const everyone = Object.fromEntries(userIds.map((userId) => [userId, true]));
+      mapItems((item) => ({ ...item, assignees: { ...everyone } }));
     },
     tax: taxInput,
     setTax: setTaxInput,

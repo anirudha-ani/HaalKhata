@@ -1,12 +1,14 @@
-/** Composite expense-form hook: field state, payer/split validation, submit. */
+/** Composite expense-form hook: field state, receipt scanning, payer/split validation, submit. */
 
 import type { User } from "@haalkhata/protogen/common/v1/common_pb";
 import { useRouter } from "expo-router";
+import * as ImagePicker from "expo-image-picker";
 import { useMemo, useState } from "react";
 import { errorMessage } from "@/lib/api/connect";
-import { parseMoneyInput } from "@haalkhata/shared/money/money";
-import { itemsPayload } from "@/lib/expense/itemDraft";
+import { centsToInput, parseMoneyInput } from "@haalkhata/shared/money/money";
+import { draftItemsFromLines, itemsPayload } from "@/lib/expense/itemDraft";
 import { useItemDraft } from "@/lib/hooks/useItemDraft";
+import { PICKER_OPTIONS } from "../../../constants/imagePicker";
 import type { ExpenseFormInitial } from "../../../utils/initialValues";
 import {
   buildSplitSpecs,
@@ -14,7 +16,13 @@ import {
   checkSplit,
   type FormSplitType,
 } from "../../../utils/splitForm";
-import type { useNewExpenseAPI } from "./useNewExpenseAPI";
+import type { ReceiptPhotoInput, useNewExpenseAPI } from "./useNewExpenseAPI";
+
+/** A photo picked for scanning, plus its local URI for the preview. */
+export interface ReceiptPhoto extends ReceiptPhotoInput {
+  /** Local file URI used to render the preview image. */
+  uri: string;
+}
 
 /**
  * Returns a copy of `source` without `keyToDrop`.
@@ -37,7 +45,9 @@ function omitKey<Value>(source: Record<string, Value>, keyToDrop: string): Recor
  * @param editExpenseId - Id of the expense being edited, or "" when creating.
  * @returns The form controller: every field value with its setter, the
  *   derived `people`/`participantIds`/`totalCents`, the payer and split
- *   validation results, `canSubmit`, the `submit` action, and save state.
+ *   validation results, `canSubmit`, the `submit` action, save state, and
+ *   the receipt scanning state (`photo`, `pickPhoto`, `parseNow`,
+ *   `isParsing`, `provider`, `fromReceipt`).
  */
 export function useNewExpense(
   expenseAPI: ReturnType<typeof useNewExpenseAPI>,
@@ -62,8 +72,12 @@ export function useNewExpense(
   const [singlePayerId, setSinglePayerId] = useState(initial.singlePayerId);
   const [payerAmounts, setPayerAmounts] = useState(initial.payerAmounts);
   const [error, setError] = useState("");
-  // The itemized split's lines, shared with the receipt scan flow so a
-  // scanned expense can be corrected here with the same editor.
+  // Receipt state. A scan is a way of filling this form in, not a separate
+  // flow: the photo is parsed into the same item draft the Items split edits.
+  const [photo, setPhoto] = useState<ReceiptPhoto | null>(null);
+  const [provider, setProvider] = useState("");
+  // The itemized split's lines — the same editor whether they were typed or
+  // read off a receipt.
   const itemDraft = useItemDraft({ items: initial.items, tax: initial.tax, tip: initial.tip });
   const isItemized = splitType === "itemized";
 
@@ -122,6 +136,13 @@ export function useNewExpense(
   /**
    * Adds or removes an ad-hoc participant.
    *
+   * Somebody joining goes onto every existing line item, which is the same
+   * "shared by everyone" default a new item gets, applied from the other
+   * direction — you untick their exceptions. This matters most when a receipt
+   * was scanned before the cast was picked, which is the natural order when
+   * the paper is in your hand: without it every parsed line would stay
+   * assigned to you alone and the newcomer would owe nothing.
+   *
    * @param userId - Id of the person to toggle on this expense.
    */
   const toggleFriend = (userId: string) => {
@@ -136,6 +157,7 @@ export function useNewExpense(
     // user has touched a participation checkbox — until then `checked` is
     // derived from `people` and already has them in.
     setCheckedOverride((current) => (current ? { ...current, [userId]: true } : current));
+    itemDraft.assignAllTo(userId);
   };
 
   /**
@@ -144,16 +166,96 @@ export function useNewExpense(
    * hand-picked people and every per-person value referring to them are
    * dropped.
    *
+   * Item rows survive and are re-shared across the incoming roster rather
+   * than left unassigned: attaching a scanned receipt to a group should not
+   * mean re-ticking every line by hand.
+   *
    * @param nextGroupId - Id of the group to attach the expense to, "" for none.
    */
   const changeGroup = (nextGroupId: string) => {
+    const currentUserId = expenseAPI.me?.id ?? "";
+    const nextRoster = nextGroupId
+      ? (expenseAPI.groups
+          .find((groupSummary) => groupSummary.group?.id === nextGroupId)
+          ?.group?.members.flatMap((member) => (member.user ? [member.user.id] : [])) ?? [])
+      : [currentUserId];
     setGroupId(nextGroupId);
     setFriendIds([]);
     setCheckedOverride(null);
     setSplitInputs({});
     setPayerAmounts({});
-    setSinglePayerId(expenseAPI.me?.id ?? "");
-    itemDraft.clearAssignees();
+    setSinglePayerId(currentUserId);
+    itemDraft.shareEveryItemWith(nextRoster);
+  };
+
+  /**
+   * Captures or picks a receipt photo and forgets any previous parse — the
+   * items stay as they are until "Itemize with AI" replaces them.
+   *
+   * @param useCamera - True to open the camera, false for the photo library.
+   */
+  const pickPhoto = async (useCamera: boolean) => {
+    setError("");
+    if (useCamera) {
+      const permission = await ImagePicker.requestCameraPermissionsAsync();
+      if (!permission.granted) {
+        setError("camera permission is required to scan receipts");
+        return;
+      }
+    }
+    const result = useCamera
+      ? await ImagePicker.launchCameraAsync(PICKER_OPTIONS)
+      : await ImagePicker.launchImageLibraryAsync(PICKER_OPTIONS);
+    if (result.canceled) return;
+    const asset = result.assets[0];
+    if (!asset?.base64) {
+      setError("could not read the photo — try again");
+      return;
+    }
+    setPhoto({
+      uri: asset.uri,
+      base64: asset.base64,
+      // Always JPEG: PICKER_OPTIONS sets `quality`, which makes the picker
+      // re-encode. Passing through asset.mimeType would label an iPhone photo
+      // "image/heic" while the bytes are already JPEG, and the server's
+      // magic-byte check would reject its own successfully converted image.
+      mediaType: "image/jpeg",
+    });
+    setProvider("");
+  };
+
+  /**
+   * Sends the chosen photo to the AI parser and loads the result into the
+   * form: description and date (only where nothing was typed yet), tax, tip,
+   * and the line items — shared by everyone on the expense, since splitting
+   * the whole bill evenly is the common case — with the split switched to
+   * Items.
+   */
+  const parseNow = () => {
+    if (!photo) return;
+    setError("");
+    expenseAPI.parse.mutate(photo, {
+      onSuccess: (result) => {
+        const receipt = result.receipt;
+        if (!receipt) return;
+        setProvider(result.provider);
+        // Only fill fields the user has not already written in — a scan
+        // should not overwrite what somebody deliberately typed first.
+        if (receipt.merchant) setDescription((current) => current || receipt.merchant);
+        if (receipt.date) setDate(receipt.date);
+        const everyone = Object.fromEntries(people.map((person) => [person.id, true]));
+        itemDraft.replace(
+          draftItemsFromLines(receipt.items).map((item) => ({
+            ...item,
+            assignees: { ...everyone },
+          })),
+          centsToInput(receipt.taxCents),
+          centsToInput(receipt.tipCents),
+        );
+        setSplitType("itemized");
+      },
+      onError: (mutationError) => setError(errorMessage(mutationError)),
+    });
   };
 
   // null override = default: everyone checked.
@@ -265,6 +367,14 @@ export function useNewExpense(
     error,
     submit,
     isSaving: expenseAPI.create.isPending || expenseAPI.update.isPending,
+    // Receipt scanning.
+    photo,
+    pickPhoto,
+    parseNow,
+    isParsing: expenseAPI.parse.isPending,
+    provider,
+    /** True once a receipt has been read into the form. */
+    fromReceipt: provider !== "",
   };
 }
 

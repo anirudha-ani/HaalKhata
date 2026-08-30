@@ -1,4 +1,4 @@
-/** New/edit expense form: context picker, basics (amount/date/category), payer + split editors, submit. */
+/** New/edit expense form: receipt panel, context picker, basics (amount/date/category), payer + split editors, submit. */
 
 import { useRouter } from "expo-router";
 import { StyleSheet, Text, View } from "react-native";
@@ -13,13 +13,15 @@ import type { ExpenseFormInitial } from "../../../../utils/initialValues";
 import { useNewExpense } from "../../hooks/useNewExpense";
 import type { useNewExpenseAPI } from "../../hooks/useNewExpenseAPI";
 import { PayerEditor } from "../PayerEditor/PayerEditor";
+import { ReceiptPanel } from "../ReceiptPanel/ReceiptPanel";
 import { SplitEditor } from "../SplitEditor/SplitEditor";
 import { MAX_EXPENSE_DESCRIPTION_LENGTH, MAX_EXPENSE_NOTES_LENGTH } from "@haalkhata/shared/text/limits";
 
 /**
- * Renders the full expense form: the group/friend context picker, the basic
- * fields (description, amount, date, category), the payer and split editors,
- * optional notes, validation errors, and the submit button.
+ * Renders the full expense form: the receipt panel (a photo fills the form
+ * in), the group/friend context picker, the basic fields (description,
+ * amount, date, category), the payer and split editors, optional notes,
+ * validation errors, and the submit button.
  *
  * @param props - Component props.
  * @returns The expense form for creating or editing an expense.
@@ -42,6 +44,10 @@ export function ExpenseForm({
 
   return (
     <View style={styles.form}>
+      {/* Editing cannot re-scan: re-parsing a photo over a saved expense
+          would silently replace its lines. */}
+      {form.isEdit ? null : <ReceiptPanel form={form} />}
+
       {/* Who's on this: any number of friends, or one group instead. While
           editing, only the group choice is locked — the server pins a saved
           expense to its scope because settlements live there — so the group

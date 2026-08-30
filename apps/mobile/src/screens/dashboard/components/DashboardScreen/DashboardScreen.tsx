@@ -1,7 +1,7 @@
 /** Dashboard screen: balance summary, per-person balances with settle-up, recent activity. */
 
 import { Link, useRouter } from "expo-router";
-import { Plus, ScanLine, UsersRound } from "lucide-react-native";
+import { Plus, UsersRound } from "lucide-react-native";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { SettleUpModal } from "@/components/modals/SettleUpModal";
 import { PersonLink } from "@/components/people/PersonLink";
@@ -52,16 +52,9 @@ export function DashboardScreen() {
             <Text style={styles.greetingSub}>Here&apos;s where your ledger stands.</Text>
           </View>
 
+          {/* Scanning a receipt is one of the ways to fill this form in, so
+              it is not a second button beside it. */}
           <View style={styles.quickActions}>
-            <View style={styles.quickAction}>
-              <Button
-                compact
-                icon={<ScanLine color={colors.brand600} size={16} />}
-                label="Scan receipt"
-                onPress={() => router.push("/scan")}
-                variant="outline"
-              />
-            </View>
             <View style={styles.quickAction}>
               <Button
                 compact

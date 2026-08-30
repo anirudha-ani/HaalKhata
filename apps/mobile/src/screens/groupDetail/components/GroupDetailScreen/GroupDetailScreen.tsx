@@ -1,7 +1,7 @@
 /** Group detail orchestrator: header, members strip, expenses/balances/activity tabs, members, add-people and settle sheets. */
 
 import { useRouter } from "expo-router";
-import { Bell, ChevronRight, Plus, ScanLine, UserPlus } from "lucide-react-native";
+import { Bell, ChevronRight, Plus, UserPlus } from "lucide-react-native";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { ActivityList } from "@/components/activity/ActivityList";
 import { SettleUpModal } from "@/components/modals/SettleUpModal";
@@ -26,7 +26,7 @@ import { ExpenseList } from "@/components/expenses/ExpenseList";
 import { useGroupDetail } from "./hooks/useGroupDetail";
 
 /**
- * Renders a single group's screen: header with scan/add-expense actions, the
+ * Renders a single group's screen: header with the add-expense action, the
  * member avatar strip (tap for the full member list, where every row opens
  * that person's ledger or offers a friend request, you can leave the group,
  * and the owner can hand it on or remove somebody) with an add-people
@@ -75,24 +75,17 @@ export function GroupDetailScreen({
       header={
         <DetailHeader
           right={
-            <View style={styles.headerActions}>
-              <Pressable
-                accessibilityLabel="Scan receipt"
-                hitSlop={8}
-                onPress={() => router.push(`/scan?group=${groupId}`)}
-                style={styles.headerIconButton}
-              >
-                <ScanLine color={colors.brand600} size={20} />
-              </Pressable>
-              <Pressable
-                accessibilityLabel="Add expense"
-                hitSlop={8}
-                onPress={() => router.push(`/expenses/new?group=${groupId}`)}
-                style={[styles.headerIconButton, styles.headerIconButtonPrimary]}
-              >
-                <Plus color={colors.white} size={20} />
-              </Pressable>
-            </View>
+            // One button, not two: scanning a receipt is how you fill the
+            // expense form in, so "Scan receipt" was a second door to the
+            // same room.
+            <Pressable
+              accessibilityLabel="Add expense"
+              hitSlop={8}
+              onPress={() => router.push(`/expenses/new?group=${groupId}`)}
+              style={[styles.headerIconButton, styles.headerIconButtonPrimary]}
+            >
+              <Plus color={colors.white} size={20} />
+            </Pressable>
           }
           title={groupDetail.group.name}
         />
@@ -414,10 +407,6 @@ const styles = StyleSheet.create({
     color: colors.ink,
     fontSize: 22,
     fontWeight: "700",
-  },
-  headerActions: {
-    flexDirection: "row",
-    gap: spacing.sm,
   },
   headerIconButton: {
     alignItems: "center",

@@ -11,7 +11,7 @@ import { useNewExpenseAPI } from "./hooks/useNewExpenseAPI";
  * Orchestrator: loads data, then mounts the form with fully-resolved initial
  * values (keyed by expense id so edit → create never reuses stale state).
  * Every split type is editable here, itemized receipts included — the form
- * reloads their lines and assignments into the same editor the scan uses.
+ * reloads their lines and assignments into the same editor a fresh scan fills.
  *
  * @param props - Component props.
  * @returns The new/edit expense screen content.

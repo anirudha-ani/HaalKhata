@@ -1,4 +1,4 @@
-/** Scan-route constants: image picker configuration. */
+/** New-expense-route constants: receipt image picker configuration. */
 
 import type { ImagePickerOptions } from "expo-image-picker";
 

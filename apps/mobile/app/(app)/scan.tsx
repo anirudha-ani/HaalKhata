@@ -1,12 +1,23 @@
-/** /scan route: renders ScanScreen (reads the optional ?group param itself) as a pushed screen. */
+/** /scan: kept as a redirect into the expense form, which now owns scanning. */
 
-import { ScanScreen } from "@/screens/scan/components/ScanScreen/ScanScreen";
+import { Redirect, useLocalSearchParams } from "expo-router";
 
 /**
- * Renders the scan route by mounting the ScanScreen orchestrator.
+ * Forwards /scan to the expense form, carrying ?group / ?friend across.
  *
- * @returns The /scan screen.
+ * Scanning stopped being a destination: a scanned receipt and a hand-entered
+ * itemized bill save the identical row, so the photo is an input to the
+ * expense form rather than a screen beside it — the same move the web made.
+ * This redirect stays so any link written before the merge keeps working.
+ *
+ * @returns A redirect to /expenses/new with the scope params preserved.
  */
 export default function Scan() {
-  return <ScanScreen />;
+  const params = useLocalSearchParams<{ group?: string; friend?: string }>();
+  const suffix = params.group
+    ? `?group=${params.group}`
+    : params.friend
+      ? `?friend=${params.friend}`
+      : "";
+  return <Redirect href={`/expenses/new${suffix}`} />;
 }
