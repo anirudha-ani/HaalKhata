@@ -14,7 +14,7 @@ import { MONEY_KEYS, queryKeys } from "@haalkhata/shared/api/queryKeys";
  * @returns An object with `me`, `group`, `groupError`, `friends`, `expenses`,
  *   `balances`, an `isLoading` flag covering the group and expense queries,
  *   `refresh`/`isRefreshing` for pull-to-refresh, and the `addMembers`,
- *   `removeMember` and `transferOwnership` mutations.
+ *   `removeMember`, `transferOwnership` and `addFriend` mutations.
  */
 export function useGroupDetailAPI(groupId: string) {
   const queryClient = useQueryClient();
@@ -86,6 +86,16 @@ export function useGroupDetailAPI(groupId: string) {
   });
 
   /**
+   * Sends a friend request to another member. The recipient must accept
+   * before a friendship exists, so nothing here is invalidated — the server
+   * deliberately does not expose outgoing-request state.
+   */
+  const addFriend = useMutation({
+    mutationFn: (userId: string) =>
+      socialClient.addFriend({ email: "", phone: "", name: "", userId }),
+  });
+
+  /**
    * Flips the group's simplify-debts mode. It changes which debts every
    * money surface shows — this group's balances, friend ledgers, the
    * dashboard — so success invalidates the whole money set, not just the
@@ -119,6 +129,7 @@ export function useGroupDetailAPI(groupId: string) {
     addMembers,
     removeMember,
     transferOwnership,
+    addFriend,
     setSimplify,
     activityEvents: activity.data?.events ?? [],
     activityLoading: activity.isLoading,

@@ -22,7 +22,8 @@ export type GroupTab = "expenses" | "balances" | "activity";
  *   `peopleError`, `canAddPeople`), `candidates` (friends not already in the
  *   group), the members sheet (`viewingMembers`/`setViewingMembers`,
  *   `removeMember`, `removingUserId`, `transferOwnership`,
- *   `transferringUserId`, `memberError`),
+ *   `transferringUserId`, `memberError`, `requestFriendship`,
+ *   `requestedIds`, `requestingUserId`, `friendIds`),
  *   `simplified`/`setSimplified`/`simplifyPending` for the group's
  *   persisted simplify-debts mode, `settleWith`/`setSettleWith` for the
  *   settle-up sheet, and `userById` mapping member ids to users.
@@ -37,6 +38,9 @@ export function useGroupDetail(groupId: string) {
   const [identifier, setIdentifier] = useState("");
   const [peopleError, setPeopleError] = useState("");
   const [memberError, setMemberError] = useState("");
+  // The server deliberately does not expose outgoing-request state, so this
+  // local marker prevents accidental duplicate taps while the sheet is open.
+  const [requestedIds, setRequestedIds] = useState<string[]>([]);
   // `received` rides along because the same sheet records both directions:
   // paying what you owe, and logging money that has arrived from someone who
   // owed you. Without it the group screen could only ever offer the first.
@@ -120,6 +124,20 @@ export function useGroupDetail(groupId: string) {
     });
   };
 
+  /**
+   * Sends a friend request to a member who is not yet a friend; the row
+   * shows "Requested" afterwards so it cannot be sent twice from here.
+   *
+   * @param userId - The member to befriend.
+   */
+  const requestFriendship = (userId: string) => {
+    setMemberError("");
+    groupDetailAPI.addFriend.mutate(userId, {
+      onSuccess: () => setRequestedIds((current) => [...current, userId]),
+      onError: (mutationError) => setMemberError(errorMessage(mutationError)),
+    });
+  };
+
   return {
     ...groupDetailAPI,
     tab: activeTab,
@@ -137,6 +155,14 @@ export function useGroupDetail(groupId: string) {
       ? groupDetailAPI.transferOwnership.variables
       : undefined,
     memberError,
+    requestFriendship,
+    requestedIds,
+    requestingUserId: groupDetailAPI.addFriend.isPending
+      ? groupDetailAPI.addFriend.variables
+      : undefined,
+    // Ids the caller already has a friendship with, so the members sheet can
+    // tell "open our ledger" from "ask to be friends".
+    friendIds: new Set(groupDetailAPI.friends.map((friend) => friend.id)),
     candidates,
     pickedIds,
     togglePicked,

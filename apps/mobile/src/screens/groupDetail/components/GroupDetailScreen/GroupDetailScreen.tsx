@@ -1,11 +1,12 @@
 /** Group detail orchestrator: header, members strip, expenses/balances/activity tabs, members, add-people and settle sheets. */
 
 import { useRouter } from "expo-router";
-import { Bell, Plus, ScanLine, UserPlus } from "lucide-react-native";
+import { Bell, ChevronRight, Plus, ScanLine, UserPlus } from "lucide-react-native";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { ActivityList } from "@/components/activity/ActivityList";
 import { SettleUpModal } from "@/components/modals/SettleUpModal";
 import { PersonChecklist } from "@/components/people/PersonChecklist";
+import { PersonLink } from "@/components/people/PersonLink";
 import { DetailHeader } from "@/components/shell/DetailHeader";
 import { Screen } from "@/components/shell/Screen";
 import { Avatar } from "@/components/ui/Avatar";
@@ -26,8 +27,10 @@ import { useGroupDetail } from "./hooks/useGroupDetail";
 
 /**
  * Renders a single group's screen: header with scan/add-expense actions, the
- * member avatar strip (tap for the full member list, where you can leave the
- * group or, as its owner, remove somebody) with an add-people button, the
+ * member avatar strip (tap for the full member list, where every row opens
+ * that person's ledger or offers a friend request, you can leave the group,
+ * and the owner can hand it on or remove somebody) with an add-people
+ * button, the
  * expenses/balances tab switcher, and the members, add-people and settle-up
  * sheets.
  *
@@ -187,7 +190,14 @@ export function GroupDetailScreen({
           onClose={() => groupDetail.setViewingMembers(false)}
           title={`Members (${members.length})`}
         >
-          {/* Leaving and removing are one RPC under one rule: the server
+          {/* Per row: you get "Leave group" unless you own the group; a
+              friend's row opens your shared ledger; somebody not yet a
+              friend gets a request button (they must accept before a
+              friendship exists) and still opens the ledger, which works for
+              any pair with group history; and as the owner, "Make owner"
+              and "Remove" on everyone else.
+
+              Leaving and removing are one RPC under one rule: the server
               refuses while that person still has a balance here, and its
               message is the honest one to show. Leaving is what makes
               membership consensual — any member may enrol you, so you must
@@ -200,6 +210,9 @@ export function GroupDetailScreen({
               if (!person) return null;
               const isMe = person.id === groupDetail.me?.id;
               const isOwner = member.role === OWNER_ROLE;
+              const isFriend = groupDetail.friendIds.has(person.id);
+              const requested = groupDetail.requestedIds.includes(person.id);
+              const requesting = groupDetail.requestingUserId === person.id;
               const removing = groupDetail.removingUserId === person.id;
               const transferring = groupDetail.transferringUserId === person.id;
               return (
@@ -207,38 +220,71 @@ export function GroupDetailScreen({
                   key={person.id}
                   style={[styles.memberRow, index > 0 ? styles.memberRowDivider : null]}
                 >
-                  <Avatar size="sm" user={person} />
-                  <Text numberOfLines={1} style={styles.memberName}>
-                    {person.name}
-                    {isMe ? <Text style={styles.memberTag}> · you</Text> : null}
-                    {isOwner ? <Text style={styles.memberTag}> · owner</Text> : null}
-                  </Text>
-                  {isMe && !isOwner ? (
-                    <Button
-                      busy={removing}
-                      compact
-                      label="Leave group"
-                      onPress={() => groupDetail.removeMember(person.id)}
-                      variant="outline"
-                    />
-                  ) : !isMe && viewerIsOwner ? (
-                    <View style={styles.memberActions}>
-                      <Button
-                        busy={transferring}
-                        compact
-                        label="Make owner"
-                        onPress={() => groupDetail.transferOwnership(person.id)}
-                        variant="outline"
-                      />
+                  <PersonLink
+                    meId={groupDetail.me?.id}
+                    style={styles.memberPerson}
+                    userId={person.id}
+                  >
+                    <Avatar size="sm" user={person} />
+                    <Text numberOfLines={1} style={styles.memberName}>
+                      {person.name}
+                      {isMe ? <Text style={styles.memberTag}> · you</Text> : null}
+                      {isOwner ? <Text style={styles.memberTag}> · owner</Text> : null}
+                    </Text>
+                  </PersonLink>
+                  {isMe ? (
+                    isOwner ? null : (
                       <Button
                         busy={removing}
                         compact
-                        label="Remove"
+                        label="Leave group"
                         onPress={() => groupDetail.removeMember(person.id)}
                         variant="outline"
                       />
+                    )
+                  ) : (
+                    <View style={styles.memberActions}>
+                      {isFriend ? (
+                        <Button
+                          compact
+                          icon={<ChevronRight color={colors.inkSoft} size={14} />}
+                          label="Ledger"
+                          onPress={() => {
+                            groupDetail.setViewingMembers(false);
+                            router.push(`/friends/${person.id}`);
+                          }}
+                          variant="outline"
+                        />
+                      ) : (
+                        <Button
+                          busy={requesting}
+                          compact
+                          disabled={requested}
+                          icon={<UserPlus color={colors.white} size={14} />}
+                          label={requested ? "Requested" : "Request"}
+                          onPress={() => groupDetail.requestFriendship(person.id)}
+                        />
+                      )}
+                      {viewerIsOwner ? (
+                        <>
+                          <Button
+                            busy={transferring}
+                            compact
+                            label="Make owner"
+                            onPress={() => groupDetail.transferOwnership(person.id)}
+                            variant="outline"
+                          />
+                          <Button
+                            busy={removing}
+                            compact
+                            label="Remove"
+                            onPress={() => groupDetail.removeMember(person.id)}
+                            variant="outline"
+                          />
+                        </>
+                      ) : null}
                     </View>
-                  ) : null}
+                  )}
                 </View>
               );
             })}
@@ -388,7 +434,9 @@ const styles = StyleSheet.create({
   },
   memberActions: {
     flexDirection: "row",
+    flexWrap: "wrap",
     gap: spacing.sm,
+    justifyContent: "flex-end",
   },
   memberAvatars: {
     flexDirection: "row",
@@ -406,6 +454,13 @@ const styles = StyleSheet.create({
   },
   memberOverlap: {
     marginLeft: -8,
+  },
+  memberPerson: {
+    alignItems: "center",
+    flex: 1,
+    flexDirection: "row",
+    gap: spacing.md,
+    minWidth: 0,
   },
   memberRow: {
     alignItems: "center",
