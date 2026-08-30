@@ -53,6 +53,19 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # Fail the build, not the users: an unset variable interpolates to ""
+      # and produces an image whose sign-in button never appears. Readiness
+      # now refuses such an image too, but a deploy that never happens is
+      # cheaper than one that gets rolled back.
+      - name: 'Config: the browser client id is set'
+        env:
+          NEXT_PUBLIC_GOOGLE_CLIENT_ID: ${{ vars.NEXT_PUBLIC_GOOGLE_CLIENT_ID }}
+        run: |
+          if [ -z "$NEXT_PUBLIC_GOOGLE_CLIENT_ID" ]; then
+            echo "NEXT_PUBLIC_GOOGLE_CLIENT_ID is not set as a repository variable; refusing to build a lockout" >&2
+            exit 1
+          fi
+
       - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
         with:
           context: .
