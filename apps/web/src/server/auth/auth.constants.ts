@@ -10,6 +10,14 @@ import { MAX_USER_NAME_LENGTH } from "@haalkhata/shared/text/limits";
  */
 export const TOKEN_LIFETIME_SECONDS = 60 * 60 * 24 * 7;
 
+/**
+ * Remaining lifetime below which an authenticated request re-issues the
+ * session. Half the lifetime: a person who opens the app at least weekly
+ * stays signed in indefinitely, while a token that stops being used still
+ * dies on schedule.
+ */
+export const TOKEN_RENEWAL_THRESHOLD_SECONDS = TOKEN_LIFETIME_SECONDS / 2;
+
 /** Signed-session payload version; changing it deliberately invalidates legacy tokens. */
 export const SESSION_TOKEN_FORMAT = "v2";
 

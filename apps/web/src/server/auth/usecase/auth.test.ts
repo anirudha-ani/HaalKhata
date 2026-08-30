@@ -10,9 +10,11 @@ import {
   createToken,
   decodeSessionSecret,
   signPayload,
+  tokenExpiresAt,
   tokenVersion,
   verifyToken,
 } from "./auth.usecase";
+import { TOKEN_LIFETIME_SECONDS } from "@/server/auth/auth.constants";
 import { normalizePhone } from "@/server/auth/auth.constants";
 
 describe("auth tokens", () => {
@@ -32,6 +34,16 @@ describe("auth tokens", () => {
   it("embeds and exposes the token version", () => {
     const token = createToken("user-456", 7);
     expect(tokenVersion(token)).toBe(7);
+  });
+
+  it("exposes the embedded expiry for renewal decisions", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-28T00:00:00.000Z"));
+    const token = createToken("user-456", 0);
+    expect(tokenExpiresAt(token)).toBe(
+      Math.floor(Date.UTC(2026, 7, 28) / 1000) + TOKEN_LIFETIME_SECONDS,
+    );
+    expect(tokenExpiresAt("not-a-token")).toBeNaN();
   });
 
   it("has a seven-day absolute lifetime", () => {

@@ -285,6 +285,21 @@ export function tokenVersion(token: string): number {
   return Number.isSafeInteger(version) && version >= 0 ? version : Number.NaN;
 }
 
+/**
+ * Extracts the embedded expiry (Unix seconds) from a token string, without
+ * verifying the signature. Used after verifyToken to decide whether the
+ * session is old enough to renew.
+ *
+ * @param token - Bearer token of the form "v2.userId.version.expiry.signature".
+ * @returns The expiry in Unix seconds, or NaN when the token is malformed.
+ */
+export function tokenExpiresAt(token: string): number {
+  const fields = token.split(".");
+  if (fields.length !== 5 || fields[0] !== SESSION_TOKEN_FORMAT) return Number.NaN;
+  const expiresAt = Number(fields[3]);
+  return Number.isSafeInteger(expiresAt) ? expiresAt : Number.NaN;
+}
+
 // --- flows -----------------------------------------------------------------
 
 /**

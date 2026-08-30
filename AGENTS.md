@@ -221,7 +221,10 @@ with colocated tests. Mobile-specific rules:
 
 - **Auth is bearer-token**, not cookies: LogIn/SignUp return `token`, stored
   in SecureStore (`src/lib/api/session.ts`) and attached by a transport
-  interceptor. `Code.Unauthenticated` clears the session; the `(app)/_layout`
+  interceptor. Sessions renew themselves: once a token is past half its
+  seven-day life, any authenticated RPC returns a fresh one (a cookie for
+  the browser, the `x-haalkhata-session` header for mobile, which the
+  interceptor stores). `Code.Unauthenticated` clears the session; the `(app)/_layout`
   gate redirects to /login. The server's CSRF guard exempts bearer clients.
 - **Design tokens** come from `src/lib/theme/theme.ts` (the web's globals.css
   palette). No inline hex colors in screens.

@@ -1,12 +1,22 @@
 /** Per-request Connect plumbing: caller auth (bearer/cookie), session cookies, UsecaseError → ConnectError mapping. */
 
 import { Code, ConnectError, type HandlerContext } from "@connectrpc/connect";
-import { tokenVersion, verifyToken } from "@/server/auth/usecase/auth.usecase";
+import { SESSION_RENEWAL_HEADER } from "@haalkhata/shared/auth/sessionRenewal";
+import {
+  createToken,
+  tokenExpiresAt,
+  tokenVersion,
+  verifyToken,
+} from "@/server/auth/usecase/auth.usecase";
 import { findUserTokenVersion } from "@/server/auth/repo/users.repo";
+import { TOKEN_RENEWAL_THRESHOLD_SECONDS } from "@/server/auth/auth.constants";
 import { UsecaseError } from "@/server/common/errors";
 import { logError } from "@/server/common/logger";
 import { CODE_MAP, COOKIE_MAX_AGE, sessionCookieAttributes } from "./connect.constants";
-import { tokenFromHeaders } from "./credentials";
+import { bearerTokenFromAuthorization, tokenFromHeaders } from "./credentials";
+
+/** The one RPC that must not hand back a fresh session on its way out. */
+const LOG_OUT_METHOD = "LogOut";
 
 /**
  * Returns the calling user's id, rejecting the request when unauthenticated.
@@ -29,7 +39,38 @@ export async function requireUser(handlerContext: HandlerContext): Promise<strin
   if (currentVersion === undefined || currentVersion !== embeddedVersion) {
     throw new ConnectError("session expired, please sign in again", Code.Unauthenticated);
   }
+  renewAgingSession(handlerContext, token, userId, currentVersion);
   return userId;
+}
+
+/**
+ * Re-issues a session that has used up more than half its lifetime, so a
+ * person who keeps using the app is never signed out by the absolute token
+ * limit — only by inactivity or by signing out. The fresh token travels the
+ * way the old one arrived: a cookie for the browser, a response header the
+ * mobile transport stores. Sign-out is skipped, or the renewal would race the
+ * cookie clear and the mobile token delete.
+ *
+ * @param handlerContext - Connect handler context for the current request.
+ * @param token - The verified token the request arrived with.
+ * @param userId - Its verified user id.
+ * @param currentVersion - The user's current token_version, baked into the renewal.
+ */
+function renewAgingSession(
+  handlerContext: HandlerContext,
+  token: string,
+  userId: string,
+  currentVersion: number,
+): void {
+  if (handlerContext.method.name === LOG_OUT_METHOD) return;
+  const remainingSeconds = tokenExpiresAt(token) - Date.now() / 1000;
+  if (!(remainingSeconds < TOKEN_RENEWAL_THRESHOLD_SECONDS)) return;
+  const renewed = createToken(userId, currentVersion);
+  if (bearerTokenFromAuthorization(handlerContext.requestHeader.get("authorization"))) {
+    handlerContext.responseHeader.set(SESSION_RENEWAL_HEADER, renewed);
+    return;
+  }
+  setSessionCookie(handlerContext, renewed);
 }
 
 /**
