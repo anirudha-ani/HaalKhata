@@ -7,8 +7,8 @@ import { SearchField } from "@/components/ui/SearchField";
 import { Spinner } from "@/components/ui/Spinner";
 import { useHydrated } from "@/lib/hooks/useHydrated";
 import { ActivityList } from "@/components/activity/ActivityList";
-import { ACTIVITY_FILTERS } from "@/components/activity/activityTypes";
-import { monthLabel } from "@/components/activity/activityFormat";
+import { ACTIVITY_FILTERS } from "@haalkhata/shared/activity/filters";
+import { monthLabel } from "@haalkhata/shared/activity/format";
 import { useActivity } from "./hooks/useActivity";
 
 /**

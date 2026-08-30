@@ -1,7 +1,7 @@
 /** Group detail orchestrator: header, members strip, expenses/balances/activity tabs, members, add-people and settle sheets. */
 
 import { useRouter } from "expo-router";
-import { Bell, ChevronRight, Plus, UserPlus } from "lucide-react-native";
+import { Bell, ChevronDown, ChevronRight, Plus, UserPlus } from "lucide-react-native";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { ActivityList } from "@/components/activity/ActivityList";
 import { SettleUpModal } from "@/components/modals/SettleUpModal";
@@ -176,7 +176,18 @@ export function GroupDetailScreen({
           title="Nothing yet"
         />
       ) : (
-        <ActivityList events={groupDetail.activityEvents} />
+        <>
+          <ActivityList events={groupDetail.activityEvents} now={new Date()} />
+          {groupDetail.activityHasMore ? (
+            <Button
+              busy={groupDetail.activityLoadingMore}
+              icon={<ChevronDown color={colors.inkSoft} size={16} />}
+              label="Show me more"
+              onPress={groupDetail.loadMoreActivity}
+              variant="outline"
+            />
+          ) : null}
+        </>
       )}
 
       {groupDetail.viewingMembers ? (

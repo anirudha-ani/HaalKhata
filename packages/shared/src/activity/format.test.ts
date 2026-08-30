@@ -7,7 +7,7 @@ import {
   monthLabel,
   timeOfDay,
   withoutAmount,
-} from "./activityFormat";
+} from "./format";
 
 const NOW_TIME = new Date(2026, 6, 27, 14, 30); // 27 July 2026, local time
 

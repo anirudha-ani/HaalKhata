@@ -7,7 +7,7 @@ import { Avatar } from "@/components/ui/Avatar";
 import { formatMoney } from "@haalkhata/shared/money/money";
 import { safeActivityPath } from "@haalkhata/shared/navigation/activityPath";
 import { activityLook } from "./activityTypes";
-import { groupByDay, timeOfDay, withoutAmount } from "./activityFormat";
+import { groupByDay, timeOfDay, withoutAmount } from "@haalkhata/shared/activity/format";
 import { ActivityGlyph } from "./ActivityGlyph";
 
 /**

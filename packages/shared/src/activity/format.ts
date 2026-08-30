@@ -1,6 +1,6 @@
 /** Pure formatting helpers for the activity feed: date headings, month labels, amount de-duplication. */
 
-import { formatMoney } from "@haalkhata/shared/money/money";
+import { formatMoney } from "../money/money";
 
 /** Milliseconds in a day, for the Today/Yesterday comparison. */
 const DAY_MS = 86_400_000;
