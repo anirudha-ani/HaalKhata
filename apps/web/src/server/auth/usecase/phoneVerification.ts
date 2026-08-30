@@ -2,6 +2,7 @@
 
 import { UsecaseError, invalid } from "@/server/common/errors";
 import { logEvent } from "@/server/common/logger";
+import { readSecret } from "@/server/common/secrets";
 import {
   PHONE_VERIFICATION_CODE_PATTERN,
   PHONE_VERIFICATION_TIMEOUT_MS,
@@ -29,7 +30,7 @@ interface VerificationConfiguration {
  */
 function configuration(): VerificationConfiguration {
   const apiKeySid = process.env.TWILIO_API_KEY_SID?.trim() ?? "";
-  const apiKeySecret = process.env.TWILIO_API_KEY_SECRET?.trim() ?? "";
+  const apiKeySecret = readSecret("TWILIO_API_KEY_SECRET").trim();
   const serviceSid = process.env.TWILIO_VERIFY_SERVICE_SID?.trim() ?? "";
   if (!apiKeySid || !apiKeySecret || !serviceSid) {
     throw new UsecaseError("unavailable", "phone verification is temporarily unavailable");

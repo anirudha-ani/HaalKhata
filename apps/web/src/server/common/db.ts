@@ -12,6 +12,7 @@ import {
   WEAK_DATABASE_PASSWORDS,
 } from "@/server/common/db.constants";
 import { logError } from "@/server/common/logger";
+import { readSecret } from "@/server/common/secrets";
 
 // Keep date/time columns as strings end-to-end (row types say `string`);
 // pg would otherwise hand back JS Date objects.
@@ -28,9 +29,24 @@ types.setTypeParser(types.builtins.TIMESTAMPTZ, (value) => new Date(value).toISO
 types.setTypeParser(types.builtins.TIMESTAMP, (value) => value);
 types.setTypeParser(types.builtins.DATE, (value) => value);
 
-/** Resolves the Postgres connection string, preferring the DATABASE_URL env var. */
+/**
+ * Resolves the Postgres connection string: DATABASE_URL when set; otherwise
+ * assembled from the parts, with the password read through the `_FILE`
+ * convention (POSTGRES_PASSWORD_FILE — the same secret the postgres image
+ * initializes with) and URL-encoded, so no credential has to be exported
+ * into the environment and no reserved character can break the URL.
+ *
+ * @returns The connection string to open the pool with.
+ */
 function databaseUrl(): string {
-  return process.env.DATABASE_URL ?? DEFAULT_DATABASE_URL;
+  if (process.env.DATABASE_URL) return process.env.DATABASE_URL;
+  const password = readSecret("POSTGRES_PASSWORD");
+  if (!password) return DEFAULT_DATABASE_URL;
+  const user = process.env.POSTGRES_USER ?? "haalkhata";
+  const host = process.env.POSTGRES_HOST ?? "db";
+  const port = process.env.POSTGRES_PORT ?? "5432";
+  const database = process.env.POSTGRES_DB ?? "haalkhata";
+  return `postgres://${encodeURIComponent(user)}:${encodeURIComponent(password)}@${host}:${port}/${database}`;
 }
 
 /**

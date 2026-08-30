@@ -1,4 +1,5 @@
 /** Receipt domain constants: accepted image types, size limit, extraction schema + prompt. */
+import { readSecret } from "@/server/common/secrets";
 
 /**
  * Image formats accepted from clients. HEIC/HEIF are included because that is
@@ -67,8 +68,8 @@ export const MAX_PARSED_MONEY_CENTS = 2_000_000_000;
 export const COMPATIBLE_AI = {
   /** Base URL without a trailing slash, e.g. "https://openrouter.ai/api/v1". */
   baseUrl: (process.env.COMPATIBLE_AI_BASE_URL ?? "").replace(/\/$/, ""),
-  /** Bearer token for the endpoint; optional for an unauthenticated local box. */
-  apiKey: process.env.COMPATIBLE_AI_API_KEY ?? "",
+  /** Bearer token for the endpoint (COMPATIBLE_AI_API_KEY or its _FILE); optional for an unauthenticated local box. */
+  apiKey: readSecret("COMPATIBLE_AI_API_KEY"),
   /** Model identifier as the endpoint names it. */
   model: process.env.COMPATIBLE_AI_MODEL ?? "",
   /**

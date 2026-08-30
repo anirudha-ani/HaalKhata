@@ -26,6 +26,7 @@ import {
 } from "@/server/auth/repo/googleSignInNonces.repo";
 import { PAYMENT_METHOD_KEYS } from "@haalkhata/shared/payment/methods";
 import { UsecaseError, invalid } from "@/server/common/errors";
+import { readSecret } from "@/server/common/secrets";
 import {
   AVATAR_PALETTE,
   DATA_DIRECTORY,
@@ -112,6 +113,8 @@ async function verifyPassword(password: string, storedHash: string): Promise<boo
 // --- bearer tokens ---------------------------------------------------------
 
 let cachedSecret: Buffer | null = null;
+/** The previous signing key during a rotation; null when none is configured. */
+let cachedPreviousSecret: Buffer | null | undefined;
 
 /**
  * Strictly decodes standard Base64 without accepting Node's permissive
@@ -170,8 +173,9 @@ export function decodeSessionSecret(
  */
 function secret(): Buffer {
   if (cachedSecret) return cachedSecret;
-  if (process.env.SESSION_SECRET) {
-    cachedSecret = decodeSessionSecret(process.env.SESSION_SECRET);
+  const configured = readSecret("SESSION_SECRET");
+  if (configured) {
+    cachedSecret = decodeSessionSecret(configured);
     return cachedSecret;
   }
   if (process.env.NODE_ENV === "production") {
@@ -193,6 +197,22 @@ function secret(): Buffer {
 }
 
 /**
+ * The previous signing key, kept for verification only while a rotation is
+ * in flight. Set SESSION_SECRET_PREVIOUS (or _FILE) to the old key when
+ * changing SESSION_SECRET and tokens issued under it stay valid until they
+ * expire; unset it afterwards. Incident rotation leaves it unset, which
+ * invalidates every session at once as before.
+ *
+ * @returns The decoded previous key, or null when none is configured.
+ */
+function previousSecret(): Buffer | null {
+  if (cachedPreviousSecret !== undefined) return cachedPreviousSecret;
+  const configured = readSecret("SESSION_SECRET_PREVIOUS");
+  cachedPreviousSecret = configured ? decodeSessionSecret(configured) : null;
+  return cachedPreviousSecret;
+}
+
+/**
  * Security domain bound into each signed token class — or, for
  * "rate-limit", into a keyed fingerprint that lets a limiter key on a phone
  * number without holding the number itself.
@@ -209,32 +229,48 @@ export type TokenPurpose = "session" | "phone-merge" | "rate-limit";
  * @returns Its base64url HMAC-SHA256 signature.
  */
 export function signPayload(purpose: TokenPurpose, payload: string): string {
-  return crypto
-    .createHmac("sha256", secret())
-    .update(`${purpose}\0${payload}`)
-    .digest("base64url");
+  return signWith(secret(), purpose, payload);
 }
 
 /**
- * Compares a purpose-bound signature in constant time.
+ * Signs a purpose-bound payload with one specific key.
+ *
+ * @param hmacKey - HMAC key.
+ * @param purpose - Token domain being authorized.
+ * @param payload - Exact string being authorized.
+ * @returns Its base64url HMAC-SHA256 signature.
+ */
+function signWith(hmacKey: Buffer, purpose: TokenPurpose, payload: string): string {
+  return crypto.createHmac("sha256", hmacKey).update(`${purpose}\0${payload}`).digest("base64url");
+}
+
+/**
+ * Compares a purpose-bound signature in constant time, against the current
+ * key and — during a rotation — the previous one, so a planned key change
+ * does not sign everyone out at once.
  *
  * @param purpose - Token domain expected by the reader.
  * @param payload - Exact signed payload.
  * @param givenSignature - Base64url signature supplied with the token.
- * @returns True only for a same-purpose, same-payload signature.
+ * @returns True only for a same-purpose, same-payload signature under a live key.
  */
 export function verifyPayloadSignature(
   purpose: TokenPurpose,
   payload: string,
   givenSignature: string,
 ): boolean {
-  const expectedSignature = signPayload(purpose, payload);
   const givenBuffer = Buffer.from(givenSignature);
-  const expectedBuffer = Buffer.from(expectedSignature);
-  return (
-    givenBuffer.length === expectedBuffer.length &&
-    crypto.timingSafeEqual(givenBuffer, expectedBuffer)
-  );
+  const previous = previousSecret();
+  const keys = previous ? [secret(), previous] : [secret()];
+  let valid = false;
+  for (const hmacKey of keys) {
+    const expectedBuffer = Buffer.from(signWith(hmacKey, purpose, payload));
+    // Every key is checked, so timing does not say which one matched.
+    if (givenBuffer.length === expectedBuffer.length && crypto.timingSafeEqual(givenBuffer, expectedBuffer)) {
+      valid = true;
+    }
+  }
+  return valid;
 }
 
 /**

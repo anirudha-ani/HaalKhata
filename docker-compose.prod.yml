@@ -61,8 +61,17 @@ services:
       NODE_ENV: production
       # Safe only because this stack's Caddyfile overwrites X-Forwarded-For.
       TRUST_PROXY_HEADERS: "true"
-      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
+      # Required form: production signs in with Google only, so a stack
+      # without this would start, pass readiness, and lock everyone out.
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:?GOOGLE_CLIENT_ID is required — production signs in with Google only}
       GOOGLE_MOBILE_CLIENT_IDS: ${GOOGLE_MOBILE_CLIENT_IDS:-}
+      # Secrets are read from these files by the app itself (the Docker
+      # `_FILE` convention); nothing exports them into the environment.
+      SESSION_SECRET_FILE: /run/secrets/session_secret
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+      POSTGRES_HOST: db
+      COMPATIBLE_AI_API_KEY_FILE: /run/secrets/openrouter_api_key
+      TWILIO_API_KEY_SECRET_FILE: /run/secrets/twilio_api_key_secret
       TWILIO_API_KEY_SID: ${TWILIO_API_KEY_SID}
       TWILIO_VERIFY_SERVICE_SID: ${TWILIO_VERIFY_SERVICE_SID}
       # `mock` is deliberately dropped here. In development it keeps the scan
