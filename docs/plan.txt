@@ -1754,3 +1754,46 @@ GetGroupBalances / GetFriendLedger are as expensive as the rate-limited
 reads and remain unlimited; and group-scope immutability is group-wide after
 any settlement — narrowing it needs a stored `simplified` flag on
 settlements.
+
+## §26 The friction pass (2026-08-29)
+
+With the audit closed, the question became which rules still cost a normal
+user more than they protect. Eight were found; all eight are done.
+
+- **Mobile signs in with Google.** Production accepts Google only, and the
+  app only knew the password RPCs — a release build could not sign in at
+  all. `expo-auth-session`'s Google provider now runs the same
+  server-nonce challenge the web uses, against the platform's native client
+  id; the server accepts those ids as audiences (`GOOGLE_MOBILE_CLIENT_IDS`).
+  The password form is development-only, mirroring the server.
+- **An owner can hand the group on.** `TransferOwnership` makes another
+  member the owner and drops the caller to a member, who can then leave —
+  the "transfer ownership first" message finally points at something.
+- **A mistaken payment can be removed.** `DeleteSettlement` is the same
+  visible soft delete expenses got: either person on the payment may remove
+  it, the friend-ledger line stays struck through with a zero change, the
+  debt it paid down comes back, and the other person is told. Web only for
+  now — mobile has no per-payment surface yet.
+- **Editing an expense can change who is on it.** Only the group/one-off
+  scope is pinned (settlements live there); the server always accepted a
+  changed cast, and now both pickers allow it.
+- **Sessions renew themselves.** Past half its seven-day life, any
+  authenticated RPC re-issues the token — a cookie for the browser, the
+  `x-haalkhata-session` header for mobile — so regular use is never signed
+  out; only inactivity or sign-out ends a session. LogOut is exempt.
+- **Itemized expenses are editable on mobile.** The scan flow's item editor
+  became a shared hook and component (`lib/hooks/useItemDraft`,
+  `components/expense/ItemDraftEditor`); the expense form gained an "Items"
+  split type that reloads a receipt's lines and assignments.
+- **The "somebody has paid" warning is about the expense's own people** in
+  pairwise groups; simplified groups keep the wide answer, because there a
+  payment between two unrelated members can be routed debt from the
+  expense.
+- **Comments stay open on a deleted expense** — "why was this removed?" is
+  the conversation the kept row exists to host.
+
+Deliberately unchanged: bringing a brand-new person in still takes a friend
+request they accept first (the cost of closing the account-existence oracle;
+an invite link would soften it), an expense still cannot move between
+groups, leaving a group still needs a zero balance, and receipt scanning
+stays at five a minute.
