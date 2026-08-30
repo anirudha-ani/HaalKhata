@@ -433,4 +433,70 @@ describe.skipIf(!reachable)("recordSettlement against Postgres", () => {
     );
     expect(membership.rowCount).toBe(expense.rowCount);
   });
+
+  /** Counts every settlement row, so a replay can be shown to add none. */
+  const settlementCount = async (): Promise<number> =>
+    Number((await database.query(`SELECT count(*) AS total FROM settlements`)).rows[0].total);
+
+  // H-03: a retry of a lost response must find the first attempt's result,
+  // not store a second one. The claim commits with the business row, so a
+  // concurrent duplicate blocks on it and then replays.
+  it("replays a retried expense instead of storing it twice", async () => {
+    // The earlier removal race may have left the pair sharing no group, and
+    // a one-off needs a friendship or a shared group; make the friendship.
+    await database.query(
+      `INSERT INTO friendships (user_id, friend_id) VALUES ($1, $2), ($2, $1)
+       ON CONFLICT DO NOTHING`,
+      [CREDITOR, DEBTOR],
+    );
+    const request = {
+      groupId: "",
+      description: "Retried lunch",
+      amountCents: 800,
+      currency: "USD",
+      category: "food",
+      expenseDate: "2026-07-30",
+      splitType: "exact",
+      notes: "",
+      payers: [{ userId: CREDITOR, amountCents: 800 }],
+      splitSpecs: [{ userId: DEBTOR, amountCents: 800, percentBp: 0, shares: 0 }],
+      items: [],
+      taxCents: 0,
+      tipCents: 0,
+      operationId: "op-lunch",
+    } as never;
+    const [first, concurrent] = await Promise.all([
+      createExpense(CREDITOR, request),
+      createExpense(CREDITOR, request),
+    ]);
+    const retried = await createExpense(CREDITOR, request);
+    expect(concurrent.id).toBe(first.id);
+    expect(retried.id).toBe(first.id);
+    const stored = await database.query(
+      `SELECT count(*) AS total FROM expenses WHERE description = 'Retried lunch'`,
+    );
+    expect(Number(stored.rows[0].total)).toBe(1);
+  });
+
+  it("replays a retried payment and refuses the id for a different one", async () => {
+    const before = await settlementCount();
+    const request = {
+      groupId: "",
+      toUserId: CREDITOR,
+      amountCents: 300,
+      currency: "USD",
+      method: "cash",
+      note: "",
+      operationId: "op-pay",
+    };
+    const first = await recordSettlement(DEBTOR, request);
+    const retried = await recordSettlement(DEBTOR, request);
+    expect(retried.id).toBe(first.id);
+    expect(await settlementCount()).toBe(before + 1);
+    // Same id, different amount: not a retry, and not silently the old result.
+    await expect(recordSettlement(DEBTOR, { ...request, amountCents: 200 })).rejects.toThrow(
+      /already used for a different request/,
+    );
+    expect(await settlementCount()).toBe(before + 1);
+  });
 });

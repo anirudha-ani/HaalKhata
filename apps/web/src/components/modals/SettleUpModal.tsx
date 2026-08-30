@@ -1,12 +1,13 @@
 "use client";
 /** Modal for settling up: pick which balances the payment covers and the app the money moved through, then record it. */
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Check, Copy, ExternalLink } from "lucide-react";
 import type { User } from "@haalkhata/protogen/common/v1/common_pb";
 import { errorMessage, expenseClient } from "@/lib/api/connect";
 import { copyText } from "@/lib/clipboard/copyText";
+import { newOperationId } from "@/lib/operations/operationId";
 import { centsToInput, formatMoney, parseMoneyInput } from "@haalkhata/shared/money/money";
 import { MONEY_KEYS, queryKeys } from "@haalkhata/shared/api/queryKeys";
 import {
@@ -92,6 +93,9 @@ export function SettleUpModal({
   const [note, setNote] = useState("");
   const [error, setError] = useState("");
   const [copied, setCopied] = useState(false);
+  // One id per attempt at recording: a retry after a lost response sends
+  // the same one and gets the first recording back, never a second.
+  const operationIdRef = useRef(newOperationId());
 
   // The same per-scope balances the friend page shows, so this checklist and
   // that page can never disagree about where money is owed.
@@ -144,8 +148,10 @@ export function SettleUpModal({
         note,
         received,
         scopeGroupIds: effectiveCheckedIds,
+        operationId: operationIdRef.current,
       }),
     onSuccess: () => {
+      operationIdRef.current = newOperationId();
       for (const moneyKey of MONEY_KEYS) queryClient.invalidateQueries({ queryKey: moneyKey });
       onClose();
     },

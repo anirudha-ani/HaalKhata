@@ -1,10 +1,11 @@
 "use client";
 /** Composite expense-form hook: field state, payer/split validation, submit. */
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { User } from "@haalkhata/protogen/common/v1/common_pb";
 import { errorMessage } from "@/lib/api/connect";
+import { newOperationId } from "@/lib/operations/operationId";
 import { prepareReceiptImage } from "@/lib/image/receiptImage";
 import { centsToInput, parseMoneyInput } from "@haalkhata/shared/money/money";
 import { nextDraftKey } from "@haalkhata/shared/expense/draftKey";
@@ -82,6 +83,9 @@ export function useNewExpense(
   const [receiptUrl, setReceiptUrl] = useState("");
   const [provider, setProvider] = useState("");
   const [isPreparing, setIsPreparing] = useState(false);
+  // One id per attempt at saving: a retry after a lost response sends the
+  // same one and gets the expense the first attempt stored, not a second.
+  const operationIdRef = useRef(newOperationId());
 
   const selectedGroup = expenseAPI.groups.find(
     (groupSummary) => groupSummary.group?.id === groupId,
@@ -417,13 +421,19 @@ export function useNewExpense(
       items: isItemized ? buildItemsPayload(items) : [],
       taxCents: isItemized ? taxCents : 0,
       tipCents: isItemized ? tipCents : 0,
+      // Names this attempt: a retry after a lost response sends the same id
+      // and gets the expense the first attempt stored, not a second one.
+      operationId: operationIdRef.current,
     };
 
     // Land on the thing you just made, not on the list you started from.
     // Both RPCs return the saved Expense, so the id is already here — and
     // seeing the split it landed on is the confirmation that matters, far
     // more than a group page where the new row is one line among many.
-    const onSuccess = (saved: { id: string }) => router.push(`/expenses/${saved.id}`);
+    const onSuccess = (saved: { id: string }) => {
+      operationIdRef.current = newOperationId();
+      router.push(`/expenses/${saved.id}`);
+    };
     const onError = (mutationError: unknown) => setError(errorMessage(mutationError));
     if (editExpenseId) {
       expenseAPI.update.mutate(

@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { User } from "@haalkhata/protogen/common/v1/common_pb";
 import * as Clipboard from "expo-clipboard";
 import { Check, Copy, ExternalLink } from "lucide-react-native";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Linking, Pressable, StyleSheet, Text, View } from "react-native";
 import { Avatar } from "@/components/ui/Avatar";
 import { Button } from "@/components/ui/Button";
@@ -13,6 +13,7 @@ import { Money } from "@/components/ui/Money";
 import { Sheet } from "@/components/ui/Sheet";
 import { TextField } from "@/components/ui/TextField";
 import { errorMessage, expenseClient } from "@/lib/api/connect";
+import { newOperationId } from "@/lib/api/operationId";
 import { MONEY_KEYS, queryKeys } from "@haalkhata/shared/api/queryKeys";
 import { centsToInput, formatMoney, parseMoneyInput } from "@haalkhata/shared/money/money";
 import {
@@ -96,6 +97,9 @@ export function SettleUpModal({
   const [note, setNote] = useState("");
   const [error, setError] = useState("");
   const [copied, setCopied] = useState(false);
+  // One id per attempt at recording: a retry after a lost response sends
+  // the same one and gets the first recording back, never a second.
+  const operationIdRef = useRef(newOperationId());
 
   // The same per-scope balances the friend screen shows, so this checklist
   // and that screen can never disagree about where money is owed.
@@ -148,8 +152,10 @@ export function SettleUpModal({
         note,
         received,
         scopeGroupIds: effectiveCheckedIds,
+        operationId: operationIdRef.current,
       }),
     onSuccess: () => {
+      operationIdRef.current = newOperationId();
       for (const moneyKey of MONEY_KEYS) queryClient.invalidateQueries({ queryKey: moneyKey });
       onClose();
     },

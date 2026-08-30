@@ -57,6 +57,7 @@ import {
   withLedgerTransaction,
 } from "@/server/common/ledgerLocks";
 import { normalizeCurrencyCode } from "@/server/common/validation";
+import { beginOperation, finishOperation } from "@/server/common/operations";
 import { toPublicUser } from "@/server/auth/usecase/user.mapper";
 import {
   COMMENT_PREVIEW_LENGTH,
@@ -426,7 +427,13 @@ async function recordExpenseActivity(
 export async function createExpense(userId: string, request: CreateExpenseRequest) {
   const write = await buildExpenseWrite(userId, request);
   const participantIds = involvedUserIds(write);
+  const operation = { userId, rpc: "CreateExpense", operationId: request.operationId ?? "" };
   const expenseId = await withLedgerTransaction(async (client) => {
+    // Claimed before any lock: a retry of a lost response resolves here to
+    // the expense the first attempt stored, without waiting on ledgers it
+    // will not touch.
+    const claim = await beginOperation(operation, request, client);
+    if (claim.replayOf !== null) return claim.replayOf;
     if (write.groupId) {
       await lockGroupLedgers(client, [write.groupId]);
       await assertLockedGroupParticipants(write.groupId, userId, participantIds, client);
@@ -443,6 +450,7 @@ export async function createExpense(userId: string, request: CreateExpenseReques
       }
     }
     await recordExpenseActivity(userId, insertedId, write, "added", client);
+    await finishOperation(operation, insertedId, client);
     return insertedId;
   });
   return getExpenseProto(expenseId);
@@ -952,6 +960,7 @@ export async function recordSettlement(
     note: string;
     received?: boolean;
     scopeGroupIds?: string[];
+    operationId?: string;
   },
 ) {
   if (request.toUserId === userId) invalid("you cannot settle with yourself");
@@ -998,11 +1007,22 @@ export async function recordSettlement(
   // become visible at the same instant the lock releases — and so do the
   // feed rows and the notification, which commit with the payment or not at
   // all.
+  const operation = { userId, rpc: "RecordSettlement", operationId: request.operationId ?? "" };
   const settlements = await withSettlementPairLock(payerId, creditorId, async (client) => {
+    // A retry of a lost response finds the claim the first attempt
+    // committed and answers with its recording — never a second one, which
+    // the over-settle guard alone could not catch for a partial payment.
+    const claim = await beginOperation(operation, request, client);
+    if (claim.replayOf !== null) {
+      const replayed = await findSettlementById(claim.replayOf, client);
+      return replayed ? [replayed] : [];
+    }
     const stored = await storeSettlementPortions(client);
     await announceSettlement(client, stored);
+    await finishOperation(operation, stored[0].id, client);
     return stored;
   });
+  if (settlements.length === 0) notFound("payment not found");
   return toSettlement(settlements[0]);
 
   /**

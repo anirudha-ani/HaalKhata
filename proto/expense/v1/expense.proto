@@ -107,6 +107,14 @@ message CreateExpenseRequest {
   repeated ExpenseItem items = 11; // itemized only; ids may be empty
   int32 tax_cents = 12;            // itemized only
   int32 tip_cents = 13;            // itemized only
+  // Required. A client-generated id (a UUID) naming this one attempt, sent
+  // unchanged on every retry of it and replaced only after a success. The
+  // server stores at most one expense per (caller, operation_id): a retry
+  // of a lost response gets the expense the first attempt created, the
+  // same id with a different payload is refused, and a claim is kept for
+  // 24 hours. Ignored inside UpdateExpenseRequest — an update replaces the
+  // row it names and is idempotent by nature.
+  string operation_id = 14;
 }
 
 message UpdateExpenseRequest {
@@ -219,6 +227,11 @@ message RecordSettlementRequest {
   // owes — which is also what clients predating this field send, so the
   // default and the legacy behavior are the same thing.
   repeated string scope_group_ids = 8;
+  // Required. A client-generated id naming this one attempt at recording
+  // the payment; same contract as CreateExpenseRequest.operation_id. The
+  // retry of a lost response gets the recording the first attempt made,
+  // never a second one.
+  string operation_id = 9;
 }
 
 message Settlement {

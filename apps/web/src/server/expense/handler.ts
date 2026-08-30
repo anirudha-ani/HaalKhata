@@ -6,6 +6,7 @@ import * as expenses from "@/server/expense/usecase/expense.usecase";
 import * as balances from "@/server/expense/usecase/balance.usecase";
 import { requireUser, runUsecase } from "@/server/api/connect/context";
 import { requireRateLimitedUser, RPC_RATE_LIMITS } from "@/server/api/connect/rpcRateLimit";
+import { assertOperationId } from "@/server/common/operations";
 
 /**
  * ConnectRPC implementation of ExpenseService. Every method only resolves the
@@ -13,15 +14,15 @@ import { requireRateLimitedUser, RPC_RATE_LIMITS } from "@/server/api/connect/rp
  * UsecaseError codes onto ConnectError codes.
  */
 export const expenseHandler: ServiceImpl<typeof ExpenseService> = {
+  /** Every external create names its attempt, so a retry cannot store two. */
   async createExpense(request, context) {
-    return runUsecase(
-      async () =>
-        expenses.createExpense(
-          await requireRateLimitedUser(context, "create-expense", RPC_RATE_LIMITS.createExpense),
-          request,
-        ),
-      context,
-    );
+    return runUsecase(async () => {
+      assertOperationId(request.operationId);
+      return expenses.createExpense(
+        await requireRateLimitedUser(context, "create-expense", RPC_RATE_LIMITS.createExpense),
+        request,
+      );
+    }, context);
   },
 
   async updateExpense(request, context) {
@@ -70,8 +71,12 @@ export const expenseHandler: ServiceImpl<typeof ExpenseService> = {
     );
   },
 
+  /** Every external recording names its attempt, so a retry cannot store two. */
   async recordSettlement(request, context) {
-    return runUsecase(async () => expenses.recordSettlement(await requireUser(context), request), context);
+    return runUsecase(async () => {
+      assertOperationId(request.operationId);
+      return expenses.recordSettlement(await requireUser(context), request);
+    }, context);
   },
 
   async getGroupBalances(request, context) {

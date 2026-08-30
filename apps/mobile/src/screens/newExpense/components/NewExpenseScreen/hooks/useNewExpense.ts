@@ -3,8 +3,9 @@
 import type { User } from "@haalkhata/protogen/common/v1/common_pb";
 import { useRouter } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { errorMessage } from "@/lib/api/connect";
+import { newOperationId } from "@/lib/api/operationId";
 import { centsToInput, parseMoneyInput } from "@haalkhata/shared/money/money";
 import { draftItemsFromLines, itemsPayload } from "@/lib/expense/itemDraft";
 import { useItemDraft } from "@/lib/hooks/useItemDraft";
@@ -76,6 +77,9 @@ export function useNewExpense(
   // flow: the photo is parsed into the same item draft the Items split edits.
   const [photo, setPhoto] = useState<ReceiptPhoto | null>(null);
   const [provider, setProvider] = useState("");
+  // One id per attempt at saving: a retry after a lost response sends the
+  // same one and gets the expense the first attempt stored, not a second.
+  const operationIdRef = useRef(newOperationId());
   // The itemized split's lines — the same editor whether they were typed or
   // read off a receipt.
   const itemDraft = useItemDraft({ items: initial.items, tax: initial.tax, tip: initial.tip });
@@ -309,9 +313,13 @@ export function useNewExpense(
       items: isItemized ? itemsPayload(itemDraft.items ?? []) : [],
       taxCents: isItemized ? itemDraft.taxCents : 0,
       tipCents: isItemized ? itemDraft.tipCents : 0,
+      operationId: operationIdRef.current,
     };
 
-    const onSuccess = () => router.replace(groupId ? `/groups/${groupId}` : "/friends");
+    const onSuccess = () => {
+      operationIdRef.current = newOperationId();
+      router.replace(groupId ? `/groups/${groupId}` : "/friends");
+    };
     const onError = (mutationError: unknown) => setError(errorMessage(mutationError));
     if (editExpenseId) {
       expenseAPI.update.mutate(
