@@ -29,7 +29,7 @@ describe("settlement history mutation guard", () => {
     await scopeHasSettlements("group-trip", [], EVENT_ORDER, transactionClient);
 
     const [statement, values, client] = vi.mocked(queryOne).mock.calls[0];
-    expect(statement).toContain("group_id = $1 AND ledger_event_order > $2");
+    expect(statement).toContain("group_id = $1 AND deleted_at IS NULL AND ledger_event_order > $2");
     expect(values).toEqual(["group-trip", EVENT_ORDER, false, []]);
     expect(client).toBe(transactionClient);
   });

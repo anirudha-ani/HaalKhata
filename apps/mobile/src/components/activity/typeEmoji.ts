@@ -6,6 +6,7 @@ export const TYPE_EMOJI: Record<string, string> = {
   expense_updated: "✏️",
   expense_deleted: "🗑️",
   settlement: "💸",
+  settlement_deleted: "↩️",
   member_added: "👋",
   group_created: "📒",
   ownership_transferred: "👑",

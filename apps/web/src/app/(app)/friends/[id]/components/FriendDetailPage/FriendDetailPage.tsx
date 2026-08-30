@@ -268,16 +268,39 @@ export function FriendDetailPage({
                           {entry.description}
                         </Link>
                       ) : (
-                        <span className="font-medium text-pos-700">{entry.description}</span>
+                        <span
+                          className={`font-medium ${
+                            entry.deleted ? "text-ink-soft line-through" : "text-pos-700"
+                          }`}
+                        >
+                          {entry.description}
+                        </span>
                       )}
-                      {/* Struck through but kept: a deleted expense no longer
-                          moves the balance, and a payment made against it
-                          needs this row to explain why the balance leans the
-                          other way now. */}
+                      {/* Struck through but kept: a deleted expense or a
+                          removed payment no longer moves the balance, and
+                          the row is what explains why the balance leans the
+                          way it does now. */}
                       {entry.deleted ? (
                         <span className="ml-2 rounded-full bg-paper px-2 py-0.5 text-[11px] text-ink-soft">
-                          deleted
+                          {entry.kind === "settlement" ? "removed" : "deleted"}
                         </span>
+                      ) : null}
+                      {/* A mistyped payment is the reason this exists. Two
+                          taps: the first arms the button, the second sends. */}
+                      {entry.kind === "settlement" && !entry.deleted ? (
+                        <button
+                          type="button"
+                          onClick={() => view.removeSettlement(entry.id)}
+                          disabled={view.removingSettlementId === entry.id}
+                          aria-label={`Remove the payment ${entry.description}`}
+                          className="ml-2 rounded-full border border-line px-2 py-0.5 text-[11px] font-medium text-ink-soft hover:border-neg-600 hover:text-neg-600 disabled:opacity-50"
+                        >
+                          {view.removingSettlementId === entry.id
+                            ? "Removing…"
+                            : view.confirmingSettlementId === entry.id
+                              ? "Tap again to remove"
+                              : "Remove"}
+                        </button>
                       ) : null}
                       {entry.groupName ? (
                         <span className="ml-2 rounded-full bg-paper px-2 py-0.5 text-[11px] text-ink-soft">

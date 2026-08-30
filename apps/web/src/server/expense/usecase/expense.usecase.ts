@@ -26,8 +26,10 @@ import { findUserById, findUsersByIds } from "@/server/auth/repo/users.repo";
 import { insertFriendship, listFriendIds } from "@/server/social/repo/friendships.repo";
 import { insertComment, listCommentsByExpense } from "@/server/expense/repo/comments.repo";
 import {
+  findSettlementById,
   insertSettlement,
   scopeHasSettlements,
+  softDeleteSettlement,
   withSettlementPairLock,
 } from "@/server/expense/repo/settlements.repo";
 import { insertActivity, listActivityForExpense } from "@/server/social/repo/activity.repo";
@@ -1109,4 +1111,63 @@ export async function recordSettlement(
     link: groupId ? `/groups/${groupId}` : `/friends/${userId}`,
   });
   return toSettlement(settlements[0]);
+}
+
+/**
+ * Removes a mistaken payment. Either of the two people on it may — both are
+ * affected, and the other one is told. A soft delete: the row keeps its
+ * place in the friend ledger, struck through, while every balance ignores it
+ * from here on, so the debt it had paid down comes back exactly.
+ *
+ * Runs under the pair lock plus the group lock, like recording: a settlement
+ * being validated against this payment must see it either counted or gone,
+ * never half-way.
+ *
+ * @param userId - Authenticated caller; must be the payer or the recipient.
+ * @param settlementId - Id of the settlement to remove.
+ * @throws UsecaseError (not_found) when the settlement is missing or already
+ *   removed; (permission_denied) when the caller is not on it.
+ */
+export async function deleteSettlement(userId: string, settlementId: string): Promise<void> {
+  const existing = await findSettlementById(settlementId);
+  if (!existing || existing.deleted_at) notFound("payment not found");
+  if (existing.from_user !== userId && existing.to_user !== userId) {
+    denied("only the two people on a payment can remove it");
+  }
+  const removed = await withSettlementPairLock(
+    existing.from_user,
+    existing.to_user,
+    async (client) => {
+      if (existing.group_id) await lockGroupLedgers(client, [existing.group_id]);
+      const current = await findSettlementById(settlementId, client);
+      if (!current || current.deleted_at) notFound("payment not found");
+      await softDeleteSettlement(settlementId, client);
+      return current;
+    },
+  );
+
+  const actor = (await findUserById(userId))!;
+  const otherUserId = removed.from_user === userId ? removed.to_user : removed.from_user;
+  const [payer, creditor, group] = await Promise.all([
+    findUserById(removed.from_user),
+    findUserById(removed.to_user),
+    removed.group_id ? findGroupById(removed.group_id) : Promise.resolve(undefined),
+  ]);
+  const amount = formatMoney(removed.amount_cents, removed.currency);
+  await insertActivity({
+    groupId: removed.group_id,
+    actorId: userId,
+    type: "settlement_deleted",
+    message: `${actor.name} removed the payment "${payer?.name ?? "someone"} paid ${creditor?.name ?? "someone"} ${amount}"${group ? ` in "${group.name}"` : ""}`,
+    link: removed.group_id ? `/groups/${removed.group_id}` : `/friends/${otherUserId}`,
+    audience: [...new Set([removed.from_user, removed.to_user])],
+    amountCents: removed.amount_cents,
+    currency: removed.currency,
+  });
+  await insertNotifications([otherUserId], {
+    type: "settlement_deleted",
+    title: `${actor.name} removed the payment of ${amount}`,
+    body: group ? group.name : "Settlement",
+    link: removed.group_id ? `/groups/${removed.group_id}` : `/friends/${userId}`,
+  });
 }

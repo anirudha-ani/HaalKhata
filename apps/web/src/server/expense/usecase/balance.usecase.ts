@@ -455,7 +455,7 @@ export async function getFriendLedger(userId: string, friendId: string) {
 
   const expenses = await listExpensesBetween(userId, friendId, true);
   const children = await loadExpenseChildren(expenses.map((expense) => expense.id));
-  const settlements = await listSettlementsBetween(userId, friendId);
+  const settlements = await listSettlementsBetween(userId, friendId, true);
 
   const groupNames = new Map<string, string>();
   for (const groupId of new Set(
@@ -518,6 +518,9 @@ export async function getFriendLedger(userId: string, friendId: string) {
     // You paying them shrinks your debt, so it moves the balance in your
     // favour exactly as an expense they owed you on would.
     const paidByYou = settlement.from_user === userId;
+    // A removed payment stays as a line with no movement, so the debt that
+    // came back when it was removed still has the row explaining it.
+    const deleted = settlement.deleted_at !== null;
     lines.push({
       kind: "settlement",
       id: settlement.id,
@@ -528,10 +531,10 @@ export async function getFriendLedger(userId: string, friendId: string) {
       groupId: settlement.group_id ?? "",
       groupName: settlement.group_id ? (groupNames.get(settlement.group_id) ?? "") : "",
       totalCents: settlement.amount_cents,
-      deltaCents: paidByYou ? settlement.amount_cents : -settlement.amount_cents,
+      deltaCents: deleted ? 0 : paidByYou ? settlement.amount_cents : -settlement.amount_cents,
       sortKey: `${settlement.created_at.slice(0, 10)}T${settlement.created_at}`,
       createdAt: settlement.created_at,
-      deleted: false,
+      deleted,
     });
   }
 

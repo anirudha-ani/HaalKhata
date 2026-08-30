@@ -61,6 +61,12 @@ export const ACTIVITY_LOOK: Record<string, ActivityLook> = {
     tile: "bg-paper text-ink-soft ring-1 ring-line",
     label: "Comment",
   },
+  // Muted like a deleted expense: a removed payment is inert history.
+  settlement_deleted: {
+    glyph: "skull",
+    tile: "bg-card text-ink/70 ring-1 ring-line",
+    label: "Payment removed",
+  },
 };
 
 /** Fallback for an event kind this build does not know about. */
@@ -130,7 +136,7 @@ export const ACTIVITY_FILTERS: readonly ActivityFilterOption[] = [
     label: "Expenses",
     types: ["expense_added", "expense_updated", "expense_deleted"],
   },
-  { value: "payments", label: "Payments", types: ["settlement"] },
+  { value: "payments", label: "Payments", types: ["settlement", "settlement_deleted"] },
   { value: "comments", label: "Comments", types: ["comment"] },
   {
     value: "groups",

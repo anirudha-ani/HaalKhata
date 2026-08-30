@@ -230,6 +230,7 @@ function recordTripSettlement(fromUser: string, toUser: string, amountCents: num
     note: "",
     created_at: "2026-08-02T00:00:00Z",
     ledger_event_order: "2",
+    deleted_at: null,
   });
 }
 

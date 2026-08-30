@@ -85,6 +85,7 @@ describe.skipIf(!reachable)("recordSettlement against Postgres", () => {
   let recordSettlement: typeof import("./expense.usecase").recordSettlement;
   let createExpense: typeof import("./expense.usecase").createExpense;
   let deleteExpense: typeof import("./expense.usecase").deleteExpense;
+  let deleteSettlement: typeof import("./expense.usecase").deleteSettlement;
   let getExpense: typeof import("./expense.usecase").getExpense;
   let listExpenses: typeof import("./expense.usecase").listExpenses;
   let updateExpense: typeof import("./expense.usecase").updateExpense;
@@ -112,8 +113,15 @@ describe.skipIf(!reachable)("recordSettlement against Postgres", () => {
       const cache = globalThis as unknown as { __haalkhataPool?: { end(): Promise<void> } };
       await cache.__haalkhataPool?.end();
     };
-    ({ createExpense, deleteExpense, getExpense, listExpenses, recordSettlement, updateExpense } =
-      await import("./expense.usecase"));
+    ({
+      createExpense,
+      deleteExpense,
+      deleteSettlement,
+      getExpense,
+      listExpenses,
+      recordSettlement,
+      updateExpense,
+    } = await import("./expense.usecase"));
     ({ removeMemberFromGroup } = await import("@/server/group/usecase/group.usecase"));
     ({ getFriendLedger, userNetInGroup, netWithUser } = await import("./balance.usecase"));
 
@@ -343,6 +351,56 @@ describe.skipIf(!reachable)("recordSettlement against Postgres", () => {
     // settled ledger it expects.
     await recordSettlement(...payment(CREDITOR, DEBTOR, 3000));
     expect(await userNetInGroup(DEBTOR, "grp-1")).toBe(0);
+  });
+
+  it("brings the debt back when a mistaken payment is removed, keeping the line", async () => {
+    const fuel = await createExpense(CREDITOR, {
+      groupId: "grp-1",
+      description: "Fuel",
+      amountCents: 2000,
+      currency: "USD",
+      category: "transport",
+      expenseDate: "2026-07-31",
+      splitType: "exact",
+      notes: "",
+      payers: [{ userId: CREDITOR, amountCents: 2000 }],
+      splitSpecs: [{ userId: DEBTOR, amountCents: 2000, percentBp: 0, shares: 0 }],
+      items: [],
+      taxCents: 0,
+      tipCents: 0,
+    } as never);
+    const mistaken = await recordSettlement(DEBTOR, {
+      groupId: "grp-1",
+      toUserId: CREDITOR,
+      amountCents: 2000,
+      currency: "USD",
+      method: "cash",
+      note: "",
+    });
+    expect(await userNetInGroup(DEBTOR, "grp-1")).toBe(0);
+
+    // The recipient may remove it too; here the payer who mistyped it does.
+    await deleteSettlement(DEBTOR, mistaken.id);
+
+    expect(await userNetInGroup(DEBTOR, "grp-1")).toBe(-2000);
+    const ledgerLine = (await getFriendLedger(DEBTOR, CREDITOR)).entries.find(
+      (entry) => entry.kind === "settlement" && entry.id === mistaken.id,
+    );
+    expect(ledgerLine).toMatchObject({ deleted: true, deltaCents: 0, totalCents: 2000 });
+    await expect(deleteSettlement(DEBTOR, mistaken.id)).rejects.toThrow(/payment not found/);
+
+    // Pay it for real, so the rest of the suite sees the settled ledger it
+    // expects — and prove the guard counts the removed payment as gone.
+    await recordSettlement(DEBTOR, {
+      groupId: "grp-1",
+      toUserId: CREDITOR,
+      amountCents: 2000,
+      currency: "USD",
+      method: "cash",
+      note: "",
+    });
+    expect(await userNetInGroup(DEBTOR, "grp-1")).toBe(0);
+    expect(fuel.id).toBeTruthy();
   });
 
   it("serializes member removal against a new expense for that member", async () => {

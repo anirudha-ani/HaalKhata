@@ -25,6 +25,11 @@ service ExpenseService {
   rpc AddComment(AddCommentRequest) returns (Comment);
 
   rpc RecordSettlement(RecordSettlementRequest) returns (Settlement);
+  // Removes a mistaken payment. Either of the two people on it may; it is a
+  // soft delete, so the line stays in the friend ledger struck through with
+  // a zero change (FriendLedgerEntry.deleted) and the debt it had paid down
+  // comes back.
+  rpc DeleteSettlement(DeleteSettlementRequest) returns (google.protobuf.Empty);
   rpc GetGroupBalances(GetGroupBalancesRequest) returns (BalancesResponse);
   rpc GetOverallBalances(google.protobuf.Empty) returns (OverallBalancesResponse);
   rpc GetFriendLedger(GetFriendLedgerRequest) returns (FriendLedgerResponse);
@@ -180,6 +185,10 @@ message DeleteExpenseRequest {
   string expense_id = 1;
 }
 
+message DeleteSettlementRequest {
+  string settlement_id = 1;
+}
+
 message AddCommentRequest {
   string expense_id = 1;
   string body = 2;
@@ -266,9 +275,11 @@ message FriendLedgerEntry {
   // stored in UTC, and only the client knows the viewer's timezone — so the
   // client renders it, and `date` (the UTC day) is just the fallback.
   string created_at = 10;
-  // True for an expense line that has since been deleted. It stays in the
-  // history with delta_cents = 0 — it no longer moves the balance — so a
-  // payment made against it still has the row that explains it.
+  // True for an expense or settlement line that has since been deleted. It
+  // stays in the history with delta_cents = 0 — it no longer moves the
+  // balance — so a payment made against a deleted expense, or a debt that
+  // came back when a mistaken payment was removed, still has the row that
+  // explains it.
   bool deleted = 11;
 }
 

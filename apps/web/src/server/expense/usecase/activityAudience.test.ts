@@ -46,8 +46,10 @@ vi.mock("@/server/expense/repo/comments.repo", () => ({
   listCommentsByExpense: vi.fn(),
 }));
 vi.mock("@/server/expense/repo/settlements.repo", () => ({
+  findSettlementById: vi.fn(),
   insertSettlement: vi.fn(),
   scopeHasSettlements: vi.fn(),
+  softDeleteSettlement: vi.fn(),
   withSettlementPairLock: vi.fn(
     (first: string, second: string, operation: (client: PoolClient) => Promise<unknown>) =>
       operation(transactionClient),
@@ -77,6 +79,7 @@ import {
   addComment,
   createExpense,
   deleteExpense,
+  deleteSettlement,
   getExpense,
   recordSettlement,
   updateExpense,
@@ -98,8 +101,10 @@ import {
 } from "@/server/expense/repo/expenses.repo";
 import { insertComment, listCommentsByExpense } from "@/server/expense/repo/comments.repo";
 import {
+  findSettlementById,
   insertSettlement,
   scopeHasSettlements,
+  softDeleteSettlement,
 } from "@/server/expense/repo/settlements.repo";
 import {
   lockExpenseLedger,
@@ -556,6 +561,67 @@ describe("who hears about a transaction", () => {
     await expect(updateExpense(PAYER, "expense-1", validExpenseRequest())).rejects.toThrow(
       /expense not found/,
     );
+  });
+
+  it("lets either person remove a payment under both ledger locks and tells the other", async () => {
+    vi.mocked(findSettlementById).mockResolvedValue({
+      id: "settlement-1",
+      group_id: GOA_TRIP,
+      from_user: OWER,
+      to_user: PAYER,
+      amount_cents: 1000,
+      currency: "USD",
+      method: "cash",
+      note: "",
+      created_at: "2026-08-09T00:00:00Z",
+      ledger_event_order: "43",
+      deleted_at: null,
+    } as SettlementRow);
+
+    await deleteSettlement(PAYER, "settlement-1");
+
+    expect(lockGroupLedgers).toHaveBeenCalledWith(transactionClient, [GOA_TRIP]);
+    expect(softDeleteSettlement).toHaveBeenCalledWith("settlement-1", transactionClient);
+    expect(insertActivity).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "settlement_deleted",
+        audience: [OWER, PAYER],
+        amountCents: 1000,
+      }),
+    );
+    // The recipient removed it, so the payer is the one told.
+    expect(insertNotifications).toHaveBeenCalledWith(
+      [OWER],
+      expect.objectContaining({ type: "settlement_deleted" }),
+    );
+  });
+
+  it("refuses to remove somebody else's payment", async () => {
+    vi.mocked(findSettlementById).mockResolvedValue({
+      id: "settlement-1",
+      group_id: GOA_TRIP,
+      from_user: OWER,
+      to_user: PAYER,
+      amount_cents: 1000,
+      deleted_at: null,
+    } as SettlementRow);
+
+    await expect(deleteSettlement(OUTSIDER, "settlement-1")).rejects.toThrow(
+      /only the two people on a payment/,
+    );
+    expect(softDeleteSettlement).not.toHaveBeenCalled();
+  });
+
+  it("treats an already-removed payment as gone", async () => {
+    vi.mocked(findSettlementById).mockResolvedValue({
+      id: "settlement-1",
+      from_user: OWER,
+      to_user: PAYER,
+      deleted_at: "2026-08-10T00:00:00Z",
+    } as SettlementRow);
+
+    await expect(deleteSettlement(PAYER, "settlement-1")).rejects.toThrow(/payment not found/);
+    expect(softDeleteSettlement).not.toHaveBeenCalled();
   });
 
   it("still refuses to delete an expense twice", async () => {

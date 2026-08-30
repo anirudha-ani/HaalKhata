@@ -1,7 +1,7 @@
 /** All SQL for the settlements table. */
 
 import type { PoolClient } from "pg";
-import { newId, query, queryOne } from "@/server/common/db";
+import { execute, newId, query, queryOne } from "@/server/common/db";
 import { lockParticipantLedgers, withLedgerTransaction } from "@/server/common/ledgerLocks";
 
 /** One row of the settlements table (column names mirror SQL). */
@@ -21,6 +21,8 @@ export interface SettlementRow {
   created_at: string;
   /** Monotonic order shared with expenses for mutation-safety checks. */
   ledger_event_order: string;
+  /** When the payment was removed; null while it counts. */
+  deleted_at: string | null;
 }
 
 /**
@@ -83,7 +85,7 @@ export async function scopeHasSettlements(
     return (
       (await queryOne(
         `SELECT 1 AS matched FROM settlements
-          WHERE group_id = $1 AND ledger_event_order > $2
+          WHERE group_id = $1 AND deleted_at IS NULL AND ledger_event_order > $2
             AND ($3::boolean IS FALSE OR from_user = ANY($4::text[]) OR to_user = ANY($4::text[]))
           LIMIT 1`,
         [groupId, expenseEventOrder, groupParticipantsOnly, [...new Set(participantIds)]],
@@ -95,7 +97,7 @@ export async function scopeHasSettlements(
   return (
     (await queryOne(
       `SELECT 1 AS matched FROM settlements
-        WHERE group_id IS NULL
+        WHERE group_id IS NULL AND deleted_at IS NULL
           AND from_user = ANY($1::text[])
           AND to_user = ANY($1::text[])
           AND ledger_event_order > $2
@@ -147,7 +149,32 @@ export async function insertSettlement(
 }
 
 /**
- * Lists a group's settlements, oldest first.
+ * Fetches a single settlement row, including soft-deleted ones.
+ *
+ * @param settlementId - Id of the settlement to load.
+ * @param client - Optional transaction client holding the pair's ledger lock.
+ * @returns The matching row, or undefined if the id is unknown.
+ */
+export async function findSettlementById(
+  settlementId: string,
+  client?: PoolClient,
+): Promise<SettlementRow | undefined> {
+  return queryOne<SettlementRow>(`SELECT * FROM settlements WHERE id = $1`, [settlementId], client);
+}
+
+/**
+ * Marks a settlement removed (sets deleted_at) without deleting the row, so
+ * the friend ledger can keep showing it struck through.
+ *
+ * @param settlementId - Id of the settlement to remove.
+ * @param client - Transaction client holding the pair's ledger lock.
+ */
+export async function softDeleteSettlement(settlementId: string, client: PoolClient): Promise<void> {
+  await execute(`UPDATE settlements SET deleted_at = now() WHERE id = $1`, [settlementId], client);
+}
+
+/**
+ * Lists a group's live settlements, oldest first.
  *
  * @param groupId - Id of the group whose settlements to list.
  * @returns Settlement rows in chronological order.
@@ -157,7 +184,7 @@ export async function listSettlementsByGroup(
   client?: PoolClient,
 ): Promise<SettlementRow[]> {
   return query<SettlementRow>(
-    `SELECT * FROM settlements WHERE group_id = $1 ORDER BY created_at ASC`,
+    `SELECT * FROM settlements WHERE group_id = $1 AND deleted_at IS NULL ORDER BY created_at ASC`,
     [groupId],
     client,
   );
@@ -169,17 +196,21 @@ export async function listSettlementsByGroup(
  *
  * @param firstUserId - One of the two people.
  * @param secondUserId - The other person.
+ * @param includeDeleted - Whether removed payments are returned too; only the
+ *   friend ledger wants them, struck through — every balance reads without.
  * @returns Settlement rows between the pair, in chronological order.
  */
 export async function listSettlementsBetween(
   firstUserId: string,
   secondUserId: string,
+  includeDeleted = false,
 ): Promise<SettlementRow[]> {
   return query<SettlementRow>(
     `SELECT * FROM settlements
-     WHERE (from_user = $1 AND to_user = $2) OR (from_user = $2 AND to_user = $1)
+     WHERE ((from_user = $1 AND to_user = $2) OR (from_user = $2 AND to_user = $1))
+       AND ($3::boolean OR deleted_at IS NULL)
      ORDER BY created_at ASC`,
-    [firstUserId, secondUserId],
+    [firstUserId, secondUserId, includeDeleted],
   );
 }
 
@@ -200,7 +231,7 @@ export async function listOneOffSettlementsBetween(
 ): Promise<SettlementRow[]> {
   return query<SettlementRow>(
     `SELECT * FROM settlements
-     WHERE group_id IS NULL
+     WHERE group_id IS NULL AND deleted_at IS NULL
        AND ((from_user = $1 AND to_user = $2) OR (from_user = $2 AND to_user = $1))
      ORDER BY created_at ASC`,
     [firstUserId, secondUserId],
@@ -209,7 +240,7 @@ export async function listOneOffSettlementsBetween(
 }
 
 /**
- * Lists every settlement the user paid or received, oldest first.
+ * Lists every live settlement the user paid or received, oldest first.
  *
  * @param userId - Id of the user involved as payer or recipient.
  * @returns Settlement rows in chronological order.
@@ -218,7 +249,7 @@ export async function listSettlementsInvolvingUser(
   userId: string,
 ): Promise<SettlementRow[]> {
   return query<SettlementRow>(
-    `SELECT * FROM settlements WHERE from_user = $1 OR to_user = $1
+    `SELECT * FROM settlements WHERE (from_user = $1 OR to_user = $1) AND deleted_at IS NULL
      ORDER BY created_at ASC`,
     [userId],
   );

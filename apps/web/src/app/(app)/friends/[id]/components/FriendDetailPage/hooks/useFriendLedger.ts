@@ -2,9 +2,9 @@
 /** Friend ledger data: the shared history query plus the settle-up modal's direction. */
 
 import { useState } from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { errorMessage, expenseClient, socialClient } from "@/lib/api/connect";
-import { queryKeys } from "@haalkhata/shared/api/queryKeys";
+import { MONEY_KEYS, queryKeys } from "@haalkhata/shared/api/queryKeys";
 
 /** Which way a settlement being recorded moved the money. */
 export type SettleDirection = "paid" | "received";
@@ -16,13 +16,15 @@ export type SettleDirection = "paid" | "received";
  * @param friendId - User id of the person whose ledger to load.
  * @returns The `ledger` response (or undefined while loading), `isLoading`,
  *   the load `error`, `sendReminder` with its `isReminding` flag and the
- *   resulting `reminderNote`, and `settling`/`openSettle`/`closeSettle`
- *   driving the settle-up modal.
+ *   resulting `reminderNote`, `removeSettlement` with its arming and in-flight
+ *   ids, and `settling`/`openSettle`/`closeSettle` driving the settle-up modal.
  */
 export function useFriendLedger(friendId: string) {
+  const queryClient = useQueryClient();
   const [settling, setSettling] = useState<SettleDirection | null>(null);
   const [reminderNote, setReminderNote] = useState("");
   const [friendRequestSent, setFriendRequestSent] = useState(false);
+  const [confirmingSettlementId, setConfirmingSettlementId] = useState("");
 
   const ledger = useQuery({
     queryKey: queryKeys.friendLedger(friendId),
@@ -37,6 +39,19 @@ export function useFriendLedger(friendId: string) {
     onSuccess: () => {
       setFriendRequestSent(true);
       setReminderNote("Friend request sent");
+    },
+    onError: (mutationError) => setReminderNote(errorMessage(mutationError)),
+  });
+
+  // Removing a payment changes balances everywhere it was counted, so the
+  // whole money set is invalidated, not just this ledger.
+  const removeSettlementMutation = useMutation({
+    mutationFn: (settlementId: string) => expenseClient.deleteSettlement({ settlementId }),
+    onSuccess: () => {
+      setConfirmingSettlementId("");
+      for (const moneyQueryKey of MONEY_KEYS) {
+        queryClient.invalidateQueries({ queryKey: moneyQueryKey });
+      }
     },
     onError: (mutationError) => setReminderNote(errorMessage(mutationError)),
   });
@@ -65,6 +80,25 @@ export function useFriendLedger(friendId: string) {
       setReminderNote("");
       remind.mutate();
     },
+    /**
+     * Removes a mistaken payment in two taps: the first arms the row, the
+     * second sends. A modal for a one-line ledger row is heavier than the
+     * mistake it corrects; the second tap is the confirmation.
+     *
+     * @param settlementId - The payment line being removed.
+     */
+    removeSettlement: (settlementId: string) => {
+      if (confirmingSettlementId !== settlementId) {
+        setConfirmingSettlementId(settlementId);
+        return;
+      }
+      setReminderNote("");
+      removeSettlementMutation.mutate(settlementId);
+    },
+    confirmingSettlementId,
+    removingSettlementId: removeSettlementMutation.isPending
+      ? removeSettlementMutation.variables
+      : undefined,
     settling,
     /**
      * Opens the settle-up modal for one direction.

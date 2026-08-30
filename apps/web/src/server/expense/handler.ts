@@ -54,6 +54,15 @@ export const expenseHandler: ServiceImpl<typeof ExpenseService> = {
     return {};
   },
 
+  /** Removes a mistaken payment; either person on it may. */
+  async deleteSettlement(request, context) {
+    await runUsecase(
+      async () => expenses.deleteSettlement(await requireUser(context), request.settlementId),
+      context,
+    );
+    return {};
+  },
+
   async addComment(request, context) {
     return runUsecase(
       async () => expenses.addComment(await requireUser(context), request.expenseId, request.body),
