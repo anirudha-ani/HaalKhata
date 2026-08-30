@@ -5,6 +5,8 @@ import { useRouter } from "expo-router";
 import { useMemo, useState } from "react";
 import { errorMessage } from "@/lib/api/connect";
 import { parseMoneyInput } from "@haalkhata/shared/money/money";
+import { itemsPayload } from "@/lib/expense/itemDraft";
+import { useItemDraft } from "@/lib/hooks/useItemDraft";
 import type { ExpenseFormInitial } from "../../../utils/initialValues";
 import {
   buildSplitSpecs,
@@ -60,6 +62,10 @@ export function useNewExpense(
   const [singlePayerId, setSinglePayerId] = useState(initial.singlePayerId);
   const [payerAmounts, setPayerAmounts] = useState(initial.payerAmounts);
   const [error, setError] = useState("");
+  // The itemized split's lines, shared with the receipt scan flow so a
+  // scanned expense can be corrected here with the same editor.
+  const itemDraft = useItemDraft({ items: initial.items, tax: initial.tax, tip: initial.tip });
+  const isItemized = splitType === "itemized";
 
   const selectedGroup = expenseAPI.groups.find(
     (groupSummary) => groupSummary.group?.id === groupId,
@@ -122,6 +128,7 @@ export function useNewExpense(
     if (friendIds.includes(userId)) {
       setFriendIds(friendIds.filter((existingId) => existingId !== userId));
       forgetPerson(userId);
+      itemDraft.dropAssignee(userId);
       return;
     }
     setFriendIds([...friendIds, userId]);
@@ -146,6 +153,7 @@ export function useNewExpense(
     setSplitInputs({});
     setPayerAmounts({});
     setSinglePayerId(expenseAPI.me?.id ?? "");
+    itemDraft.clearAssignees();
   };
 
   // null override = default: everyone checked.
@@ -153,12 +161,16 @@ export function useNewExpense(
     checkedOverride ?? Object.fromEntries(people.map((person) => [person.id, true]));
   const setChecked = (next: Record<string, boolean>) => setCheckedOverride(next);
 
-  const totalCents = parseMoneyInput(amount);
+  // An itemized total is what the lines add up to; the amount field becomes
+  // a readout of it rather than an input.
+  const totalCents = isItemized ? itemDraft.grandTotalCents : parseMoneyInput(amount);
   const participantIds = people
     .filter((person) => checked[person.id])
     .map((person) => person.id);
 
-  const splitCheck = checkSplit({ splitType, totalCents, participantIds, inputs: splitInputs });
+  const splitCheck = isItemized
+    ? itemDraft.completeness
+    : checkSplit({ splitType, totalCents, participantIds, inputs: splitInputs });
   const payerCheck = checkPayers(totalCents, multiPayer, payerAmounts);
   // A group, or at least one other person — mirrors exactly what the picker
   // shows, so the button never disables for a reason that isn't on screen.
@@ -192,9 +204,9 @@ export function useNewExpense(
       notes,
       payers,
       splitSpecs: buildSplitSpecs({ splitType, totalCents, participantIds, inputs: splitInputs }),
-      items: [],
-      taxCents: 0,
-      tipCents: 0,
+      items: isItemized ? itemsPayload(itemDraft.items ?? []) : [],
+      taxCents: isItemized ? itemDraft.taxCents : 0,
+      tipCents: isItemized ? itemDraft.tipCents : 0,
     };
 
     const onSuccess = () => router.replace(groupId ? `/groups/${groupId}` : "/friends");
@@ -231,6 +243,8 @@ export function useNewExpense(
     setNotes,
     splitType,
     setSplitType,
+    isItemized,
+    itemDraft,
     people,
     checked,
     setChecked,

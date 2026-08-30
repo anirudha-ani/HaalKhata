@@ -5,24 +5,11 @@ import { useRouter } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
 import { useMemo, useState } from "react";
 import { errorMessage } from "@/lib/api/connect";
-import { centsToInput, parseMoneyInput, todayISO } from "@haalkhata/shared/money/money";
-import { nextDraftKey } from "@haalkhata/shared/expense/draftKey";
+import { centsToInput, todayISO } from "@haalkhata/shared/money/money";
+import { draftItemsFromLines, itemsPayload } from "@/lib/expense/itemDraft";
+import { useItemDraft } from "@/lib/hooks/useItemDraft";
 import { PICKER_OPTIONS } from "../../../constants/imagePicker";
 import { useScanAPI, type ReceiptPhotoInput } from "./useScanAPI";
-
-/** One editable line item on the scanned-receipt draft. */
-export interface DraftItem {
-  /** Stable client-side key (items have no server id until saved). */
-  key: string;
-  /** Item name as parsed from the receipt or typed by the user. */
-  name: string;
-  /** How many of this item were bought (minimum 1). */
-  quantity: number;
-  /** Raw money input, e.g. "14.50". */
-  total: string;
-  /** Map of user id to whether that person shares this item. */
-  assignees: Record<string, boolean>;
-}
 
 /** A photo picked for scanning, plus its local URI for the preview. */
 export interface ReceiptPhoto extends ReceiptPhotoInput {
@@ -38,13 +25,12 @@ export interface ReceiptPhoto extends ReceiptPhotoInput {
  *
  * @param initialGroupId - Group id from the ?group param; preselects that
  *   group in the "who's on this?" picker (empty string for none).
- * @returns Everything from {@link useScanAPI} plus the picker state
- *   (`groupId`/`setGroupId`, `friendIds`/`toggleFriend`), the picked `photo`
- *   and `pickPhoto` (camera or library), `parseNow`/`isParsing` for the AI
- *   step, the draft fields (`merchant`, `date`, `items`, `tax`, `tip`,
- *   `payerId`) with their editing helpers, derived totals
- *   (`itemsTotalCents`, `taxCents`, `tipCents`, `grandTotalCents`),
- *   `unassignedCount`, the `people` who can be assigned, and
+ * @returns Everything from {@link useScanAPI} and the shared item draft
+ *   (`items`, `tax`, `tip`, their editing helpers and derived totals), plus
+ *   the picker state (`groupId`/`setGroupId`, `friendIds`/`toggleFriend`),
+ *   the picked `photo` and `pickPhoto` (camera or library),
+ *   `parseNow`/`isParsing` for the AI step, `merchant`, `date` and `payerId`
+ *   with their setters, the `people` who can be assigned, and
  *   `canSave`/`save`/`isSaving`/`error` for submission.
  */
 export function useScan(initialGroupId: string) {
@@ -57,12 +43,12 @@ export function useScan(initialGroupId: string) {
   const [provider, setProvider] = useState("");
   const [error, setError] = useState("");
 
-  // Draft (items stay null until a receipt has been parsed).
+  // Draft (items stay null until a receipt has been parsed). The lines, the
+  // assignments and the tax/tip inputs live in the same hook the expense
+  // form uses for its itemized mode, so both edit receipts the same way.
   const [merchant, setMerchant] = useState("");
   const [date, setDate] = useState(() => todayISO());
-  const [items, setItems] = useState<DraftItem[] | null>(null);
-  const [taxInput, setTaxInput] = useState("0.00");
-  const [tipInput, setTipInput] = useState("0.00");
+  const draft = useItemDraft({ items: null, tax: "0.00", tip: "0.00" });
   const [payerId, setPayerId] = useState("");
 
   const selectedGroup = scanAPI.groups.find(
@@ -103,14 +89,7 @@ export function useScan(initialGroupId: string) {
       return;
     }
     setFriendIds(friendIds.filter((existingId) => existingId !== userId));
-    setItems((current) =>
-      current
-        ? current.map((item) => {
-            const { [userId]: _dropped, ...assignees } = item.assignees;
-            return { ...item, assignees };
-          })
-        : current,
-    );
+    draft.dropAssignee(userId);
     setPayerId((current) => (current === userId ? "" : current));
   };
 
@@ -126,9 +105,7 @@ export function useScan(initialGroupId: string) {
     setGroupId(nextGroupId);
     setFriendIds([]);
     setPayerId("");
-    setItems((current) =>
-      current ? current.map((item) => ({ ...item, assignees: {} })) : current,
-    );
+    draft.clearAssignees();
   };
 
   /**
@@ -163,7 +140,7 @@ export function useScan(initialGroupId: string) {
       // magic-byte check would reject its own successfully converted image.
       mediaType: "image/jpeg",
     });
-    setItems(null);
+    draft.replace(null, "0.00", "0.00");
     setProvider("");
   };
 
@@ -178,143 +155,41 @@ export function useScan(initialGroupId: string) {
         setProvider(result.provider);
         setMerchant(receipt.merchant || "Receipt");
         if (receipt.date) setDate(receipt.date);
-        setTaxInput(centsToInput(receipt.taxCents));
-        setTipInput(centsToInput(receipt.tipCents));
-        setItems(
-          receipt.items.map((item) => ({
-            key: nextDraftKey(),
-            name: item.name,
-            quantity: item.quantity,
-            total: centsToInput(item.totalCents),
-            assignees: {},
-          })),
+        draft.replace(
+          draftItemsFromLines(receipt.items),
+          centsToInput(receipt.taxCents),
+          centsToInput(receipt.tipCents),
         );
       },
       onError: (mutationError) => setError(errorMessage(mutationError)),
     });
   };
 
-  /**
-   * Applies a partial update to one draft item.
-   *
-   * @param index - Position of the item in the draft.
-   * @param patch - Fields to merge into that item.
-   */
-  const updateItem = (index: number, patch: Partial<DraftItem>) => {
-    setItems((current) =>
-      current
-        ? current.map((item, itemIndex) => (itemIndex === index ? { ...item, ...patch } : item))
-        : current,
-    );
-  };
-
-  /**
-   * Toggles whether a person shares a draft item.
-   *
-   * @param index - Position of the item in the draft.
-   * @param userId - Id of the person to toggle on that item.
-   */
-  const toggleAssignee = (index: number, userId: string) => {
-    setItems((current) =>
-      current
-        ? current.map((item, itemIndex) =>
-            itemIndex === index
-              ? {
-                  ...item,
-                  assignees: { ...item.assignees, [userId]: !item.assignees[userId] },
-                }
-              : item,
-          )
-        : current,
-    );
-  };
-
-  /**
-   * Assigns every draft item to a person (leaving other assignees untouched).
-   *
-   * @param userId - Id of the person to add to every item.
-   */
-  const assignAllTo = (userId: string) => {
-    setItems((current) =>
-      current
-        ? current.map((item) => ({
-            ...item,
-            assignees: { ...item.assignees, [userId]: true },
-          }))
-        : current,
-    );
-  };
-
-  /**
-   * Removes one item from the draft.
-   *
-   * @param index - Position of the item to remove.
-   */
-  const removeItem = (index: number) => {
-    setItems((current) =>
-      current ? current.filter((_item, itemIndex) => itemIndex !== index) : current,
-    );
-  };
-
-  /** Appends a blank item row to the draft. */
-  const addItem = () => {
-    setItems((current) => [
-      ...(current ?? []),
-      { key: nextDraftKey(), name: "", quantity: 1, total: "", assignees: {} },
-    ]);
-  };
-
-  // Derived totals: items subtotal plus the tax/tip inputs.
-  const itemsTotalCents = (items ?? []).reduce(
-    (sumCents, item) => sumCents + (parseMoneyInput(item.total) ?? 0),
-    0,
-  );
-  const taxCents = parseMoneyInput(taxInput) ?? 0;
-  const tipCents = parseMoneyInput(tipInput) ?? 0;
-  const grandTotalCents = itemsTotalCents + taxCents + tipCents;
-
-  const unassignedCount = (items ?? []).filter(
-    (item) => !Object.values(item.assignees).some(Boolean),
-  ).length;
-
-  // Saving requires a group or at least one other person, at least one priced
-  // item, no unassigned items, and a payer.
+  // Saving requires a group or at least one other person, a complete draft
+  // (priced, every item assigned), and a payer.
   const hasParticipants = groupId !== "" || friendIds.length > 0;
   const canSave =
-    hasParticipants &&
-    items !== null &&
-    items.length > 0 &&
-    itemsTotalCents > 0 &&
-    unassignedCount === 0 &&
-    effectivePayerId !== "";
+    hasParticipants && draft.items !== null && draft.completeness.ok && effectivePayerId !== "";
 
   /** Saves the draft as an itemized expense and navigates to the new expense screen. */
   const save = () => {
-    if (!canSave || items === null) return;
+    if (!canSave || draft.items === null) return;
     setError("");
     scanAPI.create.mutate(
       {
         groupId,
         description: merchant.trim() || "Receipt",
-        amountCents: grandTotalCents,
+        amountCents: draft.grandTotalCents,
         currency: selectedGroup?.currency ?? scanAPI.me?.defaultCurrency ?? "USD",
         category: "food",
         expenseDate: date,
         splitType: "itemized",
         notes: "",
-        payers: [{ userId: effectivePayerId, amountCents: grandTotalCents }],
+        payers: [{ userId: effectivePayerId, amountCents: draft.grandTotalCents }],
         splitSpecs: [],
-        items: items.map((item) => ({
-          id: "",
-          name: item.name.trim() || "Item",
-          quantity: item.quantity,
-          totalCents: parseMoneyInput(item.total) ?? 0,
-          assignments: Object.entries(item.assignees)
-            .filter(([, isAssigned]) => isAssigned)
-            .map(([userId]) => ({ userId, weight: 1 })),
-        })),
-        taxCents,
-        tipCents,
+        items: itemsPayload(draft.items),
+        taxCents: draft.taxCents,
+        tipCents: draft.tipCents,
       },
       {
         onSuccess: (expense) => router.replace(`/expenses/${expense.id}`),
@@ -325,6 +200,7 @@ export function useScan(initialGroupId: string) {
 
   return {
     ...scanAPI,
+    ...draft,
     groupId,
     setGroupId: changeGroup,
     friendIds,
@@ -339,25 +215,10 @@ export function useScan(initialGroupId: string) {
     setMerchant,
     date,
     setDate,
-    items,
-    updateItem,
-    toggleAssignee,
-    assignAllTo,
-    removeItem,
-    addItem,
-    tax: taxInput,
-    setTax: setTaxInput,
-    tip: tipInput,
-    setTip: setTipInput,
     payerId: effectivePayerId,
     setPayerId,
     people,
     selectedGroup,
-    itemsTotalCents,
-    taxCents,
-    tipCents,
-    grandTotalCents,
-    unassignedCount,
     canSave,
     save,
     isSaving: scanAPI.create.isPending,

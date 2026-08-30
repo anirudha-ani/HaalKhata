@@ -2,6 +2,7 @@
 
 import type { Expense } from "@haalkhata/protogen/expense/v1/expense_pb";
 import { centsToInput, todayISO } from "@haalkhata/shared/money/money";
+import { draftItemsFromLines, type DraftItem } from "@/lib/expense/itemDraft";
 import type { FormSplitType } from "./splitForm";
 
 /** Initial values for every field of the expense form. */
@@ -32,6 +33,12 @@ export interface ExpenseFormInitial {
   singlePayerId: string;
   /** Raw per-user paid-amount inputs for multi-payer mode, keyed by user id. */
   payerAmounts: Record<string, string>;
+  /** Line items for the itemized split; empty unless editing an itemized expense. */
+  items: DraftItem[];
+  /** Raw tax input for the itemized split. */
+  tax: string;
+  /** Raw tip input for the itemized split. */
+  tip: string;
 }
 
 /**
@@ -66,6 +73,9 @@ export function buildInitialValues(
       multiPayer: false,
       singlePayerId: currentUserId,
       payerAmounts: {},
+      items: [],
+      tax: "0.00",
+      tip: "0.00",
     };
   }
 
@@ -89,8 +99,7 @@ export function buildInitialValues(
     date: expense.expenseDate,
     category: expense.category,
     notes: expense.notes,
-    splitType:
-      expense.splitType === "itemized" ? "equal" : (expense.splitType as FormSplitType),
+    splitType: expense.splitType as FormSplitType,
     checked: Object.fromEntries(expense.splits.map((split) => [split.userId, true])),
     splitInputs:
       expense.splitType === "exact"
@@ -105,5 +114,10 @@ export function buildInitialValues(
           expense.payers.map((payer) => [payer.userId, centsToInput(payer.amountCents)]),
         )
       : {},
+    // An itemized expense reloads its lines with their assignments, so the
+    // receipt can be corrected in place instead of deleted and re-scanned.
+    items: draftItemsFromLines(expense.items),
+    tax: centsToInput(expense.taxCents),
+    tip: centsToInput(expense.tipCents),
   };
 }

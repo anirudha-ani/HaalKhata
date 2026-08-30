@@ -2,6 +2,7 @@
 
 import { Check } from "lucide-react-native";
 import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { ItemDraftEditor } from "@/components/expense/ItemDraftEditor";
 import { Avatar } from "@/components/ui/Avatar";
 import { Segmented } from "@/components/ui/Segmented";
 import { colors, radii, spacing } from "@/lib/theme/theme";
@@ -9,9 +10,11 @@ import { SPLIT_TABS, UNIT } from "../../../../constants/splitEditor";
 import type { NewExpenseController } from "../../hooks/useNewExpense";
 
 /**
- * Renders the "Split" section of the expense form: split-type tabs, a
- * per-person list with participation checkboxes and (for non-equal splits)
- * value inputs, plus either the split validation message or the equal-split
+ * Renders the "Split" section of the expense form: split-type tabs, then
+ * either the item editor (for an itemized split — the same one the receipt
+ * scan uses, so a scanned expense can be corrected here) or a per-person
+ * list with participation checkboxes and, for non-equal splits, value
+ * inputs; plus either the split validation message or the equal-split
  * per-person summary.
  *
  * @param props - Component props.
@@ -19,9 +22,12 @@ import type { NewExpenseController } from "../../hooks/useNewExpense";
  */
 export function SplitEditor({
   form,
+  currency,
 }: {
   /** The expense-form controller from useNewExpense that owns all split state. */
   form: NewExpenseController;
+  /** ISO 4217 code the itemized totals are shown in. */
+  currency: string;
 }) {
   return (
     <View style={styles.section}>
@@ -29,6 +35,14 @@ export function SplitEditor({
 
       <Segmented onChange={form.setSplitType} options={SPLIT_TABS} value={form.splitType} />
 
+      {form.isItemized ? (
+        <ItemDraftEditor
+          currency={currency}
+          draft={form.itemDraft}
+          meId={form.me?.id}
+          people={form.people}
+        />
+      ) : (
       <View style={styles.listCard}>
         {form.people.map((person, index) => {
           const isChecked = form.checked[person.id] ?? false;
@@ -69,8 +83,9 @@ export function SplitEditor({
           );
         })}
       </View>
+      )}
 
-      {!form.splitCheck.ok && form.totalCents !== null ? (
+      {!form.splitCheck.ok && (form.isItemized || form.totalCents !== null) ? (
         <Text style={styles.validation}>{form.splitCheck.message}</Text>
       ) : form.splitType === "equal" && form.participantIds.length > 0 && form.totalCents ? (
         <Text style={styles.summary}>

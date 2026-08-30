@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/Button";
 import { Chip } from "@/components/ui/Chip";
 import { DateField } from "@/components/ui/DateField";
 import { TextField } from "@/components/ui/TextField";
+import { centsToInput } from "@haalkhata/shared/money/money";
 import { CATEGORIES } from "@haalkhata/shared/money/money.constants";
 import { colors, spacing } from "@/lib/theme/theme";
 import type { ExpenseFormInitial } from "../../../../utils/initialValues";
@@ -125,12 +126,15 @@ export function ExpenseForm({
         />
         <View style={styles.basicsRow}>
           <View style={styles.basicsCell}>
+            {/* Itemized totals are derived from the line items, so the field
+                becomes a read-only readout of items + tax + tip. */}
             <TextField
+              editable={!form.isItemized}
               keyboardType="decimal-pad"
-              label={`Amount (${currency})`}
+              label={form.isItemized ? `Total (${currency}) · from items` : `Amount (${currency})`}
               onChangeText={form.setAmount}
               placeholder="0.00"
-              value={form.amount}
+              value={form.isItemized ? centsToInput(form.totalCents ?? 0) : form.amount}
             />
           </View>
           <View style={styles.basicsCell}>
@@ -150,7 +154,7 @@ export function ExpenseForm({
       </View>
 
       <PayerEditor form={form} />
-      <SplitEditor form={form} />
+      <SplitEditor currency={currency} form={form} />
 
       <TextField
         maxLength={MAX_EXPENSE_NOTES_LENGTH}

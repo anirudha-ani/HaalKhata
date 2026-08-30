@@ -75,8 +75,6 @@ export function ExpenseDetailScreen({ expenseId }: { expenseId: string }) {
   const hasLaterSettlement = expenseDetail.detail?.hasLaterSettlement === true;
   const isDeleted = expense.deletedAt !== "";
   const deletion = expenseDetail.deletion;
-  // Itemized expenses have no mobile editor yet; the web form handles them.
-  const canEditHere = expense.splitType !== "itemized";
 
   return (
     <Screen header={<DetailHeader title="Expense" />}>
@@ -112,17 +110,15 @@ export function ExpenseDetailScreen({ expenseId }: { expenseId: string }) {
         </View>
       ) : null}
 
-      {isParticipant && !isDeleted && (canEditHere || isCreator) ? (
+      {isParticipant && !isDeleted ? (
         <View style={styles.actions}>
-          {canEditHere ? (
-            <Button
-              compact
-              icon={<Pencil color={colors.inkSoft} size={14} />}
-              label="Edit"
-              onPress={() => router.push(`/expenses/new?edit=${expense.id}`)}
-              variant="outline"
-            />
-          ) : null}
+          <Button
+            compact
+            icon={<Pencil color={colors.inkSoft} size={14} />}
+            label="Edit"
+            onPress={() => router.push(`/expenses/new?edit=${expense.id}`)}
+            variant="outline"
+          />
           {isCreator ? (
             <Button
               compact

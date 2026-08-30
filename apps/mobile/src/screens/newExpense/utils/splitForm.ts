@@ -2,8 +2,12 @@
 
 import { parseMoneyInput } from "@haalkhata/shared/money/money";
 
-/** Split modes the form supports (itemized expenses are handled elsewhere). */
-export type FormSplitType = "equal" | "exact" | "percent" | "shares";
+/**
+ * Split modes the form supports. "itemized" is validated by the item draft
+ * (every line priced and assigned) rather than by {@link checkSplit}, and
+ * sends no split specs — the server derives the splits from the items.
+ */
+export type FormSplitType = "equal" | "exact" | "percent" | "shares" | "itemized";
 
 /** Snapshot of the split-relevant form state used for validation and payload assembly. */
 export interface SplitFormState {
@@ -43,6 +47,7 @@ export function checkSplit(state: SplitFormState): SplitCheck {
   }
   switch (splitType) {
     case "equal":
+    case "itemized":
       return { ok: true, message: "" };
     case "exact": {
       const parsedCents = participantIds.map(
@@ -99,8 +104,13 @@ export function checkSplit(state: SplitFormState): SplitCheck {
  *   active split type populated (amountCents, percentBp, or shares).
  */
 export function buildSplitSpecs(state: SplitFormState) {
+  // Itemized splits are computed by the server from the items and their
+  // assignments; there is nothing per-participant to send.
+  if (state.splitType === "itemized") return [];
+  // Read once so the narrowing above survives into the callback below.
+  const splitType = state.splitType;
   return state.participantIds.map((userId) => {
-    switch (state.splitType) {
+    switch (splitType) {
       case "equal":
         return { userId, amountCents: 0, percentBp: 0, shares: 0 };
       case "exact":

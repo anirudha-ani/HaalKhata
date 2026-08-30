@@ -76,6 +76,21 @@ describe("buildSplitSpecs", () => {
     });
     expect(shareSpecs).toEqual([{ userId: "user-a", amountCents: 0, percentBp: 0, shares: 3 }]);
   });
+
+  it("sends no specs for an itemized split, which the server derives from the items", () => {
+    expect(
+      buildSplitSpecs({
+        splitType: "itemized",
+        totalCents: 900,
+        participantIds: participants,
+        inputs: {},
+      }),
+    ).toEqual([]);
+    expect(
+      checkSplit({ splitType: "itemized", totalCents: 900, participantIds: participants, inputs: {} })
+        .ok,
+    ).toBe(true);
+  });
 });
 
 describe("checkPayers", () => {
