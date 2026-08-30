@@ -162,7 +162,9 @@ export function GroupDetailScreen({
           balances={groupDetail.balances}
           currency={groupDetail.group.currency}
           meId={groupDetail.me?.id}
-          onSettle={(user, cents) => groupDetail.setSettleWith({ user, cents })}
+          onSettle={(user, cents, received) =>
+            groupDetail.setSettleWith({ user, cents, received })
+          }
           onToggleSimplified={groupDetail.setSimplified}
           simplified={groupDetail.simplified}
           simplifyPending={groupDetail.simplifyPending}
@@ -310,6 +312,7 @@ export function GroupDetailScreen({
           currency={groupDetail.group.currency}
           groupId={groupId}
           onClose={() => groupDetail.setSettleWith(null)}
+          received={groupDetail.settleWith.received}
           suggestedCents={groupDetail.settleWith.cents}
           to={groupDetail.settleWith.user}
         />

@@ -11,8 +11,8 @@ import { colors, radii, spacing } from "@/lib/theme/theme";
 
 /**
  * Renders the balances tab of a group: every member's net position, then the
- * list of who-owes-whom debts (pairwise or simplified) with a settle button on
- * the debts the viewer owes.
+ * list of who-owes-whom debts (pairwise or simplified) with an action on every
+ * debt the viewer is part of: settle what they owe, record what they are owed.
  *
  * @returns The two balance sections, or null until balances have loaded.
  */
@@ -40,8 +40,11 @@ export function BalancesPanel({
   simplifyPending?: boolean;
   /** Called with the desired state when the simplify-debts toggle is pressed. */
   onToggleSimplified: (value: boolean) => void;
-  /** Called with the creditor and amount when the viewer taps Settle on a debt. */
-  onSettle: (user: User, cents: number) => void;
+  /**
+   * Called when the viewer taps the action on a debt, with the other party,
+   * the amount, and whether this records money *received* rather than paid.
+   */
+  onSettle: (user: User, cents: number, received: boolean) => void;
 }) {
   if (!balances) return null;
   const debts = simplified ? balances.simplified : balances.debts;
@@ -147,6 +150,7 @@ export function BalancesPanel({
               const toUser = userById.get(debt.toUserId);
               if (!fromUser || !toUser) return null;
               const mine = debt.fromUserId === meId;
+              const owedToMe = debt.toUserId === meId;
               return (
                 <View key={`${debt.fromUserId}-${debt.toUserId}`} style={styles.debtRow}>
                   <Avatar size="sm" user={fromUser} />
@@ -160,11 +164,17 @@ export function BalancesPanel({
                     </Text>
                   </Text>
                   <Money cents={debt.amountCents} currency={currency} style={styles.rowAmount} />
-                  {mine ? (
+                  {/* Both directions, matching the friend screen: a debt you
+                      owe is one to pay, a debt owed to you is one to record
+                      when it lands. Only offering the first left a group
+                      where everyone owes the payer with no action anywhere on
+                      the screen — the ordinary case for whoever picked up
+                      the bill. */}
+                  {mine || owedToMe ? (
                     <Button
                       compact
-                      label="Settle"
-                      onPress={() => onSettle(toUser, debt.amountCents)}
+                      label={mine ? "Settle" : "Record"}
+                      onPress={() => onSettle(mine ? toUser : fromUser, debt.amountCents, !mine)}
                       variant="positive"
                     />
                   ) : null}

@@ -152,7 +152,9 @@ export function FriendsScreen() {
                   >
                     <Plus color={colors.inkSoft} size={16} />
                   </Pressable>
-                  {friend.netCents < 0 ? (
+                  {/* Settling is offered whichever way the debt runs — being
+                      owed money used to be a dead end with no action at all. */}
+                  {friend.netCents !== 0 ? (
                     <Button
                       compact
                       label="Settle"
@@ -171,7 +173,8 @@ export function FriendsScreen() {
         <SettleUpModal
           currency={currency}
           onClose={() => friendsState.setSettleWith(null)}
-          suggestedCents={-friendsState.settleWith.netCents}
+          received={friendsState.settleWith.netCents > 0}
+          suggestedCents={Math.abs(friendsState.settleWith.netCents)}
           to={friendsState.settleWith.user}
         />
       ) : null}
