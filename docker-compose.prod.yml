@@ -68,6 +68,8 @@ services:
       # Secrets are read from these files by the app itself (the Docker
       # `_FILE` convention); nothing exports them into the environment.
       SESSION_SECRET_FILE: /run/secrets/session_secret
+      # Verification-only key for a planned rotation; the file is empty otherwise.
+      SESSION_SECRET_PREVIOUS_FILE: /run/secrets/session_secret_previous
       POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
       POSTGRES_HOST: db
       COMPATIBLE_AI_API_KEY_FILE: /run/secrets/openrouter_api_key
@@ -84,6 +86,7 @@ services:
       COMPATIBLE_AI_ZDR: "true"
     secrets:
       - session_secret
+      - session_secret_previous
       - postgres_password
       - openrouter_api_key
       - twilio_api_key_secret
@@ -131,6 +134,8 @@ services:
 secrets:
   session_secret:
     file: /srv/haalkhata/secrets/session_secret
+  session_secret_previous:
+    file: /srv/haalkhata/secrets/session_secret_previous
   postgres_password:
     file: /srv/haalkhata/secrets/postgres_password
   openrouter_api_key:

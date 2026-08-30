@@ -12,7 +12,7 @@ scp -r ops docker-compose.prod.yml Caddyfile deploy@haalkhata.app:/srv/haalkhata
 
 | File | Goes to | Purpose |
 |---|---|---|
-| `docker-entrypoint.sh` | *in the image* | Loads Docker secrets into the environment, assembles `DATABASE_URL` |
+| `docker-entrypoint.sh` | *in the image* | Exec-only; the app reads `/run/secrets/` itself through `*_FILE` variables |
 | `deploy.sh` | `/srv/haalkhata/deploy.sh` | SSH forced command: pull a tag, restart, prune |
 | `backup.sh` | `/srv/haalkhata/backup.sh` | Nightly encrypted database **and secrets** backup |
 | `backup-failure.sh` | `/srv/haalkhata/backup-failure.sh` | Sends a critical backup-failure alert |
@@ -48,13 +48,16 @@ sudo systemctl start haalkhata-backup-failure.service
 
 ## Secrets
 
-Four files, referenced by `docker-compose.prod.yml`:
+Five files, referenced by `docker-compose.prod.yml`. The app reads them
+itself through `*_FILE` variables (the Docker `_FILE` convention); nothing
+copies them into the environment.
 
 ```
-/srv/haalkhata/secrets/session_secret        openssl rand -hex 32
-/srv/haalkhata/secrets/postgres_password     openssl rand -hex 24
-/srv/haalkhata/secrets/openrouter_api_key    from openrouter.ai
-/srv/haalkhata/secrets/twilio_api_key_secret from a restricted Twilio Verify API key
+/srv/haalkhata/secrets/session_secret          openssl rand -hex 32
+/srv/haalkhata/secrets/session_secret_previous empty (`: > file`) until a planned rotation
+/srv/haalkhata/secrets/postgres_password       openssl rand -hex 24
+/srv/haalkhata/secrets/openrouter_api_key      from openrouter.ai
+/srv/haalkhata/secrets/twilio_api_key_secret   from a restricted Twilio Verify API key
 ```
 
 Set `TWILIO_API_KEY_SID` and `TWILIO_VERIFY_SERVICE_SID` in `/srv/haalkhata/.env`.
@@ -93,10 +96,22 @@ docker compose -f docker-compose.prod.yml up -d --force-recreate --wait web
 unset NEW
 ```
 
-The other two have no second copy anywhere, so they are simpler: write the new
+The API keys have no second copy anywhere, so they are simpler: write the new
 value, `up -d --force-recreate --wait web`, then revoke the old one upstream.
-Rotating `session_secret` invalidates every session immediately — that is the
-break-glass control if you ever suspect token theft.
+
+### Rotating `session_secret` — two ways
+
+*Planned* (nobody gets signed out): copy the current key into
+`session_secret_previous`, write the new key into `session_secret`,
+`up -d --force-recreate --wait web`. Sessions signed under the old key stay
+valid until they expire on their own (the session lifetime), and everything
+issued from now on uses the new key. Once that lifetime has passed, empty
+`session_secret_previous` again (`: > secrets/session_secret_previous`) and
+recreate `web` — the old key must not stay accepted indefinitely.
+
+*Break-glass* (suspected token theft): write the new key, make sure
+`session_secret_previous` is empty, recreate `web`. Every session ends at
+once, including the attacker's.
 
 ### Offsite backup retention
 
