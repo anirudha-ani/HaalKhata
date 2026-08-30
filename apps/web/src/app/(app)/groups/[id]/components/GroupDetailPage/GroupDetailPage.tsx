@@ -155,6 +155,8 @@ export function GroupDetailPage({
           friendIds={new Set(groupDetail.friends.map((friend) => friend.id))}
           onRemove={groupDetail.removeMember}
           removingUserId={groupDetail.removingUserId}
+          onTransfer={groupDetail.transferOwnership}
+          transferringUserId={groupDetail.transferringUserId}
           removeError={groupDetail.memberError}
           onClose={() => groupDetail.setViewingMembers(false)}
         />

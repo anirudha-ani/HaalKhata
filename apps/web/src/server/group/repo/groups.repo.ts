@@ -245,3 +245,24 @@ export async function memberRole(
   );
   return roleRow?.role;
 }
+
+/**
+ * Changes one member's role in a group.
+ *
+ * @param groupId - Group whose membership row changes.
+ * @param userId - The member.
+ * @param role - The new role, "owner" or "member".
+ * @param client - Optional transaction client holding the group-ledger lock.
+ */
+export async function updateMemberRole(
+  groupId: string,
+  userId: string,
+  role: string,
+  client?: PoolClient,
+): Promise<void> {
+  await execute(
+    `UPDATE group_members SET role = $3 WHERE group_id = $1 AND user_id = $2`,
+    [groupId, userId, role],
+    client,
+  );
+}

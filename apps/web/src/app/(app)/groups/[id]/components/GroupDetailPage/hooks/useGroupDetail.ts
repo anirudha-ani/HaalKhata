@@ -22,7 +22,8 @@ export type GroupTab = "expenses" | "balances" | "activity";
  *   `togglePicked`, `identifier`/`setIdentifier`, `submitPeople`,
  *   `peopleError`, `canAddPeople`), `candidates` (friends not already in the
  *   group), the members modal (`viewingMembers`/`setViewingMembers`,
- *   `removeMember`, `removingUserId`, `memberError`),
+ *   `removeMember`, `removingUserId`, `transferOwnership`,
+ *   `transferringUserId`, `memberError`),
  *   `simplified`/`setSimplified`/`simplifyPending` for the group's
  *   persisted simplify-debts mode, `settleWith`/`setSettleWith` for the
  *   settle-up modal, and `userById` mapping member ids to users.
@@ -107,6 +108,19 @@ export function useGroupDetail(groupId: string) {
     });
   };
 
+  /**
+   * Makes another member the owner. The server's refusals (not the owner,
+   * not a member) are shown in the members modal.
+   *
+   * @param userId - The member who becomes the owner.
+   */
+  const transferOwnership = (userId: string) => {
+    setMemberError("");
+    groupDetailAPI.transferOwnership.mutate(userId, {
+      onError: (mutationError) => setMemberError(errorMessage(mutationError)),
+    });
+  };
+
   return {
     ...groupDetailAPI,
     tab: activeTab,
@@ -118,6 +132,10 @@ export function useGroupDetail(groupId: string) {
     removeMember,
     removingUserId: groupDetailAPI.removeMember.isPending
       ? groupDetailAPI.removeMember.variables
+      : undefined,
+    transferOwnership,
+    transferringUserId: groupDetailAPI.transferOwnership.isPending
+      ? groupDetailAPI.transferOwnership.variables
       : undefined,
     memberError,
     candidates,

@@ -8,5 +8,6 @@ export const TYPE_EMOJI: Record<string, string> = {
   settlement: "💸",
   member_added: "👋",
   group_created: "📒",
+  ownership_transferred: "👑",
   comment: "💬",
 };

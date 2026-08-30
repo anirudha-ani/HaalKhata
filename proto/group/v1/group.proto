@@ -13,9 +13,13 @@ service GroupService {
   // id; email/phone may identify an existing connected account. Cold invites
   // need an acceptance flow and are rejected until one exists. Any member may
   // call this; only the owner may remove somebody else, while a zero-balance
-  // non-owner may remove themselves.
+  // non-owner may remove themselves. The owner leaves by first handing the
+  // role on with TransferOwnership.
   rpc AddMembers(AddMembersRequest) returns (AddMembersResponse);
   rpc RemoveMember(RemoveMemberRequest) returns (google.protobuf.Empty);
+  // Hands ownership to another member. Only the current owner may; they
+  // become an ordinary member and may then leave like anyone else.
+  rpc TransferOwnership(TransferOwnershipRequest) returns (Group);
   // Turns debt simplification on or off for the whole group. Any member may
   // flip it (the same trust level as adding people): it is a routing mode
   // over balances that stay fully derived, so it rewrites nothing and is
@@ -101,6 +105,12 @@ message AddMembersResponse {
 
 message RemoveMemberRequest {
   string group_id = 1;
+  string user_id = 2;
+}
+
+message TransferOwnershipRequest {
+  string group_id = 1;
+  // An existing member who becomes the owner.
   string user_id = 2;
 }
 

@@ -1,6 +1,6 @@
 /** Group domain constants. */
 
-import { OWNER_ROLE } from "@haalkhata/shared/group/roles";
+import { MEMBER_ROLE, OWNER_ROLE } from "@haalkhata/shared/group/roles";
 import { MAX_GROUP_NAME_LENGTH } from "@haalkhata/shared/text/limits";
 
 /** Group categories the API accepts; anything else falls back to "other". */
@@ -11,7 +11,7 @@ export const GROUP_TYPES = new Set(["trip", "home", "couple", "other"]);
  * Re-exported from the shared package so the clients gate their controls on
  * the same spelling the server writes.
  */
-export { OWNER_ROLE };
+export { MEMBER_ROLE, OWNER_ROLE };
 
 /**
  * Maximum persisted group-name length. Names fan out into activity and

@@ -51,6 +51,11 @@ export const ACTIVITY_LOOK: Record<string, ActivityLook> = {
     tile: "bg-ink/8 text-ink ring-1 ring-ink/10",
     label: "Group created",
   },
+  ownership_transferred: {
+    glyph: "buddies",
+    tile: "bg-ink/8 text-ink ring-1 ring-ink/10",
+    label: "Ownership handed over",
+  },
   comment: {
     glyph: "yapping",
     tile: "bg-paper text-ink-soft ring-1 ring-line",
@@ -127,5 +132,9 @@ export const ACTIVITY_FILTERS: readonly ActivityFilterOption[] = [
   },
   { value: "payments", label: "Payments", types: ["settlement"] },
   { value: "comments", label: "Comments", types: ["comment"] },
-  { value: "groups", label: "Groups", types: ["group_created", "member_added"] },
+  {
+    value: "groups",
+    label: "Groups",
+    types: ["group_created", "member_added", "ownership_transferred"],
+  },
 ];

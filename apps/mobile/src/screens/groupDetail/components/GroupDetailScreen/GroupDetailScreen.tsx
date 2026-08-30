@@ -189,7 +189,9 @@ export function GroupDetailScreen({
               refuses while that person still has a balance here, and its
               message is the honest one to show. Leaving is what makes
               membership consensual — any member may enrol you, so you must
-              be able to walk out again. */}
+              be able to walk out again. Handing the group on is what lets
+              the owner do the same: they become an ordinary member and get
+              "Leave group" like everyone else. */}
           <View style={styles.membersList}>
             {members.map((member, index) => {
               const person = member.user;
@@ -197,6 +199,7 @@ export function GroupDetailScreen({
               const isMe = person.id === groupDetail.me?.id;
               const isOwner = member.role === OWNER_ROLE;
               const removing = groupDetail.removingUserId === person.id;
+              const transferring = groupDetail.transferringUserId === person.id;
               return (
                 <View
                   key={person.id}
@@ -217,13 +220,22 @@ export function GroupDetailScreen({
                       variant="outline"
                     />
                   ) : !isMe && viewerIsOwner ? (
-                    <Button
-                      busy={removing}
-                      compact
-                      label="Remove"
-                      onPress={() => groupDetail.removeMember(person.id)}
-                      variant="outline"
-                    />
+                    <View style={styles.memberActions}>
+                      <Button
+                        busy={transferring}
+                        compact
+                        label="Make owner"
+                        onPress={() => groupDetail.transferOwnership(person.id)}
+                        variant="outline"
+                      />
+                      <Button
+                        busy={removing}
+                        compact
+                        label="Remove"
+                        onPress={() => groupDetail.removeMember(person.id)}
+                        variant="outline"
+                      />
+                    </View>
                   ) : null}
                 </View>
               );
@@ -370,6 +382,10 @@ const styles = StyleSheet.create({
   headerIconButtonPrimary: {
     backgroundColor: colors.brand600,
     borderColor: colors.brand600,
+  },
+  memberActions: {
+    flexDirection: "row",
+    gap: spacing.sm,
   },
   memberAvatars: {
     flexDirection: "row",

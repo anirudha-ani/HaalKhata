@@ -51,6 +51,18 @@ export const groupHandler: ServiceImpl<typeof GroupService> = {
     );
   },
 
+  /** Hands the group to another member; only the current owner may. */
+  async transferOwnership(request, context) {
+    return runUsecase(
+      async () =>
+        groups.transferOwnership(await requireUser(context), {
+          groupId: request.groupId,
+          userId: request.userId,
+        }),
+      context,
+    );
+  },
+
   /** Removes a member from a group; refused while the member has a balance. */
   async removeMember(request, context) {
     await runUsecase(

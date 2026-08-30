@@ -4,7 +4,7 @@
 import Link from "next/link";
 import { useState } from "react";
 import { useMutation } from "@tanstack/react-query";
-import { ChevronRight, LogOut, UserMinus, UserPlus } from "lucide-react";
+import { ChevronRight, Crown, LogOut, UserMinus, UserPlus } from "lucide-react";
 import type { Member } from "@haalkhata/protogen/group/v1/group_pb";
 import { OWNER_ROLE } from "@haalkhata/shared/group/roles";
 import { errorMessage, socialClient } from "@/lib/api/connect";
@@ -27,12 +27,14 @@ const rowActionClass =
  * - not (yet) a friend: a request button — the recipient must accept before
  *   friendship exists — and the row still links to the shared ledger, which
  *   works for any pair with group or ledger history.
- * - anyone else, when you own the group: a "Remove" button.
+ * - anyone else, when you own the group: "Make owner" and "Remove" buttons.
  *
  * Leaving and removing are one RPC under one rule: the server refuses while
  * that person still has a balance here, and its message is the honest one to
  * show. Leaving is what makes membership consensual — any member may enrol
- * you, so you must be able to walk out again.
+ * you, so you must be able to walk out again. Handing the group on is what
+ * lets the owner do the same: the old owner becomes an ordinary member and
+ * gets the "Leave group" button like everyone else.
  *
  * @returns The members modal.
  */
@@ -42,6 +44,8 @@ export function MembersModal({
   friendIds,
   onRemove,
   removingUserId,
+  onTransfer,
+  transferringUserId,
   removeError,
   onClose,
 }: {
@@ -55,7 +59,11 @@ export function MembersModal({
   onRemove: (userId: string) => void;
   /** Id of the member whose removal is in flight, if any. */
   removingUserId: string | undefined;
-  /** Server message from the last failed removal, or "" when there is none. */
+  /** Called with a member's id to make them the owner (owner only). */
+  onTransfer: (userId: string) => void;
+  /** Id of the member being made owner, while that is in flight. */
+  transferringUserId: string | undefined;
+  /** Server message from the last failed removal or transfer, or "" when there is none. */
   removeError: string;
   /** Called when the modal is dismissed. */
   onClose: () => void;
@@ -88,6 +96,7 @@ export function MembersModal({
           const isFriend = friendIds.has(person.id);
           const requested = requestedIds.has(person.id);
           const removing = removingUserId === person.id;
+          const transferring = transferringUserId === person.id;
           return (
             <li key={person.id} className="flex items-center gap-2 py-2.5">
               <PersonLink
@@ -136,15 +145,26 @@ export function MembersModal({
                     </button>
                   )}
                   {viewerIsOwner ? (
-                    <button
-                      type="button"
-                      disabled={removing}
-                      onClick={() => onRemove(person.id)}
-                      aria-label={`Remove ${person.name} from the group`}
-                      className={rowActionClass}
-                    >
-                      <UserMinus className="h-3.5 w-3.5" /> {removing ? "Removing…" : "Remove"}
-                    </button>
+                    <>
+                      <button
+                        type="button"
+                        disabled={transferring}
+                        onClick={() => onTransfer(person.id)}
+                        aria-label={`Make ${person.name} the owner`}
+                        className={rowActionClass}
+                      >
+                        <Crown className="h-3.5 w-3.5" /> {transferring ? "Handing over…" : "Make owner"}
+                      </button>
+                      <button
+                        type="button"
+                        disabled={removing}
+                        onClick={() => onRemove(person.id)}
+                        aria-label={`Remove ${person.name} from the group`}
+                        className={rowActionClass}
+                      >
+                        <UserMinus className="h-3.5 w-3.5" /> {removing ? "Removing…" : "Remove"}
+                      </button>
+                    </>
                   ) : null}
                 </>
               )}

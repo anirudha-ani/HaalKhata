@@ -5,3 +5,6 @@
  * non-owner may only remove themselves. Mirrors `group_members.role`.
  */
 export const OWNER_ROLE = "owner";
+
+/** Role held by every other member of a group. */
+export const MEMBER_ROLE = "member";

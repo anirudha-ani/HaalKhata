@@ -13,8 +13,8 @@ import { MONEY_KEYS, queryKeys } from "@haalkhata/shared/api/queryKeys";
  * @param groupId - Identifier of the group being viewed.
  * @returns An object with `me`, `group`, `groupError`, `friends`, `expenses`,
  *   `balances`, an `isLoading` flag covering the group and expense queries,
- *   `refresh`/`isRefreshing` for pull-to-refresh, and the `addMembers` and
- *   `removeMember` mutations.
+ *   `refresh`/`isRefreshing` for pull-to-refresh, and the `addMembers`,
+ *   `removeMember` and `transferOwnership` mutations.
  */
 export function useGroupDetailAPI(groupId: string) {
   const queryClient = useQueryClient();
@@ -74,6 +74,18 @@ export function useGroupDetailAPI(groupId: string) {
   });
 
   /**
+   * Hands the group to another member. Roles change on this group and the
+   * old owner may now leave, so the group and the list refresh.
+   */
+  const transferOwnership = useMutation({
+    mutationFn: (userId: string) => groupClient.transferOwnership({ groupId, userId }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.group(groupId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.groups });
+    },
+  });
+
+  /**
    * Flips the group's simplify-debts mode. It changes which debts every
    * money surface shows — this group's balances, friend ledgers, the
    * dashboard — so success invalidates the whole money set, not just the
@@ -106,6 +118,7 @@ export function useGroupDetailAPI(groupId: string) {
     isRefreshing: group.isRefetching || expenses.isRefetching || balances.isRefetching,
     addMembers,
     removeMember,
+    transferOwnership,
     setSimplify,
     activityEvents: activity.data?.events ?? [],
     activityLoading: activity.isLoading,

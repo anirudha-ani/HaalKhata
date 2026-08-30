@@ -12,6 +12,7 @@ import {
   listMembersByGroupIds,
   memberRole,
   removeMember,
+  updateMemberRole,
   updateSimplifyDebts,
 } from "@/server/group/repo/groups.repo";
 import type { UserRow } from "@/server/auth/repo/users.repo";
@@ -32,6 +33,7 @@ import {
   GROUP_TYPES,
   MAX_GROUP_MEMBER_IDS_PER_REQUEST,
   MAX_GROUP_NAME_LENGTH,
+  MEMBER_ROLE,
   OWNER_ROLE,
 } from "@/server/group/group.constants";
 import { lockGroupLedgers, withLedgerTransaction } from "@/server/common/ledgerLocks";
@@ -39,7 +41,7 @@ import { toGroup, toMember } from "./group.mapper";
 
 /**
  * Loads a group and asserts the caller is its owner; used for owner-only
- * actions like removing somebody else from the group.
+ * actions like removing somebody else from the group or handing it on.
  *
  * @param groupId - Id of the group to load.
  * @param userId - Id of the authenticated caller.
@@ -403,7 +405,59 @@ export async function addMembers(
     audience,
   });
   await notifyAdded(actor, input.groupId, group.name, added);
-  return { added: added.map((user) => toMember({ ...user, role: "member" })) };
+  return { added: added.map((user) => toMember({ ...user, role: MEMBER_ROLE })) };
+}
+
+/**
+ * Hands a group's ownership to another member. The caller must own the
+ * group and becomes an ordinary member — which is what lets an owner leave:
+ * removal keeps its zero-balance gate, but "owners cannot remove themselves"
+ * was a dead end while nothing could make somebody else the owner.
+ *
+ * @param userId - Id of the authenticated caller, the current owner.
+ * @param input - The group id and the member who becomes its owner.
+ * @returns The group (with members) after the change.
+ * @throws UsecaseError (not_found) when the group does not exist.
+ * @throws UsecaseError (permission_denied) when the caller is not the owner.
+ * @throws UsecaseError (invalid_argument) when the target is the caller or
+ *   not a member of the group.
+ */
+export async function transferOwnership(
+  userId: string,
+  input: { groupId: string; userId: string },
+) {
+  const change = await withLedgerTransaction(async (client) => {
+    await lockGroupLedgers(client, [input.groupId]);
+    const group = await assertGroupOwner(input.groupId, userId, client);
+    if (input.userId === userId) invalid("you already own this group");
+    if (!(await memberRole(input.groupId, input.userId, client))) {
+      invalid("they are not a member of this group");
+    }
+    await updateMemberRole(input.groupId, input.userId, OWNER_ROLE, client);
+    await updateMemberRole(input.groupId, userId, MEMBER_ROLE, client);
+    return {
+      group,
+      audience: (await listMembers(input.groupId, client)).map((member) => member.id),
+    };
+  });
+  const actor = (await findUserById(userId))!;
+  const newOwner = (await findUserById(input.userId))!;
+  // Structural, like member_added: the whole group hears who holds the keys.
+  await insertActivity({
+    groupId: input.groupId,
+    actorId: userId,
+    type: "ownership_transferred",
+    message: `${actor.name} made ${newOwner.name} the owner of "${change.group.name}"`,
+    link: `/groups/${input.groupId}`,
+    audience: change.audience,
+  });
+  await insertNotifications([input.userId], {
+    type: "ownership_transferred",
+    title: `${actor.name} made you the owner of "${change.group.name}"`,
+    body: "",
+    link: `/groups/${input.groupId}`,
+  });
+  return toGroup((await findGroupById(input.groupId))!, await listMembers(input.groupId));
 }
 
 /**
@@ -479,7 +533,7 @@ export async function removeMemberFromGroup(
       const role = await memberRole(input.groupId, userId, client);
       if (!role) denied("you are not a member of this group");
       if (role === OWNER_ROLE) {
-        invalid("owners cannot remove themselves; transfer ownership first");
+        invalid("owners cannot leave until they make somebody else the owner");
       }
     } else {
       await assertGroupOwner(input.groupId, userId, client);

@@ -21,6 +21,7 @@ vi.mock("@/server/group/repo/groups.repo", () => ({
   listMembersByGroupIds: vi.fn(),
   memberRole: vi.fn(),
   removeMember: vi.fn(),
+  updateMemberRole: vi.fn(),
   updateSimplifyDebts: vi.fn(),
 }));
 vi.mock("@/server/auth/repo/users.repo", () => ({
@@ -50,7 +51,13 @@ vi.mock("@/server/common/ledgerLocks", () => ({
   ),
 }));
 
-import { addMembers, createGroup, removeMemberFromGroup, setSimplifyDebts } from "./group.usecase";
+import {
+  addMembers,
+  createGroup,
+  removeMemberFromGroup,
+  setSimplifyDebts,
+  transferOwnership,
+} from "./group.usecase";
 import {
   addMember,
   findGroupById,
@@ -60,6 +67,7 @@ import {
   listMembers,
   memberRole,
   removeMember,
+  updateMemberRole,
   updateSimplifyDebts,
 } from "@/server/group/repo/groups.repo";
 import { findUserByEmail, findUserById } from "@/server/auth/repo/users.repo";
@@ -133,13 +141,55 @@ describe("group membership authorization", () => {
     expect(removeMember).toHaveBeenCalledWith(TRIP, MEMBER, transactionClient);
   });
 
-  it("still prevents the owner from leaving without transferring ownership", async () => {
+  it("still prevents the owner from leaving without handing the group on", async () => {
     vi.mocked(memberRole).mockResolvedValue("owner");
 
     await expect(
       removeMemberFromGroup(MEMBER, { groupId: TRIP, userId: MEMBER }),
-    ).rejects.toThrow(/transfer ownership/);
+    ).rejects.toThrow(/make somebody else the owner/);
     expect(removeMember).not.toHaveBeenCalled();
+  });
+});
+
+describe("transferOwnership", () => {
+  beforeEach(() => {
+    vi.mocked(findGroupById).mockResolvedValue({ id: TRIP, name: "Trip" } as GroupRow);
+    vi.mocked(listMembers).mockResolvedValue([{ id: MEMBER }, { id: TARGET }] as MemberRow[]);
+    vi.mocked(findUserById).mockImplementation(
+      async (userId: string) => ({ id: userId, name: `Name ${userId}` }) as UserRow,
+    );
+    vi.mocked(memberRole).mockImplementation(async (_groupId: string, userId: string) =>
+      userId === MEMBER ? "owner" : userId === TARGET ? "member" : undefined,
+    );
+  });
+
+  it("hands the role to another member under the group lock and announces it", async () => {
+    await transferOwnership(MEMBER, { groupId: TRIP, userId: TARGET });
+
+    expect(lockGroupLedgers).toHaveBeenCalledWith(transactionClient, [TRIP]);
+    expect(updateMemberRole).toHaveBeenCalledWith(TRIP, TARGET, "owner", transactionClient);
+    expect(updateMemberRole).toHaveBeenCalledWith(TRIP, MEMBER, "member", transactionClient);
+    expect(insertActivity).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "ownership_transferred",
+        audience: [MEMBER, TARGET],
+        link: `/groups/${TRIP}`,
+      }),
+    );
+  });
+
+  it("is the owner's call alone", async () => {
+    await expect(
+      transferOwnership(TARGET, { groupId: TRIP, userId: MEMBER }),
+    ).rejects.toThrow(/only the group owner/);
+    expect(updateMemberRole).not.toHaveBeenCalled();
+  });
+
+  it("refuses a target who is not in the group", async () => {
+    await expect(
+      transferOwnership(MEMBER, { groupId: TRIP, userId: OUTSIDER }),
+    ).rejects.toThrow(/not a member/);
+    expect(updateMemberRole).not.toHaveBeenCalled();
   });
 });
 
