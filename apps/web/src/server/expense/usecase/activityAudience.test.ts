@@ -513,7 +513,7 @@ describe("who hears about a transaction", () => {
     );
   });
 
-  it("keeps a deleted expense readable, marked deleted, and closed to comments", async () => {
+  it("keeps a deleted expense readable, marked deleted, and frozen", async () => {
     vi.mocked(findExpenseById).mockResolvedValue({
       ...(await findExpenseById("expense-1"))!,
       deleted_at: "2026-08-10T00:00:00Z",
@@ -525,7 +525,6 @@ describe("who hears about a transaction", () => {
     const detail = await getExpense(OWER, "expense-1");
 
     expect(detail.expense.deletedAt).toBe("2026-08-10T00:00:00Z");
-    await expect(addComment(OWER, "expense-1", "why?")).rejects.toThrow(/was deleted/);
     await expect(updateExpense(PAYER, "expense-1", validExpenseRequest())).rejects.toThrow(
       /expense not found/,
     );

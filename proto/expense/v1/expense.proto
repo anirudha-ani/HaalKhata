@@ -81,9 +81,10 @@ message Expense {
   int32 tax_cents = 15;
   int32 tip_cents = 16;
   // When the expense was deleted; empty while it is live. A deleted expense
-  // is still returned by list and detail reads so history stays legible, but
-  // contributes nothing to any balance, cannot be edited or commented on, and
-  // is never reported as settled.
+  // is still returned by list and detail reads so history stays legible —
+  // and stays open to comments, since "why was this removed?" is the
+  // conversation the kept row exists to host — but contributes nothing to
+  // any balance, cannot be edited, and is never reported as settled.
   string deleted_at = 17;
 }
 

@@ -63,8 +63,8 @@ export function ExpenseDetailPage({ expenseId }: { expenseId: string }) {
   // the creator. Neither is refused once a payment has been recorded in the
   // ledger after the expense: the derived balance rebalances against what
   // was paid, so the page warns rather than hides. A deleted expense is
-  // read-only history — no actions, no new comments — with the row kept so
-  // any payment made against it still has its explanation.
+  // frozen history — no actions, though comments stay open — with the row
+  // kept so any payment made against it still has its explanation.
   const isCreator = expense.createdBy === meId;
   const isParticipant =
     isCreator ||
@@ -370,34 +370,32 @@ export function ExpenseDetailPage({ expenseId }: { expenseId: string }) {
             </div>
           </div>
         ))}
-        {isDeleted ? (
-          <p className="text-xs text-ink-soft">Comments are closed on a deleted expense.</p>
-        ) : (
-          <form
-            className="flex gap-2"
-            onSubmit={(event) => {
-              event.preventDefault();
-              expenseDetail.submitComment();
-            }}
+        {/* Open on deleted expenses too: "why was this removed?" is exactly
+            the conversation the kept row is there to host. */}
+        <form
+          className="flex gap-2"
+          onSubmit={(event) => {
+            event.preventDefault();
+            expenseDetail.submitComment();
+          }}
+        >
+          <input
+            value={expenseDetail.comment}
+            onChange={(event) => expenseDetail.setComment(event.target.value)}
+            maxLength={MAX_COMMENT_LENGTH}
+            placeholder="Add a comment…"
+            aria-label="Add a comment"
+            className="min-w-0 flex-1 rounded-xl border border-line bg-card px-3.5 py-2.5 text-sm focus:border-brand-500 focus:outline-none"
+          />
+          <button
+            type="submit"
+            disabled={expenseDetail.isCommenting || expenseDetail.comment.trim() === ""}
+            aria-label="Send comment"
+            className="rounded-xl bg-brand-600 px-4 text-white hover:bg-brand-700 disabled:opacity-40"
           >
-            <input
-              value={expenseDetail.comment}
-              onChange={(event) => expenseDetail.setComment(event.target.value)}
-              maxLength={MAX_COMMENT_LENGTH}
-              placeholder="Add a comment…"
-              aria-label="Add a comment"
-              className="min-w-0 flex-1 rounded-xl border border-line bg-card px-3.5 py-2.5 text-sm focus:border-brand-500 focus:outline-none"
-            />
-            <button
-              type="submit"
-              disabled={expenseDetail.isCommenting || expenseDetail.comment.trim() === ""}
-              aria-label="Send comment"
-              className="rounded-xl bg-brand-600 px-4 text-white hover:bg-brand-700 disabled:opacity-40"
-            >
-              <Send className="h-4 w-4" />
-            </button>
-          </form>
-        )}
+            <Send className="h-4 w-4" />
+          </button>
+        </form>
       </section>
 
       {expenseDetail.error ? (

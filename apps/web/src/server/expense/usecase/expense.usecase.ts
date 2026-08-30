@@ -813,15 +813,14 @@ export async function getExpense(userId: string, expenseId: string) {
  * @param expenseId - Id of the expense being commented on.
  * @param body - Comment text; trimmed, must be non-empty.
  * @returns The stored comment (with author) as a proto message init shape.
- * @throws UsecaseError if the expense is missing or deleted, the caller lacks
- *   access, or the comment is empty.
+ * @throws UsecaseError if the expense is missing, the caller lacks access, or
+ *   the comment is empty.
  */
 export async function addComment(userId: string, expenseId: string, body: string) {
   const expenseRow = await findExpenseById(expenseId);
+  // Deleted expenses stay open to comments: "why was this removed?" is
+  // exactly the conversation the kept row is there to host.
   if (!expenseRow) notFound("expense not found");
-  // Readable history, not a live thread: the page stays, the conversation
-  // does not continue on something nobody can act on any more.
-  if (expenseRow.deleted_at) invalid("this expense was deleted and can no longer be commented on");
   await assertCanTouch(userId, expenseRow);
   const trimmed = body.trim();
   if (trimmed.length === 0) invalid("comment cannot be empty");

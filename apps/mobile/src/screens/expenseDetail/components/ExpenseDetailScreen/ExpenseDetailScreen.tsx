@@ -64,8 +64,8 @@ export function ExpenseDetailScreen({ expenseId }: { expenseId: string }) {
   // the creator. Neither is refused once a payment has been recorded in the
   // ledger after the expense: the derived balance rebalances against what
   // was paid, so the screen warns rather than hides. A deleted expense is
-  // read-only history — no actions, no new comments — with the row kept so
-  // any payment made against it still has its explanation.
+  // frozen history — no actions, though comments stay open — with the row
+  // kept so any payment made against it still has its explanation.
   const meId = expenseDetail.me?.id;
   const isCreator = expense.createdBy === meId;
   const isParticipant =
@@ -241,33 +241,31 @@ export function ExpenseDetailScreen({ expenseId }: { expenseId: string }) {
             </View>
           </View>
         ))}
-        {isDeleted ? (
-          <Text style={styles.deletedText}>Comments are closed on a deleted expense.</Text>
-        ) : (
-          <View style={styles.composer}>
-            <TextInput
-              maxLength={MAX_COMMENT_LENGTH}
-              onChangeText={expenseDetail.setComment}
-              placeholder="Add a comment…"
-              placeholderTextColor={colors.inkSoft}
-              style={styles.composerInput}
-              value={expenseDetail.comment}
-            />
-            <Pressable
-              accessibilityLabel="Send comment"
-              disabled={expenseDetail.isCommenting || expenseDetail.comment.trim() === ""}
-              onPress={() => expenseDetail.submitComment()}
-              style={[
-                styles.composerSend,
-                expenseDetail.isCommenting || expenseDetail.comment.trim() === ""
-                  ? styles.composerSendDisabled
-                  : null,
-              ]}
-            >
-              <Send color={colors.white} size={16} />
-            </Pressable>
-          </View>
-        )}
+        {/* Open on deleted expenses too: "why was this removed?" is exactly
+            the conversation the kept row is there to host. */}
+        <View style={styles.composer}>
+          <TextInput
+            maxLength={MAX_COMMENT_LENGTH}
+            onChangeText={expenseDetail.setComment}
+            placeholder="Add a comment…"
+            placeholderTextColor={colors.inkSoft}
+            style={styles.composerInput}
+            value={expenseDetail.comment}
+          />
+          <Pressable
+            accessibilityLabel="Send comment"
+            disabled={expenseDetail.isCommenting || expenseDetail.comment.trim() === ""}
+            onPress={() => expenseDetail.submitComment()}
+            style={[
+              styles.composerSend,
+              expenseDetail.isCommenting || expenseDetail.comment.trim() === ""
+                ? styles.composerSendDisabled
+                : null,
+            ]}
+          >
+            <Send color={colors.white} size={16} />
+          </Pressable>
+        </View>
       </View>
 
       {expenseDetail.error ? <Text style={styles.error}>{expenseDetail.error}</Text> : null}
