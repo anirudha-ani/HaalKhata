@@ -90,6 +90,19 @@ start the web server with `next dev -H 0.0.0.0` (or set
 builds require an explicit HTTPS origin and reject plaintext bearer-token
 transport; Android release manifests also disable cleartext traffic.
 
+**Sign-in.** Production accepts Google only, so a release build needs its
+own native OAuth clients in the same Google Cloud project as the web one: an
+*Android* client for package `com.haalkhata.app` with the signing key's
+SHA-1, and an *iOS* client for bundle `com.haalkhata.app`. Put their ids in
+`EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID` / `EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID`
+when building the app, and list the same ids in the server's
+`GOOGLE_MOBILE_CLIENT_IDS` so it accepts them as token audiences. The flow is
+the web one's twin: the server issues a one-time nonce, the native OAuth
+request carries it, and the ID token Google mints is exchanged for a session.
+The bundle id doubles as the OAuth redirect scheme (`app.json` → `scheme`).
+The email/phone + password form only appears in development builds, matching
+the server's password gate.
+
 ## Schema & migrations
 
 The schema lives in plain SQL under `apps/web/migrations/` (node-pg-migrate,

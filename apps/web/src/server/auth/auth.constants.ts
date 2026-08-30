@@ -88,6 +88,22 @@ export const PHONE_VERIFICATION_CODE_PATTERN = /^\d{4,10}$/;
  */
 export const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID ?? "";
 
+/**
+ * Native OAuth client ids (Android, iOS) the mobile app signs in with, comma
+ * separated. An ID token names the client that requested it as its audience,
+ * so each of them must be accepted alongside the web client. Public values
+ * like the web client id; there is still no secret.
+ */
+export const GOOGLE_MOBILE_CLIENT_IDS = (process.env.GOOGLE_MOBILE_CLIENT_IDS ?? "")
+  .split(",")
+  .map((clientId) => clientId.trim())
+  .filter((clientId) => clientId.length > 0);
+
+/** Every audience a Google ID token may carry: the web client plus the native ones. */
+export const GOOGLE_AUDIENCES = [GOOGLE_CLIENT_ID, ...GOOGLE_MOBILE_CLIENT_IDS].filter(
+  (clientId) => clientId.length > 0,
+);
+
 /** Entropy in each server-issued Google authentication nonce. */
 export const GOOGLE_SIGN_IN_NONCE_BYTES = 32;
 

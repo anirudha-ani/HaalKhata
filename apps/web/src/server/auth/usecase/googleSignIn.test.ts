@@ -9,6 +9,8 @@ import type { UserRow } from "@/server/auth/repo/users.repo";
 const { verifyIdTokenMock } = vi.hoisted(() => {
   process.env.SESSION_SECRET = "test-secret-key-for-vitest-0123456789abcdef";
   process.env.GOOGLE_CLIENT_ID = "test-client.apps.googleusercontent.com";
+  process.env.GOOGLE_MOBILE_CLIENT_IDS =
+    "android-client.apps.googleusercontent.com, ios-client.apps.googleusercontent.com";
   return { verifyIdTokenMock: vi.fn() };
 });
 
@@ -132,6 +134,25 @@ describe("logInWithGoogle", () => {
     expect(storedHash).toMatch(/^[0-9a-f]{64}$/);
     expect(storedHash).not.toContain(first.nonce);
     expect(lifetimeSeconds).toBe(GOOGLE_SIGN_IN_NONCE_LIFETIME_SECONDS);
+  });
+
+  it("accepts the web client and every native mobile client as the token audience", async () => {
+    googleReturns(VERIFIED);
+    vi.mocked(findUserByGoogleSub).mockResolvedValue(userRow({ google_sub: "google-sub-123" }));
+
+    await logInWithGoogle("id-token");
+
+    // The mobile app signs in with its own Android and iOS OAuth clients, and
+    // an ID token names the client that requested it — so all three are us.
+    expect(verifyIdTokenMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        audience: [
+          "test-client.apps.googleusercontent.com",
+          "android-client.apps.googleusercontent.com",
+          "ios-client.apps.googleusercontent.com",
+        ],
+      }),
+    );
   });
 
   it("rejects an ID token with no server-issued nonce", async () => {

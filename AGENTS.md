@@ -219,9 +219,13 @@ Expo SDK 57 + expo-router. The same conventions apply — thin route files in
 constants sit in route-scoped `constants/` folders, pure helpers in `utils/`
 with colocated tests. Mobile-specific rules:
 
-- **Auth is bearer-token**, not cookies: LogIn/SignUp return `token`, stored
+- **Auth is bearer-token**, not cookies: LogInWithGoogle (production) or
+  LogIn/SignUp (development only) return `token`, stored
   in SecureStore (`src/lib/api/session.ts`) and attached by a transport
-  interceptor. Sessions renew themselves: once a token is past half its
+  interceptor. Google sign-in uses `expo-auth-session`'s Google provider with
+  the platform's native client id (`EXPO_PUBLIC_GOOGLE_{ANDROID,IOS}_CLIENT_ID`
+  at build time; the server accepts them through `GOOGLE_MOBILE_CLIENT_IDS`)
+  and the same server-issued nonce as the web. Sessions renew themselves: once a token is past half its
   seven-day life, any authenticated RPC returns a fresh one (a cookie for
   the browser, the `x-haalkhata-session` header for mobile, which the
   interceptor stores). `Code.Unauthenticated` clears the session; the `(app)/_layout`

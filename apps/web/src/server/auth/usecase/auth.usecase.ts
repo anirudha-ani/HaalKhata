@@ -29,6 +29,7 @@ import {
   AVATAR_PALETTE,
   DATA_DIRECTORY,
   EMAIL_PATTERN,
+  GOOGLE_AUDIENCES,
   GOOGLE_CLIENT_ID,
   GOOGLE_SIGN_IN_NONCE_BYTES,
   GOOGLE_SIGN_IN_NONCE_LIFETIME_SECONDS,
@@ -480,9 +481,11 @@ async function verifyGoogleIdToken(idToken: string): Promise<{
   const client = googleClient();
   let claims;
   try {
+    // The web client and the native mobile clients each mint tokens naming
+    // themselves as audience; any of them is this app.
     const ticket = await client.verifyIdToken({
       idToken,
-      audience: GOOGLE_CLIENT_ID,
+      audience: GOOGLE_AUDIENCES,
     });
     claims = ticket.getPayload();
   } catch {

@@ -62,6 +62,7 @@ services:
       # Safe only because this stack's Caddyfile overwrites X-Forwarded-For.
       TRUST_PROXY_HEADERS: "true"
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
+      GOOGLE_MOBILE_CLIENT_IDS: ${GOOGLE_MOBILE_CLIENT_IDS:-}
       TWILIO_API_KEY_SID: ${TWILIO_API_KEY_SID}
       TWILIO_VERIFY_SERVICE_SID: ${TWILIO_VERIFY_SERVICE_SID}
       # `mock` is deliberately dropped here. In development it keeps the scan

@@ -1,4 +1,4 @@
-/** Login screen UI: sign-in / create-account toggle and credentials form. */
+/** Login screen UI: Google sign-in, plus the development-only password form. */
 
 import {
   KeyboardAvoidingView,
@@ -13,12 +13,16 @@ import { Button } from "@/components/ui/Button";
 import { Segmented } from "@/components/ui/Segmented";
 import { TextField } from "@/components/ui/TextField";
 import { colors, fonts, radii, spacing } from "@/lib/theme/theme";
+import { GOOGLE_SIGN_IN_CONFIGURED, PASSWORD_AUTH_ENABLED } from "../../constants/googleSignIn";
 import { LOGIN_MODES } from "../../constants/loginModes";
+import { GoogleSignInButton } from "./components/GoogleSignInButton/GoogleSignInButton";
 import { useLogin } from "./hooks/useLogin";
 
 /**
- * Renders the login screen: the HaalKhata wordmark, the sign-in/create-account
- * mode toggle, and the credentials form (name appears only in signup mode).
+ * Renders the login screen: the HaalKhata wordmark, "Continue with Google"
+ * (the only way in on a production server), and — in development builds
+ * only, mirroring the server's password gate — the sign-in/create-account
+ * toggle and credentials form for seeded accounts.
  *
  * @returns The full-height login screen.
  */
@@ -43,53 +47,70 @@ export function LoginScreen() {
           </View>
 
           <View style={styles.card}>
-            <Segmented
-              onChange={login.switchMode}
-              options={LOGIN_MODES}
-              value={login.mode}
-            />
-
-            <View style={styles.form}>
-              {login.mode === "signup" ? (
-                <TextField
-                  autoComplete="name"
-                  onChangeText={login.setName}
-                  placeholder="Your name"
-                  value={login.name}
-                />
-              ) : null}
-              <TextField
-                autoCapitalize="none"
-                autoComplete="username"
-                keyboardType="email-address"
-                onChangeText={login.setIdentifier}
-                placeholder="Email or phone"
-                value={login.identifier}
-              />
-              <TextField
-                autoCapitalize="none"
-                autoComplete={login.mode === "login" ? "current-password" : "new-password"}
-                onChangeText={login.setPassword}
-                onSubmitEditing={login.submit}
-                placeholder="Password"
-                secureTextEntry
-                value={login.password}
-              />
-
-              {login.error ? <Text style={styles.error}>{login.error}</Text> : null}
-
-              <Button
-                busy={login.isPending}
-                label={login.mode === "login" ? "Sign in" : "Open your ledger"}
-                onPress={login.submit}
-              />
-            </View>
-
-            {login.mode === "signup" ? (
+            {GOOGLE_SIGN_IN_CONFIGURED ? (
+              <GoogleSignInButton />
+            ) : PASSWORD_AUTH_ENABLED ? null : (
               <Text style={styles.hint}>
-                Invited by a friend? Sign up with the same email or phone and
-                your shared expenses will already be here.
+                Sign-in is not configured for this build: it needs the Google client ids set at
+                build time.
               </Text>
+            )}
+
+            {PASSWORD_AUTH_ENABLED ? (
+              <>
+                {GOOGLE_SIGN_IN_CONFIGURED ? (
+                  <Text style={styles.divider}>or, in development, with a password</Text>
+                ) : null}
+                <Segmented
+                  onChange={login.switchMode}
+                  options={LOGIN_MODES}
+                  value={login.mode}
+                />
+
+                <View style={styles.form}>
+                  {login.mode === "signup" ? (
+                    <TextField
+                      autoComplete="name"
+                      onChangeText={login.setName}
+                      placeholder="Your name"
+                      value={login.name}
+                    />
+                  ) : null}
+                  <TextField
+                    autoCapitalize="none"
+                    autoComplete="username"
+                    keyboardType="email-address"
+                    onChangeText={login.setIdentifier}
+                    placeholder="Email or phone"
+                    value={login.identifier}
+                  />
+                  <TextField
+                    autoCapitalize="none"
+                    autoComplete={login.mode === "login" ? "current-password" : "new-password"}
+                    onChangeText={login.setPassword}
+                    onSubmitEditing={login.submit}
+                    placeholder="Password"
+                    secureTextEntry
+                    value={login.password}
+                  />
+
+                  {login.error ? <Text style={styles.error}>{login.error}</Text> : null}
+
+                  <Button
+                    busy={login.isPending}
+                    label={login.mode === "login" ? "Sign in" : "Open your ledger"}
+                    onPress={login.submit}
+                    variant={GOOGLE_SIGN_IN_CONFIGURED ? "outline" : "primary"}
+                  />
+                </View>
+
+                {login.mode === "signup" ? (
+                  <Text style={styles.hint}>
+                    Invited by a friend? Sign up with the same email or phone and
+                    your shared expenses will already be here.
+                  </Text>
+                ) : null}
+              </>
             ) : null}
           </View>
         </ScrollView>
@@ -106,6 +127,11 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     gap: spacing.lg,
     padding: spacing.xl,
+  },
+  divider: {
+    color: colors.inkSoft,
+    fontSize: 12,
+    textAlign: "center",
   },
   error: {
     color: colors.brand600,
@@ -134,13 +160,6 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     justifyContent: "center",
     padding: spacing.xl,
-  },
-  subtitle: {
-    color: colors.inkSoft,
-    fontSize: 12,
-    fontWeight: "500",
-    letterSpacing: 5,
-    marginTop: spacing.xs,
   },
   tagline: {
     color: colors.inkSoft,
