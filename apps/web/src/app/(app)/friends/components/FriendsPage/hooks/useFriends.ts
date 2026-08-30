@@ -3,11 +3,31 @@
 
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { CounterpartyBalance } from "@haalkhata/protogen/common/v1/common_pb";
+import type { User } from "@haalkhata/protogen/common/v1/common_pb";
 import { splitIdentifier } from "@haalkhata/shared/auth/identifier";
+import { totalsByCurrency, type CurrencyBucket } from "@haalkhata/shared/money/balances";
 import { matchesTerms, searchTerms } from "@haalkhata/shared/search/filter";
 import { authClient, errorMessage, socialClient } from "@/lib/api/connect";
 import { queryKeys } from "@haalkhata/shared/api/queryKeys";
+
+/**
+ * A friend's position per currency. A server predating `balances` sends only
+ * the default-currency scalar, which reads the same way as one bucket.
+ *
+ * @param friend - A counterparty balance from the friends list.
+ * @param defaultCurrency - The caller's default currency.
+ * @returns Non-zero buckets, or an empty list when settled.
+ */
+export function bucketsOf(
+  friend: { netCents: number; balances: CurrencyBucket[] },
+  defaultCurrency: string,
+): CurrencyBucket[] {
+  const buckets =
+    friend.balances.length > 0
+      ? friend.balances
+      : [{ currency: defaultCurrency, cents: friend.netCents }];
+  return buckets.filter((bucket) => bucket.cents !== 0);
+}
 
 /**
  * Provides all data and behavior the friends page needs: the signed-in user,
@@ -31,7 +51,11 @@ export function useFriends() {
   const [query, setQuery] = useState("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
-  const [settleWith, setSettleWith] = useState<CounterpartyBalance | null>(null);
+  const [settleWith, setSettleWith] = useState<{
+    user: User;
+    currency: string;
+    cents: number;
+  } | null>(null);
   const [showAdd, setShowAdd] = useState(false);
 
   const currentUser = useQuery({ queryKey: queryKeys.me, queryFn: () => authClient.getMe({}) });
@@ -72,14 +96,15 @@ export function useFriends() {
   }, [friends.data, query]);
 
   // Headline totals, so the page answers "where do I stand overall?" before
-  // any individual row is read.
-  const owedToYouCents = allFriends.reduce(
-    (total, friend) => total + Math.max(friend.netCents, 0),
-    0,
-  );
-  const youOweCents = allFriends.reduce(
-    (total, friend) => total + Math.max(-friend.netCents, 0),
-    0,
+  // any individual row is read — per currency, never summed across them.
+  const currency = currentUser.data?.defaultCurrency || "USD";
+  const totals = useMemo(
+    () =>
+      totalsByCurrency(
+        allFriends.map((friend) => ({ balances: bucketsOf(friend, currency) })),
+        currency,
+      ),
+    [allFriends, currency],
   );
 
   return {
@@ -91,8 +116,7 @@ export function useFriends() {
     friendsError: friends.error,
     incomingRequests: friends.data?.incomingRequests ?? [],
     visibleFriends,
-    owedToYouCents,
-    youOweCents,
+    totals,
     query,
     setQuery,
     showAdd,

@@ -1,5 +1,5 @@
 "use client";
-/** Friend detail: net balance, settle either way, and the full shared ledger with a running balance. */
+/** Friend detail: net balance per currency, settle either way, and the full shared ledger with a running balance. */
 
 import Link from "next/link";
 import { ArrowLeft, Bell, Check, HandCoins, Plus, UserPlus, Wallet } from "lucide-react";
@@ -10,6 +10,7 @@ import { SettleUpModal } from "@/components/modals/SettleUpModal";
 import { Spinner } from "@/components/ui/Spinner";
 import { errorMessage } from "@/lib/api/connect";
 import { useHydrated } from "@/lib/hooks/useHydrated";
+import { outstandingBuckets } from "@haalkhata/shared/money/balances";
 import { formatMoney } from "@haalkhata/shared/money/money";
 import { localDate } from "@haalkhata/shared/time/localTime";
 import { useFriendLedger } from "./hooks/useFriendLedger";
@@ -61,8 +62,15 @@ export function FriendDetailPage({
     isFriend = true,
     mutualGroups = [],
   } = view.ledger;
-  const isSettled = netCents === 0;
-  const theyOweYou = netCents > 0;
+  // One net per currency, never a sum: a server predating `nets` sends only
+  // the default-currency scalar, which reads the same way as one bucket.
+  const nets = outstandingBuckets(
+    view.ledger.nets?.length ? view.ledger.nets : [{ currency, cents: netCents }],
+    currency,
+  );
+  const isSettled = nets.length === 0;
+  const owedToYou = nets.filter((bucket) => bucket.cents > 0);
+  const owedByYou = nets.filter((bucket) => bucket.cents < 0);
 
   return (
     <div className="mx-auto max-w-3xl space-y-6">
@@ -122,16 +130,20 @@ export function FriendDetailPage({
               <Check className="h-5 w-5" /> All settled up
             </p>
           ) : (
-            <>
-              <p className="text-sm text-ink-soft">
-                {theyOweYou ? `${friend.name.split(" ")[0]} owes you` : "you owe"}
-              </p>
-              <Money
-                cents={Math.abs(netCents)}
-                currency={currency}
-                className={`text-3xl font-bold ${theyOweYou ? "text-pos-700" : "text-neg-600"}`}
-              />
-            </>
+            // One line per currency: a dollar owed and a euro owed are two
+            // facts, and no arithmetic turns them into one.
+            nets.map((bucket) => (
+              <div key={bucket.currency}>
+                <p className="text-sm text-ink-soft">
+                  {bucket.cents > 0 ? `${friend.name.split(" ")[0]} owes you` : "you owe"}
+                </p>
+                <Money
+                  cents={Math.abs(bucket.cents)}
+                  currency={bucket.currency}
+                  className={`text-3xl font-bold ${bucket.cents > 0 ? "text-pos-700" : "text-neg-600"}`}
+                />
+              </div>
+            ))
           )}
         </div>
       </header>
@@ -144,21 +156,22 @@ export function FriendDetailPage({
           <Plus className="h-4 w-4" /> Add expense
         </Link>
         {/* Both directions are always offered: the balance tells you which one
-            you probably want, but recording the other is never blocked. */}
-        {!theyOweYou && !isSettled ? (
+            you probably want, but recording the other is never blocked. Each
+            opens on its currency; the dialog can switch. */}
+        {owedByYou.length > 0 ? (
           <button
             type="button"
-            onClick={() => view.openSettle("paid")}
+            onClick={() => view.openSettle("paid", owedByYou[0].currency)}
             className="flex items-center gap-2 rounded-xl bg-pos-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-pos-700"
           >
             <Wallet className="h-4 w-4" /> I paid {friend.name.split(" ")[0]}
           </button>
         ) : null}
-        {theyOweYou ? (
+        {owedToYou.length > 0 ? (
           <>
             <button
               type="button"
-              onClick={() => view.openSettle("received")}
+              onClick={() => view.openSettle("received", owedToYou[0].currency)}
               className="flex items-center gap-2 rounded-xl bg-pos-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-pos-700"
             >
               <HandCoins className="h-4 w-4" /> {friend.name.split(" ")[0]} paid me
@@ -187,7 +200,7 @@ export function FriendDetailPage({
           <ul className="divide-y divide-line overflow-hidden rounded-2xl border border-line bg-card">
             {groupBalances.map((balance) => (
               <li
-                key={balance.groupId || "one-off"}
+                key={`${balance.groupId || "one-off"}-${balance.currency}`}
                 className="flex items-center justify-between px-4 py-2.5 text-sm"
               >
                 <span className="flex min-w-0 items-center gap-1.5 truncate">
@@ -215,7 +228,7 @@ export function FriendDetailPage({
                 </span>
                 <Money
                   cents={balance.netCents}
-                  currency={currency}
+                  currency={balance.currency || currency}
                   signed
                   className="font-semibold"
                 />
@@ -316,7 +329,7 @@ export function FriendDetailPage({
                       ) : null}
                     </td>
                     <td className="py-2.5 pl-3 text-right text-ink-soft tabular-nums">
-                      {formatMoney(entry.totalCents, currency)}
+                      {formatMoney(entry.totalCents, entry.currency || currency)}
                     </td>
                     {/* The signed column is the one that matters: the expense
                         total is context, your share of it is the movement. */}
@@ -334,12 +347,14 @@ export function FriendDetailPage({
                       ) : (
                         <>
                           {entry.deltaCents > 0 ? "+" : "−"}
-                          {formatMoney(Math.abs(entry.deltaCents), currency)}
+                          {formatMoney(Math.abs(entry.deltaCents), entry.currency || currency)}
                         </>
                       )}
                     </td>
+                    {/* The running balance is per currency: a euro line
+                        continues the euro column, not the dollar one. */}
                     <td className="py-2.5 pr-4 pl-3 text-right tabular-nums">
-                      {formatMoney(Math.abs(entry.balanceAfterCents), currency)}
+                      {formatMoney(Math.abs(entry.balanceAfterCents), entry.currency || currency)}
                       <span className="ml-1 text-[11px] text-ink-soft">
                         {entry.balanceAfterCents === 0
                           ? "even"
@@ -368,9 +383,11 @@ export function FriendDetailPage({
       {view.settling ? (
         <SettleUpModal
           to={friend}
-          received={view.settling === "received"}
-          suggestedCents={Math.abs(netCents)}
-          currency={currency}
+          received={view.settling.direction === "received"}
+          suggestedCents={Math.abs(
+            nets.find((bucket) => bucket.currency === view.settling?.currency)?.cents ?? 0,
+          )}
+          currency={view.settling.currency}
           onClose={view.closeSettle}
         />
       ) : null}

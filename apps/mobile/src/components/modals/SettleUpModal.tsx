@@ -26,10 +26,12 @@ import { MAX_SETTLEMENT_NOTE_LENGTH } from "@haalkhata/shared/text/limits";
 import { colors, radii, spacing } from "@/lib/theme/theme";
 import { COPIED_BADGE_MS } from "./modals.constants";
 
-/** One balance the payment can pay down: a group's, or the pair's direct slate. */
+/** One balance the payment can pay down: a group's, or the pair's direct slate, in one currency. */
 interface OwingScope {
   /** Group id, or "" for the direct (non-group) balance. */
   scopeId: string;
+  /** ISO 4217 code the balance is denominated in. */
+  currency: string;
   /** Name shown on the checklist row. */
   label: string;
   /** Cents outstanding in this scope in the payment's direction; always > 0. */
@@ -65,11 +67,15 @@ interface OwingScope {
  * payment received logs money that has already arrived: there is nobody to
  * send anything to, and surfacing your own handle there would offer a link
  * that opens Venmo to pay yourself.
+ *
+ * A payment moves in one currency and pays down balances in that currency
+ * only — nothing converts. When the pair owes in more than one, the sheet
+ * offers a switch; the checklist, the amount and the request all follow it.
  */
 export function SettleUpModal({
   to: other,
   suggestedCents,
-  currency,
+  currency: initialCurrency,
   groupId = "",
   received = false,
   onClose,
@@ -78,7 +84,7 @@ export function SettleUpModal({
   to: User;
   /** Suggested amount in cents; pre-fills the input until the balances load. */
   suggestedCents: number;
-  /** ISO 4217 currency code of the settlement. */
+  /** ISO 4217 code to start on; the sheet can switch to another the pair owes in. */
   currency: string;
   /** Group whose balance starts checked; empty string starts with all checked. */
   groupId?: string;
@@ -93,6 +99,7 @@ export function SettleUpModal({
   const [typedAmount, setTypedAmount] = useState("");
   const [amountEdited, setAmountEdited] = useState(false);
   const [checkedIds, setCheckedIds] = useState<string[] | null>(null);
+  const [currency, setCurrency] = useState(initialCurrency);
   const [methodKey, setMethodKey] = useState("venmo");
   const [note, setNote] = useState("");
   const [error, setError] = useState("");
@@ -110,14 +117,19 @@ export function SettleUpModal({
 
   // Balances in this payment's direction only: a scope where the money points
   // the other way cannot absorb a payment, so it is not offered.
-  const owingScopes: OwingScope[] = (ledgerQuery.data?.groupBalances ?? [])
+  const owingAnywhere: OwingScope[] = (ledgerQuery.data?.groupBalances ?? [])
     .filter((scope) => (received ? scope.netCents > 0 : scope.netCents < 0))
     .map((scope) => ({
       scopeId: scope.groupId,
+      currency: scope.currency || initialCurrency,
       label: scope.groupId ? scope.groupName || "Unnamed group" : "Not in any group",
       owedCents: Math.abs(scope.netCents),
       simplified: scope.simplified,
     }));
+  // The currencies this direction owes in, for the switch; and only the
+  // chosen currency's balances are listed — a dollar cannot pay down a euro.
+  const owedCurrencies = [...new Set(owingAnywhere.map((scope) => scope.currency))].sort();
+  const owingScopes = owingAnywhere.filter((scope) => scope.currency === currency);
 
   // If the named group has nothing owed in this direction (someone else just
   // settled it, or its debts got rerouted away by simplification), fall back
@@ -183,6 +195,19 @@ export function SettleUpModal({
     return () => clearTimeout(timer);
   }, [copied]);
 
+  /**
+   * Switches the payment's currency: the checklist, the amount and the
+   * request all follow, and any typed amount is dropped since it was in
+   * the old currency.
+   *
+   * @param nextCurrency - ISO 4217 code to pay in.
+   */
+  const switchCurrency = (nextCurrency: string) => {
+    setCurrency(nextCurrency);
+    setCheckedIds(null);
+    setAmountEdited(false);
+  };
+
   /** Adds or removes one balance from what this payment covers. */
   const toggleScope = (scopeId: string) => {
     setCheckedIds(
@@ -223,7 +248,7 @@ export function SettleUpModal({
     mutation.mutate(cents);
   };
 
-  const settledUp = ledgerQuery.data !== undefined && owingScopes.length === 0;
+  const settledUp = ledgerQuery.data !== undefined && owingAnywhere.length === 0;
 
   return (
     <Sheet onClose={onClose} title={received ? "Record a payment received" : "Settle up"}>
@@ -243,6 +268,25 @@ export function SettleUpModal({
           </Text>
         </View>
 
+        {/* Currencies are separate ledgers: a payment is in one, and only
+            that one's balances are offered. The switch appears only when the
+            pair owes in more than one. */}
+        {owedCurrencies.length > 1 ? (
+          <View style={styles.block}>
+            <Text style={styles.blockTitle}>Currency</Text>
+            <View style={styles.methods}>
+              {owedCurrencies.map((code) => (
+                <Chip
+                  key={code}
+                  label={code}
+                  onPress={() => switchCurrency(code)}
+                  selected={currency === code}
+                />
+              ))}
+            </View>
+          </View>
+        ) : null}
+
         {/* Which balances the payment covers. Listed in full even when opened
             from one group — the other places money is owed stay visible, so
             bundling them is one tap and partial settling is a choice made
@@ -258,6 +302,10 @@ export function SettleUpModal({
               {received
                 ? `${firstName} doesn't owe you anything right now.`
                 : `You don't owe ${firstName} anything right now.`}
+            </Text>
+          ) : owingScopes.length === 0 ? (
+            <Text style={styles.placeholder}>
+              Nothing outstanding in {currency} — pick another currency above.
             </Text>
           ) : (
             <View style={styles.scopeList}>
@@ -399,7 +447,7 @@ export function SettleUpModal({
         <View style={styles.submitBlock}>
           <Button
             busy={mutation.isPending}
-            disabled={ledgerQuery.data === undefined || settledUp}
+            disabled={ledgerQuery.data === undefined || settledUp || owingScopes.length === 0}
             label="Record payment"
             onPress={submit}
             variant="positive"

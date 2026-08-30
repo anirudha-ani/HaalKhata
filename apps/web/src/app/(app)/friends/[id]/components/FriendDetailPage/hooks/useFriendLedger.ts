@@ -9,6 +9,13 @@ import { MONEY_KEYS, queryKeys } from "@haalkhata/shared/api/queryKeys";
 /** Which way a settlement being recorded moved the money. */
 export type SettleDirection = "paid" | "received";
 
+/** The settle-up modal's opening state: direction and currency. */
+export interface Settling {
+  direction: SettleDirection;
+  /** ISO 4217 code of the balance being settled. */
+  currency: string;
+}
+
 /**
  * Loads the full shared history with one person and holds the settle-up
  * modal's open/direction state.
@@ -21,7 +28,7 @@ export type SettleDirection = "paid" | "received";
  */
 export function useFriendLedger(friendId: string) {
   const queryClient = useQueryClient();
-  const [settling, setSettling] = useState<SettleDirection | null>(null);
+  const [settling, setSettling] = useState<Settling | null>(null);
   const [reminderNote, setReminderNote] = useState("");
   const [friendRequestSent, setFriendRequestSent] = useState(false);
   const [confirmingSettlementId, setConfirmingSettlementId] = useState("");
@@ -101,11 +108,13 @@ export function useFriendLedger(friendId: string) {
       : undefined,
     settling,
     /**
-     * Opens the settle-up modal for one direction.
+     * Opens the settle-up modal for one direction in one currency.
      *
      * @param direction - "paid" when you paid them, "received" when they paid you.
+     * @param currency - ISO 4217 code of the balance being settled.
      */
-    openSettle: (direction: SettleDirection) => setSettling(direction),
+    openSettle: (direction: SettleDirection, currency: string) =>
+      setSettling({ direction, currency }),
     closeSettle: () => setSettling(null),
   };
 }

@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/Button";
 import { Money } from "@/components/ui/Money";
 import { Spinner } from "@/components/ui/Spinner";
 import { errorMessage } from "@/lib/api/connect";
+import { outstandingBuckets } from "@haalkhata/shared/money/balances";
 import { formatMoney } from "@haalkhata/shared/money/money";
 import { localDate } from "@haalkhata/shared/time/localTime";
 import { colors, fonts, radii, spacing } from "@/lib/theme/theme";
@@ -75,8 +76,15 @@ export function FriendDetailScreen({
     isFriend = true,
     mutualGroups = [],
   } = view.ledger;
-  const isSettled = netCents === 0;
-  const theyOweYou = netCents > 0;
+  // One net per currency, never a sum: a server predating `nets` sends only
+  // the default-currency scalar, which reads the same way as one bucket.
+  const nets = outstandingBuckets(
+    view.ledger.nets?.length ? view.ledger.nets : [{ currency, cents: netCents }],
+    currency,
+  );
+  const isSettled = nets.length === 0;
+  const owedToYou = nets.filter((bucket) => bucket.cents > 0);
+  const owedByYou = nets.filter((bucket) => bucket.cents < 0);
   const firstName = friend.name.split(" ")[0];
 
   return (
@@ -138,16 +146,23 @@ export function FriendDetailScreen({
               <Text style={styles.settledText}>All settled up</Text>
             </View>
           ) : (
-            <>
-              <Text style={styles.balanceLabel}>
-                {theyOweYou ? `${firstName} owes you` : "you owe"}
-              </Text>
-              <Money
-                cents={Math.abs(netCents)}
-                currency={currency}
-                style={[styles.balanceAmount, theyOweYou ? styles.balancePos : styles.balanceNeg]}
-              />
-            </>
+            // One line per currency: a dollar owed and a euro owed are two
+            // facts, and no arithmetic turns them into one.
+            nets.map((bucket) => (
+              <View key={bucket.currency} style={styles.balanceLine}>
+                <Text style={styles.balanceLabel}>
+                  {bucket.cents > 0 ? `${firstName} owes you` : "you owe"}
+                </Text>
+                <Money
+                  cents={Math.abs(bucket.cents)}
+                  currency={bucket.currency}
+                  style={[
+                    styles.balanceAmount,
+                    bucket.cents > 0 ? styles.balancePos : styles.balanceNeg,
+                  ]}
+                />
+              </View>
+            ))
           )}
         </View>
       </View>
@@ -160,23 +175,24 @@ export function FriendDetailScreen({
           onPress={() => router.push(`/expenses/new?friend=${friend.id}`)}
         />
         {/* Both directions are always offered: the balance tells you which one
-            you probably want, but recording the other is never blocked. */}
-        {!theyOweYou && !isSettled ? (
+            you probably want, but recording the other is never blocked. Each
+            opens on its currency; the sheet can switch. */}
+        {owedByYou.length > 0 ? (
           <Button
             compact
             icon={<Wallet color={colors.white} size={16} />}
             label={`I paid ${firstName}`}
-            onPress={() => view.openSettle("paid")}
+            onPress={() => view.openSettle("paid", owedByYou[0].currency)}
             variant="positive"
           />
         ) : null}
-        {theyOweYou ? (
+        {owedToYou.length > 0 ? (
           <>
             <Button
               compact
               icon={<HandCoins color={colors.white} size={16} />}
               label={`${firstName} paid me`}
-              onPress={() => view.openSettle("received")}
+              onPress={() => view.openSettle("received", owedToYou[0].currency)}
               variant="positive"
             />
             <Button
@@ -199,7 +215,7 @@ export function FriendDetailScreen({
           <View style={styles.listCard}>
             {groupBalances.map((balance, index) => (
               <View
-                key={balance.groupId || "one-off"}
+                key={`${balance.groupId || "one-off"}-${balance.currency}`}
                 style={[styles.row, index > 0 ? styles.rowDivider : null]}
               >
                 {balance.groupId ? (
@@ -224,7 +240,12 @@ export function FriendDetailScreen({
                     <Text style={styles.pillText}>simplified</Text>
                   </View>
                 ) : null}
-                <Money cents={balance.netCents} currency={currency} signed style={styles.rowAmount} />
+                <Money
+                  cents={balance.netCents}
+                  currency={balance.currency || currency}
+                  signed
+                  style={styles.rowAmount}
+                />
               </View>
             ))}
           </View>
@@ -311,7 +332,7 @@ export function FriendDetailScreen({
                     <View style={styles.figure}>
                       <Text style={styles.figureLabel}>Total</Text>
                       <Text style={styles.figureValue}>
-                        {formatMoney(entry.totalCents, currency)}
+                        {formatMoney(entry.totalCents, entry.currency || currency)}
                       </Text>
                     </View>
                     {/* The signed column is the one that matters: the expense
@@ -331,13 +352,15 @@ export function FriendDetailScreen({
                       >
                         {entry.deleted
                           ? "—"
-                          : `${entry.deltaCents > 0 ? "+" : "−"}${formatMoney(Math.abs(entry.deltaCents), currency)}`}
+                          : `${entry.deltaCents > 0 ? "+" : "−"}${formatMoney(Math.abs(entry.deltaCents), entry.currency || currency)}`}
                       </Text>
                     </View>
+                    {/* The running balance is per currency: a euro line
+                        continues the euro column, not the dollar one. */}
                     <View style={[styles.figure, styles.figureEnd]}>
                       <Text style={styles.figureLabel}>Balance</Text>
                       <Text style={styles.figureValue}>
-                        {formatMoney(Math.abs(entry.balanceAfterCents), currency)}
+                        {formatMoney(Math.abs(entry.balanceAfterCents), entry.currency || currency)}
                         <Text style={styles.figureSuffix}>
                           {" "}
                           {entry.balanceAfterCents === 0
@@ -383,10 +406,12 @@ export function FriendDetailScreen({
 
       {view.settling ? (
         <SettleUpModal
-          currency={currency}
+          currency={view.settling.currency}
           onClose={view.closeSettle}
-          received={view.settling === "received"}
-          suggestedCents={Math.abs(netCents)}
+          received={view.settling.direction === "received"}
+          suggestedCents={Math.abs(
+            nets.find((bucket) => bucket.currency === view.settling?.currency)?.cents ?? 0,
+          )}
           to={friend}
         />
       ) : null}
@@ -409,6 +434,9 @@ const styles = StyleSheet.create({
     borderTopColor: colors.line,
     borderTopWidth: 1,
     paddingTop: spacing.md,
+  },
+  balanceLine: {
+    alignItems: "flex-end",
   },
   balanceLabel: {
     color: colors.inkSoft,

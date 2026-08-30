@@ -13,6 +13,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { Money } from "@/components/ui/Money";
 import { Spinner } from "@/components/ui/Spinner";
 import { errorMessage } from "@/lib/api/connect";
+import { leadingBucket, outstandingBuckets } from "@haalkhata/shared/money/balances";
 import { formatMoney } from "@haalkhata/shared/money/money";
 import { safeActivityPath } from "@haalkhata/shared/navigation/activityPath";
 import { localDate } from "@haalkhata/shared/time/localTime";
@@ -74,37 +75,43 @@ export function DashboardScreen() {
             </View>
           ) : null}
 
-          {/* Balance summary */}
-          <View style={styles.summary}>
-            <View style={styles.summaryRow}>
-              <SummaryCard
-                label="You are owed"
-                tone="pos"
-                value={
-                  balancesFailed
-                    ? "—"
-                    : formatMoney(dashboard.balances?.owedToYouCents ?? 0, currency)
-                }
-              />
-              <SummaryCard
-                label="You owe"
-                tone="neg"
-                value={
-                  balancesFailed ? "—" : formatMoney(dashboard.balances?.youOweCents ?? 0, currency)
-                }
-              />
-            </View>
-            <SummaryCard
-              label="Net balance"
-              strong
-              tone={dashboard.netCents >= 0 ? "pos" : "neg"}
-              value={
-                balancesFailed
-                  ? "—"
-                  : `${dashboard.netCents < 0 ? "−" : ""}${formatMoney(Math.abs(dashboard.netCents), currency)}`
-              }
-            />
-          </View>
+          {/* Balance summary — one set of cards per currency. Currencies are
+              separate ledgers: a dollar owed and a euro owed are two facts,
+              and adding them would be adding nothing to nothing. */}
+          {dashboard.totals.map((total) => {
+            const netCents = total.owedToYouCents - total.youOweCents;
+            return (
+              <View key={total.currency} style={styles.summary}>
+                {dashboard.totals.length > 1 ? (
+                  <Text style={styles.summaryCurrency}>{total.currency}</Text>
+                ) : null}
+                <View style={styles.summaryRow}>
+                  <SummaryCard
+                    label="You are owed"
+                    tone="pos"
+                    value={
+                      balancesFailed ? "—" : formatMoney(total.owedToYouCents, total.currency)
+                    }
+                  />
+                  <SummaryCard
+                    label="You owe"
+                    tone="neg"
+                    value={balancesFailed ? "—" : formatMoney(total.youOweCents, total.currency)}
+                  />
+                </View>
+                <SummaryCard
+                  label="Net balance"
+                  strong
+                  tone={netCents >= 0 ? "pos" : "neg"}
+                  value={
+                    balancesFailed
+                      ? "—"
+                      : `${netCents < 0 ? "−" : ""}${formatMoney(Math.abs(netCents), total.currency)}`
+                  }
+                />
+              </View>
+            );
+          })}
 
           {/* Per-person balances */}
           <View style={styles.section}>
@@ -112,48 +119,69 @@ export function DashboardScreen() {
             {balancesFailed ? null : dashboard.balances &&
               dashboard.balances.counterparties.length > 0 ? (
               <View style={styles.listCard}>
-                {dashboard.balances.counterparties.map((counterparty, index) =>
-                  counterparty.user ? (
+                {dashboard.balances.counterparties.map((counterparty, index) => {
+                  if (!counterparty.user) return null;
+                  const person = counterparty.user;
+                  // One line per currency. A server predating `balances`
+                  // sends only the default-currency scalar, which reads the
+                  // same way.
+                  const buckets = outstandingBuckets(
+                    counterparty.balances.length > 0
+                      ? counterparty.balances
+                      : [{ currency, cents: counterparty.netCents }],
+                    currency,
+                  );
+                  const toSettle = leadingBucket(buckets.filter((bucket) => bucket.cents < 0));
+                  return (
                     <View
-                      key={counterparty.user.id}
+                      key={person.id}
                       style={[styles.personRow, index > 0 ? styles.rowDivider : null]}
                     >
-                      <PersonLink
-                        meId={dashboard.me?.id}
-                        style={styles.personLink}
-                        userId={counterparty.user.id}
-                      >
-                        <Avatar user={counterparty.user} />
+                      <PersonLink meId={dashboard.me?.id} style={styles.personLink} userId={person.id}>
+                        <Avatar user={person} />
                         <View style={styles.personText}>
                           <Text numberOfLines={1} style={styles.personName}>
-                            {counterparty.user.name}
+                            {person.name}
                           </Text>
                           <Text style={styles.personHint}>
-                            {counterparty.netCents === 0
+                            {buckets.length === 0
                               ? "settled up"
-                              : counterparty.netCents > 0
+                              : buckets.every((bucket) => bucket.cents > 0)
                                 ? "owes you"
-                                : "you owe"}
+                                : buckets.every((bucket) => bucket.cents < 0)
+                                  ? "you owe"
+                                  : "owes you · you owe"}
                           </Text>
                         </View>
                       </PersonLink>
-                      <Money
-                        cents={counterparty.netCents}
-                        currency={currency}
-                        signed
-                        style={styles.personAmount}
-                      />
-                      {counterparty.netCents < 0 ? (
+                      <View style={styles.personAmounts}>
+                        {buckets.map((bucket) => (
+                          <Money
+                            cents={bucket.cents}
+                            currency={bucket.currency}
+                            key={bucket.currency}
+                            signed
+                            style={styles.personAmount}
+                          />
+                        ))}
+                      </View>
+                      {toSettle ? (
                         <Button
                           compact
                           label="Settle"
-                          onPress={() => dashboard.setSettleWith(counterparty)}
+                          onPress={() =>
+                            dashboard.setSettleWith({
+                              user: person,
+                              currency: toSettle.currency,
+                              cents: toSettle.cents,
+                            })
+                          }
                           variant="outline"
                         />
                       ) : null}
                     </View>
-                  ) : null,
-                )}
+                  );
+                })}
               </View>
             ) : (
               <EmptyState
@@ -258,11 +286,12 @@ export function DashboardScreen() {
         </>
       )}
 
-      {dashboard.settleWith?.user ? (
+      {dashboard.settleWith ? (
         <SettleUpModal
-          currency={currency}
+          currency={dashboard.settleWith.currency}
           onClose={() => dashboard.setSettleWith(null)}
-          suggestedCents={-dashboard.settleWith.netCents}
+          received={dashboard.settleWith.cents > 0}
+          suggestedCents={Math.abs(dashboard.settleWith.cents)}
           to={dashboard.settleWith.user}
         />
       ) : null}
@@ -379,6 +408,9 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     overflow: "hidden",
   },
+  personAmounts: {
+    alignItems: "flex-end",
+  },
   personAmount: {
     fontSize: 15,
     fontWeight: "600",
@@ -460,6 +492,12 @@ const styles = StyleSheet.create({
   summaryLabel: {
     color: colors.inkSoft,
     fontSize: 13,
+  },
+  summaryCurrency: {
+    color: colors.inkSoft,
+    fontSize: 12,
+    fontWeight: "600",
+    letterSpacing: 1,
   },
   summaryRow: {
     flexDirection: "row",

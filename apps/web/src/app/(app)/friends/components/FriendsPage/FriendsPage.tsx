@@ -19,7 +19,8 @@ import { SettleUpModal } from "@/components/modals/SettleUpModal";
 import { Spinner } from "@/components/ui/Spinner";
 import { errorMessage } from "@/lib/api/connect";
 import { useHydrated } from "@/lib/hooks/useHydrated";
-import { useFriends } from "./hooks/useFriends";
+import { leadingBucket } from "@haalkhata/shared/money/balances";
+import { bucketsOf, useFriends } from "./hooks/useFriends";
 
 /**
  * Renders the friends page: your overall position (owed to you / you owe), an
@@ -84,26 +85,38 @@ export function FriendsPage() {
         </section>
       ) : null}
 
-      {friendsState.friends.length > 0 ? (
-        <div className="grid grid-cols-2 gap-3">
-          <div className="rounded-2xl border border-line bg-card p-4">
-            <p className="text-sm text-ink-soft">You are owed</p>
-            <Money
-              cents={friendsState.owedToYouCents}
-              currency={currency}
-              className="text-2xl font-bold text-pos-700"
-            />
-          </div>
-          <div className="rounded-2xl border border-line bg-card p-4">
-            <p className="text-sm text-ink-soft">You owe</p>
-            <Money
-              cents={friendsState.youOweCents}
-              currency={currency}
-              className="text-2xl font-bold text-neg-600"
-            />
-          </div>
-        </div>
-      ) : null}
+      {/* One row of cards per currency: a dollar owed and a euro owed are two
+          facts, never one total. Nothing outstanding shows zeros in the
+          caller's own currency. */}
+      {friendsState.friends.length > 0
+        ? (friendsState.totals.length > 0
+            ? friendsState.totals
+            : [{ currency, owedToYouCents: 0, youOweCents: 0 }]
+          ).map((total) => (
+            <div key={total.currency} className="grid grid-cols-2 gap-3">
+              <div className="rounded-2xl border border-line bg-card p-4">
+                <p className="text-sm text-ink-soft">
+                  You are owed{friendsState.totals.length > 1 ? ` · ${total.currency}` : ""}
+                </p>
+                <Money
+                  cents={total.owedToYouCents}
+                  currency={total.currency}
+                  className="text-2xl font-bold text-pos-700"
+                />
+              </div>
+              <div className="rounded-2xl border border-line bg-card p-4">
+                <p className="text-sm text-ink-soft">
+                  You owe{friendsState.totals.length > 1 ? ` · ${total.currency}` : ""}
+                </p>
+                <Money
+                  cents={total.youOweCents}
+                  currency={total.currency}
+                  className="text-2xl font-bold text-neg-600"
+                />
+              </div>
+            </div>
+          ))
+        : null}
 
       {friendsState.showAdd || friendsState.friends.length === 0 ? (
         <div className="space-y-2 rounded-2xl border border-line bg-card p-4">
@@ -181,51 +194,70 @@ export function FriendsPage() {
             </p>
           ) : (
             <ul className="divide-y divide-line overflow-hidden rounded-2xl border border-line bg-card">
-              {friendsState.visibleFriends.map((friend) =>
-                friend.user ? (
-                  <li key={friend.user.id} className="flex items-center gap-1">
+              {friendsState.visibleFriends.map((friend) => {
+                if (!friend.user) return null;
+                const person = friend.user;
+                // One line per currency — a dollar owed and a euro owed
+                // are two facts, never one number.
+                const buckets = bucketsOf(friend, currency);
+                const lead = leadingBucket(buckets);
+                return (
+                  <li key={person.id} className="flex items-center gap-1">
                     <Link
-                      href={`/friends/${friend.user.id}`}
+                      href={`/friends/${person.id}`}
                       className="flex min-w-0 flex-1 items-center gap-3 px-4 py-3 hover:bg-paper"
                     >
-                      <Avatar user={friend.user} />
+                      <Avatar user={person} />
                       <div className="min-w-0 flex-1">
                         <p className="truncate font-medium">
-                          {friend.user.name}
-                          {!friend.user.registered ? (
+                          {person.name}
+                          {!person.registered ? (
                             <span className="ml-2 rounded-full bg-paper px-2 py-0.5 text-[11px] font-medium text-ink-soft">
                               invited
                             </span>
                           ) : null}
                         </p>
                         <p className="text-xs text-ink-soft">
-                          {friend.netCents === 0
+                          {buckets.length === 0
                             ? "settled up"
-                            : friend.netCents > 0
+                            : buckets.every((bucket) => bucket.cents > 0)
                               ? "owes you"
-                              : "you owe"}
+                              : buckets.every((bucket) => bucket.cents < 0)
+                                ? "you owe"
+                                : "owes you · you owe"}
                         </p>
                       </div>
-                      {friend.netCents !== 0 ? (
-                        <Money
-                          cents={friend.netCents}
-                          currency={currency}
-                          signed
-                          className="font-semibold"
-                        />
-                      ) : null}
+                      <span className="flex flex-col items-end">
+                        {buckets.map((bucket) => (
+                          <Money
+                            key={bucket.currency}
+                            cents={bucket.cents}
+                            currency={bucket.currency}
+                            signed
+                            className="font-semibold"
+                          />
+                        ))}
+                      </span>
                       <ChevronRight className="h-4 w-4 shrink-0 text-ink-soft" />
                     </Link>
                     {/* Settling is offered whichever way the debt runs — being
-                        owed money used to be a dead end with no action at all. */}
-                    {friend.netCents !== 0 ? (
+                        owed money used to be a dead end with no action at all.
+                        It opens on the largest balance; the dialog can switch
+                        currency. */}
+                    {lead ? (
                       <button
                         type="button"
-                        onClick={() => friendsState.setSettleWith(friend)}
-                        title={friend.netCents > 0 ? "Record a payment received" : "Settle up"}
+                        onClick={() =>
+                          friendsState.setSettleWith({
+                            user: person,
+                            currency: lead.currency,
+                            cents: lead.cents,
+                          })
+                        }
+                        title={lead.cents > 0 ? "Record a payment received" : "Settle up"}
                         className="mr-3 flex shrink-0 items-center gap-1.5 rounded-lg border border-line px-3 py-1.5 text-xs font-semibold text-ink-soft hover:border-pos-600 hover:text-pos-600"
                       >
-                        {friend.netCents > 0 ? (
+                        {lead.cents > 0 ? (
                           <HandCoins className="h-3.5 w-3.5" />
                         ) : (
                           <Wallet className="h-3.5 w-3.5" />
@@ -234,19 +266,19 @@ export function FriendsPage() {
                       </button>
                     ) : null}
                   </li>
-                ) : null,
-              )}
+                );
+              })}
             </ul>
           )}
         </>
       )}
 
-      {settleTarget?.user ? (
+      {settleTarget ? (
         <SettleUpModal
           to={settleTarget.user}
-          received={settleTarget.netCents > 0}
-          suggestedCents={Math.abs(settleTarget.netCents)}
-          currency={currency}
+          received={settleTarget.cents > 0}
+          suggestedCents={Math.abs(settleTarget.cents)}
+          currency={settleTarget.currency}
           onClose={() => friendsState.setSettleWith(null)}
         />
       ) : null}

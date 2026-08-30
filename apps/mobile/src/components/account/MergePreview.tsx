@@ -2,6 +2,7 @@
 
 import type { MergePreview as MergePreviewMessage } from "@haalkhata/protogen/auth/v1/auth_pb";
 import { StyleSheet, Text, View } from "react-native";
+import { outstandingBuckets } from "@haalkhata/shared/money/balances";
 import { formatMoney } from "@haalkhata/shared/money/money";
 import { colors, fonts, radii, spacing } from "@/lib/theme/theme";
 
@@ -23,23 +24,29 @@ export function MergePreview({
 }: {
   /** The server's preview of the row that would be absorbed. */
   preview: MergePreviewMessage;
-  /** ISO 4217 code to render the net position in. */
+  /** The caller's default currency: listed first, and the fallback label for older servers. */
   currency: string;
 }) {
+  // One position per currency, never a sum: a server predating `nets` sends
+  // only the default-currency bucket, which reads the same way.
+  const nets = outstandingBuckets(
+    preview.nets?.length ? preview.nets : [{ currency, cents: preview.netCents }],
+    currency,
+  );
   return (
     <View style={styles.card}>
       <Text style={styles.name}>{preview.name}</Text>
       <Text style={styles.line}>
         {preview.expenseCount} {preview.expenseCount === 1 ? "expense" : "expenses"}
-        {preview.netCents !== 0 ? (
-          <>
+        {nets.map((bucket) => (
+          <Text key={bucket.currency}>
             {" · "}
-            <Text style={preview.netCents > 0 ? styles.owed : styles.owes}>
-              {preview.netCents > 0 ? "owed " : "owes "}
-              {formatMoney(Math.abs(preview.netCents), currency)}
+            <Text style={bucket.cents > 0 ? styles.owed : styles.owes}>
+              {bucket.cents > 0 ? "owed " : "owes "}
+              {formatMoney(Math.abs(bucket.cents), bucket.currency)}
             </Text>
-          </>
-        ) : null}
+          </Text>
+        ))}
       </Text>
       {preview.counterpartyNames.length > 0 ? (
         <Text style={styles.line}>Shared with {preview.counterpartyNames.join(", ")}</Text>

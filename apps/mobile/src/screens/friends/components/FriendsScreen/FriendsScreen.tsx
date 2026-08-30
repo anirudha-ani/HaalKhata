@@ -14,9 +14,10 @@ import { Money } from "@/components/ui/Money";
 import { SearchField } from "@/components/ui/SearchField";
 import { Spinner } from "@/components/ui/Spinner";
 import { errorMessage } from "@/lib/api/connect";
+import { leadingBucket } from "@haalkhata/shared/money/balances";
 import { formatMoney } from "@haalkhata/shared/money/money";
 import { colors, fonts, radii, spacing } from "@/lib/theme/theme";
-import { useFriends } from "./hooks/useFriends";
+import { bucketsOf, useFriends } from "./hooks/useFriends";
 
 /**
  * Renders the friends screen: your overall position (owed to you / you owe),
@@ -108,22 +109,33 @@ export function FriendsScreen() {
         </View>
       ) : null}
 
-      {friendsState.friends.length > 0 ? (
-        <View style={styles.totals}>
-          <View style={styles.totalCard}>
-            <Text style={styles.totalLabel}>You are owed</Text>
-            <Text style={[styles.totalAmount, styles.totalPos]}>
-              {formatMoney(friendsState.owedToYouCents, currency)}
-            </Text>
-          </View>
-          <View style={styles.totalCard}>
-            <Text style={styles.totalLabel}>You owe</Text>
-            <Text style={[styles.totalAmount, styles.totalNeg]}>
-              {formatMoney(friendsState.youOweCents, currency)}
-            </Text>
-          </View>
-        </View>
-      ) : null}
+      {/* One pair of cards per currency: a dollar owed and a euro owed are
+          two facts, never one total. */}
+      {friendsState.friends.length > 0
+        ? (friendsState.totals.length > 0
+            ? friendsState.totals
+            : [{ currency, owedToYouCents: 0, youOweCents: 0 }]
+          ).map((total) => (
+            <View key={total.currency} style={styles.totals}>
+              <View style={styles.totalCard}>
+                <Text style={styles.totalLabel}>
+                  You are owed{friendsState.totals.length > 1 ? ` · ${total.currency}` : ""}
+                </Text>
+                <Text style={[styles.totalAmount, styles.totalPos]}>
+                  {formatMoney(total.owedToYouCents, total.currency)}
+                </Text>
+              </View>
+              <View style={styles.totalCard}>
+                <Text style={styles.totalLabel}>
+                  You owe{friendsState.totals.length > 1 ? ` · ${total.currency}` : ""}
+                </Text>
+                <Text style={[styles.totalAmount, styles.totalNeg]}>
+                  {formatMoney(total.youOweCents, total.currency)}
+                </Text>
+              </View>
+            </View>
+          ))
+        : null}
 
       {friendsState.isLoading ? (
         <Spinner label="Loading friends…" />
@@ -162,71 +174,92 @@ export function FriendsScreen() {
             </View>
           ) : (
         <View style={styles.listCard}>
-          {friendsState.visibleFriends.map((friend, index) =>
-            friend.user ? (
-              <View
-                key={friend.user.id}
-                style={[styles.row, index > 0 ? styles.rowDivider : null]}
-              >
-                <PersonLink meId={friendsState.me?.id} style={styles.rowLink} userId={friend.user.id}>
-                  <Avatar user={friend.user} />
+          {friendsState.visibleFriends.map((friend, index) => {
+            if (!friend.user) return null;
+            const person = friend.user;
+            // One line per currency — a dollar owed and a euro owed are two
+            // facts, never one number.
+            const buckets = bucketsOf(friend, currency);
+            const lead = leadingBucket(buckets);
+            return (
+              <View key={person.id} style={[styles.row, index > 0 ? styles.rowDivider : null]}>
+                <PersonLink meId={friendsState.me?.id} style={styles.rowLink} userId={person.id}>
+                  <Avatar user={person} />
                   <View style={styles.rowText}>
                     <View style={styles.nameRow}>
                       <Text numberOfLines={1} style={styles.name}>
-                        {friend.user.name}
+                        {person.name}
                       </Text>
-                      {!friend.user.registered ? (
+                      {!person.registered ? (
                         <View style={styles.invitedBadge}>
                           <Text style={styles.invitedBadgeText}>invited</Text>
                         </View>
                       ) : null}
                     </View>
                     <Text style={styles.balanceHint}>
-                      {friend.netCents === 0
+                      {buckets.length === 0
                         ? "settled up"
-                        : friend.netCents > 0
+                        : buckets.every((bucket) => bucket.cents > 0)
                           ? "owes you"
-                          : "you owe"}
+                          : buckets.every((bucket) => bucket.cents < 0)
+                            ? "you owe"
+                            : "owes you · you owe"}
                     </Text>
                   </View>
-                  {friend.netCents !== 0 ? (
-                    <Money cents={friend.netCents} currency={currency} signed style={styles.amount} />
-                  ) : null}
+                  <View style={styles.amounts}>
+                    {buckets.map((bucket) => (
+                      <Money
+                        cents={bucket.cents}
+                        currency={bucket.currency}
+                        key={bucket.currency}
+                        signed
+                        style={styles.amount}
+                      />
+                    ))}
+                  </View>
                   <ChevronRight color={colors.inkSoft} size={16} />
                 </PersonLink>
                 <View style={styles.rowActions}>
                   <Pressable
                     accessibilityLabel="Add one-off expense"
-                    onPress={() => router.push(`/expenses/new?friend=${friend.user?.id}`)}
+                    onPress={() => router.push(`/expenses/new?friend=${person.id}`)}
                     style={styles.iconAction}
                   >
                     <Plus color={colors.inkSoft} size={16} />
                   </Pressable>
                   {/* Settling is offered whichever way the debt runs — being
-                      owed money used to be a dead end with no action at all. */}
-                  {friend.netCents !== 0 ? (
+                      owed money used to be a dead end with no action at all.
+                      It opens on the largest balance; the sheet can switch
+                      currency. */}
+                  {lead ? (
                     <Button
                       compact
                       label="Settle"
-                      onPress={() => friendsState.setSettleWith(friend)}
+                      onPress={() =>
+                        friendsState.setSettleWith({
+                          user: person,
+                          currency: lead.currency,
+                          cents: lead.cents,
+                        })
+                      }
                       variant="outline"
                     />
                   ) : null}
                 </View>
               </View>
-            ) : null,
-          )}
+            );
+          })}
         </View>
           )}
         </View>
       )}
 
-      {friendsState.settleWith?.user ? (
+      {friendsState.settleWith ? (
         <SettleUpModal
-          currency={currency}
+          currency={friendsState.settleWith.currency}
           onClose={() => friendsState.setSettleWith(null)}
-          received={friendsState.settleWith.netCents > 0}
-          suggestedCents={Math.abs(friendsState.settleWith.netCents)}
+          received={friendsState.settleWith.cents > 0}
+          suggestedCents={Math.abs(friendsState.settleWith.cents)}
           to={friendsState.settleWith.user}
         />
       ) : null}
@@ -249,6 +282,9 @@ const styles = StyleSheet.create({
   addRow: {
     flexDirection: "row",
     gap: spacing.sm,
+  },
+  amounts: {
+    alignItems: "flex-end",
   },
   amount: {
     fontSize: 14,

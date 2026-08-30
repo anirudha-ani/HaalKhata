@@ -1,6 +1,7 @@
 /** The facts about an unclaimed account a phone number would absorb. */
 
 import type { MergePreview as MergePreviewMessage } from "@haalkhata/protogen/auth/v1/auth_pb";
+import { outstandingBuckets } from "@haalkhata/shared/money/balances";
 import { formatMoney } from "@haalkhata/shared/money/money";
 
 /**
@@ -21,23 +22,29 @@ export function MergePreview({
 }: {
   /** The server's preview of the row that would be absorbed. */
   preview: MergePreviewMessage;
-  /** ISO 4217 code to render the net position in. */
+  /** The caller's default currency: listed first, and the fallback label for older servers. */
   currency: string;
 }) {
+  // One position per currency, never a sum: a server predating `nets` sends
+  // only the default-currency bucket, which reads the same way.
+  const nets = outstandingBuckets(
+    preview.nets?.length ? preview.nets : [{ currency, cents: preview.netCents }],
+    currency,
+  );
   return (
     <div className="rounded-xl border border-line bg-paper p-4">
       <p className="font-display text-lg text-ink">{preview.name}</p>
       <p className="mt-1 text-sm text-ink-soft">
         {preview.expenseCount} {preview.expenseCount === 1 ? "expense" : "expenses"}
-        {preview.netCents !== 0 ? (
-          <>
+        {nets.map((bucket) => (
+          <span key={bucket.currency}>
             {" · "}
-            <span className={preview.netCents > 0 ? "text-pos-600" : "text-neg-600"}>
-              {preview.netCents > 0 ? "owed " : "owes "}
-              {formatMoney(Math.abs(preview.netCents), currency)}
+            <span className={bucket.cents > 0 ? "text-pos-600" : "text-neg-600"}>
+              {bucket.cents > 0 ? "owed " : "owes "}
+              {formatMoney(Math.abs(bucket.cents), bucket.currency)}
             </span>
-          </>
-        ) : null}
+          </span>
+        ))}
       </p>
       {preview.counterpartyNames.length > 0 ? (
         <p className="mt-2 text-sm text-ink-soft">

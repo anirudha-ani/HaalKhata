@@ -11,6 +11,7 @@ import { SettleUpModal } from "@/components/modals/SettleUpModal";
 import { Spinner } from "@/components/ui/Spinner";
 import { errorMessage } from "@/lib/api/connect";
 import { useHydrated } from "@/lib/hooks/useHydrated";
+import { leadingBucket, outstandingBuckets } from "@haalkhata/shared/money/balances";
 import { formatMoney } from "@haalkhata/shared/money/money";
 import { safeActivityPath } from "@haalkhata/shared/navigation/activityPath";
 import { localDate } from "@haalkhata/shared/time/localTime";
@@ -63,75 +64,112 @@ export function DashboardPage() {
         </p>
       ) : null}
 
-      {/* Balance summary */}
-      <section className="grid gap-3 sm:grid-cols-3">
-        <SummaryCard
-          label="You are owed"
-          value={
-            balancesFailed ? "—" : formatMoney(dashboard.balances?.owedToYouCents ?? 0, currency)
-          }
-          tone="pos"
-        />
-        <SummaryCard
-          label="You owe"
-          value={balancesFailed ? "—" : formatMoney(dashboard.balances?.youOweCents ?? 0, currency)}
-          tone="neg"
-        />
-        <SummaryCard
-          label="Net balance"
-          value={
-            balancesFailed
-              ? "—"
-              : `${dashboard.netCents < 0 ? "−" : ""}${formatMoney(Math.abs(dashboard.netCents), currency)}`
-          }
-          tone={dashboard.netCents >= 0 ? "pos" : "neg"}
-          strong
-        />
-      </section>
+      {/* Balance summary — one row of cards per currency. Currencies are
+          separate ledgers: a dollar owed and a euro owed are two facts, and
+          adding them would be adding nothing to nothing. */}
+      {dashboard.totals.map((total) => {
+        const netCents = total.owedToYouCents - total.youOweCents;
+        return (
+          <section key={total.currency} className="space-y-2">
+            {dashboard.totals.length > 1 ? (
+              <h2 className="text-sm font-semibold tracking-wide text-ink-soft uppercase">
+                {total.currency}
+              </h2>
+            ) : null}
+            <div className="grid gap-3 sm:grid-cols-3">
+              <SummaryCard
+                label="You are owed"
+                value={balancesFailed ? "—" : formatMoney(total.owedToYouCents, total.currency)}
+                tone="pos"
+              />
+              <SummaryCard
+                label="You owe"
+                value={balancesFailed ? "—" : formatMoney(total.youOweCents, total.currency)}
+                tone="neg"
+              />
+              <SummaryCard
+                label="Net balance"
+                value={
+                  balancesFailed
+                    ? "—"
+                    : `${netCents < 0 ? "−" : ""}${formatMoney(Math.abs(netCents), total.currency)}`
+                }
+                tone={netCents >= 0 ? "pos" : "neg"}
+                strong
+              />
+            </div>
+          </section>
+        );
+      })}
 
       {/* Per-person balances */}
       <section>
         <h2 className="mb-3 text-xl font-semibold">People</h2>
         {balancesFailed ? null : dashboard.balances && dashboard.balances.counterparties.length > 0 ? (
           <ul className="divide-y divide-line overflow-hidden rounded-2xl border border-line bg-card">
-            {dashboard.balances.counterparties.map((counterparty) =>
-              counterparty.user ? (
-                <li key={counterparty.user.id} className="flex items-center gap-3 px-4 py-3">
+            {dashboard.balances.counterparties.map((counterparty) => {
+              if (!counterparty.user) return null;
+              // One line per currency. A server predating `balances` sends
+              // only the default-currency scalar, which reads the same way.
+              const buckets = outstandingBuckets(
+                counterparty.balances.length > 0
+                  ? counterparty.balances
+                  : [{ currency, cents: counterparty.netCents }],
+                currency,
+              );
+              const owedByYou = buckets.filter((bucket) => bucket.cents < 0);
+              const toSettle = leadingBucket(owedByYou);
+              const person = counterparty.user;
+              return (
+                <li key={person.id} className="flex items-center gap-3 px-4 py-3">
                   <PersonLink
-                    userId={counterparty.user.id}
+                    userId={person.id}
                     meId={dashboard.me?.id}
                     className="flex min-w-0 flex-1 items-center gap-3"
                   >
-                    <Avatar user={counterparty.user} />
+                    <Avatar user={person} />
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate font-medium">{counterparty.user.name}</span>
+                      <span className="block truncate font-medium">{person.name}</span>
                       <span className="block text-xs text-ink-soft">
-                        {counterparty.netCents === 0
+                        {buckets.length === 0
                           ? "settled up"
-                          : counterparty.netCents > 0
+                          : buckets.every((bucket) => bucket.cents > 0)
                             ? "owes you"
-                            : "you owe"}
+                            : buckets.every((bucket) => bucket.cents < 0)
+                              ? "you owe"
+                              : "owes you · you owe"}
                       </span>
                     </span>
                   </PersonLink>
-                  <Money
-                    cents={counterparty.netCents}
-                    currency={currency}
-                    signed
-                    className="font-semibold"
-                  />
-                  {counterparty.netCents < 0 ? (
+                  <span className="flex flex-col items-end">
+                    {buckets.map((bucket) => (
+                      <Money
+                        key={bucket.currency}
+                        cents={bucket.cents}
+                        currency={bucket.currency}
+                        signed
+                        className="font-semibold"
+                      />
+                    ))}
+                  </span>
+                  {toSettle ? (
                     <button
                       type="button"
-                      onClick={() => dashboard.setSettleWith(counterparty)}
+                      onClick={() =>
+                        dashboard.setSettleWith({
+                          user: person,
+                          currency: toSettle.currency,
+                          cents: toSettle.cents,
+                        })
+                      }
                       className="rounded-lg border border-line px-3 py-1.5 text-xs font-semibold text-ink-soft hover:border-pos-600 hover:text-pos-600"
                     >
                       Settle
                     </button>
                   ) : null}
                 </li>
-              ) : null,
-            )}
+              );
+            })}
           </ul>
         ) : (
           <EmptyState
@@ -231,11 +269,12 @@ export function DashboardPage() {
         </section>
       ) : null}
 
-      {dashboard.settleWith?.user ? (
+      {dashboard.settleWith ? (
         <SettleUpModal
           to={dashboard.settleWith.user}
-          suggestedCents={-dashboard.settleWith.netCents}
-          currency={currency}
+          received={dashboard.settleWith.cents > 0}
+          suggestedCents={Math.abs(dashboard.settleWith.cents)}
+          currency={dashboard.settleWith.currency}
           onClose={() => dashboard.setSettleWith(null)}
         />
       ) : null}
