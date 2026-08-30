@@ -7,9 +7,14 @@ import * as auth from "@/server/auth/usecase/auth.usecase";
 import * as accountMerge from "@/server/auth/usecase/accountMerge.usecase";
 import { clearSessionCookie, requireUser, runUsecase, setSessionCookie } from "@/server/api/connect/context";
 import { rateLimitCheck } from "@/server/common/rateLimit";
-import { AUTH_RATE_LIMIT, PHONE_VERIFICATION_RATE_LIMIT } from "@/server/auth/auth.constants";
+import {
+  AUTH_RATE_LIMIT,
+  normalizePhone,
+  PHONE_VERIFICATION_RATE_LIMIT,
+} from "@/server/auth/auth.constants";
 import { ConnectError, Code } from "@connectrpc/connect";
 import { clientIp } from "@/server/auth/clientIp";
+import { enforcePhoneSendLimits } from "@/server/auth/phoneRateLimit";
 
 /**
  * Enforces the per-IP login/signup rate limit, throwing a ResourceExhausted
@@ -90,6 +95,14 @@ export const authHandler: ServiceImpl<typeof AuthService> = {
   async setPhone(request, handlerContext) {
     const userId = await requireUser(handlerContext);
     enforcePhoneRateLimit(userId);
+    // A call without a code is the one that sends an SMS; it is also
+    // limited by destination and by client address, whoever the account is.
+    if (request.verificationCode === "") {
+      enforcePhoneSendLimits(
+        normalizePhone(request.phone) ?? request.phone.trim(),
+        clientIp(handlerContext.requestHeader),
+      );
+    }
     return runUsecase(
       async () => accountMerge.setPhone(userId, request.phone, request.verificationCode),
       handlerContext,

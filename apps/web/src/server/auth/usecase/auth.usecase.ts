@@ -186,8 +186,12 @@ function secret(): Buffer {
   return cachedSecret;
 }
 
-/** Security domain bound into each signed token class. */
-export type TokenPurpose = "session" | "phone-merge";
+/**
+ * Security domain bound into each signed token class — or, for
+ * "rate-limit", into a keyed fingerprint that lets a limiter key on a phone
+ * number without holding the number itself.
+ */
+export type TokenPurpose = "session" | "phone-merge" | "rate-limit";
 
 /**
  * Signs a purpose-bound payload. The NUL separator cannot appear in any token

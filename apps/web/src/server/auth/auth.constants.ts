@@ -58,6 +58,25 @@ export const AUTH_RATE_LIMIT = 10;
 /** Max phone-verification and merge attempts per account per minute. */
 export const PHONE_VERIFICATION_RATE_LIMIT = 5;
 
+/** One hour, for the longer rate-limit windows. */
+export const HOUR_MS = 60 * 60 * 1000;
+
+/** One day, for the longest rate-limit window. */
+export const DAY_MS = 24 * HOUR_MS;
+
+/**
+ * Most verification SMS one destination number may receive per hour, from
+ * every account and address together. Three covers a typo and a resend;
+ * more than that in an hour is somebody else's number being hammered.
+ */
+export const PHONE_SEND_LIMIT_PER_DESTINATION_HOUR = 3;
+
+/** Most verification SMS one destination number may receive per day. */
+export const PHONE_SEND_LIMIT_PER_DESTINATION_DAY = 8;
+
+/** Most verifications one client address may start per hour. */
+export const PHONE_SEND_LIMIT_PER_IP_HOUR = 20;
+
 /**
  * Maximum persisted display-name length. Names are copied into fan-out rows.
  * Re-exported from the shared package so both clients bound their inputs to
