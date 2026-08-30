@@ -1,6 +1,23 @@
 /** Canonical parsing for Connect bearer and cookie credentials. */
 
+import { BEARER_TRANSPORT, SESSION_TRANSPORT_HEADER } from "@haalkhata/shared/auth/sessionRenewal";
 import { SESSION_COOKIE } from "./connect.constants";
+
+/**
+ * Whether the client asked to receive its session as a bearer token.
+ *
+ * A browser keeps its session in an HttpOnly cookie precisely so script
+ * cannot read it; handing the same token back in the JSON body would undo
+ * that for any script running during sign-in. So the token is returned
+ * only to clients that say they carry it as a bearer credential — the
+ * mobile app sets this header on every request.
+ *
+ * @param headers - Incoming request headers.
+ * @returns True when the response should carry the bearer token.
+ */
+export function wantsBearerToken(headers: Headers): boolean {
+  return headers.get(SESSION_TRANSPORT_HEADER) === BEARER_TRANSPORT;
+}
 
 /**
  * Parses the exact Bearer authorization syntax accepted by the server.

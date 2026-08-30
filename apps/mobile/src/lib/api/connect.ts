@@ -11,7 +11,11 @@ import { ExpenseService } from "@haalkhata/protogen/expense/v1/expense_pb";
 import { GroupService } from "@haalkhata/protogen/group/v1/group_pb";
 import { ReceiptService } from "@haalkhata/protogen/receipt/v1/receipt_pb";
 import { SocialService } from "@haalkhata/protogen/social/v1/social_pb";
-import { SESSION_RENEWAL_HEADER } from "@haalkhata/shared/auth/sessionRenewal";
+import {
+  BEARER_TRANSPORT,
+  SESSION_RENEWAL_HEADER,
+  SESSION_TRANSPORT_HEADER,
+} from "@haalkhata/shared/auth/sessionRenewal";
 import { resolveApiBaseUrl } from "./api.constants";
 import { clearMobileQueryCache } from "./queryCache";
 import { clearSession, sessionToken, setSessionToken } from "./session";
@@ -26,6 +30,9 @@ import { clearSession, sessionToken, setSessionToken } from "./session";
 const authorization: Interceptor = (next) => async (request) => {
   const token = sessionToken();
   if (token) request.header.set("Authorization", `Bearer ${token}`);
+  // Says how this client carries its session: the sign-in RPCs return the
+  // bearer token only to a client that asks, and set a cookie for the rest.
+  request.header.set(SESSION_TRANSPORT_HEADER, BEARER_TRANSPORT);
   try {
     const response = await next(request);
     const renewed = response.header.get(SESSION_RENEWAL_HEADER);

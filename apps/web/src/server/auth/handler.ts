@@ -6,6 +6,7 @@ import type { AuthService } from "@haalkhata/protogen/auth/v1/auth_pb";
 import * as auth from "@/server/auth/usecase/auth.usecase";
 import * as accountMerge from "@/server/auth/usecase/accountMerge.usecase";
 import { clearSessionCookie, requireUser, runUsecase, setSessionCookie } from "@/server/api/connect/context";
+import { wantsBearerToken } from "@/server/api/connect/credentials";
 import { rateLimitCheck } from "@/server/common/rateLimit";
 import {
   AUTH_RATE_LIMIT,
@@ -36,22 +37,39 @@ function enforcePhoneRateLimit(userId: string): void {
   }
 }
 
+/**
+ * Hands a freshly issued session to the client the way it carries sessions:
+ * as a bearer token in the body for a client that asked for one (mobile),
+ * otherwise as the HttpOnly cookie and nothing readable in the body. A
+ * browser must never receive bearer material — the cookie is HttpOnly so
+ * script cannot read the session, and a token in the JSON would hand it to
+ * any script running during sign-in.
+ *
+ * @param handlerContext - Connect handler context for the current request.
+ * @param result - The usecase's response, including the token.
+ * @returns The response to send.
+ */
+function deliverSession<Result extends { token: string }>(
+  handlerContext: HandlerContext,
+  result: Result,
+): Result {
+  if (wantsBearerToken(handlerContext.requestHeader)) return result;
+  setSessionCookie(handlerContext, result.token);
+  return { ...result, token: "" };
+}
+
 /** AuthService implementation; every method delegates to auth.usecase and only manages cookies here. */
 export const authHandler: ServiceImpl<typeof AuthService> = {
-  /** Creates (or claims) an account, then starts a web session via cookie. */
+  /** Creates (or claims) an account, then starts a session the way the client carries it. */
   async signUp(request, handlerContext) {
     enforceAuthRateLimit(handlerContext);
-    const result = await runUsecase(() => auth.signUp(request), handlerContext);
-    setSessionCookie(handlerContext, result.token);
-    return result;
+    return deliverSession(handlerContext, await runUsecase(() => auth.signUp(request), handlerContext));
   },
 
-  /** Verifies credentials, then starts a web session via cookie. */
+  /** Verifies credentials, then starts a session the way the client carries it. */
   async logIn(request, handlerContext) {
     enforceAuthRateLimit(handlerContext);
-    const result = await runUsecase(() => auth.logIn(request), handlerContext);
-    setSessionCookie(handlerContext, result.token);
-    return result;
+    return deliverSession(handlerContext, await runUsecase(() => auth.logIn(request), handlerContext));
   },
 
   /** Creates a short-lived, single-use nonce for a Google ID-token request. */
@@ -60,15 +78,13 @@ export const authHandler: ServiceImpl<typeof AuthService> = {
     return runUsecase(() => auth.beginGoogleSignIn(), handlerContext);
   },
 
-  /** Verifies a Google ID token, then starts a web session via cookie. */
+  /** Verifies a Google ID token, then starts a session the way the client carries it. */
   async logInWithGoogle(request, handlerContext) {
     enforceAuthRateLimit(handlerContext);
-    const result = await runUsecase(
-      () => auth.logInWithGoogle(request.idToken),
+    return deliverSession(
       handlerContext,
+      await runUsecase(() => auth.logInWithGoogle(request.idToken), handlerContext),
     );
-    setSessionCookie(handlerContext, result.token);
-    return result;
   },
 
   /** Ends the web session by expiring the session cookie and revoking the token. */

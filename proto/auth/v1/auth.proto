@@ -65,6 +65,11 @@ message LogInWithGoogleRequest {
 message AuthResponse {
   common.v1.User user = 1;
   // Bearer token; pass as "Authorization: Bearer <token>" on future calls.
+  // Returned only to a client that announced it carries sessions as bearer
+  // credentials (the mobile app's transport header). A browser gets an
+  // HttpOnly cookie instead and an empty string here: bearer material in a
+  // JSON body would hand the session to any script running during sign-in,
+  // which is what HttpOnly exists to prevent.
   string token = 2;
 }
 
