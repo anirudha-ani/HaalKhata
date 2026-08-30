@@ -168,24 +168,28 @@ async function enrollMembers(
   callerId: string,
   groupId: string,
   userIds: string[],
+  client: PoolClient,
 ): Promise<UserRow[]> {
   const requestedIds = [...new Set(userIds)].filter((userId) => userId !== "");
   if (requestedIds.length === 0) return [];
 
-  const existingIds = new Set((await listMembers(groupId)).map((member) => member.id));
+  const existingIds = new Set((await listMembers(groupId, client)).map((member) => member.id));
   const newIds = requestedIds.filter((userId) => !existingIds.has(userId));
   const usersById = new Map(
     (await findUsersByIds(newIds)).map((userRow) => [userRow.id, userRow] as const),
   );
 
+  // Every enrolment rides the caller's transaction, so a batch is all or
+  // nothing — a failure on the third person cannot leave two enrolled with
+  // no feed line explaining how they got there.
   const added: UserRow[] = [];
   for (const userId of newIds) {
     const user = usersById.get(userId);
     // An id with no row is a client sending something stale, not an attack —
     // the authorization check above already passed, so just skip it.
     if (!user) continue;
-    await addMember(groupId, userId);
-    await insertFriendship(callerId, userId);
+    await addMember(groupId, userId, MEMBER_ROLE, client);
+    await insertFriendship(callerId, userId, client);
     added.push(user);
   }
   return added;
@@ -258,22 +262,30 @@ export async function createGroup(
   // Authorize before the insert, so a rejected member list does not leave an
   // orphan group behind.
   await assertCanAdd(userId, input.memberIds ?? []);
-  const group = await insertGroup({ name, type, currency, createdBy: userId });
-  const added = await enrollMembers(userId, group.id, input.memberIds ?? []);
-
   const actor = (await findUserById(userId))!;
-  // Everyone enrolled at creation sees the event, so a group appearing in
-  // their list is explained by their feed rather than showing up unannounced.
-  // No separate "added" event: at creation the two are the same act.
-  await insertActivity({
-    groupId: group.id,
-    actorId: userId,
-    type: "group_created",
-    message: `${actor.name} created the group "${name}"`,
-    link: `/groups/${group.id}`,
-    audience: [userId, ...added.map((user) => user.id)],
+  // The group, its first members, the friendships they imply and the feed
+  // event announcing it commit together: a group that exists with half its
+  // members and no announcement is what a retry would then create twice.
+  const group = await withLedgerTransaction(async (client) => {
+    const created = await insertGroup({ name, type, currency, createdBy: userId }, client);
+    const added = await enrollMembers(userId, created.id, input.memberIds ?? [], client);
+    // Everyone enrolled at creation sees the event, so a group appearing in
+    // their list is explained by their feed rather than showing up unannounced.
+    // No separate "added" event: at creation the two are the same act.
+    await insertActivity(
+      {
+        groupId: created.id,
+        actorId: userId,
+        type: "group_created",
+        message: `${actor.name} created the group "${name}"`,
+        link: `/groups/${created.id}`,
+        audience: [userId, ...added.map((user) => user.id)],
+      },
+      client,
+    );
+    await notifyAdded(actor, created.id, name, added, client);
+    return created;
   });
-  await notifyAdded(actor, group.id, name, added);
   return toGroup(group, await listMembers(group.id));
 }
 
@@ -323,23 +335,29 @@ export async function getGroup(userId: string, groupId: string) {
  * @param groupId - Group they were added to.
  * @param groupName - That group's display name, for the notification title.
  * @param added - The user rows that were actually added.
+ * @param client - The transaction the enrolment is being made in.
  */
 async function notifyAdded(
   actor: UserRow,
   groupId: string,
   groupName: string,
   added: UserRow[],
+  client: PoolClient,
 ): Promise<void> {
   const recipientIds = added
     .map((user) => user.id)
     .filter((recipientId) => recipientId !== actor.id);
   if (recipientIds.length === 0) return;
-  await insertNotifications(recipientIds, {
-    type: "added_to_group",
-    title: `${actor.name} added you to "${groupName}"`,
-    body: "",
-    link: `/groups/${groupId}`,
-  });
+  await insertNotifications(
+    recipientIds,
+    {
+      type: "added_to_group",
+      title: `${actor.name} added you to "${groupName}"`,
+      body: "",
+      link: `/groups/${groupId}`,
+    },
+    client,
+  );
 }
 
 /**
@@ -381,30 +399,40 @@ export async function addMembers(
   assertMemberIdCount(candidateIds);
   if (candidateIds.length === 0) invalid("pick somebody to add");
   await assertCanAdd(userId, candidateIds);
-
-  const added = await enrollMembers(userId, input.groupId, candidateIds);
-  if (added.length === 0) {
-    // Nothing happened, and silently reporting success would leave the modal
-    // looking like it worked. The singular case is the common one: you typed
-    // the email of somebody already in the group.
-    invalid(
-      candidateIds.length === 1
-        ? "they're already in this group"
-        : "everybody you picked is already in this group",
-    );
-  }
-
   const actor = (await findUserById(userId))!;
-  const audience = (await listMembers(input.groupId)).map((member) => member.id);
-  await insertActivity({
-    groupId: input.groupId,
-    actorId: userId,
-    type: "member_added",
-    message: `${actor.name} added ${nameList(added.map((user) => user.name))} to "${group.name}"`,
-    link: `/groups/${input.groupId}`,
-    audience,
+
+  // Under the group's ledger lock: a settlement being validated in this
+  // group re-checks membership under the same lock, so it sees the roster
+  // either before or after the whole batch, never in the middle of it. The
+  // batch, the friendships it implies, and the announcement commit together.
+  const added = await withLedgerTransaction(async (client) => {
+    await lockGroupLedgers(client, [input.groupId]);
+    const enrolled = await enrollMembers(userId, input.groupId, candidateIds, client);
+    if (enrolled.length === 0) {
+      // Nothing happened, and silently reporting success would leave the modal
+      // looking like it worked. The singular case is the common one: you typed
+      // the email of somebody already in the group.
+      invalid(
+        candidateIds.length === 1
+          ? "they're already in this group"
+          : "everybody you picked is already in this group",
+      );
+    }
+    const audience = (await listMembers(input.groupId, client)).map((member) => member.id);
+    await insertActivity(
+      {
+        groupId: input.groupId,
+        actorId: userId,
+        type: "member_added",
+        message: `${actor.name} added ${nameList(enrolled.map((user) => user.name))} to "${group.name}"`,
+        link: `/groups/${input.groupId}`,
+        audience,
+      },
+      client,
+    );
+    await notifyAdded(actor, input.groupId, group.name, enrolled, client);
+    return enrolled;
   });
-  await notifyAdded(actor, input.groupId, group.name, added);
   return { added: added.map((user) => toMember({ ...user, role: MEMBER_ROLE })) };
 }
 
@@ -426,7 +454,10 @@ export async function transferOwnership(
   userId: string,
   input: { groupId: string; userId: string },
 ) {
-  const change = await withLedgerTransaction(async (client) => {
+  const actor = (await findUserById(userId))!;
+  const newOwner = await findUserById(input.userId);
+  if (!newOwner) invalid("they are not a member of this group");
+  await withLedgerTransaction(async (client) => {
     await lockGroupLedgers(client, [input.groupId]);
     const group = await assertGroupOwner(input.groupId, userId, client);
     if (input.userId === userId) invalid("you already own this group");
@@ -435,27 +466,30 @@ export async function transferOwnership(
     }
     await updateMemberRole(input.groupId, input.userId, OWNER_ROLE, client);
     await updateMemberRole(input.groupId, userId, MEMBER_ROLE, client);
-    return {
-      group,
-      audience: (await listMembers(input.groupId, client)).map((member) => member.id),
-    };
-  });
-  const actor = (await findUserById(userId))!;
-  const newOwner = (await findUserById(input.userId))!;
-  // Structural, like member_added: the whole group hears who holds the keys.
-  await insertActivity({
-    groupId: input.groupId,
-    actorId: userId,
-    type: "ownership_transferred",
-    message: `${actor.name} made ${newOwner.name} the owner of "${change.group.name}"`,
-    link: `/groups/${input.groupId}`,
-    audience: change.audience,
-  });
-  await insertNotifications([input.userId], {
-    type: "ownership_transferred",
-    title: `${actor.name} made you the owner of "${change.group.name}"`,
-    body: "",
-    link: `/groups/${input.groupId}`,
+    const audience = (await listMembers(input.groupId, client)).map((member) => member.id);
+    // Structural, like member_added: the whole group hears who holds the
+    // keys — on the same transaction as the handover itself.
+    await insertActivity(
+      {
+        groupId: input.groupId,
+        actorId: userId,
+        type: "ownership_transferred",
+        message: `${actor.name} made ${newOwner.name} the owner of "${group.name}"`,
+        link: `/groups/${input.groupId}`,
+        audience,
+      },
+      client,
+    );
+    await insertNotifications(
+      [input.userId],
+      {
+        type: "ownership_transferred",
+        title: `${actor.name} made you the owner of "${group.name}"`,
+        body: "",
+        link: `/groups/${input.groupId}`,
+      },
+      client,
+    );
   });
   return toGroup((await findGroupById(input.groupId))!, await listMembers(input.groupId));
 }
@@ -483,32 +517,27 @@ export async function setSimplifyDebts(
   userId: string,
   input: { groupId: string; simplify: boolean },
 ) {
-  const change = await withLedgerTransaction(async (client) => {
+  const actor = (await findUserById(userId))!;
+  await withLedgerTransaction(async (client) => {
     await lockGroupLedgers(client, [input.groupId]);
     const group = await assertGroupMember(input.groupId, userId, client);
-    if (group.simplify_debts === input.simplify) {
-      return { changed: false, group, audience: [] as string[] };
-    }
+    if (group.simplify_debts === input.simplify) return;
     await updateSimplifyDebts(input.groupId, input.simplify, client);
-    return {
-      changed: true,
-      group,
-      audience: (await listMembers(input.groupId, client)).map((member) => member.id),
-    };
+    const audience = (await listMembers(input.groupId, client)).map((member) => member.id);
+    await insertActivity(
+      {
+        groupId: input.groupId,
+        actorId: userId,
+        type: "simplify_debts",
+        message: input.simplify
+          ? `${actor.name} turned on debt simplification in "${group.name}" — fewer payments, same balances`
+          : `${actor.name} turned off debt simplification in "${group.name}" — debts show person to person again`,
+        link: `/groups/${input.groupId}`,
+        audience,
+      },
+      client,
+    );
   });
-  if (change.changed) {
-    const actor = (await findUserById(userId))!;
-    await insertActivity({
-      groupId: input.groupId,
-      actorId: userId,
-      type: "simplify_debts",
-      message: input.simplify
-        ? `${actor.name} turned on debt simplification in "${change.group.name}" — fewer payments, same balances`
-        : `${actor.name} turned off debt simplification in "${change.group.name}" — debts show person to person again`,
-      link: `/groups/${input.groupId}`,
-      audience: change.audience,
-    });
-  }
   return toGroup((await findGroupById(input.groupId))!, await listMembers(input.groupId));
 }
 

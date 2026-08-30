@@ -27,26 +27,34 @@ export type MemberRow = UserRow & { role: string };
  *
  * @param input - Group attributes: display name, category type, currency
  *   code, and the creating user's id.
+ * @param client - Transaction client when the group must commit together
+ *   with its first members and the feed event announcing it; omitted, the
+ *   two inserts get a transaction of their own.
  * @returns The freshly inserted group row.
  */
-export async function insertGroup(input: {
-  name: string;
-  type: string;
-  currency: string;
-  createdBy: string;
-}): Promise<GroupRow> {
+export async function insertGroup(
+  input: {
+    name: string;
+    type: string;
+    currency: string;
+    createdBy: string;
+  },
+  client?: PoolClient,
+): Promise<GroupRow> {
   const groupId = newId();
-  await transaction(async (client) => {
-    await client.query(
+  const persist = async (transactionClient: PoolClient): Promise<void> => {
+    await transactionClient.query(
       `INSERT INTO groups (id, name, type, currency, created_by) VALUES ($1, $2, $3, $4, $5)`,
       [groupId, input.name, input.type, input.currency, input.createdBy],
     );
-    await client.query(
+    await transactionClient.query(
       `INSERT INTO group_members (group_id, user_id, role) VALUES ($1, $2, 'owner')`,
       [groupId, input.createdBy],
     );
-  });
-  return (await findGroupById(groupId))!;
+  };
+  if (client) await persist(client);
+  else await transaction(persist);
+  return (await findGroupById(groupId, client))!;
 }
 
 /**
@@ -171,16 +179,20 @@ export async function listCoMemberIds(userId: string): Promise<string[]> {
  * @param groupId - Id of the group to add the user to.
  * @param userId - Id of the user being added.
  * @param role - Membership role to record (defaults to "member").
+ * @param client - Transaction client when the enrolment must commit with the
+ *   rest of a batch and the feed event announcing it.
  */
 export async function addMember(
   groupId: string,
   userId: string,
   role = "member",
+  client?: PoolClient,
 ): Promise<void> {
   await execute(
     `INSERT INTO group_members (group_id, user_id, role) VALUES ($1, $2, $3)
      ON CONFLICT DO NOTHING`,
     [groupId, userId, role],
+    client,
   );
 }
 

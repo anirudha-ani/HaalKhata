@@ -175,6 +175,7 @@ describe("transferOwnership", () => {
         audience: [MEMBER, TARGET],
         link: `/groups/${TRIP}`,
       }),
+      transactionClient,
     );
   });
 

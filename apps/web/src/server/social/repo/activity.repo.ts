@@ -1,5 +1,6 @@
 /** All SQL for the activity table (audience-scoped feed events). */
 
+import type { PoolClient } from "pg";
 import { execute, newId, query } from "@/server/common/db";
 import {
   ACTIVITY_CURSOR_ID_PATTERN,
@@ -37,18 +38,23 @@ export interface ActivityRow {
  *   scoped), acting user's id, event kind, pre-rendered message, in-app
  *   link, the list of user ids who may see the event, and — where the event
  *   concerned money — its amount, currency and (for settlements) who received it.
+ * @param client - Transaction client when the event must commit with the
+ *   change it announces; omitted, it autocommits.
  */
-export async function insertActivity(input: {
-  groupId: string | null;
-  actorId: string;
-  type: string;
-  message: string;
-  link: string;
-  audience: string[];
-  amountCents?: number;
-  currency?: string;
-  creditUserId?: string | null;
-}): Promise<void> {
+export async function insertActivity(
+  input: {
+    groupId: string | null;
+    actorId: string;
+    type: string;
+    message: string;
+    link: string;
+    audience: string[];
+    amountCents?: number;
+    currency?: string;
+    creditUserId?: string | null;
+  },
+  client?: PoolClient,
+): Promise<void> {
   await execute(
     `INSERT INTO activity
        (id, group_id, actor_id, type, message, link, audience, amount_cents, currency, credit_user_id)
@@ -65,6 +71,7 @@ export async function insertActivity(input: {
       input.currency ?? "",
       input.creditUserId ?? null,
     ],
+    client,
   );
 }
 

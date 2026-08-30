@@ -22,7 +22,7 @@ import {
   listGroupsByUser,
   listMembers,
 } from "@/server/group/repo/groups.repo";
-import { findUserById, findUsersByIds } from "@/server/auth/repo/users.repo";
+import { findUserById, findUsersByIds, type UserRow } from "@/server/auth/repo/users.repo";
 import { insertFriendship, listFriendIds } from "@/server/social/repo/friendships.repo";
 import { insertComment, listCommentsByExpense } from "@/server/expense/repo/comments.repo";
 import {
@@ -31,6 +31,7 @@ import {
   scopeHasSettlements,
   softDeleteSettlement,
   withSettlementPairLock,
+  type SettlementRow,
 } from "@/server/expense/repo/settlements.repo";
 import { insertActivity, listActivityForExpense } from "@/server/social/repo/activity.repo";
 import { insertNotifications } from "@/server/social/repo/notifications.repo";
@@ -364,33 +365,41 @@ function storedExpenseWrite(expense: ExpenseRow, children: ExpenseChildren): Exp
  * @param expenseId - Id of the affected expense (used for links).
  * @param write - The expense contents used to build the messages.
  * @param verb - Which change happened: "added" | "updated" | "deleted".
+ * @param client - The ledger transaction the change is being made in. The
+ *   feed event and notifications commit with it, or not at all: an expense
+ *   that exists without its announcement, or an announcement of an expense
+ *   that rolled back, are both records nobody can reconcile.
  */
 async function recordExpenseActivity(
   actorId: string,
   expenseId: string,
   write: ExpenseWrite,
   verb: "added" | "updated" | "deleted",
+  client: PoolClient,
 ): Promise<void> {
   const actor = (await findUserById(actorId))!;
-  const group = write.groupId ? await findGroupById(write.groupId) : undefined;
+  const group = write.groupId ? await findGroupById(write.groupId, client) : undefined;
   const locationSuffix = group ? ` in "${group.name}"` : "";
   // The participants plus whoever recorded it — never the whole group. A
   // transaction is announced to the people whose money it moved; a member
   // who is not on the expense reads the group's ledger tabs, not a feed
   // line about other people's dinner.
   const audience = [...new Set([...involvedUserIds(write), actorId])];
-  await insertActivity({
-    groupId: write.groupId,
-    actorId,
-    type: `expense_${verb}`,
-    message: `${actor.name} ${verb} "${write.description}" (${formatMoney(write.amountCents, write.currency)})${locationSuffix}`,
-    // A deleted expense still has a page — it stays readable, marked deleted —
-    // and the detail view reads this row back as "deleted by X on Y".
-    link: `/expenses/${expenseId}`,
-    audience,
-    amountCents: write.amountCents,
-    currency: write.currency,
-  });
+  await insertActivity(
+    {
+      groupId: write.groupId,
+      actorId,
+      type: `expense_${verb}`,
+      message: `${actor.name} ${verb} "${write.description}" (${formatMoney(write.amountCents, write.currency)})${locationSuffix}`,
+      // A deleted expense still has a page — it stays readable, marked deleted —
+      // and the detail view reads this row back as "deleted by X on Y".
+      link: `/expenses/${expenseId}`,
+      audience,
+      amountCents: write.amountCents,
+      currency: write.currency,
+    },
+    client,
+  );
   await insertNotifications(
     involvedUserIds(write).filter((recipientId) => recipientId !== actorId),
     {
@@ -399,13 +408,15 @@ async function recordExpenseActivity(
       body: group ? group.name : "One-off expense",
       link: `/expenses/${expenseId}`,
     },
+    client,
   );
 }
 
 /**
  * Creates an expense: validates the request, computes authoritative splits,
  * persists everything, auto-friends the participants of a one-off expense,
- * and fans out activity + notifications.
+ * and fans out activity + notifications — all in one transaction, so a
+ * failure anywhere leaves nothing behind for a retry to duplicate.
  *
  * @param userId - Authenticated caller creating the expense.
  * @param request - Raw create request from the client.
@@ -422,15 +433,18 @@ export async function createExpense(userId: string, request: CreateExpenseReques
     } else {
       await lockParticipantLedgers(client, participantIds);
     }
-    return insertExpense(write, client);
-  });
-  // One-off expenses imply a friend connection between all participants.
-  if (!write.groupId) {
-    for (const participantId of involvedUserIds(write)) {
-      if (participantId !== userId) await insertFriendship(userId, participantId);
+    const insertedId = await insertExpense(write, client);
+    // One-off expenses imply a friend connection between all participants.
+    // Ledger locks first, then the friend-request inbox locks inside
+    // insertFriendship — the one order every path takes them in.
+    if (!write.groupId) {
+      for (const participantId of participantIds) {
+        if (participantId !== userId) await insertFriendship(userId, participantId, client);
+      }
     }
-  }
-  await recordExpenseActivity(userId, expenseId, write, "added");
+    await recordExpenseActivity(userId, insertedId, write, "added", client);
+    return insertedId;
+  });
   return getExpenseProto(expenseId);
 }
 
@@ -565,8 +579,8 @@ export async function updateExpense(
     }
     write.createdBy = current.created_by;
     await replaceExpense(expenseId, write, client);
+    await recordExpenseActivity(userId, expenseId, write, "updated", client);
   });
-  await recordExpenseActivity(userId, expenseId, write, "updated");
   return getExpenseProto(expenseId);
 }
 
@@ -587,7 +601,7 @@ export async function updateExpense(
  *   caller is not its creator.
  */
 export async function deleteExpense(userId: string, expenseId: string): Promise<void> {
-  const deletedWrite = await withLedgerTransaction(async (client) => {
+  await withLedgerTransaction(async (client) => {
     await lockExpenseLedger(client, expenseId);
     const existing = await findExpenseById(expenseId, client);
     if (!existing || existing.deleted_at) notFound("expense not found");
@@ -600,9 +614,14 @@ export async function deleteExpense(userId: string, expenseId: string): Promise<
       await lockParticipantLedgers(client, participantIds);
     }
     await softDeleteExpense(expenseId, client);
-    return storedExpenseWrite(existing, children);
+    await recordExpenseActivity(
+      userId,
+      expenseId,
+      storedExpenseWrite(existing, children),
+      "deleted",
+      client,
+    );
   });
-  await recordExpenseActivity(userId, expenseId, deletedWrite, "deleted");
 }
 
 /**
@@ -833,45 +852,55 @@ export async function addComment(userId: string, expenseId: string, body: string
   if (trimmed.length > MAX_COMMENT_LENGTH) {
     invalid(`comment is too long (max ${MAX_COMMENT_LENGTH} characters)`);
   }
-  const comment = await insertComment(expenseId, userId, trimmed);
   const author = (await findUserById(userId))!;
-
-  const children = await loadExpenseChildren([expenseId]);
-  const involved = new Set([
-    expenseRow.created_by,
-    ...(children.payers.get(expenseId) ?? []).map((payer) => payer.user_id),
-    ...(children.splits.get(expenseId) ?? []).map((split) => split.user_id),
-  ]);
   const preview =
     trimmed.length > COMMENT_PREVIEW_LENGTH
       ? `${trimmed.slice(0, COMMENT_PREVIEW_LENGTH)}…`
       : trimmed;
 
-  // The feed quotes the comment rather than just naming it: "Ani commented on
-  // X" tells a reader nothing about whether it is worth opening, and the feed
-  // searches over this message, so quoting makes comments findable by content.
-  await insertActivity({
-    groupId: expenseRow.group_id,
-    actorId: userId,
-    type: "comment",
-    message: `${author.name} commented on "${expenseRow.description}": ${preview}`,
-    link: `/expenses/${expenseId}`,
-    // The thread follows its transaction: a comment is announced to the
-    // expense's participants (and its author, who may be neither payer nor
-    // ower) — the same people who saw the expense land in their feeds. A
-    // feed line about a conversation on somebody else's expense is noise
-    // with a name in it.
-    audience: [...new Set([...involved, userId])],
+  // One transaction for the comment and everything that announces it: a
+  // comment nobody was told about, or a feed line quoting a comment that was
+  // never stored, are both what a retry would then duplicate.
+  const comment = await withLedgerTransaction(async (client) => {
+    const stored = await insertComment(expenseId, userId, trimmed, client);
+    const children = await loadExpenseChildren([expenseId], client);
+    const involved = new Set([
+      expenseRow.created_by,
+      ...(children.payers.get(expenseId) ?? []).map((payer) => payer.user_id),
+      ...(children.splits.get(expenseId) ?? []).map((split) => split.user_id),
+    ]);
+
+    // The feed quotes the comment rather than just naming it: "Ani commented on
+    // X" tells a reader nothing about whether it is worth opening, and the feed
+    // searches over this message, so quoting makes comments findable by content.
+    await insertActivity(
+      {
+        groupId: expenseRow.group_id,
+        actorId: userId,
+        type: "comment",
+        message: `${author.name} commented on "${expenseRow.description}": ${preview}`,
+        link: `/expenses/${expenseId}`,
+        // The thread follows its transaction: a comment is announced to the
+        // expense's participants (and its author, who may be neither payer nor
+        // ower) — the same people who saw the expense land in their feeds. A
+        // feed line about a conversation on somebody else's expense is noise
+        // with a name in it.
+        audience: [...new Set([...involved, userId])],
+      },
+      client,
+    );
+    await insertNotifications(
+      [...involved].filter((recipientId) => recipientId !== userId),
+      {
+        type: "comment",
+        title: `${author.name} commented on "${expenseRow.description}"`,
+        body: preview,
+        link: `/expenses/${expenseId}`,
+      },
+      client,
+    );
+    return stored;
   });
-  await insertNotifications(
-    [...involved].filter((recipientId) => recipientId !== userId),
-    {
-      type: "comment",
-      title: `${author.name} commented on "${expenseRow.description}"`,
-      body: preview,
-      link: `/expenses/${expenseId}`,
-    },
-  );
   return {
     id: comment.id,
     expenseId: comment.expense_id,
@@ -933,8 +962,11 @@ export async function recordSettlement(
   if (request.note.length > MAX_SETTLEMENT_NOTE_LENGTH) {
     invalid(`settlement note is too long (max ${MAX_SETTLEMENT_NOTE_LENGTH} characters)`);
   }
-  const recipient = await findUserById(request.toUserId);
-  if (!recipient) notFound("recipient not found");
+  const recipientRow = await findUserById(request.toUserId);
+  if (!recipientRow) notFound("recipient not found");
+  // Typed const rather than the narrowed binding, so the nested writers
+  // below can read it without re-checking.
+  const recipient: UserRow = recipientRow;
   // Whoever is settling a debt is the payer; the other is the creditor.
   const payerId = request.received ? request.toUserId : userId;
   const creditorId = request.received ? userId : request.toUserId;
@@ -956,14 +988,31 @@ export async function recordSettlement(
   if (!currency) currency = (await findUserById(userId))?.default_currency ?? "USD";
   currency = normalizeCurrencyCode(currency);
   const method = SETTLEMENT_METHODS.has(request.method) ? request.method : "cash";
+  const actor = (await findUserById(userId))!;
 
   // Validation + inserts inside the pair lock, so a concurrent recording of
   // the same real-world payment — from another tab, another device, or the
   // other scope's page — waits here, then re-reads a ledger that already
   // contains this one, and is refused by the guards instead of doubling up.
   // The inserts ride the lock's transaction: portions land atomically, and
-  // become visible at the same instant the lock releases.
+  // become visible at the same instant the lock releases — and so do the
+  // feed rows and the notification, which commit with the payment or not at
+  // all.
   const settlements = await withSettlementPairLock(payerId, creditorId, async (client) => {
+    const stored = await storeSettlementPortions(client);
+    await announceSettlement(client, stored);
+    return stored;
+  });
+  return toSettlement(settlements[0]);
+
+  /**
+   * Validates the payment against what is owed under the lock and writes one
+   * settlement row per scope it pays down.
+   *
+   * @param client - The pair lock's transaction client.
+   * @returns The stored rows, direct slate first.
+   */
+  async function storeSettlementPortions(client: PoolClient): Promise<SettlementRow[]> {
     // Refuse to record more than the debt a payment can actually clear —
     // otherwise it would flip the balance the other way (settlement-as-attack).
     // The cap is what the payer owes in the addressed scope(s), never the
@@ -1059,58 +1108,74 @@ export async function recordSettlement(
       );
     }
     return rows;
-  });
-
-  const actor = (await findUserById(userId))!;
-  // The feed states who actually paid whom, not who typed it in — otherwise a
-  // payment received reads as one made.
-  const payerName = request.received ? recipient.name : actor.name;
-  const creditorName = request.received ? actor.name : recipient.name;
-  const friendLink = `/friends/${request.toUserId}`;
-  // One feed row per portion, each in its own scope's voice: the slice that
-  // paid down a group says so and carries that group's id, so it files under
-  // the group's activity tab for the two people it concerns. Every slice
-  // stays between the pair — a payment is the payer's and the receiver's
-  // line, not the room's.
-  for (const settlement of settlements) {
-    const group = settlement.group_id ? await findGroupById(settlement.group_id) : undefined;
-    await insertActivity({
-      groupId: settlement.group_id,
-      // The payer, not whoever typed it in. A feed row's avatar restates the
-      // subject of its own sentence, and for a settlement that subject is the
-      // person who paid — the message right below already names them first.
-      // Recording a payment received put the recorder's face beside "someone
-      // else paid me", which reads as though they had paid themselves.
-      //
-      // Every other activity type has actor and subject as the same person, so
-      // this is the only place they can diverge. Who entered it is not lost:
-      // the notification below says "<name> recorded your payment".
-      actorId: payerId,
-      type: "settlement",
-      message: `${payerName} paid ${creditorName} ${formatMoney(settlement.amount_cents, currency)}${group ? ` in "${group.name}"` : ""}`,
-      link: settlement.group_id ? `/groups/${settlement.group_id}` : friendLink,
-      // The pair, never the room: if you are A, "B paid C" is B and C's
-      // feed line. The recorder is always one of the two.
-      audience: [...new Set([payerId, creditorId])],
-      amountCents: settlement.amount_cents,
-      currency,
-      // Who received the money, so each reader's feed can say whether it came
-      // to them — the same row is inbound for one party and outbound for the other.
-      creditUserId: creditorId,
-    });
   }
-  // One notification for the whole payment, whatever it was split across —
-  // the other party was paid once and should be told once.
-  const notifyGroup = groupId ? await findGroupById(groupId) : undefined;
-  await insertNotifications([request.toUserId], {
-    type: "settlement",
-    title: request.received
-      ? `${actor.name} recorded your payment of ${formatMoney(request.amountCents, currency)}`
-      : `${actor.name} recorded a payment of ${formatMoney(request.amountCents, currency)} to you`,
-    body: notifyGroup ? notifyGroup.name : "Settlement",
-    link: groupId ? `/groups/${groupId}` : `/friends/${userId}`,
-  });
-  return toSettlement(settlements[0]);
+
+  /**
+   * Writes the feed rows and the notification for a stored payment, on the
+   * same transaction as the rows themselves.
+   *
+   * @param client - The pair lock's transaction client.
+   * @param stored - The settlement rows just inserted.
+   */
+  async function announceSettlement(client: PoolClient, stored: SettlementRow[]): Promise<void> {
+    // The feed states who actually paid whom, not who typed it in — otherwise a
+    // payment received reads as one made.
+    const payerName = request.received ? recipient.name : actor.name;
+    const creditorName = request.received ? actor.name : recipient.name;
+    const friendLink = `/friends/${request.toUserId}`;
+    // One feed row per portion, each in its own scope's voice: the slice that
+    // paid down a group says so and carries that group's id, so it files under
+    // the group's activity tab for the two people it concerns. Every slice
+    // stays between the pair — a payment is the payer's and the receiver's
+    // line, not the room's.
+    for (const settlement of stored) {
+      const group = settlement.group_id
+        ? await findGroupById(settlement.group_id, client)
+        : undefined;
+      await insertActivity(
+        {
+          groupId: settlement.group_id,
+          // The payer, not whoever typed it in. A feed row's avatar restates the
+          // subject of its own sentence, and for a settlement that subject is the
+          // person who paid — the message right below already names them first.
+          // Recording a payment received put the recorder's face beside "someone
+          // else paid me", which reads as though they had paid themselves.
+          //
+          // Every other activity type has actor and subject as the same person, so
+          // this is the only place they can diverge. Who entered it is not lost:
+          // the notification below says "<name> recorded your payment".
+          actorId: payerId,
+          type: "settlement",
+          message: `${payerName} paid ${creditorName} ${formatMoney(settlement.amount_cents, currency)}${group ? ` in "${group.name}"` : ""}`,
+          link: settlement.group_id ? `/groups/${settlement.group_id}` : friendLink,
+          // The pair, never the room: if you are A, "B paid C" is B and C's
+          // feed line. The recorder is always one of the two.
+          audience: [...new Set([payerId, creditorId])],
+          amountCents: settlement.amount_cents,
+          currency,
+          // Who received the money, so each reader's feed can say whether it came
+          // to them — the same row is inbound for one party and outbound for the other.
+          creditUserId: creditorId,
+        },
+        client,
+      );
+    }
+    // One notification for the whole payment, whatever it was split across —
+    // the other party was paid once and should be told once.
+    const notifyGroup = groupId ? await findGroupById(groupId, client) : undefined;
+    await insertNotifications(
+      [request.toUserId],
+      {
+        type: "settlement",
+        title: request.received
+          ? `${actor.name} recorded your payment of ${formatMoney(request.amountCents, currency)}`
+          : `${actor.name} recorded a payment of ${formatMoney(request.amountCents, currency)} to you`,
+        body: notifyGroup ? notifyGroup.name : "Settlement",
+        link: groupId ? `/groups/${groupId}` : `/friends/${userId}`,
+      },
+      client,
+    );
+  }
 }
 
 /**
@@ -1134,40 +1199,44 @@ export async function deleteSettlement(userId: string, settlementId: string): Pr
   if (existing.from_user !== userId && existing.to_user !== userId) {
     denied("only the two people on a payment can remove it");
   }
-  const removed = await withSettlementPairLock(
-    existing.from_user,
-    existing.to_user,
-    async (client) => {
-      if (existing.group_id) await lockGroupLedgers(client, [existing.group_id]);
-      const current = await findSettlementById(settlementId, client);
-      if (!current || current.deleted_at) notFound("payment not found");
-      await softDeleteSettlement(settlementId, client);
-      return current;
-    },
-  );
-
   const actor = (await findUserById(userId))!;
-  const otherUserId = removed.from_user === userId ? removed.to_user : removed.from_user;
-  const [payer, creditor, group] = await Promise.all([
-    findUserById(removed.from_user),
-    findUserById(removed.to_user),
-    removed.group_id ? findGroupById(removed.group_id) : Promise.resolve(undefined),
+  const otherUserId = existing.from_user === userId ? existing.to_user : existing.from_user;
+  const [payer, creditor] = await Promise.all([
+    findUserById(existing.from_user),
+    findUserById(existing.to_user),
   ]);
-  const amount = formatMoney(removed.amount_cents, removed.currency);
-  await insertActivity({
-    groupId: removed.group_id,
-    actorId: userId,
-    type: "settlement_deleted",
-    message: `${actor.name} removed the payment "${payer?.name ?? "someone"} paid ${creditor?.name ?? "someone"} ${amount}"${group ? ` in "${group.name}"` : ""}`,
-    link: removed.group_id ? `/groups/${removed.group_id}` : `/friends/${otherUserId}`,
-    audience: [...new Set([removed.from_user, removed.to_user])],
-    amountCents: removed.amount_cents,
-    currency: removed.currency,
-  });
-  await insertNotifications([otherUserId], {
-    type: "settlement_deleted",
-    title: `${actor.name} removed the payment of ${amount}`,
-    body: group ? group.name : "Settlement",
-    link: removed.group_id ? `/groups/${removed.group_id}` : `/friends/${userId}`,
+  await withSettlementPairLock(existing.from_user, existing.to_user, async (client) => {
+    if (existing.group_id) await lockGroupLedgers(client, [existing.group_id]);
+    const current = await findSettlementById(settlementId, client);
+    if (!current || current.deleted_at) notFound("payment not found");
+    await softDeleteSettlement(settlementId, client);
+    // Announced on the same transaction as the removal: the feed row is
+    // the only record of who removed it and when, so it cannot be allowed
+    // to go missing while the removal stands.
+    const group = current.group_id ? await findGroupById(current.group_id, client) : undefined;
+    const amount = formatMoney(current.amount_cents, current.currency);
+    await insertActivity(
+      {
+        groupId: current.group_id,
+        actorId: userId,
+        type: "settlement_deleted",
+        message: `${actor.name} removed the payment "${payer?.name ?? "someone"} paid ${creditor?.name ?? "someone"} ${amount}"${group ? ` in "${group.name}"` : ""}`,
+        link: current.group_id ? `/groups/${current.group_id}` : `/friends/${otherUserId}`,
+        audience: [...new Set([current.from_user, current.to_user])],
+        amountCents: current.amount_cents,
+        currency: current.currency,
+      },
+      client,
+    );
+    await insertNotifications(
+      [otherUserId],
+      {
+        type: "settlement_deleted",
+        title: `${actor.name} removed the payment of ${amount}`,
+        body: group ? group.name : "Settlement",
+        link: current.group_id ? `/groups/${current.group_id}` : `/friends/${userId}`,
+      },
+      client,
+    );
   });
 }

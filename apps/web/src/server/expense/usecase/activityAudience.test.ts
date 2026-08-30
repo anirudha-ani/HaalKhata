@@ -113,7 +113,7 @@ import {
 } from "@/server/common/ledgerLocks";
 import { insertActivity, listActivityForExpense } from "@/server/social/repo/activity.repo";
 import { insertNotifications } from "@/server/social/repo/notifications.repo";
-import { listFriendIds } from "@/server/social/repo/friendships.repo";
+import { insertFriendship, listFriendIds } from "@/server/social/repo/friendships.repo";
 import { amountOwed, userNetInGroup } from "./balance.usecase";
 import {
   MAX_EXPENSE_ITEM_NAME_LENGTH,
@@ -540,9 +540,11 @@ describe("who hears about a transaction", () => {
     expect(lockExpenseLedger).toHaveBeenCalledWith(transactionClient, "expense-1");
     expect(lockGroupLedgers).toHaveBeenCalledWith(transactionClient, [GOA_TRIP]);
     expect(softDeleteExpense).toHaveBeenCalledWith("expense-1", transactionClient);
-    // The feed line links to the expense's own page, which still resolves.
+    // The feed line links to the expense's own page, which still resolves —
+    // and is written on the deletion's own transaction.
     expect(insertActivity).toHaveBeenCalledWith(
       expect.objectContaining({ type: "expense_deleted", link: "/expenses/expense-1" }),
+      transactionClient,
     );
   });
 
@@ -588,11 +590,82 @@ describe("who hears about a transaction", () => {
         audience: [OWER, PAYER],
         amountCents: 1000,
       }),
+      transactionClient,
     );
-    // The recipient removed it, so the payer is the one told.
+    // The recipient removed it, so the payer is the one told — on the same
+    // transaction as the removal.
     expect(insertNotifications).toHaveBeenCalledWith(
       [OWER],
       expect.objectContaining({ type: "settlement_deleted" }),
+      transactionClient,
+    );
+  });
+
+  // H-03: every announcement rides the transaction of the change it
+  // announces. A feed row or a notification that outlives a rolled-back
+  // write — or a write that commits without its announcement — is exactly
+  // what a retry then duplicates.
+  it("commits a new one-off expense, its friendships and its announcement together", async () => {
+    vi.mocked(listFriendIds).mockResolvedValue([OWER]);
+
+    await createExpense(PAYER, validExpenseRequest({ groupId: "" }));
+
+    expect(insertExpense).toHaveBeenCalledWith(expect.anything(), transactionClient);
+    expect(insertFriendship).toHaveBeenCalledWith(PAYER, OWER, transactionClient);
+    expect(insertActivity).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "expense_added" }),
+      transactionClient,
+    );
+    expect(insertNotifications).toHaveBeenCalledWith(
+      [OWER],
+      expect.objectContaining({ type: "expense_added" }),
+      transactionClient,
+    );
+  });
+
+  it("commits a comment with the feed line and notifications that announce it", async () => {
+    vi.mocked(insertComment).mockResolvedValue({
+      id: "comment-1",
+      expense_id: "expense-1",
+      user_id: OWER,
+      body: "thanks!",
+      created_at: "2026-08-09T00:00:00Z",
+    } as CommentRow);
+
+    await addComment(OWER, "expense-1", "thanks!");
+
+    expect(insertComment).toHaveBeenCalledWith("expense-1", OWER, "thanks!", transactionClient);
+    expect(insertActivity).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "comment" }),
+      transactionClient,
+    );
+    expect(insertNotifications).toHaveBeenCalledWith(
+      [PAYER],
+      expect.objectContaining({ type: "comment" }),
+      transactionClient,
+    );
+  });
+
+  it("announces a payment on the pair lock's transaction", async () => {
+    vi.mocked(amountOwed).mockResolvedValue(1000);
+
+    await recordSettlement(PAYER, {
+      groupId: GOA_TRIP,
+      toUserId: OWER,
+      amountCents: 1000,
+      currency: "USD",
+      method: "cash",
+      note: "",
+    });
+
+    expect(insertActivity).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "settlement" }),
+      transactionClient,
+    );
+    expect(insertNotifications).toHaveBeenCalledWith(
+      [OWER],
+      expect.objectContaining({ type: "settlement" }),
+      transactionClient,
     );
   });
 
