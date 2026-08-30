@@ -3,6 +3,7 @@
 import crypto from "node:crypto";
 import fileSystem from "node:fs";
 import path from "node:path";
+import { promisify } from "node:util";
 import { OAuth2Client } from "google-auth-library";
 import {
   bumpTokenVersion,
@@ -73,9 +74,14 @@ export function avatarColorFor(email: string): string {
  * @throws UsecaseError "invalid_argument" when the password is too short or too long.
  */
 function validatePassword(password: string): void {
-  if (password.length < PASSWORD_MIN_LENGTH) invalid("password must be at least 6 characters");
+  if (password.length < PASSWORD_MIN_LENGTH) {
+    invalid(`password must be at least ${PASSWORD_MIN_LENGTH} characters`);
+  }
   if (password.length > PASSWORD_MAX_LENGTH) invalid("password is too long");
 }
+
+/** scrypt on the thread pool: a hash must never block the event loop for every other request. */
+const scrypt = promisify<string, string, number, Buffer>(crypto.scrypt);
 
 /**
  * Hashes a plaintext password with scrypt and a random salt.
@@ -83,9 +89,9 @@ function validatePassword(password: string): void {
  * @param password - Plaintext password to hash.
  * @returns Storable "salt:hash" string, both parts hex-encoded.
  */
-function hashPassword(password: string): string {
+async function hashPassword(password: string): Promise<string> {
   const salt = crypto.randomBytes(16).toString("hex");
-  const hash = crypto.scryptSync(password, salt, 64).toString("hex");
+  const hash = (await scrypt(password, salt, 64)).toString("hex");
   return `${salt}:${hash}`;
 }
 
@@ -96,10 +102,10 @@ function hashPassword(password: string): string {
  * @param storedHash - Previously stored "salt:hash" string from the users table.
  * @returns True when the password matches the stored hash.
  */
-function verifyPassword(password: string, storedHash: string): boolean {
+async function verifyPassword(password: string, storedHash: string): Promise<boolean> {
   const [salt, hash] = storedHash.split(":");
   if (!salt || !hash) return false;
-  const candidate = crypto.scryptSync(password, salt, 64);
+  const candidate = await scrypt(password, salt, 64);
   return crypto.timingSafeEqual(candidate, Buffer.from(hash, "hex"));
 }
 
@@ -371,14 +377,14 @@ export async function signUp(input: {
       throw new UsecaseError("already_exists", "an account with this email or phone already exists");
     }
     // Shadow user invited earlier — claim the account (keeps expense history).
-    await claimUser(existing.id, name, hashPassword(input.password));
+    await claimUser(existing.id, name, await hashPassword(input.password));
     user = (await findUserById(existing.id))!;
   } else {
     user = await insertUser({
       email: email || null,
       name,
       avatarColor: avatarColorFor(colorSeed),
-      passwordHash: hashPassword(input.password),
+      passwordHash: await hashPassword(input.password),
       phone: phone ?? null,
     });
   }
@@ -404,7 +410,7 @@ export async function logIn(input: { email: string; phone: string; password: str
   if (!user || user.password_hash === null || input.password.length > PASSWORD_MAX_LENGTH) {
     throw new UsecaseError("unauthenticated", "invalid email/phone or password");
   }
-  if (!verifyPassword(input.password, user.password_hash)) {
+  if (!(await verifyPassword(input.password, user.password_hash))) {
     throw new UsecaseError("unauthenticated", "invalid email/phone or password");
   }
   return { user: toPrivateUser(user), token: createToken(user.id, user.token_version) };

@@ -141,8 +141,12 @@ export function passwordAuthEnabled(): boolean {
   return process.env.NODE_ENV !== "production";
 }
 
-/** Minimum password length accepted at signup. */
-export const PASSWORD_MIN_LENGTH = 6;
+/**
+ * Minimum password length accepted at signup. Development-only, since
+ * production accepts Google alone — but a floor that would be weak on a
+ * public deployment is a floor waiting to be enabled by mistake.
+ */
+export const PASSWORD_MIN_LENGTH = 8;
 /**
  * Maximum password length accepted at signup. scrypt has no built-in input
  * cap, so an unbounded password length is a CPU-DoS vector; 1024 bytes is
