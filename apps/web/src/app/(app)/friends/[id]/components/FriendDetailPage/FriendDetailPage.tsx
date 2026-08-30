@@ -371,6 +371,9 @@ export function FriendDetailPage({
         )}
         {entries.length > 0 ? (
           <p className="text-xs text-ink-soft">
+            {view.ledger.truncated
+              ? "Showing the most recent lines — older ones still count toward every balance. "
+              : ""}
             &ldquo;Change&rdquo; is what each line did to your balance; positive means it went in
             your favour.{" "}
             {groupBalances.some((balance) => balance.simplified)

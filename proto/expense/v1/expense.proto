@@ -129,6 +129,8 @@ message ListExpensesRequest {
 }
 
 message ListExpensesResponse {
+  // Newest first, capped for display; balances are never derived from this
+  // list, so a cut list changes what is shown and nothing that is owed.
   repeated Expense expenses = 1;
   repeated common.v1.User users = 2; // everyone referenced by the expenses
   // Ids of listed expenses with nothing pending for the CALLER: their balance
@@ -139,6 +141,9 @@ message ListExpensesResponse {
   // a scope still owes, singling out one of its expenses as "settled" would
   // be an attribution the ledger never made.
   repeated string settled_expense_ids = 3;
+  // True when older rows were left off to bound the response; every
+  // balance and settledness figure still read the whole ledger.
+  bool truncated = 4;
 }
 
 message GetExpenseRequest {
@@ -369,4 +374,7 @@ message FriendLedgerResponse {
   // still appears, because "where do I know this person from" is a different
   // question from "where does money move between us".
   repeated MutualGroup mutual_groups = 7;
+  // True when older lines were left off `entries` to bound the response.
+  // The nets and group balances are computed over everything regardless.
+  bool truncated = 10;
 }

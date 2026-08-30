@@ -74,6 +74,7 @@ import {
   MAX_SETTLEMENT_NOTE_LENGTH,
   SETTLEMENT_METHODS,
   SPLIT_TYPES,
+  EXPENSE_LIST_DISPLAY_LIMIT,
 } from "@/server/expense/expense.constants";
 import { toExpense, toSettlement } from "./expense.mapper";
 
@@ -678,8 +679,12 @@ export async function listExpenses(
   } else if (filter.withUserId) {
     rows = await listOneOffExpensesBetween(userId, filter.withUserId, undefined, true);
   } else {
-    rows = await listExpensesInvolvingUser(userId, true);
+    // One past the cap, so the response can say the list is cut without a
+    // second count query.
+    rows = await listExpensesInvolvingUser(userId, true, EXPENSE_LIST_DISPLAY_LIMIT + 1);
   }
+  const truncated = rows.length > EXPENSE_LIST_DISPLAY_LIMIT;
+  if (truncated) rows = rows.slice(0, EXPENSE_LIST_DISPLAY_LIMIT);
   const children = await loadExpenseChildren(rows.map((expenseRow) => expenseRow.id));
 
   // Settledness inputs: the viewer's net per group scope, and per one-off
@@ -729,6 +734,7 @@ export async function listExpenses(
       viewerNetByGroupId,
       oneOffNetByPair,
     ),
+    truncated,
   };
 }
 

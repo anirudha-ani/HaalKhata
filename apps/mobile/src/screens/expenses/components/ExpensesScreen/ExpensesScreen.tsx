@@ -88,6 +88,14 @@ export function ExpensesScreen() {
             ))}
           </View>
 
+          {/* The list is bounded; the balances are not. Say so rather than
+              let an old row's absence read as its deletion. */}
+          {listState.truncated ? (
+            <Text style={styles.truncated}>
+              Showing your most recent expenses — older ones still count toward every balance.
+            </Text>
+          ) : null}
+
           {listState.visibleExpenses.length === 0 ? (
             <View style={styles.emptyCard}>
               <Text style={styles.emptyText}>
@@ -146,6 +154,10 @@ const styles = StyleSheet.create({
     fontFamily: fonts.display,
     fontSize: 28,
     fontWeight: "700",
+  },
+  truncated: {
+    color: colors.inkSoft,
+    fontSize: 12,
   },
   titleRow: {
     alignItems: "center",

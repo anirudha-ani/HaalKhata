@@ -81,6 +81,14 @@ export function ExpensesPage() {
         ))}
       </div>
 
+      {/* The list is bounded; the balances are not. Say so rather than let
+          an old row's absence read as its deletion. */}
+      {listState.truncated ? (
+        <p className="text-xs text-ink-soft">
+          Showing your most recent expenses — older ones still count toward every balance.
+        </p>
+      ) : null}
+
       {listState.visibleExpenses.length === 0 ? (
         <p className="rounded-2xl border border-line bg-card px-4 py-6 text-center text-sm text-ink-soft">
           {noExpensesMessage(listState.query, listState.scope, filteredGroupName)}

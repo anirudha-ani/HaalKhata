@@ -93,6 +93,7 @@ describe.skipIf(!reachable)("recordSettlement against Postgres", () => {
     "@/server/group/usecase/group.usecase"
   ).removeMemberFromGroup;
   let userNetInGroup: typeof import("./balance.usecase").userNetInGroup;
+  let userNetInGroups: typeof import("./balance.usecase").userNetInGroups;
   let netWithUser: typeof import("./balance.usecase").netWithUser;
   let getFriendLedger: typeof import("./balance.usecase").getFriendLedger;
   let closePool: () => Promise<void>;
@@ -123,7 +124,9 @@ describe.skipIf(!reachable)("recordSettlement against Postgres", () => {
       updateExpense,
     } = await import("./expense.usecase"));
     ({ removeMemberFromGroup } = await import("@/server/group/usecase/group.usecase"));
-    ({ getFriendLedger, userNetInGroup, netWithUser } = await import("./balance.usecase"));
+    ({ getFriendLedger, userNetInGroup, userNetInGroups, netWithUser } = await import(
+      "./balance.usecase"
+    ));
 
     database = new Client({ connectionString: TEST_URL });
     await database.connect();
@@ -498,5 +501,14 @@ describe.skipIf(!reachable)("recordSettlement against Postgres", () => {
       /already used for a different request/,
     );
     expect(await settlementCount()).toBe(before + 1);
+  });
+
+  it("sums each group's net in one query, agreeing with the ledger walk", async () => {
+    // M-02: the group list used to rebuild every group's whole ledger in the
+    // process, one pool connection each. The SQL sum must land on the same
+    // number the full walk does, live rows only.
+    const batched = await userNetInGroups(DEBTOR, ["grp-1", "grp-missing"]);
+    expect(batched.get("grp-1")).toBe(await userNetInGroup(DEBTOR, "grp-1"));
+    expect(batched.get("grp-missing")).toBe(0);
   });
 });

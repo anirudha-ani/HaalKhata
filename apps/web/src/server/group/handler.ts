@@ -19,7 +19,14 @@ export const groupHandler: ServiceImpl<typeof GroupService> = {
 
   /** Lists the caller's groups with member counts and the caller's net balance. */
   async listGroups(_request, context) {
-    return runUsecase(async () => ({ groups: await groups.listGroups(await requireUser(context)) }), context);
+    return runUsecase(
+      async () => ({
+        groups: await groups.listGroups(
+          await requireRateLimitedUser(context, "list-groups", RPC_RATE_LIMITS.listGroups),
+        ),
+      }),
+      context,
+    );
   },
 
   /** Fetches a single group (with members) the caller belongs to. */

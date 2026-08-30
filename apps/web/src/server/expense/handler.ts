@@ -38,10 +38,13 @@ export const expenseHandler: ServiceImpl<typeof ExpenseService> = {
   async listExpenses(request, context) {
     return runUsecase(
       async () =>
-        expenses.listExpenses(await requireUser(context), {
-          groupId: request.groupId || undefined,
-          withUserId: request.withUserId || undefined,
-        }),
+        expenses.listExpenses(
+          await requireRateLimitedUser(context, "list-expenses", RPC_RATE_LIMITS.listExpenses),
+          {
+            groupId: request.groupId || undefined,
+            withUserId: request.withUserId || undefined,
+          },
+        ),
       context,
     );
   },
@@ -80,7 +83,18 @@ export const expenseHandler: ServiceImpl<typeof ExpenseService> = {
   },
 
   async getGroupBalances(request, context) {
-    return runUsecase(async () => balances.getGroupBalances(await requireUser(context), request.groupId), context);
+    return runUsecase(
+      async () =>
+        balances.getGroupBalances(
+          await requireRateLimitedUser(
+            context,
+            "get-group-balances",
+            RPC_RATE_LIMITS.getGroupBalances,
+          ),
+          request.groupId,
+        ),
+      context,
+    );
   },
 
   async getOverallBalances(_request, context) {
@@ -99,7 +113,15 @@ export const expenseHandler: ServiceImpl<typeof ExpenseService> = {
 
   async getFriendLedger(request, context) {
     return runUsecase(
-      async () => balances.getFriendLedger(await requireUser(context), request.userId),
+      async () =>
+        balances.getFriendLedger(
+          await requireRateLimitedUser(
+            context,
+            "get-friend-ledger",
+            RPC_RATE_LIMITS.getFriendLedger,
+          ),
+          request.userId,
+        ),
       context,
     );
   },

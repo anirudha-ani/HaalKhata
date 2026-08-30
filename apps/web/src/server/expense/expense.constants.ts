@@ -30,6 +30,20 @@ export const MAX_ITEM_ASSIGNMENTS = 100;
 export const MAX_MONEY_CENTS = 2_000_000_000;
 
 /**
+ * Most lines a friend statement returns, newest first. The balances are
+ * computed over the whole history regardless; this bounds only what is
+ * shipped to a screen, and the response says when it applied.
+ */
+export const LEDGER_DISPLAY_LIMIT = 300;
+
+/**
+ * Most rows an expense list returns, newest first. Same shape as the
+ * statement cap: settledness and every balance still read the whole
+ * ledger, only the list itself is bounded.
+ */
+export const EXPENSE_LIST_DISPLAY_LIMIT = 500;
+
+/**
  * Text bounds on the expense write path. Defined once in the shared package
  * and re-exported here, so both clients cap their inputs at exactly what the
  * server (and the matching database CHECKs) will accept.

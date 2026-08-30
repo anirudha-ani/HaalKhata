@@ -42,6 +42,7 @@ export function useExpensesAPI() {
     expenses: expensesQuery.data?.expenses ?? [],
     userById: new Map((expensesQuery.data?.users ?? []).map((user) => [user.id, user])),
     settledIds: new Set(expensesQuery.data?.settledExpenseIds ?? []),
+    truncated: expensesQuery.data?.truncated ?? false,
     groups: groupsQuery.data?.groups ?? [],
     isLoading: expensesQuery.isLoading,
     refresh,

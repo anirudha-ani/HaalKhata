@@ -390,19 +390,23 @@ export async function listExpensesBetween(
  *
  * @param userId - Id of the user whose expenses to list.
  * @param includeDeleted - Whether soft-deleted rows are returned too (display only).
+ * @param limit - Most rows to return (display only); omitted, every row —
+ *   which the balance math needs and a screen does not.
  * @returns Expense rows involving the user, newest first.
  */
 export async function listExpensesInvolvingUser(
   userId: string,
   includeDeleted = false,
+  limit?: number,
 ): Promise<ExpenseRow[]> {
   return query<ExpenseRow>(
     `SELECT DISTINCT expense.* FROM expenses expense
      WHERE ($2::boolean OR expense.deleted_at IS NULL)
        AND EXISTS (SELECT 1 FROM expense_splits split WHERE split.expense_id = expense.id AND split.user_id = $1
                    UNION SELECT 1 FROM expense_payers payer WHERE payer.expense_id = expense.id AND payer.user_id = $1)
-     ORDER BY expense.expense_date DESC, expense.created_at DESC`,
-    [userId, includeDeleted],
+     ORDER BY expense.expense_date DESC, expense.created_at DESC
+     LIMIT $3`,
+    [userId, includeDeleted, limit ?? null],
   );
 }
 

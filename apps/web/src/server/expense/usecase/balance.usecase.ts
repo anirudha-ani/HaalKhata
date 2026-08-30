@@ -34,9 +34,11 @@ import {
 } from "../domain/balances";
 import { type ScopeDebt } from "../domain/settlementAllocation";
 import { listFriendIds } from "@/server/social/repo/friendships.repo";
+import { sumUserNetByGroup } from "@/server/expense/repo/ledger.repo";
 import { denied, notFound } from "@/server/common/errors";
 import { toInt32Cents } from "@/server/common/money";
 import { toPublicUser } from "@/server/auth/usecase/user.mapper";
+import { LEDGER_DISPLAY_LIMIT } from "@/server/expense/expense.constants";
 
 /**
  * Cents per ISO 4217 code. A balance between two people is one number per
@@ -237,25 +239,23 @@ export async function userNetInGroup(
 }
 
 /**
- * Batched: each group's net position for a specific user, in one pass per
- * group. Used by listGroups to avoid the N+1 of calling userNetInGroup per
- * group.
+ * Batched: each group's net position for a specific user, in one database
+ * query for every group at once. Nets are routing-independent, so the SQL
+ * sum agrees with {@link userNetInGroup}'s ledger walk; what it avoids is
+ * loading every group's whole history into the process, one pool connection
+ * per group, to answer a number Postgres can add up itself.
  *
  * @param userId - User whose positions are computed.
  * @param groupIds - Groups to compute the position in.
- * @returns Map of group id → net cents for that user (> 0 ⇒ owed money).
+ * @returns Map of group id → net cents for that user (> 0 ⇒ owed money);
+ *   every requested group is present, at zero when nothing involves them.
  */
 export async function userNetInGroups(
   userId: string,
   groupIds: string[],
 ): Promise<Map<string, number>> {
-  const result = new Map<string, number>();
-  await Promise.all(
-    groupIds.map(async (groupId) => {
-      result.set(groupId, await userNetInGroup(userId, groupId));
-    }),
-  );
-  return result;
+  const nets = await sumUserNetByGroup(userId, groupIds);
+  return new Map(groupIds.map((groupId) => [groupId, nets.get(groupId) ?? 0]));
 }
 
 /**
@@ -733,6 +733,11 @@ export async function getFriendLedger(userId: string, friendId: string) {
     };
   });
   entries.reverse();
+  // The statement is a display; the balances above it are computed over
+  // everything. Past the cap the oldest lines are left off and the response
+  // says so, rather than shipping an unbounded table to a phone.
+  const truncated = entries.length > LEDGER_DISPLAY_LIMIT;
+  const shownEntries = truncated ? entries.slice(0, LEDGER_DISPLAY_LIMIT) : entries;
 
   // The pair's history per scope and currency: `<groupId>|<currency>`, with
   // the one-off slate keyed on "" — one entry per currency it holds.
@@ -811,7 +816,8 @@ export async function getFriendLedger(userId: string, friendId: string) {
     netCents: toInt32Cents(nets.get(defaultCurrency) ?? 0, "this balance"),
     currency: defaultCurrency,
     nets: currencyAmounts(nets, defaultCurrency),
-    entries,
+    entries: shownEntries,
+    truncated,
     groupBalances: groupBalances.map((scope) => ({
       ...scope,
       netCents: toInt32Cents(scope.netCents, "a balance"),
