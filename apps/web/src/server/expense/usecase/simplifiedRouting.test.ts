@@ -41,6 +41,7 @@ import {
   amountOwed,
   getFriendLedger,
   getOverallBalances,
+  groupCancelsOut,
   netWithUser,
   owedByScope,
   userNetInGroup,
@@ -362,6 +363,10 @@ describe("after paying along the simplified edge", () => {
     expect(await amountOwed(ALICE, BOBBY, TRIP)).toBe(1000);
     expect(await amountOwed(BOBBY, CARA, TRIP)).toBe(1000);
     expect(await amountOwed(CARA, ALICE, TRIP)).toBe(1000);
+    // M-01: visible, but not payable — nobody owes anybody overall, so no
+    // scope offers an edge of the loop to a cross-scope payment.
+    expect(await groupCancelsOut(TRIP)).toBe(true);
+    expect(await owedByScope(ALICE, BOBBY)).toEqual([]);
     for (const member of [ALICE, BOBBY, CARA]) {
       expect(await userNetInGroup(member, TRIP)).toBe(0);
     }

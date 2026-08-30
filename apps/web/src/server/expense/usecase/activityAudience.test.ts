@@ -69,6 +69,7 @@ vi.mock("@/server/social/repo/activity.repo", () => ({
 }));
 vi.mock("@/server/social/repo/notifications.repo", () => ({ insertNotifications: vi.fn() }));
 vi.mock("./balance.usecase", () => ({
+  groupCancelsOut: vi.fn(),
   amountOwed: vi.fn(),
   oneOffNetBetween: vi.fn(),
   owedByScope: vi.fn(),
@@ -114,7 +115,7 @@ import {
 import { insertActivity, listActivityForExpense } from "@/server/social/repo/activity.repo";
 import { insertNotifications } from "@/server/social/repo/notifications.repo";
 import { insertFriendship, listFriendIds } from "@/server/social/repo/friendships.repo";
-import { amountOwed, userNetInGroup } from "./balance.usecase";
+import { amountOwed, userNetInGroup, groupCancelsOut } from "./balance.usecase";
 import {
   MAX_EXPENSE_ITEM_NAME_LENGTH,
   MAX_EXPENSE_NOTES_LENGTH,
@@ -209,6 +210,7 @@ beforeEach(() => {
   });
   vi.mocked(insertActivity).mockResolvedValue(undefined as never);
   vi.mocked(insertNotifications).mockResolvedValue(undefined);
+  vi.mocked(groupCancelsOut).mockResolvedValue(false);
   vi.mocked(insertSettlement).mockImplementation(
     async (input) =>
       ({
@@ -644,6 +646,25 @@ describe("who hears about a transaction", () => {
       expect.objectContaining({ type: "comment" }),
       transactionClient,
     );
+  });
+
+  it("refuses to pay down a pairwise loop that nets to zero", async () => {
+    // M-01: after simplification is switched off, A→B→C→A can remain with
+    // every net at zero. Each edge validates on its own, so the guard has to
+    // look at the group, not the pair.
+    vi.mocked(amountOwed).mockResolvedValue(1000);
+    vi.mocked(groupCancelsOut).mockResolvedValue(true);
+    await expect(
+      recordSettlement(PAYER, {
+        groupId: GOA_TRIP,
+        toUserId: OWER,
+        amountCents: 1000,
+        currency: "USD",
+        method: "cash",
+        note: "",
+      }),
+    ).rejects.toThrow(/cancel out around a loop/);
+    expect(insertSettlement).not.toHaveBeenCalled();
   });
 
   it("announces a payment on the pair lock's transaction", async () => {

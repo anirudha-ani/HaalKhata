@@ -177,7 +177,10 @@ export function BalancesPanel({
                       where everyone owes the payer with no action anywhere on
                       the screen — the ordinary case for whoever picked up
                       the bill. */}
-                  {mine || owedToMe ? (
+                  {/* A loop that nets to zero offers no action: the server
+                      refuses to pay it down, and a button that only ever
+                      produces a refusal is worse than none. */}
+                  {(mine || owedToMe) && !cancelingLoop ? (
                     <Button
                       compact
                       label={mine ? "Settle" : "Record"}

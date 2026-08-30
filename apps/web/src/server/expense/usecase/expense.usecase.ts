@@ -42,6 +42,7 @@ import {
 } from "@haalkhata/shared/expense/splits";
 import {
   amountOwed,
+  groupCancelsOut,
   oneOffNetsBetween,
   owedByScope,
   userNetInGroup,
@@ -1063,6 +1064,15 @@ export async function recordSettlement(
       const recipientIsMember = await isMember(groupId, request.toUserId, client);
       if (!callerIsMember || !recipientIsMember) {
         denied("both people must be members of the group");
+      }
+      // A pairwise loop that nets to zero (A→B→C→A, left behind by payments
+      // made while the group simplified debts) is not debt: paying along
+      // one edge would leave the payer owed by the next person round. The
+      // mode switch that exposed it is also what clears it.
+      if (await groupCancelsOut(groupId, client)) {
+        invalid(
+          "these debts cancel out around a loop — everyone here is settled up overall; turn on Simplify debts to clear the view",
+        );
       }
       const outstandingCents = await amountOwed(payerId, creditorId, groupId, client);
       if (outstandingCents <= 0) {

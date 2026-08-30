@@ -52,7 +52,11 @@ vi.mock("@/server/social/repo/activity.repo", () => ({
   listActivityForExpense: vi.fn(),
 }));
 vi.mock("@/server/social/repo/notifications.repo", () => ({ insertNotifications: vi.fn() }));
-vi.mock("./balance.usecase", () => ({ amountOwed: vi.fn(), owedByScope: vi.fn() }));
+vi.mock("./balance.usecase", () => ({
+  amountOwed: vi.fn(),
+  groupCancelsOut: vi.fn(),
+  owedByScope: vi.fn(),
+}));
 
 import { recordSettlement } from "./expense.usecase";
 import { findUserById } from "@/server/auth/repo/users.repo";

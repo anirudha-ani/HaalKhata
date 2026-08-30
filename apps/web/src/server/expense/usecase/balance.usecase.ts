@@ -259,6 +259,26 @@ export async function userNetInGroups(
 }
 
 /**
+ * Whether a group's pairwise debts cancel out around a loop: every member's
+ * net is zero while pairwise edges remain (A→B→C→A). Money-wise nobody owes
+ * anybody, so no edge of the loop is a debt a payment should pay down — a
+ * payment along it would leave the payer owed money by the next person
+ * round, which is exactly the double-count simplification exists to
+ * prevent. Typically left behind by payments recorded while the group
+ * simplified debts and then switching the mode off.
+ *
+ * @param groupId - Group whose ledger is consulted.
+ * @param client - Settlement transaction client; omitted for ordinary reads.
+ * @returns True when pairwise debts exist but every net is zero.
+ */
+export async function groupCancelsOut(groupId: string, client?: PoolClient): Promise<boolean> {
+  const ledger = await groupLedger(groupId, client);
+  return (
+    ledger.length > 0 && [...netBalances(ledger).values()].every((netCents) => netCents === 0)
+  );
+}
+
+/**
  * How much `debtorId` currently owes `creditorId` inside one group, along the
  * route the group's mode prescribes — the pairwise debt, or the simplified
  * edge when the group simplifies. Returns a non-negative number of cents (0
@@ -445,11 +465,17 @@ export async function owedByScope(
   );
   for (const group of await listGroupsByUser(creditorId, client)) {
     if (!payerGroupIds.has(group.id)) continue;
-    const owedCents = owedInEntries(
-      routeDebts(await groupLedger(group.id, client), group.simplify_debts),
-      payerId,
-      creditorId,
-    );
+    const ledger = await groupLedger(group.id, client);
+    // A pairwise loop that nets to zero is not debt anyone should pay down —
+    // see groupCancelsOut. Simplified groups route it away themselves.
+    if (
+      !group.simplify_debts &&
+      ledger.length > 0 &&
+      [...netBalances(ledger).values()].every((netCents) => netCents === 0)
+    ) {
+      continue;
+    }
+    const owedCents = owedInEntries(routeDebts(ledger, group.simplify_debts), payerId, creditorId);
     if (owedCents > 0) scopes.push({ groupId: group.id, currency: group.currency, owedCents });
   }
   return scopes;
