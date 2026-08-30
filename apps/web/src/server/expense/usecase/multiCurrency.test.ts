@@ -216,6 +216,32 @@ describe("balances are kept per currency", () => {
     ]);
   });
 
+  it("refuses, by name, an aggregate the int32 wire field cannot carry", async () => {
+    // Two rows at the per-row cap are each valid; their sum is not
+    // representable. The encoder would throw an opaque internal error;
+    // instead the caller gets a precondition failure that says which number.
+    const huge = [
+      expenseRow("expense-huge-1", "USD", 2_000_000_000, "2026-08-03T10:00:00Z"),
+      expenseRow("expense-huge-2", "USD", 2_000_000_000, "2026-08-04T10:00:00Z"),
+    ];
+    for (const expense of huge) {
+      payersByExpense.set(expense.id, [
+        { expense_id: expense.id, user_id: BOBBY, amount_cents: 2_000_000_000 },
+      ]);
+      splitsByExpense.set(expense.id, [
+        { expense_id: expense.id, user_id: ALICE, owed_cents: 2_000_000_000 },
+      ]);
+    }
+    vi.mocked(listExpensesInvolvingUser).mockResolvedValue(huge);
+    await expect(getOverallBalances(ALICE)).rejects.toMatchObject({
+      code: "failed_precondition",
+    });
+    for (const expense of huge) {
+      payersByExpense.delete(expense.id);
+      splitsByExpense.delete(expense.id);
+    }
+  });
+
   it("a dollar payment moves the dollar column and leaves the euros alone", async () => {
     settlementRows.push({
       id: "settlement-1",

@@ -27,6 +27,7 @@ import { insertActivity } from "@/server/social/repo/activity.repo";
 import { insertNotifications } from "@/server/social/repo/notifications.repo";
 import { userNetInGroup, userNetInGroups } from "@/server/expense/usecase/balance.usecase";
 import { denied, invalid, notFound } from "@/server/common/errors";
+import { toInt32Cents } from "@/server/common/money";
 import { normalizeCurrencyCode } from "@/server/common/validation";
 import { EMAIL_PATTERN, normalizePhone, PHONE_FORMAT_HINT } from "@/server/auth/auth.constants";
 import {
@@ -307,7 +308,7 @@ export async function listGroups(userId: string) {
   return groups.map((group) => ({
     group: toGroup(group, membersByGroup.get(group.id) ?? []),
     memberCount: (membersByGroup.get(group.id) ?? []).length,
-    yourNetCents: netByGroup.get(group.id) ?? 0,
+    yourNetCents: toInt32Cents(netByGroup.get(group.id) ?? 0, "your balance in a group"),
   }));
 }
 

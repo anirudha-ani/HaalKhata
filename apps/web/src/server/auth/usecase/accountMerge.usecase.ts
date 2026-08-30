@@ -16,11 +16,10 @@ import {
 } from "@/server/auth/repo/users.repo";
 import { mergeAccounts, previewMerge } from "@/server/auth/repo/accountMerge.repo";
 import { UsecaseError, invalid } from "@/server/common/errors";
+import { toInt32Cents } from "@/server/common/money";
 import {
   MERGE_TOKEN_LIFETIME_SECONDS,
   PHONE_FORMAT_HINT,
-  PROTO_INT32_MAX,
-  PROTO_INT32_MIN,
   normalizePhone,
 } from "@/server/auth/auth.constants";
 import { signPayload, verifyPayloadSignature } from "./auth.usecase";
@@ -169,17 +168,10 @@ export async function setPhone(
   if (!preview) throw new UsecaseError("not_found", "that invitation no longer exists");
   // One bucket per currency, each checked against the wire's int32 before
   // it is promised to a client.
-  const nets = Object.entries(preview.nets ?? {}).map(([currency, cents]) => {
-    const netCents = Number(cents);
-    if (
-      !Number.isSafeInteger(netCents) ||
-      netCents < PROTO_INT32_MIN ||
-      netCents > PROTO_INT32_MAX
-    ) {
-      invalid("that account balance is too large to preview safely");
-    }
-    return { currency, cents: netCents };
-  });
+  const nets = Object.entries(preview.nets ?? {}).map(([currency, cents]) => ({
+    currency,
+    cents: toInt32Cents(Number(cents), "that account's balance"),
+  }));
   const defaultCurrency = (await findUserById(userId))?.default_currency || "USD";
   return {
     pendingMerge: {

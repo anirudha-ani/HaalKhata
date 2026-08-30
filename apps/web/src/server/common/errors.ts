@@ -7,6 +7,7 @@ export type UsecaseErrorCode =
   | "permission_denied"
   | "not_found"
   | "already_exists"
+  | "failed_precondition"
   | "unavailable";
 
 /** Error thrown by usecases so handlers can report failures without transport knowledge. */

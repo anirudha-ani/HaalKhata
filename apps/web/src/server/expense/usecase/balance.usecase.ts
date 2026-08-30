@@ -35,6 +35,7 @@ import {
 import { type ScopeDebt } from "../domain/settlementAllocation";
 import { listFriendIds } from "@/server/social/repo/friendships.repo";
 import { denied, notFound } from "@/server/common/errors";
+import { toInt32Cents } from "@/server/common/money";
 import { toPublicUser } from "@/server/auth/usecase/user.mapper";
 
 /**
@@ -76,7 +77,7 @@ export function currencyAmounts(
     .sort(([first], [second]) =>
       first === defaultCurrency ? -1 : second === defaultCurrency ? 1 : first.localeCompare(second),
     )
-    .map(([currency, cents]) => ({ currency, cents }));
+    .map(([currency, cents]) => ({ currency, cents: toInt32Cents(cents, "a balance") }));
 }
 
 /**
@@ -196,19 +197,25 @@ export async function getGroupBalances(userId: string, groupId: string) {
   for (const member of await listMembers(groupId)) {
     if (!netByUser.has(member.id)) netByUser.set(member.id, 0);
   }
+  // Aggregates, checked against the wire: two valid rows can already sum
+  // past int32, and the encoder's own failure would be an opaque internal
+  // error.
   return {
     nets: [...netByUser.entries()]
       .sort(([firstUserId], [secondUserId]) => firstUserId.localeCompare(secondUserId))
-      .map(([memberId, netCents]) => ({ userId: memberId, netCents })),
+      .map(([memberId, netCents]) => ({
+        userId: memberId,
+        netCents: toInt32Cents(netCents, "a member's balance in this group"),
+      })),
     debts: pairwise.map((debt) => ({
       fromUserId: debt.from,
       toUserId: debt.to,
-      amountCents: debt.amountCents,
+      amountCents: toInt32Cents(debt.amountCents, "a debt in this group"),
     })),
     simplified: simplifyDebts(netByUser).map((debt) => ({
       fromUserId: debt.from,
       toUserId: debt.to,
-      amountCents: debt.amountCents,
+      amountCents: toInt32Cents(debt.amountCents, "a debt in this group"),
     })),
   };
 }
@@ -487,8 +494,8 @@ export async function getOverallBalances(userId: string) {
   );
   const defaultTotals = totals.get(defaultCurrency) ?? { youOweCents: 0, owedToYouCents: 0 };
   return {
-    youOweCents: defaultTotals.youOweCents,
-    owedToYouCents: defaultTotals.owedToYouCents,
+    youOweCents: toInt32Cents(defaultTotals.youOweCents, "what you owe"),
+    owedToYouCents: toInt32Cents(defaultTotals.owedToYouCents, "what you are owed"),
     totals: [...totals.entries()]
       .sort(([first], [second]) =>
         first === defaultCurrency
@@ -497,7 +504,11 @@ export async function getOverallBalances(userId: string) {
             ? 1
             : first.localeCompare(second),
       )
-      .map(([currency, total]) => ({ currency, ...total })),
+      .map(([currency, total]) => ({
+        currency,
+        youOweCents: toInt32Cents(total.youOweCents, "what you owe"),
+        owedToYouCents: toInt32Cents(total.owedToYouCents, "what you are owed"),
+      })),
     counterparties: [...perCounterparty.entries()]
       .sort(
         ([, firstBuckets], [, secondBuckets]) =>
@@ -509,7 +520,7 @@ export async function getOverallBalances(userId: string) {
         return [
           {
             user: toPublicUser(user),
-            netCents: buckets.get(defaultCurrency) ?? 0,
+            netCents: toInt32Cents(buckets.get(defaultCurrency) ?? 0, "a balance"),
             balances: currencyAmounts(buckets, defaultCurrency),
           },
         ];
@@ -688,8 +699,8 @@ export async function getFriendLedger(userId: string, friendId: string) {
       groupName: line.groupName,
       currency: line.currency,
       totalCents: line.totalCents,
-      deltaCents: line.deltaCents,
-      balanceAfterCents: runningCents,
+      deltaCents: toInt32Cents(line.deltaCents, "a line's change"),
+      balanceAfterCents: toInt32Cents(runningCents, "the running balance"),
       createdAt: line.createdAt,
       deleted: line.deleted,
       recordedByName: line.recordedByName,
@@ -771,11 +782,14 @@ export async function getFriendLedger(userId: string, friendId: string) {
 
   return {
     friend: toPublicUser(friend),
-    netCents: nets.get(defaultCurrency) ?? 0,
+    netCents: toInt32Cents(nets.get(defaultCurrency) ?? 0, "this balance"),
     currency: defaultCurrency,
     nets: currencyAmounts(nets, defaultCurrency),
     entries,
-    groupBalances,
+    groupBalances: groupBalances.map((scope) => ({
+      ...scope,
+      netCents: toInt32Cents(scope.netCents, "a balance"),
+    })),
     isFriend,
     mutualGroups: mutualGroupRows.map((group) => ({
       groupId: group.id,

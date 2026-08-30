@@ -215,8 +215,8 @@ describe("setPhone", () => {
     });
 
     await expect(setPhone(KEEPER, PHONE, "123456")).rejects.toMatchObject({
-      code: "invalid_argument",
-      message: "that account balance is too large to preview safely",
+      code: "failed_precondition",
+      message: expect.stringMatching(/larger than this app can represent/),
     });
   });
 

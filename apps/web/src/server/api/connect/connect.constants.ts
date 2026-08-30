@@ -43,5 +43,6 @@ export const CODE_MAP: Record<UsecaseErrorCode, Code> = {
   permission_denied: Code.PermissionDenied,
   not_found: Code.NotFound,
   already_exists: Code.AlreadyExists,
+  failed_precondition: Code.FailedPrecondition,
   unavailable: Code.Unavailable,
 };
