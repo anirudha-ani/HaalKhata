@@ -20,11 +20,12 @@ export const mobileQueryClient = new QueryClient({
 });
 
 /**
- * Erases both live and persisted query data at an authentication boundary.
+ * Erases the live query cache at an authentication boundary, and any cache a
+ * previous version of the app persisted to storage.
  * The memory clear is deliberately synchronous and first, so a storage error
  * cannot leave the previous account visible during the current process.
  *
- * @returns A promise that resolves after the persisted cache has been removed.
+ * @returns A promise that resolves after any stored cache has been removed.
  */
 export async function clearMobileQueryCache(): Promise<void> {
   mobileQueryClient.clear();
