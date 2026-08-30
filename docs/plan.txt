@@ -1473,8 +1473,10 @@ only over the compose network.
 
 **Secrets are files, not environment.** `SESSION_SECRET`, `POSTGRES_PASSWORD`
 and `COMPATIBLE_AI_API_KEY` arrive as Docker secrets under `/run/secrets/`.
-The app reads `process.env`, so `ops/docker-entrypoint.sh` bridges the two and
-assembles `DATABASE_URL` there — meaning the password appears in no compose
+(Superseded by §28: the app now reads the files itself through `*_FILE`
+variables and the entrypoint exports nothing.) At the time the app read
+`process.env`, so `ops/docker-entrypoint.sh` bridged the two and
+assembled `DATABASE_URL` there — meaning the password appeared in no compose
 file, no image layer, and no `docker inspect` output. It does still reach the
 process environment, because that is what the app reads; closing that last gap
 means teaching `auth.usecase.ts` and `receipt.constants.ts` a `*_FILE`
@@ -1865,3 +1867,104 @@ needs a rebuild, as after the Google sign-in change.
 Deliberately still different, because the platform is: the web's PWA
 service worker and install prompt, its desktop sidebar, and hand-drawn SVG
 feed glyphs (mobile draws emoji tiles with the same inbound/outbound rule).
+
+## §28 Closing the server half of the security audit (2026-08-30)
+
+§25 closed the client findings of the 2026-08-29 audit. This pass took the
+rest — the ledger, the API, secrets and operations — the same way: every
+finding re-checked against the code first (two had already been closed on
+this branch: mobile Google sign-in, and transfer-ownership's owner check),
+then the established way of solving each looked up before choosing ours, and
+one commit per finding so a reviewer can take or revert each on its own.
+The decisions worth keeping, because the code cannot explain why it is
+shaped this way:
+
+- **Side effects commit with the change they announce.** Activity rows,
+  notifications and the friendships a group creates are written on the same
+  transaction client as the expense, payment or group change they describe.
+  The pattern is the transactional-outbox one — but the "outbox" here is
+  just more Postgres tables and there is no broker to relay to, so the
+  tables themselves are the outbox and the same transaction is enough.
+  Repo insert functions take an optional `client` for that reason; a usecase
+  that writes a side effect outside the transaction is a bug.
+- **Idempotent money mutations.** `CreateExpense` and `RecordSettlement`
+  require a client-generated UUID `operation_id` (the IETF Idempotency-Key
+  draft's model, as Stripe applies it): the key is claimed inside the ledger
+  transaction under the primary key (user, rpc, id), so a concurrent
+  duplicate waits on that row and then replays; a replay with the same
+  canonical payload returns the stored result, a reuse with a different
+  payload is refused, a key whose first attempt is still running says so,
+  and claims expire after 24 hours. The clients hold the id in a ref for the
+  life of one submit and mint a new one after success, so a retry after a
+  timeout cannot double-post and a second intentional payment cannot be
+  swallowed.
+- **Who asserted a payment is part of the ledger.** Either party can record
+  a payment in either direction — that is what makes settling up usable — so
+  the trust model is provenance plus reversal, not approval: `recorded_by`
+  and `deleted_by` are stored, the feed and the friend ledger say "recorded
+  by" whenever the recorder is not the payer, and the counterparty sees it
+  immediately and can remove it. An approval step was considered and
+  rejected: the app cannot verify a payment happened, so approval would only
+  block the honest majority while a dishonest counterparty declines.
+  Visibility and an audit trail are what a shared ledger can actually offer.
+- **Balances are kept per currency and never summed.** Every balance map
+  is keyed by currency (`CurrencyCents`), responses carry `CurrencyAmount`
+  buckets ("you owe $12.45 and €8.72"), settlements allocate only within the
+  currency being paid, a group's expenses and payments are in the group's
+  currency, and nothing ever converts — the Splitwise and ledger-provider
+  rule. The old scalar fields stay on the wire because `buf breaking` forbids
+  removing them; they are redefined as the caller's default-currency bucket
+  and legacy readers see exactly what they saw before when only one currency
+  is in play. The account-merge invariant is checked per currency too.
+- **The int32 ceiling is a stated limit, not a crash.** Cents stay int32 on
+  the wire (changing the type is a breaking change and would put bigints in
+  every client); every aggregate goes through `toInt32Cents()` and an
+  overflow is a `failed_precondition` naming the ceiling (21,474,836.47 in
+  one currency) rather than an encoder exception. Per-row amounts are
+  bounded at validation, so only sums can reach it.
+- **No payment onto a loop that nets to zero.** With Simplify debts off, a
+  group whose pairwise debts cancel around a cycle shows debts while
+  everyone is settled overall; the server refuses to record a payment there
+  and the clients hide Settle/Record, pointing at Simplify debts instead.
+- **Reads are bounded.** The friend ledger stops at 300 lines and the
+  expense list at 500, each with a `truncated` flag the clients show; the
+  read RPCs that fan out over the ledger are rate-limited at 60/min per
+  user. The limiter — like the SMS limiter below — is process-local, which
+  is correct for the single-container deployment this is and becomes a
+  documented gap the day a second replica exists.
+- **SMS is limited by destination and client, not just by account.** Three
+  sends an hour and eight a day per number (keyed by an HMAC of the E.164
+  number, so the limiter never holds phone numbers) and twenty an hour per
+  client address, on top of the per-account limit — Twilio's own anti-fraud
+  guidance. Reminders take a (sender, debtor) advisory lock before the
+  cooldown check so two clicks cannot both pass it.
+- **Secrets are files, and keys can overlap.** `readSecret()` implements the
+  Docker `<NAME>_FILE` convention; the entrypoint exports nothing, the
+  database URL is assembled from `POSTGRES_*` inside the app, and
+  `SESSION_SECRET_PREVIOUS` lets a planned rotation keep sessions valid
+  until they expire. CI runs gitleaks over the full history. What is still
+  documented rather than automated: the secret inventory and expiry
+  monitoring, and separate migration and runtime database roles.
+- **Readiness means someone can sign in.** With password auth off, the
+  health route refuses when there is no Google audience, when the image
+  was built without the public client id, or when the two differ; the
+  deploy workflow refuses to build without it and Compose refuses to start
+  without it.
+- **A backup that stayed on the box is a failed backup.** Missing offsite
+  target now fails the run and alerts unless a written local-only opt-out
+  is present; every archive is listed back from the remote and its size
+  compared after upload.
+- Also closed: strict calendar dates (Feb 30 is rejected, not normalized),
+  the service worker caches only content-hashed build assets, the bearer
+  token is returned only to clients that declared bearer transport, receipt
+  provider and decoder errors are logged rather than shown, the currency
+  field is an allowlist, the development password floor is eight
+  characters with hashing off the event loop, and the mobile query cache
+  is memory-only (OWASP MASVS-STORAGE: not writing it beats encrypting it).
+
+Left open on purpose, each a known trade-off rather than an oversight: a
+shared rate limiter for a multi-replica deployment; deleting or archiving a
+group; an exactly-one-owner database constraint (the usecase enforces it
+under the group lock); monitoring for secret age; split database roles; and
+a release-mode mobile end-to-end sign-in test. The root `AUDIT.md` predates
+§25–§28 and is kept as history, not as a to-do list.

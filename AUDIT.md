@@ -4,6 +4,11 @@ A full pass over the repo (architecture, security, data model, ops, frontend).
 Findings are sorted by severity within each section. File:line references use
 `apps/web/...` unless noted.
 
+> **Historical.** This predates the 2026-08-29 security audit and the two
+> passes that closed it (`docs/plan.txt` §25 and §28). Most findings below
+> are resolved and some file references no longer exist; read it as a record
+> of where the codebase was, not as open work.
+
 ---
 
 ## The Good

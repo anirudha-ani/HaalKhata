@@ -157,10 +157,13 @@ What it adds:
   so they survive a different proxy. The production stack
   enables `TRUST_PROXY_HEADERS=true` only alongside that overwrite; direct
   deployments ignore forwarded headers and use the socket peer.
-- **Docker secrets** for `SESSION_SECRET`, `POSTGRES_PASSWORD` and
-  `COMPATIBLE_AI_API_KEY`. `ops/docker-entrypoint.sh` loads them from
-  `/run/secrets/` and assembles `DATABASE_URL`, so no secret appears in a
-  compose file, an image layer, or `docker inspect`.
+- **Docker secrets** for `SESSION_SECRET`, `POSTGRES_PASSWORD`,
+  `COMPATIBLE_AI_API_KEY` and `TWILIO_API_KEY_SECRET`. The app reads them
+  straight from `/run/secrets/` through `*_FILE` variables (the same
+  convention the official Postgres image uses) and builds its own database
+  URL, so no secret appears in a compose file, an image layer, `docker
+  inspect`, or the process environment. `SESSION_SECRET_PREVIOUS_FILE` keeps
+  sessions valid across a planned key rotation.
 - **Nothing published but 80/443.** Postgres and the app are reachable only
   over the compose network.
 - Read-only application root filesystem, minimal per-service capabilities, and
@@ -183,10 +186,15 @@ Three things worth knowing before you point a domain at it:
   cannot be fixed by restarting with a corrected environment, only by
   rebuilding.
 - **Readiness fails closed.** `/api/health` requires at least 32 decoded bytes
-  of `SESSION_SECRET`, waits for migrations, and performs a live database query.
-  A missing/short secret or a `DATABASE_URL` with a missing, placeholder, or
-  shorter-than-16-byte password keeps the container unhealthy and fails
-  `docker compose up -d --wait`.
+  of `SESSION_SECRET`, waits for migrations, performs a live database query,
+  and — since Google is the only way in — refuses when no Google audience is
+  configured or the id built into the bundle is not one the server accepts.
+  Any of those keeps the container unhealthy and fails
+  `docker compose up -d --wait`; the deploy workflow also refuses to build
+  without `NEXT_PUBLIC_GOOGLE_CLIENT_ID`.
+- **Backups must leave the box.** `ops/backup.sh` fails (and alerts) when no
+  offsite target is configured, and verifies each archive's size on the
+  remote after upload. See `ops/README.md`.
 
 ### Receipt AI providers (optional)
 

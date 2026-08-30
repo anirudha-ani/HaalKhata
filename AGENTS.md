@@ -271,11 +271,32 @@ with colocated tests. Mobile-specific rules:
 - **Security headers ship with Next.js** through `next.config.ts`; keep the CSP
   synchronized with Google Identity Services and avatar/receipt image sources.
 - **Production guardrails** — `/api/health` must exercise token signing,
-  migrations, and a live database query. Token signing requires at least 32
-  decoded bytes of `SESSION_SECRET`; database work rejects `DATABASE_URL` with
-  missing, placeholder, or shorter-than-16-byte credentials. Don't weaken these
-  semantic checks into exact URL comparisons; Compose and direct deployments
-  use different hosts.
+  migrations, a live database query and — with password auth off — that a
+  Google audience exists and matches the client id built into the bundle.
+  Token signing requires at least 32 decoded bytes of `SESSION_SECRET`;
+  database work rejects `DATABASE_URL` with missing, placeholder, or
+  shorter-than-16-byte credentials. Don't weaken these semantic checks into
+  exact URL comparisons; Compose and direct deployments use different hosts.
+- **Don't read a secret from `process.env`** — go through `readSecret()` in
+  `common/secrets.ts`, which honours the Docker `<NAME>_FILE` convention
+  production relies on. Without `DATABASE_URL` the pool assembles its URL
+  from `POSTGRES_PASSWORD(_FILE)` and the `POSTGRES_*` parts.
+- **Money is per currency.** Balance maps are keyed by currency
+  (`CurrencyCents` in `balance.usecase.ts`), responses carry `CurrencyAmount`
+  buckets, and the legacy scalar fields are only the caller's default-currency
+  bucket. Never add cents across currencies, and pass every aggregate through
+  `toInt32Cents()` before it reaches a proto `int32` — an overflow is a
+  `failed_precondition`, not an encoder crash.
+- **Side effects go in the transaction.** Activity, notification and
+  friendship rows are written on the same `client` as the ledger change that
+  announces them; repo insert functions take an optional `client` for that.
+- **Money mutations need an `operation_id`.** `CreateExpense` and
+  `RecordSettlement` require a client UUID (`assertOperationId` in the
+  handler); the usecase claims it with `beginOperation` inside the ledger
+  transaction and `finishOperation` before commit, so a retry replays the
+  stored result. Clients mint one per submit (`newOperationId()`).
+- **Limiters are process-local** (`rateLimit.ts`, `phoneRateLimit.ts`): fine
+  for one container, wrong for two replicas — see `docs/plan.txt` §28.
 
 ## Deploy
 
@@ -289,8 +310,10 @@ image, web bound to `127.0.0.1:3000`, config from a plaintext `.env`. Set
 `POSTGRES_PASSWORD` and `SESSION_SECRET` there before first boot.
 
 **Production** — `docker compose -f docker-compose.prod.yml up -d --wait`,
-with `Caddyfile` in front for TLS. Secrets come from `/run/secrets/` via
-`ops/docker-entrypoint.sh`, never from `.env`. Only Caddy publishes ports.
+with `Caddyfile` in front for TLS. Secrets are mounted at `/run/secrets/`
+and named to the app through `*_FILE` variables (`readSecret()`); nothing
+exports them into the environment and none belong in `.env`. Only Caddy
+publishes ports.
 Built by `.github/workflows/deploy.yml` and pushed to GHCR; the server pulls a
 commit SHA over an SSH key restricted to `ops/deploy.sh` by a forced
 `command=`. See `ops/README.md` and `docs/plan.txt` §7c.
