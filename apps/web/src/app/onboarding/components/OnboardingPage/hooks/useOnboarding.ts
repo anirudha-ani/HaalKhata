@@ -7,7 +7,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { queryKeys } from "@haalkhata/shared/api/queryKeys";
 import type { MergePreview } from "@haalkhata/protogen/auth/v1/auth_pb";
 import { authClient, errorMessage } from "@/lib/api/connect";
-import { composeE164, DEFAULT_PHONE_REGION, splitE164 } from "@/lib/phone/phone";
+import { composeE164, DEFAULT_PHONE_REGION, splitE164 } from "@haalkhata/shared/phone/phone";
 
 /**
  * Drives the onboarding screen.

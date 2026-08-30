@@ -4,7 +4,7 @@
 import { ChevronDown } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { matchesTerms, searchTerms } from "@haalkhata/shared/search/filter";
-import { PHONE_COUNTRIES, phoneCountry, splitE164 } from "@/lib/phone/phone";
+import { PHONE_COUNTRIES, phoneCountry, splitE164 } from "@haalkhata/shared/phone/phone";
 import { SearchField } from "./SearchField";
 
 /**

@@ -17,5 +17,8 @@
     "typescript": "^5.8.3",
     "typescript-eslint": "^8.63.0",
     "vitest": "^3.2.4"
+  },
+  "dependencies": {
+    "libphonenumber-js": "^1.13.8"
   }
 }

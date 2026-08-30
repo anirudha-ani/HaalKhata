@@ -8,7 +8,7 @@ import type { User } from "@haalkhata/protogen/common/v1/common_pb";
 import type { MergePreview } from "@haalkhata/protogen/auth/v1/auth_pb";
 import { authClient, errorMessage } from "@/lib/api/connect";
 import { MONEY_KEYS, queryKeys } from "@haalkhata/shared/api/queryKeys";
-import { composeE164, DEFAULT_PHONE_REGION, splitE164 } from "@/lib/phone/phone";
+import { composeE164, DEFAULT_PHONE_REGION, splitE164 } from "@haalkhata/shared/phone/phone";
 import { stripHandlePrefix } from "@haalkhata/shared/payment/methods";
 
 /**

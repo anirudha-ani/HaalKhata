@@ -264,6 +264,10 @@ importers:
         version: 2.12.1
 
   packages/shared:
+    dependencies:
+      libphonenumber-js:
+        specifier: ^1.13.8
+        version: 1.13.8
     devDependencies:
       '@eslint/js':
         specifier: ^9
