@@ -2,8 +2,9 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { CounterpartyBalance } from "@haalkhata/protogen/common/v1/common_pb";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { splitIdentifier } from "@haalkhata/shared/auth/identifier";
+import { matchesTerms, searchTerms } from "@haalkhata/shared/search/filter";
 import { authClient, errorMessage, socialClient } from "@/lib/api/connect";
 import { queryKeys } from "@haalkhata/shared/api/queryKeys";
 
@@ -17,6 +18,8 @@ import { queryKeys } from "@haalkhata/shared/api/queryKeys";
  *
  * @returns An object exposing `me` (the signed-in user), `friends`
  *   (counterparty balances) with `friendsError` when that query failed,
+ *   `visibleFriends` (those matching `query`) with the `query`/`setQuery`
+ *   search state, the headline `owedToYouCents`/`youOweCents` totals,
  *   `isLoading`/`isAdding` flags,
  *   `refresh`/`isRefreshing` for pull-to-refresh, the `identifier` form state
  *   with `setIdentifier` and `submitAdd`, the last add-friend `error` message,
@@ -25,6 +28,7 @@ import { queryKeys } from "@haalkhata/shared/api/queryKeys";
 export function useFriends() {
   const queryClient = useQueryClient();
   const [identifier, setIdentifier] = useState("");
+  const [query, setQuery] = useState("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [settleWith, setSettleWith] = useState<CounterpartyBalance | null>(null);
@@ -54,14 +58,41 @@ export function useFriends() {
     onError: (mutationError) => setError(errorMessage(mutationError)),
   });
 
+  const allFriends = friends.data?.friends ?? [];
+  // Filtering keeps the server's order (people you have expenses with first,
+  // then the rest alphabetically) rather than re-ranking by match quality.
+  // Names only: a friend's email and phone are private and arrive empty.
+  const visibleFriends = useMemo(() => {
+    const everyFriend = friends.data?.friends ?? [];
+    const terms = searchTerms(query);
+    if (terms.length === 0) return everyFriend;
+    return everyFriend.filter((friend) => matchesTerms(terms, friend.user?.name));
+  }, [friends.data, query]);
+
+  // Headline totals, so the screen answers "where do I stand overall?"
+  // before any individual row is read.
+  const owedToYouCents = allFriends.reduce(
+    (total, friend) => total + Math.max(friend.netCents, 0),
+    0,
+  );
+  const youOweCents = allFriends.reduce(
+    (total, friend) => total + Math.max(-friend.netCents, 0),
+    0,
+  );
+
   return {
     me: currentUser.data,
-    friends: friends.data?.friends ?? [],
+    friends: allFriends,
     // Surfaced rather than swallowed: ListFriends shares the per-account
     // rate limit with the overall balances, and a refused call must not
     // render as "no friends yet".
     friendsError: friends.error,
     incomingRequests: friends.data?.incomingRequests ?? [],
+    visibleFriends,
+    owedToYouCents,
+    youOweCents,
+    query,
+    setQuery,
     isLoading: friends.isLoading,
     refresh: () => void friends.refetch(),
     isRefreshing: friends.isRefetching,

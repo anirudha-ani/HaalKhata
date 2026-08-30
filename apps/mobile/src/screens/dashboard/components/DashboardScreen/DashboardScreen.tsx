@@ -4,6 +4,7 @@ import { Link, useRouter } from "expo-router";
 import { Plus, ScanLine, UsersRound } from "lucide-react-native";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { SettleUpModal } from "@/components/modals/SettleUpModal";
+import { PersonLink } from "@/components/people/PersonLink";
 import { Screen } from "@/components/shell/Screen";
 import { ScreenHeader } from "@/components/shell/ScreenHeader";
 import { Avatar } from "@/components/ui/Avatar";
@@ -123,19 +124,25 @@ export function DashboardScreen() {
                       key={counterparty.user.id}
                       style={[styles.personRow, index > 0 ? styles.rowDivider : null]}
                     >
-                      <Avatar user={counterparty.user} />
-                      <View style={styles.personText}>
-                        <Text numberOfLines={1} style={styles.personName}>
-                          {counterparty.user.name}
-                        </Text>
-                        <Text style={styles.personHint}>
-                          {counterparty.netCents === 0
-                            ? "settled up"
-                            : counterparty.netCents > 0
-                              ? "owes you"
-                              : "you owe"}
-                        </Text>
-                      </View>
+                      <PersonLink
+                        meId={dashboard.me?.id}
+                        style={styles.personLink}
+                        userId={counterparty.user.id}
+                      >
+                        <Avatar user={counterparty.user} />
+                        <View style={styles.personText}>
+                          <Text numberOfLines={1} style={styles.personName}>
+                            {counterparty.user.name}
+                          </Text>
+                          <Text style={styles.personHint}>
+                            {counterparty.netCents === 0
+                              ? "settled up"
+                              : counterparty.netCents > 0
+                                ? "owes you"
+                                : "you owe"}
+                          </Text>
+                        </View>
+                      </PersonLink>
                       <Money
                         cents={counterparty.netCents}
                         currency={currency}
@@ -314,6 +321,13 @@ const styles = StyleSheet.create({
   personHint: {
     color: colors.inkSoft,
     fontSize: 12,
+  },
+  personLink: {
+    alignItems: "center",
+    flex: 1,
+    flexDirection: "row",
+    gap: spacing.md,
+    minWidth: 0,
   },
   personName: {
     color: colors.ink,

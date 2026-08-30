@@ -3,6 +3,7 @@
 import { useRouter } from "expo-router";
 import { Lock, Pencil, Send, Trash2 } from "lucide-react-native";
 import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { PersonLink } from "@/components/people/PersonLink";
 import { DetailHeader } from "@/components/shell/DetailHeader";
 import { Screen } from "@/components/shell/Screen";
 import { Avatar } from "@/components/ui/Avatar";
@@ -148,10 +149,12 @@ export function ExpenseDetailScreen({ expenseId }: { expenseId: string }) {
           const payerUser = expenseDetail.userById.get(payer.userId);
           return (
             <View key={payer.userId} style={styles.personRow}>
-              {payerUser ? <Avatar size="sm" user={payerUser} /> : null}
-              <Text numberOfLines={1} style={styles.personName}>
-                {displayName(payer.userId)}
-              </Text>
+              <PersonLink meId={meId} style={styles.personLink} userId={payer.userId}>
+                {payerUser ? <Avatar size="sm" user={payerUser} /> : null}
+                <Text numberOfLines={1} style={styles.personName}>
+                  {displayName(payer.userId)}
+                </Text>
+              </PersonLink>
               <Money cents={payer.amountCents} currency={expense.currency} style={styles.rowAmount} />
             </View>
           );
@@ -164,10 +167,12 @@ export function ExpenseDetailScreen({ expenseId }: { expenseId: string }) {
           const splitUser = expenseDetail.userById.get(split.userId);
           return (
             <View key={split.userId} style={styles.personRow}>
-              {splitUser ? <Avatar size="sm" user={splitUser} /> : null}
-              <Text numberOfLines={1} style={styles.personName}>
-                {displayName(split.userId)}
-              </Text>
+              <PersonLink meId={meId} style={styles.personLink} userId={split.userId}>
+                {splitUser ? <Avatar size="sm" user={splitUser} /> : null}
+                <Text numberOfLines={1} style={styles.personName}>
+                  {displayName(split.userId)}
+                </Text>
+              </PersonLink>
               <Money cents={split.owedCents} currency={expense.currency} style={styles.rowAmount} />
             </View>
           );
@@ -227,11 +232,19 @@ export function ExpenseDetailScreen({ expenseId }: { expenseId: string }) {
         <Text style={styles.cardTitle}>COMMENTS</Text>
         {(expenseDetail.detail?.comments ?? []).map((comment) => (
           <View key={comment.id} style={styles.commentCard}>
-            {comment.author ? <Avatar size="sm" user={comment.author} /> : null}
+            {comment.author ? (
+              <PersonLink meId={meId} userId={comment.author.id}>
+                <Avatar size="sm" user={comment.author} />
+              </PersonLink>
+            ) : null}
             <View style={styles.commentBody}>
               <Text style={styles.commentMeta}>
-                <Text style={styles.commentAuthor}>{comment.author?.name}</Text> ·{" "}
-                {localDateTime(comment.createdAt)}
+                {comment.author ? (
+                  <PersonLink meId={meId} userId={comment.author.id}>
+                    <Text style={styles.commentAuthor}>{comment.author.name}</Text>
+                  </PersonLink>
+                ) : null}{" "}
+                · {localDateTime(comment.createdAt)}
               </Text>
               <Text style={styles.commentText}>{comment.body}</Text>
             </View>
@@ -470,6 +483,13 @@ const styles = StyleSheet.create({
   notFoundText: {
     color: colors.inkSoft,
     fontSize: 15,
+  },
+  personLink: {
+    alignItems: "center",
+    flex: 1,
+    flexDirection: "row",
+    gap: spacing.sm,
+    minWidth: 0,
   },
   personName: {
     color: colors.ink,

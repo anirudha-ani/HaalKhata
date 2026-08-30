@@ -1,24 +1,31 @@
-/** Friends screen UI: add-by-email-or-phone form, per-friend balances, settle-up. */
+/** Friends screen UI: overall position, searchable friend list opening each ledger, add-by-email-or-phone, settle-up. */
 
 import { useRouter } from "expo-router";
-import { Plus, UserPlus, Users } from "lucide-react-native";
+import { ChevronRight, Plus, UserPlus, Users } from "lucide-react-native";
 import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { SettleUpModal } from "@/components/modals/SettleUpModal";
+import { PersonLink } from "@/components/people/PersonLink";
 import { Screen } from "@/components/shell/Screen";
 import { ScreenHeader } from "@/components/shell/ScreenHeader";
 import { Avatar } from "@/components/ui/Avatar";
 import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Money } from "@/components/ui/Money";
+import { SearchField } from "@/components/ui/SearchField";
 import { Spinner } from "@/components/ui/Spinner";
 import { errorMessage } from "@/lib/api/connect";
+import { formatMoney } from "@haalkhata/shared/money/money";
 import { colors, fonts, radii, spacing } from "@/lib/theme/theme";
 import { useFriends } from "./hooks/useFriends";
 
 /**
- * Renders the friends screen: an add-friend form (email or phone), the list of
- * friends with their net balances and quick actions (one-off expense,
- * settle), and the settle-up sheet when a friend is selected.
+ * Renders the friends screen: your overall position (owed to you / you owe),
+ * an add-friend form (email or phone), a searchable list where each row opens
+ * that friendship's ledger, quick actions (one-off expense, settle whichever
+ * way the money is owed), and the settle-up sheet when a friend is selected.
+ *
+ * Every row opens the ledger rather than being a dead readout — a balance you
+ * cannot open is a number you cannot check.
  *
  * @returns The friends screen content, with a spinner while the list loads.
  */
@@ -101,6 +108,23 @@ export function FriendsScreen() {
         </View>
       ) : null}
 
+      {friendsState.friends.length > 0 ? (
+        <View style={styles.totals}>
+          <View style={styles.totalCard}>
+            <Text style={styles.totalLabel}>You are owed</Text>
+            <Text style={[styles.totalAmount, styles.totalPos]}>
+              {formatMoney(friendsState.owedToYouCents, currency)}
+            </Text>
+          </View>
+          <View style={styles.totalCard}>
+            <Text style={styles.totalLabel}>You owe</Text>
+            <Text style={[styles.totalAmount, styles.totalNeg]}>
+              {formatMoney(friendsState.youOweCents, currency)}
+            </Text>
+          </View>
+        </View>
+      ) : null}
+
       {friendsState.isLoading ? (
         <Spinner label="Loading friends…" />
       ) : friendsState.friendsError ? (
@@ -114,36 +138,62 @@ export function FriendsScreen() {
           title="No friends yet"
         />
       ) : (
+        <View style={styles.listSection}>
+          <View style={styles.searchRow}>
+            <View style={styles.searchField}>
+              <SearchField
+                onChange={friendsState.setQuery}
+                placeholder="Search friends by name"
+                value={friendsState.query}
+              />
+            </View>
+            {friendsState.query ? (
+              <Text style={styles.searchCount}>
+                {friendsState.visibleFriends.length} of {friendsState.friends.length}
+              </Text>
+            ) : null}
+          </View>
+
+          {friendsState.visibleFriends.length === 0 ? (
+            <View style={styles.noMatchCard}>
+              <Text style={styles.noMatchText}>
+                No friends match “{friendsState.query}”.
+              </Text>
+            </View>
+          ) : (
         <View style={styles.listCard}>
-          {friendsState.friends.map((friend, index) =>
+          {friendsState.visibleFriends.map((friend, index) =>
             friend.user ? (
               <View
                 key={friend.user.id}
                 style={[styles.row, index > 0 ? styles.rowDivider : null]}
               >
-                <Avatar user={friend.user} />
-                <View style={styles.rowText}>
-                  <View style={styles.nameRow}>
-                    <Text numberOfLines={1} style={styles.name}>
-                      {friend.user.name}
+                <PersonLink meId={friendsState.me?.id} style={styles.rowLink} userId={friend.user.id}>
+                  <Avatar user={friend.user} />
+                  <View style={styles.rowText}>
+                    <View style={styles.nameRow}>
+                      <Text numberOfLines={1} style={styles.name}>
+                        {friend.user.name}
+                      </Text>
+                      {!friend.user.registered ? (
+                        <View style={styles.invitedBadge}>
+                          <Text style={styles.invitedBadgeText}>invited</Text>
+                        </View>
+                      ) : null}
+                    </View>
+                    <Text style={styles.balanceHint}>
+                      {friend.netCents === 0
+                        ? "settled up"
+                        : friend.netCents > 0
+                          ? "owes you"
+                          : "you owe"}
                     </Text>
-                    {!friend.user.registered ? (
-                      <View style={styles.invitedBadge}>
-                        <Text style={styles.invitedBadgeText}>invited</Text>
-                      </View>
-                    ) : null}
                   </View>
-                  <Text style={styles.balanceHint}>
-                    {friend.netCents === 0
-                      ? "settled up"
-                      : friend.netCents > 0
-                        ? "owes you"
-                        : "you owe"}
-                  </Text>
-                </View>
-                {friend.netCents !== 0 ? (
-                  <Money cents={friend.netCents} currency={currency} signed style={styles.amount} />
-                ) : null}
+                  {friend.netCents !== 0 ? (
+                    <Money cents={friend.netCents} currency={currency} signed style={styles.amount} />
+                  ) : null}
+                  <ChevronRight color={colors.inkSoft} size={16} />
+                </PersonLink>
                 <View style={styles.rowActions}>
                   <Pressable
                     accessibilityLabel="Add one-off expense"
@@ -165,6 +215,8 @@ export function FriendsScreen() {
                 </View>
               </View>
             ) : null,
+          )}
+        </View>
           )}
         </View>
       )}
@@ -244,6 +296,21 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: "500",
   },
+  listSection: {
+    gap: spacing.md,
+  },
+  noMatchCard: {
+    backgroundColor: colors.card,
+    borderColor: colors.line,
+    borderRadius: radii.lg,
+    borderWidth: 1,
+    padding: spacing.xl,
+  },
+  noMatchText: {
+    color: colors.inkSoft,
+    fontSize: 14,
+    textAlign: "center",
+  },
   listCard: {
     backgroundColor: colors.card,
     borderColor: colors.line,
@@ -284,6 +351,19 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: "500",
   },
+  searchCount: {
+    color: colors.inkSoft,
+    fontSize: 13,
+    fontVariant: ["tabular-nums"],
+  },
+  searchField: {
+    flex: 1,
+  },
+  searchRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: spacing.md,
+  },
   sectionTitle: {
     color: colors.ink,
     fontSize: 17,
@@ -294,9 +374,44 @@ const styles = StyleSheet.create({
     borderTopColor: colors.line,
     borderTopWidth: 1,
   },
+  rowLink: {
+    alignItems: "center",
+    flex: 1,
+    flexDirection: "row",
+    gap: spacing.md,
+    minWidth: 0,
+  },
   rowText: {
     flex: 1,
     minWidth: 0,
+  },
+  totalAmount: {
+    fontSize: 22,
+    fontVariant: ["tabular-nums"],
+    fontWeight: "700",
+  },
+  totalCard: {
+    backgroundColor: colors.card,
+    borderColor: colors.line,
+    borderRadius: radii.lg,
+    borderWidth: 1,
+    flex: 1,
+    gap: 2,
+    padding: spacing.lg,
+  },
+  totalLabel: {
+    color: colors.inkSoft,
+    fontSize: 13,
+  },
+  totalNeg: {
+    color: colors.neg600,
+  },
+  totalPos: {
+    color: colors.pos700,
+  },
+  totals: {
+    flexDirection: "row",
+    gap: spacing.md,
   },
   title: {
     color: colors.ink,
