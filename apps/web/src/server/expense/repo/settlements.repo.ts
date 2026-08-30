@@ -23,6 +23,14 @@ export interface SettlementRow {
   ledger_event_order: string;
   /** When the payment was removed; null while it counts. */
   deleted_at: string | null;
+  /**
+   * The authenticated user who typed the payment in — one of the two people
+   * on it, and not necessarily the payer. Rows older than the column carry
+   * the payer.
+   */
+  recorded_by: string;
+  /** The authenticated user who removed it; null while it counts. */
+  deleted_by: string | null;
 }
 
 /**
@@ -111,7 +119,8 @@ export async function scopeHasSettlements(
 /**
  * Inserts a recorded settlement (a real-world payment between two users).
  *
- * @param input - Settlement details: payer, recipient, amount, currency, method and note.
+ * @param input - Settlement details: payer, recipient, amount, currency,
+ *   method, note, and who typed it in.
  * @param client - Transaction client when the insert must commit with a
  *   surrounding {@link withSettlementPairLock} window; omitted, it autocommits.
  * @returns The inserted row, including its generated id and timestamp.
@@ -125,11 +134,13 @@ export async function insertSettlement(
     currency: string;
     method: string;
     note: string;
+    recordedBy: string;
   },
   client?: PoolClient,
 ): Promise<SettlementRow> {
-  const text = `INSERT INTO settlements (id, group_id, from_user, to_user, amount_cents, currency, method, note)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+  const text = `INSERT INTO settlements
+       (id, group_id, from_user, to_user, amount_cents, currency, method, note, recorded_by)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
      RETURNING *`;
   const params = [
     newId(),
@@ -140,6 +151,7 @@ export async function insertSettlement(
     input.currency,
     input.method,
     input.note,
+    input.recordedBy,
   ];
   if (client) {
     const { rows } = await client.query<SettlementRow>(text, params as never[]);
@@ -163,14 +175,24 @@ export async function findSettlementById(
 }
 
 /**
- * Marks a settlement removed (sets deleted_at) without deleting the row, so
- * the friend ledger can keep showing it struck through.
+ * Marks a settlement removed (sets deleted_at and who removed it) without
+ * deleting the row, so the friend ledger can keep showing it struck through
+ * and name the remover.
  *
  * @param settlementId - Id of the settlement to remove.
+ * @param deletedBy - The authenticated user removing it.
  * @param client - Transaction client holding the pair's ledger lock.
  */
-export async function softDeleteSettlement(settlementId: string, client: PoolClient): Promise<void> {
-  await execute(`UPDATE settlements SET deleted_at = now() WHERE id = $1`, [settlementId], client);
+export async function softDeleteSettlement(
+  settlementId: string,
+  deletedBy: string,
+  client: PoolClient,
+): Promise<void> {
+  await execute(
+    `UPDATE settlements SET deleted_at = now(), deleted_by = $2 WHERE id = $1`,
+    [settlementId, deletedBy],
+    client,
+  );
 }
 
 /**

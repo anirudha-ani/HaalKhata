@@ -539,7 +539,7 @@ describe("who hears about a transaction", () => {
 
     expect(lockExpenseLedger).toHaveBeenCalledWith(transactionClient, "expense-1");
     expect(lockGroupLedgers).toHaveBeenCalledWith(transactionClient, [GOA_TRIP]);
-    expect(softDeleteExpense).toHaveBeenCalledWith("expense-1", transactionClient);
+    expect(softDeleteExpense).toHaveBeenCalledWith("expense-1", PAYER, transactionClient);
     // The feed line links to the expense's own page, which still resolves —
     // and is written on the deletion's own transaction.
     expect(insertActivity).toHaveBeenCalledWith(
@@ -583,7 +583,7 @@ describe("who hears about a transaction", () => {
     await deleteSettlement(PAYER, "settlement-1");
 
     expect(lockGroupLedgers).toHaveBeenCalledWith(transactionClient, [GOA_TRIP]);
-    expect(softDeleteSettlement).toHaveBeenCalledWith("settlement-1", transactionClient);
+    expect(softDeleteSettlement).toHaveBeenCalledWith("settlement-1", PAYER, transactionClient);
     expect(insertActivity).toHaveBeenCalledWith(
       expect.objectContaining({
         type: "settlement_deleted",

@@ -123,6 +123,32 @@ async function activityFor(received: boolean) {
   return vi.mocked(insertActivity).mock.calls[0][0];
 }
 
+describe("recordSettlement — provenance", () => {
+  // H-02: a settlement is a claim one of the two people typed in. The row
+  // itself says which, whichever direction the money went, so a debtor who
+  // records their own payment cannot later look like the creditor confirmed
+  // it — and the creditor's Remove is what answers a false one.
+  it("stores who recorded a payment made", async () => {
+    await activityFor(false);
+    expect(vi.mocked(insertSettlement).mock.calls[0][0]).toMatchObject({
+      fromUser: RECORDER,
+      toUser: OTHER,
+      recordedBy: RECORDER,
+    });
+  });
+
+  it("stores who recorded a payment received", async () => {
+    const activity = await activityFor(true);
+    expect(vi.mocked(insertSettlement).mock.calls[0][0]).toMatchObject({
+      fromUser: OTHER,
+      toUser: RECORDER,
+      recordedBy: RECORDER,
+    });
+    // And the feed line says so too, not only the one-time notification.
+    expect(activity.message).toMatch(/recorded by Rita Recorder$/);
+  });
+});
+
 describe("recordSettlement — activity attribution", () => {
   it("attributes a payment received to the person who paid, not the recorder", async () => {
     // The bug: the feed avatar is drawn from actorId while the message beside

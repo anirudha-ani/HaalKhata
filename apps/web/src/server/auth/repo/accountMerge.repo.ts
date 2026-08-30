@@ -67,7 +67,10 @@ type DirectMergeTarget =
   | readonly ["comments", "user_id"]
   | readonly ["activity", "actor_id"]
   | readonly ["activity", "credit_user_id"]
-  | readonly ["notifications", "user_id"];
+  | readonly ["notifications", "user_id"]
+  | readonly ["settlements", "recorded_by"]
+  | readonly ["settlements", "deleted_by"]
+  | readonly ["expenses", "deleted_by"];
 
 /** Allowlisted direct repoints; these identifiers are interpolated into SQL. */
 const DIRECT_MERGE_TARGETS = [
@@ -77,6 +80,11 @@ const DIRECT_MERGE_TARGETS = [
   ["activity", "actor_id"],
   ["activity", "credit_user_id"],
   ["notifications", "user_id"],
+  // Provenance columns point at people too: who typed a payment in, who
+  // removed a payment or an expense.
+  ["settlements", "recorded_by"],
+  ["settlements", "deleted_by"],
+  ["expenses", "deleted_by"],
 ] as const satisfies readonly DirectMergeTarget[];
 
 /**

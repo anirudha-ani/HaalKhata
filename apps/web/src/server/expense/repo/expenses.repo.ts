@@ -27,6 +27,8 @@ export interface ExpenseRow {
   ledger_event_order: string;
   /** Soft-delete timestamp; NULL ⇒ the expense is active. */
   deleted_at: string | null;
+  /** The authenticated user who deleted it; NULL while it is active. */
+  deleted_by: string | null;
 }
 
 /** One row of expense_payers: how much a user paid toward an expense. */
@@ -268,13 +270,23 @@ export async function replaceExpense(
 }
 
 /**
- * Marks an expense deleted (sets deleted_at) without removing any rows.
+ * Marks an expense deleted (sets deleted_at and who deleted it) without
+ * removing any rows.
  *
  * @param expenseId - Id of the expense to soft-delete.
+ * @param deletedBy - The authenticated user deleting it.
  * @param client - Optional transaction client holding the expense scope lock.
  */
-export async function softDeleteExpense(expenseId: string, client?: PoolClient): Promise<void> {
-  await execute(`UPDATE expenses SET deleted_at = now() WHERE id = $1`, [expenseId], client);
+export async function softDeleteExpense(
+  expenseId: string,
+  deletedBy: string,
+  client?: PoolClient,
+): Promise<void> {
+  await execute(
+    `UPDATE expenses SET deleted_at = now(), deleted_by = $2 WHERE id = $1`,
+    [expenseId, deletedBy],
+    client,
+  );
 }
 
 /**

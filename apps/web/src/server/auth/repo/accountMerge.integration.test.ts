@@ -124,8 +124,8 @@ describe.skipIf(!reachable)("mergeAccounts against Postgres", () => {
     await expect(
       database.query(
         `INSERT INTO settlements
-           (id, from_user, to_user, amount_cents, currency, method)
-         VALUES ('stl-self', $1, $1, 100, 'USD', 'cash')`,
+           (id, from_user, to_user, amount_cents, currency, method, recorded_by)
+         VALUES ('stl-self', $1, $1, 100, 'USD', 'cash', $1)`,
         [KEEPER],
       ),
     ).rejects.toMatchObject({ constraint: "chk_settlements_distinct_users" });
@@ -293,8 +293,8 @@ async function seed(database: Client): Promise<void> {
 
   // stl-1 is between the two rows: money paid to oneself once merged.
   await database.query(
-    `INSERT INTO settlements (id, from_user, to_user, amount_cents, currency) VALUES
-       ('stl-1', $1, $2, 500, 'USD'), ('stl-2', $3, $2, 200, 'USD')`,
+    `INSERT INTO settlements (id, from_user, to_user, amount_cents, currency, recorded_by) VALUES
+       ('stl-1', $1, $2, 500, 'USD', $1), ('stl-2', $3, $2, 200, 'USD', $3)`,
     [KEEPER, LOSER, RAHUL],
   );
 

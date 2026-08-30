@@ -231,6 +231,9 @@ message Settlement {
   string method = 7;
   string note = 8;
   string created_at = 9;
+  // The authenticated user who typed the payment in: one of the two people
+  // on it, not necessarily the payer. A payment is a claim; this says whose.
+  string recorded_by_user_id = 10;
 }
 
 message GetGroupBalancesRequest {
@@ -281,6 +284,10 @@ message FriendLedgerEntry {
   // came back when a mistaken payment was removed, still has the row that
   // explains it.
   bool deleted = 11;
+  // For a settlement line, who typed it in — "you", or the friend's name.
+  // Either person may record a payment either way round, so the statement
+  // names the asserter on every payment line. Empty for expense lines.
+  string recorded_by_name = 12;
 }
 
 message FriendGroupBalance {

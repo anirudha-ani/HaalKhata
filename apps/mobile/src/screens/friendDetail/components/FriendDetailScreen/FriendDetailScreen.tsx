@@ -275,6 +275,15 @@ export function FriendDetailScreen({
                         <Text style={styles.pillText}>{isSettlement ? "removed" : "deleted"}</Text>
                       </View>
                     ) : null}
+                    {/* A payment is a claim one of the two of you typed in;
+                        the statement says which, on every line. */}
+                    {entry.recordedByName ? (
+                      <View style={styles.pill}>
+                        <Text numberOfLines={1} style={styles.pillText}>
+                          recorded by {entry.recordedByName}
+                        </Text>
+                      </View>
+                    ) : null}
                   </View>
 
                   {entry.kind === "expense" ? (

@@ -477,6 +477,7 @@ export async function getFriendLedger(userId: string, friendId: string) {
     sortKey: string;
     createdAt: string;
     deleted: boolean;
+    recordedByName: string;
   };
   const lines: Line[] = [];
 
@@ -511,6 +512,7 @@ export async function getFriendLedger(userId: string, friendId: string) {
       // there is nothing to convert, so no timestamp rides along.
       createdAt: "",
       deleted,
+      recordedByName: "",
     });
   }
 
@@ -535,6 +537,10 @@ export async function getFriendLedger(userId: string, friendId: string) {
       sortKey: `${settlement.created_at.slice(0, 10)}T${settlement.created_at}`,
       createdAt: settlement.created_at,
       deleted,
+      // A payment is a claim one of the two people typed in; the statement
+      // says which, so "You paid" recorded by them reads differently from
+      // "You paid" recorded by you.
+      recordedByName: settlement.recorded_by === userId ? "you" : (friend?.name ?? ""),
     });
   }
 
@@ -554,6 +560,7 @@ export async function getFriendLedger(userId: string, friendId: string) {
       balanceAfterCents: runningCents,
       createdAt: line.createdAt,
       deleted: line.deleted,
+      recordedByName: line.recordedByName,
     };
   });
   entries.reverse();

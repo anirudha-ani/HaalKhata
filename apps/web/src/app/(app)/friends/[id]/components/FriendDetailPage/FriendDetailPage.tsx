@@ -285,6 +285,13 @@ export function FriendDetailPage({
                           {entry.kind === "settlement" ? "removed" : "deleted"}
                         </span>
                       ) : null}
+                      {/* A payment is a claim one of the two of you typed
+                          in; the statement says which, on every line. */}
+                      {entry.recordedByName ? (
+                        <span className="ml-2 rounded-full bg-paper px-2 py-0.5 text-[11px] text-ink-soft">
+                          recorded by {entry.recordedByName}
+                        </span>
+                      ) : null}
                       {/* A mistyped payment is the reason this exists. Two
                           taps: the first arms the button, the second sends. */}
                       {entry.kind === "settlement" && !entry.deleted ? (

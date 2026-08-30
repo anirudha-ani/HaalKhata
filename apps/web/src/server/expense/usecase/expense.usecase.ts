@@ -613,7 +613,7 @@ export async function deleteExpense(userId: string, expenseId: string): Promise<
     } else {
       await lockParticipantLedgers(client, participantIds);
     }
-    await softDeleteExpense(expenseId, client);
+    await softDeleteExpense(expenseId, userId, client);
     await recordExpenseActivity(
       userId,
       expenseId,
@@ -1048,6 +1048,7 @@ export async function recordSettlement(
           currency,
           method,
           note: request.note,
+          recordedBy: userId,
         },
         client,
       );
@@ -1102,6 +1103,9 @@ export async function recordSettlement(
             currency,
             method,
             note: request.note,
+            // The row itself names who typed it in: a payment is a claim
+            // one of the two people made, and the ledger has to say which.
+            recordedBy: userId,
           },
           client,
         ),
@@ -1146,7 +1150,10 @@ export async function recordSettlement(
           // the notification below says "<name> recorded your payment".
           actorId: payerId,
           type: "settlement",
-          message: `${payerName} paid ${creditorName} ${formatMoney(settlement.amount_cents, currency)}${group ? ` in "${group.name}"` : ""}`,
+          // When the recorder is not the payer, the feed line says so: the
+          // ledger's own surfaces carry who asserted a payment, not only
+          // the one-time notification.
+          message: `${payerName} paid ${creditorName} ${formatMoney(settlement.amount_cents, currency)}${group ? ` in "${group.name}"` : ""}${request.received ? ` — recorded by ${actor.name}` : ""}`,
           link: settlement.group_id ? `/groups/${settlement.group_id}` : friendLink,
           // The pair, never the room: if you are A, "B paid C" is B and C's
           // feed line. The recorder is always one of the two.
@@ -1209,7 +1216,7 @@ export async function deleteSettlement(userId: string, settlementId: string): Pr
     if (existing.group_id) await lockGroupLedgers(client, [existing.group_id]);
     const current = await findSettlementById(settlementId, client);
     if (!current || current.deleted_at) notFound("payment not found");
-    await softDeleteSettlement(settlementId, client);
+    await softDeleteSettlement(settlementId, userId, client);
     // Announced on the same transaction as the removal: the feed row is
     // the only record of who removed it and when, so it cannot be allowed
     // to go missing while the removal stands.

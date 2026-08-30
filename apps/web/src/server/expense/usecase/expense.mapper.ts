@@ -69,5 +69,6 @@ export function toSettlement(settlementRow: SettlementRow) {
     method: settlementRow.method,
     note: settlementRow.note,
     createdAt: settlementRow.created_at,
+    recordedByUserId: settlementRow.recorded_by,
   };
 }
