@@ -237,6 +237,26 @@ describe("who hears about a transaction", () => {
     expect(insertExpense).not.toHaveBeenCalled();
   });
 
+  it.each(["2026-02-31", "2026-02-29", "2026-04-31", "2026-13-01", "2026-00-10"])(
+    "rejects the impossible calendar date %s before persistence",
+    async (expenseDate) => {
+      // L-01: Date normalises Feb 31 to Mar 3 rather than refusing it, and the
+      // original impossible string was stored. A round trip catches every
+      // month-length and leap-year miss.
+      await expect(
+        createExpense(PAYER, validExpenseRequest({ expenseDate })),
+      ).rejects.toThrow(/not a real calendar date/);
+      expect(insertExpense).not.toHaveBeenCalled();
+    },
+  );
+
+  it("accepts a real leap day", async () => {
+    await createExpense(PAYER, validExpenseRequest({ expenseDate: "2024-02-29" }));
+    expect(vi.mocked(insertExpense).mock.calls[0]?.[0]).toMatchObject({
+      expenseDate: "2024-02-29",
+    });
+  });
+
   it("stores every category the pickers offer instead of flattening it", async () => {
     // "groceries" is on the shared CATEGORIES list both apps render, but was
     // missing from the server allowlist, so it was silently persisted as
