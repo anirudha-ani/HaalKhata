@@ -5,7 +5,7 @@ import Link from "next/link";
 import { Check, Lock, Pencil, Send, Trash2 } from "lucide-react";
 import { Avatar } from "@/components/ui/Avatar";
 import { PersonLink } from "@/components/people/PersonLink";
-import { settledStatus } from "@/components/expenses/settledStatus";
+import { settledStatus } from "@haalkhata/shared/expense/settledStatus";
 import { Modal } from "@/components/ui/Modal";
 import { Money } from "@/components/ui/Money";
 import { Spinner } from "@/components/ui/Spinner";

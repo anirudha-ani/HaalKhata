@@ -1,4 +1,4 @@
-/** /scan route: renders ScanScreen (reads the optional ?group param itself). */
+/** /scan route: renders ScanScreen (reads the optional ?group param itself) as a pushed screen. */
 
 import { ScanScreen } from "@/screens/scan/components/ScanScreen/ScanScreen";
 

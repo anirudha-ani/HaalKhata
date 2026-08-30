@@ -22,7 +22,7 @@ import { OWNER_ROLE } from "@haalkhata/shared/group/roles";
 import { groupEmoji } from "../../../groups/constants/groupTypes";
 import { TABS } from "../../constants/tabs";
 import { BalancesPanel } from "./components/BalancesPanel/BalancesPanel";
-import { ExpenseList } from "./components/ExpenseList/ExpenseList";
+import { ExpenseList } from "@/components/expenses/ExpenseList";
 import { useGroupDetail } from "./hooks/useGroupDetail";
 
 /**
@@ -158,6 +158,7 @@ export function GroupDetailScreen({
           emptyHint="Add the first expense or scan a receipt to get this ledger going."
           expenses={groupDetail.expenses?.expenses ?? []}
           meId={groupDetail.me?.id}
+          settledIds={new Set(groupDetail.expenses?.settledExpenseIds ?? [])}
           userById={groupDetail.userById}
         />
       ) : groupDetail.tab === "balances" ? (

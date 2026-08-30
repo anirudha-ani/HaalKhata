@@ -7,7 +7,7 @@ import { ExpenseList } from "@/components/expenses/ExpenseList";
 import { SearchField } from "@/components/ui/SearchField";
 import { Spinner } from "@/components/ui/Spinner";
 import { useHydrated } from "@/lib/hooks/useHydrated";
-import { noExpensesMessage } from "../../constants/expenseFilters";
+import { noExpensesMessage } from "@haalkhata/shared/expense/scopeFilter";
 import { useExpensesList } from "./hooks/useExpensesList";
 
 /**

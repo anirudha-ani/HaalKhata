@@ -1,4 +1,4 @@
-/** Group-detail-route constants: expense category emoji. */
+/** Expense category emoji, shared by every expense list. */
 
 /** Emoji shown next to each expense, keyed by expense category. */
 export const CATEGORY_EMOJI: Record<string, string> = {

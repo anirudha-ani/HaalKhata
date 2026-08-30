@@ -1,7 +1,7 @@
 /** Unit tests for the all-expenses page's scope filter and empty message. */
 
 import { describe, expect, it } from "vitest";
-import { matchesScopeFilter, noExpensesMessage } from "./expenseFilters";
+import { matchesScopeFilter, noExpensesMessage } from "./scopeFilter";
 
 describe("matchesScopeFilter", () => {
   it("shows everything under 'all'", () => {

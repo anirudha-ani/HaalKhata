@@ -9,7 +9,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { Money } from "@/components/ui/Money";
 import { formatMoney } from "@haalkhata/shared/money/money";
 import { CATEGORY_EMOJI } from "./categoryEmoji";
-import { settledStatus } from "./settledStatus";
+import { settledStatus } from "@haalkhata/shared/expense/settledStatus";
 
 /**
  * Group-agnostic expense list with a "your share" lens per row: each expense

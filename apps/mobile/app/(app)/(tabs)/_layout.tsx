@@ -38,7 +38,7 @@ function tabScreen(item: TabItem) {
 /**
  * Layout for the authed tab bar, mirroring the web's mobile bottom nav:
  * Home and Groups on the left, the raised add-expense button in the middle,
- * Scan and Friends on the right. Activity is reached via the header bell.
+ * Expenses and Friends on the right. Activity is reached via the header bell.
  *
  * @returns The bottom-tab navigator.
  */

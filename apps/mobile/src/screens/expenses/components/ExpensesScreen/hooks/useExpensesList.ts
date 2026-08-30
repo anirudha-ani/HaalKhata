@@ -1,15 +1,14 @@
-"use client";
-/** Composite hook for the all-expenses page: API data + search + scope filter. */
+/** Composite hook for the all-expenses screen: API data + search + scope filter. */
 
 import { useMemo, useState } from "react";
-import { matchesTerms, searchTerms } from "@haalkhata/shared/search/filter";
 import { matchesScopeFilter, type ExpenseScopeFilter } from "@haalkhata/shared/expense/scopeFilter";
+import { matchesTerms, searchTerms } from "@haalkhata/shared/search/filter";
 import { useExpensesAPI } from "./useExpensesAPI";
 
 /**
- * Combines the expenses API data with the page's narrowing state: a search
+ * Combines the expenses API data with the screen's narrowing state: a search
  * query over description and category, and a scope filter (all / one-off /
- * one group). Both narrow together, the way the groups page's search and
+ * one group). Both narrow together, the way the groups screen's search and
  * balance filter do.
  *
  * @returns Everything from {@link useExpensesAPI} plus `visibleExpenses`,
