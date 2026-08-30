@@ -15,7 +15,7 @@
 
 import heicDecode from "heic-decode";
 import sharp from "sharp";
-import { invalid } from "@/server/common/errors";
+import { invalid, UsecaseError } from "@/server/common/errors";
 import { logEvent } from "@/server/common/logger";
 import {
   COMPATIBLE_AI,
@@ -337,13 +337,16 @@ const compatibleProvider: Provider = {
     });
     const responseText = await readProviderResponse(response);
     if (!response.ok) {
-      // Surface the body: a ZDR-enforced request to a model with no
-      // zero-retention endpoint fails here, and "returned 404" alone would
-      // send you hunting for a networking problem that doesn't exist.
-      const detail = responseText.slice(0, 300);
-      throw new Error(
-        `compatible provider returned ${response.status}${detail ? `: ${detail}` : ""}`,
-      );
+      // The body goes to the log, not the client: a ZDR-enforced request to
+      // a model with no zero-retention endpoint fails here, and "returned
+      // 404" alone would send an operator hunting for a networking problem
+      // that doesn't exist — but the provider's diagnostics are the
+      // operator's to read, not the user's.
+      logEvent("warn", "compatible receipt provider rejected the request", {
+        providerStatus: response.status,
+        detail: responseText.slice(0, 300),
+      });
+      throw new Error(`compatible provider returned ${response.status}`);
     }
     const data = safeJsonParse(responseText, "compatible provider response") as {
       choices?: { message?: { content?: string } }[];
@@ -484,7 +487,7 @@ interface DecodedHeicImage {
  *
  * @param width - Decoded image width.
  * @param height - Decoded image height.
- * @throws Error when dimensions are invalid or exceed the pixel ceiling.
+ * @throws UsecaseError (invalid_argument) when dimensions are invalid or exceed the pixel ceiling.
  */
 function assertSafeDimensions(width: number, height: number): void {
   if (
@@ -494,7 +497,8 @@ function assertSafeDimensions(width: number, height: number): void {
     height <= 0 ||
     width > Math.floor(MAX_IMAGE_PIXELS / height)
   ) {
-    throw new Error(`image dimensions exceed the ${MAX_IMAGE_PIXELS}-pixel limit`);
+    // Our own limit, so its wording is ours to show; decoder failures are not.
+    invalid(`image dimensions exceed the ${MAX_IMAGE_PIXELS}-pixel limit`);
   }
 }
 
@@ -590,8 +594,14 @@ async function normalizeToJpeg(image: Uint8Array, format: ImageMediaType): Promi
     // still being compressed.
     return isHeic ? await withHeicDecodeSlot(transcode) : await transcode();
   } catch (error) {
-    const detail = error instanceof Error ? error.message : String(error);
-    invalid(`could not read that image (${detail})`);
+    // Our own limits are already worded for the user; only a decoder's
+    // failure is rewritten. The decoder's words name a native library and
+    // its internals, so they go to the log and the user gets what to do.
+    if (error instanceof UsecaseError) throw error;
+    logEvent("warn", "receipt image could not be decoded", {
+      detail: error instanceof Error ? error.message : String(error),
+    });
+    invalid("could not read that image — try a clear JPEG, PNG or WebP photo");
   }
 }
 
@@ -649,5 +659,9 @@ export async function parseReceipt(
       errors.push(`${provider.name}: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
-  invalid(`could not parse the receipt (${errors.join("; ")})`);
+  // Which provider failed how is operator information — it names models,
+  // endpoints and policies — so it is logged under the same warning stream
+  // the provider errors use, and the user gets a stable sentence.
+  logEvent("warn", "no receipt provider could parse the image", { errors });
+  invalid("could not read the receipt — try a clearer photo of the whole bill");
 }
