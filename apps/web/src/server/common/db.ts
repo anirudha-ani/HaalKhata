@@ -258,3 +258,15 @@ export async function transaction<TransactionResult>(
 export function newId(): string {
   return crypto.randomUUID();
 }
+
+/**
+ * Whether an error is Postgres's unique-constraint violation (SQLSTATE
+ * 23505) — the signal that a concurrent writer won an insert race the
+ * caller can recover from by re-reading.
+ *
+ * @param error - The thrown value, usually from pg.
+ * @returns True when the error carries SQLSTATE 23505.
+ */
+export function isUniqueViolation(error: unknown): boolean {
+  return (error as { code?: string } | null | undefined)?.code === "23505";
+}

@@ -50,7 +50,7 @@ import {
   passwordAuthEnabled,
 } from "@/server/auth/auth.constants";
 import { normalizeCurrencyCode } from "@/server/common/validation";
-import { transaction } from "@/server/common/db";
+import { isUniqueViolation, transaction } from "@/server/common/db";
 import { toPrivateUser } from "./user.mapper";
 
 /**
@@ -608,8 +608,7 @@ export async function logInWithGoogle(idToken: string) {
         // TOCTOU: a concurrent sign-in (double-clicked button, two tabs) won
         // the unique-index race on email or google_sub. Re-read rather than
         // surfacing a 500 for what is a successful sign-in either way.
-        const databaseError = error as { code?: string };
-        if (databaseError.code !== "23505") throw error;
+        if (!isUniqueViolation(error)) throw error;
         user =
           (await findUserByGoogleSub(claims.googleSub)) ?? (await findUserByEmail(claims.email))!;
       }
@@ -760,10 +759,8 @@ export async function findOrCreateUserByEmail(
     });
   } catch (error) {
     // TOCTOU: a concurrent invite to the same email won the unique-index
-    // race (Postgres SQLSTATE 23505). Re-read the now-existing row instead
-    // of surfacing a 500 to the caller.
-    const databaseError = error as { code?: string };
-    if (databaseError.code === "23505") {
+    // race. Re-read the now-existing row instead of surfacing a 500.
+    if (isUniqueViolation(error)) {
       const concurrent = await findUserByEmail(normalizedEmail);
       if (concurrent) return concurrent;
     }
@@ -806,9 +803,8 @@ export async function findOrCreateUserByPhone(
     });
   } catch (error) {
     // TOCTOU: a concurrent invite to the same number won the unique-index
-    // race (Postgres SQLSTATE 23505). Re-read rather than surfacing a 500.
-    const databaseError = error as { code?: string };
-    if (databaseError.code === "23505") {
+    // race. Re-read rather than surfacing a 500.
+    if (isUniqueViolation(error)) {
       const concurrent = await findUserByPhone(normalizedPhone);
       if (concurrent) return concurrent;
     }

@@ -15,6 +15,7 @@ import {
   type UserRow,
 } from "@/server/auth/repo/users.repo";
 import { mergeAccounts, previewMerge } from "@/server/auth/repo/accountMerge.repo";
+import { isUniqueViolation } from "@/server/common/db";
 import { UsecaseError, invalid } from "@/server/common/errors";
 import { toInt32Cents } from "@/server/common/money";
 import {
@@ -136,8 +137,7 @@ export async function setPhone(
       // TOCTOU: another account may claim the partial-unique phone index
       // between the lookup above and this update. Re-read the winner and feed
       // it through the same claimed-account/merge-preview decisions below.
-      const databaseError = error as { code?: string };
-      if (databaseError.code !== "23505") throw error;
+      if (!isUniqueViolation(error)) throw error;
       holder = await findUserByPhone(phone);
       if (!holder) {
         throw new UsecaseError(

@@ -46,7 +46,10 @@ vi.mock("@/server/auth/repo/googleSignInNonces.repo", () => ({
   insertGoogleSignInNonce: vi.fn(),
 }));
 
-vi.mock("@/server/common/db", () => ({
+vi.mock("@/server/common/db", async (importOriginal) => ({
+  // Pure helpers (isUniqueViolation, newId) stay real; only the transaction
+  // wrapper is stubbed so no pool is ever opened.
+  ...(await importOriginal<typeof import("@/server/common/db")>()),
   transaction: vi.fn(
     async (operation: (client: object) => Promise<unknown>) => operation({}),
   ),
