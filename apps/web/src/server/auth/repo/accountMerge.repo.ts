@@ -15,7 +15,7 @@
  * user). Keep the allowlists below synchronized with new user references.
  */
 
-import { query, queryOne, transaction } from "@/server/common/db";
+import { queryOne, transaction } from "@/server/common/db";
 import { lockFriendRequestInboxes } from "@/server/common/ledgerLocks";
 import type { PoolClient } from "pg";
 
@@ -476,18 +476,4 @@ export async function mergeAccounts(
       duplicateSplitsSummed,
     };
   });
-}
-
-/**
- * Lists the ids of rows absorbed into a user, newest first.
- *
- * @param keeperId - The surviving account.
- * @returns Tombstone ids pointing at it.
- */
-export async function findMergedInto(keeperId: string): Promise<string[]> {
-  const rows = await query<{ id: string }>(
-    `SELECT id FROM users WHERE merged_into = $1 ORDER BY id`,
-    [keeperId],
-  );
-  return rows.map((tombstone) => tombstone.id);
 }

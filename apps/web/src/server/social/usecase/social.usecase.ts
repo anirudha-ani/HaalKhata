@@ -295,16 +295,6 @@ export async function markNotificationsRead(userId: string): Promise<void> {
 }
 
 /**
- * Asserts that the given user id still resolves to an account.
- *
- * @param userId - Id of the user whose existence to verify.
- * @throws UsecaseError (permission_denied) when the account no longer exists.
- */
-export async function assertUserExists(userId: string): Promise<void> {
-  if (!(await findUserById(userId))) denied("account no longer exists");
-}
-
-/**
  * Nudges someone who owes the caller money, as an in-app notification that
  * includes the caller's payment handles so the debtor knows where to send it.
  *

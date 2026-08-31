@@ -1,7 +1,7 @@
 /** All SQL for the payment_handles table. */
 
 import type { PoolClient } from "pg";
-import { execute, transaction } from "@/server/common/db";
+import { transaction } from "@/server/common/db";
 
 /**
  * Replaces a user's entire set of payment handles.
@@ -33,13 +33,4 @@ export async function replacePaymentHandles(
   };
   if (client) await persist(client);
   else await transaction(persist);
-}
-
-/**
- * Removes every payment handle for a user.
- *
- * @param userId - Owner of the handles to clear.
- */
-export async function clearPaymentHandles(userId: string): Promise<void> {
-  await execute(`DELETE FROM payment_handles WHERE user_id = $1`, [userId]);
 }
