@@ -1968,3 +1968,51 @@ group; an exactly-one-owner database constraint (the usecase enforces it
 under the group lock); monitoring for secret age; split database roles; and
 a release-mode mobile end-to-end sign-in test. The root `AUDIT.md` predates
 §25–§28 and is kept as history, not as a to-do list.
+
+## §29 A readability pass over the backend (2026-08-31)
+
+Before the code grows further, one deliberate pass over everything in
+`apps/web/src/server`, block by block, against the boring virtues:
+simplicity, clarity, one spelling per idea. No behavior changed; every
+commit in the pass is a refactor a reviewer can hold in one glance, and
+the full suite ran green before each one.
+
+What the pass actually changed:
+
+- **One spelling per invariant.** The `friend-request-inbox:` advisory
+  lock existed as two independent copies (friendships repo, account
+  merge); the whole deadlock argument rests on both spelling identical
+  keys in identical order, so it now lives with the other locks in
+  `common/ledgerLocks`. Same treatment for Postgres's 23505 recovery
+  (`isUniqueViolation` in common/db, was four anonymous casts), the
+  real-calendar-date round trip (was written independently in expense
+  and receipt), the zero-loop test the comments already said was
+  `groupCancelsOut`, and the default-currency-first ordering.
+- **One derivation per set.** "Who is on this expense" was derived
+  inline five ways; `moneyParticipantIds` (payers+owers, what
+  settledness wants) and `storedParticipantIds` (plus creator, what
+  authorization wants) are now the only two. updateExpense's
+  exists/may-edit/no-group-move sequence ran twice — deliberately, once
+  pre-lock and once under the lock — but nothing said so; it is one
+  function now, with the why-twice written on it.
+- **Less to hold in your head.** Auth's four copies of display-name
+  validation became normalizeName/requireName; the merge usecase's five
+  identical "confirmation is no longer valid" strings got one name; the
+  getExpense people map stopped being called `commentAuthors` when half
+  of it is activity actors.
+- **Dead surface removed.** assertUserExists, clearPaymentHandles and
+  findMergedInto had no callers anywhere and are gone (history keeps
+  them). mergeAccounts' correction counts stay: the merge integration
+  test asserts on them.
+- **Prose repaired.** An old mechanical rename (key → operation) had
+  chewed through the idempotency comments ("a operation", "the
+  idempotency-operation draft"); the intended wording is back.
+
+Looked at and deliberately left alone: `withLedgerTransaction` is a
+do-nothing alias for `transaction`, but it is the seam five test files
+mock to intercept ledger transactions without stubbing the database
+wholesale, so it stays; the per-recipient INSERT loop in notifications is
+bounded by the 100-participant cap and a batch statement would buy
+complexity, not correctness; and the repo/usecase/handler layering held
+everywhere it was checked, with the account-merge repo's cross-domain SQL
+remaining the one documented exception.
