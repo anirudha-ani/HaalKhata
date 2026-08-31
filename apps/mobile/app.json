@@ -4,7 +4,7 @@
     "slug": "haalkhata",
     "version": "0.1.0",
     "scheme": ["haalkhata", "com.haalkhata.app"],
-    "orientation": "portrait",
+    "orientation": "default",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
     "icon": "./assets/icon.png",

@@ -30,3 +30,21 @@ export const RIGHT_TAB_ITEMS: TabItem[] = [
   { name: "expenses", label: "Expenses", icon: ReceiptText },
   { name: "friends", label: "Friends", icon: Users },
 ];
+
+/** Viewport width at which persistent tablet navigation replaces bottom tabs. */
+export const TABLET_BREAKPOINT = 768;
+
+/** Viewport width at which screens have room for side-by-side content columns. */
+export const EXPANDED_LAYOUT_BREAKPOINT = 1024;
+
+/** Maximum readable width for the standard screen canvas. */
+export const SCREEN_CONTENT_MAX_WIDTH = 1180;
+
+/** Maximum width for focused authentication and onboarding forms. */
+export const FOCUSED_CONTENT_MAX_WIDTH = 520;
+
+/** Maximum width for a tablet dialog presented by the shared Sheet component. */
+export const TABLET_SHEET_MAX_WIDTH = 640;
+
+/** Width of the persistent navigation rail on tablet-sized viewports. */
+export const TABLET_NAVIGATION_WIDTH = 104;

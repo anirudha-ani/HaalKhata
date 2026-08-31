@@ -19,6 +19,7 @@ import { LOGIN_MODES } from "../../constants/loginModes";
 import brandIconSource from "../../../../../assets/icon.png";
 import { GoogleSignInButton } from "./components/GoogleSignInButton/GoogleSignInButton";
 import { useLogin } from "./hooks/useLogin";
+import { FOCUSED_CONTENT_MAX_WIDTH } from "@/components/shell/shell.constants";
 
 /**
  * Renders the login screen: the HaalKhata icon and wordmark, "Continue with Google"
@@ -41,15 +42,16 @@ export function LoginScreen() {
           contentContainerStyle={styles.scrollContent}
           keyboardShouldPersistTaps="handled"
         >
-          <View style={styles.hero}>
-            <Image source={brandIconSource} style={styles.brandIcon} />
-            <Text style={styles.wordmark}>HAALKHATA</Text>
-            <Text style={styles.tagline}>
-              Camera eats first. The AI splits the rest.
-            </Text>
-          </View>
+          <View style={styles.content}>
+            <View style={styles.hero}>
+              <Image source={brandIconSource} style={styles.brandIcon} />
+              <Text style={styles.wordmark}>HAALKHATA</Text>
+              <Text style={styles.tagline}>
+                Camera eats first. The AI splits the rest.
+              </Text>
+            </View>
 
-          <View style={styles.card}>
+            <View style={styles.card}>
             {GOOGLE_SIGN_IN_CONFIGURED ? (
               <GoogleSignInButton />
             ) : PASSWORD_AUTH_ENABLED ? null : (
@@ -115,6 +117,7 @@ export function LoginScreen() {
                 ) : null}
               </>
             ) : null}
+            </View>
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -136,6 +139,10 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     gap: spacing.lg,
     padding: spacing.xl,
+  },
+  content: {
+    maxWidth: FOCUSED_CONTENT_MAX_WIDTH,
+    width: "100%",
   },
   divider: {
     color: colors.inkSoft,
@@ -166,6 +173,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
+    alignItems: "center",
     flexGrow: 1,
     justifyContent: "center",
     padding: spacing.xl,

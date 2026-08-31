@@ -20,6 +20,7 @@ import { CURRENCIES } from "@haalkhata/shared/money/money.constants";
 import { MAX_USER_NAME_LENGTH } from "@haalkhata/shared/text/limits";
 import { colors, fonts, radii, spacing } from "@/lib/theme/theme";
 import { useOnboarding } from "./hooks/useOnboarding";
+import { FOCUSED_CONTENT_MAX_WIDTH } from "@/components/shell/shell.constants";
 
 /**
  * Renders the first-run flow: a short profile form, an optional phone number,
@@ -47,7 +48,7 @@ export function OnboardingScreen() {
           {onboarding.isLoading ? (
             <Spinner />
           ) : (
-            <>
+            <View style={styles.content}>
               <View style={styles.hero}>
                 <Text style={styles.title}>
                   {merge ? "Is this you?" : verifying ? "Verify your phone" : "Welcome to HaalKhata"}
@@ -166,7 +167,7 @@ export function OnboardingScreen() {
                   </>
                 )}
               </View>
-            </>
+            </View>
           )}
         </ScrollView>
       </KeyboardAvoidingView>
@@ -200,6 +201,10 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     textAlign: "center",
   },
+  content: {
+    maxWidth: FOCUSED_CONTENT_MAX_WIDTH,
+    width: "100%",
+  },
   error: {
     color: colors.brand600,
     fontSize: 14,
@@ -230,6 +235,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
+    alignItems: "center",
     flexGrow: 1,
     justifyContent: "center",
     padding: spacing.xl,

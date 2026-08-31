@@ -4,6 +4,7 @@ import { useRouter } from "expo-router";
 import { ChevronLeft } from "lucide-react-native";
 import type { ReactNode } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
+import { SCREEN_CONTENT_MAX_WIDTH } from "@/components/shell/shell.constants";
 import { colors, fonts, radii, spacing } from "@/lib/theme/theme";
 
 /**
@@ -22,18 +23,20 @@ export function DetailHeader({
   const router = useRouter();
   return (
     <View style={styles.header}>
-      <Pressable
-        accessibilityLabel="Back"
-        hitSlop={8}
-        onPress={() => (router.canGoBack() ? router.back() : router.replace("/dashboard"))}
-        style={styles.backButton}
-      >
-        <ChevronLeft color={colors.ink} size={24} />
-      </Pressable>
-      <Text numberOfLines={1} style={styles.title}>
-        {title}
-      </Text>
-      {right ? <View style={styles.right}>{right}</View> : null}
+      <View style={styles.headerContent}>
+        <Pressable
+          accessibilityLabel="Back"
+          hitSlop={8}
+          onPress={() => (router.canGoBack() ? router.back() : router.replace("/dashboard"))}
+          style={styles.backButton}
+        >
+          <ChevronLeft color={colors.ink} size={24} />
+        </Pressable>
+        <Text numberOfLines={1} style={styles.title}>
+          {title}
+        </Text>
+        {right ? <View style={styles.right}>{right}</View> : null}
+      </View>
     </View>
   );
 }
@@ -44,14 +47,19 @@ const styles = StyleSheet.create({
     padding: spacing.xs,
   },
   header: {
-    alignItems: "center",
     backgroundColor: colors.card,
     borderBottomColor: colors.line,
     borderBottomWidth: 1,
+  },
+  headerContent: {
+    alignItems: "center",
+    alignSelf: "center",
     flexDirection: "row",
     gap: spacing.sm,
+    maxWidth: SCREEN_CONTENT_MAX_WIDTH,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.md,
+    width: "100%",
   },
   right: {
     marginLeft: "auto",

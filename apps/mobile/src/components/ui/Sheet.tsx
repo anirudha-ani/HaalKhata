@@ -14,6 +14,8 @@ import {
   View,
 } from "react-native";
 import { colors, fonts, radii, spacing } from "@/lib/theme/theme";
+import { TABLET_SHEET_MAX_WIDTH } from "@/components/shell/shell.constants";
+import { useResponsiveLayout } from "@/components/shell/hooks/useResponsiveLayout";
 import { SHEET_MAX_HEIGHT_RATIO } from "./ui.constants";
 
 /**
@@ -34,16 +36,21 @@ export function Sheet({
   children: ReactNode;
 }) {
   const { height: windowHeight } = useWindowDimensions();
+  const { isTablet } = useResponsiveLayout();
   return (
-    <Modal animationType="slide" onRequestClose={onClose} transparent visible>
+    <Modal animationType={isTablet ? "fade" : "slide"} onRequestClose={onClose} transparent visible>
       <KeyboardAvoidingView
         behavior={Platform.OS === "ios" ? "padding" : undefined}
-        style={styles.backdropContainer}
+        style={[styles.backdropContainer, isTablet ? styles.backdropContainerTablet : null]}
       >
         <Pressable accessibilityLabel="Close" onPress={onClose} style={styles.backdrop} />
         <View
           accessibilityLabel={title}
-          style={[styles.sheet, { maxHeight: windowHeight * SHEET_MAX_HEIGHT_RATIO }]}
+          style={[
+            styles.sheet,
+            { maxHeight: windowHeight * SHEET_MAX_HEIGHT_RATIO },
+            isTablet ? styles.sheetTablet : null,
+          ]}
         >
           <View style={styles.header}>
             <Text style={styles.title}>{title}</Text>
@@ -78,6 +85,11 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: "flex-end",
   },
+  backdropContainerTablet: {
+    alignItems: "center",
+    justifyContent: "center",
+    padding: spacing.xxl,
+  },
   closeButton: {
     borderRadius: radii.full,
     padding: 6,
@@ -94,6 +106,11 @@ const styles = StyleSheet.create({
     borderTopRightRadius: radii.lg,
     padding: spacing.xl - 4,
     paddingBottom: spacing.xxl,
+  },
+  sheetTablet: {
+    borderRadius: radii.lg,
+    maxWidth: TABLET_SHEET_MAX_WIDTH,
+    width: "100%",
   },
   title: {
     color: colors.ink,
