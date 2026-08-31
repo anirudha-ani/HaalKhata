@@ -70,7 +70,7 @@ describe("beginOperation / finishOperation", () => {
   });
 
   it("refuses the same id with a different payload", async () => {
-    // IETF idempotency-operation draft: a operation must not be reused across payloads.
+    // IETF Idempotency-Key draft: an operation id must not be reused across payloads.
     vi.mocked(claimOperation).mockResolvedValue(false);
     vi.mocked(findOperation).mockResolvedValue({
       request_fingerprint: requestFingerprint({ ...request, amountCents: 999 }),

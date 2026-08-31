@@ -8,6 +8,6 @@ export const OPERATION_ID_PATTERN = /^[A-Za-z0-9_-]+$/;
 
 /**
  * How long a claim answers retries for, in hours. Published as the contract
- * the idempotency draft asks for: after this a reused id runs again.
+ * the Idempotency-Key draft asks for: after this a reused id runs again.
  */
 export const OPERATION_RETENTION_HOURS = 24;

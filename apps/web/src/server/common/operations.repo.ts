@@ -21,8 +21,8 @@ export interface OperationKey {
 /**
  * Claims an operation id for the caller inside the given transaction.
  *
- * A concurrent request with the same operation blocks on the primary operation until
- * this transaction commits or rolls back — Postgres holds a conflicting
+ * A concurrent request for the same operation blocks on the first claim
+ * until this transaction commits or rolls back — Postgres holds a conflicting
  * insert until the first one's fate is known — so a duplicate never runs
  * alongside the original; it either finds the committed row or finds
  * nothing and claims for itself.
@@ -58,7 +58,7 @@ export async function claimOperation(
 }
 
 /**
- * Reads the committed claim for a operation, for replaying its result.
+ * Reads the committed claim for an operation, for replaying its result.
  *
  * @param operation - The operation to look up.
  * @param client - Transaction client.

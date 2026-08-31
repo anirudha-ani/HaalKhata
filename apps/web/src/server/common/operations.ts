@@ -75,10 +75,10 @@ export type OperationClaim = { replayOf: null } | { replayOf: string };
  * Claims an operation inside the caller's transaction, or resolves it to the
  * result a completed claim produced.
  *
- * Semantics follow the idempotency-operation draft and Stripe's practice: the same
+ * Semantics follow the IETF Idempotency-Key draft and Stripe's practice: the same
  * id with the same payload replays the first result; the same id with a
  * different payload is refused; a duplicate arriving while the first is
- * still in flight waits for it (the primary operation blocks) and then replays.
+ * still in flight waits for it (its conflicting insert blocks) and then replays.
  * An empty id skips deduplication — the transport boundary requires one on
  * every external request, so that path is only for internal callers.
  *
