@@ -23,6 +23,7 @@ import {
   isMember,
   listGroupsByUser,
   listMembers,
+  type GroupRow,
 } from "@/server/group/repo/groups.repo";
 import { findUserById, findUsersByIds } from "@/server/auth/repo/users.repo";
 import {
@@ -587,6 +588,247 @@ function pairDelta(debts: LedgerEntry[], userId: string, otherUserId: string): n
   return delta;
 }
 
+/** One internal statement line before its running balance is attached. */
+interface FriendLedgerLine {
+  kind: string;
+  id: string;
+  date: string;
+  description: string;
+  groupId: string;
+  groupName: string;
+  currency: string;
+  totalCents: number;
+  deltaCents: number;
+  sortKey: string;
+  createdAt: string;
+  deleted: boolean;
+  recordedByName: string;
+}
+
+/** One routed balance between the pair inside a single scope and currency. */
+interface FriendLedgerScopeBalance {
+  groupId: string;
+  groupName: string;
+  currency: string;
+  netCents: number;
+  simplified: boolean;
+}
+
+/**
+ * Loads names for the groups referenced by statement expenses.
+ *
+ * @param expenses - Shared expenses whose group labels will be rendered.
+ * @returns Group id to display name.
+ */
+async function groupNamesForExpenses(expenses: ExpenseRow[]): Promise<Map<string, string>> {
+  const groupNames = new Map<string, string>();
+  const groupIds = new Set(
+    expenses.flatMap((expense) => (expense.group_id ? [expense.group_id] : [])),
+  );
+  for (const groupId of groupIds) {
+    const group = await findGroupById(groupId);
+    if (group) groupNames.set(groupId, group.name);
+  }
+  return groupNames;
+}
+
+/**
+ * Maps shared expense rows to the movements they made between this pair.
+ *
+ * @param expenses - Expenses shared by the pair, deleted rows included.
+ * @param children - Payers and splits for those expenses.
+ * @param groupNames - Group labels keyed by id.
+ * @param userId - Statement viewer.
+ * @param friendId - Other person on the statement.
+ * @returns Expense lines that affected the pair.
+ */
+function expenseLedgerLines(
+  expenses: ExpenseRow[],
+  children: ExpenseChildren,
+  groupNames: ReadonlyMap<string, string>,
+  userId: string,
+  friendId: string,
+): FriendLedgerLine[] {
+  const lines: FriendLedgerLine[] = [];
+  for (const expense of expenses) {
+    const debts = expenseDebts(
+      (children.payers.get(expense.id) ?? []).map((payer) => ({
+        userId: payer.user_id,
+        amountCents: payer.amount_cents,
+      })),
+      (children.splits.get(expense.id) ?? []).map((split) => ({
+        userId: split.user_id,
+        amountCents: split.owed_cents,
+      })),
+    );
+    const liveDeltaCents = pairDelta(debts, userId, friendId);
+    if (liveDeltaCents === 0) continue;
+    const deleted = expense.deleted_at !== null;
+    lines.push({
+      kind: "expense",
+      id: expense.id,
+      date: expense.expense_date,
+      description: expense.description,
+      groupId: expense.group_id ?? "",
+      groupName: expense.group_id ? (groupNames.get(expense.group_id) ?? "") : "",
+      currency: expense.currency,
+      totalCents: expense.amount_cents,
+      // A deleted line remains explanatory history but no longer moves money.
+      deltaCents: deleted ? 0 : liveDeltaCents,
+      sortKey: `${expense.expense_date}T${expense.created_at}`,
+      // An expense date is a calendar day, not a moment to localize.
+      createdAt: "",
+      deleted,
+      recordedByName: "",
+    });
+  }
+  return lines;
+}
+
+/**
+ * Maps settlement rows to statement movements from the viewer's perspective.
+ *
+ * @param settlements - Payments between the pair, deleted rows included.
+ * @param groupNames - Group labels keyed by id.
+ * @param userId - Statement viewer.
+ * @param friendName - Other person's display name.
+ * @returns One line per stored payment.
+ */
+function settlementLedgerLines(
+  settlements: SettlementRow[],
+  groupNames: ReadonlyMap<string, string>,
+  userId: string,
+  friendName: string,
+): FriendLedgerLine[] {
+  return settlements.map((settlement) => {
+    const paidByYou = settlement.from_user === userId;
+    const deleted = settlement.deleted_at !== null;
+    return {
+      kind: "settlement",
+      id: settlement.id,
+      date: settlement.created_at.slice(0, 10),
+      description: paidByYou ? "You paid" : `${friendName} paid you`,
+      groupId: settlement.group_id ?? "",
+      groupName: settlement.group_id ? (groupNames.get(settlement.group_id) ?? "") : "",
+      currency: settlement.currency,
+      totalCents: settlement.amount_cents,
+      deltaCents: deleted ? 0 : paidByYou ? settlement.amount_cents : -settlement.amount_cents,
+      sortKey: `${settlement.created_at.slice(0, 10)}T${settlement.created_at}`,
+      createdAt: settlement.created_at,
+      deleted,
+      // A payment is a claim one of the pair recorded; keep who asserted it.
+      recordedByName: settlement.recorded_by === userId ? "you" : friendName,
+    };
+  });
+}
+
+/**
+ * Sorts statement lines oldest-first and attaches one running balance per currency.
+ *
+ * @param lines - Unordered expense and settlement movements.
+ * @returns Proto-ready entries, newest first.
+ */
+function friendLedgerEntries(lines: FriendLedgerLine[]) {
+  lines.sort((first, second) => first.sortKey.localeCompare(second.sortKey));
+  const runningByCurrency = new Map<string, number>();
+  const entries = lines.map((line) => {
+    const runningCents = (runningByCurrency.get(line.currency) ?? 0) + line.deltaCents;
+    runningByCurrency.set(line.currency, runningCents);
+    return {
+      kind: line.kind,
+      id: line.id,
+      date: line.date,
+      description: line.description,
+      groupId: line.groupId,
+      groupName: line.groupName,
+      currency: line.currency,
+      totalCents: line.totalCents,
+      deltaCents: toInt32Cents(line.deltaCents, "a line's change"),
+      balanceAfterCents: toInt32Cents(runningCents, "the running balance"),
+      createdAt: line.createdAt,
+      deleted: line.deleted,
+      recordedByName: line.recordedByName,
+    };
+  });
+  return entries.reverse();
+}
+
+/**
+ * Builds the stable key used for a pair's group/one-off currency scope.
+ *
+ * @param groupId - Group id, or an empty string for the one-off slate.
+ * @param currency - Scope currency.
+ * @returns Composite history key.
+ */
+function friendScopeKey(groupId: string, currency: string): string {
+  return `${groupId}|${currency}`;
+}
+
+/**
+ * Totals raw statement history by scope and currency.
+ *
+ * @param lines - Statement movements.
+ * @returns Composite scope key to net cents.
+ */
+function historyNetsByScope(lines: FriendLedgerLine[]): Map<string, number> {
+  const nets = new Map<string, number>();
+  for (const line of lines) {
+    const scope = friendScopeKey(line.groupId, line.currency);
+    nets.set(scope, (nets.get(scope) ?? 0) + line.deltaCents);
+  }
+  return nets;
+}
+
+/**
+ * Replaces raw history with the routed edge for simplified mutual groups.
+ *
+ * @param mutualGroups - Groups both people currently belong to.
+ * @param historyNets - Raw pair history by scope; consumed by this function.
+ * @param groupNames - Group labels keyed by id.
+ * @param userId - Statement viewer.
+ * @param friendId - Other person on the statement.
+ * @returns Per-scope balances following each group's routing mode.
+ */
+async function friendScopeBalances(
+  mutualGroups: GroupRow[],
+  historyNets: Map<string, number>,
+  groupNames: ReadonlyMap<string, string>,
+  userId: string,
+  friendId: string,
+): Promise<FriendLedgerScopeBalance[]> {
+  const balances: FriendLedgerScopeBalance[] = [];
+  for (const group of mutualGroups) {
+    if (!group.simplify_debts) continue;
+    const edges = simplifyDebts(netBalances(await groupLedger(group.id)));
+    const routedCents =
+      owedInEntries(edges, friendId, userId) - owedInEntries(edges, userId, friendId);
+    const scopeKey = friendScopeKey(group.id, group.currency);
+    const historyCents = historyNets.get(scopeKey) ?? 0;
+    historyNets.delete(scopeKey);
+    if (routedCents !== 0 || historyCents !== 0) {
+      balances.push({
+        groupId: group.id,
+        groupName: group.name,
+        currency: group.currency,
+        netCents: routedCents,
+        simplified: true,
+      });
+    }
+  }
+  for (const [scope, historyCents] of historyNets) {
+    if (historyCents === 0) continue;
+    const [groupId, currency] = scope.split("|");
+    balances.push({
+      groupId,
+      groupName: groupId ? (groupNames.get(groupId) ?? "") : "",
+      currency,
+      netCents: historyCents,
+      simplified: false,
+    });
+  }
+  return balances;
+}
+
 /**
  * The full shared history with one person: every expense you both appear on
  * (group ones included, the way Splitwise totals a friendship) and every
@@ -618,135 +860,19 @@ export async function getFriendLedger(userId: string, friendId: string) {
   const expenses = await listExpensesBetween(userId, friendId, true);
   const children = await loadExpenseChildren(expenses.map((expense) => expense.id));
   const settlements = await listSettlementsBetween(userId, friendId, true);
-
-  const groupNames = new Map<string, string>();
-  for (const groupId of new Set(
-    expenses.flatMap((expense) => (expense.group_id ? [expense.group_id] : [])),
-  )) {
-    const group = await findGroupById(groupId);
-    if (group) groupNames.set(groupId, group.name);
-  }
-
-  type Line = {
-    kind: string;
-    id: string;
-    date: string;
-    description: string;
-    groupId: string;
-    groupName: string;
-    currency: string;
-    totalCents: number;
-    deltaCents: number;
-    sortKey: string;
-    createdAt: string;
-    deleted: boolean;
-    recordedByName: string;
-  };
-  const lines: Line[] = [];
-
-  for (const expense of expenses) {
-    const debts = expenseDebts(
-      (children.payers.get(expense.id) ?? []).map((payer) => ({
-        userId: payer.user_id,
-        amountCents: payer.amount_cents,
-      })),
-      (children.splits.get(expense.id) ?? []).map((split) => ({
-        userId: split.user_id,
-        amountCents: split.owed_cents,
-      })),
-    );
-    // What the line would move — or did move, until it was deleted. A row
-    // that never touched this pair is noise either way and stays out.
-    const liveDeltaCents = pairDelta(debts, userId, friendId);
-    if (liveDeltaCents === 0) continue;
-    const deleted = expense.deleted_at !== null;
-    lines.push({
-      kind: "expense",
-      id: expense.id,
-      date: expense.expense_date,
-      description: expense.description,
-      groupId: expense.group_id ?? "",
-      groupName: expense.group_id ? (groupNames.get(expense.group_id) ?? "") : "",
-      currency: expense.currency,
-      totalCents: expense.amount_cents,
-      // Deleted means owed-to-zero: the line stays, the movement does not.
-      deltaCents: deleted ? 0 : liveDeltaCents,
-      sortKey: `${expense.expense_date}T${expense.created_at}`,
-      // An expense's date is the calendar day the user picked, not a moment;
-      // there is nothing to convert, so no timestamp rides along.
-      createdAt: "",
-      deleted,
-      recordedByName: "",
-    });
-  }
-
-  for (const settlement of settlements) {
-    // You paying them shrinks your debt, so it moves the balance in your
-    // favour exactly as an expense they owed you on would.
-    const paidByYou = settlement.from_user === userId;
-    // A removed payment stays as a line with no movement, so the debt that
-    // came back when it was removed still has the row explaining it.
-    const deleted = settlement.deleted_at !== null;
-    lines.push({
-      kind: "settlement",
-      id: settlement.id,
-      // The UTC day, kept as a fallback; the timestamp below is what the
-      // client renders, in the viewer's own timezone.
-      date: settlement.created_at.slice(0, 10),
-      description: paidByYou ? "You paid" : `${friend?.name ?? ""} paid you`,
-      groupId: settlement.group_id ?? "",
-      groupName: settlement.group_id ? (groupNames.get(settlement.group_id) ?? "") : "",
-      currency: settlement.currency,
-      totalCents: settlement.amount_cents,
-      deltaCents: deleted ? 0 : paidByYou ? settlement.amount_cents : -settlement.amount_cents,
-      sortKey: `${settlement.created_at.slice(0, 10)}T${settlement.created_at}`,
-      createdAt: settlement.created_at,
-      deleted,
-      // A payment is a claim one of the two people typed in; the statement
-      // says which, so "You paid" recorded by them reads differently from
-      // "You paid" recorded by you.
-      recordedByName: settlement.recorded_by === userId ? "you" : (friend?.name ?? ""),
-    });
-  }
-
-  lines.sort((first, second) => first.sortKey.localeCompare(second.sortKey));
-  // One running column per currency: a euro line continues the euro balance
-  // and leaves the dollar one where it was.
-  const runningByCurrency = new Map<string, number>();
-  const entries = lines.map((line) => {
-    const runningCents = (runningByCurrency.get(line.currency) ?? 0) + line.deltaCents;
-    runningByCurrency.set(line.currency, runningCents);
-    return {
-      kind: line.kind,
-      id: line.id,
-      date: line.date,
-      description: line.description,
-      groupId: line.groupId,
-      groupName: line.groupName,
-      currency: line.currency,
-      totalCents: line.totalCents,
-      deltaCents: toInt32Cents(line.deltaCents, "a line's change"),
-      balanceAfterCents: toInt32Cents(runningCents, "the running balance"),
-      createdAt: line.createdAt,
-      deleted: line.deleted,
-      recordedByName: line.recordedByName,
-    };
-  });
-  entries.reverse();
+  const groupNames = await groupNamesForExpenses(expenses);
+  const lines = [
+    ...expenseLedgerLines(expenses, children, groupNames, userId, friendId),
+    ...settlementLedgerLines(settlements, groupNames, userId, friend?.name ?? ""),
+  ];
+  const entries = friendLedgerEntries(lines);
   // The statement is a display; the balances above it are computed over
   // everything. Past the cap the oldest lines are left off and the response
   // says so, rather than shipping an unbounded table to a phone.
   const truncated = entries.length > LEDGER_DISPLAY_LIMIT;
   const shownEntries = truncated ? entries.slice(0, LEDGER_DISPLAY_LIMIT) : entries;
 
-  // The pair's history per scope and currency: `<groupId>|<currency>`, with
-  // the one-off slate keyed on "" — one entry per currency it holds.
-  const scopeKey = (groupId: string, currency: string) => `${groupId}|${currency}`;
-  const netByScope = new Map<string, number>();
-  for (const line of lines) {
-    const scope = scopeKey(line.groupId, line.currency);
-    netByScope.set(scope, (netByScope.get(scope) ?? 0) + line.deltaCents);
-  }
+  const netByScope = historyNetsByScope(lines);
 
   // Relationship context, not balance context: which groups both belong to
   // (settled ones included — "where do I know them from" is not "where does
@@ -770,41 +896,13 @@ export async function getFriendLedger(userId: string, friendId: string) {
   // balance always has a line explaining where it went, and the headline is
   // the sum of these rows — the same routed number the dashboard shows and
   // the settlement guards enforce, not the raw history total.
-  const groupBalances: {
-    groupId: string;
-    groupName: string;
-    currency: string;
-    netCents: number;
-    simplified: boolean;
-  }[] = [];
-  for (const group of mutualGroupRows) {
-    if (!group.simplify_debts) continue;
-    const edges = simplifyDebts(netBalances(await groupLedger(group.id)));
-    const routedCents =
-      owedInEntries(edges, friendId, userId) - owedInEntries(edges, userId, friendId);
-    const historyCents = netByScope.get(scopeKey(group.id, group.currency)) ?? 0;
-    netByScope.delete(scopeKey(group.id, group.currency));
-    if (routedCents !== 0 || historyCents !== 0) {
-      groupBalances.push({
-        groupId: group.id,
-        groupName: group.name,
-        currency: group.currency,
-        netCents: routedCents,
-        simplified: true,
-      });
-    }
-  }
-  for (const [scope, historyCents] of netByScope) {
-    if (historyCents === 0) continue;
-    const [groupId, currency] = scope.split("|");
-    groupBalances.push({
-      groupId,
-      groupName: groupId ? (groupNames.get(groupId) ?? "") : "",
-      currency,
-      netCents: historyCents,
-      simplified: false,
-    });
-  }
+  const groupBalances = await friendScopeBalances(
+    mutualGroupRows,
+    netByScope,
+    groupNames,
+    userId,
+    friendId,
+  );
   // The headline: one net per currency, each the sum of that currency's
   // scopes — the same routed numbers the dashboard shows and the settlement
   // guards enforce.
