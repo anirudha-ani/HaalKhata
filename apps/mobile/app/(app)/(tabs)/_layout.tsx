@@ -1,11 +1,18 @@
-/** Bottom-tab layout: the main destinations around the floating add-expense button. */
+/** Responsive primary navigation: bottom tabs on phones and a rail on tablets. */
 
-import { Tabs } from "expo-router";
+import { Tabs, useRouter } from "expo-router";
 import type { LucideIcon } from "lucide-react-native";
-import type { ColorValue } from "react-native";
+import { StyleSheet, type ColorValue } from "react-native";
 import { AddExpenseTabButton } from "@/components/shell/AddExpenseTabButton";
-import { LEFT_TAB_ITEMS, RIGHT_TAB_ITEMS, type TabItem } from "@/components/shell/shell.constants";
-import { colors } from "@/lib/theme/theme";
+import {
+  ADD_TAB_ITEM,
+  LEFT_TAB_ITEMS,
+  RIGHT_TAB_ITEMS,
+  TABLET_NAVIGATION_WIDTH,
+  type TabItem,
+} from "@/components/shell/shell.constants";
+import { useResponsiveLayout } from "@/components/shell/hooks/useResponsiveLayout";
+import { colors, radii, spacing } from "@/lib/theme/theme";
 
 /**
  * Builds the tabBarIcon render function for a lucide icon.
@@ -36,13 +43,15 @@ function tabScreen(item: TabItem) {
 }
 
 /**
- * Layout for the authed tab bar, mirroring the web's mobile bottom nav:
- * Home and Groups on the left, the raised add-expense button in the middle,
- * Expenses and Friends on the right. Activity is reached via the header bell.
+ * Layout for authenticated primary navigation. Phones use the familiar
+ * bottom bar with a raised add button; tablets use a persistent left rail
+ * with the same destinations and a conventional add item.
  *
  * @returns The bottom-tab navigator.
  */
 export default function TabsLayout() {
+  const router = useRouter();
+  const { isTablet } = useResponsiveLayout();
   return (
     <Tabs
       screenOptions={{
@@ -50,16 +59,57 @@ export default function TabsLayout() {
         sceneStyle: { backgroundColor: colors.paper },
         tabBarActiveTintColor: colors.brand600,
         tabBarInactiveTintColor: colors.inkSoft,
-        tabBarLabelStyle: { fontSize: 11, fontWeight: "500" },
-        tabBarStyle: { backgroundColor: colors.card, borderTopColor: colors.line },
+        tabBarItemStyle: isTablet ? styles.railItem : undefined,
+        tabBarLabelPosition: "below-icon",
+        tabBarLabelStyle: isTablet ? styles.railLabel : styles.bottomLabel,
+        tabBarPosition: isTablet ? "left" : "bottom",
+        tabBarStyle: isTablet ? styles.rail : styles.bottomBar,
+        tabBarVariant: isTablet ? "material" : "uikit",
       }}
     >
       {LEFT_TAB_ITEMS.map(tabScreen)}
       <Tabs.Screen
         name="add"
-        options={{ tabBarButton: AddExpenseTabButton, title: "Add" }}
+        listeners={{
+          tabPress: (event) => {
+            event.preventDefault();
+            router.push("/expenses/new");
+          },
+        }}
+        options={
+          isTablet
+            ? { tabBarIcon: tabIcon(ADD_TAB_ITEM.icon), title: ADD_TAB_ITEM.label }
+            : { tabBarButton: AddExpenseTabButton, title: ADD_TAB_ITEM.label }
+        }
       />
       {RIGHT_TAB_ITEMS.map(tabScreen)}
     </Tabs>
   );
 }
+
+const styles = StyleSheet.create({
+  bottomBar: {
+    backgroundColor: colors.card,
+    borderTopColor: colors.line,
+  },
+  bottomLabel: {
+    fontSize: 11,
+    fontWeight: "500",
+  },
+  rail: {
+    backgroundColor: colors.card,
+    borderRightColor: colors.line,
+    borderRightWidth: 1,
+    paddingVertical: spacing.xl - spacing.xs,
+    width: TABLET_NAVIGATION_WIDTH,
+  },
+  railItem: {
+    borderRadius: radii.md,
+    marginHorizontal: spacing.md - 2,
+    marginVertical: spacing.xs,
+  },
+  railLabel: {
+    fontSize: 12,
+    fontWeight: "600",
+  },
+});

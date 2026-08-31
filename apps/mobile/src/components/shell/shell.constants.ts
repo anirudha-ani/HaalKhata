@@ -1,6 +1,6 @@
 /** Constants for the authed app shell (bottom tabs + screen headers). */
 
-import { Home, ReceiptText, Users, UsersRound, type LucideIcon } from "lucide-react-native";
+import { Home, Plus, ReceiptText, Users, UsersRound, type LucideIcon } from "lucide-react-native";
 
 /** One bottom-tab destination: the route file name, its label, and its icon. */
 export interface TabItem {
@@ -30,6 +30,9 @@ export const RIGHT_TAB_ITEMS: TabItem[] = [
   { name: "expenses", label: "Expenses", icon: ReceiptText },
   { name: "friends", label: "Friends", icon: Users },
 ];
+
+/** Add-expense destination rendered as a regular item in the tablet rail. */
+export const ADD_TAB_ITEM: TabItem = { name: "add", label: "Add", icon: Plus };
 
 /** Viewport width at which persistent tablet navigation replaces bottom tabs. */
 export const TABLET_BREAKPOINT = 768;
