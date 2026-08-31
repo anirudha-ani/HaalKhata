@@ -46,6 +46,12 @@ vi.mock("@/server/auth/repo/googleSignInNonces.repo", () => ({
   insertGoogleSignInNonce: vi.fn(),
 }));
 
+vi.mock("@/server/common/db", () => ({
+  transaction: vi.fn(
+    async (operation: (client: object) => Promise<unknown>) => operation({}),
+  ),
+}));
+
 import {
   beginGoogleSignIn,
   logIn,
@@ -66,6 +72,7 @@ import {
   setAvatarUrl,
   updateUserProfile,
 } from "@/server/auth/repo/users.repo";
+import { replacePaymentHandles } from "@/server/auth/repo/paymentHandles.repo";
 import {
   GOOGLE_SIGN_IN_NONCE_LIFETIME_SECONDS,
   MAX_USER_NAME_LENGTH,
@@ -419,9 +426,26 @@ describe("profile persisted input bounds", () => {
   it("normalizes a valid profile currency before writing", async () => {
     await updateProfile("user-1", { name: " Ani ", defaultCurrency: " eur " });
 
-    expect(updateUserProfile).toHaveBeenCalledWith("user-1", {
-      name: "Ani",
-      defaultCurrency: "EUR",
-    });
+    expect(updateUserProfile).toHaveBeenCalledWith(
+      "user-1",
+      {
+        name: "Ani",
+        defaultCurrency: "EUR",
+      },
+      expect.anything(),
+    );
+  });
+
+  it("validates payment handles before changing any profile field", async () => {
+    await expect(
+      updateProfile("user-1", {
+        name: "Ani",
+        defaultCurrency: "USD",
+        paymentHandles: [{ method: "carrier-pigeon", handle: "roof" }],
+      }),
+    ).rejects.toThrow(/unknown payment method/);
+
+    expect(updateUserProfile).not.toHaveBeenCalled();
+    expect(replacePaymentHandles).not.toHaveBeenCalled();
   });
 });

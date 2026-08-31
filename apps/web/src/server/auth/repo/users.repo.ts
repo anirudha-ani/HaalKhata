@@ -1,5 +1,6 @@
 /** All SQL for the users table: insert, lookups, shadow-user claim, profile updates. */
 
+import type { PoolClient } from "pg";
 import { execute, newId, query, queryOne } from "@/server/common/db";
 
 /** One row of the users table. Field names mirror the SQL column names. */
@@ -257,18 +258,19 @@ export async function bumpTokenVersion(userId: string): Promise<void> {
  *
  * @param userId - Primary key of the user to update.
  * @param fields - New values; only properties that are defined get written.
+ * @param client - Transaction client when the profile and related rows must update atomically.
  */
 export async function updateUserProfile(
   userId: string,
   fields: { name?: string; defaultCurrency?: string },
+  client?: PoolClient,
 ): Promise<void> {
-  if (fields.name !== undefined) {
-    await execute(`UPDATE users SET name = $1 WHERE id = $2`, [fields.name, userId]);
-  }
-  if (fields.defaultCurrency !== undefined) {
-    await execute(`UPDATE users SET default_currency = $1 WHERE id = $2`, [
-      fields.defaultCurrency,
-      userId,
-    ]);
-  }
+  await execute(
+    `UPDATE users
+        SET name = COALESCE($2, name),
+            default_currency = COALESCE($3, default_currency)
+      WHERE id = $1`,
+    [userId, fields.name ?? null, fields.defaultCurrency ?? null],
+    client,
+  );
 }

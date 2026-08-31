@@ -50,6 +50,7 @@ import {
   passwordAuthEnabled,
 } from "@/server/auth/auth.constants";
 import { normalizeCurrencyCode } from "@/server/common/validation";
+import { transaction } from "@/server/common/db";
 import { toPrivateUser } from "./user.mapper";
 
 /**
@@ -670,13 +671,10 @@ export async function updateProfile(
   if (name.length > MAX_USER_NAME_LENGTH) {
     invalid(`name is too long (max ${MAX_USER_NAME_LENGTH} characters)`);
   }
-  await updateUserProfile(userId, {
-    name,
-    defaultCurrency: input.defaultCurrency
-      ? normalizeCurrencyCode(input.defaultCurrency)
-      : undefined,
-  });
-  if (input.paymentHandles) {
+  const defaultCurrency = input.defaultCurrency
+    ? normalizeCurrencyCode(input.defaultCurrency)
+    : undefined;
+  if (input.paymentHandles !== undefined) {
     for (const entry of input.paymentHandles) {
       if (!PAYMENT_METHOD_KEYS.includes(entry.method)) {
         invalid(`unknown payment method "${entry.method}"`);
@@ -685,8 +683,16 @@ export async function updateProfile(
         invalid(`that ${entry.method} handle is too long`);
       }
     }
-    await replacePaymentHandles(userId, input.paymentHandles);
   }
+  // Validate the entire request before opening the transaction. The profile
+  // and its handles are one form submission, so they either both change or
+  // neither does.
+  await transaction(async (client) => {
+    await updateUserProfile(userId, { name, defaultCurrency }, client);
+    if (input.paymentHandles !== undefined) {
+      await replacePaymentHandles(userId, input.paymentHandles, client);
+    }
+  });
   return getMe(userId);
 }
 
