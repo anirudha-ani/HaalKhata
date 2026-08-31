@@ -16,6 +16,7 @@
 import heicDecode from "heic-decode";
 import sharp from "sharp";
 import { invalid, UsecaseError } from "@/server/common/errors";
+import { isRealCalendarDate } from "@/server/common/validation";
 import { logEvent } from "@/server/common/logger";
 import {
   COMPATIBLE_AI,
@@ -75,18 +76,6 @@ interface Provider {
 type ParsedReceiptItem = ParsedReceiptData["items"][number];
 
 /**
- * Whether text names a real ISO calendar date rather than only matching its shape.
- *
- * @param value - Candidate YYYY-MM-DD string.
- * @returns True when the date exists in the calendar.
- */
-function isRealIsoDate(value: string): boolean {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
-  const parsed = new Date(`${value}T00:00:00Z`);
-  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
-}
-
-/**
  * Coerces whatever date string a model returned into the strict `YYYY-MM-DD`
  * the expense API requires, or "" when it cannot be read confidently.
  *
@@ -104,13 +93,13 @@ function isRealIsoDate(value: string): boolean {
  */
 function toIsoDate(value: string): string {
   const trimmed = value.trim();
-  if (isRealIsoDate(trimmed)) return trimmed;
+  if (isRealCalendarDate(trimmed)) return trimmed;
 
   // Embedded ISO date, e.g. "2026-01-17 11:41" or "2026-01-17T11:41:00Z".
   const embedded = /(\d{4})-(\d{2})-(\d{2})/.exec(trimmed);
   if (embedded) {
     const candidate = `${embedded[1]}-${embedded[2]}-${embedded[3]}`;
-    if (isRealIsoDate(candidate)) return candidate;
+    if (isRealCalendarDate(candidate)) return candidate;
   }
 
   // Month-first numeric, e.g. "1/17/26", "01-17-2026 11:41 AM".
@@ -121,7 +110,7 @@ function toIsoDate(value: string): string {
     const yearPart = numeric[3];
     const year = yearPart.length === 2 ? 2000 + Number(yearPart) : Number(yearPart);
     const candidate = `${year}-${String(month).padStart(2, "0")}-${String(dayOfMonth).padStart(2, "0")}`;
-    if (isRealIsoDate(candidate)) return candidate;
+    if (isRealCalendarDate(candidate)) return candidate;
   }
   return "";
 }

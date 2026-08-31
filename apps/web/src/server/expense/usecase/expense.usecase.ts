@@ -57,7 +57,7 @@ import {
   lockParticipantLedgers,
   withLedgerTransaction,
 } from "@/server/common/ledgerLocks";
-import { normalizeCurrencyCode } from "@/server/common/validation";
+import { isRealCalendarDate, normalizeCurrencyCode } from "@/server/common/validation";
 import { beginOperation, finishOperation } from "@/server/common/operations";
 import { toPublicUser } from "@/server/auth/usecase/user.mapper";
 import {
@@ -106,14 +106,7 @@ function normalizeExpenseDate(expenseDate: string): string {
   if (!ISO_DATE_PATTERN.test(expenseDate)) {
     invalid("expense_date must be a YYYY-MM-DD string");
   }
-  // JavaScript's Date normalises an impossible day instead of rejecting it:
-  // 2026-02-31 quietly becomes March 3rd and 2026-02-29 becomes March 1st,
-  // both "valid". Only an exact round trip proves the day exists — the
-  // check Temporal.PlainDate.from makes for you.
-  const parsed = new Date(`${expenseDate}T00:00:00Z`);
-  if (Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== expenseDate) {
-    invalid("expense_date is not a real calendar date");
-  }
+  if (!isRealCalendarDate(expenseDate)) invalid("expense_date is not a real calendar date");
   return expenseDate;
 }
 

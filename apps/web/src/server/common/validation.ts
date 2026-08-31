@@ -29,3 +29,20 @@ export function normalizeCurrencyCode(value: string): string {
   }
   return currencyCode;
 }
+
+/**
+ * Whether text names a real ISO calendar day, not merely a YYYY-MM-DD shape.
+ *
+ * JavaScript's Date normalises an impossible day instead of rejecting it:
+ * 2026-02-31 quietly becomes March 3rd and 2026-02-29 becomes March 1st,
+ * both "valid". Only an exact round trip proves the day exists — the check
+ * Temporal.PlainDate.from would make for you.
+ *
+ * @param value - Candidate YYYY-MM-DD string.
+ * @returns True when the date exists in the calendar.
+ */
+export function isRealCalendarDate(value: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const parsed = new Date(`${value}T00:00:00Z`);
+  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+}
