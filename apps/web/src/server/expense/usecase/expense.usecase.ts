@@ -117,23 +117,29 @@ function normalizeExpenseDate(expenseDate: string): string {
   return expenseDate;
 }
 
+/** Group and currency resolved for an expense write. */
+interface ExpenseScope {
+  groupId: string | null;
+  groupMemberIds: Set<string> | null;
+  currency: string;
+}
+
+/** Authoritative money and split fields computed from an expense request. */
+interface ExpenseAmounts {
+  amountCents: number;
+  taxCents: number;
+  tipCents: number;
+  splits: ExpenseWrite["splits"];
+  items: ExpenseWrite["items"];
+}
+
 /**
- * Validates a create/update request and computes the authoritative splits.
- * Resolves the currency (group currency wins, then the caller's default),
- * recomputes splits server-side (client amounts are never trusted), and
- * checks that payments cover the total and every participant exists (and,
- * for group expenses, is a member).
+ * Validates request fields whose rules do not require database access.
  *
- * @param userId - Authenticated caller creating or updating the expense.
  * @param request - Raw expense request from the client.
- * @returns A fully validated `ExpenseWrite` ready for the repo layer.
- * @throws UsecaseError (invalid_argument / not_found / permission_denied) on
- *   any validation, existence, or membership failure.
+ * @returns The trimmed, non-empty description.
  */
-async function buildExpenseWrite(
-  userId: string,
-  request: CreateExpenseRequest,
-): Promise<ExpenseWrite> {
+function validateExpenseRequest(request: CreateExpenseRequest): string {
   const description = request.description.trim();
   if (description.length === 0) invalid("description is required");
   if (description.length > MAX_EXPENSE_DESCRIPTION_LENGTH) {
@@ -160,7 +166,20 @@ async function buildExpenseWrite(
   if (request.items.some((item) => item.name.trim().length > MAX_EXPENSE_ITEM_NAME_LENGTH)) {
     invalid(`item name is too long (max ${MAX_EXPENSE_ITEM_NAME_LENGTH} characters)`);
   }
+  return description;
+}
 
+/**
+ * Resolves an expense's ledger scope and authoritative currency.
+ *
+ * @param userId - Authenticated caller creating or updating the expense.
+ * @param request - Expense request containing the optional group and currency.
+ * @returns The normalized scope, membership snapshot, and currency.
+ */
+async function resolveExpenseScope(
+  userId: string,
+  request: CreateExpenseRequest,
+): Promise<ExpenseScope> {
   const groupId = request.groupId || null;
   let groupMemberIds: Set<string> | null = null;
   let currency = request.currency;
@@ -172,12 +191,28 @@ async function buildExpenseWrite(
     currency = group.currency;
   }
   if (!currency) currency = (await findUserById(userId))?.default_currency ?? "USD";
-  currency = normalizeCurrencyCode(currency);
+  return { groupId, groupMemberIds, currency: normalizeCurrencyCode(currency) };
+}
 
+/**
+ * Recomputes all expense amounts and splits from the raw client specification.
+ *
+ * Client-computed split amounts are never accepted as authoritative. Itemized
+ * requests are normalized before the shared cent-exact calculator receives
+ * them, and their computed total must match the total stated by the client.
+ *
+ * @param request - Expense request containing amount and split specifications.
+ * @param currency - Normalized currency used in validation messages.
+ * @returns Authoritative total, tax, tip, splits, and normalized items.
+ */
+function computeExpenseAmounts(
+  request: CreateExpenseRequest,
+  currency: string,
+): ExpenseAmounts {
   let amountCents: number;
   let taxCents = 0;
   let tipCents = 0;
-  let splits: { userId: string; owedCents: number }[];
+  let splits: ExpenseWrite["splits"];
   let items: ExpenseWrite["items"] = [];
 
   try {
@@ -224,12 +259,25 @@ async function buildExpenseWrite(
     if (error instanceof SplitError) invalid(error.message);
     throw error;
   }
-
   if (splits.length > MAX_EXPENSE_PARTICIPANTS) {
     invalid(`too many participants (max ${MAX_EXPENSE_PARTICIPANTS})`);
   }
+  return { amountCents, taxCents, tipCents, splits, items };
+}
 
-  if (request.payers.length === 0) invalid("at least one payer is required");
+/**
+ * Confirms payer contributions are positive and cover the expense exactly.
+ *
+ * @param request - Expense request containing payer contributions.
+ * @param amountCents - Authoritative total the contributions must cover.
+ * @param currency - Currency used in validation messages.
+ * @returns Nothing; throws when the contributions are invalid.
+ */
+function validateExpensePayments(
+  request: CreateExpenseRequest,
+  amountCents: number,
+  currency: string,
+): void {
   if (request.payers.some((payer) => payer.amountCents <= 0)) {
     invalid("each payer amount must be positive");
   }
@@ -239,13 +287,24 @@ async function buildExpenseWrite(
       `payments (${formatMoney(paidCents, currency)}) must equal the total (${formatMoney(amountCents, currency)})`,
     );
   }
+}
 
-  // Everyone referenced must exist; in a group, everyone must be a member.
-  const involved = [
-    ...new Set([...splits.map((split) => split.userId), ...request.payers.map((payer) => payer.userId)]),
-  ];
+/**
+ * Verifies that every participant exists and may share this ledger with the caller.
+ *
+ * @param userId - Authenticated caller creating or updating the expense.
+ * @param involved - Distinct payer and ower ids referenced by the request.
+ * @param scope - Resolved group membership or one-off scope.
+ * @returns Nothing once every participant is authorized.
+ */
+async function validateExpenseParticipants(
+  userId: string,
+  involved: string[],
+  scope: ExpenseScope,
+): Promise<void> {
   const users = await findUsersByIds(involved);
   if (users.length !== involved.length) invalid("unknown participant");
+  const { groupId, groupMemberIds } = scope;
   if (groupId) {
     for (const participantId of involved) {
       if (!groupMemberIds?.has(participantId)) {
@@ -263,22 +322,51 @@ async function buildExpenseWrite(
       denied("you can only split with people you already share a friendship or a group with");
     }
   }
+}
+
+/**
+ * Validates a create/update request and computes the authoritative repo write.
+ *
+ * The stages deliberately run in validation order: cheap shape checks first,
+ * then scope resolution, cent-exact calculation, and participant authorization.
+ *
+ * @param userId - Authenticated caller creating or updating the expense.
+ * @param request - Raw expense request from the client.
+ * @returns A fully validated `ExpenseWrite` ready for the repo layer.
+ * @throws UsecaseError (invalid_argument / not_found / permission_denied) on
+ *   any validation, existence, or membership failure.
+ */
+async function buildExpenseWrite(
+  userId: string,
+  request: CreateExpenseRequest,
+): Promise<ExpenseWrite> {
+  const description = validateExpenseRequest(request);
+  const scope = await resolveExpenseScope(userId, request);
+  const amounts = computeExpenseAmounts(request, scope.currency);
+  validateExpensePayments(request, amounts.amountCents, scope.currency);
+  const involved = [
+    ...new Set([
+      ...amounts.splits.map((split) => split.userId),
+      ...request.payers.map((payer) => payer.userId),
+    ]),
+  ];
+  await validateExpenseParticipants(userId, involved, scope);
 
   return {
-    groupId,
+    groupId: scope.groupId,
     description,
-    amountCents,
-    currency,
+    amountCents: amounts.amountCents,
+    currency: scope.currency,
     category: EXPENSE_CATEGORIES.has(request.category) ? request.category : "general",
     expenseDate: normalizeExpenseDate(request.expenseDate),
     splitType: request.splitType,
     notes: request.notes,
-    taxCents,
-    tipCents,
+    taxCents: amounts.taxCents,
+    tipCents: amounts.tipCents,
     createdBy: userId,
     payers: request.payers.map((payer) => ({ userId: payer.userId, amountCents: payer.amountCents })),
-    splits,
-    items,
+    splits: amounts.splits,
+    items: amounts.items,
   };
 }
 
