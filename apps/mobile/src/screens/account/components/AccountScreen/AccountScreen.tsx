@@ -5,6 +5,7 @@ import { Check, LogOut } from "lucide-react-native";
 import { StyleSheet, Text, TextInput, View } from "react-native";
 import { MergePreview } from "@/components/account/MergePreview";
 import { DetailHeader } from "@/components/shell/DetailHeader";
+import { useResponsiveLayout } from "@/components/shell/hooks/useResponsiveLayout";
 import { Screen } from "@/components/shell/Screen";
 import { Avatar } from "@/components/ui/Avatar";
 import { Button } from "@/components/ui/Button";
@@ -89,22 +90,33 @@ function ZelleField({ form }: { form: ReturnType<typeof useProfileForm> }) {
  */
 function ProfileForm({ me: currentUser }: { me: User }) {
   const form = useProfileForm(currentUser);
+  const { isExpanded } = useResponsiveLayout();
 
   return (
     <View style={styles.container}>
-      <View style={styles.summaryCard}>
-        <Avatar size="lg" user={currentUser} />
-        <View style={styles.summaryText}>
-          <Text numberOfLines={1} style={styles.summaryName}>
-            {currentUser.name}
-          </Text>
-          <Text numberOfLines={1} style={styles.summaryContact}>
-            {currentUser.email || currentUser.phone}
-          </Text>
-        </View>
-      </View>
+      <View style={[styles.profileLayout, isExpanded ? styles.profileLayoutExpanded : null]}>
+        <View style={[styles.profileAside, isExpanded ? styles.profileAsideExpanded : null]}>
+          <View style={styles.summaryCard}>
+            <Avatar size="lg" user={currentUser} />
+            <View style={styles.summaryText}>
+              <Text numberOfLines={1} style={styles.summaryName}>
+                {currentUser.name}
+              </Text>
+              <Text numberOfLines={1} style={styles.summaryContact}>
+                {currentUser.email || currentUser.phone}
+              </Text>
+            </View>
+          </View>
 
-      <View style={styles.formCard}>
+          <Button
+            icon={<LogOut color={colors.inkSoft} size={16} />}
+            label="Sign out"
+            onPress={() => void form.signOut()}
+            variant="outline"
+          />
+        </View>
+
+        <View style={[styles.formCard, isExpanded ? styles.formCardExpanded : null]}>
         <TextField
           label="Display name"
           maxLength={MAX_USER_NAME_LENGTH}
@@ -192,14 +204,8 @@ function ProfileForm({ me: currentUser }: { me: User }) {
           onPress={form.save}
           variant={form.saved ? "positive" : "primary"}
         />
+        </View>
       </View>
-
-      <Button
-        icon={<LogOut color={colors.inkSoft} size={16} />}
-        label="Sign out"
-        onPress={() => void form.signOut()}
-        variant="outline"
-      />
 
       {form.verificationPhone ? (
         <Sheet onClose={form.cancelVerification} title="Verify your phone">
@@ -303,6 +309,10 @@ const styles = StyleSheet.create({
     gap: spacing.lg,
     padding: spacing.lg,
   },
+  formCardExpanded: {
+    flex: 3,
+    minWidth: 0,
+  },
   handleBlock: {
     gap: spacing.xs + 2,
   },
@@ -343,6 +353,21 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     gap: spacing.md,
     paddingTop: spacing.lg,
+  },
+  profileAside: {
+    gap: spacing.lg,
+  },
+  profileAsideExpanded: {
+    flex: 2,
+    minWidth: 0,
+  },
+  profileLayout: {
+    gap: spacing.xl,
+  },
+  profileLayoutExpanded: {
+    alignItems: "flex-start",
+    flexDirection: "row",
+    gap: spacing.xxl,
   },
   sheetBody: {
     gap: spacing.lg,
