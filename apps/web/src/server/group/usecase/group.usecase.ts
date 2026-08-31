@@ -201,8 +201,9 @@ async function enrollMembers(
  * deliberately rejected: without an acceptance flow, creating a shadow row
  * would let the caller enrol a stranger who never consented.
  *
- * @param input - The raw email and phone fields, plus an optional display
- *   name for a shadow user. Both empty means nobody was invited.
+ * @param input - The raw email and phone fields. The legacy name field is
+ *   accepted for wire compatibility but ignored because no shadow user is
+ *   created. Empty contact fields mean nobody was invited.
  * @returns The invited user row, or undefined when neither field was given.
  * @throws UsecaseError (invalid_argument) when both fields are populated.
  */
@@ -322,9 +323,7 @@ export async function listGroups(userId: string) {
  * @throws UsecaseError (permission_denied) when the caller is not a member.
  */
 export async function getGroup(userId: string, groupId: string) {
-  const group = await findGroupById(groupId);
-  if (!group) notFound("group not found");
-  if (!(await isMember(groupId, userId))) denied("you are not a member of this group");
+  const group = await assertGroupMember(groupId, userId);
   return toGroup(group, await listMembers(groupId));
 }
 
