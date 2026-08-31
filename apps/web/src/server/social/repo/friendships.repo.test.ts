@@ -21,7 +21,7 @@ import {
 
 const REQUESTER = "user-requester";
 const RECIPIENT = "user-recipient";
-const transactionClient = {} as PoolClient;
+const transactionClient = { query: vi.fn() } as unknown as PoolClient;
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -33,15 +33,13 @@ describe("friend request persistence", () => {
     database.queryOne.mockResolvedValueOnce({ requester_id: REQUESTER });
     await expect(insertFriendRequest(REQUESTER, RECIPIENT)).resolves.toBe(true);
 
-    expect(database.execute).toHaveBeenCalledWith(
+    expect(transactionClient.query).toHaveBeenCalledWith(
       expect.stringContaining("pg_advisory_xact_lock"),
       [`friend-request-inbox:${REQUESTER}`],
-      transactionClient,
     );
-    expect(database.execute).toHaveBeenCalledWith(
+    expect(transactionClient.query).toHaveBeenCalledWith(
       expect.stringContaining("pg_advisory_xact_lock"),
       [`friend-request-inbox:${RECIPIENT}`],
-      transactionClient,
     );
     expect(database.queryOne).toHaveBeenCalledWith(
       expect.stringContaining("usr.merged_into IS NULL"),

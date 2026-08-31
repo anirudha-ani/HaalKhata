@@ -1,9 +1,10 @@
-/** Deterministic transaction-scoped advisory locks for money-ledger mutations. */
+/** Deterministic transaction-scoped advisory locks: money ledgers, reminders, friend-request inboxes. */
 
 import type { PoolClient } from "pg";
 import { transaction } from "@/server/common/db";
 import {
   EXPENSE_LEDGER_LOCK_PREFIX,
+  FRIEND_REQUEST_INBOX_LOCK_PREFIX,
   GROUP_LEDGER_LOCK_PREFIX,
   PARTICIPANT_LEDGER_LOCK_PREFIX,
   REMINDER_LOCK_PREFIX,
@@ -89,6 +90,26 @@ export async function lockReminder(
   debtorId: string,
 ): Promise<void> {
   await acquireKeys(client, [`${REMINDER_LOCK_PREFIX}${senderId}:${debtorId}`]);
+}
+
+/**
+ * Serializes pending-request and friendship changes for a deterministic set
+ * of inboxes, preventing accept/send races from recreating stale requests.
+ * Account merges take these same locks, in the same sorted order, before
+ * their row locks on users — the one order every path takes them in.
+ *
+ * @param client - Existing transaction client.
+ * @param userIds - Inbox owner ids to lock, in any order.
+ * @returns A promise that resolves after every inbox lock is held.
+ */
+export async function lockFriendRequestInboxes(
+  client: PoolClient,
+  userIds: string[],
+): Promise<void> {
+  await acquireKeys(
+    client,
+    userIds.filter(Boolean).map((userId) => `${FRIEND_REQUEST_INBOX_LOCK_PREFIX}${userId}`),
+  );
 }
 
 /**

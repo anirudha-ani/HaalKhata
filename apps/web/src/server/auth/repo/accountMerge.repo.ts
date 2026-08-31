@@ -16,6 +16,7 @@
  */
 
 import { query, queryOne, transaction } from "@/server/common/db";
+import { lockFriendRequestInboxes } from "@/server/common/ledgerLocks";
 import type { PoolClient } from "pg";
 
 /** What a caller would take on by absorbing a row, read before anything changes. */
@@ -254,14 +255,11 @@ export async function mergeAccounts(
 ): Promise<MergeOutcome> {
   return transaction(async (client) => {
     // Friend-request writers take inbox locks before their INSERT acquires
-    // foreign-key locks on users. Merge must use that same lock order to avoid
-    // deadlocking with a concurrent send or accept. Sorting also keeps two
-    // concurrent merges from waiting on each other's second inbox.
-    for (const accountId of [keeperId, loserId].sort()) {
-      await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", [
-        `friend-request-inbox:${accountId}`,
-      ]);
-    }
+    // foreign-key locks on users. Merge must use that same lock order to
+    // avoid deadlocking with a concurrent send or accept; the shared helper
+    // sorts, which also keeps two concurrent merges from waiting on each
+    // other's second inbox.
+    await lockFriendRequestInboxes(client, [keeperId, loserId]);
     // Lock both user rows in a fixed order after the inboxes. This prevents a
     // claim, phone change, or competing merge from interleaving with repoints.
     await client.query(`SELECT id FROM users WHERE id = ANY($1::text[]) ORDER BY id FOR UPDATE`, [

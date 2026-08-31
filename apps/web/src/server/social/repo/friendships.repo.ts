@@ -2,27 +2,8 @@
 
 import type { PoolClient } from "pg";
 import { execute, query, queryOne, transaction } from "@/server/common/db";
+import { lockFriendRequestInboxes } from "@/server/common/ledgerLocks";
 import { MAX_PENDING_FRIEND_REQUESTS } from "@/server/social/social.constants";
-
-/**
- * Serializes pending-request and friendship changes for a deterministic set
- * of inboxes, preventing accept/send races from recreating stale requests.
- *
- * @param userIds - Inbox owner ids to lock in any order.
- * @param client - Transaction client that owns the advisory locks.
- */
-async function lockFriendRequestInboxes(
-  userIds: string[],
-  client: PoolClient,
-): Promise<void> {
-  for (const userId of [...new Set(userIds)].sort()) {
-    await execute(
-      "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))",
-      [`friend-request-inbox:${userId}`],
-      client,
-    );
-  }
-}
 
 /**
  * Records a friendship as two symmetric rows (user→friend and friend→user);
@@ -38,7 +19,7 @@ export async function insertFriendship(
   client?: PoolClient,
 ): Promise<void> {
   const persist = async (transactionClient: PoolClient): Promise<void> => {
-    await lockFriendRequestInboxes([userId, friendId], transactionClient);
+    await lockFriendRequestInboxes(transactionClient, [userId, friendId]);
     await execute(
       `DELETE FROM friend_requests
         WHERE (requester_id = $1 AND recipient_id = $2)
@@ -115,7 +96,7 @@ export async function insertFriendRequest(
     // identities. Without the recipient lock, many distinct senders can all
     // observe 99 rows and exceed the cap; without the requester lock, merging
     // that account can race this insert and leave a request on its tombstone.
-    await lockFriendRequestInboxes([requesterId, recipientId], transactionClient);
+    await lockFriendRequestInboxes(transactionClient, [requesterId, recipientId]);
     const inserted = await queryOne<{ requester_id: string }>(
       `INSERT INTO friend_requests (requester_id, recipient_id)
        SELECT $1, $2
@@ -170,7 +151,7 @@ export async function deleteFriendRequest(
   recipientId: string,
   client: PoolClient,
 ): Promise<boolean> {
-  await lockFriendRequestInboxes([requesterId, recipientId], client);
+  await lockFriendRequestInboxes(client, [requesterId, recipientId]);
   const removed = await queryOne<{ requester_id: string }>(
     `DELETE FROM friend_requests
       WHERE requester_id = $1 AND recipient_id = $2
