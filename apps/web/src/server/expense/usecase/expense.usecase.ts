@@ -383,6 +383,23 @@ function involvedUserIds(write: ExpenseWrite): string[] {
 }
 
 /**
+ * Collects the distinct payer and ower ids of one stored expense — the
+ * people with money on it, creator not implied.
+ *
+ * @param expenseId - Expense whose child rows are consulted.
+ * @param children - Batch-loaded child rows including that expense.
+ * @returns Distinct participant user ids.
+ */
+function moneyParticipantIds(expenseId: string, children: ExpenseChildren): string[] {
+  return [
+    ...new Set([
+      ...(children.payers.get(expenseId) ?? []).map((payer) => payer.user_id),
+      ...(children.splits.get(expenseId) ?? []).map((split) => split.user_id),
+    ]),
+  ];
+}
+
+/**
  * Collects everyone referenced by an already-stored expense.
  *
  * @param expense - Parent expense row.
@@ -390,13 +407,7 @@ function involvedUserIds(write: ExpenseWrite): string[] {
  * @returns Distinct creator, payer, and ower ids.
  */
 function storedParticipantIds(expense: ExpenseRow, children: ExpenseChildren): string[] {
-  return [
-    ...new Set([
-      expense.created_by,
-      ...(children.payers.get(expense.id) ?? []).map((payer) => payer.user_id),
-      ...(children.splits.get(expense.id) ?? []).map((split) => split.user_id),
-    ]),
-  ];
+  return [...new Set([expense.created_by, ...moneyParticipantIds(expense.id, children)])];
 }
 
 /**
@@ -568,12 +579,9 @@ async function assertCanTouch(userId: string, expense: ExpenseRow): Promise<void
     return;
   }
   const children = await loadExpenseChildren([expense.id]);
-  const involved = new Set([
-    expense.created_by,
-    ...(children.payers.get(expense.id) ?? []).map((payer) => payer.user_id),
-    ...(children.splits.get(expense.id) ?? []).map((split) => split.user_id),
-  ]);
-  if (!involved.has(userId)) denied("you are not part of this expense");
+  if (!storedParticipantIds(expense, children).includes(userId)) {
+    denied("you are not part of this expense");
+  }
 }
 
 /**
@@ -737,12 +745,9 @@ export async function deleteExpense(userId: string, expenseId: string): Promise<
  * @returns Proto user message init shapes for every referenced user.
  */
 async function usersReferenced(rows: ExpenseRow[], children: ExpenseChildren) {
-  const userIds = new Set<string>();
-  for (const expenseRow of rows) {
-    userIds.add(expenseRow.created_by);
-    for (const payer of children.payers.get(expenseRow.id) ?? []) userIds.add(payer.user_id);
-    for (const split of children.splits.get(expenseRow.id) ?? []) userIds.add(split.user_id);
-  }
+  const userIds = new Set(
+    rows.flatMap((expenseRow) => storedParticipantIds(expenseRow, children)),
+  );
   return (await findUsersByIds([...userIds])).map(toPublicUser);
 }
 
@@ -789,12 +794,7 @@ export async function listExpenses(
     id: expenseRow.id,
     groupId: expenseRow.group_id ?? "",
     currency: expenseRow.currency,
-    participantIds: [
-      ...new Set([
-        ...(children.payers.get(expenseRow.id) ?? []).map((payer) => payer.user_id),
-        ...(children.splits.get(expenseRow.id) ?? []).map((split) => split.user_id),
-      ]),
-    ],
+    participantIds: moneyParticipantIds(expenseRow.id, children),
   }));
   const groupIds = [
     ...new Set(rows.flatMap((expenseRow) => (expenseRow.group_id ? [expenseRow.group_id] : []))),
@@ -877,12 +877,7 @@ export async function getExpense(userId: string, expenseId: string) {
 
   // The same settledness rule the expense list applies, for this one expense,
   // so the detail page and the row that linked to it can never disagree.
-  const participantIds = [
-    ...new Set([
-      ...(children.payers.get(expenseId) ?? []).map((payer) => payer.user_id),
-      ...(children.splits.get(expenseId) ?? []).map((split) => split.user_id),
-    ]),
-  ];
+  const participantIds = moneyParticipantIds(expenseId, children);
   const viewerNetByGroupId = new Map<string, number>();
   if (expenseRow.group_id) {
     viewerNetByGroupId.set(expenseRow.group_id, await userNetInGroup(userId, expenseRow.group_id));
@@ -987,11 +982,7 @@ export async function addComment(userId: string, expenseId: string, body: string
   const comment = await withLedgerTransaction(async (client) => {
     const stored = await insertComment(expenseId, userId, trimmed, client);
     const children = await loadExpenseChildren([expenseId], client);
-    const involved = new Set([
-      expenseRow.created_by,
-      ...(children.payers.get(expenseId) ?? []).map((payer) => payer.user_id),
-      ...(children.splits.get(expenseId) ?? []).map((split) => split.user_id),
-    ]);
+    const involved = new Set(storedParticipantIds(expenseRow, children));
 
     // The feed quotes the comment rather than just naming it: "Ani commented on
     // X" tells a reader nothing about whether it is worth opening, and the feed
