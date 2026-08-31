@@ -638,6 +638,40 @@ async function assertCanDelete(
 }
 
 /**
+ * Loads an expense for editing and applies every check a replacement must
+ * pass: it exists and is not deleted, the caller may edit it, and the
+ * request does not try to move it between groups.
+ *
+ * Runs twice per update on purpose: once before the expensive request
+ * validation, so a doomed edit fails fast without taking ledger locks, and
+ * once more on the locked transaction client, because everything checked
+ * here can change between the first look and the lock.
+ *
+ * @param userId - Authenticated caller requesting the edit.
+ * @param expenseId - Expense being replaced.
+ * @param request - The replacement, whose group must match the stored one.
+ * @param client - Transaction client holding the expense's ledger lock;
+ *   omitted for the pre-lock fast path.
+ * @returns The stored expense row and its child rows.
+ * @throws UsecaseError when any of the checks fails.
+ */
+async function loadExpenseForEdit(
+  userId: string,
+  expenseId: string,
+  request: CreateExpenseRequest,
+  client?: PoolClient,
+): Promise<{ expense: ExpenseRow; children: ExpenseChildren }> {
+  const expense = await findExpenseById(expenseId, client);
+  if (!expense || expense.deleted_at) notFound("expense not found");
+  const children = await loadExpenseChildren([expenseId], client);
+  await assertCanEdit(userId, expense, children, client);
+  if ((request.groupId || null) !== expense.group_id) {
+    invalid("an expense cannot be moved between groups; delete it and create it in the right group");
+  }
+  return { expense, children };
+}
+
+/**
  * Replaces an expense with a freshly validated version (original creator is
  * preserved) and fans out an "updated" activity + notifications. Any
  * participant may do this, not just the creator — see {@link assertCanEdit}.
@@ -659,22 +693,16 @@ export async function updateExpense(
   expenseId: string,
   request: CreateExpenseRequest,
 ) {
-  const existing = await findExpenseById(expenseId);
-  if (!existing || existing.deleted_at) notFound("expense not found");
-  await assertCanEdit(userId, existing, await loadExpenseChildren([expenseId]));
-  if ((request.groupId || null) !== existing.group_id) {
-    invalid("an expense cannot be moved between groups; delete it and create it in the right group");
-  }
+  await loadExpenseForEdit(userId, expenseId, request);
   const write = await buildExpenseWrite(userId, request);
   await withLedgerTransaction(async (client) => {
     await lockExpenseLedger(client, expenseId);
-    const current = await findExpenseById(expenseId, client);
-    if (!current || current.deleted_at) notFound("expense not found");
-    const children = await loadExpenseChildren([expenseId], client);
-    await assertCanEdit(userId, current, children, client);
-    if ((request.groupId || null) !== current.group_id) {
-      invalid("an expense cannot be moved between groups; delete it and create it in the right group");
-    }
+    const { expense: current, children } = await loadExpenseForEdit(
+      userId,
+      expenseId,
+      request,
+      client,
+    );
     const participantIds = [
       ...new Set([...storedParticipantIds(current, children), ...involvedUserIds(write)]),
     ];
