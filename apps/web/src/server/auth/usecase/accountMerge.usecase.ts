@@ -24,6 +24,9 @@ import {
   normalizePhone,
 } from "@/server/auth/auth.constants";
 import { signPayload, verifyPayloadSignature } from "./auth.usecase";
+
+/** One message for every failed merge-token check: expired, forged, and malformed all just mean "start over". */
+const STALE_MERGE_TOKEN_MESSAGE = "that confirmation is no longer valid, please try again";
 import { toPrivateUser } from "./user.mapper";
 import { confirmPhoneVerification, startPhoneVerification } from "./phoneVerification";
 
@@ -76,13 +79,13 @@ function createMergeToken(keeperId: string, loserId: string, phone: string): str
  */
 function readMergeToken(token: string, callerId: string): { loserId: string; phone: string } {
   const lastDot = token.lastIndexOf(".");
-  if (lastDot <= 0) invalid("that confirmation is no longer valid, please try again");
+  if (lastDot <= 0) invalid(STALE_MERGE_TOKEN_MESSAGE);
   const payload = token.slice(0, lastDot);
   if (!verifyPayloadSignature("phone-merge", payload, token.slice(lastDot + 1))) {
-    invalid("that confirmation is no longer valid, please try again");
+    invalid(STALE_MERGE_TOKEN_MESSAGE);
   }
   const fields = payload.split(".");
-  if (fields.length !== 4) invalid("that confirmation is no longer valid, please try again");
+  if (fields.length !== 4) invalid(STALE_MERGE_TOKEN_MESSAGE);
   const [keeperId, loserId, phone, expiresAtText] = fields;
   const expiresAt = Number(expiresAtText);
   if (
@@ -92,7 +95,7 @@ function readMergeToken(token: string, callerId: string): { loserId: string; pho
     !Number.isSafeInteger(expiresAt) ||
     expiresAt <= Date.now() / 1000
   ) {
-    invalid("that confirmation is no longer valid, please try again");
+    invalid(STALE_MERGE_TOKEN_MESSAGE);
   }
   // Signature alone would let anyone replay someone else's token; the merge
   // must land on the account that was shown the preview.
@@ -220,7 +223,7 @@ export async function confirmPhoneMerge(userId: string, mergeToken: string) {
     throw new UsecaseError("already_exists", "that number is already on another account");
   }
   if (loser.phone !== phone) {
-    invalid("that confirmation is no longer valid, please try again");
+    invalid(STALE_MERGE_TOKEN_MESSAGE);
   }
 
   await mergeAccounts(userId, loserId, phone);

@@ -65,6 +65,36 @@ export function avatarColorFor(email: string): string {
   return AVATAR_PALETTE[Math.abs(hash) % AVATAR_PALETTE.length];
 }
 
+/**
+ * Trims a display name and enforces the shared length bound. Empty stays
+ * legal here — whether a name is required differs by flow, so that check
+ * belongs to {@link requireName}.
+ *
+ * @param rawName - Name text as the client sent it.
+ * @returns The trimmed name, possibly "".
+ * @throws UsecaseError "invalid_argument" when the trimmed name is too long.
+ */
+function normalizeName(rawName: string): string {
+  const name = rawName.trim();
+  if (name.length > MAX_USER_NAME_LENGTH) {
+    invalid(`name is too long (max ${MAX_USER_NAME_LENGTH} characters)`);
+  }
+  return name;
+}
+
+/**
+ * Like {@link normalizeName}, for the flows where a person must have a name.
+ *
+ * @param rawName - Name text as the client sent it.
+ * @returns The trimmed, non-empty name.
+ * @throws UsecaseError "invalid_argument" when the name is empty or too long.
+ */
+function requireName(rawName: string): string {
+  const name = normalizeName(rawName);
+  if (name.length === 0) invalid("name is required");
+  return name;
+}
+
 // --- password hashing (scrypt) -------------------------------------------
 
 /**
@@ -382,11 +412,7 @@ export async function signUp(input: {
   password: string;
 }) {
   requirePasswordAuthEnabled();
-  const name = input.name.trim();
-  if (name.length === 0) invalid("name is required");
-  if (name.length > MAX_USER_NAME_LENGTH) {
-    invalid(`name is too long (max ${MAX_USER_NAME_LENGTH} characters)`);
-  }
+  const name = requireName(input.name);
   validatePassword(input.password);
 
   const email = input.email.trim().toLowerCase();
@@ -665,11 +691,7 @@ export async function updateProfile(
     paymentHandles?: { method: string; handle: string }[];
   },
 ) {
-  const name = input.name.trim();
-  if (name.length === 0) invalid("name is required");
-  if (name.length > MAX_USER_NAME_LENGTH) {
-    invalid(`name is too long (max ${MAX_USER_NAME_LENGTH} characters)`);
-  }
+  const name = requireName(input.name);
   const defaultCurrency = input.defaultCurrency
     ? normalizeCurrencyCode(input.defaultCurrency)
     : undefined;
@@ -744,10 +766,7 @@ export async function findOrCreateUserByEmail(
 ): Promise<UserRow> {
   const normalizedEmail = email.trim().toLowerCase();
   if (!EMAIL_PATTERN.test(normalizedEmail)) invalid("please enter a valid email address");
-  const requestedName = name?.trim() ?? "";
-  if (requestedName.length > MAX_USER_NAME_LENGTH) {
-    invalid(`name is too long (max ${MAX_USER_NAME_LENGTH} characters)`);
-  }
+  const requestedName = normalizeName(name ?? "");
   const existing = await findUserByEmail(normalizedEmail);
   if (existing) return existing;
   try {
@@ -787,10 +806,7 @@ export async function findOrCreateUserByPhone(
 ): Promise<UserRow> {
   const normalizedPhone = normalizePhone(phone);
   if (!normalizedPhone) invalid(PHONE_FORMAT_HINT);
-  const requestedName = name?.trim() ?? "";
-  if (requestedName.length > MAX_USER_NAME_LENGTH) {
-    invalid(`name is too long (max ${MAX_USER_NAME_LENGTH} characters)`);
-  }
+  const requestedName = normalizeName(name ?? "");
   const existing = await findUserByPhone(normalizedPhone);
   if (existing) return existing;
   try {
