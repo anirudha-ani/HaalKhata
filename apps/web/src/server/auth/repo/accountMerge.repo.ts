@@ -8,10 +8,11 @@
  * one-way, money-touching operation harder to read and easier to get wrong.
  * It lives here whole, and nothing else reaches across domains this way.
  *
- * A user id lives in EIGHTEEN places. Sixteen are foreign keys; the last two
- * are not, and are invisible to any `REFERENCES users(id)` search:
- * `activity.audience` (a JSONB array) and `activity.credit_user_id` (untyped
- * TEXT, deliberately unconstrained so the feed survives a deleted user).
+ * User ids occur throughout the schema. Most are foreign keys; two activity
+ * fields are not and are therefore invisible to a `REFERENCES users(id)`
+ * search: `activity.audience` (a JSONB array) and `activity.credit_user_id`
+ * (untyped TEXT, deliberately unconstrained so the feed survives a deleted
+ * user). Keep the allowlists below synchronized with new user references.
  */
 
 import { query, queryOne, transaction } from "@/server/common/db";
@@ -88,6 +89,7 @@ type DirectMergeTarget =
   | readonly ["activity", "actor_id"]
   | readonly ["activity", "credit_user_id"]
   | readonly ["notifications", "user_id"]
+  | readonly ["operations", "user_id"]
   | readonly ["settlements", "recorded_by"]
   | readonly ["settlements", "deleted_by"]
   | readonly ["expenses", "deleted_by"];
@@ -100,6 +102,10 @@ const DIRECT_MERGE_TARGETS = [
   ["activity", "actor_id"],
   ["activity", "credit_user_id"],
   ["notifications", "user_id"],
+  // Idempotency history belongs to the surviving identity too. An invited
+  // row cannot normally create an operation, but repointing keeps this merge
+  // complete even if internal tooling or a future flow creates one.
+  ["operations", "user_id"],
   // Provenance columns point at people too: who typed a payment in, who
   // removed a payment or an expense.
   ["settlements", "recorded_by"],

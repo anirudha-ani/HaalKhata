@@ -155,9 +155,20 @@ describe.skipIf(!reachable)("mergeAccounts against Postgres", () => {
 
   it("deletes money paid between the two rows and repoints the rest", async () => {
     const { rows } = await database.query(
-      `SELECT id, from_user, to_user FROM settlements ORDER BY id`,
+      `SELECT id, from_user, to_user, recorded_by FROM settlements ORDER BY id`,
     );
-    expect(rows).toEqual([{ id: "stl-2", from_user: RAHUL, to_user: KEEPER }]);
+    expect(rows).toEqual([
+      { id: "stl-2", from_user: RAHUL, to_user: KEEPER, recorded_by: KEEPER },
+    ]);
+  });
+
+  it("moves idempotency history to the surviving account", async () => {
+    const { rows } = await database.query(
+      `SELECT user_id, rpc, operation_id FROM operations ORDER BY operation_id`,
+    );
+    expect(rows).toEqual([
+      { user_id: KEEPER, rpc: "CreateExpense", operation_id: "operation-1" },
+    ]);
   });
 
   it("rewrites the JSONB audience and the unconstrained credit_user_id", async () => {
@@ -202,12 +213,14 @@ describe.skipIf(!reachable)("mergeAccounts against Postgres", () => {
        + (SELECT COUNT(*) FROM friendships WHERE user_id = $1 OR friend_id = $1)
        + (SELECT COUNT(*) FROM friend_requests WHERE requester_id = $1 OR recipient_id = $1)
        + (SELECT COUNT(*) FROM settlements WHERE from_user = $1 OR to_user = $1)
+       + (SELECT COUNT(*) FROM settlements WHERE recorded_by = $1 OR deleted_by = $1)
        + (SELECT COUNT(*) FROM comments WHERE user_id = $1)
        + (SELECT COUNT(*) FROM activity WHERE actor_id = $1 OR credit_user_id = $1
             OR audience @> to_jsonb($1::text))
        + (SELECT COUNT(*) FROM notifications WHERE user_id = $1)
        + (SELECT COUNT(*) FROM payment_handles WHERE user_id = $1)
-       + (SELECT COUNT(*) FROM expenses WHERE created_by = $1)
+       + (SELECT COUNT(*) FROM operations WHERE user_id = $1)
+       + (SELECT COUNT(*) FROM expenses WHERE created_by = $1 OR deleted_by = $1)
        + (SELECT COUNT(*) FROM groups WHERE created_by = $1) AS dangling`,
       [LOSER],
     );
@@ -282,9 +295,10 @@ async function seed(database: Client): Promise<void> {
 
   // exp-3 is soft-deleted; its splits must still repoint.
   await database.query(
-    `INSERT INTO expenses (id, description, amount_cents, currency, expense_date, split_type, created_by, deleted_at)
-     VALUES ('exp-3', 'Cancelled', 900, 'USD', '2026-07-03', 'equal', $1, now())`,
-    [RAHUL],
+    `INSERT INTO expenses
+       (id, description, amount_cents, currency, expense_date, split_type, created_by, deleted_at, deleted_by)
+     VALUES ('exp-3', 'Cancelled', 900, 'USD', '2026-07-03', 'equal', $1, now(), $2)`,
+    [RAHUL, LOSER],
   );
   await database.query(
     `INSERT INTO expense_splits (expense_id, user_id, owed_cents) VALUES ('exp-3', $1, 900)`,
@@ -294,8 +308,14 @@ async function seed(database: Client): Promise<void> {
   // stl-1 is between the two rows: money paid to oneself once merged.
   await database.query(
     `INSERT INTO settlements (id, from_user, to_user, amount_cents, currency, recorded_by) VALUES
-       ('stl-1', $1, $2, 500, 'USD', $1), ('stl-2', $3, $2, 200, 'USD', $3)`,
+       ('stl-1', $1, $2, 500, 'USD', $1), ('stl-2', $3, $2, 200, 'USD', $2)`,
     [KEEPER, LOSER, RAHUL],
+  );
+
+  await database.query(
+    `INSERT INTO operations (user_id, rpc, operation_id, request_fingerprint, result_id)
+     VALUES ($1, 'CreateExpense', 'operation-1', 'fingerprint', 'exp-2')`,
+    [LOSER],
   );
 
   // Overlapping both ways, plus the pair that would become a self-loop and
