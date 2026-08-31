@@ -352,15 +352,15 @@ export async function sendReminder(userId: string, debtorId: string): Promise<vo
     );
     if (owedBuckets.length === 0) invalid("they don't owe you anything right now");
 
-  // The nudge carries the sender's handles, because "where do I send it?" is
-  // the very next question and making the debtor ask defeats the reminder.
-  const payTo = (sender.payment_handles ?? [])
-    .filter((entry) => entry.handle)
-    .map((entry) => {
-      const method = findPaymentMethod(entry.method);
-      return `${method?.label ?? entry.method}: ${entry.handle}`;
-    })
-    .join(" · ");
+    // The nudge carries the sender's handles, because "where do I send it?" is
+    // the very next question and making the debtor ask defeats the reminder.
+    const payTo = (sender.payment_handles ?? [])
+      .filter((entry) => entry.handle)
+      .map((entry) => {
+        const method = findPaymentMethod(entry.method);
+        return `${method?.label ?? entry.method}: ${entry.handle}`;
+      })
+      .join(" · ");
     const owed = owedBuckets.map(([currency, cents]) => formatMoney(cents, currency)).join(" and ");
 
     await insertNotifications(
