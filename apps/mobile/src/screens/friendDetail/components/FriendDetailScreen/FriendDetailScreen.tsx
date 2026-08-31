@@ -5,6 +5,7 @@ import { Bell, Check, HandCoins, Plus, UserPlus, Wallet } from "lucide-react-nat
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { SettleUpModal } from "@/components/modals/SettleUpModal";
 import { DetailHeader } from "@/components/shell/DetailHeader";
+import { useResponsiveLayout } from "@/components/shell/hooks/useResponsiveLayout";
 import { Screen } from "@/components/shell/Screen";
 import { Avatar } from "@/components/ui/Avatar";
 import { Button } from "@/components/ui/Button";
@@ -38,6 +39,7 @@ export function FriendDetailScreen({
 }) {
   const view = useFriendLedger(friendId);
   const router = useRouter();
+  const { isExpanded } = useResponsiveLayout();
 
   if (view.isLoading) {
     return (
@@ -209,8 +211,9 @@ export function FriendDetailScreen({
 
       {view.reminderNote ? <Text style={styles.note}>{view.reminderNote}</Text> : null}
 
+      <View style={[styles.ledgerLayout, isExpanded ? styles.ledgerLayoutExpanded : null]}>
       {groupBalances.length > 1 ? (
-        <View style={styles.section}>
+        <View style={[styles.section, isExpanded ? styles.balanceSectionExpanded : null]}>
           <Text style={styles.sectionTitle}>WHERE THE BALANCE SITS</Text>
           <View style={styles.listCard}>
             {groupBalances.map((balance, index) => (
@@ -252,7 +255,7 @@ export function FriendDetailScreen({
         </View>
       ) : null}
 
-      <View style={styles.section}>
+      <View style={[styles.section, isExpanded ? styles.historySectionExpanded : null]}>
         <Text style={styles.sectionTitle}>HISTORY</Text>
 
         {entries.length === 0 ? (
@@ -406,6 +409,7 @@ export function FriendDetailScreen({
           </Text>
         ) : null}
       </View>
+      </View>
 
       {view.settling ? (
         <SettleUpModal
@@ -431,6 +435,10 @@ const styles = StyleSheet.create({
   balanceAmount: {
     fontSize: 30,
     fontWeight: "700",
+  },
+  balanceSectionExpanded: {
+    flex: 2,
+    minWidth: 0,
   },
   balanceBlock: {
     alignItems: "flex-end",
@@ -575,6 +583,10 @@ const styles = StyleSheet.create({
     flex: 1,
     minWidth: 0,
   },
+  historySectionExpanded: {
+    flex: 3,
+    minWidth: 0,
+  },
   invited: {
     color: colors.inkSoft,
     fontSize: 13,
@@ -586,6 +598,14 @@ const styles = StyleSheet.create({
     borderRadius: radii.lg,
     borderWidth: 1,
     overflow: "hidden",
+  },
+  ledgerLayout: {
+    gap: spacing.xl,
+  },
+  ledgerLayoutExpanded: {
+    alignItems: "flex-start",
+    flexDirection: "row",
+    gap: spacing.xxl,
   },
   name: {
     color: colors.ink,

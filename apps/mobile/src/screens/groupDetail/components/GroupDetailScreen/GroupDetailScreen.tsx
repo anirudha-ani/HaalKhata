@@ -8,6 +8,7 @@ import { SettleUpModal } from "@/components/modals/SettleUpModal";
 import { PersonChecklist } from "@/components/people/PersonChecklist";
 import { PersonLink } from "@/components/people/PersonLink";
 import { DetailHeader } from "@/components/shell/DetailHeader";
+import { useResponsiveLayout } from "@/components/shell/hooks/useResponsiveLayout";
 import { Screen } from "@/components/shell/Screen";
 import { Avatar } from "@/components/ui/Avatar";
 import { Button } from "@/components/ui/Button";
@@ -45,6 +46,7 @@ export function GroupDetailScreen({
 }) {
   const groupDetail = useGroupDetail(groupId);
   const router = useRouter();
+  const { isExpanded } = useResponsiveLayout();
 
   if (groupDetail.isLoading) {
     return (
@@ -93,54 +95,56 @@ export function GroupDetailScreen({
       onRefresh={groupDetail.refresh}
       refreshing={groupDetail.isRefreshing}
     >
-      <View style={styles.groupHeader}>
-        <View style={styles.groupEmojiTile}>
-          <Text style={styles.groupEmoji}>{groupEmoji(groupDetail.group.type)}</Text>
-        </View>
-        <View>
-          <Text style={styles.groupName}>{groupDetail.group.name}</Text>
-          <Text style={styles.groupMeta}>
-            {groupDetail.group.type} · {groupDetail.group.currency}
-          </Text>
-        </View>
-      </View>
-
-      {/* Members strip. The avatars-and-names run opens the full member
-          list — a truncated line of first names is a summary, not a way to
-          reach anyone, and it is where leaving the group lives. */}
-      <View style={styles.membersCard}>
-        <Pressable
-          accessibilityLabel="View members"
-          accessibilityRole="button"
-          onPress={() => groupDetail.setViewingMembers(true)}
-          style={styles.membersSummary}
-        >
-          <View style={styles.memberAvatars}>
-            {members.map((member, index) =>
-              member.user ? (
-                <View key={member.user.id} style={index > 0 ? styles.memberOverlap : null}>
-                  <Avatar ring size="sm" user={member.user} />
-                </View>
-              ) : null,
-            )}
+      <View style={[styles.overview, isExpanded ? styles.overviewExpanded : null]}>
+        <View style={[styles.groupHeader, isExpanded ? styles.groupHeaderExpanded : null]}>
+          <View style={styles.groupEmojiTile}>
+            <Text style={styles.groupEmoji}>{groupEmoji(groupDetail.group.type)}</Text>
           </View>
-          <Text numberOfLines={1} style={styles.memberNames}>
-            {members
-              .flatMap((member) =>
-                member.user
-                  ? [member.user.id === groupDetail.me?.id ? "You" : member.user.name.split(" ")[0]]
-                  : [],
-              )
-              .join(", ")}
-          </Text>
-        </Pressable>
-        <Button
-          compact
-          icon={<UserPlus color={colors.inkSoft} size={14} />}
-          label="Add people"
-          onPress={() => groupDetail.setAddingPeople(true)}
-          variant="outline"
-        />
+          <View>
+            <Text style={styles.groupName}>{groupDetail.group.name}</Text>
+            <Text style={styles.groupMeta}>
+              {groupDetail.group.type} · {groupDetail.group.currency}
+            </Text>
+          </View>
+        </View>
+
+        {/* Members strip. The avatars-and-names run opens the full member
+            list — a truncated line of first names is a summary, not a way to
+            reach anyone, and it is where leaving the group lives. */}
+        <View style={[styles.membersCard, isExpanded ? styles.membersCardExpanded : null]}>
+          <Pressable
+            accessibilityLabel="View members"
+            accessibilityRole="button"
+            onPress={() => groupDetail.setViewingMembers(true)}
+            style={styles.membersSummary}
+          >
+            <View style={styles.memberAvatars}>
+              {members.map((member, index) =>
+                member.user ? (
+                  <View key={member.user.id} style={index > 0 ? styles.memberOverlap : null}>
+                    <Avatar ring size="sm" user={member.user} />
+                  </View>
+                ) : null,
+              )}
+            </View>
+            <Text numberOfLines={1} style={styles.memberNames}>
+              {members
+                .flatMap((member) =>
+                  member.user
+                    ? [member.user.id === groupDetail.me?.id ? "You" : member.user.name.split(" ")[0]]
+                    : [],
+                )
+                .join(", ")}
+            </Text>
+          </Pressable>
+          <Button
+            compact
+            icon={<UserPlus color={colors.inkSoft} size={14} />}
+            label="Add people"
+            onPress={() => groupDetail.setAddingPeople(true)}
+            variant="outline"
+          />
+        </View>
       </View>
 
       {/* Tabs */}
@@ -408,6 +412,10 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: spacing.lg,
   },
+  groupHeaderExpanded: {
+    flex: 2,
+    minWidth: 0,
+  },
   groupMeta: {
     color: colors.inkSoft,
     fontSize: 13,
@@ -487,6 +495,10 @@ const styles = StyleSheet.create({
   membersList: {
     gap: spacing.sm,
   },
+  membersCardExpanded: {
+    flex: 3,
+    minWidth: 0,
+  },
   membersSummary: {
     alignItems: "center",
     flex: 1,
@@ -508,5 +520,13 @@ const styles = StyleSheet.create({
   notFoundText: {
     color: colors.inkSoft,
     fontSize: 15,
+  },
+  overview: {
+    gap: spacing.lg,
+  },
+  overviewExpanded: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: spacing.xxl,
   },
 });

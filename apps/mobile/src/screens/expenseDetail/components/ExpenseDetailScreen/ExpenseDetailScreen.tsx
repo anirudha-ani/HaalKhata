@@ -184,40 +184,42 @@ export function ExpenseDetailScreen({ expenseId }: { expenseId: string }) {
         </View>
       ) : null}
 
-      <View style={styles.breakdownCard}>
-        <Text style={styles.cardTitle}>PAID BY</Text>
-        {expense.payers.map((payer) => {
-          const payerUser = expenseDetail.userById.get(payer.userId);
-          return (
-            <View key={payer.userId} style={styles.personRow}>
-              <PersonLink meId={meId} style={styles.personLink} userId={payer.userId}>
-                {payerUser ? <Avatar size="sm" user={payerUser} /> : null}
-                <Text numberOfLines={1} style={styles.personName}>
-                  {displayName(payer.userId)}
-                </Text>
-              </PersonLink>
-              <Money cents={payer.amountCents} currency={expense.currency} style={styles.rowAmount} />
-            </View>
-          );
-        })}
-      </View>
+      <View style={styles.breakdownGrid}>
+        <View style={[styles.breakdownCard, styles.breakdownColumn]}>
+          <Text style={styles.cardTitle}>PAID BY</Text>
+          {expense.payers.map((payer) => {
+            const payerUser = expenseDetail.userById.get(payer.userId);
+            return (
+              <View key={payer.userId} style={styles.personRow}>
+                <PersonLink meId={meId} style={styles.personLink} userId={payer.userId}>
+                  {payerUser ? <Avatar size="sm" user={payerUser} /> : null}
+                  <Text numberOfLines={1} style={styles.personName}>
+                    {displayName(payer.userId)}
+                  </Text>
+                </PersonLink>
+                <Money cents={payer.amountCents} currency={expense.currency} style={styles.rowAmount} />
+              </View>
+            );
+          })}
+        </View>
 
-      <View style={styles.breakdownCard}>
-        <Text style={styles.cardTitle}>SPLIT · {expense.splitType.toUpperCase()}</Text>
-        {expense.splits.map((split) => {
-          const splitUser = expenseDetail.userById.get(split.userId);
-          return (
-            <View key={split.userId} style={styles.personRow}>
-              <PersonLink meId={meId} style={styles.personLink} userId={split.userId}>
-                {splitUser ? <Avatar size="sm" user={splitUser} /> : null}
-                <Text numberOfLines={1} style={styles.personName}>
-                  {displayName(split.userId)}
-                </Text>
-              </PersonLink>
-              <Money cents={split.owedCents} currency={expense.currency} style={styles.rowAmount} />
-            </View>
-          );
-        })}
+        <View style={[styles.breakdownCard, styles.breakdownColumn]}>
+          <Text style={styles.cardTitle}>SPLIT · {expense.splitType.toUpperCase()}</Text>
+          {expense.splits.map((split) => {
+            const splitUser = expenseDetail.userById.get(split.userId);
+            return (
+              <View key={split.userId} style={styles.personRow}>
+                <PersonLink meId={meId} style={styles.personLink} userId={split.userId}>
+                  {splitUser ? <Avatar size="sm" user={splitUser} /> : null}
+                  <Text numberOfLines={1} style={styles.personName}>
+                    {displayName(split.userId)}
+                  </Text>
+                </PersonLink>
+                <Money cents={split.owedCents} currency={expense.currency} style={styles.rowAmount} />
+              </View>
+            );
+          })}
+        </View>
       </View>
 
       {expense.items.length > 0 ? (
@@ -422,6 +424,15 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     gap: spacing.sm,
     padding: spacing.lg,
+  },
+  breakdownColumn: {
+    flexBasis: 360,
+    flexGrow: 1,
+  },
+  breakdownGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: spacing.xl,
   },
   cardTitle: {
     color: colors.inkSoft,
