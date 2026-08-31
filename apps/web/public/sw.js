@@ -4,7 +4,7 @@
 // precached (see SHELL below) so new deploys ship fresh HTML immediately,
 // which references new Next-hashed JS/CSS chunks — assets self-invalidate
 // via their hashed filenames, so a manual bump is rarely needed.
-const CACHE_VERSION = "haalkhata-v2";
+const CACHE_VERSION = "haalkhata-v3";
 const CACHE = CACHE_VERSION;
 
 // Only static, content-hashed assets are precached. HTML routes (e.g.
@@ -38,6 +38,10 @@ self.addEventListener("activate", (event) => {
 // self-invalidates by name, or it is never touched.
 const CACHEABLE_PREFIXES = ["/_next/static/"];
 
+// Development bundles keep stable URLs while their contents change, so they
+// must never use the production cache-first policy.
+const DEVELOPMENT_HOSTNAMES = new Set(["localhost", "127.0.0.1", "[::1]"]);
+
 /**
  * Whether a request is for a static asset this worker may serve from cache.
  * Same origin, GET, and either a hashed build asset or one of the shell
@@ -49,6 +53,7 @@ function isCacheableAsset(request) {
   if (request.method !== "GET") return false;
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) return false;
+  if (DEVELOPMENT_HOSTNAMES.has(url.hostname)) return false;
   if (request.headers.get("RSC") === "1" || url.searchParams.has("_rsc")) return false;
   if (SHELL.includes(url.pathname)) return true;
   return CACHEABLE_PREFIXES.some((prefix) => url.pathname.startsWith(prefix));

@@ -13,9 +13,10 @@ interface FetchEvent {
 /**
  * Executes the real public worker script with a recording cache.
  *
+ * @param workerOrigin - Origin the worker controls.
  * @returns The fetch listener plus spies on the network and the cache.
  */
-function fetchHarness(): {
+function fetchHarness(workerOrigin = "https://app.example"): {
   onFetch: (event: FetchEvent) => void;
   fetchMock: ReturnType<typeof vi.fn>;
   cachePut: ReturnType<typeof vi.fn>;
@@ -26,7 +27,7 @@ function fetchHarness(): {
     Promise.resolve({ ok: true, clone: () => ({ cloned: true }) }),
   );
   const workerScope = {
-    location: { origin: "https://app.example" },
+    location: { origin: workerOrigin },
     addEventListener: (type: string, listener: (event: FetchEvent) => void) =>
       listeners.set(type, listener),
     skipWaiting: vi.fn(),
@@ -83,6 +84,17 @@ describe("service-worker fetch handling", () => {
     expect(respondWith).toHaveBeenCalledOnce();
     await respondWith.mock.calls[0][0];
     expect(cachePut).toHaveBeenCalledOnce();
+  });
+
+  it("leaves development assets to the network because their names are stable", () => {
+    const { onFetch, cachePut, fetchMock } = fetchHarness("http://localhost:3000");
+    const { event, respondWith } = fetchEvent(
+      "http://localhost:3000/_next/static/css/app/layout.css",
+    );
+    onFetch(event);
+    expect(respondWith).not.toHaveBeenCalled();
+    expect(cachePut).not.toHaveBeenCalled();
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it.each([

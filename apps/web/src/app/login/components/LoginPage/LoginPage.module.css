@@ -1,0 +1,255 @@
+/** Motion and paper-detail styling for the combined marketing and login page. */
+
+.page {
+  isolation: isolate;
+  overflow-x: clip;
+  background:
+    radial-gradient(circle at 10% 8%, rgb(199 74 51 / 0.12), transparent 24rem),
+    linear-gradient(112deg, #faf6ef 0%, #faf6ef 61%, #f4eadb 61%, #f7efe4 100%);
+}
+
+.page::before {
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  background-image:
+    linear-gradient(rgb(176 58 37 / 0.045) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(176 58 37 / 0.045) 1px, transparent 1px);
+  background-size: 32px 32px;
+  mask-image: linear-gradient(to right, black, transparent 70%);
+  content: "";
+}
+
+.page::after {
+  position: absolute;
+  z-index: -1;
+  top: 0;
+  bottom: 0;
+  left: max(1.25rem, calc((100vw - 1480px) / 2));
+  width: 1px;
+  background: rgb(176 58 37 / 0.22);
+  box-shadow: 5px 0 0 rgb(176 58 37 / 0.06);
+  content: "";
+}
+
+.story {
+  animation: story-in 700ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.heroTitle {
+  font-size: clamp(3.25rem, 7vw, 6.7rem);
+}
+
+.heroGrid {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.authPanel {
+  animation: panel-in 750ms 80ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.ledger {
+  animation: ledger-in 800ms 160ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  box-shadow:
+    0 28px 80px rgb(83 55 29 / 0.14),
+    0 2px 0 rgb(255 255 255 / 0.9) inset;
+}
+
+.ledger::before {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background-image: repeating-linear-gradient(
+    to bottom,
+    transparent 0,
+    transparent 55px,
+    rgb(234 225 209 / 0.72) 55px,
+    rgb(234 225 209 / 0.72) 56px
+  );
+  pointer-events: none;
+  content: "";
+}
+
+.expenseRow {
+  animation: expense-in 520ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.delayOne {
+  animation-delay: 650ms;
+}
+
+.delayTwo {
+  animation-delay: 820ms;
+}
+
+.delayThree {
+  animation-delay: 990ms;
+}
+
+.receipt {
+  display: none;
+  animation: receipt-float 5s ease-in-out infinite;
+  box-shadow: 0 18px 42px rgb(83 55 29 / 0.18);
+}
+
+.receipt::after {
+  position: absolute;
+  right: 0.75rem;
+  left: 0.75rem;
+  height: 2px;
+  border-radius: 999px;
+  background: #c74a33;
+  box-shadow: 0 0 12px 3px rgb(199 74 51 / 0.28);
+  animation: scan-receipt 3.5s ease-in-out infinite;
+  content: "";
+}
+
+.stamp {
+  animation: stamp-in 4.5s 1.2s cubic-bezier(0.34, 1.56, 0.64, 1) infinite;
+  transform-origin: center;
+}
+
+.balanceGlow {
+  animation: balance-glow 3s 1.4s ease-in-out infinite;
+}
+
+@keyframes story-in {
+  from {
+    opacity: 0;
+    transform: translateY(18px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes panel-in {
+  from {
+    opacity: 0;
+    transform: translateX(22px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes ledger-in {
+  from {
+    opacity: 0;
+    transform: translateY(28px) rotate(0.8deg);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) rotate(-0.35deg);
+  }
+}
+
+@keyframes expense-in {
+  from {
+    opacity: 0;
+    transform: translateX(-14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes receipt-float {
+  0%,
+  100% {
+    transform: translateY(0) rotate(2.5deg);
+  }
+  50% {
+    transform: translateY(-7px) rotate(1.5deg);
+  }
+}
+
+@keyframes scan-receipt {
+  0%,
+  18% {
+    top: 1rem;
+    opacity: 0;
+  }
+  28% {
+    opacity: 1;
+  }
+  72% {
+    opacity: 1;
+  }
+  82%,
+  100% {
+    top: calc(100% - 1rem);
+    opacity: 0;
+  }
+}
+
+@keyframes stamp-in {
+  0%,
+  22%,
+  100% {
+    opacity: 0;
+    transform: scale(1.25) rotate(-6deg);
+  }
+  30%,
+  80% {
+    opacity: 1;
+    transform: scale(1) rotate(-3deg);
+  }
+}
+
+@keyframes balance-glow {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgb(14 127 88 / 0);
+  }
+  50% {
+    box-shadow: 0 0 0 7px rgb(14 127 88 / 0.1);
+  }
+}
+
+@media (max-width: 1023px) {
+  .page {
+    background: #faf6ef;
+  }
+
+  .page::after {
+    display: none;
+  }
+
+  .ledger {
+    transform: none;
+  }
+}
+
+@media (min-width: 640px) {
+  .receipt {
+    display: block;
+  }
+
+  .expenseList {
+    max-width: calc(100% - 10.5rem);
+  }
+}
+
+@media (min-width: 1024px) {
+  .heroGrid {
+    grid-template-columns: minmax(0, 1fr) 400px;
+    grid-template-rows: auto 1fr;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .story,
+  .authPanel,
+  .ledger,
+  .expenseRow,
+  .receipt,
+  .receipt::after,
+  .stamp,
+  .balanceGlow {
+    animation: none;
+  }
+}
