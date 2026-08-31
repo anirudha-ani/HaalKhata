@@ -2,6 +2,7 @@
 /** Combined HaalKhata marketing page and login/signup experience. */
 
 import { useState, type ReactNode } from "react";
+import Image from "next/image";
 import {
   ArrowRight,
   Camera,
@@ -39,7 +40,7 @@ function LedgerPreview() {
       <div className="relative z-10 flex items-start justify-between gap-4 pr-0 sm:pr-44">
         <div>
           <div className="mb-2 flex items-center gap-2 text-[11px] font-bold tracking-[0.18em] text-brand-600 uppercase">
-            <span className="h-2 w-2 rounded-full bg-brand-500" /> Live example
+            <span className="h-2 w-2 rounded-full bg-brand-500" /> Trip math, tamed
           </div>
           <h2 className="text-2xl font-bold">Trip to Yosemite</h2>
           <p className="mt-1 text-sm text-ink-soft">4 friends · one shared ledger</p>
@@ -357,9 +358,15 @@ export function LoginPage() {
     <main className={`${styles.page} relative min-h-dvh`}>
       <header className="sticky top-0 z-30 mx-auto flex max-w-[1480px] items-center justify-between gap-4 border-b border-line/70 bg-paper/90 px-5 py-4 backdrop-blur-md sm:px-8 lg:static lg:border-b-0 lg:bg-transparent lg:px-12 lg:py-5 lg:backdrop-blur-none">
         <div className="flex items-center gap-3">
-          <span className="flex h-10 w-10 -rotate-2 items-center justify-center rounded-lg bg-brand-600 font-display text-lg font-black text-white shadow-[3px_3px_0_#6f2517]">
-            হা
-          </span>
+          <Image
+            src="/icon.svg"
+            alt=""
+            aria-hidden="true"
+            className="h-10 w-10 rounded-lg"
+            height={40}
+            priority
+            width={40}
+          />
           <span>
             <span className="block font-display text-xl font-bold leading-none">HaalKhata</span>
             <span className="mt-1 block text-[9px] font-bold tracking-[0.18em] text-ink-soft uppercase">
