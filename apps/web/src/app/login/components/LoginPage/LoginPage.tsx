@@ -443,7 +443,7 @@ export function LoginPage() {
                 number="03"
                 icon={<Check className="h-5 w-5" />}
                 title="Clear it"
-                detail="See balances by person and currency, then record a settlement when money moves."
+                detail="See who owes what, open their preferred payment app or copy their saved handle, then record the settlement."
               />
             </div>
           </div>
