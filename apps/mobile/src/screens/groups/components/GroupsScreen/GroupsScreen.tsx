@@ -102,45 +102,45 @@ export function GroupsScreen() {
               </Text>
             </View>
           ) : (
-        <View style={styles.cards}>
-          {groupsState.visibleGroups.map((summary) =>
-            summary.group ? (
-              <Pressable
-                key={summary.group.id}
-                onPress={() => router.push(`/groups/${summary.group?.id}`)}
-                style={({ pressed }) => [styles.card, pressed ? styles.cardPressed : null]}
-              >
-                <View style={styles.cardTop}>
-                  <Text style={styles.cardEmoji}>{groupEmoji(summary.group.type)}</Text>
-                  <View style={styles.typeBadge}>
-                    <Text style={styles.typeBadgeText}>{summary.group.type}</Text>
-                  </View>
-                </View>
-                <View>
-                  <Text style={styles.cardName}>{summary.group.name}</Text>
-                  <Text style={styles.cardMembers}>
-                    {summary.memberCount} member{summary.memberCount === 1 ? "" : "s"}
-                  </Text>
-                </View>
-                {summary.yourNetCents === 0 ? (
-                  <Text style={styles.cardSettled}>all settled up</Text>
-                ) : (
-                  <View style={styles.cardBalance}>
-                    <Text style={styles.cardBalanceLabel}>
-                      {summary.yourNetCents > 0 ? "you are owed " : "you owe "}
-                    </Text>
-                    <Money
-                      cents={summary.yourNetCents}
-                      currency={summary.group.currency}
-                      signed
-                      style={styles.cardBalanceAmount}
-                    />
-                  </View>
-                )}
-              </Pressable>
-            ) : null,
-          )}
-        </View>
+            <View style={styles.cards}>
+              {groupsState.visibleGroups.map((summary) =>
+                summary.group ? (
+                  <Pressable
+                    key={summary.group.id}
+                    onPress={() => router.push(`/groups/${summary.group?.id}`)}
+                    style={({ pressed }) => [styles.card, pressed ? styles.cardPressed : null]}
+                  >
+                    <View style={styles.cardTop}>
+                      <Text style={styles.cardEmoji}>{groupEmoji(summary.group.type)}</Text>
+                      <View style={styles.typeBadge}>
+                        <Text style={styles.typeBadgeText}>{summary.group.type}</Text>
+                      </View>
+                    </View>
+                    <View>
+                      <Text style={styles.cardName}>{summary.group.name}</Text>
+                      <Text style={styles.cardMembers}>
+                        {summary.memberCount} member{summary.memberCount === 1 ? "" : "s"}
+                      </Text>
+                    </View>
+                    {summary.yourNetCents === 0 ? (
+                      <Text style={styles.cardSettled}>all settled up</Text>
+                    ) : (
+                      <View style={styles.cardBalance}>
+                        <Text style={styles.cardBalanceLabel}>
+                          {summary.yourNetCents > 0 ? "you are owed " : "you owe "}
+                        </Text>
+                        <Money
+                          cents={summary.yourNetCents}
+                          currency={summary.group.currency}
+                          signed
+                          style={styles.cardBalanceAmount}
+                        />
+                      </View>
+                    )}
+                  </Pressable>
+                ) : null,
+              )}
+            </View>
           )}
         </>
       )}
@@ -229,7 +229,10 @@ const styles = StyleSheet.create({
     borderColor: colors.line,
     borderRadius: radii.lg,
     borderWidth: 1,
+    flexBasis: 300,
+    flexGrow: 1,
     gap: spacing.md,
+    maxWidth: 570,
     padding: spacing.lg,
   },
   cardBalance: {
@@ -262,6 +265,8 @@ const styles = StyleSheet.create({
     borderColor: colors.brand200,
   },
   cards: {
+    flexDirection: "row",
+    flexWrap: "wrap",
     gap: spacing.md,
   },
   cardSettled: {

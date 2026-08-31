@@ -85,7 +85,7 @@ export function DashboardScreen() {
                 {dashboard.totals.length > 1 ? (
                   <Text style={styles.summaryCurrency}>{total.currency}</Text>
                 ) : null}
-                <View style={styles.summaryRow}>
+                <View style={styles.summaryCards}>
                   <SummaryCard
                     label="You are owed"
                     tone="pos"
@@ -98,23 +98,24 @@ export function DashboardScreen() {
                     tone="neg"
                     value={balancesFailed ? "—" : formatMoney(total.youOweCents, total.currency)}
                   />
+                  <SummaryCard
+                    label="Net balance"
+                    strong
+                    tone={netCents >= 0 ? "pos" : "neg"}
+                    value={
+                      balancesFailed
+                        ? "—"
+                        : `${netCents < 0 ? "−" : ""}${formatMoney(Math.abs(netCents), total.currency)}`
+                    }
+                  />
                 </View>
-                <SummaryCard
-                  label="Net balance"
-                  strong
-                  tone={netCents >= 0 ? "pos" : "neg"}
-                  value={
-                    balancesFailed
-                      ? "—"
-                      : `${netCents < 0 ? "−" : ""}${formatMoney(Math.abs(netCents), total.currency)}`
-                  }
-                />
               </View>
             );
           })}
 
+          <View style={styles.dashboardGrid}>
           {/* Per-person balances */}
-          <View style={styles.section}>
+          <View style={[styles.section, styles.dashboardSection]}>
             <Text style={styles.sectionTitle}>People</Text>
             {balancesFailed ? null : dashboard.balances &&
               dashboard.balances.counterparties.length > 0 ? (
@@ -204,7 +205,7 @@ export function DashboardScreen() {
               the cards the groups screen uses, because here it sits between
               two other lists and has to read as a peer of them. */}
           {dashboard.topGroups.length > 0 ? (
-            <View style={styles.section}>
+            <View style={[styles.section, styles.dashboardSection]}>
               <View style={styles.sectionHeader}>
                 <Text style={styles.sectionTitle}>Groups</Text>
                 {dashboard.groups.length > dashboard.topGroups.length ? (
@@ -259,7 +260,7 @@ export function DashboardScreen() {
 
           {/* Recent activity */}
           {dashboard.recentActivity.length > 0 ? (
-            <View style={styles.section}>
+            <View style={[styles.section, styles.dashboardSection]}>
               <View style={styles.sectionHeader}>
                 <Text style={styles.sectionTitle}>Recent activity</Text>
                 <Link href="/activity" style={styles.sectionLink}>
@@ -283,6 +284,7 @@ export function DashboardScreen() {
               </View>
             </View>
           ) : null}
+          </View>
         </>
       )}
 
@@ -363,6 +365,16 @@ const styles = StyleSheet.create({
     gap: spacing.md,
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.md,
+  },
+  dashboardGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: spacing.xl,
+  },
+  dashboardSection: {
+    flexBasis: 480,
+    flexGrow: 1,
+    maxWidth: 566,
   },
   errorCard: {
     backgroundColor: colors.neg50,
@@ -480,7 +492,8 @@ const styles = StyleSheet.create({
     borderColor: colors.line,
     borderRadius: radii.lg,
     borderWidth: 1,
-    flex: 1,
+    flexBasis: 160,
+    flexGrow: 1,
     padding: spacing.lg,
   },
   summaryCardNeg: {
@@ -499,8 +512,9 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     letterSpacing: 1,
   },
-  summaryRow: {
+  summaryCards: {
     flexDirection: "row",
+    flexWrap: "wrap",
     gap: spacing.sm,
   },
   summaryValue: {
