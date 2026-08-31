@@ -2,6 +2,7 @@
 
 import { StyleSheet, Text, View } from "react-native";
 import { PeoplePicker } from "@/components/people/PeoplePicker";
+import { useResponsiveLayout } from "@/components/shell/hooks/useResponsiveLayout";
 import { Button } from "@/components/ui/Button";
 import { Chip } from "@/components/ui/Chip";
 import { DateField } from "@/components/ui/DateField";
@@ -40,83 +41,88 @@ export function ExpenseForm({
 }) {
   const form = useNewExpense(expenseAPI, initial, editExpenseId);
   const currency = form.selectedGroup?.currency ?? form.me?.defaultCurrency ?? "USD";
+  const { isExpanded } = useResponsiveLayout();
 
   return (
-    <View style={styles.form}>
-      {/* Editing cannot re-scan: re-parsing a photo over a saved expense
-          would silently replace its lines. */}
-      {form.isEdit ? null : <ReceiptPanel form={form} />}
+    <View style={[styles.form, isExpanded ? styles.formExpanded : null]}>
+      <View style={styles.formColumn}>
+        {/* Editing cannot re-scan: re-parsing a photo over a saved expense
+            would silently replace its lines. */}
+        {form.isEdit ? null : <ReceiptPanel form={form} />}
 
-      <PeoplePicker
-        friendIds={form.friendIds}
-        friends={form.friends.flatMap((friend) => (friend.user ? [friend.user] : []))}
-        groupId={form.groupId}
-        groups={form.groups.flatMap((summary) =>
-          summary.group ? [{ id: summary.group.id, name: summary.group.name }] : [],
-        )}
-        me={form.me}
-        onGroupChange={form.setGroupId}
-        onToggleFriend={form.toggleFriend}
-        people={form.people}
-        scopeLocked={form.isEdit}
-      />
-
-      {/* Basics */}
-      <View style={styles.section}>
-        <TextField
-          maxLength={MAX_EXPENSE_DESCRIPTION_LENGTH}
-          onChangeText={form.setDescription}
-          placeholder="What was it for?"
-          value={form.description}
+        <PeoplePicker
+          friendIds={form.friendIds}
+          friends={form.friends.flatMap((friend) => (friend.user ? [friend.user] : []))}
+          groupId={form.groupId}
+          groups={form.groups.flatMap((summary) =>
+            summary.group ? [{ id: summary.group.id, name: summary.group.name }] : [],
+          )}
+          me={form.me}
+          onGroupChange={form.setGroupId}
+          onToggleFriend={form.toggleFriend}
+          people={form.people}
+          scopeLocked={form.isEdit}
         />
-        <View style={styles.basicsRow}>
-          <View style={styles.basicsCell}>
-            {/* Itemized totals are derived from the line items, so the field
-                becomes a read-only readout of items + tax + tip. */}
-            <TextField
-              editable={!form.isItemized}
-              keyboardType="decimal-pad"
-              label={form.isItemized ? `Total (${currency}) · from items` : `Amount (${currency})`}
-              onChangeText={form.setAmount}
-              placeholder="0.00"
-              value={form.isItemized ? centsToInput(form.totalCents ?? 0) : form.amount}
-            />
+
+        {/* Basics */}
+        <View style={styles.section}>
+          <TextField
+            maxLength={MAX_EXPENSE_DESCRIPTION_LENGTH}
+            onChangeText={form.setDescription}
+            placeholder="What was it for?"
+            value={form.description}
+          />
+          <View style={styles.basicsRow}>
+            <View style={styles.basicsCell}>
+              {/* Itemized totals are derived from the line items, so the field
+                  becomes a read-only readout of items + tax + tip. */}
+              <TextField
+                editable={!form.isItemized}
+                keyboardType="decimal-pad"
+                label={form.isItemized ? `Total (${currency}) · from items` : `Amount (${currency})`}
+                onChangeText={form.setAmount}
+                placeholder="0.00"
+                value={form.isItemized ? centsToInput(form.totalCents ?? 0) : form.amount}
+              />
+            </View>
+            <View style={styles.basicsCell}>
+              <DateField label="Date" onChange={form.setDate} value={form.date} />
+            </View>
           </View>
-          <View style={styles.basicsCell}>
-            <DateField label="Date" onChange={form.setDate} value={form.date} />
+          <View style={styles.chips}>
+            {CATEGORIES.map((categoryOption) => (
+              <Chip
+                key={categoryOption}
+                label={categoryOption}
+                onPress={() => form.setCategory(categoryOption)}
+                selected={form.category === categoryOption}
+              />
+            ))}
           </View>
-        </View>
-        <View style={styles.chips}>
-          {CATEGORIES.map((categoryOption) => (
-            <Chip
-              key={categoryOption}
-              label={categoryOption}
-              onPress={() => form.setCategory(categoryOption)}
-              selected={form.category === categoryOption}
-            />
-          ))}
         </View>
       </View>
 
-      <PayerEditor form={form} />
-      <SplitEditor currency={currency} form={form} />
+      <View style={styles.formColumn}>
+        <PayerEditor form={form} />
+        <SplitEditor currency={currency} form={form} />
 
-      <TextField
-        maxLength={MAX_EXPENSE_NOTES_LENGTH}
-        multiline
-        onChangeText={form.setNotes}
-        placeholder="Notes (optional)"
-        value={form.notes}
-      />
+        <TextField
+          maxLength={MAX_EXPENSE_NOTES_LENGTH}
+          multiline
+          onChangeText={form.setNotes}
+          placeholder="Notes (optional)"
+          value={form.notes}
+        />
 
-      {form.error ? <Text style={styles.error}>{form.error}</Text> : null}
+        {form.error ? <Text style={styles.error}>{form.error}</Text> : null}
 
-      <Button
-        busy={form.isSaving}
-        disabled={!form.canSubmit}
-        label={form.isEdit ? "Save changes" : "Add expense"}
-        onPress={form.submit}
-      />
+        <Button
+          busy={form.isSaving}
+          disabled={!form.canSubmit}
+          label={form.isEdit ? "Save changes" : "Add expense"}
+          onPress={form.submit}
+        />
+      </View>
     </View>
   );
 }
@@ -141,6 +147,16 @@ const styles = StyleSheet.create({
   },
   form: {
     gap: spacing.xl,
+  },
+  formColumn: {
+    flex: 1,
+    gap: spacing.xl,
+    minWidth: 0,
+  },
+  formExpanded: {
+    alignItems: "flex-start",
+    flexDirection: "row",
+    gap: spacing.xxl,
   },
   section: {
     gap: spacing.md,
