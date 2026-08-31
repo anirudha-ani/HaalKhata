@@ -1,15 +1,16 @@
-/** Tab-screen header: the wordmark plus notification bell and account avatar. */
+/** Tab-screen header: the brand lockup, notification bell, and account avatar. */
 
 import { useRouter } from "expo-router";
 import { Bell, CircleUserRound } from "lucide-react-native";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Image, Pressable, StyleSheet, Text, View } from "react-native";
 import { Avatar } from "@/components/ui/Avatar";
 import { colors, fonts, radii, spacing } from "@/lib/theme/theme";
+import brandIconSource from "../../../assets/icon.png";
 import { useShellData } from "./hooks/useShellData";
 
 /**
  * Renders the chrome above every tab screen — the mobile counterpart of the
- * web's mobile header: the HaalKhata wordmark on the left, and on the right a
+ * web's mobile header: the HaalKhata brand lockup on the left, and on the right a
  * notification bell (with unread dot) leading to the activity feed and the
  * signed-in user's avatar leading to the account screen.
  *
@@ -22,6 +23,7 @@ export function ScreenHeader() {
   return (
     <View style={styles.header}>
       <View style={styles.wordmarkRow}>
+        <Image source={brandIconSource} style={styles.brandIcon} />
         <Text style={styles.wordmark}>HAALKHATA</Text>
       </View>
       <View style={styles.actions}>
@@ -56,6 +58,11 @@ const styles = StyleSheet.create({
     alignItems: "center",
     flexDirection: "row",
     gap: spacing.xs,
+  },
+  brandIcon: {
+    borderRadius: radii.sm,
+    height: 32,
+    width: 32,
   },
   header: {
     alignItems: "center",
@@ -95,7 +102,7 @@ const styles = StyleSheet.create({
     letterSpacing: 3,
   },
   wordmarkRow: {
-    alignItems: "baseline",
+    alignItems: "center",
     flexDirection: "row",
     gap: spacing.sm,
   },

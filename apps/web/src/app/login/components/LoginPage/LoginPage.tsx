@@ -359,7 +359,7 @@ export function LoginPage() {
       <header className="sticky top-0 z-30 mx-auto flex max-w-[1480px] items-center justify-between gap-4 border-b border-line/70 bg-paper/90 px-5 py-4 backdrop-blur-md sm:px-8 lg:static lg:border-b-0 lg:bg-transparent lg:px-12 lg:py-5 lg:backdrop-blur-none">
         <div className="flex items-center gap-3">
           <Image
-            src="/icon.svg"
+            src="/icon-192.png"
             alt=""
             aria-hidden="true"
             className="h-10 w-10 rounded-lg"

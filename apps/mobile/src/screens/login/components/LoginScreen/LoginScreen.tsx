@@ -2,6 +2,7 @@
 
 import {
   KeyboardAvoidingView,
+  Image,
   Platform,
   ScrollView,
   StyleSheet,
@@ -15,11 +16,12 @@ import { TextField } from "@/components/ui/TextField";
 import { colors, fonts, radii, spacing } from "@/lib/theme/theme";
 import { GOOGLE_SIGN_IN_CONFIGURED, PASSWORD_AUTH_ENABLED } from "../../constants/googleSignIn";
 import { LOGIN_MODES } from "../../constants/loginModes";
+import brandIconSource from "../../../../../assets/icon.png";
 import { GoogleSignInButton } from "./components/GoogleSignInButton/GoogleSignInButton";
 import { useLogin } from "./hooks/useLogin";
 
 /**
- * Renders the login screen: the HaalKhata wordmark, "Continue with Google"
+ * Renders the login screen: the HaalKhata icon and wordmark, "Continue with Google"
  * (the only way in on a production server), and — in development builds
  * only, mirroring the server's password gate — the sign-in/create-account
  * toggle and credentials form for seeded accounts.
@@ -40,6 +42,7 @@ export function LoginScreen() {
           keyboardShouldPersistTaps="handled"
         >
           <View style={styles.hero}>
+            <Image source={brandIconSource} style={styles.brandIcon} />
             <Text style={styles.wordmark}>HAALKHATA</Text>
             <Text style={styles.tagline}>
               Camera eats first. The AI splits the rest.
@@ -120,6 +123,12 @@ export function LoginScreen() {
 }
 
 const styles = StyleSheet.create({
+  brandIcon: {
+    borderRadius: radii.lg,
+    height: 96,
+    marginBottom: spacing.lg,
+    width: 96,
+  },
   card: {
     backgroundColor: colors.card,
     borderColor: colors.line,

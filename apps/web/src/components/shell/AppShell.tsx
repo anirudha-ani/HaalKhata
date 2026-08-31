@@ -2,6 +2,7 @@
 /** App chrome around authed pages: desktop sidebar, mobile header, and bottom nav. */
 
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { Bell, CircleUserRound, LogOut, Plus } from "lucide-react";
@@ -11,12 +12,19 @@ import { NAVIGATION_ITEMS, MOBILE_LEFT_NAV, MOBILE_RIGHT_NAV } from "./shell.con
 import { Avatar } from "@/components/ui/Avatar";
 import { useShellData } from "./hooks/useShellData";
 
-/** Renders the HaalKhata wordmark linking back to the dashboard. */
+/** Renders the HaalKhata brand mark and wordmark linking to the dashboard. */
 function Logo() {
   return (
-    <Link href="/dashboard" className="flex items-baseline gap-2 px-1">
+    <Link href="/dashboard" className="flex items-center gap-2.5 px-1">
+      <Image
+        src="/icon-192.png"
+        alt=""
+        aria-hidden="true"
+        className="h-8 w-8 rounded-lg"
+        height={32}
+        width={32}
+      />
       <span className="font-display text-2xl font-bold text-brand-600">HaalKhata</span>
-      
     </Link>
   );
 }
