@@ -945,6 +945,289 @@ export async function addComment(userId: string, expenseId: string, body: string
   };
 }
 
+/** Raw settlement fields accepted from the ExpenseService transport. */
+interface SettlementRequest {
+  groupId: string;
+  toUserId: string;
+  amountCents: number;
+  currency: string;
+  method: string;
+  note: string;
+  received?: boolean;
+  scopeGroupIds?: string[];
+  operationId?: string;
+}
+
+/** Validated identities and normalized values shared by settlement write stages. */
+interface SettlementContext {
+  userId: string;
+  request: SettlementRequest;
+  recipient: UserRow;
+  actor: UserRow;
+  payerId: string;
+  creditorId: string;
+  groupId: string | null;
+  currency: string;
+  method: string;
+}
+
+/**
+ * Validates a settlement request and resolves its normalized identities,
+ * currency, scope, and payment method.
+ *
+ * @param userId - Authenticated caller recording the payment.
+ * @param request - Raw settlement request.
+ * @returns Context safe for the locked write and announcement stages.
+ */
+async function prepareSettlement(
+  userId: string,
+  request: SettlementRequest,
+): Promise<SettlementContext> {
+  if (request.toUserId === userId) invalid("you cannot settle with yourself");
+  if (request.amountCents <= 0) invalid("amount must be positive");
+  if (request.amountCents > MAX_MONEY_CENTS) {
+    invalid(`amount is too large (max ${MAX_MONEY_CENTS} cents)`);
+  }
+  if (request.note.length > MAX_SETTLEMENT_NOTE_LENGTH) {
+    invalid(`settlement note is too long (max ${MAX_SETTLEMENT_NOTE_LENGTH} characters)`);
+  }
+  const recipient = await findUserById(request.toUserId);
+  if (!recipient) notFound("recipient not found");
+
+  const payerId = request.received ? request.toUserId : userId;
+  const creditorId = request.received ? userId : request.toUserId;
+  const groupId = request.groupId || null;
+  let currency = request.currency;
+  if (groupId) {
+    const group = await findGroupById(groupId);
+    if (!group) notFound("group not found");
+    const [callerIsMember, recipientIsMember] = await Promise.all([
+      isMember(groupId, userId),
+      isMember(groupId, request.toUserId),
+    ]);
+    if (!callerIsMember || !recipientIsMember) {
+      denied("both people must be members of the group");
+    }
+    // A group settles only in its own currency; relabelling the requested
+    // amount would silently invent an exchange rate.
+    const requestedCurrency = request.currency
+      ? normalizeCurrencyCode(request.currency)
+      : group.currency;
+    if (requestedCurrency !== group.currency) {
+      invalid(`this group settles in ${group.currency}, not ${requestedCurrency}`);
+    }
+    currency = group.currency;
+  }
+  if (!currency) currency = (await findUserById(userId))?.default_currency ?? "USD";
+  currency = normalizeCurrencyCode(currency);
+  const actor = await findUserById(userId);
+  if (!actor) denied("account no longer exists");
+  return {
+    userId,
+    request,
+    recipient,
+    actor,
+    payerId,
+    creditorId,
+    groupId,
+    currency,
+    method: SETTLEMENT_METHODS.has(request.method) ? request.method : "cash",
+  };
+}
+
+/**
+ * Stores a payment addressed to one explicit group after rechecking its locked ledger.
+ *
+ * @param context - Prepared settlement with a non-null group id.
+ * @param client - Pair-lock transaction client.
+ * @returns The single stored group settlement.
+ */
+async function storeGroupSettlement(
+  context: SettlementContext,
+  client: PoolClient,
+): Promise<SettlementRow[]> {
+  const { userId, request, payerId, creditorId, groupId, currency, method } = context;
+  if (!groupId) throw new Error("storeGroupSettlement requires a group id");
+  await lockGroupLedgers(client, [groupId]);
+  const callerIsMember = await isMember(groupId, userId, client);
+  const recipientIsMember = await isMember(groupId, request.toUserId, client);
+  if (!callerIsMember || !recipientIsMember) {
+    denied("both people must be members of the group");
+  }
+  // A pairwise loop that nets to zero is not debt. Paying one edge would
+  // instead leave the payer owed elsewhere around the loop.
+  if (await groupCancelsOut(groupId, client)) {
+    invalid(
+      "these debts cancel out around a loop — everyone here is settled up overall; turn on Simplify debts to clear the view",
+    );
+  }
+  const outstandingCents = await amountOwed(payerId, creditorId, groupId, client);
+  if (outstandingCents <= 0) {
+    invalid(
+      request.received
+        ? "this person doesn't owe you anything in this group"
+        : "you don't owe this person anything in this group",
+    );
+  }
+  if (request.amountCents > outstandingCents) {
+    invalid(
+      `settlement (${formatMoney(request.amountCents, currency)}) exceeds what ${
+        request.received ? "they owe" : "you owe"
+      } (${formatMoney(outstandingCents, currency)})`,
+    );
+  }
+  return [
+    await insertSettlement(
+      {
+        groupId,
+        fromUser: payerId,
+        toUser: creditorId,
+        amountCents: request.amountCents,
+        currency,
+        method,
+        note: request.note,
+        recordedBy: userId,
+      },
+      client,
+    ),
+  ];
+}
+
+/**
+ * Validates a prepared payment against current locked ledgers and stores one
+ * settlement row per scope it pays down.
+ *
+ * @param context - Validated settlement identities and normalized values.
+ * @param client - Pair-lock transaction client.
+ * @returns Stored rows, with the direct slate first for cross-scope payments.
+ */
+async function storeSettlementPortions(
+  context: SettlementContext,
+  client: PoolClient,
+): Promise<SettlementRow[]> {
+  const { userId, request, payerId, creditorId, groupId, currency, method } = context;
+  if (groupId) return storeGroupSettlement(context, client);
+
+  // Lock every group either person belongs to before selecting the shared
+  // scopes. That snapshot cannot gain an unlocked group midway through the
+  // read-then-write guard.
+  const payerGroups = await listGroupsByUser(payerId, client);
+  const creditorGroups = await listGroupsByUser(creditorId, client);
+  const lockedGroupIds = new Set(
+    [...payerGroups, ...creditorGroups].map((group) => group.id),
+  );
+  await lockGroupLedgers(client, [...lockedGroupIds]);
+  const selection = new Set(request.scopeGroupIds ?? []);
+  // The client chooses scopes, never amounts. Re-read current server balances
+  // so a stale selection cannot double-record a payment.
+  const selected = (await owedByScope(payerId, creditorId, client)).filter(
+    (scope) =>
+      (scope.groupId === null || lockedGroupIds.has(scope.groupId)) &&
+      (selection.size === 0 || selection.has(scope.groupId ?? "")),
+  );
+  const foreign = selected.find(
+    (scope) => scope.currency !== currency && selection.has(scope.groupId ?? ""),
+  );
+  // There is no exchange rate in the request, so an explicitly selected
+  // foreign-currency balance must be rejected rather than relabelled.
+  if (foreign) {
+    invalid(
+      `that balance is in ${foreign.currency} — settle it in ${foreign.currency}, not ${currency}`,
+    );
+  }
+  const scopes = selected.filter((scope) => scope.currency === currency);
+  const totalOwedCents = scopes.reduce((running, scope) => running + scope.owedCents, 0);
+  if (totalOwedCents <= 0) {
+    invalid(
+      request.received
+        ? `this person doesn't owe you anything in the selected ${currency} balances`
+        : `you don't owe this person anything in the selected ${currency} balances`,
+    );
+  }
+  if (request.amountCents > totalOwedCents) {
+    invalid(
+      `settlement (${formatMoney(request.amountCents, currency)}) exceeds what ${
+        request.received ? "they owe" : "you owe"
+      } there (${formatMoney(totalOwedCents, currency)})`,
+    );
+  }
+
+  const rows: SettlementRow[] = [];
+  for (const portion of allocateSettlement(scopes, request.amountCents)) {
+    rows.push(
+      await insertSettlement(
+        {
+          groupId: portion.groupId,
+          fromUser: payerId,
+          toUser: creditorId,
+          amountCents: portion.amountCents,
+          currency: portion.currency,
+          method,
+          note: request.note,
+          recordedBy: userId,
+        },
+        client,
+      ),
+    );
+  }
+  return rows;
+}
+
+/**
+ * Writes activity and the counterparty notification for a stored payment on
+ * the payment transaction.
+ *
+ * @param context - Validated settlement identities and normalized values.
+ * @param stored - Settlement portions just inserted.
+ * @param client - Pair-lock transaction client.
+ */
+async function announceSettlement(
+  context: SettlementContext,
+  stored: SettlementRow[],
+  client: PoolClient,
+): Promise<void> {
+  const { userId, request, recipient, actor, payerId, creditorId, groupId, currency } = context;
+  const payerName = request.received ? recipient.name : actor.name;
+  const creditorName = request.received ? actor.name : recipient.name;
+  const friendLink = `/friends/${request.toUserId}`;
+  // Each portion belongs in its own scope's feed, but remains visible only to
+  // the payer and recipient rather than every member of a group.
+  for (const settlement of stored) {
+    const group = settlement.group_id
+      ? await findGroupById(settlement.group_id, client)
+      : undefined;
+    await insertActivity(
+      {
+        groupId: settlement.group_id,
+        // The feed subject is the person who paid. recorded_by still preserves
+        // who asserted the payment when the recipient entered it.
+        actorId: payerId,
+        type: "settlement",
+        message: `${payerName} paid ${creditorName} ${formatMoney(settlement.amount_cents, currency)}${group ? ` in "${group.name}"` : ""}${request.received ? ` — recorded by ${actor.name}` : ""}`,
+        link: settlement.group_id ? `/groups/${settlement.group_id}` : friendLink,
+        audience: [...new Set([payerId, creditorId])],
+        amountCents: settlement.amount_cents,
+        currency,
+        creditUserId: creditorId,
+      },
+      client,
+    );
+  }
+  const notifyGroup = groupId ? await findGroupById(groupId, client) : undefined;
+  await insertNotifications(
+    [request.toUserId],
+    {
+      type: "settlement",
+      title: request.received
+        ? `${actor.name} recorded your payment of ${formatMoney(request.amountCents, currency)}`
+        : `${actor.name} recorded a payment of ${formatMoney(request.amountCents, currency)} to you`,
+      body: notifyGroup ? notifyGroup.name : "Settlement",
+      link: groupId ? `/groups/${groupId}` : `/friends/${userId}`,
+    },
+    client,
+  );
+}
+
 /**
  * Records a real-world payment between the caller and another user, then fans
  * out activity + a notification to the other party.
@@ -978,59 +1261,9 @@ export async function addComment(userId: string, expenseId: string, body: string
  */
 export async function recordSettlement(
   userId: string,
-  request: {
-    groupId: string;
-    toUserId: string;
-    amountCents: number;
-    currency: string;
-    method: string;
-    note: string;
-    received?: boolean;
-    scopeGroupIds?: string[];
-    operationId?: string;
-  },
+  request: SettlementRequest,
 ) {
-  if (request.toUserId === userId) invalid("you cannot settle with yourself");
-  if (request.amountCents <= 0) invalid("amount must be positive");
-  if (request.amountCents > MAX_MONEY_CENTS) {
-    invalid(`amount is too large (max ${MAX_MONEY_CENTS} cents)`);
-  }
-  if (request.note.length > MAX_SETTLEMENT_NOTE_LENGTH) {
-    invalid(`settlement note is too long (max ${MAX_SETTLEMENT_NOTE_LENGTH} characters)`);
-  }
-  const recipientRow = await findUserById(request.toUserId);
-  if (!recipientRow) notFound("recipient not found");
-  // Typed const rather than the narrowed binding, so the nested writers
-  // below can read it without re-checking.
-  const recipient: UserRow = recipientRow;
-  // Whoever is settling a debt is the payer; the other is the creditor.
-  const payerId = request.received ? request.toUserId : userId;
-  const creditorId = request.received ? userId : request.toUserId;
-
-  const groupId = request.groupId || null;
-  let currency = request.currency;
-  if (groupId) {
-    const group = await findGroupById(groupId);
-    if (!group) notFound("group not found");
-    const [callerIsMember, recipientIsMember] = await Promise.all([
-      isMember(groupId, userId),
-      isMember(groupId, request.toUserId),
-    ]);
-    if (!callerIsMember || !recipientIsMember) {
-      denied("both people must be members of the group");
-    }
-    // A group settles in its own currency. A payment stated in another one
-    // is refused, not relabelled: the amount would be wrong by an exchange
-    // rate nobody entered.
-    if (request.currency && normalizeCurrencyCode(request.currency) !== group.currency) {
-      invalid(`this group settles in ${group.currency}, not ${normalizeCurrencyCode(request.currency)}`);
-    }
-    currency = group.currency;
-  }
-  if (!currency) currency = (await findUserById(userId))?.default_currency ?? "USD";
-  currency = normalizeCurrencyCode(currency);
-  const method = SETTLEMENT_METHODS.has(request.method) ? request.method : "cash";
-  const actor = (await findUserById(userId))!;
+  const context = await prepareSettlement(userId, request);
 
   // Validation + inserts inside the pair lock, so a concurrent recording of
   // the same real-world payment — from another tab, another device, or the
@@ -1041,224 +1274,26 @@ export async function recordSettlement(
   // feed rows and the notification, which commit with the payment or not at
   // all.
   const operation = { userId, rpc: "RecordSettlement", operationId: request.operationId ?? "" };
-  const settlements = await withSettlementPairLock(payerId, creditorId, async (client) => {
-    // A retry of a lost response finds the claim the first attempt
-    // committed and answers with its recording — never a second one, which
-    // the over-settle guard alone could not catch for a partial payment.
-    const claim = await beginOperation(operation, request, client);
-    if (claim.replayOf !== null) {
-      const replayed = await findSettlementById(claim.replayOf, client);
-      return replayed ? [replayed] : [];
-    }
-    const stored = await storeSettlementPortions(client);
-    await announceSettlement(client, stored);
-    await finishOperation(operation, stored[0].id, client);
-    return stored;
-  });
+  const settlements = await withSettlementPairLock(
+    context.payerId,
+    context.creditorId,
+    async (client) => {
+      // A retry of a lost response finds the claim the first attempt
+      // committed and answers with its recording — never a second one, which
+      // the over-settle guard alone could not catch for a partial payment.
+      const claim = await beginOperation(operation, request, client);
+      if (claim.replayOf !== null) {
+        const replayed = await findSettlementById(claim.replayOf, client);
+        return replayed ? [replayed] : [];
+      }
+      const stored = await storeSettlementPortions(context, client);
+      await announceSettlement(context, stored, client);
+      await finishOperation(operation, stored[0].id, client);
+      return stored;
+    },
+  );
   if (settlements.length === 0) notFound("payment not found");
   return toSettlement(settlements[0]);
-
-  /**
-   * Validates the payment against what is owed under the lock and writes one
-   * settlement row per scope it pays down.
-   *
-   * @param client - The pair lock's transaction client.
-   * @returns The stored rows, direct slate first.
-   */
-  async function storeSettlementPortions(client: PoolClient): Promise<SettlementRow[]> {
-    // Refuse to record more than the debt a payment can actually clear —
-    // otherwise it would flip the balance the other way (settlement-as-attack).
-    // The cap is what the payer owes in the addressed scope(s), never the
-    // pair's net: a debt pointing the other way cannot absorb a payment.
-    if (groupId) {
-      await lockGroupLedgers(client, [groupId]);
-      const callerIsMember = await isMember(groupId, userId, client);
-      const recipientIsMember = await isMember(groupId, request.toUserId, client);
-      if (!callerIsMember || !recipientIsMember) {
-        denied("both people must be members of the group");
-      }
-      // A pairwise loop that nets to zero (A→B→C→A, left behind by payments
-      // made while the group simplified debts) is not debt: paying along
-      // one edge would leave the payer owed by the next person round. The
-      // mode switch that exposed it is also what clears it.
-      if (await groupCancelsOut(groupId, client)) {
-        invalid(
-          "these debts cancel out around a loop — everyone here is settled up overall; turn on Simplify debts to clear the view",
-        );
-      }
-      const outstandingCents = await amountOwed(payerId, creditorId, groupId, client);
-      if (outstandingCents <= 0) {
-        invalid(
-          request.received
-            ? "this person doesn't owe you anything in this group"
-            : "you don't owe this person anything in this group",
-        );
-      }
-      if (request.amountCents > outstandingCents) {
-        invalid(
-          `settlement (${formatMoney(request.amountCents, currency)}) exceeds what ${
-            request.received ? "they owe" : "you owe"
-          } (${formatMoney(outstandingCents, currency)})`,
-        );
-      }
-      const stored = await insertSettlement(
-        {
-          groupId,
-          fromUser: payerId,
-          toUser: creditorId,
-          amountCents: request.amountCents,
-          currency,
-          method,
-          note: request.note,
-          recordedBy: userId,
-        },
-        client,
-      );
-      return [stored];
-    }
-
-    // The payer picked which balances this payment addresses ("" names the
-    // one-off ledger); an empty selection means all of them. Filtering what
-    // is actually owed by the selection — rather than trusting the client's
-    // amounts — keeps the guards authoritative: a stale checkbox for a
-    // balance someone else just settled contributes nothing here, and the
-    // refusal below says so instead of double-recording.
-    // Lock the union, rather than only today's intersection: if membership
-    // changes while the pair lock is held, no newly shared group is used
-    // unless its group lock was selected from this snapshot.
-    const payerGroups = await listGroupsByUser(payerId, client);
-    const creditorGroups = await listGroupsByUser(creditorId, client);
-    const lockedGroupIds = new Set(
-      [...payerGroups, ...creditorGroups].map((group) => group.id),
-    );
-    await lockGroupLedgers(client, [...lockedGroupIds]);
-    const selection = new Set(request.scopeGroupIds ?? []);
-    const selected = (await owedByScope(payerId, creditorId, client)).filter(
-      (scope) =>
-        (scope.groupId === null || lockedGroupIds.has(scope.groupId)) &&
-        (selection.size === 0 || selection.has(scope.groupId ?? "")),
-    );
-    // A payment moves in one currency and can only pay down balances in
-    // that currency. A balance the payer picked by name in another currency
-    // is refused rather than converted — there is no rate to convert at;
-    // balances not picked by name in other currencies are simply not
-    // addressed, the way a euro debt is not addressed by a dollar payment.
-    const foreign = selected.find(
-      (scope) => scope.currency !== currency && selection.has(scope.groupId ?? ""),
-    );
-    if (foreign) {
-      invalid(
-        `that balance is in ${foreign.currency} — settle it in ${foreign.currency}, not ${currency}`,
-      );
-    }
-    const scopes = selected.filter((scope) => scope.currency === currency);
-    const totalOwedCents = scopes.reduce((running, scope) => running + scope.owedCents, 0);
-    if (totalOwedCents <= 0) {
-      invalid(
-        request.received
-          ? `this person doesn't owe you anything in the selected ${currency} balances`
-          : `you don't owe this person anything in the selected ${currency} balances`,
-      );
-    }
-    if (request.amountCents > totalOwedCents) {
-      invalid(
-        `settlement (${formatMoney(request.amountCents, currency)}) exceeds what ${
-          request.received ? "they owe" : "you owe"
-        } there (${formatMoney(totalOwedCents, currency)})`,
-      );
-    }
-    const rows = [];
-    for (const portion of allocateSettlement(scopes, request.amountCents)) {
-      rows.push(
-        await insertSettlement(
-          {
-            groupId: portion.groupId,
-            fromUser: payerId,
-            toUser: creditorId,
-            amountCents: portion.amountCents,
-            currency: portion.currency,
-            method,
-            note: request.note,
-            // The row itself names who typed it in: a payment is a claim
-            // one of the two people made, and the ledger has to say which.
-            recordedBy: userId,
-          },
-          client,
-        ),
-      );
-    }
-    return rows;
-  }
-
-  /**
-   * Writes the feed rows and the notification for a stored payment, on the
-   * same transaction as the rows themselves.
-   *
-   * @param client - The pair lock's transaction client.
-   * @param stored - The settlement rows just inserted.
-   */
-  async function announceSettlement(client: PoolClient, stored: SettlementRow[]): Promise<void> {
-    // The feed states who actually paid whom, not who typed it in — otherwise a
-    // payment received reads as one made.
-    const payerName = request.received ? recipient.name : actor.name;
-    const creditorName = request.received ? actor.name : recipient.name;
-    const friendLink = `/friends/${request.toUserId}`;
-    // One feed row per portion, each in its own scope's voice: the slice that
-    // paid down a group says so and carries that group's id, so it files under
-    // the group's activity tab for the two people it concerns. Every slice
-    // stays between the pair — a payment is the payer's and the receiver's
-    // line, not the room's.
-    for (const settlement of stored) {
-      const group = settlement.group_id
-        ? await findGroupById(settlement.group_id, client)
-        : undefined;
-      await insertActivity(
-        {
-          groupId: settlement.group_id,
-          // The payer, not whoever typed it in. A feed row's avatar restates the
-          // subject of its own sentence, and for a settlement that subject is the
-          // person who paid — the message right below already names them first.
-          // Recording a payment received put the recorder's face beside "someone
-          // else paid me", which reads as though they had paid themselves.
-          //
-          // Every other activity type has actor and subject as the same person, so
-          // this is the only place they can diverge. Who entered it is not lost:
-          // the notification below says "<name> recorded your payment".
-          actorId: payerId,
-          type: "settlement",
-          // When the recorder is not the payer, the feed line says so: the
-          // ledger's own surfaces carry who asserted a payment, not only
-          // the one-time notification.
-          message: `${payerName} paid ${creditorName} ${formatMoney(settlement.amount_cents, currency)}${group ? ` in "${group.name}"` : ""}${request.received ? ` — recorded by ${actor.name}` : ""}`,
-          link: settlement.group_id ? `/groups/${settlement.group_id}` : friendLink,
-          // The pair, never the room: if you are A, "B paid C" is B and C's
-          // feed line. The recorder is always one of the two.
-          audience: [...new Set([payerId, creditorId])],
-          amountCents: settlement.amount_cents,
-          currency,
-          // Who received the money, so each reader's feed can say whether it came
-          // to them — the same row is inbound for one party and outbound for the other.
-          creditUserId: creditorId,
-        },
-        client,
-      );
-    }
-    // One notification for the whole payment, whatever it was split across —
-    // the other party was paid once and should be told once.
-    const notifyGroup = groupId ? await findGroupById(groupId, client) : undefined;
-    await insertNotifications(
-      [request.toUserId],
-      {
-        type: "settlement",
-        title: request.received
-          ? `${actor.name} recorded your payment of ${formatMoney(request.amountCents, currency)}`
-          : `${actor.name} recorded a payment of ${formatMoney(request.amountCents, currency)} to you`,
-        body: notifyGroup ? notifyGroup.name : "Settlement",
-        link: groupId ? `/groups/${groupId}` : `/friends/${userId}`,
-      },
-      client,
-    );
-  }
 }
 
 /**
