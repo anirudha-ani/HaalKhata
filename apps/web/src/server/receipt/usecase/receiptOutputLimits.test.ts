@@ -53,6 +53,12 @@ describe("receipt provider output limits", () => {
     expect(receipt.totalCents).toBe(MAX_PARSED_MONEY_CENTS);
   });
 
+  it("keeps only provider dates that exist in the calendar", () => {
+    expect(normalizeProviderOutput({ date: "2028-02-29" }).date).toBe("2028-02-29");
+    expect(normalizeProviderOutput({ date: "2026-02-29" }).date).toBe("");
+    expect(normalizeProviderOutput({ date: "02/29/2026 11:41 AM" }).date).toBe("");
+  });
+
   it("rejects a provider response whose declared size exceeds the cap", async () => {
     const response = new Response("{}", {
       headers: { "content-length": String(MAX_PROVIDER_RESPONSE_BYTES + 1) },

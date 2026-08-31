@@ -99,8 +99,8 @@ interface ImageSignature {
 }
 
 /**
- * Magic-byte signatures per accepted format, used to verify the
- * client-supplied mediaType matches the actual bytes (defense against a
+ * Magic-byte signatures per accepted format. The server detects the type from
+ * these bytes instead of trusting the client declaration (defense against a
  * mislabeled or malicious upload). A format may list several alternatives;
  * matching any one is enough.
  *

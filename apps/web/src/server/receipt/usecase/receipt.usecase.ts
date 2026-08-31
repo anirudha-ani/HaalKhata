@@ -1,6 +1,6 @@
 /**
- * Receipt-parsing business logic: provider fallback chain
- * (compatible → mock), normalized to integer cents.
+ * Receipt-parsing business logic: provider selection, image normalization,
+ * and untrusted provider output normalized to integer cents.
  *
  * There is deliberately no provider-specific SDK here. OpenRouter fronts every
  * model worth using for this — Claude and Gemini included — behind one
@@ -71,6 +71,21 @@ interface Provider {
   parse(imageBase64: string, mediaType: ImageMediaType): Promise<ParsedReceiptData>;
 }
 
+/** One normalized line item in a parsed receipt. */
+type ParsedReceiptItem = ParsedReceiptData["items"][number];
+
+/**
+ * Whether text names a real ISO calendar date rather than only matching its shape.
+ *
+ * @param value - Candidate YYYY-MM-DD string.
+ * @returns True when the date exists in the calendar.
+ */
+function isRealIsoDate(value: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const parsed = new Date(`${value}T00:00:00Z`);
+  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+}
+
 /**
  * Coerces whatever date string a model returned into the strict `YYYY-MM-DD`
  * the expense API requires, or "" when it cannot be read confidently.
@@ -89,11 +104,14 @@ interface Provider {
  */
 function toIsoDate(value: string): string {
   const trimmed = value.trim();
-  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed;
+  if (isRealIsoDate(trimmed)) return trimmed;
 
   // Embedded ISO date, e.g. "2026-01-17 11:41" or "2026-01-17T11:41:00Z".
   const embedded = /(\d{4})-(\d{2})-(\d{2})/.exec(trimmed);
-  if (embedded) return `${embedded[1]}-${embedded[2]}-${embedded[3]}`;
+  if (embedded) {
+    const candidate = `${embedded[1]}-${embedded[2]}-${embedded[3]}`;
+    if (isRealIsoDate(candidate)) return candidate;
+  }
 
   // Month-first numeric, e.g. "1/17/26", "01-17-2026 11:41 AM".
   const numeric = /^(\d{1,2})[/-](\d{1,2})[/-](\d{2}|\d{4})\b/.exec(trimmed);
@@ -102,11 +120,68 @@ function toIsoDate(value: string): string {
     const dayOfMonth = Number(numeric[2]);
     const yearPart = numeric[3];
     const year = yearPart.length === 2 ? 2000 + Number(yearPart) : Number(yearPart);
-    if (month >= 1 && month <= 12 && dayOfMonth >= 1 && dayOfMonth <= 31) {
-      return `${year}-${String(month).padStart(2, "0")}-${String(dayOfMonth).padStart(2, "0")}`;
-    }
+    const candidate = `${year}-${String(month).padStart(2, "0")}-${String(dayOfMonth).padStart(2, "0")}`;
+    if (isRealIsoDate(candidate)) return candidate;
   }
   return "";
+}
+
+/**
+ * Coerces an untrusted provider value to a non-negative bounded integer.
+ *
+ * @param value - Raw provider value.
+ * @param maximum - Largest accepted integer.
+ * @returns Rounded and clamped integer, or zero when the value is not numeric.
+ */
+function toBoundedInteger(value: unknown, maximum: number): number {
+  return Number.isFinite(Number(value))
+    ? Math.min(maximum, Math.max(0, Math.round(Number(value))))
+    : 0;
+}
+
+/**
+ * Coerces an untrusted provider value to trimmed, length-bounded text.
+ *
+ * @param value - Raw provider value.
+ * @param maximum - Maximum returned character count.
+ * @returns Bounded text, or an empty string for non-string input.
+ */
+function toBoundedString(value: unknown, maximum: number): string {
+  return (typeof value === "string" ? value.trim() : "").slice(0, maximum);
+}
+
+/**
+ * Normalizes one model-produced line item.
+ *
+ * @param rawItem - Untrusted item value.
+ * @returns A bounded line item with missing price fields derived when possible.
+ */
+function normalizeProviderItem(rawItem: unknown): ParsedReceiptItem {
+  const itemRecord = (typeof rawItem === "object" && rawItem !== null ? rawItem : {}) as Record<
+    string,
+    unknown
+  >;
+  const quantity = Math.max(
+    1,
+    toBoundedInteger(itemRecord.quantity ?? itemRecord.qty ?? 1, MAX_PARSED_QUANTITY),
+  );
+  const unitPrice = toBoundedInteger(
+    itemRecord.unit_price_cents ?? itemRecord.unitPriceCents,
+    MAX_PARSED_MONEY_CENTS,
+  );
+  let lineTotal = toBoundedInteger(
+    itemRecord.total_cents ?? itemRecord.totalCents,
+    MAX_PARSED_MONEY_CENTS,
+  );
+  if (lineTotal === 0 && unitPrice > 0) {
+    lineTotal = Math.min(MAX_PARSED_MONEY_CENTS, unitPrice * quantity);
+  }
+  return {
+    name: toBoundedString(itemRecord.name, MAX_PARSED_NAME_LENGTH) || "Item",
+    quantity,
+    unitPriceCents: unitPrice > 0 ? unitPrice : Math.round(lineTotal / quantity),
+    totalCents: lineTotal,
+  };
 }
 
 /**
@@ -118,40 +193,13 @@ function toIsoDate(value: string): string {
  * @returns Fully populated, size-bounded receipt data.
  */
 export function normalizeProviderOutput(rawOutput: unknown): ParsedReceiptData {
-  const rawRecord = (typeof rawOutput === "object" && rawOutput !== null ? rawOutput : {}) as Record<string, unknown>;
-  const toBoundedInteger = (value: unknown, maximum: number): number =>
-    Number.isFinite(Number(value))
-      ? Math.min(maximum, Math.max(0, Math.round(Number(value))))
-      : 0;
-  const toBoundedString = (value: unknown, maximum: number): string =>
-    (typeof value === "string" ? value.trim() : "").slice(0, maximum);
+  const rawRecord = (typeof rawOutput === "object" && rawOutput !== null
+    ? rawOutput
+    : {}) as Record<string, unknown>;
 
   const items = (Array.isArray(rawRecord.items) ? rawRecord.items : [])
     .slice(0, MAX_PARSED_ITEMS)
-    .map((rawItem) => {
-      const itemRecord = (typeof rawItem === "object" && rawItem !== null ? rawItem : {}) as Record<string, unknown>;
-      const quantity = Math.max(
-        1,
-        toBoundedInteger(itemRecord.quantity ?? itemRecord.qty ?? 1, MAX_PARSED_QUANTITY),
-      );
-      const unitPrice = toBoundedInteger(
-        itemRecord.unit_price_cents ?? itemRecord.unitPriceCents,
-        MAX_PARSED_MONEY_CENTS,
-      );
-      let lineTotal = toBoundedInteger(
-        itemRecord.total_cents ?? itemRecord.totalCents,
-        MAX_PARSED_MONEY_CENTS,
-      );
-      if (lineTotal === 0 && unitPrice > 0) {
-        lineTotal = Math.min(MAX_PARSED_MONEY_CENTS, unitPrice * quantity);
-      }
-      return {
-        name: toBoundedString(itemRecord.name, MAX_PARSED_NAME_LENGTH) || "Item",
-        quantity,
-        unitPriceCents: unitPrice > 0 ? unitPrice : Math.round(lineTotal / quantity),
-        totalCents: lineTotal,
-      };
-    })
+    .map(normalizeProviderItem)
     // Keep zero-priced rows as long as they are named. A model that splits
     // "Toasted Bagel / with cream cheese $7.00" across two lines puts the price
     // on the modifier, so dropping the zero row would delete the actual item
@@ -410,10 +458,12 @@ function providerChain(): { chain: Provider[]; unconfigured: string[] } {
     return provider ? [provider] : [];
   });
   const real = requested.filter((provider) => provider.name !== mockProvider.name);
-  const configured = real.filter((provider) => provider.available());
-  const unconfigured = real
-    .filter((provider) => !provider.available())
-    .map((provider) => provider.name);
+  const configured: Provider[] = [];
+  const unconfigured: string[] = [];
+  for (const provider of real) {
+    if (provider.available()) configured.push(provider);
+    else unconfigured.push(provider.name);
+  }
   if (configured.length > 0) return { chain: configured, unconfigured };
   const wantsMock = requested.some((provider) => provider.name === mockProvider.name);
   return { chain: wantsMock ? [mockProvider] : [], unconfigured };
