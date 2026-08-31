@@ -864,7 +864,7 @@ export async function getExpense(userId: string, expenseId: string) {
   // expense, looked up together so the history does not cost a second round
   // trip for a set that mostly overlaps.
   const events = await listActivityForExpense(expenseId);
-  const commentAuthors = new Map(
+  const peopleById = new Map(
     (
       await findUsersByIds([
         ...new Set([
@@ -874,6 +874,11 @@ export async function getExpense(userId: string, expenseId: string) {
       ])
     ).map((user) => [user.id, user]),
   );
+  /** Resolves one of those people to the public proto shape; undefined when gone. */
+  const publicUserById = (personId: string) => {
+    const person = peopleById.get(personId);
+    return person ? toPublicUser(person) : undefined;
+  };
 
   // The same settledness rule the expense list applies, for this one expense,
   // so the detail page and the row that linked to it can never disagree.
@@ -931,17 +936,13 @@ export async function getExpense(userId: string, expenseId: string) {
     comments: comments.map((comment) => ({
       id: comment.id,
       expenseId: comment.expense_id,
-      author: commentAuthors.get(comment.user_id)
-        ? toPublicUser(commentAuthors.get(comment.user_id)!)
-        : undefined,
+      author: publicUserById(comment.user_id),
       body: comment.body,
       createdAt: comment.created_at,
     })),
     users: await usersReferenced([expenseRow], children),
     history: events.map((event) => ({
-      actor: commentAuthors.get(event.actor_id)
-        ? toPublicUser(commentAuthors.get(event.actor_id)!)
-        : undefined,
+      actor: publicUserById(event.actor_id),
       type: event.type,
       createdAt: event.created_at,
     })),
