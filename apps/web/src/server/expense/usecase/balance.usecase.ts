@@ -63,9 +63,21 @@ function addCents(buckets: CurrencyCents, currency: string, cents: number): void
 }
 
 /**
- * Lists the buckets as proto CurrencyAmount init shapes, the default currency
- * first and the rest alphabetically, so every client renders them in the
- * same order.
+ * Comparator putting the caller's default currency first and the rest
+ * alphabetically — the one order every list of currency buckets uses, so
+ * clients always render them the same way.
+ *
+ * @param defaultCurrency - The currency to list first.
+ * @returns A comparator over ISO 4217 codes.
+ */
+function defaultCurrencyFirst(defaultCurrency: string) {
+  return (first: string, second: string): number =>
+    first === defaultCurrency ? -1 : second === defaultCurrency ? 1 : first.localeCompare(second);
+}
+
+/**
+ * Lists the buckets as proto CurrencyAmount init shapes, ordered by
+ * {@link defaultCurrencyFirst}.
  *
  * @param buckets - Cents per currency.
  * @param defaultCurrency - The caller's default currency, listed first.
@@ -75,11 +87,10 @@ export function currencyAmounts(
   buckets: CurrencyCents,
   defaultCurrency: string,
 ): { currency: string; cents: number }[] {
+  const compareCurrency = defaultCurrencyFirst(defaultCurrency);
   return [...buckets.entries()]
     .filter(([, cents]) => cents !== 0)
-    .sort(([first], [second]) =>
-      first === defaultCurrency ? -1 : second === defaultCurrency ? 1 : first.localeCompare(second),
-    )
+    .sort(([first], [second]) => compareCurrency(first, second))
     .map(([currency, cents]) => ({ currency, cents: toInt32Cents(cents, "a balance") }));
 }
 
@@ -273,7 +284,17 @@ export async function userNetInGroups(
  * @returns True when pairwise debts exist but every net is zero.
  */
 export async function groupCancelsOut(groupId: string, client?: PoolClient): Promise<boolean> {
-  const ledger = await groupLedger(groupId, client);
+  return cancelsOut(await groupLedger(groupId, client));
+}
+
+/**
+ * The pure half of {@link groupCancelsOut}: pairwise edges remain while
+ * every member's net is zero.
+ *
+ * @param ledger - Normalized pairwise entries.
+ * @returns True when entries exist but all nets are zero.
+ */
+function cancelsOut(ledger: LedgerEntry[]): boolean {
   return (
     ledger.length > 0 && [...netBalances(ledger).values()].every((netCents) => netCents === 0)
   );
@@ -469,13 +490,7 @@ export async function owedByScope(
     const ledger = await groupLedger(group.id, client);
     // A pairwise loop that nets to zero is not debt anyone should pay down —
     // see groupCancelsOut. Simplified groups route it away themselves.
-    if (
-      !group.simplify_debts &&
-      ledger.length > 0 &&
-      [...netBalances(ledger).values()].every((netCents) => netCents === 0)
-    ) {
-      continue;
-    }
+    if (!group.simplify_debts && cancelsOut(ledger)) continue;
     const owedCents = owedInEntries(routeDebts(ledger, group.simplify_debts), payerId, creditorId);
     if (owedCents > 0) scopes.push({ groupId: group.id, currency: group.currency, owedCents });
   }
@@ -524,13 +539,7 @@ export async function getOverallBalances(userId: string) {
     youOweCents: toInt32Cents(defaultTotals.youOweCents, "what you owe"),
     owedToYouCents: toInt32Cents(defaultTotals.owedToYouCents, "what you are owed"),
     totals: [...totals.entries()]
-      .sort(([first], [second]) =>
-        first === defaultCurrency
-          ? -1
-          : second === defaultCurrency
-            ? 1
-            : first.localeCompare(second),
-      )
+      .sort(([first], [second]) => defaultCurrencyFirst(defaultCurrency)(first, second))
       .map(([currency, total]) => ({
         currency,
         youOweCents: toInt32Cents(total.youOweCents, "what you owe"),
@@ -651,16 +660,7 @@ function expenseLedgerLines(
 ): FriendLedgerLine[] {
   const lines: FriendLedgerLine[] = [];
   for (const expense of expenses) {
-    const debts = expenseDebts(
-      (children.payers.get(expense.id) ?? []).map((payer) => ({
-        userId: payer.user_id,
-        amountCents: payer.amount_cents,
-      })),
-      (children.splits.get(expense.id) ?? []).map((split) => ({
-        userId: split.user_id,
-        amountCents: split.owed_cents,
-      })),
-    );
+    const debts = debtsFromExpenses([expense], children);
     const liveDeltaCents = pairDelta(debts, userId, friendId);
     if (liveDeltaCents === 0) continue;
     const deleted = expense.deleted_at !== null;
