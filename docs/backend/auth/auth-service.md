@@ -58,10 +58,13 @@ and must confirm.
 
 The pending merge between `SetPhone` and `ConfirmPhoneMerge` is carried by a
 signed stateless token, not a table:
-`<keeperId>.<loserId>.<phone>.<expiry>.<hmac>` with a `phone-merge` purpose
-prefix (so it can never validate as a session token). It binds all three of
-keeper, loser, and phone — it cannot be replayed to absorb a different row —
-and expires after **10 minutes**. Every failure mode (expired, forged,
+`<keeperId>.<loserId>.<phone>.<previewFingerprint>.<expiry>.<hmac>` with a
+`phone-merge` purpose prefix (so it can never validate as a session token).
+It binds keeper, loser, and phone — it cannot be replayed to absorb a
+different row — plus a **fingerprint of the previewed history** (name,
+expense count, per-currency nets): `ConfirmPhoneMerge` recomputes the
+preview and refuses on drift, so nobody absorbs materially different
+balances than they were shown. It expires after **10 minutes**. Every failure mode (expired, forged,
 malformed) yields one message: *"that confirmation is no longer valid, please
 try again"*. A token presented by a different account than it was issued to
 is `PermissionDenied` — the merge must land on the account that saw the
@@ -72,13 +75,15 @@ preview.
 | RPC | Limit |
 | --- | --- |
 | SignUp, LogIn, BeginGoogleSignIn, LogInWithGoogle | 10/min per client IP |
-| SetPhone, ConfirmPhoneMerge | 5/min per account |
-| SetPhone with empty code (the SMS send) | additionally 3/hour + 8/day per destination number (across all accounts), 20/hour per client IP |
+| SetPhone with empty code (the SMS send) | 3/min per account, plus 3/hour + 8/day per destination number (across all accounts) and 20/hour per client IP — the ceilings are **durable** (Postgres `phone_send_events`), surviving restarts and replicas |
+| SetPhone with a code (the check) | 5/min per account, and at most **5 wrong codes per delivered SMS** (server-side attempt budget) |
+| ConfirmPhoneMerge, RemovePhone | 5/min per account |
 
 The per-destination limits exist because a per-account limit alone lets
 anyone with several accounts point all of them at one victim number (SMS
 pumping / harassment). Destination keys are a purpose-bound HMAC of the
-number, never the raw number.
+number, never the raw number. The buckets are split so a fumbled code
+cannot lock the user out of the merge confirmation.
 
 ---
 
@@ -93,7 +98,8 @@ number, never the raw number.
 7. [UpdateProfile](#7-updateprofile)
 8. [SetPhone](#8-setphone)
 9. [ConfirmPhoneMerge](#9-confirmphonemerge)
-10. [CompleteOnboarding](#10-completeonboarding)
+10. [RemovePhone](#10-removephone)
+11. [CompleteOnboarding](#11-completeonboarding)
 
 ---
 
@@ -367,8 +373,8 @@ collision would require. One RPC, two calls:
 
 | Call | `verification_code` | What happens |
 | --- | --- | --- |
-| First | empty | An SMS code is sent (Twilio Verify). **No account data is read or changed.** Response: `verification_sent: true`. |
-| Second | the received code | Possession is confirmed, then the number is resolved (below). |
+| First | empty | The server records its own verification state — bound to **this account and this number**, expiring in 10 minutes — then an SMS code is sent (Twilio Verify). **No account data is read or changed.** Response: `verification_sent: true`. |
+| Second | the received code | An attempt is spent from the server-side budget (5 per delivered code, refused before the provider is even called once exhausted or when no live verification exists for this account+number), possession is confirmed with the provider, the verification is **consumed** (single-use on our side, whatever the provider's semantics), then the number is resolved (below). |
 
 #### Notes
 
@@ -387,7 +393,10 @@ collision would require. One RPC, two calls:
      `merge_token` for [ConfirmPhoneMerge](#9-confirmphonemerge).
 - The preview's balance buckets are per currency and int32-checked before
   being promised to a client; `net_cents` is the caller's-default-currency
-  bucket only.
+  bucket only. Counterparty names are capped at 12, and every preview
+  disclosure is logged (it reveals the previous number-holder's counterparty
+  names to whoever holds the number today — the deliberate recycled-number
+  defense, kept auditable).
 - **Provider behavior:** codes are 4–10 digits; provider outages surface as
   `Unavailable` "phone verification is temporarily unavailable"; a wrong or
   expired code is `InvalidArgument`. Missing Twilio configuration fails
@@ -454,7 +463,10 @@ collision would require. One RPC, two calls:
   then **re-reads and re-checks the loser row** rather than trusting the
   token: in the seconds since the preview the row could have been claimed by
   its rightful owner (`AlreadyExists`), merged already (`NotFound`), or its
-  phone changed (`InvalidArgument`, start over).
+  phone changed (`InvalidArgument`, start over). The preview is then
+  **recomputed and compared against the token's fingerprint** — balances
+  that changed inside the ten-minute window refuse with "review it again",
+  so the user only ever absorbs the history they actually read.
 - The merge itself (`mergeAccounts`) runs in one transaction that takes the
   friend-request inbox locks for both accounts first (sorted — the same
   order every friend-request writer uses), then row locks. It rewrites every
@@ -479,7 +491,34 @@ collision would require. One RPC, two calls:
 
 ---
 
-### 10. CompleteOnboarding
+### 10. RemovePhone
+
+**Method:** `RemovePhone`
+**Route:** `POST /api/connect/auth.v1.AuthService/RemovePhone`
+
+#### Notes
+
+- Detaches the caller's phone number — the release valve for a lost or
+  recycled number, without which a number could only ever leave an account
+  by somebody else claiming it.
+- **Refused** (`InvalidArgument`) when the phone is the account's only
+  identifier: the database's `chk_users_has_identifier` requires every live
+  row to stay reachable by something, and this check turns that constraint
+  into a sentence instead of an internal error.
+- A no-op success when no phone is set. Rate-limited with the merge bucket
+  (5/min per account).
+
+#### Request
+
+`google.protobuf.Empty`.
+
+#### Response
+
+`common.v1.User` — the refreshed private projection with `phone: ""`.
+
+---
+
+### 11. CompleteOnboarding
 
 **Method:** `CompleteOnboarding`
 **Route:** `POST /api/connect/auth.v1.AuthService/CompleteOnboarding`

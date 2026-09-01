@@ -111,15 +111,20 @@ the contract: if a message is not safe to show, it must not be a
 
 An in-memory sliding-window limiter (`rateLimitCheck(key, max, windowMs)`),
 1-minute window by default. **Per process** — a multi-replica deploy needs a
-shared store; today's deployment is single-instance. Hard-capped at 10,000
+shared store; today's deployment is single-instance. The exception is the
+SMS anti-abuse ceilings, which live in Postgres (`phone_send_events`) and
+therefore survive restarts and span replicas — a harassment ceiling that
+forgets on deploy is not a ceiling. Hard-capped at 10,000
 tracked keys with LRU eviction so it cannot be a memory-exhaustion vector.
 
 | Bucket | Key | Limit |
 | --- | --- | --- |
 | Sign-in/up, Google begin+finish | `auth:<client-ip>` | 10/min |
-| Phone verification + merge RPCs | `phone:<userId>` | 5/min |
-| SMS sends per destination number | keyed HMAC of the number | 3/hour, 8/day |
-| SMS sends per client IP | `phone:ip:hour:<ip>` | 20/hour |
+| SetPhone (SMS send) | `phone:send:<userId>` | 3/min |
+| SetPhone (code check) | `phone:check:<userId>` | 5/min |
+| ConfirmPhoneMerge, RemovePhone | `phone:merge:<userId>` | 5/min |
+| SMS sends per destination number | keyed HMAC, **durable** (`phone_send_events`) | 3/hour, 8/day |
+| SMS sends per client IP | **durable** (`phone_send_events`) | 20/hour |
 | `AddFriend` | per account | 10/min |
 | `AddMembers` | per account | 15/min |
 | `CreateExpense` | per account | 30/min |
