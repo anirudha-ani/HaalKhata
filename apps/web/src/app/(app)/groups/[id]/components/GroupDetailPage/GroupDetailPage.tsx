@@ -168,8 +168,8 @@ export function GroupDetailPage({
           candidates={groupDetail.candidates}
           pickedIds={groupDetail.pickedIds}
           onToggle={groupDetail.togglePicked}
-          identifier={groupDetail.identifier}
-          onIdentifierChange={groupDetail.setIdentifier}
+          contact={groupDetail.contact}
+          onContactChange={groupDetail.setContact}
           error={groupDetail.peopleError}
           canSubmit={groupDetail.canAddPeople}
           isPending={groupDetail.addMembers.isPending}

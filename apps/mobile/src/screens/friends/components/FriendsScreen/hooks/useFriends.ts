@@ -3,7 +3,13 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { User } from "@haalkhata/protogen/common/v1/common_pb";
 import { useMemo, useState } from "react";
-import { splitIdentifier } from "@haalkhata/shared/auth/identifier";
+import {
+  contactIsEmpty,
+  contactPayload,
+  EMPTY_CONTACT,
+  INVALID_PHONE_MESSAGE,
+  type ContactDraft,
+} from "@haalkhata/shared/phone/contact";
 import { totalsByCurrency, type CurrencyBucket } from "@haalkhata/shared/money/balances";
 import { matchesTerms, searchTerms } from "@haalkhata/shared/search/filter";
 import { authClient, errorMessage, socialClient } from "@/lib/api/connect";
@@ -14,8 +20,8 @@ import { queryKeys } from "@haalkhata/shared/api/queryKeys";
  * user, the friend list with per-friend balances, the add-friend form state,
  * and the settle-up sheet target.
  *
- * The add form takes one identifier that may be an email address or a phone
- * number, routed by `splitIdentifier` the same way the login form routes it.
+ * The add form is an explicit email-or-phone choice; the phone side carries
+ * its country and is validated client-side before anything is sent.
  *
  * @returns An object exposing `me` (the signed-in user), `friends`
  *   (counterparty balances) with `friendsError` when that query failed,
@@ -47,7 +53,7 @@ export function bucketsOf(
 
 export function useFriends() {
   const queryClient = useQueryClient();
-  const [identifier, setIdentifier] = useState("");
+  const [contact, setContact] = useState<ContactDraft>(EMPTY_CONTACT);
   const [query, setQuery] = useState("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -65,9 +71,10 @@ export function useFriends() {
 
   /** Sends a friend request without revealing whether the identifier matched. */
   const addFriend = useMutation({
-    mutationFn: () => socialClient.addFriend({ ...splitIdentifier(identifier), name: "" }),
+    mutationFn: (payload: { email: string; phone: string }) =>
+      socialClient.addFriend({ ...payload, name: "" }),
     onSuccess: () => {
-      setIdentifier("");
+      setContact(EMPTY_CONTACT);
       setNotice("If an account matches, they’ll receive a friend request.");
       queryClient.invalidateQueries({ queryKey: queryKeys.friends });
     },
@@ -120,14 +127,22 @@ export function useFriends() {
     isLoading: friends.isLoading,
     refresh: () => void friends.refetch(),
     isRefreshing: friends.isRefetching,
-    identifier,
-    setIdentifier,
+    contact,
+    setContact,
+    canSubmitAdd: !contactIsEmpty(contact),
     error,
     notice,
     submitAdd: () => {
       setError("");
       setNotice("");
-      addFriend.mutate();
+      const payload = contactPayload(contact);
+      // A number that cannot exist in the selected country never leaves the
+      // form; the privacy-preserving empty response is only for real lookups.
+      if (payload === null) {
+        setError(INVALID_PHONE_MESSAGE);
+        return;
+      }
+      addFriend.mutate(payload);
     },
     isAdding: addFriend.isPending,
     respondToRequest: (userId: string, accept: boolean) => {

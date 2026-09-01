@@ -3,6 +3,8 @@
 
 import Link from "next/link";
 import type { User } from "@haalkhata/protogen/common/v1/common_pb";
+import type { ContactDraft } from "@haalkhata/shared/phone/contact";
+import { EmailOrPhoneField } from "@/components/ui/EmailOrPhoneField";
 import { FriendChecklist } from "@/components/people/FriendChecklist";
 import { Modal } from "@/components/ui/Modal";
 
@@ -29,8 +31,8 @@ export function AddPeopleModal({
   candidates,
   pickedIds,
   onToggle,
-  identifier,
-  onIdentifierChange,
+  contact,
+  onContactChange,
   error,
   canSubmit,
   isPending,
@@ -45,10 +47,10 @@ export function AddPeopleModal({
   pickedIds: string[];
   /** Called with a person's id when their checkbox is toggled. */
   onToggle: (userId: string) => void;
-  /** Raw contents of the email-or-phone fallback field. */
-  identifier: string;
-  /** Called with the new value as the fallback field is typed in. */
-  onIdentifierChange: (identifier: string) => void;
+  /** Draft of the email-or-phone fallback field. */
+  contact: ContactDraft;
+  /** Called with the whole updated draft as the fallback field changes. */
+  onContactChange: (contact: ContactDraft) => void;
   /** Server error from the last attempt, or "" when there is none. */
   error: string;
   /** Whether anything is selected or typed — the submit button's enablement. */
@@ -98,18 +100,16 @@ export function AddPeopleModal({
         )}
 
         <div className="space-y-1.5 border-t border-line pt-4">
-          <label htmlFor="add-people-identifier" className="block text-sm font-medium">
+          <label className="block text-sm font-medium">
             Not on the list?
           </label>
-          <input
-            id="add-people-identifier"
+          <EmailOrPhoneField
             autoFocus={candidates.length === 0}
-            type="text"
-            inputMode="email"
-            placeholder="Email or phone number"
-            value={identifier}
-            onChange={(event) => onIdentifierChange(event.target.value)}
-            className="w-full rounded-xl border border-line bg-card px-3.5 py-3 focus:border-brand-500 focus:outline-none"
+            contact={contact}
+            onContactChange={onContactChange}
+            emailPlaceholder="Email address"
+            emailLabel="Email of somebody already connected with you"
+            phoneLabel="Phone of somebody already connected with you"
           />
           <p className="text-xs text-ink-soft">
             Works for anyone already connected with you on HaalKhata — a friend, or someone you

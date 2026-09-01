@@ -2,7 +2,7 @@
 
 import type { User } from "@haalkhata/protogen/common/v1/common_pb";
 import { Check, LogOut } from "lucide-react-native";
-import { StyleSheet, Text, TextInput, View } from "react-native";
+import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { MergePreview } from "@/components/account/MergePreview";
 import { DetailHeader } from "@/components/shell/DetailHeader";
 import { useResponsiveLayout } from "@/components/shell/hooks/useResponsiveLayout";
@@ -143,6 +143,17 @@ function ProfileForm({ me: currentUser }: { me: User }) {
               Only so friends can find you when they split something. Never used to sign in.
             </Text>
           )}
+          {form.hasPhone ? (
+            <Pressable
+              accessibilityRole="button"
+              disabled={form.isRemovingPhone}
+              onPress={form.removePhone}
+            >
+              <Text style={styles.removeLink}>
+                {form.isRemovingPhone ? "Removing…" : "Remove this number"}
+              </Text>
+            </Pressable>
+          ) : null}
         </View>
 
         <View style={styles.fieldBlock}>
@@ -368,6 +379,12 @@ const styles = StyleSheet.create({
     alignItems: "flex-start",
     flexDirection: "row",
     gap: spacing.xxl,
+  },
+  removeLink: {
+    color: colors.inkSoft,
+    fontSize: 13,
+    fontWeight: "600",
+    textDecorationLine: "underline",
   },
   sheetBody: {
     gap: spacing.lg,

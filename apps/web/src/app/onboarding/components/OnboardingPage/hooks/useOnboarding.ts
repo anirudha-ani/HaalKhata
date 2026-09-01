@@ -7,7 +7,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { queryKeys } from "@haalkhata/shared/api/queryKeys";
 import type { MergePreview } from "@haalkhata/protogen/auth/v1/auth_pb";
 import { authClient, errorMessage } from "@/lib/api/connect";
-import { composeE164, DEFAULT_PHONE_REGION, splitE164 } from "@haalkhata/shared/phone/phone";
+import { composeE164, DEFAULT_PHONE_REGION, isValidPhone, splitE164 } from "@haalkhata/shared/phone/phone";
+import { INVALID_PHONE_MESSAGE } from "@haalkhata/shared/phone/contact";
 
 /**
  * Drives the onboarding screen.
@@ -81,6 +82,10 @@ export function useOnboarding() {
       // re-typed with different spacing has to count as unchanged.
       const claimedPhone = composeE164(region, nationalNumber);
       if (claimedPhone.length > 0 && claimedPhone !== meQuery.data?.phone) {
+        // Checked with the same libphonenumber metadata the server uses, so
+        // an impossible number fails beside the field instead of costing an
+        // SMS round-trip to hear the same thing.
+        if (!isValidPhone(region, nationalNumber)) throw new Error(INVALID_PHONE_MESSAGE);
         const result = await authClient.setPhone({ phone: claimedPhone, verificationCode: "" });
         if (result.verificationSent) setVerificationPhone(claimedPhone);
         return;

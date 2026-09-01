@@ -12,11 +12,11 @@ import { useResponsiveLayout } from "@/components/shell/hooks/useResponsiveLayou
 import { Screen } from "@/components/shell/Screen";
 import { Avatar } from "@/components/ui/Avatar";
 import { Button } from "@/components/ui/Button";
+import { EmailOrPhoneField } from "@/components/ui/EmailOrPhoneField";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Segmented } from "@/components/ui/Segmented";
 import { Sheet } from "@/components/ui/Sheet";
 import { Spinner } from "@/components/ui/Spinner";
-import { TextField } from "@/components/ui/TextField";
 import { errorMessage } from "@/lib/api/connect";
 import { colors, radii, spacing } from "@/lib/theme/theme";
 import { OWNER_ROLE } from "@haalkhata/shared/group/roles";
@@ -335,13 +335,13 @@ export function GroupDetailScreen({
               </Text>
             )}
 
-            <TextField
-              autoCapitalize="none"
-              keyboardType="email-address"
-              label="Not on the list?"
-              onChangeText={groupDetail.setIdentifier}
-              placeholder="Email or phone number"
-              value={groupDetail.identifier}
+            <Text style={styles.addLabel}>Not on the list?</Text>
+            <EmailOrPhoneField
+              contact={groupDetail.contact}
+              onContactChange={groupDetail.setContact}
+              emailPlaceholder="Email address"
+              emailLabel="Email of somebody already connected with you"
+              phoneLabel="Phone of somebody already connected with you"
             />
             <Text style={styles.addHint}>
               Works for anyone already connected with you on HaalKhata — a friend, or someone you

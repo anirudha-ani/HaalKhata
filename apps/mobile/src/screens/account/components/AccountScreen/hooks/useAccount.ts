@@ -10,7 +10,8 @@ import { MONEY_KEYS, queryKeys } from "@haalkhata/shared/api/queryKeys";
 import { clearMobileQueryCache } from "@/lib/api/queryCache";
 import { clearSession } from "@/lib/api/session";
 import { stripHandlePrefix } from "@haalkhata/shared/payment/methods";
-import { composeE164, DEFAULT_PHONE_REGION, splitE164 } from "@haalkhata/shared/phone/phone";
+import { composeE164, DEFAULT_PHONE_REGION, isValidPhone, splitE164 } from "@haalkhata/shared/phone/phone";
+import { INVALID_PHONE_MESSAGE } from "@haalkhata/shared/phone/contact";
 import { SAVED_BADGE_MS } from "../../../constants/account";
 
 /**
@@ -120,6 +121,10 @@ export function useProfileForm(currentUser: User) {
       // already hold would otherwise round-trip for nothing.
       const claimedPhone = composeE164(region, nationalNumber);
       if (claimedPhone.length > 0 && claimedPhone !== currentUser.phone) {
+        // Checked with the same libphonenumber metadata the server uses, so
+        // an impossible number fails beside the field instead of costing an
+        // SMS round-trip to hear the same thing.
+        if (!isValidPhone(region, nationalNumber)) throw new Error(INVALID_PHONE_MESSAGE);
         const result = await authClient.setPhone({ phone: claimedPhone, verificationCode: "" });
         if (result.verificationSent) setVerificationPhone(claimedPhone);
         return false;
@@ -175,6 +180,16 @@ export function useProfileForm(currentUser: User) {
     onError: (mutationError) => setError(errorMessage(mutationError)),
   });
 
+  const removePhoneMutation = useMutation({
+    mutationFn: () => authClient.removePhone({}),
+    onSuccess: () => {
+      setNationalNumber("");
+      queryClient.invalidateQueries({ queryKey: queryKeys.me });
+      setMessage("Saved ✓");
+    },
+    onError: (mutationError) => setError(errorMessage(mutationError)),
+  });
+
   /** Backs out of a merge, leaving both accounts untouched and the number unclaimed. */
   const declineMerge = () => {
     setPendingMerge(undefined);
@@ -225,6 +240,14 @@ export function useProfileForm(currentUser: User) {
       confirmMerge.mutate();
     },
     declineMerge,
+    /** Whether a verified number is on the account, enabling its removal. */
+    hasPhone: currentUser.phone !== "",
+    removePhone: () => {
+      setMessage("");
+      setError("");
+      removePhoneMutation.mutate();
+    },
+    isRemovingPhone: removePhoneMutation.isPending,
     handles,
     /** True while the button shows its confirmed state. */
     saved: message !== "",

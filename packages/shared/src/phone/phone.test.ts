@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import {
   composeE164,
   flagEmoji,
+  isValidPhone,
   phoneCountry,
   PHONE_COUNTRIES,
   splitE164,
@@ -82,5 +83,25 @@ describe("splitE164", () => {
   it("returns null for something that is not a phone number", () => {
     expect(splitE164("+")).toBeNull();
     expect(splitE164("+000")).toBeNull();
+  });
+});
+
+describe("isValidPhone", () => {
+  it("accepts a real national number for the selected country", () => {
+    expect(isValidPhone("US", "(617) 555-0123")).toBe(true);
+    expect(isValidPhone("BD", "1712-345678")).toBe(true);
+  });
+
+  it("rejects digits that are not a dialable number there", () => {
+    // Too short and too long are invalid in every numbering plan; a
+    // cross-country example would depend on one plan's prefix ranges.
+    expect(isValidPhone("US", "12345")).toBe(false);
+    expect(isValidPhone("US", "617555012345678")).toBe(false);
+    expect(isValidPhone("BD", "12")).toBe(false);
+  });
+
+  it("rejects an empty number box", () => {
+    expect(isValidPhone("US", "")).toBe(false);
+    expect(isValidPhone("US", "  -  ")).toBe(false);
   });
 });

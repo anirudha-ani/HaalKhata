@@ -169,7 +169,7 @@ describe("setPhone", () => {
       name: "Ani",
       expense_count: 40,
       nets: { USD: -8700 },
-      counterparty_names: Array.from({ length: 40 }, (_, index) => `Person ${index}`),
+      counterparty_names: Array.from({ length: 40 }, (unused, index) => `Person ${index}`),
     });
 
     const result = await setPhone(KEEPER, PHONE, "123456");

@@ -12,6 +12,7 @@ import {
   X,
 } from "lucide-react";
 import { Avatar } from "@/components/ui/Avatar";
+import { EmailOrPhoneField } from "@/components/ui/EmailOrPhoneField";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Money } from "@/components/ui/Money";
 import { SearchField } from "@/components/ui/SearchField";
@@ -121,27 +122,22 @@ export function FriendsPage() {
       {friendsState.showAdd || friendsState.friends.length === 0 ? (
         <div className="space-y-2 rounded-2xl border border-line bg-card p-4">
           <form
-            className="flex gap-2"
+            className="space-y-2"
             onSubmit={(event) => {
               event.preventDefault();
               friendsState.submitAdd();
             }}
           >
-            {/* Deliberately type="text": type="email" makes the browser reject a
-                phone number before the form is ever submitted. */}
-            <input
-              type="text"
-              required
-              placeholder="Email or phone"
-              aria-label="Friend's email or phone number"
-              value={friendsState.identifier}
-              onChange={(event) => friendsState.setIdentifier(event.target.value)}
-              className="min-w-0 flex-1 rounded-xl border border-line bg-paper px-3.5 py-2.5 focus:border-brand-500 focus:outline-none"
+            <EmailOrPhoneField
+              contact={friendsState.contact}
+              onContactChange={friendsState.setContact}
+              emailLabel="Friend's email address"
+              phoneLabel="Friend's phone number"
             />
             <button
               type="submit"
-              disabled={friendsState.isAdding}
-              className="rounded-xl bg-brand-600 px-4 font-semibold text-white hover:bg-brand-700 disabled:opacity-50"
+              disabled={friendsState.isAdding || !friendsState.canSubmitAdd}
+              className="w-full rounded-xl bg-brand-600 px-4 py-2.5 font-semibold text-white hover:bg-brand-700 disabled:opacity-50"
             >
               {friendsState.isAdding ? "Sending…" : "Send request"}
             </button>

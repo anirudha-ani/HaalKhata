@@ -4,7 +4,13 @@ import type { User } from "@haalkhata/protogen/common/v1/common_pb";
 import { useRouter } from "expo-router";
 import { useState } from "react";
 import { errorMessage } from "@/lib/api/connect";
-import { splitIdentifier } from "@haalkhata/shared/auth/identifier";
+import {
+  contactIsEmpty,
+  contactPayload,
+  EMPTY_CONTACT,
+  INVALID_PHONE_MESSAGE,
+  type ContactDraft,
+} from "@haalkhata/shared/phone/contact";
 import { useGroupDetailAPI } from "./useGroupDetailAPI";
 
 /** The tabs available on the group detail screen. */
@@ -18,7 +24,7 @@ export type GroupTab = "expenses" | "balances" | "activity";
  * @param groupId - Identifier of the group being viewed.
  * @returns Everything from {@link useGroupDetailAPI} plus `tab`/`setTab`,
  *   `addingPeople`/`setAddingPeople` and the add-people form (`pickedIds`,
- *   `togglePicked`, `identifier`/`setIdentifier`, `submitPeople`,
+ *   `togglePicked`, `contact`/`setContact`, `submitPeople`,
  *   `peopleError`, `canAddPeople`), `candidates` (friends not already in the
  *   group), the members sheet (`viewingMembers`/`setViewingMembers`,
  *   `removeMember`, `removingUserId`, `transferOwnership`,
@@ -35,7 +41,7 @@ export function useGroupDetail(groupId: string) {
   const [addingPeople, setAddingPeople] = useState(false);
   const [viewingMembers, setViewingMembers] = useState(false);
   const [pickedIds, setPickedIds] = useState<string[]>([]);
-  const [identifier, setIdentifier] = useState("");
+  const [contact, setContact] = useState<ContactDraft>(EMPTY_CONTACT);
   const [peopleError, setPeopleError] = useState("");
   const [memberError, setMemberError] = useState("");
   // The server deliberately does not expose outgoing-request state, so this
@@ -73,16 +79,19 @@ export function useGroupDetail(groupId: string) {
   /** Adds the checked people plus the typed email/phone, then closes the sheet. */
   const submitPeople = () => {
     setPeopleError("");
-    const trimmed = identifier.trim();
+    const payload = contactPayload(contact);
+    // A number that cannot exist in the selected country never leaves the
+    // form; the server's generic denial is reserved for real lookups.
+    if (payload === null) {
+      setPeopleError(INVALID_PHONE_MESSAGE);
+      return;
+    }
     groupDetailAPI.addMembers.mutate(
-      {
-        userIds: pickedIds,
-        ...(trimmed === "" ? { email: "", phone: "" } : splitIdentifier(trimmed)),
-      },
+      { userIds: pickedIds, ...payload },
       {
         onSuccess: () => {
           setPickedIds([]);
-          setIdentifier("");
+          setContact(EMPTY_CONTACT);
           setAddingPeople(false);
         },
         onError: (mutationError) => setPeopleError(errorMessage(mutationError)),
@@ -166,11 +175,11 @@ export function useGroupDetail(groupId: string) {
     candidates,
     pickedIds,
     togglePicked,
-    identifier,
-    setIdentifier,
+    contact,
+    setContact,
     peopleError,
     submitPeople,
-    canAddPeople: pickedIds.length > 0 || identifier.trim() !== "",
+    canAddPeople: pickedIds.length > 0 || !contactIsEmpty(contact),
     // The persisted group mode, not view state: everyone in the group sees
     // the same debts, and the server's settlement guards follow the same
     // switch. (A cached Group from before the field existed simply lacks it —

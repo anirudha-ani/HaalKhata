@@ -130,10 +130,10 @@ export async function recordPhoneSend(
          WHERE client_ip = $2 AND sent_at > NOW() - INTERVAL '1 hour') AS ip_hour`,
     [destinationHash, clientIp],
   );
-  const row = counts[0];
+  const countsRow = counts[0];
   return {
-    destinationHour: row?.destination_hour ?? 0,
-    destinationDay: row?.destination_day ?? 0,
-    ipHour: row?.ip_hour ?? 0,
+    destinationHour: countsRow?.destination_hour ?? 0,
+    destinationDay: countsRow?.destination_day ?? 0,
+    ipHour: countsRow?.ip_hour ?? 0,
   };
 }

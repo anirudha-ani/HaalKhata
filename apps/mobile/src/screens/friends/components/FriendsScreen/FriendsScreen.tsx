@@ -2,13 +2,14 @@
 
 import { useRouter } from "expo-router";
 import { ChevronRight, Plus, UserPlus, Users } from "lucide-react-native";
-import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 import { SettleUpModal } from "@/components/modals/SettleUpModal";
 import { PersonLink } from "@/components/people/PersonLink";
 import { Screen } from "@/components/shell/Screen";
 import { ScreenHeader } from "@/components/shell/ScreenHeader";
 import { Avatar } from "@/components/ui/Avatar";
 import { Button } from "@/components/ui/Button";
+import { EmailOrPhoneField } from "@/components/ui/EmailOrPhoneField";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Money } from "@/components/ui/Money";
 import { SearchField } from "@/components/ui/SearchField";
@@ -44,23 +45,19 @@ export function FriendsScreen() {
       <Text style={styles.title}>Friends</Text>
 
       <View>
-        <View style={styles.addRow}>
-          {/* email-address keyboard, not phone-pad: it carries both letters
-              and digits, so one field serves either identifier. */}
-          <TextInput
-            autoCapitalize="none"
-            keyboardType="email-address"
-            onChangeText={friendsState.setIdentifier}
-            placeholder="Add a friend by email or phone"
-            placeholderTextColor={colors.inkSoft}
-            style={styles.addInput}
-            value={friendsState.identifier}
+        <View style={styles.addBlock}>
+          <EmailOrPhoneField
+            contact={friendsState.contact}
+            onContactChange={friendsState.setContact}
+            emailLabel="Friend's email address"
+            emailPlaceholder="Add a friend by email"
+            phoneLabel="Friend's phone number"
           />
           <Button
             busy={friendsState.isAdding}
-            disabled={friendsState.identifier.trim() === ""}
+            disabled={!friendsState.canSubmitAdd}
             icon={<UserPlus color={colors.white} size={16} />}
-            label="Send"
+            label="Send request"
             onPress={friendsState.submitAdd}
           />
         </View>
@@ -268,19 +265,7 @@ export function FriendsScreen() {
 }
 
 const styles = StyleSheet.create({
-  addInput: {
-    backgroundColor: colors.card,
-    borderColor: colors.line,
-    borderRadius: radii.md,
-    borderWidth: 1,
-    color: colors.ink,
-    flex: 1,
-    fontSize: 15,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-  },
-  addRow: {
-    flexDirection: "row",
+  addBlock: {
     gap: spacing.sm,
   },
   amounts: {

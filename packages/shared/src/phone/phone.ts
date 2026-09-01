@@ -102,6 +102,23 @@ export function composeE164(region: string, nationalNumber: string): string {
   return `+${phoneCountry(region).dialCode}${digits}`;
 }
 
+/**
+ * Whether a selected country plus a typed national number form a real,
+ * dialable phone number — the client-side gate that keeps a form from
+ * submitting digits the server's `normalizePhone` would refuse anyway.
+ * Validation comes from libphonenumber's own metadata, so every country the
+ * picker offers is checked by the same rules the server applies.
+ *
+ * @param region - Selected region code.
+ * @param nationalNumber - What the user typed in the number box.
+ * @returns True when the composed number is valid for that country.
+ */
+export function isValidPhone(region: string, nationalNumber: string): boolean {
+  const composed = composeE164(region, nationalNumber);
+  if (composed === "") return false;
+  return parsePhoneNumberFromString(composed)?.isValid() ?? false;
+}
+
 /** A phone number split into the two halves the field edits. */
 export interface SplitPhone {
   /** Region code to select. */

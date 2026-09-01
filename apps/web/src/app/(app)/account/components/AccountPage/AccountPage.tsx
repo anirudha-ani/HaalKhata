@@ -151,6 +151,16 @@ function ProfileForm({ me: currentUser }: { me: User }) {
               Only so friends can find you when they split something. Never used to sign in.
             </p>
           )}
+          {form.hasPhone ? (
+            <button
+              type="button"
+              onClick={form.removePhone}
+              disabled={form.isRemovingPhone}
+              className="mt-1.5 text-xs font-semibold text-ink-soft underline-offset-2 hover:text-brand-600 hover:underline disabled:opacity-50"
+            >
+              {form.isRemovingPhone ? "Removing…" : "Remove this number"}
+            </button>
+          ) : null}
         </div>
         <label className="block text-sm font-medium">
           Default currency
