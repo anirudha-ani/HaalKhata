@@ -1,10 +1,21 @@
 # Build the image on amd64, push it to GHCR, then hand the server one commit
-# SHA over SSH. The server pulls; it never builds.
+# SHA over SSH — plus the non-secret .env config on stdin. The server pulls;
+# it never builds, and nobody edits files on it by hand: deploy.sh validates
+# and applies the piped config, and adopts the compose file and Caddyfile
+# baked into the image itself.
 #
 # Required repo settings:
 #   Variable  NEXT_PUBLIC_GOOGLE_CLIENT_ID   the OAuth client id (NOT secret —
 #             it is inlined into the client bundle by design, and marking it
-#             secret only makes build logs harder to read)
+#             secret only makes build logs harder to read). Also shipped to
+#             the server as GOOGLE_CLIENT_ID: the audience the server checks
+#             is by contract the same id the browser renders the button with.
+#   Variable  ACME_EMAIL                     monitored operator address Caddy
+#             registers with Let's Encrypt for expiry/problem notices
+#   Variable  GOOGLE_MOBILE_CLIENT_IDS       optional; native Android/iOS
+#             OAuth client ids, comma separated
+#   Secret    TWILIO_API_KEY_SID             optional; phone verification
+#   Secret    TWILIO_VERIFY_SERVICE_SID      optional; phone verification
 #   Secret    DEPLOY_SSH_KEY                 private half of the deploy key
 #   Secret    DEPLOY_KNOWN_HOSTS             `ssh-keyscan haalkhata.app`
 #   Environment `production`                 optional required-reviewer gate
@@ -89,15 +100,43 @@ jobs:
     # merge and live, without changing how you commit.
     environment: production
     steps:
+      # Same shape as the build-side client-id guard: the production compose
+      # file refuses to start Caddy without ACME_EMAIL, so a deploy that
+      # would ship an unstartable stack fails here instead.
+      - name: 'Config: the ACME contact is set'
+        env:
+          ACME_EMAIL: ${{ vars.ACME_EMAIL }}
+        run: |
+          if [ -z "$ACME_EMAIL" ]; then
+            echo "ACME_EMAIL is not set as a repository variable; refusing to deploy a stack that cannot start" >&2
+            exit 1
+          fi
+
       - name: Ship it
         env:
           KEY: ${{ secrets.DEPLOY_SSH_KEY }}
           HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+          ACME_EMAIL: ${{ vars.ACME_EMAIL }}
+          # By contract the same id the browser bundle was built with: the
+          # server checks it as the ID-token audience. One variable, two uses,
+          # zero chance of them drifting apart.
+          GOOGLE_CLIENT_ID: ${{ vars.NEXT_PUBLIC_GOOGLE_CLIENT_ID }}
+          GOOGLE_MOBILE_CLIENT_IDS: ${{ vars.GOOGLE_MOBILE_CLIENT_IDS }}
+          TWILIO_API_KEY_SID: ${{ secrets.TWILIO_API_KEY_SID }}
+          TWILIO_VERIFY_SERVICE_SID: ${{ secrets.TWILIO_VERIFY_SERVICE_SID }}
         run: |
           install -m 700 -d ~/.ssh
           install -m 600 /dev/null ~/.ssh/id_ed25519
           printf '%s\n' "$KEY"   > ~/.ssh/id_ed25519
           printf '%s\n' "$HOSTS" > ~/.ssh/known_hosts
-          # The sha is only an argument. authorized_keys pins the command, so
-          # this key cannot open a shell or run anything else.
-          ssh -i ~/.ssh/id_ed25519 deploy@haalkhata.app "${{ github.sha }}"
+          # The sha is only an argument and the config is only data on stdin.
+          # authorized_keys pins the command, so this key cannot open a shell
+          # or run anything else; deploy.sh validates every line against its
+          # allowlist before .env changes.
+          {
+            printf 'ACME_EMAIL=%s\n'                "$ACME_EMAIL"
+            printf 'GOOGLE_CLIENT_ID=%s\n'          "$GOOGLE_CLIENT_ID"
+            printf 'GOOGLE_MOBILE_CLIENT_IDS=%s\n'  "$GOOGLE_MOBILE_CLIENT_IDS"
+            printf 'TWILIO_API_KEY_SID=%s\n'        "$TWILIO_API_KEY_SID"
+            printf 'TWILIO_VERIFY_SERVICE_SID=%s\n' "$TWILIO_VERIFY_SERVICE_SID"
+          } | ssh -i ~/.ssh/id_ed25519 deploy@haalkhata.app "${{ github.sha }}"

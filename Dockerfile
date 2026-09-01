@@ -42,6 +42,11 @@ COPY --from=build --chown=node:node /app/apps/web/migrations ./apps/web/migratio
 COPY ops/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN chmod 755 /usr/local/bin/docker-entrypoint.sh
 
+# The production server never hand-edits its compose file or Caddyfile:
+# deploy.sh extracts this pair from the image it is deploying, so the infra
+# files version with the code they serve — and roll back with it.
+COPY docker-compose.prod.yml Caddyfile /opt/release/
+
 USER node
 EXPOSE 3000
 ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
