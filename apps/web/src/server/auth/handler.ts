@@ -11,7 +11,9 @@ import { rateLimitCheck } from "@/server/common/rateLimit";
 import {
   AUTH_RATE_LIMIT,
   normalizePhone,
-  PHONE_VERIFICATION_RATE_LIMIT,
+  PHONE_CHECK_RATE_LIMIT,
+  PHONE_MERGE_RATE_LIMIT,
+  PHONE_SEND_RATE_LIMIT,
 } from "@/server/auth/auth.constants";
 import { ConnectError, Code } from "@connectrpc/connect";
 import { clientIp } from "@/server/auth/clientIp";
@@ -30,9 +32,22 @@ function enforceAuthRateLimit(handlerContext: HandlerContext): void {
   }
 }
 
-/** Enforces a per-account limit on SMS sends, checks, and merge confirmations. */
-function enforcePhoneRateLimit(userId: string): void {
-  if (!rateLimitCheck(`phone:${userId}`, PHONE_VERIFICATION_RATE_LIMIT)) {
+/**
+ * Enforces one per-account phone bucket. Sends, checks, and merge actions
+ * each pace separately so a fumbled code cannot lock the user out of the
+ * confirmation; the durable anti-abuse ceilings live in Postgres.
+ *
+ * @param userId - Authenticated caller.
+ * @param scope - Which phone operation is being paced.
+ * @param maxAttempts - Calls accepted in the rolling minute.
+ * @throws ConnectError with Code.ResourceExhausted when rate-limited.
+ */
+function enforcePhoneRateLimit(
+  userId: string,
+  scope: "send" | "check" | "merge",
+  maxAttempts: number,
+): void {
+  if (!rateLimitCheck(`phone:${scope}:${userId}`, maxAttempts)) {
     throw new ConnectError("too many verification attempts, please try again later", Code.ResourceExhausted);
   }
 }
@@ -110,29 +125,40 @@ export const authHandler: ServiceImpl<typeof AuthService> = {
    */
   async setPhone(request, handlerContext) {
     const userId = await requireUser(handlerContext);
-    enforcePhoneRateLimit(userId);
-    // A call without a code is the one that sends an SMS; it is also
-    // limited by destination and by client address, whoever the account is.
-    if (request.verificationCode === "") {
-      enforcePhoneSendLimits(
-        normalizePhone(request.phone) ?? request.phone.trim(),
-        clientIp(handlerContext.requestHeader),
-      );
-    }
-    return runUsecase(
-      async () => accountMerge.setPhone(userId, request.phone, request.verificationCode),
-      handlerContext,
-    );
+    // Inside runUsecase so the durable limiter's own database errors are
+    // sanitized like any other; its ConnectError refusals pass through.
+    return runUsecase(async () => {
+      if (request.verificationCode === "") {
+        // A call without a code is the one that sends an SMS; it is also
+        // limited by destination and by client address, whoever the account
+        // is — durably, in Postgres.
+        enforcePhoneRateLimit(userId, "send", PHONE_SEND_RATE_LIMIT);
+        await enforcePhoneSendLimits(
+          normalizePhone(request.phone) ?? request.phone.trim(),
+          clientIp(handlerContext.requestHeader),
+        );
+      } else {
+        enforcePhoneRateLimit(userId, "check", PHONE_CHECK_RATE_LIMIT);
+      }
+      return accountMerge.setPhone(userId, request.phone, request.verificationCode);
+    }, handlerContext);
   },
 
   /** Carries out the merge that setPhone previewed. */
   async confirmPhoneMerge(request, handlerContext) {
     const userId = await requireUser(handlerContext);
-    enforcePhoneRateLimit(userId);
+    enforcePhoneRateLimit(userId, "merge", PHONE_MERGE_RATE_LIMIT);
     return runUsecase(
       async () => accountMerge.confirmPhoneMerge(userId, request.mergeToken),
       handlerContext,
     );
+  },
+
+  /** Detaches the caller's phone number; refused when it is their only identifier. */
+  async removePhone(_request, handlerContext) {
+    const userId = await requireUser(handlerContext);
+    enforcePhoneRateLimit(userId, "merge", PHONE_MERGE_RATE_LIMIT);
+    return runUsecase(async () => auth.removePhone(userId), handlerContext);
   },
 
   /** Marks the caller's first-run flow finished, skipped fields included. */

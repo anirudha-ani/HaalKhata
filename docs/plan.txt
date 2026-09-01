@@ -2078,3 +2078,44 @@ server-only per §28's hardening — GitHub Actions never holds them.
 Bootstrap still required once: scp the new deploy.sh (the old forced command
 cannot update it), and create the secret files before the hardened compose
 can go live; until then deploy.sh's dry-run keeps the old stack running.
+
+## §32 Phone verification hardening + phone UX completion (2026-09-01)
+
+Fixes for the seven issues found reviewing the phone flow, following OWASP
+ASVS/MASVS OTP guidance (single-use, server-side attempt caps, short expiry,
+bind the check to the requester) and Twilio's own anti-fraud guidance.
+
+Server:
+1. New `phone_verifications` table — one active verification per account:
+   (user_id PK, phone, created_at, send_count, last_sent_at, check_count,
+   consumed_at). The check call now requires an active, unexpired (10 min),
+   unconsumed row for THIS account matching THIS phone; approval consumes it
+   (single-use server-side, no longer relying on Twilio's semantics), and
+   check_count caps attempts at 5 our side before Twilio is even called.
+   Fixes #1 (binding) and #2 (replay/brute-force ownership).
+2. SMS-send abuse ceilings move to Postgres (`phone_send_events`: destination
+   hash + client ip + sent_at, pruned on insert like operations): 3/h + 8/day
+   per destination and 20/h per IP now survive restarts and replicas. The
+   in-memory limiter stays for cheap per-account request pacing. Fixes #3.
+3. Split per-account buckets: phone:send 3/min, phone:check 5/min,
+   phone:merge 5/min — a fumbled code no longer locks out the confirm. #7.
+4. Merge token gains a preview fingerprint (hash of nets+expense_count+name);
+   ConfirmPhoneMerge recomputes and refuses on drift ("balances changed —
+   review again"), so nobody absorbs materially different history than they
+   were shown. Fixes #6.
+5. New AuthService.RemovePhone RPC (proto + gen): clears the caller's phone;
+   refused when the phone is the row's only identifier
+   (chk_users_has_identifier). Fixes #4.
+6. Merge preview counterparty list capped (12) and the disclosure logged
+   (audit trail); the preview itself is retained deliberately — it IS the
+   recycled-number defense. Mitigates #5.
+
+Clients (both): the searchable-country PhoneField already exists (account,
+onboarding). Completing coverage: the add-friend and add-to-group forms get
+an explicit Email | Phone toggle whose phone side is PhoneField with
+client-side isValidPhoneNumber gating (libphonenumber-js, already shipped);
+account screens gain Remove-phone. The dev-only password login keeps its
+single identifier box: production rejects that flow entirely.
+
+Plus: a Twilio setup runbook artifact for the operator (account, Verify
+service, restricted API key, geo permissions, Fraud Guard, secrets wiring).

@@ -28,6 +28,11 @@ service AuthService {
   rpc SetPhone(SetPhoneRequest) returns (SetPhoneResponse);
   rpc ConfirmPhoneMerge(ConfirmPhoneMergeRequest) returns (common.v1.User);
 
+  // Detaches the caller's phone number — the release valve for a lost or
+  // recycled number. Refused when the phone is the account's only
+  // identifier, since a row must stay reachable by something.
+  rpc RemovePhone(google.protobuf.Empty) returns (common.v1.User);
+
   // Marks the first-run flow finished, including when it was skipped.
   rpc CompleteOnboarding(google.protobuf.Empty) returns (common.v1.User);
 }

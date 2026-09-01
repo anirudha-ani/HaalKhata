@@ -55,8 +55,39 @@ export const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 /** Max login/signup attempts per key (IP or email) per 60s window. */
 export const AUTH_RATE_LIMIT = 10;
 
-/** Max phone-verification and merge attempts per account per minute. */
-export const PHONE_VERIFICATION_RATE_LIMIT = 5;
+/**
+ * Per-account, per-minute pacing for the three phone operations, each in its
+ * own bucket so a fumbled code cannot lock the user out of the confirm.
+ * These are request pacing only; the durable anti-abuse ceilings live in
+ * Postgres (phone_send_events) and the per-code attempt budget in
+ * phone_verifications.
+ */
+export const PHONE_SEND_RATE_LIMIT = 3;
+/** Per-account, per-minute pacing for code checks. */
+export const PHONE_CHECK_RATE_LIMIT = 5;
+/** Per-account, per-minute pacing for merge confirmations and phone removal. */
+export const PHONE_MERGE_RATE_LIMIT = 5;
+
+/**
+ * Seconds an SMS verification stays answerable after the send. Matches the
+ * merge-token lifetime deliberately: both are one sitting at one screen.
+ */
+export const PHONE_VERIFICATION_LIFETIME_SECONDS = 60 * 10;
+
+/**
+ * Wrong-code attempts allowed per delivered code before a fresh SMS is
+ * required — OWASP's three-to-five band, enforced server-side rather than
+ * delegated to the provider's own cap.
+ */
+export const MAX_PHONE_CODE_CHECKS = 5;
+
+/**
+ * Most counterparty names a merge preview lists. The preview is the
+ * recycled-number defense, but it is also a disclosure to whoever holds the
+ * number today — a dozen names decide "is this my history?" as well as a
+ * hundred would.
+ */
+export const MAX_PREVIEW_COUNTERPARTY_NAMES = 12;
 
 /** One hour, for the longer rate-limit windows. */
 export const HOUR_MS = 60 * 60 * 1000;

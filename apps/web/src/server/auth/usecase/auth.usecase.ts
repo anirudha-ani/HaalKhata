@@ -16,6 +16,7 @@ import {
   linkGoogleAccount,
   markOnboarded,
   setAvatarUrl,
+  setUserPhone,
   updateUserProfile,
   type UserRow,
 } from "@/server/auth/repo/users.repo";
@@ -748,6 +749,33 @@ export async function sessionUser(token: string) {
  */
 export async function completeOnboarding(userId: string) {
   await markOnboarded(userId);
+  return getMe(userId);
+}
+
+/**
+ * Detaches the caller's phone number — the release valve for a number that
+ * was lost or recycled, without which it could only ever leave the account
+ * by somebody else claiming it.
+ *
+ * Refused when the phone is the row's only identifier: the database's
+ * chk_users_has_identifier says every live account stays reachable by
+ * something, and this check turns that constraint into a sentence instead
+ * of an internal error.
+ *
+ * @param userId - Id of the authenticated caller.
+ * @returns The refreshed user in proto shape; a no-op when no phone is set.
+ * @throws UsecaseError "invalid_argument" when the phone is the only identifier.
+ */
+export async function removePhone(userId: string) {
+  const user = await findUserById(userId);
+  if (!user) throw new UsecaseError("unauthenticated", "account no longer exists");
+  if (user.phone === null) return toPrivateUser(user);
+  if (user.email === null) {
+    invalid(
+      "this number is the only way your account can be found — sign in with Google to attach an email before removing it",
+    );
+  }
+  await setUserPhone(userId, null);
   return getMe(userId);
 }
 
