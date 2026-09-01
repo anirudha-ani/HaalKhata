@@ -4,16 +4,22 @@ Everything here runs **on the server**, except `docker-entrypoint.sh`, which is
 baked into the image. They live in git so they are versioned and reviewable
 rather than typed into a terminal and forgotten.
 
-Copy them into place once:
+Only `deploy.sh` (and the systemd/backup files below) need copying by hand,
+and only once — the compose file and Caddyfile are **not** maintained on the
+server: every image carries the pair it was built with under `/opt/release/`,
+and `deploy.sh` adopts them on each deploy after a dry-run validates them.
+Bootstrap (also after changing `deploy.sh` itself, which cannot update itself
+through the forced command):
 
 ```sh
 scp -r ops docker-compose.prod.yml Caddyfile deploy@haalkhata.app:/srv/haalkhata/
+scp ops/deploy.sh deploy@haalkhata.app:/srv/haalkhata/deploy.sh
 ```
 
 | File | Goes to | Purpose |
 |---|---|---|
 | `docker-entrypoint.sh` | *in the image* | Exec-only; the app reads `/run/secrets/` itself through `*_FILE` variables |
-| `deploy.sh` | `/srv/haalkhata/deploy.sh` | SSH forced command: pull a tag, restart, prune |
+| `deploy.sh` | `/srv/haalkhata/deploy.sh` | SSH forced command: apply pipeline config, adopt the image's compose/Caddyfile, pull, restart, prune |
 | `backup.sh` | `/srv/haalkhata/backup.sh` | Nightly encrypted database **and secrets** backup |
 | `backup-failure.sh` | `/srv/haalkhata/backup-failure.sh` | Sends a critical backup-failure alert |
 | `daemon.json` | `/etc/docker/daemon.json` | Caps log size; enables live-restore |
@@ -60,14 +66,25 @@ copies them into the environment.
 /srv/haalkhata/secrets/twilio_api_key_secret   from a restricted Twilio Verify API key
 ```
 
-Set `TWILIO_API_KEY_SID` and `TWILIO_VERIFY_SERVICE_SID` in `/srv/haalkhata/.env`.
-They identify the restricted key and Verify service but do not authenticate a
-request; only `twilio_api_key_secret` is mounted as a secret.
+## Pipeline-managed `.env`
 
-Also set `ACME_EMAIL` in `/srv/haalkhata/.env` to a monitored operator address.
-Caddy registers that contact with the certificate authority for expiry and
-account problem notices, and the production Compose file refuses to start when
-it is absent.
+`/srv/haalkhata/.env` is written by `deploy.sh`, never by hand. On every
+deploy the workflow pipes these keys over the forced-command channel, sourced
+from GitHub repository variables/secrets, and `deploy.sh` validates each one
+against its allowlist before touching the file:
+
+| `.env` key | GitHub source | Notes |
+|---|---|---|
+| `IMAGE_TAG` | the release's commit SHA | Written from the SSH argument |
+| `ACME_EMAIL` | Variable `ACME_EMAIL` | Required — the deploy job refuses to run without it; Caddy registers it with the CA for expiry/problem notices |
+| `GOOGLE_CLIENT_ID` | Variable `NEXT_PUBLIC_GOOGLE_CLIENT_ID` | Same id the browser bundle is built with, by contract |
+| `GOOGLE_MOBILE_CLIENT_IDS` | Variable `GOOGLE_MOBILE_CLIENT_IDS` | Optional |
+| `TWILIO_API_KEY_SID` | Secret `TWILIO_API_KEY_SID` | Optional; identifies but does not authenticate |
+| `TWILIO_VERIFY_SERVICE_SID` | Secret `TWILIO_VERIFY_SERVICE_SID` | Optional |
+
+Only `twilio_api_key_secret` (and the other four secret *files* below) hold
+authenticating material, and those never pass through GitHub — they live on
+the server alone.
 
 The directory is `0700 root:root`; the files are `0444`. That looks
 backwards until you remember the containers run as non-root (`node` is 1000,
@@ -163,8 +180,12 @@ archives and partial files are created as `0600`.
 `deploy.sh` accepts any valid commit SHA, so rolling back is one line:
 
 ```sh
-ssh -i ~/.ssh/haalkhata_deploy deploy@haalkhata.app <previous-sha>
+ssh -i ~/.ssh/haalkhata_deploy deploy@haalkhata.app <previous-sha> </dev/null
 ```
+
+(`</dev/null` skips the stdin config read — a manual rollback changes code,
+not config. An image from before `/opt/release/` existed keeps the server's
+current compose/Caddyfile.)
 
 This rolls back **code, not schema**. Migrations apply on boot and are never
 reverted, so an older image can find itself talking to a newer schema —

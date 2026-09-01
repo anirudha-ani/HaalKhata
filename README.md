@@ -178,8 +178,10 @@ shaped the way it is.
 
 Three things worth knowing before you point a domain at it:
 
-- **Certificate notices need a real recipient.** Set `ACME_EMAIL` in
-  `/srv/haalkhata/.env`; the production stack refuses to start without it.
+- **Certificate notices need a real recipient.** Set the `ACME_EMAIL`
+  repository variable; the deploy pipeline writes it into
+  `/srv/haalkhata/.env`, and the production stack refuses to start without
+  it. (Manual bootstraps without the workflow set it in `.env` directly.)
 - **Google is the only way in.** `passwordAuthEnabled()` is false when
   `NODE_ENV=production`, so `SignUp`/`LogIn` are rejected.
   `NEXT_PUBLIC_GOOGLE_CLIENT_ID` is inlined at **build** time — a wrong value

@@ -2046,3 +2046,35 @@ domain modules, constants), not from the protos alone, so behavioral notes
 (TOCTOU recovery, guard ordering, truncation caps, oracle-prevention) match
 the code as of this commit. Convention going forward, stated in the README:
 a PR that changes behavior fixes the doc in the same PR.
+
+## §31 Server config flows through the deploy pipeline (2026-09-01)
+
+Decision: nothing on the production server is hand-edited. Discovered while
+wiring ACME_EMAIL that /srv/haalkhata/.env was hand-provisioned (and missing
+the new keys), and the server's docker-compose.prod.yml/Caddyfile had drifted
+from the repo (the audit-hardened versions were never shipped). Three changes
+make GitHub the single source of truth:
+
+1. deploy.sh now accepts KEY=VALUE config lines on stdin alongside the SHA
+   argument. Allowlist: ACME_EMAIL, GOOGLE_CLIENT_ID,
+   GOOGLE_MOBILE_CLIENT_IDS, TWILIO_API_KEY_SID, TWILIO_VERIFY_SERVICE_SID.
+   Unknown keys and shell-hostile values fail the deploy loudly. The forced-
+   command security model is unchanged: the client supplies data, never code.
+2. The image carries docker-compose.prod.yml + Caddyfile under /opt/release/;
+   deploy.sh adopts them only after `docker compose config -q` and a
+   secrets-file existence check pass — a release the server is not
+   provisioned for fails with the old stack still running. Infra files now
+   version and roll back with the code. Rollback documented as
+   `ssh ... <sha> </dev/null`.
+3. deploy.yml pipes the config from repository variables/secrets (guard step
+   refuses to deploy without ACME_EMAIL, mirroring the client-id guard) and
+   ships GOOGLE_CLIENT_ID from NEXT_PUBLIC_GOOGLE_CLIENT_ID so the audience
+   and the button id cannot drift.
+
+Set on GitHub already: ACME_EMAIL=anirudhaprasun@gmail.com (repo variable).
+Deliberately NOT pipeline-managed: the five secret files under
+/srv/haalkhata/secrets/ (session key, db password, API keys) stay
+server-only per §28's hardening — GitHub Actions never holds them.
+Bootstrap still required once: scp the new deploy.sh (the old forced command
+cannot update it), and create the secret files before the hardened compose
+can go live; until then deploy.sh's dry-run keeps the old stack running.
