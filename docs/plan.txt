@@ -2016,3 +2016,33 @@ bounded by the 100-participant cap and a batch statement would buy
 complexity, not correctness; and the repo/usecase/handler layering held
 everywhere it was checked, with the account-merge repo's cross-domain SQL
 remaining the one documented exception.
+
+## §30 Backend service documentation (2026-08-31)
+
+Wrote per-service reference documentation under docs/backend/, one doc per
+proto, following the gold-standard format the user supplied (module overview
+→ conceptual model sections → data-model tables → per-endpoint Notes/Request/
+Response with JSON samples):
+
+- docs/backend/README.md — index, layering, the two sentences that explain
+  most design decisions (one-scope-per-debt; never trust the client on money
+  or identity), reading order.
+- docs/backend/common/conventions.md — the cross-cutting rules every RPC
+  obeys: transport/mount behavior, sessions and sliding renewal, CSRF, the
+  UsecaseError → Connect code map, every rate-limit bucket, the
+  operation_id idempotency contract, the five advisory-lock classes and
+  their global ordering, money rules, the database boundary, the three user
+  privacy projections, secrets via _FILE.
+- docs/backend/common/common-types.md — common.v1 messages and their privacy
+  semantics (net_cents-is-one-bucket gotcha called out).
+- docs/backend/{auth,group,expense,social,receipt}/<service>.md — one per
+  service. The expense doc carries the load: the derived-ledger model, debt
+  routing under simplify-debts and the one-routed-graph invariant,
+  write-time settlement allocation, lock ordering per operation, the
+  authorization and fan-out tables.
+
+Documentation was written from the implementation (handlers, usecases,
+domain modules, constants), not from the protos alone, so behavioral notes
+(TOCTOU recovery, guard ordering, truncation caps, oracle-prevention) match
+the code as of this commit. Convention going forward, stated in the README:
+a PR that changes behavior fixes the doc in the same PR.
