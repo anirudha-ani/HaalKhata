@@ -3,6 +3,7 @@
 import type { User } from "@haalkhata/protogen/common/v1/common_pb";
 import { useRouter } from "expo-router";
 import { useState } from "react";
+import { Code, ConnectError } from "@connectrpc/connect";
 import { errorMessage, socialClient } from "@/lib/api/connect";
 import { shareInvite } from "@/lib/invite/share";
 import { useMutation } from "@tanstack/react-query";
@@ -47,6 +48,9 @@ export function useGroupDetail(groupId: string) {
   const [peopleError, setPeopleError] = useState("");
   const [memberError, setMemberError] = useState("");
   const [linkNotice, setLinkNotice] = useState("");
+  // §33c: set when a typed contact has no claimed account, so the sheet
+  // can offer "send them a sign-up invite?" instead of a dead error.
+  const [inviteOffer, setInviteOffer] = useState<{ email: string; phone: string } | null>(null);
   // The server deliberately does not expose outgoing-request state, so this
   // local marker prevents accidental duplicate taps while the sheet is open.
   const [requestedIds, setRequestedIds] = useState<string[]>([]);
@@ -82,6 +86,7 @@ export function useGroupDetail(groupId: string) {
   /** Adds the checked people plus the typed email/phone, then closes the sheet. */
   const submitPeople = () => {
     setPeopleError("");
+    setInviteOffer(null);
     const payload = contactPayload(contact);
     // A number that cannot exist in the selected country never leaves the
     // form; the server's generic denial is reserved for real lookups.
@@ -97,10 +102,35 @@ export function useGroupDetail(groupId: string) {
           setContact(EMPTY_CONTACT);
           setAddingPeople(false);
         },
-        onError: (mutationError) => setPeopleError(errorMessage(mutationError)),
+        onError: (mutationError) => {
+          // §33c: the not-on-platform refusal becomes the invite offer.
+          if (
+            mutationError instanceof ConnectError &&
+            mutationError.code === Code.FailedPrecondition &&
+            (payload.email !== "" || payload.phone !== "")
+          ) {
+            setInviteOffer(payload);
+            return;
+          }
+          setPeopleError(errorMessage(mutationError));
+        },
       },
     );
   };
+
+  /** Sends the sign-up invite the §33c offer promised, then shares its link. */
+  const sendSignUpInvite = useMutation({
+    mutationFn: async (offer: { email: string; phone: string }) => {
+      const { token } = await socialClient.inviteContactToSignUp(offer);
+      return shareInvite(token, groupDetailAPI.me?.name ?? "A member", "");
+    },
+    onSuccess: (outcome) => {
+      setInviteOffer(null);
+      setContact(EMPTY_CONTACT);
+      if (outcome === "shared") setLinkNotice("Invite shared — you can add them once they join ✓");
+    },
+    onError: (mutationError) => setPeopleError(errorMessage(mutationError)),
+  });
 
   /**
    * Shares the group's one join link (minted on first ask) through the
@@ -239,6 +269,12 @@ export function useGroupDetail(groupId: string) {
     contact,
     setContact,
     peopleError,
+    inviteOffer,
+    sendSignUpInvite: () => {
+      if (inviteOffer) sendSignUpInvite.mutate(inviteOffer);
+    },
+    sendingSignUpInvite: sendSignUpInvite.isPending,
+    dismissInviteOffer: () => setInviteOffer(null),
     submitPeople,
     canAddPeople: pickedIds.length > 0 || !contactIsEmpty(contact),
     // The persisted group mode, not view state: everyone in the group sees

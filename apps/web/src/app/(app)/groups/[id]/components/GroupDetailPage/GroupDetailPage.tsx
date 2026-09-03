@@ -188,6 +188,10 @@ export function GroupDetailPage({
           contact={groupDetail.contact}
           onContactChange={groupDetail.setContact}
           error={groupDetail.peopleError}
+          inviteOffer={groupDetail.inviteOffer}
+          onSendInvite={groupDetail.sendSignUpInvite}
+          sendingInvite={groupDetail.sendingSignUpInvite}
+          onDismissInvite={groupDetail.dismissInviteOffer}
           canSubmit={groupDetail.canAddPeople}
           isPending={groupDetail.addMembers.isPending}
           onSubmit={groupDetail.submitPeople}

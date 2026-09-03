@@ -357,6 +357,14 @@ export function GroupDetailScreen({
                     : ""}
                 </Text>
                 <PersonChecklist
+                  disabledIds={
+                    new Set(
+                      groupDetail.candidates
+                        .filter((candidate) => !candidate.registered)
+                        .map((candidate) => candidate.id),
+                    )
+                  }
+                  disabledHint="invited — can add once they join"
                   onToggle={groupDetail.togglePicked}
                   people={groupDetail.candidates}
                   selectedIds={groupDetail.pickedIds}
@@ -383,7 +391,26 @@ export function GroupDetailScreen({
               once they accept, you can add them.
             </Text>
 
-            {groupDetail.peopleError ? (
+            {groupDetail.inviteOffer ? (
+              <View style={styles.inviteOffer}>
+                <Text style={styles.addHint}>
+                  They&apos;re not on HaalKhata yet. Send them a sign-up invite?
+                  Once they join, you can add them here.
+                </Text>
+                <Button
+                  busy={groupDetail.sendingSignUpInvite}
+                  compact
+                  label="Send sign-up invite"
+                  onPress={groupDetail.sendSignUpInvite}
+                />
+                <Button
+                  compact
+                  label="Cancel"
+                  onPress={groupDetail.dismissInviteOffer}
+                  variant="outline"
+                />
+              </View>
+            ) : groupDetail.peopleError ? (
               <Text style={styles.addError}>{groupDetail.peopleError}</Text>
             ) : null}
             <Button
@@ -474,6 +501,9 @@ const styles = StyleSheet.create({
   headerIconButtonPrimary: {
     backgroundColor: colors.brand600,
     borderColor: colors.brand600,
+  },
+  inviteOffer: {
+    gap: spacing.sm,
   },
   linkNotice: {
     color: colors.pos700,

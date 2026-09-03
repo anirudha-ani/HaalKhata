@@ -132,6 +132,12 @@ function ProfileForm({ me: currentUser }: { me: User }) {
         </label>
         <div className="text-sm font-medium">
           Phone number
+          {currentUser.phone ? (
+            /* Every attached number passed SMS possession (§34) — say so. */
+            <span className="ml-2 rounded-full bg-pos-50 px-2 py-0.5 text-[11px] font-semibold text-pos-700">
+              ✓ verified
+            </span>
+          ) : null}
           <div className="mt-1">
             <PhoneField
               region={form.region}

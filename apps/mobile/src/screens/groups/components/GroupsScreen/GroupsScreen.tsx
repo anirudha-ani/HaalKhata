@@ -203,6 +203,14 @@ export function GroupsScreen() {
                   </Text>
                 </Text>
                 <PersonChecklist
+                  disabledHint="invited — can add once they join"
+                  disabledIds={
+                    new Set(
+                      groupsState.friends
+                        .filter((friend) => !friend.registered)
+                        .map((friend) => friend.id),
+                    )
+                  }
                   onToggle={groupsState.toggleMember}
                   people={groupsState.friends}
                   selectedIds={groupsState.memberIds}

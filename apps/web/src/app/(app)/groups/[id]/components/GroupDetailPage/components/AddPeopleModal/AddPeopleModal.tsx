@@ -34,6 +34,10 @@ export function AddPeopleModal({
   contact,
   onContactChange,
   error,
+  inviteOffer,
+  onSendInvite,
+  sendingInvite,
+  onDismissInvite,
   canSubmit,
   isPending,
   onSubmit,
@@ -53,6 +57,14 @@ export function AddPeopleModal({
   onContactChange: (contact: ContactDraft) => void;
   /** Server error from the last attempt, or "" when there is none. */
   error: string;
+  /** §33c: the typed contact has no account; offer to send a sign-up invite. */
+  inviteOffer: { email: string; phone: string } | null;
+  /** Sends the offered invite and opens the share sheet with its link. */
+  onSendInvite: () => void;
+  /** Whether the invite send/share is in flight. */
+  sendingInvite: boolean;
+  /** Dismisses the offer without inviting. */
+  onDismissInvite: () => void;
   /** Whether anything is selected or typed — the submit button's enablement. */
   canSubmit: boolean;
   /** Whether the add request is in flight. */
@@ -81,6 +93,14 @@ export function AddPeopleModal({
             </p>
             <div className="rounded-xl border border-line bg-paper p-2">
               <FriendChecklist
+                disabledIds={
+                  new Set(
+                    candidates
+                      .filter((candidate) => !candidate.registered)
+                      .map((candidate) => candidate.id),
+                  )
+                }
+                disabledHint="invited — can add once they join"
                 autoFocus
                 people={candidates}
                 selectedIds={pickedIds}
@@ -121,7 +141,33 @@ export function AddPeopleModal({
           </p>
         </div>
 
-        {error ? <p className="text-sm text-brand-600">{error}</p> : null}
+        {inviteOffer ? (
+          <div className="space-y-2 rounded-xl border border-line bg-paper p-3">
+            <p className="text-sm">
+              They&apos;re not on HaalKhata yet. Send them a sign-up invite? Once
+              they join, you can add them here.
+            </p>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                disabled={sendingInvite}
+                onClick={onSendInvite}
+                className="flex-1 rounded-lg bg-brand-600 px-3 py-2 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-50"
+              >
+                {sendingInvite ? "Sharing…" : "Send sign-up invite"}
+              </button>
+              <button
+                type="button"
+                onClick={onDismissInvite}
+                className="rounded-lg border border-line px-3 py-2 text-sm font-semibold text-ink-soft hover:bg-card"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        ) : error ? (
+          <p className="text-sm text-brand-600">{error}</p>
+        ) : null}
         <button
           type="submit"
           disabled={isPending || !canSubmit}

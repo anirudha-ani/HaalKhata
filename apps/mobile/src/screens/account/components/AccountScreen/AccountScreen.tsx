@@ -125,7 +125,13 @@ function ProfileForm({ me: currentUser }: { me: User }) {
         />
 
         <View style={styles.fieldBlock}>
-          <Text style={styles.fieldLabel}>Phone number</Text>
+          <View style={styles.fieldLabelRow}>
+            <Text style={styles.fieldLabel}>Phone number</Text>
+            {currentUser.phone ? (
+              /* Every attached number passed SMS possession (§34) — say so. */
+              <Text style={styles.verifiedTag}>✓ verified</Text>
+            ) : null}
+          </View>
           <PhoneField
             nationalNumber={form.nationalNumber}
             onNationalNumberChange={form.setNationalNumber}
@@ -339,6 +345,11 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "500",
   },
+  fieldLabelRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: spacing.sm,
+  },
   formCard: {
     backgroundColor: colors.card,
     borderColor: colors.line,
@@ -453,6 +464,11 @@ const styles = StyleSheet.create({
   summaryText: {
     flex: 1,
     minWidth: 0,
+  },
+  verifiedTag: {
+    color: colors.brand700,
+    fontSize: 11,
+    fontWeight: "700",
   },
   zelleModes: {
     width: 150,

@@ -210,6 +210,14 @@ export function GroupsPage() {
                     selectedIds={groupsState.memberIds}
                     onToggle={groupsState.toggleMember}
                     legend="People to add to this group"
+                    disabledIds={
+                      new Set(
+                        groupsState.friends
+                          .filter((friend) => !friend.registered)
+                          .map((friend) => friend.id),
+                      )
+                    }
+                    disabledHint="invited — can add once they join"
                   />
                 </div>
               </div>
