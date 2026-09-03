@@ -246,6 +246,9 @@ async function collapseSummed(
  * @param phone - The loser's E.164 number, or null for an email-only invite
  *   claimed through a link; passed explicitly because it is part of the
  *   eligibility check, not merely copied.
+ * @param options - adoptPhone: whether the keeper takes the number as their
+ *   own. True only when possession was just proven (the SMS-merge path);
+ *   a link claim passes false and the number is simply freed.
  * @returns Counts of the corrections that were applied.
  * @throws Error when the target changed after preview or when the post-merge
  *   net does not equal the sum of the two pre-merge nets; either rolls back.
@@ -254,6 +257,7 @@ export async function mergeAccounts(
   keeperId: string,
   loserId: string,
   phone: string | null,
+  options: { adoptPhone: boolean },
 ): Promise<MergeOutcome> {
   return transaction(async (client) => {
     // Friend-request writers take inbox locks before their INSERT acquires
@@ -274,9 +278,8 @@ export async function mergeAccounts(
     // this assertion and the irreversible repoints below.
     // IS NOT DISTINCT FROM: a link claim passes the invite's phone, which for
     // an email-only invitation is NULL, and `phone = NULL` matches nothing.
-    // The loser's email is read here, before the tombstone frees it below.
-    const eligibleTarget = await client.query<{ id: string; email: string | null }>(
-      `SELECT id, email FROM users
+    const eligibleTarget = await client.query<{ id: string }>(
+      `SELECT id FROM users
         WHERE id = $1
           AND password_hash IS NULL
           AND google_sub IS NULL
@@ -287,7 +290,6 @@ export async function mergeAccounts(
     if (eligibleTarget.rows.length !== 1) {
       throw new Error("account merge target changed while acquiring locks");
     }
-    const loserEmail = eligibleTarget.rows[0].email;
 
     const keeperNetBefore = await netCents(client, keeperId);
     const loserNetBefore = await netCents(client, loserId);
@@ -464,14 +466,18 @@ export async function mergeAccounts(
         WHERE id = $2`,
       [keeperId, loserId],
     );
-    // The keeper adopts only into empty slots: a phone-merge always carries
-    // the claimed number ($2 non-null, keeper's slot free by construction),
-    // while a link claim may carry neither, and an inviter's typo of an email
-    // must never overwrite an address the keeper actually signs in with.
-    await client.query(
-      `UPDATE users SET phone = COALESCE(phone, $2), email = COALESCE(email, $3) WHERE id = $1`,
-      [keeperId, phone, loserEmail],
-    );
+    // Adoption is earned, never inherited (§33b). The SMS-merge path adopts
+    // the phone because possession was proven seconds earlier; a link claim
+    // adopts NOTHING — the invite's identifiers were the inviter's claim,
+    // verified by nobody, and promoting a typed number to "the acceptor's
+    // phone" squats it against its real owner. The freed email is likewise
+    // never copied: its owner reclaims it through Google's verified sign-in.
+    if (options.adoptPhone && phone !== null) {
+      await client.query(`UPDATE users SET phone = COALESCE(phone, $2) WHERE id = $1`, [
+        keeperId,
+        phone,
+      ]);
+    }
 
     // --- invariant ----------------------------------------------------------
     // Settlements between the two rows net to zero across the pair, so removing

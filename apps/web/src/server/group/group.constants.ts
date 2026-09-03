@@ -22,3 +22,11 @@ export { MAX_GROUP_NAME_LENGTH };
 
 /** Maximum member identifiers accepted by one create/add request. */
 export const MAX_GROUP_MEMBER_IDS_PER_REQUEST = 100;
+
+/**
+ * Hard ceiling on a group's roster, enforced on the join-link path (§33b):
+ * a leaked bearer link must not let a bot swarm grow a roster without
+ * bound. Aligned with the 100-participant expense ceiling — a group larger
+ * than that could never split one bill across everyone anyway.
+ */
+export const MAX_GROUP_MEMBERS = 100;

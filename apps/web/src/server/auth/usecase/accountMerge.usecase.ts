@@ -304,7 +304,9 @@ export async function confirmPhoneMerge(userId: string, mergeToken: string) {
     invalid("that account's balances changed since the preview — please review it again");
   }
 
-  await mergeAccounts(userId, loserId, phone);
+  // Possession of this exact number was proven seconds ago — the one path
+  // where adopting it onto the keeper is earned.
+  await mergeAccounts(userId, loserId, phone, { adoptPhone: true });
 
   const merged = await findUserById(userId);
   if (!merged) throw new UsecaseError("unauthenticated", "account no longer exists");

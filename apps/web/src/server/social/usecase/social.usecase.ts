@@ -29,12 +29,12 @@ import {
 import {
   addMember,
   findGroupById,
-  listCoMemberIds,
+  listGroupsByUser,
   listMembers,
   memberRole,
 } from "@/server/group/repo/groups.repo";
 import { insertActivity as recordActivity } from "@/server/social/repo/activity.repo";
-import { OWNER_ROLE } from "@/server/group/group.constants";
+import { MAX_GROUP_MEMBERS, OWNER_ROLE } from "@/server/group/group.constants";
 import { listActivityMonths, listActivityPage } from "@/server/social/repo/activity.repo";
 import { isMember } from "@/server/group/repo/groups.repo";
 import { isUniqueViolation } from "@/server/common/db";
@@ -364,9 +364,13 @@ export async function getFriendInviteLink(
   if (!isUnclaimed(invited)) {
     invalid("they already have an account — no invite needed");
   }
-  const connected = (await friendshipExists(userId, invitedUserId))
-    || (await listCoMemberIds(userId)).includes(invitedUserId);
-  if (!connected) denied("you can only invite people you already share a friendship or a group with");
+  // Friendship-only, NOT co-membership (§33b): an invited row's friends are
+  // exactly the people who invited it somewhere. A mere co-member of one of
+  // its groups could otherwise mint a claim link and, with a second account,
+  // inherit the row's seats in groups nobody there consented to.
+  if (!(await friendshipExists(userId, invitedUserId))) {
+    denied("only somebody who invited them can share their invite link");
+  }
 
   const existing = await findActiveFriendLink(userId, invitedUserId);
   if (existing) return { token: existing.token };
@@ -595,10 +599,22 @@ export async function acceptInviteLink(
       if (!invited || invited.merged_into !== null || !isUnclaimed(invited)) {
         notFound(DEAD_LINK_MESSAGE);
       }
-      // No-money claim: memberships and friendships ride along in one
-      // transaction; the invariant inside would roll back anything else.
-      await mergeAccounts(userId, invitedId, invited.phone);
+      // Read before the merge: afterwards the seats belong to the acceptor
+      // and the invited row no longer answers for them.
+      const inheritedGroups = await listGroupsByUser(invitedId);
+      try {
+        // No-money claim: memberships and friendships ride along in one
+        // transaction; the invariant inside would roll back anything else.
+        // adoptPhone false (§33b): the invite's number was the INVITER'S
+        // claim, verified by nobody — it is freed, never inherited.
+        await mergeAccounts(userId, invitedId, invited.phone, { adoptPhone: false });
+      } catch {
+        // Two acceptors raced this link, or the row was claimed mid-flight;
+        // to the loser that is just a link that no longer works.
+        notFound(DEAD_LINK_MESSAGE);
+      }
       await revokeFriendLinksFor(invitedId);
+      await announceClaimedSeats(acceptor.name, invited.name, inheritedGroups, userId);
     }
     await insertFriendship(userId, link.inviter_id);
     await notifyInviteAccepted(link.inviter_id, acceptor.name, "/friends");
@@ -614,6 +630,10 @@ export async function acceptInviteLink(
   // being validated sees the roster before or after the join, never mid-way.
   await transaction(async (client) => {
     await lockGroupLedgers(client, [group.id]);
+    // §33b: a leaked bearer link must not grow a roster without bound.
+    if ((await listMembers(group.id, client)).length >= MAX_GROUP_MEMBERS) {
+      invalid("this group is full");
+    }
     await addMember(group.id, userId, "member", client);
     if (link.inviter_id !== userId) {
       await insertFriendship(userId, link.inviter_id, client);
@@ -633,6 +653,36 @@ export async function acceptInviteLink(
   });
   await notifyInviteAccepted(link.inviter_id, acceptor.name, `/groups/${group.id}`);
   return { groupId: group.id };
+}
+
+/**
+ * Announces a claimed invitation in every group whose seat it carried, so a
+ * roster face never changes silently (§33b) — the same transparency rule a
+ * direct link-join follows. Best-effort after the claim's own transaction:
+ * a missing announcement is recoverable, an unclaimed announcement is not.
+ *
+ * @param acceptorName - Who now holds the seats.
+ * @param invitedName - The name the invitation was known by.
+ * @param groups - Groups the invited row belonged to before the claim.
+ * @param acceptorId - The acceptor, as the events' actor.
+ */
+async function announceClaimedSeats(
+  acceptorName: string,
+  invitedName: string,
+  groups: { id: string; name: string }[],
+  acceptorId: string,
+): Promise<void> {
+  for (const group of groups) {
+    const audience = (await listMembers(group.id)).map((member) => member.id);
+    await recordActivity({
+      groupId: group.id,
+      actorId: acceptorId,
+      type: "member_added",
+      message: `${acceptorName} joined "${group.name}" — claimed ${invitedName}'s invitation`,
+      link: `/groups/${group.id}`,
+      audience,
+    });
+  }
 }
 
 /**

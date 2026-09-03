@@ -343,7 +343,7 @@ describe("confirmPhoneMerge", () => {
 
     const result = await confirmPhoneMerge(KEEPER, token);
 
-    expect(mergeAccountsMock).toHaveBeenCalledWith(KEEPER, LOSER, PHONE);
+    expect(mergeAccountsMock).toHaveBeenCalledWith(KEEPER, LOSER, PHONE, { adoptPhone: true });
     expect(result.phone).toBe(PHONE);
   });
 

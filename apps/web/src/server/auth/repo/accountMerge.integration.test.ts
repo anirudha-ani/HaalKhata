@@ -82,7 +82,7 @@ describe.skipIf(!reachable)("mergeAccounts against Postgres", () => {
   it("absorbs the invited row and leaves the balance invariant intact", async () => {
     // The invariant assertion lives inside the transaction, so a wrong repoint
     // surfaces as a rejection here rather than as quietly wrong money.
-    const outcome = await mergeAccounts(KEEPER, LOSER, PHONE);
+    const outcome = await mergeAccounts(KEEPER, LOSER, PHONE, { adoptPhone: true });
 
     expect(outcome.selfSettlementsRemoved).toBe(1);
     expect(outcome.duplicateSplitsSummed).toBe(1);

@@ -35,7 +35,7 @@ describe("account merge target locking", () => {
       .mockResolvedValueOnce({ rows: [{ id: "keeper" }, { id: "loser" }] } as never)
       .mockResolvedValueOnce({ rows: [] } as never);
 
-    await expect(mergeAccounts("keeper", "loser", "+16175551212")).rejects.toThrow(
+    await expect(mergeAccounts("keeper", "loser", "+16175551212", { adoptPhone: true })).rejects.toThrow(
       "target changed",
     );
 

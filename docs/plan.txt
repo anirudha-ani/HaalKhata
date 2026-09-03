@@ -2193,3 +2193,31 @@ owner and start putting them on one-off expenses. The link removes the
 typing and the identifier-guessing, not the consent tap. Already-friends
 and duplicate requests accept quietly; the owner gets the ordinary
 friend_request notification and accepts from Friends like any other.
+
+### §33b Invite-surface hardening (2026-09-03)
+
+Adversarial pass over §33/§33a before Twilio goes live; five fixes:
+1. A link-claim no longer adopts the invited row's identifiers. The phone
+   was the INVITER'S claim, verified by nobody — promoting it to the
+   acceptor's own number squatted numbers their real owners could then
+   never attach. mergeAccounts takes an explicit adoptPhone flag: true only
+   on the SMS-merge path, where possession was proven seconds earlier;
+   email adoption is dropped everywhere (a freed address is reclaimed by
+   its owner through Google's verified sign-in, not inherited).
+2. Claim links are mintable only by an actual friend of the invited row
+   (its inviters), no longer by any co-member: a co-member of group A could
+   mint a link and claim the identity with a second account, inheriting
+   seats in groups B and C that nobody in B or C consented to.
+3. A claim announces itself: after the merge, every inherited group gets a
+   member_added feed event ("claimed X's invitation via Y's link"), so a
+   roster face never changes silently — the same transparency rule group
+   joins already follow.
+4. Group joins via link are capped at MAX_GROUP_MEMBERS (100, aligned with
+   the expense participant ceiling): a leaked bearer link must not let a
+   bot swarm grow a roster without bound.
+5. Two acceptors racing one claim link: the loser's merge eligibility
+   failure now maps to the generic dead-link sentence instead of leaking a
+   500.
+Residual, documented: invite tokens ride in URLs and therefore appear in
+front-proxy access logs — operator-visible only, and revocation is the
+remedy; this is the industry-standard trade for shareable links.

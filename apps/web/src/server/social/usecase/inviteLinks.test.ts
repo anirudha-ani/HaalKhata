@@ -40,7 +40,7 @@ vi.mock("@/server/group/repo/groups.repo", () => ({
   addMember: vi.fn(),
   findGroupById: vi.fn(),
   isMember: vi.fn(),
-  listCoMemberIds: vi.fn(),
+  listGroupsByUser: vi.fn(),
   listMembers: vi.fn(),
   memberRole: vi.fn(),
 }));
@@ -89,7 +89,7 @@ import {
   addMember,
   findGroupById,
   isMember,
-  listCoMemberIds,
+  listGroupsByUser,
   listMembers,
   memberRole,
 } from "@/server/group/repo/groups.repo";
@@ -170,7 +170,7 @@ beforeEach(() => {
     return userRow({ id: userId });
   });
   vi.mocked(findUsersByIds).mockResolvedValue([]);
-  vi.mocked(listCoMemberIds).mockResolvedValue([]);
+  vi.mocked(listGroupsByUser).mockResolvedValue([]);
   vi.mocked(friendshipExists).mockResolvedValue(true);
 });
 
@@ -184,9 +184,10 @@ describe("getFriendInviteLink", () => {
     });
   });
 
-  it("refuses a target the caller is not connected with", async () => {
-    // A bare user id must not be enough to mint a link that would claim
-    // somebody else's invitation.
+  it("refuses anyone but an actual inviter — co-membership is not enough (§33b)", async () => {
+    // An invited row's friends are exactly the people who invited it; a mere
+    // co-member could otherwise mint a claim link and, with a second
+    // account, inherit seats in groups nobody there consented to.
     vi.mocked(friendshipExists).mockResolvedValue(false);
 
     await expect(getFriendInviteLink(CALLER, INVITED)).rejects.toMatchObject({
@@ -324,13 +325,63 @@ describe("acceptInviteLink", () => {
     await expect(acceptInviteLink(CALLER, TOKEN)).resolves.toEqual({ groupId: "" });
 
     // The claim is the §32 merge machinery on a moneyless row.
-    expect(mergeAccounts).toHaveBeenCalledWith(CALLER, INVITED, "+8801712345678");
+    // adoptPhone false: the invite's number was the inviter's claim,
+    // verified by nobody — freed, never inherited (§33b).
+    expect(mergeAccounts).toHaveBeenCalledWith(CALLER, INVITED, "+8801712345678", {
+      adoptPhone: false,
+    });
     expect(revokeFriendLinksFor).toHaveBeenCalledWith(INVITED);
     expect(insertFriendship).toHaveBeenCalledWith(CALLER, INVITER);
     expect(insertNotifications).toHaveBeenCalledWith(
       [INVITER],
       expect.objectContaining({ type: "invite_accepted" }),
     );
+  });
+
+  it("announces every inherited seat so a roster face never changes silently", async () => {
+    vi.mocked(findActiveLinkByToken).mockResolvedValue(linkRow());
+    vi.mocked(listGroupsByUser).mockResolvedValue([{ id: GROUP, name: "Bali Trip" }] as never);
+    vi.mocked(listMembers).mockResolvedValue([{ id: CALLER }, { id: INVITER }] as never);
+
+    await acceptInviteLink(CALLER, TOKEN);
+
+    expect(insertActivity).toHaveBeenCalledWith(
+      expect.objectContaining({
+        groupId: GROUP,
+        type: "member_added",
+        message: expect.stringContaining("claimed Rifat (invited)'s invitation"),
+      }),
+    );
+  });
+
+  it("maps a lost claim race to the same dead-link sentence, not a 500", async () => {
+    vi.mocked(findActiveLinkByToken).mockResolvedValue(linkRow());
+    vi.mocked(mergeAccounts).mockRejectedValue(
+      new Error("account merge target changed while acquiring locks"),
+    );
+
+    await expect(acceptInviteLink(CALLER, TOKEN)).rejects.toMatchObject({
+      code: "not_found",
+      message: expect.stringContaining("isn't valid"),
+    });
+    expect(revokeFriendLinksFor).not.toHaveBeenCalled();
+  });
+
+  it("refuses a group join when the roster is at its ceiling", async () => {
+    vi.mocked(findActiveLinkByToken).mockResolvedValue(
+      linkRow({ kind: "group", group_id: GROUP, invited_user_id: null }),
+    );
+    vi.mocked(findGroupById).mockResolvedValue({ id: GROUP, name: "Bali Trip" } as never);
+    vi.mocked(isMember).mockResolvedValue(false);
+    vi.mocked(listMembers).mockResolvedValue(
+      Array.from({ length: 100 }, (unused, index) => ({ id: `member-${index}` })) as never,
+    );
+
+    await expect(acceptInviteLink(CALLER, TOKEN)).rejects.toMatchObject({
+      code: "invalid_argument",
+      message: expect.stringContaining("full"),
+    });
+    expect(addMember).not.toHaveBeenCalled();
   });
 
   it("skips the merge when the caller already claimed the row by email match", async () => {
