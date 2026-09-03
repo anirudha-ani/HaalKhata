@@ -69,6 +69,9 @@ own "add me" link). Tokens are 43-char random bearer credentials; every
 unusable token — malformed, revoked, missing, already claimed — gets one
 identical sentence, so the endpoints scan as nothing. Delivery is the
 inviter's own share sheet; the server sends no email or SMS.
+Known residual: tokens ride in URLs, so they appear in front-proxy access
+logs (operator-visible only); revocation is the remedy — the standard trade
+every shareable-link product makes.
 
 **The profile-kind asymmetry:** accepting a friend or group link acts
 immediately (their blast radius is bounded — an Invited row holds no money,
@@ -353,10 +356,12 @@ account?").
 - Returns the Invited person's active reminder link, minting it on first ask
   (one active link per (inviter, invited) pair; a concurrent ask re-reads
   the unique-index winner).
-- **Authorization:** the target must be *unregistered* (a registered person
-  signs in, they don't need a claiming link) and *connected* to the caller —
-  their friend or a co-member — so a bare user id cannot mint a link that
-  claims somebody else's invitation.
+- **Authorization (§33b):** the target must be *unregistered* (a registered
+  person signs in, they don't need a claiming link) and a **friend** of the
+  caller — which for an invited row means one of its actual inviters. Mere
+  co-membership is not enough: a co-member of one group could otherwise
+  mint a link and, via a second account, inherit the row's seats in groups
+  nobody there consented to.
 - Clients compose the URL as `https://haalkhata.app/join/<token>` and hand
   it to the OS share sheet; the server never builds URLs.
 
@@ -462,13 +467,21 @@ account?").
 - **Friend link:** the still-unclaimed invited identity is merged into the
   caller (friendships and group memberships ride along; no money can exist
   on it), its reminder links are revoked, and caller ↔ inviter are
-  befriended. A caller who already claimed the row by email match skips the
-  merge; an identity claimed by somebody else is a dead link; the inviter's
-  own link is refused.
+  befriended. **The invite's identifiers are freed, never adopted** (§33b):
+  the phone was the inviter's unverified claim, and the acceptor attaches
+  their own through SetPhone's SMS proof. Every inherited group gets a
+  `member_added` feed event ("claimed X's invitation"), so a roster face
+  never changes silently. A caller who already claimed the row by email
+  match skips the merge; an identity claimed by somebody else — or lost to
+  a racing acceptor — is the same dead link; the inviter's own link is
+  refused.
 - **Group link:** enrols the caller under the group's ledger lock, befriends
   them with the inviter, and writes a `member_added` feed event ("joined via
   X's invite link") so a new face is explained. Already a member → quiet
   success.
+- **Group link ceiling (§33b):** joins refuse at 100 members
+  (`MAX_GROUP_MEMBERS`) — a leaked bearer link must not grow a roster
+  without bound.
 - **Profile link (§33a):** sends the owner an ordinary `friend_request`
   (with a notification saying the profile link was used) — never an instant
   friendship; see the asymmetry note above. Already friends or already
