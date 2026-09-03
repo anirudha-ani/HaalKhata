@@ -14,6 +14,7 @@ import {
 import { totalsByCurrency, type CurrencyBucket } from "@haalkhata/shared/money/balances";
 import { matchesTerms, searchTerms } from "@haalkhata/shared/search/filter";
 import { authClient, errorMessage, socialClient } from "@/lib/api/connect";
+import { shareInvite } from "@/lib/invite/share";
 import { queryKeys } from "@haalkhata/shared/api/queryKeys";
 
 /**
@@ -81,6 +82,25 @@ export function useFriends() {
       queryClient.invalidateQueries({ queryKey: queryKeys.friends });
     },
     onError: (mutationError) => setError(errorMessage(mutationError)),
+  });
+
+  /**
+   * Shares an Invited friend's sign-up link through the OS share sheet (or
+   * the clipboard). The link claims their invited identity, so friendships
+   * and any group seats come with them when they join.
+   */
+  const remind = useMutation({
+    mutationFn: async (person: User) => {
+      const { token } = await socialClient.getFriendInviteLink({ userId: person.id });
+      return shareInvite(token, currentUser.data?.name ?? "A friend", "");
+    },
+    onSuccess: (outcome) =>
+      setNotice(outcome === "copied" ? "Invite link copied ✓" : "Invite link shared ✓"),
+    onError: (mutationError) => {
+      // Closing the share sheet is a decision, not a failure.
+      if (mutationError instanceof Error && mutationError.name === "AbortError") return;
+      setError(errorMessage(mutationError));
+    },
   });
 
   /** Accepts or declines one request addressed to the current user. */
@@ -152,6 +172,12 @@ export function useFriends() {
       respondToRequest.mutate({ userId, accept });
     },
     respondingUserId: respondToRequest.isPending ? respondToRequest.variables?.userId : undefined,
+    remindFriend: (person: User) => {
+      setError("");
+      setNotice("");
+      remind.mutate(person);
+    },
+    remindingUserId: remind.isPending ? remind.variables?.id : undefined,
     settleWith,
     setSettleWith,
   };

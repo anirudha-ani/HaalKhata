@@ -2,7 +2,7 @@
 /** Group detail orchestrator: header, members strip, expenses/balances tabs, add-people and settle modals. */
 
 import Link from "next/link";
-import { Plus, UserPlus } from "lucide-react";
+import { Link2, Plus, UserPlus } from "lucide-react";
 import { Avatar } from "@/components/ui/Avatar";
 import { SettleUpModal } from "@/components/modals/SettleUpModal";
 import { Spinner } from "@/components/ui/Spinner";
@@ -99,7 +99,20 @@ export function GroupDetailPage({
         >
           <UserPlus className="h-3.5 w-3.5" /> Add people
         </button>
+        <button
+          type="button"
+          disabled={groupDetail.sharingInviteLink}
+          onClick={groupDetail.shareInviteLink}
+          title="Share a link anyone can use to join this group"
+          className="flex shrink-0 items-center gap-1.5 rounded-lg border border-line px-3 py-1.5 text-xs font-semibold text-ink-soft hover:border-brand-200 hover:text-brand-600 disabled:opacity-50"
+        >
+          <Link2 className="h-3.5 w-3.5" />
+          {groupDetail.sharingInviteLink ? "Sharing…" : "Invite link"}
+        </button>
       </div>
+      {groupDetail.linkNotice ? (
+        <p className="text-sm font-medium text-pos-700">{groupDetail.linkNotice}</p>
+      ) : null}
 
       {/* Tabs */}
       <div className="grid grid-cols-3 rounded-xl bg-card p-1 text-sm font-semibold ring-1 ring-line">
@@ -157,6 +170,10 @@ export function GroupDetailPage({
           removingUserId={groupDetail.removingUserId}
           onTransfer={groupDetail.transferOwnership}
           transferringUserId={groupDetail.transferringUserId}
+          onRemind={groupDetail.remindMember}
+          remindingUserId={groupDetail.remindingUserId}
+          onResetLink={groupDetail.resetInviteLink}
+          resettingLink={groupDetail.resettingInviteLink}
           removeError={groupDetail.memberError}
           onClose={() => groupDetail.setViewingMembers(false)}
         />

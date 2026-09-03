@@ -7,6 +7,7 @@ import {
   ChevronRight,
   HandCoins,
   Handshake,
+  Send,
   UserPlus,
   Wallet,
   X,
@@ -259,6 +260,19 @@ export function FriendsPage() {
                           <Wallet className="h-3.5 w-3.5" />
                         )}
                         Settle
+                      </button>
+                    ) : !person.registered ? (
+                      /* An invited person has no balance to settle; the useful
+                         action is nudging them to sign up. The link claims
+                         their invited identity, seats and all. */
+                      <button
+                        type="button"
+                        disabled={friendsState.remindingUserId === person.id}
+                        onClick={() => friendsState.remindFriend(person)}
+                        className="mr-3 flex shrink-0 items-center gap-1.5 rounded-lg border border-line px-3 py-1.5 text-xs font-semibold text-ink-soft hover:border-brand-600 hover:text-brand-600 disabled:opacity-50"
+                      >
+                        <Send className="h-3.5 w-3.5" />
+                        {friendsState.remindingUserId === person.id ? "Sharing…" : "Remind"}
                       </button>
                     ) : null}
                   </li>

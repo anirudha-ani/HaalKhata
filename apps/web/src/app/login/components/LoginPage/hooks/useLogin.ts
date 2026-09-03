@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { splitIdentifier } from "@haalkhata/shared/auth/identifier";
 import { authClient, errorMessage } from "@/lib/api/connect";
+import { nextPathFromLocation } from "@/lib/navigation/nextPath";
 import { clearAccountQueryCache } from "@/lib/api/queryCache";
 
 /** Which form the login page is showing: sign in or create account. */
@@ -40,7 +41,7 @@ export function useLogin() {
     },
     onSuccess: () => {
       clearAccountQueryCache(queryClient);
-      router.push("/dashboard");
+      router.push(nextPathFromLocation());
     },
     onError: (mutationError) => setError(errorMessage(mutationError)),
   });

@@ -4,8 +4,9 @@
 import Link from "next/link";
 import { useState } from "react";
 import { useMutation } from "@tanstack/react-query";
-import { ChevronRight, Crown, LogOut, UserMinus, UserPlus } from "lucide-react";
+import { ChevronRight, Crown, LogOut, Send, UserMinus, UserPlus } from "lucide-react";
 import type { Member } from "@haalkhata/protogen/group/v1/group_pb";
+import type { User } from "@haalkhata/protogen/common/v1/common_pb";
 import { OWNER_ROLE } from "@haalkhata/shared/group/roles";
 import { errorMessage, socialClient } from "@/lib/api/connect";
 import { Avatar } from "@/components/ui/Avatar";
@@ -46,6 +47,10 @@ export function MembersModal({
   removingUserId,
   onTransfer,
   transferringUserId,
+  onRemind,
+  remindingUserId,
+  onResetLink,
+  resettingLink,
   removeError,
   onClose,
 }: {
@@ -63,6 +68,14 @@ export function MembersModal({
   onTransfer: (userId: string) => void;
   /** Id of the member being made owner, while that is in flight. */
   transferringUserId: string | undefined;
+  /** Shares an Invited member's personal sign-up link. */
+  onRemind: (person: User) => void;
+  /** Member whose remind-share is in flight, for the row's busy state. */
+  remindingUserId: string | undefined;
+  /** Owner-only: turns the group's shared join link off. */
+  onResetLink: () => void;
+  /** Whether the link reset is in flight. */
+  resettingLink: boolean;
   /** Server message from the last failed removal or transfer, or "" when there is none. */
   removeError: string;
   /** Called when the modal is dismissed. */
@@ -114,6 +127,11 @@ export function MembersModal({
                     {isOwner ? (
                       <span className="ml-1.5 text-xs font-normal text-ink-soft">owner</span>
                     ) : null}
+                    {!person.registered ? (
+                      <span className="ml-1.5 rounded-full bg-paper px-2 py-0.5 text-[11px] font-medium text-ink-soft">
+                        invited
+                      </span>
+                    ) : null}
                   </span>
                 </span>
               </PersonLink>
@@ -130,7 +148,17 @@ export function MembersModal({
                 )
               ) : (
                 <>
-                  {isFriend ? (
+                  {!person.registered ? (
+                    <button
+                      type="button"
+                      disabled={remindingUserId === person.id}
+                      onClick={() => onRemind(person)}
+                      className={rowActionClass}
+                    >
+                      <Send className="h-3.5 w-3.5" />{" "}
+                      {remindingUserId === person.id ? "Sharing…" : "Remind"}
+                    </button>
+                  ) : isFriend ? (
                     <Link href={`/friends/${person.id}`} className={rowActionClass}>
                       Ledger <ChevronRight className="h-3.5 w-3.5" />
                     </Link>
@@ -174,6 +202,18 @@ export function MembersModal({
       </ul>
       {error || removeError ? (
         <p className="mt-3 text-sm text-brand-600">{error || removeError}</p>
+      ) : null}
+      {viewerIsOwner ? (
+        /* Revocation kills a link every member may have shared — the
+           destructive direction, so it sits with the owner like removal. */
+        <button
+          type="button"
+          disabled={resettingLink}
+          onClick={onResetLink}
+          className="mt-3 text-xs font-semibold text-ink-soft underline-offset-2 hover:text-brand-600 hover:underline disabled:opacity-50"
+        >
+          {resettingLink ? "Turning off…" : "Turn off the group's invite link"}
+        </button>
       ) : null}
     </Modal>
   );

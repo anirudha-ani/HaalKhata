@@ -175,6 +175,13 @@ export function PeoplePicker({
                   onToggle={onToggleFriend}
                   legend="Friends on this expense"
                   autoFocus={focusSearch}
+                  // §33: an Invited person can be a friend but never on a
+                  // transaction. Shown-but-disabled beats hidden — "why isn't
+                  // Rifat here?" answers itself.
+                  disabledIds={
+                    new Set(friends.filter((friend) => !friend.registered).map((friend) => friend.id))
+                  }
+                  disabledHint="invited — hasn't joined yet"
                 />
               </div>
             ) : null}

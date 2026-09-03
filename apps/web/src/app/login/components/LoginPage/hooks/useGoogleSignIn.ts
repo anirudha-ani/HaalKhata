@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { authClient, errorMessage } from "@/lib/api/connect";
+import { nextPathFromLocation } from "@/lib/navigation/nextPath";
 import { clearAccountQueryCache } from "@/lib/api/queryCache";
 import {
   GOOGLE_BUTTON_OPTIONS,
@@ -70,7 +71,7 @@ export function useGoogleSignIn() {
     mutationFn: (idToken: string) => authClient.logInWithGoogle({ idToken }),
     onSuccess: () => {
       clearAccountQueryCache(queryClient);
-      router.push("/dashboard");
+      router.push(nextPathFromLocation());
     },
     onError: (mutationError) => setError(errorMessage(mutationError)),
   });

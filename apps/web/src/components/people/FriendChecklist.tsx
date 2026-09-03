@@ -38,6 +38,8 @@ export function FriendChecklist({
   searchLabel = "Search friends",
   placeholder = "Search by name",
   autoFocus = false,
+  disabledIds,
+  disabledHint = "",
 }: {
   /** Everyone selectable, in the order they should be offered. */
   people: User[];
@@ -53,6 +55,14 @@ export function FriendChecklist({
   placeholder?: string;
   /** Whether to focus the search field on mount. */
   autoFocus?: boolean;
+  /**
+   * People shown but not selectable — e.g. Invited (unregistered) friends in
+   * an expense picker, who cannot be on a transaction until they sign up.
+   * Shown rather than hidden so "why isn't Rifat here?" never comes up.
+   */
+  disabledIds?: Set<string>;
+  /** Short label rendered on a disabled row saying why. */
+  disabledHint?: string;
 }) {
   const [query, setQuery] = useState("");
 
@@ -75,21 +85,32 @@ export function FriendChecklist({
       />
       <fieldset className={people.length > SCROLLING_LIST_THRESHOLD ? "max-h-64 overflow-y-auto" : ""}>
         <legend className="sr-only">{legend}</legend>
-        {visible.map((person) => (
-          <label
-            key={person.id}
-            className="flex cursor-pointer items-center gap-2.5 rounded-lg px-2 py-2 hover:bg-card"
-          >
-            <input
-              type="checkbox"
-              checked={selectedIds.includes(person.id)}
-              onChange={() => onToggle(person.id)}
-              className="h-4 w-4 accent-brand-600"
-            />
-            <Avatar user={person} size="sm" />
-            <span className="min-w-0 flex-1 truncate text-sm font-medium">{person.name}</span>
-          </label>
-        ))}
+        {visible.map((person) => {
+          const disabled = disabledIds?.has(person.id) ?? false;
+          return (
+            <label
+              key={person.id}
+              className={`flex items-center gap-2.5 rounded-lg px-2 py-2 ${
+                disabled ? "cursor-not-allowed opacity-60" : "cursor-pointer hover:bg-card"
+              }`}
+            >
+              <input
+                type="checkbox"
+                checked={selectedIds.includes(person.id)}
+                disabled={disabled}
+                onChange={() => onToggle(person.id)}
+                className="h-4 w-4 accent-brand-600"
+              />
+              <Avatar user={person} size="sm" />
+              <span className="min-w-0 flex-1 truncate text-sm font-medium">{person.name}</span>
+              {disabled && disabledHint ? (
+                <span className="shrink-0 rounded-full bg-paper px-2 py-0.5 text-[11px] text-ink-soft">
+                  {disabledHint}
+                </span>
+              ) : null}
+            </label>
+          );
+        })}
       </fieldset>
       {matching.length === 0 ? (
         <p className="px-2 pb-1 text-sm text-ink-soft">No one matches “{query}”.</p>

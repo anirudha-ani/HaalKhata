@@ -4,7 +4,9 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import type { User } from "@haalkhata/protogen/common/v1/common_pb";
-import { errorMessage } from "@/lib/api/connect";
+import { errorMessage, socialClient } from "@/lib/api/connect";
+import { shareInvite } from "@/lib/invite/share";
+import { useMutation } from "@tanstack/react-query";
 import {
   contactIsEmpty,
   contactPayload,
@@ -44,6 +46,7 @@ export function useGroupDetail(groupId: string) {
   const [contact, setContact] = useState<ContactDraft>(EMPTY_CONTACT);
   const [peopleError, setPeopleError] = useState("");
   const [memberError, setMemberError] = useState("");
+  const [linkNotice, setLinkNotice] = useState("");
   // `received` rides along because the same modal records both directions:
   // paying what you owe, and logging money that has arrived from someone who
   // owed you. Without it the group page could only ever offer the first.
@@ -97,6 +100,55 @@ export function useGroupDetail(groupId: string) {
   };
 
   /**
+   * Shares the group's one join link (minted on first ask) through the OS
+   * share sheet. Anyone with the link sees who invited them to what before
+   * accepting; a stranger joining this way is the consent path §33 gives
+   * registered non-friends.
+   */
+  const shareGroupLink = useMutation({
+    mutationFn: async () => {
+      const { token } = await socialClient.createGroupInviteLink({ groupId });
+      return shareInvite(
+        token,
+        groupDetailAPI.me?.name ?? "A member",
+        groupDetailAPI.group?.name ?? "a group",
+      );
+    },
+    onSuccess: (outcome) =>
+      setLinkNotice(outcome === "copied" ? "Invite link copied ✓" : "Invite link shared ✓"),
+    onError: (mutationError) => {
+      if (mutationError instanceof Error && mutationError.name === "AbortError") return;
+      setLinkNotice("");
+      setPeopleError(errorMessage(mutationError));
+    },
+  });
+
+  /** Owner-only: turns the shared link off; the next share mints a fresh one. */
+  const resetInviteLink = useMutation({
+    mutationFn: () => socialClient.revokeGroupInviteLink({ groupId }),
+    onSuccess: () => setLinkNotice("Invite link turned off — sharing again makes a new one"),
+    onError: (mutationError) => setMemberError(errorMessage(mutationError)),
+  });
+
+  /** Shares an Invited member's personal sign-up link. */
+  const remindMember = useMutation({
+    mutationFn: async (person: User) => {
+      const { token } = await socialClient.getFriendInviteLink({ userId: person.id });
+      return shareInvite(
+        token,
+        groupDetailAPI.me?.name ?? "A member",
+        groupDetailAPI.group?.name ?? "",
+      );
+    },
+    onSuccess: (outcome) =>
+      setLinkNotice(outcome === "copied" ? "Invite link copied ✓" : "Invite link shared ✓"),
+    onError: (mutationError) => {
+      if (mutationError instanceof Error && mutationError.name === "AbortError") return;
+      setMemberError(errorMessage(mutationError));
+    },
+  });
+
+  /**
    * Removes one member — the caller's own id means leaving. The zero-balance
    * gate lives on the server, whose message is the honest one to show; a
    * successful leave navigates away, since this page is no longer the
@@ -147,6 +199,22 @@ export function useGroupDetail(groupId: string) {
       ? groupDetailAPI.transferOwnership.variables
       : undefined,
     memberError,
+    linkNotice,
+    shareInviteLink: () => {
+      setLinkNotice("");
+      shareGroupLink.mutate();
+    },
+    sharingInviteLink: shareGroupLink.isPending,
+    resetInviteLink: () => {
+      setMemberError("");
+      resetInviteLink.mutate();
+    },
+    resettingInviteLink: resetInviteLink.isPending,
+    remindMember: (person: User) => {
+      setMemberError("");
+      remindMember.mutate(person);
+    },
+    remindingUserId: remindMember.isPending ? remindMember.variables?.id : undefined,
     candidates,
     pickedIds,
     togglePicked,
