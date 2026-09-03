@@ -101,6 +101,23 @@ export const socialHandler: ServiceImpl<typeof SocialService> = {
     );
   },
 
+  /** The caller's own "add me" link, minted on first ask. */
+  async getProfileInviteLink(_request, context) {
+    return runUsecase(
+      async () => social.getProfileInviteLink(await requireUser(context)),
+      context,
+    );
+  },
+
+  /** Disables the caller's profile link; the next ask mints a fresh one. */
+  async revokeProfileInviteLink(_request, context) {
+    await runUsecase(
+      async () => social.revokeProfileInviteLink(await requireUser(context)),
+      context,
+    );
+    return {};
+  },
+
   /** Disables the group's join link; owner only. */
   async revokeGroupInviteLink(request, context) {
     await runUsecase(

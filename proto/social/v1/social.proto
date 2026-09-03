@@ -35,6 +35,13 @@ service SocialService {
   // Disables the group's active link; a fresh one can be created after.
   // Owner only: revocation invalidates a link every member may have shared.
   rpc RevokeGroupInviteLink(RevokeGroupInviteLinkRequest) returns (google.protobuf.Empty);
+  // The caller's own shareable "add me" link, minted on first ask. Accepting
+  // it sends the owner an ordinary friend request — the link removes the
+  // typing, not the consent: a bearer string that leaks must not let a
+  // stranger attach themselves (and future one-off expenses) to the owner.
+  rpc GetProfileInviteLink(google.protobuf.Empty) returns (InviteLink);
+  // Disables the caller's profile link; the next ask mints a fresh one.
+  rpc RevokeProfileInviteLink(google.protobuf.Empty) returns (google.protobuf.Empty);
   // UNAUTHENTICATED. What a clicked link offers — who invited you, to what —
   // so the landing page can say it before asking anyone to sign in.
   // Possession of the unguessable token is the only credential; the call is
@@ -154,7 +161,7 @@ message PreviewInviteLinkRequest {
 }
 
 message InvitePreview {
-  string kind = 1; // "friend" | "group"
+  string kind = 1; // "friend" | "group" | "profile"
   string inviter_name = 2;
   // Group links only.
   string group_name = 3;

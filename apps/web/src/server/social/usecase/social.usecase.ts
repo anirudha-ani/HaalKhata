@@ -19,9 +19,11 @@ import {
   findActiveFriendLink,
   findActiveGroupLink,
   findActiveLinkByToken,
+  findActiveProfileLink,
   insertInviteLink,
   revokeFriendLinksFor,
   revokeGroupLinks,
+  revokeProfileLinks,
   type InviteLinkRow,
 } from "@/server/social/repo/inviteLinks.repo";
 import {
@@ -419,6 +421,43 @@ export async function createGroupInviteLink(
 }
 
 /**
+ * The caller's own shareable "add me" link, minted on first ask.
+ *
+ * @param userId - The profile's owner.
+ * @returns The link's bearer token.
+ */
+export async function getProfileInviteLink(userId: string): Promise<{ token: string }> {
+  const existing = await findActiveProfileLink(userId);
+  if (existing) return { token: existing.token };
+  const token = newInviteToken();
+  try {
+    await insertInviteLink({
+      token,
+      kind: "profile",
+      inviterId: userId,
+      groupId: null,
+      invitedUserId: null,
+    });
+  } catch (error) {
+    if (!isUniqueViolation(error)) throw error;
+    const winner = await findActiveProfileLink(userId);
+    if (winner) return { token: winner.token };
+    throw error;
+  }
+  return { token };
+}
+
+/**
+ * Disables the caller's profile link; the next ask mints a fresh one — the
+ * remedy when a link escaped further than intended.
+ *
+ * @param userId - The profile's owner.
+ */
+export async function revokeProfileInviteLink(userId: string): Promise<void> {
+  await revokeProfileLinks(userId);
+}
+
+/**
  * Disables the group's active join link. Owner only: revocation kills a
  * link every member may have already shared, which is the destructive
  * direction — the same line drawn for removing members.
@@ -456,6 +495,16 @@ export async function previewInviteLink(token: string) {
       inviterName: inviter?.name ?? "Someone",
       groupName: group.name,
       memberCount: members.length,
+      invitedName: "",
+    };
+  }
+  if (link.kind === "profile") {
+    if (!inviter || inviter.merged_into !== null) notFound(DEAD_LINK_MESSAGE);
+    return {
+      kind: "profile",
+      inviterName: inviter.name,
+      groupName: "",
+      memberCount: 0,
       invitedName: "",
     };
   }
@@ -513,8 +562,30 @@ export async function acceptInviteLink(
   const link = await loadActiveLink(token);
   const acceptor = await findUserById(userId);
   if (!acceptor) denied("account no longer exists");
-  if (link.inviter_id === userId && link.kind === "friend") {
+  if (link.inviter_id === userId && link.kind !== "group") {
     invalid("that's your own invite link");
+  }
+
+  if (link.kind === "profile") {
+    // The link removes the typing, not the consent: acceptance is an
+    // ordinary friend request the owner confirms from Friends, so a leaked
+    // bearer string cannot attach a stranger to somebody's expense picker.
+    if (await friendshipExists(userId, link.inviter_id)) return { groupId: "" };
+    await transaction(async (client) => {
+      const inserted = await insertFriendRequest(userId, link.inviter_id, client);
+      if (!inserted) return;
+      await insertNotifications(
+        [link.inviter_id],
+        {
+          type: "friend_request",
+          title: `${acceptor.name} wants to connect`,
+          body: "They used your profile link. Accept or decline from Friends.",
+          link: "/friends",
+        },
+        client,
+      );
+    });
+    return { groupId: "" };
   }
 
   if (link.kind === "friend") {

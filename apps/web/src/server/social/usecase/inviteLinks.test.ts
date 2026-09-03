@@ -30,9 +30,11 @@ vi.mock("@/server/social/repo/inviteLinks.repo", () => ({
   findActiveFriendLink: vi.fn(),
   findActiveGroupLink: vi.fn(),
   findActiveLinkByToken: vi.fn(),
+  findActiveProfileLink: vi.fn(),
   insertInviteLink: vi.fn(),
   revokeFriendLinksFor: vi.fn(),
   revokeGroupLinks: vi.fn(),
+  revokeProfileLinks: vi.fn(),
 }));
 vi.mock("@/server/group/repo/groups.repo", () => ({
   addMember: vi.fn(),
@@ -73,11 +75,16 @@ import {
   findActiveFriendLink,
   findActiveGroupLink,
   findActiveLinkByToken,
+  findActiveProfileLink,
   insertInviteLink,
   revokeFriendLinksFor,
   revokeGroupLinks,
 } from "@/server/social/repo/inviteLinks.repo";
-import { friendshipExists, insertFriendship } from "@/server/social/repo/friendships.repo";
+import {
+  friendshipExists,
+  insertFriendRequest,
+  insertFriendship,
+} from "@/server/social/repo/friendships.repo";
 import {
   addMember,
   findGroupById,
@@ -92,6 +99,7 @@ import {
   acceptInviteLink,
   createGroupInviteLink,
   getFriendInviteLink,
+  getProfileInviteLink,
   previewInviteLink,
   revokeGroupInviteLink,
 } from "./social.usecase";
@@ -387,5 +395,81 @@ describe("acceptInviteLink", () => {
     await expect(acceptInviteLink(CALLER, TOKEN)).resolves.toEqual({ groupId: GROUP });
     expect(addMember).not.toHaveBeenCalled();
     expect(insertActivity).not.toHaveBeenCalled();
+  });
+});
+
+describe("profile links (§33a)", () => {
+  it("mints the caller's one link and reuses it after", async () => {
+    vi.mocked(findActiveProfileLink).mockResolvedValue(undefined);
+
+    const { token } = await getProfileInviteLink(CALLER);
+    expect(token).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    expect(insertInviteLink).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: "profile", inviterId: CALLER }),
+    );
+
+    vi.mocked(findActiveProfileLink).mockResolvedValue(
+      linkRow({ kind: "profile", inviter_id: CALLER, invited_user_id: null }),
+    );
+    await expect(getProfileInviteLink(CALLER)).resolves.toEqual({ token: TOKEN });
+  });
+
+  it("previews as the owner's connect card", async () => {
+    vi.mocked(findActiveLinkByToken).mockResolvedValue(
+      linkRow({ kind: "profile", invited_user_id: null }),
+    );
+
+    await expect(previewInviteLink(TOKEN)).resolves.toEqual({
+      kind: "profile",
+      inviterName: "Anirudha",
+      groupName: "",
+      memberCount: 0,
+      invitedName: "",
+    });
+  });
+
+  it("accepting sends a friend request and notifies — never instant friendship", async () => {
+    // A leaked bearer link must not attach a stranger to the owner's picker.
+    vi.mocked(findActiveLinkByToken).mockResolvedValue(
+      linkRow({ kind: "profile", invited_user_id: null }),
+    );
+    vi.mocked(friendshipExists).mockResolvedValue(false);
+    vi.mocked(insertFriendRequest).mockResolvedValue(true);
+
+    await expect(acceptInviteLink(CALLER, TOKEN)).resolves.toEqual({ groupId: "" });
+
+    expect(insertFriendship).not.toHaveBeenCalled();
+    expect(insertFriendRequest).toHaveBeenCalledWith(CALLER, INVITER, expect.anything());
+    expect(insertNotifications).toHaveBeenCalledWith(
+      [INVITER],
+      expect.objectContaining({ type: "friend_request" }),
+      expect.anything(),
+    );
+  });
+
+  it("accepts quietly when already friends or already requested", async () => {
+    vi.mocked(findActiveLinkByToken).mockResolvedValue(
+      linkRow({ kind: "profile", invited_user_id: null }),
+    );
+
+    vi.mocked(friendshipExists).mockResolvedValue(true);
+    await expect(acceptInviteLink(CALLER, TOKEN)).resolves.toEqual({ groupId: "" });
+    expect(insertFriendRequest).not.toHaveBeenCalled();
+
+    vi.mocked(friendshipExists).mockResolvedValue(false);
+    vi.mocked(insertFriendRequest).mockResolvedValue(false);
+    await expect(acceptInviteLink(CALLER, TOKEN)).resolves.toEqual({ groupId: "" });
+    expect(insertNotifications).not.toHaveBeenCalled();
+  });
+
+  it("refuses the owner's own link", async () => {
+    vi.mocked(findActiveLinkByToken).mockResolvedValue(
+      linkRow({ kind: "profile", inviter_id: CALLER, invited_user_id: null }),
+    );
+
+    await expect(acceptInviteLink(CALLER, TOKEN)).rejects.toMatchObject({
+      code: "invalid_argument",
+      message: expect.stringContaining("your own invite link"),
+    });
   });
 });

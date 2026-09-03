@@ -6,8 +6,8 @@ import { execute, queryOne } from "@/server/common/db";
 /** One stored link, exactly as the table holds it. */
 export interface InviteLinkRow {
   token: string;
-  /** 'friend' (reminds a specific Invited person) or 'group' (join link). */
-  kind: "friend" | "group";
+  /** 'friend' (reminds an Invited person), 'group' (join link), or 'profile' ("add me"). */
+  kind: "friend" | "group" | "profile";
   inviter_id: string;
   group_id: string | null;
   invited_user_id: string | null;
@@ -72,7 +72,7 @@ export async function findActiveFriendLink(
  */
 export async function insertInviteLink(link: {
   token: string;
-  kind: "friend" | "group";
+  kind: "friend" | "group" | "profile";
   inviterId: string;
   groupId: string | null;
   invitedUserId: string | null;
@@ -81,6 +81,35 @@ export async function insertInviteLink(link: {
     `INSERT INTO invite_links (token, kind, inviter_id, group_id, invited_user_id)
      VALUES ($1, $2, $3, $4, $5)`,
     [link.token, link.kind, link.inviterId, link.groupId, link.invitedUserId],
+  );
+}
+
+/**
+ * The caller's one active profile link, if it exists.
+ *
+ * @param inviterId - The profile's owner.
+ * @returns The live link, or undefined.
+ */
+export async function findActiveProfileLink(
+  inviterId: string,
+): Promise<InviteLinkRow | undefined> {
+  return queryOne<InviteLinkRow>(
+    `SELECT ${LINK_COLUMNS} FROM invite_links
+      WHERE inviter_id = $1 AND kind = 'profile' AND revoked_at IS NULL`,
+    [inviterId],
+  );
+}
+
+/**
+ * Revokes the caller's active profile links; the next ask mints afresh.
+ *
+ * @param inviterId - The profile's owner.
+ */
+export async function revokeProfileLinks(inviterId: string): Promise<void> {
+  await execute(
+    `UPDATE invite_links SET revoked_at = now()
+      WHERE inviter_id = $1 AND kind = 'profile' AND revoked_at IS NULL`,
+    [inviterId],
   );
 }
 

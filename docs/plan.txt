@@ -2179,3 +2179,17 @@ Design:
 
 Rollout: migration+proto first, then server (gated), then web, then
 mobile, then docs — small commits per phase.
+
+### §33a Profile links: "add me" (2026-09-02)
+
+Third invite-link kind, 'profile': the caller's own shareable link, minted
+on first ask, one active per user, revocable. Preview says "X wants to
+connect"; ACCEPTING SENDS A FRIEND REQUEST rather than creating the
+friendship — the deliberate asymmetry against the other kinds. A friend/
+group link's blast radius is bounded (an Invited row holds no money; a
+group join is visible to the whole roster), but instant friendship from a
+bearer profile link would let anyone who finds it attach themselves to the
+owner and start putting them on one-off expenses. The link removes the
+typing and the identifier-guessing, not the consent tap. Already-friends
+and duplicate requests accept quietly; the owner gets the ordinary
+friend_request notification and accepts from Friends like any other.

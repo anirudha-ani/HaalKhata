@@ -31,3 +31,13 @@ export function inviteShareMessage(inviterName: string, groupName: string): stri
     ? `${inviterName} invited you to "${groupName}" on HaalKhata — split expenses and settle up without the spreadsheet.`
     : `${inviterName} invited you to HaalKhata — split expenses and settle up without the spreadsheet.`;
 }
+
+/**
+ * The message beside a shared profile link, written for its reader.
+ *
+ * @param name - The profile owner's display name.
+ * @returns One sentence inviting the reader to connect.
+ */
+export function profileShareMessage(name: string): string {
+  return `Add ${name} on HaalKhata — split expenses and settle up without the spreadsheet.`;
+}
