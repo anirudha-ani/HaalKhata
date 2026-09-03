@@ -16,12 +16,7 @@ import {
   updateSimplifyDebts,
 } from "@/server/group/repo/groups.repo";
 import type { UserRow } from "@/server/auth/repo/users.repo";
-import {
-  findUserByEmail,
-  findUserById,
-  findUserByPhone,
-  findUsersByIds,
-} from "@/server/auth/repo/users.repo";
+import { findUserById, findUsersByIds } from "@/server/auth/repo/users.repo";
 import { insertFriendship, listFriendIds } from "@/server/social/repo/friendships.repo";
 import { insertActivity } from "@/server/social/repo/activity.repo";
 import { insertNotifications } from "@/server/social/repo/notifications.repo";
@@ -29,7 +24,10 @@ import { userNetInGroup, userNetInGroups } from "@/server/expense/usecase/balanc
 import { denied, invalid, notFound } from "@/server/common/errors";
 import { toInt32Cents } from "@/server/common/money";
 import { normalizeCurrencyCode } from "@/server/common/validation";
-import { EMAIL_PATTERN, normalizePhone, PHONE_FORMAT_HINT } from "@/server/auth/auth.constants";
+import {
+  findOrCreateUserByEmail,
+  findOrCreateUserByPhone,
+} from "@/server/auth/usecase/auth.usecase";
 import {
   GROUP_TYPES,
   MAX_GROUP_MEMBER_IDS_PER_REQUEST,
@@ -197,15 +195,22 @@ async function enrollMembers(
 }
 
 /**
- * Resolves an optional email/phone to an existing account. Cold invites are
- * deliberately rejected: without an acceptance flow, creating a shadow row
- * would let the caller enrol a stranger who never consented.
+ * Resolves an optional email/phone to an account, creating the Invited
+ * (unregistered) row when nobody holds the identifier.
+ *
+ * Cold invites are safe now precisely because an unregistered row can be
+ * part of no transaction (plan.txt §33): enrolling one attributes no debt
+ * to anybody, it only reserves a seat that signing up later claims. A
+ * REGISTERED stranger still cannot be enrolled this way — the caller-side
+ * connected check applies to claimed accounts, and the group join link is
+ * the consent path for them.
  *
  * @param input - The raw email and phone fields. The legacy name field is
- *   accepted for wire compatibility but ignored because no shadow user is
- *   created. Empty contact fields mean nobody was invited.
+ *   accepted for wire compatibility but ignored. Empty contact fields mean
+ *   nobody was invited.
  * @returns The invited user row, or undefined when neither field was given.
- * @throws UsecaseError (invalid_argument) when both fields are populated.
+ * @throws UsecaseError (invalid_argument) when both fields are populated or
+ *   the given identifier is malformed.
  */
 async function resolveInvitee(input: {
   email?: string;
@@ -217,21 +222,20 @@ async function resolveInvitee(input: {
   if (email !== "" && phone !== "") {
     invalid("enter either an email address or a phone number, not both");
   }
-  let invitee: UserRow | undefined;
-  if (email !== "") {
-    if (!EMAIL_PATTERN.test(email)) invalid("please enter a valid email address");
-    invitee = await findUserByEmail(email);
-  }
-  if (phone !== "") {
-    const normalizedPhone = normalizePhone(phone);
-    if (!normalizedPhone) invalid(PHONE_FORMAT_HINT);
-    invitee = await findUserByPhone(normalizedPhone);
-  }
-  if ((email !== "" || phone !== "") && !invitee) {
-    denied("you can only add people you already share a friendship or a group with");
-  }
-  if (invitee) return invitee;
+  if (email !== "") return findOrCreateUserByEmail(email);
+  if (phone !== "") return findOrCreateUserByPhone(phone);
   return undefined;
+}
+
+/**
+ * Whether a row is an unclaimed invitation — enrollable without the
+ * connected check, because no transaction can ever involve it.
+ *
+ * @param user - Row to classify.
+ * @returns True when neither credential is set.
+ */
+function isUnclaimedInvite(user: UserRow): boolean {
+  return user.password_hash === null && user.google_sub === null;
 }
 
 /**
@@ -398,7 +402,14 @@ export async function addMembers(
   const candidateIds = [...pickedIds, ...(invitee ? [invitee.id] : [])];
   assertMemberIdCount(candidateIds);
   if (candidateIds.length === 0) invalid("pick somebody to add");
-  await assertCanAdd(userId, candidateIds);
+  // The connected rule protects claimed accounts from debt attribution by
+  // strangers. An unregistered invitee can carry no debt, so it enrols
+  // without it — that IS the invite.
+  const guardedIds =
+    invitee && isUnclaimedInvite(invitee)
+      ? candidateIds.filter((candidateId) => candidateId !== invitee.id)
+      : candidateIds;
+  await assertCanAdd(userId, guardedIds);
   const actor = (await findUserById(userId))!;
 
   // Under the group's ledger lock: a settlement being validated in this

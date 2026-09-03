@@ -20,6 +20,29 @@ service SocialService {
   // Nudges someone who owes the caller money. Rate-limited server-side so it
   // cannot become a way to harass somebody.
   rpc SendReminder(SendReminderRequest) returns (google.protobuf.Empty);
+
+  // Invite links. A person without an account appears as "Invited" and can
+  // be part of no transaction, which is what makes a bearer link safe to
+  // share: claiming an invite moves friendships and group memberships onto
+  // the acceptor's account, never money.
+
+  // The invited person's active reminder link, created on first ask. The
+  // target must be an unregistered ("Invited") connection of the caller.
+  rpc GetFriendInviteLink(GetFriendInviteLinkRequest) returns (InviteLink);
+  // The group's one active join link, created on first ask. Any member may
+  // — the same trust level as adding people directly.
+  rpc CreateGroupInviteLink(CreateGroupInviteLinkRequest) returns (InviteLink);
+  // Disables the group's active link; a fresh one can be created after.
+  // Owner only: revocation invalidates a link every member may have shared.
+  rpc RevokeGroupInviteLink(RevokeGroupInviteLinkRequest) returns (google.protobuf.Empty);
+  // UNAUTHENTICATED. What a clicked link offers — who invited you, to what —
+  // so the landing page can say it before asking anyone to sign in.
+  // Possession of the unguessable token is the only credential; the call is
+  // rate-limited by client address.
+  rpc PreviewInviteLink(PreviewInviteLinkRequest) returns (InvitePreview);
+  // Accepts a link as the signed-in caller: joins the group and/or claims
+  // the invited identity, and befriends the inviter. Safe to repeat.
+  rpc AcceptInviteLink(AcceptInviteLinkRequest) returns (AcceptInviteLinkResponse);
 }
 
 message SendReminderRequest {
@@ -104,4 +127,48 @@ message Notification {
 message ListNotificationsResponse {
   repeated Notification notifications = 1;
   int32 unread_count = 2;
+}
+
+message GetFriendInviteLinkRequest {
+  // The Invited (unregistered) person the link reminds.
+  string user_id = 1;
+}
+
+message CreateGroupInviteLinkRequest {
+  string group_id = 1;
+}
+
+message RevokeGroupInviteLinkRequest {
+  string group_id = 1;
+}
+
+message InviteLink {
+  // Opaque bearer token. Clients compose the shareable URL as
+  // https://haalkhata.app/join/<token>; the server never builds URLs so the
+  // link origin stays a client concern.
+  string token = 1;
+}
+
+message PreviewInviteLinkRequest {
+  string token = 1;
+}
+
+message InvitePreview {
+  string kind = 1; // "friend" | "group"
+  string inviter_name = 2;
+  // Group links only.
+  string group_name = 3;
+  int32 member_count = 4;
+  // Friend links only: the name the invitation was created under, so the
+  // landing page can say "join as Rifat".
+  string invited_name = 5;
+}
+
+message AcceptInviteLinkRequest {
+  string token = 1;
+}
+
+message AcceptInviteLinkResponse {
+  // Set for a group link so the client can land on the group afterwards.
+  string group_id = 1;
 }

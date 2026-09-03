@@ -297,6 +297,18 @@ async function validateExpenseParticipants(
 ): Promise<void> {
   const users = await findUsersByIds(involved);
   if (users.length !== involved.length) invalid("unknown participant");
+  // The Invited rule (plan.txt §33): a person without an account can be a
+  // friend and a group member, but never on a transaction — the one gate
+  // that keeps a bearer invite link from ever moving money. Legacy rows
+  // with pre-§33 history keep it; they just can't join NEW expenses.
+  const unregistered = users.find(
+    (participant) => participant.password_hash === null && participant.google_sub === null,
+  );
+  if (unregistered) {
+    invalid(
+      `${unregistered.name} hasn't joined HaalKhata yet — remind them to sign up before splitting with them`,
+    );
+  }
   const { groupId, groupMemberIds } = scope;
   if (groupId) {
     for (const participantId of involved) {

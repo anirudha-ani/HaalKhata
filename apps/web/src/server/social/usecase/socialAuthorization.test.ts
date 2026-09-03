@@ -26,6 +26,20 @@ vi.mock("@/server/group/repo/groups.repo", () => ({
 }));
 vi.mock("@/server/common/db", () => ({
   transaction: vi.fn((operation) => operation({ query: vi.fn() })),
+  isUniqueViolation: vi.fn(() => false),
+}));
+vi.mock("@/server/auth/usecase/auth.usecase", () => ({
+  findOrCreateUserByEmail: vi.fn(),
+  findOrCreateUserByPhone: vi.fn(),
+}));
+vi.mock("@/server/auth/repo/accountMerge.repo", () => ({ mergeAccounts: vi.fn() }));
+vi.mock("@/server/social/repo/inviteLinks.repo", () => ({
+  findActiveFriendLink: vi.fn(),
+  findActiveGroupLink: vi.fn(),
+  findActiveLinkByToken: vi.fn(),
+  insertInviteLink: vi.fn(),
+  revokeFriendLinksFor: vi.fn(),
+  revokeGroupLinks: vi.fn(),
 }));
 vi.mock("@/server/social/repo/notifications.repo", () => ({
   countUnread: vi.fn(),
@@ -39,7 +53,8 @@ vi.mock("@/server/expense/usecase/balance.usecase", () => ({
   netWithUser: vi.fn(),
 }));
 
-import { findUserByEmail, findUserById } from "@/server/auth/repo/users.repo";
+import { findUserById } from "@/server/auth/repo/users.repo";
+import { findOrCreateUserByEmail } from "@/server/auth/usecase/auth.usecase";
 import {
   deleteFriendRequest,
   friendshipExists,
@@ -79,11 +94,9 @@ beforeEach(() => {
 });
 
 describe("addFriend contact lookup", () => {
-  it("returns the same empty acknowledgement for missing and existing accounts", async () => {
-    vi.mocked(findUserByEmail).mockResolvedValue(undefined);
-    await expect(addFriend(CALLER, { email: TARGET_EMAIL, phone: "" })).resolves.toEqual({});
+  it("keeps the request flow for a registered account", async () => {
+    vi.mocked(findOrCreateUserByEmail).mockResolvedValue(targetRow);
 
-    vi.mocked(findUserByEmail).mockResolvedValue(targetRow);
     await expect(addFriend(CALLER, { email: TARGET_EMAIL, phone: "" })).resolves.toEqual({});
 
     expect(insertFriendship).not.toHaveBeenCalled();
@@ -95,8 +108,25 @@ describe("addFriend contact lookup", () => {
     );
   });
 
+  it("befriends an unregistered contact immediately as Invited (§33)", async () => {
+    // Nobody exists to accept, and an unregistered row can hold no
+    // transactions, so the entry is a contact-book line until claimed.
+    vi.mocked(findOrCreateUserByEmail).mockResolvedValue({
+      ...targetRow,
+      id: "invited-1",
+      google_sub: null,
+      password_hash: null,
+    });
+
+    await expect(addFriend(CALLER, { email: TARGET_EMAIL, phone: "" })).resolves.toEqual({});
+
+    expect(insertFriendship).toHaveBeenCalledWith(CALLER, "invited-1");
+    expect(insertFriendRequest).not.toHaveBeenCalled();
+    expect(insertNotifications).not.toHaveBeenCalled();
+  });
+
   it("does not reveal or notify a duplicate pending request", async () => {
-    vi.mocked(findUserByEmail).mockResolvedValue(targetRow);
+    vi.mocked(findOrCreateUserByEmail).mockResolvedValue(targetRow);
     vi.mocked(insertFriendRequest).mockResolvedValue(false);
 
     const result = await addFriend(CALLER, { email: TARGET_EMAIL, phone: "" });
@@ -107,7 +137,7 @@ describe("addFriend contact lookup", () => {
   });
 
   it("does not create a pending request for an accepted friendship", async () => {
-    vi.mocked(findUserByEmail).mockResolvedValue(targetRow);
+    vi.mocked(findOrCreateUserByEmail).mockResolvedValue(targetRow);
     vi.mocked(friendshipExists).mockResolvedValue(true);
 
     await expect(addFriend(CALLER, { email: TARGET_EMAIL, phone: "" })).resolves.toEqual({});

@@ -2119,3 +2119,63 @@ single identifier box: production rejects that flow entirely.
 
 Plus: a Twilio setup runbook artifact for the operator (account, Verify
 service, restricted API key, geo permissions, Fraud Guard, secrets wiring).
+
+## §33 Frictionless invites: Invited people, reminder links, group join links (2026-09-02)
+
+Direction from Anirudha: minimize friction. Anyone can add anyone as a
+friend or into a group; a person without an account appears as "Invited"
+and CANNOT be part of any transaction until they sign up. Inviters get an
+easy share-a-link way to remind them; groups get a shareable join link
+whose landing page says who invited you to what, and accepting joins you.
+
+The key insight that makes this safe: the no-transaction rule removes all
+money from unclaimed rows. An invite that carries no balances can be
+claimed via a bearer link without the recycled-number/absorb-history
+dangers §32 defends against — claiming an empty identity just wires up
+friendships and group memberships.
+
+Design:
+1. Invited = the existing shadow-user row (no credential), resurrected as
+   a first-class state. `User.registered` already crosses the wire; the
+   clients render an "Invited" badge off it.
+2. The transaction gate lives in ONE place: expense create/update refuses
+   unregistered payers/owers by name ("X hasn't joined yet — remind them
+   to sign up"). Settlements and reminders need no new guard: both already
+   require outstanding debt, and a no-transaction invitee can never have
+   any. Legacy shadows with pre-existing money keep their history and can
+   still be settled with; they just can't join NEW expenses.
+3. AddFriend(email/phone) with no matching account creates the shadow and
+   an immediate two-way friendship (there is nobody to accept). A matching
+   REGISTERED account keeps today's request+accept flow. Trade-off knowingly
+   accepted: the differing outcomes reveal whether an identifier has an
+   account — Splitwise-style frictionlessness beats the oracle here; rate
+   limits (10/min) and logging stay.
+4. AddMembers email/phone that matches nobody creates the shadow and
+   enrols it (Invited member). Registered-but-unconnected stays refused —
+   the join link is the path for strangers.
+5. invite_links table (raw 43-char random token PK — retrievable so the
+   share button always shows the same link; revocable): kind 'friend'
+   (inviter + the invited shadow it claims) or 'group' (group_id). One
+   active link per (inviter, invited) pair and per group.
+6. New social.v1 RPCs (all link kinds live in social — the connective
+   tissue — to avoid cross-proto imports): GetFriendInviteLink,
+   CreateGroupInviteLink (any member; returns the active link),
+   RevokeGroupInviteLink (owner), PreviewInviteLink (UNAUTHENTICATED,
+   IP-rate-limited; returns inviter name, kind, group name+member count),
+   AcceptInviteLink (authenticated): friend-kind → merge the still-
+   unclaimed shadow into the caller (memberships and friendships ride
+   along) + befriend the inviter; group-kind → enrol + befriend inviter,
+   with feed event and notification. Idempotent re-accepts.
+7. mergeAccounts generalizes for link claims: the eligibility check uses
+   IS NOT DISTINCT FROM for a NULL phone, and the loser's email moves to
+   the keeper when the keeper has none, otherwise is cleared — a tombstone
+   must not strand an address the person may later sign up with.
+8. Delivery is the inviter's own share sheet (navigator.share / RN Share,
+   clipboard fallback) — industry standard for v1; no server-side email or
+   SMS sending is introduced.
+9. Web landing route /join/<token> (public preview → Google sign-in →
+   auto-accept); login gains a `next` redirect if it lacks one. Mobile
+   mirrors with an expo-router join/[token] route.
+
+Rollout: migration+proto first, then server (gated), then web, then
+mobile, then docs — small commits per phase.

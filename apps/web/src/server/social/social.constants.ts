@@ -8,6 +8,19 @@
  */
 export const REMINDER_COOLDOWN_HOURS = 24;
 
+/** Random bytes in an invite-link token; 32 encode to 43 base64url chars. */
+export const INVITE_LINK_TOKEN_BYTES = 32;
+
+/** Base64url shape of a token produced from {@link INVITE_LINK_TOKEN_BYTES}. */
+export const INVITE_LINK_TOKEN_PATTERN = /^[A-Za-z0-9_-]{43}$/;
+
+/**
+ * Unauthenticated invite-link previews allowed per client address per
+ * minute. The token itself is the credential; this just keeps the endpoint
+ * from being a scanning surface.
+ */
+export const INVITE_PREVIEW_RATE_LIMIT = 30;
+
 /** Maximum unanswered friend requests retained for one recipient. */
 export const MAX_PENDING_FRIEND_REQUESTS = 100;
 

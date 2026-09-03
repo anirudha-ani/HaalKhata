@@ -70,7 +70,8 @@ import {
   updateMemberRole,
   updateSimplifyDebts,
 } from "@/server/group/repo/groups.repo";
-import { findUserByEmail, findUserById } from "@/server/auth/repo/users.repo";
+import { findUserById, findUsersByIds } from "@/server/auth/repo/users.repo";
+import { findOrCreateUserByEmail } from "@/server/auth/usecase/auth.usecase";
 import { listFriendIds } from "@/server/social/repo/friendships.repo";
 import { insertActivity } from "@/server/social/repo/activity.repo";
 import { userNetInGroup } from "@/server/expense/usecase/balance.usecase";
@@ -121,13 +122,41 @@ beforeEach(() => {
 });
 
 describe("group membership authorization", () => {
-  it("does not let a contact field bypass the connected-user check", async () => {
-    vi.mocked(findUserByEmail).mockResolvedValue({ id: TARGET } as UserRow);
+  it("still denies a REGISTERED unconnected contact typed into the field", async () => {
+    // The connected rule protects claimed accounts from debt attribution by
+    // strangers; the invite path below is only for rows nobody can sign into.
+    vi.mocked(findOrCreateUserByEmail).mockResolvedValue({
+      id: "stranger-1",
+      google_sub: "google-stranger",
+      password_hash: null,
+    } as UserRow);
 
     await expect(
-      addMembers(MEMBER, { groupId: TRIP, email: "target@example.com" }),
+      addMembers(MEMBER, { groupId: TRIP, userIds: [], email: "stranger@example.com" }),
     ).rejects.toMatchObject({ code: "permission_denied" });
     expect(addMember).not.toHaveBeenCalled();
+  });
+
+  it("creates and enrols an UNREGISTERED contact as Invited (§33)", async () => {
+    // No credential means no possible transaction, so enrolling attributes
+    // debt to nobody — that is what makes the cold invite safe.
+    const invited = {
+      id: "invited-1",
+      name: "New Person",
+      google_sub: null,
+      password_hash: null,
+    } as UserRow;
+    vi.mocked(findOrCreateUserByEmail).mockResolvedValue(invited);
+    vi.mocked(findUsersByIds).mockResolvedValue([invited]);
+
+    const result = await addMembers(MEMBER, {
+      groupId: TRIP,
+      userIds: [],
+      email: "new-person@example.com",
+    });
+
+    expect(addMember).toHaveBeenCalledWith(TRIP, "invited-1", "member", expect.anything());
+    expect(result.added).toHaveLength(1);
   });
 
   it("lets a zero-balance non-owner leave a group", async () => {

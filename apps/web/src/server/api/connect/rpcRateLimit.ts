@@ -13,6 +13,7 @@ import { rateLimitCheck } from "@/server/common/rateLimit";
  * a minute; a script can otherwise turn one account into a load test.
  */
 export const RPC_RATE_LIMITS = {
+  acceptInvite: 10,
   addFriend: 10,
   addMembers: 15,
   createExpense: 30,
