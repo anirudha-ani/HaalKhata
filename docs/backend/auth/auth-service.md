@@ -48,6 +48,10 @@ Google link. Everything else is an *unclaimed invite* (shadow user):
   an account, a colliding shadow row cannot simply be claimed — it must be
   **merged** into the caller's account (`ConfirmPhoneMerge`), which is why
   phone gets its own two-RPC flow instead of a field on `UpdateProfile`.
+- **By invite link (§33):** `AcceptInviteLink` merges a still-unclaimed
+  Invited row into the acceptor. A bearer link suffices here because §33
+  rows can hold no transactions — the claim moves friendships and group
+  seats, never money.
 
 **Recycled-number defense:** possession of a number proves control *today*,
 not when old invitations were written. So a collision never merges silently —

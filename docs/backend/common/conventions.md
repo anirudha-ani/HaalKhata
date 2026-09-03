@@ -126,6 +126,8 @@ tracked keys with LRU eviction so it cannot be a memory-exhaustion vector.
 | SMS sends per destination number | keyed HMAC, **durable** (`phone_send_events`) | 3/hour, 8/day |
 | SMS sends per client IP | **durable** (`phone_send_events`) | 20/hour |
 | `AddFriend` | per account | 10/min |
+| `AcceptInviteLink` | per account | 10/min |
+| `PreviewInviteLink` | per client IP (unauthenticated) | 30/min |
 | `AddMembers` | per account | 15/min |
 | `CreateExpense` | per account | 30/min |
 | `SendReminder` | per account | 10/min |

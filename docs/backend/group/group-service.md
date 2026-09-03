@@ -32,12 +32,14 @@ SQL in [groups.repo.ts](../../../apps/web/src/server/group/repo/groups.repo.ts).
 | Transfer ownership | owner only | Also how an owner leaves: hand the role on, become an ordinary member, then leave like anyone else. |
 | Flip simplify-debts | **any member** | Same trust level as adding people: a routing mode over fully derived balances — rewrites nothing, always reversible. |
 
-**Who may be added:** only people the caller is *connected* to — an explicit
-friend, or someone they already share any group with. A bare user id is not
-authorization (a stranger's id would be enough to enrol them and start
-attributing debts to them), and an email/phone must resolve to an existing
-connected account — **cold invites are rejected** here (no acceptance flow
-exists on this path; shadow rows are never created by AddMembers). The
+**Who may be added:** registered people the caller is *connected* to — an
+explicit friend, or someone they already share any group with. A bare user
+id is not authorization (a stranger's id would be enough to enrol them and
+start attributing debts to them). Since §33, an email/phone matching
+**nobody** creates the Invited row and enrols it directly — safe precisely
+because an unregistered row can be on no transaction, so no debt can be
+attributed to it; a **registered** stranger still cannot be enrolled this
+way, and the group's shareable join link is their consent path. The
 connected set includes co-members, not just friends, because two people who
 met in somebody else's group have no friendship row yet would still be
 offered to each other in the picker.

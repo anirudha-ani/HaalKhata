@@ -22,9 +22,10 @@ SQL in [friendships.repo.ts](../../../apps/web/src/server/social/repo/friendship
 ## The Friendship Model
 
 - A **friendship** is symmetric (two rows, one per direction) and is created
-  only by: accepting a friend request, being added to a group together (the
-  adder ↔ the added), or sharing a one-off expense (the creator ↔ each
-  participant).
+  by: accepting a friend request, being added to a group together (the adder
+  ↔ the added), sharing a one-off expense (the creator ↔ each participant),
+  inviting an unregistered contact (§33 — immediate, since nobody exists to
+  accept), or accepting an invite link (acceptor ↔ inviter).
 - A **friend request** is asymmetric and pending until the recipient acts.
   At most 100 unanswered requests are retained per recipient.
 - "**Connected**" (the authorization set for adding people to groups and
@@ -37,11 +38,13 @@ SQL in [friendships.repo.ts](../../../apps/web/src/server/social/repo/friendship
 
 ## Privacy Invariants
 
-- **AddFriend is not an existence oracle.** Every syntactically valid lookup
-  returns the same empty response — target missing, target is yourself,
-  already friends, request already pending, or a request actually created
-  are all indistinguishable to the caller. Only the recipient learns a real
-  request exists (their private list + a notification).
+- **AddFriend leaks less than it used to, deliberately more than nothing.**
+  Since §33, an email/phone matching nobody creates an Invited row and an
+  immediate friendship (there is nobody to accept), while registered targets
+  keep the request flow — so the differing outcomes reveal whether an
+  identifier has an account. Frictionless inviting won that trade knowingly;
+  within the registered flow, self/duplicate/pending stay indistinguishable,
+  and the rate limit stands.
 - A pending request's sender is shown through the minimal
   `toFriendRequestUser` projection — no contact info, payment handles,
   currency, or registration status until accepted.
@@ -49,6 +52,22 @@ SQL in [friendships.repo.ts](../../../apps/web/src/server/social/repo/friendship
   user ids allowed to see it, decided by the writer (expense participants,
   group members for structural events). Reads filter by audience; a group
   feed still only shows a member what their audiences allow.
+
+## Invite Links (§33)
+
+A person without an account appears as **Invited** (`registered: false`) and
+can be part of **no transaction** — the expense service refuses unregistered
+participants by name. That one rule is what makes a bearer link safe to
+share: claiming an invite moves friendships and group memberships onto the
+acceptor's account (via the §32 merge machinery, whose money invariant holds
+trivially at zero), never money.
+
+`invite_links` holds two kinds, each with one active link (regenerate =
+revoke + recreate): **friend** (inviter + the Invited row it claims) and
+**group** (one join link per group). Tokens are 43-char random bearer
+credentials; every unusable token — malformed, revoked, missing, already
+claimed — gets one identical sentence, so the endpoints scan as nothing.
+Delivery is the inviter's own share sheet; the server sends no email or SMS.
 
 ## Rate Limits (this service)
 
@@ -70,6 +89,11 @@ SQL in [friendships.repo.ts](../../../apps/web/src/server/social/repo/friendship
 5. [ListNotifications](#5-listnotifications)
 6. [MarkNotificationsRead](#6-marknotificationsread)
 7. [SendReminder](#7-sendreminder)
+8. [GetFriendInviteLink](#8-getfriendinvitelink)
+9. [CreateGroupInviteLink](#9-creategroupinvitelink)
+10. [RevokeGroupInviteLink](#10-revokegroupinvitelink)
+11. [PreviewInviteLink](#11-previewinvitelink)
+12. [AcceptInviteLink](#12-acceptinvitelink)
 
 ---
 
@@ -83,14 +107,17 @@ SQL in [friendships.repo.ts](../../../apps/web/src/server/social/repo/friendship
 - **Exactly one identifier** of `user_id` / `email` / `phone` (E.164 or US
   national) — the clients present one "email or phone" field and route the
   raw string, so both being set means a client bug, and the server says so
-  rather than guessing. The legacy `name` field is ignored (shadow users are
-  never created here).
+  rather than guessing. The legacy `name` field is ignored.
 - Malformed identifiers are the only user-visible failures
   (`InvalidArgument` with the format hint).
-- **No friendship exists until the recipient accepts.** The request insert
-  and the recipient's `friend_request` notification commit together; a
-  duplicate pending request inserts nothing and notifies nobody (no
-  notification spam by re-sending).
+- **Registered targets:** no friendship exists until the recipient accepts.
+  The request insert and the recipient's `friend_request` notification
+  commit together; a duplicate pending request inserts nothing and notifies
+  nobody (no notification spam by re-sending).
+- **Unmatched email/phone (§33):** the Invited row is created on the spot
+  with an immediate two-way friendship — there is nobody to accept, and the
+  row can hold no transactions, so it is a contact-book entry until claimed.
+  The person appears as "Invited" on the caller's next friends refetch.
 - Merged-away accounts (tombstones) are treated as missing.
 
 #### Request
@@ -302,3 +329,146 @@ account?").
 #### Response
 
 `google.protobuf.Empty`.
+
+---
+
+### 8. GetFriendInviteLink
+
+**Method:** `GetFriendInviteLink`
+**Route:** `POST /api/connect/social.v1.SocialService/GetFriendInviteLink`
+
+#### Notes
+
+- Returns the Invited person's active reminder link, minting it on first ask
+  (one active link per (inviter, invited) pair; a concurrent ask re-reads
+  the unique-index winner).
+- **Authorization:** the target must be *unregistered* (a registered person
+  signs in, they don't need a claiming link) and *connected* to the caller —
+  their friend or a co-member — so a bare user id cannot mint a link that
+  claims somebody else's invitation.
+- Clients compose the URL as `https://haalkhata.app/join/<token>` and hand
+  it to the OS share sheet; the server never builds URLs.
+
+#### Request
+
+| Field | Type | Description |
+| --- | --- | --- |
+| user_id | string | The Invited person the link reminds. |
+
+#### Response
+
+**InviteLink:** `{ token }`.
+
+---
+
+### 9. CreateGroupInviteLink
+
+**Method:** `CreateGroupInviteLink`
+**Route:** `POST /api/connect/social.v1.SocialService/CreateGroupInviteLink`
+
+#### Notes
+
+- The group's one active join link, minted on first ask. **Any member may**
+  — the same trust level as adding people directly, and the accept side
+  still records who invited whom.
+
+#### Request
+
+| Field | Type | Description |
+| --- | --- | --- |
+| group_id | string | |
+
+#### Response
+
+**InviteLink:** `{ token }`.
+
+---
+
+### 10. RevokeGroupInviteLink
+
+**Method:** `RevokeGroupInviteLink`
+**Route:** `POST /api/connect/social.v1.SocialService/RevokeGroupInviteLink`
+
+#### Notes
+
+- Disables the group's active link at once; a fresh one can be created
+  after. **Owner only:** revocation invalidates a link every member may
+  have shared — the destructive direction, drawn where member removal is.
+
+#### Request
+
+| Field | Type | Description |
+| --- | --- | --- |
+| group_id | string | |
+
+#### Response
+
+`google.protobuf.Empty`.
+
+---
+
+### 11. PreviewInviteLink
+
+**Method:** `PreviewInviteLink`
+**Route:** `POST /api/connect/social.v1.SocialService/PreviewInviteLink`
+
+#### Notes
+
+- **UNAUTHENTICATED** — the landing page must say "Anirudha invited you to
+  Bali Trip" *before* asking anyone to create an account. Possession of the
+  unguessable token is the credential; 30/min per client IP keeps the
+  endpoint from being a scanning surface.
+- Every dead shape — malformed, unknown, revoked, an invitation already
+  claimed — returns the identical `NotFound` sentence.
+
+#### Request
+
+| Field | Type | Description |
+| --- | --- | --- |
+| token | string | From the shared URL. |
+
+#### Response
+
+**InvitePreview:**
+
+| Field | Type | Description |
+| --- | --- | --- |
+| kind | string | `"friend"` \| `"group"`. |
+| inviter_name | string | Who shared the link. |
+| group_name / member_count | string / int32 | Group links only. |
+| invited_name | string | Friend links: the name the invite was created under. |
+
+---
+
+### 12. AcceptInviteLink
+
+**Method:** `AcceptInviteLink`
+**Route:** `POST /api/connect/social.v1.SocialService/AcceptInviteLink`
+
+#### Notes
+
+- Authenticated; 10/min per account. Safe to repeat.
+- **Friend link:** the still-unclaimed invited identity is merged into the
+  caller (friendships and group memberships ride along; no money can exist
+  on it), its reminder links are revoked, and caller ↔ inviter are
+  befriended. A caller who already claimed the row by email match skips the
+  merge; an identity claimed by somebody else is a dead link; the inviter's
+  own link is refused.
+- **Group link:** enrols the caller under the group's ledger lock, befriends
+  them with the inviter, and writes a `member_added` feed event ("joined via
+  X's invite link") so a new face is explained. Already a member → quiet
+  success.
+- Either way the inviter gets an `invite_accepted` notification — the one
+  moment an invite produces for its sender.
+
+#### Request
+
+| Field | Type | Description |
+| --- | --- | --- |
+| token | string | From the shared URL. |
+
+#### Response
+
+| Field | Type | Description |
+| --- | --- | --- |
+| group_id | string | Set for group links, so the client can land there. |
