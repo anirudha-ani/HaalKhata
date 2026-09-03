@@ -217,31 +217,45 @@ export function FriendsScreen() {
                   <ChevronRight color={colors.inkSoft} size={16} />
                 </PersonLink>
                 <View style={styles.rowActions}>
-                  <Pressable
-                    accessibilityLabel="Add one-off expense"
-                    onPress={() => router.push(`/expenses/new?friend=${person.id}`)}
-                    style={styles.iconAction}
-                  >
-                    <Plus color={colors.inkSoft} size={16} />
-                  </Pressable>
-                  {/* Settling is offered whichever way the debt runs — being
-                      owed money used to be a dead end with no action at all.
-                      It opens on the largest balance; the sheet can switch
-                      currency. */}
-                  {lead ? (
+                  {!person.registered ? (
+                    /* An invited person can be on no expense yet; the useful
+                       action is nudging them to sign up. */
                     <Button
+                      busy={friendsState.remindingUserId === person.id}
                       compact
-                      label="Settle"
-                      onPress={() =>
-                        friendsState.setSettleWith({
-                          user: person,
-                          currency: lead.currency,
-                          cents: lead.cents,
-                        })
-                      }
+                      label="Remind"
+                      onPress={() => friendsState.remindFriend(person)}
                       variant="outline"
                     />
-                  ) : null}
+                  ) : (
+                    <>
+                      <Pressable
+                        accessibilityLabel="Add one-off expense"
+                        onPress={() => router.push(`/expenses/new?friend=${person.id}`)}
+                        style={styles.iconAction}
+                      >
+                        <Plus color={colors.inkSoft} size={16} />
+                      </Pressable>
+                      {/* Settling is offered whichever way the debt runs — being
+                          owed money used to be a dead end with no action at all.
+                          It opens on the largest balance; the sheet can switch
+                          currency. */}
+                      {lead ? (
+                        <Button
+                          compact
+                          label="Settle"
+                          onPress={() =>
+                            friendsState.setSettleWith({
+                              user: person,
+                              currency: lead.currency,
+                              cents: lead.cents,
+                            })
+                          }
+                          variant="outline"
+                        />
+                      ) : null}
+                    </>
+                  )}
                 </View>
               </View>
             );

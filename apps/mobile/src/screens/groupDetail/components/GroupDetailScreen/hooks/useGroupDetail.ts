@@ -3,7 +3,9 @@
 import type { User } from "@haalkhata/protogen/common/v1/common_pb";
 import { useRouter } from "expo-router";
 import { useState } from "react";
-import { errorMessage } from "@/lib/api/connect";
+import { errorMessage, socialClient } from "@/lib/api/connect";
+import { shareInvite } from "@/lib/invite/share";
+import { useMutation } from "@tanstack/react-query";
 import {
   contactIsEmpty,
   contactPayload,
@@ -44,6 +46,7 @@ export function useGroupDetail(groupId: string) {
   const [contact, setContact] = useState<ContactDraft>(EMPTY_CONTACT);
   const [peopleError, setPeopleError] = useState("");
   const [memberError, setMemberError] = useState("");
+  const [linkNotice, setLinkNotice] = useState("");
   // The server deliberately does not expose outgoing-request state, so this
   // local marker prevents accidental duplicate taps while the sheet is open.
   const [requestedIds, setRequestedIds] = useState<string[]>([]);
@@ -98,6 +101,48 @@ export function useGroupDetail(groupId: string) {
       },
     );
   };
+
+  /**
+   * Shares the group's one join link (minted on first ask) through the
+   * native share sheet.
+   */
+  const shareGroupLink = useMutation({
+    mutationFn: async () => {
+      const { token } = await socialClient.createGroupInviteLink({ groupId });
+      return shareInvite(
+        token,
+        groupDetailAPI.me?.name ?? "A member",
+        groupDetailAPI.group?.name ?? "a group",
+      );
+    },
+    onSuccess: (outcome) => {
+      if (outcome === "shared") setLinkNotice("Invite link shared ✓");
+    },
+    onError: (mutationError) => setPeopleError(errorMessage(mutationError)),
+  });
+
+  /** Owner-only: turns the shared link off; the next share mints a fresh one. */
+  const resetLink = useMutation({
+    mutationFn: () => socialClient.revokeGroupInviteLink({ groupId }),
+    onSuccess: () => setLinkNotice("Invite link turned off — sharing again makes a new one"),
+    onError: (mutationError) => setMemberError(errorMessage(mutationError)),
+  });
+
+  /** Shares an Invited member's personal sign-up link. */
+  const remind = useMutation({
+    mutationFn: async (person: User) => {
+      const { token } = await socialClient.getFriendInviteLink({ userId: person.id });
+      return shareInvite(
+        token,
+        groupDetailAPI.me?.name ?? "A member",
+        groupDetailAPI.group?.name ?? "",
+      );
+    },
+    onSuccess: (outcome) => {
+      if (outcome === "shared") setLinkNotice("Invite link shared ✓");
+    },
+    onError: (mutationError) => setMemberError(errorMessage(mutationError)),
+  });
 
   /**
    * Removes one member — the caller's own id means leaving. The zero-balance
@@ -164,6 +209,22 @@ export function useGroupDetail(groupId: string) {
       ? groupDetailAPI.transferOwnership.variables
       : undefined,
     memberError,
+    linkNotice,
+    shareInviteLink: () => {
+      setLinkNotice("");
+      shareGroupLink.mutate();
+    },
+    sharingInviteLink: shareGroupLink.isPending,
+    resetInviteLink: () => {
+      setMemberError("");
+      resetLink.mutate();
+    },
+    resettingInviteLink: resetLink.isPending,
+    remindMember: (person: User) => {
+      setMemberError("");
+      remind.mutate(person);
+    },
+    remindingUserId: remind.isPending ? remind.variables?.id : undefined,
     requestFriendship,
     requestedIds,
     requestingUserId: groupDetailAPI.addFriend.isPending

@@ -3,7 +3,10 @@
     "name": "HaalKhata",
     "slug": "haalkhata",
     "version": "0.1.0",
-    "scheme": ["haalkhata", "com.haalkhata.app"],
+    "scheme": [
+      "haalkhata",
+      "com.haalkhata.app"
+    ],
     "orientation": "default",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
@@ -20,7 +23,10 @@
         "NSAppTransportSecurity": {
           "NSAllowsArbitraryLoads": false
         }
-      }
+      },
+      "associatedDomains": [
+        "applinks:haalkhata.app"
+      ]
     },
     "android": {
       "package": "com.haalkhata.app",
@@ -29,7 +35,24 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#b03a25"
       },
-      "edgeToEdgeEnabled": true
+      "edgeToEdgeEnabled": true,
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "autoVerify": true,
+          "data": [
+            {
+              "scheme": "https",
+              "host": "haalkhata.app",
+              "pathPrefix": "/join"
+            }
+          ],
+          "category": [
+            "BROWSABLE",
+            "DEFAULT"
+          ]
+        }
+      ]
     },
     "plugins": [
       "expo-router",

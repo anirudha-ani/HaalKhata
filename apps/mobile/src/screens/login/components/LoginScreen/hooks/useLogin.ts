@@ -5,6 +5,7 @@ import { useRouter } from "expo-router";
 import { useState } from "react";
 import { splitIdentifier } from "@haalkhata/shared/auth/identifier";
 import { authClient, errorMessage } from "@/lib/api/connect";
+import { consumePendingInvite } from "@/lib/invite/consumePendingInvite";
 import { clearMobileQueryCache } from "@/lib/api/queryCache";
 import { setSessionToken } from "@/lib/api/session";
 
@@ -41,7 +42,7 @@ export function useLogin() {
     onSuccess: async (response) => {
       await clearMobileQueryCache();
       await setSessionToken(response.token);
-      router.replace("/dashboard");
+      router.replace(await consumePendingInvite());
     },
     onError: (mutationError) => setError(errorMessage(mutationError)),
   });

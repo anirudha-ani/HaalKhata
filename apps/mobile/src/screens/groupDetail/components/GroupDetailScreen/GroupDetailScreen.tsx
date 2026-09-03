@@ -1,7 +1,7 @@
 /** Group detail orchestrator: header, members strip, expenses/balances/activity tabs, members, add-people and settle sheets. */
 
 import { useRouter } from "expo-router";
-import { Bell, ChevronDown, ChevronRight, Plus, UserPlus } from "lucide-react-native";
+import { Bell, ChevronDown, ChevronRight, Link2, Plus, Send, UserPlus } from "lucide-react-native";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { ActivityList } from "@/components/activity/ActivityList";
 import { SettleUpModal } from "@/components/modals/SettleUpModal";
@@ -144,7 +144,18 @@ export function GroupDetailScreen({
             onPress={() => groupDetail.setAddingPeople(true)}
             variant="outline"
           />
+          <Button
+            busy={groupDetail.sharingInviteLink}
+            compact
+            icon={<Link2 color={colors.inkSoft} size={14} />}
+            label="Invite link"
+            onPress={groupDetail.shareInviteLink}
+            variant="outline"
+          />
         </View>
+        {groupDetail.linkNotice ? (
+          <Text style={styles.linkNotice}>{groupDetail.linkNotice}</Text>
+        ) : null}
       </View>
 
       {/* Tabs */}
@@ -239,6 +250,9 @@ export function GroupDetailScreen({
                       {person.name}
                       {isMe ? <Text style={styles.memberTag}> · you</Text> : null}
                       {isOwner ? <Text style={styles.memberTag}> · owner</Text> : null}
+                      {!person.registered ? (
+                        <Text style={styles.memberTag}> · invited</Text>
+                      ) : null}
                     </Text>
                   </PersonLink>
                   {isMe ? (
@@ -253,7 +267,16 @@ export function GroupDetailScreen({
                     )
                   ) : (
                     <View style={styles.memberActions}>
-                      {isFriend ? (
+                      {!person.registered ? (
+                        <Button
+                          busy={groupDetail.remindingUserId === person.id}
+                          compact
+                          icon={<Send color={colors.inkSoft} size={14} />}
+                          label="Remind"
+                          onPress={() => groupDetail.remindMember(person)}
+                          variant="outline"
+                        />
+                      ) : isFriend ? (
                         <Button
                           compact
                           icon={<ChevronRight color={colors.inkSoft} size={14} />}
@@ -299,6 +322,17 @@ export function GroupDetailScreen({
             })}
             {groupDetail.memberError ? (
               <Text style={styles.addError}>{groupDetail.memberError}</Text>
+            ) : null}
+            {viewerIsOwner ? (
+              /* Revocation kills a link every member may have shared — the
+                 destructive direction, so it sits with the owner. */
+              <Button
+                busy={groupDetail.resettingInviteLink}
+                compact
+                label="Turn off the group's invite link"
+                onPress={groupDetail.resetInviteLink}
+                variant="outline"
+              />
             ) : null}
           </View>
         </Sheet>
@@ -440,6 +474,11 @@ const styles = StyleSheet.create({
   headerIconButtonPrimary: {
     backgroundColor: colors.brand600,
     borderColor: colors.brand600,
+  },
+  linkNotice: {
+    color: colors.pos700,
+    fontSize: 13,
+    fontWeight: "600",
   },
   memberActions: {
     flexDirection: "row",

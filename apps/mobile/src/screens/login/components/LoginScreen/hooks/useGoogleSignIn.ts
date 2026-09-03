@@ -6,6 +6,7 @@ import { useRouter } from "expo-router";
 import * as WebBrowser from "expo-web-browser";
 import { useEffect, useMemo, useState } from "react";
 import { authClient, errorMessage } from "@/lib/api/connect";
+import { consumePendingInvite } from "@/lib/invite/consumePendingInvite";
 import { clearMobileQueryCache } from "@/lib/api/queryCache";
 import { setSessionToken } from "@/lib/api/session";
 import {
@@ -65,7 +66,7 @@ export function useGoogleSignIn() {
     onSuccess: async (result) => {
       await clearMobileQueryCache();
       await setSessionToken(result.token);
-      router.replace("/dashboard");
+      router.replace(await consumePendingInvite());
     },
     onError: (mutationError) => setError(errorMessage(mutationError)),
   });
