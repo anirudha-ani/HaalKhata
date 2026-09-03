@@ -211,8 +211,12 @@ export async function claimUser(
  * @param userId - Account to write to.
  * @param phone - E.164 number, or null to clear it.
  */
-export async function setUserPhone(userId: string, phone: string | null): Promise<void> {
-  await execute(`UPDATE users SET phone = $1 WHERE id = $2`, [phone, userId]);
+export async function setUserPhone(
+  userId: string,
+  phone: string | null,
+  client?: PoolClient,
+): Promise<void> {
+  await execute(`UPDATE users SET phone = $1 WHERE id = $2`, [phone, userId], client);
 }
 
 /**

@@ -62,6 +62,20 @@ vi.mock("./phoneVerification", () => ({
   confirmPhoneVerification: confirmPhoneVerificationMock,
 }));
 
+const { transferClient } = vi.hoisted(() => ({
+  transferClient: { query: vi.fn() } as unknown as import("pg").PoolClient,
+}));
+vi.mock("@/server/common/db", () => ({
+  transaction: vi.fn((operation: (client: import("pg").PoolClient) => Promise<unknown>) =>
+    operation(transferClient),
+  ),
+  isUniqueViolation: vi.fn(
+    (error: unknown) => (error as { code?: string } | null)?.code === "23505",
+  ),
+}));
+vi.mock("@/server/social/repo/notifications.repo", () => ({ insertNotifications: vi.fn() }));
+
+import { insertNotifications } from "@/server/social/repo/notifications.repo";
 import { confirmPhoneMerge, setPhone } from "./accountMerge.usecase";
 import { findUserById, findUserByPhone } from "@/server/auth/repo/users.repo";
 
@@ -107,6 +121,7 @@ const invitedRow = userRow({
 describe("setPhone", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(transferClient.query).mockResolvedValue({ rows: [{ id: "someone-else" }] } as never);
     spendPhoneCheckAttemptMock.mockResolvedValue("ok");
     vi.mocked(findUserById).mockResolvedValue(userRow({ phone: PHONE }));
     previewMergeMock.mockResolvedValue({
@@ -189,7 +204,7 @@ describe("setPhone", () => {
     expect(result.mergeToken).toBe("");
   });
 
-  it("turns a concurrent claimed-account unique race into a conflict", async () => {
+  it("resolves a concurrent claimed-account unique race into a transfer (§34)", async () => {
     const concurrentHolder = userRow({
       id: "someone-else",
       phone: PHONE,
@@ -202,11 +217,11 @@ describe("setPhone", () => {
       Object.assign(new Error("duplicate phone"), { code: "23505" }),
     );
 
-    await expect(setPhone(KEEPER, PHONE, "123456")).rejects.toMatchObject({
-      code: "already_exists",
-      message: expect.stringContaining("already on another account"),
-    });
-    expect(findUserByPhone).toHaveBeenCalledTimes(2);
+    const result = await setPhone(KEEPER, PHONE, "123456");
+
+    expect(result.user).toBeDefined();
+    expect(setUserPhoneMock).toHaveBeenCalledWith("someone-else", null, expect.anything());
+    expect(setUserPhoneMock).toHaveBeenCalledWith(KEEPER, PHONE, expect.anything());
     expect(previewMergeMock).not.toHaveBeenCalled();
   });
 
@@ -285,21 +300,43 @@ describe("setPhone", () => {
     });
   });
 
-  it("refuses a number held by a Google account", async () => {
+  it("transfers a number off a registered account, telling both sides (§34)", async () => {
     vi.mocked(findUserByPhone).mockResolvedValue(
       userRow({ id: "someone-else", phone: PHONE, google_sub: "google-sub-2" }),
     );
 
-    await expect(setPhone(KEEPER, PHONE, "123456")).rejects.toThrow(/already on another account/);
+    const result = await setPhone(KEEPER, PHONE, "123456");
+
+    expect(result.user).toBeDefined();
+    expect(setUserPhoneMock).toHaveBeenCalledWith("someone-else", null, expect.anything());
+    expect(setUserPhoneMock).toHaveBeenCalledWith(KEEPER, PHONE, expect.anything());
+    const notified = vi.mocked(insertNotifications).mock.calls.map((call) => call[0]);
+    expect(notified).toContainEqual(["someone-else"]);
+    expect(notified).toContainEqual([KEEPER]);
+  });
+
+  it("refuses the transfer when the number is the holder's only identifier", async () => {
+    // Clearing it would strand a phone-only (dev signup) account entirely.
+    vi.mocked(findUserByPhone).mockResolvedValue(
+      userRow({ id: "someone-else", phone: PHONE, email: null, google_sub: null, password_hash: "salt:hash" }),
+    );
+
+    await expect(setPhone(KEEPER, PHONE, "123456")).rejects.toMatchObject({
+      code: "failed_precondition",
+    });
     expect(setUserPhoneMock).not.toHaveBeenCalled();
   });
 
-  it("refuses a number held by a password account", async () => {
+  it("starts over when the number moves again before the transfer locks", async () => {
     vi.mocked(findUserByPhone).mockResolvedValue(
-      userRow({ id: "someone-else", phone: PHONE, google_sub: null, password_hash: "salt:hash" }),
+      userRow({ id: "someone-else", phone: PHONE, google_sub: "google-sub-2" }),
     );
+    vi.mocked(transferClient.query).mockResolvedValue({ rows: [] } as never);
 
-    await expect(setPhone(KEEPER, PHONE, "123456")).rejects.toThrow(/already on another account/);
+    await expect(setPhone(KEEPER, PHONE, "123456")).rejects.toMatchObject({
+      code: "invalid_argument",
+      message: expect.stringContaining("changed while it was being claimed"),
+    });
   });
 
   it("rejects an unparseable number before any lookup", async () => {

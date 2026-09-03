@@ -70,8 +70,7 @@ import {
   updateMemberRole,
   updateSimplifyDebts,
 } from "@/server/group/repo/groups.repo";
-import { findUserById, findUsersByIds } from "@/server/auth/repo/users.repo";
-import { findOrCreateUserByEmail } from "@/server/auth/usecase/auth.usecase";
+import { findUserByEmail, findUserById, findUsersByIds } from "@/server/auth/repo/users.repo";
 import { listFriendIds } from "@/server/social/repo/friendships.repo";
 import { insertActivity } from "@/server/social/repo/activity.repo";
 import { userNetInGroup } from "@/server/expense/usecase/balance.usecase";
@@ -125,7 +124,7 @@ describe("group membership authorization", () => {
   it("still denies a REGISTERED unconnected contact typed into the field", async () => {
     // The connected rule protects claimed accounts from debt attribution by
     // strangers; the invite path below is only for rows nobody can sign into.
-    vi.mocked(findOrCreateUserByEmail).mockResolvedValue({
+    vi.mocked(findUserByEmail).mockResolvedValue({
       id: "stranger-1",
       google_sub: "google-stranger",
       password_hash: null,
@@ -137,26 +136,35 @@ describe("group membership authorization", () => {
     expect(addMember).not.toHaveBeenCalled();
   });
 
-  it("creates and enrols an UNREGISTERED contact as Invited (§33)", async () => {
-    // No credential means no possible transaction, so enrolling attributes
-    // debt to nobody — that is what makes the cold invite safe.
+  it("refuses a contact with no claimed account, as the invite offer (§33c)", async () => {
+    vi.mocked(findUserByEmail).mockResolvedValue(undefined);
+
+    await expect(
+      addMembers(MEMBER, { groupId: TRIP, userIds: [], email: "new-person@example.com" }),
+    ).rejects.toMatchObject({
+      code: "failed_precondition",
+      message: expect.stringContaining("not on HaalKhata yet"),
+    });
+    expect(addMember).not.toHaveBeenCalled();
+  });
+
+  it("refuses enrolling an Invited (unregistered) friend by id (§33c)", async () => {
     const invited = {
       id: "invited-1",
       name: "New Person",
       google_sub: null,
       password_hash: null,
     } as UserRow;
-    vi.mocked(findOrCreateUserByEmail).mockResolvedValue(invited);
+    vi.mocked(listFriendIds).mockResolvedValue(["invited-1"]);
     vi.mocked(findUsersByIds).mockResolvedValue([invited]);
 
-    const result = await addMembers(MEMBER, {
-      groupId: TRIP,
-      userIds: [],
-      email: "new-person@example.com",
+    await expect(
+      addMembers(MEMBER, { groupId: TRIP, userIds: ["invited-1"], email: "" }),
+    ).rejects.toMatchObject({
+      code: "failed_precondition",
+      message: expect.stringContaining("New Person hasn't joined"),
     });
-
-    expect(addMember).toHaveBeenCalledWith(TRIP, "invited-1", "member", expect.anything());
-    expect(result.added).toHaveLength(1);
+    expect(addMember).not.toHaveBeenCalled();
   });
 
   it("lets a zero-balance non-owner leave a group", async () => {

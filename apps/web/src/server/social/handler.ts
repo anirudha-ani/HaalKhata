@@ -101,6 +101,18 @@ export const socialHandler: ServiceImpl<typeof SocialService> = {
     );
   },
 
+  /** Creates the Invited contact and returns its claim link to share (§33c). */
+  async inviteContactToSignUp(request, context) {
+    return runUsecase(
+      async () =>
+        social.inviteContactToSignUp(
+          await requireRateLimitedUser(context, "add-friend", RPC_RATE_LIMITS.addFriend),
+          { email: request.email, phone: request.phone },
+        ),
+      context,
+    );
+  },
+
   /** The caller's own "add me" link, minted on first ask. */
   async getProfileInviteLink(_request, context) {
     return runUsecase(

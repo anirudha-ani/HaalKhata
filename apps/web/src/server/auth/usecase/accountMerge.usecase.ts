@@ -25,7 +25,8 @@ import {
   spendPhoneCheckAttempt,
 } from "@/server/auth/repo/phoneVerifications.repo";
 import { createHash } from "node:crypto";
-import { isUniqueViolation } from "@/server/common/db";
+import { isUniqueViolation, transaction } from "@/server/common/db";
+import { insertNotifications } from "@/server/social/repo/notifications.repo";
 import { logEvent } from "@/server/common/logger";
 import { UsecaseError, invalid } from "@/server/common/errors";
 import { toInt32Cents } from "@/server/common/money";
@@ -218,13 +219,14 @@ export async function setPhone(
     }
   }
 
-  // Held by a real account. Recycled number or a typo — either way a person
-  // has to sort it out, and absorbing someone's live account is never right.
+  // Held by a real account: TRANSFER, not refusal (§34). Numbers move —
+  // lost SIMs, temporary SIMs — and possession-by-SMS is the definition of
+  // holding one. Safe precisely because a phone here is a directory
+  // pointer, never an authenticator (sign-in stays Google-only). Absorbing
+  // the ACCOUNT would be wrong; moving the NUMBER, with both sides told,
+  // is how every messaging app treats it.
   if (isClaimed(holder)) {
-    throw new UsecaseError(
-      "already_exists",
-      "that number is already on another account — get in touch if it should be yours",
-    );
+    return transferVerifiedPhone(userId, holder, phone);
   }
 
   // Held by an unclaimed row someone was invited into. Almost certainly the
@@ -256,6 +258,72 @@ export async function setPhone(
     },
     mergeToken: createMergeToken(userId, holder.id, phone, previewFingerprint(preview)),
   };
+}
+
+/**
+ * Moves a just-verified number from the registered account holding it onto
+ * the caller's, atomically, and tells both sides (§34).
+ *
+ * @param claimantId - Who proved possession seconds ago.
+ * @param holder - The registered account currently pointing at the number.
+ * @param phone - The E.164 number changing hands.
+ * @returns The claimant's refreshed profile.
+ * @throws UsecaseError "failed_precondition" when the number is the
+ *   holder's only identifier — clearing it would strand that account.
+ */
+async function transferVerifiedPhone(
+  claimantId: string,
+  holder: UserRow,
+  phone: string,
+): Promise<SetPhoneResult> {
+  if (holder.email === null) {
+    throw new UsecaseError(
+      "failed_precondition",
+      "that number is the only way its current account can be reached — get in touch and we'll sort it out",
+    );
+  }
+  await transaction(async (client) => {
+    // Both rows locked in sorted order, like the merge path, so a competing
+    // transfer or merge serializes instead of deadlocking.
+    await client.query(`SELECT id FROM users WHERE id = ANY($1::text[]) ORDER BY id FOR UPDATE`, [
+      [claimantId, holder.id].sort(),
+    ]);
+    const current = await client.query<{ id: string }>(
+      `SELECT id FROM users WHERE id = $1 AND phone = $2 AND merged_into IS NULL`,
+      [holder.id, phone],
+    );
+    if (current.rows.length !== 1) {
+      // It moved again between verification and this lock; start over.
+      invalid("that number changed while it was being claimed — please try again");
+    }
+    await setUserPhone(holder.id, null, client);
+    await setUserPhone(claimantId, phone, client);
+    // Both parties hear about it, on the transfer's own transaction: the
+    // notification IS the theft alarm, so it must not be lose-able.
+    await insertNotifications(
+      [holder.id],
+      {
+        type: "phone_transferred",
+        title: `Your number ${phone} now points to a different account`,
+        body: "Someone verified it by SMS — usually a moved or reissued SIM. Still your number? Verify it again from Account to take it back.",
+        link: "/account",
+      },
+      client,
+    );
+    await insertNotifications(
+      [claimantId],
+      {
+        type: "phone_transferred",
+        title: `${phone} is now on your profile`,
+        body: "It previously pointed to another account; they've been told.",
+        link: "/account",
+      },
+      client,
+    );
+  });
+  const refreshed = await findUserById(claimantId);
+  if (!refreshed) throw new UsecaseError("unauthenticated", "account no longer exists");
+  return { user: toPrivateUser(refreshed), mergeToken: "" };
 }
 
 /**

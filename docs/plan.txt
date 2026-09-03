@@ -2221,3 +2221,37 @@ Adversarial pass over §33/§33a before Twilio goes live; five fixes:
 Residual, documented: invite tokens ride in URLs and therefore appear in
 front-proxy access logs — operator-visible only, and revocation is the
 remedy; this is the industry-standard trade for shareable links.
+
+### §33c Groups are registered-only; inviting becomes explicit (2026-09-03)
+
+Direction: nobody who is not on the platform can be added to a group — not
+even as an Invited seat. This walks back §33's group-side cold enrolment;
+the Invited state now lives ONLY in the friends list. The new group-add
+flow: typing an email/phone that has no claimed account refuses with a
+distinct failed_precondition ("they're not on HaalKhata yet — invite them
+to sign up first"); the client renders that as an offer — "send them a
+sign-up invite?" — which creates the Invited friend and hands the caller
+the claim link to share. Once they sign up, they are already the caller's
+friend and addable like anyone. One server gate enforces it for picked ids
+too, inside enrollMembers (covers CreateGroup and AddMembers alike), so an
+unregistered friend can never hold a seat going forward. New social RPC
+InviteContactToSignUp(email|phone) → InviteLink does the offer's work:
+find-or-create the unregistered contact, befriend, mint the claim link.
+Deliberate oracle: the distinct refusal says an identifier has no account —
+the same §33 trade, now scoped to an explicit user gesture.
+
+### §34 Verified number transfer with dual notification (2026-09-03)
+
+Direction: numbers move (lost SIMs, temporary SIMs). Whoever proves SMS
+possession attaches the number — even when a REGISTERED account holds it —
+because the phone is a directory pointer and NEVER an authenticator
+(sign-in stays Google-only). WhatsApp semantics: possession wins, both
+sides are told. SetPhone's claimed-holder branch becomes a transfer: one
+transaction locks both user rows (sorted FOR UPDATE), re-checks the holder
+still holds it, frees it, attaches it, and notifies BOTH parties
+(phone_transferred: the loser learns the number now points elsewhere and
+how to take it back or object; the gainer learns it was taken from another
+account). Refused only when the number is the holder's sole identifier
+(dev phone-signup rows — clearing it would strand the account). The
+clients mark the saved number "Verified" — every attached number is, by
+construction.

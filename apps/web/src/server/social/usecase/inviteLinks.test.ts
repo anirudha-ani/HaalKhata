@@ -71,6 +71,7 @@ vi.mock("@/server/common/db", () => ({
 
 import { findUserById, findUsersByIds } from "@/server/auth/repo/users.repo";
 import { mergeAccounts } from "@/server/auth/repo/accountMerge.repo";
+import { findOrCreateUserByEmail } from "@/server/auth/usecase/auth.usecase";
 import {
   findActiveFriendLink,
   findActiveGroupLink,
@@ -100,6 +101,7 @@ import {
   createGroupInviteLink,
   getFriendInviteLink,
   getProfileInviteLink,
+  inviteContactToSignUp,
   previewInviteLink,
   revokeGroupInviteLink,
 } from "./social.usecase";
@@ -522,5 +524,38 @@ describe("profile links (§33a)", () => {
       code: "invalid_argument",
       message: expect.stringContaining("your own invite link"),
     });
+  });
+});
+
+describe("inviteContactToSignUp (§33c)", () => {
+  it("creates the Invited contact, befriends, and hands back the claim link", async () => {
+    vi.mocked(findOrCreateUserByEmail).mockResolvedValue(invitedRow);
+    vi.mocked(findActiveFriendLink).mockResolvedValue(undefined);
+
+    const { token } = await inviteContactToSignUp(CALLER, {
+      email: "rifat@example.com",
+      phone: "",
+    });
+
+    expect(insertFriendship).toHaveBeenCalledWith(CALLER, INVITED);
+    expect(token).toMatch(/^[A-Za-z0-9_-]{43}$/);
+  });
+
+  it("refuses a contact who already has a claimed account", async () => {
+    vi.mocked(findOrCreateUserByEmail).mockResolvedValue(userRow({ id: "registered-1" }));
+
+    await expect(
+      inviteContactToSignUp(CALLER, { email: "tanvir@example.com", phone: "" }),
+    ).rejects.toMatchObject({
+      code: "invalid_argument",
+      message: expect.stringContaining("already on HaalKhata"),
+    });
+    expect(insertFriendship).not.toHaveBeenCalled();
+  });
+
+  it("requires exactly one identifier", async () => {
+    await expect(
+      inviteContactToSignUp(CALLER, { email: "", phone: "" }),
+    ).rejects.toMatchObject({ code: "invalid_argument" });
   });
 });

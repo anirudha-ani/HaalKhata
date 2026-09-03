@@ -425,6 +425,44 @@ export async function createGroupInviteLink(
 }
 
 /**
+ * The one gesture behind "they're not on HaalKhata yet — send them a
+ * sign-up invite?" (§33c): find-or-create the Invited contact, befriend the
+ * caller with it (which is what authorizes minting), and hand back the
+ * claim link to share. Deliberate oracle, same trade as addFriend's: the
+ * distinct refusal for a registered identifier says an account exists, in
+ * exchange for a flow a person can actually follow.
+ *
+ * @param userId - Authenticated caller doing the inviting.
+ * @param input - Exactly one of email/phone identifying the contact.
+ * @returns The claim link's bearer token.
+ * @throws UsecaseError (invalid_argument) for malformed/both/neither
+ *   identifiers, or when the contact already has a claimed account.
+ */
+export async function inviteContactToSignUp(
+  userId: string,
+  input: { email: string; phone: string },
+): Promise<{ token: string }> {
+  const email = input.email.trim();
+  const phone = input.phone.trim();
+  if ((email === "") === (phone === "")) {
+    invalid("enter exactly one email address or phone number");
+  }
+  const contact = email !== ""
+    ? await findOrCreateUserByEmail(email)
+    : await findOrCreateUserByPhone(phone);
+  if (contact.id === userId || contact.merged_into !== null) {
+    invalid("that contact can't be invited");
+  }
+  if (!isUnclaimed(contact)) {
+    invalid("they're already on HaalKhata — add them directly");
+  }
+  // The friendship is the invite's record on the caller's side (the contact
+  // shows as Invited in Friends) and is what authorizes the link mint.
+  await insertFriendship(userId, contact.id);
+  return getFriendInviteLink(userId, contact.id);
+}
+
+/**
  * The caller's own shareable "add me" link, minted on first ask.
  *
  * @param userId - The profile's owner.

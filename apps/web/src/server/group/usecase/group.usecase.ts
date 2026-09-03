@@ -16,18 +16,20 @@ import {
   updateSimplifyDebts,
 } from "@/server/group/repo/groups.repo";
 import type { UserRow } from "@/server/auth/repo/users.repo";
-import { findUserById, findUsersByIds } from "@/server/auth/repo/users.repo";
+import {
+  findUserByEmail,
+  findUserById,
+  findUserByPhone,
+  findUsersByIds,
+} from "@/server/auth/repo/users.repo";
+import { EMAIL_PATTERN, normalizePhone, PHONE_FORMAT_HINT } from "@/server/auth/auth.constants";
 import { insertFriendship, listFriendIds } from "@/server/social/repo/friendships.repo";
 import { insertActivity } from "@/server/social/repo/activity.repo";
 import { insertNotifications } from "@/server/social/repo/notifications.repo";
 import { userNetInGroup, userNetInGroups } from "@/server/expense/usecase/balance.usecase";
-import { denied, invalid, notFound } from "@/server/common/errors";
+import { denied, invalid, notFound, UsecaseError } from "@/server/common/errors";
 import { toInt32Cents } from "@/server/common/money";
 import { normalizeCurrencyCode } from "@/server/common/validation";
-import {
-  findOrCreateUserByEmail,
-  findOrCreateUserByPhone,
-} from "@/server/auth/usecase/auth.usecase";
 import {
   GROUP_TYPES,
   MAX_GROUP_MEMBER_IDS_PER_REQUEST,
@@ -187,6 +189,15 @@ async function enrollMembers(
     // An id with no row is a client sending something stale, not an attack —
     // the authorization check above already passed, so just skip it.
     if (!user) continue;
+    // §33c: a seat belongs only to somebody who can open the app. Invited
+    // friends look pickable on stale clients, so the gate lives here, where
+    // CreateGroup and AddMembers converge.
+    if (user.password_hash === null && user.google_sub === null) {
+      throw new UsecaseError(
+        "failed_precondition",
+        `${user.name} hasn't joined HaalKhata yet — invite them to sign up first`,
+      );
+    }
     await addMember(groupId, userId, MEMBER_ROLE, client);
     await insertFriendship(callerId, userId, client);
     added.push(user);
@@ -194,16 +205,17 @@ async function enrollMembers(
   return added;
 }
 
+/** The §33c refusal the clients render as "send them a sign-up invite?". */
+const NOT_ON_PLATFORM_MESSAGE =
+  "they're not on HaalKhata yet — invite them to sign up first";
+
 /**
- * Resolves an optional email/phone to an account, creating the Invited
- * (unregistered) row when nobody holds the identifier.
- *
- * Cold invites are safe now precisely because an unregistered row can be
- * part of no transaction (plan.txt §33): enrolling one attributes no debt
- * to anybody, it only reserves a seat that signing up later claims. A
- * REGISTERED stranger still cannot be enrolled this way — the caller-side
- * connected check applies to claimed accounts, and the group join link is
- * the consent path for them.
+ * Resolves an optional email/phone to a REGISTERED account (§33c). A group
+ * seat belongs only to somebody who can actually open the app: an identifier
+ * with no claimed account refuses with a distinct failed_precondition, which
+ * the clients render as the offer to send a sign-up invite
+ * (social.InviteContactToSignUp). Once claimed, the person is already the
+ * inviter's friend and addable like anyone.
  *
  * @param input - The raw email and phone fields. The legacy name field is
  *   accepted for wire compatibility but ignored. Empty contact fields mean
@@ -222,19 +234,38 @@ async function resolveInvitee(input: {
   if (email !== "" && phone !== "") {
     invalid("enter either an email address or a phone number, not both");
   }
-  if (email !== "") return findOrCreateUserByEmail(email);
-  if (phone !== "") return findOrCreateUserByPhone(phone);
-  return undefined;
+  if (email === "" && phone === "") return undefined;
+  if (email !== "" && !EMAIL_PATTERN.test(email)) {
+    invalid("please enter a valid email address");
+  }
+  const invitee = email !== ""
+    ? await findUserByEmail(email)
+    : await findUserByPhone(assertPhoneShape(phone));
+  if (!invitee || isUnregistered(invitee)) {
+    throw new UsecaseError("failed_precondition", NOT_ON_PLATFORM_MESSAGE);
+  }
+  return invitee;
 }
 
 /**
- * Whether a row is an unclaimed invitation — enrollable without the
- * connected check, because no transaction can ever involve it.
+ * Normalizes a typed phone or refuses with the format hint.
+ *
+ * @param phone - Raw phone text.
+ * @returns The E.164 form.
+ */
+function assertPhoneShape(phone: string): string {
+  const normalized = normalizePhone(phone);
+  if (!normalized) invalid(PHONE_FORMAT_HINT);
+  return normalized;
+}
+
+/**
+ * Whether a row has no way to sign in — an invitation, not a member-to-be.
  *
  * @param user - Row to classify.
  * @returns True when neither credential is set.
  */
-function isUnclaimedInvite(user: UserRow): boolean {
+function isUnregistered(user: UserRow): boolean {
   return user.password_hash === null && user.google_sub === null;
 }
 
@@ -402,14 +433,7 @@ export async function addMembers(
   const candidateIds = [...pickedIds, ...(invitee ? [invitee.id] : [])];
   assertMemberIdCount(candidateIds);
   if (candidateIds.length === 0) invalid("pick somebody to add");
-  // The connected rule protects claimed accounts from debt attribution by
-  // strangers. An unregistered invitee can carry no debt, so it enrols
-  // without it — that IS the invite.
-  const guardedIds =
-    invitee && isUnclaimedInvite(invitee)
-      ? candidateIds.filter((candidateId) => candidateId !== invitee.id)
-      : candidateIds;
-  await assertCanAdd(userId, guardedIds);
+  await assertCanAdd(userId, candidateIds);
   const actor = (await findUserById(userId))!;
 
   // Under the group's ledger lock: a settlement being validated in this

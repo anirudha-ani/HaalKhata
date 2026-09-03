@@ -29,6 +29,12 @@ service SocialService {
   // The invited person's active reminder link, created on first ask. The
   // target must be an unregistered ("Invited") connection of the caller.
   rpc GetFriendInviteLink(GetFriendInviteLinkRequest) returns (InviteLink);
+  // One gesture behind the group-add flow's "they're not on HaalKhata yet —
+  // send them a sign-up invite?" offer (§33c): creates (or finds) the
+  // Invited contact, befriends the caller with it, and returns the claim
+  // link to share. Refused when the identifier already has a claimed
+  // account — that person is added directly, not invited.
+  rpc InviteContactToSignUp(InviteContactRequest) returns (InviteLink);
   // The group's one active join link, created on first ask. Any member may
   // — the same trust level as adding people directly.
   rpc CreateGroupInviteLink(CreateGroupInviteLinkRequest) returns (InviteLink);
@@ -178,4 +184,10 @@ message AcceptInviteLinkRequest {
 message AcceptInviteLinkResponse {
   // Set for a group link so the client can land on the group afterwards.
   string group_id = 1;
+}
+
+message InviteContactRequest {
+  // Exactly one of email/phone; phone in any format the user typed.
+  string email = 1;
+  string phone = 2;
 }
