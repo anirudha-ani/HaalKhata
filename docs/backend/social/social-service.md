@@ -62,12 +62,21 @@ share: claiming an invite moves friendships and group memberships onto the
 acceptor's account (via the §32 merge machinery, whose money invariant holds
 trivially at zero), never money.
 
-`invite_links` holds two kinds, each with one active link (regenerate =
-revoke + recreate): **friend** (inviter + the Invited row it claims) and
-**group** (one join link per group). Tokens are 43-char random bearer
-credentials; every unusable token — malformed, revoked, missing, already
-claimed — gets one identical sentence, so the endpoints scan as nothing.
-Delivery is the inviter's own share sheet; the server sends no email or SMS.
+`invite_links` holds three kinds, each with one active link (regenerate =
+revoke + recreate): **friend** (inviter + the Invited row it claims),
+**group** (one join link per group), and **profile** (§33a — the owner's
+own "add me" link). Tokens are 43-char random bearer credentials; every
+unusable token — malformed, revoked, missing, already claimed — gets one
+identical sentence, so the endpoints scan as nothing. Delivery is the
+inviter's own share sheet; the server sends no email or SMS.
+
+**The profile-kind asymmetry:** accepting a friend or group link acts
+immediately (their blast radius is bounded — an Invited row holds no money,
+a group join is visible to the whole roster), but accepting a profile link
+**sends an ordinary friend request** the owner confirms from Friends. A
+leaked bearer link must not let a stranger attach themselves — and future
+one-off expenses — to the owner; the link removes the typing, not the
+consent.
 
 ## Rate Limits (this service)
 
@@ -94,6 +103,8 @@ Delivery is the inviter's own share sheet; the server sends no email or SMS.
 10. [RevokeGroupInviteLink](#10-revokegroupinvitelink)
 11. [PreviewInviteLink](#11-previewinvitelink)
 12. [AcceptInviteLink](#12-acceptinvitelink)
+13. [GetProfileInviteLink](#13-getprofileinvitelink)
+14. [RevokeProfileInviteLink](#14-revokeprofileinvitelink)
 
 ---
 
@@ -458,6 +469,10 @@ account?").
   them with the inviter, and writes a `member_added` feed event ("joined via
   X's invite link") so a new face is explained. Already a member → quiet
   success.
+- **Profile link (§33a):** sends the owner an ordinary `friend_request`
+  (with a notification saying the profile link was used) — never an instant
+  friendship; see the asymmetry note above. Already friends or already
+  requested → quiet success.
 - Either way the inviter gets an `invite_accepted` notification — the one
   moment an invite produces for its sender.
 
@@ -472,3 +487,45 @@ account?").
 | Field | Type | Description |
 | --- | --- | --- |
 | group_id | string | Set for group links, so the client can land there. |
+
+---
+
+### 13. GetProfileInviteLink
+
+**Method:** `GetProfileInviteLink`
+**Route:** `POST /api/connect/social.v1.SocialService/GetProfileInviteLink`
+
+#### Notes
+
+- The caller's own shareable "add me" link, minted on first ask — one
+  active per person, the same token every time the share button is pressed.
+- Accepting it goes through [AcceptInviteLink](#12-acceptinvitelink)'s
+  profile branch: a friend request, not a friendship.
+
+#### Request
+
+`google.protobuf.Empty`.
+
+#### Response
+
+**InviteLink:** `{ token }`.
+
+---
+
+### 14. RevokeProfileInviteLink
+
+**Method:** `RevokeProfileInviteLink`
+**Route:** `POST /api/connect/social.v1.SocialService/RevokeProfileInviteLink`
+
+#### Notes
+
+- Disables the caller's profile link at once; the next ask mints a fresh
+  one. The remedy when a link escaped further than intended.
+
+#### Request
+
+`google.protobuf.Empty`.
+
+#### Response
+
+`google.protobuf.Empty`.
