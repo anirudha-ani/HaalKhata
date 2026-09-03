@@ -389,9 +389,17 @@ collision would require. One RPC, two calls:
      response carries `user`. A TOCTOU race (someone claims the partial
      unique index between lookup and update) is re-read and fed through the
      same decisions below.
-  2. **Held by a claimed account:** `AlreadyExists` — "that number is already
-     on another account". Absorbing someone's live account is never right;
-     support sorts out typos and recycled numbers.
+  2. **Held by a claimed account: a TRANSFER, not a refusal (§34).** Numbers
+     move — lost SIMs, temporary SIMs — and SMS possession is the definition
+     of holding one. One transaction locks both rows (sorted `FOR UPDATE`),
+     re-checks the holder still holds it, frees it, attaches it, and
+     notifies **both parties** (`phone_transferred`) on the transfer's own
+     transaction — the loser's notification is the theft alarm and tells
+     them how to take the number back (verify it again) or object. Safe
+     because a phone is a directory pointer and **never an authenticator**
+     (sign-in stays Google-only). Refused (`FailedPrecondition`) only when
+     the number is the holder's sole identifier, which would strand that
+     account.
   3. **Held by an unclaimed invited row:** nothing changes yet. The response
      carries `pending_merge` — what merging would absorb — plus a
      `merge_token` for [ConfirmPhoneMerge](#9-confirmphonemerge).

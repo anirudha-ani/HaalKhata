@@ -32,17 +32,20 @@ SQL in [groups.repo.ts](../../../apps/web/src/server/group/repo/groups.repo.ts).
 | Transfer ownership | owner only | Also how an owner leaves: hand the role on, become an ordinary member, then leave like anyone else. |
 | Flip simplify-debts | **any member** | Same trust level as adding people: a routing mode over fully derived balances — rewrites nothing, always reversible. |
 
-**Who may be added:** registered people the caller is *connected* to — an
-explicit friend, or someone they already share any group with. A bare user
-id is not authorization (a stranger's id would be enough to enrol them and
-start attributing debts to them). Since §33, an email/phone matching
-**nobody** creates the Invited row and enrols it directly — safe precisely
-because an unregistered row can be on no transaction, so no debt can be
-attributed to it; a **registered** stranger still cannot be enrolled this
-way, and the group's shareable join link is their consent path. The
-connected set includes co-members, not just friends, because two people who
-met in somebody else's group have no friendship row yet would still be
-offered to each other in the picker.
+**Who may be added (§33c): registered, connected people only.** A group
+seat belongs to somebody who can actually open the app. A bare user id is
+not authorization (a stranger's id would be enough to enrol them and start
+attributing debts to them), and an email/phone with **no claimed account**
+refuses with a distinct `failed_precondition` ("they're not on HaalKhata
+yet — invite them to sign up first") that the clients render as the offer
+to send a sign-up invite (`social.InviteContactToSignUp`). Unregistered
+*friends* are refused by the same gate, by name, inside `enrollMembers` —
+where CreateGroup and AddMembers converge — so an Invited person can never
+hold a seat; once they sign up they are already the inviter's friend and
+addable like anyone. A registered stranger's consent path is the group's
+join link. The connected set includes co-members, not just friends,
+because two people who met in somebody else's group have no friendship row
+yet would still be offered to each other in the picker.
 
 **The zero-balance removal gate:** a member can only be removed (or leave)
 when their net in the group is exactly zero. Removing someone who owes—or is

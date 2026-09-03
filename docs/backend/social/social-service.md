@@ -85,7 +85,7 @@ consent.
 
 | RPC | Limit |
 | --- | --- |
-| AddFriend | 10/min per account |
+| AddFriend, InviteContactToSignUp | 10/min per account (shared bucket) |
 | ListFriends | 60/min — **shares the `GetOverallBalances` bucket**, because it computes the same full-ledger aggregate; separate buckets would let one endpoint bypass the other's limit |
 | SendReminder | 10/min per account, plus the 24 h per-pair cooldown |
 | Others | authentication only |
@@ -108,6 +108,7 @@ consent.
 12. [AcceptInviteLink](#12-acceptinvitelink)
 13. [GetProfileInviteLink](#13-getprofileinvitelink)
 14. [RevokeProfileInviteLink](#14-revokeprofileinvitelink)
+15. [InviteContactToSignUp](#15-invitecontacttosignup)
 
 ---
 
@@ -542,3 +543,32 @@ account?").
 #### Response
 
 `google.protobuf.Empty`.
+
+---
+
+### 15. InviteContactToSignUp
+
+**Method:** `InviteContactToSignUp`
+**Route:** `POST /api/connect/social.v1.SocialService/InviteContactToSignUp`
+
+#### Notes
+
+- The one gesture behind the group-add flow's §33c offer ("they're not on
+  HaalKhata yet — send them a sign-up invite?"): finds or creates the
+  Invited contact, befriends the caller with it (which is what authorizes
+  the mint), and returns the claim link to share.
+- Refused (`InvalidArgument`, "already on HaalKhata") when the identifier
+  has a claimed account — that person is added directly, not invited. A
+  deliberate oracle of the addFriend family, scoped to an explicit user
+  gesture and the shared 10/min bucket.
+
+#### Request
+
+| Field | Type | Description |
+| --- | --- | --- |
+| email | string | Exactly one of email/phone. |
+| phone | string | Any format typed; normalized server-side. |
+
+#### Response
+
+**InviteLink:** `{ token }` — the contact's claim link.
