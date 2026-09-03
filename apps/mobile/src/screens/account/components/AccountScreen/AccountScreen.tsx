@@ -1,7 +1,7 @@
 /** Account screen: profile (name, phone, currency, payment handles), phone verification and merge, sign out. */
 
 import type { User } from "@haalkhata/protogen/common/v1/common_pb";
-import { Check, LogOut } from "lucide-react-native";
+import { Check, LogOut, Share2 } from "lucide-react-native";
 import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { MergePreview } from "@/components/account/MergePreview";
 import { DetailHeader } from "@/components/shell/DetailHeader";
@@ -215,6 +215,33 @@ function ProfileForm({ me: currentUser }: { me: User }) {
           onPress={form.save}
           variant={form.saved ? "positive" : "primary"}
         />
+
+        {/* The add-me link: the frictionless way for others to find you.
+            Accepting it sends you a normal friend request to confirm. */}
+        <View style={styles.shareBlock}>
+          <Button
+            busy={form.isSharingProfile}
+            icon={<Share2 color={colors.inkSoft} size={16} />}
+            label="Share my profile"
+            onPress={form.shareProfile}
+            variant="outline"
+          />
+          {form.profileNotice ? (
+            <Text style={styles.shareNotice}>{form.profileNotice}</Text>
+          ) : (
+            <Pressable
+              accessibilityRole="button"
+              disabled={form.isResettingProfileLink}
+              onPress={form.resetProfileLink}
+            >
+              <Text style={styles.removeLink}>
+                {form.isResettingProfileLink
+                  ? "Resetting…"
+                  : "Reset the link if it got away from you"}
+              </Text>
+            </Pressable>
+          )}
+        </View>
         </View>
       </View>
 
@@ -385,6 +412,15 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: "600",
     textDecorationLine: "underline",
+  },
+  shareBlock: {
+    alignItems: "center",
+    gap: spacing.sm,
+  },
+  shareNotice: {
+    color: colors.brand700,
+    fontSize: 13,
+    fontWeight: "600",
   },
   sheetBody: {
     gap: spacing.lg,

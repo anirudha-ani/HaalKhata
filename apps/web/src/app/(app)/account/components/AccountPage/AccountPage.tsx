@@ -1,7 +1,7 @@
 "use client";
 /** Account page: view/edit profile (name, default currency) and sign out. */
 
-import { Check, LogOut } from "lucide-react";
+import { Check, LogOut, Share2 } from "lucide-react";
 import type { User } from "@haalkhata/protogen/common/v1/common_pb";
 import { Avatar } from "@/components/ui/Avatar";
 import { MergePreview } from "@/components/account/MergePreview";
@@ -228,6 +228,32 @@ function ProfileForm({ me: currentUser }: { me: User }) {
           </span>
         </button>
       </form>
+
+      {/* The add-me link: the frictionless way for others to find you.
+          Accepting it sends you a normal friend request to confirm. */}
+      <div className="space-y-1.5">
+        <button
+          type="button"
+          disabled={form.isSharingProfile}
+          onClick={form.shareProfile}
+          className="flex w-full items-center justify-center gap-2 rounded-xl border border-line bg-card py-3 font-semibold text-ink-soft hover:border-brand-600 hover:text-brand-600 disabled:opacity-50"
+        >
+          <Share2 className="h-4 w-4" />
+          {form.isSharingProfile ? "Sharing…" : "Share my profile"}
+        </button>
+        {form.profileNotice ? (
+          <p className="text-center text-sm font-medium text-pos-700">{form.profileNotice}</p>
+        ) : (
+          <button
+            type="button"
+            disabled={form.isResettingProfileLink}
+            onClick={form.resetProfileLink}
+            className="block w-full text-center text-xs font-semibold text-ink-soft underline-offset-2 hover:text-brand-600 hover:underline disabled:opacity-50"
+          >
+            {form.isResettingProfileLink ? "Resetting…" : "Reset the link if it got away from you"}
+          </button>
+        )}
+      </div>
 
       <button
         type="button"

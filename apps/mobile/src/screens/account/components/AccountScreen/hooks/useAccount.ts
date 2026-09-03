@@ -6,6 +6,8 @@ import type { User } from "@haalkhata/protogen/common/v1/common_pb";
 import { useRouter } from "expo-router";
 import { useEffect, useState } from "react";
 import { authClient, errorMessage } from "@/lib/api/connect";
+import { socialClient } from "@/lib/api/connect";
+import { shareProfileInvite } from "@/lib/invite/share";
 import { MONEY_KEYS, queryKeys } from "@haalkhata/shared/api/queryKeys";
 import { clearMobileQueryCache } from "@/lib/api/queryCache";
 import { clearSession } from "@/lib/api/session";
@@ -180,6 +182,27 @@ export function useProfileForm(currentUser: User) {
     onError: (mutationError) => setError(errorMessage(mutationError)),
   });
 
+  const [profileNotice, setProfileNotice] = useState("");
+
+  /** Shares the caller's own add-me link; acceptors send a friend request. */
+  const shareProfile = useMutation({
+    mutationFn: async () => {
+      const { token } = await socialClient.getProfileInviteLink({});
+      return shareProfileInvite(token, currentUser.name);
+    },
+    onSuccess: (outcome) => {
+      if (outcome === "shared") setProfileNotice("Profile link shared ✓");
+    },
+    onError: (mutationError) => setError(errorMessage(mutationError)),
+  });
+
+  /** Turns the caller's profile link off; the next share mints a fresh one. */
+  const resetProfileLink = useMutation({
+    mutationFn: () => socialClient.revokeProfileInviteLink({}),
+    onSuccess: () => setProfileNotice("Profile link reset — sharing again makes a new one"),
+    onError: (mutationError) => setError(errorMessage(mutationError)),
+  });
+
   const removePhoneMutation = useMutation({
     mutationFn: () => authClient.removePhone({}),
     onSuccess: () => {
@@ -248,6 +271,17 @@ export function useProfileForm(currentUser: User) {
       removePhoneMutation.mutate();
     },
     isRemovingPhone: removePhoneMutation.isPending,
+    profileNotice,
+    shareProfile: () => {
+      setProfileNotice("");
+      shareProfile.mutate();
+    },
+    isSharingProfile: shareProfile.isPending,
+    resetProfileLink: () => {
+      setProfileNotice("");
+      resetProfileLink.mutate();
+    },
+    isResettingProfileLink: resetProfileLink.isPending,
     handles,
     /** True while the button shows its confirmed state. */
     saved: message !== "",

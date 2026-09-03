@@ -3,8 +3,9 @@
 
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
+import { useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Handshake, Users } from "lucide-react";
+import { Handshake, UserPlus, Users } from "lucide-react";
 import { Spinner } from "@/components/ui/Spinner";
 import { authClient, errorMessage, socialClient } from "@/lib/api/connect";
 
@@ -36,9 +37,16 @@ export default function JoinPage() {
     retry: false,
   });
 
+  const [requestSent, setRequestSent] = useState(false);
   const accept = useMutation({
     mutationFn: () => socialClient.acceptInviteLink({ token }),
     onSuccess: (result) => {
+      // A profile link produces a pending request, not a friendship yet —
+      // redirecting to Friends would show nothing and read as a silent fail.
+      if (preview.data?.kind === "profile") {
+        setRequestSent(true);
+        return;
+      }
       router.push(result.groupId ? `/groups/${result.groupId}` : "/friends");
     },
   });
@@ -61,6 +69,8 @@ export default function JoinPage() {
             <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-brand-50 text-brand-700">
               {preview.data.kind === "group" ? (
                 <Users className="h-6 w-6" />
+              ) : preview.data.kind === "profile" ? (
+                <UserPlus className="h-6 w-6" />
               ) : (
                 <Handshake className="h-6 w-6" />
               )}
@@ -68,18 +78,27 @@ export default function JoinPage() {
             <h1 className="text-xl font-bold" style={{ textWrap: "balance" }}>
               {preview.data.kind === "group"
                 ? `${preview.data.inviterName} invited you to “${preview.data.groupName}”`
-                : `${preview.data.inviterName} invited you to HaalKhata`}
+                : preview.data.kind === "profile"
+                  ? `${preview.data.inviterName} wants to connect on HaalKhata`
+                  : `${preview.data.inviterName} invited you to HaalKhata`}
             </h1>
             <p className="text-sm text-ink-soft">
               {preview.data.kind === "group"
                 ? `A shared expense group with ${preview.data.memberCount} ${
                     preview.data.memberCount === 1 ? "member" : "members"
                   }. Accepting adds you to it.`
-                : `They added you as “${preview.data.invitedName}”. Accepting brings that
-                   invitation — friendships and any group seats — onto your account.`}
+                : preview.data.kind === "profile"
+                  ? "Accepting sends them a friend request; you'll be connected once they confirm."
+                  : `They added you as “${preview.data.invitedName}”. Accepting brings that
+                     invitation — friendships and any group seats — onto your account.`}
             </p>
 
             {viewer.data ? (
+              requestSent ? (
+                <p className="rounded-xl bg-pos-50 px-4 py-3 text-sm font-medium text-pos-700">
+                  Request sent — {preview.data.inviterName} will confirm from their side.
+                </p>
+              ) : (
               <>
                 <button
                   type="button"
@@ -91,7 +110,9 @@ export default function JoinPage() {
                     ? "One moment…"
                     : preview.data.kind === "group"
                       ? "Join the group"
-                      : "Accept the invite"}
+                      : preview.data.kind === "profile"
+                        ? "Send friend request"
+                        : "Accept the invite"}
                 </button>
                 {accept.isError ? (
                   <p className="text-sm font-medium text-brand-600">
@@ -105,6 +126,7 @@ export default function JoinPage() {
                   </Link>
                 </p>
               </>
+              )
             ) : viewer.isLoading ? (
               <Spinner />
             ) : (

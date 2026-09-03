@@ -7,6 +7,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { User } from "@haalkhata/protogen/common/v1/common_pb";
 import type { MergePreview } from "@haalkhata/protogen/auth/v1/auth_pb";
 import { authClient, errorMessage } from "@/lib/api/connect";
+import { socialClient } from "@/lib/api/connect";
+import { shareProfileInvite } from "@/lib/invite/share";
 import { MONEY_KEYS, queryKeys } from "@haalkhata/shared/api/queryKeys";
 import { composeE164, DEFAULT_PHONE_REGION, isValidPhone, splitE164 } from "@haalkhata/shared/phone/phone";
 import { INVALID_PHONE_MESSAGE } from "@haalkhata/shared/phone/contact";
@@ -189,6 +191,30 @@ export function useProfileForm(currentUser: User) {
     onError: (mutationError) => setError(errorMessage(mutationError)),
   });
 
+  const [profileNotice, setProfileNotice] = useState("");
+
+  /** Shares the caller's own add-me link; acceptors send a friend request. */
+  const shareProfile = useMutation({
+    mutationFn: async () => {
+      const { token } = await socialClient.getProfileInviteLink({});
+      return shareProfileInvite(token, currentUser.name);
+    },
+    onSuccess: (outcome) =>
+      setProfileNotice(outcome === "copied" ? "Profile link copied ✓" : "Profile link shared ✓"),
+    onError: (mutationError) => {
+      if (mutationError instanceof Error && mutationError.name === "AbortError") return;
+      setError(errorMessage(mutationError));
+    },
+  });
+
+  /** Turns the caller's profile link off; the next share mints a fresh one. */
+  const resetProfileLink = useMutation({
+    mutationFn: () => socialClient.revokeProfileInviteLink({}),
+    onSuccess: () =>
+      setProfileNotice("Profile link reset — sharing again makes a new one"),
+    onError: (mutationError) => setError(errorMessage(mutationError)),
+  });
+
   const removePhoneMutation = useMutation({
     mutationFn: () => authClient.removePhone({}),
     onSuccess: () => {
@@ -252,6 +278,17 @@ export function useProfileForm(currentUser: User) {
       removePhoneMutation.mutate();
     },
     isRemovingPhone: removePhoneMutation.isPending,
+    profileNotice,
+    shareProfile: () => {
+      setProfileNotice("");
+      shareProfile.mutate();
+    },
+    isSharingProfile: shareProfile.isPending,
+    resetProfileLink: () => {
+      setProfileNotice("");
+      resetProfileLink.mutate();
+    },
+    isResettingProfileLink: resetProfileLink.isPending,
     handles,
     /** True while the button shows its confirmed state. */
     saved: message !== "",

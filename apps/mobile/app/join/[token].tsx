@@ -1,6 +1,7 @@
 /** Deep-link landing for invite links: who invited you, to what, one tap in. */
 
 import { useLocalSearchParams, useRouter } from "expo-router";
+import { useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -34,9 +35,16 @@ export default function JoinRoute() {
     retry: false,
   });
 
+  const [requestSent, setRequestSent] = useState(false);
   const accept = useMutation({
     mutationFn: () => socialClient.acceptInviteLink({ token }),
     onSuccess: (result) => {
+      // A profile link produces a pending request, not a friendship yet —
+      // redirecting to Friends would show nothing and read as a silent fail.
+      if (preview.data?.kind === "profile") {
+        setRequestSent(true);
+        return;
+      }
       router.replace(result.groupId ? `/groups/${result.groupId}` : "/friends");
     },
   });
@@ -63,26 +71,42 @@ export default function JoinRoute() {
             <Text style={styles.title}>
               {preview.data.kind === "group"
                 ? `${preview.data.inviterName} invited you to “${preview.data.groupName}”`
-                : `${preview.data.inviterName} invited you to HaalKhata`}
+                : preview.data.kind === "profile"
+                  ? `${preview.data.inviterName} wants to connect on HaalKhata`
+                  : `${preview.data.inviterName} invited you to HaalKhata`}
             </Text>
             <Text style={styles.body}>
               {preview.data.kind === "group"
                 ? `A shared expense group with ${preview.data.memberCount} ${
                     preview.data.memberCount === 1 ? "member" : "members"
                   }. Accepting adds you to it.`
-                : `They added you as “${preview.data.invitedName}”. Accepting brings that invitation — friendships and any group seats — onto your account.`}
+                : preview.data.kind === "profile"
+                  ? "Accepting sends them a friend request; you'll be connected once they confirm."
+                  : `They added you as “${preview.data.invitedName}”. Accepting brings that invitation — friendships and any group seats — onto your account.`}
             </Text>
             {viewer.data ? (
+              requestSent ? (
+                <Text style={styles.requested}>
+                  Request sent — {preview.data.inviterName} will confirm from their side.
+                </Text>
+              ) : (
               <>
                 <Button
                   busy={accept.isPending}
-                  label={preview.data.kind === "group" ? "Join the group" : "Accept the invite"}
+                  label={
+                    preview.data.kind === "group"
+                      ? "Join the group"
+                      : preview.data.kind === "profile"
+                        ? "Send friend request"
+                        : "Accept the invite"
+                  }
                   onPress={() => accept.mutate()}
                 />
                 {accept.isError ? (
                   <Text style={styles.error}>{errorMessage(accept.error)}</Text>
                 ) : null}
               </>
+              )
             ) : viewer.isLoading ? (
               <Spinner />
             ) : (
@@ -124,6 +148,11 @@ const styles = StyleSheet.create({
   hint: {
     color: colors.inkSoft,
     fontSize: 12,
+  },
+  requested: {
+    color: colors.brand700,
+    fontSize: 14,
+    fontWeight: "600",
   },
   screen: {
     backgroundColor: colors.paper,
