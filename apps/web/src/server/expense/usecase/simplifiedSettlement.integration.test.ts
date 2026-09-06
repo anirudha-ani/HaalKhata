@@ -53,10 +53,10 @@ async function databaseReachable(): Promise<boolean> {
  */
 async function seed(database: Client): Promise<void> {
   await database.query(
-    `INSERT INTO users (id, email, name, avatar_color, onboarded_at)
-     VALUES ($1, 'alice@example.com', 'Alice Anders', '#c73e2e', now()),
-            ($2, 'bob@example.com', 'Bob Barker', '#0f8a5f', now()),
-            ($3, 'cara@example.com', 'Cara Castillo', '#3355aa', now())`,
+    `INSERT INTO users (id, email, name, avatar_color, onboarded_at, google_sub)
+     VALUES ($1, 'alice@example.com', 'Alice Anders', '#c73e2e', now(), 'google-alice'),
+            ($2, 'bob@example.com', 'Bob Barker', '#0f8a5f', now(), 'google-bob'),
+            ($3, 'cara@example.com', 'Cara Castillo', '#3355aa', now(), 'google-cara')`,
     [ALICE, BOBBY, CARA],
   );
   await database.query(`INSERT INTO groups (id, name, created_by) VALUES ($1, 'Trip', $2)`, [
