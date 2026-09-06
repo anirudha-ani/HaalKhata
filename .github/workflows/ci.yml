@@ -14,6 +14,10 @@ on:
 # Least privilege: nothing in this workflow writes.
 permissions:
   contents: read
+  # gitleaks-action on a pull_request event lists the PR's commits through
+  # the API to pick its scan range; without this read scope that call is a
+  # 403 and the scanner crashes before scanning anything.
+  pull-requests: read
 
 concurrency:
   group: ci-${{ github.ref }}
