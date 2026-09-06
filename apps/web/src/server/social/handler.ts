@@ -163,6 +163,19 @@ export const socialHandler: ServiceImpl<typeof SocialService> = {
     );
   },
 
+  /** Ends a friendship; the usecase enforces the settled-balance gate (§37). */
+  async removeFriend(request, context) {
+    await runUsecase(
+      async () =>
+        social.removeFriend(
+          await requireRateLimitedUser(context, "remove-friend", RPC_RATE_LIMITS.removeFriend),
+          request.userId,
+        ),
+      context,
+    );
+    return {};
+  },
+
   /** Nudges someone who owes the caller money; rate-limited in the usecase. */
   async sendReminder(request, context) {
     await runUsecase(

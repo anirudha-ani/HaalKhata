@@ -2,6 +2,7 @@
 /** Friend ledger data: the shared history query plus the settle-up modal's direction. */
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { errorMessage, expenseClient, socialClient } from "@/lib/api/connect";
 import { MONEY_KEYS, queryKeys } from "@haalkhata/shared/api/queryKeys";
@@ -28,6 +29,7 @@ export interface Settling {
  */
 export function useFriendLedger(friendId: string) {
   const queryClient = useQueryClient();
+  const router = useRouter();
   const [settling, setSettling] = useState<Settling | null>(null);
   const [reminderNote, setReminderNote] = useState("");
   const [friendRequestSent, setFriendRequestSent] = useState(false);
@@ -63,6 +65,23 @@ export function useFriendLedger(friendId: string) {
     onError: (mutationError) => setReminderNote(errorMessage(mutationError)),
   });
 
+  const [confirmingRemoval, setConfirmingRemoval] = useState(false);
+
+  // Ends the friendship (§37). The server holds the settled-balance gate;
+  // the page also disables the button while balances are outstanding, so
+  // the refusal is normally never seen.
+  const removeFriendMutation = useMutation({
+    mutationFn: () => socialClient.removeFriend({ userId: friendId }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.friends });
+      router.push("/friends");
+    },
+    onError: (mutationError) => {
+      setConfirmingRemoval(false);
+      setReminderNote(errorMessage(mutationError));
+    },
+  });
+
   const remind = useMutation({
     mutationFn: () => socialClient.sendReminder({ userId: friendId }),
     onSuccess: () => setReminderNote("Reminder sent"),
@@ -73,6 +92,18 @@ export function useFriendLedger(friendId: string) {
 
   return {
     ledger: ledger.data,
+    confirmingRemoval,
+    /** First call arms the confirmation; the second actually removes. */
+    removeFriend: () => {
+      setReminderNote("");
+      if (!confirmingRemoval) {
+        setConfirmingRemoval(true);
+        return;
+      }
+      removeFriendMutation.mutate();
+    },
+    cancelRemoval: () => setConfirmingRemoval(false),
+    isRemovingFriend: removeFriendMutation.isPending,
     isLoading: ledger.isLoading,
     error: ledger.error,
     addFriend: () => {

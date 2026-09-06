@@ -109,6 +109,7 @@ consent.
 13. [GetProfileInviteLink](#13-getprofileinvitelink)
 14. [RevokeProfileInviteLink](#14-revokeprofileinvitelink)
 15. [InviteContactToSignUp](#15-invitecontacttosignup)
+16. [RemoveFriend](#16-removefriend)
 
 ---
 
@@ -572,3 +573,41 @@ account?").
 #### Response
 
 **InviteLink:** `{ token }` — the contact's claim link.
+
+---
+
+### 16. RemoveFriend
+
+**Method:** `RemoveFriend`
+**Route:** `POST /api/connect/social.v1.SocialService/RemoveFriend`
+
+#### Notes
+
+- **Rate-limited:** 10/min per account.
+- **The settled-balance gate (§37):** refused with `FailedPrecondition`
+  while the pairwise net with that person is non-zero in ANY currency. The
+  same rule group removal follows, and for the same reason: removing the
+  row that makes somebody reachable must not orphan debt.
+- **Atomic against money:** one transaction takes the pair's friend-request
+  inbox locks (the order every friendship writer uses) and both participant
+  ledger locks, so the zero check cannot race a concurrent one-off expense
+  or settlement. Group writes need no serializing: a group debt lives with
+  the group and both memberships either way.
+- **What it touches:** both stored friendship directions, any pending
+  friend requests between the pair, and the caller's active friend claim
+  link for an Invited friend (the link promised "you two are friends when
+  you join", which is exactly what is being withdrawn). Shared history,
+  group co-memberships, and other inviters' links are untouched.
+- **Quiet by design**, like RemoveMember: no notification, no feed event.
+  They can be re-added later through the normal request flow.
+- `NotFound` when the target is not currently a friend.
+
+#### Request
+
+| Field | Type | Description |
+| --- | --- | --- |
+| user_id | string | The friend being removed. |
+
+#### Response
+
+`google.protobuf.Empty`.

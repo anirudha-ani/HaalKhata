@@ -2,6 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
+import { useRouter } from "expo-router";
 import { errorMessage, expenseClient, socialClient } from "@/lib/api/connect";
 import { MONEY_KEYS, queryKeys } from "@haalkhata/shared/api/queryKeys";
 
@@ -29,6 +30,7 @@ export interface Settling {
  */
 export function useFriendLedger(friendId: string) {
   const queryClient = useQueryClient();
+  const router = useRouter();
   const [settling, setSettling] = useState<Settling | null>(null);
   const [reminderNote, setReminderNote] = useState("");
   const [friendRequestSent, setFriendRequestSent] = useState(false);
@@ -64,6 +66,23 @@ export function useFriendLedger(friendId: string) {
     onError: (mutationError) => setReminderNote(errorMessage(mutationError)),
   });
 
+  const [confirmingRemoval, setConfirmingRemoval] = useState(false);
+
+  // Ends the friendship (§37). The server holds the settled-balance gate;
+  // the screen also disables the button while balances are outstanding, so
+  // the refusal is normally never seen.
+  const removeFriendMutation = useMutation({
+    mutationFn: () => socialClient.removeFriend({ userId: friendId }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.friends });
+      router.back();
+    },
+    onError: (mutationError) => {
+      setConfirmingRemoval(false);
+      setReminderNote(errorMessage(mutationError));
+    },
+  });
+
   const remind = useMutation({
     mutationFn: () => socialClient.sendReminder({ userId: friendId }),
     onSuccess: () => setReminderNote("Reminder sent"),
@@ -90,6 +109,18 @@ export function useFriendLedger(friendId: string) {
       setReminderNote("");
       remind.mutate();
     },
+    confirmingRemoval,
+    /** First tap arms the confirmation; the second actually removes. */
+    removeFriend: () => {
+      setReminderNote("");
+      if (!confirmingRemoval) {
+        setConfirmingRemoval(true);
+        return;
+      }
+      removeFriendMutation.mutate();
+    },
+    cancelRemoval: () => setConfirmingRemoval(false),
+    isRemovingFriend: removeFriendMutation.isPending,
     /**
      * Removes a mistaken payment in two taps: the first arms the row, the
      * second sends. A sheet for a one-line ledger row is heavier than the

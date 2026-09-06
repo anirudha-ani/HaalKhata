@@ -48,6 +48,36 @@ export async function insertFriendship(
 }
 
 /**
+ * Removes a friendship in both stored directions, along with any pending
+ * requests between the pair. Lock-free on purpose: the usecase holds the
+ * pair's inbox locks (the order every friendship writer takes), so a
+ * concurrent accept or send serializes instead of racing the deletes.
+ *
+ * @param userId - One side of the friendship.
+ * @param friendId - The other side.
+ * @param client - The removal's transaction client.
+ */
+export async function deleteFriendship(
+  userId: string,
+  friendId: string,
+  client: PoolClient,
+): Promise<void> {
+  await execute(
+    `DELETE FROM friendships
+      WHERE (user_id = $1 AND friend_id = $2) OR (user_id = $2 AND friend_id = $1)`,
+    [userId, friendId],
+    client,
+  );
+  await execute(
+    `DELETE FROM friend_requests
+      WHERE (requester_id = $1 AND recipient_id = $2)
+         OR (requester_id = $2 AND recipient_id = $1)`,
+    [userId, friendId],
+    client,
+  );
+}
+
+/**
  * Lists the ids of everyone the given user has an explicit friendship with.
  *
  * @param userId - Id of the user whose friends to look up.

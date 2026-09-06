@@ -211,6 +211,35 @@ export function FriendDetailScreen({
 
       {view.reminderNote ? <Text style={styles.note}>{view.reminderNote}</Text> : null}
 
+      {isFriend ? (
+        <View style={styles.removeRow}>
+          <Pressable
+            accessibilityRole="button"
+            disabled={!isSettled || view.isRemovingFriend}
+            onPress={view.removeFriend}
+            style={!isSettled ? styles.removeDisabled : null}
+          >
+            <Text style={styles.removeText}>
+              {view.isRemovingFriend
+                ? "Removing…"
+                : view.confirmingRemoval
+                  ? "Tap again to confirm"
+                  : "Remove friend"}
+            </Text>
+          </Pressable>
+          {view.confirmingRemoval && !view.isRemovingFriend ? (
+            <Pressable accessibilityRole="button" onPress={view.cancelRemoval}>
+              <Text style={styles.removeCancel}>Cancel</Text>
+            </Pressable>
+          ) : null}
+          {!isSettled ? (
+            <Text style={styles.footnote}>
+              You can remove a friend once every balance is settled.
+            </Text>
+          ) : null}
+        </View>
+      ) : null}
+
       <View style={[styles.ledgerLayout, isExpanded ? styles.ledgerLayoutExpanded : null]}>
       {groupBalances.length > 1 ? (
         <View style={[styles.section, isExpanded ? styles.balanceSectionExpanded : null]}>
@@ -612,6 +641,26 @@ const styles = StyleSheet.create({
     fontFamily: fonts.display,
     fontSize: 22,
     fontWeight: "700",
+  },
+  removeCancel: {
+    color: colors.inkSoft,
+    fontSize: 13,
+    fontWeight: "600",
+  },
+  removeDisabled: {
+    opacity: 0.5,
+  },
+  removeRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: spacing.md,
+  },
+  removeText: {
+    color: colors.inkSoft,
+    fontSize: 13,
+    fontWeight: "600",
+    textDecorationLine: "underline",
   },
   note: {
     color: colors.inkSoft,

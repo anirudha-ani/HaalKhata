@@ -2293,3 +2293,20 @@ rather than accidents: a group's currency is declared at creation and
 frozen (no RPC or SQL path updates it; it is the unit every balance in the
 group derives in), and positions are kept and shown per currency, never
 summed across currencies.
+
+### §37 Remove friend behind the settled-balance gate (2026-09-06)
+
+New social RPC RemoveFriend(user_id). Allowed only when the pairwise net
+with that person is exactly zero in EVERY currency (the same rule group
+removal follows): removing the row that makes somebody reachable must not
+orphan debt. The usecase runs one transaction taking the pair's
+friend-request inbox locks (the order every friendship writer uses) plus
+both participant ledger locks, so the zero check cannot race a concurrent
+one-off expense or settlement; it deletes both friendship rows and any
+pending requests between the pair, and revokes the caller's active friend
+claim link for an Invited friend (the link's promise is the friendship
+being removed). Quiet by design, like group removal: no notification, no
+feed event. Shared history and group co-memberships are untouched, and a
+removed friend can be re-added later. Clients put Remove friend on the
+friend detail screen, disabled with an explanation while balances are
+outstanding.

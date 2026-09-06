@@ -2,6 +2,7 @@
 
 import {
   deleteFriendRequest,
+  deleteFriendship,
   friendshipExists,
   insertFriendRequest,
   insertFriendship,
@@ -21,6 +22,7 @@ import {
   findActiveLinkByToken,
   findActiveProfileLink,
   insertInviteLink,
+  revokeFriendLinkForPair,
   revokeFriendLinksFor,
   revokeGroupLinks,
   revokeProfileLinks,
@@ -53,12 +55,16 @@ import {
   MAX_ACTIVITY_PAGE_SIZE,
   REMINDER_COOLDOWN_HOURS,
 } from "@/server/social/social.constants";
-import { lockGroupLedgers } from "@/server/common/ledgerLocks";
+import {
+  lockFriendRequestInboxes,
+  lockGroupLedgers,
+  lockParticipantLedgers,
+} from "@/server/common/ledgerLocks";
 import { formatMoney } from "@haalkhata/shared/money/money";
 import { safeActivityPath } from "@haalkhata/shared/navigation/activityPath";
 import { findPaymentMethod } from "@haalkhata/shared/payment/methods";
 import { getOverallBalances, netWithUser } from "@/server/expense/usecase/balance.usecase";
-import { denied, invalid, notFound } from "@/server/common/errors";
+import { denied, invalid, notFound, UsecaseError } from "@/server/common/errors";
 import { transaction } from "@/server/common/db";
 import { toFriendRequestUser, toPublicUser } from "@/server/auth/usecase/user.mapper";
 
@@ -745,6 +751,53 @@ async function notifyInviteAccepted(
       link,
     },
   );
+}
+
+/**
+ * Ends a friendship (§37), allowed only when the pairwise net with that
+ * person is exactly zero in EVERY currency: the rule group removal already
+ * follows, because removing the row that makes somebody reachable must not
+ * orphan debt. Quiet by design, also like group removal: no notification,
+ * no feed event. Shared history and group co-memberships are untouched, and
+ * they can be re-added later.
+ *
+ * The transaction takes the pair's inbox locks first (the order every
+ * friendship writer uses), then both participant ledger locks, so the zero
+ * check cannot race a concurrent one-off expense or settlement. Group
+ * writes need no serializing here: a group debt lives with the group and
+ * both memberships either way.
+ *
+ * @param userId - Id of the authenticated caller.
+ * @param friendId - The friend being removed.
+ * @throws UsecaseError "failed_precondition" while any balance is
+ *   outstanding; "not_found" when they are not a friend.
+ */
+export async function removeFriend(userId: string, friendId: string): Promise<void> {
+  if (userId === friendId) invalid("you cannot remove yourself");
+  const friend = await findUserById(friendId);
+  if (!friend || friend.merged_into !== null || !(await friendshipExists(userId, friendId))) {
+    notFound("you're not friends with them");
+  }
+  await transaction(async (client) => {
+    // Inbox locks first (the order every friendship writer takes), then the
+    // participant ledger locks every one-off expense and settlement writer
+    // holds — so the zero check below cannot race money being written
+    // between this pair.
+    await lockFriendRequestInboxes(client, [userId, friendId]);
+    await lockParticipantLedgers(client, [userId, friendId]);
+    const nets = await netWithUser(userId, friendId);
+    if ([...nets.values()].some((cents) => cents !== 0)) {
+      throw new UsecaseError(
+        "failed_precondition",
+        `you still have unsettled balances with ${friend.name}. Settle up first`,
+      );
+    }
+    await deleteFriendship(userId, friendId, client);
+    // An Invited friend's claim link promised "you two are friends when you
+    // join"; that promise is exactly what is being withdrawn. Other
+    // inviters' links for the same person live on.
+    await revokeFriendLinkForPair(userId, friendId, client);
+  });
 }
 
 /**

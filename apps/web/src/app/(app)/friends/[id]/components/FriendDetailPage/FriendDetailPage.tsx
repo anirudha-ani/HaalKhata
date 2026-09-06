@@ -192,6 +192,37 @@ export function FriendDetailPage({
         <p className="text-sm font-medium text-ink-soft">{view.reminderNote}</p>
       ) : null}
 
+      {isFriend ? (
+        <div className="flex flex-wrap items-center gap-3">
+          <button
+            type="button"
+            disabled={!isSettled || view.isRemovingFriend}
+            onClick={view.removeFriend}
+            className="text-sm font-semibold text-ink-soft underline-offset-2 hover:text-brand-600 hover:underline disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {view.isRemovingFriend
+              ? "Removing…"
+              : view.confirmingRemoval
+                ? "Click again to confirm"
+                : "Remove friend"}
+          </button>
+          {view.confirmingRemoval && !view.isRemovingFriend ? (
+            <button
+              type="button"
+              onClick={view.cancelRemoval}
+              className="text-sm text-ink-soft underline-offset-2 hover:underline"
+            >
+              Cancel
+            </button>
+          ) : null}
+          {!isSettled ? (
+            <span className="text-xs text-ink-soft">
+              You can remove a friend once every balance is settled.
+            </span>
+          ) : null}
+        </div>
+      ) : null}
+
       {groupBalances.length > 1 ? (
         <section className="space-y-2">
           <h2 className="text-sm font-semibold tracking-wide text-ink-soft uppercase">

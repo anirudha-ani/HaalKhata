@@ -114,6 +114,29 @@ export async function revokeProfileLinks(inviterId: string): Promise<void> {
 }
 
 /**
+ * Revokes the caller's active friend claim link for one Invited person
+ * (§37): unfriending them withdraws the link's promise that joining makes
+ * you two friends. Other inviters' links for the same person live on.
+ *
+ * @param inviterId - Whoever is ending the friendship.
+ * @param invitedUserId - The Invited row the link would claim.
+ * @param client - The removal's transaction client.
+ */
+export async function revokeFriendLinkForPair(
+  inviterId: string,
+  invitedUserId: string,
+  client?: PoolClient,
+): Promise<void> {
+  await execute(
+    `UPDATE invite_links SET revoked_at = now()
+      WHERE kind = 'friend' AND inviter_id = $1 AND invited_user_id = $2
+        AND revoked_at IS NULL`,
+    [inviterId, invitedUserId],
+    client,
+  );
+}
+
+/**
  * Revokes every active link of a group. Old tokens stop resolving at once;
  * a fresh link can be created afterwards.
  *

@@ -23,6 +23,7 @@ export const RPC_RATE_LIMITS = {
   listExpenses: 60,
   listGroups: 60,
   parseReceipt: 5,
+  removeFriend: 10,
   sendReminder: 10,
 } as const;
 
