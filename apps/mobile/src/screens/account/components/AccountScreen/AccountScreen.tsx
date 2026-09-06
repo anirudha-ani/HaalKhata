@@ -13,7 +13,8 @@ import { Chip } from "@/components/ui/Chip";
 import { PhoneField } from "@/components/ui/PhoneField";
 import { Segmented } from "@/components/ui/Segmented";
 import { Sheet } from "@/components/ui/Sheet";
-import { ProfileShareSheet } from "@/components/modals/ProfileShareSheet";
+import { InviteShareSheet } from "@/components/modals/InviteShareSheet";
+import { shareProfileInvite } from "@/lib/invite/share";
 import { Spinner } from "@/components/ui/Spinner";
 import { TextField } from "@/components/ui/TextField";
 import { CURRENCIES } from "@haalkhata/shared/money/money.constants";
@@ -267,9 +268,11 @@ function ProfileForm({ me: currentUser }: { me: User }) {
       </View>
 
       {form.profileShareToken ? (
-        <ProfileShareSheet
-          name={currentUser.name}
+        <InviteShareSheet
+          explainer="Anyone who scans this or opens the link can send you a friend request."
           onClose={form.closeProfileShare}
+          share={() => shareProfileInvite(form.profileShareToken, currentUser.name)}
+          title="Share my profile"
           token={form.profileShareToken}
         />
       ) : null}

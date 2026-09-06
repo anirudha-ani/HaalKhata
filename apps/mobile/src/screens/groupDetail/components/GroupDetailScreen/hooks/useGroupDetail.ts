@@ -132,22 +132,19 @@ export function useGroupDetail(groupId: string) {
     onError: (mutationError) => setPeopleError(errorMessage(mutationError)),
   });
 
+  const [groupShareToken, setGroupShareToken] = useState("");
+
   /**
-   * Shares the group's one join link (minted on first ask) through the
-   * native share sheet.
+   * Fetches the group's one join link (minted on first ask) and opens the
+   * share dialog, which owns the QR code, the copy button, and the OS
+   * share sheet.
    */
   const shareGroupLink = useMutation({
     mutationFn: async () => {
       const { token } = await socialClient.createGroupInviteLink({ groupId });
-      return shareInvite(
-        token,
-        groupDetailAPI.me?.name ?? "A member",
-        groupDetailAPI.group?.name ?? "a group",
-      );
+      return token;
     },
-    onSuccess: (outcome) => {
-      if (outcome === "shared") setLinkNotice("Invite link shared ✓");
-    },
+    onSuccess: (token) => setGroupShareToken(token),
     onError: (mutationError) => setPeopleError(errorMessage(mutationError)),
   });
 
@@ -245,6 +242,16 @@ export function useGroupDetail(groupId: string) {
       shareGroupLink.mutate();
     },
     sharingInviteLink: shareGroupLink.isPending,
+    /** Token behind the open share dialog; empty while it is closed. */
+    groupShareToken,
+    closeGroupShare: () => setGroupShareToken(""),
+    /** Opens the OS share sheet with the link's message; for the dialog. */
+    shareLinkToSheet: () =>
+      shareInvite(
+        groupShareToken,
+        groupDetailAPI.me?.name ?? "A member",
+        groupDetailAPI.group?.name ?? "a group",
+      ),
     resetInviteLink: () => {
       setMemberError("");
       resetLink.mutate();

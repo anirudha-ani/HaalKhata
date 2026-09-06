@@ -4,6 +4,7 @@ import { useRouter } from "expo-router";
 import { Bell, ChevronDown, ChevronRight, Link2, Plus, Send, UserPlus } from "lucide-react-native";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { ActivityList } from "@/components/activity/ActivityList";
+import { InviteShareSheet } from "@/components/modals/InviteShareSheet";
 import { SettleUpModal } from "@/components/modals/SettleUpModal";
 import { PersonChecklist } from "@/components/people/PersonChecklist";
 import { PersonLink } from "@/components/people/PersonLink";
@@ -421,6 +422,16 @@ export function GroupDetailScreen({
             />
           </View>
         </Sheet>
+      ) : null}
+
+      {groupDetail.groupShareToken ? (
+        <InviteShareSheet
+          explainer={`Anyone who scans this or opens the link can join ${groupDetail.group.name}. They'll see who invited them before accepting.`}
+          onClose={groupDetail.closeGroupShare}
+          share={groupDetail.shareLinkToSheet}
+          title="Group invite link"
+          token={groupDetail.groupShareToken}
+        />
       ) : null}
 
       {groupDetail.settleWith ? (

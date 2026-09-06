@@ -6,7 +6,8 @@ import type { User } from "@haalkhata/protogen/common/v1/common_pb";
 import { Avatar } from "@/components/ui/Avatar";
 import { MergePreview } from "@/components/account/MergePreview";
 import { Modal } from "@/components/ui/Modal";
-import { ProfileShareModal } from "@/components/modals/ProfileShareModal";
+import { InviteShareModal } from "@/components/modals/InviteShareModal";
+import { shareProfileInvite } from "@/lib/invite/share";
 import { PhoneField } from "@/components/ui/PhoneField";
 import { Spinner } from "@/components/ui/Spinner";
 import { useHydrated } from "@/lib/hooks/useHydrated";
@@ -287,9 +288,11 @@ function ProfileForm({ me: currentUser }: { me: User }) {
       </button>
 
       {form.profileShareToken ? (
-        <ProfileShareModal
+        <InviteShareModal
+          title="Share my profile"
+          explainer="Anyone who scans this or opens the link can send you a friend request."
           token={form.profileShareToken}
-          name={currentUser.name}
+          share={() => shareProfileInvite(form.profileShareToken, currentUser.name)}
           onClose={form.closeProfileShare}
         />
       ) : null}

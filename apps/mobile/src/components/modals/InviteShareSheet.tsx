@@ -1,4 +1,4 @@
-/** Sheet showing the caller's profile link as a QR code, with copy and share actions. */
+/** Sheet showing an invite link as a QR code, with copy and share actions. */
 
 import * as Clipboard from "expo-clipboard";
 import { Copy, Share2 } from "lucide-react-native";
@@ -7,30 +7,35 @@ import { StyleSheet, Text, View } from "react-native";
 import QRCode from "react-native-qrcode-svg";
 import { Button } from "@/components/ui/Button";
 import { Sheet } from "@/components/ui/Sheet";
-import { shareProfileInvite } from "@/lib/invite/share";
 import { inviteUrl } from "@haalkhata/shared/invite/invite";
 import { colors, radii, spacing } from "@/lib/theme/theme";
 import { COPIED_BADGE_MS } from "./modals.constants";
 
 /**
- * Renders the share-my-profile sheet: the link as a scannable QR code for
- * the person standing next to you, the URL itself readable, a copy button,
- * and the OS share sheet. Nothing leaves the device until one of those is
- * chosen; opening the sheet only fetched the link.
+ * Renders a share sheet for any invite link (profile, group join): the link
+ * as a scannable QR code for the person standing next to you, the URL itself
+ * readable, a copy button, and the OS share sheet. Nothing leaves the device
+ * until one of those is chosen; opening the sheet only fetched the link.
  *
  * @param props - Component props.
- * @param props.token - The profile link's token, already minted.
- * @param props.name - The profile owner's display name, for the share message.
+ * @param props.title - Sheet heading, naming what is being shared.
+ * @param props.explainer - One sentence on what the link lets its holder do.
+ * @param props.token - The invite link's token, already minted.
+ * @param props.share - Opens the OS share sheet with the link's message.
  * @param props.onClose - Called when the sheet is dismissed.
  * @returns The sheet.
  */
-export function ProfileShareSheet({
+export function InviteShareSheet({
+  title,
+  explainer,
   token,
-  name,
+  share,
   onClose,
 }: {
+  title: string;
+  explainer: string;
   token: string;
-  name: string;
+  share: () => Promise<unknown>;
   onClose: () => void;
 }) {
   const linkUrl = inviteUrl(token);
@@ -48,11 +53,9 @@ export function ProfileShareSheet({
   };
 
   return (
-    <Sheet title="Share my profile" onClose={onClose}>
+    <Sheet title={title} onClose={onClose}>
       <View style={styles.body}>
-        <Text style={styles.explainer}>
-          Anyone who scans this or opens the link can send you a friend request.
-        </Text>
+        <Text style={styles.explainer}>{explainer}</Text>
         {/* White behind the code on purpose: scanners want contrast. */}
         <View style={styles.qrCard}>
           <QRCode value={linkUrl} size={192} backgroundColor={colors.white} color={colors.ink} />
@@ -72,7 +75,7 @@ export function ProfileShareSheet({
             <Button
               icon={<Share2 color={colors.inkSoft} size={16} />}
               label="Share…"
-              onPress={() => shareProfileInvite(token, name)}
+              onPress={share}
               variant="outline"
             />
           </View>

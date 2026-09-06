@@ -1,36 +1,42 @@
 "use client";
-/** Dialog showing the caller's profile link as a QR code, with copy and OS-share actions. */
+/** Dialog showing an invite link as a QR code, with copy and OS-share actions. */
 
 import { QRCodeSVG } from "qrcode.react";
 import { Copy, Share2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { inviteUrl } from "@haalkhata/shared/invite/invite";
 import { Modal } from "@/components/ui/Modal";
-import { shareProfileInvite } from "@/lib/invite/share";
 
 /** How long the copy button holds its confirmed state, in milliseconds. */
 const COPIED_BADGE_MS = 1800;
 
 /**
- * Renders the share-my-profile dialog: the link as a scannable QR code for
- * the person standing next to you, the URL itself readable and selectable,
- * a copy button, and the OS share sheet where the browser has one. Nothing
- * leaves the device until one of those is chosen; opening the dialog only
- * fetched the link.
+ * Renders a share dialog for any invite link (profile, group join): the link
+ * as a scannable QR code for the person standing next to you, the URL itself
+ * readable and selectable, a copy button, and the OS share sheet where the
+ * browser has one. Nothing leaves the device until one of those is chosen;
+ * opening the dialog only fetched the link.
  *
  * @param props - Component props.
- * @param props.token - The profile link's token, already minted.
- * @param props.name - The profile owner's display name, for the share message.
+ * @param props.title - Dialog heading, naming what is being shared.
+ * @param props.explainer - One sentence on what the link lets its holder do.
+ * @param props.token - The invite link's token, already minted.
+ * @param props.share - Opens the OS share sheet with the link's message; its
+ *   rejection with AbortError means the person closed the sheet.
  * @param props.onClose - Called when the dialog is dismissed.
  * @returns The dialog.
  */
-export function ProfileShareModal({
+export function InviteShareModal({
+  title,
+  explainer,
   token,
-  name,
+  share,
   onClose,
 }: {
+  title: string;
+  explainer: string;
   token: string;
-  name: string;
+  share: () => Promise<unknown>;
   onClose: () => void;
 }) {
   const linkUrl = inviteUrl(token);
@@ -61,7 +67,7 @@ export function ProfileShareModal({
   const openShareSheet = async () => {
     setShareError("");
     try {
-      await shareProfileInvite(token, name);
+      await share();
     } catch (error) {
       // Closing the sheet is a decision, not a failure.
       if (error instanceof Error && error.name === "AbortError") return;
@@ -70,15 +76,13 @@ export function ProfileShareModal({
   };
 
   return (
-    <Modal title="Share my profile" onClose={onClose}>
+    <Modal title={title} onClose={onClose}>
       <div className="flex flex-col items-center gap-4">
-        <p className="text-center text-sm text-ink-soft">
-          Anyone who scans this or opens the link can send you a friend request.
-        </p>
+        <p className="text-center text-sm text-ink-soft">{explainer}</p>
         {/* White behind the code on purpose: scanners want contrast, and the
             card background follows the theme. */}
         <div className="rounded-xl border border-line bg-white p-3">
-          <QRCodeSVG value={linkUrl} size={192} marginSize={1} aria-label="Profile link QR code" />
+          <QRCodeSVG value={linkUrl} size={192} marginSize={1} aria-label="Invite link QR code" />
         </div>
         <code className="w-full select-all break-all rounded-lg bg-paper px-3 py-2 text-center text-xs text-ink-soft">
           {linkUrl}

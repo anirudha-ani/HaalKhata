@@ -4,6 +4,7 @@
 import Link from "next/link";
 import { Link2, Plus, UserPlus } from "lucide-react";
 import { Avatar } from "@/components/ui/Avatar";
+import { InviteShareModal } from "@/components/modals/InviteShareModal";
 import { SettleUpModal } from "@/components/modals/SettleUpModal";
 import { Spinner } from "@/components/ui/Spinner";
 import { errorMessage } from "@/lib/api/connect";
@@ -107,11 +108,21 @@ export function GroupDetailPage({
           className="flex shrink-0 items-center gap-1.5 rounded-lg border border-line px-3 py-1.5 text-xs font-semibold text-ink-soft hover:border-brand-200 hover:text-brand-600 disabled:opacity-50"
         >
           <Link2 className="h-3.5 w-3.5" />
-          {groupDetail.sharingInviteLink ? "Sharing…" : "Invite link"}
+          {groupDetail.sharingInviteLink ? "Opening…" : "Invite link"}
         </button>
       </div>
       {groupDetail.linkNotice ? (
         <p className="text-sm font-medium text-pos-700">{groupDetail.linkNotice}</p>
+      ) : null}
+
+      {groupDetail.groupShareToken ? (
+        <InviteShareModal
+          title="Group invite link"
+          explainer={`Anyone who scans this or opens the link can join ${groupDetail.group.name}. They'll see who invited them before accepting.`}
+          token={groupDetail.groupShareToken}
+          share={groupDetail.shareLinkToSheet}
+          onClose={groupDetail.closeGroupShare}
+        />
       ) : null}
 
       {/* Tabs */}
