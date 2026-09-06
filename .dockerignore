@@ -24,9 +24,9 @@ install-deps.sh
 apps/mobile/android
 apps/mobile/ios
 
-# Production config: read from /srv/haalkhata on the server, never from the
-# image. Keeping them out of the context also keeps them out of layer cache.
-docker-compose.prod.yml
-Caddyfile
+# docker-compose.prod.yml and Caddyfile are deliberately NOT listed here: the
+# Dockerfile bakes them into /opt/release/ so deploy.sh can adopt the pair
+# each image was built with (see ops/README.md). Neither holds a secret
+# value; both only reference .env keys and files under /srv/haalkhata/secrets.
 .github
 AUDIT.md
