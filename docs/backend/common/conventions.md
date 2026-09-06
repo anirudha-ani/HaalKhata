@@ -222,9 +222,13 @@ seam tests mock to intercept ledger transactions.
   int32, so every aggregate crossing the wire goes through `toInt32Cents`,
   which turns an unrepresentable sum into a named `FailedPrecondition` instead
   of an opaque encoder crash.
-- **Currency codes** are validated against the product's supported allowlist
-  (the same list both clients' pickers render), not merely "three letters" —
-  a fictional code would create a balance nobody could ever settle.
+- **Currency codes** are validated against the product's currency catalog
+  (§36): the full ISO 4217 list minus non-transactional codes (metals, fund
+  and bond units, the test/none codes), the same catalog both clients'
+  pickers render with each currency's symbol. Not merely "three letters" —
+  a fictional code would create a balance nobody could ever settle. Amounts
+  are integers in the currency's OWN minor unit: 2 digits for most, 0 for
+  JPY, 3 for KWD; formatting and input parsing follow the catalog's digits.
 - **Calendar dates vs moments.** `expense_date` is a `YYYY-MM-DD` calendar
   day (validated as a *real* day — `2026-02-31` is rejected, not normalized);
   timestamps are ISO-8601 UTC and localized by clients.

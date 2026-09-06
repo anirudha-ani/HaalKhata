@@ -327,8 +327,8 @@ export function useNewExpense(
         // should not overwrite what somebody deliberately typed first.
         if (receipt.merchant) setDescription((current) => current || receipt.merchant);
         if (receipt.date) setDate(receipt.date);
-        setTaxInput(centsToInput(receipt.taxCents));
-        setTipInput(centsToInput(receipt.tipCents));
+        setTaxInput(centsToInput(receipt.taxCents, currency));
+        setTipInput(centsToInput(receipt.tipCents, currency));
         // Parsed rows start shared by everyone: splitting the whole bill
         // evenly is the common case, so it costs zero taps and the user only
         // touches the exceptions.
@@ -338,7 +338,7 @@ export function useNewExpense(
             key: nextDraftKey(),
             name: item.name,
             quantity: item.quantity,
-            total: centsToInput(item.totalCents),
+            total: centsToInput(item.totalCents, currency),
             assignees: { ...everyone },
           })),
         );
@@ -359,12 +359,16 @@ export function useNewExpense(
     });
   };
 
-  const taxCents = parseMoneyInput(taxInput) ?? 0;
-  const tipCents = parseMoneyInput(tipInput) ?? 0;
-  const itemized = itemizedTotals(items, taxCents, tipCents);
+  // The one currency every money input on this form is typed in: the
+  // group's frozen currency, or the payer's default for one-off expenses.
+  // Parsing needs it because decimals follow the currency (§36).
+  const currency = selectedGroup?.currency ?? expenseAPI.me?.defaultCurrency ?? "USD";
+  const taxCents = parseMoneyInput(taxInput, currency) ?? 0;
+  const tipCents = parseMoneyInput(tipInput, currency) ?? 0;
+  const itemized = itemizedTotals(items, taxCents, tipCents, currency);
   // Live "what each person owes" figures, from the same allocator the server
   // runs — so the preview under the grid is exactly what gets saved.
-  const previewShares = previewItemizedShares(items, taxCents, tipCents);
+  const previewShares = previewItemizedShares(items, taxCents, tipCents, currency);
 
   /**
    * Sets the tip to a percentage of the items subtotal (before tax), the way
@@ -373,19 +377,19 @@ export function useNewExpense(
    * @param percent - Tip percentage to apply, e.g. 18.
    */
   const applyTipPercent = (percent: number) =>
-    setTipInput(((itemized.itemsTotalCents * percent) / 100 / 100).toFixed(2));
+    setTipInput(centsToInput(Math.round((itemized.itemsTotalCents * percent) / 100), currency));
 
   // In itemized mode the total is derived from the line items; the amount
   // input is read-only and the server recomputes (and re-verifies) the same sum.
-  const totalCents = isItemized ? itemized.totalCents : parseMoneyInput(amount);
+  const totalCents = isItemized ? itemized.totalCents : parseMoneyInput(amount, currency);
   const participantIds = people
     .filter((person) => checked[person.id])
     .map((person) => person.id);
 
   const splitCheck = isItemized
-    ? checkItemized(items)
-    : checkSplit({ splitType, totalCents, participantIds, inputs: splitInputs });
-  const payerCheck = checkPayers(totalCents, multiPayer, payerAmounts);
+    ? checkItemized(items, currency)
+    : checkSplit({ splitType, totalCents, participantIds, inputs: splitInputs, currency });
+  const payerCheck = checkPayers(totalCents, multiPayer, payerAmounts, currency);
   // A group, or at least one other person — mirrors exactly what the picker
   // shows, so the button never disables for a reason that isn't on screen.
   const hasParticipants = groupId !== "" || friendIds.length > 0;
@@ -403,7 +407,7 @@ export function useNewExpense(
     setError("");
     const payers = multiPayer
       ? Object.entries(payerAmounts)
-          .map(([userId, value]) => ({ userId, amountCents: parseMoneyInput(value) ?? 0 }))
+          .map(([userId, value]) => ({ userId, amountCents: parseMoneyInput(value, currency) ?? 0 }))
           .filter((payer) => payer.amountCents > 0)
       : [{ userId: singlePayerId, amountCents: totalCents }];
 
@@ -411,14 +415,20 @@ export function useNewExpense(
       groupId,
       description: description.trim(),
       amountCents: totalCents,
-      currency: selectedGroup?.currency ?? expenseAPI.me?.defaultCurrency ?? "USD",
+      currency,
       category,
       expenseDate: date,
       splitType,
       notes,
       payers,
-      splitSpecs: buildSplitSpecs({ splitType, totalCents, participantIds, inputs: splitInputs }),
-      items: isItemized ? buildItemsPayload(items) : [],
+      splitSpecs: buildSplitSpecs({
+        splitType,
+        totalCents,
+        participantIds,
+        inputs: splitInputs,
+        currency,
+      }),
+      items: isItemized ? buildItemsPayload(items, currency) : [],
       taxCents: isItemized ? taxCents : 0,
       tipCents: isItemized ? tipCents : 0,
       // Names this attempt: a retry after a lost response sends the same id

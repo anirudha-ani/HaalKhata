@@ -2276,3 +2276,20 @@ clients stop lying: the chip reads the field, an unverified number gets a
 self-holder path), and a dismissible post-login banner prompts legacy
 holders — soft, not a wall, because phone stays optional; its honest pitch
 is §34 itself: verify it or anyone proving SMS possession can claim it.
+
+### §36 Full ISO 4217 currency catalog (2026-09-06)
+
+The 8-code allowlist becomes the full ISO 4217 catalog (currency-codes
+package for codes/names/minor-unit digits, currency-symbol-map for
+symbols), minus the non-transactional codes (metals, funds, SDR, test).
+Pickers show the symbol beside the code and name; the familiar 8 stay
+pinned to the top, the rest alphabetical. Web keeps native selects, mobile
+replaces the chip row with a searchable picker sheet. Money helpers become
+minor-unit aware: amounts stay integers in the currency's own minor unit,
+so formatMoney/parseMoneyInput/centsToInput take the currency's digits (0
+for JPY, 3 for KWD) instead of assuming 2; display can no longer round a
+yen amount into a lie. Two facts confirmed, now documented as invariants
+rather than accidents: a group's currency is declared at creation and
+frozen (no RPC or SQL path updates it; it is the unit every balance in the
+group derives in), and positions are kept and shown per currency, never
+summed across currencies.

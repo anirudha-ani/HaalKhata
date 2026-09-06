@@ -15,7 +15,7 @@ import { Sheet } from "@/components/ui/Sheet";
 import { Spinner } from "@/components/ui/Spinner";
 import { TextField } from "@/components/ui/TextField";
 import { GROUP_BALANCE_FILTERS, noGroupsMessage } from "@haalkhata/shared/group/balanceFilter";
-import { CURRENCIES } from "@haalkhata/shared/money/money.constants";
+import { CurrencyPicker } from "@/components/ui/CurrencyPicker";
 import { colors, fonts, radii, spacing } from "@/lib/theme/theme";
 import { GROUP_TYPES, groupEmoji } from "../../constants/groupTypes";
 import { useGroups } from "./hooks/useGroups";
@@ -179,16 +179,11 @@ export function GroupsScreen() {
             </View>
             <View style={styles.currencyBlock}>
               <Text style={styles.currencyLabel}>Currency</Text>
-              <View style={styles.currencyChips}>
-                {CURRENCIES.map((currencyCode) => (
-                  <Chip
-                    key={currencyCode}
-                    label={currencyCode}
-                    onPress={() => groupsState.setCurrency(currencyCode)}
-                    selected={groupsState.currency === currencyCode}
-                  />
-                ))}
-              </View>
+              <CurrencyPicker onChange={groupsState.setCurrency} value={groupsState.currency} />
+              <Text style={styles.currencyHint}>
+                Every expense and balance in the group lives in this currency. It cannot be
+                changed after the group is created.
+              </Text>
             </View>
             {/* Members at creation, so a new group is not born empty and then
                 needing a second trip through a separate add-people sheet. */}
@@ -293,6 +288,11 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     flexWrap: "wrap",
     gap: spacing.sm,
+  },
+  currencyHint: {
+    color: colors.inkSoft,
+    fontSize: 12,
+    lineHeight: 16,
   },
   currencyLabel: {
     color: colors.ink,

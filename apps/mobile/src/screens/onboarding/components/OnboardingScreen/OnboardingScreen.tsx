@@ -12,11 +12,10 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { MergePreview } from "@/components/account/MergePreview";
 import { Button } from "@/components/ui/Button";
-import { Chip } from "@/components/ui/Chip";
 import { PhoneField } from "@/components/ui/PhoneField";
 import { Spinner } from "@/components/ui/Spinner";
 import { TextField } from "@/components/ui/TextField";
-import { CURRENCIES } from "@haalkhata/shared/money/money.constants";
+import { CurrencyPicker } from "@/components/ui/CurrencyPicker";
 import { MAX_USER_NAME_LENGTH } from "@haalkhata/shared/text/limits";
 import { colors, fonts, radii, spacing } from "@/lib/theme/theme";
 import { useOnboarding } from "./hooks/useOnboarding";
@@ -138,16 +137,10 @@ export function OnboardingScreen() {
 
                     <View style={styles.fieldBlock}>
                       <Text style={styles.fieldLabel}>Default currency</Text>
-                      <View style={styles.chips}>
-                        {CURRENCIES.map((code) => (
-                          <Chip
-                            key={code}
-                            label={code}
-                            onPress={() => onboarding.setCurrency(code)}
-                            selected={onboarding.currency === code}
-                          />
-                        ))}
-                      </View>
+                      <CurrencyPicker
+                        onChange={onboarding.setCurrency}
+                        value={onboarding.currency}
+                      />
                     </View>
 
                     {onboarding.error ? <Text style={styles.error}>{onboarding.error}</Text> : null}

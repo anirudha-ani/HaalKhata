@@ -33,36 +33,36 @@ function draftItem(overrides: Partial<DraftLineItem> = {}): DraftLineItem {
 describe("itemizedTotals", () => {
   it("sums items and adds tax and tip", () => {
     const items = [draftItem({ total: "10.00" }), draftItem({ key: "key-2", total: "5.50" })];
-    expect(itemizedTotals(items, 120, 300)).toEqual({
+    expect(itemizedTotals(items, 120, 300, "USD")).toEqual({
       itemsTotalCents: 1550,
       totalCents: 1970,
     });
   });
 
   it("treats unparseable amounts as zero", () => {
-    expect(itemizedTotals([draftItem({ total: "" })], 0, 0).itemsTotalCents).toBe(0);
+    expect(itemizedTotals([draftItem({ total: "" })], 0, 0, "USD").itemsTotalCents).toBe(0);
   });
 });
 
 describe("checkItemized", () => {
   it("accepts a priced, fully assigned draft", () => {
-    expect(checkItemized([draftItem()]).ok).toBe(true);
+    expect(checkItemized([draftItem()], "USD").ok).toBe(true);
   });
 
   it("rejects an empty draft", () => {
-    const check = checkItemized([]);
+    const check = checkItemized([], "USD");
     expect(check.ok).toBe(false);
     expect(check.message).toBe("add at least one item");
   });
 
   it("rejects items with no amount", () => {
-    const check = checkItemized([draftItem({ total: "" })]);
+    const check = checkItemized([draftItem({ total: "" })], "USD");
     expect(check.ok).toBe(false);
     expect(check.message).toBe("1 item needs an amount");
   });
 
   it("rejects items nobody is assigned to", () => {
-    const check = checkItemized([draftItem({ assignees: {} })]);
+    const check = checkItemized([draftItem({ assignees: {} })], "USD");
     expect(check.ok).toBe(false);
     expect(check.message).toBe("1 item is unassigned");
   });
@@ -71,14 +71,14 @@ describe("checkItemized", () => {
     const check = checkItemized([
       draftItem({ assignees: {} }),
       draftItem({ key: "key-2", assignees: {} }),
-    ]);
+    ], "USD");
     expect(check.message).toBe("2 items are unassigned");
   });
 });
 
 describe("buildItemsPayload", () => {
   it("carries per-person weights through unchanged", () => {
-    const [item] = buildItemsPayload([draftItem({ assignees: { alice: 2, bobby: 1 } })]);
+    const [item] = buildItemsPayload([draftItem({ assignees: { alice: 2, bobby: 1 } })], "USD");
     expect(item.assignments).toEqual([
       { userId: "alice", weight: 2 },
       { userId: "bobby", weight: 1 },
@@ -89,7 +89,7 @@ describe("buildItemsPayload", () => {
   it("drops zero-weight assignees and defaults a blank name", () => {
     const [item] = buildItemsPayload([
       draftItem({ name: "   ", assignees: { alice: 1, bobby: 0 } }),
-    ]);
+    ], "USD");
     expect(item.name).toBe("Item");
     expect(item.assignments).toEqual([{ userId: "alice", weight: 1 }]);
   });
@@ -97,6 +97,7 @@ describe("buildItemsPayload", () => {
 
 describe("itemized mode in the shared split helpers", () => {
   const state = {
+    currency: "USD",
     splitType: "itemized" as const,
     totalCents: 1000,
     participantIds: ["alice"],
@@ -127,7 +128,7 @@ describe("includeInEveryItem", () => {
     // Scan first (only you on the expense), pick people after — every parsed
     // line has to pick the newcomer up, or they owe nothing.
     const scanned = [draftItem({ key: "a", assignees: { alice: 1 } })];
-    expect(checkItemized(scanned).ok).toBe(true);
+    expect(checkItemized(scanned, "USD").ok).toBe(true);
     const shared = includeInEveryItem(scanned, "bobby");
     expect(Object.keys(shared[0].assignees).sort()).toEqual(["alice", "bobby"]);
   });
@@ -161,7 +162,7 @@ describe("shareEveryItemWith", () => {
   it("leaves an empty roster with nothing assigned, which checkItemized rejects", () => {
     const next = shareEveryItemWith([draftItem()], []);
     expect(next[0].assignees).toEqual({});
-    expect(checkItemized(next).ok).toBe(false);
+    expect(checkItemized(next, "USD").ok).toBe(false);
   });
 
   it("gives each item its own assignee object, so editing one does not edit the rest", () => {

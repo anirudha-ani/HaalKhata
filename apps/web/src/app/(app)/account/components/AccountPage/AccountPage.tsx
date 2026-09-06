@@ -11,7 +11,7 @@ import { shareProfileInvite } from "@/lib/invite/share";
 import { PhoneField } from "@/components/ui/PhoneField";
 import { Spinner } from "@/components/ui/Spinner";
 import { useHydrated } from "@/lib/hooks/useHydrated";
-import { CURRENCIES } from "@haalkhata/shared/money/money.constants";
+import { CURRENCIES, currencyOptionLabel } from "@haalkhata/shared/money/money.constants";
 import { HANDLE_METHODS } from "@haalkhata/shared/payment/methods";
 import { useAccountAPI, useProfileForm } from "./hooks/useAccount";
 import { MAX_USER_NAME_LENGTH } from "@haalkhata/shared/text/limits";
@@ -193,8 +193,10 @@ function ProfileForm({ me: currentUser }: { me: User }) {
             onChange={(event) => form.setCurrency(event.target.value)}
             className="mt-1 w-full rounded-xl border border-line bg-card px-3 py-2.5 focus:border-brand-500 focus:outline-none"
           >
-            {CURRENCIES.map((currencyCode) => (
-              <option key={currencyCode}>{currencyCode}</option>
+            {CURRENCIES.map((info) => (
+              <option key={info.code} value={info.code}>
+                {currencyOptionLabel(info)}
+              </option>
             ))}
           </select>
         </label>

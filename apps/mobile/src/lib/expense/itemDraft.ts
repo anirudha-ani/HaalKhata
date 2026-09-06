@@ -42,13 +42,18 @@ export interface DraftTotals {
  * @param tipInput - Raw tip money input.
  * @returns The subtotal, tax, tip, and the grand total the expense will carry.
  */
-export function draftTotals(items: DraftItem[], taxInput: string, tipInput: string): DraftTotals {
+export function draftTotals(
+  items: DraftItem[],
+  taxInput: string,
+  tipInput: string,
+  currency: string,
+): DraftTotals {
   const itemsTotalCents = items.reduce(
-    (sumCents, item) => sumCents + (parseMoneyInput(item.total) ?? 0),
+    (sumCents, item) => sumCents + (parseMoneyInput(item.total, currency) ?? 0),
     0,
   );
-  const taxCents = parseMoneyInput(taxInput) ?? 0;
-  const tipCents = parseMoneyInput(tipInput) ?? 0;
+  const taxCents = parseMoneyInput(taxInput, currency) ?? 0;
+  const tipCents = parseMoneyInput(tipInput, currency) ?? 0;
   return { itemsTotalCents, taxCents, tipCents, grandTotalCents: itemsTotalCents + taxCents + tipCents };
 }
 
@@ -92,12 +97,12 @@ export function draftCompleteness(
  * @param lines - Items as the API returned them.
  * @returns Editable draft rows with fresh client keys.
  */
-export function draftItemsFromLines(lines: readonly ItemLine[]): DraftItem[] {
+export function draftItemsFromLines(lines: readonly ItemLine[], currency: string): DraftItem[] {
   return lines.map((line) => ({
     key: nextDraftKey(),
     name: line.name,
     quantity: line.quantity,
-    total: centsToInput(line.totalCents),
+    total: centsToInput(line.totalCents, currency),
     assignees: Object.fromEntries((line.assignments ?? []).map((assignment) => [assignment.userId, true])),
   }));
 }
@@ -110,12 +115,12 @@ export function draftItemsFromLines(lines: readonly ItemLine[]): DraftItem[] {
  * @param items - The draft's line items.
  * @returns Request items with empty ids (the server assigns them).
  */
-export function itemsPayload(items: DraftItem[]) {
+export function itemsPayload(items: DraftItem[], currency: string) {
   return items.map((item) => ({
     id: "",
     name: item.name.trim() || "Item",
     quantity: item.quantity,
-    totalCents: parseMoneyInput(item.total) ?? 0,
+    totalCents: parseMoneyInput(item.total, currency) ?? 0,
     assignments: Object.entries(item.assignees)
       .filter(([, isAssigned]) => isAssigned)
       .map(([userId]) => ({ userId, weight: 1 })),

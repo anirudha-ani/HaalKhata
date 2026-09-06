@@ -4,20 +4,22 @@ import { CURRENCIES } from "@haalkhata/shared/money/money.constants";
 import { invalid } from "@/server/common/errors";
 import { CURRENCY_CODE_PATTERN } from "@/server/common/validation.constants";
 
-/** The currencies the product supports — the same list both clients offer. */
-const SUPPORTED_CURRENCIES: ReadonlySet<string> = new Set(CURRENCIES);
+/** The currencies the product supports — the same catalog both clients offer (§36). */
+const SUPPORTED_CURRENCIES: ReadonlySet<string> = new Set(
+  CURRENCIES.map((info) => info.code),
+);
 
 /**
  * Normalizes and validates a persisted currency code against the product's
- * supported list.
+ * currency catalog: full ISO 4217 minus non-transactional codes (§36).
  *
  * Shape alone ("three letters") let a fictional code like ZZZ through and
- * with it a balance nobody could ever settle. The allowlist is the one the
+ * with it a balance nobody could ever settle. The catalog is the one the
  * pickers on both apps render, so nothing a client can choose is refused.
  *
  * @param value - Client or stored-default currency value.
- * @returns A three-letter uppercase code from the supported list.
- * @throws UsecaseError when the value is malformed or not supported.
+ * @returns A three-letter uppercase code from the catalog.
+ * @throws UsecaseError when the value is malformed or not a real currency.
  */
 export function normalizeCurrencyCode(value: string): string {
   const currencyCode = value.trim().toUpperCase();
@@ -25,7 +27,7 @@ export function normalizeCurrencyCode(value: string): string {
     invalid("currency must be a three-letter code");
   }
   if (!SUPPORTED_CURRENCIES.has(currencyCode)) {
-    invalid(`currency ${currencyCode} is not supported (${CURRENCIES.join(", ")})`);
+    invalid(`currency ${currencyCode} is not an ISO 4217 currency`);
   }
   return currencyCode;
 }

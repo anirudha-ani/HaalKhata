@@ -83,7 +83,7 @@ export function ExpenseForm({
               placeholder="0.00"
               readOnly={form.isItemized}
               title={form.isItemized ? "Calculated from the items below" : undefined}
-              value={form.isItemized ? centsToInput(form.totalCents ?? 0) : form.amount}
+              value={form.isItemized ? centsToInput(form.totalCents ?? 0, currency) : form.amount}
               onChange={(event) => form.setAmount(event.target.value)}
             />
           </label>

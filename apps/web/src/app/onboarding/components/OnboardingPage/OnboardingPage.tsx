@@ -1,7 +1,7 @@
 "use client";
 /** First-run screen: name, currency, phone — plus the merge confirmation. */
 
-import { CURRENCIES } from "@haalkhata/shared/money/money.constants";
+import { CURRENCIES, currencyOptionLabel } from "@haalkhata/shared/money/money.constants";
 import { MergePreview } from "@/components/account/MergePreview";
 import { PhoneField } from "@/components/ui/PhoneField";
 import { useOnboarding } from "./hooks/useOnboarding";
@@ -150,9 +150,9 @@ export function OnboardingPage() {
                 value={onboarding.currency}
                 onChange={(event) => onboarding.setCurrency(event.target.value)}
               >
-                {CURRENCIES.map((code) => (
-                  <option key={code} value={code}>
-                    {code}
+                {CURRENCIES.map((info) => (
+                  <option key={info.code} value={info.code}>
+                    {currencyOptionLabel(info)}
                   </option>
                 ))}
               </select>

@@ -82,7 +82,7 @@ export function ExpenseForm({
                 label={form.isItemized ? `Total (${currency}) · from items` : `Amount (${currency})`}
                 onChangeText={form.setAmount}
                 placeholder="0.00"
-                value={form.isItemized ? centsToInput(form.totalCents ?? 0) : form.amount}
+                value={form.isItemized ? centsToInput(form.totalCents ?? 0, currency) : form.amount}
               />
             </View>
             <View style={styles.basicsCell}>

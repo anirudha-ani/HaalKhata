@@ -20,7 +20,10 @@ import {
  * @returns The draft state, its editing helpers, and the derived totals,
  *   unassigned count, and completeness check.
  */
-export function useItemDraft(initial: { items: DraftItem[] | null; tax: string; tip: string }) {
+export function useItemDraft(
+  initial: { items: DraftItem[] | null; tax: string; tip: string },
+  currency: string,
+) {
   const [items, setItems] = useState<DraftItem[] | null>(initial.items);
   const [taxInput, setTaxInput] = useState(initial.tax);
   const [tipInput, setTipInput] = useState(initial.tip);
@@ -34,7 +37,7 @@ export function useItemDraft(initial: { items: DraftItem[] | null; tax: string; 
     setItems((current) => (current ? current.map(change) : current));
   };
 
-  const totals = draftTotals(items ?? [], taxInput, tipInput);
+  const totals = draftTotals(items ?? [], taxInput, tipInput, currency);
 
   return {
     items,

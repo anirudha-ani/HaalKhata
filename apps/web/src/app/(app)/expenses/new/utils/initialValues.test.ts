@@ -140,7 +140,7 @@ describe("round trip — opening an edit and saving it unchanged", () => {
     const expense = itemizedExpense();
     const initial = buildInitialValues(NO_PARAMS, MINE, expense);
 
-    expect(buildItemsPayload(initial.items)).toEqual(
+    expect(buildItemsPayload(initial.items, "USD")).toEqual(
       expense.items.map((item) => ({
         // Ids are dropped on the way out: UpdateExpense replaces the receipt
         // wholesale rather than diffing rows.
@@ -178,7 +178,7 @@ describe("round trip — opening an edit and saving it unchanged", () => {
       ],
     } as Partial<Expense>);
     const initial = buildInitialValues(NO_PARAMS, MINE, expense);
-    expect(buildItemsPayload(initial.items)[0].totalCents).toBe(3333);
+    expect(buildItemsPayload(initial.items, "USD")[0].totalCents).toBe(3333);
   });
 });
 

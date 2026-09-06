@@ -80,14 +80,21 @@ export function useNewExpense(
   // One id per attempt at saving: a retry after a lost response sends the
   // same one and gets the expense the first attempt stored, not a second.
   const operationIdRef = useRef(newOperationId());
-  // The itemized split's lines — the same editor whether they were typed or
-  // read off a receipt.
-  const itemDraft = useItemDraft({ items: initial.items, tax: initial.tax, tip: initial.tip });
   const isItemized = splitType === "itemized";
 
   const selectedGroup = expenseAPI.groups.find(
     (groupSummary) => groupSummary.group?.id === groupId,
   )?.group;
+  // The one currency every money input on this form is typed in: the
+  // group's frozen currency, or the payer's default for one-off expenses.
+  // Parsing needs it because decimals follow the currency (§36).
+  const currency = selectedGroup?.currency ?? expenseAPI.me?.defaultCurrency ?? "USD";
+  // The itemized split's lines — the same editor whether they were typed or
+  // read off a receipt.
+  const itemDraft = useItemDraft(
+    { items: initial.items, tax: initial.tax, tip: initial.tip },
+    currency,
+  );
 
   /**
    * Every user this form can name, so an ad-hoc participant still resolves
@@ -249,12 +256,12 @@ export function useNewExpense(
         if (receipt.date) setDate(receipt.date);
         const everyone = Object.fromEntries(people.map((person) => [person.id, true]));
         itemDraft.replace(
-          draftItemsFromLines(receipt.items).map((item) => ({
+          draftItemsFromLines(receipt.items, currency).map((item) => ({
             ...item,
             assignees: { ...everyone },
           })),
-          centsToInput(receipt.taxCents),
-          centsToInput(receipt.tipCents),
+          centsToInput(receipt.taxCents, currency),
+          centsToInput(receipt.tipCents, currency),
         );
         setSplitType("itemized");
       },
@@ -269,15 +276,15 @@ export function useNewExpense(
 
   // An itemized total is what the lines add up to; the amount field becomes
   // a readout of it rather than an input.
-  const totalCents = isItemized ? itemDraft.grandTotalCents : parseMoneyInput(amount);
+  const totalCents = isItemized ? itemDraft.grandTotalCents : parseMoneyInput(amount, currency);
   const participantIds = people
     .filter((person) => checked[person.id])
     .map((person) => person.id);
 
   const splitCheck = isItemized
     ? itemDraft.completeness
-    : checkSplit({ splitType, totalCents, participantIds, inputs: splitInputs });
-  const payerCheck = checkPayers(totalCents, multiPayer, payerAmounts);
+    : checkSplit({ splitType, totalCents, participantIds, inputs: splitInputs, currency });
+  const payerCheck = checkPayers(totalCents, multiPayer, payerAmounts, currency);
   // A group, or at least one other person — mirrors exactly what the picker
   // shows, so the button never disables for a reason that isn't on screen.
   const hasParticipants = groupId !== "" || friendIds.length > 0;
@@ -295,7 +302,7 @@ export function useNewExpense(
     setError("");
     const payers = multiPayer
       ? Object.entries(payerAmounts)
-          .map(([userId, value]) => ({ userId, amountCents: parseMoneyInput(value) ?? 0 }))
+          .map(([userId, value]) => ({ userId, amountCents: parseMoneyInput(value, currency) ?? 0 }))
           .filter((payer) => payer.amountCents > 0)
       : [{ userId: singlePayerId, amountCents: totalCents }];
 
@@ -303,14 +310,20 @@ export function useNewExpense(
       groupId,
       description: description.trim(),
       amountCents: totalCents,
-      currency: selectedGroup?.currency ?? expenseAPI.me?.defaultCurrency ?? "USD",
+      currency,
       category,
       expenseDate: date,
       splitType,
       notes,
       payers,
-      splitSpecs: buildSplitSpecs({ splitType, totalCents, participantIds, inputs: splitInputs }),
-      items: isItemized ? itemsPayload(itemDraft.items ?? []) : [],
+      splitSpecs: buildSplitSpecs({
+        splitType,
+        totalCents,
+        participantIds,
+        inputs: splitInputs,
+        currency,
+      }),
+      items: isItemized ? itemsPayload(itemDraft.items ?? [], currency) : [],
       taxCents: isItemized ? itemDraft.taxCents : 0,
       tipCents: isItemized ? itemDraft.tipCents : 0,
       operationId: operationIdRef.current,

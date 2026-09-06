@@ -144,7 +144,7 @@ export function SettleUpModal({
   // are still loading.
   const amount = amountEdited
     ? typedAmount
-    : centsToInput(ledgerQuery.data ? checkedCents : Math.max(suggestedCents, 0));
+    : centsToInput(ledgerQuery.data ? checkedCents : Math.max(suggestedCents, 0), currency);
 
   const mutation = useMutation({
     mutationFn: (amountCents: number) =>
@@ -176,7 +176,7 @@ export function SettleUpModal({
   const handle = received
     ? ""
     : (other.paymentHandles.find((entry) => entry.method === methodKey)?.handle ?? "");
-  const amountCents = parseMoneyInput(amount) ?? 0;
+  const amountCents = parseMoneyInput(amount, currency) ?? 0;
   const link = paymentLink(methodKey, handle, amountCents, note);
   // Storage keeps the bare identifier; the payer wants the form printed on a
   // profile. "@jordan-lee" is what they will search for and what pastes
@@ -219,7 +219,7 @@ export function SettleUpModal({
 
   /** Validates the amount and selection, then records the settlement. */
   const submit = () => {
-    const cents = parseMoneyInput(amount);
+    const cents = parseMoneyInput(amount, currency);
     if (cents === null || cents <= 0) {
       setError("enter a valid amount");
       return;

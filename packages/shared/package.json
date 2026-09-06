@@ -19,6 +19,8 @@
     "vitest": "^3.2.4"
   },
   "dependencies": {
+    "currency-codes": "^2.2.0",
+    "currency-symbol-map": "^5.1.0",
     "libphonenumber-js": "^1.13.8"
   }
 }

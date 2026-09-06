@@ -95,7 +95,7 @@ export function buildInitialValues(
       ? []
       : participantIds.filter((userId) => userId !== currentUserId),
     description: expense.description,
-    amount: centsToInput(expense.amountCents),
+    amount: centsToInput(expense.amountCents, expense.currency),
     date: expense.expenseDate,
     category: expense.category,
     notes: expense.notes,
@@ -104,20 +104,20 @@ export function buildInitialValues(
     splitInputs:
       expense.splitType === "exact"
         ? Object.fromEntries(
-            expense.splits.map((split) => [split.userId, centsToInput(split.owedCents)]),
+            expense.splits.map((split) => [split.userId, centsToInput(split.owedCents, expense.currency)]),
           )
         : {},
     multiPayer,
     singlePayerId: expense.payers[0]?.userId ?? currentUserId,
     payerAmounts: multiPayer
       ? Object.fromEntries(
-          expense.payers.map((payer) => [payer.userId, centsToInput(payer.amountCents)]),
+          expense.payers.map((payer) => [payer.userId, centsToInput(payer.amountCents, expense.currency)]),
         )
       : {},
     // An itemized expense reloads its lines with their assignments, so the
     // receipt can be corrected in place instead of deleted and re-scanned.
-    items: draftItemsFromLines(expense.items),
-    tax: centsToInput(expense.taxCents),
-    tip: centsToInput(expense.tipCents),
+    items: draftItemsFromLines(expense.items, expense.currency),
+    tax: centsToInput(expense.taxCents, expense.currency),
+    tip: centsToInput(expense.tipCents, expense.currency),
   };
 }

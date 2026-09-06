@@ -125,8 +125,8 @@ export function ItemGrid({
   const columnCount = leadingColumns + people.length + 1;
   // What each add-on works out to as a rate. A bare "8.40" says nothing about
   // whether it is the tax you expected; "8.9% of items" does.
-  const taxPercent = percentOfItems(parseMoneyInput(taxInput) ?? 0, itemsTotalCents);
-  const tipPercent = percentOfItems(parseMoneyInput(tipInput) ?? 0, itemsTotalCents);
+  const taxPercent = percentOfItems(parseMoneyInput(taxInput, currency) ?? 0, itemsTotalCents);
+  const tipPercent = percentOfItems(parseMoneyInput(tipInput, currency) ?? 0, itemsTotalCents);
 
   return (
     // People columns can outgrow the viewport; the grid scrolls, the page does not.

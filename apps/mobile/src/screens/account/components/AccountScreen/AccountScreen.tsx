@@ -9,7 +9,6 @@ import { useResponsiveLayout } from "@/components/shell/hooks/useResponsiveLayou
 import { Screen } from "@/components/shell/Screen";
 import { Avatar } from "@/components/ui/Avatar";
 import { Button } from "@/components/ui/Button";
-import { Chip } from "@/components/ui/Chip";
 import { PhoneField } from "@/components/ui/PhoneField";
 import { Segmented } from "@/components/ui/Segmented";
 import { Sheet } from "@/components/ui/Sheet";
@@ -17,7 +16,7 @@ import { InviteShareSheet } from "@/components/modals/InviteShareSheet";
 import { shareProfileInvite } from "@/lib/invite/share";
 import { Spinner } from "@/components/ui/Spinner";
 import { TextField } from "@/components/ui/TextField";
-import { CURRENCIES } from "@haalkhata/shared/money/money.constants";
+import { CurrencyPicker } from "@/components/ui/CurrencyPicker";
 import { HANDLE_METHODS } from "@haalkhata/shared/payment/methods";
 import { MAX_USER_NAME_LENGTH } from "@haalkhata/shared/text/limits";
 import { colors, radii, spacing } from "@/lib/theme/theme";
@@ -180,16 +179,7 @@ function ProfileForm({ me: currentUser }: { me: User }) {
 
         <View style={styles.fieldBlock}>
           <Text style={styles.fieldLabel}>Default currency</Text>
-          <View style={styles.currencyChips}>
-            {CURRENCIES.map((currencyCode) => (
-              <Chip
-                key={currencyCode}
-                label={currencyCode}
-                onPress={() => form.setCurrency(currencyCode)}
-                selected={form.currency === currencyCode}
-              />
-            ))}
-          </View>
+          <CurrencyPicker onChange={form.setCurrency} value={form.currency} />
         </View>
 
         <View style={styles.handlesSection}>

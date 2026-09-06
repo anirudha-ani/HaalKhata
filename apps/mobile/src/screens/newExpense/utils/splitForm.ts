@@ -1,6 +1,6 @@
 /** Pure helpers for the expense form — validation + request assembly. */
 
-import { parseMoneyInput } from "@haalkhata/shared/money/money";
+import { centsToInput, parseMoneyInput } from "@haalkhata/shared/money/money";
 
 /**
  * Split modes the form supports. "itemized" is validated by the item draft
@@ -19,6 +19,8 @@ export interface SplitFormState {
   participantIds: string[];
   /** Per-user raw input: exact → "12.50", percent → "25", shares → "2". */
   inputs: Record<string, string>;
+  /** ISO 4217 code money inputs are typed in; sets the decimals they allow (§36). */
+  currency: string;
 }
 
 /** Result of a validation check: `ok` plus a user-facing message when not ok. */
@@ -51,7 +53,7 @@ export function checkSplit(state: SplitFormState): SplitCheck {
       return { ok: true, message: "" };
     case "exact": {
       const parsedCents = participantIds.map(
-        (participantId) => parseMoneyInput(inputs[participantId] ?? "") ?? 0,
+        (participantId) => parseMoneyInput(inputs[participantId] ?? "", state.currency) ?? 0,
       );
       const assignedCents = parsedCents.reduce(
         (runningTotal, cents) => runningTotal + cents,
@@ -61,7 +63,7 @@ export function checkSplit(state: SplitFormState): SplitCheck {
       if (remaining !== 0) {
         return {
           ok: false,
-          message: `${(Math.abs(remaining) / 100).toFixed(2)} ${remaining > 0 ? "left to assign" : "over the total"}`,
+          message: `${centsToInput(Math.abs(remaining), state.currency)} ${remaining > 0 ? "left to assign" : "over the total"}`,
         };
       }
       return { ok: true, message: "" };
@@ -116,7 +118,7 @@ export function buildSplitSpecs(state: SplitFormState) {
       case "exact":
         return {
           userId,
-          amountCents: parseMoneyInput(state.inputs[userId] ?? "") ?? 0,
+          amountCents: parseMoneyInput(state.inputs[userId] ?? "", state.currency) ?? 0,
           percentBp: 0,
           shares: 0,
         };
@@ -152,11 +154,12 @@ export function checkPayers(
   totalCents: number | null,
   multiPayer: boolean,
   payerAmounts: Record<string, string>,
+  currency: string,
 ): SplitCheck {
   if (!multiPayer) return { ok: true, message: "" };
   if (totalCents === null) return { ok: false, message: "enter a valid amount" };
   const paidCents = Object.values(payerAmounts)
-    .map((value) => parseMoneyInput(value) ?? 0)
+    .map((value) => parseMoneyInput(value, currency) ?? 0)
     .filter((cents) => cents > 0);
   if (paidCents.length === 0) return { ok: false, message: "enter who paid what" };
   const paidTotalCents = paidCents.reduce((runningTotal, cents) => runningTotal + cents, 0);
@@ -164,7 +167,7 @@ export function checkPayers(
     const differenceCents = totalCents - paidTotalCents;
     return {
       ok: false,
-      message: `payments ${differenceCents > 0 ? "short" : "over"} by ${(Math.abs(differenceCents) / 100).toFixed(2)}`,
+      message: `payments ${differenceCents > 0 ? "short" : "over"} by ${centsToInput(Math.abs(differenceCents), currency)}`,
     };
   }
   return { ok: true, message: "" };

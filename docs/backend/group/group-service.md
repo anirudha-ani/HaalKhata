@@ -105,8 +105,12 @@ three times is noise.
 
 - **Validation:** name required (trimmed, bounded); type coerced to `other`
   when unrecognized; currency falls back to the creator's default currency,
-  then `"USD"`, and is validated against the supported allowlist. ≤ 100
+  then `"USD"`, and is validated against the ISO 4217 catalog (§36). ≤ 100
   member ids.
+- **The currency is declared here and frozen.** No endpoint (or SQL path)
+  changes a group's currency after creation: every expense, settlement, and
+  derived balance in the group is denominated in it, so changing it would
+  silently re-denominate history. The clients say so beside the picker.
 - **Born populated:** `member_ids` enrols people alongside the creator in the
   same transaction, under the same connected-people authorization as
   AddMembers — checked *before* the insert, so a rejected member list leaves
