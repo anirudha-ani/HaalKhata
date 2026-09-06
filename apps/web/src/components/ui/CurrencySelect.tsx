@@ -131,7 +131,7 @@ export function CurrencySelect({
               setActiveIndex(0);
             }}
             onKeyDown={onSearchKeyDown}
-            placeholder="Search code or name, e.g. BDT or taka"
+            placeholder="Search code or name, e.g. USD or US dollar"
             aria-label="Search currencies"
             className="w-full border-b border-line bg-card px-3 py-2 text-sm focus:outline-none"
           />

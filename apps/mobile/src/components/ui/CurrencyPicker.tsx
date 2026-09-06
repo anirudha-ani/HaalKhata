@@ -78,7 +78,7 @@ export function CurrencyPicker({
               autoCorrect={false}
               label="Search"
               onChangeText={setQuery}
-              placeholder="Code or name, e.g. BDT or taka"
+              placeholder="Code or name, e.g. USD or US Dollar"
               value={query}
             />
             {options.map((info) => (
