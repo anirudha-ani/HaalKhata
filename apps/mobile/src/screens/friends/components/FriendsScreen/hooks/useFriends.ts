@@ -87,14 +87,16 @@ export function useFriends() {
    * The link claims their invited identity, so friendships and any group
    * seats come with them when they join.
    */
+  const [remindShare, setRemindShare] = useState<{ token: string; personName: string } | null>(
+    null,
+  );
+
   const remind = useMutation({
     mutationFn: async (person: User) => {
       const { token } = await socialClient.getFriendInviteLink({ userId: person.id });
-      return shareInvite(token, currentUser.data?.name ?? "A friend", "");
+      return { token, personName: person.name };
     },
-    onSuccess: (outcome) => {
-      if (outcome === "shared") setNotice("Invite link shared ✓");
-    },
+    onSuccess: (share) => setRemindShare(share),
     onError: (mutationError) => setError(errorMessage(mutationError)),
   });
 
@@ -172,6 +174,12 @@ export function useFriends() {
       remind.mutate(person);
     },
     remindingUserId: remind.isPending ? remind.variables?.id : undefined,
+    /** The open remind dialog's link and person; null while closed. */
+    remindShare,
+    closeRemindShare: () => setRemindShare(null),
+    /** Opens the OS share sheet with the link's message; for the dialog. */
+    remindShareToSheet: () =>
+      shareInvite(remindShare?.token ?? "", currentUser.data?.name ?? "A friend", ""),
     respondingUserId: respondToRequest.isPending ? respondToRequest.variables?.userId : undefined,
     respondingAccept: respondToRequest.isPending && respondToRequest.variables?.accept === true,
     settleWith,

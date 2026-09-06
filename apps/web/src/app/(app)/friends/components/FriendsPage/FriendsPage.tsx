@@ -17,6 +17,7 @@ import { EmailOrPhoneField } from "@/components/ui/EmailOrPhoneField";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Money } from "@/components/ui/Money";
 import { SearchField } from "@/components/ui/SearchField";
+import { InviteShareModal } from "@/components/modals/InviteShareModal";
 import { SettleUpModal } from "@/components/modals/SettleUpModal";
 import { Spinner } from "@/components/ui/Spinner";
 import { errorMessage } from "@/lib/api/connect";
@@ -272,7 +273,7 @@ export function FriendsPage() {
                         className="mr-3 flex shrink-0 items-center gap-1.5 rounded-lg border border-line px-3 py-1.5 text-xs font-semibold text-ink-soft hover:border-brand-600 hover:text-brand-600 disabled:opacity-50"
                       >
                         <Send className="h-3.5 w-3.5" />
-                        {friendsState.remindingUserId === person.id ? "Sharing…" : "Remind"}
+                        {friendsState.remindingUserId === person.id ? "Opening…" : "Remind"}
                       </button>
                     ) : null}
                   </li>
@@ -282,6 +283,16 @@ export function FriendsPage() {
           )}
         </>
       )}
+
+      {friendsState.remindShare ? (
+        <InviteShareModal
+          title="Remind them to sign up"
+          explainer={`This link signs ${friendsState.remindShare.personName} up and claims their invited identity, friendships and group seats included.`}
+          token={friendsState.remindShare.token}
+          share={friendsState.remindShareToSheet}
+          onClose={friendsState.closeRemindShare}
+        />
+      ) : null}
 
       {settleTarget ? (
         <SettleUpModal

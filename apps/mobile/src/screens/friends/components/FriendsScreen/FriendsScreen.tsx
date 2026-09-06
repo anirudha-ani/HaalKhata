@@ -3,6 +3,7 @@
 import { useRouter } from "expo-router";
 import { ChevronRight, Plus, UserPlus, Users } from "lucide-react-native";
 import { Pressable, StyleSheet, Text, View } from "react-native";
+import { InviteShareSheet } from "@/components/modals/InviteShareSheet";
 import { SettleUpModal } from "@/components/modals/SettleUpModal";
 import { PersonLink } from "@/components/people/PersonLink";
 import { Screen } from "@/components/shell/Screen";
@@ -264,6 +265,16 @@ export function FriendsScreen() {
           )}
         </View>
       )}
+
+      {friendsState.remindShare ? (
+        <InviteShareSheet
+          explainer={`This link signs ${friendsState.remindShare.personName} up and claims their invited identity, friendships and group seats included.`}
+          onClose={friendsState.closeRemindShare}
+          share={friendsState.remindShareToSheet}
+          title="Remind them to sign up"
+          token={friendsState.remindShare.token}
+        />
+      ) : null}
 
       {friendsState.settleWith ? (
         <SettleUpModal

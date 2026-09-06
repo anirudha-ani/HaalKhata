@@ -85,22 +85,22 @@ export function useFriends() {
   });
 
   /**
-   * Shares an Invited friend's sign-up link through the OS share sheet (or
-   * the clipboard). The link claims their invited identity, so friendships
-   * and any group seats come with them when they join.
+   * Fetches an Invited friend's sign-up link and opens the share dialog
+   * (QR code, copy, share sheet) — visible feedback wherever the button
+   * is, instead of a silent clipboard write. The link claims their invited
+   * identity, so friendships and any group seats come with them.
    */
+  const [remindShare, setRemindShare] = useState<{ token: string; personName: string } | null>(
+    null,
+  );
+
   const remind = useMutation({
     mutationFn: async (person: User) => {
       const { token } = await socialClient.getFriendInviteLink({ userId: person.id });
-      return shareInvite(token, currentUser.data?.name ?? "A friend", "");
+      return { token, personName: person.name };
     },
-    onSuccess: (outcome) =>
-      setNotice(outcome === "copied" ? "Invite link copied ✓" : "Invite link shared ✓"),
-    onError: (mutationError) => {
-      // Closing the share sheet is a decision, not a failure.
-      if (mutationError instanceof Error && mutationError.name === "AbortError") return;
-      setError(errorMessage(mutationError));
-    },
+    onSuccess: (share) => setRemindShare(share),
+    onError: (mutationError) => setError(errorMessage(mutationError)),
   });
 
   /** Accepts or declines one request addressed to the current user. */
@@ -178,6 +178,12 @@ export function useFriends() {
       remind.mutate(person);
     },
     remindingUserId: remind.isPending ? remind.variables?.id : undefined,
+    /** The open remind dialog's link and person; null while closed. */
+    remindShare,
+    closeRemindShare: () => setRemindShare(null),
+    /** Opens the OS share sheet with the link's message; for the dialog. */
+    remindShareToSheet: () =>
+      shareInvite(remindShare?.token ?? "", currentUser.data?.name ?? "A friend", ""),
     settleWith,
     setSettleWith,
   };
