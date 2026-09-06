@@ -210,6 +210,16 @@ export function GroupDetailPage({
         />
       ) : null}
 
+      {groupDetail.signUpShare ? (
+        <InviteShareModal
+          title="Sign-up invite"
+          explainer={`This link signs ${groupDetail.signUpShare.contact} up and connects you as friends. Once they join, you can add them to ${groupDetail.group.name}.`}
+          token={groupDetail.signUpShare.token}
+          share={groupDetail.signUpShareToSheet}
+          onClose={groupDetail.closeSignUpShare}
+        />
+      ) : null}
+
       {groupDetail.settleWith ? (
         <SettleUpModal
           to={groupDetail.settleWith.user}

@@ -434,6 +434,16 @@ export function GroupDetailScreen({
         />
       ) : null}
 
+      {groupDetail.signUpShare ? (
+        <InviteShareSheet
+          explainer={`This link signs ${groupDetail.signUpShare.contact} up and connects you as friends. Once they join, you can add them to ${groupDetail.group.name}.`}
+          onClose={groupDetail.closeSignUpShare}
+          share={groupDetail.signUpShareToSheet}
+          title="Sign-up invite"
+          token={groupDetail.signUpShare.token}
+        />
+      ) : null}
+
       {groupDetail.settleWith ? (
         <SettleUpModal
           currency={groupDetail.group.currency}

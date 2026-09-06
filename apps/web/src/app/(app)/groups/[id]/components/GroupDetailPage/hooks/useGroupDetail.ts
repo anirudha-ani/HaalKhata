@@ -115,25 +115,27 @@ export function useGroupDetail(groupId: string) {
     );
   };
 
-  /** Sends the sign-up invite the §33c offer promised, then shares its link. */
+  const [signUpShare, setSignUpShare] = useState<{ token: string; contact: string } | null>(
+    null,
+  );
+
+  /**
+   * Sends the sign-up invite the §33c offer promised, then opens the share
+   * dialog (QR code, copy, share sheet) with its claim link. The add-people
+   * modal closes: the invite's notice used to render behind it, unseen.
+   */
   const sendSignUpInvite = useMutation({
     mutationFn: async (offer: { email: string; phone: string }) => {
       const { token } = await socialClient.inviteContactToSignUp(offer);
-      return shareInvite(token, groupDetailAPI.me?.name ?? "A member", "");
+      return { token, contact: offer.email || offer.phone };
     },
-    onSuccess: (outcome) => {
+    onSuccess: (share) => {
       setInviteOffer(null);
       setContact(EMPTY_CONTACT);
-      setLinkNotice(
-        outcome === "copied"
-          ? "Invite copied — you can add them once they join ✓"
-          : "Invite shared — you can add them once they join ✓",
-      );
+      setAddingPeople(false);
+      setSignUpShare(share);
     },
-    onError: (mutationError) => {
-      if (mutationError instanceof Error && mutationError.name === "AbortError") return;
-      setPeopleError(errorMessage(mutationError));
-    },
+    onError: (mutationError) => setPeopleError(errorMessage(mutationError)),
   });
 
   const [groupShareToken, setGroupShareToken] = useState("");
@@ -270,6 +272,12 @@ export function useGroupDetail(groupId: string) {
       if (inviteOffer) sendSignUpInvite.mutate(inviteOffer);
     },
     sendingSignUpInvite: sendSignUpInvite.isPending,
+    /** The open sign-up share dialog's link and contact; null while closed. */
+    signUpShare,
+    closeSignUpShare: () => setSignUpShare(null),
+    /** Opens the OS share sheet with the link's message; for the dialog. */
+    signUpShareToSheet: () =>
+      shareInvite(signUpShare?.token ?? "", groupDetailAPI.me?.name ?? "A member", ""),
     dismissInviteOffer: () => setInviteOffer(null),
     submitPeople,
     canAddPeople: pickedIds.length > 0 || !contactIsEmpty(contact),
