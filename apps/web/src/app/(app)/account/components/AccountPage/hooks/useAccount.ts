@@ -225,6 +225,21 @@ export function useProfileForm(currentUser: User) {
     onError: (mutationError) => setError(errorMessage(mutationError)),
   });
 
+  // Re-verifies the number already on the account (§35): a number written
+  // before verification existed carries no stamp, and `save` deliberately
+  // skips an unchanged number. Same SetPhone flow end to end, so the code
+  // dialog and the send ceilings behave exactly as for a new number.
+  const verifyCurrentPhone = useMutation({
+    mutationFn: async () => {
+      const result = await authClient.setPhone({
+        phone: currentUser.phone,
+        verificationCode: "",
+      });
+      if (result.verificationSent) setVerificationPhone(currentUser.phone);
+    },
+    onError: (mutationError) => setError(errorMessage(mutationError)),
+  });
+
   /** Backs out of a merge, leaving both accounts untouched and the number unclaimed. */
   const declineMerge = () => {
     setPendingMerge(undefined);
@@ -270,8 +285,16 @@ export function useProfileForm(currentUser: User) {
       confirmMerge.mutate();
     },
     declineMerge,
-    /** Whether a verified number is on the account, enabling its removal. */
+    /** Whether a number is on the account, enabling its removal. */
     hasPhone: currentUser.phone !== "",
+    /** False on a number written before verification existed (§35). */
+    phoneVerified: currentUser.phoneVerified,
+    verifyCurrentPhone: () => {
+      setMessage("");
+      setError("");
+      verifyCurrentPhone.mutate();
+    },
+    isRequestingVerification: verifyCurrentPhone.isPending,
     removePhone: () => {
       setMessage("");
       setError("");

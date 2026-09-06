@@ -127,9 +127,23 @@ function ProfileForm({ me: currentUser }: { me: User }) {
         <View style={styles.fieldBlock}>
           <View style={styles.fieldLabelRow}>
             <Text style={styles.fieldLabel}>Phone number</Text>
-            {currentUser.phone ? (
-              /* Every attached number passed SMS possession (§34) — say so. */
+            {currentUser.phone && form.phoneVerified ? (
+              /* The stamp is stored, not inferred (§35): numbers written
+                 before verification existed must not wear it unearned. */
               <Text style={styles.verifiedTag}>✓ verified</Text>
+            ) : null}
+            {currentUser.phone && !form.phoneVerified ? (
+              <>
+                <Text style={styles.unverifiedTag}>not verified</Text>
+                <Pressable
+                  disabled={form.isRequestingVerification}
+                  onPress={form.verifyCurrentPhone}
+                >
+                  <Text style={styles.verifyNowText}>
+                    {form.isRequestingVerification ? "Sending code…" : "Verify now"}
+                  </Text>
+                </Pressable>
+              </>
             ) : null}
           </View>
           <PhoneField
@@ -465,10 +479,21 @@ const styles = StyleSheet.create({
     flex: 1,
     minWidth: 0,
   },
+  unverifiedTag: {
+    color: colors.neg700,
+    fontSize: 11,
+    fontWeight: "700",
+  },
   verifiedTag: {
     color: colors.brand700,
     fontSize: 11,
     fontWeight: "700",
+  },
+  verifyNowText: {
+    color: colors.brand600,
+    fontSize: 11,
+    fontWeight: "700",
+    textDecorationLine: "underline",
   },
   zelleModes: {
     width: 150,

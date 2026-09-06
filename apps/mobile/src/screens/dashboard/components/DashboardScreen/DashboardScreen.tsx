@@ -7,6 +7,7 @@ import { SettleUpModal } from "@/components/modals/SettleUpModal";
 import { PersonLink } from "@/components/people/PersonLink";
 import { Screen } from "@/components/shell/Screen";
 import { ScreenHeader } from "@/components/shell/ScreenHeader";
+import { VerifyPhoneBanner } from "@/components/shell/VerifyPhoneBanner";
 import { Avatar } from "@/components/ui/Avatar";
 import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -53,6 +54,8 @@ export function DashboardScreen() {
             </Text>
             <Text style={styles.greetingSub}>Here&apos;s where your ledger stands.</Text>
           </View>
+
+          <VerifyPhoneBanner currentUser={dashboard.me} />
 
           {/* Scanning a receipt is one of the ways to fill this form in, so
               it is not a second button beside it. */}

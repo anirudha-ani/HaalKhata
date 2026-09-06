@@ -10,6 +10,7 @@ import type { ReactNode } from "react";
 import { authClient } from "@/lib/api/connect";
 import { NAVIGATION_ITEMS, MOBILE_LEFT_NAV, MOBILE_RIGHT_NAV } from "./shell.constants";
 import { Avatar } from "@/components/ui/Avatar";
+import { VerifyPhoneBanner } from "./VerifyPhoneBanner";
 import { useShellData } from "./hooks/useShellData";
 
 /** Renders the HaalKhata brand mark and wordmark linking to the dashboard. */
@@ -161,7 +162,10 @@ export function AppShell({
             from handing the scroll to the document, which is what made the
             whole frame bounce. */}
         <main className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-6 md:px-8">
-          <div className="mx-auto w-full max-w-6xl">{children}</div>
+          <div className="mx-auto w-full max-w-6xl">
+            <VerifyPhoneBanner currentUser={currentUser} />
+            {children}
+          </div>
         </main>
 
         {/* Mobile bottom nav — likewise a row of the frame, never fixed.
