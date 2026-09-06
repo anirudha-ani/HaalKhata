@@ -26,6 +26,7 @@ same email, or by verifying the same phone number and merging.
 | payment_handles | repeated PaymentHandle | Where this person wants to be paid. **Visible to anyone who shares an expense with them** — exactly who needs it, because settling happens in Venmo/Zelle/Cash App and this app only records that it happened. |
 | onboarded | bool | Whether this person finished (or skipped) the first-run flow. Only ever meaningful about the caller themselves; always `false` on any other user, and clients must not read it off anyone else. |
 | avatar_url | string | Google profile picture URL; empty for invited users and never guaranteed even for Google users. Clients must keep the initials-on-`avatar_color` rendering as the fallback. |
+| phone_verified | bool | **Private**, like `phone` itself. Whether the number has passed SMS possession verification (§35). Stored (`users.phone_verified_at`), not inferred, because numbers written before verification existed carry no stamp. False with a phone set means the clients prompt to verify; until then anyone proving possession can claim the number away (§34). Always `false` in public projections. |
 
 ### Projections
 

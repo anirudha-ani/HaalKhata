@@ -403,6 +403,13 @@ collision would require. One RPC, two calls:
   3. **Held by an unclaimed invited row:** nothing changes yet. The response
      carries `pending_merge` — what merging would absorb — plus a
      `merge_token` for [ConfirmPhoneMerge](#9-confirmphonemerge).
+- **Verification is stored, not inferred (§35):** every write through this
+  endpoint (and through a confirmed merge's phone adoption) stamps
+  `users.phone_verified_at`, surfaced privately as `User.phone_verified`.
+  Numbers written before verification existed carry no stamp; the clients
+  show them as unverified, prompt after login, and re-run this same flow on
+  the number already held (outcome 1's "already the caller's" branch) to
+  earn it. Clearing or transferring the number clears the stamp with it.
 - The preview's balance buckets are per currency and int32-checked before
   being promised to a client; `net_cents` is the caller's-default-currency
   bucket only. Counterparty names are capped at 12, and every preview

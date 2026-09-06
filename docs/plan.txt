@@ -2255,3 +2255,24 @@ account). Refused only when the number is the holder's sole identifier
 (dev phone-signup rows — clearing it would strand the account). The
 clients mark the saved number "Verified" — every attached number is, by
 construction.
+
+### §35 Stored phone verification state (2026-09-06)
+
+§34's closing line — "every attached number is verified by construction" —
+is only true for numbers written after §32. Production rows predate it:
+their numbers were written by the old unverified SetPhone and are
+indistinguishable in the schema, yet the clients would show them the
+verified chip. Fix: store the fact instead of inferring it. New column
+users.phone_verified_at (TIMESTAMPTZ, null = unverified), backfilled NULL
+for everyone — honest, since Twilio was never configured before this.
+setUserPhone stamps now() on set and clears on clear (all its callers are
+SMS-proven contexts); the merge's adoptPhone stamps only when the number
+actually adopts into the empty slot; the tombstone clears it. Shadow-row
+creation (inviter-typed numbers) leaves it NULL by default. A CHECK keeps
+the pair coherent (no stamp without a number). Exposed as the private
+`phone_verified` field on common.User (self-view only, like phone). The
+clients stop lying: the chip reads the field, an unverified number gets a
+"Verify" action that re-runs SetPhone on the number already held (the
+self-holder path), and a dismissible post-login banner prompts legacy
+holders — soft, not a wall, because phone stays optional; its honest pitch
+is §34 itself: verify it or anyone proving SMS possession can claim it.
