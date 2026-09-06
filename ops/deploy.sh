@@ -15,9 +15,11 @@
 # Nothing on this server is hand-edited: GitHub is the source of truth for
 # code, for the compose file and Caddyfile (each image carries the pair it
 # was built with under /opt/release/, adopted below only after a dry-run
-# validates them), and for non-secret .env config (piped in by the deploy
-# workflow from repository variables/secrets). Only the secret files under
-# /srv/haalkhata/secrets/ live on the server alone — see ops/README.md.
+# validates them), for non-secret .env config, and — when the corresponding
+# GitHub secret is set — for the secret files under /srv/haalkhata/secrets/
+# too (an unset GitHub secret pipes an empty value, which leaves the
+# server's file alone, so any secret may still live on the server only).
+# See ops/README.md.
 #
 # Rollback is the same command with an older SHA and nothing on stdin:
 #   ssh -i ~/.ssh/haalkhata_deploy deploy@haalkhata.app <previous-sha> </dev/null
@@ -45,6 +47,22 @@ set_env() {
   }
 }
 
+# Writes one secret file idempotently. Secrets land under secrets/, never
+# in .env: the app reads them through the *_FILE convention, so they stay
+# out of the process environment and out of compose interpolation. An empty
+# value means "not managed from GitHub" and leaves the server's file alone —
+# a rollback with nothing on stdin clobbers nothing. 0444 looks backwards
+# until you remember the containers run as non-root and read the bind-mounted
+# file with its host permissions; the 0700 directory is what gates host-side
+# readers (see ops/README.md).
+set_secret() {
+  [ -z "$2" ] && return 0
+  install -d -m 700 secrets
+  printf '%s' "$2" > "secrets/.$1.tmp"
+  chmod 444 "secrets/.$1.tmp"
+  mv -f "secrets/.$1.tmp" "secrets/$1"
+}
+
 # --- config from stdin -------------------------------------------------------
 # The workflow pipes KEY=VALUE lines from repository variables/secrets. A key
 # outside the allowlist or a value with characters .env must not hold fails
@@ -57,20 +75,35 @@ printf '%s\n' "$CONFIG" | while IFS= read -r line; do
   key="${line%%=*}"
   value="${line#*=}"
   case "$key" in
-    ACME_EMAIL | GOOGLE_CLIENT_ID | GOOGLE_MOBILE_CLIENT_IDS | TWILIO_API_KEY_SID | TWILIO_VERIFY_SERVICE_SID) ;;
+    ACME_EMAIL | GOOGLE_CLIENT_ID | GOOGLE_MOBILE_CLIENT_IDS | TWILIO_API_KEY_SID | TWILIO_VERIFY_SERVICE_SID)
+      # %s\n, not %s: an empty value is zero bytes, and grep cannot match a
+      # line that was never emitted. read -r means a value can never hold a
+      # newline, so this is always exactly one line.
+      printf '%s\n' "$value" | grep -Eq '^[A-Za-z0-9@._,+:-]*$' || {
+        echo "refusing: $key value carries characters .env must not hold" >&2
+        exit 1
+      }
+      set_env "$key" "$value"
+      ;;
+    TWILIO_API_KEY_SECRET | COMPATIBLE_AI_API_KEY | SESSION_SECRET | POSTGRES_PASSWORD)
+      # Any printable ASCII: secret material (base64, hex, vendor formats)
+      # is wider than what .env may hold, and a file has no syntax to break.
+      printf '%s\n' "$value" | grep -Eq '^[!-~]*$' || {
+        echo "refusing: $key value carries non-printable characters" >&2
+        exit 1
+      }
+      case "$key" in
+        TWILIO_API_KEY_SECRET) set_secret twilio_api_key_secret "$value" ;;
+        COMPATIBLE_AI_API_KEY) set_secret openrouter_api_key "$value" ;;
+        SESSION_SECRET) set_secret session_secret "$value" ;;
+        POSTGRES_PASSWORD) set_secret postgres_password "$value" ;;
+      esac
+      ;;
     *)
-      echo "refusing: '$key' is not a pipeline-managed .env key" >&2
+      echo "refusing: '$key' is not a pipeline-managed key" >&2
       exit 1
       ;;
   esac
-  # %s\n, not %s: an empty value is zero bytes, and grep cannot match a line
-  # that was never emitted. read -r means a value can never hold a newline,
-  # so this is always exactly one line.
-  printf '%s\n' "$value" | grep -Eq '^[A-Za-z0-9@._,+:-]*$' || {
-    echo "refusing: $key value carries characters .env must not hold" >&2
-    exit 1
-  }
-  set_env "$key" "$value"
 done
 
 # IMAGE_TAG is read by docker-compose.prod.yml via compose's automatic .env

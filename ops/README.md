@@ -66,6 +66,26 @@ copies them into the environment.
 /srv/haalkhata/secrets/twilio_api_key_secret   from a restricted Twilio Verify API key
 ```
 
+Each of these (except `session_secret_previous`, which only exists for
+planned rotations) can be **GitHub-managed**: set the matching GitHub secret
+(`SESSION_SECRET`, `POSTGRES_PASSWORD`, `COMPATIBLE_AI_API_KEY`,
+`TWILIO_API_KEY_SECRET`) and every deploy writes the file over the same
+forced-command channel as the `.env` config. Left unset in GitHub, the
+value pipes as empty and `deploy.sh` leaves the server's file untouched, so
+any secret can stay server-only instead. `deploy.sh` runs as the `deploy`
+user, so GitHub-managed secrets need the directory handed over once:
+
+```sh
+sudo chown -R deploy:deploy /srv/haalkhata/secrets
+sudo chmod 700 /srv/haalkhata/secrets
+```
+
+The trade this makes is explicit: anything in GitHub is readable by
+whoever can edit workflows in the repo — which is the same set of people
+who can already deploy arbitrary code to this server, so the marginal
+exposure is small, and registered secrets are masked in workflow logs.
+Choose per secret; the mechanism supports both answers.
+
 ## Pipeline-managed `.env`
 
 `/srv/haalkhata/.env` is written by `deploy.sh`, never by hand. On every
@@ -82,15 +102,24 @@ against its allowlist before touching the file:
 | `TWILIO_API_KEY_SID` | Secret `TWILIO_API_KEY_SID` | Optional; identifies but does not authenticate |
 | `TWILIO_VERIFY_SERVICE_SID` | Secret `TWILIO_VERIFY_SERVICE_SID` | Optional |
 
-Only `twilio_api_key_secret` (and the other four secret *files* below) hold
-authenticating material, and those never pass through GitHub — they live on
-the server alone.
+Authenticating material never lands in `.env`. The same channel also
+carries these keys, which `deploy.sh` writes as secret *files* instead
+(empty value = file untouched):
 
-The directory is `0700 root:root`; the files are `0444`. That looks
-backwards until you remember the containers run as non-root (`node` is 1000,
-`postgres` is 999) and Compose bind-mounts these with their host permissions —
-`0400 root:root` would be unreadable and the stack would refuse to boot. The
-directory mode is what actually protects them.
+| Secret file | GitHub source | Notes |
+|---|---|---|
+| `secrets/twilio_api_key_secret` | Secret `TWILIO_API_KEY_SECRET` | The authenticating half of the Twilio API key |
+| `secrets/openrouter_api_key` | Secret `COMPATIBLE_AI_API_KEY` | Receipt parsing |
+| `secrets/session_secret` | Secret `SESSION_SECRET` | Changing it ends every session unless `session_secret_previous` covers the rotation |
+| `secrets/postgres_password` | Secret `POSTGRES_PASSWORD` | Rotates the FILE only — see the rotation order below before ever changing it |
+
+The directory is `0700` (owned by `deploy` once GitHub-managed secrets are
+in use; `root` on a server provisioned entirely by hand); the files are
+`0444`. That looks backwards until you remember the containers run as
+non-root (`node` is 1000, `postgres` is 999) and Compose bind-mounts these
+with their host permissions — `0400 root:root` would be unreadable and the
+stack would refuse to boot. The directory mode is what actually protects
+them.
 
 ### Rotating `postgres_password` — order matters
 

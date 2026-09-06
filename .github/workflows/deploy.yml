@@ -16,6 +16,19 @@
 #             OAuth client ids, comma separated
 #   Secret    TWILIO_API_KEY_SID             optional; phone verification
 #   Secret    TWILIO_VERIFY_SERVICE_SID      optional; phone verification
+#   Secret    TWILIO_API_KEY_SECRET          optional; lands as the server's
+#             secrets/twilio_api_key_secret file, never in .env
+#   Secret    COMPATIBLE_AI_API_KEY          optional; lands as
+#             secrets/openrouter_api_key
+#   Secret    SESSION_SECRET                 optional; lands as
+#             secrets/session_secret. CHANGING it ends every session unless
+#             SESSION_SECRET_PREVIOUS covers the rotation
+#   Secret    POSTGRES_PASSWORD              optional; lands as
+#             secrets/postgres_password. Must match what the db volume was
+#             initialized with — this rotates the FILE, not the database
+#   Any of these four left unset pipes an empty value, and deploy.sh then
+#   leaves the server's existing secret file untouched — so each secret can
+#   be GitHub-managed or server-only, per secret.
 #   Secret    DEPLOY_SSH_KEY                 private half of the deploy key
 #   Secret    DEPLOY_KNOWN_HOSTS             `ssh-keyscan haalkhata.app`
 #   Environment `production`                 optional required-reviewer gate
@@ -124,6 +137,10 @@ jobs:
           GOOGLE_MOBILE_CLIENT_IDS: ${{ vars.GOOGLE_MOBILE_CLIENT_IDS }}
           TWILIO_API_KEY_SID: ${{ secrets.TWILIO_API_KEY_SID }}
           TWILIO_VERIFY_SERVICE_SID: ${{ secrets.TWILIO_VERIFY_SERVICE_SID }}
+          TWILIO_API_KEY_SECRET: ${{ secrets.TWILIO_API_KEY_SECRET }}
+          COMPATIBLE_AI_API_KEY: ${{ secrets.COMPATIBLE_AI_API_KEY }}
+          SESSION_SECRET: ${{ secrets.SESSION_SECRET }}
+          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
         run: |
           install -m 700 -d ~/.ssh
           install -m 600 /dev/null ~/.ssh/id_ed25519
@@ -139,4 +156,8 @@ jobs:
             printf 'GOOGLE_MOBILE_CLIENT_IDS=%s\n'  "$GOOGLE_MOBILE_CLIENT_IDS"
             printf 'TWILIO_API_KEY_SID=%s\n'        "$TWILIO_API_KEY_SID"
             printf 'TWILIO_VERIFY_SERVICE_SID=%s\n' "$TWILIO_VERIFY_SERVICE_SID"
+            printf 'TWILIO_API_KEY_SECRET=%s\n'     "$TWILIO_API_KEY_SECRET"
+            printf 'COMPATIBLE_AI_API_KEY=%s\n'     "$COMPATIBLE_AI_API_KEY"
+            printf 'SESSION_SECRET=%s\n'            "$SESSION_SECRET"
+            printf 'POSTGRES_PASSWORD=%s\n'         "$POSTGRES_PASSWORD"
           } | ssh -i ~/.ssh/id_ed25519 deploy@haalkhata.app "${{ github.sha }}"
