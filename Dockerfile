@@ -35,10 +35,9 @@ COPY --from=build --chown=node:node /app/apps/web/public ./apps/web/public
 # ship them with the runtime image.
 COPY --from=build --chown=node:node /app/apps/web/migrations ./apps/web/migrations
 
-# Reads Docker secrets from /run/secrets into the environment before starting
-# the app, so no secret value lives in a compose file or an image layer. A
-# no-op when no secrets are mounted, which is what keeps `docker run` of this
-# image usable for a smoke test.
+# Exec-only entrypoint. Secrets are mounted as files under /run/secrets and
+# the app reads them itself through the *_FILE variables the compose file
+# sets, so nothing is copied into the environment (see the script's header).
 COPY ops/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN chmod 755 /usr/local/bin/docker-entrypoint.sh
 
