@@ -1,7 +1,7 @@
 "use client";
 /** First-run screen: name, currency, phone — plus the merge confirmation. */
 
-import { CURRENCIES, currencyOptionLabel } from "@haalkhata/shared/money/money.constants";
+import { CurrencySelect } from "@/components/ui/CurrencySelect";
 import { MergePreview } from "@/components/account/MergePreview";
 import { PhoneField } from "@/components/ui/PhoneField";
 import { useOnboarding } from "./hooks/useOnboarding";
@@ -145,17 +145,11 @@ export function OnboardingPage() {
               <label className="mt-2 text-xs font-semibold uppercase tracking-wide text-ink-soft">
                 Default currency
               </label>
-              <select
-                className={inputClass}
+              <CurrencySelect
                 value={onboarding.currency}
-                onChange={(event) => onboarding.setCurrency(event.target.value)}
-              >
-                {CURRENCIES.map((info) => (
-                  <option key={info.code} value={info.code}>
-                    {currencyOptionLabel(info)}
-                  </option>
-                ))}
-              </select>
+                onChange={onboarding.setCurrency}
+                ariaLabel="Default currency"
+              />
 
               {onboarding.error ? (
                 <p className="text-sm text-brand-600">{onboarding.error}</p>

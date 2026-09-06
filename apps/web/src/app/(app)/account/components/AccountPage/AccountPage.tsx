@@ -11,7 +11,7 @@ import { shareProfileInvite } from "@/lib/invite/share";
 import { PhoneField } from "@/components/ui/PhoneField";
 import { Spinner } from "@/components/ui/Spinner";
 import { useHydrated } from "@/lib/hooks/useHydrated";
-import { CURRENCIES, currencyOptionLabel } from "@haalkhata/shared/money/money.constants";
+import { CurrencySelect } from "@/components/ui/CurrencySelect";
 import { HANDLE_METHODS } from "@haalkhata/shared/payment/methods";
 import { useAccountAPI, useProfileForm } from "./hooks/useAccount";
 import { MAX_USER_NAME_LENGTH } from "@haalkhata/shared/text/limits";
@@ -188,17 +188,7 @@ function ProfileForm({ me: currentUser }: { me: User }) {
         </div>
         <label className="block text-sm font-medium">
           Default currency
-          <select
-            value={form.currency}
-            onChange={(event) => form.setCurrency(event.target.value)}
-            className="mt-1 w-full rounded-xl border border-line bg-card px-3 py-2.5 focus:border-brand-500 focus:outline-none"
-          >
-            {CURRENCIES.map((info) => (
-              <option key={info.code} value={info.code}>
-                {currencyOptionLabel(info)}
-              </option>
-            ))}
-          </select>
+          <CurrencySelect value={form.currency} onChange={form.setCurrency} ariaLabel="Default currency" />
         </label>
         <fieldset className="space-y-2 border-t border-line pt-4">
           <legend className="sr-only">Payment handles</legend>

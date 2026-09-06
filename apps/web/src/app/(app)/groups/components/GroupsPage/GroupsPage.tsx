@@ -10,7 +10,7 @@ import { Money } from "@/components/ui/Money";
 import { SearchField } from "@/components/ui/SearchField";
 import { Spinner } from "@/components/ui/Spinner";
 import { useHydrated } from "@/lib/hooks/useHydrated";
-import { CURRENCIES, currencyOptionLabel } from "@haalkhata/shared/money/money.constants";
+import { CurrencySelect } from "@/components/ui/CurrencySelect";
 import { GROUP_BALANCE_FILTERS, noGroupsMessage } from "@haalkhata/shared/group/balanceFilter";
 import { GROUP_TYPES, groupEmoji } from "../../constants/groupTypes";
 import { useGroups } from "./hooks/useGroups";
@@ -181,17 +181,7 @@ export function GroupsPage() {
             </div>
             <label className="block text-sm font-medium">
               Currency
-              <select
-                value={groupsState.currency}
-                onChange={(event) => groupsState.setCurrency(event.target.value)}
-                className="mt-1 w-full rounded-xl border border-line bg-card px-3 py-2.5 focus:border-brand-500 focus:outline-none"
-              >
-                {CURRENCIES.map((info) => (
-                  <option key={info.code} value={info.code}>
-                    {currencyOptionLabel(info)}
-                  </option>
-                ))}
-              </select>
+              <CurrencySelect value={groupsState.currency} onChange={groupsState.setCurrency} />
               <p className="mt-1 text-xs font-normal text-ink-soft">
                 Every expense and balance in the group lives in this currency. It cannot be
                 changed after the group is created.
