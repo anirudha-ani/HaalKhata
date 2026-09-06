@@ -7,7 +7,6 @@ import { useRouter } from "expo-router";
 import { useEffect, useState } from "react";
 import { authClient, errorMessage } from "@/lib/api/connect";
 import { socialClient } from "@/lib/api/connect";
-import { shareProfileInvite } from "@/lib/invite/share";
 import { MONEY_KEYS, queryKeys } from "@haalkhata/shared/api/queryKeys";
 import { clearMobileQueryCache } from "@/lib/api/queryCache";
 import { clearSession } from "@/lib/api/session";
@@ -184,15 +183,17 @@ export function useProfileForm(currentUser: User) {
 
   const [profileNotice, setProfileNotice] = useState("");
 
-  /** Shares the caller's own add-me link; acceptors send a friend request. */
+  const [profileShareToken, setProfileShareToken] = useState("");
+
+  // Fetches the link and opens the share sheet dialog; acceptors of the link
+  // send a friend request. The dialog owns the QR code, the copy button, and
+  // the OS share sheet, so nothing leaves the device on this tap alone.
   const shareProfile = useMutation({
     mutationFn: async () => {
       const { token } = await socialClient.getProfileInviteLink({});
-      return shareProfileInvite(token, currentUser.name);
+      return token;
     },
-    onSuccess: (outcome) => {
-      if (outcome === "shared") setProfileNotice("Profile link shared ✓");
-    },
+    onSuccess: (token) => setProfileShareToken(token),
     onError: (mutationError) => setError(errorMessage(mutationError)),
   });
 
@@ -300,6 +301,9 @@ export function useProfileForm(currentUser: User) {
       shareProfile.mutate();
     },
     isSharingProfile: shareProfile.isPending,
+    /** Token behind the open share dialog; empty while it is closed. */
+    profileShareToken,
+    closeProfileShare: () => setProfileShareToken(""),
     resetProfileLink: () => {
       setProfileNotice("");
       resetProfileLink.mutate();

@@ -30,6 +30,7 @@
     "next": "^15.5.24",
     "node-pg-migrate": "^8.0.4",
     "pg": "^8.22.0",
+    "qrcode.react": "^4.2.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "sharp": "^0.35.3"

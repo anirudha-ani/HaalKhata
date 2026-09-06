@@ -6,6 +6,7 @@ import type { User } from "@haalkhata/protogen/common/v1/common_pb";
 import { Avatar } from "@/components/ui/Avatar";
 import { MergePreview } from "@/components/account/MergePreview";
 import { Modal } from "@/components/ui/Modal";
+import { ProfileShareModal } from "@/components/modals/ProfileShareModal";
 import { PhoneField } from "@/components/ui/PhoneField";
 import { Spinner } from "@/components/ui/Spinner";
 import { useHydrated } from "@/lib/hooks/useHydrated";
@@ -261,7 +262,7 @@ function ProfileForm({ me: currentUser }: { me: User }) {
           className="flex w-full items-center justify-center gap-2 rounded-xl border border-line bg-card py-3 font-semibold text-ink-soft hover:border-brand-600 hover:text-brand-600 disabled:opacity-50"
         >
           <Share2 className="h-4 w-4" />
-          {form.isSharingProfile ? "Sharing…" : "Share my profile"}
+          {form.isSharingProfile ? "Opening…" : "Share my profile"}
         </button>
         {form.profileNotice ? (
           <p className="text-center text-sm font-medium text-pos-700">{form.profileNotice}</p>
@@ -284,6 +285,14 @@ function ProfileForm({ me: currentUser }: { me: User }) {
       >
         <LogOut className="h-4 w-4" /> Sign out
       </button>
+
+      {form.profileShareToken ? (
+        <ProfileShareModal
+          token={form.profileShareToken}
+          name={currentUser.name}
+          onClose={form.closeProfileShare}
+        />
+      ) : null}
 
       {form.verificationPhone ? (
         <Modal title="Verify your phone" onClose={form.cancelVerification}>

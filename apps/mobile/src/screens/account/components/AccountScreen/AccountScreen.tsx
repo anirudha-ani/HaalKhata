@@ -13,6 +13,7 @@ import { Chip } from "@/components/ui/Chip";
 import { PhoneField } from "@/components/ui/PhoneField";
 import { Segmented } from "@/components/ui/Segmented";
 import { Sheet } from "@/components/ui/Sheet";
+import { ProfileShareSheet } from "@/components/modals/ProfileShareSheet";
 import { Spinner } from "@/components/ui/Spinner";
 import { TextField } from "@/components/ui/TextField";
 import { CURRENCIES } from "@haalkhata/shared/money/money.constants";
@@ -264,6 +265,14 @@ function ProfileForm({ me: currentUser }: { me: User }) {
         </View>
         </View>
       </View>
+
+      {form.profileShareToken ? (
+        <ProfileShareSheet
+          name={currentUser.name}
+          onClose={form.closeProfileShare}
+          token={form.profileShareToken}
+        />
+      ) : null}
 
       {form.verificationPhone ? (
         <Sheet onClose={form.cancelVerification} title="Verify your phone">
