@@ -125,13 +125,18 @@ export function useFriends() {
   // Headline totals, so the page answers "where do I stand overall?" before
   // any individual row is read — per currency, never summed across them.
   const currency = currentUser.data?.defaultCurrency || "USD";
+  // Keyed on the query data, not on allFriends: that `?? []` fallback is a
+  // fresh array on every render while the list is loading, which would make
+  // this memo recompute each time for nothing.
   const totals = useMemo(
     () =>
       totalsByCurrency(
-        allFriends.map((friend) => ({ balances: bucketsOf(friend, currency) })),
+        (friends.data?.friends ?? []).map((friend) => ({
+          balances: bucketsOf(friend, currency),
+        })),
         currency,
       ),
-    [allFriends, currency],
+    [friends.data, currency],
   );
 
   return {
