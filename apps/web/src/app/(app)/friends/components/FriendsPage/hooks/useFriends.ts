@@ -3,22 +3,50 @@
 
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { CounterpartyBalance } from "@haalkhata/protogen/common/v1/common_pb";
-import { splitIdentifier } from "@haalkhata/shared/auth/identifier";
+import type { User } from "@haalkhata/protogen/common/v1/common_pb";
+import {
+  contactIsEmpty,
+  contactPayload,
+  EMPTY_CONTACT,
+  INVALID_PHONE_MESSAGE,
+  type ContactDraft,
+} from "@haalkhata/shared/phone/contact";
+import { totalsByCurrency, type CurrencyBucket } from "@haalkhata/shared/money/balances";
 import { matchesTerms, searchTerms } from "@haalkhata/shared/search/filter";
 import { authClient, errorMessage, socialClient } from "@/lib/api/connect";
+import { shareInvite } from "@/lib/invite/share";
 import { queryKeys } from "@haalkhata/shared/api/queryKeys";
+
+/**
+ * A friend's position per currency. A server predating `balances` sends only
+ * the default-currency scalar, which reads the same way as one bucket.
+ *
+ * @param friend - A counterparty balance from the friends list.
+ * @param defaultCurrency - The caller's default currency.
+ * @returns Non-zero buckets, or an empty list when settled.
+ */
+export function bucketsOf(
+  friend: { netCents: number; balances: CurrencyBucket[] },
+  defaultCurrency: string,
+): CurrencyBucket[] {
+  const buckets =
+    friend.balances.length > 0
+      ? friend.balances
+      : [{ currency: defaultCurrency, cents: friend.netCents }];
+  return buckets.filter((bucket) => bucket.cents !== 0);
+}
 
 /**
  * Provides all data and behavior the friends page needs: the signed-in user,
  * the friend list with per-friend balances, the add-friend form state, and
  * the settle-up modal target.
  *
- * The add form takes one identifier that may be an email address or a phone
- * number, routed by `splitIdentifier` the same way the login form routes it.
+ * The add form is an explicit email-or-phone choice; the phone side carries
+ * its country and is validated client-side before anything is sent.
  *
  * @returns An object exposing `me` (the signed-in user), `friends` (every
- *   counterparty balance) and `visibleFriends` (those matching `query`), the
+ *   counterparty balance) with `friendsError` when that query failed, and
+ *   `visibleFriends` (those matching `query`), the
  *   `query`/`setQuery` search state, `isLoading`/`isAdding` flags, the
  *   `identifier` form state with `setIdentifier` and `submitAdd`, the last
  *   add-friend `error` message, and `settleWith`/`setSettleWith` controlling
@@ -26,10 +54,15 @@ import { queryKeys } from "@haalkhata/shared/api/queryKeys";
  */
 export function useFriends() {
   const queryClient = useQueryClient();
-  const [identifier, setIdentifier] = useState("");
+  const [contact, setContact] = useState<ContactDraft>(EMPTY_CONTACT);
   const [query, setQuery] = useState("");
   const [error, setError] = useState("");
-  const [settleWith, setSettleWith] = useState<CounterpartyBalance | null>(null);
+  const [notice, setNotice] = useState("");
+  const [settleWith, setSettleWith] = useState<{
+    user: User;
+    currency: string;
+    cents: number;
+  } | null>(null);
   const [showAdd, setShowAdd] = useState(false);
 
   const currentUser = useQuery({ queryKey: queryKeys.me, queryFn: () => authClient.getMe({}) });
@@ -38,59 +71,124 @@ export function useFriends() {
     queryFn: () => socialClient.listFriends({}),
   });
 
-  /** Adds a friend by email or phone; on success clears the form and refreshes the list. */
+  /** Sends a friend request without revealing whether the identifier matched. */
   const addFriend = useMutation({
-    mutationFn: () => socialClient.addFriend({ ...splitIdentifier(identifier), name: "" }),
+    mutationFn: (payload: { email: string; phone: string }) =>
+      socialClient.addFriend({ ...payload, name: "" }),
     onSuccess: () => {
-      setIdentifier("");
+      setContact(EMPTY_CONTACT);
       setShowAdd(false);
+      setNotice("If an account matches, they’ll receive a friend request.");
       queryClient.invalidateQueries({ queryKey: queryKeys.friends });
     },
+    onError: (mutationError) => setError(errorMessage(mutationError)),
+  });
+
+  /**
+   * Fetches an Invited friend's sign-up link and opens the share dialog
+   * (QR code, copy, share sheet) — visible feedback wherever the button
+   * is, instead of a silent clipboard write. The link claims their invited
+   * identity, so friendships and any group seats come with them.
+   */
+  const [remindShare, setRemindShare] = useState<{ token: string; personName: string } | null>(
+    null,
+  );
+
+  const remind = useMutation({
+    mutationFn: async (person: User) => {
+      const { token } = await socialClient.getFriendInviteLink({ userId: person.id });
+      return { token, personName: person.name };
+    },
+    onSuccess: (share) => setRemindShare(share),
+    onError: (mutationError) => setError(errorMessage(mutationError)),
+  });
+
+  /** Accepts or declines one request addressed to the current user. */
+  const respondToRequest = useMutation({
+    mutationFn: (response: { userId: string; accept: boolean }) =>
+      socialClient.respondFriendRequest(response),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.friends }),
     onError: (mutationError) => setError(errorMessage(mutationError)),
   });
 
   const allFriends = friends.data?.friends ?? [];
   // Filtering keeps the server's order (people you have expenses with first,
   // then the rest alphabetically) rather than re-ranking by match quality.
+  // Names only: a friend's email and phone are private and arrive empty.
   const visibleFriends = useMemo(() => {
     const everyFriend = friends.data?.friends ?? [];
     const terms = searchTerms(query);
     if (terms.length === 0) return everyFriend;
-    return everyFriend.filter((friend) =>
-      matchesTerms(terms, friend.user?.name, friend.user?.email, friend.user?.phone),
-    );
+    return everyFriend.filter((friend) => matchesTerms(terms, friend.user?.name));
   }, [friends.data, query]);
 
   // Headline totals, so the page answers "where do I stand overall?" before
-  // any individual row is read.
-  const owedToYouCents = allFriends.reduce(
-    (total, friend) => total + Math.max(friend.netCents, 0),
-    0,
-  );
-  const youOweCents = allFriends.reduce(
-    (total, friend) => total + Math.max(-friend.netCents, 0),
-    0,
+  // any individual row is read — per currency, never summed across them.
+  const currency = currentUser.data?.defaultCurrency || "USD";
+  // Keyed on the query data, not on allFriends: that `?? []` fallback is a
+  // fresh array on every render while the list is loading, which would make
+  // this memo recompute each time for nothing.
+  const totals = useMemo(
+    () =>
+      totalsByCurrency(
+        (friends.data?.friends ?? []).map((friend) => ({
+          balances: bucketsOf(friend, currency),
+        })),
+        currency,
+      ),
+    [friends.data, currency],
   );
 
   return {
     me: currentUser.data,
     friends: allFriends,
+    // Surfaced rather than swallowed: ListFriends shares the per-account
+    // rate limit with the overall balances, and a refused call must not
+    // render as "no friends yet".
+    friendsError: friends.error,
+    incomingRequests: friends.data?.incomingRequests ?? [],
     visibleFriends,
-    owedToYouCents,
-    youOweCents,
+    totals,
     query,
     setQuery,
     showAdd,
     setShowAdd,
     isLoading: friends.isLoading,
-    identifier,
-    setIdentifier,
+    contact,
+    setContact,
+    canSubmitAdd: !contactIsEmpty(contact),
     error,
+    notice,
     submitAdd: () => {
       setError("");
-      addFriend.mutate();
+      setNotice("");
+      const payload = contactPayload(contact);
+      // A number that cannot exist in the selected country never leaves the
+      // form; the privacy-preserving empty response is only for real lookups.
+      if (payload === null) {
+        setError(INVALID_PHONE_MESSAGE);
+        return;
+      }
+      addFriend.mutate(payload);
     },
     isAdding: addFriend.isPending,
+    respondToRequest: (userId: string, accept: boolean) => {
+      setError("");
+      respondToRequest.mutate({ userId, accept });
+    },
+    respondingUserId: respondToRequest.isPending ? respondToRequest.variables?.userId : undefined,
+    remindFriend: (person: User) => {
+      setError("");
+      setNotice("");
+      remind.mutate(person);
+    },
+    remindingUserId: remind.isPending ? remind.variables?.id : undefined,
+    /** The open remind dialog's link and person; null while closed. */
+    remindShare,
+    closeRemindShare: () => setRemindShare(null),
+    /** Opens the OS share sheet with the link's message; for the dialog. */
+    remindShareToSheet: () =>
+      shareInvite(remindShare?.token ?? "", currentUser.data?.name ?? "A friend", ""),
     settleWith,
     setSettleWith,
   };

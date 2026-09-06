@@ -1,13 +1,28 @@
-/** Expense form queries (me, groups, friends, expense being edited) + create/update mutations. */
+/** Expense form queries (me, groups, friends, expense being edited) + create/update/parse mutations. */
 
 import type { MessageInitShape } from "@bufbuild/protobuf";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { CreateExpenseRequestSchema } from "@haalkhata/protogen/expense/v1/expense_pb";
-import { authClient, expenseClient, groupClient, socialClient } from "@/lib/api/connect";
+import {
+  authClient,
+  expenseClient,
+  groupClient,
+  receiptClient,
+  socialClient,
+} from "@/lib/api/connect";
 import { MONEY_KEYS, queryKeys } from "@haalkhata/shared/api/queryKeys";
+import { base64ToBytes } from "@/lib/encoding/encoding";
 
 /** Plain-object init shape of a CreateExpenseRequest proto message. */
 export type CreateExpenseInput = MessageInitShape<typeof CreateExpenseRequestSchema>;
+
+/** A photo picked for scanning: its base64 payload and media type. */
+export interface ReceiptPhotoInput {
+  /** Base64-encoded image bytes from the picker. */
+  base64: string;
+  /** MIME type of the image (e.g. "image/jpeg"). */
+  mediaType: string;
+}
 
 /**
  * Loads everything the expense form needs (current user, groups, friends,
@@ -16,7 +31,8 @@ export type CreateExpenseInput = MessageInitShape<typeof CreateExpenseRequestSch
  *
  * @param editExpenseId - Id of the expense being edited, or "" when creating.
  * @returns `me`, `groups`, `friends`, `editing` (the getExpense response when
- *   editing), a combined `isLoading` flag, and the `create`/`update` mutations.
+ *   editing), a combined `isLoading` flag, the `create`/`update` mutations,
+ *   and the `parse` mutation that reads a receipt photo into a draft.
  */
 export function useNewExpenseAPI(editExpenseId: string) {
   const queryClient = useQueryClient();
@@ -56,6 +72,19 @@ export function useNewExpenseAPI(editExpenseId: string) {
     onSuccess: invalidateMoney,
   });
 
+  /**
+   * Sends a receipt photo to the AI parser and yields the structured draft.
+   * Lives here rather than on its own route because a scan is a way of
+   * filling in this form, not a different kind of expense.
+   */
+  const parse = useMutation({
+    mutationFn: (photo: ReceiptPhotoInput) =>
+      receiptClient.parseReceipt({
+        image: base64ToBytes(photo.base64),
+        mediaType: photo.mediaType,
+      }),
+  });
+
   return {
     me: currentUserQuery.data,
     groups: groupsQuery.data?.groups ?? [],
@@ -68,5 +97,6 @@ export function useNewExpenseAPI(editExpenseId: string) {
       (editExpenseId !== "" && editingQuery.isLoading),
     create,
     update,
+    parse,
   };
 }

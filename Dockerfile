@@ -1,5 +1,5 @@
 # Build: pnpm install → buf generate → next build (standalone output).
-FROM node:24-alpine AS build
+FROM node:24-alpine@sha256:e67514e5d0f6c46656005e1b693b2ec9d52e80b641307de684d4a015ba7a4eaf AS build
 RUN npm install -g pnpm@11.9.0
 WORKDIR /app
 
@@ -25,13 +25,14 @@ ENV NEXT_PUBLIC_GOOGLE_CLIENT_ID=$NEXT_PUBLIC_GOOGLE_CLIENT_ID
 RUN pnpm gen && pnpm --filter @haalkhata/web build
 
 # Runtime: only the standalone server + static assets, no toolchain.
-FROM node:24-alpine
+FROM node:24-alpine@sha256:e67514e5d0f6c46656005e1b693b2ec9d52e80b641307de684d4a015ba7a4eaf
 ENV NODE_ENV=production HOSTNAME=0.0.0.0 PORT=3000
 WORKDIR /app
 COPY --from=build --chown=node:node /app/apps/web/.next/standalone ./
 COPY --from=build --chown=node:node /app/apps/web/.next/static ./apps/web/.next/static
 COPY --from=build --chown=node:node /app/apps/web/public ./apps/web/public
-# Pending migrations apply automatically on boot (db.ts); ship them.
+# The readiness endpoint applies pending migrations before reporting healthy;
+# ship them with the runtime image.
 COPY --from=build --chown=node:node /app/apps/web/migrations ./apps/web/migrations
 
 # Reads Docker secrets from /run/secrets into the environment before starting
@@ -40,6 +41,11 @@ COPY --from=build --chown=node:node /app/apps/web/migrations ./apps/web/migratio
 # image usable for a smoke test.
 COPY ops/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN chmod 755 /usr/local/bin/docker-entrypoint.sh
+
+# The production server never hand-edits its compose file or Caddyfile:
+# deploy.sh extracts this pair from the image it is deploying, so the infra
+# files version with the code they serve — and roll back with it.
+COPY docker-compose.prod.yml Caddyfile /opt/release/
 
 USER node
 EXPOSE 3000

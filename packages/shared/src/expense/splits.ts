@@ -92,6 +92,9 @@ export function computeSplits(
       return specs.map((spec) => ({ userId: spec.userId, owedCents: spec.amountCents ?? 0 }));
     }
     case "percent": {
+      if (specs.some((spec) => (spec.percentBp ?? 0) < 0)) {
+        throw new SplitError("percentages must be non-negative");
+      }
       const basisPointSum = specs.reduce((runningTotal, spec) => runningTotal + (spec.percentBp ?? 0), 0);
       if (basisPointSum !== 10000) {
         throw new SplitError(`percentages must sum to 100% (got ${basisPointSum / 100}%)`);

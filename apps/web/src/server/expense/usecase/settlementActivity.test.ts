@@ -17,6 +17,7 @@ vi.mock("@/server/expense/repo/expenses.repo", () => ({
 vi.mock("@/server/group/repo/groups.repo", () => ({
   findGroupById: vi.fn(),
   isMember: vi.fn(),
+  listGroupsByUser: vi.fn(),
   listMembers: vi.fn(),
 }));
 vi.mock("@/server/auth/repo/users.repo", () => ({
@@ -30,6 +31,7 @@ vi.mock("@/server/expense/repo/comments.repo", () => ({
 }));
 vi.mock("@/server/expense/repo/settlements.repo", () => ({
   insertSettlement: vi.fn(),
+  scopeHasSettlements: vi.fn(),
   // The lock is orthogonal to attribution; run the operation directly. The
   // client handed through is never dereferenced by the mocked insert.
   withSettlementPairLock: vi.fn(
@@ -37,15 +39,28 @@ vi.mock("@/server/expense/repo/settlements.repo", () => ({
       operation({} as PoolClient),
   ),
 }));
+vi.mock("@/server/common/ledgerLocks", () => ({
+  lockExpenseLedger: vi.fn(),
+  lockGroupLedgers: vi.fn(),
+  lockParticipantLedgers: vi.fn(),
+  withLedgerTransaction: vi.fn(
+    (operation: (client: PoolClient) => Promise<unknown>) => operation({} as PoolClient),
+  ),
+}));
 vi.mock("@/server/social/repo/activity.repo", () => ({
   insertActivity: vi.fn(),
   listActivityForExpense: vi.fn(),
 }));
 vi.mock("@/server/social/repo/notifications.repo", () => ({ insertNotifications: vi.fn() }));
-vi.mock("./balance.usecase", () => ({ amountOwed: vi.fn(), owedByScope: vi.fn() }));
+vi.mock("./balance.usecase", () => ({
+  amountOwed: vi.fn(),
+  groupCancelsOut: vi.fn(),
+  owedByScope: vi.fn(),
+}));
 
 import { recordSettlement } from "./expense.usecase";
 import { findUserById } from "@/server/auth/repo/users.repo";
+import { listGroupsByUser } from "@/server/group/repo/groups.repo";
 import { insertSettlement } from "@/server/expense/repo/settlements.repo";
 import { insertActivity } from "@/server/social/repo/activity.repo";
 import { insertNotifications } from "@/server/social/repo/notifications.repo";
@@ -66,10 +81,11 @@ function resetRepos(): void {
   vi.mocked(findUserById).mockImplementation(
     async (userId: string) => PEOPLE[userId] as Awaited<ReturnType<typeof findUserById>>,
   );
+  vi.mocked(listGroupsByUser).mockResolvedValue([]);
   // The whole debt lives in the pair's one-off ledger, comfortably above the
   // amount settled, so the guards pass and a single one-off row is recorded —
   // which is what these attribution tests inspect.
-  vi.mocked(owedByScope).mockResolvedValue([{ groupId: null, owedCents: 10_000 }]);
+  vi.mocked(owedByScope).mockResolvedValue([{ groupId: null, currency: "USD", owedCents: 10_000 }]);
   // Echo the input back as the stored row: the activity fan-out reads the
   // row's scope and amount, so a bare {} would silently test nothing.
   vi.mocked(insertSettlement).mockImplementation(
@@ -110,6 +126,32 @@ async function activityFor(received: boolean) {
   });
   return vi.mocked(insertActivity).mock.calls[0][0];
 }
+
+describe("recordSettlement — provenance", () => {
+  // H-02: a settlement is a claim one of the two people typed in. The row
+  // itself says which, whichever direction the money went, so a debtor who
+  // records their own payment cannot later look like the creditor confirmed
+  // it — and the creditor's Remove is what answers a false one.
+  it("stores who recorded a payment made", async () => {
+    await activityFor(false);
+    expect(vi.mocked(insertSettlement).mock.calls[0][0]).toMatchObject({
+      fromUser: RECORDER,
+      toUser: OTHER,
+      recordedBy: RECORDER,
+    });
+  });
+
+  it("stores who recorded a payment received", async () => {
+    const activity = await activityFor(true);
+    expect(vi.mocked(insertSettlement).mock.calls[0][0]).toMatchObject({
+      fromUser: OTHER,
+      toUser: RECORDER,
+      recordedBy: RECORDER,
+    });
+    // And the feed line says so too, not only the one-time notification.
+    expect(activity.message).toMatch(/recorded by Rita Recorder$/);
+  });
+});
 
 describe("recordSettlement — activity attribution", () => {
   it("attributes a payment received to the person who paid, not the recorder", async () => {

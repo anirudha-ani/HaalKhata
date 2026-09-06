@@ -9,6 +9,8 @@ import type { UserRow } from "@/server/auth/repo/users.repo";
 const { verifyIdTokenMock } = vi.hoisted(() => {
   process.env.SESSION_SECRET = "test-secret-key-for-vitest-0123456789abcdef";
   process.env.GOOGLE_CLIENT_ID = "test-client.apps.googleusercontent.com";
+  process.env.GOOGLE_MOBILE_CLIENT_IDS =
+    "android-client.apps.googleusercontent.com, ios-client.apps.googleusercontent.com";
   return { verifyIdTokenMock: vi.fn() };
 });
 
@@ -39,7 +41,31 @@ vi.mock("@/server/auth/repo/paymentHandles.repo", () => ({
   replacePaymentHandles: vi.fn(),
 }));
 
-import { logIn, logInWithGoogle, signUp } from "./auth.usecase";
+vi.mock("@/server/auth/repo/googleSignInNonces.repo", () => ({
+  consumeGoogleSignInNonce: vi.fn(),
+  insertGoogleSignInNonce: vi.fn(),
+}));
+
+vi.mock("@/server/common/db", async (importOriginal) => ({
+  // Pure helpers (isUniqueViolation, newId) stay real; only the transaction
+  // wrapper is stubbed so no pool is ever opened.
+  ...(await importOriginal<typeof import("@/server/common/db")>()),
+  transaction: vi.fn(
+    async (operation: (client: object) => Promise<unknown>) => operation({}),
+  ),
+}));
+
+import {
+  beginGoogleSignIn,
+  logIn,
+  logInWithGoogle,
+  signUp,
+  updateProfile,
+} from "./auth.usecase";
+import {
+  consumeGoogleSignInNonce,
+  insertGoogleSignInNonce,
+} from "@/server/auth/repo/googleSignInNonces.repo";
 import {
   findUserByEmail,
   findUserByGoogleSub,
@@ -47,7 +73,13 @@ import {
   insertUser,
   linkGoogleAccount,
   setAvatarUrl,
+  updateUserProfile,
 } from "@/server/auth/repo/users.repo";
+import { replacePaymentHandles } from "@/server/auth/repo/paymentHandles.repo";
+import {
+  GOOGLE_SIGN_IN_NONCE_LIFETIME_SECONDS,
+  MAX_USER_NAME_LENGTH,
+} from "@/server/auth/auth.constants";
 
 /**
  * Builds a users row with sensible defaults for the fields a test does not care
@@ -68,6 +100,7 @@ function userRow(overrides: Partial<UserRow> = {}): UserRow {
     phone: null,
     google_sub: null,
     onboarded_at: null,
+    phone_verified_at: null,
     merged_into: null,
     token_version: 0,
     created_at: "2026-07-27T00:00:00.000Z",
@@ -85,16 +118,68 @@ function googleReturns(payload: Record<string, unknown>): void {
   verifyIdTokenMock.mockResolvedValue({ getPayload: () => payload });
 }
 
+const GOOGLE_AUTH_NONCE = "n".repeat(43);
+
 const VERIFIED = {
   sub: "google-sub-123",
   email: "Anirudha@Example.com",
   email_verified: true,
   name: "Anirudha Paul",
+  nonce: GOOGLE_AUTH_NONCE,
 };
 
 describe("logInWithGoogle", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(consumeGoogleSignInNonce).mockResolvedValue(true);
+  });
+
+  it("issues a random challenge while persisting only its fixed-length hash", async () => {
+    const first = await beginGoogleSignIn();
+    const second = await beginGoogleSignIn();
+
+    expect(first.nonce).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    expect(second.nonce).not.toBe(first.nonce);
+    expect(insertGoogleSignInNonce).toHaveBeenCalledTimes(2);
+    const [storedHash, lifetimeSeconds] = vi.mocked(insertGoogleSignInNonce).mock.calls[0];
+    expect(storedHash).toMatch(/^[0-9a-f]{64}$/);
+    expect(storedHash).not.toContain(first.nonce);
+    expect(lifetimeSeconds).toBe(GOOGLE_SIGN_IN_NONCE_LIFETIME_SECONDS);
+  });
+
+  it("accepts the web client and every native mobile client as the token audience", async () => {
+    googleReturns(VERIFIED);
+    vi.mocked(findUserByGoogleSub).mockResolvedValue(userRow({ google_sub: "google-sub-123" }));
+
+    await logInWithGoogle("id-token");
+
+    // The mobile app signs in with its own Android and iOS OAuth clients, and
+    // an ID token names the client that requested it — so all three are us.
+    expect(verifyIdTokenMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        audience: [
+          "test-client.apps.googleusercontent.com",
+          "android-client.apps.googleusercontent.com",
+          "ios-client.apps.googleusercontent.com",
+        ],
+      }),
+    );
+  });
+
+  it("rejects an ID token with no server-issued nonce", async () => {
+    googleReturns({ ...VERIFIED, nonce: undefined });
+
+    await expect(logInWithGoogle("id-token")).rejects.toThrow(/could not verify/);
+    expect(consumeGoogleSignInNonce).not.toHaveBeenCalled();
+    expect(findUserByGoogleSub).not.toHaveBeenCalled();
+  });
+
+  it("atomically rejects an expired or already-used nonce", async () => {
+    googleReturns(VERIFIED);
+    vi.mocked(consumeGoogleSignInNonce).mockResolvedValue(false);
+
+    await expect(logInWithGoogle("id-token")).rejects.toThrow(/could not verify/);
+    expect(findUserByGoogleSub).not.toHaveBeenCalled();
   });
 
   it("returns the already-linked account without touching email lookup", async () => {
@@ -155,6 +240,19 @@ describe("logInWithGoogle", () => {
         googleSub: "google-sub-123",
         passwordHash: null,
       }),
+    );
+  });
+
+  it("bounds a provider-owned Google display name before persistence", async () => {
+    googleReturns({ ...VERIFIED, name: "N".repeat(MAX_USER_NAME_LENGTH + 50) });
+    vi.mocked(findUserByGoogleSub).mockResolvedValue(undefined);
+    vi.mocked(findUserByEmail).mockResolvedValue(undefined);
+    vi.mocked(insertUser).mockResolvedValue(userRow({ google_sub: "google-sub-123" }));
+
+    await logInWithGoogle("id-token");
+
+    expect(insertUser).toHaveBeenCalledWith(
+      expect.objectContaining({ name: "N".repeat(MAX_USER_NAME_LENGTH) }),
     );
   });
 
@@ -296,5 +394,62 @@ describe("password auth is production-gated", () => {
       /invalid email\/phone or password/,
     );
     expect(findUserByEmail).toHaveBeenCalled();
+  });
+
+  it("rejects an oversized signup name before hashing or persistence", async () => {
+    vi.stubEnv("NODE_ENV", "development");
+
+    await expect(
+      signUp({
+        email: "a@b.com",
+        phone: "",
+        name: "N".repeat(MAX_USER_NAME_LENGTH + 1),
+        password: "hunter22",
+      }),
+    ).rejects.toThrow(/name is too long/);
+    expect(insertUser).not.toHaveBeenCalled();
+  });
+});
+
+describe("profile persisted input bounds", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(findUserById).mockResolvedValue(userRow());
+  });
+
+  it("rejects an oversized profile name before writing", async () => {
+    await expect(
+      updateProfile("user-1", {
+        name: "N".repeat(MAX_USER_NAME_LENGTH + 1),
+        defaultCurrency: "USD",
+      }),
+    ).rejects.toThrow(/name is too long/);
+    expect(updateUserProfile).not.toHaveBeenCalled();
+  });
+
+  it("normalizes a valid profile currency before writing", async () => {
+    await updateProfile("user-1", { name: " Ani ", defaultCurrency: " eur " });
+
+    expect(updateUserProfile).toHaveBeenCalledWith(
+      "user-1",
+      {
+        name: "Ani",
+        defaultCurrency: "EUR",
+      },
+      expect.anything(),
+    );
+  });
+
+  it("validates payment handles before changing any profile field", async () => {
+    await expect(
+      updateProfile("user-1", {
+        name: "Ani",
+        defaultCurrency: "USD",
+        paymentHandles: [{ method: "carrier-pigeon", handle: "roof" }],
+      }),
+    ).rejects.toThrow(/unknown payment method/);
+
+    expect(updateUserProfile).not.toHaveBeenCalled();
+    expect(replacePaymentHandles).not.toHaveBeenCalled();
   });
 });

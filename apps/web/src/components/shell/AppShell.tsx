@@ -2,6 +2,7 @@
 /** App chrome around authed pages: desktop sidebar, mobile header, and bottom nav. */
 
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { Bell, CircleUserRound, LogOut, Plus } from "lucide-react";
@@ -9,14 +10,22 @@ import type { ReactNode } from "react";
 import { authClient } from "@/lib/api/connect";
 import { NAVIGATION_ITEMS, MOBILE_LEFT_NAV, MOBILE_RIGHT_NAV } from "./shell.constants";
 import { Avatar } from "@/components/ui/Avatar";
+import { VerifyPhoneBanner } from "./VerifyPhoneBanner";
 import { useShellData } from "./hooks/useShellData";
 
-/** Renders the HaalKhata wordmark linking back to the dashboard. */
+/** Renders the HaalKhata brand mark and wordmark linking to the dashboard. */
 function Logo() {
   return (
-    <Link href="/dashboard" className="flex items-baseline gap-2 px-1">
+    <Link href="/dashboard" className="flex items-center gap-2.5 px-1">
+      <Image
+        src="/icon-192.png"
+        alt=""
+        aria-hidden="true"
+        className="h-8 w-8 rounded-lg"
+        height={32}
+        width={32}
+      />
       <span className="font-display text-2xl font-bold text-brand-600">HaalKhata</span>
-      
     </Link>
   );
 }
@@ -153,7 +162,10 @@ export function AppShell({
             from handing the scroll to the document, which is what made the
             whole frame bounce. */}
         <main className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-6 md:px-8">
-          <div className="mx-auto w-full max-w-6xl">{children}</div>
+          <div className="mx-auto w-full max-w-6xl">
+            <VerifyPhoneBanner currentUser={currentUser} />
+            {children}
+          </div>
         </main>
 
         {/* Mobile bottom nav — likewise a row of the frame, never fixed.

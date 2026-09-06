@@ -53,10 +53,10 @@ async function databaseReachable(): Promise<boolean> {
  */
 async function seed(database: Client): Promise<void> {
   await database.query(
-    `INSERT INTO users (id, email, name, avatar_color, onboarded_at)
-     VALUES ($1, 'alice@example.com', 'Alice Anders', '#c73e2e', now()),
-            ($2, 'bob@example.com', 'Bob Barker', '#0f8a5f', now()),
-            ($3, 'cara@example.com', 'Cara Castillo', '#3355aa', now())`,
+    `INSERT INTO users (id, email, name, avatar_color, onboarded_at, google_sub)
+     VALUES ($1, 'alice@example.com', 'Alice Anders', '#c73e2e', now(), 'google-alice'),
+            ($2, 'bob@example.com', 'Bob Barker', '#0f8a5f', now(), 'google-bob'),
+            ($3, 'cara@example.com', 'Cara Castillo', '#3355aa', now(), 'google-cara')`,
     [ALICE, BOBBY, CARA],
   );
   await database.query(`INSERT INTO groups (id, name, created_by) VALUES ($1, 'Trip', $2)`, [
@@ -200,9 +200,9 @@ describe.skipIf(!reachable)("simplified-edge settlement against Postgres", () =>
     for (const member of [ALICE, BOBBY, CARA]) {
       expect(await userNetInGroup(member, TRIP)).toBe(0);
     }
-    expect(await netWithUser(ALICE, CARA)).toBe(0);
-    expect(await netWithUser(BOBBY, ALICE)).toBe(0);
-    expect(await netWithUser(BOBBY, CARA)).toBe(0);
+    expect(await netWithUser(ALICE, CARA)).toEqual(new Map());
+    expect(await netWithUser(BOBBY, ALICE)).toEqual(new Map());
+    expect(await netWithUser(BOBBY, CARA)).toEqual(new Map());
   });
 
   it("tells the pair about the payment — and nobody else, on either feed", async () => {

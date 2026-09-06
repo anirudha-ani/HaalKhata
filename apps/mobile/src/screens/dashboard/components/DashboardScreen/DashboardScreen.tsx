@@ -1,26 +1,32 @@
-/** Dashboard screen: balance summary, per-person balances with settle-up, recent activity. */
+/** Dashboard screen: balance summary, per-person balances with settle-up, group highlights, recent activity. */
 
 import { Link, useRouter } from "expo-router";
-import { Plus, ScanLine, UsersRound } from "lucide-react-native";
+import { Plus, UsersRound } from "lucide-react-native";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { SettleUpModal } from "@/components/modals/SettleUpModal";
+import { PersonLink } from "@/components/people/PersonLink";
 import { Screen } from "@/components/shell/Screen";
 import { ScreenHeader } from "@/components/shell/ScreenHeader";
+import { VerifyPhoneBanner } from "@/components/shell/VerifyPhoneBanner";
 import { Avatar } from "@/components/ui/Avatar";
 import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Money } from "@/components/ui/Money";
 import { Spinner } from "@/components/ui/Spinner";
+import { errorMessage } from "@/lib/api/connect";
+import { leadingBucket, outstandingBuckets } from "@haalkhata/shared/money/balances";
 import { formatMoney } from "@haalkhata/shared/money/money";
+import { safeActivityPath } from "@haalkhata/shared/navigation/activityPath";
 import { localDate } from "@haalkhata/shared/time/localTime";
 import { getGreeting } from "@haalkhata/shared/greeting";
 import { colors, fonts, radii, spacing } from "@/lib/theme/theme";
+import { groupEmoji } from "../../../groups/constants/groupTypes";
 import { useDashboard } from "./hooks/useDashboard";
 
 /**
  * Renders the dashboard: greeting header with quick actions, the three-card
- * balance summary, per-person balances with a settle-up flow, and the most
- * recent activity entries.
+ * balance summary, per-person balances with a settle-up flow, the groups
+ * that most need attention, and the most recent activity entries.
  *
  * @returns The dashboard screen content (spinner while loading).
  */
@@ -28,6 +34,9 @@ export function DashboardScreen() {
   const dashboard = useDashboard();
   const router = useRouter();
   const currency = dashboard.me?.defaultCurrency ?? "USD";
+  // A failed balance query (the RPC is rate-limited per account) must not
+  // read as a zero balance: the cards show a dash and the reason is stated.
+  const balancesFailed = Boolean(dashboard.balancesError);
 
   return (
     <Screen
@@ -46,16 +55,11 @@ export function DashboardScreen() {
             <Text style={styles.greetingSub}>Here&apos;s where your ledger stands.</Text>
           </View>
 
+          <VerifyPhoneBanner currentUser={dashboard.me} />
+
+          {/* Scanning a receipt is one of the ways to fill this form in, so
+              it is not a second button beside it. */}
           <View style={styles.quickActions}>
-            <View style={styles.quickAction}>
-              <Button
-                compact
-                icon={<ScanLine color={colors.brand600} size={16} />}
-                label="Scan receipt"
-                onPress={() => router.push("/scan")}
-                variant="outline"
-              />
-            </View>
             <View style={styles.quickAction}>
               <Button
                 compact
@@ -66,69 +70,122 @@ export function DashboardScreen() {
             </View>
           </View>
 
-          {/* Balance summary */}
-          <View style={styles.summary}>
-            <View style={styles.summaryRow}>
-              <SummaryCard
-                label="You are owed"
-                tone="pos"
-                value={formatMoney(dashboard.balances?.owedToYouCents ?? 0, currency)}
-              />
-              <SummaryCard
-                label="You owe"
-                tone="neg"
-                value={formatMoney(dashboard.balances?.youOweCents ?? 0, currency)}
-              />
+          {balancesFailed ? (
+            <View accessibilityRole="alert" style={styles.errorCard}>
+              <Text style={styles.errorText}>
+                Couldn&apos;t load your balances — {errorMessage(dashboard.balancesError)}
+              </Text>
             </View>
-            <SummaryCard
-              label="Net balance"
-              strong
-              tone={dashboard.netCents >= 0 ? "pos" : "neg"}
-              value={`${dashboard.netCents < 0 ? "−" : ""}${formatMoney(Math.abs(dashboard.netCents), currency)}`}
-            />
-          </View>
+          ) : null}
 
+          {/* Balance summary — one set of cards per currency. Currencies are
+              separate ledgers: a dollar owed and a euro owed are two facts,
+              and adding them would be adding nothing to nothing. */}
+          {dashboard.totals.map((total) => {
+            const netCents = total.owedToYouCents - total.youOweCents;
+            return (
+              <View key={total.currency} style={styles.summary}>
+                {dashboard.totals.length > 1 ? (
+                  <Text style={styles.summaryCurrency}>{total.currency}</Text>
+                ) : null}
+                <View style={styles.summaryCards}>
+                  <SummaryCard
+                    label="You are owed"
+                    tone="pos"
+                    value={
+                      balancesFailed ? "—" : formatMoney(total.owedToYouCents, total.currency)
+                    }
+                  />
+                  <SummaryCard
+                    label="You owe"
+                    tone="neg"
+                    value={balancesFailed ? "—" : formatMoney(total.youOweCents, total.currency)}
+                  />
+                  <SummaryCard
+                    label="Net balance"
+                    strong
+                    tone={netCents >= 0 ? "pos" : "neg"}
+                    value={
+                      balancesFailed
+                        ? "—"
+                        : `${netCents < 0 ? "−" : ""}${formatMoney(Math.abs(netCents), total.currency)}`
+                    }
+                  />
+                </View>
+              </View>
+            );
+          })}
+
+          <View style={styles.dashboardGrid}>
           {/* Per-person balances */}
-          <View style={styles.section}>
+          <View style={[styles.section, styles.dashboardSection]}>
             <Text style={styles.sectionTitle}>People</Text>
-            {dashboard.balances && dashboard.balances.counterparties.length > 0 ? (
+            {balancesFailed ? null : dashboard.balances &&
+              dashboard.balances.counterparties.length > 0 ? (
               <View style={styles.listCard}>
-                {dashboard.balances.counterparties.map((counterparty, index) =>
-                  counterparty.user ? (
+                {dashboard.balances.counterparties.map((counterparty, index) => {
+                  if (!counterparty.user) return null;
+                  const person = counterparty.user;
+                  // One line per currency. A server predating `balances`
+                  // sends only the default-currency scalar, which reads the
+                  // same way.
+                  const buckets = outstandingBuckets(
+                    counterparty.balances.length > 0
+                      ? counterparty.balances
+                      : [{ currency, cents: counterparty.netCents }],
+                    currency,
+                  );
+                  const toSettle = leadingBucket(buckets.filter((bucket) => bucket.cents < 0));
+                  return (
                     <View
-                      key={counterparty.user.id}
+                      key={person.id}
                       style={[styles.personRow, index > 0 ? styles.rowDivider : null]}
                     >
-                      <Avatar user={counterparty.user} />
-                      <View style={styles.personText}>
-                        <Text numberOfLines={1} style={styles.personName}>
-                          {counterparty.user.name}
-                        </Text>
-                        <Text style={styles.personHint}>
-                          {counterparty.netCents === 0
-                            ? "settled up"
-                            : counterparty.netCents > 0
-                              ? "owes you"
-                              : "you owe"}
-                        </Text>
+                      <PersonLink meId={dashboard.me?.id} style={styles.personLink} userId={person.id}>
+                        <Avatar user={person} />
+                        <View style={styles.personText}>
+                          <Text numberOfLines={1} style={styles.personName}>
+                            {person.name}
+                          </Text>
+                          <Text style={styles.personHint}>
+                            {buckets.length === 0
+                              ? "settled up"
+                              : buckets.every((bucket) => bucket.cents > 0)
+                                ? "owes you"
+                                : buckets.every((bucket) => bucket.cents < 0)
+                                  ? "you owe"
+                                  : "owes you · you owe"}
+                          </Text>
+                        </View>
+                      </PersonLink>
+                      <View style={styles.personAmounts}>
+                        {buckets.map((bucket) => (
+                          <Money
+                            cents={bucket.cents}
+                            currency={bucket.currency}
+                            key={bucket.currency}
+                            signed
+                            style={styles.personAmount}
+                          />
+                        ))}
                       </View>
-                      <Money
-                        cents={counterparty.netCents}
-                        currency={currency}
-                        signed
-                        style={styles.personAmount}
-                      />
-                      {counterparty.netCents < 0 ? (
+                      {toSettle ? (
                         <Button
                           compact
                           label="Settle"
-                          onPress={() => dashboard.setSettleWith(counterparty)}
+                          onPress={() =>
+                            dashboard.setSettleWith({
+                              user: person,
+                              currency: toSettle.currency,
+                              cents: toSettle.cents,
+                            })
+                          }
                           variant="outline"
                         />
                       ) : null}
                     </View>
-                  ) : null,
-                )}
+                  );
+                })}
               </View>
             ) : (
               <EmptyState
@@ -146,9 +203,67 @@ export function DashboardScreen() {
             )}
           </View>
 
+          {/* Groups — the other half of "who do I owe": People answers it per
+              person, this answers it per shared pot. Compact rows rather than
+              the cards the groups screen uses, because here it sits between
+              two other lists and has to read as a peer of them. */}
+          {dashboard.topGroups.length > 0 ? (
+            <View style={[styles.section, styles.dashboardSection]}>
+              <View style={styles.sectionHeader}>
+                <Text style={styles.sectionTitle}>Groups</Text>
+                {dashboard.groups.length > dashboard.topGroups.length ? (
+                  <Link href="/groups" style={styles.sectionLink}>
+                    See all {dashboard.groups.length}
+                  </Link>
+                ) : null}
+              </View>
+              <View style={styles.listCard}>
+                {dashboard.topGroups.map((summary, index) =>
+                  summary.group ? (
+                    <Pressable
+                      key={summary.group.id}
+                      onPress={() => router.push(`/groups/${summary.group?.id}`)}
+                      style={({ pressed }) => [
+                        styles.groupRow,
+                        index > 0 ? styles.rowDivider : null,
+                        pressed ? styles.groupRowPressed : null,
+                      ]}
+                    >
+                      <Text style={styles.groupEmoji}>{groupEmoji(summary.group.type)}</Text>
+                      <View style={styles.personText}>
+                        <Text numberOfLines={1} style={styles.personName}>
+                          {summary.group.name}
+                        </Text>
+                        <Text style={styles.personHint}>
+                          {summary.memberCount} member{summary.memberCount === 1 ? "" : "s"}
+                          {summary.yourNetCents === 0
+                            ? " · settled up"
+                            : summary.yourNetCents > 0
+                              ? " · owed to you"
+                              : " · you owe"}
+                        </Text>
+                      </View>
+                      {/* The group's own currency, not yours — a group settles
+                          in one currency and showing your default here would
+                          label the number with money it was never counted in. */}
+                      {summary.yourNetCents === 0 ? null : (
+                        <Money
+                          cents={summary.yourNetCents}
+                          currency={summary.group.currency}
+                          signed
+                          style={styles.personAmount}
+                        />
+                      )}
+                    </Pressable>
+                  ) : null,
+                )}
+              </View>
+            </View>
+          ) : null}
+
           {/* Recent activity */}
           {dashboard.recentActivity.length > 0 ? (
-            <View style={styles.section}>
+            <View style={[styles.section, styles.dashboardSection]}>
               <View style={styles.sectionHeader}>
                 <Text style={styles.sectionTitle}>Recent activity</Text>
                 <Link href="/activity" style={styles.sectionLink}>
@@ -159,7 +274,7 @@ export function DashboardScreen() {
                 {dashboard.recentActivity.map((event) => (
                   <Pressable
                     key={event.id}
-                    onPress={() => router.push((event.link || "/activity") as never)}
+                    onPress={() => router.push(safeActivityPath(event.link))}
                     style={styles.activityRow}
                   >
                     {event.actor ? <Avatar size="sm" user={event.actor} /> : null}
@@ -172,14 +287,16 @@ export function DashboardScreen() {
               </View>
             </View>
           ) : null}
+          </View>
         </>
       )}
 
-      {dashboard.settleWith?.user ? (
+      {dashboard.settleWith ? (
         <SettleUpModal
-          currency={currency}
+          currency={dashboard.settleWith.currency}
           onClose={() => dashboard.setSettleWith(null)}
-          suggestedCents={-dashboard.settleWith.netCents}
+          received={dashboard.settleWith.cents > 0}
+          suggestedCents={Math.abs(dashboard.settleWith.cents)}
           to={dashboard.settleWith.user}
         />
       ) : null}
@@ -252,6 +369,42 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.md,
   },
+  dashboardGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: spacing.xl,
+  },
+  dashboardSection: {
+    flexBasis: 480,
+    flexGrow: 1,
+    maxWidth: 566,
+  },
+  errorCard: {
+    backgroundColor: colors.neg50,
+    borderColor: colors.neg600,
+    borderRadius: radii.lg,
+    borderWidth: 1,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+  },
+  errorText: {
+    color: colors.neg700,
+    fontSize: 14,
+    fontWeight: "500",
+  },
+  groupEmoji: {
+    fontSize: 22,
+  },
+  groupRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: spacing.md,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+  },
+  groupRowPressed: {
+    backgroundColor: colors.paper,
+  },
   greeting: {
     color: colors.ink,
     fontFamily: fonts.display,
@@ -270,6 +423,9 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     overflow: "hidden",
   },
+  personAmounts: {
+    alignItems: "flex-end",
+  },
   personAmount: {
     fontSize: 15,
     fontWeight: "600",
@@ -277,6 +433,13 @@ const styles = StyleSheet.create({
   personHint: {
     color: colors.inkSoft,
     fontSize: 12,
+  },
+  personLink: {
+    alignItems: "center",
+    flex: 1,
+    flexDirection: "row",
+    gap: spacing.md,
+    minWidth: 0,
   },
   personName: {
     color: colors.ink,
@@ -332,7 +495,8 @@ const styles = StyleSheet.create({
     borderColor: colors.line,
     borderRadius: radii.lg,
     borderWidth: 1,
-    flex: 1,
+    flexBasis: 160,
+    flexGrow: 1,
     padding: spacing.lg,
   },
   summaryCardNeg: {
@@ -345,8 +509,15 @@ const styles = StyleSheet.create({
     color: colors.inkSoft,
     fontSize: 13,
   },
-  summaryRow: {
+  summaryCurrency: {
+    color: colors.inkSoft,
+    fontSize: 12,
+    fontWeight: "600",
+    letterSpacing: 1,
+  },
+  summaryCards: {
     flexDirection: "row",
+    flexWrap: "wrap",
     gap: spacing.sm,
   },
   summaryValue: {

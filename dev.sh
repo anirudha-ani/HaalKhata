@@ -2,7 +2,8 @@
 # dev.sh — start everything HaalKhata needs for local development.
 #
 # Assumes ./install-deps.sh has been run at least once (it installs Node,
-# pnpm, Docker, buf). This script only STARTS things:
+# pnpm and Docker; buf comes from the workspace's devDependencies). This
+# script only STARTS things:
 #   1. start the Docker daemon if it's not running (systemctl / Docker Desktop)
 #   2. self-heal cheap project state (node_modules, protogen) if missing
 #   3. start the Postgres db (docker compose up -d db) and wait for it to be healthy

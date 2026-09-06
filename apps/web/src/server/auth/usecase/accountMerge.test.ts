@@ -3,12 +3,26 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { UserRow } from "@/server/auth/repo/users.repo";
 
-const { setUserPhoneMock, mergeAccountsMock, previewMergeMock } = vi.hoisted(() => {
+const {
+  setUserPhoneMock,
+  mergeAccountsMock,
+  previewMergeMock,
+  startPhoneVerificationMock,
+  confirmPhoneVerificationMock,
+  beginPhoneVerificationMock,
+  spendPhoneCheckAttemptMock,
+  consumePhoneVerificationMock,
+} = vi.hoisted(() => {
   process.env.SESSION_SECRET = "test-secret-key-for-vitest-0123456789abcdef";
   return {
     setUserPhoneMock: vi.fn(),
     mergeAccountsMock: vi.fn(),
     previewMergeMock: vi.fn(),
+    startPhoneVerificationMock: vi.fn(),
+    confirmPhoneVerificationMock: vi.fn(),
+    beginPhoneVerificationMock: vi.fn(),
+    spendPhoneCheckAttemptMock: vi.fn(),
+    consumePhoneVerificationMock: vi.fn(),
   };
 });
 
@@ -31,10 +45,37 @@ vi.mock("@/server/auth/repo/accountMerge.repo", () => ({
   previewMerge: previewMergeMock,
 }));
 
+vi.mock("@/server/auth/repo/phoneVerifications.repo", () => ({
+  beginPhoneVerification: beginPhoneVerificationMock,
+  spendPhoneCheckAttempt: spendPhoneCheckAttemptMock,
+  consumePhoneVerification: consumePhoneVerificationMock,
+}));
+
+vi.mock("@/server/common/logger", () => ({ logEvent: vi.fn(), logError: vi.fn() }));
+
 vi.mock("@/server/auth/repo/paymentHandles.repo", () => ({
   replacePaymentHandles: vi.fn(),
 }));
 
+vi.mock("./phoneVerification", () => ({
+  startPhoneVerification: startPhoneVerificationMock,
+  confirmPhoneVerification: confirmPhoneVerificationMock,
+}));
+
+const { transferClient } = vi.hoisted(() => ({
+  transferClient: { query: vi.fn() } as unknown as import("pg").PoolClient,
+}));
+vi.mock("@/server/common/db", () => ({
+  transaction: vi.fn((operation: (client: import("pg").PoolClient) => Promise<unknown>) =>
+    operation(transferClient),
+  ),
+  isUniqueViolation: vi.fn(
+    (error: unknown) => (error as { code?: string } | null)?.code === "23505",
+  ),
+}));
+vi.mock("@/server/social/repo/notifications.repo", () => ({ insertNotifications: vi.fn() }));
+
+import { insertNotifications } from "@/server/social/repo/notifications.repo";
 import { confirmPhoneMerge, setPhone } from "./accountMerge.usecase";
 import { findUserById, findUserByPhone } from "@/server/auth/repo/users.repo";
 
@@ -60,6 +101,7 @@ function userRow(overrides: Partial<UserRow> = {}): UserRow {
     phone: null,
     google_sub: "google-sub-1",
     onboarded_at: null,
+    phone_verified_at: null,
     merged_into: null,
     token_version: 0,
     created_at: "2026-07-27T00:00:00.000Z",
@@ -80,30 +122,138 @@ const invitedRow = userRow({
 describe("setPhone", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(transferClient.query).mockResolvedValue({ rows: [{ id: "someone-else" }] } as never);
+    spendPhoneCheckAttemptMock.mockResolvedValue("ok");
     vi.mocked(findUserById).mockResolvedValue(userRow({ phone: PHONE }));
     previewMergeMock.mockResolvedValue({
       name: "Ani",
       expense_count: 4,
-      net_cents: -8700,
+      nets: { USD: -8700 },
       counterparty_names: ["Rahul", "Priya"],
     });
+  });
+
+  it("sends a code without looking up or changing the account", async () => {
+    const result = await setPhone(KEEPER, "(617) 555-1212", "");
+
+    expect(startPhoneVerificationMock).toHaveBeenCalledWith(PHONE);
+    // The server records its own verification state, bound to this account
+    // and number, before the provider is asked to deliver anything.
+    expect(beginPhoneVerificationMock).toHaveBeenCalledWith(KEEPER, PHONE, expect.any(Number));
+    expect(beginPhoneVerificationMock.mock.invocationCallOrder[0]).toBeLessThan(
+      startPhoneVerificationMock.mock.invocationCallOrder[0],
+    );
+    expect(findUserByPhone).not.toHaveBeenCalled();
+    expect(setUserPhoneMock).not.toHaveBeenCalled();
+    expect(previewMergeMock).not.toHaveBeenCalled();
+    expect(result).toEqual({ verificationSent: true, mergeToken: "" });
+  });
+
+  it("refuses a code check no send of this account's ever set up", async () => {
+    spendPhoneCheckAttemptMock.mockResolvedValue("no_verification");
+
+    await expect(setPhone(KEEPER, PHONE, "123456")).rejects.toMatchObject({
+      code: "invalid_argument",
+      message: expect.stringContaining("no longer active"),
+    });
+    // The provider is never consulted for a check the server did not arm:
+    // the binding to (account, number) is ours, not Twilio's.
+    expect(confirmPhoneVerificationMock).not.toHaveBeenCalled();
+  });
+
+  it("refuses further codes once the attempt budget is spent", async () => {
+    spendPhoneCheckAttemptMock.mockResolvedValue("exhausted");
+
+    await expect(setPhone(KEEPER, PHONE, "123456")).rejects.toMatchObject({
+      code: "invalid_argument",
+      message: expect.stringContaining("too many incorrect codes"),
+    });
+    expect(confirmPhoneVerificationMock).not.toHaveBeenCalled();
+  });
+
+  it("consumes the verification on approval, making it single-use here", async () => {
+    vi.mocked(findUserByPhone).mockResolvedValue(undefined);
+
+    await setPhone(KEEPER, PHONE, "123456");
+
+    expect(consumePhoneVerificationMock).toHaveBeenCalledWith(KEEPER);
+  });
+
+  it("caps how many counterparty names a preview discloses", async () => {
+    vi.mocked(findUserByPhone).mockResolvedValue(invitedRow);
+    previewMergeMock.mockResolvedValue({
+      name: "Ani",
+      expense_count: 40,
+      nets: { USD: -8700 },
+      counterparty_names: Array.from({ length: 40 }, (unused, index) => `Person ${index}`),
+    });
+
+    const result = await setPhone(KEEPER, PHONE, "123456");
+
+    expect(result.pendingMerge?.counterpartyNames).toHaveLength(12);
   });
 
   it("writes the number straight through when nothing holds it", async () => {
     vi.mocked(findUserByPhone).mockResolvedValue(undefined);
 
-    const result = await setPhone(KEEPER, "(617) 555-1212");
+    const result = await setPhone(KEEPER, "(617) 555-1212", "123456");
 
+    expect(confirmPhoneVerificationMock).toHaveBeenCalledWith(PHONE, "123456");
     expect(setUserPhoneMock).toHaveBeenCalledWith(KEEPER, PHONE);
     expect(result.user?.phone).toBe(PHONE);
     expect(result.pendingMerge).toBeUndefined();
     expect(result.mergeToken).toBe("");
   });
 
+  it("resolves a concurrent claimed-account unique race into a transfer (§34)", async () => {
+    const concurrentHolder = userRow({
+      id: "someone-else",
+      phone: PHONE,
+      google_sub: "google-sub-2",
+    });
+    vi.mocked(findUserByPhone)
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(concurrentHolder);
+    setUserPhoneMock.mockRejectedValueOnce(
+      Object.assign(new Error("duplicate phone"), { code: "23505" }),
+    );
+
+    const result = await setPhone(KEEPER, PHONE, "123456");
+
+    expect(result.user).toBeDefined();
+    expect(setUserPhoneMock).toHaveBeenCalledWith("someone-else", null, expect.anything());
+    expect(setUserPhoneMock).toHaveBeenCalledWith(KEEPER, PHONE, expect.anything());
+    expect(previewMergeMock).not.toHaveBeenCalled();
+  });
+
+  it("previews a concurrent unclaimed-invite unique race", async () => {
+    vi.mocked(findUserByPhone)
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(invitedRow);
+    setUserPhoneMock.mockRejectedValueOnce(
+      Object.assign(new Error("duplicate phone"), { code: "23505" }),
+    );
+
+    const result = await setPhone(KEEPER, PHONE, "123456");
+
+    expect(result.pendingMerge?.name).toBe("Ani");
+    expect(result.mergeToken).not.toBe("");
+    expect(previewMergeMock).toHaveBeenCalledWith(LOSER);
+  });
+
+  it("does not disguise unrelated database failures as phone conflicts", async () => {
+    vi.mocked(findUserByPhone).mockResolvedValue(undefined);
+    const databaseFailure = Object.assign(new Error("connection lost"), { code: "08006" });
+    setUserPhoneMock.mockRejectedValueOnce(databaseFailure);
+
+    await expect(setPhone(KEEPER, PHONE, "123456")).rejects.toBe(databaseFailure);
+    expect(findUserByPhone).toHaveBeenCalledTimes(1);
+  });
+
   it("normalizes a national format before looking for a holder", async () => {
     vi.mocked(findUserByPhone).mockResolvedValue(undefined);
 
-    await setPhone(KEEPER, "617-555-1212");
+    await setPhone(KEEPER, "617-555-1212", "123456");
 
     expect(findUserByPhone).toHaveBeenCalledWith(PHONE);
   });
@@ -111,7 +261,7 @@ describe("setPhone", () => {
   it("is a no-op re-save when the caller already holds the number", async () => {
     vi.mocked(findUserByPhone).mockResolvedValue(userRow({ phone: PHONE }));
 
-    const result = await setPhone(KEEPER, PHONE);
+    const result = await setPhone(KEEPER, PHONE, "123456");
 
     expect(result.user).toBeDefined();
     expect(result.pendingMerge).toBeUndefined();
@@ -120,7 +270,7 @@ describe("setPhone", () => {
   it("previews rather than merges when an unclaimed invite holds it", async () => {
     vi.mocked(findUserByPhone).mockResolvedValue(invitedRow);
 
-    const result = await setPhone(KEEPER, PHONE);
+    const result = await setPhone(KEEPER, PHONE, "123456");
 
     // Nothing may be written before the caller has seen what they would take on.
     expect(setUserPhoneMock).not.toHaveBeenCalled();
@@ -130,30 +280,68 @@ describe("setPhone", () => {
       name: "Ani",
       expenseCount: 4,
       netCents: -8700,
+      nets: [{ currency: "USD", cents: -8700 }],
       counterpartyNames: ["Rahul", "Priya"],
     });
     expect(result.mergeToken).not.toBe("");
   });
 
-  it("refuses a number held by a Google account", async () => {
+  it("rejects a merge preview whose aggregate cannot fit its protobuf field", async () => {
+    vi.mocked(findUserByPhone).mockResolvedValue(invitedRow);
+    previewMergeMock.mockResolvedValue({
+      name: "Ani",
+      expense_count: 4,
+      nets: { USD: 4000000000 },
+      counterparty_names: ["Rahul"],
+    });
+
+    await expect(setPhone(KEEPER, PHONE, "123456")).rejects.toMatchObject({
+      code: "failed_precondition",
+      message: expect.stringMatching(/larger than this app can represent/),
+    });
+  });
+
+  it("transfers a number off a registered account, telling both sides (§34)", async () => {
     vi.mocked(findUserByPhone).mockResolvedValue(
       userRow({ id: "someone-else", phone: PHONE, google_sub: "google-sub-2" }),
     );
 
-    await expect(setPhone(KEEPER, PHONE)).rejects.toThrow(/already on another account/);
+    const result = await setPhone(KEEPER, PHONE, "123456");
+
+    expect(result.user).toBeDefined();
+    expect(setUserPhoneMock).toHaveBeenCalledWith("someone-else", null, expect.anything());
+    expect(setUserPhoneMock).toHaveBeenCalledWith(KEEPER, PHONE, expect.anything());
+    const notified = vi.mocked(insertNotifications).mock.calls.map((call) => call[0]);
+    expect(notified).toContainEqual(["someone-else"]);
+    expect(notified).toContainEqual([KEEPER]);
+  });
+
+  it("refuses the transfer when the number is the holder's only identifier", async () => {
+    // Clearing it would strand a phone-only (dev signup) account entirely.
+    vi.mocked(findUserByPhone).mockResolvedValue(
+      userRow({ id: "someone-else", phone: PHONE, email: null, google_sub: null, password_hash: "salt:hash" }),
+    );
+
+    await expect(setPhone(KEEPER, PHONE, "123456")).rejects.toMatchObject({
+      code: "failed_precondition",
+    });
     expect(setUserPhoneMock).not.toHaveBeenCalled();
   });
 
-  it("refuses a number held by a password account", async () => {
+  it("starts over when the number moves again before the transfer locks", async () => {
     vi.mocked(findUserByPhone).mockResolvedValue(
-      userRow({ id: "someone-else", phone: PHONE, google_sub: null, password_hash: "salt:hash" }),
+      userRow({ id: "someone-else", phone: PHONE, google_sub: "google-sub-2" }),
     );
+    vi.mocked(transferClient.query).mockResolvedValue({ rows: [] } as never);
 
-    await expect(setPhone(KEEPER, PHONE)).rejects.toThrow(/already on another account/);
+    await expect(setPhone(KEEPER, PHONE, "123456")).rejects.toMatchObject({
+      code: "invalid_argument",
+      message: expect.stringContaining("changed while it was being claimed"),
+    });
   });
 
   it("rejects an unparseable number before any lookup", async () => {
-    await expect(setPhone(KEEPER, "not-a-number")).rejects.toThrow(/valid phone number/);
+    await expect(setPhone(KEEPER, "not-a-number", "123456")).rejects.toThrow(/valid phone number/);
     expect(findUserByPhone).not.toHaveBeenCalled();
   });
 });
@@ -161,10 +349,11 @@ describe("setPhone", () => {
 describe("confirmPhoneMerge", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    spendPhoneCheckAttemptMock.mockResolvedValue("ok");
     previewMergeMock.mockResolvedValue({
       name: "Ani",
       expense_count: 4,
-      net_cents: -8700,
+      nets: { USD: -8700 },
       counterparty_names: ["Rahul"],
     });
   });
@@ -180,7 +369,7 @@ describe("confirmPhoneMerge", () => {
    */
   async function issueToken(): Promise<string> {
     vi.mocked(findUserByPhone).mockResolvedValue(invitedRow);
-    const result = await setPhone(KEEPER, PHONE);
+    const result = await setPhone(KEEPER, PHONE, "123456");
     return result.mergeToken;
   }
 
@@ -192,7 +381,7 @@ describe("confirmPhoneMerge", () => {
 
     const result = await confirmPhoneMerge(KEEPER, token);
 
-    expect(mergeAccountsMock).toHaveBeenCalledWith(KEEPER, LOSER, PHONE);
+    expect(mergeAccountsMock).toHaveBeenCalledWith(KEEPER, LOSER, PHONE, { adoptPhone: true });
     expect(result.phone).toBe(PHONE);
   });
 
@@ -252,6 +441,27 @@ describe("confirmPhoneMerge", () => {
     );
 
     await expect(confirmPhoneMerge(KEEPER, token)).rejects.toThrow(/no longer valid/);
+    expect(mergeAccountsMock).not.toHaveBeenCalled();
+  });
+
+  it("refuses when the balances changed since the preview the user read", async () => {
+    const token = await issueToken();
+    vi.mocked(findUserById)
+      .mockResolvedValueOnce(invitedRow)
+      .mockResolvedValueOnce(userRow({ phone: PHONE }));
+    // An expense landed on the invited row inside the token's ten minutes —
+    // the history on screen is no longer the history that would be absorbed.
+    previewMergeMock.mockResolvedValue({
+      name: "Ani",
+      expense_count: 5,
+      nets: { USD: -12000 },
+      counterparty_names: ["Rahul"],
+    });
+
+    await expect(confirmPhoneMerge(KEEPER, token)).rejects.toMatchObject({
+      code: "invalid_argument",
+      message: expect.stringContaining("changed since the preview"),
+    });
     expect(mergeAccountsMock).not.toHaveBeenCalled();
   });
 });

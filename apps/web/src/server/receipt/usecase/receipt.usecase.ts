@@ -1,6 +1,6 @@
 /**
- * Receipt-parsing business logic: provider fallback chain
- * (compatible → mock), normalized to integer cents.
+ * Receipt-parsing business logic: provider selection, image normalization,
+ * and untrusted provider output normalized to integer cents.
  *
  * There is deliberately no provider-specific SDK here. OpenRouter fronts every
  * model worth using for this — Claude and Gemini included — behind one
@@ -13,9 +13,10 @@
  * docs/plan.txt §6b).
  */
 
-import heicConvert from "heic-convert";
+import heicDecode from "heic-decode";
 import sharp from "sharp";
-import { invalid } from "@/server/common/errors";
+import { invalid, UsecaseError } from "@/server/common/errors";
+import { isRealCalendarDate } from "@/server/common/validation";
 import { logEvent } from "@/server/common/logger";
 import {
   COMPATIBLE_AI,
@@ -23,13 +24,26 @@ import {
   IMAGE_MEDIA_TYPES,
   IMAGE_SIGNATURES,
   JPEG_QUALITY,
+  MAX_CONCURRENT_HEIC_DECODES,
   MAX_IMAGE_BYTES,
   MAX_IMAGE_EDGE_PIXELS,
+  MAX_IMAGE_PIXELS,
+  MAX_PARSED_ITEMS,
+  MAX_PARSED_MONEY_CENTS,
+  MAX_PARSED_NAME_LENGTH,
+  MAX_PARSED_QUANTITY,
+  MAX_PROVIDER_RESPONSE_BYTES,
   PROMPT,
   PROVIDER_TIMEOUT_MS,
   RECEIPT_JSON_SCHEMA,
   type ImageMediaType,
 } from "@/server/receipt/receipt.constants";
+
+/** Number of HEIC decodes currently holding a process-local memory slot. */
+let activeHeicDecodes = 0;
+
+/** FIFO waiters for the bounded HEIC decode slot. */
+const heicDecodeWaiters: Array<() => void> = [];
 
 /** A receipt extracted from an image, with all money amounts as integer cents. */
 export interface ParsedReceiptData {
@@ -58,14 +72,9 @@ interface Provider {
   parse(imageBase64: string, mediaType: ImageMediaType): Promise<ParsedReceiptData>;
 }
 
-/**
- * Accepts loosely-shaped provider output and normalizes it to safe integers:
- * clamps negatives, drops zero-total items, and derives missing unit prices,
- * subtotals and totals from what is present.
- *
- * @param rawOutput - Whatever JSON the provider produced (snake_case or camelCase keys).
- * @returns A fully populated ParsedReceiptData with consistent integer-cent amounts.
- */
+/** One normalized line item in a parsed receipt. */
+type ParsedReceiptItem = ParsedReceiptData["items"][number];
+
 /**
  * Coerces whatever date string a model returned into the strict `YYYY-MM-DD`
  * the expense API requires, or "" when it cannot be read confidently.
@@ -84,11 +93,14 @@ interface Provider {
  */
 function toIsoDate(value: string): string {
   const trimmed = value.trim();
-  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed;
+  if (isRealCalendarDate(trimmed)) return trimmed;
 
   // Embedded ISO date, e.g. "2026-01-17 11:41" or "2026-01-17T11:41:00Z".
   const embedded = /(\d{4})-(\d{2})-(\d{2})/.exec(trimmed);
-  if (embedded) return `${embedded[1]}-${embedded[2]}-${embedded[3]}`;
+  if (embedded) {
+    const candidate = `${embedded[1]}-${embedded[2]}-${embedded[3]}`;
+    if (isRealCalendarDate(candidate)) return candidate;
+  }
 
   // Month-first numeric, e.g. "1/17/26", "01-17-2026 11:41 AM".
   const numeric = /^(\d{1,2})[/-](\d{1,2})[/-](\d{2}|\d{4})\b/.exec(trimmed);
@@ -97,33 +109,86 @@ function toIsoDate(value: string): string {
     const dayOfMonth = Number(numeric[2]);
     const yearPart = numeric[3];
     const year = yearPart.length === 2 ? 2000 + Number(yearPart) : Number(yearPart);
-    if (month >= 1 && month <= 12 && dayOfMonth >= 1 && dayOfMonth <= 31) {
-      return `${year}-${String(month).padStart(2, "0")}-${String(dayOfMonth).padStart(2, "0")}`;
-    }
+    const candidate = `${year}-${String(month).padStart(2, "0")}-${String(dayOfMonth).padStart(2, "0")}`;
+    if (isRealCalendarDate(candidate)) return candidate;
   }
   return "";
 }
 
-function normalize(rawOutput: unknown): ParsedReceiptData {
-  const rawRecord = (typeof rawOutput === "object" && rawOutput !== null ? rawOutput : {}) as Record<string, unknown>;
-  const toNonNegativeInteger = (value: unknown): number =>
-    Number.isFinite(Number(value)) ? Math.max(0, Math.round(Number(value))) : 0;
-  const toTrimmedString = (value: unknown): string => (typeof value === "string" ? value.trim() : "");
+/**
+ * Coerces an untrusted provider value to a non-negative bounded integer.
+ *
+ * @param value - Raw provider value.
+ * @param maximum - Largest accepted integer.
+ * @returns Rounded and clamped integer, or zero when the value is not numeric.
+ */
+function toBoundedInteger(value: unknown, maximum: number): number {
+  return Number.isFinite(Number(value))
+    ? Math.min(maximum, Math.max(0, Math.round(Number(value))))
+    : 0;
+}
+
+/**
+ * Coerces an untrusted provider value to trimmed, length-bounded text.
+ *
+ * @param value - Raw provider value.
+ * @param maximum - Maximum returned character count.
+ * @returns Bounded text, or an empty string for non-string input.
+ */
+function toBoundedString(value: unknown, maximum: number): string {
+  return (typeof value === "string" ? value.trim() : "").slice(0, maximum);
+}
+
+/**
+ * Normalizes one model-produced line item.
+ *
+ * @param rawItem - Untrusted item value.
+ * @returns A bounded line item with missing price fields derived when possible.
+ */
+function normalizeProviderItem(rawItem: unknown): ParsedReceiptItem {
+  const itemRecord = (typeof rawItem === "object" && rawItem !== null ? rawItem : {}) as Record<
+    string,
+    unknown
+  >;
+  const quantity = Math.max(
+    1,
+    toBoundedInteger(itemRecord.quantity ?? itemRecord.qty ?? 1, MAX_PARSED_QUANTITY),
+  );
+  const unitPrice = toBoundedInteger(
+    itemRecord.unit_price_cents ?? itemRecord.unitPriceCents,
+    MAX_PARSED_MONEY_CENTS,
+  );
+  let lineTotal = toBoundedInteger(
+    itemRecord.total_cents ?? itemRecord.totalCents,
+    MAX_PARSED_MONEY_CENTS,
+  );
+  if (lineTotal === 0 && unitPrice > 0) {
+    lineTotal = Math.min(MAX_PARSED_MONEY_CENTS, unitPrice * quantity);
+  }
+  return {
+    name: toBoundedString(itemRecord.name, MAX_PARSED_NAME_LENGTH) || "Item",
+    quantity,
+    unitPriceCents: unitPrice > 0 ? unitPrice : Math.round(lineTotal / quantity),
+    totalCents: lineTotal,
+  };
+}
+
+/**
+ * Accepts loosely-shaped provider output and normalizes it as untrusted data:
+ * bounds arrays, strings, quantities and cents; clamps negatives; and derives
+ * missing unit prices, subtotals and totals from what is present.
+ *
+ * @param rawOutput - Whatever JSON the provider produced (snake_case or camelCase keys).
+ * @returns Fully populated, size-bounded receipt data.
+ */
+export function normalizeProviderOutput(rawOutput: unknown): ParsedReceiptData {
+  const rawRecord = (typeof rawOutput === "object" && rawOutput !== null
+    ? rawOutput
+    : {}) as Record<string, unknown>;
 
   const items = (Array.isArray(rawRecord.items) ? rawRecord.items : [])
-    .map((rawItem) => {
-      const itemRecord = (typeof rawItem === "object" && rawItem !== null ? rawItem : {}) as Record<string, unknown>;
-      const quantity = Math.max(1, toNonNegativeInteger(itemRecord.quantity ?? itemRecord.qty ?? 1));
-      const unitPrice = toNonNegativeInteger(itemRecord.unit_price_cents ?? itemRecord.unitPriceCents);
-      let lineTotal = toNonNegativeInteger(itemRecord.total_cents ?? itemRecord.totalCents);
-      if (lineTotal === 0 && unitPrice > 0) lineTotal = unitPrice * quantity;
-      return {
-        name: toTrimmedString(itemRecord.name) || "Item",
-        quantity,
-        unitPriceCents: unitPrice > 0 ? unitPrice : Math.round(lineTotal / quantity),
-        totalCents: lineTotal,
-      };
-    })
+    .slice(0, MAX_PARSED_ITEMS)
+    .map(normalizeProviderItem)
     // Keep zero-priced rows as long as they are named. A model that splits
     // "Toasted Bagel / with cream cheese $7.00" across two lines puts the price
     // on the modifier, so dropping the zero row would delete the actual item
@@ -132,17 +197,31 @@ function normalize(rawOutput: unknown): ParsedReceiptData {
     .filter((parsedItem) => parsedItem.totalCents > 0 || parsedItem.name !== "Item");
 
   const itemsTotal = items.reduce((runningTotal, parsedItem) => runningTotal + parsedItem.totalCents, 0);
-  const taxCents = toNonNegativeInteger(rawRecord.tax_cents ?? rawRecord.taxCents);
-  const tipCents = toNonNegativeInteger(rawRecord.tip_cents ?? rawRecord.tipCents);
-  let subtotal = toNonNegativeInteger(rawRecord.subtotal_cents ?? rawRecord.subtotalCents);
-  if (subtotal === 0) subtotal = itemsTotal;
-  let total = toNonNegativeInteger(rawRecord.total_cents ?? rawRecord.totalCents);
-  if (total === 0) total = subtotal + taxCents + tipCents;
+  const taxCents = toBoundedInteger(
+    rawRecord.tax_cents ?? rawRecord.taxCents,
+    MAX_PARSED_MONEY_CENTS,
+  );
+  const tipCents = toBoundedInteger(
+    rawRecord.tip_cents ?? rawRecord.tipCents,
+    MAX_PARSED_MONEY_CENTS,
+  );
+  let subtotal = toBoundedInteger(
+    rawRecord.subtotal_cents ?? rawRecord.subtotalCents,
+    MAX_PARSED_MONEY_CENTS,
+  );
+  if (subtotal === 0) subtotal = Math.min(MAX_PARSED_MONEY_CENTS, itemsTotal);
+  let total = toBoundedInteger(
+    rawRecord.total_cents ?? rawRecord.totalCents,
+    MAX_PARSED_MONEY_CENTS,
+  );
+  if (total === 0) {
+    total = Math.min(MAX_PARSED_MONEY_CENTS, subtotal + taxCents + tipCents);
+  }
 
   return {
-    merchant: toTrimmedString(rawRecord.merchant),
-    date: toIsoDate(toTrimmedString(rawRecord.date)),
-    currency: (toTrimmedString(rawRecord.currency) || "USD").toUpperCase().slice(0, 3),
+    merchant: toBoundedString(rawRecord.merchant, MAX_PARSED_NAME_LENGTH),
+    date: toIsoDate(toBoundedString(rawRecord.date, MAX_PARSED_NAME_LENGTH)),
+    currency: (toBoundedString(rawRecord.currency, 3) || "USD").toUpperCase(),
     items,
     subtotalCents: subtotal,
     taxCents,
@@ -169,6 +248,48 @@ function safeJsonParse(text: string, providerName: string): unknown {
   } catch {
     throw new Error(`${providerName} returned non-JSON output (length ${text.length})`);
   }
+}
+
+/**
+ * Reads a fetch response while enforcing a byte cap during streaming. The
+ * Content-Length check rejects obvious oversize responses immediately; the
+ * running count remains authoritative for missing or dishonest headers.
+ *
+ * @param response - Provider response to consume.
+ * @returns UTF-8 response text within the configured limit.
+ * @throws Error when the response exceeds the byte ceiling.
+ */
+export async function readProviderResponse(response: Response): Promise<string> {
+  const declaredLength = Number(response.headers.get("content-length"));
+  if (Number.isFinite(declaredLength) && declaredLength > MAX_PROVIDER_RESPONSE_BYTES) {
+    throw new Error(`provider response exceeds ${MAX_PROVIDER_RESPONSE_BYTES} bytes`);
+  }
+  if (!response.body) {
+    const text = await response.text();
+    if (Buffer.byteLength(text, "utf8") > MAX_PROVIDER_RESPONSE_BYTES) {
+      throw new Error(`provider response exceeds ${MAX_PROVIDER_RESPONSE_BYTES} bytes`);
+    }
+    return text;
+  }
+
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let totalBytes = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      totalBytes += value.byteLength;
+      if (totalBytes > MAX_PROVIDER_RESPONSE_BYTES) {
+        await reader.cancel();
+        throw new Error(`provider response exceeds ${MAX_PROVIDER_RESPONSE_BYTES} bytes`);
+      }
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  return Buffer.concat(chunks.map((chunk) => Buffer.from(chunk)), totalBytes).toString("utf8");
 }
 
 /**
@@ -251,21 +372,25 @@ const compatibleProvider: Provider = {
         ],
       }),
     });
+    const responseText = await readProviderResponse(response);
     if (!response.ok) {
-      // Surface the body: a ZDR-enforced request to a model with no
-      // zero-retention endpoint fails here, and "returned 404" alone would
-      // send you hunting for a networking problem that doesn't exist.
-      const detail = (await response.text().catch(() => "")).slice(0, 300);
-      throw new Error(
-        `compatible provider returned ${response.status}${detail ? `: ${detail}` : ""}`,
-      );
+      // The body goes to the log, not the client: a ZDR-enforced request to
+      // a model with no zero-retention endpoint fails here, and "returned
+      // 404" alone would send an operator hunting for a networking problem
+      // that doesn't exist — but the provider's diagnostics are the
+      // operator's to read, not the user's.
+      logEvent("warn", "compatible receipt provider rejected the request", {
+        providerStatus: response.status,
+        detail: responseText.slice(0, 300),
+      });
+      throw new Error(`compatible provider returned ${response.status}`);
     }
-    const data = (await response.json()) as {
+    const data = safeJsonParse(responseText, "compatible provider response") as {
       choices?: { message?: { content?: string } }[];
     };
     const text = data.choices?.[0]?.message?.content ?? "";
     const jsonText = extractJsonObject(text);
-    return normalize(safeJsonParse(jsonText, "compatible"));
+    return normalizeProviderOutput(safeJsonParse(jsonText, "compatible"));
   },
 };
 
@@ -274,7 +399,7 @@ const mockProvider: Provider = {
   name: "mock",
   available: () => true,
   async parse() {
-    return normalize({
+    return normalizeProviderOutput({
       merchant: "Demo Diner",
       date: new Date().toISOString().slice(0, 10),
       currency: "USD",
@@ -322,10 +447,12 @@ function providerChain(): { chain: Provider[]; unconfigured: string[] } {
     return provider ? [provider] : [];
   });
   const real = requested.filter((provider) => provider.name !== mockProvider.name);
-  const configured = real.filter((provider) => provider.available());
-  const unconfigured = real
-    .filter((provider) => !provider.available())
-    .map((provider) => provider.name);
+  const configured: Provider[] = [];
+  const unconfigured: string[] = [];
+  for (const provider of real) {
+    if (provider.available()) configured.push(provider);
+    else unconfigured.push(provider.name);
+  }
   if (configured.length > 0) return { chain: configured, unconfigured };
   const wantsMock = requested.some((provider) => provider.name === mockProvider.name);
   return { chain: wantsMock ? [mockProvider] : [], unconfigured };
@@ -347,7 +474,9 @@ function providerChain(): { chain: Provider[]; unconfigured: string[] } {
 function detectImageFormat(image: Uint8Array): ImageMediaType | null {
   for (const mediaType of IMAGE_MEDIA_TYPES) {
     const matches = IMAGE_SIGNATURES[mediaType].some((signature) =>
-      signature.bytes.every((byte, index) => image[signature.offset + index] === byte),
+      signature.fragments.every((fragment) =>
+        fragment.bytes.every((byte, index) => image[fragment.offset + index] === byte),
+      ),
     );
     if (!matches) continue;
     // HEIF containers also hold video and image sequences; the brand at offset
@@ -362,7 +491,60 @@ function detectImageFormat(image: Uint8Array): ImageMediaType | null {
 }
 
 /**
- * Decodes a HEIC/HEIF still to JPEG bytes.
+ * Runs a memory-heavy HEIC operation within the process-local concurrency cap.
+ *
+ * @param operation - Decode operation to run once a slot is available.
+ * @returns The operation's result.
+ */
+async function withHeicDecodeSlot<Result>(operation: () => Promise<Result>): Promise<Result> {
+  if (activeHeicDecodes < MAX_CONCURRENT_HEIC_DECODES) {
+    activeHeicDecodes++;
+  } else {
+    await new Promise<void>((resolve) => heicDecodeWaiters.push(resolve));
+  }
+  try {
+    return await operation();
+  } finally {
+    const nextWaiter = heicDecodeWaiters.shift();
+    if (nextWaiter) nextWaiter();
+    else activeHeicDecodes--;
+  }
+}
+
+/** Raw primary HEIC image ready for Sharp's raw-pixel input. */
+interface DecodedHeicImage {
+  /** Four-channel pixel bytes. */
+  data: Buffer;
+  /** Pixel width. */
+  width: number;
+  /** Pixel height. */
+  height: number;
+}
+
+/**
+ * Validates dimensions without multiplying attacker-controlled values first.
+ *
+ * @param width - Decoded image width.
+ * @param height - Decoded image height.
+ * @throws UsecaseError (invalid_argument) when dimensions are invalid or exceed the pixel ceiling.
+ */
+function assertSafeDimensions(width: number, height: number): void {
+  if (
+    !Number.isSafeInteger(width) ||
+    !Number.isSafeInteger(height) ||
+    width <= 0 ||
+    height <= 0 ||
+    width > Math.floor(MAX_IMAGE_PIXELS / height)
+  ) {
+    // Our own limit, so its wording is ours to show; decoder failures are not.
+    invalid(`image dimensions exceed the ${MAX_IMAGE_PIXELS}-pixel limit`);
+  }
+}
+
+/**
+ * Reads HEIC/HEIF metadata first, then decodes only when the primary image is
+ * within the pixel limit. This is the critical ordering: the one-shot decoder
+ * allocates width × height × 4 before returning dimensions to its caller.
  *
  * This does NOT go through sharp. sharp bundles libheif 1.23, whose security
  * limits cap an `iref` box at 16 references — and real iPhone photos carry ~48
@@ -370,18 +552,29 @@ function detectImageFormat(image: Uint8Array): ImageMediaType | null {
  * with "Security limit exceeded". libheif does not expose that limit through
  * libvips, so there is no option to relax.
  *
- * heic-convert bundles its own libheif build without that cap and decodes the
- * same files at full resolution. ffmpeg also decodes them, but returns a
- * half-size preview image rather than the primary one — worse for small
- * receipt print, and a system dependency besides.
+ * heic-decode uses the same alternate libheif build as heic-convert and
+ * decodes the same files at full resolution. ffmpeg also decodes them, but
+ * returns a half-size preview image rather than the primary one — worse for
+ * small receipt print, and a system dependency besides.
  *
  * @param image - Raw HEIC/HEIF bytes.
- * @returns Decoded JPEG bytes, orientation already applied to the pixels.
+ * @returns Decoded four-channel pixels, with orientation already applied.
  */
-async function decodeHeicToJpeg(image: Uint8Array): Promise<Buffer> {
-  return Buffer.from(
-    await heicConvert({ buffer: image, format: "JPEG", quality: 0.92 }),
-  );
+async function decodeHeic(image: Uint8Array): Promise<DecodedHeicImage> {
+  const images = await heicDecode.all({ buffer: image });
+  try {
+    const primaryImage = images[0];
+    if (!primaryImage) throw new Error("HEIF image not found");
+    assertSafeDimensions(primaryImage.width, primaryImage.height);
+    const decoded = await primaryImage.decode();
+    return {
+      data: Buffer.from(decoded.data.buffer, decoded.data.byteOffset, decoded.data.byteLength),
+      width: decoded.width,
+      height: decoded.height,
+    };
+  } finally {
+    images.dispose();
+  }
 }
 
 /**
@@ -409,24 +602,45 @@ async function decodeHeicToJpeg(image: Uint8Array): Promise<Buffer> {
  */
 async function normalizeToJpeg(image: Uint8Array, format: ImageMediaType): Promise<Buffer> {
   try {
-    const decoded =
-      format === "image/heic" || format === "image/heif"
-        ? await decodeHeicToJpeg(image)
-        : Buffer.from(image);
-    const jpeg = await sharp(decoded)
-      .rotate() // no argument = apply the EXIF orientation tag
-      .resize({
-        width: MAX_IMAGE_EDGE_PIXELS,
-        height: MAX_IMAGE_EDGE_PIXELS,
-        fit: "inside",
-        withoutEnlargement: true,
+    const isHeic = format === "image/heic" || format === "image/heif";
+    const transcode = async (): Promise<Buffer> => {
+      const decodedHeic = isHeic ? await decodeHeic(image) : null;
+      const decoded = decodedHeic?.data ?? Buffer.from(image);
+      return sharp(decoded, {
+        limitInputPixels: MAX_IMAGE_PIXELS,
+        ...(decodedHeic
+          ? {
+              raw: {
+                width: decodedHeic.width,
+                height: decodedHeic.height,
+                channels: 4 as const,
+              },
+            }
+          : {}),
       })
-      .jpeg({ quality: JPEG_QUALITY })
-      .toBuffer();
-    return jpeg;
+        .rotate() // no argument = apply the EXIF orientation tag
+        .resize({
+          width: MAX_IMAGE_EDGE_PIXELS,
+          height: MAX_IMAGE_EDGE_PIXELS,
+          fit: "inside",
+          withoutEnlargement: true,
+        })
+        .jpeg({ quality: JPEG_QUALITY })
+        .toBuffer();
+    };
+    // Hold the slot through Sharp's consumption of the raw RGBA buffer; a
+    // decode-only lock would let the next upload allocate while this one was
+    // still being compressed.
+    return isHeic ? await withHeicDecodeSlot(transcode) : await transcode();
   } catch (error) {
-    const detail = error instanceof Error ? error.message : String(error);
-    invalid(`could not read that image (${detail})`);
+    // Our own limits are already worded for the user; only a decoder's
+    // failure is rewritten. The decoder's words name a native library and
+    // its internals, so they go to the log and the user gets what to do.
+    if (error instanceof UsecaseError) throw error;
+    logEvent("warn", "receipt image could not be decoded", {
+      detail: error instanceof Error ? error.message : String(error),
+    });
+    invalid("could not read that image — try a clear JPEG, PNG or WebP photo");
   }
 }
 
@@ -484,5 +698,9 @@ export async function parseReceipt(
       errors.push(`${provider.name}: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
-  invalid(`could not parse the receipt (${errors.join("; ")})`);
+  // Which provider failed how is operator information — it names models,
+  // endpoints and policies — so it is logged under the same warning stream
+  // the provider errors use, and the user gets a stable sentence.
+  logEvent("warn", "no receipt provider could parse the image", { errors });
+  invalid("could not read the receipt — try a clearer photo of the whole bill");
 }

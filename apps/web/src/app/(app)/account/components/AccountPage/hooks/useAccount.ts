@@ -7,8 +7,10 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { User } from "@haalkhata/protogen/common/v1/common_pb";
 import type { MergePreview } from "@haalkhata/protogen/auth/v1/auth_pb";
 import { authClient, errorMessage } from "@/lib/api/connect";
+import { socialClient } from "@/lib/api/connect";
 import { MONEY_KEYS, queryKeys } from "@haalkhata/shared/api/queryKeys";
-import { composeE164, DEFAULT_PHONE_REGION, splitE164 } from "@/lib/phone/phone";
+import { composeE164, DEFAULT_PHONE_REGION, isValidPhone, splitE164 } from "@haalkhata/shared/phone/phone";
+import { INVALID_PHONE_MESSAGE } from "@haalkhata/shared/phone/contact";
 import { stripHandlePrefix } from "@haalkhata/shared/payment/methods";
 
 /**
@@ -71,6 +73,8 @@ export function useProfileForm(currentUser: User) {
   );
   const [pendingMerge, setPendingMerge] = useState<MergePreview | undefined>();
   const [mergeToken, setMergeToken] = useState("");
+  const [verificationPhone, setVerificationPhone] = useState("");
+  const [verificationCode, setVerificationCode] = useState("");
   const [handles, setHandles] = useState<Record<string, string>>(() =>
     Object.fromEntries(
       currentUser.paymentHandles.map((entry) => [entry.method, entry.handle]),
@@ -127,12 +131,13 @@ export function useProfileForm(currentUser: User) {
       // already hold would otherwise round-trip for nothing.
       const claimedPhone = composeE164(region, nationalNumber);
       if (claimedPhone.length > 0 && claimedPhone !== currentUser.phone) {
-        const result = await authClient.setPhone({ phone: claimedPhone });
-        if (result.pendingMerge) {
-          setPendingMerge(result.pendingMerge);
-          setMergeToken(result.mergeToken);
-          return false;
-        }
+        // Checked with the same libphonenumber metadata the server uses, so
+        // an impossible number fails beside the field instead of costing an
+        // SMS round-trip to hear the same thing.
+        if (!isValidPhone(region, nationalNumber)) throw new Error(INVALID_PHONE_MESSAGE);
+        const result = await authClient.setPhone({ phone: claimedPhone, verificationCode: "" });
+        if (result.verificationSent) setVerificationPhone(claimedPhone);
+        return false;
       }
       return true;
     },
@@ -146,6 +151,22 @@ export function useProfileForm(currentUser: User) {
     // a rejected number still leaves a changed name or currency on the server
     // that the cache would otherwise keep showing stale.
     onSettled: () => queryClient.invalidateQueries({ queryKey: queryKeys.me }),
+  });
+
+  const verifyPhone = useMutation({
+    mutationFn: () => authClient.setPhone({ phone: verificationPhone, verificationCode }),
+    onSuccess: (result) => {
+      setVerificationPhone("");
+      setVerificationCode("");
+      if (result.pendingMerge) {
+        setPendingMerge(result.pendingMerge);
+        setMergeToken(result.mergeToken);
+        return;
+      }
+      queryClient.invalidateQueries({ queryKey: queryKeys.me });
+      setMessage("Saved ✓");
+    },
+    onError: (mutationError) => setError(errorMessage(mutationError)),
   });
 
   const confirmMerge = useMutation({
@@ -166,6 +187,54 @@ export function useProfileForm(currentUser: User) {
     // seconds between the preview and the answer, and that refusal has to be
     // readable where the user is looking — writing it into the form behind the
     // backdrop is the same as saying nothing.
+    onError: (mutationError) => setError(errorMessage(mutationError)),
+  });
+
+  const [profileNotice, setProfileNotice] = useState("");
+  const [profileShareToken, setProfileShareToken] = useState("");
+
+  // Fetches the link and opens the share dialog; acceptors of the link send
+  // a friend request. The dialog owns the QR code, the copy button, and the
+  // OS share sheet, so nothing leaves the device on this click alone.
+  const shareProfile = useMutation({
+    mutationFn: async () => {
+      const { token } = await socialClient.getProfileInviteLink({});
+      return token;
+    },
+    onSuccess: (token) => setProfileShareToken(token),
+    onError: (mutationError) => setError(errorMessage(mutationError)),
+  });
+
+  /** Turns the caller's profile link off; the next share mints a fresh one. */
+  const resetProfileLink = useMutation({
+    mutationFn: () => socialClient.revokeProfileInviteLink({}),
+    onSuccess: () =>
+      setProfileNotice("Profile link reset — sharing again makes a new one"),
+    onError: (mutationError) => setError(errorMessage(mutationError)),
+  });
+
+  const removePhoneMutation = useMutation({
+    mutationFn: () => authClient.removePhone({}),
+    onSuccess: () => {
+      setNationalNumber("");
+      queryClient.invalidateQueries({ queryKey: queryKeys.me });
+      setMessage("Saved ✓");
+    },
+    onError: (mutationError) => setError(errorMessage(mutationError)),
+  });
+
+  // Re-verifies the number already on the account (§35): a number written
+  // before verification existed carries no stamp, and `save` deliberately
+  // skips an unchanged number. Same SetPhone flow end to end, so the code
+  // dialog and the send ceilings behave exactly as for a new number.
+  const verifyCurrentPhone = useMutation({
+    mutationFn: async () => {
+      const result = await authClient.setPhone({
+        phone: currentUser.phone,
+        verificationCode: "",
+      });
+      if (result.verificationSent) setVerificationPhone(currentUser.phone);
+    },
     onError: (mutationError) => setError(errorMessage(mutationError)),
   });
 
@@ -197,11 +266,53 @@ export function useProfileForm(currentUser: User) {
     nationalNumber,
     setNationalNumber,
     pendingMerge,
+    verificationPhone,
+    verificationCode,
+    setVerificationCode,
+    verifyPhone: () => {
+      setError("");
+      verifyPhone.mutate();
+    },
+    cancelVerification: () => {
+      setVerificationPhone("");
+      setVerificationCode("");
+      setError("");
+    },
     confirmMerge: () => {
       setError("");
       confirmMerge.mutate();
     },
     declineMerge,
+    /** Whether a number is on the account, enabling its removal. */
+    hasPhone: currentUser.phone !== "",
+    /** False on a number written before verification existed (§35). */
+    phoneVerified: currentUser.phoneVerified,
+    verifyCurrentPhone: () => {
+      setMessage("");
+      setError("");
+      verifyCurrentPhone.mutate();
+    },
+    isRequestingVerification: verifyCurrentPhone.isPending,
+    removePhone: () => {
+      setMessage("");
+      setError("");
+      removePhoneMutation.mutate();
+    },
+    isRemovingPhone: removePhoneMutation.isPending,
+    profileNotice,
+    shareProfile: () => {
+      setProfileNotice("");
+      shareProfile.mutate();
+    },
+    isSharingProfile: shareProfile.isPending,
+    /** Token behind the open share dialog; empty while it is closed. */
+    profileShareToken,
+    closeProfileShare: () => setProfileShareToken(""),
+    resetProfileLink: () => {
+      setProfileNotice("");
+      resetProfileLink.mutate();
+    },
+    isResettingProfileLink: resetProfileLink.isPending,
     handles,
     /** True while the button shows its confirmed state. */
     saved: message !== "",
@@ -226,7 +337,7 @@ export function useProfileForm(currentUser: User) {
       setError("");
       save.mutate();
     },
-    isSaving: save.isPending || confirmMerge.isPending,
+    isSaving: save.isPending || verifyPhone.isPending || confirmMerge.isPending,
     signOut,
   };
 }

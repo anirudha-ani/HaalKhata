@@ -3,6 +3,7 @@
 import crypto from "node:crypto";
 import fileSystem from "node:fs";
 import path from "node:path";
+import { promisify } from "node:util";
 import { OAuth2Client } from "google-auth-library";
 import {
   bumpTokenVersion,
@@ -15,26 +16,43 @@ import {
   linkGoogleAccount,
   markOnboarded,
   setAvatarUrl,
+  setUserPhone,
   updateUserProfile,
   type UserRow,
 } from "@/server/auth/repo/users.repo";
 import { replacePaymentHandles } from "@/server/auth/repo/paymentHandles.repo";
+import {
+  consumeGoogleSignInNonce,
+  insertGoogleSignInNonce,
+} from "@/server/auth/repo/googleSignInNonces.repo";
 import { PAYMENT_METHOD_KEYS } from "@haalkhata/shared/payment/methods";
 import { UsecaseError, invalid } from "@/server/common/errors";
+import { readSecret } from "@/server/common/secrets";
 import {
   AVATAR_PALETTE,
   DATA_DIRECTORY,
   EMAIL_PATTERN,
+  GOOGLE_AUDIENCES,
   GOOGLE_CLIENT_ID,
+  GOOGLE_SIGN_IN_NONCE_BYTES,
+  GOOGLE_SIGN_IN_NONCE_LIFETIME_SECONDS,
+  GOOGLE_SIGN_IN_NONCE_PATTERN,
   MAX_PAYMENT_HANDLE_LENGTH,
+  MAX_USER_NAME_LENGTH,
+  MIN_SESSION_SECRET_BYTES,
   PASSWORD_MAX_LENGTH,
   PASSWORD_MIN_LENGTH,
   PHONE_FORMAT_HINT,
+  SESSION_SECRET_BASE64_PATTERN,
+  SESSION_SECRET_HEX_PATTERN,
+  SESSION_TOKEN_FORMAT,
   TOKEN_LIFETIME_SECONDS,
   normalizePhone,
   passwordAuthEnabled,
 } from "@/server/auth/auth.constants";
-import { toUser } from "./user.mapper";
+import { normalizeCurrencyCode } from "@/server/common/validation";
+import { isUniqueViolation, transaction } from "@/server/common/db";
+import { toPrivateUser } from "./user.mapper";
 
 /**
  * Picks a stable avatar color for an email address by hashing it into the palette.
@@ -48,6 +66,36 @@ export function avatarColorFor(email: string): string {
   return AVATAR_PALETTE[Math.abs(hash) % AVATAR_PALETTE.length];
 }
 
+/**
+ * Trims a display name and enforces the shared length bound. Empty stays
+ * legal here — whether a name is required differs by flow, so that check
+ * belongs to {@link requireName}.
+ *
+ * @param rawName - Name text as the client sent it.
+ * @returns The trimmed name, possibly "".
+ * @throws UsecaseError "invalid_argument" when the trimmed name is too long.
+ */
+function normalizeName(rawName: string): string {
+  const name = rawName.trim();
+  if (name.length > MAX_USER_NAME_LENGTH) {
+    invalid(`name is too long (max ${MAX_USER_NAME_LENGTH} characters)`);
+  }
+  return name;
+}
+
+/**
+ * Like {@link normalizeName}, for the flows where a person must have a name.
+ *
+ * @param rawName - Name text as the client sent it.
+ * @returns The trimmed, non-empty name.
+ * @throws UsecaseError "invalid_argument" when the name is empty or too long.
+ */
+function requireName(rawName: string): string {
+  const name = normalizeName(rawName);
+  if (name.length === 0) invalid("name is required");
+  return name;
+}
+
 // --- password hashing (scrypt) -------------------------------------------
 
 /**
@@ -59,9 +107,14 @@ export function avatarColorFor(email: string): string {
  * @throws UsecaseError "invalid_argument" when the password is too short or too long.
  */
 function validatePassword(password: string): void {
-  if (password.length < PASSWORD_MIN_LENGTH) invalid("password must be at least 6 characters");
+  if (password.length < PASSWORD_MIN_LENGTH) {
+    invalid(`password must be at least ${PASSWORD_MIN_LENGTH} characters`);
+  }
   if (password.length > PASSWORD_MAX_LENGTH) invalid("password is too long");
 }
+
+/** scrypt on the thread pool: a hash must never block the event loop for every other request. */
+const scrypt = promisify<string, string, number, Buffer>(crypto.scrypt);
 
 /**
  * Hashes a plaintext password with scrypt and a random salt.
@@ -69,9 +122,9 @@ function validatePassword(password: string): void {
  * @param password - Plaintext password to hash.
  * @returns Storable "salt:hash" string, both parts hex-encoded.
  */
-function hashPassword(password: string): string {
+async function hashPassword(password: string): Promise<string> {
   const salt = crypto.randomBytes(16).toString("hex");
-  const hash = crypto.scryptSync(password, salt, 64).toString("hex");
+  const hash = (await scrypt(password, salt, 64)).toString("hex");
   return `${salt}:${hash}`;
 }
 
@@ -82,28 +135,79 @@ function hashPassword(password: string): string {
  * @param storedHash - Previously stored "salt:hash" string from the users table.
  * @returns True when the password matches the stored hash.
  */
-function verifyPassword(password: string, storedHash: string): boolean {
+async function verifyPassword(password: string, storedHash: string): Promise<boolean> {
   const [salt, hash] = storedHash.split(":");
   if (!salt || !hash) return false;
-  const candidate = crypto.scryptSync(password, salt, 64);
+  const candidate = await scrypt(password, salt, 64);
   return crypto.timingSafeEqual(candidate, Buffer.from(hash, "hex"));
 }
 
 // --- bearer tokens ---------------------------------------------------------
 
 let cachedSecret: Buffer | null = null;
+/** The previous signing key during a rotation; null when none is configured. */
+let cachedPreviousSecret: Buffer | null | undefined;
 
 /**
- * Returns the HMAC signing secret: SESSION_SECRET when set, otherwise (dev
- * only) a generated secret persisted under DATA_DIRECTORY so sessions survive
- * restarts. In production the app refuses to start without SESSION_SECRET — a
- * missing secret would otherwise silently rotate on every restart (or fail to
- * write in a read-only container) and invalidate all sessions.
+ * Strictly decodes standard Base64 without accepting Node's permissive
+ * truncation of malformed input.
+ *
+ * @param configuredSecret - Possible padded or unpadded Base64 text.
+ * @returns Decoded bytes for canonical Base64, otherwise null.
+ */
+function decodeCanonicalBase64(configuredSecret: string): Buffer | null {
+  if (
+    configuredSecret.length % 4 === 1 ||
+    !SESSION_SECRET_BASE64_PATTERN.test(configuredSecret)
+  ) {
+    return null;
+  }
+  const candidate = Buffer.from(configuredSecret, "base64");
+  const canonicalValue = candidate.toString("base64").replace(/=+$/, "");
+  return canonicalValue === configuredSecret.replace(/=+$/, "") ? candidate : null;
+}
+
+/**
+ * Decodes configured signing-key material and enforces a production length
+ * floor. Canonical hex and standard Base64 are decoded so operator guidance
+ * such as `openssl rand -hex 32` contributes the intended 256 random bits;
+ * other values remain supported as UTF-8 passphrases.
+ *
+ * @param configuredSecret - SESSION_SECRET value supplied by the operator.
+ * @param environment - Runtime environment; only production enforces the floor.
+ * @returns Bytes used as the HMAC key.
+ * @throws Error when production key material decodes to fewer than 32 bytes.
+ */
+export function decodeSessionSecret(
+  configuredSecret: string,
+  environment: string | undefined = process.env.NODE_ENV,
+): Buffer {
+  let decodedSecret: Buffer;
+  if (SESSION_SECRET_HEX_PATTERN.test(configuredSecret)) {
+    decodedSecret = Buffer.from(configuredSecret, "hex");
+  } else {
+    decodedSecret = decodeCanonicalBase64(configuredSecret) ?? Buffer.from(configuredSecret, "utf8");
+  }
+
+  if (environment === "production" && decodedSecret.byteLength < MIN_SESSION_SECRET_BYTES) {
+    throw new Error(
+      `SESSION_SECRET must contain at least ${MIN_SESSION_SECRET_BYTES} decoded bytes in production (use \`openssl rand -hex 32\`)`,
+    );
+  }
+  return decodedSecret;
+}
+
+/**
+ * Returns the decoded HMAC signing secret: SESSION_SECRET when set, otherwise
+ * (dev only) a generated secret persisted under DATA_DIRECTORY so sessions
+ * survive restarts. In production the readiness check invokes this function
+ * and refuses to mark the container healthy without at least 32 decoded bytes.
  */
 function secret(): Buffer {
   if (cachedSecret) return cachedSecret;
-  if (process.env.SESSION_SECRET) {
-    cachedSecret = Buffer.from(process.env.SESSION_SECRET, "utf8");
+  const configured = readSecret("SESSION_SECRET");
+  if (configured) {
+    cachedSecret = decodeSessionSecret(configured);
     return cachedSecret;
   }
   if (process.env.NODE_ENV === "production") {
@@ -117,25 +221,88 @@ function secret(): Buffer {
   if (!fileSystem.existsSync(secretFilePath)) {
     fileSystem.writeFileSync(secretFilePath, crypto.randomBytes(32).toString("hex"), { mode: 0o600 });
   }
-  cachedSecret = Buffer.from(fileSystem.readFileSync(secretFilePath, "utf8").trim(), "utf8");
+  cachedSecret = decodeSessionSecret(
+    fileSystem.readFileSync(secretFilePath, "utf8").trim(),
+    "development",
+  );
   return cachedSecret;
 }
 
-/** Computes the base64url HMAC-SHA256 signature for a token payload. */
-function sign(payload: string): string {
-  return crypto.createHmac("sha256", secret()).update(payload).digest("base64url");
+/**
+ * The previous signing key, kept for verification only while a rotation is
+ * in flight. Set SESSION_SECRET_PREVIOUS (or _FILE) to the old key when
+ * changing SESSION_SECRET and tokens issued under it stay valid until they
+ * expire; unset it afterwards. Incident rotation leaves it unset, which
+ * invalidates every session at once as before.
+ *
+ * @returns The decoded previous key, or null when none is configured.
+ */
+function previousSecret(): Buffer | null {
+  if (cachedPreviousSecret !== undefined) return cachedPreviousSecret;
+  const configured = readSecret("SESSION_SECRET_PREVIOUS");
+  cachedPreviousSecret = configured ? decodeSessionSecret(configured) : null;
+  return cachedPreviousSecret;
 }
 
 /**
- * Signs an arbitrary payload with the session key, for short-lived tokens that
- * are not sessions — currently the merge confirmation in accountMerge.usecase.
- * Exported so those flows reuse this key rather than inventing a second one.
+ * Security domain bound into each signed token class — or, for
+ * "rate-limit", into a keyed fingerprint that lets a limiter key on a phone
+ * number without holding the number itself.
+ */
+export type TokenPurpose = "session" | "phone-merge" | "rate-limit";
+
+/**
+ * Signs a purpose-bound payload. The NUL separator cannot appear in any token
+ * field, so one token class can never validate as another even with the same
+ * root secret.
  *
+ * @param purpose - Token domain being authorized.
  * @param payload - Exact string being authorized.
  * @returns Its base64url HMAC-SHA256 signature.
  */
-export function signPayload(payload: string): string {
-  return sign(payload);
+export function signPayload(purpose: TokenPurpose, payload: string): string {
+  return signWith(secret(), purpose, payload);
+}
+
+/**
+ * Signs a purpose-bound payload with one specific key.
+ *
+ * @param hmacKey - HMAC key.
+ * @param purpose - Token domain being authorized.
+ * @param payload - Exact string being authorized.
+ * @returns Its base64url HMAC-SHA256 signature.
+ */
+function signWith(hmacKey: Buffer, purpose: TokenPurpose, payload: string): string {
+  return crypto.createHmac("sha256", hmacKey).update(`${purpose}\0${payload}`).digest("base64url");
+}
+
+/**
+ * Compares a purpose-bound signature in constant time, against the current
+ * key and — during a rotation — the previous one, so a planned key change
+ * does not sign everyone out at once.
+ *
+ * @param purpose - Token domain expected by the reader.
+ * @param payload - Exact signed payload.
+ * @param givenSignature - Base64url signature supplied with the token.
+ * @returns True only for a same-purpose, same-payload signature under a live key.
+ */
+export function verifyPayloadSignature(
+  purpose: TokenPurpose,
+  payload: string,
+  givenSignature: string,
+): boolean {
+  const givenBuffer = Buffer.from(givenSignature);
+  const previous = previousSecret();
+  const keys = previous ? [secret(), previous] : [secret()];
+  let valid = false;
+  for (const hmacKey of keys) {
+    const expectedBuffer = Buffer.from(signWith(hmacKey, purpose, payload));
+    // Every key is checked, so timing does not say which one matched.
+    if (givenBuffer.length === expectedBuffer.length && crypto.timingSafeEqual(givenBuffer, expectedBuffer)) {
+      valid = true;
+    }
+  }
+  return valid;
 }
 
 /**
@@ -144,12 +311,13 @@ export function signPayload(payload: string): string {
  *
  * @param userId - Id of the user the token authenticates.
  * @param tokenVersion - Current token_version of the user, baked into the payload.
- * @returns Token of the form "userId.version.expiry.signature", valid for TOKEN_LIFETIME_SECONDS.
+ * @returns Token of the form "v2.userId.version.expiry.signature", valid for
+ *   TOKEN_LIFETIME_SECONDS.
  */
 export function createToken(userId: string, tokenVersion: number): string {
   const expiresAtSeconds = Math.floor(Date.now() / 1000) + TOKEN_LIFETIME_SECONDS;
-  const payload = `${userId}.${tokenVersion}.${expiresAtSeconds}`;
-  return `${payload}.${sign(payload)}`;
+  const payload = `${SESSION_TOKEN_FORMAT}.${userId}.${tokenVersion}.${expiresAtSeconds}`;
+  return `${payload}.${signPayload("session", payload)}`;
 }
 
 /**
@@ -157,7 +325,7 @@ export function createToken(userId: string, tokenVersion: number): string {
  * unexpired, correctly-signed token, without consulting the database. Callers
  * must then verify the embedded version still matches the user's current row.
  *
- * @param token - Bearer token of the form "userId.version.expiry.signature".
+ * @param token - Bearer token of the form "v2.userId.version.expiry.signature".
  * @returns The embedded user id and token version, or null when the signature
  *   or expiry check fails.
  */
@@ -165,13 +333,20 @@ export function verifyToken(token: string): string | null {
   const lastDot = token.lastIndexOf(".");
   if (lastDot <= 0) return null;
   const payload = token.slice(0, lastDot);
-  const givenSignature = token.slice(lastDot + 1);
-  const expectedSignature = sign(payload);
-  const givenBuffer = Buffer.from(givenSignature);
-  const expectedBuffer = Buffer.from(expectedSignature);
-  if (givenBuffer.length !== expectedBuffer.length || !crypto.timingSafeEqual(givenBuffer, expectedBuffer)) return null;
-  const [userId, versionText, expiresAtText] = payload.split(".");
-  if (!userId || versionText === undefined || Number(expiresAtText) < Date.now() / 1000) return null;
+  if (!verifyPayloadSignature("session", payload, token.slice(lastDot + 1))) return null;
+  const fields = payload.split(".");
+  if (fields.length !== 4) return null;
+  const [format, userId, versionText, expiresAtText] = fields;
+  const version = Number(versionText);
+  const expiresAt = Number(expiresAtText);
+  if (
+    format !== SESSION_TOKEN_FORMAT ||
+    !userId ||
+    !Number.isSafeInteger(version) ||
+    version < 0 ||
+    !Number.isSafeInteger(expiresAt) ||
+    expiresAt <= Date.now() / 1000
+  ) return null;
   return userId;
 }
 
@@ -179,14 +354,29 @@ export function verifyToken(token: string): string | null {
  * Extracts the embedded token_version from a token string (without verifying
  * the signature). Used after verifyToken to compare against the DB row.
  *
- * @param token - Bearer token of the form "userId.version.expiry.signature".
+ * @param token - Bearer token of the form "v2.userId.version.expiry.signature".
  * @returns The embedded version number, or NaN when the token is malformed.
  */
 export function tokenVersion(token: string): number {
-  const firstDot = token.indexOf(".");
-  const secondDot = token.indexOf(".", firstDot + 1);
-  if (firstDot <= 0 || secondDot <= firstDot) return Number.NaN;
-  return Number(token.slice(firstDot + 1, secondDot));
+  const fields = token.split(".");
+  if (fields.length !== 5 || fields[0] !== SESSION_TOKEN_FORMAT) return Number.NaN;
+  const version = Number(fields[2]);
+  return Number.isSafeInteger(version) && version >= 0 ? version : Number.NaN;
+}
+
+/**
+ * Extracts the embedded expiry (Unix seconds) from a token string, without
+ * verifying the signature. Used after verifyToken to decide whether the
+ * session is old enough to renew.
+ *
+ * @param token - Bearer token of the form "v2.userId.version.expiry.signature".
+ * @returns The expiry in Unix seconds, or NaN when the token is malformed.
+ */
+export function tokenExpiresAt(token: string): number {
+  const fields = token.split(".");
+  if (fields.length !== 5 || fields[0] !== SESSION_TOKEN_FORMAT) return Number.NaN;
+  const expiresAt = Number(fields[3]);
+  return Number.isSafeInteger(expiresAt) ? expiresAt : Number.NaN;
 }
 
 // --- flows -----------------------------------------------------------------
@@ -223,8 +413,7 @@ export async function signUp(input: {
   password: string;
 }) {
   requirePasswordAuthEnabled();
-  const name = input.name.trim();
-  if (name.length === 0) invalid("name is required");
+  const name = requireName(input.name);
   validatePassword(input.password);
 
   const email = input.email.trim().toLowerCase();
@@ -252,18 +441,18 @@ export async function signUp(input: {
       throw new UsecaseError("already_exists", "an account with this email or phone already exists");
     }
     // Shadow user invited earlier — claim the account (keeps expense history).
-    await claimUser(existing.id, name, hashPassword(input.password));
+    await claimUser(existing.id, name, await hashPassword(input.password));
     user = (await findUserById(existing.id))!;
   } else {
     user = await insertUser({
       email: email || null,
       name,
       avatarColor: avatarColorFor(colorSeed),
-      passwordHash: hashPassword(input.password),
+      passwordHash: await hashPassword(input.password),
       phone: phone ?? null,
     });
   }
-  return { user: toUser(user), token: createToken(user.id, user.token_version) };
+  return { user: toPrivateUser(user), token: createToken(user.id, user.token_version) };
 }
 
 /**
@@ -285,10 +474,10 @@ export async function logIn(input: { email: string; phone: string; password: str
   if (!user || user.password_hash === null || input.password.length > PASSWORD_MAX_LENGTH) {
     throw new UsecaseError("unauthenticated", "invalid email/phone or password");
   }
-  if (!verifyPassword(input.password, user.password_hash)) {
+  if (!(await verifyPassword(input.password, user.password_hash))) {
     throw new UsecaseError("unauthenticated", "invalid email/phone or password");
   }
-  return { user: toUser(user), token: createToken(user.id, user.token_version) };
+  return { user: toPrivateUser(user), token: createToken(user.id, user.token_version) };
 }
 
 // --- google sign-in --------------------------------------------------------
@@ -313,6 +502,33 @@ function googleClient(): OAuth2Client {
 }
 
 /**
+ * Hashes a Google authentication nonce before it crosses the repository
+ * boundary, so a database read cannot reveal a still-usable raw challenge.
+ *
+ * @param nonce - Raw server-issued nonce.
+ * @returns Lowercase hexadecimal SHA-256 digest.
+ */
+function googleSignInNonceHash(nonce: string): string {
+  return crypto.createHash("sha256").update(nonce, "utf8").digest("hex");
+}
+
+/**
+ * Issues and persists a short-lived challenge for one Google sign-in attempt.
+ *
+ * @returns The raw nonce the client must include in Google's ID-token request.
+ * @throws UsecaseError "invalid_argument" when Google sign-in is not configured.
+ */
+export async function beginGoogleSignIn(): Promise<{ nonce: string }> {
+  googleClient();
+  const nonce = crypto.randomBytes(GOOGLE_SIGN_IN_NONCE_BYTES).toString("base64url");
+  await insertGoogleSignInNonce(
+    googleSignInNonceHash(nonce),
+    GOOGLE_SIGN_IN_NONCE_LIFETIME_SECONDS,
+  );
+  return { nonce };
+}
+
+/**
  * Verifies a Google ID token and returns only the claims we trust from it.
  *
  * The library checks the signature against Google's rotating public keys plus
@@ -321,8 +537,8 @@ function googleClient(): OAuth2Client {
  *
  * @param idToken - Raw JWT credential produced by Google Identity Services.
  * @returns The stable account id, the verified email, the display name Google
- *   holds, and the profile picture URL — the last two empty when absent, which
- *   Google documents as always possible.
+ *   holds, the profile picture URL, and the server-issued authentication nonce.
+ *   The name and picture are empty when absent, which Google documents as possible.
  * @throws UsecaseError "unauthenticated" when verification fails, the token
  *   carries no email, or that email is unverified.
  */
@@ -331,6 +547,7 @@ async function verifyGoogleIdToken(idToken: string): Promise<{
   email: string;
   name: string;
   picture: string;
+  nonce: string;
 }> {
   // Resolved before the try: a missing GOOGLE_CLIENT_ID is a server
   // misconfiguration, and rewrapping it as "could not verify" would send an
@@ -338,9 +555,11 @@ async function verifyGoogleIdToken(idToken: string): Promise<{
   const client = googleClient();
   let claims;
   try {
+    // The web client and the native mobile clients each mint tokens naming
+    // themselves as audience; any of them is this app.
     const ticket = await client.verifyIdToken({
       idToken,
-      audience: GOOGLE_CLIENT_ID,
+      audience: GOOGLE_AUDIENCES,
     });
     claims = ticket.getPayload();
   } catch {
@@ -348,7 +567,12 @@ async function verifyGoogleIdToken(idToken: string): Promise<{
     // caller on purpose, and none of them worth logging a stack trace over.
     throw new UsecaseError("unauthenticated", "could not verify that Google account");
   }
-  if (!claims?.sub || !claims.email) {
+  if (
+    !claims?.sub ||
+    !claims.email ||
+    !claims.nonce ||
+    !GOOGLE_SIGN_IN_NONCE_PATTERN.test(claims.nonce)
+  ) {
     throw new UsecaseError("unauthenticated", "could not verify that Google account");
   }
   // Linking an existing row on an unverified address is account takeover:
@@ -361,8 +585,9 @@ async function verifyGoogleIdToken(idToken: string): Promise<{
   return {
     googleSub: claims.sub,
     email: claims.email.trim().toLowerCase(),
-    name: claims.name?.trim() ?? "",
+    name: claims.name?.trim().slice(0, MAX_USER_NAME_LENGTH) ?? "",
     picture: claims.picture?.trim() ?? "",
+    nonce: claims.nonce,
   };
 }
 
@@ -381,6 +606,10 @@ async function verifyGoogleIdToken(idToken: string): Promise<{
  */
 export async function logInWithGoogle(idToken: string) {
   const claims = await verifyGoogleIdToken(idToken);
+  const nonceAccepted = await consumeGoogleSignInNonce(googleSignInNonceHash(claims.nonce));
+  if (!nonceAccepted) {
+    throw new UsecaseError("unauthenticated", "could not verify that Google account");
+  }
 
   let user = await findUserByGoogleSub(claims.googleSub);
   if (!user) {
@@ -406,8 +635,7 @@ export async function logInWithGoogle(idToken: string) {
         // TOCTOU: a concurrent sign-in (double-clicked button, two tabs) won
         // the unique-index race on email or google_sub. Re-read rather than
         // surfacing a 500 for what is a successful sign-in either way.
-        const databaseError = error as { code?: string };
-        if (databaseError.code !== "23505") throw error;
+        if (!isUniqueViolation(error)) throw error;
         user =
           (await findUserByGoogleSub(claims.googleSub)) ?? (await findUserByEmail(claims.email))!;
       }
@@ -423,7 +651,7 @@ export async function logInWithGoogle(idToken: string) {
     user = { ...user, avatar_url: claims.picture };
   }
 
-  return { user: toUser(user), token: createToken(user.id, user.token_version) };
+  return { user: toPrivateUser(user), token: createToken(user.id, user.token_version) };
 }
 
 /**
@@ -436,7 +664,7 @@ export async function logInWithGoogle(idToken: string) {
 export async function getMe(userId: string) {
   const user = await findUserById(userId);
   if (!user) throw new UsecaseError("unauthenticated", "account no longer exists");
-  return toUser(user);
+  return toPrivateUser(user);
 }
 
 /**
@@ -464,12 +692,11 @@ export async function updateProfile(
     paymentHandles?: { method: string; handle: string }[];
   },
 ) {
-  if (input.name.trim().length === 0) invalid("name is required");
-  await updateUserProfile(userId, {
-    name: input.name.trim(),
-    defaultCurrency: input.defaultCurrency || undefined,
-  });
-  if (input.paymentHandles) {
+  const name = requireName(input.name);
+  const defaultCurrency = input.defaultCurrency
+    ? normalizeCurrencyCode(input.defaultCurrency)
+    : undefined;
+  if (input.paymentHandles !== undefined) {
     for (const entry of input.paymentHandles) {
       if (!PAYMENT_METHOD_KEYS.includes(entry.method)) {
         invalid(`unknown payment method "${entry.method}"`);
@@ -478,8 +705,16 @@ export async function updateProfile(
         invalid(`that ${entry.method} handle is too long`);
       }
     }
-    await replacePaymentHandles(userId, input.paymentHandles);
   }
+  // Validate the entire request before opening the transaction. The profile
+  // and its handles are one form submission, so they either both change or
+  // neither does.
+  await transaction(async (client) => {
+    await updateUserProfile(userId, { name, defaultCurrency }, client);
+    if (input.paymentHandles !== undefined) {
+      await replacePaymentHandles(userId, input.paymentHandles, client);
+    }
+  });
   return getMe(userId);
 }
 
@@ -500,7 +735,7 @@ export async function sessionUser(token: string) {
   const user = await findUserById(userId);
   if (!user || user.merged_into !== null) return null;
   if (user.token_version !== tokenVersion(token)) return null;
-  return toUser(user);
+  return toPrivateUser(user);
 }
 
 /**
@@ -514,6 +749,33 @@ export async function sessionUser(token: string) {
  */
 export async function completeOnboarding(userId: string) {
   await markOnboarded(userId);
+  return getMe(userId);
+}
+
+/**
+ * Detaches the caller's phone number — the release valve for a number that
+ * was lost or recycled, without which it could only ever leave the account
+ * by somebody else claiming it.
+ *
+ * Refused when the phone is the row's only identifier: the database's
+ * chk_users_has_identifier says every live account stays reachable by
+ * something, and this check turns that constraint into a sentence instead
+ * of an internal error.
+ *
+ * @param userId - Id of the authenticated caller.
+ * @returns The refreshed user in proto shape; a no-op when no phone is set.
+ * @throws UsecaseError "invalid_argument" when the phone is the only identifier.
+ */
+export async function removePhone(userId: string) {
+  const user = await findUserById(userId);
+  if (!user) throw new UsecaseError("unauthenticated", "account no longer exists");
+  if (user.phone === null) return toPrivateUser(user);
+  if (user.email === null) {
+    invalid(
+      "this number is the only way your account can be found — sign in with Google to attach an email before removing it",
+    );
+  }
+  await setUserPhone(userId, null);
   return getMe(userId);
 }
 
@@ -532,21 +794,20 @@ export async function findOrCreateUserByEmail(
 ): Promise<UserRow> {
   const normalizedEmail = email.trim().toLowerCase();
   if (!EMAIL_PATTERN.test(normalizedEmail)) invalid("please enter a valid email address");
+  const requestedName = normalizeName(name ?? "");
   const existing = await findUserByEmail(normalizedEmail);
   if (existing) return existing;
   try {
     return await insertUser({
       email: normalizedEmail,
-      name: name?.trim() || normalizedEmail.split("@")[0],
+      name: requestedName || normalizedEmail.split("@")[0].slice(0, MAX_USER_NAME_LENGTH),
       avatarColor: avatarColorFor(normalizedEmail),
       passwordHash: null,
     });
   } catch (error) {
     // TOCTOU: a concurrent invite to the same email won the unique-index
-    // race (Postgres SQLSTATE 23505). Re-read the now-existing row instead
-    // of surfacing a 500 to the caller.
-    const databaseError = error as { code?: string };
-    if (databaseError.code === "23505") {
+    // race. Re-read the now-existing row instead of surfacing a 500.
+    if (isUniqueViolation(error)) {
       const concurrent = await findUserByEmail(normalizedEmail);
       if (concurrent) return concurrent;
     }
@@ -573,21 +834,21 @@ export async function findOrCreateUserByPhone(
 ): Promise<UserRow> {
   const normalizedPhone = normalizePhone(phone);
   if (!normalizedPhone) invalid(PHONE_FORMAT_HINT);
+  const requestedName = normalizeName(name ?? "");
   const existing = await findUserByPhone(normalizedPhone);
   if (existing) return existing;
   try {
     return await insertUser({
       email: null,
       phone: normalizedPhone,
-      name: name?.trim() || normalizedPhone,
+      name: requestedName || normalizedPhone,
       avatarColor: avatarColorFor(normalizedPhone),
       passwordHash: null,
     });
   } catch (error) {
     // TOCTOU: a concurrent invite to the same number won the unique-index
-    // race (Postgres SQLSTATE 23505). Re-read rather than surfacing a 500.
-    const databaseError = error as { code?: string };
-    if (databaseError.code === "23505") {
+    // race. Re-read rather than surfacing a 500.
+    if (isUniqueViolation(error)) {
       const concurrent = await findUserByPhone(normalizedPhone);
       if (concurrent) return concurrent;
     }

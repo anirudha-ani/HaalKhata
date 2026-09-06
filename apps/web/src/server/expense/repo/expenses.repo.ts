@@ -23,8 +23,12 @@ export interface ExpenseRow {
   tip_cents: number;
   created_by: string;
   created_at: string;
+  /** Monotonic order shared with settlements for mutation-safety checks. */
+  ledger_event_order: string;
   /** Soft-delete timestamp; NULL ⇒ the expense is active. */
   deleted_at: string | null;
+  /** The authenticated user who deleted it; NULL while it is active. */
+  deleted_by: string | null;
 }
 
 /** One row of expense_payers: how much a user paid toward an expense. */
@@ -184,12 +188,13 @@ async function insertChildren(
  * Inserts an expense and all its child rows in a single transaction.
  *
  * @param input - Validated expense to persist.
+ * @param client - Optional transaction client holding the expense scope lock.
  * @returns The generated id of the new expense.
  */
-export async function insertExpense(input: ExpenseWrite): Promise<string> {
+export async function insertExpense(input: ExpenseWrite, client?: PoolClient): Promise<string> {
   const expenseId = newId();
-  await transaction(async (client) => {
-    await client.query(
+  const persist = async (transactionClient: PoolClient) => {
+    await transactionClient.query(
       `INSERT INTO expenses
          (id, group_id, description, amount_cents, currency, category,
           expense_date, split_type, notes, tax_cents, tip_cents, created_by)
@@ -209,8 +214,10 @@ export async function insertExpense(input: ExpenseWrite): Promise<string> {
         input.createdBy,
       ],
     );
-    await insertChildren(client, expenseId, input);
-  });
+    await insertChildren(transactionClient, expenseId, input);
+  };
+  if (client) await persist(client);
+  else await transaction(persist);
   return expenseId;
 }
 
@@ -220,13 +227,15 @@ export async function insertExpense(input: ExpenseWrite): Promise<string> {
  *
  * @param expenseId - Id of the expense to overwrite.
  * @param input - Validated replacement expense.
+ * @param client - Optional transaction client holding the expense scope lock.
  */
 export async function replaceExpense(
   expenseId: string,
   input: ExpenseWrite,
+  client?: PoolClient,
 ): Promise<void> {
-  await transaction(async (client) => {
-    await client.query(
+  const persist = async (transactionClient: PoolClient) => {
+    await transactionClient.query(
       `UPDATE expenses SET
          group_id = $1, description = $2, amount_cents = $3, currency = $4,
          category = $5, expense_date = $6, split_type = $7, notes = $8,
@@ -246,48 +255,76 @@ export async function replaceExpense(
         expenseId,
       ],
     );
-    await client.query(
+    await transactionClient.query(
       `DELETE FROM expense_item_assignments WHERE item_id IN
          (SELECT id FROM expense_items WHERE expense_id = $1)`,
       [expenseId],
     );
-    await client.query(`DELETE FROM expense_items WHERE expense_id = $1`, [expenseId]);
-    await client.query(`DELETE FROM expense_payers WHERE expense_id = $1`, [expenseId]);
-    await client.query(`DELETE FROM expense_splits WHERE expense_id = $1`, [expenseId]);
-    await insertChildren(client, expenseId, input);
-  });
+    await transactionClient.query(`DELETE FROM expense_items WHERE expense_id = $1`, [expenseId]);
+    await transactionClient.query(`DELETE FROM expense_payers WHERE expense_id = $1`, [expenseId]);
+    await transactionClient.query(`DELETE FROM expense_splits WHERE expense_id = $1`, [expenseId]);
+    await insertChildren(transactionClient, expenseId, input);
+  };
+  if (client) await persist(client);
+  else await transaction(persist);
 }
 
 /**
- * Marks an expense deleted (sets deleted_at) without removing any rows.
+ * Marks an expense deleted (sets deleted_at and who deleted it) without
+ * removing any rows.
  *
  * @param expenseId - Id of the expense to soft-delete.
+ * @param deletedBy - The authenticated user deleting it.
+ * @param client - Optional transaction client holding the expense scope lock.
  */
-export async function softDeleteExpense(expenseId: string): Promise<void> {
-  await execute(`UPDATE expenses SET deleted_at = now() WHERE id = $1`, [expenseId]);
+export async function softDeleteExpense(
+  expenseId: string,
+  deletedBy: string,
+  client?: PoolClient,
+): Promise<void> {
+  await execute(
+    `UPDATE expenses SET deleted_at = now(), deleted_by = $2 WHERE id = $1`,
+    [expenseId, deletedBy],
+    client,
+  );
 }
 
 /**
  * Fetches a single expense row, including soft-deleted ones.
  *
  * @param expenseId - Id of the expense to fetch.
+ * @param client - Optional transaction client for a lock-protected read.
  * @returns The matching row, or undefined if the id is unknown.
  */
-export async function findExpenseById(expenseId: string): Promise<ExpenseRow | undefined> {
-  return queryOne<ExpenseRow>(`SELECT * FROM expenses WHERE id = $1`, [expenseId]);
+export async function findExpenseById(
+  expenseId: string,
+  client?: PoolClient,
+): Promise<ExpenseRow | undefined> {
+  return queryOne<ExpenseRow>(`SELECT * FROM expenses WHERE id = $1`, [expenseId], client);
 }
 
 /**
- * Lists a group's non-deleted expenses, newest first.
+ * Lists a group's expenses, newest first.
+ *
+ * Deleted rows are excluded by default, which is what every balance
+ * computation wants; display reads pass `includeDeleted` so a deleted
+ * expense stays visible, marked, in the group's history.
  *
  * @param groupId - Id of the group whose expenses to list.
+ * @param client - Optional transaction client holding the group-ledger lock.
+ * @param includeDeleted - Whether soft-deleted rows are returned too.
  * @returns Expense rows ordered by expense date, then creation time, descending.
  */
-export async function listExpensesByGroup(groupId: string): Promise<ExpenseRow[]> {
+export async function listExpensesByGroup(
+  groupId: string,
+  client?: PoolClient,
+  includeDeleted = false,
+): Promise<ExpenseRow[]> {
   return query<ExpenseRow>(
-    `SELECT * FROM expenses WHERE group_id = $1 AND deleted_at IS NULL
+    `SELECT * FROM expenses WHERE group_id = $1 AND ($2::boolean OR deleted_at IS NULL)
      ORDER BY expense_date DESC, created_at DESC`,
-    [groupId],
+    [groupId, includeDeleted],
+    client,
   );
 }
 
@@ -296,21 +333,26 @@ export async function listExpensesByGroup(groupId: string): Promise<ExpenseRow[]
  *
  * @param firstUserId - One of the two participants.
  * @param secondUserId - The other participant.
- * @returns Non-deleted one-off expense rows involving both users, newest first.
+ * @param client - Optional transaction client holding the pair's ledger lock.
+ * @param includeDeleted - Whether soft-deleted rows are returned too (display only).
+ * @returns One-off expense rows involving both users, newest first.
  */
 export async function listOneOffExpensesBetween(
   firstUserId: string,
   secondUserId: string,
+  client?: PoolClient,
+  includeDeleted = false,
 ): Promise<ExpenseRow[]> {
   return query<ExpenseRow>(
     `SELECT DISTINCT expense.* FROM expenses expense
-     WHERE expense.group_id IS NULL AND expense.deleted_at IS NULL
+     WHERE expense.group_id IS NULL AND ($3::boolean OR expense.deleted_at IS NULL)
        AND EXISTS (SELECT 1 FROM expense_splits split WHERE split.expense_id = expense.id AND split.user_id = $1
                    UNION SELECT 1 FROM expense_payers payer WHERE payer.expense_id = expense.id AND payer.user_id = $1)
        AND EXISTS (SELECT 1 FROM expense_splits split WHERE split.expense_id = expense.id AND split.user_id = $2
                    UNION SELECT 1 FROM expense_payers payer WHERE payer.expense_id = expense.id AND payer.user_id = $2)
      ORDER BY expense.expense_date DESC, expense.created_at DESC`,
-    [firstUserId, secondUserId],
+    [firstUserId, secondUserId, includeDeleted],
+    client,
   );
 }
 
@@ -323,38 +365,48 @@ export async function listOneOffExpensesBetween(
  *
  * @param firstUserId - One of the two participants.
  * @param secondUserId - The other participant.
- * @returns Non-deleted expense rows involving both users, newest first.
+ * @param includeDeleted - Whether soft-deleted rows are returned too (display only).
+ * @returns Expense rows involving both users, newest first.
  */
 export async function listExpensesBetween(
   firstUserId: string,
   secondUserId: string,
+  includeDeleted = false,
 ): Promise<ExpenseRow[]> {
   return query<ExpenseRow>(
     `SELECT DISTINCT expense.* FROM expenses expense
-     WHERE expense.deleted_at IS NULL
+     WHERE ($3::boolean OR expense.deleted_at IS NULL)
        AND EXISTS (SELECT 1 FROM expense_splits split WHERE split.expense_id = expense.id AND split.user_id = $1
                    UNION SELECT 1 FROM expense_payers payer WHERE payer.expense_id = expense.id AND payer.user_id = $1)
        AND EXISTS (SELECT 1 FROM expense_splits split WHERE split.expense_id = expense.id AND split.user_id = $2
                    UNION SELECT 1 FROM expense_payers payer WHERE payer.expense_id = expense.id AND payer.user_id = $2)
      ORDER BY expense.expense_date DESC, expense.created_at DESC`,
-    [firstUserId, secondUserId],
+    [firstUserId, secondUserId, includeDeleted],
   );
 }
 
 /**
- * Every non-deleted expense the user pays for or owes on (groups + one-off).
+ * Every expense the user pays for or owes on (groups + one-off).
  *
  * @param userId - Id of the user whose expenses to list.
+ * @param includeDeleted - Whether soft-deleted rows are returned too (display only).
+ * @param limit - Most rows to return (display only); omitted, every row —
+ *   which the balance math needs and a screen does not.
  * @returns Expense rows involving the user, newest first.
  */
-export async function listExpensesInvolvingUser(userId: string): Promise<ExpenseRow[]> {
+export async function listExpensesInvolvingUser(
+  userId: string,
+  includeDeleted = false,
+  limit?: number,
+): Promise<ExpenseRow[]> {
   return query<ExpenseRow>(
     `SELECT DISTINCT expense.* FROM expenses expense
-     WHERE expense.deleted_at IS NULL
+     WHERE ($2::boolean OR expense.deleted_at IS NULL)
        AND EXISTS (SELECT 1 FROM expense_splits split WHERE split.expense_id = expense.id AND split.user_id = $1
                    UNION SELECT 1 FROM expense_payers payer WHERE payer.expense_id = expense.id AND payer.user_id = $1)
-     ORDER BY expense.expense_date DESC, expense.created_at DESC`,
-    [userId],
+     ORDER BY expense.expense_date DESC, expense.created_at DESC
+     LIMIT $3`,
+    [userId, includeDeleted, limit ?? null],
   );
 }
 
@@ -371,7 +423,10 @@ export interface ExpenseChildren {
  * @param expenseIds - Ids of the expenses whose child rows are needed.
  * @returns Maps of expense id → child rows (empty maps for an empty input).
  */
-export async function loadExpenseChildren(expenseIds: string[]): Promise<ExpenseChildren> {
+export async function loadExpenseChildren(
+  expenseIds: string[],
+  client?: PoolClient,
+): Promise<ExpenseChildren> {
   const result: ExpenseChildren = {
     payers: new Map(),
     splits: new Map(),
@@ -380,15 +435,21 @@ export async function loadExpenseChildren(expenseIds: string[]): Promise<Expense
   if (expenseIds.length === 0) return result;
 
   const [payers, splits, items] = await Promise.all([
-    query<PayerRow>(`SELECT * FROM expense_payers WHERE expense_id = ANY($1::text[])`, [
-      expenseIds,
-    ]),
-    query<SplitRow>(`SELECT * FROM expense_splits WHERE expense_id = ANY($1::text[])`, [
-      expenseIds,
-    ]),
-    query<ItemRow>(`SELECT * FROM expense_items WHERE expense_id = ANY($1::text[])`, [
-      expenseIds,
-    ]),
+    query<PayerRow>(
+      `SELECT * FROM expense_payers WHERE expense_id = ANY($1::text[])`,
+      [expenseIds],
+      client,
+    ),
+    query<SplitRow>(
+      `SELECT * FROM expense_splits WHERE expense_id = ANY($1::text[])`,
+      [expenseIds],
+      client,
+    ),
+    query<ItemRow>(
+      `SELECT * FROM expense_items WHERE expense_id = ANY($1::text[])`,
+      [expenseIds],
+      client,
+    ),
   ]);
 
   for (const payerRow of payers) {
@@ -407,6 +468,7 @@ export async function loadExpenseChildren(expenseIds: string[]): Promise<Expense
     const assignments = await query<ItemAssignmentRow>(
       `SELECT * FROM expense_item_assignments WHERE item_id = ANY($1::text[])`,
       [items.map((item) => item.id)],
+      client,
     );
     for (const assignmentRow of assignments) {
       const list = assignmentsByItem.get(assignmentRow.item_id) ?? [];

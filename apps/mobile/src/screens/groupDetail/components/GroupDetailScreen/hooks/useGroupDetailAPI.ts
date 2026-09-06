@@ -1,6 +1,6 @@
-/** TanStack Query bindings for group detail: me, group, friends, expenses, balances, add-members. */
+/** TanStack Query bindings for group detail: me, group, friends, expenses, balances, add/remove members. */
 
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { authClient, expenseClient, groupClient, socialClient } from "@/lib/api/connect";
 import { MONEY_KEYS, queryKeys } from "@haalkhata/shared/api/queryKeys";
 
@@ -13,7 +13,8 @@ import { MONEY_KEYS, queryKeys } from "@haalkhata/shared/api/queryKeys";
  * @param groupId - Identifier of the group being viewed.
  * @returns An object with `me`, `group`, `groupError`, `friends`, `expenses`,
  *   `balances`, an `isLoading` flag covering the group and expense queries,
- *   `refresh`/`isRefreshing` for pull-to-refresh, and the `addMembers` mutation.
+ *   `refresh`/`isRefreshing` for pull-to-refresh, and the `addMembers`,
+ *   `removeMember`, `transferOwnership` and `addFriend` mutations.
  */
 export function useGroupDetailAPI(groupId: string) {
   const queryClient = useQueryClient();
@@ -37,17 +38,21 @@ export function useGroupDetailAPI(groupId: string) {
     queryFn: () => socialClient.listFriends({}),
   });
 
-  // The group's own feed — same audience rule as everywhere: the server only
-  // returns events this member is allowed to see.
-  const activity = useQuery({
-    queryKey: queryKeys.activity(groupId),
-    queryFn: () => socialClient.listActivity({ groupId }),
+  // The group's own feed, paged the same way the global activity screen
+  // pages (keyset, driven by next_cursor). Same audience rule as everywhere:
+  // the server only returns events this member is allowed to see.
+  const activity = useInfiniteQuery({
+    queryKey: queryKeys.activityFeed(groupId),
+    initialPageParam: "",
+    queryFn: ({ pageParam }) =>
+      socialClient.listActivity({ groupId, cursor: pageParam, month: "" }),
+    getNextPageParam: (lastPage) => lastPage.nextCursor || undefined,
   });
 
   /**
-   * Adds people by id plus an optional email/phone newcomer; on success
-   * refreshes this group, the group list, and the friends list — adding
-   * somebody also befriends them.
+   * Adds people by id plus an optional email/phone that must resolve to an
+   * already-connected account; on success refreshes this group, the group
+   * list, and the friends list — adding somebody also befriends them.
    */
   const addMembers = useMutation({
     mutationFn: (input: { userIds: string[]; email: string; phone: string }) =>
@@ -57,6 +62,41 @@ export function useGroupDetailAPI(groupId: string) {
       queryClient.invalidateQueries({ queryKey: queryKeys.groups });
       queryClient.invalidateQueries({ queryKey: queryKeys.friends });
     },
+  });
+
+  /**
+   * Removes one member: the caller leaving, or the owner removing somebody
+   * else. Membership decides what the caller may see and which balances the
+   * leaver was part of, so success invalidates the whole money set — the
+   * group list, this group, and every ledger — not just this group.
+   */
+  const removeMember = useMutation({
+    mutationFn: (userId: string) => groupClient.removeMember({ groupId, userId }),
+    onSuccess: () => {
+      for (const moneyKey of MONEY_KEYS) queryClient.invalidateQueries({ queryKey: moneyKey });
+    },
+  });
+
+  /**
+   * Hands the group to another member. Roles change on this group and the
+   * old owner may now leave, so the group and the list refresh.
+   */
+  const transferOwnership = useMutation({
+    mutationFn: (userId: string) => groupClient.transferOwnership({ groupId, userId }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.group(groupId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.groups });
+    },
+  });
+
+  /**
+   * Sends a friend request to another member. The recipient must accept
+   * before a friendship exists, so nothing here is invalidated — the server
+   * deliberately does not expose outgoing-request state.
+   */
+  const addFriend = useMutation({
+    mutationFn: (userId: string) =>
+      socialClient.addFriend({ email: "", phone: "", name: "", userId }),
   });
 
   /**
@@ -91,8 +131,14 @@ export function useGroupDetailAPI(groupId: string) {
     refresh,
     isRefreshing: group.isRefetching || expenses.isRefetching || balances.isRefetching,
     addMembers,
+    removeMember,
+    transferOwnership,
+    addFriend,
     setSimplify,
-    activityEvents: activity.data?.events ?? [],
+    activityEvents: (activity.data?.pages ?? []).flatMap((page) => page.events),
     activityLoading: activity.isLoading,
+    activityHasMore: activity.hasNextPage,
+    activityLoadingMore: activity.isFetchingNextPage,
+    loadMoreActivity: () => void activity.fetchNextPage(),
   };
 }

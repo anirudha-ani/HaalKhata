@@ -2,15 +2,21 @@
 Description=HaalKhata encrypted database + secrets backup
 After=docker.service
 Requires=docker.service
+OnFailure=haalkhata-backup-failure.service
 
 [Service]
 Type=oneshot
+UMask=0077
 # Runs as root, not deploy. backup.sh tars /srv/haalkhata/secrets, which is
 # 0700 root:root by design — a deploy-owned service cannot even traverse it,
 # and the failure is a one-line tar error buried in the journal while the
 # database half of the backup still succeeds. Root also needs no docker-group
 # membership to reach the daemon.
 #
-# Consequence: age's private key and ~/.s3cfg live in /root, not /home/deploy.
+# Consequence: ~/.s3cfg (the offsite upload credential) lives in /root, not
+# /home/deploy. age's PRIVATE key does not live on this box at all — only the
+# public recipient (backup-recipient.txt) is here; the private half stays
+# with the recovery custodian, off-host, and is brought in only for an
+# attended restore (see backup.sh).
 User=root
 ExecStart=/srv/haalkhata/backup.sh

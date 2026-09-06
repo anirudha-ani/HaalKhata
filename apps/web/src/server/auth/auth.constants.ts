@@ -2,9 +2,33 @@
 
 import path from "node:path";
 import { parsePhoneNumberFromString } from "libphonenumber-js";
+import { MAX_USER_NAME_LENGTH } from "@haalkhata/shared/text/limits";
 
-/** How long an issued bearer token stays valid, in seconds (30 days). */
-export const TOKEN_LIFETIME_SECONDS = 60 * 60 * 24 * 30;
+/**
+ * Absolute lifetime of an issued browser or mobile session token (seven days).
+ * Sign-out can revoke it sooner through the user's token version.
+ */
+export const TOKEN_LIFETIME_SECONDS = 60 * 60 * 24 * 7;
+
+/**
+ * Remaining lifetime below which an authenticated request re-issues the
+ * session. Half the lifetime: a person who opens the app at least weekly
+ * stays signed in indefinitely, while a token that stops being used still
+ * dies on schedule.
+ */
+export const TOKEN_RENEWAL_THRESHOLD_SECONDS = TOKEN_LIFETIME_SECONDS / 2;
+
+/** Signed-session payload version; changing it deliberately invalidates legacy tokens. */
+export const SESSION_TOKEN_FORMAT = "v2";
+
+/** Minimum decoded HMAC key length accepted in production. */
+export const MIN_SESSION_SECRET_BYTES = 32;
+
+/** Canonical unprefixed hexadecimal key material. */
+export const SESSION_SECRET_HEX_PATTERN = /^(?:[0-9a-fA-F]{2})+$/;
+
+/** Canonical padded or unpadded standard Base64 key material. */
+export const SESSION_SECRET_BASE64_PATTERN = /^[A-Za-z0-9+/]+={0,2}$/;
 
 /**
  * How long a pending account-merge confirmation stays valid, in seconds.
@@ -32,12 +56,107 @@ export const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 export const AUTH_RATE_LIMIT = 10;
 
 /**
+ * Per-account, per-minute pacing for the three phone operations, each in its
+ * own bucket so a fumbled code cannot lock the user out of the confirm.
+ * These are request pacing only; the durable anti-abuse ceilings live in
+ * Postgres (phone_send_events) and the per-code attempt budget in
+ * phone_verifications.
+ */
+export const PHONE_SEND_RATE_LIMIT = 3;
+/** Per-account, per-minute pacing for code checks. */
+export const PHONE_CHECK_RATE_LIMIT = 5;
+/** Per-account, per-minute pacing for merge confirmations and phone removal. */
+export const PHONE_MERGE_RATE_LIMIT = 5;
+
+/**
+ * Seconds an SMS verification stays answerable after the send. Matches the
+ * merge-token lifetime deliberately: both are one sitting at one screen.
+ */
+export const PHONE_VERIFICATION_LIFETIME_SECONDS = 60 * 10;
+
+/**
+ * Wrong-code attempts allowed per delivered code before a fresh SMS is
+ * required — OWASP's three-to-five band, enforced server-side rather than
+ * delegated to the provider's own cap.
+ */
+export const MAX_PHONE_CODE_CHECKS = 5;
+
+/**
+ * Most counterparty names a merge preview lists. The preview is the
+ * recycled-number defense, but it is also a disclosure to whoever holds the
+ * number today — a dozen names decide "is this my history?" as well as a
+ * hundred would.
+ */
+export const MAX_PREVIEW_COUNTERPARTY_NAMES = 12;
+
+/** One hour, for the longer rate-limit windows. */
+export const HOUR_MS = 60 * 60 * 1000;
+
+/** One day, for the longest rate-limit window. */
+export const DAY_MS = 24 * HOUR_MS;
+
+/**
+ * Most verification SMS one destination number may receive per hour, from
+ * every account and address together. Three covers a typo and a resend;
+ * more than that in an hour is somebody else's number being hammered.
+ */
+export const PHONE_SEND_LIMIT_PER_DESTINATION_HOUR = 3;
+
+/** Most verification SMS one destination number may receive per day. */
+export const PHONE_SEND_LIMIT_PER_DESTINATION_DAY = 8;
+
+/** Most verifications one client address may start per hour. */
+export const PHONE_SEND_LIMIT_PER_IP_HOUR = 20;
+
+/**
+ * Maximum persisted display-name length. Names are copied into fan-out rows.
+ * Re-exported from the shared package so both clients bound their inputs to
+ * the value the server enforces.
+ */
+export { MAX_USER_NAME_LENGTH };
+
+
+/** Timeout for each call to the external phone-verification provider. */
+export const PHONE_VERIFICATION_TIMEOUT_MS = 10_000;
+
+/** Twilio Verify v2 base URL; fixed so user input can never influence the destination. */
+export const TWILIO_VERIFY_BASE_URL = "https://verify.twilio.com/v2";
+
+/** Verification codes are numeric and between four and ten digits. */
+export const PHONE_VERIFICATION_CODE_PATTERN = /^\d{4,10}$/;
+
+/**
  * OAuth client id that a Google ID token must name as its audience. Only the
  * client id is needed: the ID-token flow verifies a signed assertion the
  * browser already holds, so there is no code-for-token exchange and therefore
  * no client secret to deploy. Never add one here.
  */
 export const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID ?? "";
+
+/**
+ * Native OAuth client ids (Android, iOS) the mobile app signs in with, comma
+ * separated. An ID token names the client that requested it as its audience,
+ * so each of them must be accepted alongside the web client. Public values
+ * like the web client id; there is still no secret.
+ */
+export const GOOGLE_MOBILE_CLIENT_IDS = (process.env.GOOGLE_MOBILE_CLIENT_IDS ?? "")
+  .split(",")
+  .map((clientId) => clientId.trim())
+  .filter((clientId) => clientId.length > 0);
+
+/** Every audience a Google ID token may carry: the web client plus the native ones. */
+export const GOOGLE_AUDIENCES = [GOOGLE_CLIENT_ID, ...GOOGLE_MOBILE_CLIENT_IDS].filter(
+  (clientId) => clientId.length > 0,
+);
+
+/** Entropy in each server-issued Google authentication nonce. */
+export const GOOGLE_SIGN_IN_NONCE_BYTES = 32;
+
+/** Base64url shape of a nonce produced from {@link GOOGLE_SIGN_IN_NONCE_BYTES}. */
+export const GOOGLE_SIGN_IN_NONCE_PATTERN = /^[A-Za-z0-9_-]{43}$/;
+
+/** Seconds before an unused Google authentication nonce is rejected. */
+export const GOOGLE_SIGN_IN_NONCE_LIFETIME_SECONDS = 60 * 5;
 
 /**
  * Whether email/phone + password sign-in is accepted. Google is the only way
@@ -53,8 +172,12 @@ export function passwordAuthEnabled(): boolean {
   return process.env.NODE_ENV !== "production";
 }
 
-/** Minimum password length accepted at signup. */
-export const PASSWORD_MIN_LENGTH = 6;
+/**
+ * Minimum password length accepted at signup. Development-only, since
+ * production accepts Google alone — but a floor that would be weak on a
+ * public deployment is a floor waiting to be enabled by mistake.
+ */
+export const PASSWORD_MIN_LENGTH = 8;
 /**
  * Maximum password length accepted at signup. scrypt has no built-in input
  * cap, so an unbounded password length is a CPU-DoS vector; 1024 bytes is

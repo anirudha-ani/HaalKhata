@@ -1,7 +1,7 @@
 /** Group rows → group.v1 message init shapes. */
 
 import type { GroupRow, MemberRow } from "@/server/group/repo/groups.repo";
-import { toUser } from "@/server/auth/usecase/user.mapper";
+import { toPublicUser } from "@/server/auth/usecase/user.mapper";
 
 /**
  * Maps a member row (user + role) to a group.v1 Member message init shape.
@@ -10,7 +10,7 @@ import { toUser } from "@/server/auth/usecase/user.mapper";
  * @returns An object matching the Member proto message fields.
  */
 export function toMember(memberRow: MemberRow) {
-  return { user: toUser(memberRow), role: memberRow.role };
+  return { user: toPublicUser(memberRow), role: memberRow.role };
 }
 
 /**

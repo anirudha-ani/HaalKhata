@@ -5,21 +5,35 @@ import { nextJsApiRouter } from "@connectrpc/connect-next";
 import routes from "@/server/api/connect/routes";
 import { csrfGuard } from "@/server/api/connect/csrf";
 import { ensureMigrated } from "@/server/common/db";
+import { CONNECT_READ_MAX_BYTES } from "@/server/api/connect/connect.constants";
+import { logError } from "@/server/common/logger";
+import { DIRECT_CLIENT_IP_HEADER } from "@/server/auth/clientIp";
 
 /** Next.js API handler that serves every registered Connect RPC under /api/connect. */
-const { handler } = nextJsApiRouter({ routes, prefix: "/api/connect" });
-
-// Run pending migrations once per process before serving the first request.
-// Cached on the global so subsequent requests skip it. This keeps migrations
-// out of the per-query hot path while staying zero-step for dev/Docker.
-const migrationPromise = ensureMigrated();
+const { handler } = nextJsApiRouter({
+  routes,
+  prefix: "/api/connect",
+  readMaxBytes: CONNECT_READ_MAX_BYTES,
+});
 
 /**
  * Wraps the Connect handler with a CSRF guard and a one-shot migration wait.
  */
 export default async function connectHandler(request: NextApiRequest, response: NextApiResponse) {
+  // Always overwrite the internal header: direct deployments get the actual
+  // socket peer, and a caller cannot smuggle a fake fallback through Caddy.
+  request.headers[DIRECT_CLIENT_IP_HEADER] = request.socket?.remoteAddress ?? "";
   if (!csrfGuard(request, response)) return;
-  await migrationPromise;
+  try {
+    // ensureMigrated caches a successful/in-flight run process-wide and clears
+    // its cache on failure. Calling it here makes that retry path reachable on
+    // the next request instead of poisoning this route until process restart.
+    await ensureMigrated();
+  } catch (error) {
+    logError(error, { scope: "database-migration" });
+    response.status(503).json({ error: "service temporarily unavailable" });
+    return;
+  }
   return handler(request, response);
 }
 

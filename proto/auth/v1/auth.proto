@@ -9,11 +9,13 @@ import "common/v1/common.proto";
 // auth RPC returns a bearer token for mobile clients and additionally sets an
 // httpOnly session cookie for browsers.
 //
-// SignUp/LogIn are the retired email-or-phone + password flows, kept so an
-// already-shipped mobile build keeps working. No current client calls them.
+// SignUp/LogIn are retired email-or-phone + password flows kept for local
+// development and seeded accounts. Production rejects both RPCs, and no
+// current client calls them.
 service AuthService {
   rpc SignUp(SignUpRequest) returns (AuthResponse);
   rpc LogIn(LogInRequest) returns (AuthResponse);
+  rpc BeginGoogleSignIn(google.protobuf.Empty) returns (GoogleSignInChallenge);
   rpc LogInWithGoogle(LogInWithGoogleRequest) returns (AuthResponse);
   rpc LogOut(google.protobuf.Empty) returns (google.protobuf.Empty);
   rpc GetMe(google.protobuf.Empty) returns (common.v1.User);
@@ -25,6 +27,11 @@ service AuthService {
   // and UpdateProfile cannot return two shapes.
   rpc SetPhone(SetPhoneRequest) returns (SetPhoneResponse);
   rpc ConfirmPhoneMerge(ConfirmPhoneMergeRequest) returns (common.v1.User);
+
+  // Detaches the caller's phone number — the release valve for a lost or
+  // recycled number. Refused when the phone is the account's only
+  // identifier, since a row must stay reachable by something.
+  rpc RemovePhone(google.protobuf.Empty) returns (common.v1.User);
 
   // Marks the first-run flow finished, including when it was skipped.
   rpc CompleteOnboarding(google.protobuf.Empty) returns (common.v1.User);
@@ -46,6 +53,12 @@ message LogInRequest {
   string password = 3;
 }
 
+message GoogleSignInChallenge {
+  // Server-issued, short-lived value that the client asks Google to copy into
+  // the ID token. The server accepts it exactly once before creating a session.
+  string nonce = 1;
+}
+
 message LogInWithGoogleRequest {
   // The credential handed to the client by Google Identity Services. The
   // server verifies it against Google's public keys and reads the account
@@ -57,15 +70,27 @@ message LogInWithGoogleRequest {
 message AuthResponse {
   common.v1.User user = 1;
   // Bearer token; pass as "Authorization: Bearer <token>" on future calls.
+  // Returned only to a client that announced it carries sessions as bearer
+  // credentials (the mobile app's transport header). A browser gets an
+  // HttpOnly cookie instead and an empty string here: bearer material in a
+  // JSON body would hand the session to any script running during sign-in,
+  // which is what HttpOnly exists to prevent.
   string token = 2;
 }
 
 message SetPhoneRequest {
   // Any format the user typed; normalized to E.164 server-side.
   string phone = 1;
+  // Empty on the first call, which sends an SMS code. Set to the received
+  // code on the second call; no phone data is exposed or changed before the
+  // provider confirms control of the number.
+  string verification_code = 2;
 }
 
 message SetPhoneResponse {
+  // True on the first call after the verification provider accepted the SMS
+  // request. The client should ask for the code and call SetPhone again.
+  bool verification_sent = 4;
   // Set when the number was free and simply written to the caller's account.
   common.v1.User user = 1;
   // Set instead when an unclaimed row created by an invite already holds this
@@ -76,21 +101,24 @@ message SetPhoneResponse {
   string merge_token = 3;
 }
 
-// What a caller would take on by merging, shown before anything is written.
-// Phone entry is not verified yet, so this screen is the only guard on the
-// merge — and the only defense against a recycled number, which verification
-// could not cover either: proving control today says nothing about who held
-// the number when the invites were made.
+// What a caller would take on by merging, shown after SMS verification but
+// before anything is written. Possession proves control today; this preview is
+// the additional defense against absorbing history created for a previous
+// holder of a recycled number.
 message MergePreview {
   // How many undeleted expenses the absorbed row appears in.
   int32 expense_count = 1;
-  // The absorbed row's net position in cents: positive means it is owed.
+  // The absorbed row's net position in the caller's default currency only,
+  // kept for older clients: positive means it is owed. `nets` is the whole
+  // picture.
   int32 net_cents = 2;
   // Display names of the people it shares expenses with — the actual check,
   // since someone who does not recognize them should back out.
   repeated string counterparty_names = 3;
   // Name the absorbed row carries, usually whatever the inviter typed.
   string name = 4;
+  // The absorbed row's net position per currency, non-zero buckets only.
+  repeated common.v1.CurrencyAmount nets = 5;
 }
 
 message ConfirmPhoneMergeRequest {

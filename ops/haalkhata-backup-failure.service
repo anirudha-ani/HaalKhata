@@ -1,0 +1,23 @@
+[Unit]
+Description=Notify the operator that the HaalKhata backup failed
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+CapabilityBoundingSet=
+# AF_UNIX is what `logger` needs to reach journald's /dev/log socket; without
+# it the notifier dies on its first line and never reaches the HTTPS alert.
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+ExecStart=/srv/haalkhata/backup-failure.sh

@@ -4,7 +4,15 @@ import { Pool, types, type PoolClient } from "pg";
 import type { QueryResultRow } from "pg";
 import path from "node:path";
 import { runner } from "node-pg-migrate";
-import { DEFAULT_DATABASE_URL } from "@/server/common/db.constants";
+import {
+  DATABASE_URL_PROTOCOLS,
+  DEFAULT_DATABASE_URL,
+  MIN_DATABASE_PASSWORD_BYTES,
+  PLAINTEXT_DATABASE_HOSTS,
+  WEAK_DATABASE_PASSWORDS,
+} from "@/server/common/db.constants";
+import { logError } from "@/server/common/logger";
+import { readSecret } from "@/server/common/secrets";
 
 // Keep date/time columns as strings end-to-end (row types say `string`);
 // pg would otherwise hand back JS Date objects.
@@ -21,22 +29,83 @@ types.setTypeParser(types.builtins.TIMESTAMPTZ, (value) => new Date(value).toISO
 types.setTypeParser(types.builtins.TIMESTAMP, (value) => value);
 types.setTypeParser(types.builtins.DATE, (value) => value);
 
-/** Resolves the Postgres connection string, preferring the DATABASE_URL env var. */
+/**
+ * Resolves the Postgres connection string: DATABASE_URL when set; otherwise
+ * assembled from the parts, with the password read through the `_FILE`
+ * convention (POSTGRES_PASSWORD_FILE — the same secret the postgres image
+ * initializes with) and URL-encoded, so no credential has to be exported
+ * into the environment and no reserved character can break the URL.
+ *
+ * @returns The connection string to open the pool with.
+ */
 function databaseUrl(): string {
-  return process.env.DATABASE_URL ?? DEFAULT_DATABASE_URL;
+  if (process.env.DATABASE_URL) return process.env.DATABASE_URL;
+  const password = readSecret("POSTGRES_PASSWORD");
+  if (!password) return DEFAULT_DATABASE_URL;
+  const user = process.env.POSTGRES_USER ?? "haalkhata";
+  const host = process.env.POSTGRES_HOST ?? "db";
+  const port = process.env.POSTGRES_PORT ?? "5432";
+  const database = process.env.POSTGRES_DB ?? "haalkhata";
+  return `postgres://${encodeURIComponent(user)}:${encodeURIComponent(password)}@${host}:${port}/${database}`;
 }
 
 /**
- * In production, refuse the insecure default connection string
- * (haalkhata:haalkhata) so a forgotten POSTGRES_PASSWORD doesn't silently
- * deploy with a guessable credential. Dev keeps the default for zero-config
- * `pnpm dev`.
+ * Parses the connection URL, requires certificate-verified TLS for any remote
+ * database, and rejects absent, placeholder, or short production passwords.
+ * Plaintext is confined to loopback, Unix sockets, and the bundled private
+ * Compose hostname (`db`).
+ *
+ * @param connectionString - PostgreSQL URL to validate.
+ * @param environment - Runtime environment; strict credential checks apply in production.
+ * @throws Error when the URL is malformed, a remote connection does not use
+ * certificate-verified TLS, or production credentials are weak.
  */
-function assertSafeDatabaseUrl(): void {
-  if (process.env.NODE_ENV === "production" && databaseUrl() === DEFAULT_DATABASE_URL) {
-    throw new Error(
-      "DATABASE_URL must be set to a non-default value in production (got the haalkhata:haalkhata default).",
-    );
+export function assertSafeDatabaseUrl(
+  connectionString: string = databaseUrl(),
+  environment: string | undefined = process.env.NODE_ENV,
+): void {
+  let parsedUrl: URL;
+  try {
+    parsedUrl = new URL(connectionString);
+  } catch {
+    throw new Error("DATABASE_URL must be a valid PostgreSQL URL");
+  }
+  if (!DATABASE_URL_PROTOCOLS.has(parsedUrl.protocol)) {
+    throw new Error("DATABASE_URL must use the postgres or postgresql protocol");
+  }
+
+  if (environment === "production") {
+    if (!parsedUrl.username) {
+      throw new Error("DATABASE_URL must include PostgreSQL credentials in production");
+    }
+
+    let password: string;
+    try {
+      password = decodeURIComponent(parsedUrl.password);
+    } catch {
+      throw new Error("DATABASE_URL password must use valid URL encoding");
+    }
+    if (
+      Buffer.byteLength(password, "utf8") < MIN_DATABASE_PASSWORD_BYTES ||
+      WEAK_DATABASE_PASSWORDS.has(password.toLowerCase())
+    ) {
+      throw new Error(
+        `DATABASE_URL must use a non-placeholder password of at least ${MIN_DATABASE_PASSWORD_BYTES} bytes in production`,
+      );
+    }
+  }
+
+  // pg-connection-string keeps the last duplicate query parameter, and a
+  // `host=` parameter overrides the URL hostname. Mirror both behaviors so a
+  // crafted URL cannot make validation inspect a different destination.
+  const queryHosts = parsedUrl.searchParams.getAll("host");
+  const effectiveHost = queryHosts.at(-1) ?? parsedUrl.hostname;
+  const isLocalSocket = effectiveHost.startsWith("/");
+  if (!isLocalSocket && !PLAINTEXT_DATABASE_HOSTS.has(effectiveHost.toLowerCase())) {
+    const sslModes = parsedUrl.searchParams.getAll("sslmode");
+    if (sslModes.at(-1)?.toLowerCase() !== "verify-full") {
+      throw new Error("remote DATABASE_URL must set sslmode=verify-full");
+    }
   }
 }
 
@@ -50,13 +119,20 @@ const globalCache = globalThis as unknown as {
 function pool(): Pool {
   if (!globalCache.__haalkhataPool) {
     assertSafeDatabaseUrl();
-    globalCache.__haalkhataPool = new Pool({
+    const createdPool = new Pool({
       connectionString: databaseUrl(),
       // Bound pool so multi-replica deploys don't exhaust Postgres connections.
       max: 20,
       idleTimeoutMillis: 30_000,
       connectionTimeoutMillis: 5_000,
     });
+    // pg emits idle-client failures on the Pool. EventEmitter treats an
+    // unhandled "error" event as an uncaught exception, so this listener is
+    // required to survive routine database restarts and network failures.
+    createdPool.on("error", (error, client) => {
+      logError(error, { scope: "pg-pool-idle-client", clientPresent: Boolean(client) });
+    });
+    globalCache.__haalkhataPool = createdPool;
   }
   return globalCache.__haalkhataPool;
 }
@@ -90,13 +166,16 @@ export function ensureMigrated(): Promise<void> {
  *
  * @param text - SQL statement with $1-style placeholders.
  * @param params - Values bound to the statement's placeholders, in order.
+ * @param client - Existing transaction client; omitted to use the shared pool.
  * @returns All rows produced by the statement.
  */
 export async function query<ResultRow extends QueryResultRow>(
   text: string,
   params: unknown[] = [],
+  client?: PoolClient,
 ): Promise<ResultRow[]> {
-  const { rows } = await pool().query<ResultRow>(text, params as never[]);
+  const executor = client ?? pool();
+  const { rows } = await executor.query<ResultRow>(text, params as never[]);
   return rows;
 }
 
@@ -105,13 +184,15 @@ export async function query<ResultRow extends QueryResultRow>(
  *
  * @param text - SQL statement with $1-style placeholders.
  * @param params - Values bound to the statement's placeholders, in order.
+ * @param client - Existing transaction client; omitted to use the shared pool.
  * @returns The first resulting row, or undefined when nothing matches.
  */
 export async function queryOne<ResultRow extends QueryResultRow>(
   text: string,
   params: unknown[] = [],
+  client?: PoolClient,
 ): Promise<ResultRow | undefined> {
-  return (await query<ResultRow>(text, params))[0];
+  return (await query<ResultRow>(text, params, client))[0];
 }
 
 /**
@@ -119,9 +200,14 @@ export async function queryOne<ResultRow extends QueryResultRow>(
  *
  * @param text - SQL statement with $1-style placeholders.
  * @param params - Values bound to the statement's placeholders, in order.
+ * @param client - Existing transaction client; omitted to use the shared pool.
  */
-export async function execute(text: string, params: unknown[] = []): Promise<void> {
-  await query(text, params);
+export async function execute(
+  text: string,
+  params: unknown[] = [],
+  client?: PoolClient,
+): Promise<void> {
+  await query(text, params, client);
 }
 
 /**
@@ -135,20 +221,52 @@ export async function transaction<TransactionResult>(
   operation: (client: PoolClient) => Promise<TransactionResult>,
 ): Promise<TransactionResult> {
   const client = await pool().connect();
+  let releaseError: Error | undefined;
+  let transactionFailed = false;
   try {
     await client.query("BEGIN");
     const result = await operation(client);
     await client.query("COMMIT");
     return result;
   } catch (error) {
-    await client.query("ROLLBACK");
+    transactionFailed = true;
+    try {
+      await client.query("ROLLBACK");
+    } catch (rollbackError) {
+      // A client that cannot roll back may still be inside a transaction (or
+      // disconnected mid-command). Passing an error makes pg destroy it
+      // instead of lending contaminated state to the next request.
+      releaseError =
+        rollbackError instanceof Error ? rollbackError : new Error(String(rollbackError));
+    }
     throw error;
   } finally {
-    client.release();
+    try {
+      if (releaseError) client.release(releaseError);
+      else client.release();
+    } catch (releaseFailure) {
+      // On the success path a release failure is the request's only error.
+      // On the failure path, never let cleanup replace the real SQL/usecase
+      // error the caller needs for diagnosis.
+      if (!transactionFailed) throw releaseFailure;
+      logError(releaseFailure, { scope: "pg-transaction-release-after-failure" });
+    }
   }
 }
 
 /** Generates a random UUID for use as a new row's primary key. */
 export function newId(): string {
   return crypto.randomUUID();
+}
+
+/**
+ * Whether an error is Postgres's unique-constraint violation (SQLSTATE
+ * 23505) — the signal that a concurrent writer won an insert race the
+ * caller can recover from by re-reading.
+ *
+ * @param error - The thrown value, usually from pg.
+ * @returns True when the error carries SQLSTATE 23505.
+ */
+export function isUniqueViolation(error: unknown): boolean {
+  return (error as { code?: string } | null | undefined)?.code === "23505";
 }

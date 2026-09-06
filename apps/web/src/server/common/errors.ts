@@ -6,7 +6,9 @@ export type UsecaseErrorCode =
   | "unauthenticated"
   | "permission_denied"
   | "not_found"
-  | "already_exists";
+  | "already_exists"
+  | "failed_precondition"
+  | "unavailable";
 
 /** Error thrown by usecases so handlers can report failures without transport knowledge. */
 export class UsecaseError extends Error {

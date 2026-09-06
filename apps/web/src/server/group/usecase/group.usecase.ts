@@ -1,5 +1,6 @@
-/** Group business logic: create/list/get, add-by-email (shadow users), balance-guarded member removal. */
+/** Group business logic: create/list/get, connected-member enrollment, balance-guarded removal. */
 
+import type { PoolClient } from "pg";
 import {
   addMember,
   findGroupById,
@@ -11,36 +12,49 @@ import {
   listMembersByGroupIds,
   memberRole,
   removeMember,
+  updateMemberRole,
   updateSimplifyDebts,
 } from "@/server/group/repo/groups.repo";
 import type { UserRow } from "@/server/auth/repo/users.repo";
-import { findUserById, findUsersByIds } from "@/server/auth/repo/users.repo";
+import {
+  findUserByEmail,
+  findUserById,
+  findUserByPhone,
+  findUsersByIds,
+} from "@/server/auth/repo/users.repo";
+import { EMAIL_PATTERN, normalizePhone, PHONE_FORMAT_HINT } from "@/server/auth/auth.constants";
 import { insertFriendship, listFriendIds } from "@/server/social/repo/friendships.repo";
 import { insertActivity } from "@/server/social/repo/activity.repo";
 import { insertNotifications } from "@/server/social/repo/notifications.repo";
-import {
-  findOrCreateUserByEmail,
-  findOrCreateUserByPhone,
-} from "@/server/auth/usecase/auth.usecase";
 import { userNetInGroup, userNetInGroups } from "@/server/expense/usecase/balance.usecase";
-import { denied, invalid, notFound } from "@/server/common/errors";
-import { GROUP_TYPES, OWNER_ROLE } from "@/server/group/group.constants";
+import { denied, invalid, notFound, UsecaseError } from "@/server/common/errors";
+import { toInt32Cents } from "@/server/common/money";
+import { normalizeCurrencyCode } from "@/server/common/validation";
+import {
+  GROUP_TYPES,
+  MAX_GROUP_MEMBER_IDS_PER_REQUEST,
+  MAX_GROUP_NAME_LENGTH,
+  MEMBER_ROLE,
+  OWNER_ROLE,
+} from "@/server/group/group.constants";
+import { lockGroupLedgers, withLedgerTransaction } from "@/server/common/ledgerLocks";
 import { toGroup, toMember } from "./group.mapper";
 
 /**
  * Loads a group and asserts the caller is its owner; used for owner-only
- * actions like removing a member.
+ * actions like removing somebody else from the group or handing it on.
  *
  * @param groupId - Id of the group to load.
  * @param userId - Id of the authenticated caller.
+ * @param client - Optional transaction client holding the group-ledger lock.
  * @returns The loaded group row.
  * @throws UsecaseError (not_found) when the group does not exist.
  * @throws UsecaseError (permission_denied) when the caller is not the owner.
  */
-async function assertGroupOwner(groupId: string, userId: string) {
-  const group = await findGroupById(groupId);
+async function assertGroupOwner(groupId: string, userId: string, client?: PoolClient) {
+  const group = await findGroupById(groupId, client);
   if (!group) notFound("group not found");
-  const role = await memberRole(groupId, userId);
+  const role = await memberRole(groupId, userId, client);
   if (role !== OWNER_ROLE) denied("only the group owner can do this");
   return group;
 }
@@ -52,19 +66,22 @@ async function assertGroupOwner(groupId: string, userId: string) {
  * ledger, and whoever notices that somebody is missing from the dinner is
  * rarely the person who happened to create the group — routing every addition
  * through one account makes them a bottleneck for a change anyone present can
- * see is correct. Removal stays owner-only: it is the destructive direction,
- * and it is already gated on a settled balance.
+ * see is correct. Removing somebody else stays owner-only: it is the
+ * destructive direction, and it is already gated on a settled balance. A
+ * non-owner may still remove themselves under the same gate — membership
+ * is consensual only if the person a co-member enrolled can walk out again.
  *
  * @param groupId - Id of the group to load.
  * @param userId - Id of the authenticated caller.
+ * @param client - Optional transaction client holding the group-ledger lock.
  * @returns The loaded group row.
  * @throws UsecaseError (not_found) when the group does not exist.
  * @throws UsecaseError (permission_denied) when the caller is not a member.
  */
-async function assertGroupMember(groupId: string, userId: string) {
-  const group = await findGroupById(groupId);
+async function assertGroupMember(groupId: string, userId: string, client?: PoolClient) {
+  const group = await findGroupById(groupId, client);
   if (!group) notFound("group not found");
-  if (!(await isMember(groupId, userId))) denied("you are not a member of this group");
+  if (!(await isMember(groupId, userId, client))) denied("you are not a member of this group");
   return group;
 }
 
@@ -102,14 +119,24 @@ function nameList(names: string[]): string {
 }
 
 /**
+ * Rejects oversized member-id arrays before authorization queries or writes.
+ * The raw count is intentional: duplicate identifiers still consume request
+ * parsing and iteration resources and therefore do not bypass the limit.
+ *
+ * @param memberIds - Raw identifiers supplied by the caller.
+ * @throws UsecaseError (invalid_argument) when the request exceeds the limit.
+ */
+function assertMemberIdCount(memberIds: string[]): void {
+  if (memberIds.length > MAX_GROUP_MEMBER_IDS_PER_REQUEST) {
+    invalid(`too many members (max ${MAX_GROUP_MEMBER_IDS_PER_REQUEST} per request)`);
+  }
+}
+
+/**
  * Asserts the caller may enrol every one of these ids.
  *
- * Only ids that arrived *from the client* go through here. A person resolved
- * server-side from an email or phone the caller typed is authorized by that
- * act — checking them would reject the newcomer the invite exists to add.
- *
  * @param callerId - Id of the authenticated caller doing the adding.
- * @param userIds - Client-supplied user ids to authorize.
+ * @param userIds - User ids to authorize, including contact-resolved ids.
  * @throws UsecaseError (permission_denied) when an id is somebody the caller
  *   neither has as a friend nor shares a group with.
  */
@@ -128,9 +155,8 @@ async function assertCanAdd(callerId: string, userIds: string[]): Promise<void> 
  * Enrols people in a group: skips anyone already in, adds the rest, and
  * befriends the caller with each of them.
  *
- * Authorization is the caller's job ({@link assertCanAdd}) — by the time ids
- * reach here they may include a server-resolved invitee who is deliberately
- * exempt. Already-members are skipped rather than rejected so one stale
+ * Authorization is the caller's job ({@link assertCanAdd}). Already-members
+ * are skipped rather than rejected so one stale
  * checkbox cannot lose the rest of the batch; whether an empty result is an
  * error differs between creating and adding, so that is decided upstream too.
  *
@@ -143,37 +169,60 @@ async function enrollMembers(
   callerId: string,
   groupId: string,
   userIds: string[],
+  client: PoolClient,
 ): Promise<UserRow[]> {
   const requestedIds = [...new Set(userIds)].filter((userId) => userId !== "");
   if (requestedIds.length === 0) return [];
 
-  const existingIds = new Set((await listMembers(groupId)).map((member) => member.id));
+  const existingIds = new Set((await listMembers(groupId, client)).map((member) => member.id));
   const newIds = requestedIds.filter((userId) => !existingIds.has(userId));
   const usersById = new Map(
     (await findUsersByIds(newIds)).map((userRow) => [userRow.id, userRow] as const),
   );
 
+  // Every enrolment rides the caller's transaction, so a batch is all or
+  // nothing — a failure on the third person cannot leave two enrolled with
+  // no feed line explaining how they got there.
   const added: UserRow[] = [];
   for (const userId of newIds) {
     const user = usersById.get(userId);
     // An id with no row is a client sending something stale, not an attack —
     // the authorization check above already passed, so just skip it.
     if (!user) continue;
-    await addMember(groupId, userId);
-    await insertFriendship(callerId, userId);
+    // §33c: a seat belongs only to somebody who can open the app. Invited
+    // friends look pickable on stale clients, so the gate lives here, where
+    // CreateGroup and AddMembers converge.
+    if (user.password_hash === null && user.google_sub === null) {
+      throw new UsecaseError(
+        "failed_precondition",
+        `${user.name} hasn't joined HaalKhata yet — invite them to sign up first`,
+      );
+    }
+    await addMember(groupId, userId, MEMBER_ROLE, client);
+    await insertFriendship(callerId, userId, client);
     added.push(user);
   }
   return added;
 }
 
+/** The §33c refusal the clients render as "send them a sign-up invite?". */
+const NOT_ON_PLATFORM_MESSAGE =
+  "they're not on HaalKhata yet — invite them to sign up first";
+
 /**
- * Resolves the optional email/phone invitee on an add-people request into a
- * user row, creating a claimable shadow user when no account matches.
+ * Resolves an optional email/phone to a REGISTERED account (§33c). A group
+ * seat belongs only to somebody who can actually open the app: an identifier
+ * with no claimed account refuses with a distinct failed_precondition, which
+ * the clients render as the offer to send a sign-up invite
+ * (social.InviteContactToSignUp). Once claimed, the person is already the
+ * inviter's friend and addable like anyone.
  *
- * @param input - The raw email and phone fields, plus an optional display
- *   name for a shadow user. Both empty means nobody was invited.
+ * @param input - The raw email and phone fields. The legacy name field is
+ *   accepted for wire compatibility but ignored. Empty contact fields mean
+ *   nobody was invited.
  * @returns The invited user row, or undefined when neither field was given.
- * @throws UsecaseError (invalid_argument) when both fields are populated.
+ * @throws UsecaseError (invalid_argument) when both fields are populated or
+ *   the given identifier is malformed.
  */
 async function resolveInvitee(input: {
   email?: string;
@@ -185,9 +234,39 @@ async function resolveInvitee(input: {
   if (email !== "" && phone !== "") {
     invalid("enter either an email address or a phone number, not both");
   }
-  if (email !== "") return findOrCreateUserByEmail(email, input.name);
-  if (phone !== "") return findOrCreateUserByPhone(phone, input.name);
-  return undefined;
+  if (email === "" && phone === "") return undefined;
+  if (email !== "" && !EMAIL_PATTERN.test(email)) {
+    invalid("please enter a valid email address");
+  }
+  const invitee = email !== ""
+    ? await findUserByEmail(email)
+    : await findUserByPhone(assertPhoneShape(phone));
+  if (!invitee || isUnregistered(invitee)) {
+    throw new UsecaseError("failed_precondition", NOT_ON_PLATFORM_MESSAGE);
+  }
+  return invitee;
+}
+
+/**
+ * Normalizes a typed phone or refuses with the format hint.
+ *
+ * @param phone - Raw phone text.
+ * @returns The E.164 form.
+ */
+function assertPhoneShape(phone: string): string {
+  const normalized = normalizePhone(phone);
+  if (!normalized) invalid(PHONE_FORMAT_HINT);
+  return normalized;
+}
+
+/**
+ * Whether a row has no way to sign in — an invitation, not a member-to-be.
+ *
+ * @param user - Row to classify.
+ * @returns True when neither credential is set.
+ */
+function isUnregistered(user: UserRow): boolean {
+  return user.password_hash === null && user.google_sub === null;
 }
 
 /**
@@ -207,30 +286,43 @@ export async function createGroup(
   userId: string,
   input: { name: string; type: string; currency: string; memberIds?: string[] },
 ) {
+  assertMemberIdCount(input.memberIds ?? []);
   const name = input.name.trim();
   if (name.length === 0) invalid("group name is required");
+  if (name.length > MAX_GROUP_NAME_LENGTH) {
+    invalid(`group name is too long (max ${MAX_GROUP_NAME_LENGTH} characters)`);
+  }
   const type = GROUP_TYPES.has(input.type) ? input.type : "other";
-  const currency =
-    input.currency || (await findUserById(userId))?.default_currency || "USD";
+  const currency = normalizeCurrencyCode(
+    input.currency || (await findUserById(userId))?.default_currency || "USD",
+  );
   // Authorize before the insert, so a rejected member list does not leave an
   // orphan group behind.
   await assertCanAdd(userId, input.memberIds ?? []);
-  const group = await insertGroup({ name, type, currency, createdBy: userId });
-  const added = await enrollMembers(userId, group.id, input.memberIds ?? []);
-
   const actor = (await findUserById(userId))!;
-  // Everyone enrolled at creation sees the event, so a group appearing in
-  // their list is explained by their feed rather than showing up unannounced.
-  // No separate "added" event: at creation the two are the same act.
-  await insertActivity({
-    groupId: group.id,
-    actorId: userId,
-    type: "group_created",
-    message: `${actor.name} created the group "${name}"`,
-    link: `/groups/${group.id}`,
-    audience: [userId, ...added.map((user) => user.id)],
+  // The group, its first members, the friendships they imply and the feed
+  // event announcing it commit together: a group that exists with half its
+  // members and no announcement is what a retry would then create twice.
+  const group = await withLedgerTransaction(async (client) => {
+    const created = await insertGroup({ name, type, currency, createdBy: userId }, client);
+    const added = await enrollMembers(userId, created.id, input.memberIds ?? [], client);
+    // Everyone enrolled at creation sees the event, so a group appearing in
+    // their list is explained by their feed rather than showing up unannounced.
+    // No separate "added" event: at creation the two are the same act.
+    await insertActivity(
+      {
+        groupId: created.id,
+        actorId: userId,
+        type: "group_created",
+        message: `${actor.name} created the group "${name}"`,
+        link: `/groups/${created.id}`,
+        audience: [userId, ...added.map((user) => user.id)],
+      },
+      client,
+    );
+    await notifyAdded(actor, created.id, name, added, client);
+    return created;
   });
-  await notifyAdded(actor, group.id, name, added);
   return toGroup(group, await listMembers(group.id));
 }
 
@@ -252,7 +344,7 @@ export async function listGroups(userId: string) {
   return groups.map((group) => ({
     group: toGroup(group, membersByGroup.get(group.id) ?? []),
     memberCount: (membersByGroup.get(group.id) ?? []).length,
-    yourNetCents: netByGroup.get(group.id) ?? 0,
+    yourNetCents: toInt32Cents(netByGroup.get(group.id) ?? 0, "your balance in a group"),
   }));
 }
 
@@ -266,9 +358,7 @@ export async function listGroups(userId: string) {
  * @throws UsecaseError (permission_denied) when the caller is not a member.
  */
 export async function getGroup(userId: string, groupId: string) {
-  const group = await findGroupById(groupId);
-  if (!group) notFound("group not found");
-  if (!(await isMember(groupId, userId))) denied("you are not a member of this group");
+  const group = await assertGroupMember(groupId, userId);
   return toGroup(group, await listMembers(groupId));
 }
 
@@ -280,29 +370,35 @@ export async function getGroup(userId: string, groupId: string) {
  * @param groupId - Group they were added to.
  * @param groupName - That group's display name, for the notification title.
  * @param added - The user rows that were actually added.
+ * @param client - The transaction the enrolment is being made in.
  */
 async function notifyAdded(
   actor: UserRow,
   groupId: string,
   groupName: string,
   added: UserRow[],
+  client: PoolClient,
 ): Promise<void> {
   const recipientIds = added
     .map((user) => user.id)
     .filter((recipientId) => recipientId !== actor.id);
   if (recipientIds.length === 0) return;
-  await insertNotifications(recipientIds, {
-    type: "added_to_group",
-    title: `${actor.name} added you to "${groupName}"`,
-    body: "",
-    link: `/groups/${groupId}`,
-  });
+  await insertNotifications(
+    recipientIds,
+    {
+      type: "added_to_group",
+      title: `${actor.name} added you to "${groupName}"`,
+      body: "",
+      link: `/groups/${groupId}`,
+    },
+    client,
+  );
 }
 
 /**
- * Adds people to a group in one call: existing friends and co-members by id,
- * plus at most one newcomer by email or phone, for whom a claimable shadow
- * user is created. Befriends the caller with everyone added, writes a single
+ * Adds connected people to a group in one call, by id or by an email/phone
+ * that resolves to an existing connected account. Befriends the caller with
+ * everyone added, writes a single
  * "member_added" activity event naming them all, and notifies each of them.
  *
  * One event for the batch rather than one per person: a feed that reports a
@@ -311,8 +407,8 @@ async function notifyAdded(
  * Open to any member, not just the owner — see {@link assertGroupMember}.
  *
  * @param userId - Id of the authenticated caller performing the add.
- * @param input - Target group id, ids of people to add outright, and the
- *   optional email/phone (at most one) plus display name of a newcomer.
+ * @param input - Target group id, ids of people to add, and an optional
+ *   email/phone (at most one) identifying an existing connected account.
  * @returns `{ added }` — the people actually added, as Member message shapes.
  * @throws UsecaseError (not_found) when the group does not exist.
  * @throws UsecaseError (permission_denied) when the caller is not a member,
@@ -330,40 +426,107 @@ export async function addMembers(
     name?: string;
   },
 ) {
-  const group = await assertGroupMember(input.groupId, userId);
-
   const pickedIds = input.userIds ?? [];
-  await assertCanAdd(userId, pickedIds);
-  // Resolved only after the picked ids pass: a rejected request must not leave
-  // a shadow user behind for somebody who was never added.
+  assertMemberIdCount(pickedIds);
+  const group = await assertGroupMember(input.groupId, userId);
   const invitee = await resolveInvitee(input);
   const candidateIds = [...pickedIds, ...(invitee ? [invitee.id] : [])];
+  assertMemberIdCount(candidateIds);
   if (candidateIds.length === 0) invalid("pick somebody to add");
-
-  const added = await enrollMembers(userId, input.groupId, candidateIds);
-  if (added.length === 0) {
-    // Nothing happened, and silently reporting success would leave the modal
-    // looking like it worked. The singular case is the common one: you typed
-    // the email of somebody already in the group.
-    invalid(
-      candidateIds.length === 1
-        ? "they're already in this group"
-        : "everybody you picked is already in this group",
-    );
-  }
-
+  await assertCanAdd(userId, candidateIds);
   const actor = (await findUserById(userId))!;
-  const audience = (await listMembers(input.groupId)).map((member) => member.id);
-  await insertActivity({
-    groupId: input.groupId,
-    actorId: userId,
-    type: "member_added",
-    message: `${actor.name} added ${nameList(added.map((user) => user.name))} to "${group.name}"`,
-    link: `/groups/${input.groupId}`,
-    audience,
+
+  // Under the group's ledger lock: a settlement being validated in this
+  // group re-checks membership under the same lock, so it sees the roster
+  // either before or after the whole batch, never in the middle of it. The
+  // batch, the friendships it implies, and the announcement commit together.
+  const added = await withLedgerTransaction(async (client) => {
+    await lockGroupLedgers(client, [input.groupId]);
+    const enrolled = await enrollMembers(userId, input.groupId, candidateIds, client);
+    if (enrolled.length === 0) {
+      // Nothing happened, and silently reporting success would leave the modal
+      // looking like it worked. The singular case is the common one: you typed
+      // the email of somebody already in the group.
+      invalid(
+        candidateIds.length === 1
+          ? "they're already in this group"
+          : "everybody you picked is already in this group",
+      );
+    }
+    const audience = (await listMembers(input.groupId, client)).map((member) => member.id);
+    await insertActivity(
+      {
+        groupId: input.groupId,
+        actorId: userId,
+        type: "member_added",
+        message: `${actor.name} added ${nameList(enrolled.map((user) => user.name))} to "${group.name}"`,
+        link: `/groups/${input.groupId}`,
+        audience,
+      },
+      client,
+    );
+    await notifyAdded(actor, input.groupId, group.name, enrolled, client);
+    return enrolled;
   });
-  await notifyAdded(actor, input.groupId, group.name, added);
-  return { added: added.map((user) => toMember({ ...user, role: "member" })) };
+  return { added: added.map((user) => toMember({ ...user, role: MEMBER_ROLE })) };
+}
+
+/**
+ * Hands a group's ownership to another member. The caller must own the
+ * group and becomes an ordinary member — which is what lets an owner leave:
+ * removal keeps its zero-balance gate, but "owners cannot remove themselves"
+ * was a dead end while nothing could make somebody else the owner.
+ *
+ * @param userId - Id of the authenticated caller, the current owner.
+ * @param input - The group id and the member who becomes its owner.
+ * @returns The group (with members) after the change.
+ * @throws UsecaseError (not_found) when the group does not exist.
+ * @throws UsecaseError (permission_denied) when the caller is not the owner.
+ * @throws UsecaseError (invalid_argument) when the target is the caller or
+ *   not a member of the group.
+ */
+export async function transferOwnership(
+  userId: string,
+  input: { groupId: string; userId: string },
+) {
+  const actor = (await findUserById(userId))!;
+  const newOwner = await findUserById(input.userId);
+  if (!newOwner) invalid("they are not a member of this group");
+  await withLedgerTransaction(async (client) => {
+    await lockGroupLedgers(client, [input.groupId]);
+    const group = await assertGroupOwner(input.groupId, userId, client);
+    if (input.userId === userId) invalid("you already own this group");
+    if (!(await memberRole(input.groupId, input.userId, client))) {
+      invalid("they are not a member of this group");
+    }
+    await updateMemberRole(input.groupId, input.userId, OWNER_ROLE, client);
+    await updateMemberRole(input.groupId, userId, MEMBER_ROLE, client);
+    const audience = (await listMembers(input.groupId, client)).map((member) => member.id);
+    // Structural, like member_added: the whole group hears who holds the
+    // keys — on the same transaction as the handover itself.
+    await insertActivity(
+      {
+        groupId: input.groupId,
+        actorId: userId,
+        type: "ownership_transferred",
+        message: `${actor.name} made ${newOwner.name} the owner of "${group.name}"`,
+        link: `/groups/${input.groupId}`,
+        audience,
+      },
+      client,
+    );
+    await insertNotifications(
+      [input.userId],
+      {
+        type: "ownership_transferred",
+        title: `${actor.name} made you the owner of "${group.name}"`,
+        body: "",
+        link: `/groups/${input.groupId}`,
+      },
+      client,
+    );
+  });
+  return toGroup((await findGroupById(input.groupId))!, await listMembers(input.groupId));
 }
 
 /**
@@ -389,22 +552,27 @@ export async function setSimplifyDebts(
   userId: string,
   input: { groupId: string; simplify: boolean },
 ) {
-  const group = await assertGroupMember(input.groupId, userId);
-  if (group.simplify_debts !== input.simplify) {
-    await updateSimplifyDebts(input.groupId, input.simplify);
-    const actor = (await findUserById(userId))!;
-    const audience = (await listMembers(input.groupId)).map((member) => member.id);
-    await insertActivity({
-      groupId: input.groupId,
-      actorId: userId,
-      type: "simplify_debts",
-      message: input.simplify
-        ? `${actor.name} turned on debt simplification in "${group.name}" — fewer payments, same balances`
-        : `${actor.name} turned off debt simplification in "${group.name}" — debts show person to person again`,
-      link: `/groups/${input.groupId}`,
-      audience,
-    });
-  }
+  const actor = (await findUserById(userId))!;
+  await withLedgerTransaction(async (client) => {
+    await lockGroupLedgers(client, [input.groupId]);
+    const group = await assertGroupMember(input.groupId, userId, client);
+    if (group.simplify_debts === input.simplify) return;
+    await updateSimplifyDebts(input.groupId, input.simplify, client);
+    const audience = (await listMembers(input.groupId, client)).map((member) => member.id);
+    await insertActivity(
+      {
+        groupId: input.groupId,
+        actorId: userId,
+        type: "simplify_debts",
+        message: input.simplify
+          ? `${actor.name} turned on debt simplification in "${group.name}" — fewer payments, same balances`
+          : `${actor.name} turned off debt simplification in "${group.name}" — debts show person to person again`,
+        link: `/groups/${input.groupId}`,
+        audience,
+      },
+      client,
+    );
+  });
   return toGroup((await findGroupById(input.groupId))!, await listMembers(input.groupId));
 }
 
@@ -423,12 +591,20 @@ export async function removeMemberFromGroup(
   userId: string,
   input: { groupId: string; userId: string },
 ) {
-  await assertGroupOwner(input.groupId, userId);
-  if (input.userId === userId) {
-    invalid("owners cannot remove themselves; transfer ownership first");
-  }
-  if ((await userNetInGroup(input.userId, input.groupId)) !== 0) {
-    invalid("cannot remove a member with an outstanding balance — settle up first");
-  }
-  await removeMember(input.groupId, input.userId);
+  await withLedgerTransaction(async (client) => {
+    await lockGroupLedgers(client, [input.groupId]);
+    if (input.userId === userId) {
+      const role = await memberRole(input.groupId, userId, client);
+      if (!role) denied("you are not a member of this group");
+      if (role === OWNER_ROLE) {
+        invalid("owners cannot leave until they make somebody else the owner");
+      }
+    } else {
+      await assertGroupOwner(input.groupId, userId, client);
+    }
+    if ((await userNetInGroup(input.userId, input.groupId, client)) !== 0) {
+      invalid("cannot remove a member with an outstanding balance — settle up first");
+    }
+    await removeMember(input.groupId, input.userId, client);
+  });
 }

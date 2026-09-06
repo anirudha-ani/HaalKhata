@@ -23,8 +23,9 @@ recording settlements is in.
   plain `.sql` files under `apps/web/migrations/` run by node-pg-migrate
   (history table `pgmigrations`). Pending migrations auto-apply once per
   process on boot (db.ts), so dev and Docker stay zero-step; the CLI
-  (`pnpm db:new`, `pnpm db:migrate`, `pnpm db:down`) is for authoring and
-  rollback. No inline DDL in code.
+  (`pnpm db:new`, `pnpm db:migrate`) is for authoring and applying migrations.
+  Populated databases move forward only; recovery uses a verified backup or a
+  new corrective migration. No inline DDL in code.
 - **Backend: Node/TypeScript inside Next.js** (no Go, no Fly.io). One
   language, one deploy artifact (Next standalone output in Docker).
 - **API contract: ConnectRPC + Protobuf stays.** `.proto` files remain the
@@ -622,8 +623,12 @@ friendship alone would show a name in the picker that the server then refuses.
 and whoever notices somebody is missing from the dinner is rarely the person
 who happened to create the group — routing every addition through one account
 makes them a bottleneck for a change anyone present can see is correct.
-`RemoveMember` stays owner-only: it is the destructive direction, and it is
-already gated on the leaver's balance being settled.
+`RemoveMember` is owner-only for removing *somebody else*: it is the
+destructive direction, and it is already gated on the leaver's balance being
+settled. A non-owner may remove *themselves* under the same zero-balance gate
+(2026-08-29, security audit H1): membership is consensual only if the person a
+co-member enrolled can walk out again. Both clients offer "Leave group" from
+the members list, and the owner gets "Remove" on every other row there.
 
 **Batch semantics.** Adding is idempotent per person: someone already in the
 group is *skipped*, not an error, so one already-member cannot fail the other
@@ -636,8 +641,8 @@ a feed that reports a single action three times is noise.
 both places it appears (new-group form, group detail):
 
 ```
-  Search  [ name, email or phone      ]
-  ☑ Rifat        ☐ Tanvir       ☐ Sadia      ← friends, minus current members
+  Search  [ name                      ]      ← names only: others' email and
+  ☑ Rifat        ☐ Tanvir       ☐ Sadia      ←   phone are private (2026-08-29)
   ── Not on the list? ─────────────────
   [ email or phone            ]  ← the fallback, below the fold
 ```
@@ -645,6 +650,15 @@ both places it appears (new-group form, group detail):
 `FriendChecklist` (`components/people/`) is that middle block, extracted from
 `PeoplePicker` so all three callers share one search, one 50-row cap, and one
 overflow hint rather than three copies that drift.
+
+**Revised 2026-08-29 (security audit H1/H2).** The fallback no longer creates
+a shadow user. An email or phone must resolve to an existing account the
+caller is already connected with — the same `connectedUserIds` rule as the
+picked ids — and anything else is refused with the same generic denial, so
+the field is not an account-existence oracle either. Somebody genuinely new
+is brought in by a friend request (§3f) that they accept first. Both clients
+say so under the field instead of promising a share "tracked and waiting when
+they sign up".
 
 ## 3j. Scanning is not a kind of expense (v5.13 — 2026-07-27)
 
@@ -1459,8 +1473,10 @@ only over the compose network.
 
 **Secrets are files, not environment.** `SESSION_SECRET`, `POSTGRES_PASSWORD`
 and `COMPATIBLE_AI_API_KEY` arrive as Docker secrets under `/run/secrets/`.
-The app reads `process.env`, so `ops/docker-entrypoint.sh` bridges the two and
-assembles `DATABASE_URL` there — meaning the password appears in no compose
+(Superseded by §28: the app now reads the files itself through `*_FILE`
+variables and the entrypoint exports nothing.) At the time the app read
+`process.env`, so `ops/docker-entrypoint.sh` bridged the two and
+assembled `DATABASE_URL` there — meaning the password appeared in no compose
 file, no image layer, and no `docker inspect` output. It does still reach the
 process environment, because that is what the app reads; closing that last gap
 means teaching `auth.usecase.ts` and `receipt.constants.ts` a `*_FILE`
@@ -1542,8 +1558,9 @@ the generated TypeScript in `packages/protogen` is shared as-is.
 - **Same contract, same transport.** `@connectrpc/connect-web`'s Connect
   transport over JSON against `<server>/api/connect` — identical RPCs the
   browser calls. `TextEncoder`/`TextDecoder` polyfilled at the entry point.
-  The API base URL comes from `EXPO_PUBLIC_API_URL`, falling back in dev to
-  the Metro host (so a device on the LAN reaches the dev server).
+  The API base URL comes from an HTTPS `EXPO_PUBLIC_API_URL` in release builds,
+  falling back only in dev to the Metro host (so a device on the LAN reaches
+  the dev server). Android release manifests reject cleartext traffic.
 - **Bearer-token auth.** LogIn/SignUp already return a token for mobile
   clients; it is kept in `expo-secure-store`, attached via a transport
   interceptor (`Authorization: Bearer`), and cleared on `unauthenticated`
@@ -1567,11 +1584,13 @@ apps/mobile/
   app/                        expo-router routes — THIN (mirror of page.tsx)
     _layout.tsx               providers + root stack
     login.tsx                 public auth screen
-    (app)/_layout.tsx         session gate + authed stack
-    (app)/(tabs)/_layout.tsx  bottom tabs: Home·Groups·Add·Scan·Friends
-    (app)/(tabs)/<tab>.tsx    dashboard | groups | scan | friends | activity
-    (app)/groups/[id].tsx     pushed detail screens
-    (app)/expenses/new.tsx    (+ [id].tsx), account.tsx
+    onboarding.tsx            first-run flow (outside (app), so the gate cannot loop)
+    (app)/_layout.tsx         session + onboarding gate, authed stack
+    (app)/(tabs)/_layout.tsx  bottom tabs: Home·Groups·Add·Expenses·Friends
+    (app)/(tabs)/<tab>.tsx    dashboard | groups | expenses | friends
+    (app)/groups/[id].tsx     pushed detail screens: groups, expenses, friends/[id]
+    (app)/expenses/new.tsx    (+ [id].tsx), friends/[id].tsx, account.tsx, activity.tsx
+    (app)/scan.tsx            redirect into /expenses/new (scanning lives in the form)
   src/
     screens/<route>/          per-route fan-out (components/hooks/constants/utils)
     components/ui|modals|providers
@@ -1584,7 +1603,8 @@ activity, settle-up), groups (list/create/detail/invite/balances/simplify),
 expenses (all non-itemized split types, multi-payer, edit, delete,
 comments), friends (add/one-off/settle), activity feed with notification
 badge + mark-read, account (profile, currency, sign out), receipt scan
-(camera or library → AI draft → assign → save itemized).
+(camera or library → AI draft → assign → save itemized). §27 closes the
+gap to 100%: everything the web can do, the app can do.
 
 **Verification:** `pnpm --filter @haalkhata/mobile typecheck | lint | test`
 (vitest on pure utils); manual run via `pnpm dev:mobile` (Expo Go) against
@@ -1671,3 +1691,622 @@ west of Greenwich).
   server-side; events within hours of a month boundary can file under the
   neighbouring month. Fixing it needs the viewer's timezone on the RPC —
   deferred until someone actually trips on it.
+
+## §25 Closing the client half of the security audit (2026-08-29)
+
+The 2026-08-23 audit (SECURITY-AUDIT.md) was worked through as one commit
+per finding. Reviewing those commits showed a pattern: the server rule
+landed, the clients did not — a control the server now refuses stayed on
+screen, a promise the server no longer keeps stayed in the copy. This section
+records what was completed, so the contract and the two apps say the same
+thing.
+
+- **A settled expense can still be corrected — or deleted.** The audit asked
+  for edits to be serialized against settlements and for deletion of a
+  settled expense to be refused; the first pass froze edits too, which turned
+  "B paid, then somebody spotted a mistake" into a fake compensating expense
+  (negative amounts are not allowed, so a refund had to be modelled as an
+  expense the other way round). Edits now run under the ledger lock and the
+  derived balance rebalances against what was already paid — pay less than
+  your corrected share and you are owed the difference, more and you owe it.
+  Deletion is allowed for the same reason: delete means owed-to-zero, the
+  payment stays, and the payer is owed a refund. What made deletion look
+  dangerous was that a deleted expense vanished — every list dropped it, its
+  page 404'd, the friend ledger could not carry it — so the refund appeared
+  from nowhere. Deleted expenses now stay visible everywhere the ledger is
+  shown (`Expense.deleted_at`, `FriendLedgerEntry.deleted`): struck through,
+  contributing nothing, never "settled", read-only, with "deleted by X on Y"
+  on the detail page from the `expense_deleted` activity row that now links
+  there. `GetExpenseResponse.has_later_settlement` is a warning before either
+  change, not a lock.
+- **Anyone on an expense may correct it.** Editing was creator-only, so a
+  participant who spotted the mistake had to ask whoever entered it. Now the
+  creator, every payer and everyone who owes a share may edit (the "updated"
+  activity reaches all of them); deletion stays with the creator, since it
+  is the destructive direction and leaves nothing behind to check. Both
+  clients show Edit to participants only and Delete to the creator only —
+  the buttons the server denies are never offered.
+- **Leaving a group is reachable.** RemoveMember lets a zero-balance
+  non-owner remove themselves (§3i); the members list on both apps now has
+  "Leave group" on your own row and "Remove" on every other row for the
+  owner. The shared `group/roles.ts` spells the owner role once.
+- **Add-people no longer promises a shadow account** (§3i, revised).
+- **Private contact fields stay private in the UI.** Search matches names
+  only; the friend header shows sign-in state instead of an empty line.
+- **Text bounds are one constant** — `@haalkhata/shared/text/limits.ts` —
+  re-exported by the server's domain constants and applied as `maxLength` on
+  every bounded input in both apps, so a client stops at exactly the length
+  the server (and the matching database CHECK) accepts.
+- **A refused ledger read is shown as refused.** The dashboard and friends
+  screens render the server's rate-limit message instead of a zero balance
+  or an empty friends list.
+- **Categories:** the server allowlist is the shared `CATEGORIES` list plus
+  the legacy `lodging`/`other`, and the database CHECK matches; picker
+  choices are stored verbatim instead of flattened to "general".
+
+Server-side corrections made in the same pass: one-off ledger locks are per
+participant rather than per pair (the pair set overflowed Postgres's shared
+lock table at large casts); the server-component session guard parses the
+Cookie header with the same duplicate-rejecting parser as Connect; the text
+and currency constraint migration normalizes legacy rows before adding its
+CHECKs; the backup-failure notifier is allowed AF_UNIX so `logger` no longer
+kills it before the HTTPS alert; and Caddy strips `X-Real-IP`.
+
+Still open from the audit, deliberately: the mobile app has no Google
+sign-in (password RPCs are disabled in production, so a release build cannot
+sign in — a feature, not a fix); ListGroups / ListExpenses /
+GetGroupBalances / GetFriendLedger are as expensive as the rate-limited
+reads and remain unlimited; and group-scope immutability is group-wide after
+any settlement — narrowing it needs a stored `simplified` flag on
+settlements.
+
+## §26 The friction pass (2026-08-29)
+
+With the audit closed, the question became which rules still cost a normal
+user more than they protect. Eight were found; all eight are done.
+
+- **Mobile signs in with Google.** Production accepts Google only, and the
+  app only knew the password RPCs — a release build could not sign in at
+  all. `expo-auth-session`'s Google provider now runs the same
+  server-nonce challenge the web uses, against the platform's native client
+  id; the server accepts those ids as audiences (`GOOGLE_MOBILE_CLIENT_IDS`).
+  The password form is development-only, mirroring the server.
+- **An owner can hand the group on.** `TransferOwnership` makes another
+  member the owner and drops the caller to a member, who can then leave —
+  the "transfer ownership first" message finally points at something.
+- **A mistaken payment can be removed.** `DeleteSettlement` is the same
+  visible soft delete expenses got: either person on the payment may remove
+  it, the friend-ledger line stays struck through with a zero change, the
+  debt it paid down comes back, and the other person is told. Web first;
+  mobile caught up in §27 with the friend ledger screen.
+- **Editing an expense can change who is on it.** Only the group/one-off
+  scope is pinned (settlements live there); the server always accepted a
+  changed cast, and now both pickers allow it.
+- **Sessions renew themselves.** Past half its seven-day life, any
+  authenticated RPC re-issues the token — a cookie for the browser, the
+  `x-haalkhata-session` header for mobile — so regular use is never signed
+  out; only inactivity or sign-out ends a session. LogOut is exempt.
+- **Itemized expenses are editable on mobile.** The scan flow's item editor
+  became a shared hook and component (`lib/hooks/useItemDraft`,
+  `components/expense/ItemDraftEditor`); the expense form gained an "Items"
+  split type that reloads a receipt's lines and assignments.
+- **The "somebody has paid" warning is about the expense's own people** in
+  pairwise groups; simplified groups keep the wide answer, because there a
+  payment between two unrelated members can be routed debt from the
+  expense.
+- **Comments stay open on a deleted expense** — "why was this removed?" is
+  the conversation the kept row exists to host.
+
+Deliberately unchanged: bringing a brand-new person in still takes a friend
+request they accept first (the cost of closing the account-existence oracle;
+an invite link would soften it), an expense still cannot move between
+groups, leaving a group still needs a zero balance, and receipt scanning
+stays at five a minute.
+
+## §27 Mobile parity: nothing is web-only (2026-08-29)
+
+The rule, stated and enforced: the mobile app has every user-facing
+capability the web app has. A feature landing on one and "tracked" for the
+other is a gap, not a plan. The friction pass's DeleteSettlement UI was the
+last such note; this pass took the whole inventory — every web route, every
+RPC the web calls, every control on each page — against the app, and closed
+all of it. Pure logic that both apps needed moved into `@haalkhata/shared`
+with its tests rather than being written twice: `expense/settledStatus`,
+`expense/scopeFilter`, `group/balanceFilter`, `group/highlights`,
+`activity/format`, `activity/filters`, `phone/phone`.
+
+What the app gained, one commit each:
+
+- **Settle up in both directions, across every balance.** The sheet records
+  "they paid me" as well as "I paid them", lists each scope where money is
+  owed as a checklist (fed by GetFriendLedger, so it cannot disagree with the
+  friend screen), sends `scopeGroupIds` and an empty `groupId` like the web,
+  and shows the recipient's handle for the chosen app — copy (expo-clipboard)
+  or open. Friends offers Settle either way; a group's balances tab gains
+  "Record" on debts owed to the viewer.
+- **Friend ledger screen** (`/friends/[id]`): net balance, invited marker,
+  mutual groups, Request friendship, Add expense, I paid / paid me, Send a
+  reminder, the per-group breakdown with the simplified marker, and the full
+  history with running balance — deleted expenses and removed payments struck
+  through with zero change, a two-tap Remove on live payments
+  (DeleteSettlement). `PersonLink` makes every person on screen open it:
+  friends rows (which also gained search and the owed/owe headline), the
+  dashboard's People, expense breakdowns, comment authors, balances avatars,
+  and the members sheet, which now offers Ledger / Request per row.
+- **All-expenses screen** with search and All / One-off / per-group scope
+  chips, taking the Expenses tab slot as on web. The expense list is shared
+  (`components/expenses/ExpenseList`) and shows group/one-off pills and the
+  settled state.
+- **Scanning lives in the expense form.** A receipt panel at the top of a
+  new expense fills description, date, tax, tip and items (shared by
+  everyone, split switched to Items); the separate scan screen is deleted and
+  `/scan` redirects, exactly as the web did in §3j. Adding a person joins
+  them to every line; attaching a group re-shares every line.
+- **Searchable people picker** in the form: participant chips, "Add people"
+  over the shared `PersonChecklist`, the group chips locked while editing.
+- **Activity feed** with keyset paging, search, type filters, a month window,
+  day grouping, time of day and amounts (signed and tinted only for
+  settlements, inbound vs outbound tiles). The group's activity tab pages the
+  same way.
+- **Groups search and balance filter**, and **group highlights on the
+  dashboard** (top four by absolute balance, "See all N").
+- **Expense detail**: history of edits, your share of each receipt item, and
+  the nothing-pending banner.
+- **Account**: phone number with country picker, SMS verification and the
+  merge preview; Venmo / Cash App / PayPal / Zelle handles (Zelle as phone or
+  email). This also fixed a real bug: the old save sent UpdateProfile without
+  `paymentHandles`, which the server treats as "replace with nothing", so a
+  name change on the phone erased every handle set on the web.
+- **First-run onboarding** (`/onboarding`, gated by the authed layout on
+  `me.onboarded`; the profile is re-read into the cache before navigating so
+  the gate cannot bounce the user back).
+
+Native modules added: expo-clipboard (settle sheet copy). The dev client
+needs a rebuild, as after the Google sign-in change.
+
+Deliberately still different, because the platform is: the web's PWA
+service worker and install prompt, its desktop sidebar, and hand-drawn SVG
+feed glyphs (mobile draws emoji tiles with the same inbound/outbound rule).
+
+## §28 Closing the server half of the security audit (2026-08-30)
+
+§25 closed the client findings of the 2026-08-29 audit. This pass took the
+rest — the ledger, the API, secrets and operations — the same way: every
+finding re-checked against the code first (two had already been closed on
+this branch: mobile Google sign-in, and transfer-ownership's owner check),
+then the established way of solving each looked up before choosing ours, and
+one commit per finding so a reviewer can take or revert each on its own.
+The decisions worth keeping, because the code cannot explain why it is
+shaped this way:
+
+- **Side effects commit with the change they announce.** Activity rows,
+  notifications and the friendships a group creates are written on the same
+  transaction client as the expense, payment or group change they describe.
+  The pattern is the transactional-outbox one — but the "outbox" here is
+  just more Postgres tables and there is no broker to relay to, so the
+  tables themselves are the outbox and the same transaction is enough.
+  Repo insert functions take an optional `client` for that reason; a usecase
+  that writes a side effect outside the transaction is a bug.
+- **Idempotent money mutations.** `CreateExpense` and `RecordSettlement`
+  require a client-generated UUID `operation_id` (the IETF Idempotency-Key
+  draft's model, as Stripe applies it): the key is claimed inside the ledger
+  transaction under the primary key (user, rpc, id), so a concurrent
+  duplicate waits on that row and then replays; a replay with the same
+  canonical payload returns the stored result, a reuse with a different
+  payload is refused, a key whose first attempt is still running says so,
+  and claims expire after 24 hours. The clients hold the id in a ref for the
+  life of one submit and mint a new one after success, so a retry after a
+  timeout cannot double-post and a second intentional payment cannot be
+  swallowed.
+- **Who asserted a payment is part of the ledger.** Either party can record
+  a payment in either direction — that is what makes settling up usable — so
+  the trust model is provenance plus reversal, not approval: `recorded_by`
+  and `deleted_by` are stored, the feed and the friend ledger say "recorded
+  by" whenever the recorder is not the payer, and the counterparty sees it
+  immediately and can remove it. An approval step was considered and
+  rejected: the app cannot verify a payment happened, so approval would only
+  block the honest majority while a dishonest counterparty declines.
+  Visibility and an audit trail are what a shared ledger can actually offer.
+- **Balances are kept per currency and never summed.** Every balance map
+  is keyed by currency (`CurrencyCents`), responses carry `CurrencyAmount`
+  buckets ("you owe $12.45 and €8.72"), settlements allocate only within the
+  currency being paid, a group's expenses and payments are in the group's
+  currency, and nothing ever converts — the Splitwise and ledger-provider
+  rule. The old scalar fields stay on the wire because `buf breaking` forbids
+  removing them; they are redefined as the caller's default-currency bucket
+  and legacy readers see exactly what they saw before when only one currency
+  is in play. The account-merge invariant is checked per currency too.
+- **The int32 ceiling is a stated limit, not a crash.** Cents stay int32 on
+  the wire (changing the type is a breaking change and would put bigints in
+  every client); every aggregate goes through `toInt32Cents()` and an
+  overflow is a `failed_precondition` naming the ceiling (21,474,836.47 in
+  one currency) rather than an encoder exception. Per-row amounts are
+  bounded at validation, so only sums can reach it.
+- **No payment onto a loop that nets to zero.** With Simplify debts off, a
+  group whose pairwise debts cancel around a cycle shows debts while
+  everyone is settled overall; the server refuses to record a payment there
+  and the clients hide Settle/Record, pointing at Simplify debts instead.
+- **Reads are bounded.** The friend ledger stops at 300 lines and the
+  expense list at 500, each with a `truncated` flag the clients show; the
+  read RPCs that fan out over the ledger are rate-limited at 60/min per
+  user. The limiter — like the SMS limiter below — is process-local, which
+  is correct for the single-container deployment this is and becomes a
+  documented gap the day a second replica exists.
+- **SMS is limited by destination and client, not just by account.** Three
+  sends an hour and eight a day per number (keyed by an HMAC of the E.164
+  number, so the limiter never holds phone numbers) and twenty an hour per
+  client address, on top of the per-account limit — Twilio's own anti-fraud
+  guidance. Reminders take a (sender, debtor) advisory lock before the
+  cooldown check so two clicks cannot both pass it.
+- **Secrets are files, and keys can overlap.** `readSecret()` implements the
+  Docker `<NAME>_FILE` convention; the entrypoint exports nothing, the
+  database URL is assembled from `POSTGRES_*` inside the app, and
+  `SESSION_SECRET_PREVIOUS` lets a planned rotation keep sessions valid
+  until they expire. CI runs gitleaks over the full history. What is still
+  documented rather than automated: the secret inventory and expiry
+  monitoring, and separate migration and runtime database roles.
+- **Readiness means someone can sign in.** With password auth off, the
+  health route refuses when there is no Google audience, when the image
+  was built without the public client id, or when the two differ; the
+  deploy workflow refuses to build without it and Compose refuses to start
+  without it.
+- **A backup that stayed on the box is a failed backup.** Missing offsite
+  target now fails the run and alerts unless a written local-only opt-out
+  is present; every archive is listed back from the remote and its size
+  compared after upload.
+- Also closed: strict calendar dates (Feb 30 is rejected, not normalized),
+  the service worker caches only content-hashed build assets, the bearer
+  token is returned only to clients that declared bearer transport, receipt
+  provider and decoder errors are logged rather than shown, the currency
+  field is an allowlist, the development password floor is eight
+  characters with hashing off the event loop, and the mobile query cache
+  is memory-only (OWASP MASVS-STORAGE: not writing it beats encrypting it).
+
+Left open on purpose, each a known trade-off rather than an oversight: a
+shared rate limiter for a multi-replica deployment; deleting or archiving a
+group; an exactly-one-owner database constraint (the usecase enforces it
+under the group lock); monitoring for secret age; split database roles; and
+a release-mode mobile end-to-end sign-in test. The root `AUDIT.md` predates
+§25–§28 and is kept as history, not as a to-do list.
+
+## §29 A readability pass over the backend (2026-08-31)
+
+Before the code grows further, one deliberate pass over everything in
+`apps/web/src/server`, block by block, against the boring virtues:
+simplicity, clarity, one spelling per idea. No behavior changed; every
+commit in the pass is a refactor a reviewer can hold in one glance, and
+the full suite ran green before each one.
+
+What the pass actually changed:
+
+- **One spelling per invariant.** The `friend-request-inbox:` advisory
+  lock existed as two independent copies (friendships repo, account
+  merge); the whole deadlock argument rests on both spelling identical
+  keys in identical order, so it now lives with the other locks in
+  `common/ledgerLocks`. Same treatment for Postgres's 23505 recovery
+  (`isUniqueViolation` in common/db, was four anonymous casts), the
+  real-calendar-date round trip (was written independently in expense
+  and receipt), the zero-loop test the comments already said was
+  `groupCancelsOut`, and the default-currency-first ordering.
+- **One derivation per set.** "Who is on this expense" was derived
+  inline five ways; `moneyParticipantIds` (payers+owers, what
+  settledness wants) and `storedParticipantIds` (plus creator, what
+  authorization wants) are now the only two. updateExpense's
+  exists/may-edit/no-group-move sequence ran twice — deliberately, once
+  pre-lock and once under the lock — but nothing said so; it is one
+  function now, with the why-twice written on it.
+- **Less to hold in your head.** Auth's four copies of display-name
+  validation became normalizeName/requireName; the merge usecase's five
+  identical "confirmation is no longer valid" strings got one name; the
+  getExpense people map stopped being called `commentAuthors` when half
+  of it is activity actors.
+- **Dead surface removed.** assertUserExists, clearPaymentHandles and
+  findMergedInto had no callers anywhere and are gone (history keeps
+  them). mergeAccounts' correction counts stay: the merge integration
+  test asserts on them.
+- **Prose repaired.** An old mechanical rename (key → operation) had
+  chewed through the idempotency comments ("a operation", "the
+  idempotency-operation draft"); the intended wording is back.
+
+Looked at and deliberately left alone: `withLedgerTransaction` is a
+do-nothing alias for `transaction`, but it is the seam five test files
+mock to intercept ledger transactions without stubbing the database
+wholesale, so it stays; the per-recipient INSERT loop in notifications is
+bounded by the 100-participant cap and a batch statement would buy
+complexity, not correctness; and the repo/usecase/handler layering held
+everywhere it was checked, with the account-merge repo's cross-domain SQL
+remaining the one documented exception.
+
+## §30 Backend service documentation (2026-08-31)
+
+Wrote per-service reference documentation under docs/backend/, one doc per
+proto, following the gold-standard format the user supplied (module overview
+→ conceptual model sections → data-model tables → per-endpoint Notes/Request/
+Response with JSON samples):
+
+- docs/backend/README.md — index, layering, the two sentences that explain
+  most design decisions (one-scope-per-debt; never trust the client on money
+  or identity), reading order.
+- docs/backend/common/conventions.md — the cross-cutting rules every RPC
+  obeys: transport/mount behavior, sessions and sliding renewal, CSRF, the
+  UsecaseError → Connect code map, every rate-limit bucket, the
+  operation_id idempotency contract, the five advisory-lock classes and
+  their global ordering, money rules, the database boundary, the three user
+  privacy projections, secrets via _FILE.
+- docs/backend/common/common-types.md — common.v1 messages and their privacy
+  semantics (net_cents-is-one-bucket gotcha called out).
+- docs/backend/{auth,group,expense,social,receipt}/<service>.md — one per
+  service. The expense doc carries the load: the derived-ledger model, debt
+  routing under simplify-debts and the one-routed-graph invariant,
+  write-time settlement allocation, lock ordering per operation, the
+  authorization and fan-out tables.
+
+Documentation was written from the implementation (handlers, usecases,
+domain modules, constants), not from the protos alone, so behavioral notes
+(TOCTOU recovery, guard ordering, truncation caps, oracle-prevention) match
+the code as of this commit. Convention going forward, stated in the README:
+a PR that changes behavior fixes the doc in the same PR.
+
+## §31 Server config flows through the deploy pipeline (2026-09-01)
+
+Decision: nothing on the production server is hand-edited. Discovered while
+wiring ACME_EMAIL that /srv/haalkhata/.env was hand-provisioned (and missing
+the new keys), and the server's docker-compose.prod.yml/Caddyfile had drifted
+from the repo (the audit-hardened versions were never shipped). Three changes
+make GitHub the single source of truth:
+
+1. deploy.sh now accepts KEY=VALUE config lines on stdin alongside the SHA
+   argument. Allowlist: ACME_EMAIL, GOOGLE_CLIENT_ID,
+   GOOGLE_MOBILE_CLIENT_IDS, TWILIO_API_KEY_SID, TWILIO_VERIFY_SERVICE_SID.
+   Unknown keys and shell-hostile values fail the deploy loudly. The forced-
+   command security model is unchanged: the client supplies data, never code.
+2. The image carries docker-compose.prod.yml + Caddyfile under /opt/release/;
+   deploy.sh adopts them only after `docker compose config -q` and a
+   secrets-file existence check pass — a release the server is not
+   provisioned for fails with the old stack still running. Infra files now
+   version and roll back with the code. Rollback documented as
+   `ssh ... <sha> </dev/null`.
+3. deploy.yml pipes the config from repository variables/secrets (guard step
+   refuses to deploy without ACME_EMAIL, mirroring the client-id guard) and
+   ships GOOGLE_CLIENT_ID from NEXT_PUBLIC_GOOGLE_CLIENT_ID so the audience
+   and the button id cannot drift.
+
+Set on GitHub already: ACME_EMAIL=anirudhaprasun@gmail.com (repo variable).
+Deliberately NOT pipeline-managed: the five secret files under
+/srv/haalkhata/secrets/ (session key, db password, API keys) stay
+server-only per §28's hardening — GitHub Actions never holds them.
+Bootstrap still required once: scp the new deploy.sh (the old forced command
+cannot update it), and create the secret files before the hardened compose
+can go live; until then deploy.sh's dry-run keeps the old stack running.
+
+## §32 Phone verification hardening + phone UX completion (2026-09-01)
+
+Fixes for the seven issues found reviewing the phone flow, following OWASP
+ASVS/MASVS OTP guidance (single-use, server-side attempt caps, short expiry,
+bind the check to the requester) and Twilio's own anti-fraud guidance.
+
+Server:
+1. New `phone_verifications` table — one active verification per account:
+   (user_id PK, phone, created_at, send_count, last_sent_at, check_count,
+   consumed_at). The check call now requires an active, unexpired (10 min),
+   unconsumed row for THIS account matching THIS phone; approval consumes it
+   (single-use server-side, no longer relying on Twilio's semantics), and
+   check_count caps attempts at 5 our side before Twilio is even called.
+   Fixes #1 (binding) and #2 (replay/brute-force ownership).
+2. SMS-send abuse ceilings move to Postgres (`phone_send_events`: destination
+   hash + client ip + sent_at, pruned on insert like operations): 3/h + 8/day
+   per destination and 20/h per IP now survive restarts and replicas. The
+   in-memory limiter stays for cheap per-account request pacing. Fixes #3.
+3. Split per-account buckets: phone:send 3/min, phone:check 5/min,
+   phone:merge 5/min — a fumbled code no longer locks out the confirm. #7.
+4. Merge token gains a preview fingerprint (hash of nets+expense_count+name);
+   ConfirmPhoneMerge recomputes and refuses on drift ("balances changed —
+   review again"), so nobody absorbs materially different history than they
+   were shown. Fixes #6.
+5. New AuthService.RemovePhone RPC (proto + gen): clears the caller's phone;
+   refused when the phone is the row's only identifier
+   (chk_users_has_identifier). Fixes #4.
+6. Merge preview counterparty list capped (12) and the disclosure logged
+   (audit trail); the preview itself is retained deliberately — it IS the
+   recycled-number defense. Mitigates #5.
+
+Clients (both): the searchable-country PhoneField already exists (account,
+onboarding). Completing coverage: the add-friend and add-to-group forms get
+an explicit Email | Phone toggle whose phone side is PhoneField with
+client-side isValidPhoneNumber gating (libphonenumber-js, already shipped);
+account screens gain Remove-phone. The dev-only password login keeps its
+single identifier box: production rejects that flow entirely.
+
+Plus: a Twilio setup runbook artifact for the operator (account, Verify
+service, restricted API key, geo permissions, Fraud Guard, secrets wiring).
+
+## §33 Frictionless invites: Invited people, reminder links, group join links (2026-09-02)
+
+Direction from Anirudha: minimize friction. Anyone can add anyone as a
+friend or into a group; a person without an account appears as "Invited"
+and CANNOT be part of any transaction until they sign up. Inviters get an
+easy share-a-link way to remind them; groups get a shareable join link
+whose landing page says who invited you to what, and accepting joins you.
+
+The key insight that makes this safe: the no-transaction rule removes all
+money from unclaimed rows. An invite that carries no balances can be
+claimed via a bearer link without the recycled-number/absorb-history
+dangers §32 defends against — claiming an empty identity just wires up
+friendships and group memberships.
+
+Design:
+1. Invited = the existing shadow-user row (no credential), resurrected as
+   a first-class state. `User.registered` already crosses the wire; the
+   clients render an "Invited" badge off it.
+2. The transaction gate lives in ONE place: expense create/update refuses
+   unregistered payers/owers by name ("X hasn't joined yet — remind them
+   to sign up"). Settlements and reminders need no new guard: both already
+   require outstanding debt, and a no-transaction invitee can never have
+   any. Legacy shadows with pre-existing money keep their history and can
+   still be settled with; they just can't join NEW expenses.
+3. AddFriend(email/phone) with no matching account creates the shadow and
+   an immediate two-way friendship (there is nobody to accept). A matching
+   REGISTERED account keeps today's request+accept flow. Trade-off knowingly
+   accepted: the differing outcomes reveal whether an identifier has an
+   account — Splitwise-style frictionlessness beats the oracle here; rate
+   limits (10/min) and logging stay.
+4. AddMembers email/phone that matches nobody creates the shadow and
+   enrols it (Invited member). Registered-but-unconnected stays refused —
+   the join link is the path for strangers.
+5. invite_links table (raw 43-char random token PK — retrievable so the
+   share button always shows the same link; revocable): kind 'friend'
+   (inviter + the invited shadow it claims) or 'group' (group_id). One
+   active link per (inviter, invited) pair and per group.
+6. New social.v1 RPCs (all link kinds live in social — the connective
+   tissue — to avoid cross-proto imports): GetFriendInviteLink,
+   CreateGroupInviteLink (any member; returns the active link),
+   RevokeGroupInviteLink (owner), PreviewInviteLink (UNAUTHENTICATED,
+   IP-rate-limited; returns inviter name, kind, group name+member count),
+   AcceptInviteLink (authenticated): friend-kind → merge the still-
+   unclaimed shadow into the caller (memberships and friendships ride
+   along) + befriend the inviter; group-kind → enrol + befriend inviter,
+   with feed event and notification. Idempotent re-accepts.
+7. mergeAccounts generalizes for link claims: the eligibility check uses
+   IS NOT DISTINCT FROM for a NULL phone, and the loser's email moves to
+   the keeper when the keeper has none, otherwise is cleared — a tombstone
+   must not strand an address the person may later sign up with.
+8. Delivery is the inviter's own share sheet (navigator.share / RN Share,
+   clipboard fallback) — industry standard for v1; no server-side email or
+   SMS sending is introduced.
+9. Web landing route /join/<token> (public preview → Google sign-in →
+   auto-accept); login gains a `next` redirect if it lacks one. Mobile
+   mirrors with an expo-router join/[token] route.
+
+Rollout: migration+proto first, then server (gated), then web, then
+mobile, then docs — small commits per phase.
+
+### §33a Profile links: "add me" (2026-09-02)
+
+Third invite-link kind, 'profile': the caller's own shareable link, minted
+on first ask, one active per user, revocable. Preview says "X wants to
+connect"; ACCEPTING SENDS A FRIEND REQUEST rather than creating the
+friendship — the deliberate asymmetry against the other kinds. A friend/
+group link's blast radius is bounded (an Invited row holds no money; a
+group join is visible to the whole roster), but instant friendship from a
+bearer profile link would let anyone who finds it attach themselves to the
+owner and start putting them on one-off expenses. The link removes the
+typing and the identifier-guessing, not the consent tap. Already-friends
+and duplicate requests accept quietly; the owner gets the ordinary
+friend_request notification and accepts from Friends like any other.
+
+### §33b Invite-surface hardening (2026-09-03)
+
+Adversarial pass over §33/§33a before Twilio goes live; five fixes:
+1. A link-claim no longer adopts the invited row's identifiers. The phone
+   was the INVITER'S claim, verified by nobody — promoting it to the
+   acceptor's own number squatted numbers their real owners could then
+   never attach. mergeAccounts takes an explicit adoptPhone flag: true only
+   on the SMS-merge path, where possession was proven seconds earlier;
+   email adoption is dropped everywhere (a freed address is reclaimed by
+   its owner through Google's verified sign-in, not inherited).
+2. Claim links are mintable only by an actual friend of the invited row
+   (its inviters), no longer by any co-member: a co-member of group A could
+   mint a link and claim the identity with a second account, inheriting
+   seats in groups B and C that nobody in B or C consented to.
+3. A claim announces itself: after the merge, every inherited group gets a
+   member_added feed event ("claimed X's invitation via Y's link"), so a
+   roster face never changes silently — the same transparency rule group
+   joins already follow.
+4. Group joins via link are capped at MAX_GROUP_MEMBERS (100, aligned with
+   the expense participant ceiling): a leaked bearer link must not let a
+   bot swarm grow a roster without bound.
+5. Two acceptors racing one claim link: the loser's merge eligibility
+   failure now maps to the generic dead-link sentence instead of leaking a
+   500.
+Residual, documented: invite tokens ride in URLs and therefore appear in
+front-proxy access logs — operator-visible only, and revocation is the
+remedy; this is the industry-standard trade for shareable links.
+
+### §33c Groups are registered-only; inviting becomes explicit (2026-09-03)
+
+Direction: nobody who is not on the platform can be added to a group — not
+even as an Invited seat. This walks back §33's group-side cold enrolment;
+the Invited state now lives ONLY in the friends list. The new group-add
+flow: typing an email/phone that has no claimed account refuses with a
+distinct failed_precondition ("they're not on HaalKhata yet — invite them
+to sign up first"); the client renders that as an offer — "send them a
+sign-up invite?" — which creates the Invited friend and hands the caller
+the claim link to share. Once they sign up, they are already the caller's
+friend and addable like anyone. One server gate enforces it for picked ids
+too, inside enrollMembers (covers CreateGroup and AddMembers alike), so an
+unregistered friend can never hold a seat going forward. New social RPC
+InviteContactToSignUp(email|phone) → InviteLink does the offer's work:
+find-or-create the unregistered contact, befriend, mint the claim link.
+Deliberate oracle: the distinct refusal says an identifier has no account —
+the same §33 trade, now scoped to an explicit user gesture.
+
+### §34 Verified number transfer with dual notification (2026-09-03)
+
+Direction: numbers move (lost SIMs, temporary SIMs). Whoever proves SMS
+possession attaches the number — even when a REGISTERED account holds it —
+because the phone is a directory pointer and NEVER an authenticator
+(sign-in stays Google-only). WhatsApp semantics: possession wins, both
+sides are told. SetPhone's claimed-holder branch becomes a transfer: one
+transaction locks both user rows (sorted FOR UPDATE), re-checks the holder
+still holds it, frees it, attaches it, and notifies BOTH parties
+(phone_transferred: the loser learns the number now points elsewhere and
+how to take it back or object; the gainer learns it was taken from another
+account). Refused only when the number is the holder's sole identifier
+(dev phone-signup rows — clearing it would strand the account). The
+clients mark the saved number "Verified" — every attached number is, by
+construction.
+
+### §35 Stored phone verification state (2026-09-06)
+
+§34's closing line — "every attached number is verified by construction" —
+is only true for numbers written after §32. Production rows predate it:
+their numbers were written by the old unverified SetPhone and are
+indistinguishable in the schema, yet the clients would show them the
+verified chip. Fix: store the fact instead of inferring it. New column
+users.phone_verified_at (TIMESTAMPTZ, null = unverified), backfilled NULL
+for everyone — honest, since Twilio was never configured before this.
+setUserPhone stamps now() on set and clears on clear (all its callers are
+SMS-proven contexts); the merge's adoptPhone stamps only when the number
+actually adopts into the empty slot; the tombstone clears it. Shadow-row
+creation (inviter-typed numbers) leaves it NULL by default. A CHECK keeps
+the pair coherent (no stamp without a number). Exposed as the private
+`phone_verified` field on common.User (self-view only, like phone). The
+clients stop lying: the chip reads the field, an unverified number gets a
+"Verify" action that re-runs SetPhone on the number already held (the
+self-holder path), and a dismissible post-login banner prompts legacy
+holders — soft, not a wall, because phone stays optional; its honest pitch
+is §34 itself: verify it or anyone proving SMS possession can claim it.
+
+### §36 Full ISO 4217 currency catalog (2026-09-06)
+
+The 8-code allowlist becomes the full ISO 4217 catalog (currency-codes
+package for codes/names/minor-unit digits, currency-symbol-map for
+symbols), minus the non-transactional codes (metals, funds, SDR, test).
+Pickers show the symbol beside the code and name; the familiar 8 stay
+pinned to the top, the rest alphabetical. Web keeps native selects, mobile
+replaces the chip row with a searchable picker sheet. Money helpers become
+minor-unit aware: amounts stay integers in the currency's own minor unit,
+so formatMoney/parseMoneyInput/centsToInput take the currency's digits (0
+for JPY, 3 for KWD) instead of assuming 2; display can no longer round a
+yen amount into a lie. Two facts confirmed, now documented as invariants
+rather than accidents: a group's currency is declared at creation and
+frozen (no RPC or SQL path updates it; it is the unit every balance in the
+group derives in), and positions are kept and shown per currency, never
+summed across currencies.
+
+### §37 Remove friend behind the settled-balance gate (2026-09-06)
+
+New social RPC RemoveFriend(user_id). Allowed only when the pairwise net
+with that person is exactly zero in EVERY currency (the same rule group
+removal follows): removing the row that makes somebody reachable must not
+orphan debt. The usecase runs one transaction taking the pair's
+friend-request inbox locks (the order every friendship writer uses) plus
+both participant ledger locks, so the zero check cannot race a concurrent
+one-off expense or settlement; it deletes both friendship rows and any
+pending requests between the pair, and revokes the caller's active friend
+claim link for an Invited friend (the link's promise is the friendship
+being removed). Quiet by design, like group removal: no notification, no
+feed event. Shared history and group co-memberships are untouched, and a
+removed friend can be re-added later. Clients put Remove friend on the
+friend detail screen, disabled with an explanation while balances are
+outstanding.

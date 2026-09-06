@@ -10,18 +10,21 @@ import { Button } from "@/components/ui/Button";
 import { Chip } from "@/components/ui/Chip";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Money } from "@/components/ui/Money";
+import { SearchField } from "@/components/ui/SearchField";
 import { Sheet } from "@/components/ui/Sheet";
 import { Spinner } from "@/components/ui/Spinner";
 import { TextField } from "@/components/ui/TextField";
-import { CURRENCIES } from "@haalkhata/shared/money/money.constants";
+import { GROUP_BALANCE_FILTERS, noGroupsMessage } from "@haalkhata/shared/group/balanceFilter";
+import { CurrencyPicker } from "@/components/ui/CurrencyPicker";
 import { colors, fonts, radii, spacing } from "@/lib/theme/theme";
 import { GROUP_TYPES, groupEmoji } from "../../constants/groupTypes";
 import { useGroups } from "./hooks/useGroups";
+import { MAX_GROUP_NAME_LENGTH } from "@haalkhata/shared/text/limits";
 
 /**
- * Renders the groups screen: a card list of group summaries (member count and
- * your net balance per group) and a bottom-sheet form for creating a new
- * group.
+ * Renders the groups screen: a searchable, balance-filterable card list of
+ * group summaries (member count and your net balance per group) and a
+ * bottom-sheet form for creating a new group.
  *
  * @returns The groups screen content, with a spinner while the list loads.
  */
@@ -61,45 +64,85 @@ export function GroupsScreen() {
           title="No groups yet"
         />
       ) : (
-        <View style={styles.cards}>
-          {groupsState.groups.map((summary) =>
-            summary.group ? (
-              <Pressable
-                key={summary.group.id}
-                onPress={() => router.push(`/groups/${summary.group?.id}`)}
-                style={({ pressed }) => [styles.card, pressed ? styles.cardPressed : null]}
-              >
-                <View style={styles.cardTop}>
-                  <Text style={styles.cardEmoji}>{groupEmoji(summary.group.type)}</Text>
-                  <View style={styles.typeBadge}>
-                    <Text style={styles.typeBadgeText}>{summary.group.type}</Text>
-                  </View>
-                </View>
-                <View>
-                  <Text style={styles.cardName}>{summary.group.name}</Text>
-                  <Text style={styles.cardMembers}>
-                    {summary.memberCount} member{summary.memberCount === 1 ? "" : "s"}
-                  </Text>
-                </View>
-                {summary.yourNetCents === 0 ? (
-                  <Text style={styles.cardSettled}>all settled up</Text>
-                ) : (
-                  <View style={styles.cardBalance}>
-                    <Text style={styles.cardBalanceLabel}>
-                      {summary.yourNetCents > 0 ? "you are owed " : "you owe "}
-                    </Text>
-                    <Money
-                      cents={summary.yourNetCents}
-                      currency={summary.group.currency}
-                      signed
-                      style={styles.cardBalanceAmount}
-                    />
-                  </View>
-                )}
-              </Pressable>
-            ) : null,
+        <>
+          <View style={styles.searchRow}>
+            <View style={styles.searchField}>
+              <SearchField
+                onChange={groupsState.setQuery}
+                placeholder="Search groups by name or type"
+                value={groupsState.query}
+              />
+            </View>
+            {/* The count has to account for the balance filter too, or it
+                would read as unfiltered while rows are being hidden. */}
+            {groupsState.query || groupsState.balance !== "all" ? (
+              <Text style={styles.searchCount}>
+                {groupsState.visibleGroups.length} of {groupsState.groups.length}
+              </Text>
+            ) : null}
+          </View>
+
+          {/* Filter state stays visible while it hides rows, matching the
+              activity feed: the active chip is styled, not just remembered. */}
+          <View style={styles.filterChips}>
+            {GROUP_BALANCE_FILTERS.map((entry) => (
+              <Chip
+                key={entry.value}
+                label={entry.label}
+                onPress={() => groupsState.setBalance(entry.value)}
+                selected={groupsState.balance === entry.value}
+              />
+            ))}
+          </View>
+
+          {groupsState.visibleGroups.length === 0 ? (
+            <View style={styles.noMatchCard}>
+              <Text style={styles.noMatchText}>
+                {noGroupsMessage(groupsState.query, groupsState.balance)}
+              </Text>
+            </View>
+          ) : (
+            <View style={styles.cards}>
+              {groupsState.visibleGroups.map((summary) =>
+                summary.group ? (
+                  <Pressable
+                    key={summary.group.id}
+                    onPress={() => router.push(`/groups/${summary.group?.id}`)}
+                    style={({ pressed }) => [styles.card, pressed ? styles.cardPressed : null]}
+                  >
+                    <View style={styles.cardTop}>
+                      <Text style={styles.cardEmoji}>{groupEmoji(summary.group.type)}</Text>
+                      <View style={styles.typeBadge}>
+                        <Text style={styles.typeBadgeText}>{summary.group.type}</Text>
+                      </View>
+                    </View>
+                    <View>
+                      <Text style={styles.cardName}>{summary.group.name}</Text>
+                      <Text style={styles.cardMembers}>
+                        {summary.memberCount} member{summary.memberCount === 1 ? "" : "s"}
+                      </Text>
+                    </View>
+                    {summary.yourNetCents === 0 ? (
+                      <Text style={styles.cardSettled}>all settled up</Text>
+                    ) : (
+                      <View style={styles.cardBalance}>
+                        <Text style={styles.cardBalanceLabel}>
+                          {summary.yourNetCents > 0 ? "you are owed " : "you owe "}
+                        </Text>
+                        <Money
+                          cents={summary.yourNetCents}
+                          currency={summary.group.currency}
+                          signed
+                          style={styles.cardBalanceAmount}
+                        />
+                      </View>
+                    )}
+                  </Pressable>
+                ) : null,
+              )}
+            </View>
           )}
-        </View>
+        </>
       )}
 
       {groupsState.creating ? (
@@ -107,6 +150,7 @@ export function GroupsScreen() {
           <View style={styles.form}>
             <TextField
               autoFocus
+              maxLength={MAX_GROUP_NAME_LENGTH}
               onChangeText={groupsState.setName}
               placeholder="Group name (e.g. Sundarban Trip)"
               value={groupsState.name}
@@ -135,16 +179,11 @@ export function GroupsScreen() {
             </View>
             <View style={styles.currencyBlock}>
               <Text style={styles.currencyLabel}>Currency</Text>
-              <View style={styles.currencyChips}>
-                {CURRENCIES.map((currencyCode) => (
-                  <Chip
-                    key={currencyCode}
-                    label={currencyCode}
-                    onPress={() => groupsState.setCurrency(currencyCode)}
-                    selected={groupsState.currency === currencyCode}
-                  />
-                ))}
-              </View>
+              <CurrencyPicker onChange={groupsState.setCurrency} value={groupsState.currency} />
+              <Text style={styles.currencyHint}>
+                Every expense and balance in the group lives in this currency. It cannot be
+                changed after the group is created.
+              </Text>
             </View>
             {/* Members at creation, so a new group is not born empty and then
                 needing a second trip through a separate add-people sheet. */}
@@ -159,6 +198,14 @@ export function GroupsScreen() {
                   </Text>
                 </Text>
                 <PersonChecklist
+                  disabledHint="invited — can add once they join"
+                  disabledIds={
+                    new Set(
+                      groupsState.friends
+                        .filter((friend) => !friend.registered)
+                        .map((friend) => friend.id),
+                    )
+                  }
                   onToggle={groupsState.toggleMember}
                   people={groupsState.friends}
                   selectedIds={groupsState.memberIds}
@@ -185,7 +232,10 @@ const styles = StyleSheet.create({
     borderColor: colors.line,
     borderRadius: radii.lg,
     borderWidth: 1,
+    flexBasis: 300,
+    flexGrow: 1,
     gap: spacing.md,
+    maxWidth: 570,
     padding: spacing.lg,
   },
   cardBalance: {
@@ -218,6 +268,8 @@ const styles = StyleSheet.create({
     borderColor: colors.brand200,
   },
   cards: {
+    flexDirection: "row",
+    flexWrap: "wrap",
     gap: spacing.md,
   },
   cardSettled: {
@@ -237,6 +289,11 @@ const styles = StyleSheet.create({
     flexWrap: "wrap",
     gap: spacing.sm,
   },
+  currencyHint: {
+    color: colors.inkSoft,
+    fontSize: 12,
+    lineHeight: 16,
+  },
   currencyLabel: {
     color: colors.ink,
     fontSize: 14,
@@ -245,6 +302,11 @@ const styles = StyleSheet.create({
   error: {
     color: colors.brand600,
     fontSize: 14,
+  },
+  filterChips: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: spacing.sm,
   },
   form: {
     gap: spacing.lg,
@@ -260,6 +322,31 @@ const styles = StyleSheet.create({
     color: colors.ink,
     fontSize: 14,
     fontWeight: "500",
+  },
+  noMatchCard: {
+    backgroundColor: colors.card,
+    borderColor: colors.line,
+    borderRadius: radii.lg,
+    borderWidth: 1,
+    padding: spacing.xl,
+  },
+  noMatchText: {
+    color: colors.inkSoft,
+    fontSize: 14,
+    textAlign: "center",
+  },
+  searchCount: {
+    color: colors.inkSoft,
+    fontSize: 13,
+    fontVariant: ["tabular-nums"],
+  },
+  searchField: {
+    flex: 1,
+  },
+  searchRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: spacing.md,
   },
   title: {
     color: colors.ink,

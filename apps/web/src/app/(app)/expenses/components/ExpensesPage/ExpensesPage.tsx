@@ -7,7 +7,7 @@ import { ExpenseList } from "@/components/expenses/ExpenseList";
 import { SearchField } from "@/components/ui/SearchField";
 import { Spinner } from "@/components/ui/Spinner";
 import { useHydrated } from "@/lib/hooks/useHydrated";
-import { noExpensesMessage } from "../../constants/expenseFilters";
+import { noExpensesMessage } from "@haalkhata/shared/expense/scopeFilter";
 import { useExpensesList } from "./hooks/useExpensesList";
 
 /**
@@ -80,6 +80,14 @@ export function ExpensesPage() {
           </button>
         ))}
       </div>
+
+      {/* The list is bounded; the balances are not. Say so rather than let
+          an old row's absence read as its deletion. */}
+      {listState.truncated ? (
+        <p className="text-xs text-ink-soft">
+          Showing your most recent expenses — older ones still count toward every balance.
+        </p>
+      ) : null}
 
       {listState.visibleExpenses.length === 0 ? (
         <p className="rounded-2xl border border-line bg-card px-4 py-6 text-center text-sm text-ink-soft">

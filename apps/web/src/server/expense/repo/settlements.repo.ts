@@ -1,7 +1,8 @@
 /** All SQL for the settlements table. */
 
 import type { PoolClient } from "pg";
-import { newId, query, transaction } from "@/server/common/db";
+import { execute, newId, query, queryOne } from "@/server/common/db";
+import { lockParticipantLedgers, withLedgerTransaction } from "@/server/common/ledgerLocks";
 
 /** One row of the settlements table (column names mirror SQL). */
 export interface SettlementRow {
@@ -18,6 +19,18 @@ export interface SettlementRow {
   method: string;
   note: string;
   created_at: string;
+  /** Monotonic order shared with expenses for mutation-safety checks. */
+  ledger_event_order: string;
+  /** When the payment was removed; null while it counts. */
+  deleted_at: string | null;
+  /**
+   * The authenticated user who typed the payment in — one of the two people
+   * on it, and not necessarily the payer. Rows older than the column carry
+   * the payer.
+   */
+  recorded_by: string;
+  /** The authenticated user who removed it; null while it counts. */
+  deleted_by: string | null;
 }
 
 /**
@@ -29,15 +42,10 @@ export interface SettlementRow {
  * the lock two concurrent recordings both read the same outstanding debt,
  * both pass, and both insert — the pair ends up double-settled.
  *
- * Why the validation reads inside `operation` may still use the shared pool:
- * a previous writer's insert rides its lock transaction, so its rows become
- * visible at the same instant its lock releases. Whoever acquires the lock
- * next therefore reads a committed state that already includes every prior
- * settlement. Readers elsewhere never block — the lock is advisory and only
- * writers take it.
- *
- * Inserts inside `operation` must use the provided client so a multi-portion
- * settlement commits atomically with the lock window.
+ * Every validation read and insert inside `operation` must use the provided
+ * client. Borrowing from the shared pool while this transaction holds one
+ * connection lets enough concurrent settlements deadlock the pool waiting for
+ * second connections; one client also guarantees read-your-own-writes.
  *
  * @param firstUserId - One side of the pair, in either order.
  * @param secondUserId - The other side.
@@ -49,20 +57,70 @@ export async function withSettlementPairLock<Outcome>(
   secondUserId: string,
   operation: (client: PoolClient) => Promise<Outcome>,
 ): Promise<Outcome> {
-  const [lowUserId, highUserId] =
-    firstUserId < secondUserId ? [firstUserId, secondUserId] : [secondUserId, firstUserId];
-  return transaction(async (client) => {
-    await client.query(`SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, [
-      `settlement:${lowUserId}|${highUserId}`,
-    ]);
+  return withLedgerTransaction(async (client) => {
+    await lockParticipantLedgers(client, [firstUserId, secondUserId]);
     return operation(client);
   });
 }
 
 /**
+ * Reports whether a scope has settlement history recorded after an expense.
+ * Earlier payments cannot have paid a later expense, so they do not stop that
+ * new expense from being deleted.
+ *
+ * @param groupId - Group scope, or null for one-off pair scopes.
+ * @param participantIds - The expense's participants. Always applied to a
+ *   one-off scope; applied to a group scope only when `groupParticipantsOnly`
+ *   is set.
+ * @param expenseEventOrder - Monotonic creation order of the expense being changed.
+ * @param client - Transaction client holding the matching ledger lock when
+ *   the answer guards a mutation; omitted for an advisory read.
+ * @param groupParticipantsOnly - In a group scope, count only settlements
+ *   that involve one of the expense's participants. Right for a group whose
+ *   debts are pairwise; wrong for a simplified group, where a payment between
+ *   two members who were never on the expense can still be routed debt from
+ *   it — callers pass false there and accept the wider answer.
+ * @returns True when a later settlement exists in the addressed scope.
+ */
+export async function scopeHasSettlements(
+  groupId: string | null,
+  participantIds: string[],
+  expenseEventOrder: string,
+  client?: PoolClient,
+  groupParticipantsOnly = false,
+): Promise<boolean> {
+  if (groupId) {
+    return (
+      (await queryOne(
+        `SELECT 1 AS matched FROM settlements
+          WHERE group_id = $1 AND deleted_at IS NULL AND ledger_event_order > $2
+            AND ($3::boolean IS FALSE OR from_user = ANY($4::text[]) OR to_user = ANY($4::text[]))
+          LIMIT 1`,
+        [groupId, expenseEventOrder, groupParticipantsOnly, [...new Set(participantIds)]],
+        client,
+      )) !== undefined
+    );
+  }
+  if (participantIds.length < 2) return false;
+  return (
+    (await queryOne(
+      `SELECT 1 AS matched FROM settlements
+        WHERE group_id IS NULL AND deleted_at IS NULL
+          AND from_user = ANY($1::text[])
+          AND to_user = ANY($1::text[])
+          AND ledger_event_order > $2
+        LIMIT 1`,
+      [[...new Set(participantIds)], expenseEventOrder],
+      client,
+    )) !== undefined
+  );
+}
+
+/**
  * Inserts a recorded settlement (a real-world payment between two users).
  *
- * @param input - Settlement details: payer, recipient, amount, currency, method and note.
+ * @param input - Settlement details: payer, recipient, amount, currency,
+ *   method, note, and who typed it in.
  * @param client - Transaction client when the insert must commit with a
  *   surrounding {@link withSettlementPairLock} window; omitted, it autocommits.
  * @returns The inserted row, including its generated id and timestamp.
@@ -76,11 +134,13 @@ export async function insertSettlement(
     currency: string;
     method: string;
     note: string;
+    recordedBy: string;
   },
   client?: PoolClient,
 ): Promise<SettlementRow> {
-  const text = `INSERT INTO settlements (id, group_id, from_user, to_user, amount_cents, currency, method, note)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+  const text = `INSERT INTO settlements
+       (id, group_id, from_user, to_user, amount_cents, currency, method, note, recorded_by)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
      RETURNING *`;
   const params = [
     newId(),
@@ -91,6 +151,7 @@ export async function insertSettlement(
     input.currency,
     input.method,
     input.note,
+    input.recordedBy,
   ];
   if (client) {
     const { rows } = await client.query<SettlementRow>(text, params as never[]);
@@ -100,15 +161,54 @@ export async function insertSettlement(
 }
 
 /**
- * Lists a group's settlements, oldest first.
+ * Fetches a single settlement row, including soft-deleted ones.
+ *
+ * @param settlementId - Id of the settlement to load.
+ * @param client - Optional transaction client holding the pair's ledger lock.
+ * @returns The matching row, or undefined if the id is unknown.
+ */
+export async function findSettlementById(
+  settlementId: string,
+  client?: PoolClient,
+): Promise<SettlementRow | undefined> {
+  return queryOne<SettlementRow>(`SELECT * FROM settlements WHERE id = $1`, [settlementId], client);
+}
+
+/**
+ * Marks a settlement removed (sets deleted_at and who removed it) without
+ * deleting the row, so the friend ledger can keep showing it struck through
+ * and name the remover.
+ *
+ * @param settlementId - Id of the settlement to remove.
+ * @param deletedBy - The authenticated user removing it.
+ * @param client - Transaction client holding the pair's ledger lock.
+ */
+export async function softDeleteSettlement(
+  settlementId: string,
+  deletedBy: string,
+  client: PoolClient,
+): Promise<void> {
+  await execute(
+    `UPDATE settlements SET deleted_at = now(), deleted_by = $2 WHERE id = $1`,
+    [settlementId, deletedBy],
+    client,
+  );
+}
+
+/**
+ * Lists a group's live settlements, oldest first.
  *
  * @param groupId - Id of the group whose settlements to list.
  * @returns Settlement rows in chronological order.
  */
-export async function listSettlementsByGroup(groupId: string): Promise<SettlementRow[]> {
+export async function listSettlementsByGroup(
+  groupId: string,
+  client?: PoolClient,
+): Promise<SettlementRow[]> {
   return query<SettlementRow>(
-    `SELECT * FROM settlements WHERE group_id = $1 ORDER BY created_at ASC`,
+    `SELECT * FROM settlements WHERE group_id = $1 AND deleted_at IS NULL ORDER BY created_at ASC`,
     [groupId],
+    client,
   );
 }
 
@@ -118,17 +218,21 @@ export async function listSettlementsByGroup(groupId: string): Promise<Settlemen
  *
  * @param firstUserId - One of the two people.
  * @param secondUserId - The other person.
+ * @param includeDeleted - Whether removed payments are returned too; only the
+ *   friend ledger wants them, struck through — every balance reads without.
  * @returns Settlement rows between the pair, in chronological order.
  */
 export async function listSettlementsBetween(
   firstUserId: string,
   secondUserId: string,
+  includeDeleted = false,
 ): Promise<SettlementRow[]> {
   return query<SettlementRow>(
     `SELECT * FROM settlements
-     WHERE (from_user = $1 AND to_user = $2) OR (from_user = $2 AND to_user = $1)
+     WHERE ((from_user = $1 AND to_user = $2) OR (from_user = $2 AND to_user = $1))
+       AND ($3::boolean OR deleted_at IS NULL)
      ORDER BY created_at ASC`,
-    [firstUserId, secondUserId],
+    [firstUserId, secondUserId, includeDeleted],
   );
 }
 
@@ -145,18 +249,20 @@ export async function listSettlementsBetween(
 export async function listOneOffSettlementsBetween(
   firstUserId: string,
   secondUserId: string,
+  client?: PoolClient,
 ): Promise<SettlementRow[]> {
   return query<SettlementRow>(
     `SELECT * FROM settlements
-     WHERE group_id IS NULL
+     WHERE group_id IS NULL AND deleted_at IS NULL
        AND ((from_user = $1 AND to_user = $2) OR (from_user = $2 AND to_user = $1))
      ORDER BY created_at ASC`,
     [firstUserId, secondUserId],
+    client,
   );
 }
 
 /**
- * Lists every settlement the user paid or received, oldest first.
+ * Lists every live settlement the user paid or received, oldest first.
  *
  * @param userId - Id of the user involved as payer or recipient.
  * @returns Settlement rows in chronological order.
@@ -165,7 +271,7 @@ export async function listSettlementsInvolvingUser(
   userId: string,
 ): Promise<SettlementRow[]> {
   return query<SettlementRow>(
-    `SELECT * FROM settlements WHERE from_user = $1 OR to_user = $1
+    `SELECT * FROM settlements WHERE (from_user = $1 OR to_user = $1) AND deleted_at IS NULL
      ORDER BY created_at ASC`,
     [userId],
   );

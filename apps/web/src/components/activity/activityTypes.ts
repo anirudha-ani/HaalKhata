@@ -51,10 +51,21 @@ export const ACTIVITY_LOOK: Record<string, ActivityLook> = {
     tile: "bg-ink/8 text-ink ring-1 ring-ink/10",
     label: "Group created",
   },
+  ownership_transferred: {
+    glyph: "buddies",
+    tile: "bg-ink/8 text-ink ring-1 ring-ink/10",
+    label: "Ownership handed over",
+  },
   comment: {
     glyph: "yapping",
     tile: "bg-paper text-ink-soft ring-1 ring-line",
     label: "Comment",
+  },
+  // Muted like a deleted expense: a removed payment is inert history.
+  settlement_deleted: {
+    glyph: "skull",
+    tile: "bg-card text-ink/70 ring-1 ring-line",
+    label: "Payment removed",
   },
 };
 
@@ -99,33 +110,3 @@ export function activityLook(type: string, inbound: boolean): ActivityLook {
   if (type === "settlement") return inbound ? INBOUND_LOOK : OUTBOUND_LOOK;
   return ACTIVITY_LOOK[type] ?? UNKNOWN_LOOK;
 }
-
-/** Which grouping of event types the feed is currently showing. */
-export type ActivityFilter = "all" | "expenses" | "payments" | "comments" | "groups";
-
-/** One filter button: a label and the raw event types it admits. */
-interface ActivityFilterOption {
-  /** Filter key held in page state. */
-  value: ActivityFilter;
-  /** Button text. */
-  label: string;
-  /** Event types this filter admits; empty means every type. */
-  types: readonly string[];
-}
-
-/**
- * Filter buttons above the feed. Each groups the raw event types a person
- * thinks of as one thing — nobody looks for "expense_updated", they look for
- * expenses.
- */
-export const ACTIVITY_FILTERS: readonly ActivityFilterOption[] = [
-  { value: "all", label: "All", types: [] },
-  {
-    value: "expenses",
-    label: "Expenses",
-    types: ["expense_added", "expense_updated", "expense_deleted"],
-  },
-  { value: "payments", label: "Payments", types: ["settlement"] },
-  { value: "comments", label: "Comments", types: ["comment"] },
-  { value: "groups", label: "Groups", types: ["group_created", "member_added"] },
-];

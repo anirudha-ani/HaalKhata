@@ -1,52 +1,77 @@
-/** Cents-based money formatting/parsing helpers. */
+/** Minor-unit money formatting/parsing helpers. */
+
+import { minorUnitDigits } from "./money.constants";
 
 /** Cache of `Intl.NumberFormat` instances keyed by currency code, so formatters are built once per currency. */
 const formatters = new Map<string, Intl.NumberFormat>();
 
 /**
- * Formats an integer amount of cents as a localized currency string.
+ * Formats an integer amount of minor units as a localized currency string.
  *
- * @param cents - The amount in minor units (cents), e.g. 1250 for $12.50.
+ * Amounts are stored in the currency's OWN minor unit (§36): 1250 is $12.50
+ * of USD but ¥1,250 of JPY, whose minor unit is the yen itself. The fraction
+ * digits are pinned to the catalog's so the display always agrees with what
+ * is stored; before §36, JPY went through a hardwired /100 and Intl then
+ * rounded the result, which showed an amount nobody entered.
+ *
+ * @param cents - The amount in the currency's minor units.
  * @param currency - ISO 4217 currency code; falls back to "USD" when empty.
  * @returns The localized currency string, or a plain `"12.50 XYZ"` fallback
  *   when the currency code is not supported by `Intl.NumberFormat`.
  */
 export function formatMoney(cents: number, currency: string): string {
   const currencyCode = currency || "USD";
+  const digits = minorUnitDigits(currencyCode);
+  const amount = cents / 10 ** digits;
   try {
     let formatter = formatters.get(currencyCode);
     if (!formatter) {
-      formatter = new Intl.NumberFormat(undefined, { style: "currency", currency: currencyCode });
+      formatter = new Intl.NumberFormat(undefined, {
+        style: "currency",
+        currency: currencyCode,
+        minimumFractionDigits: digits,
+        maximumFractionDigits: digits,
+      });
       formatters.set(currencyCode, formatter);
     }
-    return formatter.format(cents / 100);
+    return formatter.format(amount);
   } catch {
-    return `${(cents / 100).toFixed(2)} ${currencyCode}`;
+    return `${amount.toFixed(digits)} ${currencyCode}`;
   }
 }
 
 /**
- * Parses a user-typed money string into integer cents.
- * "12.50" | "12,50" | "12" → 1250; null when not parseable.
+ * Parses a user-typed money string into integer minor units.
+ * For a 2-digit currency, "12.50" | "12,50" | "12" → 1250; null when not
+ * parseable or when it carries more decimals than the currency has.
  *
  * @param value - The raw text from a money input field.
- * @returns The amount in cents, or `null` when the input is empty or malformed.
+ * @param currency - ISO 4217 code whose minor-unit digits bound the
+ *   decimals; omitted means 2, the pre-§36 behavior.
+ * @returns The amount in minor units, or `null` when empty or malformed.
  */
-export function parseMoneyInput(value: string): number | null {
+export function parseMoneyInput(value: string, currency?: string): number | null {
+  const digits = currency === undefined ? 2 : minorUnitDigits(currency);
   const normalized = value.trim().replace(",", ".");
   if (normalized === "") return null;
-  if (!/^\d+(\.\d{0,2})?$/.test(normalized)) return null;
-  return Math.round(parseFloat(normalized) * 100);
+  const pattern =
+    digits === 0 ? /^\d+$/ : new RegExp(String.raw`^\d+(\.\d{0,${digits}})?$`);
+  if (!pattern.test(normalized)) return null;
+  return Math.round(parseFloat(normalized) * 10 ** digits);
 }
 
 /**
- * Converts integer cents to a two-decimal string suitable for pre-filling a money input.
+ * Converts integer minor units to the decimal string that pre-fills a money
+ * input, with the currency's own number of decimals.
  *
- * @param cents - The amount in minor units (cents).
- * @returns The amount as a plain decimal string, e.g. 1250 → "12.50".
+ * @param cents - The amount in the currency's minor units.
+ * @param currency - ISO 4217 code; omitted means 2 digits, the pre-§36
+ *   behavior.
+ * @returns e.g. 1250 → "12.50" for USD, "1250" for JPY.
  */
-export function centsToInput(cents: number): string {
-  return (cents / 100).toFixed(2);
+export function centsToInput(cents: number, currency?: string): string {
+  const digits = currency === undefined ? 2 : minorUnitDigits(currency);
+  return (cents / 10 ** digits).toFixed(digits);
 }
 
 /**

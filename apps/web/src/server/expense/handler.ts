@@ -5,6 +5,8 @@ import type { ExpenseService } from "@haalkhata/protogen/expense/v1/expense_pb";
 import * as expenses from "@/server/expense/usecase/expense.usecase";
 import * as balances from "@/server/expense/usecase/balance.usecase";
 import { requireUser, runUsecase } from "@/server/api/connect/context";
+import { requireRateLimitedUser, RPC_RATE_LIMITS } from "@/server/api/connect/rpcRateLimit";
+import { assertOperationId } from "@/server/common/operations";
 
 /**
  * ConnectRPC implementation of ExpenseService. Every method only resolves the
@@ -12,8 +14,15 @@ import { requireUser, runUsecase } from "@/server/api/connect/context";
  * UsecaseError codes onto ConnectError codes.
  */
 export const expenseHandler: ServiceImpl<typeof ExpenseService> = {
+  /** Every external create names its attempt, so a retry cannot store two. */
   async createExpense(request, context) {
-    return runUsecase(async () => expenses.createExpense(await requireUser(context), request), context);
+    return runUsecase(async () => {
+      assertOperationId(request.operationId);
+      return expenses.createExpense(
+        await requireRateLimitedUser(context, "create-expense", RPC_RATE_LIMITS.createExpense),
+        request,
+      );
+    }, context);
   },
 
   async updateExpense(request, context) {
@@ -29,10 +38,13 @@ export const expenseHandler: ServiceImpl<typeof ExpenseService> = {
   async listExpenses(request, context) {
     return runUsecase(
       async () =>
-        expenses.listExpenses(await requireUser(context), {
-          groupId: request.groupId || undefined,
-          withUserId: request.withUserId || undefined,
-        }),
+        expenses.listExpenses(
+          await requireRateLimitedUser(context, "list-expenses", RPC_RATE_LIMITS.listExpenses),
+          {
+            groupId: request.groupId || undefined,
+            withUserId: request.withUserId || undefined,
+          },
+        ),
       context,
     );
   },
@@ -46,6 +58,15 @@ export const expenseHandler: ServiceImpl<typeof ExpenseService> = {
     return {};
   },
 
+  /** Removes a mistaken payment; either person on it may. */
+  async deleteSettlement(request, context) {
+    await runUsecase(
+      async () => expenses.deleteSettlement(await requireUser(context), request.settlementId),
+      context,
+    );
+    return {};
+  },
+
   async addComment(request, context) {
     return runUsecase(
       async () => expenses.addComment(await requireUser(context), request.expenseId, request.body),
@@ -53,21 +74,54 @@ export const expenseHandler: ServiceImpl<typeof ExpenseService> = {
     );
   },
 
+  /** Every external recording names its attempt, so a retry cannot store two. */
   async recordSettlement(request, context) {
-    return runUsecase(async () => expenses.recordSettlement(await requireUser(context), request), context);
+    return runUsecase(async () => {
+      assertOperationId(request.operationId);
+      return expenses.recordSettlement(await requireUser(context), request);
+    }, context);
   },
 
   async getGroupBalances(request, context) {
-    return runUsecase(async () => balances.getGroupBalances(await requireUser(context), request.groupId), context);
+    return runUsecase(
+      async () =>
+        balances.getGroupBalances(
+          await requireRateLimitedUser(
+            context,
+            "get-group-balances",
+            RPC_RATE_LIMITS.getGroupBalances,
+          ),
+          request.groupId,
+        ),
+      context,
+    );
   },
 
   async getOverallBalances(_request, context) {
-    return runUsecase(async () => balances.getOverallBalances(await requireUser(context)), context);
+    return runUsecase(
+      async () =>
+        balances.getOverallBalances(
+          await requireRateLimitedUser(
+            context,
+            "get-overall-balances",
+            RPC_RATE_LIMITS.getOverallBalances,
+          ),
+        ),
+      context,
+    );
   },
 
   async getFriendLedger(request, context) {
     return runUsecase(
-      async () => balances.getFriendLedger(await requireUser(context), request.userId),
+      async () =>
+        balances.getFriendLedger(
+          await requireRateLimitedUser(
+            context,
+            "get-friend-ledger",
+            RPC_RATE_LIMITS.getFriendLedger,
+          ),
+          request.userId,
+        ),
       context,
     );
   },

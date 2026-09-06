@@ -4,9 +4,9 @@
  * The unit tests around it are all mocks, which prove the decision tree but
  * never execute a single statement. This one seeds every hazard the merge has
  * to handle simultaneously — double splits, overlapping memberships,
- * bidirectional friendships, a settlement between the two rows, a JSONB
- * audience, a soft-deleted expense — and checks what the database actually
- * contains afterwards.
+ * bidirectional friendships, pending friend requests, a settlement between
+ * the two rows, a JSONB audience, a soft-deleted expense — and checks what
+ * the database actually contains afterwards.
  *
  * Skips itself when no database is reachable, so it is safe in the suite.
  */
@@ -82,10 +82,24 @@ describe.skipIf(!reachable)("mergeAccounts against Postgres", () => {
   it("absorbs the invited row and leaves the balance invariant intact", async () => {
     // The invariant assertion lives inside the transaction, so a wrong repoint
     // surfaces as a rejection here rather than as quietly wrong money.
-    const outcome = await mergeAccounts(KEEPER, LOSER, PHONE);
+    const outcome = await mergeAccounts(KEEPER, LOSER, PHONE, { adoptPhone: true });
 
     expect(outcome.selfSettlementsRemoved).toBe(1);
     expect(outcome.duplicateSplitsSummed).toBe(1);
+  });
+
+  it("stamps the adopted number verified and strips the tombstone bare (§35)", async () => {
+    // adoptPhone: true is the SMS-merge path — possession was proven seconds
+    // before the merge, so the number must arrive already marked verified.
+    const { rows } = await database.query(
+      `SELECT id, phone, phone_verified_at FROM users WHERE id = ANY($1) ORDER BY id`,
+      [[KEEPER, LOSER].sort()],
+    );
+    const keeper = rows.find((entry) => entry.id === KEEPER);
+    const loser = rows.find((entry) => entry.id === LOSER);
+    expect(keeper?.phone).toBe(PHONE);
+    expect(keeper?.phone_verified_at).not.toBeNull();
+    expect(loser).toMatchObject({ phone: null, phone_verified_at: null });
   });
 
   it("sums the shares of an expense both rows appeared in", async () => {
@@ -112,9 +126,23 @@ describe.skipIf(!reachable)("mergeAccounts against Postgres", () => {
       `SELECT user_id, role FROM group_members WHERE group_id = 'grp-1' ORDER BY user_id`,
     );
     expect(rows).toEqual([
-      { user_id: KEEPER, role: "admin" },
+      { user_id: KEEPER, role: "owner" },
       { user_id: RAHUL, role: "member" },
     ]);
+  });
+
+  it("enforces authorization roles and distinct settlement parties in Postgres", async () => {
+    await expect(
+      database.query(`UPDATE group_members SET role = 'admin' WHERE group_id = 'grp-1'`),
+    ).rejects.toMatchObject({ constraint: "chk_group_members_role" });
+    await expect(
+      database.query(
+        `INSERT INTO settlements
+           (id, from_user, to_user, amount_cents, currency, method, recorded_by)
+         VALUES ('stl-self', $1, $1, 100, 'USD', 'cash', $1)`,
+        [KEEPER],
+      ),
+    ).rejects.toMatchObject({ constraint: "chk_settlements_distinct_users" });
   });
 
   it("leaves no self-friendship and no duplicate friendship", async () => {
@@ -127,11 +155,34 @@ describe.skipIf(!reachable)("mergeAccounts against Postgres", () => {
     ]);
   });
 
+  it("repoints pending friend requests without duplicates or self-requests", async () => {
+    const { rows } = await database.query(
+      `SELECT requester_id, recipient_id
+         FROM friend_requests
+        ORDER BY requester_id, recipient_id`,
+    );
+    expect(rows).toEqual([
+      { requester_id: KEEPER, recipient_id: RAHUL },
+      { requester_id: RAHUL, recipient_id: KEEPER },
+    ]);
+  });
+
   it("deletes money paid between the two rows and repoints the rest", async () => {
     const { rows } = await database.query(
-      `SELECT id, from_user, to_user FROM settlements ORDER BY id`,
+      `SELECT id, from_user, to_user, recorded_by FROM settlements ORDER BY id`,
     );
-    expect(rows).toEqual([{ id: "stl-2", from_user: RAHUL, to_user: KEEPER }]);
+    expect(rows).toEqual([
+      { id: "stl-2", from_user: RAHUL, to_user: KEEPER, recorded_by: KEEPER },
+    ]);
+  });
+
+  it("moves idempotency history to the surviving account", async () => {
+    const { rows } = await database.query(
+      `SELECT user_id, rpc, operation_id FROM operations ORDER BY operation_id`,
+    );
+    expect(rows).toEqual([
+      { user_id: KEEPER, rpc: "CreateExpense", operation_id: "operation-1" },
+    ]);
   });
 
   it("rewrites the JSONB audience and the unconstrained credit_user_id", async () => {
@@ -174,13 +225,16 @@ describe.skipIf(!reachable)("mergeAccounts against Postgres", () => {
        + (SELECT COUNT(*) FROM expense_item_assignments WHERE user_id = $1)
        + (SELECT COUNT(*) FROM group_members WHERE user_id = $1)
        + (SELECT COUNT(*) FROM friendships WHERE user_id = $1 OR friend_id = $1)
+       + (SELECT COUNT(*) FROM friend_requests WHERE requester_id = $1 OR recipient_id = $1)
        + (SELECT COUNT(*) FROM settlements WHERE from_user = $1 OR to_user = $1)
+       + (SELECT COUNT(*) FROM settlements WHERE recorded_by = $1 OR deleted_by = $1)
        + (SELECT COUNT(*) FROM comments WHERE user_id = $1)
        + (SELECT COUNT(*) FROM activity WHERE actor_id = $1 OR credit_user_id = $1
             OR audience @> to_jsonb($1::text))
        + (SELECT COUNT(*) FROM notifications WHERE user_id = $1)
        + (SELECT COUNT(*) FROM payment_handles WHERE user_id = $1)
-       + (SELECT COUNT(*) FROM expenses WHERE created_by = $1)
+       + (SELECT COUNT(*) FROM operations WHERE user_id = $1)
+       + (SELECT COUNT(*) FROM expenses WHERE created_by = $1 OR deleted_by = $1)
        + (SELECT COUNT(*) FROM groups WHERE created_by = $1) AS dangling`,
       [LOSER],
     );
@@ -210,7 +264,7 @@ async function seed(database: Client): Promise<void> {
   );
   await database.query(
     `INSERT INTO group_members (group_id, user_id, role) VALUES
-       ('grp-1', $1, 'member'), ('grp-1', $2, 'admin'), ('grp-1', $3, 'member')`,
+       ('grp-1', $1, 'member'), ('grp-1', $2, 'owner'), ('grp-1', $3, 'member')`,
     [KEEPER, LOSER, RAHUL],
   );
 
@@ -255,9 +309,10 @@ async function seed(database: Client): Promise<void> {
 
   // exp-3 is soft-deleted; its splits must still repoint.
   await database.query(
-    `INSERT INTO expenses (id, description, amount_cents, currency, expense_date, split_type, created_by, deleted_at)
-     VALUES ('exp-3', 'Cancelled', 900, 'USD', '2026-07-03', 'equal', $1, now())`,
-    [RAHUL],
+    `INSERT INTO expenses
+       (id, description, amount_cents, currency, expense_date, split_type, created_by, deleted_at, deleted_by)
+     VALUES ('exp-3', 'Cancelled', 900, 'USD', '2026-07-03', 'equal', $1, now(), $2)`,
+    [RAHUL, LOSER],
   );
   await database.query(
     `INSERT INTO expense_splits (expense_id, user_id, owed_cents) VALUES ('exp-3', $1, 900)`,
@@ -266,9 +321,15 @@ async function seed(database: Client): Promise<void> {
 
   // stl-1 is between the two rows: money paid to oneself once merged.
   await database.query(
-    `INSERT INTO settlements (id, from_user, to_user, amount_cents, currency) VALUES
-       ('stl-1', $1, $2, 500, 'USD'), ('stl-2', $3, $2, 200, 'USD')`,
+    `INSERT INTO settlements (id, from_user, to_user, amount_cents, currency, recorded_by) VALUES
+       ('stl-1', $1, $2, 500, 'USD', $1), ('stl-2', $3, $2, 200, 'USD', $2)`,
     [KEEPER, LOSER, RAHUL],
+  );
+
+  await database.query(
+    `INSERT INTO operations (user_id, rpc, operation_id, request_fingerprint, result_id)
+     VALUES ($1, 'CreateExpense', 'operation-1', 'fingerprint', 'exp-2')`,
+    [LOSER],
   );
 
   // Overlapping both ways, plus the pair that would become a self-loop and
@@ -276,6 +337,14 @@ async function seed(database: Client): Promise<void> {
   await database.query(
     `INSERT INTO friendships (user_id, friend_id) VALUES
        ($1, $3), ($3, $1), ($2, $3), ($3, $2), ($1, $2), ($2, $1)`,
+    [KEEPER, LOSER, RAHUL],
+  );
+
+  // Duplicate incoming and outgoing requests collapse onto the keeper; the
+  // two requests between keeper and loser disappear as self-requests.
+  await database.query(
+    `INSERT INTO friend_requests (requester_id, recipient_id) VALUES
+       ($1, $3), ($2, $3), ($3, $1), ($3, $2), ($1, $2), ($2, $1)`,
     [KEEPER, LOSER, RAHUL],
   );
 
@@ -295,7 +364,8 @@ async function seed(database: Client): Promise<void> {
     [LOSER],
   );
   await database.query(
-    `INSERT INTO notifications (id, user_id, type, title) VALUES ('ntf-1', $1, 'expense', 'New expense')`,
+    `INSERT INTO notifications (id, user_id, type, title)
+     VALUES ('ntf-1', $1, 'expense_added', 'New expense')`,
     [LOSER],
   );
 }

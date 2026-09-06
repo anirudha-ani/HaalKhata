@@ -12,7 +12,6 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "db:migrate": "node --env-file-if-exists=../../.env node_modules/node-pg-migrate/bin/node-pg-migrate.js up -m migrations",
-    "db:down": "node --env-file-if-exists=../../.env node_modules/node-pg-migrate/bin/node-pg-migrate.js down -m migrations",
     "db:new": "node-pg-migrate create -m migrations --migration-file-language sql"
   },
   "dependencies": {
@@ -23,16 +22,15 @@
     "@connectrpc/connect-web": "^2.1.2",
     "@haalkhata/protogen": "workspace:*",
     "@haalkhata/shared": "workspace:*",
-    "@tanstack/query-persist-client-core": "^5.101.2",
-    "@tanstack/query-sync-storage-persister": "^5.101.2",
     "@tanstack/react-query": "^5.90.5",
     "google-auth-library": "^10.9.1",
-    "heic-convert": "^2.1.0",
+    "heic-decode": "^2.1.0",
     "libphonenumber-js": "^1.13.8",
     "lucide-react": "^1.23.0",
-    "next": "^15.3.4",
+    "next": "^15.5.24",
     "node-pg-migrate": "^8.0.4",
     "pg": "^8.22.0",
+    "qrcode.react": "^4.2.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "sharp": "^0.35.3"
@@ -40,13 +38,12 @@
   "devDependencies": {
     "@eslint/eslintrc": "^3.3.5",
     "@tailwindcss/postcss": "^4.1.10",
-    "@types/heic-convert": "^2.1.1",
     "@types/node": "^24.0.0",
     "@types/pg": "^8.20.0",
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.6",
     "eslint": "^9",
-    "eslint-config-next": "^15.3.4",
+    "eslint-config-next": "^15.5.24",
     "tailwindcss": "^4.1.10",
     "typescript": "^5.8.3",
     "vitest": "^3.2.4"

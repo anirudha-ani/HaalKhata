@@ -35,17 +35,10 @@ function alreadyHydrated(): boolean {
  * Reports `false` during the hydration render and `true` from the first
  * client-only render onwards.
  *
- * Pages under a `loading.tsx` boundary are streamed, so React hydrates them
- * *after* the root has committed — by which time the `Providers` effect has
- * restored the TanStack Query cache from localStorage. A query the server
- * rendered as pending can therefore already hold data when the page hydrates,
- * and a tree that branches on it ("spinner" server-side, "content" client-side)
- * is a hydration mismatch: React discards the whole subtree and re-renders it.
- *
- * Gating that branch on this hook makes the hydration render reproduce the
- * server's output exactly; the cached data lands on the very next render. It
- * covers everything below the gate that the server cannot reproduce either —
- * `new Date()`, `toLocaleTimeString`, the user's timezone and locale.
+ * Gating browser-only branches on this hook makes the hydration render
+ * reproduce the server's output exactly. It covers values the server cannot
+ * reproduce, including `new Date()`, `toLocaleTimeString`, the user's timezone
+ * and locale.
  *
  * `useSyncExternalStore` rather than a state-setting effect: React already
  * distinguishes the hydration render from the ones after it via the server

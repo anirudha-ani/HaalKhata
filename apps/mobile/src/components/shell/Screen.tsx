@@ -3,6 +3,8 @@
 import type { ReactNode } from "react";
 import { RefreshControl, ScrollView, StyleSheet } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { SCREEN_CONTENT_MAX_WIDTH } from "@/components/shell/shell.constants";
+import { useResponsiveLayout } from "@/components/shell/hooks/useResponsiveLayout";
 import { colors, spacing } from "@/lib/theme/theme";
 
 /**
@@ -25,11 +27,12 @@ export function Screen({
   /** Called on pull-to-refresh; omitting it disables the gesture. */
   onRefresh?: () => void;
 }) {
+  const { isTablet } = useResponsiveLayout();
   return (
     <SafeAreaView edges={["top"]} style={styles.safeArea}>
       {header}
       <ScrollView
-        contentContainerStyle={styles.content}
+        contentContainerStyle={[styles.content, isTablet ? styles.contentTablet : null]}
         keyboardShouldPersistTaps="handled"
         refreshControl={
           onRefresh ? (
@@ -49,9 +52,16 @@ export function Screen({
 
 const styles = StyleSheet.create({
   content: {
+    alignSelf: "center",
     gap: spacing.xl,
+    maxWidth: SCREEN_CONTENT_MAX_WIDTH,
     padding: spacing.lg,
     paddingBottom: spacing.xxl,
+    width: "100%",
+  },
+  contentTablet: {
+    padding: spacing.xxl,
+    paddingBottom: spacing.xxl * 2,
   },
   safeArea: {
     backgroundColor: colors.paper,

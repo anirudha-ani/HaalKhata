@@ -10,6 +10,7 @@ import { ReceiptPanel } from "../ReceiptPanel/ReceiptPanel";
 import { SplitEditor } from "../SplitEditor/SplitEditor";
 import { useNewExpense } from "../../hooks/useNewExpense";
 import type { useNewExpenseAPI } from "../../hooks/useNewExpenseAPI";
+import { MAX_EXPENSE_DESCRIPTION_LENGTH, MAX_EXPENSE_NOTES_LENGTH } from "@haalkhata/shared/text/limits";
 
 /** Shared className for the text-style inputs and selects in this form. */
 const inputClass =
@@ -56,7 +57,7 @@ export function ExpenseForm({
         friendIds={form.friendIds}
         onGroupChange={form.setGroupId}
         onToggleFriend={form.toggleFriend}
-        disabled={form.isEdit}
+        scopeLocked={form.isEdit}
       />
 
       <section className="space-y-3">
@@ -64,6 +65,7 @@ export function ExpenseForm({
           className={inputClass}
           placeholder="What was it for?"
           aria-label="Description"
+          maxLength={MAX_EXPENSE_DESCRIPTION_LENGTH}
           value={form.description}
           onChange={(event) => form.setDescription(event.target.value)}
         />
@@ -81,7 +83,7 @@ export function ExpenseForm({
               placeholder="0.00"
               readOnly={form.isItemized}
               title={form.isItemized ? "Calculated from the items below" : undefined}
-              value={form.isItemized ? centsToInput(form.totalCents ?? 0) : form.amount}
+              value={form.isItemized ? centsToInput(form.totalCents ?? 0, currency) : form.amount}
               onChange={(event) => form.setAmount(event.target.value)}
             />
           </label>
@@ -123,6 +125,7 @@ export function ExpenseForm({
         className={`${inputClass} min-h-20 text-base sm:text-sm`}
         placeholder="Notes (optional)"
         aria-label="Notes"
+        maxLength={MAX_EXPENSE_NOTES_LENGTH}
         value={form.notes}
         onChange={(event) => form.setNotes(event.target.value)}
       />

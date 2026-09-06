@@ -12,7 +12,7 @@ name: haalkhata
 
 services:
   db:
-    image: postgres:17-alpine
+    image: postgres:17-alpine@sha256:18cfe3ef5e6815560c98237d6216d1e5119702fb0f3894c8785dd58b8bbe5d73
     restart: unless-stopped
     environment:
       POSTGRES_DB: haalkhata
@@ -40,17 +40,42 @@ services:
       interval: 10s
       timeout: 3s
       retries: 10
+    # The official entrypoint starts as root only to repair volume ownership
+    # and drop to postgres. Keep exactly those capabilities; the database
+    # process inherits none after gosu changes uid.
+    cap_drop: [ALL]
+    cap_add: [CHOWN, DAC_OVERRIDE, FOWNER, SETGID, SETUID]
+    security_opt:
+      - "no-new-privileges:true"
     # No `ports`. The database is reachable only over the compose network.
 
   web:
-    image: ghcr.io/anirudha-ani/haalkhata:${IMAGE_TAG:-latest}
+    # deploy.sh writes an exact 40-character commit tag; never fall back to the
+    # mutable `latest` tag in production.
+    image: ghcr.io/anirudha-ani/haalkhata:${IMAGE_TAG:?set IMAGE_TAG to a deployed commit SHA}
     restart: unless-stopped
     depends_on:
       db:
         condition: service_healthy
     environment:
       NODE_ENV: production
-      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
+      # Safe only because this stack's Caddyfile overwrites X-Forwarded-For.
+      TRUST_PROXY_HEADERS: "true"
+      # Required form: production signs in with Google only, so a stack
+      # without this would start, pass readiness, and lock everyone out.
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:?GOOGLE_CLIENT_ID is required — production signs in with Google only}
+      GOOGLE_MOBILE_CLIENT_IDS: ${GOOGLE_MOBILE_CLIENT_IDS:-}
+      # Secrets are read from these files by the app itself (the Docker
+      # `_FILE` convention); nothing exports them into the environment.
+      SESSION_SECRET_FILE: /run/secrets/session_secret
+      # Verification-only key for a planned rotation; the file is empty otherwise.
+      SESSION_SECRET_PREVIOUS_FILE: /run/secrets/session_secret_previous
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+      POSTGRES_HOST: db
+      COMPATIBLE_AI_API_KEY_FILE: /run/secrets/openrouter_api_key
+      TWILIO_API_KEY_SECRET_FILE: /run/secrets/twilio_api_key_secret
+      TWILIO_API_KEY_SID: ${TWILIO_API_KEY_SID}
+      TWILIO_VERIFY_SERVICE_SID: ${TWILIO_VERIFY_SERVICE_SID}
       # `mock` is deliberately dropped here. In development it keeps the scan
       # flow demoable with no key; in production a fallback that invents
       # plausible line items on someone's real receipt is worse than a visible
@@ -61,8 +86,10 @@ services:
       COMPATIBLE_AI_ZDR: "true"
     secrets:
       - session_secret
+      - session_secret_previous
       - postgres_password
       - openrouter_api_key
+      - twilio_api_key_secret
     # Verified: the app serves fine on a read-only rootfs. It imports
     # next/image nowhere, so nothing writes to .next/cache/images. If that ever
     # changes, add - /app/apps/web/.next/cache to tmpfs.
@@ -73,9 +100,9 @@ services:
     security_opt:
       - "no-new-privileges:true"
     healthcheck:
-      # busybox wget, present in node:24-alpine. /login is the cheapest route
-      # that exercises a real render.
-      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:3000/login"]
+      # busybox wget is present in node:24-alpine. Readiness verifies the
+      # signing secret, applies migrations, and performs a live DB round-trip.
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:3000/api/health"]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -83,10 +110,14 @@ services:
     # No `ports`. Only Caddy reaches it, over the compose network.
 
   caddy:
-    image: caddy:2-alpine
+    image: caddy:2-alpine@sha256:5f5c8640aae01df9654968d946d8f1a56c497f1dd5c5cda4cf95ab7c14d58648
     restart: unless-stopped
+    environment:
+      # Caddy uses this for certificate expiry and account problem notices.
+      ACME_EMAIL: ${ACME_EMAIL:?set ACME_EMAIL in /srv/haalkhata/.env}
     depends_on:
-      - web
+      web:
+        condition: service_healthy
     ports:
       - "80:80"      # ACME HTTP-01 challenge + redirect to HTTPS
       - "443:443"
@@ -103,10 +134,14 @@ services:
 secrets:
   session_secret:
     file: /srv/haalkhata/secrets/session_secret
+  session_secret_previous:
+    file: /srv/haalkhata/secrets/session_secret_previous
   postgres_password:
     file: /srv/haalkhata/secrets/postgres_password
   openrouter_api_key:
     file: /srv/haalkhata/secrets/openrouter_api_key
+  twilio_api_key_secret:
+    file: /srv/haalkhata/secrets/twilio_api_key_secret
 
 volumes:
   db-data:

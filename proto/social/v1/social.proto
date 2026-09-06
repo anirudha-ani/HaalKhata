@@ -7,15 +7,60 @@ import "common/v1/common.proto";
 
 // Friends, the activity feed and in-app notifications.
 service SocialService {
-  // Add a friend by email; creates a claimable shadow user if needed.
+  // Sends a privacy-preserving friend request. The returned User is kept for
+  // wire compatibility and intentionally carries no target fields: callers
+  // must not learn whether an email, phone, or id resolved to an account.
   rpc AddFriend(AddFriendRequest) returns (common.v1.User);
   rpc ListFriends(google.protobuf.Empty) returns (ListFriendsResponse);
+  // Accepts or declines an incoming request; only the named recipient can act.
+  rpc RespondFriendRequest(RespondFriendRequestRequest) returns (google.protobuf.Empty);
+  // Ends a friendship. Refused (FailedPrecondition) while any balance with
+  // that person, in any currency, is outstanding: removal must not orphan
+  // debt. Quiet like group removal (no notification); shared history and
+  // group co-memberships are untouched, and they can be re-added later.
+  rpc RemoveFriend(RemoveFriendRequest) returns (google.protobuf.Empty);
   rpc ListActivity(ListActivityRequest) returns (ListActivityResponse);
   rpc ListNotifications(google.protobuf.Empty) returns (ListNotificationsResponse);
   rpc MarkNotificationsRead(google.protobuf.Empty) returns (google.protobuf.Empty);
   // Nudges someone who owes the caller money. Rate-limited server-side so it
   // cannot become a way to harass somebody.
   rpc SendReminder(SendReminderRequest) returns (google.protobuf.Empty);
+
+  // Invite links. A person without an account appears as "Invited" and can
+  // be part of no transaction, which is what makes a bearer link safe to
+  // share: claiming an invite moves friendships and group memberships onto
+  // the acceptor's account, never money.
+
+  // The invited person's active reminder link, created on first ask. The
+  // target must be an unregistered ("Invited") connection of the caller.
+  rpc GetFriendInviteLink(GetFriendInviteLinkRequest) returns (InviteLink);
+  // One gesture behind the group-add flow's "they're not on HaalKhata yet —
+  // send them a sign-up invite?" offer (§33c): creates (or finds) the
+  // Invited contact, befriends the caller with it, and returns the claim
+  // link to share. Refused when the identifier already has a claimed
+  // account — that person is added directly, not invited.
+  rpc InviteContactToSignUp(InviteContactRequest) returns (InviteLink);
+  // The group's one active join link, created on first ask. Any member may
+  // — the same trust level as adding people directly.
+  rpc CreateGroupInviteLink(CreateGroupInviteLinkRequest) returns (InviteLink);
+  // Disables the group's active link; a fresh one can be created after.
+  // Owner only: revocation invalidates a link every member may have shared.
+  rpc RevokeGroupInviteLink(RevokeGroupInviteLinkRequest) returns (google.protobuf.Empty);
+  // The caller's own shareable "add me" link, minted on first ask. Accepting
+  // it sends the owner an ordinary friend request — the link removes the
+  // typing, not the consent: a bearer string that leaks must not let a
+  // stranger attach themselves (and future one-off expenses) to the owner.
+  rpc GetProfileInviteLink(google.protobuf.Empty) returns (InviteLink);
+  // Disables the caller's profile link; the next ask mints a fresh one.
+  rpc RevokeProfileInviteLink(google.protobuf.Empty) returns (google.protobuf.Empty);
+  // UNAUTHENTICATED. What a clicked link offers — who invited you, to what —
+  // so the landing page can say it before asking anyone to sign in.
+  // Possession of the unguessable token is the only credential; the call is
+  // rate-limited by client address.
+  rpc PreviewInviteLink(PreviewInviteLinkRequest) returns (InvitePreview);
+  // Accepts a link as the signed-in caller: joins the group and/or claims
+  // the invited identity, and befriends the inviter. Safe to repeat.
+  rpc AcceptInviteLink(AcceptInviteLinkRequest) returns (AcceptInviteLinkResponse);
 }
 
 message SendReminderRequest {
@@ -24,18 +69,30 @@ message SendReminderRequest {
 }
 
 message AddFriendRequest {
-  // Exactly one of email/phone/user_id identifies the friend; phone is E.164.
+  // Exactly one of email/phone/user_id identifies the recipient; phone is E.164.
   string email = 1;
-  string name = 2; // optional display name for shadow users
+  string name = 2; // legacy field; ignored because shadow users are never created
   string phone = 3;
-  // An existing account by id — for befriending someone already on screen,
-  // like a fellow group member, without retyping contact details. The caller
-  // must share a group with them: an id is not an introduction, membership is.
+  // An existing account by id — for requesting someone already on screen.
   string user_id = 4;
+}
+
+message RemoveFriendRequest {
+  string user_id = 1;
+}
+
+message RespondFriendRequestRequest {
+  // Existing incoming request's sender. Unknown/non-incoming ids are rejected.
+  string user_id = 1;
+  // True accepts and creates the symmetric friendship; false declines it.
+  bool accept = 2;
 }
 
 message ListFriendsResponse {
   repeated common.v1.CounterpartyBalance friends = 1;
+  // Pending senders visible only to this recipient. Contact details and
+  // payment handles are withheld until the request is accepted.
+  repeated common.v1.User incoming_requests = 2;
 }
 
 message ListActivityRequest {
@@ -92,4 +149,54 @@ message Notification {
 message ListNotificationsResponse {
   repeated Notification notifications = 1;
   int32 unread_count = 2;
+}
+
+message GetFriendInviteLinkRequest {
+  // The Invited (unregistered) person the link reminds.
+  string user_id = 1;
+}
+
+message CreateGroupInviteLinkRequest {
+  string group_id = 1;
+}
+
+message RevokeGroupInviteLinkRequest {
+  string group_id = 1;
+}
+
+message InviteLink {
+  // Opaque bearer token. Clients compose the shareable URL as
+  // https://haalkhata.app/join/<token>; the server never builds URLs so the
+  // link origin stays a client concern.
+  string token = 1;
+}
+
+message PreviewInviteLinkRequest {
+  string token = 1;
+}
+
+message InvitePreview {
+  string kind = 1; // "friend" | "group" | "profile"
+  string inviter_name = 2;
+  // Group links only.
+  string group_name = 3;
+  int32 member_count = 4;
+  // Friend links only: the name the invitation was created under, so the
+  // landing page can say "join as Rifat".
+  string invited_name = 5;
+}
+
+message AcceptInviteLinkRequest {
+  string token = 1;
+}
+
+message AcceptInviteLinkResponse {
+  // Set for a group link so the client can land on the group afterwards.
+  string group_id = 1;
+}
+
+message InviteContactRequest {
+  // Exactly one of email/phone; phone in any format the user typed.
+  string email = 1;
+  string phone = 2;
 }

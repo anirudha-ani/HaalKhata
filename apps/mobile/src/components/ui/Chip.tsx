@@ -6,13 +6,16 @@ import { colors, radii, spacing } from "@/lib/theme/theme";
 
 /**
  * Renders a rounded pill that toggles between a muted outline and the
- * brand-tinted selected state.
+ * brand-tinted selected state. A disabled chip keeps its selected tint (it
+ * still states a fact) but dims and stops responding, so a locked choice
+ * looks locked rather than merely ignoring taps.
  */
 export function Chip({
   label,
   selected,
   onPress,
   icon,
+  disabled = false,
 }: {
   /** The chip's caption. */
   label: string;
@@ -22,13 +25,16 @@ export function Chip({
   onPress: () => void;
   /** Optional leading icon element. */
   icon?: ReactNode;
+  /** Whether the chip is locked: dimmed, and presses are ignored. */
+  disabled?: boolean;
 }) {
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityState={{ selected }}
+      accessibilityState={{ disabled, selected }}
+      disabled={disabled}
       onPress={onPress}
-      style={[styles.chip, selected ? styles.chipSelected : null]}
+      style={[styles.chip, selected ? styles.chipSelected : null, disabled ? styles.chipDisabled : null]}
     >
       {icon ?? null}
       <Text style={[styles.label, selected ? styles.labelSelected : null]}>{label}</Text>
@@ -46,6 +52,9 @@ const styles = StyleSheet.create({
     gap: 6,
     paddingHorizontal: spacing.md,
     paddingVertical: 7,
+  },
+  chipDisabled: {
+    opacity: 0.5,
   },
   chipSelected: {
     backgroundColor: colors.brand50,

@@ -9,7 +9,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { Money } from "@/components/ui/Money";
 import { formatMoney } from "@haalkhata/shared/money/money";
 import { CATEGORY_EMOJI } from "./categoryEmoji";
-import { settledStatus } from "./settledStatus";
+import { settledStatus } from "@haalkhata/shared/expense/settledStatus";
 
 /**
  * Group-agnostic expense list with a "your share" lens per row: each expense
@@ -74,6 +74,10 @@ export function ExpenseList({
               ? "you paid"
               : `${firstPayer} paid`;
 
+        // A deleted expense stays in the list, struck through: it no longer
+        // moves any balance, but a payment made against it keeps the row
+        // that explains it.
+        const deleted = expense.deletedAt !== "";
         const settled = settledIds?.has(expense.id) ?? false;
         // Everyone else on the expense, for the one-off wording — group rows
         // speak of the group instead and never read this.
@@ -98,8 +102,15 @@ export function ExpenseList({
             >
               <span className="text-xl">{CATEGORY_EMOJI[expense.category] ?? "🧾"}</span>
               <div className="min-w-0 flex-1">
-                <p className="truncate font-medium">{expense.description}</p>
+                <p className={`truncate font-medium ${deleted ? "text-ink-soft line-through" : ""}`}>
+                  {expense.description}
+                </p>
                 <p className="mt-0.5 flex items-center gap-1.5 text-xs text-ink-soft">
+                  {deleted ? (
+                    <span className="shrink-0 rounded-full bg-paper px-2 py-0.5 font-medium text-ink-soft">
+                      deleted
+                    </span>
+                  ) : null}
                   {/* The row's home as a pill, not buried in the meta text —
                       on a mixed list, where an expense lives is the first
                       thing being scanned for. */}
@@ -124,7 +135,9 @@ export function ExpenseList({
                 </p>
               </div>
               <div className="text-right">
-                {myNet === 0 ? (
+                {deleted ? (
+                  <span className="text-xs text-ink-soft">no longer counts</span>
+                ) : myNet === 0 ? (
                   <span className="text-xs text-ink-soft">not involved / even</span>
                 ) : status ? (
                   <>

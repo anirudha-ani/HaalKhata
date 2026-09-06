@@ -1,5 +1,6 @@
 /** All SQL for the notifications table. */
 
+import type { PoolClient } from "pg";
 import { execute, newId, query, queryOne, transaction } from "@/server/common/db";
 
 /** A row from the notifications table (column names mirror SQL). */
@@ -25,21 +26,26 @@ export interface NotificationRow {
  * @param userIds - Ids of the users to notify (one row per user).
  * @param input - Notification content: kind, title, body text, and the
  *   in-app link it points to.
+ * @param client - Existing transaction client when the triggering write must
+ *   commit atomically with its notification.
  */
 export async function insertNotifications(
   userIds: string[],
   input: { type: string; title: string; body: string; link: string },
+  client?: PoolClient,
 ): Promise<void> {
   if (userIds.length === 0) return;
-  await transaction(async (client) => {
+  const persist = async (transactionClient: PoolClient): Promise<void> => {
     for (const userId of userIds) {
-      await client.query(
+      await transactionClient.query(
         `INSERT INTO notifications (id, user_id, type, title, body, link)
          VALUES ($1, $2, $3, $4, $5, $6)`,
         [newId(), userId, input.type, input.title, input.body, input.link],
       );
     }
-  });
+  };
+  if (client) await persist(client);
+  else await transaction(persist);
 }
 
 /**
@@ -74,12 +80,14 @@ export async function findLatestNotificationAt(
   userId: string,
   type: string,
   link: string,
+  client?: PoolClient,
 ): Promise<string | undefined> {
   const latest = await queryOne<{ created_at: string }>(
     `SELECT created_at FROM notifications
      WHERE user_id = $1 AND type = $2 AND link = $3
      ORDER BY created_at DESC LIMIT 1`,
     [userId, type, link],
+    client,
   );
   return latest?.created_at;
 }

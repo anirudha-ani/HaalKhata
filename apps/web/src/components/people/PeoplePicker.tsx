@@ -25,6 +25,11 @@ export interface PickerGroup {
  * group takes over the cast and hides the add-people control. Picking "No
  * group" hands it back.
  *
+ * When editing, only the scope is locked: a saved expense cannot move
+ * between a group and a one-off ledger (the server pins it, because
+ * settlements live in the scope), but who is on it can still change — the
+ * server recomputes the splits and locks both the old and the new cast.
+ *
  * @param props - Component props.
  * @returns The participant picker section.
  */
@@ -37,7 +42,7 @@ export function PeoplePicker({
   friendIds,
   onGroupChange,
   onToggleFriend,
-  disabled = false,
+  scopeLocked = false,
 }: {
   /** The signed-in user, pinned as the first chip and labelled "You". */
   me: User | undefined;
@@ -55,8 +60,8 @@ export function PeoplePicker({
   onGroupChange: (groupId: string) => void;
   /** Called with a friend's id to add or remove them from the ad-hoc cast. */
   onToggleFriend: (userId: string) => void;
-  /** Whether the whole picker is locked (the cast of a saved expense cannot move). */
-  disabled?: boolean;
+  /** Whether the group/one-off choice is locked (a saved expense cannot change scope). */
+  scopeLocked?: boolean;
 }) {
   const fieldId = useId();
   // Open on a blank form, where picking people is the next thing to do; closed
@@ -104,7 +109,7 @@ export function PeoplePicker({
             const isSelf = person.id === currentUser?.id;
             // You are always on your own expense, and a group's members come
             // from the group — neither is removable here.
-            const isRemovable = !isSelf && !isGroupExpense && !disabled;
+            const isRemovable = !isSelf && !isGroupExpense;
             return (
               <li key={person.id}>
                 <span
@@ -137,7 +142,7 @@ export function PeoplePicker({
             Everyone in {selectedGroupName} is on this — leave someone out by
             unchecking them under Split.
           </p>
-        ) : disabled ? null : friends.length === 0 ? (
+        ) : friends.length === 0 ? (
           <p className="text-sm text-ink-soft">
             <Link href="/friends" className="font-medium text-brand-600">
               Add a friend
@@ -170,6 +175,13 @@ export function PeoplePicker({
                   onToggle={onToggleFriend}
                   legend="Friends on this expense"
                   autoFocus={focusSearch}
+                  // §33: an Invited person can be a friend but never on a
+                  // transaction. Shown-but-disabled beats hidden — "why isn't
+                  // Rifat here?" answers itself.
+                  disabledIds={
+                    new Set(friends.filter((friend) => !friend.registered).map((friend) => friend.id))
+                  }
+                  disabledHint="invited — hasn't joined yet"
                 />
               </div>
             ) : null}
@@ -184,7 +196,8 @@ export function PeoplePicker({
             id={`${fieldId}-group`}
             value={groupId}
             onChange={(event) => onGroupChange(event.target.value)}
-            disabled={disabled || groups.length === 0}
+            disabled={scopeLocked || groups.length === 0}
+            title={scopeLocked ? "A saved expense cannot move between groups" : undefined}
             className="min-w-0 flex-1 rounded-xl border border-line bg-card px-3 py-2 text-sm focus:border-brand-500 focus:outline-none disabled:opacity-50"
           >
             <option value="">No group (one-off)</option>
@@ -194,6 +207,9 @@ export function PeoplePicker({
               </option>
             ))}
           </select>
+          {scopeLocked ? (
+            <span className="shrink-0 text-xs text-ink-soft">can&apos;t change once saved</span>
+          ) : null}
         </div>
       </div>
     </section>

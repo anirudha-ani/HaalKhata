@@ -1,7 +1,8 @@
-/** Login screen UI: sign-in / create-account toggle and credentials form. */
+/** Login screen UI: Google sign-in, plus the development-only password form. */
 
 import {
   KeyboardAvoidingView,
+  Image,
   Platform,
   ScrollView,
   StyleSheet,
@@ -13,12 +14,18 @@ import { Button } from "@/components/ui/Button";
 import { Segmented } from "@/components/ui/Segmented";
 import { TextField } from "@/components/ui/TextField";
 import { colors, fonts, radii, spacing } from "@/lib/theme/theme";
+import { GOOGLE_SIGN_IN_CONFIGURED, PASSWORD_AUTH_ENABLED } from "../../constants/googleSignIn";
 import { LOGIN_MODES } from "../../constants/loginModes";
+import brandIconSource from "../../../../../assets/icon.png";
+import { GoogleSignInButton } from "./components/GoogleSignInButton/GoogleSignInButton";
 import { useLogin } from "./hooks/useLogin";
+import { FOCUSED_CONTENT_MAX_WIDTH } from "@/components/shell/shell.constants";
 
 /**
- * Renders the login screen: the HaalKhata wordmark, the sign-in/create-account
- * mode toggle, and the credentials form (name appears only in signup mode).
+ * Renders the login screen: the HaalKhata icon and wordmark, "Continue with Google"
+ * (the only way in on a production server), and — in development builds
+ * only, mirroring the server's password gate — the sign-in/create-account
+ * toggle and credentials form for seeded accounts.
  *
  * @returns The full-height login screen.
  */
@@ -35,62 +42,82 @@ export function LoginScreen() {
           contentContainerStyle={styles.scrollContent}
           keyboardShouldPersistTaps="handled"
         >
-          <View style={styles.hero}>
-            <Text style={styles.wordmark}>HAALKHATA</Text>
-            <Text style={styles.tagline}>
-              Camera eats first. The AI splits the rest.
-            </Text>
-          </View>
-
-          <View style={styles.card}>
-            <Segmented
-              onChange={login.switchMode}
-              options={LOGIN_MODES}
-              value={login.mode}
-            />
-
-            <View style={styles.form}>
-              {login.mode === "signup" ? (
-                <TextField
-                  autoComplete="name"
-                  onChangeText={login.setName}
-                  placeholder="Your name"
-                  value={login.name}
-                />
-              ) : null}
-              <TextField
-                autoCapitalize="none"
-                autoComplete="username"
-                keyboardType="email-address"
-                onChangeText={login.setIdentifier}
-                placeholder="Email or phone"
-                value={login.identifier}
-              />
-              <TextField
-                autoCapitalize="none"
-                autoComplete={login.mode === "login" ? "current-password" : "new-password"}
-                onChangeText={login.setPassword}
-                onSubmitEditing={login.submit}
-                placeholder="Password"
-                secureTextEntry
-                value={login.password}
-              />
-
-              {login.error ? <Text style={styles.error}>{login.error}</Text> : null}
-
-              <Button
-                busy={login.isPending}
-                label={login.mode === "login" ? "Sign in" : "Open your ledger"}
-                onPress={login.submit}
-              />
+          <View style={styles.content}>
+            <View style={styles.hero}>
+              <Image source={brandIconSource} style={styles.brandIcon} />
+              <Text style={styles.wordmark}>HAALKHATA</Text>
+              <Text style={styles.tagline}>
+                Camera eats first. The AI splits the rest.
+              </Text>
             </View>
 
-            {login.mode === "signup" ? (
+            <View style={styles.card}>
+            {GOOGLE_SIGN_IN_CONFIGURED ? (
+              <GoogleSignInButton />
+            ) : PASSWORD_AUTH_ENABLED ? null : (
               <Text style={styles.hint}>
-                Invited by a friend? Sign up with the same email or phone and
-                your shared expenses will already be here.
+                Sign-in is not configured for this build: it needs the Google client ids set at
+                build time.
               </Text>
+            )}
+
+            {PASSWORD_AUTH_ENABLED ? (
+              <>
+                {GOOGLE_SIGN_IN_CONFIGURED ? (
+                  <Text style={styles.divider}>or, in development, with a password</Text>
+                ) : null}
+                <Segmented
+                  onChange={login.switchMode}
+                  options={LOGIN_MODES}
+                  value={login.mode}
+                />
+
+                <View style={styles.form}>
+                  {login.mode === "signup" ? (
+                    <TextField
+                      autoComplete="name"
+                      onChangeText={login.setName}
+                      placeholder="Your name"
+                      value={login.name}
+                    />
+                  ) : null}
+                  <TextField
+                    autoCapitalize="none"
+                    autoComplete="username"
+                    keyboardType="email-address"
+                    onChangeText={login.setIdentifier}
+                    placeholder="Email or phone"
+                    value={login.identifier}
+                  />
+                  <TextField
+                    autoCapitalize="none"
+                    autoComplete={login.mode === "login" ? "current-password" : "new-password"}
+                    onChangeText={login.setPassword}
+                    onSubmitEditing={login.submit}
+                    placeholder="Password"
+                    secureTextEntry
+                    value={login.password}
+                  />
+
+                  {login.error ? <Text style={styles.error}>{login.error}</Text> : null}
+
+                  <Button
+                    busy={login.isPending}
+                    label={login.mode === "login" ? "Sign in" : "Open your ledger"}
+                    onPress={login.submit}
+                    variant={GOOGLE_SIGN_IN_CONFIGURED ? "outline" : "primary"}
+                  />
+                </View>
+
+                {login.mode === "signup" ? (
+                  <Text style={styles.hint}>
+                    Invited by a friend? Sign up with the same email or phone and
+                    your shared expenses will already be here.
+                  </Text>
+                ) : null}
+              </>
             ) : null}
+            </View>
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -99,6 +126,12 @@ export function LoginScreen() {
 }
 
 const styles = StyleSheet.create({
+  brandIcon: {
+    borderRadius: radii.lg,
+    height: 96,
+    marginBottom: spacing.lg,
+    width: 96,
+  },
   card: {
     backgroundColor: colors.card,
     borderColor: colors.line,
@@ -106,6 +139,15 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     gap: spacing.lg,
     padding: spacing.xl,
+  },
+  content: {
+    maxWidth: FOCUSED_CONTENT_MAX_WIDTH,
+    width: "100%",
+  },
+  divider: {
+    color: colors.inkSoft,
+    fontSize: 12,
+    textAlign: "center",
   },
   error: {
     color: colors.brand600,
@@ -131,16 +173,10 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
+    alignItems: "center",
     flexGrow: 1,
     justifyContent: "center",
     padding: spacing.xl,
-  },
-  subtitle: {
-    color: colors.inkSoft,
-    fontSize: 12,
-    fontWeight: "500",
-    letterSpacing: 5,
-    marginTop: spacing.xs,
   },
   tagline: {
     color: colors.inkSoft,

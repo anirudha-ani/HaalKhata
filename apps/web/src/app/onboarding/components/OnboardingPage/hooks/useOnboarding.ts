@@ -7,7 +7,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { queryKeys } from "@haalkhata/shared/api/queryKeys";
 import type { MergePreview } from "@haalkhata/protogen/auth/v1/auth_pb";
 import { authClient, errorMessage } from "@/lib/api/connect";
-import { composeE164, DEFAULT_PHONE_REGION, splitE164 } from "@/lib/phone/phone";
+import { composeE164, DEFAULT_PHONE_REGION, isValidPhone, splitE164 } from "@haalkhata/shared/phone/phone";
+import { INVALID_PHONE_MESSAGE } from "@haalkhata/shared/phone/contact";
 
 /**
  * Drives the onboarding screen.
@@ -40,6 +41,8 @@ export function useOnboarding() {
   const [error, setError] = useState("");
   const [pendingMerge, setPendingMerge] = useState<MergePreview | undefined>();
   const [mergeToken, setMergeToken] = useState("");
+  const [verificationPhone, setVerificationPhone] = useState("");
+  const [verificationCode, setVerificationCode] = useState("");
 
   // Seeded from the server exactly once, when the query first resolves. Using
   // state initializers would capture `undefined` on the loading render.
@@ -79,12 +82,28 @@ export function useOnboarding() {
       // re-typed with different spacing has to count as unchanged.
       const claimedPhone = composeE164(region, nationalNumber);
       if (claimedPhone.length > 0 && claimedPhone !== meQuery.data?.phone) {
-        const result = await authClient.setPhone({ phone: claimedPhone });
-        if (result.pendingMerge) {
-          setPendingMerge(result.pendingMerge);
-          setMergeToken(result.mergeToken);
-          return;
-        }
+        // Checked with the same libphonenumber metadata the server uses, so
+        // an impossible number fails beside the field instead of costing an
+        // SMS round-trip to hear the same thing.
+        if (!isValidPhone(region, nationalNumber)) throw new Error(INVALID_PHONE_MESSAGE);
+        const result = await authClient.setPhone({ phone: claimedPhone, verificationCode: "" });
+        if (result.verificationSent) setVerificationPhone(claimedPhone);
+        return;
+      }
+      await finish();
+    },
+    onError: (mutationError) => setError(errorMessage(mutationError)),
+  });
+
+  const verifyPhone = useMutation({
+    mutationFn: () => authClient.setPhone({ phone: verificationPhone, verificationCode }),
+    onSuccess: async (result) => {
+      setVerificationPhone("");
+      setVerificationCode("");
+      if (result.pendingMerge) {
+        setPendingMerge(result.pendingMerge);
+        setMergeToken(result.mergeToken);
+        return;
       }
       await finish();
     },
@@ -129,10 +148,19 @@ export function useOnboarding() {
     setNationalNumber,
     error,
     pendingMerge,
+    verificationPhone,
+    verificationCode,
+    setVerificationCode,
+    verifyPhone: () => verifyPhone.mutate(),
+    cancelVerification: () => {
+      setVerificationPhone("");
+      setVerificationCode("");
+      setError("");
+    },
     confirmMerge: () => confirmMerge.mutate(),
     declineMerge,
     save: () => save.mutate(),
     skip: () => skip.mutate(),
-    isPending: save.isPending || confirmMerge.isPending || skip.isPending,
+    isPending: save.isPending || verifyPhone.isPending || confirmMerge.isPending || skip.isPending,
   };
 }

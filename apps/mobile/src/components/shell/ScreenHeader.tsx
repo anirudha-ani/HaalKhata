@@ -1,15 +1,17 @@
-/** Tab-screen header: the wordmark plus notification bell and account avatar. */
+/** Tab-screen header: the brand lockup, notification bell, and account avatar. */
 
 import { useRouter } from "expo-router";
 import { Bell, CircleUserRound } from "lucide-react-native";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Image, Pressable, StyleSheet, Text, View } from "react-native";
 import { Avatar } from "@/components/ui/Avatar";
+import { SCREEN_CONTENT_MAX_WIDTH } from "@/components/shell/shell.constants";
 import { colors, fonts, radii, spacing } from "@/lib/theme/theme";
+import brandIconSource from "../../../assets/icon.png";
 import { useShellData } from "./hooks/useShellData";
 
 /**
  * Renders the chrome above every tab screen — the mobile counterpart of the
- * web's mobile header: the HaalKhata wordmark on the left, and on the right a
+ * web's mobile header: the HaalKhata brand lockup on the left, and on the right a
  * notification bell (with unread dot) leading to the activity feed and the
  * signed-in user's avatar leading to the account screen.
  *
@@ -21,31 +23,34 @@ export function ScreenHeader() {
 
   return (
     <View style={styles.header}>
-      <View style={styles.wordmarkRow}>
-        <Text style={styles.wordmark}>HAALKHATA</Text>
-      </View>
-      <View style={styles.actions}>
-        <Pressable
-          accessibilityLabel="Activity"
-          hitSlop={8}
-          onPress={() => router.push("/activity")}
-          style={styles.iconButton}
-        >
-          <Bell color={colors.inkSoft} size={22} />
-          {unreadCount > 0 ? <View style={styles.unreadDot} /> : null}
-        </Pressable>
-        <Pressable
-          accessibilityLabel="Account"
-          hitSlop={8}
-          onPress={() => router.push("/account")}
-          style={styles.iconButton}
-        >
-          {currentUser ? (
-            <Avatar size="sm" user={currentUser} />
-          ) : (
-            <CircleUserRound color={colors.inkSoft} size={22} />
-          )}
-        </Pressable>
+      <View style={styles.headerContent}>
+        <View style={styles.wordmarkRow}>
+          <Image source={brandIconSource} style={styles.brandIcon} />
+          <Text style={styles.wordmark}>HAALKHATA</Text>
+        </View>
+        <View style={styles.actions}>
+          <Pressable
+            accessibilityLabel="Activity"
+            hitSlop={8}
+            onPress={() => router.push("/activity")}
+            style={styles.iconButton}
+          >
+            <Bell color={colors.inkSoft} size={22} />
+            {unreadCount > 0 ? <View style={styles.unreadDot} /> : null}
+          </Pressable>
+          <Pressable
+            accessibilityLabel="Account"
+            hitSlop={8}
+            onPress={() => router.push("/account")}
+            style={styles.iconButton}
+          >
+            {currentUser ? (
+              <Avatar size="sm" user={currentUser} />
+            ) : (
+              <CircleUserRound color={colors.inkSoft} size={22} />
+            )}
+          </Pressable>
+        </View>
       </View>
     </View>
   );
@@ -57,15 +62,25 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: spacing.xs,
   },
+  brandIcon: {
+    borderRadius: radii.sm,
+    height: 32,
+    width: 32,
+  },
   header: {
-    alignItems: "center",
     backgroundColor: colors.card,
     borderBottomColor: colors.line,
     borderBottomWidth: 1,
+  },
+  headerContent: {
+    alignItems: "center",
+    alignSelf: "center",
     flexDirection: "row",
     justifyContent: "space-between",
+    maxWidth: SCREEN_CONTENT_MAX_WIDTH,
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.md,
+    width: "100%",
   },
   iconButton: {
     borderRadius: radii.full,
@@ -95,7 +110,7 @@ const styles = StyleSheet.create({
     letterSpacing: 3,
   },
   wordmarkRow: {
-    alignItems: "baseline",
+    alignItems: "center",
     flexDirection: "row",
     gap: spacing.sm,
   },

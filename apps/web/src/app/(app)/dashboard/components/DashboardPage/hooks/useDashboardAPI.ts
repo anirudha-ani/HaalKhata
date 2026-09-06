@@ -9,9 +9,10 @@ import { queryKeys } from "@haalkhata/shared/api/queryKeys";
  * Fetches everything the dashboard needs: the signed-in user, overall
  * balances across all groups/friends, the group list, and the activity feed.
  *
- * @returns `me` (current user), `balances` (overall balance summary), `groups`
- *   (group summaries), `recentActivity` (up to six newest activity events),
- *   and `isLoading` (true until both the user and balances have loaded).
+ * @returns `me` (current user), `balances` (overall balance summary) with
+ *   `balancesError` when that query failed, `groups` (group summaries),
+ *   `recentActivity` (up to six newest activity events), and `isLoading`
+ *   (true until both the user and balances have loaded).
  */
 export function useDashboardAPI() {
   const currentUserQuery = useQuery({
@@ -35,6 +36,9 @@ export function useDashboardAPI() {
   return {
     me: currentUserQuery.data,
     balances: balancesQuery.data,
+    // Surfaced rather than swallowed: the overall-balance RPC is rate-limited
+    // per account, and a refused call must not render as "you owe nothing".
+    balancesError: balancesQuery.error,
     groups: groupsQuery.data?.groups ?? [],
     recentActivity: activityQuery.data?.events.slice(0, 6) ?? [],
     // Deliberately not gated on the groups or activity queries: those sections

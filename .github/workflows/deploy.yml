@@ -1,10 +1,34 @@
 # Build the image on amd64, push it to GHCR, then hand the server one commit
-# SHA over SSH. The server pulls; it never builds.
+# SHA over SSH — plus the non-secret .env config on stdin. The server pulls;
+# it never builds, and nobody edits files on it by hand: deploy.sh validates
+# and applies the piped config, and adopts the compose file and Caddyfile
+# baked into the image itself.
 #
 # Required repo settings:
 #   Variable  NEXT_PUBLIC_GOOGLE_CLIENT_ID   the OAuth client id (NOT secret —
 #             it is inlined into the client bundle by design, and marking it
-#             secret only makes build logs harder to read)
+#             secret only makes build logs harder to read). Also shipped to
+#             the server as GOOGLE_CLIENT_ID: the audience the server checks
+#             is by contract the same id the browser renders the button with.
+#   Variable  ACME_EMAIL                     monitored operator address Caddy
+#             registers with Let's Encrypt for expiry/problem notices
+#   Variable  GOOGLE_MOBILE_CLIENT_IDS       optional; native Android/iOS
+#             OAuth client ids, comma separated
+#   Secret    TWILIO_API_KEY_SID             optional; phone verification
+#   Secret    TWILIO_VERIFY_SERVICE_SID      optional; phone verification
+#   Secret    TWILIO_API_KEY_SECRET          optional; lands as the server's
+#             secrets/twilio_api_key_secret file, never in .env
+#   Secret    COMPATIBLE_AI_API_KEY          optional; lands as
+#             secrets/openrouter_api_key
+#   Secret    SESSION_SECRET                 optional; lands as
+#             secrets/session_secret. CHANGING it ends every session unless
+#             SESSION_SECRET_PREVIOUS covers the rotation
+#   Secret    POSTGRES_PASSWORD              optional; lands as
+#             secrets/postgres_password. Must match what the db volume was
+#             initialized with — this rotates the FILE, not the database
+#   Any of these four left unset pipes an empty value, and deploy.sh then
+#   leaves the server's existing secret file untouched — so each secret can
+#   be GitHub-managed or server-only, per secret.
 #   Secret    DEPLOY_SSH_KEY                 private half of the deploy key
 #   Secret    DEPLOY_KNOWN_HOSTS             `ssh-keyscan haalkhata.app`
 #   Environment `production`                 optional required-reviewer gate
@@ -37,23 +61,36 @@ jobs:
     # for those too, so skip them explicitly. Drop this line if you ever want
     # pre-releases to reach the droplet.
     if: github.event_name == 'workflow_dispatch' || github.event.release.prerelease == false
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
       # The only elevated scope in this file, and it is scoped to this job.
       packages: write
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
 
-      - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
 
-      - uses: docker/login-action@v3
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - uses: docker/build-push-action@v6
+      # Fail the build, not the users: an unset variable interpolates to ""
+      # and produces an image whose sign-in button never appears. Readiness
+      # now refuses such an image too, but a deploy that never happens is
+      # cheaper than one that gets rolled back.
+      - name: 'Config: the browser client id is set'
+        env:
+          NEXT_PUBLIC_GOOGLE_CLIENT_ID: ${{ vars.NEXT_PUBLIC_GOOGLE_CLIENT_ID }}
+        run: |
+          if [ -z "$NEXT_PUBLIC_GOOGLE_CLIENT_ID" ]; then
+            echo "NEXT_PUBLIC_GOOGLE_CLIENT_ID is not set as a repository variable; refusing to build a lockout" >&2
+            exit 1
+          fi
+
+      - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
         with:
           context: .
           push: true
@@ -71,20 +108,56 @@ jobs:
 
   deploy:
     needs: build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # Add required reviewers to this environment for an approval gate between
     # merge and live, without changing how you commit.
     environment: production
     steps:
+      # Same shape as the build-side client-id guard: the production compose
+      # file refuses to start Caddy without ACME_EMAIL, so a deploy that
+      # would ship an unstartable stack fails here instead.
+      - name: 'Config: the ACME contact is set'
+        env:
+          ACME_EMAIL: ${{ vars.ACME_EMAIL }}
+        run: |
+          if [ -z "$ACME_EMAIL" ]; then
+            echo "ACME_EMAIL is not set as a repository variable; refusing to deploy a stack that cannot start" >&2
+            exit 1
+          fi
+
       - name: Ship it
         env:
           KEY: ${{ secrets.DEPLOY_SSH_KEY }}
           HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+          ACME_EMAIL: ${{ vars.ACME_EMAIL }}
+          # By contract the same id the browser bundle was built with: the
+          # server checks it as the ID-token audience. One variable, two uses,
+          # zero chance of them drifting apart.
+          GOOGLE_CLIENT_ID: ${{ vars.NEXT_PUBLIC_GOOGLE_CLIENT_ID }}
+          GOOGLE_MOBILE_CLIENT_IDS: ${{ vars.GOOGLE_MOBILE_CLIENT_IDS }}
+          TWILIO_API_KEY_SID: ${{ secrets.TWILIO_API_KEY_SID }}
+          TWILIO_VERIFY_SERVICE_SID: ${{ secrets.TWILIO_VERIFY_SERVICE_SID }}
+          TWILIO_API_KEY_SECRET: ${{ secrets.TWILIO_API_KEY_SECRET }}
+          COMPATIBLE_AI_API_KEY: ${{ secrets.COMPATIBLE_AI_API_KEY }}
+          SESSION_SECRET: ${{ secrets.SESSION_SECRET }}
+          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
         run: |
           install -m 700 -d ~/.ssh
+          install -m 600 /dev/null ~/.ssh/id_ed25519
           printf '%s\n' "$KEY"   > ~/.ssh/id_ed25519
           printf '%s\n' "$HOSTS" > ~/.ssh/known_hosts
-          chmod 600 ~/.ssh/id_ed25519
-          # The sha is only an argument. authorized_keys pins the command, so
-          # this key cannot open a shell or run anything else.
-          ssh -i ~/.ssh/id_ed25519 deploy@haalkhata.app "${{ github.sha }}"
+          # The sha is only an argument and the config is only data on stdin.
+          # authorized_keys pins the command, so this key cannot open a shell
+          # or run anything else; deploy.sh validates every line against its
+          # allowlist before .env changes.
+          {
+            printf 'ACME_EMAIL=%s\n'                "$ACME_EMAIL"
+            printf 'GOOGLE_CLIENT_ID=%s\n'          "$GOOGLE_CLIENT_ID"
+            printf 'GOOGLE_MOBILE_CLIENT_IDS=%s\n'  "$GOOGLE_MOBILE_CLIENT_IDS"
+            printf 'TWILIO_API_KEY_SID=%s\n'        "$TWILIO_API_KEY_SID"
+            printf 'TWILIO_VERIFY_SERVICE_SID=%s\n' "$TWILIO_VERIFY_SERVICE_SID"
+            printf 'TWILIO_API_KEY_SECRET=%s\n'     "$TWILIO_API_KEY_SECRET"
+            printf 'COMPATIBLE_AI_API_KEY=%s\n'     "$COMPATIBLE_AI_API_KEY"
+            printf 'SESSION_SECRET=%s\n'            "$SESSION_SECRET"
+            printf 'POSTGRES_PASSWORD=%s\n'         "$POSTGRES_PASSWORD"
+          } | ssh -i ~/.ssh/id_ed25519 deploy@haalkhata.app "${{ github.sha }}"

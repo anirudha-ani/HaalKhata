@@ -2,8 +2,9 @@
 /** Group detail orchestrator: header, members strip, expenses/balances tabs, add-people and settle modals. */
 
 import Link from "next/link";
-import { Plus, UserPlus } from "lucide-react";
+import { Link2, Plus, UserPlus } from "lucide-react";
 import { Avatar } from "@/components/ui/Avatar";
+import { InviteShareModal } from "@/components/modals/InviteShareModal";
 import { SettleUpModal } from "@/components/modals/SettleUpModal";
 import { Spinner } from "@/components/ui/Spinner";
 import { errorMessage } from "@/lib/api/connect";
@@ -99,7 +100,30 @@ export function GroupDetailPage({
         >
           <UserPlus className="h-3.5 w-3.5" /> Add people
         </button>
+        <button
+          type="button"
+          disabled={groupDetail.sharingInviteLink}
+          onClick={groupDetail.shareInviteLink}
+          title="Share a link anyone can use to join this group"
+          className="flex shrink-0 items-center gap-1.5 rounded-lg border border-line px-3 py-1.5 text-xs font-semibold text-ink-soft hover:border-brand-200 hover:text-brand-600 disabled:opacity-50"
+        >
+          <Link2 className="h-3.5 w-3.5" />
+          {groupDetail.sharingInviteLink ? "Opening…" : "Invite link"}
+        </button>
       </div>
+      {groupDetail.linkNotice ? (
+        <p className="text-sm font-medium text-pos-700">{groupDetail.linkNotice}</p>
+      ) : null}
+
+      {groupDetail.groupShareToken ? (
+        <InviteShareModal
+          title="Group invite link"
+          explainer={`Anyone who scans this or opens the link can join ${groupDetail.group.name}. They'll see who invited them before accepting.`}
+          token={groupDetail.groupShareToken}
+          share={groupDetail.shareLinkToSheet}
+          onClose={groupDetail.closeGroupShare}
+        />
+      ) : null}
 
       {/* Tabs */}
       <div className="grid grid-cols-3 rounded-xl bg-card p-1 text-sm font-semibold ring-1 ring-line">
@@ -150,11 +174,18 @@ export function GroupDetailPage({
 
       {groupDetail.viewingMembers ? (
         <MembersModal
-          members={(groupDetail.group.members ?? []).flatMap((member) =>
-            member.user ? [member.user] : [],
-          )}
+          members={groupDetail.group.members ?? []}
           meId={groupDetail.me?.id}
           friendIds={new Set(groupDetail.friends.map((friend) => friend.id))}
+          onRemove={groupDetail.removeMember}
+          removingUserId={groupDetail.removingUserId}
+          onTransfer={groupDetail.transferOwnership}
+          transferringUserId={groupDetail.transferringUserId}
+          onRemind={groupDetail.remindMember}
+          remindingUserId={groupDetail.remindingUserId}
+          onResetLink={groupDetail.resetInviteLink}
+          resettingLink={groupDetail.resettingInviteLink}
+          removeError={groupDetail.memberError}
           onClose={() => groupDetail.setViewingMembers(false)}
         />
       ) : null}
@@ -165,13 +196,27 @@ export function GroupDetailPage({
           candidates={groupDetail.candidates}
           pickedIds={groupDetail.pickedIds}
           onToggle={groupDetail.togglePicked}
-          identifier={groupDetail.identifier}
-          onIdentifierChange={groupDetail.setIdentifier}
+          contact={groupDetail.contact}
+          onContactChange={groupDetail.setContact}
           error={groupDetail.peopleError}
+          inviteOffer={groupDetail.inviteOffer}
+          onSendInvite={groupDetail.sendSignUpInvite}
+          sendingInvite={groupDetail.sendingSignUpInvite}
+          onDismissInvite={groupDetail.dismissInviteOffer}
           canSubmit={groupDetail.canAddPeople}
           isPending={groupDetail.addMembers.isPending}
           onSubmit={groupDetail.submitPeople}
           onClose={() => groupDetail.setAddingPeople(false)}
+        />
+      ) : null}
+
+      {groupDetail.signUpShare ? (
+        <InviteShareModal
+          title="Sign-up invite"
+          explainer={`This link signs ${groupDetail.signUpShare.contact} up and connects you as friends. Once they join, you can add them to ${groupDetail.group.name}.`}
+          token={groupDetail.signUpShare.token}
+          share={groupDetail.signUpShareToSheet}
+          onClose={groupDetail.closeSignUpShare}
         />
       ) : null}
 

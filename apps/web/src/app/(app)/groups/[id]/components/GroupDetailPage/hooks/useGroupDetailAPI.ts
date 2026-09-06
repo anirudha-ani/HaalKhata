@@ -1,5 +1,5 @@
 "use client";
-/** TanStack Query bindings for group detail: me, group, friends, expenses, balances, add-members. */
+/** TanStack Query bindings for group detail: me, group, friends, expenses, balances, add/remove members. */
 
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { authClient, expenseClient, groupClient, socialClient } from "@/lib/api/connect";
@@ -14,7 +14,7 @@ import { MONEY_KEYS, queryKeys } from "@haalkhata/shared/api/queryKeys";
  * @param groupId - Identifier of the group being viewed.
  * @returns An object with `me`, `group`, `groupError`, `friends`, `expenses`,
  *   `balances`, an `isLoading` flag covering the group and expense queries,
- *   and the `addMembers` mutation.
+ *   and the `addMembers`, `removeMember` and `transferOwnership` mutations.
  */
 export function useGroupDetailAPI(groupId: string) {
   const queryClient = useQueryClient();
@@ -49,9 +49,9 @@ export function useGroupDetailAPI(groupId: string) {
   });
 
   /**
-   * Adds people by id plus an optional email/phone newcomer; on success
-   * refreshes this group, the group list, and the friends list — adding
-   * somebody also befriends them.
+   * Adds people by id plus an optional email/phone that must resolve to an
+   * already-connected account; on success refreshes this group, the group
+   * list, and the friends list — adding somebody also befriends them.
    */
   const addMembers = useMutation({
     mutationFn: (input: { userIds: string[]; email: string; phone: string }) =>
@@ -60,6 +60,31 @@ export function useGroupDetailAPI(groupId: string) {
       queryClient.invalidateQueries({ queryKey: queryKeys.group(groupId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.groups });
       queryClient.invalidateQueries({ queryKey: queryKeys.friends });
+    },
+  });
+
+  /**
+   * Removes one member: the caller leaving, or the owner removing somebody
+   * else. Membership decides what the caller may see and which balances the
+   * leaver was part of, so success invalidates the whole money set — the
+   * group list, this group, and every ledger — not just this group.
+   */
+  const removeMember = useMutation({
+    mutationFn: (userId: string) => groupClient.removeMember({ groupId, userId }),
+    onSuccess: () => {
+      for (const moneyKey of MONEY_KEYS) queryClient.invalidateQueries({ queryKey: moneyKey });
+    },
+  });
+
+  /**
+   * Hands the group to another member. Roles change on this group and the
+   * old owner may now leave, so the group and the list refresh.
+   */
+  const transferOwnership = useMutation({
+    mutationFn: (userId: string) => groupClient.transferOwnership({ groupId, userId }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.group(groupId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.groups });
     },
   });
 
@@ -85,6 +110,8 @@ export function useGroupDetailAPI(groupId: string) {
     balances: balances.data,
     isLoading: group.isLoading || expenses.isLoading,
     addMembers,
+    removeMember,
+    transferOwnership,
     setSimplify,
     activityEvents: (activity.data?.pages ?? []).flatMap((page) => page.events),
     activityLoading: activity.isLoading,

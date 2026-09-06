@@ -1,5 +1,5 @@
 "use client";
-/** Friend detail: net balance, settle either way, and the full shared ledger with a running balance. */
+/** Friend detail: net balance per currency, settle either way, and the full shared ledger with a running balance. */
 
 import Link from "next/link";
 import { ArrowLeft, Bell, Check, HandCoins, Plus, UserPlus, Wallet } from "lucide-react";
@@ -10,6 +10,7 @@ import { SettleUpModal } from "@/components/modals/SettleUpModal";
 import { Spinner } from "@/components/ui/Spinner";
 import { errorMessage } from "@/lib/api/connect";
 import { useHydrated } from "@/lib/hooks/useHydrated";
+import { outstandingBuckets } from "@haalkhata/shared/money/balances";
 import { formatMoney } from "@haalkhata/shared/money/money";
 import { localDate } from "@haalkhata/shared/time/localTime";
 import { useFriendLedger } from "./hooks/useFriendLedger";
@@ -61,8 +62,15 @@ export function FriendDetailPage({
     isFriend = true,
     mutualGroups = [],
   } = view.ledger;
-  const isSettled = netCents === 0;
-  const theyOweYou = netCents > 0;
+  // One net per currency, never a sum: a server predating `nets` sends only
+  // the default-currency scalar, which reads the same way as one bucket.
+  const nets = outstandingBuckets(
+    view.ledger.nets?.length ? view.ledger.nets : [{ currency, cents: netCents }],
+    currency,
+  );
+  const isSettled = nets.length === 0;
+  const owedToYou = nets.filter((bucket) => bucket.cents > 0);
+  const owedByYou = nets.filter((bucket) => bucket.cents < 0);
 
   return (
     <div className="mx-auto max-w-3xl space-y-6">
@@ -77,10 +85,12 @@ export function FriendDetailPage({
         <Avatar user={friend} size="lg" />
         <div className="min-w-0 flex-1">
           <h1 className="truncate text-2xl font-bold">{friend.name}</h1>
-          <p className="truncate text-sm text-ink-soft">
-            {friend.email || friend.phone}
-            {!friend.registered ? " · invited" : ""}
-          </p>
+          {/* Their email and phone are private — the server sends them empty
+              for anyone but yourself — so the only thing worth a line here is
+              whether they have signed in yet. */}
+          {!friend.registered ? (
+            <p className="truncate text-sm text-ink-soft">Invited — hasn&apos;t signed in yet</p>
+          ) : null}
           {/* Where you know each other from — every shared group, settled
               ones included, each a link. And when this page is showing a
               pair rather than a friendship (any name anywhere links here),
@@ -99,12 +109,16 @@ export function FriendDetailPage({
               {!isFriend ? (
                 <button
                   type="button"
-                  disabled={view.isAddingFriend}
+                  disabled={view.isAddingFriend || view.friendRequestSent}
                   onClick={view.addFriend}
                   className="flex items-center gap-1 rounded-full bg-brand-600 px-2.5 py-0.5 text-xs font-semibold text-white hover:bg-brand-700 disabled:opacity-50"
                 >
                   <UserPlus className="h-3 w-3" />
-                  {view.isAddingFriend ? "Adding…" : "Add friend"}
+                  {view.isAddingFriend
+                    ? "Sending…"
+                    : view.friendRequestSent
+                      ? "Requested"
+                      : "Request friendship"}
                 </button>
               ) : null}
             </p>
@@ -116,16 +130,20 @@ export function FriendDetailPage({
               <Check className="h-5 w-5" /> All settled up
             </p>
           ) : (
-            <>
-              <p className="text-sm text-ink-soft">
-                {theyOweYou ? `${friend.name.split(" ")[0]} owes you` : "you owe"}
-              </p>
-              <Money
-                cents={Math.abs(netCents)}
-                currency={currency}
-                className={`text-3xl font-bold ${theyOweYou ? "text-pos-700" : "text-neg-600"}`}
-              />
-            </>
+            // One line per currency: a dollar owed and a euro owed are two
+            // facts, and no arithmetic turns them into one.
+            nets.map((bucket) => (
+              <div key={bucket.currency}>
+                <p className="text-sm text-ink-soft">
+                  {bucket.cents > 0 ? `${friend.name.split(" ")[0]} owes you` : "you owe"}
+                </p>
+                <Money
+                  cents={Math.abs(bucket.cents)}
+                  currency={bucket.currency}
+                  className={`text-3xl font-bold ${bucket.cents > 0 ? "text-pos-700" : "text-neg-600"}`}
+                />
+              </div>
+            ))
           )}
         </div>
       </header>
@@ -138,21 +156,22 @@ export function FriendDetailPage({
           <Plus className="h-4 w-4" /> Add expense
         </Link>
         {/* Both directions are always offered: the balance tells you which one
-            you probably want, but recording the other is never blocked. */}
-        {!theyOweYou && !isSettled ? (
+            you probably want, but recording the other is never blocked. Each
+            opens on its currency; the dialog can switch. */}
+        {owedByYou.length > 0 ? (
           <button
             type="button"
-            onClick={() => view.openSettle("paid")}
+            onClick={() => view.openSettle("paid", owedByYou[0].currency)}
             className="flex items-center gap-2 rounded-xl bg-pos-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-pos-700"
           >
             <Wallet className="h-4 w-4" /> I paid {friend.name.split(" ")[0]}
           </button>
         ) : null}
-        {theyOweYou ? (
+        {owedToYou.length > 0 ? (
           <>
             <button
               type="button"
-              onClick={() => view.openSettle("received")}
+              onClick={() => view.openSettle("received", owedToYou[0].currency)}
               className="flex items-center gap-2 rounded-xl bg-pos-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-pos-700"
             >
               <HandCoins className="h-4 w-4" /> {friend.name.split(" ")[0]} paid me
@@ -173,6 +192,37 @@ export function FriendDetailPage({
         <p className="text-sm font-medium text-ink-soft">{view.reminderNote}</p>
       ) : null}
 
+      {isFriend ? (
+        <div className="flex flex-wrap items-center gap-3">
+          <button
+            type="button"
+            disabled={!isSettled || view.isRemovingFriend}
+            onClick={view.removeFriend}
+            className="text-sm font-semibold text-ink-soft underline-offset-2 hover:text-brand-600 hover:underline disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {view.isRemovingFriend
+              ? "Removing…"
+              : view.confirmingRemoval
+                ? "Click again to confirm"
+                : "Remove friend"}
+          </button>
+          {view.confirmingRemoval && !view.isRemovingFriend ? (
+            <button
+              type="button"
+              onClick={view.cancelRemoval}
+              className="text-sm text-ink-soft underline-offset-2 hover:underline"
+            >
+              Cancel
+            </button>
+          ) : null}
+          {!isSettled ? (
+            <span className="text-xs text-ink-soft">
+              You can remove a friend once every balance is settled.
+            </span>
+          ) : null}
+        </div>
+      ) : null}
+
       {groupBalances.length > 1 ? (
         <section className="space-y-2">
           <h2 className="text-sm font-semibold tracking-wide text-ink-soft uppercase">
@@ -181,7 +231,7 @@ export function FriendDetailPage({
           <ul className="divide-y divide-line overflow-hidden rounded-2xl border border-line bg-card">
             {groupBalances.map((balance) => (
               <li
-                key={balance.groupId || "one-off"}
+                key={`${balance.groupId || "one-off"}-${balance.currency}`}
                 className="flex items-center justify-between px-4 py-2.5 text-sm"
               >
                 <span className="flex min-w-0 items-center gap-1.5 truncate">
@@ -209,7 +259,7 @@ export function FriendDetailPage({
                 </span>
                 <Money
                   cents={balance.netCents}
-                  currency={currency}
+                  currency={balance.currency || currency}
                   signed
                   className="font-semibold"
                 />
@@ -255,13 +305,54 @@ export function FriendDetailPage({
                       {entry.kind === "expense" ? (
                         <Link
                           href={`/expenses/${entry.id}`}
-                          className="font-medium hover:text-brand-600"
+                          className={`font-medium hover:text-brand-600 ${
+                            entry.deleted ? "text-ink-soft line-through" : ""
+                          }`}
                         >
                           {entry.description}
                         </Link>
                       ) : (
-                        <span className="font-medium text-pos-700">{entry.description}</span>
+                        <span
+                          className={`font-medium ${
+                            entry.deleted ? "text-ink-soft line-through" : "text-pos-700"
+                          }`}
+                        >
+                          {entry.description}
+                        </span>
                       )}
+                      {/* Struck through but kept: a deleted expense or a
+                          removed payment no longer moves the balance, and
+                          the row is what explains why the balance leans the
+                          way it does now. */}
+                      {entry.deleted ? (
+                        <span className="ml-2 rounded-full bg-paper px-2 py-0.5 text-[11px] text-ink-soft">
+                          {entry.kind === "settlement" ? "removed" : "deleted"}
+                        </span>
+                      ) : null}
+                      {/* A payment is a claim one of the two of you typed
+                          in; the statement says which, on every line. */}
+                      {entry.recordedByName ? (
+                        <span className="ml-2 rounded-full bg-paper px-2 py-0.5 text-[11px] text-ink-soft">
+                          recorded by {entry.recordedByName}
+                        </span>
+                      ) : null}
+                      {/* A mistyped payment is the reason this exists. Two
+                          taps: the first arms the button, the second sends. */}
+                      {entry.kind === "settlement" && !entry.deleted ? (
+                        <button
+                          type="button"
+                          onClick={() => view.removeSettlement(entry.id)}
+                          disabled={view.removingSettlementId === entry.id}
+                          aria-label={`Remove the payment ${entry.description}`}
+                          className="ml-2 rounded-full border border-line px-2 py-0.5 text-[11px] font-medium text-ink-soft hover:border-neg-600 hover:text-neg-600 disabled:opacity-50"
+                        >
+                          {view.removingSettlementId === entry.id
+                            ? "Removing…"
+                            : view.confirmingSettlementId === entry.id
+                              ? "Tap again to remove"
+                              : "Remove"}
+                        </button>
+                      ) : null}
                       {entry.groupName ? (
                         <span className="ml-2 rounded-full bg-paper px-2 py-0.5 text-[11px] text-ink-soft">
                           {entry.groupName}
@@ -269,20 +360,32 @@ export function FriendDetailPage({
                       ) : null}
                     </td>
                     <td className="py-2.5 pl-3 text-right text-ink-soft tabular-nums">
-                      {formatMoney(entry.totalCents, currency)}
+                      {formatMoney(entry.totalCents, entry.currency || currency)}
                     </td>
                     {/* The signed column is the one that matters: the expense
                         total is context, your share of it is the movement. */}
                     <td
                       className={`py-2.5 pl-3 text-right font-semibold tabular-nums ${
-                        entry.deltaCents > 0 ? "text-pos-700" : "text-neg-600"
+                        entry.deleted
+                          ? "text-ink-soft"
+                          : entry.deltaCents > 0
+                            ? "text-pos-700"
+                            : "text-neg-600"
                       }`}
                     >
-                      {entry.deltaCents > 0 ? "+" : "−"}
-                      {formatMoney(Math.abs(entry.deltaCents), currency)}
+                      {entry.deleted ? (
+                        "—"
+                      ) : (
+                        <>
+                          {entry.deltaCents > 0 ? "+" : "−"}
+                          {formatMoney(Math.abs(entry.deltaCents), entry.currency || currency)}
+                        </>
+                      )}
                     </td>
+                    {/* The running balance is per currency: a euro line
+                        continues the euro column, not the dollar one. */}
                     <td className="py-2.5 pr-4 pl-3 text-right tabular-nums">
-                      {formatMoney(Math.abs(entry.balanceAfterCents), currency)}
+                      {formatMoney(Math.abs(entry.balanceAfterCents), entry.currency || currency)}
                       <span className="ml-1 text-[11px] text-ink-soft">
                         {entry.balanceAfterCents === 0
                           ? "even"
@@ -299,6 +402,9 @@ export function FriendDetailPage({
         )}
         {entries.length > 0 ? (
           <p className="text-xs text-ink-soft">
+            {view.ledger.truncated
+              ? "Showing the most recent lines — older ones still count toward every balance. "
+              : ""}
             &ldquo;Change&rdquo; is what each line did to your balance; positive means it went in
             your favour.{" "}
             {groupBalances.some((balance) => balance.simplified)
@@ -311,9 +417,11 @@ export function FriendDetailPage({
       {view.settling ? (
         <SettleUpModal
           to={friend}
-          received={view.settling === "received"}
-          suggestedCents={Math.abs(netCents)}
-          currency={currency}
+          received={view.settling.direction === "received"}
+          suggestedCents={Math.abs(
+            nets.find((bucket) => bucket.currency === view.settling?.currency)?.cents ?? 0,
+          )}
+          currency={view.settling.currency}
           onClose={view.closeSettle}
         />
       ) : null}

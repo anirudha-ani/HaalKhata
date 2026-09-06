@@ -1,10 +1,11 @@
 "use client";
 /** First-run screen: name, currency, phone — plus the merge confirmation. */
 
-import { CURRENCIES } from "@haalkhata/shared/money/money.constants";
+import { CurrencySelect } from "@/components/ui/CurrencySelect";
 import { MergePreview } from "@/components/account/MergePreview";
 import { PhoneField } from "@/components/ui/PhoneField";
 import { useOnboarding } from "./hooks/useOnboarding";
+import { MAX_USER_NAME_LENGTH } from "@haalkhata/shared/text/limits";
 
 /** Shared styling for the onboarding inputs. */
 const inputClass =
@@ -25,17 +26,20 @@ export function OnboardingPage() {
   }
 
   const merge = onboarding.pendingMerge;
+  const verifying = onboarding.verificationPhone !== "";
 
   return (
     <main className="flex min-h-dvh items-center justify-center bg-paper px-4 py-10">
       <div className="w-full max-w-sm">
         <div className="mb-8 text-center">
           <h1 className="font-display text-3xl font-bold text-ink">
-            {merge ? "Is this you?" : "Welcome to HaalKhata"}
+            {merge ? "Is this you?" : verifying ? "Verify your phone" : "Welcome to HaalKhata"}
           </h1>
           <p className="mt-3 text-sm text-ink-soft">
             {merge
               ? "Someone already added this number to shared expenses."
+              : verifying
+                ? `Enter the code sent to ${onboarding.verificationPhone}.`
               : "A couple of details, so friends can find you. You can skip any of it."}
           </p>
         </div>
@@ -72,6 +76,39 @@ export function OnboardingPage() {
                 That&apos;s not me
               </button>
             </div>
+          ) : verifying ? (
+            <div className="flex flex-col gap-4">
+              <input
+                value={onboarding.verificationCode}
+                onChange={(event) =>
+                  onboarding.setVerificationCode(event.target.value.replace(/\D/g, ""))
+                }
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                maxLength={10}
+                aria-label="Verification code"
+                className={`${inputClass} text-center text-lg tracking-[0.35em]`}
+              />
+              {onboarding.error ? (
+                <p className="text-sm text-brand-600">{onboarding.error}</p>
+              ) : null}
+              <button
+                type="button"
+                onClick={onboarding.verifyPhone}
+                disabled={onboarding.isPending || onboarding.verificationCode.length < 4}
+                className="w-full rounded-xl bg-brand-600 py-3 font-semibold text-white transition-colors hover:bg-brand-700 disabled:opacity-50"
+              >
+                {onboarding.isPending ? "Verifying…" : "Verify phone"}
+              </button>
+              <button
+                type="button"
+                onClick={onboarding.cancelVerification}
+                disabled={onboarding.isPending}
+                className="w-full rounded-xl border border-line py-3 text-sm font-semibold text-ink-soft transition-colors hover:bg-paper disabled:opacity-50"
+              >
+                Use a different number
+              </button>
+            </div>
           ) : (
             <form
               className="flex flex-col gap-3"
@@ -87,6 +124,7 @@ export function OnboardingPage() {
                 className={inputClass}
                 value={onboarding.name}
                 onChange={(event) => onboarding.setName(event.target.value)}
+                maxLength={MAX_USER_NAME_LENGTH}
                 autoComplete="name"
                 required
               />
@@ -107,17 +145,11 @@ export function OnboardingPage() {
               <label className="mt-2 text-xs font-semibold uppercase tracking-wide text-ink-soft">
                 Default currency
               </label>
-              <select
-                className={inputClass}
+              <CurrencySelect
                 value={onboarding.currency}
-                onChange={(event) => onboarding.setCurrency(event.target.value)}
-              >
-                {CURRENCIES.map((code) => (
-                  <option key={code} value={code}>
-                    {code}
-                  </option>
-                ))}
-              </select>
+                onChange={onboarding.setCurrency}
+                ariaLabel="Default currency"
+              />
 
               {onboarding.error ? (
                 <p className="text-sm text-brand-600">{onboarding.error}</p>

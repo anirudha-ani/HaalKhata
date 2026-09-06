@@ -8,7 +8,7 @@ import { matchesTerms, searchTerms } from "@haalkhata/shared/search/filter";
 import {
   matchesBalanceFilter,
   type GroupBalanceFilterOption,
-} from "../../../constants/groupTypes";
+} from "@haalkhata/shared/group/balanceFilter";
 import { useGroupsAPI } from "./useGroupsAPI";
 
 /**

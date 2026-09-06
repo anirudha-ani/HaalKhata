@@ -65,6 +65,18 @@ export function useExpenseDetail(expenseId: string) {
   return {
     me: currentUserQuery.data,
     detail: detailQuery.data,
+    /**
+     * The edits and the deletion, so the screen can decide whether a history
+     * is worth showing at all. Every expense has a creation event; only a
+     * later change makes the section say anything.
+     */
+    changes: (detailQuery.data?.history ?? []).filter(
+      (event) => event.type === "expense_updated" || event.type === "expense_deleted",
+    ),
+    /** The deletion event when the expense has been deleted: who did it, and when. */
+    deletion: (detailQuery.data?.history ?? []).find(
+      (event) => event.type === "expense_deleted",
+    ),
     detailError: detailQuery.error,
     isLoading: detailQuery.isLoading,
     userById,

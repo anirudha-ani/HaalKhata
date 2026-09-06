@@ -49,9 +49,9 @@ async function databaseReachable(): Promise<boolean> {
  */
 async function seed(database: Client): Promise<void> {
   await database.query(
-    `INSERT INTO users (id, email, name, avatar_color, onboarded_at)
-     VALUES ($1, 'debtor@example.com', 'Debbie Debtor', '#c73e2e', now()),
-            ($2, 'creditor@example.com', 'Carl Creditor', '#0f8a5f', now())`,
+    `INSERT INTO users (id, email, name, avatar_color, onboarded_at, google_sub)
+     VALUES ($1, 'debtor@example.com', 'Debbie Debtor', '#c73e2e', now(), 'google-debtor'),
+            ($2, 'creditor@example.com', 'Carl Creditor', '#0f8a5f', now(), 'google-creditor')`,
     [DEBTOR, CREDITOR],
   );
   await database.query(`INSERT INTO groups (id, name, created_by) VALUES ('grp-1', 'Trip', $1)`, [
@@ -59,7 +59,7 @@ async function seed(database: Client): Promise<void> {
   ]);
   await database.query(
     `INSERT INTO group_members (group_id, user_id, role) VALUES
-       ('grp-1', $1, 'member'), ('grp-1', $2, 'admin')`,
+       ('grp-1', $1, 'member'), ('grp-1', $2, 'owner')`,
     [DEBTOR, CREDITOR],
   );
   await database.query(
@@ -83,8 +83,20 @@ const reachable = await databaseReachable();
 describe.skipIf(!reachable)("recordSettlement against Postgres", () => {
   let database: Client;
   let recordSettlement: typeof import("./expense.usecase").recordSettlement;
+  let createExpense: typeof import("./expense.usecase").createExpense;
+  let deleteExpense: typeof import("./expense.usecase").deleteExpense;
+  let deleteSettlement: typeof import("./expense.usecase").deleteSettlement;
+  let getExpense: typeof import("./expense.usecase").getExpense;
+  let listExpenses: typeof import("./expense.usecase").listExpenses;
+  let updateExpense: typeof import("./expense.usecase").updateExpense;
+  let removeMemberFromGroup: typeof import(
+    "@/server/group/usecase/group.usecase"
+  ).removeMemberFromGroup;
   let userNetInGroup: typeof import("./balance.usecase").userNetInGroup;
+  let userNetInGroups: typeof import("./balance.usecase").userNetInGroups;
   let netWithUser: typeof import("./balance.usecase").netWithUser;
+  let getFriendLedger: typeof import("./balance.usecase").getFriendLedger;
+  let sendReminder: typeof import("@/server/social/usecase/social.usecase").sendReminder;
   let closePool: () => Promise<void>;
 
   beforeAll(async () => {
@@ -103,8 +115,20 @@ describe.skipIf(!reachable)("recordSettlement against Postgres", () => {
       const cache = globalThis as unknown as { __haalkhataPool?: { end(): Promise<void> } };
       await cache.__haalkhataPool?.end();
     };
-    ({ recordSettlement } = await import("./expense.usecase"));
-    ({ userNetInGroup, netWithUser } = await import("./balance.usecase"));
+    ({
+      createExpense,
+      deleteExpense,
+      deleteSettlement,
+      getExpense,
+      listExpenses,
+      recordSettlement,
+      updateExpense,
+    } = await import("./expense.usecase"));
+    ({ removeMemberFromGroup } = await import("@/server/group/usecase/group.usecase"));
+    ({ sendReminder } = await import("@/server/social/usecase/social.usecase"));
+    ({ getFriendLedger, userNetInGroup, userNetInGroups, netWithUser } = await import(
+      "./balance.usecase"
+    ));
 
     database = new Client({ connectionString: TEST_URL });
     await database.connect();
@@ -154,7 +178,101 @@ describe.skipIf(!reachable)("recordSettlement against Postgres", () => {
     // The other half of the incident: a friends-tab settlement used to leave
     // the group still demanding the money. One recording must zero both.
     expect(await userNetInGroup(DEBTOR, "grp-1")).toBe(0);
-    expect(await netWithUser(DEBTOR, CREDITOR)).toBe(0);
+    expect(await netWithUser(DEBTOR, CREDITOR)).toEqual(new Map());
+  });
+
+  it("refuses to delete the settled expense but lets an edit rebalance the payment", async () => {
+    /**
+     * The campsite expense with a replacement total, split evenly between
+     * the two members as it was recorded.
+     *
+     * @param totalCents - Replacement total; each member's share is half.
+     * @returns A full replacement request for exp-1.
+     */
+    const campsite = (totalCents: number) =>
+      ({
+        groupId: "grp-1",
+        description: "Campsite",
+        amountCents: totalCents,
+        currency: "USD",
+        category: "general",
+        expenseDate: "2026-07-28",
+        splitType: "exact",
+        notes: "",
+        payers: [{ userId: CREDITOR, amountCents: totalCents }],
+        splitSpecs: [
+          { userId: DEBTOR, amountCents: totalCents / 2, percentBp: 0, shares: 0 },
+          { userId: CREDITOR, amountCents: totalCents / 2, percentBp: 0, shares: 0 },
+        ],
+        items: [],
+        taxCents: 0,
+        tipCents: 0,
+      }) as never;
+
+    // Deleting is the creator's call, not the debtor's.
+    await expect(deleteExpense(DEBTOR, "exp-1")).rejects.toThrow(/only the expense creator/);
+    // The detail view is told a payment postdates the expense, so the
+    // clients warn before an edit or a delete that will rebalance it.
+    expect((await getExpense(CREDITOR, "exp-1")).hasLaterSettlement).toBe(true);
+
+    // Editing is the correction path, open to anyone on the expense — here
+    // the debtor, who did not create it. The payment stays, the balance
+    // moves: they paid 5000 against a 5000 share; at a 4000 share they are
+    // owed the 1000 they overpaid …
+    await updateExpense(DEBTOR, "exp-1", campsite(8000));
+    expect(await userNetInGroup(DEBTOR, "grp-1")).toBe(1000);
+    // … and at a 6000 share they owe the extra 1000 instead.
+    await updateExpense(CREDITOR, "exp-1", campsite(12_000));
+    expect(await userNetInGroup(DEBTOR, "grp-1")).toBe(-1000);
+
+    // Back to the recorded split, so the rest of the suite sees the settled
+    // ledger it expects.
+    await updateExpense(CREDITOR, "exp-1", campsite(10_000));
+    expect(await userNetInGroup(DEBTOR, "grp-1")).toBe(0);
+    const { rows } = await database.query(
+      `SELECT description, deleted_at FROM expenses WHERE id = 'exp-1'`,
+    );
+    expect(rows).toEqual([{ description: "Campsite", deleted_at: null }]);
+  });
+
+  it("still allows correction of an expense created after an older settlement", async () => {
+    const laterExpense = await createExpense(CREDITOR, {
+      groupId: "grp-1",
+      description: "Personal snack",
+      amountCents: 250,
+      currency: "USD",
+      category: "food",
+      expenseDate: "2026-07-29",
+      splitType: "exact",
+      notes: "",
+      payers: [{ userId: CREDITOR, amountCents: 250 }],
+      splitSpecs: [{ userId: CREDITOR, amountCents: 250, percentBp: 0, shares: 0 }],
+      items: [],
+      taxCents: 0,
+      tipCents: 0,
+    } as never);
+
+    await updateExpense(CREDITOR, laterExpense.id, {
+      groupId: "grp-1",
+      description: "Personal snack corrected",
+      amountCents: 250,
+      currency: "USD",
+      category: "food",
+      expenseDate: "2026-07-29",
+      splitType: "exact",
+      notes: "",
+      payers: [{ userId: CREDITOR, amountCents: 250 }],
+      splitSpecs: [{ userId: CREDITOR, amountCents: 250, percentBp: 0, shares: 0 }],
+      items: [],
+      taxCents: 0,
+      tipCents: 0,
+    } as never);
+
+    const { rows } = await database.query(`SELECT description FROM expenses WHERE id = $1`, [
+      laterExpense.id,
+    ]);
+    expect(rows).toEqual([{ description: "Personal snack corrected" }]);
+    expect((await getExpense(CREDITOR, laterExpense.id)).hasLaterSettlement).toBe(false);
   });
 
   it("refuses a later recording of the already-settled debt from any page", async () => {
@@ -185,5 +303,231 @@ describe.skipIf(!reachable)("recordSettlement against Postgres", () => {
       `SELECT count(*)::int AS settlement_rows FROM activity WHERE type = 'settlement'`,
     );
     expect(rows[0].settlement_rows).toBe(1);
+  });
+
+  it("keeps a deleted expense visible while the payment made against it stays", async () => {
+    /**
+     * A settlement request between the pair inside the group.
+     *
+     * @param fromUserId - Who is recording that they paid.
+     * @param toUserId - Who received the money.
+     * @param amountCents - How much moved.
+     * @returns The request shape recordSettlement accepts.
+     */
+    const payment = (fromUserId: string, toUserId: string, amountCents: number) =>
+      [fromUserId, { groupId: "grp-1", toUserId, amountCents, currency: "USD", method: "cash", note: "" }] as const;
+
+    const snack = await createExpense(CREDITOR, {
+      groupId: "grp-1",
+      description: "Snack run",
+      amountCents: 3000,
+      currency: "USD",
+      category: "food",
+      expenseDate: "2026-07-30",
+      splitType: "exact",
+      notes: "",
+      payers: [{ userId: CREDITOR, amountCents: 3000 }],
+      splitSpecs: [{ userId: DEBTOR, amountCents: 3000, percentBp: 0, shares: 0 }],
+      items: [],
+      taxCents: 0,
+      tipCents: 0,
+    } as never);
+    await recordSettlement(...payment(DEBTOR, CREDITOR, 3000));
+    expect(await userNetInGroup(DEBTOR, "grp-1")).toBe(0);
+
+    await deleteExpense(CREDITOR, snack.id);
+
+    // Delete means owed-to-zero; the payment stays, so the debtor is now owed
+    // the 3000 they paid for an expense that no longer counts.
+    expect(await userNetInGroup(DEBTOR, "grp-1")).toBe(3000);
+    // … and every ledger surface still shows the row that explains why.
+    const listed = await listExpenses(DEBTOR, { groupId: "grp-1" });
+    expect(listed.expenses.find((expense) => expense.id === snack.id)?.deletedAt).not.toBe("");
+    expect(listed.settledExpenseIds).not.toContain(snack.id);
+    const detail = await getExpense(DEBTOR, snack.id);
+    expect(detail.expense.deletedAt).not.toBe("");
+    expect(detail.history.map((event) => event.type)).toContain("expense_deleted");
+    const ledgerLine = (await getFriendLedger(DEBTOR, CREDITOR)).entries.find(
+      (entry) => entry.kind === "expense" && entry.id === snack.id,
+    );
+    expect(ledgerLine).toMatchObject({ deleted: true, deltaCents: 0, totalCents: 3000 });
+
+    // The creditor refunds the 3000, so the rest of the suite sees the
+    // settled ledger it expects.
+    await recordSettlement(...payment(CREDITOR, DEBTOR, 3000));
+    expect(await userNetInGroup(DEBTOR, "grp-1")).toBe(0);
+  });
+
+  it("brings the debt back when a mistaken payment is removed, keeping the line", async () => {
+    const fuel = await createExpense(CREDITOR, {
+      groupId: "grp-1",
+      description: "Fuel",
+      amountCents: 2000,
+      currency: "USD",
+      category: "transport",
+      expenseDate: "2026-07-31",
+      splitType: "exact",
+      notes: "",
+      payers: [{ userId: CREDITOR, amountCents: 2000 }],
+      splitSpecs: [{ userId: DEBTOR, amountCents: 2000, percentBp: 0, shares: 0 }],
+      items: [],
+      taxCents: 0,
+      tipCents: 0,
+    } as never);
+    const mistaken = await recordSettlement(DEBTOR, {
+      groupId: "grp-1",
+      toUserId: CREDITOR,
+      amountCents: 2000,
+      currency: "USD",
+      method: "cash",
+      note: "",
+    });
+    expect(await userNetInGroup(DEBTOR, "grp-1")).toBe(0);
+
+    // The recipient may remove it too; here the payer who mistyped it does.
+    await deleteSettlement(DEBTOR, mistaken.id);
+
+    expect(await userNetInGroup(DEBTOR, "grp-1")).toBe(-2000);
+    const ledgerLine = (await getFriendLedger(DEBTOR, CREDITOR)).entries.find(
+      (entry) => entry.kind === "settlement" && entry.id === mistaken.id,
+    );
+    expect(ledgerLine).toMatchObject({ deleted: true, deltaCents: 0, totalCents: 2000 });
+    await expect(deleteSettlement(DEBTOR, mistaken.id)).rejects.toThrow(/payment not found/);
+
+    // Pay it for real, so the rest of the suite sees the settled ledger it
+    // expects — and prove the guard counts the removed payment as gone.
+    await recordSettlement(DEBTOR, {
+      groupId: "grp-1",
+      toUserId: CREDITOR,
+      amountCents: 2000,
+      currency: "USD",
+      method: "cash",
+      note: "",
+    });
+    expect(await userNetInGroup(DEBTOR, "grp-1")).toBe(0);
+    expect(fuel.id).toBeTruthy();
+  });
+
+  it("serializes member removal against a new expense for that member", async () => {
+    const outcomes = await Promise.allSettled([
+      removeMemberFromGroup(CREDITOR, { groupId: "grp-1", userId: DEBTOR }),
+      createExpense(CREDITOR, {
+        groupId: "grp-1",
+        description: "Late fee",
+        amountCents: 100,
+        currency: "USD",
+        category: "general",
+        expenseDate: "2026-07-29",
+        splitType: "exact",
+        notes: "",
+        payers: [{ userId: CREDITOR, amountCents: 100 }],
+        splitSpecs: [{ userId: DEBTOR, amountCents: 100, percentBp: 0, shares: 0 }],
+        items: [],
+        taxCents: 0,
+        tipCents: 0,
+      } as never),
+    ]);
+
+    expect(outcomes.filter((outcome) => outcome.status === "fulfilled")).toHaveLength(1);
+    const membership = await database.query(
+      `SELECT 1 FROM group_members WHERE group_id = 'grp-1' AND user_id = $1`,
+      [DEBTOR],
+    );
+    const expense = await database.query(
+      `SELECT 1 FROM expenses WHERE group_id = 'grp-1' AND description = 'Late fee'`,
+    );
+    expect(membership.rowCount).toBe(expense.rowCount);
+  });
+
+  /** Counts every settlement row, so a replay can be shown to add none. */
+  const settlementCount = async (): Promise<number> =>
+    Number((await database.query(`SELECT count(*) AS total FROM settlements`)).rows[0].total);
+
+  // H-03: a retry of a lost response must find the first attempt's result,
+  // not store a second one. The claim commits with the business row, so a
+  // concurrent duplicate blocks on it and then replays.
+  it("replays a retried expense instead of storing it twice", async () => {
+    // The earlier removal race may have left the pair sharing no group, and
+    // a one-off needs a friendship or a shared group; make the friendship.
+    await database.query(
+      `INSERT INTO friendships (user_id, friend_id) VALUES ($1, $2), ($2, $1)
+       ON CONFLICT DO NOTHING`,
+      [CREDITOR, DEBTOR],
+    );
+    const request = {
+      groupId: "",
+      description: "Retried lunch",
+      amountCents: 800,
+      currency: "USD",
+      category: "food",
+      expenseDate: "2026-07-30",
+      splitType: "exact",
+      notes: "",
+      payers: [{ userId: CREDITOR, amountCents: 800 }],
+      splitSpecs: [{ userId: DEBTOR, amountCents: 800, percentBp: 0, shares: 0 }],
+      items: [],
+      taxCents: 0,
+      tipCents: 0,
+      operationId: "op-lunch",
+    } as never;
+    const [first, concurrent] = await Promise.all([
+      createExpense(CREDITOR, request),
+      createExpense(CREDITOR, request),
+    ]);
+    const retried = await createExpense(CREDITOR, request);
+    expect(concurrent.id).toBe(first.id);
+    expect(retried.id).toBe(first.id);
+    const stored = await database.query(
+      `SELECT count(*) AS total FROM expenses WHERE description = 'Retried lunch'`,
+    );
+    expect(Number(stored.rows[0].total)).toBe(1);
+  });
+
+  it("replays a retried payment and refuses the id for a different one", async () => {
+    const before = await settlementCount();
+    const request = {
+      groupId: "",
+      toUserId: CREDITOR,
+      amountCents: 300,
+      currency: "USD",
+      method: "cash",
+      note: "",
+      operationId: "op-pay",
+    };
+    const first = await recordSettlement(DEBTOR, request);
+    const retried = await recordSettlement(DEBTOR, request);
+    expect(retried.id).toBe(first.id);
+    expect(await settlementCount()).toBe(before + 1);
+    // Same id, different amount: not a retry, and not silently the old result.
+    await expect(recordSettlement(DEBTOR, { ...request, amountCents: 200 })).rejects.toThrow(
+      /already used for a different request/,
+    );
+    expect(await settlementCount()).toBe(before + 1);
+  });
+
+  it("sums each group's net in one query, agreeing with the ledger walk", async () => {
+    // M-02: the group list used to rebuild every group's whole ledger in the
+    // process, one pool connection each. The SQL sum must land on the same
+    // number the full walk does, live rows only.
+    const batched = await userNetInGroups(DEBTOR, ["grp-1", "grp-missing"]);
+    expect(batched.get("grp-1")).toBe(await userNetInGroup(DEBTOR, "grp-1"));
+    expect(batched.get("grp-missing")).toBe(0);
+  });
+
+  it("delivers exactly one reminder under a concurrent burst at the cooldown boundary", async () => {
+    // M-05: the debtor still owes on the retried lunch. Three sends at once
+    // must all serialize behind the pair's lock; the first commits, the
+    // others see it and are refused by the cooldown.
+    const outcomes = await Promise.allSettled([
+      sendReminder(CREDITOR, DEBTOR),
+      sendReminder(CREDITOR, DEBTOR),
+      sendReminder(CREDITOR, DEBTOR),
+    ]);
+    expect(outcomes.filter((outcome) => outcome.status === "fulfilled")).toHaveLength(1);
+    const delivered = await database.query(
+      `SELECT count(*) AS total FROM notifications WHERE type = 'reminder' AND user_id = $1`,
+      [DEBTOR],
+    );
+    expect(Number(delivered.rows[0].total)).toBe(1);
   });
 });

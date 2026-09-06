@@ -3,8 +3,10 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { authClient, errorMessage } from "@/lib/api/connect";
+import { nextPathFromLocation } from "@/lib/navigation/nextPath";
+import { clearAccountQueryCache } from "@/lib/api/queryCache";
 import {
   GOOGLE_BUTTON_OPTIONS,
   GOOGLE_CLIENT_ID,
@@ -57,6 +59,7 @@ function loadGoogleScript(): Promise<void> {
  */
 export function useGoogleSignIn() {
   const router = useRouter();
+  const queryClient = useQueryClient();
   // The host element is held in state rather than a ref so the effect below
   // runs exactly when the div mounts, with no ordering dance against the
   // script load.
@@ -66,7 +69,10 @@ export function useGoogleSignIn() {
 
   const { mutate, isPending } = useMutation({
     mutationFn: (idToken: string) => authClient.logInWithGoogle({ idToken }),
-    onSuccess: () => router.push("/dashboard"),
+    onSuccess: () => {
+      clearAccountQueryCache(queryClient);
+      router.push(nextPathFromLocation());
+    },
     onError: (mutationError) => setError(errorMessage(mutationError)),
   });
 
@@ -74,11 +80,12 @@ export function useGoogleSignIn() {
     if (!isConfigured || !buttonElement) return;
     let cancelled = false;
 
-    loadGoogleScript()
-      .then(() => {
+    Promise.all([loadGoogleScript(), authClient.beginGoogleSignIn({})])
+      .then(([_scriptReady, challenge]) => {
         if (cancelled || !window.google) return;
         window.google.accounts.id.initialize({
           client_id: GOOGLE_CLIENT_ID,
+          nonce: challenge.nonce,
           callback: (response) => {
             setError("");
             mutate(response.credential);
@@ -87,7 +94,7 @@ export function useGoogleSignIn() {
         window.google.accounts.id.renderButton(buttonElement, GOOGLE_BUTTON_OPTIONS);
       })
       .catch(() => {
-        if (!cancelled) setError("could not reach Google, please try again");
+        if (!cancelled) setError("could not start Google sign-in, please try again");
       });
 
     return () => {

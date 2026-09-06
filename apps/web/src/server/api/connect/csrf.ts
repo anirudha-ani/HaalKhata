@@ -1,6 +1,7 @@
 /** CSRF guard: reject cookie-authenticated state-changing requests with a foreign Origin. */
 
 import type { NextApiRequest, NextApiResponse } from "next";
+import { bearerTokenFromAuthorization } from "./credentials";
 
 /**
  * Connect RPCs are all POST. A browser performing a CSRF attack would send a
@@ -23,7 +24,7 @@ export function csrfGuard(request: NextApiRequest, response: NextApiResponse): b
     return true;
   }
   const hasCookie = typeof request.headers.cookie === "string" && request.headers.cookie.length > 0;
-  const hasBearer = /^bearer\s+\S+/i.test(request.headers.authorization ?? "");
+  const hasBearer = bearerTokenFromAuthorization(request.headers.authorization) !== null;
   // Mobile / API clients send a Bearer token — CSRF doesn't leak those.
   if (!hasCookie || hasBearer) return true;
 

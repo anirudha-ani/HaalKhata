@@ -11,7 +11,14 @@ export const metadata: Metadata = {
   title: { default: "HaalKhata", template: "%s · HaalKhata" },
   description: "Split expenses with friends — groups, receipts, balances.",
   manifest: "/manifest.webmanifest",
-  icons: { icon: "/icon.svg", apple: "/icon-192.png" },
+  icons: {
+    icon: [
+      { url: "/favicon-32.png", sizes: "32x32", type: "image/png" },
+      { url: "/icon-192.png", sizes: "192x192", type: "image/png" },
+      { url: "/icon.svg", type: "image/svg+xml" },
+    ],
+    apple: { url: "/apple-touch-icon.png", sizes: "180x180", type: "image/png" },
+  },
 };
 
 /** Viewport configuration: brand theme color and mobile-friendly scaling. */
@@ -21,6 +28,9 @@ export const viewport: Viewport = {
   initialScale: 1,
   viewportFit: "cover",
 };
+
+/** Forces every document render to receive the request's fresh CSP nonce. */
+export const dynamic = "force-dynamic";
 
 /**
  * Root layout for every route: renders the HTML/body shell, wraps the app in

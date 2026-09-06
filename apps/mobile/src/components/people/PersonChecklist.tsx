@@ -22,6 +22,11 @@ import { MAX_VISIBLE_PEOPLE, SCROLLING_LIST_THRESHOLD } from "./people.constants
  * already returns people you have expenses with first, then the rest
  * alphabetically.
  *
+ * Search matches names only. Other people's email and phone are private
+ * fields the server no longer sends in any list, so matching on them would
+ * be matching on empty strings — and promising it in the placeholder would
+ * be a lie.
+ *
  * @param props - Component props.
  * @returns The search field and checkbox list.
  */
@@ -29,7 +34,9 @@ export function PersonChecklist({
   people,
   selectedIds,
   onToggle,
-  placeholder = "Search by name, email or phone",
+  placeholder = "Search by name",
+  disabledIds,
+  disabledHint = "",
 }: {
   /** Everyone selectable, in the order they should be offered. */
   people: User[];
@@ -39,13 +46,21 @@ export function PersonChecklist({
   onToggle: (userId: string) => void;
   /** Placeholder text in the search field. */
   placeholder?: string;
+  /**
+   * People shown but not selectable — e.g. Invited (unregistered) friends in
+   * an expense picker, who cannot be on a transaction until they sign up.
+   * Shown rather than hidden so "why isn't Rifat here?" never comes up.
+   */
+  disabledIds?: Set<string>;
+  /** Short label rendered on a disabled row saying why. */
+  disabledHint?: string;
 }) {
   const [query, setQuery] = useState("");
 
   const matching = useMemo(() => {
     const terms = searchTerms(query);
     if (terms.length === 0) return people;
-    return people.filter((person) => matchesTerms(terms, person.name, person.email, person.phone));
+    return people.filter((person) => matchesTerms(terms, person.name));
   }, [people, query]);
   const visible = matching.slice(0, MAX_VISIBLE_PEOPLE);
   const hiddenCount = matching.length - visible.length;
@@ -66,13 +81,19 @@ export function PersonChecklist({
       >
         {visible.map((person, index) => {
           const isChecked = selectedIds.includes(person.id);
+          const isDisabled = disabledIds?.has(person.id) ?? false;
           return (
             <Pressable
               accessibilityRole="checkbox"
-              accessibilityState={{ checked: isChecked }}
+              accessibilityState={{ checked: isChecked, disabled: isDisabled }}
+              disabled={isDisabled}
               key={person.id}
               onPress={() => onToggle(person.id)}
-              style={[styles.row, index > 0 ? styles.rowDivider : null]}
+              style={[
+                styles.row,
+                index > 0 ? styles.rowDivider : null,
+                isDisabled ? styles.rowDisabled : null,
+              ]}
             >
               <View style={[styles.checkbox, isChecked ? styles.checkboxChecked : null]}>
                 {isChecked ? <Check color={colors.white} size={12} /> : null}
@@ -81,6 +102,9 @@ export function PersonChecklist({
               <Text numberOfLines={1} style={styles.rowName}>
                 {person.name}
               </Text>
+              {isDisabled && disabledHint ? (
+                <Text style={styles.rowHint}>{disabledHint}</Text>
+              ) : null}
             </Pressable>
           );
         })}
@@ -132,6 +156,13 @@ const styles = StyleSheet.create({
     gap: spacing.md,
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.sm + 2,
+  },
+  rowDisabled: {
+    opacity: 0.55,
+  },
+  rowHint: {
+    color: colors.inkSoft,
+    fontSize: 11,
   },
   rowDivider: {
     borderTopColor: colors.line,

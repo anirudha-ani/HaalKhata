@@ -95,7 +95,7 @@ export function buildInitialValues(
       ? []
       : participantIds.filter((userId) => userId !== currentUserId),
     description: expense.description,
-    amount: centsToInput(expense.amountCents),
+    amount: centsToInput(expense.amountCents, expense.currency),
     date: expense.expenseDate,
     category: expense.category,
     notes: expense.notes,
@@ -104,14 +104,14 @@ export function buildInitialValues(
     splitInputs:
       expense.splitType === "exact"
         ? Object.fromEntries(
-            expense.splits.map((split) => [split.userId, centsToInput(split.owedCents)]),
+            expense.splits.map((split) => [split.userId, centsToInput(split.owedCents, expense.currency)]),
           )
         : {},
     multiPayer,
     singlePayerId: expense.payers[0]?.userId ?? currentUserId,
     payerAmounts: multiPayer
       ? Object.fromEntries(
-          expense.payers.map((payer) => [payer.userId, centsToInput(payer.amountCents)]),
+          expense.payers.map((payer) => [payer.userId, centsToInput(payer.amountCents, expense.currency)]),
         )
       : {},
     // Rebuilt from the stored receipt so an itemized expense reopens as what
@@ -125,7 +125,7 @@ export function buildInitialValues(
     items: expense.items.map((item) => ({
       key: nextDraftKey(),
       name: item.name,
-      total: centsToInput(item.totalCents),
+      total: centsToInput(item.totalCents, expense.currency),
       quantity: item.quantity,
       assignees: Object.fromEntries(
         item.assignments.map((assignment) => [assignment.userId, assignment.weight]),
@@ -133,7 +133,7 @@ export function buildInitialValues(
     })),
     // Blank rather than "0.00" when there was none, so the field reads as empty
     // instead of as a deliberate zero.
-    taxInput: expense.taxCents > 0 ? centsToInput(expense.taxCents) : "",
-    tipInput: expense.tipCents > 0 ? centsToInput(expense.tipCents) : "",
+    taxInput: expense.taxCents > 0 ? centsToInput(expense.taxCents, expense.currency) : "",
+    tipInput: expense.tipCents > 0 ? centsToInput(expense.tipCents, expense.currency) : "",
   };
 }

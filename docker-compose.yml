@@ -3,12 +3,12 @@
 # Secrets come from a `.env` file next to this one (see .env.example).
 services:
   db:
-    image: postgres:17-alpine
+    image: postgres:17-alpine@sha256:18cfe3ef5e6815560c98237d6216d1e5119702fb0f3894c8785dd58b8bbe5d73
     restart: unless-stopped
     environment:
       POSTGRES_DB: haalkhata
       POSTGRES_USER: haalkhata
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-haalkhata}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
     volumes:
       - db-data:/var/lib/postgresql/data
     ports:
@@ -40,7 +40,7 @@ services:
       # Overrides the DATABASE_URL in .env, which points at localhost for the
       # host dev server. Inside the compose network the database is `db`.
       # `environment:` beats `env_file:`, so this is the effective value.
-      DATABASE_URL: postgres://haalkhata:${POSTGRES_PASSWORD:-haalkhata}@db:5432/haalkhata
+      DATABASE_URL: postgres://haalkhata:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@db:5432/haalkhata
     ports:
       # Loopback only by default — put a TLS-terminating reverse proxy
       # (Caddy/nginx/Traefik) in front and expose 443 there, not 3000 here.

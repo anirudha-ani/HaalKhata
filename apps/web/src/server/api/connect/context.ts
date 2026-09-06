@@ -1,39 +1,27 @@
 /** Per-request Connect plumbing: caller auth (bearer/cookie), session cookies, UsecaseError → ConnectError mapping. */
 
 import { Code, ConnectError, type HandlerContext } from "@connectrpc/connect";
-import { tokenVersion, verifyToken } from "@/server/auth/usecase/auth.usecase";
+import { SESSION_RENEWAL_HEADER } from "@haalkhata/shared/auth/sessionRenewal";
+import {
+  createToken,
+  tokenExpiresAt,
+  tokenVersion,
+  verifyToken,
+} from "@/server/auth/usecase/auth.usecase";
 import { findUserTokenVersion } from "@/server/auth/repo/users.repo";
+import { TOKEN_RENEWAL_THRESHOLD_SECONDS } from "@/server/auth/auth.constants";
 import { UsecaseError } from "@/server/common/errors";
 import { logError } from "@/server/common/logger";
-import { CODE_MAP, COOKIE_MAX_AGE, SESSION_COOKIE, sessionCookieAttributes } from "./connect.constants";
+import { CODE_MAP, COOKIE_MAX_AGE, sessionCookieAttributes } from "./connect.constants";
+import { bearerTokenFromAuthorization, tokenFromHeaders } from "./credentials";
 
-/**
- * Extracts the bearer token string from request headers: Authorization header
- * (mobile) first, session cookie (web) second. Returns null when no credential
- * is present. Does NOT verify the token — callers pair this with verifyToken.
- *
- * @param headers - Incoming request headers to inspect for credentials.
- * @returns The raw token string, or null when no credential is present.
- */
-export function tokenFromHeaders(headers: Headers): string | null {
-  const authorizationHeader = headers.get("authorization");
-  if (authorizationHeader?.toLowerCase().startsWith("bearer ")) {
-    return authorizationHeader.slice(7).trim();
-  }
-  const cookies = headers.get("cookie");
-  if (cookies) {
-    for (const cookiePart of cookies.split(";")) {
-      const [cookieName, ...valueParts] = cookiePart.trim().split("=");
-      if (cookieName === SESSION_COOKIE) return valueParts.join("=");
-    }
-  }
-  return null;
-}
+/** The one RPC that must not hand back a fresh session on its way out. */
+const LOG_OUT_METHOD = "LogOut";
 
 /**
  * Returns the calling user's id, rejecting the request when unauthenticated.
  * The bearer token's embedded version is checked against the user's current
- * `token_version` so that logout / password change revokes outstanding tokens.
+ * `token_version` so that signing out revokes outstanding tokens.
  *
  * @param handlerContext - Connect handler context for the current request.
  * @returns The verified user id.
@@ -51,7 +39,38 @@ export async function requireUser(handlerContext: HandlerContext): Promise<strin
   if (currentVersion === undefined || currentVersion !== embeddedVersion) {
     throw new ConnectError("session expired, please sign in again", Code.Unauthenticated);
   }
+  renewAgingSession(handlerContext, token, userId, currentVersion);
   return userId;
+}
+
+/**
+ * Re-issues a session that has used up more than half its lifetime, so a
+ * person who keeps using the app is never signed out by the absolute token
+ * limit — only by inactivity or by signing out. The fresh token travels the
+ * way the old one arrived: a cookie for the browser, a response header the
+ * mobile transport stores. Sign-out is skipped, or the renewal would race the
+ * cookie clear and the mobile token delete.
+ *
+ * @param handlerContext - Connect handler context for the current request.
+ * @param token - The verified token the request arrived with.
+ * @param userId - Its verified user id.
+ * @param currentVersion - The user's current token_version, baked into the renewal.
+ */
+function renewAgingSession(
+  handlerContext: HandlerContext,
+  token: string,
+  userId: string,
+  currentVersion: number,
+): void {
+  if (handlerContext.method.name === LOG_OUT_METHOD) return;
+  const remainingSeconds = tokenExpiresAt(token) - Date.now() / 1000;
+  if (!(remainingSeconds < TOKEN_RENEWAL_THRESHOLD_SECONDS)) return;
+  const renewed = createToken(userId, currentVersion);
+  if (bearerTokenFromAuthorization(handlerContext.requestHeader.get("authorization"))) {
+    handlerContext.responseHeader.set(SESSION_RENEWAL_HEADER, renewed);
+    return;
+  }
+  setSessionCookie(handlerContext, renewed);
 }
 
 /**
@@ -82,15 +101,16 @@ export function clearSessionCookie(handlerContext: HandlerContext): void {
 /**
  * Runs a usecase call and maps UsecaseError codes onto Connect codes.
  * Unexpected (non-UsecaseError) exceptions are logged with the RPC method
- * name and a random request id before rethrowing, so production deploys
- * aren't flying blind with stack traces in stdout and no correlation.
+ * name and a random request id. Clients receive only a generic Internal error
+ * carrying that correlation id; database/provider messages stay server-side.
  *
  * @param operation - Usecase invocation to execute.
  * @param handlerContext - Connect context for the current RPC (used for the
  *   method name in logs); omitted by non-RPC callers.
  * @returns Whatever operation resolves to.
  * @throws ConnectError translated from any UsecaseError thrown by the
- *   operation; other errors are logged then rethrown unchanged.
+ *   operation; existing ConnectErrors pass through; unexpected errors become
+ *   generic Internal responses after structured logging.
  */
 export async function runUsecase<UsecaseResult>(
   operation: () => UsecaseResult | Promise<UsecaseResult>,
@@ -102,10 +122,12 @@ export async function runUsecase<UsecaseResult>(
     if (error instanceof UsecaseError) {
       throw new ConnectError(error.message, CODE_MAP[error.code]);
     }
+    if (error instanceof ConnectError) throw error;
+    const requestId = crypto.randomUUID();
     logError(error, {
       rpc: handlerContext?.method.name ?? "unknown",
-      requestId: crypto.randomUUID(),
+      requestId,
     });
-    throw error;
+    throw new ConnectError(`internal server error (request ${requestId})`, Code.Internal);
   }
 }

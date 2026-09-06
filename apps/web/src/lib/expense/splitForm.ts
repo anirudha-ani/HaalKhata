@@ -1,6 +1,6 @@
 /** Pure helpers for the expense form — validation + request assembly. */
 
-import { parseMoneyInput } from "@haalkhata/shared/money/money";
+import { centsToInput, parseMoneyInput } from "@haalkhata/shared/money/money";
 import { computeItemizedSplits } from "@haalkhata/shared/expense/splits";
 
 /** Split modes the form supports. */
@@ -38,6 +38,8 @@ export interface SplitFormState {
   participantIds: string[];
   /** Per-user raw input: exact → "12.50", percent → "25", shares → "2". */
   inputs: Record<string, string>;
+  /** ISO 4217 code money inputs are typed in; sets the decimals they allow (§36). */
+  currency: string;
 }
 
 /** Result of a validation check: `ok` plus a user-facing message when not ok. */
@@ -57,7 +59,7 @@ export interface SplitCheck {
  * @returns Whether the split is valid, with a message when it is not.
  */
 export function checkSplit(state: SplitFormState): SplitCheck {
-  const { splitType, totalCents, participantIds, inputs } = state;
+  const { splitType, totalCents, participantIds, inputs, currency } = state;
   // Itemized splits carry their own shape (line items, not a participant list
   // with per-person values) and are validated by checkItemized instead.
   if (splitType === "itemized") return { ok: true, message: "" };
@@ -72,7 +74,7 @@ export function checkSplit(state: SplitFormState): SplitCheck {
       return { ok: true, message: "" };
     case "exact": {
       const parsedCents = participantIds.map(
-        (participantId) => parseMoneyInput(inputs[participantId] ?? "") ?? 0,
+        (participantId) => parseMoneyInput(inputs[participantId] ?? "", currency) ?? 0,
       );
       const assignedCents = parsedCents.reduce(
         (runningTotal, cents) => runningTotal + cents,
@@ -82,7 +84,7 @@ export function checkSplit(state: SplitFormState): SplitCheck {
       if (remaining !== 0) {
         return {
           ok: false,
-          message: `${(Math.abs(remaining) / 100).toFixed(2)} ${remaining > 0 ? "left to assign" : "over the total"}`,
+          message: `${centsToInput(Math.abs(remaining), currency)} ${remaining > 0 ? "left to assign" : "over the total"}`,
         };
       }
       return { ok: true, message: "" };
@@ -127,7 +129,7 @@ export function checkSplit(state: SplitFormState): SplitCheck {
 export function buildSplitSpecs(state: SplitFormState) {
   // Destructured to a local const so the itemized narrowing below still holds
   // inside the map callback (a property access would widen again).
-  const { splitType, participantIds, inputs } = state;
+  const { splitType, participantIds, inputs, currency } = state;
   // Itemized expenses derive their splits server-side from the line items;
   // no per-person specs are sent.
   if (splitType === "itemized") return [];
@@ -138,7 +140,7 @@ export function buildSplitSpecs(state: SplitFormState) {
       case "exact":
         return {
           userId,
-          amountCents: parseMoneyInput(inputs[userId] ?? "") ?? 0,
+          amountCents: parseMoneyInput(inputs[userId] ?? "", currency) ?? 0,
           percentBp: 0,
           shares: 0,
         };
@@ -168,15 +170,17 @@ export function buildSplitSpecs(state: SplitFormState) {
  * @param items - The draft line items.
  * @param taxCents - Tax in integer cents.
  * @param tipCents - Tip in integer cents.
+ * @param currency - ISO 4217 code the item amounts are typed in.
  * @returns The items subtotal and the grand total (items + tax + tip), in cents.
  */
 export function itemizedTotals(
   items: DraftLineItem[],
   taxCents: number,
   tipCents: number,
+  currency: string,
 ): { itemsTotalCents: number; totalCents: number } {
   const itemsTotalCents = items.reduce(
-    (runningTotal, item) => runningTotal + (parseMoneyInput(item.total) ?? 0),
+    (runningTotal, item) => runningTotal + (parseMoneyInput(item.total, currency) ?? 0),
     0,
   );
   return { itemsTotalCents, totalCents: itemsTotalCents + taxCents + tipCents };
@@ -189,12 +193,15 @@ export function itemizedTotals(
  * message instead of round-tripping.
  *
  * @param items - The draft line items.
+ * @param currency - ISO 4217 code the item amounts are typed in.
  * @returns Whether the draft is valid, with a message when it is not.
  */
-export function checkItemized(items: DraftLineItem[]): SplitCheck {
+export function checkItemized(items: DraftLineItem[], currency: string): SplitCheck {
   if (items.length === 0) return { ok: false, message: "add at least one item" };
 
-  const unpriced = items.filter((item) => (parseMoneyInput(item.total) ?? 0) <= 0).length;
+  const unpriced = items.filter(
+    (item) => (parseMoneyInput(item.total, currency) ?? 0) <= 0,
+  ).length;
   if (unpriced > 0) {
     return {
       ok: false,
@@ -212,7 +219,7 @@ export function checkItemized(items: DraftLineItem[]): SplitCheck {
     };
   }
 
-  if (itemizedTotals(items, 0, 0).itemsTotalCents <= 0) {
+  if (itemizedTotals(items, 0, 0, currency).itemsTotalCents <= 0) {
     return { ok: false, message: "items must add up to a positive amount" };
   }
   return { ok: true, message: "" };
@@ -294,14 +301,15 @@ export function shareEveryItemWith(
  * assignees whose weight is zero and defaulting a blank name to "Item".
  *
  * @param items - The draft line items (assumed already valid).
+ * @param currency - ISO 4217 code the item amounts are typed in.
  * @returns One API item per draft row, each with its positive-weight assignments.
  */
-export function buildItemsPayload(items: DraftLineItem[]) {
+export function buildItemsPayload(items: DraftLineItem[], currency: string) {
   return items.map((item) => ({
     id: "",
     name: item.name.trim() || "Item",
     quantity: Math.max(1, item.quantity ?? 1),
-    totalCents: parseMoneyInput(item.total) ?? 0,
+    totalCents: parseMoneyInput(item.total, currency) ?? 0,
     assignments: Object.entries(item.assignees)
       .filter(([, weight]) => weight > 0)
       .map(([userId, weight]) => ({ userId, weight })),
@@ -320,15 +328,21 @@ export function buildItemsPayload(items: DraftLineItem[]) {
  * @param items - The draft line items.
  * @param taxCents - Tax in integer cents.
  * @param tipCents - Tip in integer cents.
+ * @param currency - ISO 4217 code the item amounts are typed in.
  * @returns Owed cents keyed by user id; empty while the draft is incomplete.
  */
 export function previewItemizedShares(
   items: DraftLineItem[],
   taxCents: number,
   tipCents: number,
+  currency: string,
 ): Record<string, number> {
   try {
-    const { splits } = computeItemizedSplits(buildItemsPayload(items), taxCents, tipCents);
+    const { splits } = computeItemizedSplits(
+      buildItemsPayload(items, currency),
+      taxCents,
+      tipCents,
+    );
     return Object.fromEntries(splits.map((split) => [split.userId, split.owedCents]));
   } catch {
     // Draft not complete enough to allocate yet — checkItemized surfaces why.
@@ -344,17 +358,19 @@ export function previewItemizedShares(
  * @param totalCents - Parsed expense total in cents, or null when invalid.
  * @param multiPayer - Whether multi-payer mode is enabled.
  * @param payerAmounts - Raw per-user paid-amount inputs, keyed by user id.
+ * @param currency - ISO 4217 code the amounts are typed in.
  * @returns Whether the payers are valid, with a message when they are not.
  */
 export function checkPayers(
   totalCents: number | null,
   multiPayer: boolean,
   payerAmounts: Record<string, string>,
+  currency: string,
 ): SplitCheck {
   if (!multiPayer) return { ok: true, message: "" };
   if (totalCents === null) return { ok: false, message: "enter a valid amount" };
   const paidCents = Object.values(payerAmounts)
-    .map((value) => parseMoneyInput(value) ?? 0)
+    .map((value) => parseMoneyInput(value, currency) ?? 0)
     .filter((cents) => cents > 0);
   if (paidCents.length === 0) return { ok: false, message: "enter who paid what" };
   const paidTotalCents = paidCents.reduce((runningTotal, cents) => runningTotal + cents, 0);
@@ -362,7 +378,7 @@ export function checkPayers(
     const differenceCents = totalCents - paidTotalCents;
     return {
       ok: false,
-      message: `payments ${differenceCents > 0 ? "short" : "over"} by ${(Math.abs(differenceCents) / 100).toFixed(2)}`,
+      message: `payments ${differenceCents > 0 ? "short" : "over"} by ${centsToInput(Math.abs(differenceCents), currency)}`,
     };
   }
   return { ok: true, message: "" };

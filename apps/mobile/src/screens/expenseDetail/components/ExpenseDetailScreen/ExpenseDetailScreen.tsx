@@ -1,8 +1,9 @@
-/** Expense detail screen: payers, splits, receipt items, comments, and delete flow. */
+/** Expense detail screen: payers, splits, receipt items, history, comments, and delete flow. */
 
 import { useRouter } from "expo-router";
-import { Pencil, Send, Trash2 } from "lucide-react-native";
+import { Check, Lock, Pencil, Send, Trash2 } from "lucide-react-native";
 import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { PersonLink } from "@/components/people/PersonLink";
 import { DetailHeader } from "@/components/shell/DetailHeader";
 import { Screen } from "@/components/shell/Screen";
 import { Avatar } from "@/components/ui/Avatar";
@@ -11,15 +12,19 @@ import { Money } from "@/components/ui/Money";
 import { Sheet } from "@/components/ui/Sheet";
 import { Spinner } from "@/components/ui/Spinner";
 import { errorMessage } from "@/lib/api/connect";
+import { settledStatus } from "@haalkhata/shared/expense/settledStatus";
+import { itemShareCents } from "@haalkhata/shared/expense/splits";
 import { formatMoney } from "@haalkhata/shared/money/money";
 import { localDateTime } from "@haalkhata/shared/time/localTime";
 import { colors, fonts, radii, spacing } from "@/lib/theme/theme";
 import { useExpenseDetail } from "./hooks/useExpenseDetail";
+import { MAX_COMMENT_LENGTH } from "@haalkhata/shared/text/limits";
 
 /**
  * Renders a single expense: header (description, date, category, amount),
- * edit/delete actions, payer and split breakdowns, receipt items when
- * itemized, notes, the comment thread with a composer, and a delete
+ * the nothing-pending banner, edit/delete actions, payer and split
+ * breakdowns, receipt items (with your share of each) when itemized, notes,
+ * the history of edits, the comment thread with a composer, and a delete
  * confirmation sheet.
  *
  * @param props - Component props.
@@ -58,11 +63,61 @@ export function ExpenseDetailScreen({ expenseId }: { expenseId: string }) {
       ? "You"
       : (expenseDetail.userById.get(userId)?.name ?? "someone");
 
+  // Anyone on the expense may correct it — creator, payer or ower — because
+  // each can see the mistake and each is affected by it. Deletion stays with
+  // the creator. Neither is refused once a payment has been recorded in the
+  // ledger after the expense: the derived balance rebalances against what
+  // was paid, so the screen warns rather than hides. A deleted expense is
+  // frozen history — no actions, though comments stay open — with the row
+  // kept so any payment made against it still has its explanation.
+  const meId = expenseDetail.me?.id;
+  // The viewer's net on this expense, for the nothing-pending banner: the
+  // banner only makes sense when they had a stake, and its wording depends
+  // on which direction that stake pointed.
+  const myPaidCents = expense.payers
+    .filter((payer) => payer.userId === meId)
+    .reduce((total, payer) => total + payer.amountCents, 0);
+  const myOwedCents = expense.splits
+    .filter((split) => split.userId === meId)
+    .reduce((total, split) => total + split.owedCents, 0);
+  const myNetCents = myPaidCents - myOwedCents;
+  const isCreator = expense.createdBy === meId;
+  const isParticipant =
+    isCreator ||
+    expense.payers.some((payer) => payer.userId === meId) ||
+    expense.splits.some((split) => split.userId === meId);
+  const hasLaterSettlement = expenseDetail.detail?.hasLaterSettlement === true;
+  const isDeleted = expense.deletedAt !== "";
+  const deletion = expenseDetail.deletion;
+  // Same wording as the list rows, from the same function — the list only
+  // has room for the short label, so this screen is where the full sentence
+  // actually gets read.
+  const settled =
+    expenseDetail.detail?.settledForViewer && myNetCents !== 0
+      ? settledStatus(
+          myNetCents > 0,
+          expense.groupId !== "",
+          [
+            ...new Set(
+              [
+                ...expense.payers.map((payer) => payer.userId),
+                ...expense.splits.map((split) => split.userId),
+              ]
+                .filter((participantId) => participantId !== meId)
+                .map((participantId) => expenseDetail.userById.get(participantId)?.name.split(" ")[0])
+                .filter((name): name is string => Boolean(name)),
+            ),
+          ],
+        )
+      : null;
+
   return (
     <Screen header={<DetailHeader title="Expense" />}>
       <View style={styles.titleBlock}>
         <View style={styles.titleText}>
-          <Text style={styles.title}>{expense.description}</Text>
+          <Text style={[styles.title, isDeleted ? styles.titleDeleted : null]}>
+            {expense.description}
+          </Text>
           <Text style={styles.meta}>
             {expense.expenseDate} · <Text style={styles.metaCapitalized}>{expense.category}</Text>
             {expense.groupId ? "" : " · one-off"}
@@ -76,8 +131,29 @@ export function ExpenseDetailScreen({ expenseId }: { expenseId: string }) {
         <Text style={styles.amount}>{formatMoney(expense.amountCents, expense.currency)}</Text>
       </View>
 
-      <View style={styles.actions}>
-        {expense.splitType !== "itemized" ? (
+      {settled ? (
+        <View style={styles.settledCard}>
+          <Check color={colors.pos700} size={16} />
+          <Text style={styles.settledText}>{settled.explanation}</Text>
+        </View>
+      ) : null}
+
+      {isDeleted ? (
+        <View style={styles.deletedCard}>
+          <Trash2 color={colors.inkSoft} size={16} />
+          <Text style={styles.deletedText}>
+            Deleted
+            {deletion?.actor
+              ? ` by ${deletion.actor.id === meId ? "you" : deletion.actor.name}`
+              : ""}{" "}
+            {localDateTime(deletion?.createdAt || expense.deletedAt)}. It no longer counts toward
+            anyone&apos;s balance; any payment made against it stays on the ledger.
+          </Text>
+        </View>
+      ) : null}
+
+      {isParticipant && !isDeleted ? (
+        <View style={styles.actions}>
           <Button
             compact
             icon={<Pencil color={colors.inkSoft} size={14} />}
@@ -85,76 +161,112 @@ export function ExpenseDetailScreen({ expenseId }: { expenseId: string }) {
             onPress={() => router.push(`/expenses/new?edit=${expense.id}`)}
             variant="outline"
           />
-        ) : null}
-        <Button
-          compact
-          icon={<Trash2 color={colors.inkSoft} size={14} />}
-          label="Delete"
-          onPress={() => expenseDetail.setConfirmingDelete(true)}
-          variant="outline"
-        />
-      </View>
+          {isCreator ? (
+            <Button
+              compact
+              icon={<Trash2 color={colors.inkSoft} size={14} />}
+              label="Delete"
+              onPress={() => expenseDetail.setConfirmingDelete(true)}
+              variant="outline"
+            />
+          ) : null}
+        </View>
+      ) : null}
 
-      <View style={styles.breakdownCard}>
-        <Text style={styles.cardTitle}>PAID BY</Text>
-        {expense.payers.map((payer) => {
-          const payerUser = expenseDetail.userById.get(payer.userId);
-          return (
-            <View key={payer.userId} style={styles.personRow}>
-              {payerUser ? <Avatar size="sm" user={payerUser} /> : null}
-              <Text numberOfLines={1} style={styles.personName}>
-                {displayName(payer.userId)}
-              </Text>
-              <Money cents={payer.amountCents} currency={expense.currency} style={styles.rowAmount} />
-            </View>
-          );
-        })}
-      </View>
+      {isParticipant && !isDeleted && hasLaterSettlement ? (
+        <View style={styles.settlementNoteCard}>
+          <Lock color={colors.inkSoft} size={16} />
+          <Text style={styles.settlementNoteText}>
+            Somebody has paid against this ledger since this expense was added. Editing or
+            deleting it rebalances what they owe — or are owed — against what has already been
+            paid.
+          </Text>
+        </View>
+      ) : null}
 
-      <View style={styles.breakdownCard}>
-        <Text style={styles.cardTitle}>SPLIT · {expense.splitType.toUpperCase()}</Text>
-        {expense.splits.map((split) => {
-          const splitUser = expenseDetail.userById.get(split.userId);
-          return (
-            <View key={split.userId} style={styles.personRow}>
-              {splitUser ? <Avatar size="sm" user={splitUser} /> : null}
-              <Text numberOfLines={1} style={styles.personName}>
-                {displayName(split.userId)}
-              </Text>
-              <Money cents={split.owedCents} currency={expense.currency} style={styles.rowAmount} />
-            </View>
-          );
-        })}
+      <View style={styles.breakdownGrid}>
+        <View style={[styles.breakdownCard, styles.breakdownColumn]}>
+          <Text style={styles.cardTitle}>PAID BY</Text>
+          {expense.payers.map((payer) => {
+            const payerUser = expenseDetail.userById.get(payer.userId);
+            return (
+              <View key={payer.userId} style={styles.personRow}>
+                <PersonLink meId={meId} style={styles.personLink} userId={payer.userId}>
+                  {payerUser ? <Avatar size="sm" user={payerUser} /> : null}
+                  <Text numberOfLines={1} style={styles.personName}>
+                    {displayName(payer.userId)}
+                  </Text>
+                </PersonLink>
+                <Money cents={payer.amountCents} currency={expense.currency} style={styles.rowAmount} />
+              </View>
+            );
+          })}
+        </View>
+
+        <View style={[styles.breakdownCard, styles.breakdownColumn]}>
+          <Text style={styles.cardTitle}>SPLIT · {expense.splitType.toUpperCase()}</Text>
+          {expense.splits.map((split) => {
+            const splitUser = expenseDetail.userById.get(split.userId);
+            return (
+              <View key={split.userId} style={styles.personRow}>
+                <PersonLink meId={meId} style={styles.personLink} userId={split.userId}>
+                  {splitUser ? <Avatar size="sm" user={splitUser} /> : null}
+                  <Text numberOfLines={1} style={styles.personName}>
+                    {displayName(split.userId)}
+                  </Text>
+                </PersonLink>
+                <Money cents={split.owedCents} currency={expense.currency} style={styles.rowAmount} />
+              </View>
+            );
+          })}
+        </View>
       </View>
 
       {expense.items.length > 0 ? (
         <View style={styles.breakdownCard}>
           <Text style={styles.cardTitle}>RECEIPT ITEMS</Text>
-          {expense.items.map((item, index) => (
-            <View
-              key={item.id}
-              style={[styles.itemRow, index > 0 ? styles.itemRowDivider : null]}
-            >
-              <Text numberOfLines={1} style={styles.itemName}>
-                {item.quantity > 1 ? `${item.quantity}× ` : ""}
-                {item.name}
-              </Text>
-              <View style={styles.itemAssignees}>
-                {item.assignments.map((assignment, assignmentIndex) => {
-                  const assignee = expenseDetail.userById.get(assignment.userId);
-                  return assignee ? (
-                    <View
-                      key={assignment.userId}
-                      style={assignmentIndex > 0 ? styles.assigneeOverlap : null}
-                    >
-                      <Avatar ring size="sm" user={assignee} />
-                    </View>
-                  ) : null;
-                })}
+          {expense.items.map((item, index) => {
+            // Recomputed with the same allocate() the split itself used, so
+            // the figure on the line is the one that fed the stored total —
+            // rounding cent and all. null means you are not on this item,
+            // which is a different thing from owing nothing on it.
+            const myShare = expenseDetail.me ? itemShareCents(item, expenseDetail.me.id) : null;
+            return (
+              <View
+                key={item.id}
+                style={[styles.itemBlock, index > 0 ? styles.itemRowDivider : null]}
+              >
+                <View style={styles.itemRow}>
+                  <Text numberOfLines={1} style={styles.itemName}>
+                    {item.quantity > 1 ? `${item.quantity}× ` : ""}
+                    {item.name}
+                  </Text>
+                  <View style={styles.itemAssignees}>
+                    {item.assignments.map((assignment, assignmentIndex) => {
+                      const assignee = expenseDetail.userById.get(assignment.userId);
+                      return assignee ? (
+                        <View
+                          key={assignment.userId}
+                          style={assignmentIndex > 0 ? styles.assigneeOverlap : null}
+                        >
+                          <Avatar ring size="sm" user={assignee} />
+                        </View>
+                      ) : null;
+                    })}
+                  </View>
+                  <Money cents={item.totalCents} currency={expense.currency} style={styles.rowAmount} />
+                </View>
+                {/* The question the avatars alone cannot answer: am I on
+                    this, and for how much. Stated rather than left to be
+                    worked out from a row of overlapping faces. */}
+                <Text style={[styles.itemShare, myShare === null ? styles.itemShareNone : null]}>
+                  {myShare === null
+                    ? "not yours"
+                    : `your share ${formatMoney(myShare, expense.currency)}`}
+                </Text>
               </View>
-              <Money cents={item.totalCents} currency={expense.currency} style={styles.rowAmount} />
-            </View>
-          ))}
+            );
+          })}
           {expense.taxCents > 0 || expense.tipCents > 0 ? (
             <Text style={styles.taxTip}>
               {expense.taxCents > 0
@@ -175,23 +287,67 @@ export function ExpenseDetailScreen({ expenseId }: { expenseId: string }) {
         </View>
       ) : null}
 
+      {/* Only when something actually changed. Every expense has a creation
+          event, so rendering the history unconditionally would put a section
+          on every screen to say "nothing has happened", which is noise. The
+          creation line is included once there IS an edit, because "edited"
+          only means something next to when it was made. */}
+      {expenseDetail.changes.length > 0 ? (
+        <View style={styles.breakdownCard}>
+          <Text style={styles.cardTitle}>HISTORY</Text>
+          {expenseDetail.detail?.history.map((event, index) => (
+            <View key={`${event.type}-${event.createdAt}-${index}`} style={styles.historyRow}>
+              {event.actor ? (
+                <PersonLink meId={meId} style={styles.historyActor} userId={event.actor.id}>
+                  <Avatar size="sm" user={event.actor} />
+                  <Text numberOfLines={1} style={styles.historyName}>
+                    {displayName(event.actor.id)}
+                  </Text>
+                </PersonLink>
+              ) : (
+                <Text style={styles.historyName}>Someone</Text>
+              )}
+              <Text numberOfLines={1} style={styles.historyVerb}>
+                {event.type === "expense_added"
+                  ? "created this"
+                  : event.type === "expense_deleted"
+                    ? "deleted this"
+                    : "edited this"}
+              </Text>
+              <Text style={styles.historyTime}>{localDateTime(event.createdAt)}</Text>
+            </View>
+          ))}
+        </View>
+      ) : null}
+
       {/* Comments */}
       <View style={styles.commentsSection}>
         <Text style={styles.cardTitle}>COMMENTS</Text>
         {(expenseDetail.detail?.comments ?? []).map((comment) => (
           <View key={comment.id} style={styles.commentCard}>
-            {comment.author ? <Avatar size="sm" user={comment.author} /> : null}
+            {comment.author ? (
+              <PersonLink meId={meId} userId={comment.author.id}>
+                <Avatar size="sm" user={comment.author} />
+              </PersonLink>
+            ) : null}
             <View style={styles.commentBody}>
               <Text style={styles.commentMeta}>
-                <Text style={styles.commentAuthor}>{comment.author?.name}</Text> ·{" "}
-                {localDateTime(comment.createdAt)}
+                {comment.author ? (
+                  <PersonLink meId={meId} userId={comment.author.id}>
+                    <Text style={styles.commentAuthor}>{comment.author.name}</Text>
+                  </PersonLink>
+                ) : null}{" "}
+                · {localDateTime(comment.createdAt)}
               </Text>
               <Text style={styles.commentText}>{comment.body}</Text>
             </View>
           </View>
         ))}
+        {/* Open on deleted expenses too: "why was this removed?" is exactly
+            the conversation the kept row is there to host. */}
         <View style={styles.composer}>
           <TextInput
+            maxLength={MAX_COMMENT_LENGTH}
             onChangeText={expenseDetail.setComment}
             placeholder="Add a comment…"
             placeholderTextColor={colors.inkSoft}
@@ -221,7 +377,8 @@ export function ExpenseDetailScreen({ expenseId }: { expenseId: string }) {
           <View style={styles.deleteSheet}>
             <Text style={styles.deleteText}>
               “{expense.description}” ({formatMoney(expense.amountCents, expense.currency)}) will
-              be removed from everyone&apos;s balances.
+              stop counting toward anyone&apos;s balance. It stays visible, marked deleted, and any
+              payment already made against it stays on the ledger.
             </Text>
             <View style={styles.deleteActions}>
               <View style={styles.deleteAction}>
@@ -267,6 +424,15 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     gap: spacing.sm,
     padding: spacing.lg,
+  },
+  breakdownColumn: {
+    flexBasis: 360,
+    flexGrow: 1,
+  },
+  breakdownGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: spacing.xl,
   },
   cardTitle: {
     color: colors.inkSoft,
@@ -334,6 +500,23 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: spacing.sm,
   },
+  deletedCard: {
+    alignItems: "flex-start",
+    backgroundColor: colors.paper,
+    borderColor: colors.line,
+    borderRadius: radii.lg,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: spacing.sm,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+  },
+  deletedText: {
+    color: colors.inkSoft,
+    flex: 1,
+    fontSize: 14,
+    lineHeight: 20,
+  },
   deleteSheet: {
     gap: spacing.lg,
   },
@@ -347,6 +530,34 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "500",
   },
+  historyActor: {
+    alignItems: "center",
+    flexDirection: "row",
+    flexShrink: 1,
+    gap: spacing.sm,
+  },
+  historyName: {
+    color: colors.ink,
+    flexShrink: 1,
+    fontSize: 14,
+    fontWeight: "500",
+  },
+  historyRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: spacing.sm,
+  },
+  historyTime: {
+    color: colors.inkSoft,
+    fontSize: 12,
+    fontVariant: ["tabular-nums"],
+    marginLeft: "auto",
+  },
+  historyVerb: {
+    color: colors.inkSoft,
+    flexShrink: 1,
+    fontSize: 14,
+  },
   groupLink: {
     color: colors.brand600,
     fontSize: 13,
@@ -355,6 +566,10 @@ const styles = StyleSheet.create({
   },
   itemAssignees: {
     flexDirection: "row",
+  },
+  itemBlock: {
+    gap: 2,
+    paddingVertical: spacing.xs,
   },
   itemName: {
     color: colors.ink,
@@ -365,12 +580,21 @@ const styles = StyleSheet.create({
     alignItems: "center",
     flexDirection: "row",
     gap: spacing.md,
-    paddingVertical: spacing.xs,
   },
   itemRowDivider: {
     borderTopColor: colors.line,
     borderTopWidth: 1,
     paddingTop: spacing.sm,
+  },
+  itemShare: {
+    color: colors.pos700,
+    fontSize: 12,
+    fontWeight: "500",
+    textAlign: "right",
+  },
+  itemShareNone: {
+    color: colors.inkSoft,
+    fontWeight: "400",
   },
   meta: {
     color: colors.inkSoft,
@@ -403,6 +627,13 @@ const styles = StyleSheet.create({
     color: colors.inkSoft,
     fontSize: 15,
   },
+  personLink: {
+    alignItems: "center",
+    flex: 1,
+    flexDirection: "row",
+    gap: spacing.sm,
+    minWidth: 0,
+  },
   personName: {
     color: colors.ink,
     flex: 1,
@@ -416,6 +647,41 @@ const styles = StyleSheet.create({
   rowAmount: {
     fontSize: 14,
     fontWeight: "500",
+  },
+  settledCard: {
+    alignItems: "flex-start",
+    backgroundColor: colors.pos50,
+    borderColor: colors.pos600,
+    borderRadius: radii.lg,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: spacing.sm,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+  },
+  settledText: {
+    color: colors.pos700,
+    flex: 1,
+    fontSize: 14,
+    fontWeight: "500",
+    lineHeight: 20,
+  },
+  settlementNoteCard: {
+    alignItems: "flex-start",
+    backgroundColor: colors.card,
+    borderColor: colors.line,
+    borderRadius: radii.lg,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: spacing.sm,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+  },
+  settlementNoteText: {
+    color: colors.inkSoft,
+    flex: 1,
+    fontSize: 14,
+    lineHeight: 20,
   },
   taxTip: {
     borderTopColor: colors.line,
@@ -435,6 +701,10 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: spacing.lg,
     justifyContent: "space-between",
+  },
+  titleDeleted: {
+    color: colors.inkSoft,
+    textDecorationLine: "line-through",
   },
   titleText: {
     flex: 1,

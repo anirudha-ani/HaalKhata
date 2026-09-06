@@ -2,18 +2,17 @@
 # install-deps.sh — install everything needed to run HaalKhata on a fresh box.
 #
 # Installs (skipping anything already present):
-#   1. Node.js 24 (via NodeSource apt repo on Linux, Homebrew on macOS)
+#   1. Node.js 24 (via a pinned NodeSource repo installer on Linux, Homebrew on macOS)
 #   2. pnpm 11.9.0 (the packageManager pinned in package.json)
-#   3. Docker Engine + compose plugin (via the official get.docker.com script on Linux;
+#   3. Docker Engine + compose plugin (via a pinned official installer on Linux;
 #      macOS prints instructions for Docker Desktop)
-#   4. buf CLI (npm global — also available as a workspace devDependency)
-#   5. JDK 17 (for Android Gradle builds — openjdk-17 on Linux, temurin@17 on macOS)
-#   6. Android SDK (verified via ANDROID_HOME or common install paths; prints
+#   4. JDK 17 (for Android Gradle builds — openjdk-17 on Linux, temurin@17 on macOS)
+#   5. Android SDK (verified via ANDROID_HOME or common install paths; prints
 #      instructions if missing — install Android Studio manually)
-#   7. Workspace npm dependencies (pnpm install)
-#   8. Generated protobuf TypeScript (pnpm gen → packages/protogen/src)
-#   9. apps/mobile native modules verified against Expo SDK (expo install --check)
-#   10. .env copied from .env.example (repo root) if absent
+#   6. Workspace npm dependencies (pnpm install, including the locked buf CLI)
+#   7. Generated protobuf TypeScript (pnpm gen → packages/protogen/src)
+#   8. apps/mobile native modules verified against Expo SDK (expo install --check)
+#   9. .env copied from .env.example (repo root) if absent
 #
 # Usage:
 #   ./install-deps.sh           install everything that's missing
@@ -21,7 +20,8 @@
 #
 # System installs (Node, Docker) need sudo on Linux. The script will prompt for
 # the sudo password when it actually needs to run a privileged command; it does
-# NOT run an interactive shell as root.
+# NOT stream a network response into a root shell. Installer source is pinned by
+# immutable commit URL and SHA-256, then run with a minimal root environment.
 
 set -euo pipefail
 
@@ -32,6 +32,11 @@ readonly RED=$'\033[31m'
 readonly GREEN=$'\033[32m'
 readonly YELLOW=$'\033[33m'
 readonly BLUE=$'\033[34m'
+
+readonly NODESOURCE_INSTALLER_URL="https://raw.githubusercontent.com/nodesource/distributions/9b431d8ae0f10df272598585855c6eca6c0e1bd2/scripts/deb/setup_24.x"
+readonly NODESOURCE_INSTALLER_SHA256="6e3d580f5bd7ccf2aa1e8df8d35c60d78e873c3ff8beb282c9bebd914904ad72"
+readonly DOCKER_INSTALLER_URL="https://raw.githubusercontent.com/docker/docker-install/42dcae692436f34526524ed46d3b32885c9355f5/install.sh"
+readonly DOCKER_INSTALLER_SHA256="f51e472f1ffb1cf2516a9fd55ab7d7d1ed8d07288d31dce93de3c66524b92997"
 
 log()   { printf '%s▸ %s%s %s\n'  "$BLUE"   "$RESET" "$1"; }
 ok()    { printf '%s✓ %s%s %s\n' "$GREEN"  "$RESET" "$1"; }
@@ -57,6 +62,35 @@ sudo_if_needed() {
     die "this step needs sudo but there's no TTY for a password. Re-run ./install-deps.sh from an interactive shell, or pre-authenticate with 'sudo -v'."
   fi
 }
+
+# Downloads one immutable installer, verifies its expected digest, and only
+# then executes it as root with proxy and caller-controlled environment values
+# removed. Remaining arguments are passed to the verified installer.
+# @param $1  immutable HTTPS installer URL
+# @param $2  expected lowercase SHA-256 digest
+# @param $3  interpreter (bash or sh)
+run_verified_installer() (
+  local installer_url="$1"
+  local expected_sha256="$2"
+  local interpreter="$3"
+  shift 3
+
+  local installer_path actual_sha256
+  installer_path="$(mktemp /tmp/haalkhata-installer.XXXXXX)"
+  trap 'rm -f "$installer_path"' EXIT
+
+  curl --proto '=https' --tlsv1.2 --fail --silent --show-error --location \
+    --output "$installer_path" "$installer_url"
+  actual_sha256="$(sha256sum "$installer_path" | awk '{print $1}')"
+  if [[ "$actual_sha256" != "$expected_sha256" ]]; then
+    die "installer checksum mismatch; refusing privileged execution"
+  fi
+
+  sudo_if_needed env -i \
+    HOME=/root \
+    PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+    "$interpreter" "$installer_path" "$@"
+)
 
 os_name() {
   case "$(uname -s)" in
@@ -85,7 +119,8 @@ install_node() {
   case "$os" in
     linux)
       if have apt-get; then
-        curl -fsSL https://deb.nodesource.com/setup_24.x | sudo_if_needed -E bash - >/dev/null
+        run_verified_installer \
+          "$NODESOURCE_INSTALLER_URL" "$NODESOURCE_INSTALLER_SHA256" bash >/dev/null
         sudo_if_needed apt-get install -y nodejs
       else
         die "Unsupported Linux distro (no apt-get). Install Node.js 24 manually: https://nodejs.org/en/download"
@@ -142,8 +177,9 @@ install_docker() {
         ok "Docker daemon started"
         return 0
       fi
-      log "Installing Docker Engine via the official convenience script…"
-      curl -fsSL https://get.docker.com | sudo_if_needed sh
+      log "Installing Docker Engine via the pinned official installer…"
+      run_verified_installer \
+        "$DOCKER_INSTALLER_URL" "$DOCKER_INSTALLER_SHA256" sh --channel stable
       sudo_if_needed systemctl enable --now docker
       sudo_if_needed usermod -aG docker "$USER" 2>/dev/null || true
       warn "Added '$USER' to the docker group. Log out and back in (or run 'newgrp docker') if 'docker' still needs sudo."
@@ -176,19 +212,7 @@ install_docker() {
   esac
 }
 
-# --- 4. buf --------------------------------------------------------------------
-
-install_buf() {
-  if have buf && buf --version >/dev/null 2>&1; then
-    ok "buf $(buf --version) already installed"
-    return 0
-  fi
-  log "Installing buf CLI globally via npm…"
-  npm install -g @bufbuild/buf
-  ok "buf $(buf --version) ready"
-}
-
-# --- 5. JDK 17 -----------------------------------------------------------------
+# --- 4. JDK 17 -----------------------------------------------------------------
 
 # Resolve the major version from `java -version`. Handles both modern
 # ("17.0.1") and legacy ("1.8.0") version strings.
@@ -247,7 +271,7 @@ install_java() {
   fi
 }
 
-# --- 6. Android SDK ------------------------------------------------------------
+# --- 5. Android SDK ------------------------------------------------------------
 
 # Verify the Android SDK is installed. Checks ANDROID_HOME / ANDROID_SDK_ROOT
 # env vars, then common install paths. This is warning-only (not fatal) —
@@ -279,18 +303,30 @@ check_android_sdk() {
   warn "Then re-run './install-deps.sh' to verify."
 }
 
-# --- 7 & 8. workspace deps + protogen ------------------------------------------
+# --- 6 & 7. workspace deps + protogen ------------------------------------------
 
 install_workspace() {
   cd "$(dirname "$0")"
 
+  local current_store recorded_store
+  current_store="$(pnpm store path)"
+  recorded_store="$(
+    sed -n 's/^[[:space:]]*"storeDir":[[:space:]]*"\([^"]*\)",[[:space:]]*$/\1/p' \
+      node_modules/.modules.yaml 2>/dev/null | head -1 || true
+  )"
+
   if [[ ! -f pnpm-lock.yaml ]]; then
     log "pnpm-lock.yaml missing — generating it with 'pnpm install'…"
   fi
-  if [[ ! -d node_modules ]] || [[ ! -d apps/web/node_modules ]]; then
+  if [[ ! -d node_modules ]] || [[ ! -d apps/web/node_modules ]] || [[ -z "$recorded_store" ]]; then
     log "Installing workspace dependencies (pnpm install)…"
     pnpm install
     ok "workspace dependencies installed"
+  elif [[ "$recorded_store" != "$current_store" ]]; then
+    warn "node_modules uses pnpm store '$recorded_store', but this environment uses '$current_store'."
+    log "Relinking workspace dependencies to the current pnpm store…"
+    pnpm install --force
+    ok "workspace dependencies relinked to $current_store"
   else
     ok "node_modules already present"
   fi
@@ -304,7 +340,7 @@ install_workspace() {
   fi
 }
 
-# --- 9. mobile native module check ---------------------------------------------
+# --- 8. mobile native module check ---------------------------------------------
 
 check_mobile_deps() {
   cd "$(dirname "$0")"
@@ -319,7 +355,7 @@ check_mobile_deps() {
   fi
 }
 
-# --- 10. .env file -------------------------------------------------------------
+# --- 9. .env file --------------------------------------------------------------
 
 # One .env at the repo root serves both runtimes: docker compose reads it
 # directly, and `pnpm dev` loads it via node --env-file-if-exists.
@@ -351,7 +387,6 @@ main() {
   install_node
   install_pnpm
   install_docker
-  install_buf
   install_java
   check_android_sdk
   install_workspace

@@ -10,14 +10,11 @@ import { Money } from "@/components/ui/Money";
 import { SearchField } from "@/components/ui/SearchField";
 import { Spinner } from "@/components/ui/Spinner";
 import { useHydrated } from "@/lib/hooks/useHydrated";
-import { CURRENCIES } from "@haalkhata/shared/money/money.constants";
-import {
-  GROUP_BALANCE_FILTERS,
-  GROUP_TYPES,
-  groupEmoji,
-  noGroupsMessage,
-} from "../../constants/groupTypes";
+import { CurrencySelect } from "@/components/ui/CurrencySelect";
+import { GROUP_BALANCE_FILTERS, noGroupsMessage } from "@haalkhata/shared/group/balanceFilter";
+import { GROUP_TYPES, groupEmoji } from "../../constants/groupTypes";
 import { useGroups } from "./hooks/useGroups";
+import { MAX_GROUP_NAME_LENGTH } from "@haalkhata/shared/text/limits";
 
 /**
  * Renders the groups page: a card grid of group summaries (member count and
@@ -161,6 +158,7 @@ export function GroupsPage() {
               aria-label="Group name"
               value={groupsState.name}
               onChange={(event) => groupsState.setName(event.target.value)}
+              maxLength={MAX_GROUP_NAME_LENGTH}
               required
               className="w-full rounded-xl border border-line bg-card px-3.5 py-3 focus:border-brand-500 focus:outline-none"
             />
@@ -183,15 +181,11 @@ export function GroupsPage() {
             </div>
             <label className="block text-sm font-medium">
               Currency
-              <select
-                value={groupsState.currency}
-                onChange={(event) => groupsState.setCurrency(event.target.value)}
-                className="mt-1 w-full rounded-xl border border-line bg-card px-3 py-2.5 focus:border-brand-500 focus:outline-none"
-              >
-                {CURRENCIES.map((currencyCode) => (
-                  <option key={currencyCode}>{currencyCode}</option>
-                ))}
-              </select>
+              <CurrencySelect value={groupsState.currency} onChange={groupsState.setCurrency} />
+              <p className="mt-1 text-xs font-normal text-ink-soft">
+                Every expense and balance in the group lives in this currency. It cannot be
+                changed after the group is created.
+              </p>
             </label>
 
             {/* Members at creation, so a new group is not born empty and then
@@ -212,6 +206,14 @@ export function GroupsPage() {
                     selectedIds={groupsState.memberIds}
                     onToggle={groupsState.toggleMember}
                     legend="People to add to this group"
+                    disabledIds={
+                      new Set(
+                        groupsState.friends
+                          .filter((friend) => !friend.registered)
+                          .map((friend) => friend.id),
+                      )
+                    }
+                    disabledHint="invited — can add once they join"
                   />
                 </div>
               </div>

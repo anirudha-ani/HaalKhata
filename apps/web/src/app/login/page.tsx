@@ -1,8 +1,16 @@
-/** /login route: redirects signed-in users to /dashboard, otherwise renders LoginPage. */
+/** /login route: public product landing page and authentication entry point. */
 
+import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { sessionUserId } from "@/lib/auth/session.server";
 import { LoginPage } from "./components/LoginPage/LoginPage";
+
+/** Search and browser metadata for the public HaalKhata landing page. */
+export const metadata: Metadata = {
+  title: "Split expenses without the awkward math",
+  description:
+    "Scan receipts, split group expenses down to the cent, and keep a clear ledger with friends.",
+};
 
 /**
  * Server entry point for the /login route; sends users who already have a

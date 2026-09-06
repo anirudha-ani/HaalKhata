@@ -4,6 +4,7 @@ import type { User } from "@haalkhata/protogen/common/v1/common_pb";
 import type { BalancesResponse } from "@haalkhata/protogen/expense/v1/expense_pb";
 import { ArrowRight, Wand2 } from "lucide-react-native";
 import { StyleSheet, Switch, Text, View } from "react-native";
+import { PersonLink } from "@/components/people/PersonLink";
 import { Avatar } from "@/components/ui/Avatar";
 import { Button } from "@/components/ui/Button";
 import { Money } from "@/components/ui/Money";
@@ -11,8 +12,8 @@ import { colors, radii, spacing } from "@/lib/theme/theme";
 
 /**
  * Renders the balances tab of a group: every member's net position, then the
- * list of who-owes-whom debts (pairwise or simplified) with a settle button on
- * the debts the viewer owes.
+ * list of who-owes-whom debts (pairwise or simplified) with an action on every
+ * debt the viewer is part of: settle what they owe, record what they are owed.
  *
  * @returns The two balance sections, or null until balances have loaded.
  */
@@ -40,8 +41,11 @@ export function BalancesPanel({
   simplifyPending?: boolean;
   /** Called with the desired state when the simplify-debts toggle is pressed. */
   onToggleSimplified: (value: boolean) => void;
-  /** Called with the creditor and amount when the viewer taps Settle on a debt. */
-  onSettle: (user: User, cents: number) => void;
+  /**
+   * Called when the viewer taps the action on a debt, with the other party,
+   * the amount, and whether this records money *received* rather than paid.
+   */
+  onSettle: (user: User, cents: number, received: boolean) => void;
 }) {
   if (!balances) return null;
   const debts = simplified ? balances.simplified : balances.debts;
@@ -67,10 +71,12 @@ export function BalancesPanel({
                 key={netPosition.userId}
                 style={[styles.row, index > 0 ? styles.rowDivider : null]}
               >
-                <Avatar size="sm" user={user} />
-                <Text numberOfLines={1} style={styles.rowName}>
-                  {user.id === meId ? "You" : user.name}
-                </Text>
+                <PersonLink meId={meId} style={styles.rowPerson} userId={user.id}>
+                  <Avatar size="sm" user={user} />
+                  <Text numberOfLines={1} style={styles.rowName}>
+                    {user.id === meId ? "You" : user.name}
+                  </Text>
+                </PersonLink>
                 {netPosition.netCents === 0 ? (
                   <Text style={styles.rowHint}>settled up</Text>
                 ) : (
@@ -147,11 +153,16 @@ export function BalancesPanel({
               const toUser = userById.get(debt.toUserId);
               if (!fromUser || !toUser) return null;
               const mine = debt.fromUserId === meId;
+              const owedToMe = debt.toUserId === meId;
               return (
                 <View key={`${debt.fromUserId}-${debt.toUserId}`} style={styles.debtRow}>
-                  <Avatar size="sm" user={fromUser} />
+                  <PersonLink meId={meId} userId={debt.fromUserId}>
+                    <Avatar size="sm" user={fromUser} />
+                  </PersonLink>
                   <ArrowRight color={colors.inkSoft} size={16} />
-                  <Avatar size="sm" user={toUser} />
+                  <PersonLink meId={meId} userId={debt.toUserId}>
+                    <Avatar size="sm" user={toUser} />
+                  </PersonLink>
                   <Text numberOfLines={1} style={styles.debtText}>
                     <Text style={styles.debtName}>{mine ? "You" : fromUser.name}</Text>
                     <Text style={styles.debtVerb}> owe{mine ? "" : "s"} </Text>
@@ -160,11 +171,20 @@ export function BalancesPanel({
                     </Text>
                   </Text>
                   <Money cents={debt.amountCents} currency={currency} style={styles.rowAmount} />
-                  {mine ? (
+                  {/* Both directions, matching the friend screen: a debt you
+                      owe is one to pay, a debt owed to you is one to record
+                      when it lands. Only offering the first left a group
+                      where everyone owes the payer with no action anywhere on
+                      the screen — the ordinary case for whoever picked up
+                      the bill. */}
+                  {/* A loop that nets to zero offers no action: the server
+                      refuses to pay it down, and a button that only ever
+                      produces a refusal is worse than none. */}
+                  {(mine || owedToMe) && !cancelingLoop ? (
                     <Button
                       compact
-                      label="Settle"
-                      onPress={() => onSettle(toUser, debt.amountCents)}
+                      label={mine ? "Settle" : "Record"}
+                      onPress={() => onSettle(mine ? toUser : fromUser, debt.amountCents, !mine)}
                       variant="positive"
                     />
                   ) : null}
@@ -293,6 +313,13 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 15,
     fontWeight: "500",
+  },
+  rowPerson: {
+    alignItems: "center",
+    flex: 1,
+    flexDirection: "row",
+    gap: spacing.md,
+    minWidth: 0,
   },
   section: {
     gap: spacing.sm,

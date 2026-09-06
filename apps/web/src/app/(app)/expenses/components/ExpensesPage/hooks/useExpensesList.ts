@@ -3,7 +3,7 @@
 
 import { useMemo, useState } from "react";
 import { matchesTerms, searchTerms } from "@haalkhata/shared/search/filter";
-import { matchesScopeFilter, type ExpenseScopeFilter } from "../../../constants/expenseFilters";
+import { matchesScopeFilter, type ExpenseScopeFilter } from "@haalkhata/shared/expense/scopeFilter";
 import { useExpensesAPI } from "./useExpensesAPI";
 
 /**

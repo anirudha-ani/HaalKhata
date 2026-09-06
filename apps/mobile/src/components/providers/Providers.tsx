@@ -1,19 +1,26 @@
-/** App-wide client providers: TanStack Query with AsyncStorage persistence, session hydration, foreground refetch. */
+/** App-wide client providers: TanStack Query (memory only), session hydration, foreground refetch. */
 
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { createAsyncStoragePersister } from "@tanstack/query-async-storage-persister";
-import { focusManager, QueryClient } from "@tanstack/react-query";
-import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client";
-import { useEffect, useState, type ReactNode } from "react";
+import { focusManager, QueryClientProvider } from "@tanstack/react-query";
+import { useEffect, type ReactNode } from "react";
 import { AppState } from "react-native";
 import { QUERY_CACHE_STORAGE_KEY } from "@/lib/api/api.constants";
+import { mobileQueryClient } from "@/lib/api/queryCache";
 import { hydrateSession } from "@/lib/api/session";
 
 /**
  * Wraps the app in client-side providers: a single TanStack Query client
- * (10s stale time, one retry) whose cache is persisted to AsyncStorage so a
- * cold launch renders the last-known data immediately instead of flashing
- * spinners — the mobile counterpart of the web app's localStorage persistence.
+ * (10s stale time, one retry) whose cache lives in memory only.
+ *
+ * It used to be persisted to AsyncStorage so a cold launch could paint the
+ * last-known screens. That cache held balances, expenses, the feed, the
+ * user's own email and phone and everyone's payment handles — in plaintext,
+ * under the app's storage directory, for a day. OWASP MASVS-STORAGE calls
+ * for sensitive data at rest to be encrypted with a Keystore/Keychain-held
+ * key, and the honest alternative for a financial app with no offline
+ * requirement is not to write it at all: the cache is memory now, and one
+ * network round trip on launch is the price. Any cache a previous version
+ * persisted is removed on first start.
  *
  * Also hydrates the bearer session from SecureStore once at startup, and
  * wires the AppState so returning to the foreground counts as "window focus"
@@ -21,7 +28,7 @@ import { hydrateSession } from "@/lib/api/session";
  *
  * @param props - Provider props.
  * @param props.children - The app subtree that should have access to the providers.
- * @returns The PersistQueryClientProvider-wrapped subtree.
+ * @returns The QueryClientProvider-wrapped subtree.
  */
 export function Providers({
   children,
@@ -29,24 +36,12 @@ export function Providers({
   /** The app subtree that should have access to the providers. */
   children: ReactNode;
 }) {
-  const [queryClient] = useState(
-    () =>
-      new QueryClient({
-        defaultOptions: {
-          queries: {
-            staleTime: 10_000,
-            gcTime: 1000 * 60 * 60 * 24, // keep persisted cache for 24h
-            retry: 1,
-          },
-        },
-      }),
-  );
-  const [persister] = useState(() =>
-    createAsyncStoragePersister({ storage: AsyncStorage, key: QUERY_CACHE_STORAGE_KEY }),
-  );
-
   useEffect(() => {
     void hydrateSession();
+    // Versions before this one persisted the whole query cache here.
+    AsyncStorage.removeItem(QUERY_CACHE_STORAGE_KEY).catch(() => {
+      // Nothing to remove, or storage unavailable — either way nothing persists now.
+    });
   }, []);
 
   useEffect(() => {
@@ -57,19 +52,5 @@ export function Providers({
     return () => subscription.remove();
   }, []);
 
-  return (
-    <PersistQueryClientProvider
-      client={queryClient}
-      persistOptions={{ persister, buster: CACHE_BUSTER }}
-    >
-      {children}
-    </PersistQueryClientProvider>
-  );
+  return <QueryClientProvider client={mobileQueryClient}>{children}</QueryClientProvider>;
 }
-
-/**
- * Value mixed into the persisted cache key. Bump this when the query shape
- * changes incompatibly (e.g. a proto field rename) so stale persisted entries
- * are discarded instead of rendering with a wrong shape.
- */
-const CACHE_BUSTER = "v1";

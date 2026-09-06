@@ -196,7 +196,10 @@ export function BalancesPanel({
                       lands. Only offering the first left a group where everyone
                       owes the payer with no action anywhere on the screen —
                       which is the ordinary case for whoever picked up the bill. */}
-                  {mine || owedToMe ? (
+                  {/* A loop that nets to zero offers no action: the server
+                      refuses to pay it down, and a button that only ever
+                      produces a refusal is worse than none. */}
+                  {(mine || owedToMe) && !cancelingLoop ? (
                     <button
                       type="button"
                       onClick={() => onSettle(mine ? toUser : fromUser, debt.amountCents, !mine)}

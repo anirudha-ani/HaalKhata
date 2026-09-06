@@ -9,13 +9,27 @@ import "common/v1/common.proto";
 // expense's currency; splits always reconcile to the exact total.
 service ExpenseService {
   rpc CreateExpense(CreateExpenseRequest) returns (Expense);
+  // Anyone on the expense — creator, payer or ower — may correct it; the
+  // "updated" activity tells the rest. Allowed after a settlement in the
+  // scope (the balance rebalances against what was paid). An expense cannot
+  // be moved between scopes.
   rpc UpdateExpense(UpdateExpenseRequest) returns (Expense);
   rpc ListExpenses(ListExpensesRequest) returns (ListExpensesResponse);
   rpc GetExpense(GetExpenseRequest) returns (GetExpenseResponse);
+  // Creator only. A soft delete: the expense stops counting toward every
+  // balance but stays visible everywhere the ledger is shown, marked deleted
+  // (Expense.deleted_at), and payments already recorded against it stay on
+  // the ledger — so deleting a paid-for expense leaves the payer owed a
+  // refund, with the struck-through row explaining why.
   rpc DeleteExpense(DeleteExpenseRequest) returns (google.protobuf.Empty);
   rpc AddComment(AddCommentRequest) returns (Comment);
 
   rpc RecordSettlement(RecordSettlementRequest) returns (Settlement);
+  // Removes a mistaken payment. Either of the two people on it may; it is a
+  // soft delete, so the line stays in the friend ledger struck through with
+  // a zero change (FriendLedgerEntry.deleted) and the debt it had paid down
+  // comes back.
+  rpc DeleteSettlement(DeleteSettlementRequest) returns (google.protobuf.Empty);
   rpc GetGroupBalances(GetGroupBalancesRequest) returns (BalancesResponse);
   rpc GetOverallBalances(google.protobuf.Empty) returns (OverallBalancesResponse);
   rpc GetFriendLedger(GetFriendLedgerRequest) returns (FriendLedgerResponse);
@@ -71,6 +85,12 @@ message Expense {
   repeated ExpenseItem items = 14;
   int32 tax_cents = 15;
   int32 tip_cents = 16;
+  // When the expense was deleted; empty while it is live. A deleted expense
+  // is still returned by list and detail reads so history stays legible —
+  // and stays open to comments, since "why was this removed?" is the
+  // conversation the kept row exists to host — but contributes nothing to
+  // any balance, cannot be edited, and is never reported as settled.
+  string deleted_at = 17;
 }
 
 message CreateExpenseRequest {
@@ -87,6 +107,14 @@ message CreateExpenseRequest {
   repeated ExpenseItem items = 11; // itemized only; ids may be empty
   int32 tax_cents = 12;            // itemized only
   int32 tip_cents = 13;            // itemized only
+  // Required. A client-generated id (a UUID) naming this one attempt, sent
+  // unchanged on every retry of it and replaced only after a success. The
+  // server stores at most one expense per (caller, operation_id): a retry
+  // of a lost response gets the expense the first attempt created, the
+  // same id with a different payload is refused, and a claim is kept for
+  // 24 hours. Ignored inside UpdateExpenseRequest — an update replaces the
+  // row it names and is idempotent by nature.
+  string operation_id = 14;
 }
 
 message UpdateExpenseRequest {
@@ -101,6 +129,8 @@ message ListExpensesRequest {
 }
 
 message ListExpensesResponse {
+  // Newest first, capped for display; balances are never derived from this
+  // list, so a cut list changes what is shown and nothing that is owed.
   repeated Expense expenses = 1;
   repeated common.v1.User users = 2; // everyone referenced by the expenses
   // Ids of listed expenses with nothing pending for the CALLER: their balance
@@ -111,6 +141,9 @@ message ListExpensesResponse {
   // a scope still owes, singling out one of its expenses as "settled" would
   // be an attribution the ledger never made.
   repeated string settled_expense_ids = 3;
+  // True when older rows were left off to bound the response; every
+  // balance and settledness figure still read the whole ledger.
+  bool truncated = 4;
 }
 
 message GetExpenseRequest {
@@ -137,6 +170,15 @@ message GetExpenseResponse {
   // same rule as ListExpensesResponse.settled_expense_ids, for one expense.
   // Viewer-relative, hence on the response and not on Expense.
   bool settled_for_viewer = 5;
+  // True when a settlement was recorded in this expense's scope after the
+  // expense was created. Neither editing nor deleting is refused then; the
+  // derived balance rebalances against what was already paid, so a
+  // participant who paid more than their corrected (or now-deleted) share
+  // is owed the difference and one who paid less owes it. Clients use this
+  // to warn before either change. Scope-level like settled_for_viewer, but
+  // not viewer-relative: the same answer for everyone, so it could live on
+  // Expense — it sits here because only the detail view acts on it.
+  bool has_later_settlement = 6;
 }
 
 // One recorded change to an expense, for the detail view's history line.
@@ -147,13 +189,17 @@ message GetExpenseResponse {
 // one for three fields.
 message ExpenseEvent {
   common.v1.User actor = 1;
-  // expense_added | expense_updated
+  // expense_added | expense_updated | expense_deleted
   string type = 2;
   string created_at = 3;
 }
 
 message DeleteExpenseRequest {
   string expense_id = 1;
+}
+
+message DeleteSettlementRequest {
+  string settlement_id = 1;
 }
 
 message AddCommentRequest {
@@ -173,6 +219,11 @@ message RecordSettlementRequest {
   // The other person, whichever way the money moved.
   string to_user_id = 2;
   int32 amount_cents = 3;
+  // The currency the money moved in. A group payment is always in the
+  // group's currency (a different one is refused); a cross-scope payment
+  // pays down only balances in this currency, and a selected scope in
+  // another currency is refused rather than converted. Empty = the caller's
+  // default currency.
   string currency = 4;
   string method = 5; // venmo | zelle | cashapp | paypal | cash | bank | other
   string note = 6;
@@ -186,6 +237,11 @@ message RecordSettlementRequest {
   // owes — which is also what clients predating this field send, so the
   // default and the legacy behavior are the same thing.
   repeated string scope_group_ids = 8;
+  // Required. A client-generated id naming this one attempt at recording
+  // the payment; same contract as CreateExpenseRequest.operation_id. The
+  // retry of a lost response gets the recording the first attempt made,
+  // never a second one.
+  string operation_id = 9;
 }
 
 message Settlement {
@@ -198,6 +254,9 @@ message Settlement {
   string method = 7;
   string note = 8;
   string created_at = 9;
+  // The authenticated user who typed the payment in: one of the two people
+  // on it, not necessarily the payer. A payment is a claim; this says whose.
+  string recorded_by_user_id = 10;
 }
 
 message GetGroupBalancesRequest {
@@ -212,10 +271,22 @@ message BalancesResponse {
   repeated common.v1.Debt simplified = 3;
 }
 
+// Totals in one currency across every counterparty.
+message CurrencyTotals {
+  string currency = 1;
+  int32 you_owe_cents = 2;
+  int32 owed_to_you_cents = 3;
+}
+
 message OverallBalancesResponse {
+  // Totals in the caller's default currency only, kept for older clients;
+  // `totals` carries every currency.
   int32 you_owe_cents = 1;
   int32 owed_to_you_cents = 2;
   repeated common.v1.CounterpartyBalance counterparties = 3;
+  // One entry per currency with anything outstanding, the caller's default
+  // first. Never summed across currencies.
+  repeated CurrencyTotals totals = 4;
 }
 
 message GetFriendLedgerRequest {
@@ -242,6 +313,20 @@ message FriendLedgerEntry {
   // stored in UTC, and only the client knows the viewer's timezone — so the
   // client renders it, and `date` (the UTC day) is just the fallback.
   string created_at = 10;
+  // True for an expense or settlement line that has since been deleted. It
+  // stays in the history with delta_cents = 0 — it no longer moves the
+  // balance — so a payment made against a deleted expense, or a debt that
+  // came back when a mistaken payment was removed, still has the row that
+  // explains it.
+  bool deleted = 11;
+  // For a settlement line, who typed it in — "you", or the friend's name.
+  // Either person may record a payment either way round, so the statement
+  // names the asserter on every payment line. Empty for expense lines.
+  string recorded_by_name = 12;
+  // ISO 4217 code of total_cents, delta_cents and balance_after_cents. The
+  // running balance runs per currency: a euro line continues the euro
+  // column, not the dollar one.
+  string currency = 13;
 }
 
 message FriendGroupBalance {
@@ -253,6 +338,10 @@ message FriendGroupBalance {
   // zero while the pair's shared history is not, or vice versa. Surfaced so
   // the UI can say why a group's number differs from the history.
   bool simplified = 4;
+  // ISO 4217 code of net_cents: a group's own currency, or, for the one-off
+  // slate (group_id empty), the currency of that bucket — the pair's direct
+  // dealings are one entry per currency.
+  string currency = 5;
 }
 
 // One group both people belong to, regardless of balance.
@@ -264,9 +353,13 @@ message MutualGroup {
 
 message FriendLedgerResponse {
   common.v1.User friend = 1;
-  // Net across everything shared, groups included: > 0 = they owe you.
+  // The net in the caller's default currency only (`currency`), kept for
+  // older clients: > 0 = they owe you. `nets` is the whole picture.
   int32 net_cents = 2;
   string currency = 3;
+  // Net across everything shared, groups included, one entry per currency
+  // with anything outstanding: cents > 0 = they owe you.
+  repeated common.v1.CurrencyAmount nets = 9;
   // Newest first, which is the reading order; balance_after_cents is
   // accumulated oldest-first so the topmost entry carries the current net.
   repeated FriendLedgerEntry entries = 4;
@@ -274,11 +367,14 @@ message FriendLedgerResponse {
   // balance is spread across more than a single scope.
   repeated FriendGroupBalance group_balances = 5;
   // Whether the CALLER has an explicit friendship with this person. The page
-  // works for any pair (this is what makes every name linkable), so it has
-  // to say which relationship it is showing.
+  // also works for mutual group members and historical expense counterparties,
+  // so it has to say which relationship it is showing.
   bool is_friend = 6;
   // Every group both belong to — unlike group_balances, a settled group
   // still appears, because "where do I know this person from" is a different
   // question from "where does money move between us".
   repeated MutualGroup mutual_groups = 7;
+  // True when older lines were left off `entries` to bound the response.
+  // The nets and group balances are computed over everything regardless.
+  bool truncated = 10;
 }

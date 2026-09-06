@@ -41,6 +41,7 @@ import {
   amountOwed,
   getFriendLedger,
   getOverallBalances,
+  groupCancelsOut,
   netWithUser,
   owedByScope,
   userNetInGroup,
@@ -65,6 +66,7 @@ import { listFriendIds } from "@/server/social/repo/friendships.repo";
 const ALICE = "user-alice";
 const BOBBY = "user-bob";
 const CARA = "user-cara";
+const STRANGER = "user-stranger";
 const TRIP = "group-trip";
 
 /** Whether the trip group simplifies debts in the scenario being run. */
@@ -111,7 +113,9 @@ function expenseRow(expenseId: string, description: string): ExpenseRow {
     tip_cents: 0,
     created_by: BOBBY,
     created_at: "2026-08-01T10:00:00Z",
+    ledger_event_order: "1",
     deleted_at: null,
+    deleted_by: null,
   };
 }
 
@@ -227,6 +231,10 @@ function recordTripSettlement(fromUser: string, toUser: string, amountCents: num
     method: "cash",
     note: "",
     created_at: "2026-08-02T00:00:00Z",
+    ledger_event_order: "2",
+    deleted_at: null,
+    recorded_by: fromUser,
+    deleted_by: null,
   });
 }
 
@@ -247,7 +255,7 @@ describe("the settlement guards route with the group's mode", () => {
   });
 
   it("owedByScope offers the simplified edge and only that", async () => {
-    expect(await owedByScope(ALICE, CARA)).toEqual([{ groupId: TRIP, owedCents: 1000 }]);
+    expect(await owedByScope(ALICE, CARA)).toEqual([{ groupId: TRIP, currency: "USD", owedCents: 1000 }]);
     expect(await owedByScope(ALICE, BOBBY)).toEqual([]);
   });
 });
@@ -258,7 +266,7 @@ describe("friend ledgers under simplification", () => {
     expect(ledger.netCents).toBe(-1000);
     expect(ledger.entries).toEqual([]);
     expect(ledger.groupBalances).toEqual([
-      { groupId: TRIP, groupName: "Trip", netCents: -1000, simplified: true },
+      { groupId: TRIP, groupName: "Trip", currency: "USD", netCents: -1000, simplified: true },
     ]);
   });
 
@@ -270,7 +278,7 @@ describe("friend ledgers under simplification", () => {
     // …but the routed balance is zero, and the row stays to say why.
     expect(ledger.netCents).toBe(0);
     expect(ledger.groupBalances).toEqual([
-      { groupId: TRIP, groupName: "Trip", netCents: 0, simplified: true },
+      { groupId: TRIP, groupName: "Trip", currency: "USD", netCents: 0, simplified: true },
     ]);
   });
 
@@ -279,8 +287,35 @@ describe("friend ledgers under simplification", () => {
     const ledger = await getFriendLedger(ALICE, BOBBY);
     expect(ledger.netCents).toBe(-1000);
     expect(ledger.groupBalances).toEqual([
-      { groupId: TRIP, groupName: "Trip", netCents: -1000, simplified: false },
+      { groupId: TRIP, groupName: "Trip", currency: "USD", netCents: -1000, simplified: false },
     ]);
+  });
+
+  it("returns the same not-found response for unrelated and nonexistent ids", async () => {
+    vi.mocked(listGroupsByUser).mockResolvedValue([]);
+
+    await expect(getFriendLedger(ALICE, STRANGER)).rejects.toMatchObject({
+      code: "not_found",
+      message: "friend ledger not found",
+    });
+
+    vi.mocked(findUserById).mockResolvedValueOnce(undefined);
+    await expect(getFriendLedger(ALICE, "missing-user")).rejects.toMatchObject({
+      code: "not_found",
+      message: "friend ledger not found",
+    });
+  });
+
+  it("allows an explicit friend even with no mutual group or history", async () => {
+    vi.mocked(listGroupsByUser).mockResolvedValue([]);
+    vi.mocked(listFriendIds).mockResolvedValue([STRANGER]);
+
+    const ledger = await getFriendLedger(ALICE, STRANGER);
+
+    expect(ledger.friend.id).toBe(STRANGER);
+    expect(ledger.entries).toEqual([]);
+    expect(ledger.mutualGroups).toEqual([]);
+    expect(ledger.isFriend).toBe(true);
   });
 });
 
@@ -295,9 +330,9 @@ describe("overall balances under simplification", () => {
   });
 
   it("the middle of the chain nets to nothing against everyone", async () => {
-    expect(await netWithUser(BOBBY, ALICE)).toBe(0);
-    expect(await netWithUser(BOBBY, CARA)).toBe(0);
-    expect(await netWithUser(CARA, ALICE)).toBe(1000);
+    expect((await netWithUser(BOBBY, ALICE)).get("USD") ?? 0).toBe(0);
+    expect((await netWithUser(BOBBY, CARA)).get("USD") ?? 0).toBe(0);
+    expect((await netWithUser(CARA, ALICE)).get("USD") ?? 0).toBe(1000);
   });
 
   it("pairwise mode shows the historical counterparty again", async () => {
@@ -328,6 +363,10 @@ describe("after paying along the simplified edge", () => {
     expect(await amountOwed(ALICE, BOBBY, TRIP)).toBe(1000);
     expect(await amountOwed(BOBBY, CARA, TRIP)).toBe(1000);
     expect(await amountOwed(CARA, ALICE, TRIP)).toBe(1000);
+    // M-01: visible, but not payable — nobody owes anybody overall, so no
+    // scope offers an edge of the loop to a cross-scope payment.
+    expect(await groupCancelsOut(TRIP)).toBe(true);
+    expect(await owedByScope(ALICE, BOBBY)).toEqual([]);
     for (const member of [ALICE, BOBBY, CARA]) {
       expect(await userNetInGroup(member, TRIP)).toBe(0);
     }
