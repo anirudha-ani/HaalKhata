@@ -34,6 +34,12 @@ message User {
   // fallback: it is empty for everyone who was invited rather than signed in,
   // and Google documents the claim as never guaranteed even for those who did.
   string avatar_url = 10;
+  // Whether `phone` has passed SMS possession verification. Private like
+  // phone itself: meaningful only on the caller's own profile, always false
+  // in public projections. False with a phone set marks a number written
+  // before verification existed — the clients prompt to verify it, and until
+  // then anyone proving possession can claim it away (§34).
+  bool phone_verified = 11;
 }
 
 // One "pay me here" identifier: a Venmo username, a Zelle email or phone, a

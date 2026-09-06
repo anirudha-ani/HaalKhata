@@ -19,6 +19,13 @@ export interface UserRow {
   password_hash: string | null;
   /** Phone number in E.164 (e.g. "+14155552671"); null when the user has no phone. */
   phone: string | null;
+  /**
+   * When the number last passed SMS possession (§35); null means never — an
+   * inviter-typed shadow number, a dev password-signup number, or a number
+   * that predates verification. The chk_users_phone_verified_has_phone
+   * constraint keeps it null whenever phone is.
+   */
+  phone_verified_at: string | null;
   /** Google account id (the ID token's `sub`); null when never signed in with Google. */
   google_sub: string | null;
   /** When the first-run flow finished; null means the app still redirects there. */
@@ -202,21 +209,33 @@ export async function claimUser(
 }
 
 /**
- * Writes a verified-by-policy phone number onto an account.
+ * Writes a just-verified phone number onto an account, stamping
+ * `phone_verified_at` with it (§35). Every caller sits directly behind an
+ * approved SMS code check — the plain claim, the §34 transfer, the removal
+ * flow's clear — so the stamp lives here rather than being a flag each call
+ * site could forget. Unverified writes (shadow rows, dev signup) go through
+ * insertUser and never touch this.
  *
  * Callers must have already resolved any collision: `users.phone` carries a
  * partial unique index, so a number still held by another row is rejected by
  * Postgres rather than silently overwritten.
  *
  * @param userId - Account to write to.
- * @param phone - E.164 number, or null to clear it.
+ * @param phone - E.164 number, or null to clear it (which clears the stamp).
  */
 export async function setUserPhone(
   userId: string,
   phone: string | null,
   client?: PoolClient,
 ): Promise<void> {
-  await execute(`UPDATE users SET phone = $1 WHERE id = $2`, [phone, userId], client);
+  await execute(
+    `UPDATE users
+        SET phone = $1,
+            phone_verified_at = CASE WHEN $1::text IS NULL THEN NULL ELSE now() END
+      WHERE id = $2`,
+    [phone, userId],
+    client,
+  );
 }
 
 /**

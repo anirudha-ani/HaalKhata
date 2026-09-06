@@ -461,7 +461,8 @@ export async function mergeAccounts(
     // rows — a tombstone that kept an address would strand it forever.
     await client.query(
       `UPDATE users
-          SET phone = NULL, email = NULL, merged_into = $1, google_sub = NULL,
+          SET phone = NULL, phone_verified_at = NULL, email = NULL,
+              merged_into = $1, google_sub = NULL,
               token_version = token_version + 1
         WHERE id = $2`,
       [keeperId, loserId],
@@ -473,10 +474,18 @@ export async function mergeAccounts(
     // phone" squats it against its real owner. The freed email is likewise
     // never copied: its owner reclaims it through Google's verified sign-in.
     if (options.adoptPhone && phone !== null) {
-      await client.query(`UPDATE users SET phone = COALESCE(phone, $2) WHERE id = $1`, [
-        keeperId,
-        phone,
-      ]);
+      // The stamp (§35) rides the adoption: possession of this number was
+      // proven seconds ago, but only when it actually lands in the empty
+      // slot — a keeper who already holds a different number keeps that
+      // number's own verification state untouched.
+      await client.query(
+        `UPDATE users
+            SET phone = COALESCE(phone, $2),
+                phone_verified_at = CASE WHEN phone IS NULL THEN now()
+                                         ELSE phone_verified_at END
+          WHERE id = $1`,
+        [keeperId, phone],
+      );
     }
 
     // --- invariant ----------------------------------------------------------

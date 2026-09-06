@@ -16,6 +16,7 @@ const USER_ROW: UserRow = {
   phone: "+14155552671",
   google_sub: "google-private",
   onboarded_at: "2026-08-28T00:00:00Z",
+  phone_verified_at: "2026-09-01T00:00:00Z",
   merged_into: null,
   token_version: 3,
   created_at: "2026-08-01T00:00:00Z",
@@ -29,6 +30,7 @@ describe("user response projections", () => {
     expect(publicUser.email).toBe("");
     expect(publicUser.phone).toBe("");
     expect(publicUser.onboarded).toBe(false);
+    expect("phoneVerified" in publicUser).toBe(false);
     expect(publicUser.paymentHandles).toEqual(USER_ROW.payment_handles);
     expect(publicUser.name).toBe(USER_ROW.name);
   });
@@ -38,6 +40,7 @@ describe("user response projections", () => {
 
     expect(privateUser.email).toBe(USER_ROW.email);
     expect(privateUser.phone).toBe(USER_ROW.phone);
+    expect(privateUser.phoneVerified).toBe(true);
     expect(privateUser.onboarded).toBe(true);
   });
 

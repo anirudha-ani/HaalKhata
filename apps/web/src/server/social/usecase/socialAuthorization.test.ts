@@ -80,6 +80,7 @@ const targetRow = {
   phone: null,
   google_sub: "google-target",
   onboarded_at: null,
+  phone_verified_at: null,
   merged_into: null,
   token_version: 0,
   created_at: "2026-08-01T00:00:00Z",

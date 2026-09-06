@@ -88,6 +88,20 @@ describe.skipIf(!reachable)("mergeAccounts against Postgres", () => {
     expect(outcome.duplicateSplitsSummed).toBe(1);
   });
 
+  it("stamps the adopted number verified and strips the tombstone bare (§35)", async () => {
+    // adoptPhone: true is the SMS-merge path — possession was proven seconds
+    // before the merge, so the number must arrive already marked verified.
+    const { rows } = await database.query(
+      `SELECT id, phone, phone_verified_at FROM users WHERE id = ANY($1) ORDER BY id`,
+      [[KEEPER, LOSER].sort()],
+    );
+    const keeper = rows.find((entry) => entry.id === KEEPER);
+    const loser = rows.find((entry) => entry.id === LOSER);
+    expect(keeper?.phone).toBe(PHONE);
+    expect(keeper?.phone_verified_at).not.toBeNull();
+    expect(loser).toMatchObject({ phone: null, phone_verified_at: null });
+  });
+
   it("sums the shares of an expense both rows appeared in", async () => {
     const { rows } = await database.query(
       `SELECT user_id, owed_cents FROM expense_splits WHERE expense_id = 'exp-1' ORDER BY user_id`,

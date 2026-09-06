@@ -49,6 +49,7 @@ function userRow(overrides: Partial<UserRow> = {}): UserRow {
     phone: "+16175551212",
     google_sub: "google-sub-1",
     onboarded_at: null,
+    phone_verified_at: null,
     merged_into: null,
     token_version: 0,
     created_at: "2026-07-27T00:00:00.000Z",

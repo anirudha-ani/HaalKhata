@@ -64,6 +64,7 @@ export function toPrivateUser(userRow: UserRow) {
     ...toPublicUser(userRow),
     email: userRow.email ?? "",
     phone: userRow.phone ?? "",
+    phoneVerified: userRow.phone_verified_at !== null,
     onboarded: userRow.onboarded_at !== null,
   };
 }
