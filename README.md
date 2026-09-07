@@ -83,7 +83,7 @@ Record a payment with the method you actually used: Venmo, Zelle, Cash App, PayP
   <img src="docs/screenshots/invite-link.webp" alt="An invite landing page: a named friend invited you to a named group, with a Sign in to accept button" width="440">
 </p>
 
-Friend requests need a yes from the other side. Share a link to a group or to your own profile and whoever opens it lands exactly where they should after signing in. Not on HaalKhata yet? Invite them by email or phone and they appear in your group as invited, ready to split the moment they sign up.
+Add a friend by email and they get a request to accept. Put someone in a group, or share a link to a group or to your own profile, and you are connected the moment they open it. Not on HaalKhata yet? Invite them by email or phone and they appear in your group as invited, ready to split the moment they sign up.
 
 ## Nothing slips by
 
