@@ -1,6 +1,14 @@
 # Self-hosted deployment: `docker compose up -d --build`.
 # Local dev only needs the database: `docker compose up -d db` + `pnpm dev`.
 # Secrets come from a `.env` file next to this one (see .env.example).
+#
+# Fixed project name, like docker-compose.prod.yml. Compose otherwise names
+# the project after the directory, so a second checkout (a git worktree, a
+# differently named clone) gets its own `<dir>-db-1` container and an empty
+# `<dir>_db-data` volume that fights the first one for 127.0.0.1:5432. With
+# the name pinned, every checkout on the machine shares one database.
+name: haalkhata
+
 services:
   db:
     image: postgres:17-alpine@sha256:18cfe3ef5e6815560c98237d6216d1e5119702fb0f3894c8785dd58b8bbe5d73
