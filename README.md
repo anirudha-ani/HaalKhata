@@ -1,231 +1,152 @@
-# হালখাতা HaalKhata
+<p align="center">
+  <img src="apps/web/public/icon.svg" alt="HaalKhata" width="92">
+</p>
 
-A Splitwise-style expense splitter — groups, one-off expenses, every split
-type (equal / exact / percent / shares / itemized), multi-payer, balances
-with min-cash-flow debt simplification, recorded settlements, and an **AI
-receipt scanner** that turns a photo into assignable line items with tax +
-tip split proportionally.
+<h1 align="center">HaalKhata</h1>
 
-## Architecture
+<p align="center">
+  <strong>Stop being the group accountant.</strong><br>
+  Split expenses with roommates, travel buddies, and friends. Scan the receipt, split it by the item, and settle up in one tap.
+</p>
 
-Schema-first monorepo. The API contract lives in `/proto` (ConnectRPC +
-Protobuf); `buf` generates the TypeScript used by the server handlers, the
-web client, and the React Native app — one contract, no drift.
+<p align="center">
+  <a href="https://haalkhata.app"><strong>Try it live</strong></a> &nbsp;·&nbsp;
+  <a href="docs/self-hosting.md">Self-host it</a> &nbsp;·&nbsp;
+  <a href="docs/getting-started.md">Run it locally</a> &nbsp;·&nbsp;
+  <a href="docs/README.md">Docs</a>
+</p>
 
-```
-proto/<domain>/v1/          the contract, one module per domain
-                            (common, auth, group, expense, receipt, social)
-packages/protogen/          @haalkhata/protogen — generated TS (do not edit)
-packages/shared/            @haalkhata/shared — hand-written TS used by both
-                            apps (query keys, money helpers, greeting)
-apps/web/                   Next.js app
-  src/server/<domain>/      per-proto fan-out (auth, group, expense, …), each:
-    repo/                     ALL SQL (Postgres via pg, no ORM)
-    usecase/                  ALL business logic (balances math in expense/domain/;
-                              split math in @haalkhata/shared/expense/)
-    handler.ts                thin Connect handler
-  src/server/common/        db + shared errors
-  src/server/api/connect/   transport context + routes.ts wiring
-  src/pages/api/connect/    endpoint mount
-  src/app/<route>/          thin page.tsx → components/<Page>/ + hooks/
-apps/mobile/                Expo (React Native) app — same features, same API
-  app/                      expo-router routes (thin, the page.tsx role)
-  src/screens/<route>/      per-route fan-out: components/<XScreen>/ + hooks/
-  src/lib/ src/components/  Connect transport (bearer auth), theme, shared UI
-```
+<p align="center">
+  <a href="https://github.com/anirudha-ani/HaalKhata/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/anirudha-ani/HaalKhata/actions/workflows/ci.yml/badge.svg"></a>
+  <a href="https://github.com/anirudha-ani/HaalKhata/releases"><img alt="Release" src="https://img.shields.io/github/v/release/anirudha-ani/HaalKhata?label=release&color=b03a25"></a>
+  <a href="LICENSE"><img alt="License: GPL-3.0" src="https://img.shields.io/badge/license-GPL--3.0-0f8a5f"></a>
+</p>
 
-Layering: handlers have no SQL and no business logic; usecases have no SQL
-and no transport; repos have SQL only. UI data access goes through TanStack
-Query hooks (`useXAPI`) wrapping the typed Connect client.
+<p align="center">
+  <img src="docs/screenshots/dashboard.webp" alt="The HaalKhata dashboard: what you are owed and what you owe, per currency, with the people and groups behind each number" width="100%">
+</p>
 
-## Run it
+You know the moment. The check arrives, someone grabs it, and a week later a group chat is trying to reconstruct who had the calamari. HaalKhata is the calm ledger that replaces that chat. Put an expense in once, everyone sees the same balances, and settling up becomes a tap instead of a negotiation.
 
-### One-command setup (fresh box)
+It is free, open source, and yours to run. One Docker command on any server and the ledger lives on hardware you control.
 
-```sh
-./install-deps.sh   # installs Node, pnpm, Docker, buf, deps + generates protogen
-./dev.sh            # starts db + web server at http://127.0.0.1:3000
-```
+## Why people switch
 
-`install-deps.sh` installs everything that's missing (skips what's already
-there); `dev.sh` starts the Postgres db and the Next.js dev server. Use
-`./dev.sh --clean` for a fresh database, `./dev.sh --down` to stop everything.
+| Own it | Trust it | Actually enjoy it |
+| --- | --- | --- |
+| Self-hosted on your own box, or use the hosted instance. GPL-3.0. No ads, no trackers, no upsell. | Money is integer cents end to end. The server recomputes every split, so a bill always adds up to exactly what was paid. | Photograph the receipt and the line items appear. Split any way you like with a live preview. Web app and native phone app. |
 
-### Manual setup
+## Scan the receipt. Split it by the item.
 
-```sh
-pnpm install
-pnpm gen                 # buf generate → packages/protogen
-docker compose up -d db  # Postgres 17 on localhost:5432 (or use your own)
-pnpm dev                 # http://localhost:3000
-```
+<p align="center">
+  <img src="docs/screenshots/receipt-scan.webp" alt="A photographed receipt on the left; on the right, the same receipt as editable line items with a checkbox per person, tax and tip split proportionally, and a total per person" width="100%">
+</p>
 
-Pending migrations apply automatically on the first API request (and during
-the production readiness check), while the receipt scanner falls back to a
-mock provider — no further configuration needed for a demo.
-All configuration lives in a single `.env` at the repo root: `docker compose`
-reads it directly, and `pnpm dev` loads it via Node's `--env-file-if-exists`.
-Using your own Postgres instead of the compose service? Set `DATABASE_URL`
-there and append `?sslmode=verify-full` (or `&sslmode=verify-full` when the URL
-already has parameters). Remote database connections fail closed without
-certificate-verified TLS. Real shell variables still win, so
-`DATABASE_URL=… pnpm dev` overrides the file for a one-off.
+Snap a photo at the table. HaalKhata reads the merchant, every line, the tax, and the tip, then lays them out as an itemized split. Check off who had what. Tax and tip follow each person's share automatically, and everyone's total updates as you go.
 
-### Mobile app (Expo)
+- Every line is editable before you save, and you can add what the scanner missed.
+- Works with any vision model behind an OpenAI-compatible endpoint. The default is OpenRouter with zero-data-retention routing requested on every call.
+- The photo goes to the model and nowhere else. HaalKhata never stores receipt images.
 
-```sh
-./dev.sh --mobile-android   # boot emulator + build/install dev client + Metro + web server
-./dev.sh --mobile-ios       # same for iOS simulator
-```
+## Split it any way the night went
 
-The first run builds and installs the dev client (several minutes).
-Subsequent runs reuse the emulator and installed app — Metro and the web
-server start instantly. The dev client (not Expo Go) connects to Metro
-automatically.
+| Shares, percentages, exact amounts, or equal | Itemized, with each person's share on every line |
+| --- | --- |
+| <img src="docs/screenshots/split-shares.webp" alt="The split editor set to Shares, with a different number of shares per person"> | <img src="docs/screenshots/itemized-expense.webp" alt="An itemized expense showing who paid, how it split, and each receipt line with the people on it and your share"> |
 
-The app signs in with bearer tokens against the same `/api/connect`
-endpoints. In dev it targets port 3000 on the machine running Metro, so
-start the web server with `next dev -H 0.0.0.0` (or set
-`EXPO_PUBLIC_API_URL=https://your-server`) when testing from a phone. Release
-builds require an explicit HTTPS origin and reject plaintext bearer-token
-transport; Android release manifests also disable cleartext traffic.
+Equal, exact amounts, percentages, shares, or by line item. Several people can pay one bill. Leave someone out of a round with one uncheck. Comment on any expense when the numbers need a sentence.
 
-**Sign-in.** Production accepts Google only, so a release build needs its
-own native OAuth clients in the same Google Cloud project as the web one: an
-*Android* client for package `com.haalkhata.app` with the signing key's
-SHA-1, and an *iOS* client for bundle `com.haalkhata.app`. Put their ids in
-`EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID` / `EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID`
-when building the app, and list the same ids in the server's
-`GOOGLE_MOBILE_CLIENT_IDS` so it accepts them as token audiences. The flow is
-the web one's twin: the server issues a one-time nonce, the native OAuth
-request carries it, and the ID token Google mints is exchanged for a session.
-The bundle id doubles as the OAuth redirect scheme (`app.json` → `scheme`).
-The email/phone + password form only appears in development builds, matching
-the server's password gate.
+## Balances that clean themselves up
 
-## Schema & migrations
+<p align="center">
+  <img src="docs/screenshots/group-balances.webp" alt="Group balances with Simplify debts turned on: net positions per person and the minimum set of payments that clears the group" width="100%">
+</p>
 
-The schema lives in plain SQL under `apps/web/migrations/` (node-pg-migrate,
-history tracked in the `pgmigrations` table). The app applies pending
-migrations once per process on startup, so dev and Docker never need a
-manual migrate step. To change the schema:
+Every group shows who is up, who is down, and the shortest path to zero. Turn on **Simplify debts** and a tangle of who-owes-whom collapses into the fewest possible payments. Balances are also there per friend and across everything you share.
 
-```sh
-pnpm db:new add_expense_receipts   # scaffolds migrations/<ts>_add-expense-receipts.sql
-# edit the file: SQL under "-- Up Migration", inverse under "-- Down Migration"
-pnpm db:migrate                    # apply now (or just restart the app)
-```
+Every currency stays its own currency. A trip in taka and an apartment in dollars show up as two clean numbers, never one made-up total. Any ISO 4217 currency you can actually transact in is supported.
 
-Never roll a populated database backward: historical down migrations can
-discard application data and merge audit records. Restore a verified backup
-for disaster recovery, or add a forward corrective migration. Never edit an
-applied migration — add a new one.
+## Settle up in one tap
 
-## Deploy (self-hosted Docker)
+<p align="center">
+  <img src="docs/screenshots/settle-up.webp" alt="The record-a-payment dialog: who pays whom, which balances it clears, the amount, and Venmo, Zelle, Cash App, PayPal, cash, or bank transfer" width="100%">
+</p>
 
-Everything runs on any box with Docker — no managed platform, no vendor
-lock-in.
+Record a payment with the method you actually used: Venmo, Zelle, Cash App, PayPal, cash, or a bank transfer. Friends can save their handles so paying them is a tap away. Who recorded a payment is part of the ledger, the other person sees it immediately, and either side can remove it. When someone forgets, a gentle in-app reminder does the awkward part for you.
 
-### Kick the tyres locally
+## Friends, groups, and one link to invite anyone
+
+<p align="center">
+  <img src="docs/screenshots/friend-ledger.webp" alt="A friend page: the net balance in each currency, where the balance sits by group, and the shared history with a running change column" width="100%">
+</p>
+
+<p align="center">
+  <img src="docs/screenshots/invite-link.webp" alt="An invite landing page: a named friend invited you to a named group, with a Sign in to accept button" width="440">
+</p>
+
+Friend requests need a yes from the other side. Share a link to a group or to your own profile and the recipient lands exactly where they should after signing in. Invite someone by phone before they have an account, and when they sign up and verify that number, their history is waiting for them.
+
+## Nothing slips by
+
+<p align="center">
+  <img src="docs/screenshots/activity.webp" alt="The activity feed: payments, new expenses, comments, and group changes, filterable by type and month" width="100%">
+</p>
+
+Every expense, payment, comment, and group change lands in one feed you can search and filter. Notifications reach you for anything that touches your balance.
+
+## It fits in your pocket
+
+<p align="center">
+  <img src="docs/screenshots/mobile.webp" alt="Three phone screens: the dashboard, a trip group, and an itemized expense" width="100%">
+</p>
+
+The web app installs to your home screen as a progressive web app. There is also a native iOS and Android app built with Expo, with the same features against the same API, universal links for invites, and sign-in tokens kept in the phone's secure store.
+
+## Built to be trusted with your money
+
+Splitting money with friends only works if nobody has to wonder about the tool. Here is what HaalKhata does about that, all of it in this repository where you can read it.
+
+**Your data stays yours.** The ledger lives in your own Postgres on your own server. There are no analytics or tracking scripts. The only outside services involved are Google for sign-in, and optionally Twilio for phone verification and the AI model for receipt scanning.
+
+**Sign-in is hard to fake.** Production accepts Google sign-in only. ID tokens are verified against Google's public keys and bound to a one-time nonce the server issued. The browser holds the session in an HttpOnly cookie, the phone app in its secure store, and every session can be revoked at once.
+
+**The math cannot drift.** Amounts are integer cents everywhere. The server recomputes every split from the raw spec and rejects anything that does not add up. Every money mutation carries an idempotency key, so a retried request can never double-post. Payments record who entered them, and balances are kept per currency and never converted.
+
+**The receipt scanner forgets.** Images are sent to the model and never written to disk. Zero-data-retention routing is requested on every call, and in production a failed scan is a visible failure, never invented line items.
+
+**The stack is locked down.** Secrets are read from files, never from the environment. Containers run with a read-only root filesystem, every capability dropped, and `no-new-privileges`. Only ports 80 and 443 are exposed. Caddy terminates TLS with automatic certificates and HSTS, and the app ships its own Content Security Policy and browser security headers.
+
+**Every change is checked.** Parameterized SQL throughout, rate limits on sensitive calls, a CSRF guard, and careful proxy-header handling. CI runs type checks, lint, unit and property tests, protobuf breaking-change detection, a dependency audit, and a secrets scan over the full git history. Every third-party action is pinned to a commit.
+
+**Backups leave the box.** Nightly dumps are encrypted with age before they leave the server, shipped offsite, and verified on the remote. A backup that only exists on the same disk counts as a failure and raises an alert.
+
+**It has been through the wringer.** Two full security reviews in 2026 shaped the codebase you see. The fixes landed in the open ([#21](https://github.com/anirudha-ani/HaalKhata/pull/21)). If you find something, please report it privately rather than in a public issue.
+
+## Get running in minutes
 
 ```sh
-cp .env.example .env     # set POSTGRES_PASSWORD + SESSION_SECRET
-docker compose up -d --build
+git clone https://github.com/anirudha-ani/HaalKhata.git && cd HaalKhata
+./install-deps.sh    # Node, pnpm, Docker, buf, dependencies
+./dev.sh             # Postgres + the web app at http://127.0.0.1:3000
 ```
 
-Builds the standalone image and starts it with Postgres 17 (data in the
-`db-data` volume, app on `127.0.0.1:3000`). Plaintext `.env`, no TLS — fine
-for a local look, not a deployment.
+That is a working local instance with a mock receipt scanner, no API keys required. When you are ready to host it for the people you split with, [Self-hosting](docs/self-hosting.md) walks through the production Docker stack, Google sign-in, and the checklist before you point a domain at it.
 
-### Production
+| I want to… | Read |
+| --- | --- |
+| Run it on my laptop | [Getting started](docs/getting-started.md) |
+| Put it on a server for my friends | [Self-hosting](docs/self-hosting.md) |
+| Work on the code | [Development](docs/development.md) and [`AGENTS.md`](AGENTS.md) |
+| Understand the API | [Backend services](docs/backend/README.md) |
 
-```sh
-# deploy.sh normally writes IMAGE_TAG; for a manual bootstrap, set it to the
-# exact 40-character commit image published in GHCR.
-docker compose -f docker-compose.prod.yml up -d --wait
-```
+## Under the hood
 
-A separate file rather than an override, because Compose merges list keys by
-appending and so an override cannot *remove* the dev file's published ports.
-What it adds:
+Next.js, ConnectRPC with Protobuf, Postgres 17 in plain SQL, TanStack Query, Expo, Caddy, and Docker Compose. One schema-first contract generates the types for the server, the web client, and the mobile app, so the three can never disagree about what an expense is.
 
-- **Caddy** in front, with automatic Let's Encrypt certificates, HSTS, and
-  `header_up X-Forwarded-For {remote_host}` (plus stripping `X-Real-IP`) —
-  without that overwrite a client can supply its own `X-Forwarded-For` and
-  defeat the auth rate limiter. The CSP and the other browser security
-  headers ship with the app itself (`next.config.ts` and `middleware.ts`),
-  so they survive a different proxy. The production stack
-  enables `TRUST_PROXY_HEADERS=true` only alongside that overwrite; direct
-  deployments ignore forwarded headers and use the socket peer.
-- **Docker secrets** for `SESSION_SECRET`, `POSTGRES_PASSWORD`,
-  `COMPATIBLE_AI_API_KEY` and `TWILIO_API_KEY_SECRET`. The app reads them
-  straight from `/run/secrets/` through `*_FILE` variables (the same
-  convention the official Postgres image uses) and builds its own database
-  URL, so no secret appears in a compose file, an image layer, `docker
-  inspect`, or the process environment. `SESSION_SECRET_PREVIOUS_FILE` keeps
-  sessions valid across a planned key rotation.
-- **Nothing published but 80/443.** Postgres and the app are reachable only
-  over the compose network.
-- Read-only application root filesystem, minimal per-service capabilities, and
-  `no-new-privileges` across the production stack.
-- CSP, HSTS, clickjacking, MIME-sniffing, referrer, and permissions headers
-  ship in the Next.js app itself, so alternate reverse proxies retain them.
+## About the name
 
-CI builds the image and pushes it to GHCR; the server only pulls. See
-[`ops/README.md`](ops/README.md) for server-side setup, secret rotation,
-backups and the restore drill, and `docs/plan.txt` §7c for why each piece is
-shaped the way it is.
+A *haal khata* is the fresh ledger shopkeepers in Bengal open each new year, once the old accounts are settled. Clean pages, everyone square. That is the feeling this app is after.
 
-Three things worth knowing before you point a domain at it:
+## Contributing and license
 
-- **Certificate notices need a real recipient.** Set the `ACME_EMAIL`
-  repository variable; the deploy pipeline writes it into
-  `/srv/haalkhata/.env`, and the production stack refuses to start without
-  it. (Manual bootstraps without the workflow set it in `.env` directly.)
-- **Google is the only way in.** `passwordAuthEnabled()` is false when
-  `NODE_ENV=production`, so `SignUp`/`LogIn` are rejected.
-  `NEXT_PUBLIC_GOOGLE_CLIENT_ID` is inlined at **build** time — a wrong value
-  cannot be fixed by restarting with a corrected environment, only by
-  rebuilding.
-- **Readiness fails closed.** `/api/health` requires at least 32 decoded bytes
-  of `SESSION_SECRET`, waits for migrations, performs a live database query,
-  and — since Google is the only way in — refuses when no Google audience is
-  configured or the id built into the bundle is not one the server accepts.
-  Any of those keeps the container unhealthy and fails
-  `docker compose up -d --wait`; the deploy workflow also refuses to build
-  without `NEXT_PUBLIC_GOOGLE_CLIENT_ID`.
-- **Backups must leave the box.** `ops/backup.sh` fails (and alerts) when no
-  offsite target is configured, and verifies each archive's size on the
-  remote after upload. See `ops/README.md`.
-
-### Receipt AI providers (optional)
-
-Copy `.env.example` → `.env` and set:
-
-- `COMPATIBLE_AI_BASE_URL` / `_API_KEY` / `_MODEL` — tier one: any endpoint
-  speaking the OpenAI `/chat/completions` wire format. Production is
-  OpenRouter; a Gemini compatibility endpoint or a self-hosted vision box work
-  the same way.
-- `COMPATIBLE_AI_ZDR=true` — request zero data retention, restricting routing
-  to zero-retention endpoints. Receipt images are never stored by HaalKhata,
-  so this hop is the entire privacy surface — also enforce ZDR account-wide in
-  OpenRouter, which fails closed.
-- `RECEIPT_AI_PROVIDERS` — failover order; default `compatible,mock`
-
-One key, one endpoint: OpenRouter fronts Claude, Gemini and everything else
-worth using here, so there is no provider-specific SDK in the codebase.
-
-## Quality gates
-
-```sh
-pnpm typecheck   # tsc --noEmit
-pnpm lint        # eslint (incl. layering import rules)
-pnpm test        # vitest — split math & balance domain tests
-pnpm proto:lint  # buf lint
-pnpm doctor      # react-doctor scan
-
-pnpm typecheck:mobile && pnpm lint:mobile && pnpm test:mobile   # same, for apps/mobile
-pnpm typecheck:shared && pnpm lint:shared && pnpm test:shared   # same, for packages/shared
-```
-
-See `docs/plan.txt` for the full architecture plan and delivery phases.
+Pull requests are welcome. Read [`AGENTS.md`](AGENTS.md) first for the layering rules and conventions that CI enforces. HaalKhata is released under the [GPL-3.0](LICENSE).
