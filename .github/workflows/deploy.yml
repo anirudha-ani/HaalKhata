@@ -10,8 +10,12 @@
 #             secret only makes build logs harder to read). Also shipped to
 #             the server as GOOGLE_CLIENT_ID: the audience the server checks
 #             is by contract the same id the browser renders the button with.
-#   Variable  ACME_EMAIL                     monitored operator address Caddy
-#             registers with Let's Encrypt for expiry/problem notices
+#   Secret    ACME_EMAIL                     monitored operator address Caddy
+#             registers with Let's Encrypt for expiry/problem notices. A
+#             secret rather than a variable: variables are echoed into
+#             workflow logs, which are public on a public repository, and
+#             this is a personal address. Not authenticating material, so
+#             it still lands in the server's .env like the other config.
 #   Variable  GOOGLE_MOBILE_CLIENT_IDS       optional; native Android/iOS
 #             OAuth client ids, comma separated
 #   Secret    TWILIO_API_KEY_SID             optional; phone verification
@@ -118,10 +122,10 @@ jobs:
       # would ship an unstartable stack fails here instead.
       - name: 'Config: the ACME contact is set'
         env:
-          ACME_EMAIL: ${{ vars.ACME_EMAIL }}
+          ACME_EMAIL: ${{ secrets.ACME_EMAIL }}
         run: |
           if [ -z "$ACME_EMAIL" ]; then
-            echo "ACME_EMAIL is not set as a repository variable; refusing to deploy a stack that cannot start" >&2
+            echo "ACME_EMAIL is not set as a repository secret; refusing to deploy a stack that cannot start" >&2
             exit 1
           fi
 
@@ -129,7 +133,7 @@ jobs:
         env:
           KEY: ${{ secrets.DEPLOY_SSH_KEY }}
           HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
-          ACME_EMAIL: ${{ vars.ACME_EMAIL }}
+          ACME_EMAIL: ${{ secrets.ACME_EMAIL }}
           # By contract the same id the browser bundle was built with: the
           # server checks it as the ID-token audience. One variable, two uses,
           # zero chance of them drifting apart.

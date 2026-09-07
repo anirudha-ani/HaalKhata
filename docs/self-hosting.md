@@ -60,7 +60,7 @@ repository variables and secrets it needs.
 ### Before you point a domain at it
 
 - **Certificate notices need a real recipient.** Set the `ACME_EMAIL`
-  repository variable; the deploy pipeline writes it into
+  repository secret; the deploy pipeline writes it into
   `/srv/haalkhata/.env`, and the production stack refuses to start without
   it. Manual bootstraps without the workflow set it in `.env` directly.
 - **Google is the only way in.** `passwordAuthEnabled()` is false when
