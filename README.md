@@ -9,16 +9,14 @@
   Split expenses with roommates, travel buddies, and friends. Scan the receipt, split it by the item, and settle up in one tap.
 </p>
 
+<h3 align="center"><a href="https://haalkhata.app">Start splitting at haalkhata.app</a></h3>
+
 <p align="center">
-  <a href="https://haalkhata.app"><strong>Try it live</strong></a> &nbsp;·&nbsp;
-  <a href="docs/self-hosting.md">Self-host it</a> &nbsp;·&nbsp;
-  <a href="docs/getting-started.md">Run it locally</a> &nbsp;·&nbsp;
-  <a href="docs/README.md">Docs</a>
+  Free to use. Sign in with Google and you are in.
 </p>
 
 <p align="center">
   <a href="https://github.com/anirudha-ani/HaalKhata/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/anirudha-ani/HaalKhata/actions/workflows/ci.yml/badge.svg"></a>
-  <a href="https://github.com/anirudha-ani/HaalKhata/releases"><img alt="Release" src="https://img.shields.io/github/v/release/anirudha-ani/HaalKhata?label=release&color=b03a25"></a>
   <a href="LICENSE"><img alt="License: GPL-3.0" src="https://img.shields.io/badge/license-GPL--3.0-0f8a5f"></a>
 </p>
 
@@ -28,13 +26,15 @@
 
 You know the moment. The check arrives, someone grabs it, and a week later a group chat is trying to reconstruct who had the calamari. HaalKhata is the calm ledger that replaces that chat. Put an expense in once, everyone sees the same balances, and settling up becomes a tap instead of a negotiation.
 
-It is free, open source, and yours to run. One Docker command on any server and the ledger lives on hardware you control.
+The app is free at [haalkhata.app](https://haalkhata.app). The code behind it is open source so anyone can read exactly how their money is handled, and so the people who use it can help make it better.
 
 ## Why people switch
 
-| Own it | Trust it | Actually enjoy it |
-| --- | --- | --- |
-| Self-hosted on your own box, or use the hosted instance. GPL-3.0. No ads, no trackers, no upsell. | Money is integer cents end to end. The server recomputes every split, so a bill always adds up to exactly what was paid. | Photograph the receipt and the line items appear. Split any way you like with a live preview. Web app and native phone app. |
+**The apps everyone used started charging for the basics.** Competitor apps now cap their free plans at a handful of expenses a day, put a countdown timer between entries, show full-screen ads you cannot skip, and charge around five dollars a month to lift the limits and switch receipt scanning back on. Splitting a dinner should not need a subscription. HaalKhata is free, with every feature, no ads, and no daily limit.
+
+**Itemized bills stop being a nightmare.** Eight people, one receipt, and somebody had two drinks and no appetizer. Typing that in line by line is why most groups give up and split evenly, and why someone always overpays. HaalKhata reads the receipt for you, everyone taps what they had, and tax and tip follow automatically.
+
+**You can see exactly how it works.** The code is open. Anyone can read how balances are computed and how data is handled, and anyone can help make it better.
 
 ## Scan the receipt. Split it by the item.
 
@@ -45,8 +45,7 @@ It is free, open source, and yours to run. One Docker command on any server and 
 Snap a photo at the table. HaalKhata reads the merchant, every line, the tax, and the tip, then lays them out as an itemized split. Check off who had what. Tax and tip follow each person's share automatically, and everyone's total updates as you go.
 
 - Every line is editable before you save, and you can add what the scanner missed.
-- Works with any vision model behind an OpenAI-compatible endpoint. The default is OpenRouter with zero-data-retention routing requested on every call.
-- The photo goes to the model and nowhere else. HaalKhata never stores receipt images.
+- The photo is read by an AI model and then discarded. HaalKhata never stores receipt images.
 
 ## Split it any way the night went
 
@@ -64,7 +63,7 @@ Equal, exact amounts, percentages, shares, or by line item. Several people can p
 
 Every group shows who is up, who is down, and the shortest path to zero. Turn on **Simplify debts** and a tangle of who-owes-whom collapses into the fewest possible payments. Balances are also there per friend and across everything you share.
 
-Every currency stays its own currency. A trip in taka and an apartment in dollars show up as two clean numbers, never one made-up total. Any ISO 4217 currency you can actually transact in is supported.
+Every currency stays its own currency. A trip in taka and an apartment in dollars show up as two clean numbers, never one made-up total. Any currency you can actually pay in is supported.
 
 ## Settle up in one tap
 
@@ -84,7 +83,7 @@ Record a payment with the method you actually used: Venmo, Zelle, Cash App, PayP
   <img src="docs/screenshots/invite-link.webp" alt="An invite landing page: a named friend invited you to a named group, with a Sign in to accept button" width="440">
 </p>
 
-Friend requests need a yes from the other side. Share a link to a group or to your own profile and the recipient lands exactly where they should after signing in. Invite someone by phone before they have an account, and when they sign up and verify that number, their history is waiting for them.
+Friend requests need a yes from the other side. Share a link to a group or to your own profile and whoever opens it lands exactly where they should after signing in. Not on HaalKhata yet? Invite them by email or phone and they appear in your group as invited, ready to split the moment they sign up.
 
 ## Nothing slips by
 
@@ -100,29 +99,31 @@ Every expense, payment, comment, and group change lands in one feed you can sear
   <img src="docs/screenshots/mobile.webp" alt="Three phone screens: the dashboard, a trip group, and an itemized expense" width="100%">
 </p>
 
-The web app installs to your home screen as a progressive web app. There is also a native iOS and Android app built with Expo, with the same features against the same API, universal links for invites, and sign-in tokens kept in the phone's secure store.
+HaalKhata installs to your home screen from the browser and works like an app. A native iOS and Android app is being built on the same foundation, and its code is already in this repository.
 
 ## Built to be trusted with your money
 
-Splitting money with friends only works if nobody has to wonder about the tool. Here is what HaalKhata does about that, all of it in this repository where you can read it.
+Splitting money with friends only works if nobody has to wonder about the tool. Here is what HaalKhata does about that. All of it is in this repository, where anyone can read it.
 
-**Your data stays yours.** The ledger lives in your own Postgres on your own server. There are no analytics or tracking scripts. The only outside services involved are Google for sign-in, and optionally Twilio for phone verification and the AI model for receipt scanning.
+**Your data is not the product.** There are no ads, no analytics, and no trackers in the app. Your ledger is stored for one reason: to show it back to you and the people you split with. The only outside services involved are Google for sign-in, Twilio for optional phone verification, and the AI model that reads a receipt when you scan one.
 
-**Sign-in is hard to fake.** Production accepts Google sign-in only. ID tokens are verified against Google's public keys and bound to a one-time nonce the server issued. The browser holds the session in an HttpOnly cookie, the phone app in its secure store, and every session can be revoked at once.
+**Sign-in is hard to fake.** You sign in with Google, and HaalKhata checks every sign-in against Google's own keys and a one-time code it issued. Your session is kept in a cookie no script can read, and any session can be ended from the server.
 
-**The math cannot drift.** Amounts are integer cents everywhere. The server recomputes every split from the raw spec and rejects anything that does not add up. Every money mutation carries an idempotency key, so a retried request can never double-post. Payments record who entered them, and balances are kept per currency and never converted.
+**The math cannot drift.** Amounts are whole cents everywhere, so there is no rounding error to argue about. The server recomputes every split from what you entered and rejects anything that does not add up. A payment always records who entered it, and each currency is kept separate, never converted.
 
-**The receipt scanner forgets.** Images are sent to the model and never written to disk. Zero-data-retention routing is requested on every call, and in production a failed scan is a visible failure, never invented line items.
+**The receipt scanner forgets.** A receipt photo is sent to the AI model and never written to disk. The model is asked not to retain it either, and a scan that fails simply fails, rather than inventing line items.
 
-**The stack is locked down.** Secrets are read from files, never from the environment. Containers run with a read-only root filesystem, every capability dropped, and `no-new-privileges`. Only ports 80 and 443 are exposed. Caddy terminates TLS with automatic certificates and HSTS, and the app ships its own Content Security Policy and browser security headers.
+**Locked down where it runs.** Passwords and keys are read from protected files, never from the environment. The app runs in containers with a read-only filesystem and the fewest permissions possible, only the web ports are open, and all traffic is encrypted.
 
-**Every change is checked.** Parameterized SQL throughout, rate limits on sensitive calls, a CSRF guard, and careful proxy-header handling. CI runs type checks, lint, unit and property tests, protobuf breaking-change detection, a dependency audit, and a secrets scan over the full git history. Every third-party action is pinned to a commit.
+**Every change is checked.** Nothing ships until it passes type checks, lint, unit and property tests, a check that the API contract did not break, a dependency vulnerability audit, and a scan for accidentally committed secrets.
 
-**Backups leave the box.** Nightly dumps are encrypted with age before they leave the server, shipped offsite, and verified on the remote. A backup that only exists on the same disk counts as a failure and raises an alert.
+**Backed up every night.** Your data is backed up nightly. Each backup is encrypted before it leaves the server, stored in a second location, and checked to make sure it actually arrived.
 
-**It has been through the wringer.** Two full security reviews in 2026 shaped the codebase you see. The fixes landed in the open ([#21](https://github.com/anirudha-ani/HaalKhata/pull/21)). If you find something, please report it privately rather than in a public issue.
+**Found something?** Please report security issues privately rather than in a public issue.
 
-## Get running in minutes
+## Help make it better
+
+HaalKhata is open source so the people who use it can shape it. Bug reports, ideas, and pull requests are all welcome. To work on it locally:
 
 ```sh
 git clone https://github.com/anirudha-ani/HaalKhata.git && cd HaalKhata
@@ -130,14 +131,14 @@ git clone https://github.com/anirudha-ani/HaalKhata.git && cd HaalKhata
 ./dev.sh             # Postgres + the web app at http://127.0.0.1:3000
 ```
 
-That is a working local instance with a mock receipt scanner, no API keys required. When you are ready to host it for the people you split with, [Self-hosting](docs/self-hosting.md) walks through the production Docker stack, Google sign-in, and the checklist before you point a domain at it.
+That gives you a working copy with a mock receipt scanner and no API keys needed. Read [`AGENTS.md`](AGENTS.md) first for the layering rules and conventions that CI enforces.
 
 | I want to… | Read |
 | --- | --- |
 | Run it on my laptop | [Getting started](docs/getting-started.md) |
-| Put it on a server for my friends | [Self-hosting](docs/self-hosting.md) |
 | Work on the code | [Development](docs/development.md) and [`AGENTS.md`](AGENTS.md) |
 | Understand the API | [Backend services](docs/backend/README.md) |
+| Everything else | [Docs index](docs/README.md) |
 
 ## Under the hood
 
@@ -147,6 +148,6 @@ Next.js, ConnectRPC with Protobuf, Postgres 17 in plain SQL, TanStack Query, Exp
 
 A *haal khata* is the fresh ledger shopkeepers in Bengal open each new year, once the old accounts are settled. Clean pages, everyone square. That is the feeling this app is after.
 
-## Contributing and license
+## License
 
-Pull requests are welcome. Read [`AGENTS.md`](AGENTS.md) first for the layering rules and conventions that CI enforces. HaalKhata is released under the [GPL-3.0](LICENSE).
+HaalKhata is released under the [GPL-3.0](LICENSE).
