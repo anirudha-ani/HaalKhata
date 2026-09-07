@@ -34,6 +34,11 @@ overrides:
   "metro-symbolicate@0.84.4": 0.84.5
   "metro-transform-plugins@0.84.4": 0.84.5
   "metro-transform-worker@0.84.4": 0.84.5
+  # @xmldom/xmldom fragment-injection advisory (GHSA-6gmq-8vp8-gcm6). Two
+  # lines are in the tree: plist pulls 0.8.x, @expo/plist pulls 0.9.x. Each
+  # moves to the patch release on its own line.
+  "@xmldom/xmldom@0.8.13": 0.8.15
+  "@xmldom/xmldom@0.9.10": 0.9.12
 
 # Native/postinstall packages allowed to run build scripts
 allowBuilds:
