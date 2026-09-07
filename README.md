@@ -28,6 +28,14 @@ You know the moment. The check arrives, someone grabs it, and a week later a gro
 
 The app is free at [haalkhata.app](https://haalkhata.app). The code behind it is open source so anyone can read exactly how their money is handled, and so the people who use it can help make it better.
 
+## Why people switch
+
+**The apps everyone used started charging for the basics.** Competitor apps now cap their free plans at a handful of expenses a day, put a countdown timer between entries, show full-screen ads you cannot skip, and charge around five dollars a month to lift the limits and switch receipt scanning back on. Splitting a dinner should not need a subscription. HaalKhata is free, with every feature, no ads, and no daily limit.
+
+**Itemized bills stop being a nightmare.** Eight people, one receipt, and somebody had two drinks and no appetizer. Typing that in line by line is why most groups give up and split evenly, and why someone always overpays. HaalKhata reads the receipt for you, everyone taps what they had, and tax and tip follow automatically.
+
+**You can see exactly how it works.** The code is open. Anyone can read how balances are computed and how data is handled, and anyone can help make it better.
+
 ## Scan the receipt. Split it by the item.
 
 <p align="center">
