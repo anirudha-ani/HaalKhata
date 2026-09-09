@@ -73,7 +73,6 @@ export function useNewExpense(
   const [items, setItems] = useState<DraftLineItem[]>(initial.items);
   const [taxInput, setTaxInput] = useState(initial.taxInput);
   const [tipInput, setTipInput] = useState(initial.tipInput);
-  const [unevenShares, setUnevenShares] = useState(false);
   const [error, setError] = useState("");
   /** Closes the error popup. The next action clears it anyway; this serves the dismiss button. */
   const dismissError = useCallback(() => setError(""), []);
@@ -265,6 +264,19 @@ export function useNewExpense(
         else delete assignees[userId];
         return { ...item, assignees };
       }),
+    );
+
+  /**
+   * Replaces the whole assignee map of one item. The Everyone chip puts the
+   * entire cast on (or off) a line in one update rather than one re-render
+   * per person.
+   *
+   * @param index - Position of the item in the draft.
+   * @param assignees - New portion counts by user id; an empty map leaves the item unassigned.
+   */
+  const setItemAssignees = (index: number, assignees: Record<string, number>) =>
+    setItems((current) =>
+      current.map((item, itemIndex) => (itemIndex === index ? { ...item, assignees } : item)),
     );
 
   useEffect(() => () => URL.revokeObjectURL(previewUrl), [previewUrl]);
@@ -496,8 +508,7 @@ export function useNewExpense(
     removeItem,
     updateItem,
     setAssigneeWeight,
-    unevenShares,
-    setUnevenShares,
+    setItemAssignees,
     taxInput,
     setTaxInput,
     tipInput,

@@ -1,15 +1,15 @@
 "use client";
-/** Itemized split tab: the shared items × people grid plus the uneven-shares toggle. */
+/** Itemized split tab: the shared item cards wired to the expense form's draft. */
 
-import { ItemGrid } from "@/components/expense/ItemGrid";
+import { ItemCards } from "@/components/expense/ItemCards";
 import type { NewExpenseController } from "../../hooks/useNewExpense";
 
 /**
- * Renders the Itemized tab: the shared {@link ItemGrid} wired to the expense
- * form's draft, plus the uneven-shares checkbox that turns its cells from
- * on/off toggles into share-weight inputs.
+ * Renders the Itemized tab: the shared {@link ItemCards} wired to the expense
+ * form's draft. Portions are set per card inside the component, so there is
+ * no editor-wide switch any more.
  *
- * The same grid serves a bill typed in by hand and one read off a photo — the
+ * The same cards serve a bill typed in by hand and one read off a photo; the
  * scanner fills this very draft (§3j), so the two cannot behave differently.
  *
  * @param props - Component props.
@@ -25,39 +25,27 @@ export function ItemizedEditor({
   currency: string;
 }) {
   return (
-    <div className="space-y-2">
-      {/* The quantity column only earns its width when the numbers were read
-          off paper; items typed by hand have no quantity to show. */}
-      <ItemGrid
-        showQuantity={form.fromReceipt}
-        items={form.items}
-        people={form.people}
-        currentUserId={form.me?.id ?? ""}
-        currency={currency}
-        unevenShares={form.unevenShares}
-        taxInput={form.taxInput}
-        tipInput={form.tipInput}
-        itemsTotalCents={form.itemsTotalCents}
-        totalCents={form.totalCents ?? 0}
-        shares={form.previewShares}
-        onUpdateItem={form.updateItem}
-        onSetWeight={form.setAssigneeWeight}
-        onRemoveItem={form.removeItem}
-        onAddItem={form.addItem}
-        onTaxChange={form.setTaxInput}
-        onTipChange={form.setTipInput}
-        onApplyTipPercent={form.applyTipPercent}
-      />
-
-      <label className="flex items-center gap-2 text-sm text-ink-soft">
-        <input
-          type="checkbox"
-          checked={form.unevenShares}
-          onChange={(event) => form.setUnevenShares(event.target.checked)}
-          className="h-4 w-4 accent-brand-600"
-        />
-        Uneven shares — enter how many portions each person had
-      </label>
-    </div>
+    // Quantities only earn a place when the numbers were read off paper;
+    // items typed by hand have no quantity to show.
+    <ItemCards
+      showQuantity={form.fromReceipt}
+      items={form.items}
+      people={form.people}
+      currentUserId={form.me?.id ?? ""}
+      currency={currency}
+      taxInput={form.taxInput}
+      tipInput={form.tipInput}
+      itemsTotalCents={form.itemsTotalCents}
+      totalCents={form.totalCents ?? 0}
+      shares={form.previewShares}
+      onUpdateItem={form.updateItem}
+      onSetWeight={form.setAssigneeWeight}
+      onSetAssignees={form.setItemAssignees}
+      onRemoveItem={form.removeItem}
+      onAddItem={form.addItem}
+      onTaxChange={form.setTaxInput}
+      onTipChange={form.setTipInput}
+      onApplyTipPercent={form.applyTipPercent}
+    />
   );
 }
