@@ -36,8 +36,6 @@ export function ItemizedEditor({
       taxInput={form.taxInput}
       tipInput={form.tipInput}
       itemsTotalCents={form.itemsTotalCents}
-      totalCents={form.totalCents ?? 0}
-      shares={form.previewShares}
       onUpdateItem={form.updateItem}
       onSetWeight={form.setAssigneeWeight}
       onSetAssignees={form.setItemAssignees}
@@ -46,8 +44,6 @@ export function ItemizedEditor({
       onTaxChange={form.setTaxInput}
       onTipChange={form.setTipInput}
       onApplyTipPercent={form.applyTipPercent}
-      // The form's sidebar shows the same numbers as a panel from lg up.
-      stripClassName="lg:hidden"
     />
   );
 }

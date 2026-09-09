@@ -6,7 +6,6 @@ import { useEffect, useId, useRef, useState } from "react";
 import type { User } from "@haalkhata/protogen/common/v1/common_pb";
 import { formatMoney, parseMoneyInput } from "@haalkhata/shared/money/money";
 import { MAX_EXPENSE_ITEM_NAME_LENGTH } from "@haalkhata/shared/text/limits";
-import { itemizedWarnings } from "@/lib/expense/itemizedWarnings";
 import { percentOfItems } from "@/lib/expense/splitForm";
 import { Avatar } from "@/components/ui/Avatar";
 import {
@@ -14,7 +13,6 @@ import {
   MAX_ITEM_QUANTITY,
   TIP_PERCENT_PRESETS,
 } from "./itemCards.constants";
-import { SplitSummary } from "./SplitSummary";
 
 /** One editable line item, however the owning form stores the rest of its draft. */
 export interface CardItem {
@@ -79,11 +77,8 @@ function fullName(person: User, currentUserId: string): string {
  * box. The quantity the scanner read is shown after the name and edited in
  * the same panel, since a mis-read count is one of the things people fix.
  *
- * A per-person summary strip sticks to the bottom of the scrolling area
- * while the cards are in view, so the running totals and anything still
- * unassigned are readable without leaving the list. Where the owning form
- * shows the same numbers as a sidebar panel, it hides the strip through
- * `stripClassName`.
+ * The running per-person totals live in the owning form's SplitSummary,
+ * which every split mode shares, so the cards carry only their own notes.
  *
  * @param props - Component props.
  * @returns The cards, the tax and tip rows, and the summary strip.
@@ -97,8 +92,6 @@ export function ItemCards({
   taxInput,
   tipInput,
   itemsTotalCents,
-  totalCents,
-  shares,
   onUpdateItem,
   onSetWeight,
   onSetAssignees,
@@ -107,7 +100,6 @@ export function ItemCards({
   onTaxChange,
   onTipChange,
   onApplyTipPercent,
-  stripClassName = "",
 }: {
   /** The line items to render, in order. */
   items: CardItem[];
@@ -125,10 +117,6 @@ export function ItemCards({
   tipInput: string;
   /** The items subtotal in cents, the base the tax and tip percentages read against. */
   itemsTotalCents: number;
-  /** Items + tax + tip, in cents, for the summary. */
-  totalCents: number;
-  /** What each person currently owes, keyed by user id, in cents. */
-  shares: Record<string, number>;
   /** Applies a partial update to the item at `index`. */
   onUpdateItem: (index: number, patch: Partial<CardItem>) => void;
   /** Sets one person's portion count on the item at `index`; 0 removes them. */
@@ -145,8 +133,6 @@ export function ItemCards({
   onTipChange: (value: string) => void;
   /** Sets the tip to a percentage of the items subtotal. */
   onApplyTipPercent: (percent: number) => void;
-  /** Extra classes for the summary strip, e.g. `lg:hidden` when a sidebar panel takes over. */
-  stripClassName?: string;
 }) {
   const fieldId = useId();
   const listRef = useRef<HTMLUListElement>(null);
@@ -171,7 +157,6 @@ export function ItemCards({
   const tipCents = parseMoneyInput(tipInput, currency) ?? 0;
   const taxPercent = percentOfItems(taxCents, itemsTotalCents);
   const tipPercent = percentOfItems(tipCents, itemsTotalCents);
-  const warnings = itemizedWarnings(items, currency);
 
   return (
     <div className="space-y-3">
@@ -560,19 +545,6 @@ export function ItemCards({
         </div>
       </div>
 
-      <SplitSummary
-        layout="strip"
-        className={stripClassName}
-        people={people}
-        currentUserId={currentUserId}
-        currency={currency}
-        shares={shares}
-        totalCents={totalCents}
-        breakdown={{ itemsTotalCents, taxCents, tipCents }}
-        warnings={warnings}
-        ready={items.length > 0}
-        readyMessage="Everything is assigned"
-      />
     </div>
   );
 }

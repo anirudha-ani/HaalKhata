@@ -57,6 +57,25 @@ export function ExpenseForm({
     : !form.splitCheck.ok && form.totalCents !== null
       ? [form.splitCheck.message]
       : [];
+  // The same numbers twice: a panel in the desktop sidebar, a strip that
+  // sticks to the bottom of a phone's scroller under the Split section.
+  const summaryProps = {
+    people: form.people,
+    currentUserId: form.me?.id ?? "",
+    currency,
+    shares: form.previewShares,
+    totalCents: form.totalCents ?? 0,
+    breakdown: isItemized
+      ? {
+          itemsTotalCents: form.itemsTotalCents,
+          taxCents: parseMoneyInput(form.taxInput, currency) ?? 0,
+          tipCents: parseMoneyInput(form.tipInput, currency) ?? 0,
+        }
+      : undefined,
+    warnings: summaryWarnings,
+    ready: isItemized ? form.items.length > 0 : (form.totalCents ?? 0) > 0,
+    readyMessage: isItemized ? "Everything is assigned" : "Adds up to the total",
+  };
 
   const fields = (
     <>
@@ -132,6 +151,7 @@ export function ExpenseForm({
 
       <PayerEditor form={form} />
       <SplitEditor form={form} currency={currency} />
+      <SplitSummary layout="strip" className="lg:hidden" {...summaryProps} />
 
       <textarea
         className={`${inputClass} min-h-20 text-base sm:text-sm`}
@@ -166,27 +186,7 @@ export function ExpenseForm({
               at all (the page guards it), and re-parsing a photo over a saved
               non-itemized expense would silently convert it. */}
           {form.isEdit ? null : <ReceiptPanel form={form} />}
-          <SplitSummary
-            layout="panel"
-            className="hidden lg:block"
-            people={form.people}
-            currentUserId={form.me?.id ?? ""}
-            currency={currency}
-            shares={form.previewShares}
-            totalCents={form.totalCents ?? 0}
-            breakdown={
-              isItemized
-                ? {
-                    itemsTotalCents: form.itemsTotalCents,
-                    taxCents: parseMoneyInput(form.taxInput, currency) ?? 0,
-                    tipCents: parseMoneyInput(form.tipInput, currency) ?? 0,
-                  }
-                : undefined
-            }
-            warnings={summaryWarnings}
-            ready={isItemized ? form.items.length > 0 : (form.totalCents ?? 0) > 0}
-            readyMessage={isItemized ? "Everything is assigned" : "Adds up to the total"}
-          />
+          <SplitSummary layout="panel" className="hidden lg:block" {...summaryProps} />
         </div>
         <div className="min-w-0 space-y-6">{fields}</div>
       </div>

@@ -7,10 +7,3 @@
  * Selected people are never hidden by it — they stay visible as chips.
  */
 export const MAX_VISIBLE_FRIENDS = 50;
-
-/**
- * Slack, in pixels, when deciding whether a scroll container is at an edge.
- * Fractional scroll positions and sub-pixel row heights mean "at the bottom"
- * is rarely an exact equality.
- */
-export const SCROLL_EDGE_TOLERANCE_PX = 1;

@@ -2,12 +2,13 @@
 /** Searchable checkbox list of people, the shared middle of every "who?" picker. */
 
 import { ChevronDown } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import type { User } from "@haalkhata/protogen/common/v1/common_pb";
 import { Avatar } from "@/components/ui/Avatar";
 import { SearchField } from "@/components/ui/SearchField";
 import { matchesTerms, searchTerms } from "@haalkhata/shared/search/filter";
-import { MAX_VISIBLE_FRIENDS, SCROLL_EDGE_TOLERANCE_PX } from "./people.constants";
+import { useScrollEdges } from "@/lib/hooks/useScrollEdges";
+import { MAX_VISIBLE_FRIENDS } from "./people.constants";
 
 /**
  * Renders a search box over a checkbox list of people.
@@ -75,7 +76,6 @@ export function FriendChecklist({
 }) {
   const [query, setQuery] = useState("");
   const listRef = useRef<HTMLFieldSetElement>(null);
-  const [overflow, setOverflow] = useState({ above: false, below: false });
 
   // Pickable rows first, then the rest, each half in its given order.
   const ordered = useMemo(() => {
@@ -93,29 +93,12 @@ export function FriendChecklist({
   }, [ordered, query]);
   const visible = matching.slice(0, MAX_VISIBLE_FRIENDS);
   const hiddenCount = matching.length - visible.length;
-
-  /** Records which edges of the list have rows beyond them, for the fades and the cue. */
-  const measureOverflow = useCallback(() => {
-    const list = listRef.current;
-    if (!list) return;
-    const above = list.scrollTop > SCROLL_EDGE_TOLERANCE_PX;
-    const below =
-      list.scrollTop + list.clientHeight < list.scrollHeight - SCROLL_EDGE_TOLERANCE_PX;
-    setOverflow((current) =>
-      current.above === above && current.below === below ? current : { above, below },
-    );
-  }, []);
-
-  // Re-measure when the rows change (typing, a new friend) and when the list
-  // itself is resized; scrolling is handled by the element's own handler.
-  useEffect(() => {
-    measureOverflow();
-    const list = listRef.current;
-    if (!list || typeof ResizeObserver === "undefined") return;
-    const observer = new ResizeObserver(measureOverflow);
-    observer.observe(list);
-    return () => observer.disconnect();
-  }, [measureOverflow, matching]);
+  // Which edges have rows beyond them, for the fades and the cue.
+  const { beforeStart: rowsAbove, afterEnd: rowsBelow, measure } = useScrollEdges(
+    listRef,
+    "y",
+    matching,
+  );
 
   return (
     <div className="space-y-2">
@@ -127,7 +110,7 @@ export function FriendChecklist({
         label={searchLabel}
       />
       <div className="relative">
-        <fieldset ref={listRef} onScroll={measureOverflow} className="max-h-60 overflow-y-auto">
+        <fieldset ref={listRef} onScroll={measure} className="max-h-60 overflow-y-auto">
           <legend className="sr-only">{legend}</legend>
           {visible.map((person) => {
             const disabled = disabledIds?.has(person.id) ?? false;
@@ -158,13 +141,13 @@ export function FriendChecklist({
         </fieldset>
         {/* Edge cues. Both are overlays so the rows keep their height and
             nothing jumps when the cue appears or goes away. */}
-        {overflow.above ? (
+        {rowsAbove ? (
           <div
             aria-hidden="true"
             className="pointer-events-none absolute inset-x-0 top-0 h-6 bg-linear-to-b from-paper to-transparent"
           />
         ) : null}
-        {overflow.below ? (
+        {rowsBelow ? (
           <div
             aria-hidden="true"
             className="pointer-events-none absolute inset-x-0 bottom-0 flex h-12 items-end justify-center bg-linear-to-t from-paper via-paper/80 to-transparent pb-1"
