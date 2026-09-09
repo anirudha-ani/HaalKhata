@@ -68,21 +68,29 @@ export function FriendsPage() {
                 <li key={requester.id} className="flex items-center gap-3">
                   <Avatar user={requester} />
                   <p className="min-w-0 flex-1 truncate font-medium">{requester.name}</p>
+                  {/* Icon-only on a phone, where two worded buttons left the
+                      name a few characters wide; the label carries the words. */}
                   <button
                     type="button"
                     disabled={responding}
                     onClick={() => friendsState.respondToRequest(requester.id, false)}
-                    className="flex items-center gap-1 rounded-lg border border-line px-3 py-1.5 text-sm font-semibold text-ink-soft hover:text-neg-600 disabled:opacity-50"
+                    aria-label={`Decline ${requester.name}`}
+                    title="Decline"
+                    className="flex items-center gap-1 rounded-lg border border-line p-2 text-sm font-semibold text-ink-soft hover:text-neg-600 disabled:opacity-50 sm:px-3 sm:py-1.5"
                   >
-                    <X className="h-3.5 w-3.5" /> Decline
+                    <X className="h-4 w-4 sm:h-3.5 sm:w-3.5" />
+                    <span className="hidden sm:inline">Decline</span>
                   </button>
                   <button
                     type="button"
                     disabled={responding}
                     onClick={() => friendsState.respondToRequest(requester.id, true)}
-                    className="flex items-center gap-1 rounded-lg bg-brand-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-50"
+                    aria-label={`Accept ${requester.name}`}
+                    title="Accept"
+                    className="flex items-center gap-1 rounded-lg bg-brand-600 p-2 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-50 sm:px-3 sm:py-1.5"
                   >
-                    <Check className="h-3.5 w-3.5" /> Accept
+                    <Check className="h-4 w-4 sm:h-3.5 sm:w-3.5" />
+                    <span className="hidden sm:inline">Accept</span>
                   </button>
                 </li>
               );
@@ -118,9 +126,12 @@ export function FriendsPage() {
                     type="button"
                     disabled={friendsState.cancellingKey === rowKey}
                     onClick={() => friendsState.cancelSentRequest(request)}
-                    className="flex items-center gap-1 rounded-lg border border-line px-3 py-1.5 text-sm font-semibold text-ink-soft hover:text-neg-600 disabled:opacity-50"
+                    aria-label={`Cancel the request to ${request.user?.name ?? request.identifier}`}
+                    title="Cancel request"
+                    className="flex items-center gap-1 rounded-lg border border-line p-2 text-sm font-semibold text-ink-soft hover:text-neg-600 disabled:opacity-50 sm:px-3 sm:py-1.5"
                   >
-                    <X className="h-3.5 w-3.5" /> Cancel
+                    <X className="h-4 w-4 sm:h-3.5 sm:w-3.5" />
+                    <span className="hidden sm:inline">Cancel</span>
                   </button>
                 </li>
               );
