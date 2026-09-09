@@ -5,6 +5,7 @@ import Link from "next/link";
 import {
   Check,
   ChevronRight,
+  Clock,
   HandCoins,
   Handshake,
   Send,
@@ -84,6 +85,33 @@ export function FriendsPage() {
                 </li>
               );
             })}
+          </ul>
+        </section>
+      ) : null}
+
+      {/* What you sent and are still waiting on. A typed email or phone is
+          echoed as typed and never resolved to a name; only someone picked
+          off a screen (or reached through your profile link) shows as a
+          person. Nothing to open yet: there is no ledger until they accept. */}
+      {friendsState.outgoingRequests.length > 0 ? (
+        <section className="space-y-3 rounded-2xl border border-line bg-card p-4">
+          <h2 className="font-semibold">Sent requests</h2>
+          <ul className="space-y-3">
+            {friendsState.outgoingRequests.map((request) => (
+              <li key={request.user?.id ?? request.identifier} className="flex items-center gap-3">
+                {request.user ? (
+                  <Avatar user={request.user} />
+                ) : (
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-paper text-ink-soft">
+                    <Clock className="h-4 w-4" />
+                  </span>
+                )}
+                <div className="min-w-0 flex-1">
+                  <p className="truncate font-medium">{request.user?.name ?? request.identifier}</p>
+                  <p className="text-xs text-ink-soft">Waiting for them to accept</p>
+                </div>
+              </li>
+            ))}
           </ul>
         </section>
       ) : null}

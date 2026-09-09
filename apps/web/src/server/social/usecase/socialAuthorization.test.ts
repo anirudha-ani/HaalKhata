@@ -1,15 +1,17 @@
-/** Authorization tests for social identity lookup and friendship creation. */
+/** Tests for social identity lookup, friendship creation, and what each side of a pending request may see. */
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { UserRow } from "@/server/auth/repo/users.repo";
 
 vi.mock("@/server/social/repo/friendships.repo", () => ({
+  countIncomingFriendRequests: vi.fn(),
   deleteFriendRequest: vi.fn(),
   friendshipExists: vi.fn(),
   insertFriendRequest: vi.fn(),
   insertFriendship: vi.fn(),
   listFriendIds: vi.fn(),
   listIncomingFriendRequestIds: vi.fn(),
+  listOutgoingFriendRequests: vi.fn(),
 }));
 vi.mock("@/server/auth/repo/users.repo", () => ({
   findUserByEmail: vi.fn(),
@@ -53,16 +55,25 @@ vi.mock("@/server/expense/usecase/balance.usecase", () => ({
   netWithUser: vi.fn(),
 }));
 
-import { findUserById } from "@/server/auth/repo/users.repo";
+import { findUserById, findUsersByIds } from "@/server/auth/repo/users.repo";
 import { findOrCreateUserByEmail } from "@/server/auth/usecase/auth.usecase";
+import { getOverallBalances } from "@/server/expense/usecase/balance.usecase";
 import {
+  countIncomingFriendRequests,
   deleteFriendRequest,
   friendshipExists,
   insertFriendRequest,
   insertFriendship,
+  listFriendIds,
+  listIncomingFriendRequestIds,
+  listOutgoingFriendRequests,
 } from "@/server/social/repo/friendships.repo";
-import { insertNotifications } from "@/server/social/repo/notifications.repo";
-import { addFriend, respondFriendRequest } from "./social.usecase";
+import {
+  countUnread,
+  insertNotifications,
+  listNotificationsByUser,
+} from "@/server/social/repo/notifications.repo";
+import { addFriend, listFriends, listNotifications, respondFriendRequest } from "./social.usecase";
 
 const CALLER = "user-caller";
 const TARGET = "user-target";
@@ -101,7 +112,8 @@ describe("addFriend contact lookup", () => {
     await expect(addFriend(CALLER, { email: TARGET_EMAIL, phone: "" })).resolves.toEqual({});
 
     expect(insertFriendship).not.toHaveBeenCalled();
-    expect(insertFriendRequest).toHaveBeenCalledWith(CALLER, TARGET, expect.anything());
+    // The typed address rides along so the sender's list can echo it back.
+    expect(insertFriendRequest).toHaveBeenCalledWith(CALLER, TARGET, expect.anything(), TARGET_EMAIL);
     expect(insertNotifications).toHaveBeenCalledWith(
       [TARGET],
       expect.objectContaining({ type: "friend_request", link: "/friends" }),
@@ -173,5 +185,79 @@ describe("respondFriendRequest", () => {
       code: "not_found",
     });
     expect(insertFriendship).not.toHaveBeenCalled();
+  });
+});
+
+describe("what each side of a pending request may see", () => {
+  const SENT_AT = "2026-09-08T10:00:00.000Z";
+  const PICKED = "user-picked";
+
+  beforeEach(() => {
+    vi.mocked(getOverallBalances).mockResolvedValue({ counterparties: [] } as never);
+    vi.mocked(listFriendIds).mockResolvedValue([]);
+    vi.mocked(listIncomingFriendRequestIds).mockResolvedValue([]);
+    vi.mocked(findUsersByIds).mockImplementation(async (userIds) =>
+      userIds.map((userId) => ({ ...targetRow, id: userId, name: `Name of ${userId}` })),
+    );
+  });
+
+  it("keeps nothing to echo when the sender picked the recipient by id", async () => {
+    vi.mocked(findUserById).mockImplementation(async (lookupId) =>
+      lookupId === CALLER ? { ...targetRow, id: CALLER, name: "Caller" } : targetRow,
+    );
+
+    await addFriend(CALLER, { email: "", phone: "", userId: TARGET });
+
+    expect(insertFriendRequest).toHaveBeenCalledOnce();
+    expect(vi.mocked(insertFriendRequest).mock.calls[0]?.[3]).toBeUndefined();
+  });
+
+  it("echoes a typed identifier back to the sender without resolving the account", async () => {
+    vi.mocked(listOutgoingFriendRequests).mockResolvedValue([
+      { recipient_id: TARGET, recipient_identifier: TARGET_EMAIL, created_at: SENT_AT },
+    ]);
+
+    const result = await listFriends(CALLER);
+
+    expect(result.outgoingRequests).toEqual([{ identifier: TARGET_EMAIL, createdAt: SENT_AT }]);
+    expect(findUsersByIds).not.toHaveBeenCalledWith(expect.arrayContaining([TARGET]));
+  });
+
+  it("shows a recipient the sender picked by id through the minimal projection", async () => {
+    vi.mocked(listOutgoingFriendRequests).mockResolvedValue([
+      { recipient_id: PICKED, recipient_identifier: null, created_at: SENT_AT },
+    ]);
+
+    const result = await listFriends(CALLER);
+
+    expect(result.outgoingRequests).toEqual([
+      {
+        user: expect.objectContaining({ id: PICKED, name: `Name of ${PICKED}`, email: "", phone: "" }),
+        createdAt: SENT_AT,
+      },
+    ]);
+  });
+
+  it("drops a picked recipient who has since merged away", async () => {
+    vi.mocked(listOutgoingFriendRequests).mockResolvedValue([
+      { recipient_id: PICKED, recipient_identifier: null, created_at: SENT_AT },
+    ]);
+    vi.mocked(findUsersByIds).mockResolvedValue([
+      { ...targetRow, id: PICKED, merged_into: "user-keeper" },
+    ]);
+
+    await expect(listFriends(CALLER)).resolves.toMatchObject({ outgoingRequests: [] });
+  });
+
+  it("counts the caller's unanswered incoming requests alongside notifications", async () => {
+    vi.mocked(listNotificationsByUser).mockResolvedValue([]);
+    vi.mocked(countUnread).mockResolvedValue(2);
+    vi.mocked(countIncomingFriendRequests).mockResolvedValue(3);
+
+    await expect(listNotifications(TARGET)).resolves.toMatchObject({
+      unreadCount: 2,
+      pendingFriendRequestCount: 3,
+    });
+    expect(countIncomingFriendRequests).toHaveBeenCalledWith(TARGET);
   });
 });
