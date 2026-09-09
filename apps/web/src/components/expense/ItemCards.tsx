@@ -74,8 +74,9 @@ function fullName(person: User, currentUserId: string): string {
  * the keyboard path is the same as ever. **Portions per
  * card**: most lines are on/off; the rare "two chais against one" opens a
  * stepper on that card alone instead of turning every cell into a number
- * box. The quantity the scanner read is shown after the name and edited in
- * the same panel, since a mis-read count is one of the things people fix.
+ * box. The same panel holds the line's quantity, shown after the name once
+ * it is above one: for a scanned bill that is the count the scanner read,
+ * and a mis-read count is one of the things people fix.
  *
  * The running per-person totals live in the owning form's SplitSummary,
  * which every split mode shares, so the cards carry only their own notes.
@@ -88,7 +89,7 @@ export function ItemCards({
   people,
   currentUserId,
   currency,
-  showQuantity = false,
+  scanned = false,
   taxInput,
   tipInput,
   itemsTotalCents,
@@ -109,8 +110,8 @@ export function ItemCards({
   currentUserId: string;
   /** ISO 4217 code used to format money. */
   currency: string;
-  /** Whether quantities are shown and editable (the scanner reads them off the receipt). */
-  showQuantity?: boolean;
+  /** Whether the draft came off a receipt photo, which changes how the quantity row is worded. */
+  scanned?: boolean;
   /** Raw tax money input. */
   taxInput: string;
   /** Raw tip money input. */
@@ -415,22 +416,18 @@ export function ItemCards({
 
                 {expanded ? (
                   <div className="space-y-2 rounded-xl border border-line bg-paper p-2.5 text-sm">
-                    {showQuantity ? (
-                      <div className="flex items-center gap-2 border-b border-dashed border-line pb-2">
-                        <span className="flex-1 font-medium">
-                          Quantity on the receipt
-                        </span>
-                        <Stepper
-                          value={quantity}
-                          min={1}
-                          max={MAX_ITEM_QUANTITY}
-                          label="on the receipt"
-                          onChange={(next) =>
-                            onUpdateItem(index, { quantity: next })
-                          }
-                        />
-                      </div>
-                    ) : null}
+                    <div className="flex items-center gap-2 border-b border-dashed border-line pb-2">
+                      <span className="flex-1 font-medium">
+                        {scanned ? "Quantity on the receipt" : "Quantity"}
+                      </span>
+                      <Stepper
+                        value={quantity}
+                        min={1}
+                        max={MAX_ITEM_QUANTITY}
+                        label={scanned ? "on the receipt" : "of this item"}
+                        onChange={(next) => onUpdateItem(index, { quantity: next })}
+                      />
+                    </div>
                     <p className="text-xs text-ink-soft">
                       {onItem.length > 0
                         ? "How many portions each person had of this line"

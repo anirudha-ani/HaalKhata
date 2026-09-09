@@ -25,10 +25,9 @@ export function ItemizedEditor({
   currency: string;
 }) {
   return (
-    // Quantities only earn a place when the numbers were read off paper;
-    // items typed by hand have no quantity to show.
+    // A scanned bill words its quantity row as what the scanner read.
     <ItemCards
-      showQuantity={form.fromReceipt}
+      scanned={form.fromReceipt}
       items={form.items}
       people={form.people}
       currentUserId={form.me?.id ?? ""}
