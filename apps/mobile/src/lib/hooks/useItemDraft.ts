@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { nextDraftKey } from "@haalkhata/shared/expense/draftKey";
+import { centsToInput } from "@haalkhata/shared/money/money";
 import {
   draftCompleteness,
   draftTotals,
@@ -162,6 +163,15 @@ export function useItemDraft(
     setTax: setTaxInput,
     tip: tipInput,
     setTip: setTipInput,
+    /**
+     * Sets the tip to a percentage of the items subtotal, the way tip is
+     * normally reckoned on a restaurant bill.
+     *
+     * @param percent - Whole-number percentage of the items subtotal.
+     */
+    applyTipPercent: (percent: number) => {
+      setTipInput(centsToInput(Math.round((totals.itemsTotalCents * percent) / 100), currency));
+    },
     ...totals,
     unassignedCount: unassignedCount(items ?? []),
     completeness: draftCompleteness(items ?? [], totals),

@@ -1,16 +1,19 @@
-/** New/edit expense form: receipt panel, context picker, basics (amount/date/category), payer + split editors, submit. */
+/** New/edit expense form: receipt panel, context picker, basics (amount/date/category), payer + split editors, summary, submit. */
 
-import { StyleSheet, Text, View } from "react-native";
+import { StyleSheet, View } from "react-native";
+import { SplitSummary } from "@/components/expense/SplitSummary";
 import { PeoplePicker } from "@/components/people/PeoplePicker";
 import { useResponsiveLayout } from "@/components/shell/hooks/useResponsiveLayout";
 import { Button } from "@/components/ui/Button";
 import { Chip } from "@/components/ui/Chip";
 import { DateField } from "@/components/ui/DateField";
 import { TextField } from "@/components/ui/TextField";
+import { useErrorToast } from "@/components/ui/ToastProvider";
 import { centsToInput } from "@haalkhata/shared/money/money";
 import { CATEGORIES } from "@haalkhata/shared/money/money.constants";
-import { colors, spacing } from "@/lib/theme/theme";
+import { spacing } from "@/lib/theme/theme";
 import type { ExpenseFormInitial } from "../../../../utils/initialValues";
+import { previewSplitShares } from "../../../../utils/splitForm";
 import { useNewExpense } from "../../hooks/useNewExpense";
 import type { useNewExpenseAPI } from "../../hooks/useNewExpenseAPI";
 import { PayerEditor } from "../PayerEditor/PayerEditor";
@@ -21,8 +24,10 @@ import { MAX_EXPENSE_DESCRIPTION_LENGTH, MAX_EXPENSE_NOTES_LENGTH } from "@haalk
 /**
  * Renders the full expense form: the receipt panel (a photo fills the form
  * in), the people picker (chips, a searchable friend list, the group), the basic fields (description,
- * amount, date, category), the payer and split editors, optional notes,
- * validation errors, and the submit button.
+ * amount, date, category), the payer and split editors, a who-owes-what
+ * summary for whichever split is selected (a panel beside the form on wide
+ * layouts, a strip that opens in place on phones), optional notes, and the
+ * submit button. Save and scan errors surface through the screen's toast.
  *
  * @param props - Component props.
  * @returns The expense form for creating or editing an expense.
@@ -42,6 +47,39 @@ export function ExpenseForm({
   const form = useNewExpense(expenseAPI, initial, editExpenseId);
   const currency = form.selectedGroup?.currency ?? form.me?.defaultCurrency ?? "USD";
   const { isExpanded } = useResponsiveLayout();
+  useErrorToast(form.error);
+
+  // The same numbers in two places: a panel beside the form on wide layouts,
+  // a strip under the Split section on phones.
+  const summaryProps = {
+    people: form.people,
+    meId: form.me?.id,
+    currency,
+    shares: form.isItemized
+      ? form.itemDraft.previewShares
+      : previewSplitShares({
+          splitType: form.splitType,
+          totalCents: form.totalCents,
+          participantIds: form.participantIds,
+          inputs: form.splitInputs,
+          currency,
+        }),
+    totalCents: form.totalCents ?? 0,
+    breakdown: form.isItemized
+      ? {
+          itemsTotalCents: form.itemDraft.itemsTotalCents,
+          taxCents: form.itemDraft.taxCents,
+          tipCents: form.itemDraft.tipCents,
+        }
+      : undefined,
+    warnings: form.isItemized
+      ? form.itemDraft.warnings
+      : !form.splitCheck.ok && form.totalCents !== null
+        ? [form.splitCheck.message]
+        : [],
+    ready: form.isItemized ? (form.itemDraft.items?.length ?? 0) > 0 : (form.totalCents ?? 0) > 0,
+    readyMessage: form.isItemized ? "Everything is assigned" : "Adds up to the total",
+  };
 
   return (
     <View style={[styles.form, isExpanded ? styles.formExpanded : null]}>
@@ -49,6 +87,7 @@ export function ExpenseForm({
         {/* Editing cannot re-scan: re-parsing a photo over a saved expense
             would silently replace its lines. */}
         {form.isEdit ? null : <ReceiptPanel form={form} />}
+        {isExpanded ? <SplitSummary layout="panel" {...summaryProps} /> : null}
 
         <PeoplePicker
           friendIds={form.friendIds}
@@ -105,6 +144,7 @@ export function ExpenseForm({
       <View style={styles.formColumn}>
         <PayerEditor form={form} />
         <SplitEditor currency={currency} form={form} />
+        {isExpanded ? null : <SplitSummary layout="strip" {...summaryProps} />}
 
         <TextField
           maxLength={MAX_EXPENSE_NOTES_LENGTH}
@@ -113,8 +153,6 @@ export function ExpenseForm({
           placeholder="Notes (optional)"
           value={form.notes}
         />
-
-        {form.error ? <Text style={styles.error}>{form.error}</Text> : null}
 
         <Button
           busy={form.isSaving}
@@ -139,11 +177,6 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     flexWrap: "wrap",
     gap: spacing.sm,
-  },
-  error: {
-    color: colors.brand600,
-    fontSize: 14,
-    fontWeight: "500",
   },
   form: {
     gap: spacing.xl,
