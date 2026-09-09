@@ -4,7 +4,10 @@
 import { CATEGORIES } from "@haalkhata/shared/money/money.constants";
 import { centsToInput } from "@haalkhata/shared/money/money";
 import { PeoplePicker } from "@/components/people/PeoplePicker";
+import { ItemizedSummary } from "@/components/expense/ItemizedSummary";
 import { ErrorPopup } from "@/components/ui/ErrorPopup";
+import { itemizedWarnings } from "@/lib/expense/itemizedWarnings";
+import { parseMoneyInput } from "@haalkhata/shared/money/money";
 import type { ExpenseFormInitial } from "../../../../utils/initialValues";
 import { PayerEditor } from "../PayerEditor/PayerEditor";
 import { ReceiptPanel } from "../ReceiptPanel/ReceiptPanel";
@@ -43,9 +46,12 @@ export function ExpenseForm({
 }) {
   const form = useNewExpense(expenseAPI, initial, editExpenseId);
   const currency = form.selectedGroup?.currency ?? form.me?.defaultCurrency ?? "USD";
-  // Once there is a photo to check the numbers against, it earns a column of
-  // its own — sticky, so it stays beside the item grid all the way down.
+  // Two things earn the form a sticky sidebar column on desktop: a photo to
+  // check the numbers against, and an itemized split, whose who-owes-what
+  // panel then sits beside the cards all the way down instead of as a strip
+  // at the bottom of the phone layout.
   const hasReceipt = form.receiptUrl !== "";
+  const hasSidebar = hasReceipt || form.isItemized;
 
   const fields = (
     <>
@@ -143,7 +149,7 @@ export function ExpenseForm({
   );
 
   return (
-    <div className={`mx-auto space-y-6 ${hasReceipt ? "max-w-6xl" : "max-w-xl"}`}>
+    <div className={`mx-auto space-y-6 ${hasSidebar ? "max-w-6xl" : "max-w-xl"}`}>
       <h1 className="text-3xl font-bold">{form.isEdit ? "Edit expense" : "Add expense"}</h1>
 
       {/* Editing cannot re-scan: an itemized expense is not editable here at
@@ -154,11 +160,27 @@ export function ExpenseForm({
       ) : (
         <div
           className={
-            hasReceipt ? "grid gap-6 lg:grid-cols-[minmax(0,26rem)_minmax(0,1fr)]" : "space-y-6"
+            hasSidebar ? "grid gap-6 lg:grid-cols-[minmax(0,26rem)_minmax(0,1fr)]" : "space-y-6"
           }
         >
-          <div className={hasReceipt ? "lg:sticky lg:top-6 lg:self-start" : ""}>
+          <div className={hasSidebar ? "space-y-6 lg:sticky lg:top-6 lg:self-start" : ""}>
             <ReceiptPanel form={form} />
+            {form.isItemized ? (
+              <ItemizedSummary
+                layout="panel"
+                className="hidden lg:block"
+                people={form.people}
+                currentUserId={form.me?.id ?? ""}
+                currency={currency}
+                shares={form.previewShares}
+                totalCents={form.totalCents ?? 0}
+                itemsTotalCents={form.itemsTotalCents}
+                taxCents={parseMoneyInput(form.taxInput, currency) ?? 0}
+                tipCents={parseMoneyInput(form.tipInput, currency) ?? 0}
+                warnings={itemizedWarnings(form.items, currency)}
+                hasItems={form.items.length > 0}
+              />
+            ) : null}
           </div>
           <div className="space-y-6">{fields}</div>
         </div>

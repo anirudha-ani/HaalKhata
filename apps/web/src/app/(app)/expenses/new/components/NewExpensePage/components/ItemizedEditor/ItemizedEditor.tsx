@@ -46,6 +46,8 @@ export function ItemizedEditor({
       onTaxChange={form.setTaxInput}
       onTipChange={form.setTipInput}
       onApplyTipPercent={form.applyTipPercent}
+      // The form's sidebar shows the same numbers as a panel from lg up.
+      stripClassName="lg:hidden"
     />
   );
 }

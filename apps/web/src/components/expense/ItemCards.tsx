@@ -6,9 +6,15 @@ import { useEffect, useId, useRef, useState } from "react";
 import type { User } from "@haalkhata/protogen/common/v1/common_pb";
 import { formatMoney, parseMoneyInput } from "@haalkhata/shared/money/money";
 import { MAX_EXPENSE_ITEM_NAME_LENGTH } from "@haalkhata/shared/text/limits";
+import { itemizedWarnings } from "@/lib/expense/itemizedWarnings";
 import { percentOfItems } from "@/lib/expense/splitForm";
 import { Avatar } from "@/components/ui/Avatar";
-import { MAX_ASSIGNEE_WEIGHT, MAX_ITEM_QUANTITY, TIP_PERCENT_PRESETS } from "./itemCards.constants";
+import {
+  MAX_ASSIGNEE_WEIGHT,
+  MAX_ITEM_QUANTITY,
+  TIP_PERCENT_PRESETS,
+} from "./itemCards.constants";
+import { ItemizedSummary } from "./ItemizedSummary";
 
 /** One editable line item, however the owning form stores the rest of its draft. */
 export interface CardItem {
@@ -65,16 +71,19 @@ function fullName(person: User, currentUserId: string): string {
  * on a phone.
  *
  * Two things make a long receipt fast. **Claim mode**: pick a person in the
- * bar at the top and each card offers one large "had this" toggle for them,
- * the way a table actually settles up, one person at a time. **Portions per
+ * bar at the top and every card becomes a tap target for them, the way a
+ * table actually settles up, one person at a time; the chips stay put, so
+ * the keyboard path is the same as ever. **Portions per
  * card**: most lines are on/off; the rare "two chais against one" opens a
  * stepper on that card alone instead of turning every cell into a number
  * box. The quantity the scanner read is shown after the name and edited in
  * the same panel, since a mis-read count is one of the things people fix.
  *
- * The per-person summary sticks to the bottom of the scrolling area while
- * the cards are in view, so the running totals and anything still
- * unassigned are always readable without leaving the list.
+ * A per-person summary strip sticks to the bottom of the scrolling area
+ * while the cards are in view, so the running totals and anything still
+ * unassigned are readable without leaving the list. Where the owning form
+ * shows the same numbers as a sidebar panel, it hides the strip through
+ * `stripClassName`.
  *
  * @param props - Component props.
  * @returns The cards, the tax and tip rows, and the summary strip.
@@ -98,6 +107,7 @@ export function ItemCards({
   onTaxChange,
   onTipChange,
   onApplyTipPercent,
+  stripClassName = "",
 }: {
   /** The line items to render, in order. */
   items: CardItem[];
@@ -135,6 +145,8 @@ export function ItemCards({
   onTipChange: (value: string) => void;
   /** Sets the tip to a percentage of the items subtotal. */
   onApplyTipPercent: (percent: number) => void;
+  /** Extra classes for the summary strip, e.g. `lg:hidden` when a sidebar panel takes over. */
+  stripClassName?: string;
 }) {
   const fieldId = useId();
   const listRef = useRef<HTMLUListElement>(null);
@@ -149,31 +161,17 @@ export function ItemCards({
   useEffect(() => {
     if (!focusLastAdded.current) return;
     focusLastAdded.current = false;
-    const inputs = listRef.current?.querySelectorAll<HTMLInputElement>("[data-item-name]");
+    const inputs =
+      listRef.current?.querySelectorAll<HTMLInputElement>("[data-item-name]");
     inputs?.[inputs.length - 1]?.focus();
   }, [items]);
 
-  const taxPercent = percentOfItems(parseMoneyInput(taxInput, currency) ?? 0, itemsTotalCents);
-  const tipPercent = percentOfItems(parseMoneyInput(tipInput, currency) ?? 0, itemsTotalCents);
 
-  // What the summary has to warn about, from the same rules the submit check uses.
-  let unassignedCents = 0;
-  let missingAmounts = 0;
-  for (const item of items) {
-    const cents = parseMoneyInput(item.total, currency);
-    if (cents === null || cents <= 0) {
-      missingAmounts += 1;
-      continue;
-    }
-    if (!Object.values(item.assignees).some((weight) => weight > 0)) unassignedCents += cents;
-  }
-  const warnings: string[] = [];
-  if (unassignedCents > 0) warnings.push(`${formatMoney(unassignedCents, currency)} unassigned`);
-  if (missingAmounts > 0) {
-    warnings.push(
-      `${missingAmounts} item${missingAmounts === 1 ? "" : "s"} need${missingAmounts === 1 ? "s" : ""} an amount`,
-    );
-  }
+  const taxCents = parseMoneyInput(taxInput, currency) ?? 0;
+  const tipCents = parseMoneyInput(tipInput, currency) ?? 0;
+  const taxPercent = percentOfItems(taxCents, itemsTotalCents);
+  const tipPercent = percentOfItems(tipCents, itemsTotalCents);
+  const warnings = itemizedWarnings(items, currency);
 
   return (
     <div className="space-y-3">
@@ -181,18 +179,24 @@ export function ItemCards({
           stays in view while you work down a long receipt. */}
       {people.length > 0 ? (
         <div className="sticky top-0 z-10 -mx-1 rounded-xl bg-paper/95 px-1 py-2 backdrop-blur-sm">
-          <p className="mb-1.5 text-xs text-ink-soft">
-            {claimer ? (
-              <>
-                Tap the items{" "}
-                <strong className="font-semibold text-brand-700">
-                  {fullName(claimer, currentUserId)}
-                </strong>{" "}
-                had
-              </>
-            ) : (
-              "Who had what? Tap a person, then their items."
-            )}
+          <p className="mb-1.5 flex items-baseline justify-between gap-3 text-xs text-ink-soft">
+            <span>
+              {claimer ? (
+                <>
+                  Tap the items{" "}
+                  <strong className="font-semibold text-brand-700">
+                    {fullName(claimer, currentUserId)}
+                  </strong>{" "}
+                  had
+                </>
+              ) : (
+                "Who had what? Tap a person, then their items."
+              )}
+            </span>
+            <span className="shrink-0 tabular-nums">
+              {items.length} item{items.length === 1 ? "" : "s"} ·{" "}
+              {people.length} people
+            </span>
           </p>
           <div className="flex flex-wrap items-center gap-2">
             {people.map((person) => {
@@ -231,16 +235,21 @@ export function ItemCards({
         {items.map((item, index) => {
           const cents = parseMoneyInput(item.total, currency);
           const hasAmount = cents !== null && cents > 0;
-          const onItem = people.filter((person) => (item.assignees[person.id] ?? 0) > 0);
-          const everyoneOn = people.length > 0 && onItem.length === people.length;
+          const onItem = people.filter(
+            (person) => (item.assignees[person.id] ?? 0) > 0,
+          );
+          const everyoneOn =
+            people.length > 0 && onItem.length === people.length;
           const unassigned = onItem.length === 0;
           const sumWeights = onItem.reduce(
             (runningTotal, person) => runningTotal + item.assignees[person.id],
             0,
           );
           const quantity = item.quantity ?? 1;
-          const claimerOn = claimer ? (item.assignees[claimer.id] ?? 0) > 0 : false;
-          const expanded = expandedKey === item.key && !claimer;
+          const claimerOn = claimer
+            ? (item.assignees[claimer.id] ?? 0) > 0
+            : false;
+          const expanded = expandedKey === item.key;
           const note = !hasAmount
             ? "Needs an amount"
             : unassigned
@@ -249,10 +258,39 @@ export function ItemCards({
           return (
             <li key={item.key}>
               <article
-                className={`space-y-2.5 rounded-2xl border p-3 transition-colors ${
-                  hasAmount && unassigned ? "border-neg-600/20 bg-neg-50" : "border-line bg-card"
-                } ${claimerOn ? "border-brand-500 ring-2 ring-brand-100" : ""}`}
+                // In claim mode the whole card is the target; the inputs and
+                // chips inside keep their own behaviour. Pointer convenience
+                // only: the chips remain the keyboard path, so no role is
+                // claimed here.
+                onClick={
+                  claimer
+                    ? (event) => {
+                        if (
+                          (event.target as HTMLElement).closest("input, button")
+                        )
+                          return;
+                        onSetWeight(index, claimer.id, claimerOn ? 0 : 1);
+                      }
+                    : undefined
+                }
+                className={`relative space-y-2.5 rounded-2xl border p-3 transition-[border-color,box-shadow] ${
+                  hasAmount && unassigned
+                    ? "border-neg-600/20 bg-neg-50"
+                    : "border-line bg-card"
+                } ${
+                  claimer
+                    ? claimerOn
+                      ? "cursor-pointer border-brand-500 ring-3 ring-brand-100"
+                      : "cursor-pointer border-dashed"
+                    : ""
+                }`}
               >
+                {claimer && claimerOn ? (
+                  <span className="absolute -top-2.5 right-3 inline-flex h-5 items-center gap-1 rounded-full bg-brand-600 px-2 text-[11px] font-bold text-white">
+                    <Check className="h-3 w-3" />{" "}
+                    {fullName(claimer, currentUserId)}
+                  </span>
+                ) : null}
                 <div className="flex items-center gap-2">
                   <div className="relative min-w-0 flex-1">
                     <input
@@ -264,7 +302,9 @@ export function ItemCards({
                       }`}
                       maxLength={MAX_EXPENSE_ITEM_NAME_LENGTH}
                       value={item.name}
-                      onChange={(event) => onUpdateItem(index, { name: event.target.value })}
+                      onChange={(event) =>
+                        onUpdateItem(index, { name: event.target.value })
+                      }
                       className={`${fieldClass} w-full ${quantity > 1 ? "pr-12" : ""}`}
                     />
                     {/* The count reads as part of the line, the way a receipt
@@ -284,7 +324,9 @@ export function ItemCards({
                     placeholder="0.00"
                     aria-label={`Amount for item ${index + 1}`}
                     value={item.total}
-                    onChange={(event) => onUpdateItem(index, { total: event.target.value })}
+                    onChange={(event) =>
+                      onUpdateItem(index, { total: event.target.value })
+                    }
                     onKeyDown={(event) => {
                       if (event.key !== "Enter") return;
                       event.preventDefault();
@@ -304,103 +346,103 @@ export function ItemCards({
                   </button>
                 </div>
 
-                {claimer ? (
-                  /* One large target per card in claim mode: a button, so it
-                     works from the keyboard and never nests controls. */
-                  <button
-                    type="button"
-                    onClick={() => onSetWeight(index, claimer.id, claimerOn ? 0 : 1)}
-                    aria-pressed={claimerOn}
-                    className={`flex h-10 w-full items-center justify-center gap-2 rounded-xl border text-sm font-semibold transition-colors ${
-                      claimerOn
-                        ? "border-brand-500 bg-brand-50 text-brand-700"
-                        : "border-dashed border-line text-ink-soft hover:border-brand-300 hover:text-brand-700"
-                    }`}
-                  >
-                    {claimerOn ? <Check className="h-4 w-4" /> : null}
-                    {claimerOn
-                      ? `${fullName(claimer, currentUserId)} had this`
-                      : `Tap if ${fullName(claimer, currentUserId)} had this`}
-                  </button>
-                ) : (
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    {people.length > 0 ? (
-                      <button
-                        type="button"
-                        onClick={() =>
-                          onSetAssignees(
-                            index,
-                            everyoneOn
-                              ? {}
-                              : Object.fromEntries(people.map((person) => [person.id, 1])),
-                          )
-                        }
-                        aria-pressed={everyoneOn}
-                        className={`h-8 rounded-full border px-2.5 text-xs font-medium transition-colors ${
-                          everyoneOn
-                            ? "border-ink bg-ink text-card"
-                            : "border-line bg-paper text-ink-soft hover:border-brand-300"
-                        }`}
-                      >
-                        Everyone
-                      </button>
-                    ) : null}
-                    {people.map((person) => {
-                      const weight = item.assignees[person.id] ?? 0;
-                      const isOn = weight > 0;
-                      return (
-                        <button
-                          key={person.id}
-                          type="button"
-                          onClick={() => onSetWeight(index, person.id, isOn ? 0 : 1)}
-                          aria-pressed={isOn}
-                          aria-label={`${isOn ? "Remove" : "Add"} ${fullName(person, currentUserId)} ${
-                            isOn ? "from" : "to"
-                          } item ${index + 1}`}
-                          className={`flex h-8 items-center gap-1.5 rounded-full border pr-2.5 pl-1 text-xs font-medium transition-colors ${
-                            isOn
-                              ? "border-brand-500 bg-brand-50 text-brand-700"
-                              : "border-line bg-paper text-ink-soft hover:border-brand-300"
-                          }`}
-                        >
-                          <span className={isOn ? "" : "opacity-50"}>
-                            <Avatar user={person} size="xsmall" />
-                          </span>
-                          {shortName(person, currentUserId)}
-                          {weight > 1 ? (
-                            <span className="text-[11px] text-brand-700 tabular-nums">
-                              {weight} portions
-                            </span>
-                          ) : null}
-                        </button>
-                      );
-                    })}
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {people.length > 0 ? (
                     <button
                       type="button"
-                      onClick={() => setExpandedKey(expanded ? null : item.key)}
-                      aria-expanded={expanded}
-                      className={`ml-auto h-8 rounded-full border px-2.5 text-xs transition-colors ${
-                        expanded
-                          ? "border-brand-200 text-brand-700"
-                          : "border-dashed border-line text-ink-soft hover:border-brand-200 hover:text-brand-700"
+                      onClick={() =>
+                        onSetAssignees(
+                          index,
+                          everyoneOn
+                            ? {}
+                            : Object.fromEntries(
+                                people.map((person) => [person.id, 1]),
+                              ),
+                        )
+                      }
+                      aria-pressed={everyoneOn}
+                      className={`h-8 rounded-full border px-2.5 text-xs font-medium transition-colors ${
+                        everyoneOn
+                          ? "border-ink bg-ink text-card"
+                          : "border-line bg-paper text-ink-soft hover:border-brand-300"
                       }`}
                     >
-                      Portions
+                      Everyone
                     </button>
-                  </div>
-                )}
+                  ) : null}
+                  {people.map((person) => {
+                    const weight = item.assignees[person.id] ?? 0;
+                    const isOn = weight > 0;
+                    // A lit chip takes the person's own avatar colour, so a
+                    // fully assigned card reads as four people, not four
+                    // alarms, and the same colour carries into the summary.
+                    const tint = person.avatarColor || "#b03a25";
+                    return (
+                      <button
+                        key={person.id}
+                        type="button"
+                        onClick={() =>
+                          onSetWeight(index, person.id, isOn ? 0 : 1)
+                        }
+                        aria-pressed={isOn}
+                        aria-label={`${isOn ? "Remove" : "Add"} ${fullName(person, currentUserId)} ${
+                          isOn ? "from" : "to"
+                        } item ${index + 1}`}
+                        style={
+                          isOn
+                            ? {
+                                borderColor: tint,
+                                backgroundColor: `${tint}1f`,
+                              }
+                            : undefined
+                        }
+                        className={`flex h-8 items-center gap-1.5 rounded-full border pr-2.5 pl-1 text-[13px] transition-colors ${
+                          isOn
+                            ? "font-semibold text-ink"
+                            : "border-line bg-paper font-medium text-ink-soft hover:border-brand-300"
+                        }`}
+                      >
+                        <span className={isOn ? "" : "opacity-50"}>
+                          <Avatar user={person} size="xsmall" />
+                        </span>
+                        {shortName(person, currentUserId)}
+                        {weight > 1 ? (
+                          <span className="text-[11px] text-brand-700 tabular-nums">
+                            {weight} portions
+                          </span>
+                        ) : null}
+                      </button>
+                    );
+                  })}
+                  <button
+                    type="button"
+                    onClick={() => setExpandedKey(expanded ? null : item.key)}
+                    aria-expanded={expanded}
+                    className={`ml-auto h-8 rounded-full border px-2.5 text-xs transition-colors ${
+                      expanded
+                        ? "border-brand-200 text-brand-700"
+                        : "border-dashed border-line text-ink-soft hover:border-brand-200 hover:text-brand-700"
+                    }`}
+                  >
+                    Portions
+                  </button>
+                </div>
 
                 {expanded ? (
                   <div className="space-y-2 rounded-xl border border-line bg-paper p-2.5 text-sm">
                     {showQuantity ? (
                       <div className="flex items-center gap-2 border-b border-dashed border-line pb-2">
-                        <span className="flex-1 font-medium">Quantity on the receipt</span>
+                        <span className="flex-1 font-medium">
+                          Quantity on the receipt
+                        </span>
                         <Stepper
                           value={quantity}
                           min={1}
                           max={MAX_ITEM_QUANTITY}
                           label="on the receipt"
-                          onChange={(next) => onUpdateItem(index, { quantity: next })}
+                          onChange={(next) =>
+                            onUpdateItem(index, { quantity: next })
+                          }
                         />
                       </div>
                     ) : null}
@@ -413,10 +455,16 @@ export function ItemCards({
                       const weight = item.assignees[person.id];
                       const each =
                         cents !== null && sumWeights > 0
-                          ? formatMoney(Math.round((cents * weight) / sumWeights), currency)
+                          ? formatMoney(
+                              Math.round((cents * weight) / sumWeights),
+                              currency,
+                            )
                           : "";
                       return (
-                        <div key={person.id} className="flex items-center gap-2">
+                        <div
+                          key={person.id}
+                          className="flex items-center gap-2"
+                        >
                           <Avatar user={person} size="xsmall" />
                           <span className="flex-1 truncate font-medium">
                             {fullName(person, currentUserId)}
@@ -426,7 +474,9 @@ export function ItemCards({
                             min={0}
                             max={MAX_ASSIGNEE_WEIGHT}
                             label={`for ${fullName(person, currentUserId)}`}
-                            onChange={(next) => onSetWeight(index, person.id, next)}
+                            onChange={(next) =>
+                              onSetWeight(index, person.id, next)
+                            }
                           />
                           <span className="w-16 text-right text-xs text-ink-soft tabular-nums">
                             {each}
@@ -437,7 +487,9 @@ export function ItemCards({
                   </div>
                 ) : null}
 
-                {note ? <p className="text-xs font-semibold text-neg-700">{note}</p> : null}
+                {note ? (
+                  <p className="text-xs font-semibold text-neg-700">{note}</p>
+                ) : null}
               </article>
             </li>
           );
@@ -468,7 +520,9 @@ export function ItemCards({
           />
           <span className="text-xs text-ink-soft">
             {taxPercent ? (
-              <span className="mr-1.5 font-semibold text-ink tabular-nums">{taxPercent} of items</span>
+              <span className="mr-1.5 font-semibold text-ink tabular-nums">
+                {taxPercent} of items
+              </span>
             ) : null}
             split in proportion to each person&apos;s items
           </span>
@@ -498,51 +552,28 @@ export function ItemCards({
               </button>
             ))}
             {tipPercent ? (
-              <span className="text-xs font-semibold text-ink tabular-nums">{tipPercent} of items</span>
+              <span className="text-xs font-semibold text-ink tabular-nums">
+                {tipPercent} of items
+              </span>
             ) : null}
           </span>
         </div>
       </div>
 
-      {/* Summary strip. Sticks to the bottom of the page's scroller while the
-          cards are in view: the running totals and anything still unassigned
-          are readable without leaving the list. */}
-      <div className="sticky bottom-2 z-10 space-y-1.5 rounded-2xl border border-line bg-card p-3 shadow-lg shadow-ink/10">
-        <div className="flex items-center gap-3">
-          <div className="flex min-w-0 flex-1 gap-1.5 overflow-x-auto [scrollbar-width:none]">
-            {people.map((person) => (
-              <span
-                key={person.id}
-                className="flex h-8 shrink-0 items-center gap-1.5 rounded-full border border-line bg-paper pr-2.5 pl-0.5 text-xs font-semibold tabular-nums"
-              >
-                <Avatar user={person} size="xsmall" />
-                <span className="hidden sm:inline">{shortName(person, currentUserId)}</span>
-                {formatMoney(shares[person.id] ?? 0, currency)}
-              </span>
-            ))}
-          </div>
-          <div className="shrink-0 text-right">
-            <span className="block text-[10px] font-semibold tracking-wide text-ink-soft uppercase">
-              Total
-            </span>
-            <span className="text-lg font-bold tabular-nums">{formatMoney(totalCents, currency)}</span>
-          </div>
-        </div>
-        {warnings.length > 0 ? (
-          <div className="flex flex-wrap gap-1.5">
-            {warnings.map((warning) => (
-              <span
-                key={warning}
-                className="rounded-full bg-neg-50 px-2.5 py-0.5 text-xs font-semibold text-neg-700"
-              >
-                {warning}
-              </span>
-            ))}
-          </div>
-        ) : items.length > 0 ? (
-          <p className="text-xs font-semibold text-pos-700">Everything is assigned</p>
-        ) : null}
-      </div>
+      <ItemizedSummary
+        layout="strip"
+        className={stripClassName}
+        people={people}
+        currentUserId={currentUserId}
+        currency={currency}
+        shares={shares}
+        totalCents={totalCents}
+        itemsTotalCents={itemsTotalCents}
+        taxCents={taxCents}
+        tipCents={tipCents}
+        warnings={warnings}
+        hasItems={items.length > 0}
+      />
     </div>
   );
 }
@@ -582,7 +613,9 @@ function Stepper({
       >
         −
       </button>
-      <output className="min-w-7 text-center text-sm font-semibold tabular-nums">{value}</output>
+      <output className="min-w-7 text-center text-sm font-semibold tabular-nums">
+        {value}
+      </output>
       <button
         type="button"
         disabled={value >= max}
