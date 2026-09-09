@@ -12,6 +12,7 @@ import {
   type TabItem,
 } from "@/components/shell/shell.constants";
 import { useResponsiveLayout } from "@/components/shell/hooks/useResponsiveLayout";
+import { useShellData } from "@/components/shell/hooks/useShellData";
 import { colors, radii, spacing } from "@/lib/theme/theme";
 
 /**
@@ -30,14 +31,20 @@ function tabIcon(Icon: LucideIcon) {
  * Renders one ordinary tab declaration.
  *
  * @param item - The tab's route name, label, and icon.
+ * @param badge - A count to pin to the icon; 0 shows no badge.
  * @returns The Tabs.Screen element for that destination.
  */
-function tabScreen(item: TabItem) {
+function tabScreen(item: TabItem, badge = 0) {
   return (
     <Tabs.Screen
       key={item.name}
       name={item.name}
-      options={{ tabBarIcon: tabIcon(item.icon), title: item.label }}
+      options={{
+        tabBarBadge: badge > 0 ? badge : undefined,
+        tabBarBadgeStyle: styles.badge,
+        tabBarIcon: tabIcon(item.icon),
+        title: item.label,
+      }}
     />
   );
 }
@@ -52,6 +59,9 @@ function tabScreen(item: TabItem) {
 export default function TabsLayout() {
   const router = useRouter();
   const { isTablet } = useResponsiveLayout();
+  // Friend requests waiting for an answer sit on the Friends tab, the way
+  // unread notifications sit on the bell.
+  const { pendingFriendRequestCount } = useShellData();
   return (
     <Tabs
       screenOptions={{
@@ -82,12 +92,20 @@ export default function TabsLayout() {
             : { tabBarButton: AddExpenseTabButton, title: ADD_TAB_ITEM.label }
         }
       />
-      {RIGHT_TAB_ITEMS.map(tabScreen)}
+      {RIGHT_TAB_ITEMS.map((item) =>
+        tabScreen(item, item.name === "friends" ? pendingFriendRequestCount : 0),
+      )}
     </Tabs>
   );
 }
 
 const styles = StyleSheet.create({
+  badge: {
+    backgroundColor: colors.brand600,
+    color: colors.white,
+    fontSize: 10,
+    fontWeight: "700",
+  },
   bottomBar: {
     backgroundColor: colors.card,
     borderTopColor: colors.line,
