@@ -126,14 +126,20 @@ promised:
 - Providers are tried in configured order until one returns **at least one
   line item**; an itemless "success" counts as a failure and falls through.
   When every provider fails, the per-provider errors go to the operator log
-  (they name models, endpoints, and policies) and the user gets one stable
-  sentence: "could not read the receipt — try a clearer photo of the whole
-  bill".
+  (they name models, endpoints, and policies) and the user gets one of two
+  stable sentences, chosen by what happened:
+  - A model answered and found no line items: `InvalidArgument` "could not
+    read the receipt. Try a clearer photo of the whole bill". The photo is
+    the problem.
+  - No provider produced an answer at all (HTTP error, timeout, malformed
+    response): `Unavailable` "receipt scanning is unavailable right now.
+    Please try again in a few minutes". Asking for a clearer photo here
+    would blame the user for an outage.
 - No `operation_id`: parsing stores nothing, so a retry costs money but can
   never duplicate data.
-- All user-facing failures are `InvalidArgument` with actionable wording
-  (unsupported file, too large, unconfigured provider, unreadable image);
-  decoder internals are logged, never shown.
+- Every other user-facing failure is `InvalidArgument` with actionable
+  wording (unsupported file, too large, unconfigured provider, unreadable
+  image); decoder internals are logged, never shown.
 
 #### Request
 

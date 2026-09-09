@@ -84,7 +84,7 @@ bearer headers cross-site). Details that matter:
 
 ## Error Model
 
-Usecases throw `UsecaseError` (via `invalid` / `notFound` / `denied` helpers);
+Usecases throw `UsecaseError` (via `invalid` / `notFound` / `denied` / `unavailable` helpers);
 `runUsecase` maps codes onto Connect status codes:
 
 | `UsecaseErrorCode` | Connect code | Typical meaning |
@@ -95,7 +95,7 @@ Usecases throw `UsecaseError` (via `invalid` / `notFound` / `denied` helpers);
 | `not_found` | `NotFound` | Entity missing (also used to avoid existence oracles) |
 | `already_exists` | `AlreadyExists` | Registered account already holds an identifier |
 | `failed_precondition` | `FailedPrecondition` | e.g. an aggregate exceeds the int32 wire field |
-| `unavailable` | `Unavailable` | A dependency (SMS provider, in-flight duplicate) is temporarily unusable |
+| `unavailable` | `Unavailable` | A dependency (SMS provider, receipt vision provider, in-flight duplicate) is temporarily unusable |
 
 Anything else (a pg error, a bug) is logged server-side with a random request
 id and the RPC name; the client receives only
