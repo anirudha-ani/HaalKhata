@@ -9,13 +9,16 @@ const { transactionClient } = vi.hoisted(() => ({
 }));
 
 vi.mock("@/server/social/repo/friendships.repo", () => ({
+  countIncomingFriendRequests: vi.fn(),
   deleteFriendRequest: vi.fn(),
+  deleteOutgoingFriendRequest: vi.fn(),
   deleteFriendship: vi.fn(),
   friendshipExists: vi.fn(),
   insertFriendRequest: vi.fn(),
   insertFriendship: vi.fn(),
   listFriendIds: vi.fn(),
   listIncomingFriendRequestIds: vi.fn(),
+  listOutgoingFriendRequests: vi.fn(),
 }));
 vi.mock("@/server/auth/repo/users.repo", () => ({
   findUserById: vi.fn(),

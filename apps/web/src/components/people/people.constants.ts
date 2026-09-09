@@ -7,9 +7,3 @@
  * Selected people are never hidden by it — they stay visible as chips.
  */
 export const MAX_VISIBLE_FRIENDS = 50;
-
-/**
- * Number of friends above which the list gets its own scroll container. Below
- * it the list is short enough to render inline without a scrollbar.
- */
-export const SCROLLING_LIST_THRESHOLD = 6;

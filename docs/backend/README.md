@@ -20,7 +20,7 @@ apps/web/src/server/<domain>/
   transport side effects (session cookies). Nothing else.
 - **Usecases** own validation, authorization, transactions, locking, and the
   activity/notification fan-out. They throw `UsecaseError` via the `invalid` /
-  `notFound` / `denied` helpers.
+  `notFound` / `denied` / `unavailable` helpers.
 - **Repos** own every SQL statement. They accept an optional transaction client
   so usecases can compose them under one transaction and one set of locks.
 
@@ -37,7 +37,7 @@ HTTP; JSON or binary protobuf). The mount lives at
 | `auth.v1.AuthService` | [auth.proto](../../proto/auth/v1/auth.proto) | [auth/auth-service.md](auth/auth-service.md) | Sign-in (Google + dev passwords), sessions, profile, phone verification, account merge, onboarding |
 | `group.v1.GroupService` | [group.proto](../../proto/group/v1/group.proto) | [group/group-service.md](group/group-service.md) | Groups, membership, ownership, the simplify-debts mode |
 | `expense.v1.ExpenseService` | [expense.proto](../../proto/expense/v1/expense.proto) | [expense/expense-service.md](expense/expense-service.md) | Expenses, splits, comments, settlements, every balance and ledger read |
-| `social.v1.SocialService` | [social.proto](../../proto/social/v1/social.proto) | [social/social-service.md](social/social-service.md) | Friend requests, friends list, activity feed, notifications, reminders |
+| `social.v1.SocialService` | [social.proto](../../proto/social/v1/social.proto) | [social/social-service.md](social/social-service.md) | Friend requests (incoming, sent, cancel), friends list, activity feed, notifications, reminders |
 | `receipt.v1.ReceiptService` | [receipt.proto](../../proto/receipt/v1/receipt.proto) | [receipt/receipt-service.md](receipt/receipt-service.md) | AI receipt itemization (image → draft expense) |
 
 ## Cross-Cutting Documentation

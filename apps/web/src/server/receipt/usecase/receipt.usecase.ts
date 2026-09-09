@@ -15,7 +15,7 @@
 
 import heicDecode from "heic-decode";
 import sharp from "sharp";
-import { invalid, UsecaseError } from "@/server/common/errors";
+import { invalid, unavailable, UsecaseError } from "@/server/common/errors";
 import { isRealCalendarDate } from "@/server/common/validation";
 import { logEvent } from "@/server/common/logger";
 import {
@@ -640,7 +640,7 @@ async function normalizeToJpeg(image: Uint8Array, format: ImageMediaType): Promi
     logEvent("warn", "receipt image could not be decoded", {
       detail: error instanceof Error ? error.message : String(error),
     });
-    invalid("could not read that image — try a clear JPEG, PNG or WebP photo");
+    invalid("could not read that image. Try a clear JPEG, PNG or WebP photo");
   }
 }
 
@@ -656,7 +656,9 @@ async function normalizeToJpeg(image: Uint8Array, format: ImageMediaType): Promi
  *   and the JPEG that provider was shown, for the client to display alongside
  *   the extracted values.
  * @throws UsecaseError "invalid_argument" when the image is empty, too large, or not a
- *   supported image; when no provider is configured; or when every provider fails.
+ *   supported image; when no provider is configured; or when a provider read the
+ *   photo and found no line items. UsecaseError "unavailable" when no provider
+ *   produced an answer at all (HTTP error, timeout, malformed response).
  */
 export async function parseReceipt(
   image: Uint8Array,
@@ -666,7 +668,7 @@ export async function parseReceipt(
   // The client's declared media type is advisory only — see detectImageFormat.
   const format = detectImageFormat(image);
   if (format === null) {
-    invalid("that file isn't a supported image — use JPEG, PNG, WebP, GIF or HEIC");
+    invalid("that file isn't a supported image. Use JPEG, PNG, WebP, GIF or HEIC");
   }
 
   const { chain, unconfigured } = providerChain();
@@ -689,18 +691,27 @@ export async function parseReceipt(
   const normalizedImage = await normalizeToJpeg(image, format);
   const imageBase64 = normalizedImage.toString("base64");
   const errors: string[] = [];
+  // Set when a model answered and found nothing: then the photo is the
+  // problem. Otherwise no provider produced an answer at all, and asking for
+  // a clearer photo would blame the user for an outage.
+  let readButEmpty = false;
   for (const provider of chain) {
     try {
       const receipt = await provider.parse(imageBase64, "image/jpeg");
-      if (receipt.items.length === 0) throw new Error("no line items detected");
+      if (receipt.items.length === 0) {
+        readButEmpty = true;
+        errors.push(`${provider.name}: no line items detected`);
+        continue;
+      }
       return { receipt, provider: provider.name, normalizedImage };
     } catch (error) {
       errors.push(`${provider.name}: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
-  // Which provider failed how is operator information — it names models,
-  // endpoints and policies — so it is logged under the same warning stream
+  // Which provider failed how is operator information (it names models,
+  // endpoints and policies), so it is logged under the same warning stream
   // the provider errors use, and the user gets a stable sentence.
   logEvent("warn", "no receipt provider could parse the image", { errors });
-  invalid("could not read the receipt — try a clearer photo of the whole bill");
+  if (readButEmpty) invalid("could not read the receipt. Try a clearer photo of the whole bill");
+  unavailable("receipt scanning is unavailable right now. Please try again in a few minutes");
 }

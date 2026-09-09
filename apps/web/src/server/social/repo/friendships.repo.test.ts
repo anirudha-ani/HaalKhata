@@ -13,7 +13,9 @@ const database = vi.hoisted(() => ({
 vi.mock("@/server/common/db", () => database);
 
 import {
+  countIncomingFriendRequests,
   deleteFriendRequest,
+  deleteOutgoingFriendRequest,
   friendshipExists,
   insertFriendRequest,
   insertFriendship,
@@ -43,12 +45,71 @@ describe("friend request persistence", () => {
     );
     expect(database.queryOne).toHaveBeenCalledWith(
       expect.stringContaining("usr.merged_into IS NULL"),
-      [REQUESTER, RECIPIENT, expect.any(Number)],
+      [REQUESTER, RECIPIENT, expect.any(Number), null],
       transactionClient,
     );
 
     database.queryOne.mockResolvedValueOnce(undefined);
     await expect(insertFriendRequest(REQUESTER, RECIPIENT)).resolves.toBe(false);
+  });
+
+  it("stores the identifier the requester typed so it can be echoed back", async () => {
+    database.queryOne.mockResolvedValueOnce({ requester_id: REQUESTER });
+
+    await insertFriendRequest(REQUESTER, RECIPIENT, undefined, "friend@example.com");
+
+    expect(database.queryOne).toHaveBeenCalledWith(
+      expect.stringContaining("recipient_identifier"),
+      [REQUESTER, RECIPIENT, expect.any(Number), "friend@example.com"],
+      transactionClient,
+    );
+  });
+
+  it("withdraws a sent request under both inbox locks after resolving its recipient", async () => {
+    database.queryOne
+      .mockResolvedValueOnce({ recipient_id: RECIPIENT })
+      .mockResolvedValueOnce({ requester_id: REQUESTER });
+
+    await expect(
+      deleteOutgoingFriendRequest(REQUESTER, { recipientIdentifier: "friend@example.com" }),
+    ).resolves.toBe(true);
+
+    expect(database.queryOne).toHaveBeenNthCalledWith(
+      1,
+      expect.stringContaining("recipient_identifier = $3"),
+      [REQUESTER, null, "friend@example.com"],
+      transactionClient,
+    );
+    expect(transactionClient.query).toHaveBeenCalledWith(
+      expect.stringContaining("pg_advisory_xact_lock"),
+      [`friend-request-inbox:${RECIPIENT}`],
+    );
+    expect(database.queryOne).toHaveBeenNthCalledWith(
+      2,
+      expect.stringContaining("DELETE FROM friend_requests"),
+      [REQUESTER, RECIPIENT],
+      transactionClient,
+    );
+  });
+
+  it("takes no locks and removes nothing when no such sent request exists", async () => {
+    database.queryOne.mockResolvedValueOnce(undefined);
+
+    await expect(deleteOutgoingFriendRequest(REQUESTER, { recipientId: RECIPIENT })).resolves.toBe(false);
+
+    expect(transactionClient.query).not.toHaveBeenCalled();
+    expect(database.queryOne).toHaveBeenCalledOnce();
+  });
+
+  it("counts only incoming requests from senders who still exist", async () => {
+    database.queryOne.mockResolvedValueOnce({ pending_count: 4 });
+
+    await expect(countIncomingFriendRequests(RECIPIENT)).resolves.toBe(4);
+
+    expect(database.queryOne).toHaveBeenCalledWith(
+      expect.stringContaining("merged_into IS NULL"),
+      [RECIPIENT],
+    );
   });
 
   it("checks accepted friendship state with the exact directed pair", async () => {

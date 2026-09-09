@@ -1,7 +1,9 @@
 {
   "compilerOptions": {
     "target": "ES2022",
-    "lib": ["ES2022"],
+    // DOM for URLSearchParams and globalThis.crypto, which the browser and
+    // Hermes both provide; nothing here may touch document or window.
+    "lib": ["ES2022", "DOM"],
     "module": "esnext",
     "moduleResolution": "bundler",
     "strict": true,

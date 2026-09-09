@@ -14,6 +14,11 @@ service SocialService {
   rpc ListFriends(google.protobuf.Empty) returns (ListFriendsResponse);
   // Accepts or declines an incoming request; only the named recipient can act.
   rpc RespondFriendRequest(RespondFriendRequestRequest) returns (google.protobuf.Empty);
+  // Withdraws a request the caller sent that is still pending. Named the way
+  // it was shown in outgoing_requests: by the recipient's id when they were
+  // picked, or by the typed identifier when they were not, so cancelling
+  // never needs (or reveals) the account behind an email or phone.
+  rpc CancelFriendRequest(CancelFriendRequestRequest) returns (google.protobuf.Empty);
   // Ends a friendship. Refused (FailedPrecondition) while any balance with
   // that person, in any currency, is outstanding: removal must not orphan
   // debt. Quiet like group removal (no notification); shared history and
@@ -88,11 +93,36 @@ message RespondFriendRequestRequest {
   bool accept = 2;
 }
 
+message CancelFriendRequestRequest {
+  // Exactly one of user_id/identifier, matching how the pending request was
+  // shown to the caller.
+  string user_id = 1;
+  string identifier = 2;
+}
+
 message ListFriendsResponse {
   repeated common.v1.CounterpartyBalance friends = 1;
   // Pending senders visible only to this recipient. Contact details and
   // payment handles are withheld until the request is accepted.
   repeated common.v1.User incoming_requests = 2;
+  // Requests the caller sent that are still waiting on the recipient, oldest
+  // first. Each echoes only what the caller already knew when sending.
+  repeated OutgoingFriendRequest outgoing_requests = 3;
+}
+
+// One friend request the caller sent that has not been answered yet. Exactly
+// one of user/identifier is set: a pending request must not turn into a
+// lookup that tells the caller whose account an email or phone belongs to.
+message OutgoingFriendRequest {
+  // The recipient, when the caller picked them by id (someone already on
+  // screen, such as a group member) or reached them through their profile
+  // link. Minimal projection, as for incoming requests.
+  common.v1.User user = 1;
+  // The email or phone the caller typed, when the request was sent that way.
+  // Echoed back, never resolved.
+  string identifier = 2;
+  // RFC 3339 timestamp of when the request was sent.
+  string created_at = 3;
 }
 
 message ListActivityRequest {
@@ -149,6 +179,11 @@ message Notification {
 message ListNotificationsResponse {
   repeated Notification notifications = 1;
   int32 unread_count = 2;
+  // Friend requests waiting for the caller's answer, for a badge on the
+  // Friends tab. Carried here because clients already poll this call for the
+  // bell; ListFriends computes the full-ledger aggregate and shares its rate
+  // limit with the balances, so it is the wrong thing to poll.
+  int32 pending_friend_request_count = 3;
 }
 
 message GetFriendInviteLinkRequest {

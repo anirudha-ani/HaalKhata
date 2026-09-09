@@ -60,6 +60,19 @@ export const socialHandler: ServiceImpl<typeof SocialService> = {
     return {};
   },
 
+  /** Withdraws a pending request the caller sent. */
+  async cancelFriendRequest(request, context) {
+    await runUsecase(
+      async () =>
+        social.cancelFriendRequest(await requireUser(context), {
+          userId: request.userId,
+          identifier: request.identifier,
+        }),
+      context,
+    );
+    return {};
+  },
+
   /** Lists the activity feed, scoped to one group when groupId is set. */
   async listActivity(request, context) {
     return runUsecase(

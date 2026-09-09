@@ -1,7 +1,7 @@
 "use client";
 /** Composite expense-form hook: field state, payer/split validation, submit. */
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { User } from "@haalkhata/protogen/common/v1/common_pb";
 import { errorMessage } from "@/lib/api/connect";
@@ -18,6 +18,7 @@ import {
   includeInEveryItem,
   itemizedTotals,
   previewItemizedShares,
+  previewSplitShares,
   shareEveryItemWith,
   type DraftLineItem,
   type FormSplitType,
@@ -73,8 +74,9 @@ export function useNewExpense(
   const [items, setItems] = useState<DraftLineItem[]>(initial.items);
   const [taxInput, setTaxInput] = useState(initial.taxInput);
   const [tipInput, setTipInput] = useState(initial.tipInput);
-  const [unevenShares, setUnevenShares] = useState(false);
   const [error, setError] = useState("");
+  /** Closes the error popup. The next action clears it anyway; this serves the dismiss button. */
+  const dismissError = useCallback(() => setError(""), []);
 
   // Receipt state. A scan is a way of filling this form in, not a separate
   // kind of expense, so it lives on the same controller as everything else.
@@ -265,6 +267,19 @@ export function useNewExpense(
       }),
     );
 
+  /**
+   * Replaces the whole assignee map of one item. The Everyone chip puts the
+   * entire cast on (or off) a line in one update rather than one re-render
+   * per person.
+   *
+   * @param index - Position of the item in the draft.
+   * @param assignees - New portion counts by user id; an empty map leaves the item unassigned.
+   */
+  const setItemAssignees = (index: number, assignees: Record<string, number>) =>
+    setItems((current) =>
+      current.map((item, itemIndex) => (itemIndex === index ? { ...item, assignees } : item)),
+    );
+
   useEffect(() => () => URL.revokeObjectURL(previewUrl), [previewUrl]);
   useEffect(() => () => URL.revokeObjectURL(receiptUrl), [receiptUrl]);
 
@@ -366,9 +381,6 @@ export function useNewExpense(
   const taxCents = parseMoneyInput(taxInput, currency) ?? 0;
   const tipCents = parseMoneyInput(tipInput, currency) ?? 0;
   const itemized = itemizedTotals(items, taxCents, tipCents, currency);
-  // Live "what each person owes" figures, from the same allocator the server
-  // runs — so the preview under the grid is exactly what gets saved.
-  const previewShares = previewItemizedShares(items, taxCents, tipCents, currency);
 
   /**
    * Sets the tip to a percentage of the items subtotal (before tax), the way
@@ -389,6 +401,11 @@ export function useNewExpense(
   const splitCheck = isItemized
     ? checkItemized(items, currency)
     : checkSplit({ splitType, totalCents, participantIds, inputs: splitInputs, currency });
+  // Live "what each person owes" figures for the summary, from the same
+  // allocator the server runs, so the preview is exactly what gets saved.
+  const previewShares = isItemized
+    ? previewItemizedShares(items, taxCents, tipCents, currency)
+    : previewSplitShares({ splitType, totalCents, participantIds, inputs: splitInputs, currency });
   const payerCheck = checkPayers(totalCents, multiPayer, payerAmounts, currency);
   // A group, or at least one other person — mirrors exactly what the picker
   // shows, so the button never disables for a reason that isn't on screen.
@@ -494,8 +511,7 @@ export function useNewExpense(
     removeItem,
     updateItem,
     setAssigneeWeight,
-    unevenShares,
-    setUnevenShares,
+    setItemAssignees,
     taxInput,
     setTaxInput,
     tipInput,
@@ -510,6 +526,7 @@ export function useNewExpense(
     payerCheck,
     canSubmit,
     error,
+    dismissError,
     submit,
     isSaving: expenseAPI.create.isPending || expenseAPI.update.isPending,
     // Receipt scanning.

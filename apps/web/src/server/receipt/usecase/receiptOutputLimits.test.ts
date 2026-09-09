@@ -7,6 +7,7 @@ import {
   MAX_PARSED_NAME_LENGTH,
   MAX_PARSED_QUANTITY,
   MAX_PROVIDER_RESPONSE_BYTES,
+  RECEIPT_JSON_SCHEMA,
 } from "@/server/receipt/receipt.constants";
 import { normalizeProviderOutput, readProviderResponse } from "./receipt.usecase";
 
@@ -71,5 +72,30 @@ describe("receipt provider output limits", () => {
     const response = new Response(new Uint8Array(MAX_PROVIDER_RESPONSE_BYTES + 1));
 
     await expect(readProviderResponse(response)).rejects.toThrow(/response exceeds/);
+  });
+
+  it("keeps the structured-output schema to keywords the vision provider accepts", () => {
+    // Gemini, behind OpenRouter, answers a bare INVALID_ARGUMENT to a schema
+    // containing maxItems, which took every receipt scan down. The server
+    // enforces MAX_PARSED_ITEMS itself, so the schema does not need it.
+    const acceptedKeywords = new Set([
+      "type", "description", "properties", "required", "additionalProperties",
+      "items", "maxLength", "minimum", "maximum",
+    ]);
+    const collectKeywords = (node: unknown): string[] => {
+      if (typeof node !== "object" || node === null) return [];
+      if (Array.isArray(node)) return node.flatMap(collectKeywords);
+      return Object.entries(node as Record<string, unknown>).flatMap(([keyword, value]) =>
+        keyword === "properties"
+          ? [keyword, ...Object.values(value as Record<string, unknown>).flatMap(collectKeywords)]
+          : [keyword, ...collectKeywords(value)],
+      );
+    };
+
+    const rejected = collectKeywords(RECEIPT_JSON_SCHEMA).filter(
+      (keyword) => !acceptedKeywords.has(keyword),
+    );
+
+    expect(rejected).toEqual([]);
   });
 });

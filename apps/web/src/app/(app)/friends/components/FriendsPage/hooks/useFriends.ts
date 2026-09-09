@@ -1,9 +1,10 @@
 "use client";
-/** Composite hook for the friends route: queries, add-friend mutation, form and settle state. */
+/** Composite hook for the friends route: queries, the selected tab, add-friend mutation, form and settle state. */
 
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { User } from "@haalkhata/protogen/common/v1/common_pb";
+import type { OutgoingFriendRequest } from "@haalkhata/protogen/social/v1/social_pb";
 import {
   contactIsEmpty,
   contactPayload,
@@ -16,6 +17,7 @@ import { matchesTerms, searchTerms } from "@haalkhata/shared/search/filter";
 import { authClient, errorMessage, socialClient } from "@/lib/api/connect";
 import { shareInvite } from "@/lib/invite/share";
 import { queryKeys } from "@haalkhata/shared/api/queryKeys";
+import type { FriendsTab } from "../../../constants/friendsTabs";
 
 /**
  * A friend's position per currency. A server predating `balances` sends only
@@ -45,8 +47,11 @@ export function bucketsOf(
  * its country and is validated client-side before anything is sent.
  *
  * @returns An object exposing `me` (the signed-in user), `friends` (every
- *   counterparty balance) with `friendsError` when that query failed, and
- *   `visibleFriends` (those matching `query`), the
+ *   counterparty balance) with `friendsError` when that query failed, split
+ *   into `registeredFriends` and `invitedFriends`, `incomingRequests`
+ *   awaiting the user and `outgoingRequests` the user is waiting on, the
+ *   selected `tab` with `setTab`, `visibleFriends` (registered friends
+ *   matching `query`), the
  *   `query`/`setQuery` search state, `isLoading`/`isAdding` flags, the
  *   `identifier` form state with `setIdentifier` and `submitAdd`, the last
  *   add-friend `error` message, and `settleWith`/`setSettleWith` controlling
@@ -64,6 +69,7 @@ export function useFriends() {
     cents: number;
   } | null>(null);
   const [showAdd, setShowAdd] = useState(false);
+  const [activeTab, setActiveTab] = useState<FriendsTab>("friends");
 
   const currentUser = useQuery({ queryKey: queryKeys.me, queryFn: () => authClient.getMe({}) });
   const friends = useQuery({
@@ -107,20 +113,49 @@ export function useFriends() {
   const respondToRequest = useMutation({
     mutationFn: (response: { userId: string; accept: boolean }) =>
       socialClient.respondFriendRequest(response),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.friends });
+      // The Friends tab badge counts these; drop it as soon as one is answered.
+      queryClient.invalidateQueries({ queryKey: queryKeys.notifications });
+    },
+    onError: (mutationError) => setError(errorMessage(mutationError)),
+  });
+
+  /**
+   * Withdraws one request the current user sent. Named the way the server
+   * showed it: the person's id when they were picked, otherwise the typed
+   * identifier, so the client never needs the account behind an address.
+   */
+  const cancelRequest = useMutation({
+    mutationFn: (target: { userId: string; identifier: string }) =>
+      socialClient.cancelFriendRequest(target),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.friends }),
     onError: (mutationError) => setError(errorMessage(mutationError)),
   });
 
+  /** Closes the error popup; the next action clears it anyway, this serves the dismiss button. */
+  const dismissError = useCallback(() => setError(""), []);
+
   const allFriends = friends.data?.friends ?? [];
+  // The Friends tab holds people who can carry a balance; Invited people
+  // (no account yet, so no expenses) get a tab of their own rather than
+  // sitting between them with a pill.
+  const registeredFriends = useMemo(
+    () => (friends.data?.friends ?? []).filter((friend) => friend.user?.registered),
+    [friends.data],
+  );
+  const invitedFriends = useMemo(
+    () => (friends.data?.friends ?? []).filter((friend) => friend.user && !friend.user.registered),
+    [friends.data],
+  );
   // Filtering keeps the server's order (people you have expenses with first,
   // then the rest alphabetically) rather than re-ranking by match quality.
   // Names only: a friend's email and phone are private and arrive empty.
   const visibleFriends = useMemo(() => {
-    const everyFriend = friends.data?.friends ?? [];
     const terms = searchTerms(query);
-    if (terms.length === 0) return everyFriend;
-    return everyFriend.filter((friend) => matchesTerms(terms, friend.user?.name));
-  }, [friends.data, query]);
+    if (terms.length === 0) return registeredFriends;
+    return registeredFriends.filter((friend) => matchesTerms(terms, friend.user?.name));
+  }, [registeredFriends, query]);
 
   // Headline totals, so the page answers "where do I stand overall?" before
   // any individual row is read — per currency, never summed across them.
@@ -146,7 +181,12 @@ export function useFriends() {
     // rate limit with the overall balances, and a refused call must not
     // render as "no friends yet".
     friendsError: friends.error,
+    registeredFriends,
+    invitedFriends,
     incomingRequests: friends.data?.incomingRequests ?? [],
+    outgoingRequests: friends.data?.outgoingRequests ?? [],
+    tab: activeTab,
+    setTab: setActiveTab,
     visibleFriends,
     totals,
     query,
@@ -158,6 +198,7 @@ export function useFriends() {
     setContact,
     canSubmitAdd: !contactIsEmpty(contact),
     error,
+    dismissError,
     notice,
     submitAdd: () => {
       setError("");
@@ -177,6 +218,18 @@ export function useFriends() {
       respondToRequest.mutate({ userId, accept });
     },
     respondingUserId: respondToRequest.isPending ? respondToRequest.variables?.userId : undefined,
+    cancelSentRequest: (request: OutgoingFriendRequest) => {
+      setError("");
+      cancelRequest.mutate(
+        request.user
+          ? { userId: request.user.id, identifier: "" }
+          : { userId: "", identifier: request.identifier },
+      );
+    },
+    /** The sent request being withdrawn right now, keyed as its row is: person id or identifier. */
+    cancellingKey: cancelRequest.isPending
+      ? cancelRequest.variables?.userId || cancelRequest.variables?.identifier
+      : undefined,
     remindFriend: (person: User) => {
       setError("");
       setNotice("");
@@ -193,3 +246,6 @@ export function useFriends() {
     setSettleWith,
   };
 }
+
+/** The controller object returned by {@link useFriends}, consumed by the page and its tabs. */
+export type FriendsController = ReturnType<typeof useFriends>;

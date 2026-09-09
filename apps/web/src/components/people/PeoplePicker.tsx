@@ -3,7 +3,7 @@
 
 import Link from "next/link";
 import { ChevronDown, UserPlus, X } from "lucide-react";
-import { useId, useState } from "react";
+import { useId, useMemo, useState } from "react";
 import type { User } from "@haalkhata/protogen/common/v1/common_pb";
 import { Avatar } from "@/components/ui/Avatar";
 import { FriendChecklist } from "./FriendChecklist";
@@ -75,6 +75,14 @@ export function PeoplePicker({
 
   const isGroupExpense = groupId !== "";
   const selectedGroupName = groups.find((group) => group.id === groupId)?.name ?? "";
+  // §33: an Invited person can be a friend but never on a transaction.
+  // Shown-but-disabled beats hidden ("why isn't Rifat here?" answers itself),
+  // and the checklist sinks them below everyone who can be picked. Memoised
+  // so the checklist does not re-sort on every keystroke elsewhere in the form.
+  const invitedIds = useMemo(
+    () => new Set(friends.filter((friend) => !friend.registered).map((friend) => friend.id)),
+    [friends],
+  );
 
   if (groups.length === 0 && friends.length === 0) {
     return (
@@ -175,13 +183,8 @@ export function PeoplePicker({
                   onToggle={onToggleFriend}
                   legend="Friends on this expense"
                   autoFocus={focusSearch}
-                  // §33: an Invited person can be a friend but never on a
-                  // transaction. Shown-but-disabled beats hidden — "why isn't
-                  // Rifat here?" answers itself.
-                  disabledIds={
-                    new Set(friends.filter((friend) => !friend.registered).map((friend) => friend.id))
-                  }
-                  disabledHint="invited — hasn't joined yet"
+                  disabledIds={invitedIds}
+                  disabledHint="invited, hasn't joined yet"
                 />
               </div>
             ) : null}

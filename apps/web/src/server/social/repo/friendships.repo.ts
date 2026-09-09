@@ -114,12 +114,16 @@ export async function friendshipExists(userId: string, friendId: string): Promis
  * @param requesterId - Account asking to connect.
  * @param recipientId - Account that must accept or decline.
  * @param client - Existing transaction client when related writes must be atomic.
+ * @param recipientIdentifier - The email or phone the requester typed, kept
+ *   so their sent-requests list can echo it back; omitted when the recipient
+ *   was chosen by id or reached through a link.
  * @returns True only when this call created a new pending request.
  */
 export async function insertFriendRequest(
   requesterId: string,
   recipientId: string,
   client?: PoolClient,
+  recipientIdentifier?: string,
 ): Promise<boolean> {
   const persist = async (transactionClient: PoolClient): Promise<boolean> => {
     // Serialize capacity checks for one recipient and account merges for both
@@ -128,8 +132,8 @@ export async function insertFriendRequest(
     // that account can race this insert and leave a request on its tombstone.
     await lockFriendRequestInboxes(transactionClient, [requesterId, recipientId]);
     const inserted = await queryOne<{ requester_id: string }>(
-      `INSERT INTO friend_requests (requester_id, recipient_id)
-       SELECT $1, $2
+      `INSERT INTO friend_requests (requester_id, recipient_id, recipient_identifier)
+       SELECT $1, $2, $4::text
         WHERE $1 <> $2
           AND EXISTS (
                 SELECT 1 FROM users usr WHERE usr.id = $1 AND usr.merged_into IS NULL
@@ -143,7 +147,7 @@ export async function insertFriendRequest(
           AND (SELECT COUNT(*) FROM friend_requests WHERE recipient_id = $2) < $3
        ON CONFLICT DO NOTHING
        RETURNING requester_id`,
-      [requesterId, recipientId, MAX_PENDING_FRIEND_REQUESTS],
+      [requesterId, recipientId, MAX_PENDING_FRIEND_REQUESTS, recipientIdentifier ?? null],
       transactionClient,
     );
     return inserted !== undefined;
@@ -168,6 +172,53 @@ export async function listIncomingFriendRequestIds(recipientId: string): Promise
   return requestRows.map((requestRow) => requestRow.requester_id);
 }
 
+/** A pending request as its sender sees it (column names mirror SQL). */
+export interface OutgoingFriendRequestRow {
+  recipient_id: string;
+  /** What the requester typed to reach them; null when chosen by id or through a link. */
+  recipient_identifier: string | null;
+  created_at: string;
+}
+
+/**
+ * Lists the requests one account has sent that are still unanswered, oldest first.
+ *
+ * @param requesterId - Account viewing what it has sent.
+ * @returns Recipient ids with the identifier typed for each, in creation order.
+ */
+export async function listOutgoingFriendRequests(
+  requesterId: string,
+): Promise<OutgoingFriendRequestRow[]> {
+  return query<OutgoingFriendRequestRow>(
+    `SELECT recipient_id, recipient_identifier, created_at
+       FROM friend_requests
+      WHERE requester_id = $1
+      ORDER BY created_at, recipient_id
+      LIMIT $2`,
+    [requesterId, MAX_PENDING_FRIEND_REQUESTS],
+  );
+}
+
+/**
+ * Counts the unanswered requests addressed to one account, for a badge.
+ * Senders merged away since requesting are skipped, matching what the
+ * incoming list shows.
+ *
+ * @param recipientId - Account whose inbox to count.
+ * @returns The number of pending requests the recipient can act on.
+ */
+export async function countIncomingFriendRequests(recipientId: string): Promise<number> {
+  const countRow = await queryOne<{ pending_count: number }>(
+    `SELECT COUNT(*)::int AS pending_count
+       FROM friend_requests request
+       JOIN users requester
+         ON requester.id = request.requester_id AND requester.merged_into IS NULL
+      WHERE request.recipient_id = $1`,
+    [recipientId],
+  );
+  return countRow?.pending_count ?? 0;
+}
+
 /**
  * Atomically consumes one incoming request while a response transaction runs.
  *
@@ -190,4 +241,41 @@ export async function deleteFriendRequest(
     client,
   );
   return removed !== undefined;
+}
+
+/**
+ * Withdraws one request the caller sent, found the way the caller saw it: by
+ * the recipient's id, or by the identifier the caller typed. The pair's inbox
+ * locks are taken before the delete, so a concurrent accept serializes
+ * against it instead of racing; whichever runs second finds no row.
+ *
+ * @param requesterId - Authenticated account that sent the request.
+ * @param target - The recipient's id, or the typed identifier stored with the request.
+ * @returns True when a matching pending request existed and was removed.
+ */
+export async function deleteOutgoingFriendRequest(
+  requesterId: string,
+  target: { recipientId?: string; recipientIdentifier?: string },
+): Promise<boolean> {
+  return transaction(async (client) => {
+    const pending = await queryOne<{ recipient_id: string }>(
+      `SELECT recipient_id FROM friend_requests
+        WHERE requester_id = $1
+          AND (($2::text IS NOT NULL AND recipient_id = $2)
+            OR ($3::text IS NOT NULL AND recipient_identifier = $3))
+        LIMIT 1`,
+      [requesterId, target.recipientId ?? null, target.recipientIdentifier ?? null],
+      client,
+    );
+    if (!pending) return false;
+    await lockFriendRequestInboxes(client, [requesterId, pending.recipient_id]);
+    const removed = await queryOne<{ requester_id: string }>(
+      `DELETE FROM friend_requests
+        WHERE requester_id = $1 AND recipient_id = $2
+        RETURNING requester_id`,
+      [requesterId, pending.recipient_id],
+      client,
+    );
+    return removed !== undefined;
+  });
 }

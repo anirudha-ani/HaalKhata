@@ -4,6 +4,10 @@
 import { CATEGORIES } from "@haalkhata/shared/money/money.constants";
 import { centsToInput } from "@haalkhata/shared/money/money";
 import { PeoplePicker } from "@/components/people/PeoplePicker";
+import { SplitSummary } from "@/components/expense/SplitSummary";
+import { ErrorPopup } from "@/components/ui/ErrorPopup";
+import { itemizedWarnings } from "@/lib/expense/itemizedWarnings";
+import { parseMoneyInput } from "@haalkhata/shared/money/money";
 import type { ExpenseFormInitial } from "../../../../utils/initialValues";
 import { PayerEditor } from "../PayerEditor/PayerEditor";
 import { ReceiptPanel } from "../ReceiptPanel/ReceiptPanel";
@@ -42,9 +46,36 @@ export function ExpenseForm({
 }) {
   const form = useNewExpense(expenseAPI, initial, editExpenseId);
   const currency = form.selectedGroup?.currency ?? form.me?.defaultCurrency ?? "USD";
-  // Once there is a photo to check the numbers against, it earns a column of
-  // its own — sticky, so it stays beside the item grid all the way down.
-  const hasReceipt = form.receiptUrl !== "";
+  // On desktop the form always has a sticky sidebar: the receipt scanner (or
+  // the photo, once there is one) and a who-owes-what panel for whichever
+  // split is selected, so the numbers are beside the fields all the way
+  // down. On a phone the same things stack in the flow, and an itemized
+  // split carries its own summary strip instead of the panel.
+  const isItemized = form.isItemized;
+  const summaryWarnings = isItemized
+    ? itemizedWarnings(form.items, currency)
+    : !form.splitCheck.ok && form.totalCents !== null
+      ? [form.splitCheck.message]
+      : [];
+  // The same numbers twice: a panel in the desktop sidebar, a strip that
+  // sticks to the bottom of a phone's scroller under the Split section.
+  const summaryProps = {
+    people: form.people,
+    currentUserId: form.me?.id ?? "",
+    currency,
+    shares: form.previewShares,
+    totalCents: form.totalCents ?? 0,
+    breakdown: isItemized
+      ? {
+          itemsTotalCents: form.itemsTotalCents,
+          taxCents: parseMoneyInput(form.taxInput, currency) ?? 0,
+          tipCents: parseMoneyInput(form.tipInput, currency) ?? 0,
+        }
+      : undefined,
+    warnings: summaryWarnings,
+    ready: isItemized ? form.items.length > 0 : (form.totalCents ?? 0) > 0,
+    readyMessage: isItemized ? "Everything is assigned" : "Adds up to the total",
+  };
 
   const fields = (
     <>
@@ -120,6 +151,7 @@ export function ExpenseForm({
 
       <PayerEditor form={form} />
       <SplitEditor form={form} currency={currency} />
+      <SplitSummary layout="strip" className="lg:hidden" {...summaryProps} />
 
       <textarea
         className={`${inputClass} min-h-20 text-base sm:text-sm`}
@@ -129,8 +161,6 @@ export function ExpenseForm({
         value={form.notes}
         onChange={(event) => form.setNotes(event.target.value)}
       />
-
-      {form.error ? <p className="text-sm font-medium text-brand-600">{form.error}</p> : null}
 
       <button
         type="button"
@@ -144,26 +174,26 @@ export function ExpenseForm({
   );
 
   return (
-    <div className={`mx-auto space-y-6 ${hasReceipt ? "max-w-6xl" : "max-w-xl"}`}>
+    <div className="mx-auto max-w-6xl space-y-6">
       <h1 className="text-3xl font-bold">{form.isEdit ? "Edit expense" : "Add expense"}</h1>
 
-      {/* Editing cannot re-scan: an itemized expense is not editable here at
-          all (the page guards it), and re-parsing a photo over a saved
-          non-itemized expense would silently convert it. */}
-      {form.isEdit ? (
-        <div className="space-y-6">{fields}</div>
-      ) : (
-        <div
-          className={
-            hasReceipt ? "grid gap-6 lg:grid-cols-[minmax(0,26rem)_minmax(0,1fr)]" : "space-y-6"
-          }
-        >
-          <div className={hasReceipt ? "lg:sticky lg:top-6 lg:self-start" : ""}>
-            <ReceiptPanel form={form} />
-          </div>
-          <div className="space-y-6">{fields}</div>
+      {/* The phone track is minmax(0,1fr), not the implicit auto: an auto
+          track grows to its content's max-content width, and the receipt
+          scanner's labels alone pushed the page to 863px on a 390px phone. */}
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-6 lg:grid-cols-[minmax(0,26rem)_minmax(0,1fr)]">
+        <div className="min-w-0 space-y-6 lg:sticky lg:top-6 lg:self-start">
+          {/* Editing cannot re-scan: an itemized expense is not editable here
+              at all (the page guards it), and re-parsing a photo over a saved
+              non-itemized expense would silently convert it. */}
+          {form.isEdit ? null : <ReceiptPanel form={form} />}
+          <SplitSummary layout="panel" className="hidden lg:block" {...summaryProps} />
         </div>
-      )}
+        <div className="min-w-0 space-y-6">{fields}</div>
+      </div>
+      {/* Errors from scanning and saving alike: pinned to the viewport rather
+          than printed above the submit button, which on a phone is a screen
+          away from the receipt panel that produced most of them. */}
+      <ErrorPopup message={form.error} onDismiss={form.dismissError} />
     </div>
   );
 }

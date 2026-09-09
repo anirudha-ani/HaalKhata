@@ -145,7 +145,10 @@ export const RECEIPT_JSON_SCHEMA = {
     currency: { type: "string", maxLength: 3, description: "ISO 4217 code, e.g. USD" },
     items: {
       type: "array",
-      maxItems: MAX_PARSED_ITEMS,
+      // No maxItems: Gemini, reached through OpenRouter, refuses a schema that
+      // carries it with a bare INVALID_ARGUMENT, and every scan fails. The
+      // prompt asks for at most MAX_PARSED_ITEMS rows and
+      // normalizeProviderOutput truncates to that count, so the cap holds.
       items: {
         type: "object",
         additionalProperties: false,

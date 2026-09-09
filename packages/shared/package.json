@@ -12,11 +12,11 @@
     "test": "vitest run"
   },
   "devDependencies": {
-    "@eslint/js": "^9",
-    "eslint": "^9",
-    "typescript": "^5.8.3",
+    "@eslint/js": "^9.39.4",
+    "eslint": "^9.39.4",
+    "typescript": "^5.9.3",
     "typescript-eslint": "^8.63.0",
-    "vitest": "^3.2.4"
+    "vitest": "^4.1.11"
   },
   "dependencies": {
     "currency-codes": "^2.2.0",

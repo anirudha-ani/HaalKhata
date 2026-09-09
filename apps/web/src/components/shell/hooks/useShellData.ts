@@ -1,15 +1,17 @@
 "use client";
-/** Data hook for the app shell: signed-in user profile + unread notification count. */
+/** Data hook for the app shell: signed-in user profile, unread notification count, pending friend requests. */
 
 import { useQuery } from "@tanstack/react-query";
 import { authClient, socialClient } from "@/lib/api/connect";
 import { queryKeys } from "@haalkhata/shared/api/queryKeys";
 
 /**
- * Fetches the data the shell chrome needs: the signed-in user's profile and
- * the unread notification count (polled every 30 seconds).
+ * Fetches the data the shell chrome needs: the signed-in user's profile and,
+ * polled every 30 seconds, the unread notification count together with the
+ * number of friend requests awaiting the user's answer.
  *
- * @returns An object with `currentUser` (undefined while loading) and `unreadCount`.
+ * @returns An object with `currentUser` (undefined while loading),
+ *   `unreadCount`, and `pendingFriendRequestCount`.
  */
 export function useShellData() {
   const currentUserQuery = useQuery({
@@ -25,5 +27,6 @@ export function useShellData() {
   return {
     currentUser: currentUserQuery.data,
     unreadCount: notificationsQuery.data?.unreadCount ?? 0,
+    pendingFriendRequestCount: notificationsQuery.data?.pendingFriendRequestCount ?? 0,
   };
 }

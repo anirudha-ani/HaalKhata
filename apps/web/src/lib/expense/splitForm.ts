@@ -1,7 +1,7 @@
 /** Pure helpers for the expense form — validation + request assembly. */
 
 import { centsToInput, parseMoneyInput } from "@haalkhata/shared/money/money";
-import { computeItemizedSplits } from "@haalkhata/shared/expense/splits";
+import { computeItemizedSplits, computeSplits } from "@haalkhata/shared/expense/splits";
 
 /** Split modes the form supports. */
 export type FormSplitType = "equal" | "exact" | "percent" | "shares" | "itemized";
@@ -346,6 +346,26 @@ export function previewItemizedShares(
     return Object.fromEntries(splits.map((split) => [split.userId, split.owedCents]));
   } catch {
     // Draft not complete enough to allocate yet — checkItemized surfaces why.
+    return {};
+  }
+}
+
+/**
+ * Previews what each participant owes under an equal, exact, percent or
+ * shares split, through the same allocator the server runs, so the sidebar
+ * shows exactly what will be saved. Empty until the draft can be allocated
+ * (no amount yet, percentages that do not reach 100, nobody checked); the
+ * split check says why. Itemized drafts have their own preview.
+ *
+ * @param state - The split form's current values.
+ * @returns Owed cents by user id, or an empty record while the draft is incomplete.
+ */
+export function previewSplitShares(state: SplitFormState): Record<string, number> {
+  if (state.splitType === "itemized" || state.totalCents === null) return {};
+  try {
+    const splits = computeSplits(state.splitType, state.totalCents, buildSplitSpecs(state));
+    return Object.fromEntries(splits.map((split) => [split.userId, split.owedCents]));
+  } catch {
     return {};
   }
 }
