@@ -119,7 +119,7 @@ Splitting money with friends only works if nobody has to wonder about the tool. 
 
 **Backed up every night.** Your data is backed up nightly. Each backup is encrypted before it leaves the server, stored in a second location, and checked to make sure it actually arrived.
 
-**Found something?** Please report security issues privately rather than in a public issue.
+**Found something?** Please report it privately through the [security policy](SECURITY.md) rather than in a public issue.
 
 ## Help make it better
 
