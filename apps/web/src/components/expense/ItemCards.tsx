@@ -14,7 +14,7 @@ import {
   MAX_ITEM_QUANTITY,
   TIP_PERCENT_PRESETS,
 } from "./itemCards.constants";
-import { ItemizedSummary } from "./ItemizedSummary";
+import { SplitSummary } from "./SplitSummary";
 
 /** One editable line item, however the owning form stores the rest of its draft. */
 export interface CardItem {
@@ -560,7 +560,7 @@ export function ItemCards({
         </div>
       </div>
 
-      <ItemizedSummary
+      <SplitSummary
         layout="strip"
         className={stripClassName}
         people={people}
@@ -568,11 +568,10 @@ export function ItemCards({
         currency={currency}
         shares={shares}
         totalCents={totalCents}
-        itemsTotalCents={itemsTotalCents}
-        taxCents={taxCents}
-        tipCents={tipCents}
+        breakdown={{ itemsTotalCents, taxCents, tipCents }}
         warnings={warnings}
-        hasItems={items.length > 0}
+        ready={items.length > 0}
+        readyMessage="Everything is assigned"
       />
     </div>
   );

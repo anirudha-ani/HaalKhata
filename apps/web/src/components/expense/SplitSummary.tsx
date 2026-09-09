@@ -1,38 +1,38 @@
 "use client";
-/** Who-owes-what for an itemized bill: a strip that hugs the bottom on phones, a panel with bars on desktop. */
+/** Who-owes-what for an expense split: a strip that hugs the bottom on phones, a panel with bars on desktop. */
 
 import type { User } from "@haalkhata/protogen/common/v1/common_pb";
 import { formatMoney } from "@haalkhata/shared/money/money";
 import { Avatar } from "@/components/ui/Avatar";
 
 /**
- * Renders the running per-person totals of an itemized bill, the bill total,
- * and whatever is still unaccounted for. Two layouts of one set of numbers:
- * the `strip` sticks to the bottom of the scroller beside the cards on a
+ * Renders what each person owes under the current split, the expense total,
+ * and whatever still stops it adding up. Two layouts of one set of numbers:
+ * the `strip` sticks to the bottom of the scroller beside the item cards on a
  * phone, where every row of height is contested; the `panel` sits in the
  * form's sidebar on desktop, where there is room for names and a bar per
- * person showing their slice of the total.
+ * person showing their slice of the total. Any split mode feeds it; an
+ * itemized one adds the items, tax and tip breakdown.
  *
  * @param props - Component props.
  * @returns The summary in the requested layout.
  */
-export function ItemizedSummary({
+export function SplitSummary({
   layout,
   people,
   currentUserId,
   currency,
   shares,
   totalCents,
-  itemsTotalCents,
-  taxCents,
-  tipCents,
+  breakdown,
   warnings,
-  hasItems,
+  ready,
+  readyMessage,
   className = "",
 }: {
   /** `strip` for the sticky phone strip, `panel` for the desktop sidebar. */
   layout: "strip" | "panel";
-  /** Everyone on the bill, in display order. */
+  /** Everyone on the expense, in display order. */
   people: User[];
   /** Id of the signed-in user, shown as "You". */
   currentUserId: string;
@@ -40,18 +40,16 @@ export function ItemizedSummary({
   currency: string;
   /** What each person currently owes, keyed by user id, in cents. */
   shares: Record<string, number>;
-  /** Items + tax + tip, in cents. */
+  /** The expense total, in cents. */
   totalCents: number;
-  /** The items subtotal, in cents. */
-  itemsTotalCents: number;
-  /** Tax, in cents. */
-  taxCents: number;
-  /** Tip, in cents. */
-  tipCents: number;
-  /** Sentences about money not yet accounted for; empty when the bill adds up. */
+  /** Itemized only: the subtotal, tax and tip that make up the total. */
+  breakdown?: { itemsTotalCents: number; taxCents: number; tipCents: number };
+  /** Sentences about what still stops the split adding up; empty when it does. */
   warnings: string[];
-  /** Whether there is at least one line; an empty draft has nothing to reassure about. */
-  hasItems: boolean;
+  /** Whether there is enough of a draft to reassure about; a blank form has nothing to say. */
+  ready: boolean;
+  /** What to say when there are no warnings and the draft is ready, e.g. "Everything is assigned". */
+  readyMessage: string;
   /** Extra classes for the outer element, e.g. to hide one layout at a breakpoint. */
   className?: string;
 }) {
@@ -68,8 +66,8 @@ export function ItemizedSummary({
           </span>
         ))}
       </div>
-    ) : hasItems ? (
-      <p className="text-xs font-semibold text-pos-700">Everything is assigned</p>
+    ) : ready ? (
+      <p className="text-xs font-semibold text-pos-700">{readyMessage}</p>
     ) : null;
 
   if (layout === "strip") {
@@ -122,7 +120,10 @@ export function ItemizedSummary({
           const share = shares[person.id] ?? 0;
           const width = totalCents > 0 ? Math.round((share / totalCents) * 100) : 0;
           return (
-            <li key={person.id} className="grid grid-cols-[1.75rem_minmax(0,1fr)_auto] items-center gap-x-2.5 gap-y-1.5">
+            <li
+              key={person.id}
+              className="grid grid-cols-[1.75rem_minmax(0,1fr)_auto] items-center gap-x-2.5 gap-y-1.5"
+            >
               <Avatar user={person} size="sm" />
               <span className="truncate text-sm font-semibold">{label(person)}</span>
               <span className="font-semibold tabular-nums">{formatMoney(share, currency)}</span>
@@ -136,18 +137,20 @@ export function ItemizedSummary({
           );
         })}
       </ul>
-      <dl className="space-y-1.5 border-t border-line pt-3 text-xs text-ink-soft">
-        {[
-          ["Items", itemsTotalCents],
-          ["Tax", taxCents],
-          ["Tip", tipCents],
-        ].map(([name, cents]) => (
-          <div key={name} className="flex justify-between tabular-nums">
-            <dt>{name}</dt>
-            <dd>{formatMoney(Number(cents), currency)}</dd>
-          </div>
-        ))}
-      </dl>
+      {breakdown ? (
+        <dl className="space-y-1.5 border-t border-line pt-3 text-xs text-ink-soft">
+          {[
+            ["Items", breakdown.itemsTotalCents],
+            ["Tax", breakdown.taxCents],
+            ["Tip", breakdown.tipCents],
+          ].map(([name, cents]) => (
+            <div key={name} className="flex justify-between tabular-nums">
+              <dt>{name}</dt>
+              <dd>{formatMoney(Number(cents), currency)}</dd>
+            </div>
+          ))}
+        </dl>
+      ) : null}
       {status}
     </aside>
   );

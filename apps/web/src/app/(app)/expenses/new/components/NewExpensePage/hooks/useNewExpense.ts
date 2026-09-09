@@ -18,6 +18,7 @@ import {
   includeInEveryItem,
   itemizedTotals,
   previewItemizedShares,
+  previewSplitShares,
   shareEveryItemWith,
   type DraftLineItem,
   type FormSplitType,
@@ -380,9 +381,6 @@ export function useNewExpense(
   const taxCents = parseMoneyInput(taxInput, currency) ?? 0;
   const tipCents = parseMoneyInput(tipInput, currency) ?? 0;
   const itemized = itemizedTotals(items, taxCents, tipCents, currency);
-  // Live "what each person owes" figures, from the same allocator the server
-  // runs — so the preview under the grid is exactly what gets saved.
-  const previewShares = previewItemizedShares(items, taxCents, tipCents, currency);
 
   /**
    * Sets the tip to a percentage of the items subtotal (before tax), the way
@@ -403,6 +401,11 @@ export function useNewExpense(
   const splitCheck = isItemized
     ? checkItemized(items, currency)
     : checkSplit({ splitType, totalCents, participantIds, inputs: splitInputs, currency });
+  // Live "what each person owes" figures for the summary, from the same
+  // allocator the server runs, so the preview is exactly what gets saved.
+  const previewShares = isItemized
+    ? previewItemizedShares(items, taxCents, tipCents, currency)
+    : previewSplitShares({ splitType, totalCents, participantIds, inputs: splitInputs, currency });
   const payerCheck = checkPayers(totalCents, multiPayer, payerAmounts, currency);
   // A group, or at least one other person — mirrors exactly what the picker
   // shows, so the button never disables for a reason that isn't on screen.

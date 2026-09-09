@@ -4,7 +4,7 @@
 import { CATEGORIES } from "@haalkhata/shared/money/money.constants";
 import { centsToInput } from "@haalkhata/shared/money/money";
 import { PeoplePicker } from "@/components/people/PeoplePicker";
-import { ItemizedSummary } from "@/components/expense/ItemizedSummary";
+import { SplitSummary } from "@/components/expense/SplitSummary";
 import { ErrorPopup } from "@/components/ui/ErrorPopup";
 import { itemizedWarnings } from "@/lib/expense/itemizedWarnings";
 import { parseMoneyInput } from "@haalkhata/shared/money/money";
@@ -46,12 +46,17 @@ export function ExpenseForm({
 }) {
   const form = useNewExpense(expenseAPI, initial, editExpenseId);
   const currency = form.selectedGroup?.currency ?? form.me?.defaultCurrency ?? "USD";
-  // Two things earn the form a sticky sidebar column on desktop: a photo to
-  // check the numbers against, and an itemized split, whose who-owes-what
-  // panel then sits beside the cards all the way down instead of as a strip
-  // at the bottom of the phone layout.
-  const hasReceipt = form.receiptUrl !== "";
-  const hasSidebar = hasReceipt || form.isItemized;
+  // On desktop the form always has a sticky sidebar: the receipt scanner (or
+  // the photo, once there is one) and a who-owes-what panel for whichever
+  // split is selected, so the numbers are beside the fields all the way
+  // down. On a phone the same things stack in the flow, and an itemized
+  // split carries its own summary strip instead of the panel.
+  const isItemized = form.isItemized;
+  const summaryWarnings = isItemized
+    ? itemizedWarnings(form.items, currency)
+    : !form.splitCheck.ok && form.totalCents !== null
+      ? [form.splitCheck.message]
+      : [];
 
   const fields = (
     <>
@@ -149,42 +154,42 @@ export function ExpenseForm({
   );
 
   return (
-    <div className={`mx-auto space-y-6 ${hasSidebar ? "max-w-6xl" : "max-w-xl"}`}>
+    <div className="mx-auto max-w-6xl space-y-6">
       <h1 className="text-3xl font-bold">{form.isEdit ? "Edit expense" : "Add expense"}</h1>
 
-      {/* Editing cannot re-scan: an itemized expense is not editable here at
-          all (the page guards it), and re-parsing a photo over a saved
-          non-itemized expense would silently convert it. */}
-      {form.isEdit ? (
-        <div className="space-y-6">{fields}</div>
-      ) : (
-        <div
-          className={
-            hasSidebar ? "grid gap-6 lg:grid-cols-[minmax(0,26rem)_minmax(0,1fr)]" : "space-y-6"
-          }
-        >
-          <div className={hasSidebar ? "space-y-6 lg:sticky lg:top-6 lg:self-start" : ""}>
-            <ReceiptPanel form={form} />
-            {form.isItemized ? (
-              <ItemizedSummary
-                layout="panel"
-                className="hidden lg:block"
-                people={form.people}
-                currentUserId={form.me?.id ?? ""}
-                currency={currency}
-                shares={form.previewShares}
-                totalCents={form.totalCents ?? 0}
-                itemsTotalCents={form.itemsTotalCents}
-                taxCents={parseMoneyInput(form.taxInput, currency) ?? 0}
-                tipCents={parseMoneyInput(form.tipInput, currency) ?? 0}
-                warnings={itemizedWarnings(form.items, currency)}
-                hasItems={form.items.length > 0}
-              />
-            ) : null}
-          </div>
-          <div className="space-y-6">{fields}</div>
+      {/* The phone track is minmax(0,1fr), not the implicit auto: an auto
+          track grows to its content's max-content width, and the receipt
+          scanner's labels alone pushed the page to 863px on a 390px phone. */}
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-6 lg:grid-cols-[minmax(0,26rem)_minmax(0,1fr)]">
+        <div className="min-w-0 space-y-6 lg:sticky lg:top-6 lg:self-start">
+          {/* Editing cannot re-scan: an itemized expense is not editable here
+              at all (the page guards it), and re-parsing a photo over a saved
+              non-itemized expense would silently convert it. */}
+          {form.isEdit ? null : <ReceiptPanel form={form} />}
+          <SplitSummary
+            layout="panel"
+            className="hidden lg:block"
+            people={form.people}
+            currentUserId={form.me?.id ?? ""}
+            currency={currency}
+            shares={form.previewShares}
+            totalCents={form.totalCents ?? 0}
+            breakdown={
+              isItemized
+                ? {
+                    itemsTotalCents: form.itemsTotalCents,
+                    taxCents: parseMoneyInput(form.taxInput, currency) ?? 0,
+                    tipCents: parseMoneyInput(form.tipInput, currency) ?? 0,
+                  }
+                : undefined
+            }
+            warnings={summaryWarnings}
+            ready={isItemized ? form.items.length > 0 : (form.totalCents ?? 0) > 0}
+            readyMessage={isItemized ? "Everything is assigned" : "Adds up to the total"}
+          />
         </div>
-      )}
+        <div className="min-w-0 space-y-6">{fields}</div>
+      </div>
       {/* Errors from scanning and saving alike: pinned to the viewport rather
           than printed above the submit button, which on a phone is a screen
           away from the receipt panel that produced most of them. */}
