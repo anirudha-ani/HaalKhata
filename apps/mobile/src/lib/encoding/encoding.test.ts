@@ -14,9 +14,9 @@ describe("base64ToBytes", () => {
     expect(base64ToBytes("").length).toBe(0);
   });
 
-  it("matches Node's decoder on binary data", () => {
+  it("matches the platform encoder on binary data", () => {
     const original = Uint8Array.from({ length: 256 }, (_unused, index) => index);
-    const encoded = Buffer.from(original).toString("base64");
+    const encoded = btoa(String.fromCharCode(...original));
     expect(Array.from(base64ToBytes(encoded))).toEqual(Array.from(original));
   });
 
