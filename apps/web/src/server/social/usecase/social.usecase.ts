@@ -1,6 +1,7 @@
 /** Social business logic: friends (friendships ∪ expense counterparties), activity feed, notifications. */
 
 import {
+  countIncomingFriendRequests,
   deleteFriendRequest,
   deleteFriendship,
   friendshipExists,
@@ -8,6 +9,7 @@ import {
   insertFriendship,
   listFriendIds,
   listIncomingFriendRequestIds,
+  listOutgoingFriendRequests,
 } from "@/server/social/repo/friendships.repo";
 import { randomBytes } from "node:crypto";
 import { findUserById, findUsersByIds, type UserRow } from "@/server/auth/repo/users.repo";
@@ -131,8 +133,12 @@ export async function addFriend(
   }
   const requester = await findUserById(userId);
   if (!requester) return {};
+  // Kept on the row so the sender's list can echo what they typed. A
+  // recipient chosen by id was already on their screen, so nothing is kept
+  // and their minimal profile is shown instead.
+  const typedIdentifier = email || phone || undefined;
   await transaction(async (client) => {
-    const inserted = await insertFriendRequest(userId, friend.id, client);
+    const inserted = await insertFriendRequest(userId, friend.id, client, typedIdentifier);
     if (!inserted) return;
     await insertNotifications(
       [friend.id],
@@ -149,31 +155,62 @@ export async function addFriend(
 }
 
 /**
+ * One request the caller sent and is still waiting on, as the wire shape
+ * expects it: exactly one of `user` / `identifier` is set.
+ */
+interface OutgoingFriendRequestEntry {
+  /** Minimal profile of a recipient picked by id or reached through a link. */
+  user?: ReturnType<typeof toFriendRequestUser>;
+  /** The email or phone the caller typed, echoed back as typed. */
+  identifier?: string;
+  /** When the request was sent. */
+  createdAt: string;
+}
+
+/**
  * Lists the caller's friends: expense counterparties (with their net
  * balances) first, then remaining explicit friendships alphabetically with a
- * zero balance.
+ * zero balance. Pending requests ride along in both directions.
+ *
+ * A sent request echoes only what the caller already knew: the email or
+ * phone they typed, or the minimal profile of a recipient they picked by id
+ * or reached through a profile link. A typed identifier is never resolved to
+ * the account behind it, or sending a request would double as a lookup.
  *
  * @param userId - Id of the authenticated caller whose friends to list.
- * @returns Entries of `{ user, netCents }` where positive netCents means the
- *   friend owes the caller.
+ * @returns `friends` as `{ user, netCents }` where positive netCents means
+ *   the friend owes the caller; `incomingRequests` awaiting the caller;
+ *   `outgoingRequests` the caller is waiting on, oldest first.
  */
 export async function listFriends(userId: string) {
-  const [{ counterparties }, incomingRequestIds] = await Promise.all([
+  const [{ counterparties }, incomingRequestIds, outgoingRequests] = await Promise.all([
     getOverallBalances(userId),
     listIncomingFriendRequestIds(userId),
+    listOutgoingFriendRequests(userId),
   ]);
   const seenUserIds = new Set(counterparties.map((counterparty) => counterparty.user.id));
   const remainingFriendIds = (await listFriendIds(userId)).filter(
     (friendId) => !seenUserIds.has(friendId),
   );
-  const [remainingFriends, incomingRequesters] = await Promise.all([
+  // Only recipients picked by id or link are looked up; a typed identifier
+  // is echoed as typed.
+  const pickedRecipientIds = outgoingRequests
+    .filter((request) => request.recipient_identifier === null)
+    .map((request) => request.recipient_id);
+  const [remainingFriends, incomingRequesters, pickedRecipients] = await Promise.all([
     findUsersByIds(remainingFriendIds),
     findUsersByIds(incomingRequestIds),
+    findUsersByIds(pickedRecipientIds),
   ]);
   const requesterById = new Map(
     incomingRequesters
       .filter((requester) => requester.merged_into === null)
       .map((requester) => [requester.id, requester]),
+  );
+  const recipientById = new Map(
+    pickedRecipients
+      .filter((recipient) => recipient.merged_into === null)
+      .map((recipient) => [recipient.id, recipient]),
   );
   return {
     friends: [
@@ -185,6 +222,15 @@ export async function listFriends(userId: string) {
     incomingRequests: incomingRequestIds.flatMap((requesterId) => {
       const requester = requesterById.get(requesterId);
       return requester ? [toFriendRequestUser(requester)] : [];
+    }),
+    outgoingRequests: outgoingRequests.flatMap((request): OutgoingFriendRequestEntry[] => {
+      if (request.recipient_identifier !== null) {
+        return [{ identifier: request.recipient_identifier, createdAt: request.created_at }];
+      }
+      const recipient = recipientById.get(request.recipient_id);
+      return recipient
+        ? [{ user: toFriendRequestUser(recipient), createdAt: request.created_at }]
+        : [];
     }),
   };
 }
@@ -295,16 +341,20 @@ export async function listActivity(
 }
 
 /**
- * Lists the caller's newest notifications along with their unread count.
+ * Lists the caller's newest notifications along with their unread count and
+ * the number of friend requests awaiting their answer. The latter lives here
+ * because clients already poll this call for the bell badge, and ListFriends
+ * is far too heavy to poll for one number.
  *
  * @param userId - Id of the authenticated caller.
- * @returns The notifications as social.v1 Notification message shapes plus
- *   the number still unread.
+ * @returns The notifications as social.v1 Notification message shapes, the
+ *   number still unread, and the pending incoming friend request count.
  */
 export async function listNotifications(userId: string) {
-  const [notifications, unreadCount] = await Promise.all([
+  const [notifications, unreadCount, pendingFriendRequestCount] = await Promise.all([
     listNotificationsByUser(userId),
     countUnread(userId),
+    countIncomingFriendRequests(userId),
   ]);
   return {
     notifications: notifications.map((notificationRow) => ({
@@ -317,6 +367,7 @@ export async function listNotifications(userId: string) {
       createdAt: notificationRow.created_at,
     })),
     unreadCount,
+    pendingFriendRequestCount,
   };
 }
 

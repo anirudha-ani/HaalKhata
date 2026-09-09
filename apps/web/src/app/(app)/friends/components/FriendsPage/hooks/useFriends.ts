@@ -45,8 +45,9 @@ export function bucketsOf(
  * its country and is validated client-side before anything is sent.
  *
  * @returns An object exposing `me` (the signed-in user), `friends` (every
- *   counterparty balance) with `friendsError` when that query failed, and
- *   `visibleFriends` (those matching `query`), the
+ *   counterparty balance) with `friendsError` when that query failed,
+ *   `incomingRequests` awaiting the user and `outgoingRequests` the user is
+ *   waiting on, `visibleFriends` (those matching `query`), the
  *   `query`/`setQuery` search state, `isLoading`/`isAdding` flags, the
  *   `identifier` form state with `setIdentifier` and `submitAdd`, the last
  *   add-friend `error` message, and `settleWith`/`setSettleWith` controlling
@@ -107,7 +108,11 @@ export function useFriends() {
   const respondToRequest = useMutation({
     mutationFn: (response: { userId: string; accept: boolean }) =>
       socialClient.respondFriendRequest(response),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.friends }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.friends });
+      // The Friends tab badge counts these; drop it as soon as one is answered.
+      queryClient.invalidateQueries({ queryKey: queryKeys.notifications });
+    },
     onError: (mutationError) => setError(errorMessage(mutationError)),
   });
 
@@ -147,6 +152,7 @@ export function useFriends() {
     // render as "no friends yet".
     friendsError: friends.error,
     incomingRequests: friends.data?.incomingRequests ?? [],
+    outgoingRequests: friends.data?.outgoingRequests ?? [],
     visibleFriends,
     totals,
     query,

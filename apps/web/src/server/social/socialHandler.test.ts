@@ -23,7 +23,7 @@ beforeEach(() => vi.clearAllMocks());
 
 describe("social handler rate limits", () => {
   it("charges ListFriends to the full-ledger aggregate bucket", async () => {
-    vi.mocked(listFriends).mockResolvedValue({ friends: [], incomingRequests: [] });
+    vi.mocked(listFriends).mockResolvedValue({ friends: [], incomingRequests: [], outgoingRequests: [] });
     const context = {} as HandlerContext;
 
     await socialHandler.listFriends(create(EmptySchema), context);

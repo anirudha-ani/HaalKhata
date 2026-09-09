@@ -44,7 +44,7 @@ export function AppShell({
   const pathname = usePathname();
   const router = useRouter();
   const queryClient = useQueryClient();
-  const { currentUser, unreadCount } = useShellData();
+  const { currentUser, unreadCount, pendingFriendRequestCount } = useShellData();
 
   /** Logs the user out, clears all cached queries, and redirects to the login page. */
   const signOut = async () => {
@@ -61,6 +61,19 @@ export function AppShell({
    */
   const isActive = (href: string) =>
     pathname === href || (pathname?.startsWith(`${href}/`) ?? false);
+
+  /**
+   * Count shown on a destination: unread notifications on Activity, friend
+   * requests waiting for an answer on Friends. Zero hides the badge.
+   *
+   * @param href - The navigation item's destination path.
+   * @returns The number to show, or 0 for destinations without a badge.
+   */
+  const badgeFor = (href: string) => {
+    if (href === "/activity") return unreadCount;
+    if (href === "/friends") return pendingFriendRequestCount;
+    return 0;
+  };
 
   return (
     // The shell is pinned to the viewport and does not scroll; only <main>
@@ -96,9 +109,9 @@ export function AppShell({
               >
                 <Icon className="h-[18px] w-[18px]" />
                 {label}
-                {href === "/activity" && unreadCount > 0 ? (
+                {badgeFor(href) > 0 ? (
                   <span className="ml-auto rounded-full bg-brand-600 px-2 py-0.5 text-[11px] font-bold text-white">
-                    {unreadCount}
+                    {badgeFor(href)}
                   </span>
                 ) : null}
               </Link>
@@ -175,7 +188,7 @@ export function AppShell({
         <nav className="relative z-10 shrink-0 border-t border-line bg-card md:hidden">
           <div className="mx-auto grid max-w-md grid-cols-5 items-end px-2 pt-1.5 pb-[max(0.375rem,env(safe-area-inset-bottom))]">
             {MOBILE_LEFT_NAV.map(({ href, label, icon: Icon }) => (
-              <MobileTab key={href} href={href} label={label} active={isActive(href)} icon={<Icon className="h-5 w-5" />} />
+              <MobileTab key={href} href={href} label={label} active={isActive(href)} badge={badgeFor(href)} icon={<Icon className="h-5 w-5" />} />
             ))}
             <Link
               href="/expenses/new"
@@ -185,7 +198,7 @@ export function AppShell({
               <Plus className="h-6 w-6" />
             </Link>
             {MOBILE_RIGHT_NAV.map(({ href, label, icon: Icon }) => (
-              <MobileTab key={href} href={href} label={label} active={isActive(href)} icon={<Icon className="h-5 w-5" />} />
+              <MobileTab key={href} href={href} label={label} active={isActive(href)} badge={badgeFor(href)} icon={<Icon className="h-5 w-5" />} />
             ))}
           </div>
         </nav>
@@ -194,12 +207,17 @@ export function AppShell({
   );
 }
 
-/** Renders one tab in the mobile bottom navigation: an icon over its label, tinted when active. */
+/**
+ * Renders one tab in the mobile bottom navigation: an icon over its label,
+ * tinted when active, with a count pinned to the icon's corner when there is
+ * something waiting behind it.
+ */
 function MobileTab({
   href,
   label,
   icon,
   active,
+  badge = 0,
 }: {
   /** Destination path the tab links to. */
   href: string;
@@ -209,6 +227,8 @@ function MobileTab({
   icon: ReactNode;
   /** Whether the tab's destination matches the current route. */
   active: boolean;
+  /** Items waiting behind this tab; 0 shows no badge. */
+  badge?: number;
 }) {
   return (
     <Link
@@ -217,7 +237,14 @@ function MobileTab({
         active ? "text-brand-600" : "text-ink-soft"
       }`}
     >
-      {icon}
+      <span className="relative">
+        {icon}
+        {badge > 0 ? (
+          <span className="absolute -top-1.5 -right-2.5 min-w-4 rounded-full bg-brand-600 px-1 text-center text-[10px] leading-4 font-bold text-white ring-2 ring-card">
+            {badge}
+          </span>
+        ) : null}
+      </span>
       {label}
     </Link>
   );

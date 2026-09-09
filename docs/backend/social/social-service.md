@@ -27,7 +27,9 @@ SQL in [friendships.repo.ts](../../../apps/web/src/server/social/repo/friendship
   inviting an unregistered contact (§33 — immediate, since nobody exists to
   accept), or accepting an invite link (acceptor ↔ inviter).
 - A **friend request** is asymmetric and pending until the recipient acts.
-  At most 100 unanswered requests are retained per recipient.
+  At most 100 unanswered requests are retained per recipient. Both sides see
+  it while it pends: the recipient under `incoming_requests`, the sender
+  under `outgoing_requests`.
 - "**Connected**" (the authorization set for adding people to groups and
   one-off expenses) is friendships ∪ co-membership — two people who met in
   somebody else's group can split without a request.
@@ -48,6 +50,12 @@ SQL in [friendships.repo.ts](../../../apps/web/src/server/social/repo/friendship
 - A pending request's sender is shown through the minimal
   `toFriendRequestUser` projection — no contact info, payment handles,
   currency, or registration status until accepted.
+- A pending request's **sender side** echoes only what the sender already
+  knew: the email or phone they typed (kept on the request row as
+  `recipient_identifier` for exactly this), or the same minimal projection
+  of a recipient they picked by id or reached through a profile link. A
+  typed identifier is never resolved back to a name, or AddFriend would
+  become a reverse lookup.
 - Activity is **audience-scoped at write time**: every event row carries the
   user ids allowed to see it, decided by the writer (expense participants,
   group members for structural events). Reads filter by audience; a group
@@ -129,7 +137,9 @@ consent.
 - **Registered targets:** no friendship exists until the recipient accepts.
   The request insert and the recipient's `friend_request` notification
   commit together; a duplicate pending request inserts nothing and notifies
-  nobody (no notification spam by re-sending).
+  nobody (no notification spam by re-sending). The typed email or phone is
+  stored on the request row so ListFriends can echo it back to the sender;
+  a `user_id` request stores nothing extra.
 - **Unmatched email/phone (§33):** the Invited row is created on the spot
   with an immediate two-way friendship — there is nobody to accept, and the
   row can hold no transactions, so it is a contact-book entry until claimed.
@@ -170,6 +180,10 @@ account?").
 - `incoming_requests` carries pending senders, visible only to this
   recipient, through the minimal projection (see Privacy Invariants).
   Senders merged away since requesting are dropped.
+- `outgoing_requests` carries what the caller has sent and is still waiting
+  on, oldest first. Each entry has exactly one of `user` (picked by id or
+  via profile link, minimal projection) or `identifier` (the email or phone
+  typed, echoed back). Recipients merged away since are dropped.
 
 #### Request
 
@@ -183,6 +197,7 @@ account?").
 | --- | --- | --- |
 | friends | repeated CounterpartyBalance | Counterparties with balances, then zero-balance friends A→Z. |
 | incoming_requests | repeated User | Pending senders (minimal projection). |
+| outgoing_requests | repeated OutgoingFriendRequest | Sent and unanswered: `{user?, identifier, created_at}`, exactly one of user/identifier set. |
 
 ---
 
@@ -274,6 +289,11 @@ account?").
 
 - The caller's newest notifications plus the unread count (computed
   separately, so it is correct even beyond the returned page).
+- `pending_friend_request_count` is the caller's unanswered incoming
+  requests, for the Friends tab badge. It rides along here because clients
+  already poll this call for the bell; ListFriends is the full-ledger
+  aggregate and shares the balances rate limit, so it is the wrong thing to
+  poll.
 - Notification types in use: `friend_request`, `added_to_group`,
   `ownership_transferred`, `expense_added|updated|deleted`, `comment`,
   `settlement`, `settlement_deleted`, `reminder`.
@@ -290,6 +310,7 @@ account?").
 | --- | --- | --- |
 | notifications | repeated Notification | `{id, type, title, body, link, read, created_at}`. |
 | unread_count | int32 | |
+| pending_friend_request_count | int32 | Incoming friend requests awaiting the caller. |
 
 ---
 
