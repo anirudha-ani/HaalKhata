@@ -4,6 +4,7 @@ import {
   countIncomingFriendRequests,
   deleteFriendRequest,
   deleteFriendship,
+  deleteOutgoingFriendRequest,
   friendshipExists,
   insertFriendRequest,
   insertFriendship,
@@ -270,6 +271,36 @@ export async function respondFriendRequest(
       client,
     );
   });
+}
+
+/**
+ * Withdraws a pending request the caller sent. The request is named the way
+ * the caller saw it in `outgoing_requests`: by the recipient's id when they
+ * were picked, or by the identifier typed when they were not, so cancelling
+ * never requires (or reveals) the account behind an email or phone. The
+ * recipient is not told; the request simply stops being pending.
+ *
+ * @param userId - Authenticated requester.
+ * @param input - Exactly one of the recipient's id or the typed identifier.
+ * @throws UsecaseError (invalid_argument) unless exactly one of them is given.
+ * @throws UsecaseError (not_found) when no such pending request exists,
+ *   including one the recipient answered a moment ago.
+ */
+export async function cancelFriendRequest(
+  userId: string,
+  input: { userId: string; identifier: string },
+): Promise<void> {
+  const recipientId = input.userId.trim();
+  const identifier = input.identifier.trim();
+  if ((recipientId === "") === (identifier === "")) {
+    invalid("name the request by exactly one of the person or the identifier you typed");
+  }
+  if (recipientId === userId) notFound("friend request not found");
+  const removed = await deleteOutgoingFriendRequest(
+    userId,
+    recipientId ? { recipientId } : { recipientIdentifier: identifier },
+  );
+  if (!removed) notFound("that request is no longer pending");
 }
 
 /**

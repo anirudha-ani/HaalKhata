@@ -14,6 +14,11 @@ service SocialService {
   rpc ListFriends(google.protobuf.Empty) returns (ListFriendsResponse);
   // Accepts or declines an incoming request; only the named recipient can act.
   rpc RespondFriendRequest(RespondFriendRequestRequest) returns (google.protobuf.Empty);
+  // Withdraws a request the caller sent that is still pending. Named the way
+  // it was shown in outgoing_requests: by the recipient's id when they were
+  // picked, or by the typed identifier when they were not, so cancelling
+  // never needs (or reveals) the account behind an email or phone.
+  rpc CancelFriendRequest(CancelFriendRequestRequest) returns (google.protobuf.Empty);
   // Ends a friendship. Refused (FailedPrecondition) while any balance with
   // that person, in any currency, is outstanding: removal must not orphan
   // debt. Quiet like group removal (no notification); shared history and
@@ -86,6 +91,13 @@ message RespondFriendRequestRequest {
   string user_id = 1;
   // True accepts and creates the symmetric friendship; false declines it.
   bool accept = 2;
+}
+
+message CancelFriendRequestRequest {
+  // Exactly one of user_id/identifier, matching how the pending request was
+  // shown to the caller.
+  string user_id = 1;
+  string identifier = 2;
 }
 
 message ListFriendsResponse {

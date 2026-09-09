@@ -16,6 +16,7 @@ import {
 import { Avatar } from "@/components/ui/Avatar";
 import { EmailOrPhoneField } from "@/components/ui/EmailOrPhoneField";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { ErrorPopup } from "@/components/ui/ErrorPopup";
 import { Money } from "@/components/ui/Money";
 import { SearchField } from "@/components/ui/SearchField";
 import { InviteShareModal } from "@/components/modals/InviteShareModal";
@@ -97,21 +98,32 @@ export function FriendsPage() {
         <section className="space-y-3 rounded-2xl border border-line bg-card p-4">
           <h2 className="font-semibold">Sent requests</h2>
           <ul className="space-y-3">
-            {friendsState.outgoingRequests.map((request) => (
-              <li key={request.user?.id ?? request.identifier} className="flex items-center gap-3">
-                {request.user ? (
-                  <Avatar user={request.user} />
-                ) : (
-                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-paper text-ink-soft">
-                    <Clock className="h-4 w-4" />
-                  </span>
-                )}
-                <div className="min-w-0 flex-1">
-                  <p className="truncate font-medium">{request.user?.name ?? request.identifier}</p>
-                  <p className="text-xs text-ink-soft">Waiting for them to accept</p>
-                </div>
-              </li>
-            ))}
+            {friendsState.outgoingRequests.map((request) => {
+              const rowKey = request.user?.id ?? request.identifier;
+              return (
+                <li key={rowKey} className="flex items-center gap-3">
+                  {request.user ? (
+                    <Avatar user={request.user} />
+                  ) : (
+                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-paper text-ink-soft">
+                      <Clock className="h-4 w-4" />
+                    </span>
+                  )}
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate font-medium">{request.user?.name ?? request.identifier}</p>
+                    <p className="text-xs text-ink-soft">Waiting for them to accept</p>
+                  </div>
+                  <button
+                    type="button"
+                    disabled={friendsState.cancellingKey === rowKey}
+                    onClick={() => friendsState.cancelSentRequest(request)}
+                    className="flex items-center gap-1 rounded-lg border border-line px-3 py-1.5 text-sm font-semibold text-ink-soft hover:text-neg-600 disabled:opacity-50"
+                  >
+                    <X className="h-3.5 w-3.5" /> Cancel
+                  </button>
+                </li>
+              );
+            })}
           </ul>
         </section>
       ) : null}
@@ -172,9 +184,6 @@ export function FriendsPage() {
               {friendsState.isAdding ? "Sending…" : "Send request"}
             </button>
           </form>
-          {friendsState.error ? (
-            <p className="text-sm font-medium text-brand-600">{friendsState.error}</p>
-          ) : null}
           {friendsState.notice ? (
             <p className="text-sm font-medium text-pos-700">{friendsState.notice}</p>
           ) : null}
@@ -321,6 +330,10 @@ export function FriendsPage() {
           onClose={friendsState.closeRemindShare}
         />
       ) : null}
+
+      {/* Add, accept, decline and cancel all report here. A line inside the
+          add form was invisible whenever that form was closed. */}
+      <ErrorPopup message={friendsState.error} onDismiss={friendsState.dismissError} />
 
       {settleTarget ? (
         <SettleUpModal

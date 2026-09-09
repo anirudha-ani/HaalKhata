@@ -7,6 +7,7 @@ import type { UserRow } from "@/server/auth/repo/users.repo";
 vi.mock("@/server/social/repo/friendships.repo", () => ({
   countIncomingFriendRequests: vi.fn(),
   deleteFriendRequest: vi.fn(),
+  deleteOutgoingFriendRequest: vi.fn(),
   friendshipExists: vi.fn(),
   insertFriendRequest: vi.fn(),
   insertFriendship: vi.fn(),

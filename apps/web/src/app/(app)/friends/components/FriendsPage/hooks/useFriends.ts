@@ -1,9 +1,10 @@
 "use client";
 /** Composite hook for the friends route: queries, add-friend mutation, form and settle state. */
 
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { User } from "@haalkhata/protogen/common/v1/common_pb";
+import type { OutgoingFriendRequest } from "@haalkhata/protogen/social/v1/social_pb";
 import {
   contactIsEmpty,
   contactPayload,
@@ -116,6 +117,21 @@ export function useFriends() {
     onError: (mutationError) => setError(errorMessage(mutationError)),
   });
 
+  /**
+   * Withdraws one request the current user sent. Named the way the server
+   * showed it: the person's id when they were picked, otherwise the typed
+   * identifier, so the client never needs the account behind an address.
+   */
+  const cancelRequest = useMutation({
+    mutationFn: (target: { userId: string; identifier: string }) =>
+      socialClient.cancelFriendRequest(target),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.friends }),
+    onError: (mutationError) => setError(errorMessage(mutationError)),
+  });
+
+  /** Closes the error popup; the next action clears it anyway, this serves the dismiss button. */
+  const dismissError = useCallback(() => setError(""), []);
+
   const allFriends = friends.data?.friends ?? [];
   // Filtering keeps the server's order (people you have expenses with first,
   // then the rest alphabetically) rather than re-ranking by match quality.
@@ -164,6 +180,7 @@ export function useFriends() {
     setContact,
     canSubmitAdd: !contactIsEmpty(contact),
     error,
+    dismissError,
     notice,
     submitAdd: () => {
       setError("");
@@ -183,6 +200,18 @@ export function useFriends() {
       respondToRequest.mutate({ userId, accept });
     },
     respondingUserId: respondToRequest.isPending ? respondToRequest.variables?.userId : undefined,
+    cancelSentRequest: (request: OutgoingFriendRequest) => {
+      setError("");
+      cancelRequest.mutate(
+        request.user
+          ? { userId: request.user.id, identifier: "" }
+          : { userId: "", identifier: request.identifier },
+      );
+    },
+    /** The sent request being withdrawn right now, keyed as its row is: person id or identifier. */
+    cancellingKey: cancelRequest.isPending
+      ? cancelRequest.variables?.userId || cancelRequest.variables?.identifier
+      : undefined,
     remindFriend: (person: User) => {
       setError("");
       setNotice("");

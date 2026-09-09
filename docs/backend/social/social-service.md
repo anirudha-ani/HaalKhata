@@ -29,7 +29,8 @@ SQL in [friendships.repo.ts](../../../apps/web/src/server/social/repo/friendship
 - A **friend request** is asymmetric and pending until the recipient acts.
   At most 100 unanswered requests are retained per recipient. Both sides see
   it while it pends: the recipient under `incoming_requests`, the sender
-  under `outgoing_requests`.
+  under `outgoing_requests`, and the sender can withdraw it
+  (`CancelFriendRequest`).
 - "**Connected**" (the authorization set for adding people to groups and
   one-off expenses) is friendships ∪ co-membership — two people who met in
   somebody else's group can split without a request.
@@ -118,6 +119,7 @@ consent.
 14. [RevokeProfileInviteLink](#14-revokeprofileinvitelink)
 15. [InviteContactToSignUp](#15-invitecontacttosignup)
 16. [RemoveFriend](#16-removefriend)
+17. [CancelFriendRequest](#17-cancelfriendrequest)
 
 ---
 
@@ -628,6 +630,42 @@ account?").
 | Field | Type | Description |
 | --- | --- | --- |
 | user_id | string | The friend being removed. |
+
+#### Response
+
+`google.protobuf.Empty`.
+
+---
+
+### 17. CancelFriendRequest
+
+**Method:** `CancelFriendRequest`
+**Route:** `POST /api/connect/social.v1.SocialService/CancelFriendRequest`
+
+#### Notes
+
+- Withdraws a request the caller sent that is still pending. The request is
+  named the way `ListFriends.outgoing_requests` showed it: `user_id` for a
+  recipient the caller picked by id or reached through a profile link,
+  `identifier` for a typed email or phone. Exactly one must be set
+  (`InvalidArgument` otherwise), and the identifier path never resolves the
+  account behind it, so cancelling cannot become a lookup either.
+- **Atomic against acceptance:** the recipient is resolved, then the pair's
+  friend-request inbox locks are taken (the order every friendship writer
+  uses) before the delete. A concurrent accept therefore serializes with the
+  cancel; whichever runs second finds no row and reports `NotFound`.
+- **Quiet:** the recipient is not notified. Their earlier "sent you a friend
+  request" notification stays in their feed but the request is simply no
+  longer there to answer.
+- `NotFound` when nothing pending matches, including a request answered a
+  moment earlier.
+
+#### Request
+
+| Field | Type | Description |
+| --- | --- | --- |
+| user_id | string | The recipient, when the request was shown as a person. |
+| identifier | string | The typed email or phone, when it was shown as one. |
 
 #### Response
 

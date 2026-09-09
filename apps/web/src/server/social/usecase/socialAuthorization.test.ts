@@ -6,6 +6,7 @@ import type { UserRow } from "@/server/auth/repo/users.repo";
 vi.mock("@/server/social/repo/friendships.repo", () => ({
   countIncomingFriendRequests: vi.fn(),
   deleteFriendRequest: vi.fn(),
+  deleteOutgoingFriendRequest: vi.fn(),
   friendshipExists: vi.fn(),
   insertFriendRequest: vi.fn(),
   insertFriendship: vi.fn(),
@@ -61,6 +62,7 @@ import { getOverallBalances } from "@/server/expense/usecase/balance.usecase";
 import {
   countIncomingFriendRequests,
   deleteFriendRequest,
+  deleteOutgoingFriendRequest,
   friendshipExists,
   insertFriendRequest,
   insertFriendship,
@@ -73,7 +75,13 @@ import {
   insertNotifications,
   listNotificationsByUser,
 } from "@/server/social/repo/notifications.repo";
-import { addFriend, listFriends, listNotifications, respondFriendRequest } from "./social.usecase";
+import {
+  addFriend,
+  cancelFriendRequest,
+  listFriends,
+  listNotifications,
+  respondFriendRequest,
+} from "./social.usecase";
 
 const CALLER = "user-caller";
 const TARGET = "user-target";
@@ -259,5 +267,44 @@ describe("what each side of a pending request may see", () => {
       pendingFriendRequestCount: 3,
     });
     expect(countIncomingFriendRequests).toHaveBeenCalledWith(TARGET);
+  });
+});
+
+describe("cancelFriendRequest", () => {
+  it("withdraws a request named by the recipient the caller picked", async () => {
+    vi.mocked(deleteOutgoingFriendRequest).mockResolvedValue(true);
+
+    await cancelFriendRequest(CALLER, { userId: TARGET, identifier: "" });
+
+    expect(deleteOutgoingFriendRequest).toHaveBeenCalledWith(CALLER, { recipientId: TARGET });
+  });
+
+  it("withdraws a request named by the identifier the caller typed", async () => {
+    vi.mocked(deleteOutgoingFriendRequest).mockResolvedValue(true);
+
+    await cancelFriendRequest(CALLER, { userId: "", identifier: TARGET_EMAIL });
+
+    expect(deleteOutgoingFriendRequest).toHaveBeenCalledWith(CALLER, {
+      recipientIdentifier: TARGET_EMAIL,
+    });
+  });
+
+  it("insists on exactly one way of naming the request", async () => {
+    await expect(
+      cancelFriendRequest(CALLER, { userId: TARGET, identifier: TARGET_EMAIL }),
+    ).rejects.toMatchObject({ code: "invalid_argument" });
+    await expect(cancelFriendRequest(CALLER, { userId: "", identifier: "" })).rejects.toMatchObject({
+      code: "invalid_argument",
+    });
+
+    expect(deleteOutgoingFriendRequest).not.toHaveBeenCalled();
+  });
+
+  it("reports a request that is no longer pending as not found", async () => {
+    vi.mocked(deleteOutgoingFriendRequest).mockResolvedValue(false);
+
+    await expect(cancelFriendRequest(CALLER, { userId: TARGET, identifier: "" })).rejects.toMatchObject({
+      code: "not_found",
+    });
   });
 });

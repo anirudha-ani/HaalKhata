@@ -242,3 +242,40 @@ export async function deleteFriendRequest(
   );
   return removed !== undefined;
 }
+
+/**
+ * Withdraws one request the caller sent, found the way the caller saw it: by
+ * the recipient's id, or by the identifier the caller typed. The pair's inbox
+ * locks are taken before the delete, so a concurrent accept serializes
+ * against it instead of racing; whichever runs second finds no row.
+ *
+ * @param requesterId - Authenticated account that sent the request.
+ * @param target - The recipient's id, or the typed identifier stored with the request.
+ * @returns True when a matching pending request existed and was removed.
+ */
+export async function deleteOutgoingFriendRequest(
+  requesterId: string,
+  target: { recipientId?: string; recipientIdentifier?: string },
+): Promise<boolean> {
+  return transaction(async (client) => {
+    const pending = await queryOne<{ recipient_id: string }>(
+      `SELECT recipient_id FROM friend_requests
+        WHERE requester_id = $1
+          AND (($2::text IS NOT NULL AND recipient_id = $2)
+            OR ($3::text IS NOT NULL AND recipient_identifier = $3))
+        LIMIT 1`,
+      [requesterId, target.recipientId ?? null, target.recipientIdentifier ?? null],
+      client,
+    );
+    if (!pending) return false;
+    await lockFriendRequestInboxes(client, [requesterId, pending.recipient_id]);
+    const removed = await queryOne<{ requester_id: string }>(
+      `DELETE FROM friend_requests
+        WHERE requester_id = $1 AND recipient_id = $2
+        RETURNING requester_id`,
+      [requesterId, pending.recipient_id],
+      client,
+    );
+    return removed !== undefined;
+  });
+}
