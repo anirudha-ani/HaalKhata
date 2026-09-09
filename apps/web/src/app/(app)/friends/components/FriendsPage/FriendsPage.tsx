@@ -1,18 +1,8 @@
 "use client";
-/** Friends route: overall position, searchable friend list linking into each ledger, add-by-email-or-phone. */
+/** Friends route: overall position and four tabs (friends, requests, sent, invited), plus the add-friend dialog. */
 
 import Link from "next/link";
-import {
-  Check,
-  ChevronRight,
-  Clock,
-  HandCoins,
-  Handshake,
-  Send,
-  UserPlus,
-  Wallet,
-  X,
-} from "lucide-react";
+import { ChevronRight, HandCoins, Handshake, UserPlus, Wallet } from "lucide-react";
 import { Avatar } from "@/components/ui/Avatar";
 import { EmailOrPhoneField } from "@/components/ui/EmailOrPhoneField";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -26,15 +16,24 @@ import { Spinner } from "@/components/ui/Spinner";
 import { errorMessage } from "@/lib/api/connect";
 import { useHydrated } from "@/lib/hooks/useHydrated";
 import { leadingBucket } from "@haalkhata/shared/money/balances";
+import type { FriendsTab } from "../../constants/friendsTabs";
+import { FriendsTabs } from "./components/FriendsTabs/FriendsTabs";
+import { IncomingRequests } from "./components/IncomingRequests/IncomingRequests";
+import { InvitedFriends } from "./components/InvitedFriends/InvitedFriends";
+import { SentRequests } from "./components/SentRequests/SentRequests";
 import { bucketsOf, useFriends } from "./hooks/useFriends";
 
 /**
- * Renders the friends page: your overall position (owed to you / you owe), an
- * add-friend dialog, a searchable list where each row opens that friendship's
- * ledger, and a settle action that works whichever way the money is owed.
+ * Renders the friends page as four tabs. Friends: your overall position
+ * (owed to you / you owe) and a searchable list where each row opens that
+ * friendship's ledger, with a settle action that works whichever way the
+ * money is owed. Friend requests: what awaits your answer. Sent requests:
+ * what you are waiting on. Invited: people you added who have not joined.
  *
- * Every row is a link rather than a dead readout — a balance you cannot open
- * is a number you cannot check.
+ * One list with sections grew past a screen as soon as a few requests were
+ * pending; tabs keep each view short and give the pending ones a count you
+ * can see without scrolling. Every row is a link rather than a dead readout:
+ * a balance you cannot open is a number you cannot check.
  *
  * @returns The friends page content, or a spinner while the friend list loads.
  */
@@ -44,106 +43,29 @@ export function FriendsPage() {
   if (!hydrated || friendsState.isLoading) return <Spinner label="Loading friends…" />;
   const currency = friendsState.me?.defaultCurrency ?? "USD";
   const settleTarget = friendsState.settleWith;
+  const counts: Record<FriendsTab, number> = {
+    friends: friendsState.registeredFriends.length,
+    requests: friendsState.incomingRequests.length,
+    sent: friendsState.outgoingRequests.length,
+    invited: friendsState.invitedFriends.length,
+  };
 
-  return (
-    <div className="mx-auto max-w-3xl space-y-6">
-      <header className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-3xl font-bold">Friends</h1>
-        <button
-          type="button"
-          onClick={() => friendsState.setShowAdd(true)}
-          className="flex items-center gap-2 rounded-xl bg-brand-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-brand-700"
-        >
-          <UserPlus className="h-4 w-4" /> Add friend
-        </button>
-      </header>
+  const addFriendButton = (
+    <button
+      type="button"
+      onClick={() => friendsState.setShowAdd(true)}
+      className="flex items-center gap-2 rounded-xl bg-brand-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-brand-700"
+    >
+      <UserPlus className="h-4 w-4" /> Add friend
+    </button>
+  );
 
-      {friendsState.incomingRequests.length > 0 ? (
-        <section className="space-y-3 rounded-2xl border border-line bg-card p-4">
-          <h2 className="font-semibold">Friend requests</h2>
-          <ul className="space-y-3">
-            {friendsState.incomingRequests.map((requester) => {
-              const responding = friendsState.respondingUserId === requester.id;
-              return (
-                <li key={requester.id} className="flex items-center gap-3">
-                  <Avatar user={requester} />
-                  <p className="min-w-0 flex-1 truncate font-medium">{requester.name}</p>
-                  {/* Icon-only on a phone, where two worded buttons left the
-                      name a few characters wide; the label carries the words. */}
-                  <button
-                    type="button"
-                    disabled={responding}
-                    onClick={() => friendsState.respondToRequest(requester.id, false)}
-                    aria-label={`Decline ${requester.name}`}
-                    title="Decline"
-                    className="flex items-center gap-1 rounded-lg border border-line p-2 text-sm font-semibold text-ink-soft hover:text-neg-600 disabled:opacity-50 sm:px-3 sm:py-1.5"
-                  >
-                    <X className="h-4 w-4 sm:h-3.5 sm:w-3.5" />
-                    <span className="hidden sm:inline">Decline</span>
-                  </button>
-                  <button
-                    type="button"
-                    disabled={responding}
-                    onClick={() => friendsState.respondToRequest(requester.id, true)}
-                    aria-label={`Accept ${requester.name}`}
-                    title="Accept"
-                    className="flex items-center gap-1 rounded-lg bg-brand-600 p-2 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-50 sm:px-3 sm:py-1.5"
-                  >
-                    <Check className="h-4 w-4 sm:h-3.5 sm:w-3.5" />
-                    <span className="hidden sm:inline">Accept</span>
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
-        </section>
-      ) : null}
-
-      {/* What you sent and are still waiting on. A typed email or phone is
-          echoed as typed and never resolved to a name; only someone picked
-          off a screen (or reached through your profile link) shows as a
-          person. Nothing to open yet: there is no ledger until they accept. */}
-      {friendsState.outgoingRequests.length > 0 ? (
-        <section className="space-y-3 rounded-2xl border border-line bg-card p-4">
-          <h2 className="font-semibold">Sent requests</h2>
-          <ul className="space-y-3">
-            {friendsState.outgoingRequests.map((request) => {
-              const rowKey = request.user?.id ?? request.identifier;
-              return (
-                <li key={rowKey} className="flex items-center gap-3">
-                  {request.user ? (
-                    <Avatar user={request.user} />
-                  ) : (
-                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-paper text-ink-soft">
-                      <Clock className="h-4 w-4" />
-                    </span>
-                  )}
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate font-medium">{request.user?.name ?? request.identifier}</p>
-                    <p className="text-xs text-ink-soft">Waiting for them to accept</p>
-                  </div>
-                  <button
-                    type="button"
-                    disabled={friendsState.cancellingKey === rowKey}
-                    onClick={() => friendsState.cancelSentRequest(request)}
-                    aria-label={`Cancel the request to ${request.user?.name ?? request.identifier}`}
-                    title="Cancel request"
-                    className="flex items-center gap-1 rounded-lg border border-line p-2 text-sm font-semibold text-ink-soft hover:text-neg-600 disabled:opacity-50 sm:px-3 sm:py-1.5"
-                  >
-                    <X className="h-4 w-4 sm:h-3.5 sm:w-3.5" />
-                    <span className="hidden sm:inline">Cancel</span>
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
-        </section>
-      ) : null}
-
+  const friendsTab = (
+    <>
       {/* One row of cards per currency: a dollar owed and a euro owed are two
           facts, never one total. Nothing outstanding shows zeros in the
           caller's own currency. */}
-      {friendsState.friends.length > 0
+      {friendsState.registeredFriends.length > 0
         ? (friendsState.totals.length > 0
             ? friendsState.totals
             : [{ currency, owedToYouCents: 0, youOweCents: 0 }]
@@ -173,38 +95,12 @@ export function FriendsPage() {
           ))
         : null}
 
-      {/* Confirmation of the last request sent. The dialog that took it has
-          closed by now, so this is the one place it can be read. */}
-      {friendsState.notice ? (
-        <p
-          role="status"
-          className="rounded-2xl border border-pos-600/20 bg-pos-50 px-4 py-3 text-sm font-medium text-pos-700"
-        >
-          {friendsState.notice}
-        </p>
-      ) : null}
-
-      {friendsState.friendsError ? (
-        <p
-          role="alert"
-          className="rounded-2xl border border-neg-600/20 bg-neg-50 px-4 py-6 text-center text-sm font-medium text-neg-700"
-        >
-          Couldn&apos;t load your friends — {errorMessage(friendsState.friendsError)}
-        </p>
-      ) : friendsState.friends.length === 0 ? (
+      {friendsState.registeredFriends.length === 0 ? (
         <EmptyState
           icon={<Handshake />}
           title="No friends yet"
           hint="Send a request by email or phone; they’ll appear here after accepting."
-          action={
-            <button
-              type="button"
-              onClick={() => friendsState.setShowAdd(true)}
-              className="flex items-center gap-2 rounded-xl bg-brand-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-brand-700"
-            >
-              <UserPlus className="h-4 w-4" /> Add friend
-            </button>
-          }
+          action={addFriendButton}
         />
       ) : (
         <>
@@ -217,7 +113,7 @@ export function FriendsPage() {
             />
             {friendsState.query ? (
               <span className="shrink-0 text-sm text-ink-soft tabular-nums">
-                {friendsState.visibleFriends.length} of {friendsState.friends.length}
+                {friendsState.visibleFriends.length} of {friendsState.registeredFriends.length}
               </span>
             ) : null}
           </div>
@@ -231,8 +127,8 @@ export function FriendsPage() {
               {friendsState.visibleFriends.map((friend) => {
                 if (!friend.user) return null;
                 const person = friend.user;
-                // One line per currency — a dollar owed and a euro owed
-                // are two facts, never one number.
+                // One line per currency: a dollar owed and a euro owed are
+                // two facts, never one number.
                 const buckets = bucketsOf(friend, currency);
                 const lead = leadingBucket(buckets);
                 return (
@@ -243,14 +139,7 @@ export function FriendsPage() {
                     >
                       <Avatar user={person} />
                       <div className="min-w-0 flex-1">
-                        <p className="truncate font-medium">
-                          {person.name}
-                          {!person.registered ? (
-                            <span className="ml-2 rounded-full bg-paper px-2 py-0.5 text-[11px] font-medium text-ink-soft">
-                              invited
-                            </span>
-                          ) : null}
-                        </p>
+                        <p className="truncate font-medium">{person.name}</p>
                         <p className="text-xs text-ink-soft">
                           {buckets.length === 0
                             ? "settled up"
@@ -274,7 +163,7 @@ export function FriendsPage() {
                       </span>
                       <ChevronRight className="h-4 w-4 shrink-0 text-ink-soft" />
                     </Link>
-                    {/* Settling is offered whichever way the debt runs — being
+                    {/* Settling is offered whichever way the debt runs: being
                         owed money used to be a dead end with no action at all.
                         It opens on the largest balance; the dialog can switch
                         currency. */}
@@ -298,25 +187,56 @@ export function FriendsPage() {
                         )}
                         Settle
                       </button>
-                    ) : !person.registered ? (
-                      /* An invited person has no balance to settle; the useful
-                         action is nudging them to sign up. The link claims
-                         their invited identity, seats and all. */
-                      <button
-                        type="button"
-                        disabled={friendsState.remindingUserId === person.id}
-                        onClick={() => friendsState.remindFriend(person)}
-                        className="mr-3 flex shrink-0 items-center gap-1.5 rounded-lg border border-line px-3 py-1.5 text-xs font-semibold text-ink-soft hover:border-brand-600 hover:text-brand-600 disabled:opacity-50"
-                      >
-                        <Send className="h-3.5 w-3.5" />
-                        {friendsState.remindingUserId === person.id ? "Opening…" : "Remind"}
-                      </button>
                     ) : null}
                   </li>
                 );
               })}
             </ul>
           )}
+        </>
+      )}
+    </>
+  );
+
+  return (
+    <div className="mx-auto max-w-3xl space-y-6">
+      <header className="flex flex-wrap items-center justify-between gap-3">
+        <h1 className="text-3xl font-bold">Friends</h1>
+        {addFriendButton}
+      </header>
+
+      {/* Confirmation of the last request sent. The dialog that took it has
+          closed by now, so this is the one place it can be read. */}
+      {friendsState.notice ? (
+        <p
+          role="status"
+          className="rounded-2xl border border-pos-600/20 bg-pos-50 px-4 py-3 text-sm font-medium text-pos-700"
+        >
+          {friendsState.notice}
+        </p>
+      ) : null}
+
+      {friendsState.friendsError ? (
+        <p
+          role="alert"
+          className="rounded-2xl border border-neg-600/20 bg-neg-50 px-4 py-6 text-center text-sm font-medium text-neg-700"
+        >
+          Couldn&apos;t load your friends: {errorMessage(friendsState.friendsError)}
+        </p>
+      ) : (
+        <>
+          <FriendsTabs tab={friendsState.tab} counts={counts} onChange={friendsState.setTab} />
+          <div
+            role="tabpanel"
+            id={`friends-panel-${friendsState.tab}`}
+            aria-labelledby={`friends-tab-${friendsState.tab}`}
+            className="space-y-6"
+          >
+            {friendsState.tab === "friends" ? friendsTab : null}
+            {friendsState.tab === "requests" ? <IncomingRequests friendsState={friendsState} /> : null}
+            {friendsState.tab === "sent" ? <SentRequests friendsState={friendsState} /> : null}
+            {friendsState.tab === "invited" ? <InvitedFriends friendsState={friendsState} /> : null}
+          </div>
         </>
       )}
 
@@ -331,8 +251,7 @@ export function FriendsPage() {
       ) : null}
 
       {/* The add form is a dialog, not a panel spliced into the page: it is a
-          one-field task, and opening it must not shove the balances and the
-          list down the screen. */}
+          one-field task, and opening it must not shove the list down. */}
       {friendsState.showAdd ? (
         <Modal title="Add a friend" onClose={() => friendsState.setShowAdd(false)}>
           <form
@@ -364,8 +283,8 @@ export function FriendsPage() {
         </Modal>
       ) : null}
 
-      {/* Add, accept, decline and cancel all report here. Rendered after the
-          dialog so a failed send paints above it. */}
+      {/* Add, accept, decline, cancel and remind all report here. Rendered
+          after the dialog so a failed send paints above it. */}
       <ErrorPopup message={friendsState.error} onDismiss={friendsState.dismissError} />
 
       {settleTarget ? (
