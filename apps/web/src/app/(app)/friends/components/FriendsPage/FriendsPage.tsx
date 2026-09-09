@@ -20,6 +20,7 @@ import { ErrorPopup } from "@/components/ui/ErrorPopup";
 import { Money } from "@/components/ui/Money";
 import { SearchField } from "@/components/ui/SearchField";
 import { InviteShareModal } from "@/components/modals/InviteShareModal";
+import { Modal } from "@/components/ui/Modal";
 import { SettleUpModal } from "@/components/modals/SettleUpModal";
 import { Spinner } from "@/components/ui/Spinner";
 import { errorMessage } from "@/lib/api/connect";
@@ -29,7 +30,7 @@ import { bucketsOf, useFriends } from "./hooks/useFriends";
 
 /**
  * Renders the friends page: your overall position (owed to you / you owe), an
- * add-friend form, a searchable list where each row opens that friendship's
+ * add-friend dialog, a searchable list where each row opens that friendship's
  * ledger, and a settle action that works whichever way the money is owed.
  *
  * Every row is a link rather than a dead readout — a balance you cannot open
@@ -50,7 +51,7 @@ export function FriendsPage() {
         <h1 className="text-3xl font-bold">Friends</h1>
         <button
           type="button"
-          onClick={() => friendsState.setShowAdd(!friendsState.showAdd)}
+          onClick={() => friendsState.setShowAdd(true)}
           className="flex items-center gap-2 rounded-xl bg-brand-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-brand-700"
         >
           <UserPlus className="h-4 w-4" /> Add friend
@@ -161,37 +162,15 @@ export function FriendsPage() {
           ))
         : null}
 
-      {friendsState.showAdd || friendsState.friends.length === 0 ? (
-        <div className="space-y-2 rounded-2xl border border-line bg-card p-4">
-          <form
-            className="space-y-2"
-            onSubmit={(event) => {
-              event.preventDefault();
-              friendsState.submitAdd();
-            }}
-          >
-            <EmailOrPhoneField
-              contact={friendsState.contact}
-              onContactChange={friendsState.setContact}
-              emailLabel="Friend's email address"
-              phoneLabel="Friend's phone number"
-            />
-            <button
-              type="submit"
-              disabled={friendsState.isAdding || !friendsState.canSubmitAdd}
-              className="w-full rounded-xl bg-brand-600 px-4 py-2.5 font-semibold text-white hover:bg-brand-700 disabled:opacity-50"
-            >
-              {friendsState.isAdding ? "Sending…" : "Send request"}
-            </button>
-          </form>
-          {friendsState.notice ? (
-            <p className="text-sm font-medium text-pos-700">{friendsState.notice}</p>
-          ) : null}
-          <p className="text-sm text-ink-soft">
-            For privacy, we won’t reveal whether that identifier has an account. They must accept
-            before either of you is added as a friend.
-          </p>
-        </div>
+      {/* Confirmation of the last request sent. The dialog that took it has
+          closed by now, so this is the one place it can be read. */}
+      {friendsState.notice ? (
+        <p
+          role="status"
+          className="rounded-2xl border border-pos-600/20 bg-pos-50 px-4 py-3 text-sm font-medium text-pos-700"
+        >
+          {friendsState.notice}
+        </p>
       ) : null}
 
       {friendsState.friendsError ? (
@@ -206,6 +185,15 @@ export function FriendsPage() {
           icon={<Handshake />}
           title="No friends yet"
           hint="Send a request by email or phone; they’ll appear here after accepting."
+          action={
+            <button
+              type="button"
+              onClick={() => friendsState.setShowAdd(true)}
+              className="flex items-center gap-2 rounded-xl bg-brand-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-brand-700"
+            >
+              <UserPlus className="h-4 w-4" /> Add friend
+            </button>
+          }
         />
       ) : (
         <>
@@ -331,8 +319,42 @@ export function FriendsPage() {
         />
       ) : null}
 
-      {/* Add, accept, decline and cancel all report here. A line inside the
-          add form was invisible whenever that form was closed. */}
+      {/* The add form is a dialog, not a panel spliced into the page: it is a
+          one-field task, and opening it must not shove the balances and the
+          list down the screen. */}
+      {friendsState.showAdd ? (
+        <Modal title="Add a friend" onClose={() => friendsState.setShowAdd(false)}>
+          <form
+            className="space-y-3"
+            onSubmit={(event) => {
+              event.preventDefault();
+              friendsState.submitAdd();
+            }}
+          >
+            <EmailOrPhoneField
+              contact={friendsState.contact}
+              onContactChange={friendsState.setContact}
+              emailLabel="Friend's email address"
+              phoneLabel="Friend's phone number"
+              autoFocus
+            />
+            <button
+              type="submit"
+              disabled={friendsState.isAdding || !friendsState.canSubmitAdd}
+              className="w-full rounded-xl bg-brand-600 px-4 py-2.5 font-semibold text-white hover:bg-brand-700 disabled:opacity-50"
+            >
+              {friendsState.isAdding ? "Sending…" : "Send request"}
+            </button>
+          </form>
+          <p className="mt-3 text-sm text-ink-soft">
+            For privacy, we won’t reveal whether that identifier has an account. They must accept
+            before either of you is added as a friend.
+          </p>
+        </Modal>
+      ) : null}
+
+      {/* Add, accept, decline and cancel all report here. Rendered after the
+          dialog so a failed send paints above it. */}
       <ErrorPopup message={friendsState.error} onDismiss={friendsState.dismissError} />
 
       {settleTarget ? (
