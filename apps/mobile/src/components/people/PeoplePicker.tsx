@@ -3,7 +3,7 @@
 import type { User } from "@haalkhata/protogen/common/v1/common_pb";
 import { useRouter } from "expo-router";
 import { ChevronDown, ChevronUp, UserPlus, X } from "lucide-react-native";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { Avatar } from "@/components/ui/Avatar";
 import { Button } from "@/components/ui/Button";
@@ -79,6 +79,13 @@ export function PeoplePicker({
 
   const isGroupExpense = groupId !== "";
   const selectedGroupName = groups.find((group) => group.id === groupId)?.name ?? "";
+  // §33: an Invited person can be a friend but never on a transaction.
+  // Shown-but-disabled beats hidden ("why isn't Rifat here?" answers itself),
+  // and the checklist sinks them below everyone who can be picked.
+  const invitedIds = useMemo(
+    () => new Set(friends.filter((friend) => !friend.registered).map((friend) => friend.id)),
+    [friends],
+  );
 
   if (groups.length === 0 && friends.length === 0) {
     return (
@@ -171,6 +178,8 @@ export function PeoplePicker({
 
             {isOpen ? (
               <PersonChecklist
+                disabledHint="invited, hasn't joined yet"
+                disabledIds={invitedIds}
                 onToggle={onToggleFriend}
                 people={friends}
                 selectedIds={friendIds}

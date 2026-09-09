@@ -1,7 +1,7 @@
 /** Unit tests for the expense-form split/payer validation and payload assembly. */
 
 import { describe, expect, it } from "vitest";
-import { buildSplitSpecs, checkPayers, checkSplit } from "./splitForm";
+import { buildSplitSpecs, checkPayers, checkSplit, previewSplitShares } from "./splitForm";
 
 const participants = ["user-a", "user-b", "user-c"];
 
@@ -109,5 +109,33 @@ describe("checkPayers", () => {
     expect(checkPayers(900, true, { "user-a": "4.00", "user-b": "5.00" }, "USD").ok).toBe(true);
     expect(checkPayers(900, true, { "user-a": "4.00", "user-b": "4.00" }, "USD").ok).toBe(false);
     expect(checkPayers(900, true, {}, "USD").ok).toBe(false);
+  });
+});
+
+describe("previewSplitShares", () => {
+  it("divides an equal split with the same rounding the server uses", () => {
+    expect(
+      previewSplitShares({ currency: "USD", splitType: "equal", totalCents: 1000, participantIds: participants, inputs: {} }),
+    ).toEqual({ "user-a": 334, "user-b": 333, "user-c": 333 });
+  });
+
+  it("reads percent and shares inputs as typed", () => {
+    expect(
+      previewSplitShares({
+        currency: "USD",
+        splitType: "shares",
+        totalCents: 900,
+        participantIds: participants,
+        inputs: { "user-a": "2", "user-b": "1", "user-c": "0" },
+      }),
+    ).toEqual({ "user-a": 600, "user-b": 300, "user-c": 0 });
+  });
+
+  it("returns nothing while the draft cannot be allocated yet", () => {
+    expect(previewSplitShares({ currency: "USD", splitType: "equal", totalCents: null, participantIds: participants, inputs: {} })).toEqual({});
+    expect(previewSplitShares({ currency: "USD", splitType: "itemized", totalCents: 1000, participantIds: participants, inputs: {} })).toEqual({});
+    expect(
+      previewSplitShares({ currency: "USD", splitType: "percent", totalCents: 1000, participantIds: participants, inputs: { "user-a": "10" } }),
+    ).toEqual({});
   });
 });

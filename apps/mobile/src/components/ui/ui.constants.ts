@@ -19,3 +19,6 @@ export const SHEET_MAX_HEIGHT_RATIO = 0.92;
  * and asks the user to keep typing.
  */
 export const MAX_VISIBLE_COUNTRIES = 60;
+
+/** How long an error toast stays on screen before dismissing itself, in milliseconds. */
+export const ERROR_TOAST_AUTO_DISMISS_MS = 8000;

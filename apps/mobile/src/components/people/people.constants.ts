@@ -8,7 +8,8 @@
 export const MAX_VISIBLE_PEOPLE = 50;
 
 /**
- * Number of people above which the list gets its own scroll container. Below
- * it the list is short enough to sit inline in the sheet.
+ * Height cap of the person list, about five rows. The list never grows the
+ * screen: a picker that pushes the amount, date and split off screen as the
+ * friend count grows is a picker that gets worse with use.
  */
-export const SCROLLING_LIST_THRESHOLD = 6;
+export const LIST_MAX_HEIGHT = 240;
