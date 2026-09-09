@@ -4,6 +4,7 @@
 import { CATEGORIES } from "@haalkhata/shared/money/money.constants";
 import { centsToInput } from "@haalkhata/shared/money/money";
 import { PeoplePicker } from "@/components/people/PeoplePicker";
+import { ErrorPopup } from "@/components/ui/ErrorPopup";
 import type { ExpenseFormInitial } from "../../../../utils/initialValues";
 import { PayerEditor } from "../PayerEditor/PayerEditor";
 import { ReceiptPanel } from "../ReceiptPanel/ReceiptPanel";
@@ -130,8 +131,6 @@ export function ExpenseForm({
         onChange={(event) => form.setNotes(event.target.value)}
       />
 
-      {form.error ? <p className="text-sm font-medium text-brand-600">{form.error}</p> : null}
-
       <button
         type="button"
         onClick={form.submit}
@@ -164,6 +163,10 @@ export function ExpenseForm({
           <div className="space-y-6">{fields}</div>
         </div>
       )}
+      {/* Errors from scanning and saving alike: pinned to the viewport rather
+          than printed above the submit button, which on a phone is a screen
+          away from the receipt panel that produced most of them. */}
+      <ErrorPopup message={form.error} onDismiss={form.dismissError} />
     </div>
   );
 }

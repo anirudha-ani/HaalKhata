@@ -1,7 +1,7 @@
 "use client";
 /** Composite expense-form hook: field state, payer/split validation, submit. */
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { User } from "@haalkhata/protogen/common/v1/common_pb";
 import { errorMessage } from "@/lib/api/connect";
@@ -75,6 +75,8 @@ export function useNewExpense(
   const [tipInput, setTipInput] = useState(initial.tipInput);
   const [unevenShares, setUnevenShares] = useState(false);
   const [error, setError] = useState("");
+  /** Closes the error popup. The next action clears it anyway; this serves the dismiss button. */
+  const dismissError = useCallback(() => setError(""), []);
 
   // Receipt state. A scan is a way of filling this form in, not a separate
   // kind of expense, so it lives on the same controller as everything else.
@@ -510,6 +512,7 @@ export function useNewExpense(
     payerCheck,
     canSubmit,
     error,
+    dismissError,
     submit,
     isSaving: expenseAPI.create.isPending || expenseAPI.update.isPending,
     // Receipt scanning.

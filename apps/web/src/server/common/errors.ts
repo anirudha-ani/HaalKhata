@@ -54,3 +54,13 @@ export function notFound(message: string): never {
 export function denied(message: string): never {
   throw new UsecaseError("permission_denied", message);
 }
+
+/**
+ * Fails the current usecase because a dependency it needs is not answering.
+ *
+ * @param message - Human-readable explanation, safe to show to the caller.
+ * @throws UsecaseError always, with code "unavailable".
+ */
+export function unavailable(message: string): never {
+  throw new UsecaseError("unavailable", message);
+}
