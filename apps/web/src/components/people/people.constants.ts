@@ -9,7 +9,8 @@
 export const MAX_VISIBLE_FRIENDS = 50;
 
 /**
- * Number of friends above which the list gets its own scroll container. Below
- * it the list is short enough to render inline without a scrollbar.
+ * Slack, in pixels, when deciding whether a scroll container is at an edge.
+ * Fractional scroll positions and sub-pixel row heights mean "at the bottom"
+ * is rarely an exact equality.
  */
-export const SCROLLING_LIST_THRESHOLD = 6;
+export const SCROLL_EDGE_TOLERANCE_PX = 1;
