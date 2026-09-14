@@ -23,7 +23,7 @@
     "@haalkhata/protogen": "workspace:*",
     "@haalkhata/shared": "workspace:*",
     "@tanstack/react-query": "^5.101.2",
-    "google-auth-library": "^10.9.1",
+    "google-auth-library": "^11.0.2",
     "heic-decode": "^2.1.0",
     "libphonenumber-js": "^1.13.8",
     "lucide-react": "^1.23.0",
