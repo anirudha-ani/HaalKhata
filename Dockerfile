@@ -1,5 +1,5 @@
 # Build: pnpm install → buf generate → next build (standalone output).
-FROM node:26-alpine@sha256:2d984a15c9b54fd0aeb608b8e0d0d83529eb34d2966db27a1fb4f1edc3d298a3 AS build
+FROM node:26-alpine@sha256:ef24c5053d50fdc3e4e56eb4e7ddb7861874ab0fdc797046ba897581deb8e868 AS build
 RUN npm install -g pnpm@11.9.0
 WORKDIR /app
 
@@ -25,7 +25,7 @@ ENV NEXT_PUBLIC_GOOGLE_CLIENT_ID=$NEXT_PUBLIC_GOOGLE_CLIENT_ID
 RUN pnpm gen && pnpm --filter @haalkhata/web build
 
 # Runtime: only the standalone server + static assets, no toolchain.
-FROM node:26-alpine@sha256:2d984a15c9b54fd0aeb608b8e0d0d83529eb34d2966db27a1fb4f1edc3d298a3
+FROM node:26-alpine@sha256:ef24c5053d50fdc3e4e56eb4e7ddb7861874ab0fdc797046ba897581deb8e868
 ENV NODE_ENV=production HOSTNAME=0.0.0.0 PORT=3000
 WORKDIR /app
 COPY --from=build --chown=node:node /app/apps/web/.next/standalone ./
