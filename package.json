@@ -21,6 +21,7 @@
     "typecheck": "pnpm --filter @haalkhata/web typecheck",
     "db:migrate": "pnpm --filter @haalkhata/web db:migrate",
     "db:new": "pnpm --filter @haalkhata/web db:new",
+    "db:seed": "pnpm --filter @haalkhata/web db:seed",
     "doctor": "pnpm exec react-doctor apps/web/src --no-telemetry --no-supply-chain"
   },
   "devDependencies": {

@@ -12,7 +12,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "db:migrate": "node --env-file-if-exists=../../.env node_modules/node-pg-migrate/bin/node-pg-migrate.js up -m migrations",
-    "db:new": "node-pg-migrate create -m migrations --migration-file-language sql"
+    "db:new": "node-pg-migrate create -m migrations --migration-file-language sql",
+    "db:seed": "tsx scripts/seed-demo.mts"
   },
   "dependencies": {
     "@bufbuild/protobuf": "^2.16.0",
