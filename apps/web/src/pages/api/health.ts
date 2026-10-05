@@ -9,6 +9,7 @@ import {
 } from "@/server/auth/auth.constants";
 import { ensureMigrated, query } from "@/server/common/db";
 import { logError } from "@/server/common/logger";
+import { assertAppleSignInConfigured } from "@/server/auth/usecase/apple.provider";
 
 /** Response shape intentionally reveals no component-level failure details. */
 interface HealthResponse {
@@ -68,6 +69,7 @@ export default async function healthHandler(
   try {
     signPayload("session", "healthcheck");
     assertSignInConfigured();
+    if (process.env.APPLE_SIGN_IN_REQUIRED === "true") await assertAppleSignInConfigured();
     await ensureMigrated();
     await query("SELECT 1");
     response.status(200).json({ status: "ok" });

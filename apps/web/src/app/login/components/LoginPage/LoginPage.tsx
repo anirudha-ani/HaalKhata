@@ -16,6 +16,7 @@ import {
   UsersRound,
   X,
 } from "lucide-react";
+import { useAppleSignIn } from "./hooks/useAppleSignIn";
 import { useLogin } from "./hooks/useLogin";
 import { useGoogleSignIn } from "./hooks/useGoogleSignIn";
 import {
@@ -126,6 +127,7 @@ function AuthPanel({
   onMobileClose: () => void;
 }) {
   const login = useLogin();
+  const apple = useAppleSignIn();
   const {
     setButtonElement,
     error: googleError,
@@ -180,6 +182,12 @@ function AuthPanel({
         </span>
       </div>
 
+      <button type="button" disabled={apple.isPending} onClick={apple.signIn}
+        className="mb-3 w-full rounded-full bg-black px-4 py-3 text-sm font-semibold text-white disabled:opacity-50">
+        {apple.isPending ? "Signing in…" : "Continue with Apple"}
+      </button>
+      {apple.error ? <p role="alert" className="mb-3 text-sm text-brand-600">{apple.error}</p> : null}
+
       {googleIsConfigured ? (
         <div className="flex flex-col gap-3">
           <div ref={setButtonElement} className="flex max-w-full justify-center overflow-hidden [color-scheme:light]" />
@@ -192,11 +200,7 @@ function AuthPanel({
         </div>
       ) : null}
 
-      {!googleIsConfigured && !PASSWORD_AUTH_ENABLED ? (
-        <p className="rounded-xl bg-paper p-3 text-center text-sm text-ink-soft">
-          Sign-in is not configured on this server yet.
-        </p>
-      ) : null}
+
 
       {googleIsConfigured && PASSWORD_AUTH_ENABLED ? (
         <div className="my-5 flex items-center gap-3 text-[11px] font-semibold tracking-wide text-ink-soft uppercase">

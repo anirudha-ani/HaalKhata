@@ -52,7 +52,7 @@ import {
 } from "@/server/auth/auth.constants";
 import { normalizeCurrencyCode } from "@/server/common/validation";
 import { isUniqueViolation, transaction } from "@/server/common/db";
-import { toPrivateUser } from "./user.mapper";
+import { isRegisteredUser, toPrivateUser } from "./user.mapper";
 
 /**
  * Picks a stable avatar color for an email address by hashing it into the palette.
@@ -437,7 +437,7 @@ export async function signUp(input: {
     // google_sub counts as claimed too — otherwise an account that signed in
     // with Google (and so has no password) could be taken over through this
     // form by anyone who knows the address.
-    if (existing.password_hash !== null || existing.google_sub !== null) {
+    if (isRegisteredUser(existing)) {
       throw new UsecaseError("already_exists", "an account with this email or phone already exists");
     }
     // Shadow user invited earlier — claim the account (keeps expense history).
@@ -618,7 +618,7 @@ export async function logInWithGoogle(idToken: string) {
       // Safe because the email is verified: this row is only reachable by
       // whoever controls that mailbox. An unclaimed row also takes Google's
       // display name, since its own is a local-part placeholder.
-      const unclaimed = existing.password_hash === null && existing.google_sub === null;
+      const unclaimed = !isRegisteredUser(existing);
       await linkGoogleAccount(existing.id, claims.googleSub, unclaimed ? claims.name : "");
       user = (await findUserById(existing.id))!;
     } else {

@@ -5,6 +5,7 @@ import type { HandlerContext } from "@connectrpc/connect";
 import type { AuthService } from "@haalkhata/protogen/auth/v1/auth_pb";
 import * as auth from "@/server/auth/usecase/auth.usecase";
 import * as accountMerge from "@/server/auth/usecase/accountMerge.usecase";
+import * as appleSignIn from "@/server/auth/usecase/appleSignIn.usecase";
 import { clearSessionCookie, requireUser, runUsecase, setSessionCookie } from "@/server/api/connect/context";
 import { wantsBearerToken } from "@/server/api/connect/credentials";
 import { rateLimitCheck } from "@/server/common/rateLimit";
@@ -75,6 +76,21 @@ function deliverSession<Result extends { token: string }>(
 
 /** AuthService implementation; every method delegates to auth.usecase and only manages cookies here. */
 export const authHandler: ServiceImpl<typeof AuthService> = {
+  /** Issues a native Apple nonce or a verifier-bound browser challenge. */
+  async beginAppleSignIn(request, handlerContext) {
+    enforceAuthRateLimit(handlerContext);
+    return runUsecase(() => appleSignIn.beginAppleSignIn(request), handlerContext);
+  },
+  /** Verifies native Apple proof and delivers the appropriate session credential. */
+  async logInWithApple(request, handlerContext) {
+    enforceAuthRateLimit(handlerContext);
+    return deliverSession(handlerContext, await runUsecase(() => appleSignIn.logInWithApple(request), handlerContext));
+  },
+  /** Redeems a browser callback using the initiating client's private verifier. */
+  async completeAppleSignIn(request, handlerContext) {
+    enforceAuthRateLimit(handlerContext);
+    return deliverSession(handlerContext, await runUsecase(() => appleSignIn.completeAppleSignIn(request), handlerContext));
+  },
   /** Creates (or claims) an account, then starts a session the way the client carries it. */
   async signUp(request, handlerContext) {
     enforceAuthRateLimit(handlerContext);

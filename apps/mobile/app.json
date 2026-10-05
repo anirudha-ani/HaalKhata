@@ -21,7 +21,8 @@
       },
       "associatedDomains": [
         "applinks:haalkhata.app"
-      ]
+      ],
+      "usesAppleSignIn": true
     },
     "android": {
       "package": "com.haalkhata.app",
@@ -84,7 +85,8 @@
           "backgroundColor": "#faf6ef",
           "imageWidth": 200
         }
-      ]
+      ],
+      "expo-apple-authentication"
     ]
   }
 }

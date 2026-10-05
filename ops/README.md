@@ -220,3 +220,29 @@ This rolls back **code, not schema**. Migrations apply on boot and are never
 reverted, so an older image can find itself talking to a newer schema —
 additive migrations are safe, destructive ones are not. One more reason never
 to edit an applied migration.
+
+## Apple sign-in release configuration
+
+Before deploying the mobile release, enable Sign in with Apple on the primary
+App ID `com.haalkhata.app`. Group a web Services ID with this App ID, authorize
+`haalkhata.app`, and register
+`https://haalkhata.app/api/auth/apple/callback` as its return URL. Native iOS
+uses the App ID; web and Android use the grouped Services ID.
+
+Set repository variables `APPLE_TEAM_ID`, `APPLE_KEY_ID`, and `APPLE_SERVICE_ID`.
+Reinstall this version of `ops/deploy.sh` on the server before deploying: the
+forced command needs its updated allowlist. Provision these server-only files
+with the same ownership and permissions as the existing secrets:
+
+- `/srv/haalkhata/secrets/apple_private_key`: original multiline PKCS#8 `.p8`
+  signing key downloaded from Apple. Keep it off Git and out of build variables.
+- `/srv/haalkhata/secrets/apple_token_encryption_key`: `openssl rand -hex 32`.
+  Keep this stable and backed up; it decrypts provider grants for revocation.
+  Session-key rotations do not affect it. Do not rotate it without migrating
+  existing ciphertext.
+
+The production stack requires these values and readiness checks signing and
+encryption. Browser redirects carry one-use state; the initiating client must
+prove possession of its private verifier to receive a session. Local native
+API calls continue to carry bearer sessions, and the web receives HttpOnly
+cookies. No Apple private key or refresh token reaches a client bundle.

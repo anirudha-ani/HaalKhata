@@ -1,5 +1,6 @@
 /** Social business logic: friends (friendships ∪ expense counterparties), activity feed, notifications. */
 
+import { isRegisteredUser } from "@/server/auth/usecase/user.mapper";
 import {
   countIncomingFriendRequests,
   deleteFriendRequest,
@@ -123,7 +124,7 @@ export async function addFriend(
   }
   // An unclaimed row cannot accept anything, so the friendship is immediate
   // and the person appears as "Invited" (registered=false) on refetch.
-  if (friend.password_hash === null && friend.google_sub === null) {
+  if (!isRegisteredUser(friend)) {
     await insertFriendship(userId, friend.id);
     return {};
   }
@@ -426,7 +427,7 @@ function newInviteToken(): string {
  * @returns True when neither credential is set.
  */
 function isUnclaimed(user: UserRow): boolean {
-  return user.password_hash === null && user.google_sub === null;
+  return !isRegisteredUser(user);
 }
 
 /**

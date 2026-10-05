@@ -18,6 +18,7 @@ import { GOOGLE_SIGN_IN_CONFIGURED, PASSWORD_AUTH_ENABLED } from "../../constant
 import { LOGIN_MODES } from "../../constants/loginModes";
 import brandIconSource from "../../../../../assets/icon.png";
 import { GoogleSignInButton } from "./components/GoogleSignInButton/GoogleSignInButton";
+import { AppleSignInButton } from "./components/AppleSignInButton";
 import { useLogin } from "./hooks/useLogin";
 import { FOCUSED_CONTENT_MAX_WIDTH } from "@/components/shell/shell.constants";
 
@@ -52,6 +53,7 @@ export function LoginScreen() {
             </View>
 
             <View style={styles.card}>
+            <AppleSignInButton />
             {GOOGLE_SIGN_IN_CONFIGURED ? (
               <GoogleSignInButton />
             ) : PASSWORD_AUTH_ENABLED ? null : (

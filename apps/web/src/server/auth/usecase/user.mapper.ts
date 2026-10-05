@@ -3,6 +3,15 @@
 import type { UserRow } from "@/server/auth/repo/users.repo";
 
 /**
+ * Recognizes every production identity provider when distinguishing shadow invitations.
+ * @param user Account identity columns.
+ * @returns True for a password, Google, or Apple account.
+ */
+export function isRegisteredUser(user: Pick<UserRow, "password_hash" | "google_sub" | "apple_sub">): boolean {
+  return user.password_hash !== null || user.google_sub !== null || Boolean(user.apple_sub);
+}
+
+/**
  * Maps a users table row to the public common.v1.User shape used when another
  * account is the viewer. Email, phone, and onboarding state are private;
  * payment handles remain visible because expense counterparties need them to
@@ -21,7 +30,7 @@ export function toPublicUser(userRow: UserRow) {
     defaultCurrency: userRow.default_currency,
     // A Google account has no password, so password_hash alone would read
     // every one of them as an unclaimed invite.
-    registered: userRow.password_hash !== null || userRow.google_sub !== null,
+    registered: isRegisteredUser(userRow),
     phone: "",
     // Absent on a row straight out of an INSERT ... RETURNING *, which has no
     // handles yet by definition.

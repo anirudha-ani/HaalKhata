@@ -24,6 +24,11 @@ const USER_ROW: UserRow = {
 };
 
 describe("user response projections", () => {
+  it("recognizes Apple-only accounts as registered expense participants", () => {
+    const appleUser = toPublicUser({ ...USER_ROW, password_hash: null, google_sub: null, apple_sub: "apple-private" });
+    expect(appleUser.registered).toBe(true);
+    expect(appleUser.email).toBe("");
+  });
   it("clears private contact and state fields from public users", () => {
     const publicUser = toPublicUser(USER_ROW);
 

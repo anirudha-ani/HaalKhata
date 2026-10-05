@@ -1,5 +1,6 @@
 /** Expense business logic: validation + authoritative splits, comments, settlements, activity/notification fan-out. */
 
+import { isRegisteredUser } from "@/server/auth/usecase/user.mapper";
 import type { CreateExpenseRequest } from "@haalkhata/protogen/expense/v1/expense_pb";
 import type { PoolClient } from "pg";
 import {
@@ -302,7 +303,7 @@ async function validateExpenseParticipants(
   // that keeps a bearer invite link from ever moving money. Legacy rows
   // with pre-§33 history keep it; they just can't join NEW expenses.
   const unregistered = users.find(
-    (participant) => participant.password_hash === null && participant.google_sub === null,
+    (participant) => !isRegisteredUser(participant),
   );
   if (unregistered) {
     invalid(

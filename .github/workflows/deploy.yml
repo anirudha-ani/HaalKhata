@@ -139,6 +139,9 @@ jobs:
           # zero chance of them drifting apart.
           GOOGLE_CLIENT_ID: ${{ vars.NEXT_PUBLIC_GOOGLE_CLIENT_ID }}
           GOOGLE_MOBILE_CLIENT_IDS: ${{ vars.GOOGLE_MOBILE_CLIENT_IDS }}
+          APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
+          APPLE_KEY_ID: ${{ vars.APPLE_KEY_ID }}
+          APPLE_SERVICE_ID: ${{ vars.APPLE_SERVICE_ID }}
           TWILIO_API_KEY_SID: ${{ secrets.TWILIO_API_KEY_SID }}
           TWILIO_VERIFY_SERVICE_SID: ${{ secrets.TWILIO_VERIFY_SERVICE_SID }}
           TWILIO_API_KEY_SECRET: ${{ secrets.TWILIO_API_KEY_SECRET }}
@@ -158,6 +161,9 @@ jobs:
             printf 'ACME_EMAIL=%s\n'                "$ACME_EMAIL"
             printf 'GOOGLE_CLIENT_ID=%s\n'          "$GOOGLE_CLIENT_ID"
             printf 'GOOGLE_MOBILE_CLIENT_IDS=%s\n'  "$GOOGLE_MOBILE_CLIENT_IDS"
+            printf 'APPLE_TEAM_ID=%s\n'             "$APPLE_TEAM_ID"
+            printf 'APPLE_KEY_ID=%s\n'              "$APPLE_KEY_ID"
+            printf 'APPLE_SERVICE_ID=%s\n'          "$APPLE_SERVICE_ID"
             printf 'TWILIO_API_KEY_SID=%s\n'        "$TWILIO_API_KEY_SID"
             printf 'TWILIO_VERIFY_SERVICE_SID=%s\n' "$TWILIO_VERIFY_SERVICE_SID"
             printf 'TWILIO_API_KEY_SECRET=%s\n'     "$TWILIO_API_KEY_SECRET"

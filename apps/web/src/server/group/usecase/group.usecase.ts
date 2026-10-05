@@ -1,5 +1,6 @@
 /** Group business logic: create/list/get, connected-member enrollment, balance-guarded removal. */
 
+import { isRegisteredUser } from "@/server/auth/usecase/user.mapper";
 import type { PoolClient } from "pg";
 import {
   addMember,
@@ -192,7 +193,7 @@ async function enrollMembers(
     // §33c: a seat belongs only to somebody who can open the app. Invited
     // friends look pickable on stale clients, so the gate lives here, where
     // CreateGroup and AddMembers converge.
-    if (user.password_hash === null && user.google_sub === null) {
+    if (!isRegisteredUser(user)) {
       throw new UsecaseError(
         "failed_precondition",
         `${user.name} hasn't joined HaalKhata yet — invite them to sign up first`,
@@ -266,7 +267,7 @@ function assertPhoneShape(phone: string): string {
  * @returns True when neither credential is set.
  */
 function isUnregistered(user: UserRow): boolean {
-  return user.password_hash === null && user.google_sub === null;
+  return !isRegisteredUser(user);
 }
 
 /**

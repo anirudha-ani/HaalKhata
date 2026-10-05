@@ -283,6 +283,7 @@ export async function mergeAccounts(
         WHERE id = $1
           AND password_hash IS NULL
           AND google_sub IS NULL
+          AND apple_sub IS NULL
           AND merged_into IS NULL
           AND phone IS NOT DISTINCT FROM $2`,
       [loserId, phone],

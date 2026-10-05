@@ -28,6 +28,8 @@ export interface UserRow {
   phone_verified_at: string | null;
   /** Google account id (the ID token's `sub`); null when never signed in with Google. */
   google_sub: string | null;
+  /** Apple account identifier; absent only in legacy test fixtures. */
+  apple_sub?: string | null;
   /** When the first-run flow finished; null means the app still redirects there. */
   onboarded_at: string | null;
   /** Id this row was absorbed into by an account merge; null for a live account. */
@@ -69,7 +71,7 @@ export async function insertUser(input: {
   phone?: string | null;
   googleSub?: string | null;
   avatarUrl?: string | null;
-}): Promise<UserRow> {
+}, client?: PoolClient): Promise<UserRow> {
   const rows = await query<UserRow>(
     `INSERT INTO users (id, email, name, avatar_color, default_currency, password_hash, phone, google_sub, avatar_url)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
@@ -85,6 +87,7 @@ export async function insertUser(input: {
       input.googleSub ?? null,
       input.avatarUrl ?? null,
     ],
+    client,
   );
   return rows[0];
 }

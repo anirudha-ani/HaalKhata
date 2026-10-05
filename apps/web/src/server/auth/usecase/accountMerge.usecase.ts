@@ -42,7 +42,7 @@ import { signPayload, verifyPayloadSignature } from "./auth.usecase";
 
 /** One message for every failed merge-token check: expired, forged, and malformed all just mean "start over". */
 const STALE_MERGE_TOKEN_MESSAGE = "that confirmation is no longer valid, please try again";
-import { toPrivateUser } from "./user.mapper";
+import { isRegisteredUser, toPrivateUser } from "./user.mapper";
 import { confirmPhoneVerification, startPhoneVerification } from "./phoneVerification";
 
 /** What SetPhone resolved to: either applied outright, or waiting on confirmation. */
@@ -334,7 +334,7 @@ async function transferVerifiedPhone(
  * @returns True when either credential is set.
  */
 function isClaimed(user: UserRow): boolean {
-  return user.password_hash !== null || user.google_sub !== null;
+  return isRegisteredUser(user);
 }
 
 /**
