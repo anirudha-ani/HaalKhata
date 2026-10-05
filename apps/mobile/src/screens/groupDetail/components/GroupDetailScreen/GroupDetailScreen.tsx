@@ -20,6 +20,7 @@ import { Sheet } from "@/components/ui/Sheet";
 import { Spinner } from "@/components/ui/Spinner";
 import { errorMessage } from "@/lib/api/connect";
 import { colors, radii, spacing } from "@/lib/theme/theme";
+import { memberActionPrompt } from "@haalkhata/shared/group/memberActions";
 import { OWNER_ROLE } from "@haalkhata/shared/group/roles";
 import { groupEmoji } from "../../../groups/constants/groupTypes";
 import { TABS } from "../../constants/tabs";
@@ -224,7 +225,11 @@ export function GroupDetailScreen({
               membership consensual — any member may enrol you, so you must
               be able to walk out again. Handing the group on is what lets
               the owner do the same: they become an ordinary member and get
-              "Leave group" like everyone else. */}
+              "Leave group" like everyone else.
+
+              Remove, leave and make owner ask before they act: the first
+              tap turns that person's row into the question, and only its
+              confirm button reaches the server. */}
           <View style={styles.membersList}>
             {members.map((member, index) => {
               const person = member.user;
@@ -236,88 +241,120 @@ export function GroupDetailScreen({
               const requesting = groupDetail.requestingUserId === person.id;
               const removing = groupDetail.removingUserId === person.id;
               const transferring = groupDetail.transferringUserId === person.id;
+              const armed =
+                groupDetail.pendingMemberAction?.userId === person.id
+                  ? groupDetail.pendingMemberAction.action
+                  : null;
+              const prompt = armed ? memberActionPrompt(armed, person.name, isMe) : null;
               return (
-                <View
-                  key={person.id}
-                  style={[styles.memberRow, index > 0 ? styles.memberRowDivider : null]}
-                >
-                  <PersonLink
-                    meId={groupDetail.me?.id}
-                    style={styles.memberPerson}
-                    userId={person.id}
-                  >
-                    <Avatar size="sm" user={person} />
-                    <Text numberOfLines={1} style={styles.memberName}>
-                      {person.name}
-                      {isMe ? <Text style={styles.memberTag}> · you</Text> : null}
-                      {isOwner ? <Text style={styles.memberTag}> · owner</Text> : null}
-                      {!person.registered ? (
-                        <Text style={styles.memberTag}> · invited</Text>
-                      ) : null}
-                    </Text>
-                  </PersonLink>
-                  {isMe ? (
-                    isOwner ? null : (
-                      <Button
-                        busy={removing}
-                        compact
-                        label="Leave group"
-                        onPress={() => groupDetail.removeMember(person.id)}
-                        variant="outline"
-                      />
-                    )
-                  ) : (
-                    <View style={styles.memberActions}>
-                      {!person.registered ? (
+                <View key={person.id} style={index > 0 ? styles.memberRowDivider : null}>
+                  <View style={styles.memberRow}>
+                    <PersonLink
+                      meId={groupDetail.me?.id}
+                      style={styles.memberPerson}
+                      userId={person.id}
+                    >
+                      <Avatar size="sm" user={person} />
+                      <Text numberOfLines={1} style={styles.memberName}>
+                        {person.name}
+                        {isMe ? <Text style={styles.memberTag}> · you</Text> : null}
+                        {isOwner ? <Text style={styles.memberTag}> · owner</Text> : null}
+                        {!person.registered ? (
+                          <Text style={styles.memberTag}> · invited</Text>
+                        ) : null}
+                      </Text>
+                    </PersonLink>
+                    {prompt ? null : isMe ? (
+                      isOwner ? null : (
                         <Button
-                          busy={groupDetail.remindingUserId === person.id}
+                          busy={removing}
                           compact
-                          icon={<Send color={colors.inkSoft} size={14} />}
-                          label="Remind"
-                          onPress={() => groupDetail.remindMember(person)}
+                          label="Leave group"
+                          onPress={() => groupDetail.askMemberAction(person.id, "remove")}
                           variant="outline"
                         />
-                      ) : isFriend ? (
-                        <Button
-                          compact
-                          icon={<ChevronRight color={colors.inkSoft} size={14} />}
-                          label="Ledger"
-                          onPress={() => {
-                            groupDetail.setViewingMembers(false);
-                            router.push(`/friends/${person.id}`);
-                          }}
-                          variant="outline"
-                        />
-                      ) : (
-                        <Button
-                          busy={requesting}
-                          compact
-                          disabled={requested}
-                          icon={<UserPlus color={colors.white} size={14} />}
-                          label={requested ? "Requested" : "Request"}
-                          onPress={() => groupDetail.requestFriendship(person.id)}
-                        />
-                      )}
-                      {viewerIsOwner ? (
-                        <>
+                      )
+                    ) : (
+                      <View style={styles.memberActions}>
+                        {!person.registered ? (
                           <Button
-                            busy={transferring}
+                            busy={groupDetail.remindingUserId === person.id}
                             compact
-                            label="Make owner"
-                            onPress={() => groupDetail.transferOwnership(person.id)}
+                            icon={<Send color={colors.inkSoft} size={14} />}
+                            label="Remind"
+                            onPress={() => groupDetail.remindMember(person)}
                             variant="outline"
                           />
+                        ) : isFriend ? (
                           <Button
-                            busy={removing}
                             compact
-                            label="Remove"
-                            onPress={() => groupDetail.removeMember(person.id)}
+                            icon={<ChevronRight color={colors.inkSoft} size={14} />}
+                            label="Ledger"
+                            onPress={() => {
+                              groupDetail.setViewingMembers(false);
+                              router.push(`/friends/${person.id}`);
+                            }}
                             variant="outline"
                           />
-                        </>
-                      ) : null}
+                        ) : (
+                          <Button
+                            busy={requesting}
+                            compact
+                            disabled={requested}
+                            icon={<UserPlus color={colors.white} size={14} />}
+                            label={requested ? "Requested" : "Request"}
+                            onPress={() => groupDetail.requestFriendship(person.id)}
+                          />
+                        )}
+                        {viewerIsOwner ? (
+                          <>
+                            <Button
+                              busy={transferring}
+                              compact
+                              label="Make owner"
+                              onPress={() => groupDetail.askMemberAction(person.id, "transfer")}
+                              variant="outline"
+                            />
+                            <Button
+                              busy={removing}
+                              compact
+                              label="Remove"
+                              onPress={() => groupDetail.askMemberAction(person.id, "remove")}
+                              variant="outline"
+                            />
+                          </>
+                        ) : null}
+                      </View>
+                    )}
+                  </View>
+                  {/* The question takes the place of the row's buttons, under
+                      the name, so a second tap where the first one landed
+                      cannot be the one that confirms. */}
+                  {prompt ? (
+                    <View style={styles.memberConfirm}>
+                      <Text style={styles.memberConfirmText}>
+                        <Text style={styles.memberConfirmQuestion}>{prompt.question}</Text>{" "}
+                        {prompt.detail}
+                      </Text>
+                      <View style={styles.memberConfirmActions}>
+                        <View style={styles.memberConfirmAction}>
+                          <Button
+                            compact
+                            label="Cancel"
+                            onPress={groupDetail.cancelMemberAction}
+                            variant="outline"
+                          />
+                        </View>
+                        <View style={styles.memberConfirmAction}>
+                          <Button
+                            compact
+                            label={prompt.confirmLabel}
+                            onPress={groupDetail.confirmMemberAction}
+                          />
+                        </View>
+                      </View>
                     </View>
-                  )}
+                  ) : null}
                 </View>
               );
             })}
@@ -539,6 +576,29 @@ const styles = StyleSheet.create({
   },
   memberAvatars: {
     flexDirection: "row",
+  },
+  memberConfirm: {
+    backgroundColor: colors.paper,
+    borderRadius: radii.md,
+    gap: spacing.sm,
+    marginBottom: spacing.sm,
+    padding: spacing.md,
+  },
+  memberConfirmAction: {
+    flex: 1,
+  },
+  memberConfirmActions: {
+    flexDirection: "row",
+    gap: spacing.sm,
+  },
+  memberConfirmQuestion: {
+    color: colors.ink,
+    fontWeight: "600",
+  },
+  memberConfirmText: {
+    color: colors.inkSoft,
+    fontSize: 14,
+    lineHeight: 20,
   },
   memberName: {
     color: colors.ink,

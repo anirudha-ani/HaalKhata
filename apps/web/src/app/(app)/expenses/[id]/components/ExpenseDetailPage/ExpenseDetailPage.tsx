@@ -4,6 +4,7 @@
 import Link from "next/link";
 import { Check, Lock, Pencil, Send, Trash2 } from "lucide-react";
 import { Avatar } from "@/components/ui/Avatar/Avatar";
+import { AvatarStack } from "@/components/ui/AvatarStack/AvatarStack";
 import { PersonLink } from "@/components/people/PersonLink/PersonLink";
 import { settledStatus } from "@haalkhata/shared/expense/settledStatus";
 import { Modal } from "@/components/ui/Modal/Modal";
@@ -14,6 +15,7 @@ import { useHydrated } from "@/lib/hooks/useHydrated";
 import { formatMoney } from "@haalkhata/shared/money/money";
 import { localDateTime } from "@haalkhata/shared/time/localTime";
 import { itemShareCents } from "@haalkhata/shared/expense/splits";
+import { ITEM_AVATAR_SLOTS } from "./constants/expenseDetailPage";
 import { useExpenseDetail } from "./hooks/useExpenseDetail";
 import { MAX_COMMENT_LENGTH } from "@haalkhata/shared/text/limits";
 
@@ -241,18 +243,15 @@ export function ExpenseDetailPage({ expenseId }: { expenseId: string }) {
                       {item.quantity > 1 ? `${item.quantity}× ` : ""}
                       {item.name}
                     </span>
-                    <span className="flex -space-x-1.5">
-                      {item.assignments.map((assignment) =>
-                        expenseDetail.userById.get(assignment.userId) ? (
-                          <Avatar
-                            key={assignment.userId}
-                            user={expenseDetail.userById.get(assignment.userId)!}
-                            size="sm"
-                            ring
-                          />
-                        ) : null,
-                      )}
-                    </span>
+                    {/* Capped: a dozen people on one item would otherwise
+                        take the whole row and leave no room for its name. */}
+                    <AvatarStack
+                      users={item.assignments.flatMap((assignment) => {
+                        const person = expenseDetail.userById.get(assignment.userId);
+                        return person ? [person] : [];
+                      })}
+                      slots={ITEM_AVATAR_SLOTS}
+                    />
                     <Money
                       cents={item.totalCents}
                       currency={expense.currency}

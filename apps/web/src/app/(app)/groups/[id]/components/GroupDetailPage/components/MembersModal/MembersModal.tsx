@@ -7,11 +7,13 @@ import { useMutation } from "@tanstack/react-query";
 import { ChevronRight, Crown, LogOut, Send, UserMinus, UserPlus } from "lucide-react";
 import type { Member } from "@haalkhata/protogen/group/v1/group_pb";
 import type { User } from "@haalkhata/protogen/common/v1/common_pb";
+import { memberActionPrompt, type MemberAction } from "@haalkhata/shared/group/memberActions";
 import { OWNER_ROLE } from "@haalkhata/shared/group/roles";
 import { errorMessage, socialClient } from "@/lib/api/connect";
 import { Avatar } from "@/components/ui/Avatar/Avatar";
 import { PersonLink } from "@/components/people/PersonLink/PersonLink";
 import { Modal } from "@/components/ui/Modal/Modal";
+import { ConfirmMemberAction } from "./components/ConfirmMemberAction/ConfirmMemberAction";
 import { rowActionClass } from "./constants/membersModal";
 
 /**
@@ -25,7 +27,8 @@ import { rowActionClass } from "./constants/membersModal";
  * - not (yet) a friend: a request button — the recipient must accept before
  *   friendship exists — and the row still links to the shared ledger, which
  *   works for any pair with group or ledger history.
- * - anyone else, when you own the group: "Make owner" and "Remove" buttons.
+ * - anyone else, when you own the group: "Make owner" and "Remove" buttons,
+ *   with all of that person's actions on a line under their name.
  *
  * Leaving and removing are one RPC under one rule: the server refuses while
  * that person still has a balance here, and its message is the honest one to
@@ -33,6 +36,12 @@ import { rowActionClass } from "./constants/membersModal";
  * you, so you must be able to walk out again. Handing the group on is what
  * lets the owner do the same: the old owner becomes an ordinary member and
  * gets the "Leave group" button like everyone else.
+ *
+ * Those three — remove, leave, make owner — ask before they act. They are
+ * small buttons sitting beside each other and beside "Ledger", and a slip of
+ * the thumb used to be enough to hand the group to somebody else. The first
+ * tap now turns that person's row into the question; only its confirm button
+ * calls the server. One row asks at a time.
  *
  * @returns The members modal.
  */
@@ -82,6 +91,8 @@ export function MembersModal({
   // The server deliberately does not expose outgoing-request state, so this
   // local marker prevents accidental duplicate taps during the open modal.
   const [requestedIds, setRequestedIds] = useState<Set<string>>(new Set());
+  // The member action waiting on its confirmation, if any.
+  const [pending, setPending] = useState<{ userId: string; action: MemberAction } | null>(null);
   const viewerIsOwner = members.some(
     (member) => member.user?.id === meId && member.role === OWNER_ROLE,
   );
@@ -107,8 +118,18 @@ export function MembersModal({
           const requested = requestedIds.has(person.id);
           const removing = removingUserId === person.id;
           const transferring = transferringUserId === person.id;
+          const armed = pending?.userId === person.id ? pending.action : null;
+          // An owner gets three actions per person, which no name survives
+          // sharing a row with: on a phone it was squeezed to an initial.
+          // Those rows put the actions on a line of their own under the
+          // name; a row with one action keeps it beside the name. A row that
+          // is asking its question always needs the line underneath.
+          const stacked = (viewerIsOwner && !isMe) || armed !== null;
           return (
-            <li key={person.id} className="flex items-center gap-2 py-2.5">
+            <li
+              key={person.id}
+              className={stacked ? "space-y-2 py-3" : "flex items-center gap-2 py-2.5"}
+            >
               <PersonLink
                 userId={person.id}
                 meId={meId}
@@ -132,19 +153,29 @@ export function MembersModal({
                   </span>
                 </span>
               </PersonLink>
-              {isMe ? (
+              {armed ? (
+                <ConfirmMemberAction
+                  prompt={memberActionPrompt(armed, person.name, isMe)}
+                  onCancel={() => setPending(null)}
+                  onConfirm={() => {
+                    setPending(null);
+                    if (armed === "transfer") onTransfer(person.id);
+                    else onRemove(person.id);
+                  }}
+                />
+              ) : isMe ? (
                 isOwner ? null : (
                   <button
                     type="button"
                     disabled={removing}
-                    onClick={() => onRemove(person.id)}
+                    onClick={() => setPending({ userId: person.id, action: "remove" })}
                     className={rowActionClass}
                   >
                     <LogOut className="h-3.5 w-3.5" /> {removing ? "Leaving…" : "Leave group"}
                   </button>
                 )
               ) : (
-                <>
+                <div className={stacked ? "flex flex-wrap gap-2 sm:pl-10" : "contents"}>
                   {!person.registered ? (
                     <button
                       type="button"
@@ -164,7 +195,7 @@ export function MembersModal({
                       type="button"
                       disabled={addFriend.isPending || requested}
                       onClick={() => addFriend.mutate(person.id)}
-                      className="flex shrink-0 items-center gap-1.5 rounded-lg bg-brand-600 px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-brand-700 disabled:opacity-50"
+                      className="flex shrink-0 items-center gap-1.5 rounded-lg bg-brand-600 px-2.5 py-2 text-xs font-semibold text-white hover:bg-brand-700 disabled:opacity-50 sm:py-1.5"
                     >
                       <UserPlus className="h-3.5 w-3.5" /> {requested ? "Requested" : "Request"}
                     </button>
@@ -174,7 +205,7 @@ export function MembersModal({
                       <button
                         type="button"
                         disabled={transferring}
-                        onClick={() => onTransfer(person.id)}
+                        onClick={() => setPending({ userId: person.id, action: "transfer" })}
                         aria-label={`Make ${person.name} the owner`}
                         className={rowActionClass}
                       >
@@ -183,7 +214,7 @@ export function MembersModal({
                       <button
                         type="button"
                         disabled={removing}
-                        onClick={() => onRemove(person.id)}
+                        onClick={() => setPending({ userId: person.id, action: "remove" })}
                         aria-label={`Remove ${person.name} from the group`}
                         className={rowActionClass}
                       >
@@ -191,7 +222,7 @@ export function MembersModal({
                       </button>
                     </>
                   ) : null}
-                </>
+                </div>
               )}
             </li>
           );

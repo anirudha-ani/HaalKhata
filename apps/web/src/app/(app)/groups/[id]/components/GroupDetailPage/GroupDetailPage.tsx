@@ -2,8 +2,7 @@
 /** Group detail orchestrator: header, members strip, expenses/balances tabs, add-people and settle modals. */
 
 import Link from "next/link";
-import { Link2, Plus, UserPlus } from "lucide-react";
-import { Avatar } from "@/components/ui/Avatar/Avatar";
+import { Plus } from "lucide-react";
 import { InviteShareModal } from "@/components/modals/InviteShareModal/InviteShareModal";
 import { SettleUpModal } from "@/components/modals/SettleUpModal/SettleUpModal";
 import { Spinner } from "@/components/ui/Spinner/Spinner";
@@ -13,6 +12,7 @@ import { groupEmoji } from "../../../constants/groupTypes";
 import { ActivityPanel } from "./components/ActivityPanel/ActivityPanel";
 import { AddPeopleModal } from "./components/AddPeopleModal/AddPeopleModal";
 import { MembersModal } from "./components/MembersModal/MembersModal";
+import { MembersStrip } from "./components/MembersStrip/MembersStrip";
 import { BalancesPanel } from "./components/BalancesPanel/BalancesPanel";
 import { ExpenseList } from "@/components/expenses/ExpenseList/ExpenseList";
 import { TABS } from "../../constants/tabs";
@@ -20,8 +20,8 @@ import { useGroupDetail } from "./hooks/useGroupDetail";
 
 /**
  * Renders a single group's page: header with the add-expense action, the
- * member avatar strip with an add-people button, the expenses/balances tab
- * switcher, and the add-people and settle-up modals.
+ * members strip, the expenses/balances/activity tab switcher, and the
+ * members, add-people and settle-up modals.
  *
  * @returns The group detail content, a spinner while loading, or a not-found
  *   message when the group cannot be fetched.
@@ -69,48 +69,14 @@ export function GroupDetailPage({
         </Link>
       </header>
 
-      {/* Members strip. The avatars-and-names run is a button into the full
-          member list — a truncated line of first names is a summary, not a
-          way to reach anyone. */}
-      <div className="flex items-center gap-2 overflow-x-auto rounded-2xl border border-line bg-card px-4 py-3">
-        <button
-          type="button"
-          onClick={() => groupDetail.setViewingMembers(true)}
-          className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 text-left"
-        >
-          <span className="flex -space-x-2">
-            {(groupDetail.group.members ?? []).map((member) =>
-              member.user ? <Avatar key={member.user.id} user={member.user} size="sm" ring /> : null,
-            )}
-          </span>
-          <span className="min-w-0 flex-1 truncate text-sm text-ink-soft">
-            {(groupDetail.group.members ?? [])
-              .flatMap((member) =>
-                member.user
-                  ? [member.user.id === groupDetail.me?.id ? "You" : member.user.name.split(" ")[0]]
-                  : [],
-              )
-              .join(", ")}
-          </span>
-        </button>
-        <button
-          type="button"
-          onClick={() => groupDetail.setAddingPeople(true)}
-          className="flex shrink-0 items-center gap-1.5 rounded-lg border border-line px-3 py-1.5 text-xs font-semibold text-ink-soft hover:border-brand-200 hover:text-brand-600"
-        >
-          <UserPlus className="h-3.5 w-3.5" /> Add people
-        </button>
-        <button
-          type="button"
-          disabled={groupDetail.sharingInviteLink}
-          onClick={groupDetail.shareInviteLink}
-          title="Share a link anyone can use to join this group"
-          className="flex shrink-0 items-center gap-1.5 rounded-lg border border-line px-3 py-1.5 text-xs font-semibold text-ink-soft hover:border-brand-200 hover:text-brand-600 disabled:opacity-50"
-        >
-          <Link2 className="h-3.5 w-3.5" />
-          {groupDetail.sharingInviteLink ? "Opening…" : "Invite link"}
-        </button>
-      </div>
+      <MembersStrip
+        members={groupDetail.group.members ?? []}
+        meId={groupDetail.me?.id}
+        onViewMembers={() => groupDetail.setViewingMembers(true)}
+        onAddPeople={() => groupDetail.setAddingPeople(true)}
+        onShareInviteLink={groupDetail.shareInviteLink}
+        sharingInviteLink={groupDetail.sharingInviteLink}
+      />
       {groupDetail.linkNotice ? (
         <p className="text-sm font-medium text-pos-700">{groupDetail.linkNotice}</p>
       ) : null}

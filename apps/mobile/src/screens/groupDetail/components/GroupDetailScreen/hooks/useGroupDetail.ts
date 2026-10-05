@@ -14,6 +14,7 @@ import {
   INVALID_PHONE_MESSAGE,
   type ContactDraft,
 } from "@haalkhata/shared/phone/contact";
+import type { MemberAction } from "@haalkhata/shared/group/memberActions";
 import { useGroupDetailAPI } from "./useGroupDetailAPI";
 
 /** The tabs available on the group detail screen. */
@@ -30,9 +31,10 @@ export type GroupTab = "expenses" | "balances" | "activity";
  *   `togglePicked`, `contact`/`setContact`, `submitPeople`,
  *   `peopleError`, `canAddPeople`), `candidates` (friends not already in the
  *   group), the members sheet (`viewingMembers`/`setViewingMembers`,
- *   `removeMember`, `removingUserId`, `transferOwnership`,
- *   `transferringUserId`, `memberError`, `requestFriendship`,
- *   `requestedIds`, `requestingUserId`, `friendIds`),
+ *   `pendingMemberAction` with `askMemberAction`/`cancelMemberAction`/
+ *   `confirmMemberAction` for the remove, leave and make-owner
+ *   confirmation, `removingUserId`, `transferringUserId`, `memberError`,
+ *   `requestFriendship`, `requestedIds`, `requestingUserId`, `friendIds`),
  *   `simplified`/`setSimplified`/`simplifyPending` for the group's
  *   persisted simplify-debts mode, `settleWith`/`setSettleWith` for the
  *   settle-up sheet, and `userById` mapping member ids to users.
@@ -54,6 +56,13 @@ export function useGroupDetail(groupId: string) {
   // The server deliberately does not expose outgoing-request state, so this
   // local marker prevents accidental duplicate taps while the sheet is open.
   const [requestedIds, setRequestedIds] = useState<string[]>([]);
+  // The member action waiting on its confirmation in the members sheet, if
+  // any. Removing, leaving and handing over the group all ask first: they
+  // are small buttons side by side, and a slip used to be enough.
+  const [pendingMemberAction, setPendingMemberAction] = useState<{
+    userId: string;
+    action: MemberAction;
+  } | null>(null);
   // `received` rides along because the same sheet records both directions:
   // paying what you owe, and logging money that has arrived from someone who
   // owed you. Without it the group screen could only ever offer the first.
@@ -215,6 +224,18 @@ export function useGroupDetail(groupId: string) {
   };
 
   /**
+   * Goes ahead with the member action that was waiting on its confirmation.
+   * This is the only way either mutation is reached from the members sheet.
+   */
+  const confirmMemberAction = () => {
+    if (!pendingMemberAction) return;
+    const { userId, action } = pendingMemberAction;
+    setPendingMemberAction(null);
+    if (action === "transfer") transferOwnership(userId);
+    else removeMember(userId);
+  };
+
+  /**
    * Sends a friend request to a member who is not yet a friend; the row
    * shows "Requested" afterwards so it cannot be sent twice from here.
    *
@@ -235,12 +256,20 @@ export function useGroupDetail(groupId: string) {
     addingPeople,
     setAddingPeople,
     viewingMembers,
-    setViewingMembers,
-    removeMember,
+    /** Opens or closes the members sheet; a question left open goes with it. */
+    setViewingMembers: (open: boolean) => {
+      setPendingMemberAction(null);
+      setViewingMembers(open);
+    },
+    pendingMemberAction,
+    /** Turns a member's row into the confirmation for `action`. */
+    askMemberAction: (userId: string, action: MemberAction) =>
+      setPendingMemberAction({ userId, action }),
+    cancelMemberAction: () => setPendingMemberAction(null),
+    confirmMemberAction,
     removingUserId: groupDetailAPI.removeMember.isPending
       ? groupDetailAPI.removeMember.variables
       : undefined,
-    transferOwnership,
     transferringUserId: groupDetailAPI.transferOwnership.isPending
       ? groupDetailAPI.transferOwnership.variables
       : undefined,
