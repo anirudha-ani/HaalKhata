@@ -4,7 +4,7 @@
 import { CATEGORIES } from "@haalkhata/shared/money/money.constants";
 import { centsToInput } from "@haalkhata/shared/money/money";
 import { PeoplePicker } from "@/components/people/PeoplePicker";
-import { SplitSummary } from "@/components/expense/SplitSummary";
+import { SplitSummary } from "@/components/expense/SplitSummary/SplitSummary";
 import { ErrorPopup } from "@/components/ui/ErrorPopup";
 import { itemizedWarnings } from "@/lib/expense/itemizedWarnings";
 import { parseMoneyInput } from "@haalkhata/shared/money/money";

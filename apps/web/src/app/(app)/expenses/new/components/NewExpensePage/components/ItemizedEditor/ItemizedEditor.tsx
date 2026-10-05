@@ -1,7 +1,7 @@
 "use client";
 /** Itemized split tab: the shared item cards wired to the expense form's draft. */
 
-import { ItemCards } from "@/components/expense/ItemCards";
+import { ItemCards } from "@/components/expense/ItemCards/ItemCards";
 import type { NewExpenseController } from "../../hooks/useNewExpense";
 
 /**

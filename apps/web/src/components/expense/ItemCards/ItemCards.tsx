@@ -1,18 +1,23 @@
 "use client";
 /** Item cards: one card per line item with people chips, a claim mode, per-item portions, and a running per-person summary. */
 
-import { Check, Plus, Trash2 } from "lucide-react";
+import { Plus, Trash2 } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 import type { User } from "@haalkhata/protogen/common/v1/common_pb";
 import { formatMoney, parseMoneyInput } from "@haalkhata/shared/money/money";
 import { MAX_EXPENSE_ITEM_NAME_LENGTH } from "@haalkhata/shared/text/limits";
+import { countClaimedItems, resolveClaimer } from "@/lib/expense/claiming";
 import { percentOfItems } from "@/lib/expense/splitForm";
+import { useMediaQuery } from "@/lib/hooks/useMediaQuery";
 import { Avatar } from "@/components/ui/Avatar";
+import { ClaimBar } from "./components/ClaimBar/ClaimBar";
 import {
   MAX_ASSIGNEE_WEIGHT,
   MAX_ITEM_QUANTITY,
+  PHONE_LAYOUT_MEDIA_QUERY,
   TIP_PERCENT_PRESETS,
-} from "./itemCards.constants";
+} from "./constants/itemCards";
+import { fullName, shortName } from "./utils/personLabels";
 
 /** One editable line item, however the owning form stores the rest of its draft. */
 export interface CardItem {
@@ -39,39 +44,19 @@ const fieldClass =
   "h-10 min-w-0 rounded-lg border border-line bg-paper px-3 text-base focus:border-brand-500 focus:outline-none sm:h-9 sm:text-sm";
 
 /**
- * A person's name as a chip shows it: "You" for the signed-in user, otherwise
- * the first name. The full name stays in the accessible label.
- *
- * @param person - The person to label.
- * @param currentUserId - Id of the signed-in user.
- * @returns The short display name.
- */
-function shortName(person: User, currentUserId: string): string {
-  if (person.id === currentUserId) return "You";
-  return person.name.split(/\s+/)[0] || person.name;
-}
-
-/**
- * A person's name for accessible labels and claim-mode copy.
- *
- * @param person - The person to label.
- * @param currentUserId - Id of the signed-in user.
- * @returns "You" for the signed-in user, otherwise the full name.
- */
-function fullName(person: User, currentUserId: string): string {
-  return person.id === currentUserId ? "You" : person.name;
-}
-
-/**
  * Renders line items as cards: name and amount on the first line, then one
  * chip per person to toggle who had it. Nothing scrolls sideways at any
  * width, which is what the previous items-by-people table could not manage
  * on a phone.
  *
  * Two things make a long receipt fast. **Claim mode**: pick a person in the
- * bar at the top and every card becomes a tap target for them, the way a
- * table actually settles up, one person at a time; the chips stay put, so
- * the keyboard path is the same as ever. **Portions per
+ * bar at the top and every card grows a checkbox for them, the way a table
+ * actually settles up, one person at a time. The rest of the card toggles
+ * them too, but a card full of chips leaves little bare card to hit, so the
+ * checkbox is the target that is always there. A phone starts with the
+ * signed-in user picked, because claiming is the one way through a long bill
+ * on a small screen; a wider screen leaves it off until asked for. The chips
+ * stay put either way. **Portions per
  * card**: most lines are on/off; the rare "two chais against one" opens a
  * stepper on that card alone instead of turning every cell into a number
  * box. The same panel holds the line's quantity, shown after the name once
@@ -143,7 +128,8 @@ export function ItemCards({
   // once it exists; cleared as soon as it has been used.
   const focusLastAdded = useRef(false);
 
-  const claimer = people.find((person) => person.id === claimingId) ?? null;
+  const isPhone = useMediaQuery(PHONE_LAYOUT_MEDIA_QUERY);
+  const claimer = resolveClaimer(people, claimingId, currentUserId, isPhone);
 
   useEffect(() => {
     if (!focusLastAdded.current) return;
@@ -161,60 +147,16 @@ export function ItemCards({
 
   return (
     <div className="space-y-3">
-      {/* Claim bar. Sticky within the page's scroller so the active person
-          stays in view while you work down a long receipt. */}
       {people.length > 0 ? (
-        <div className="sticky top-0 z-10 -mx-1 rounded-xl bg-paper/95 px-1 py-2 backdrop-blur-sm">
-          <p className="mb-1.5 flex items-baseline justify-between gap-3 text-xs text-ink-soft">
-            <span>
-              {claimer ? (
-                <>
-                  Tap the items{" "}
-                  <strong className="font-semibold text-brand-700">
-                    {fullName(claimer, currentUserId)}
-                  </strong>{" "}
-                  had
-                </>
-              ) : (
-                "Who had what? Tap a person, then their items."
-              )}
-            </span>
-            <span className="shrink-0 tabular-nums">
-              {items.length} item{items.length === 1 ? "" : "s"} ·{" "}
-              {people.length} people
-            </span>
-          </p>
-          <div className="flex flex-wrap items-center gap-2">
-            {people.map((person) => {
-              const active = claimingId === person.id;
-              return (
-                <button
-                  key={person.id}
-                  type="button"
-                  onClick={() => setClaimingId(active ? null : person.id)}
-                  aria-pressed={active}
-                  className={`flex h-9 items-center gap-1.5 rounded-full border pr-3 pl-1 text-sm font-semibold transition-colors ${
-                    active
-                      ? "border-brand-600 bg-brand-600 text-white"
-                      : "border-line bg-card text-ink hover:border-brand-300"
-                  }`}
-                >
-                  <Avatar user={person} size="sm" />
-                  {shortName(person, currentUserId)}
-                </button>
-              );
-            })}
-            {claimer ? (
-              <button
-                type="button"
-                onClick={() => setClaimingId(null)}
-                className="ml-auto h-9 rounded-lg border border-brand-200 bg-brand-50 px-3 text-sm font-semibold text-brand-700"
-              >
-                Done
-              </button>
-            ) : null}
-          </div>
-        </div>
+        <ClaimBar
+          layout={isPhone ? "list" : "chips"}
+          people={people}
+          claimer={claimer}
+          currentUserId={currentUserId}
+          itemCount={items.length}
+          claimedCounts={countClaimedItems(items)}
+          onClaim={setClaimingId}
+        />
       ) : null}
 
       <ul ref={listRef} className="space-y-2.5">
@@ -244,22 +186,27 @@ export function ItemCards({
           return (
             <li key={item.key}>
               <article
-                // In claim mode the whole card is the target; the inputs and
-                // chips inside keep their own behaviour. Pointer convenience
-                // only: the chips remain the keyboard path, so no role is
-                // claimed here.
+                // In claim mode the bare card toggles the claimer as well as
+                // its checkbox; the inputs and chips inside keep their own
+                // behaviour. Pointer convenience only: the checkbox is the
+                // real control, so no role is claimed here. The label is
+                // skipped along with the controls because a click on it is
+                // replayed on its checkbox, and counting both would toggle
+                // twice.
                 onClick={
                   claimer
                     ? (event) => {
                         if (
-                          (event.target as HTMLElement).closest("input, button")
+                          (event.target as HTMLElement).closest(
+                            "input, button, label",
+                          )
                         )
                           return;
                         onSetWeight(index, claimer.id, claimerOn ? 0 : 1);
                       }
                     : undefined
                 }
-                className={`relative space-y-2.5 rounded-2xl border p-3 transition-[border-color,box-shadow] ${
+                className={`space-y-2.5 rounded-2xl border p-3 transition-[border-color,box-shadow] ${
                   hasAmount && unassigned
                     ? "border-neg-600/20 bg-neg-50"
                     : "border-line bg-card"
@@ -267,17 +214,27 @@ export function ItemCards({
                   claimer
                     ? claimerOn
                       ? "cursor-pointer border-brand-500 ring-3 ring-brand-100"
-                      : "cursor-pointer border-dashed"
+                      : "cursor-pointer"
                     : ""
                 }`}
               >
-                {claimer && claimerOn ? (
-                  <span className="absolute -top-2.5 right-3 inline-flex h-5 items-center gap-1 rounded-full bg-brand-600 px-2 text-[11px] font-bold text-white">
-                    <Check className="h-3 w-3" />{" "}
-                    {fullName(claimer, currentUserId)}
-                  </span>
-                ) : null}
                 <div className="flex items-center gap-2">
+                  {/* The label is the tap target, a good deal larger than
+                      the box it wraps; its negative margins hand most of
+                      that back to the name beside it. */}
+                  {claimer ? (
+                    <label className="-mr-1 -ml-1.5 flex h-10 w-10 shrink-0 cursor-pointer items-center justify-center sm:h-9 sm:w-9">
+                      <input
+                        type="checkbox"
+                        checked={claimerOn}
+                        onChange={() =>
+                          onSetWeight(index, claimer.id, claimerOn ? 0 : 1)
+                        }
+                        aria-label={`${fullName(claimer, currentUserId)} had item ${index + 1}`}
+                        className="h-6 w-6 cursor-pointer accent-brand-600"
+                      />
+                    </label>
+                  ) : null}
                   <div className="relative min-w-0 flex-1">
                     <input
                       type="text"
