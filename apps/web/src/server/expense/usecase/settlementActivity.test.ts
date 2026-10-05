@@ -4,6 +4,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { PoolClient } from "pg";
 import type { SettlementRow } from "@/server/expense/repo/settlements.repo";
 
+vi.mock("@/server/safety/repo/safety.repo", () => ({ blockedBetween: vi.fn(async () => false), blockedPairExists: vi.fn(async () => false) }));
+
 vi.mock("@/server/expense/repo/expenses.repo", () => ({
   findExpenseById: vi.fn(),
   insertExpense: vi.fn(),

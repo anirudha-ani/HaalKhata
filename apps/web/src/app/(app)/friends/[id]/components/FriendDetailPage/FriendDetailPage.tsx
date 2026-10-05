@@ -1,6 +1,7 @@
 "use client";
 /** Friend detail: net balance per currency, settle either way, and the full shared ledger with a running balance. */
 
+import { SafetyActions } from "@/components/safety/SafetyActions";
 import Link from "next/link";
 import { ArrowLeft, Bell, Check, HandCoins, Plus, UserPlus, Wallet } from "lucide-react";
 import { groupEmoji } from "../../../../groups/constants/groupTypes";
@@ -74,6 +75,7 @@ export function FriendDetailPage({
 
   return (
     <div className="mx-auto max-w-3xl space-y-6">
+      {!friend.deleted ? <SafetyActions targetKind="user" targetId={friend.id} userId={friend.id} /> : null}
       <Link
         href="/friends"
         className="inline-flex items-center gap-1.5 text-sm font-medium text-ink-soft hover:text-brand-600"

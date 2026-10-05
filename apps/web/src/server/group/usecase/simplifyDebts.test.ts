@@ -10,6 +10,8 @@ import type { UserRow } from "@/server/auth/repo/users.repo";
 
 const { transactionClient } = vi.hoisted(() => ({ transactionClient: {} as PoolClient }));
 
+vi.mock("@/server/safety/repo/safety.repo", () => ({ blockedBetween: vi.fn(async () => false), blockedPairExists: vi.fn(async () => false) }));
+
 vi.mock("@/server/group/repo/groups.repo", () => ({
   addMember: vi.fn(),
   findGroupById: vi.fn(),

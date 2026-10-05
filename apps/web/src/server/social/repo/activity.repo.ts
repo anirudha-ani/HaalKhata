@@ -176,10 +176,10 @@ export async function listActivityPage(
   // tab instead of your feed.
   const base = scope.groupId
     ? {
-        clause: "group_id = $1 AND audience @> to_jsonb($2::text)",
+        clause: "group_id = $1 AND audience @> to_jsonb($2::text) AND NOT EXISTS (SELECT 1 FROM user_blocks WHERE (blocker_id = $2 AND blocked_id = activity.actor_id) OR (blocker_id = activity.actor_id AND blocked_id = $2))",
         values: [scope.groupId, scope.userId],
       }
-    : { clause: "audience @> to_jsonb($1::text)", values: [scope.userId] };
+    : { clause: "audience @> to_jsonb($1::text) AND NOT EXISTS (SELECT 1 FROM user_blocks WHERE (blocker_id = $1 AND blocked_id = activity.actor_id) OR (blocker_id = activity.actor_id AND blocked_id = $1))", values: [scope.userId] };
   const window = feedWindow({ ...options, nextPlaceholder: base.values.length + 1 });
   const limitPlaceholder = base.values.length + 1 + window.values.length;
 
@@ -214,10 +214,10 @@ export async function listActivityMonths(scope: {
   // Same visibility rule as the pages themselves — see listActivityPage.
   const base = scope.groupId
     ? {
-        clause: "group_id = $1 AND audience @> to_jsonb($2::text)",
+        clause: "group_id = $1 AND audience @> to_jsonb($2::text) AND NOT EXISTS (SELECT 1 FROM user_blocks WHERE (blocker_id = $2 AND blocked_id = activity.actor_id) OR (blocker_id = activity.actor_id AND blocked_id = $2))",
         values: [scope.groupId, scope.userId],
       }
-    : { clause: "audience @> to_jsonb($1::text)", values: [scope.userId] };
+    : { clause: "audience @> to_jsonb($1::text) AND NOT EXISTS (SELECT 1 FROM user_blocks WHERE (blocker_id = $1 AND blocked_id = activity.actor_id) OR (blocker_id = activity.actor_id AND blocked_id = $1))", values: [scope.userId] };
   const rows = await query<{ month: string }>(
     `SELECT DISTINCT to_char(created_at, 'YYYY-MM') AS month
      FROM activity WHERE ${base.clause}

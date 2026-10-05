@@ -1,5 +1,6 @@
 /** Expense detail screen: payers, splits, receipt items, history, comments, and delete flow. */
 
+import { SafetyActions } from "@/components/safety/SafetyActions";
 import { useRouter } from "expo-router";
 import { Check, Lock, Pencil, Send, Trash2 } from "lucide-react-native";
 import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
@@ -130,6 +131,8 @@ export function ExpenseDetailScreen({ expenseId }: { expenseId: string }) {
         </View>
         <Text style={styles.amount}>{formatMoney(expense.amountCents, expense.currency)}</Text>
       </View>
+
+      <SafetyActions targetKind="expense" targetId={expense.id} userId={expense.createdBy !== meId ? expense.createdBy : undefined} />
 
       {settled ? (
         <View style={styles.settledCard}>
@@ -340,6 +343,7 @@ export function ExpenseDetailScreen({ expenseId }: { expenseId: string }) {
                 · {localDateTime(comment.createdAt)}
               </Text>
               <Text style={styles.commentText}>{comment.body}</Text>
+              <SafetyActions targetKind="comment" targetId={comment.id} userId={comment.author?.id !== meId ? comment.author?.id : undefined} />
             </View>
           </View>
         ))}

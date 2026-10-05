@@ -1,5 +1,6 @@
 /** Auth business logic: scrypt passwords, HMAC bearer tokens, signup/login/profile flows. */
 
+import { assertSafeText } from "@/server/safety/usecase/contentFilter";
 import crypto from "node:crypto";
 import fileSystem from "node:fs";
 import path from "node:path";
@@ -76,6 +77,7 @@ export function avatarColorFor(email: string): string {
  * @throws UsecaseError "invalid_argument" when the trimmed name is too long.
  */
 function normalizeName(rawName: string): string {
+  assertSafeText(rawName);
   const name = rawName.trim();
   if (name.length > MAX_USER_NAME_LENGTH) {
     invalid(`name is too long (max ${MAX_USER_NAME_LENGTH} characters)`);

@@ -1,5 +1,6 @@
 /** Typed Connect clients for the browser. Import from client components only. */
 
+import { SafetyService } from "@haalkhata/protogen/safety/v1/safety_pb";
 import { createClient } from "@connectrpc/connect";
 import { createConnectTransport } from "@connectrpc/connect-web";
 import { ConnectError } from "@connectrpc/connect";
@@ -39,3 +40,6 @@ export function errorMessage(error: unknown): string {
   if (error instanceof Error) return error.message || "something went wrong";
   return "something went wrong";
 }
+
+/** Typed client for private reports and caller-owned blocks. */
+export const safetyClient = createClient(SafetyService, transport);

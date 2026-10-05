@@ -1,5 +1,6 @@
 /** Friend detail: net balance, settle either way, and the full shared ledger with a running balance. */
 
+import { SafetyActions } from "@/components/safety/SafetyActions";
 import { useRouter } from "expo-router";
 import { Bell, Check, HandCoins, Plus, UserPlus, Wallet } from "lucide-react-native";
 import { Pressable, StyleSheet, Text, View } from "react-native";
@@ -95,6 +96,7 @@ export function FriendDetailScreen({
       onRefresh={view.refresh}
       refreshing={view.isRefreshing}
     >
+      {!friend.deleted ? <SafetyActions targetKind="user" targetId={friend.id} userId={friend.id} /> : null}
       <View style={styles.headerCard}>
         <View style={styles.identityRow}>
           <Avatar size="lg" user={friend} />

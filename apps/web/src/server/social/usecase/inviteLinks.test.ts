@@ -9,6 +9,8 @@ const { transactionClient } = vi.hoisted(() => ({
   transactionClient: { query: vi.fn() } as unknown as PoolClient,
 }));
 
+vi.mock("@/server/safety/repo/safety.repo", () => ({ blockedBetween: vi.fn(async () => false), blockedPairExists: vi.fn(async () => false) }));
+
 vi.mock("@/server/social/repo/friendships.repo", () => ({
   countIncomingFriendRequests: vi.fn(),
   deleteFriendRequest: vi.fn(),

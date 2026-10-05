@@ -1,5 +1,6 @@
 /** Social business logic: friends (friendships ∪ expense counterparties), activity feed, notifications. */
 
+import { blockedBetween, blockedPairExists } from "@/server/safety/repo/safety.repo";
 import { isRegisteredUser } from "@/server/auth/usecase/user.mapper";
 import {
   countIncomingFriendRequests,
@@ -122,6 +123,7 @@ export async function addFriend(
   if (!friend || friend.id === userId || friend.merged_into !== null) {
     return {};
   }
+  if (await blockedBetween(userId, friend.id)) return {};
   // An unclaimed row cannot accept anything, so the friendship is immediate
   // and the person appears as "Invited" (registered=false) on refetch.
   if (!isRegisteredUser(friend)) {
@@ -145,6 +147,7 @@ export async function addFriend(
     await insertNotifications(
       [friend.id],
       {
+        actorId: userId,
         type: "friend_request",
         title: `${requester.name} sent you a friend request`,
         body: "Accept or decline it from Friends.",
@@ -253,6 +256,7 @@ export async function respondFriendRequest(
   accept: boolean,
 ): Promise<void> {
   if (!requesterId || requesterId === userId) notFound("friend request not found");
+  if (accept && await blockedBetween(userId, requesterId)) notFound("friend request not found");
   const recipient = accept ? await findUserById(userId) : undefined;
   await transaction(async (client) => {
     if (!(await deleteFriendRequest(requesterId, userId, client))) {
@@ -265,6 +269,7 @@ export async function respondFriendRequest(
       [requesterId],
       {
         type: "friend_request",
+        actorId: userId,
         title: `${recipient.name} accepted your friend request`,
         body: "You can now split one-off expenses together.",
         link: "/friends",
@@ -691,6 +696,7 @@ export async function acceptInviteLink(
   token: string,
 ): Promise<{ groupId: string }> {
   const link = await loadActiveLink(token);
+  if (await blockedBetween(userId, link.inviter_id)) notFound(DEAD_LINK_MESSAGE);
   const acceptor = await findUserById(userId);
   if (!acceptor) denied("account no longer exists");
   if (link.inviter_id === userId && link.kind !== "group") {
@@ -708,6 +714,7 @@ export async function acceptInviteLink(
       await insertNotifications(
         [link.inviter_id],
         {
+          actorId: userId,
           type: "friend_request",
           title: `${acceptor.name} wants to connect`,
           body: "They used your profile link. Accept or decline from Friends.",
@@ -751,6 +758,7 @@ export async function acceptInviteLink(
   const group = await findGroupById(link.group_id!);
   if (!group) notFound(DEAD_LINK_MESSAGE);
   if (await isMember(group.id, userId)) return { groupId: group.id };
+  if (await blockedPairExists([userId, ...(await listMembers(group.id)).map((member) => member.id)])) notFound(DEAD_LINK_MESSAGE);
 
   const inviter = await findUserById(link.inviter_id);
   // Under the group's ledger lock like every roster change: a settlement
@@ -898,6 +906,7 @@ export async function removeFriend(userId: string, friendId: string): Promise<vo
  *   while the cooldown is still running.
  */
 export async function sendReminder(userId: string, debtorId: string): Promise<void> {
+  if (await blockedBetween(userId, debtorId)) denied("reminders are unavailable for a blocked connection");
   if (debtorId === userId) invalid("you cannot remind yourself");
   const debtor = await findUserById(debtorId);
   if (!debtor) denied("account no longer exists");
@@ -945,6 +954,7 @@ export async function sendReminder(userId: string, debtorId: string): Promise<vo
     await insertNotifications(
       [debtorId],
       {
+        actorId: userId,
         type: "reminder",
         title: `${sender.name} sent you a reminder`,
         body: payTo ? `You owe ${owed} — pay via ${payTo}` : `You owe ${owed}`,

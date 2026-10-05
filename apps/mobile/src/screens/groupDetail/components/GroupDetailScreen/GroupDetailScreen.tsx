@@ -1,5 +1,6 @@
 /** Group detail orchestrator: header, members strip, expenses/balances/activity tabs, members, add-people and settle sheets. */
 
+import { SafetyActions } from "@/components/safety/SafetyActions";
 import { useRouter } from "expo-router";
 import { Bell, ChevronDown, ChevronRight, Link2, Plus, Send, UserPlus } from "lucide-react-native";
 import { Pressable, StyleSheet, Text, View } from "react-native";
@@ -96,6 +97,7 @@ export function GroupDetailScreen({
       onRefresh={groupDetail.refresh}
       refreshing={groupDetail.isRefreshing}
     >
+      <SafetyActions targetKind="group" targetId={groupId} />
       <View style={[styles.overview, isExpanded ? styles.overviewExpanded : null]}>
         <View style={[styles.groupHeader, isExpanded ? styles.groupHeaderExpanded : null]}>
           <View style={styles.groupEmojiTile}>
@@ -256,6 +258,7 @@ export function GroupDetailScreen({
                       ) : null}
                     </Text>
                   </PersonLink>
+                  {!isMe && !person.deleted ? <SafetyActions targetKind="user" targetId={person.id} userId={person.id} /> : null}
                   {isMe ? (
                     isOwner ? null : (
                       <Button

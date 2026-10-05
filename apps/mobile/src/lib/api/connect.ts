@@ -4,6 +4,7 @@
  * token from {@link ../api/session} instead of a cookie.
  */
 
+import { SafetyService } from "@haalkhata/protogen/safety/v1/safety_pb";
 import { Code, ConnectError, createClient, type Interceptor } from "@connectrpc/connect";
 import { createConnectTransport } from "@connectrpc/connect-web";
 import { AuthService } from "@haalkhata/protogen/auth/v1/auth_pb";
@@ -106,3 +107,6 @@ export function errorMessage(error: unknown): string {
   if (error instanceof Error) return error.message || "something went wrong";
   return "something went wrong";
 }
+
+/** Typed client for private reports and caller-owned blocks. */
+export const safetyClient = createClient(SafetyService, transport);

@@ -32,6 +32,8 @@ export interface UserRow {
   apple_sub?: string | null;
   /** Only fresh anonymous ledger records carry this erasure marker. */
   deleted_at?: string | null;
+  /** Moderator suspension prevents all authenticated requests, including fresh tokens. */
+  suspended_at?: string | null;
   /** When the first-run flow finished; null means the app still redirects there. */
   onboarded_at: string | null;
   /** Id this row was absorbed into by an account merge; null for a live account. */
@@ -265,7 +267,7 @@ export async function markOnboarded(userId: string): Promise<void> {
  */
 export async function findUserTokenVersion(userId: string): Promise<number | undefined> {
   const versionRow = await queryOne<{ token_version: number }>(
-    `SELECT token_version FROM users WHERE id = $1`,
+    `SELECT token_version FROM users WHERE id = $1 AND suspended_at IS NULL`,
     [userId],
   );
   return versionRow?.token_version;

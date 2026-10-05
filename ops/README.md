@@ -261,3 +261,25 @@ After deployment verify `/privacy`, `/support`, `/api/mobile-release`, and
 `/.well-known/assetlinks.json`. These URLs are public and must not redirect to
 login. Store EAS builds query `/api/mobile-release` before compilation and fail
 when Apple configuration or the native Google audience is missing.
+
+## Content moderation
+
+Install `ops/moderate.sh` alongside the server ops scripts. Review the private
+queue at least daily and respond to safety reports promptly (target: within 24
+hours). The console reads the matching SQL from the deployed image; it uses the
+internal Postgres connection and exposes no public moderator endpoint.
+
+```sh
+./ops/moderate.sh list
+./ops/moderate.sh remove REPORT_UUID   # redact content; shared cents stay intact
+./ops/moderate.sh dismiss REPORT_UUID  # close a reviewed, non-actionable report
+./ops/moderate.sh suspend REPORT_UUID  # revoke sessions and refuse new authenticated requests
+./ops/moderate.sh resume REPORT_UUID   # restore access after review; old sessions stay invalid
+```
+
+Keep queue output private. Block controls work despite outstanding balances and
+do not remove financial history. A basic automatic text filter rejects known
+slurs/threats before sharing; human moderation handles evasion, images, context,
+and other reported content. Maintain the monitored support mailbox, review the
+queue, and keep a private record of decisions so they can be reapplied after a
+backup restore.

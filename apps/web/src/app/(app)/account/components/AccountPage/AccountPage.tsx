@@ -1,6 +1,7 @@
 "use client";
 /** Account page: view/edit profile (name, default currency) and sign out. */
 
+import { BlockedPeople } from "@/components/safety/BlockedPeople";
 import { Check, LogOut, Share2 } from "lucide-react";
 import type { User } from "@haalkhata/protogen/common/v1/common_pb";
 import { Avatar } from "@/components/ui/Avatar";
@@ -280,7 +281,8 @@ function ProfileForm({ me: currentUser }: { me: User }) {
       >
         <LogOut className="h-4 w-4" /> Sign out
       </button>
-      <DeleteAccount />
+      <BlockedPeople />
+          <DeleteAccount />
       <LegalLinks />
 
       {form.profileShareToken ? (

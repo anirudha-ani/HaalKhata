@@ -1,5 +1,6 @@
 /** Account screen: profile (name, phone, currency, payment handles), phone verification and merge, sign out. */
 
+import { BlockedPeople } from "@/components/safety/BlockedPeople";
 import type { User } from "@haalkhata/protogen/common/v1/common_pb";
 import { Check, LogOut, Share2 } from "lucide-react-native";
 import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
@@ -117,6 +118,7 @@ function ProfileForm({ me: currentUser }: { me: User }) {
             onPress={() => void form.signOut()}
             variant="outline"
           />
+          <BlockedPeople />
           <DeleteAccount />
           <LegalLinks />
         </View>
