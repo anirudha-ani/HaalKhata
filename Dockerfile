@@ -5,6 +5,7 @@ WORKDIR /app
 
 # Manifests first so the install layer caches across source-only changes.
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY patches/ patches/
 COPY apps/web/package.json apps/web/
 COPY packages/protogen/package.json packages/protogen/
 COPY packages/shared/package.json packages/shared/
