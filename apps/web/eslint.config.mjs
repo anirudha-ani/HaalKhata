@@ -1,9 +1,12 @@
-import { FlatCompat } from "@eslint/eslintrc";
+/** ESLint flat configuration with Next.js rules and repository layering checks. */
 
-const compat = new FlatCompat({ baseDirectory: import.meta.dirname });
+import nextVitals from "eslint-config-next/core-web-vitals";
+import nextTypescript from "eslint-config-next/typescript";
 
+/** Web lint configuration preserving naming and server boundary rules. */
 const config = [
-  ...compat.extends("next/core-web-vitals", "next/typescript"),
+  ...nextVitals,
+  ...nextTypescript,
   {
     rules: {
       "@typescript-eslint/no-unused-vars": [

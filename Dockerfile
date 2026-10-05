@@ -1,6 +1,6 @@
 # Build: pnpm install → buf generate → next build (standalone output).
 FROM node:26-alpine@sha256:2d984a15c9b54fd0aeb608b8e0d0d83529eb34d2966db27a1fb4f1edc3d298a3 AS build
-RUN npm install -g pnpm@11.9.0
+RUN npm install -g pnpm@12.9.1
 WORKDIR /app
 
 # Manifests first so the install layer caches across source-only changes.

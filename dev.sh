@@ -103,8 +103,8 @@ assert_system_ready() {
 
   local major
   major="$(node --version | sed 's/^v//' | cut -d. -f1)"
-  if (( major < 20 )); then
-    die "Node.js $(node --version) is too old (<20). Run './install-deps.sh' to upgrade."
+  if (( major < 24 )); then
+    die "Node.js $(node --version) is too old (<24). Run './install-deps.sh' to upgrade."
   fi
 
   ok "system prerequisites present"
@@ -637,16 +637,13 @@ main() {
   # ./dev.sh --down to stop it too. With --mobile-* the Metro bundler is
   # stopped by the EXIT trap; the db and emulator/simulator keep running.
   # `pnpm exec next dev` would run the Next binary directly and SKIP the
-  # package's dev script — which is the only thing that passes
-  # --env-file-if-exists. The server then starts with none of .env set: no
+  # package's environment-loading launcher. The server then starts with none of .env set: no
   # OpenRouter key (receipt scanning silently falls back to the mock
   # provider), no SESSION_SECRET, and Postgres only by the built-in default.
-  # Invoke node with the env file the same way the dev script does.
+  # Invoke the environment-loading launcher the same way the dev script does.
   #
-  # Absolute path deliberately. A relative "../../.env" does load — pnpm runs
-  # the command in apps/web — but pnpm first echoes Node's
-  # "../../.env not found" after resolving it from the workspace root, which
-  # reads exactly like the failure this line exists to prevent.
+  # The launcher reads the root .env through Node's loadEnvFile API. Next.js 16
+  # forwards CLI flags to workers, where --env-file-if-exists is forbidden.
   #
   # --turbopack because the webpack dev server cannot hot-replace a server
   # module whose exports changed: delete a file, or rename/remove an export
@@ -656,7 +653,7 @@ main() {
   # graph properly and survives those edits. `pnpm --filter @haalkhata/web
   # dev:webpack` is the fallback if Turbopack ever misbehaves.
   pnpm --filter @haalkhata/web exec \
-    node --env-file-if-exists="$PWD/.env" node_modules/next/dist/bin/next dev \
+    node scripts/next.mjs dev \
     --turbopack -H "$web_host"
 }
 

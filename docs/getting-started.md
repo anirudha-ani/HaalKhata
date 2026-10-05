@@ -32,7 +32,8 @@ key; see [Receipt AI providers](#receipt-ai-providers-optional) below.
 ## Configuration
 
 All configuration lives in a single `.env` at the repo root: `docker compose`
-reads it directly, and `pnpm dev` loads it via Node's `--env-file-if-exists`.
+reads it directly, and `pnpm dev` loads it through Node's `loadEnvFile` API in
+the Next.js launcher.
 Copy `.env.example` to `.env` to begin; every variable is documented there.
 
 Using your own Postgres instead of the compose service? Set `DATABASE_URL`

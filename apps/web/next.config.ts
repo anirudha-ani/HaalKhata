@@ -22,6 +22,8 @@ const BASE_SECURITY_HEADERS = [
  */
 const nextConfig: NextConfig = {
   output: "standalone",
+  // Repository-wide agent guidance is maintained in the root AGENTS.md.
+  agentRules: false,
   // Don't announce the framework and version in a response header to every
   // scanner that asks. Costs nothing; removes one free hint for an attacker.
   poweredByHeader: false,

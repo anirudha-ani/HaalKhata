@@ -3,7 +3,7 @@
 #
 # Installs (skipping anything already present):
 #   1. Node.js 24 (via a pinned NodeSource repo installer on Linux, Homebrew on macOS)
-#   2. pnpm 11.9.0 (the packageManager pinned in package.json)
+#   2. pnpm 12.9.1 (the packageManager pinned in package.json)
 #   3. Docker Engine + compose plugin (via a pinned official installer on Linux;
 #      macOS prints instructions for Docker Desktop)
 #   4. JDK 17 (for Android Gradle builds — openjdk-17 on Linux, temurin@17 on macOS)
@@ -108,11 +108,11 @@ install_node() {
   if have node; then
     local major
     major="$(node --version | sed 's/^v//' | cut -d. -f1)"
-    if (( major >= 20 )); then
+    if (( major >= 24 )); then
       ok "Node.js $(node --version) already installed"
       return 0
     fi
-    warn "Node.js $(node --version) is too old (<20); installing Node 24"
+    warn "Node.js $(node --version) is too old (<24); installing Node 24"
   fi
 
   log "Installing Node.js 24…"
@@ -145,11 +145,11 @@ install_pnpm() {
   if have corepack; then
     log "Enabling pnpm via corepack…"
     corepack enable >/dev/null 2>&1 || true
-    corepack prepare pnpm@11.9.0 --activate >/dev/null 2>&1 || true
+    corepack prepare pnpm@12.9.1 --activate >/dev/null 2>&1 || true
   fi
   if ! have pnpm; then
     log "corepack didn't put pnpm on PATH; installing globally via npm…"
-    npm install -g pnpm@11.9.0
+    npm install -g pnpm@12.9.1
   fi
   ok "pnpm $(pnpm --version) ready"
 }

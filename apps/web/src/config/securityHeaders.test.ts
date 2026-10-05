@@ -3,7 +3,7 @@
 import { describe, expect, it } from "vitest";
 import { NextRequest } from "next/server";
 import nextConfig from "../../next.config";
-import { createCspNonce, middleware } from "../middleware";
+import { createCspNonce, proxy } from "../proxy";
 import { contentSecurityPolicy } from "./securityHeaders";
 
 describe("web security headers", () => {
@@ -57,7 +57,7 @@ describe("web security headers", () => {
     expect(firstNonce).toMatch(/^[A-Za-z0-9+/]{22}==$/);
     expect(secondNonce).not.toBe(firstNonce);
 
-    const response = middleware(new NextRequest("https://haalkhata.example/login"));
+    const response = proxy(new NextRequest("https://haalkhata.example/login"));
     const responsePolicy = response.headers.get("Content-Security-Policy");
     const forwardedNonce = response.headers.get("x-middleware-request-x-nonce");
 

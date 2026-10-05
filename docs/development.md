@@ -63,7 +63,7 @@ pnpm typecheck   # tsc --noEmit
 pnpm lint        # eslint (incl. layering import rules)
 pnpm test        # vitest: split math & balance domain tests
 pnpm proto:lint  # buf lint
-pnpm doctor      # react-doctor scan
+pnpm run doctor  # react-doctor scan (pnpm 12 also has a built-in doctor command)
 
 pnpm typecheck:mobile && pnpm lint:mobile && pnpm test:mobile   # same, for apps/mobile
 pnpm typecheck:shared && pnpm lint:shared && pnpm test:shared   # same, for packages/shared
