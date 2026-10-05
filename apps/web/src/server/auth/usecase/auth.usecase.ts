@@ -1,6 +1,7 @@
 /** Auth business logic: scrypt passwords, HMAC bearer tokens, signup/login/profile flows. */
 
 import { assertSafeText } from "@/server/safety/usecase/contentFilter";
+import { providerDisplayName } from "./providerDisplayName";
 import crypto from "node:crypto";
 import fileSystem from "node:fs";
 import path from "node:path";
@@ -384,8 +385,8 @@ export function tokenExpiresAt(token: string): number {
 // --- flows -----------------------------------------------------------------
 
 /**
- * Rejects the password flows on a production deploy, where Google is the only
- * way in. Enforced here rather than by hiding the form: the RPCs stay mounted
+ * Rejects the password flows on a production deploy, which uses Google and
+ * Apple. Enforced here rather than by hiding the form: the RPCs stay mounted
  * and reachable by anyone willing to POST at them, so the UI gate alone would
  * be decoration.
  *
@@ -393,7 +394,7 @@ export function tokenExpiresAt(token: string): number {
  */
 function requirePasswordAuthEnabled(): void {
   if (!passwordAuthEnabled()) {
-    throw new UsecaseError("permission_denied", "sign in with Google to continue");
+    throw new UsecaseError("permission_denied", "sign in with Google or Apple to continue");
   }
 }
 
@@ -621,13 +622,13 @@ export async function logInWithGoogle(idToken: string) {
       // whoever controls that mailbox. An unclaimed row also takes Google's
       // display name, since its own is a local-part placeholder.
       const unclaimed = !isRegisteredUser(existing);
-      await linkGoogleAccount(existing.id, claims.googleSub, unclaimed ? claims.name : "");
+      await linkGoogleAccount(existing.id, claims.googleSub, unclaimed ? providerDisplayName(claims.name) : "");
       user = (await findUserById(existing.id))!;
     } else {
       try {
         user = await insertUser({
           email: claims.email,
-          name: claims.name || claims.email.split("@")[0],
+          name: providerDisplayName(claims.name),
           avatarColor: avatarColorFor(claims.email),
           passwordHash: null,
           googleSub: claims.googleSub,
@@ -774,7 +775,7 @@ export async function removePhone(userId: string) {
   if (user.phone === null) return toPrivateUser(user);
   if (user.email === null) {
     invalid(
-      "this number is the only way your account can be found — sign in with Google to attach an email before removing it",
+      "this number is the only way your account can be found — sign in with Google or Apple to attach an email before removing it",
     );
   }
   await setUserPhone(userId, null);

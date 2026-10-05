@@ -222,7 +222,7 @@ export async function setPhone(
   // Held by a real account: TRANSFER, not refusal (§34). Numbers move —
   // lost SIMs, temporary SIMs — and possession-by-SMS is the definition of
   // holding one. Safe precisely because a phone here is a directory
-  // pointer, never an authenticator (sign-in stays Google-only). Absorbing
+  // pointer, never an authenticator (sign-in uses Google or Apple). Absorbing
   // the ACCOUNT would be wrong; moving the NUMBER, with both sides told,
   // is how every messaging app treats it.
   if (isClaimed(holder)) {

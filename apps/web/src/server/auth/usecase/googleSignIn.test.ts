@@ -256,6 +256,18 @@ describe("logInWithGoogle", () => {
     );
   });
 
+  it("creates a publishable profile when a verified Google name contains a threat", async () => {
+    googleReturns({ ...VERIFIED, name: "kill yourself" });
+    vi.mocked(findUserByGoogleSub).mockResolvedValue(undefined);
+    vi.mocked(findUserByEmail).mockResolvedValue(undefined);
+    vi.mocked(insertUser).mockResolvedValue(userRow({ name: "Member", google_sub: "google-sub-123" }));
+
+    const result = await logInWithGoogle("id-token");
+
+    expect(insertUser).toHaveBeenCalledWith(expect.objectContaining({ name: "Member" }));
+    expect(result.token).toContain("user-1.");
+  });
+
   it("rejects an unverified email rather than linking on it", async () => {
     googleReturns({ ...VERIFIED, email_verified: false });
 

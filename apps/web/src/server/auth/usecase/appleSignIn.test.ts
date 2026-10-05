@@ -48,4 +48,26 @@ describe("Apple challenge binding", () => {
     expect(appleRepository.consumeAppleBrowserChallenge).toHaveBeenCalledWith(appleProofHash("s".repeat(43)), appleProofHash("v".repeat(43)));
     expect(usersRepository.findUserById).not.toHaveBeenCalled();
   });
+
+  it("filters the caller-supplied Apple name before publishing it without rejecting valid proof", async () => {
+    const nonce = "n".repeat(43);
+    const member = { id: "member-id", email: "member@example.com", name: "Member", avatar_color: "#c73e2e",
+      avatar_url: null, default_currency: "USD", password_hash: null, phone: null, phone_verified_at: null,
+      google_sub: null, apple_sub: "subject", onboarded_at: null, merged_into: null, token_version: 0,
+      created_at: "2026-10-05T00:00:00Z", payment_handles: [] };
+    vi.mocked(provider.verifyAppleIdentity).mockResolvedValue({ subject: "subject", email: member.email, nonce });
+    vi.mocked(provider.exchangeAppleCode).mockResolvedValue({ identityToken: "verified", refreshToken: "refresh" });
+    vi.mocked(provider.encryptAppleToken).mockReturnValue("ciphertext");
+    vi.mocked(appleRepository.consumeAppleNativeChallenge).mockResolvedValue({ state_hash: "state", nonce_hash: appleProofHash(nonce),
+      client_id: "com.haalkhata.app", verifier_hash: null, mobile: true, user_id: null });
+    vi.mocked(appleRepository.findAppleUser).mockResolvedValue(undefined);
+    vi.mocked(usersRepository.insertUser).mockResolvedValue(member);
+    vi.mocked(usersRepository.findUserById).mockResolvedValue(member);
+
+    const result = await logInWithApple({ idToken: "valid-token", authorizationCode: "valid-code", name: "kill yourself" });
+
+    expect(usersRepository.insertUser).toHaveBeenCalledWith(expect.objectContaining({ name: "Member" }), expect.anything());
+    expect(appleRepository.saveAppleIdentity).toHaveBeenCalledWith(member.id, "subject", "Member", "com.haalkhata.app", "ciphertext", expect.anything());
+    expect(result.token).toBe("local-session");
+  });
 });

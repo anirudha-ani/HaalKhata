@@ -4,7 +4,6 @@ import crypto from "node:crypto";
 import type { PoolClient } from "pg";
 import { transaction } from "@/server/common/db";
 import { invalid, UsecaseError } from "@/server/common/errors";
-import { MAX_USER_NAME_LENGTH } from "../auth.constants";
 import { APPLE_AUTHORIZE_URL, APPLE_CALLBACK_PATH, APPLE_CHALLENGE_SECONDS, APPLE_HASH_PATTERN,
   APPLE_MOBILE_RETURN, APPLE_NATIVE_CLIENT_ID, APPLE_NONCE_PATTERN, APPLE_RANDOM_BYTES } from "../apple.constants";
 import * as appleRepository from "../repo/appleSignIn.repo";
@@ -12,6 +11,7 @@ import { findUserById, insertUser } from "../repo/users.repo";
 import { avatarColorFor, createToken } from "./auth.usecase";
 import { assertAppleSignInConfigured, encryptAppleToken, exchangeAppleCode, verifyAppleIdentity, type AppleIdentity } from "./apple.provider";
 import { toPrivateUser } from "./user.mapper";
+import { providerDisplayName } from "./providerDisplayName";
 
 /**
  * Hashes proof material so database reads cannot redeem it.
@@ -66,14 +66,14 @@ export async function beginAppleSignIn(input: { browserFlow: boolean; mobile: bo
  * @returns The local account with complete private profile fields.
  */
 async function bindIdentity(identity: AppleIdentity, name: string, clientId: string, refreshToken: string, client: PoolClient) {
-  const displayName = name.trim().slice(0, MAX_USER_NAME_LENGTH);
+  const displayName = providerDisplayName(name);
   await appleRepository.lockAppleIdentity(identity.email, client);
   let user = await appleRepository.findAppleUser(identity.subject, identity.email, client);
   if (user?.apple_sub && user.apple_sub !== identity.subject) {
     throw new UsecaseError("already_exists", "a different Apple account is already linked to that email");
   }
   const unclaimed = !user || (!user.password_hash && !user.google_sub && !user.apple_sub);
-  if (!user) user = await insertUser({ email: identity.email, name: displayName || "Apple member",
+  if (!user) user = await insertUser({ email: identity.email, name: displayName,
     avatarColor: avatarColorFor(identity.subject), passwordHash: null }, client);
   await appleRepository.saveAppleIdentity(user.id, identity.subject, unclaimed ? displayName : "",
     clientId, encryptAppleToken(refreshToken), client);

@@ -1,4 +1,4 @@
-/** Login screen UI: Google sign-in, plus the development-only password form. */
+/** Login screen UI: Apple/Google sign-in and the development-only password form. */
 
 import {
   KeyboardAvoidingView,
@@ -24,10 +24,8 @@ import { useLogin } from "./hooks/useLogin";
 import { FOCUSED_CONTENT_MAX_WIDTH } from "@/components/shell/shell.constants";
 
 /**
- * Renders the login screen: the HaalKhata icon and wordmark, "Continue with Google"
- * (the only way in on a production server), and — in development builds
- * only, mirroring the server's password gate — the sign-in/create-account
- * toggle and credentials form for seeded accounts.
+ * Renders the brand, production Apple/Google sign-in and legal links. Development
+ * builds also offer the password form for seeded accounts, matching the server gate.
  *
  * @returns The full-height login screen.
  */
@@ -60,8 +58,7 @@ export function LoginScreen() {
               <GoogleSignInButton />
             ) : PASSWORD_AUTH_ENABLED ? null : (
               <Text style={styles.hint}>
-                Sign-in is not configured for this build: it needs the Google client ids set at
-                build time.
+                Google sign-in is currently unavailable.
               </Text>
             )}
 
