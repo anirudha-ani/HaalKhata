@@ -26,6 +26,9 @@
 
 set -euo pipefail
 
+readonly PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$PROJECT_ROOT/scripts/macos-env.sh"
+
 # --- pretty printing -----------------------------------------------------------
 
 readonly RESET=$'\033[0m'
@@ -176,7 +179,7 @@ METRO_PORT=8081
 kill_stale_metro() {
   local pids=""
   if have lsof; then
-    pids="$(lsof -ti tcp:"$METRO_PORT" 2>/dev/null || true)"
+    pids="$(lsof -tiTCP:"$METRO_PORT" -sTCP:LISTEN 2>/dev/null || true)"
   elif have fuser; then
     pids="$(fuser "$METRO_PORT"/tcp 2>/dev/null || true)"
   elif have ss; then
@@ -197,10 +200,9 @@ cleanup_mobile() {
     pkill -P "$MOBILE_PID" 2>/dev/null || true
     wait "$MOBILE_PID" 2>/dev/null || true
     MOBILE_PID=""
+    # Clean up listeners left by this script's background process tree.
+    kill_stale_metro
   fi
-  # Also kill anything still on the Metro port — the background process tree
-  # can survive if Metro spawned children.
-  kill_stale_metro
 }
 trap cleanup_mobile EXIT
 
@@ -267,11 +269,11 @@ ensure_java_home() {
   done
 
   if have java; then
-    local home
-    home="$(java -XshowSettings:properties -version 2>&1 \
+    local java_directory
+    java_directory="$(java -XshowSettings:properties -version 2>&1 \
       | sed -n 's/.*java.home = \(.*\)/\1/p' | head -1)"
-    if [[ -n "$home" ]] && [[ -x "$home/bin/java" ]]; then
-      export JAVA_HOME="$home"
+    if [[ -n "$java_directory" ]] && [[ -x "$java_directory/bin/java" ]]; then
+      export JAVA_HOME="$java_directory"
       return 0
     fi
   fi
@@ -403,27 +405,40 @@ launch_android_app() {
 
 # --- iOS helpers ---------------------------------------------------------------
 
+# Read simctl's JSON independently of its whitespace and ignore non-iOS devices.
+# @param $1  device filter accepted by simctl (booted or available).
+# @returns the first matching iOS simulator UDID, or an empty string.
+ios_simulator_udid() {
+  xcrun simctl list devices "$1" -j | node -e '
+    const payload = JSON.parse(require("node:fs").readFileSync(0, "utf8"));
+    const devices = Object.entries(payload.devices)
+      .filter(([runtime]) => runtime.includes(".iOS-"))
+      .flatMap(([, devices]) => devices);
+    process.stdout.write(devices[0]?.udid ?? "");
+  '
+}
+
 # Ensure an iOS simulator is booted. If none is booted, finds the first
 # available simulator, boots it, and opens the Simulator app.
 ensure_ios_simulator() {
   have xcrun \
     || die "xcrun not found. Install Xcode and its command-line tools."
 
-  if xcrun simctl list devices booted -j 2>/dev/null \
-    | grep -q '"state":"Booted"'; then
+  if [[ -n "$(ios_simulator_udid booted)" ]]; then
     ok "iOS simulator already booted"
     return 0
   fi
 
   local udid
-  udid="$(xcrun simctl list devices available -j 2>/dev/null \
-    | grep -o '"udid":"[^"]*"' | head -1 | cut -d'"' -f4)"
+  udid="$(ios_simulator_udid available)"
   [[ -z "$udid" ]] \
     && die "no iOS simulator available. Install Xcode and create one via Xcode → Window → Devices and Simulators."
 
   log "booting iOS simulator (udid: ${udid:0:8}…)…"
   xcrun simctl boot "$udid" 2>/dev/null || true
-  open -a Simulator 2>/dev/null || true
+  open -a Simulator 2>/dev/null \
+    || open -a "${DEVELOPER_DIR:-$(xcode-select -p)}/../Applications/DeviceHub.app" 2>/dev/null \
+    || true
 
   local attempts=0
   until xcrun simctl list devices booted -j 2>/dev/null | grep -q "$udid"; do
@@ -436,12 +451,12 @@ ensure_ios_simulator() {
 }
 
 # Ensure the dev client app is installed on the booted simulator. If it's
-# missing, runs expo run:ios --no-bundler (prebuild + xcodebuild + install,
-# no Metro).
+# missing, builds a generic simulator binary and installs it with simctl.
+# Generic builds do not require an Apple signing certificate for the app's
+# associated-domain entitlements; physical-device builds still use signing.
 ensure_ios_app() {
   local udid
-  udid="$(xcrun simctl list devices booted -j 2>/dev/null \
-    | grep -o '"udid":"[^"]*"' | head -1 | cut -d'"' -f4)"
+  udid="$(ios_simulator_udid booted)"
 
   if xcrun simctl listapps "$udid" 2>/dev/null | grep -q "com.haalkhata.app"; then
     ok "dev client already installed on simulator"
@@ -449,15 +464,21 @@ ensure_ios_app() {
   fi
 
   log "dev client not installed — building (first run takes several minutes)…"
-  (cd apps/mobile && pnpm exec expo run:ios --no-bundler) \
+  (cd apps/mobile && pnpm exec expo run:ios --device generic \
+    --output .expo/ios-build --no-bundler) \
     || die "iOS build failed. See apps/mobile/ios for details."
+  xcrun simctl install "$udid" "apps/mobile/.expo/ios-build/HaalKhata.app" \
+    || die "could not install the iOS simulator build."
   ok "dev client built + installed"
 }
 
-# Launch the dev client app on the booted simulator.
+# Open the running Metro project in the dev client on the booted simulator.
 launch_ios_app() {
-  xcrun simctl launch booted com.haalkhata.app 2>/dev/null || true
-  ok "dev client launched on simulator"
+  local manifest_url
+  manifest_url="$(node -p 'encodeURIComponent(process.argv[1])' "http://127.0.0.1:$METRO_PORT")"
+  xcrun simctl openurl booted "haalkhata://expo-development-client/?url=$manifest_url" \
+    || die "could not open the Metro project on the iOS simulator."
+  ok "dev client connected to Metro on simulator"
 }
 
 # --- LAN helpers ---------------------------------------------------------------
@@ -524,14 +545,14 @@ start_mobile() {
   pnpm dev:mobile &
   MOBILE_PID=$!
 
-  # Wait for Metro to bind to port 8081 before launching the app (up to 30s).
+  # The HTTP status endpoint works on macOS and Linux, including machines
+  # without Linux's ss or macOS's lsof command.
   local attempts=0
-  until ss -tln "sport = :$METRO_PORT" 2>/dev/null | grep -q ":$METRO_PORT" \
-    || lsof -i tcp:"$METRO_PORT" >/dev/null 2>&1; do
+  until curl --fail --silent --max-time 1 "http://127.0.0.1:$METRO_PORT/status" \
+    | grep -q '^packager-status:running'; do
     attempts=$((attempts + 1))
     if (( attempts > 30 )); then
-      warn "Metro didn't bind to port $METRO_PORT in 30s — launching app anyway"
-      break
+      die "Metro did not become ready on port $METRO_PORT. Check the output above."
     fi
     # Check if the background process died early.
     if ! kill -0 "$MOBILE_PID" 2>/dev/null; then
@@ -571,7 +592,11 @@ main() {
     shift
   done
 
-  cd "$(dirname "$0")"
+  cd "$PROJECT_ROOT"
+
+  if [[ "$mobile_platform" == "ios" && "$(uname -s)" != "Darwin" ]]; then
+    die "iOS simulators require macOS and Xcode. On Linux use --mobile-android or run the web app."
+  fi
 
   if [[ "$mode" == "down" ]]; then
     log "stopping compose services…"

@@ -23,6 +23,7 @@ install-deps.sh
 # has run ./dev.sh --mobile-android.
 apps/mobile/android
 apps/mobile/ios
+apps/mobile/.expo
 
 # docker-compose.prod.yml and Caddyfile are deliberately NOT listed here: the
 # Dockerfile bakes them into /opt/release/ so deploy.sh can adopt the pair

@@ -3,16 +3,17 @@
 #
 # Installs (skipping anything already present):
 #   1. Node.js 24 (via a pinned NodeSource repo installer on Linux, Homebrew on macOS)
-#   2. pnpm 12.9.1 (the packageManager pinned in package.json)
+#   2. pnpm (the packageManager pinned in package.json)
 #   3. Docker Engine + compose plugin (via a pinned official installer on Linux;
 #      macOS prints instructions for Docker Desktop)
-#   4. JDK 17 (for Android Gradle builds — openjdk-17 on Linux, temurin@17 on macOS)
+#   4. JDK 17 (for Android Gradle builds — openjdk-17 on Linux, Homebrew on macOS)
 #   5. Android SDK (verified via ANDROID_HOME or common install paths; prints
 #      instructions if missing — install Android Studio manually)
 #   6. Workspace npm dependencies (pnpm install, including the locked buf CLI)
 #   7. Generated protobuf TypeScript (pnpm gen → packages/protogen/src)
 #   8. apps/mobile native modules verified against Expo SDK (expo install --check)
 #   9. .env copied from .env.example (repo root) if absent
+#  10. CocoaPods installed when macOS has a full Xcode installation
 #
 # Usage:
 #   ./install-deps.sh           install everything that's missing
@@ -24,6 +25,9 @@
 # immutable commit URL and SHA-256, then run with a minimal root environment.
 
 set -euo pipefail
+
+readonly PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$PROJECT_ROOT/scripts/macos-env.sh"
 
 # --- pretty printing -----------------------------------------------------------
 
@@ -141,15 +145,17 @@ install_node() {
 # --- 2. pnpm -------------------------------------------------------------------
 
 install_pnpm() {
+  local package_manager
+  package_manager="$(node -p 'require(process.argv[1]).packageManager' "$PROJECT_ROOT/package.json")"
   # corepack ships with Node and can pin pnpm to the packageManager version.
   if have corepack; then
     log "Enabling pnpm via corepack…"
     corepack enable >/dev/null 2>&1 || true
-    corepack prepare pnpm@12.9.1 --activate >/dev/null 2>&1 || true
+    corepack prepare "$package_manager" --activate >/dev/null 2>&1 || true
   fi
   if ! have pnpm; then
     log "corepack didn't put pnpm on PATH; installing globally via npm…"
-    npm install -g pnpm@12.9.1
+    npm install -g "$package_manager"
   fi
   ok "pnpm $(pnpm --version) ready"
 }
@@ -229,14 +235,12 @@ java_major_version() {
 }
 
 install_java() {
-  local os
+  local os ver major
   os="$(os_name)"
 
-  if have java; then
-    local ver major
-    ver="$(java -version 2>&1 | head -1)"
+  if have java && ver="$(java -version 2>&1 | head -1)"; then
     major="$(java_major_version "$ver")"
-    if (( major >= 17 )); then
+    if [[ "$major" =~ ^[0-9]+$ ]] && (( major >= 17 )); then
       ok "JDK $major already installed ($(printf '%s' "$ver" | sed 's/^.*version "//; s/".*//'))"
       return 0
     fi
@@ -255,7 +259,8 @@ install_java() {
       ;;
     macos)
       have brew || die "Homebrew not found. Install it from https://brew.sh and re-run."
-      brew install --cask temurin@17
+      brew install openjdk@17
+      configure_macos_tools
       ;;
     *)
       die "Unsupported OS for JDK install. Install OpenJDK 17 manually: https://adoptium.net/"
@@ -269,6 +274,22 @@ install_java() {
     warn "JAVA_HOME is not set. The dev.sh script resolves it automatically, but"
     warn "for other tooling add it to your shell profile (~/.bashrc / ~/.zshrc)."
   fi
+}
+
+# Install iOS native dependency tooling only on macOS with full Xcode.
+# @returns 0 after installation, or after explaining an optional missing Xcode.
+install_ios_tools() {
+  [[ "$(os_name)" == "macos" ]] || return 0
+  if ! xcrun --find simctl >/dev/null 2>&1; then
+    warn "Full Xcode and an iOS simulator runtime are required for --mobile-ios."
+    return 0
+  fi
+  if ! have pod; then
+    have brew || die "Install CocoaPods with Homebrew, then re-run ./install-deps.sh."
+    log "Installing CocoaPods for iOS native dependencies…"
+    brew install cocoapods
+  fi
+  ok "Xcode simulator tools and CocoaPods $(pod --version) ready"
 }
 
 # --- 5. Android SDK ------------------------------------------------------------
@@ -306,7 +327,7 @@ check_android_sdk() {
 # --- 6 & 7. workspace deps + protogen ------------------------------------------
 
 install_workspace() {
-  cd "$(dirname "$0")"
+  cd "$PROJECT_ROOT"
 
   local current_store recorded_store
   current_store="$(pnpm store path)"
@@ -343,7 +364,7 @@ install_workspace() {
 # --- 8. mobile native module check ---------------------------------------------
 
 check_mobile_deps() {
-  cd "$(dirname "$0")"
+  cd "$PROJECT_ROOT"
   if [[ ! -d apps/mobile ]]; then
     return 0
   fi
@@ -358,9 +379,9 @@ check_mobile_deps() {
 # --- 9. .env file --------------------------------------------------------------
 
 # One .env at the repo root serves both runtimes: docker compose reads it
-# directly, and `pnpm dev` loads it via node --env-file-if-exists.
+# directly, and `pnpm dev` loads it through the Next.js launcher's loadEnvFile API.
 setup_env_files() {
-  cd "$(dirname "$0")"
+  cd "$PROJECT_ROOT"
   if [[ ! -f .env ]] && [[ -f .env.example ]]; then
     cp .env.example .env
     ok "created .env from .env.example (edit it to set POSTGRES_PASSWORD + SESSION_SECRET for prod)"
@@ -388,6 +409,7 @@ main() {
   install_pnpm
   install_docker
   install_java
+  install_ios_tools
   check_android_sdk
   install_workspace
   check_mobile_deps
