@@ -17,6 +17,7 @@ import { previewSplitShares } from "../../../../utils/splitForm";
 import { useNewExpense } from "../../hooks/useNewExpense";
 import type { useNewExpenseAPI } from "../../hooks/useNewExpenseAPI";
 import { PayerEditor } from "../PayerEditor/PayerEditor";
+import { QuickSplitTabs } from "../QuickSplitTabs/QuickSplitTabs";
 import { ReceiptPanel } from "../ReceiptPanel/ReceiptPanel";
 import { SplitEditor } from "../SplitEditor/SplitEditor";
 import { MAX_EXPENSE_DESCRIPTION_LENGTH, MAX_EXPENSE_NOTES_LENGTH } from "@haalkhata/shared/text/limits";
@@ -142,8 +143,14 @@ export function ExpenseForm({
       </View>
 
       <View style={styles.formColumn}>
-        <PayerEditor form={form} />
-        <SplitEditor currency={currency} form={form} />
+        <QuickSplitTabs form={form} />
+        {/* Payer and split editors show up only when "Split it" selected. */}
+        {form.quickSplit === "split" ? (
+          <>
+            <PayerEditor form={form} />
+            <SplitEditor currency={currency} form={form} />
+          </>
+        ) : null}
         {isExpanded ? null : <SplitSummary layout="strip" {...summaryProps} />}
 
         <TextField

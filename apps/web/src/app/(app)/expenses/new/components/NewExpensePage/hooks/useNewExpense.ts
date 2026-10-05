@@ -7,7 +7,8 @@ import type { User } from "@haalkhata/protogen/common/v1/common_pb";
 import { errorMessage } from "@/lib/api/connect";
 import { newOperationId } from "@/lib/operations/operationId";
 import { prepareReceiptImage } from "@/lib/image/receiptImage";
-import { centsToInput, parseMoneyInput } from "@haalkhata/shared/money/money";
+import { centsToInput, formatMoney, parseMoneyInput } from "@haalkhata/shared/money/money";
+import { quickSplitOf, quickSplitTabData, type QuickSplitType } from "@haalkhata/shared/expense/quickSplit";
 import { nextDraftKey } from "@haalkhata/shared/expense/draftKey";
 import {
   buildItemsPayload,
@@ -394,6 +395,27 @@ export function useNewExpense(
   // In itemized mode the total is derived from the line items; the amount
   // input is read-only and the server recomputes (and re-verifies) the same sum.
   const totalCents = isItemized ? itemized.totalCents : parseMoneyInput(amount, currency);
+
+  const otherPerson = people.length === 2 ? people[1] : undefined;
+  // Quick split tabs show up only for a two-person expense.
+  const quickSplit: QuickSplitType =
+    expenseAPI.me && otherPerson && splitType === "equal" && !multiPayer
+      ? quickSplitOf({ meId: expenseAPI.me.id, otherId: otherPerson.id, payerId: singlePayerId, checked })
+      : "split";
+
+  const setQuickSplit = (next: QuickSplitType) => {
+    if (!expenseAPI.me || !otherPerson || next === quickSplit) return;
+    if (next === "split") {
+      setCheckedOverride(null);
+      return;
+    }
+    const [payerId, debtorId] =
+      next === "theyOweAll" ? [expenseAPI.me.id, otherPerson.id] : [otherPerson.id, expenseAPI.me.id];
+    setSplitType("equal");
+    setMultiPayer(false);
+    setSinglePayerId(payerId);
+    setCheckedOverride({ [payerId]: false, [debtorId]: true });
+  };
   const participantIds = people
     .filter((person) => checked[person.id])
     .map((person) => person.id);
@@ -494,6 +516,11 @@ export function useNewExpense(
     setNotes,
     splitType,
     setSplitType: changeSplitType,
+    quickSplit,
+    setQuickSplit,
+    quickSplitTabData: otherPerson
+      ? quickSplitTabData(otherPerson.name, totalCents ? formatMoney(totalCents, currency) : "")
+      : [],
     people,
     checked,
     setChecked,

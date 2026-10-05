@@ -10,6 +10,7 @@ import { itemizedWarnings } from "@/lib/expense/itemizedWarnings";
 import { parseMoneyInput } from "@haalkhata/shared/money/money";
 import type { ExpenseFormInitial } from "../../../../utils/initialValues";
 import { PayerEditor } from "../PayerEditor/PayerEditor";
+import { QuickSplitTabs } from "../QuickSplitTabs/QuickSplitTabs";
 import { ReceiptPanel } from "../ReceiptPanel/ReceiptPanel";
 import { SplitEditor } from "../SplitEditor/SplitEditor";
 import { useNewExpense } from "../../hooks/useNewExpense";
@@ -149,8 +150,14 @@ export function ExpenseForm({
         </div>
       </section>
 
-      <PayerEditor form={form} />
-      <SplitEditor form={form} currency={currency} />
+      <QuickSplitTabs form={form} />
+      {/* Payer and split editors show up only when "Split it" selected. */}
+      {form.quickSplit === "split" ? (
+        <>
+          <PayerEditor form={form} />
+          <SplitEditor form={form} currency={currency} />
+        </>
+      ) : null}
       <SplitSummary layout="strip" className="lg:hidden" {...summaryProps} />
 
       <textarea
