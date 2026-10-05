@@ -381,7 +381,6 @@ const compatibleProvider: Provider = {
       // operator's to read, not the user's.
       logEvent("warn", "compatible receipt provider rejected the request", {
         providerStatus: response.status,
-        detail: responseText.slice(0, 300),
       });
       throw new Error(`compatible provider returned ${response.status}`);
     }

@@ -1,6 +1,7 @@
 "use client";
 /** Combined HaalKhata marketing page and login/signup experience. */
 
+import { LegalLinks } from "@/components/legal/LegalLinks";
 import { useState, type ReactNode } from "react";
 import Image from "next/image";
 import {
@@ -188,6 +189,7 @@ function AuthPanel({
       </button>
       {apple.error ? <p role="alert" className="mb-3 text-sm text-brand-600">{apple.error}</p> : null}
 
+      <LegalLinks />
       {googleIsConfigured ? (
         <div className="flex flex-col gap-3">
           <div ref={setButtonElement} className="flex max-w-full justify-center overflow-hidden [color-scheme:light]" />
@@ -310,7 +312,7 @@ function AuthPanel({
       ) : null}
 
       <p className="mt-5 flex items-center justify-center gap-2 border-t border-line pt-4 text-[11px] text-ink-soft">
-        <LockKeyhole className="h-3.5 w-3.5 shrink-0" /> We read the receipt, make the split, then forget the photo. No storage, no AI training.
+        <LockKeyhole className="h-3.5 w-3.5 shrink-0" /> Receipt sharing is optional. Review the AI disclosure before itemizing and check the result before saving.
       </p>
       </aside>
     </>
@@ -456,7 +458,7 @@ export function LoginPage() {
 
       <footer className="mx-auto flex max-w-[1480px] flex-wrap items-center justify-between gap-4 px-5 py-7 text-xs text-ink-soft sm:px-8 lg:px-12">
         <span>HaalKhata · A fresh ledger for shared lives.</span>
-        <span className="flex items-center gap-2"><LockKeyhole className="h-3.5 w-3.5" /> Receipt photos are not retained or used for AI training</span>
+        <span className="flex items-center gap-2"><LockKeyhole className="h-3.5 w-3.5" /> Receipt photos are processed only after you accept the sharing disclosure</span>
       </footer>
     </main>
   );

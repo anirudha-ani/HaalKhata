@@ -28,6 +28,7 @@ export type CreateExpenseInput = MessageInitShape<typeof CreateExpenseRequestSch
 export function useNewExpenseAPI(editExpenseId: string) {
   const queryClient = useQueryClient();
 
+  const processingInfoQuery = useQuery({ queryKey: queryKeys.receiptProcessingInfo, queryFn: () => receiptClient.getProcessingInfo({}) });
   const currentUserQuery = useQuery({
     queryKey: queryKeys.me,
     queryFn: () => authClient.getMe({}),
@@ -69,13 +70,16 @@ export function useNewExpenseAPI(editExpenseId: string) {
    * filling in this form, not a different kind of expense.
    */
   const parse = useMutation({
-    mutationFn: async (file: File) => {
-      const bytes = new Uint8Array(await file.arrayBuffer());
-      return receiptClient.parseReceipt({ image: bytes, mediaType: file.type });
+    mutationFn: async (input: { file: File; consentVersion: string }) => {
+      const bytes = new Uint8Array(await input.file.arrayBuffer());
+      return receiptClient.parseReceipt({ image: bytes, mediaType: input.file.type, consentVersion: input.consentVersion });
     },
   });
 
   return {
+    processingInfo: processingInfoQuery.data,
+    processingInfoError: processingInfoQuery.error,
+    retryProcessingInfo: processingInfoQuery.refetch,
     me: currentUserQuery.data,
     groups: groupsQuery.data?.groups ?? [],
     friends: friendsQuery.data?.friends ?? [],

@@ -142,6 +142,9 @@ jobs:
           APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
           APPLE_KEY_ID: ${{ vars.APPLE_KEY_ID }}
           APPLE_SERVICE_ID: ${{ vars.APPLE_SERVICE_ID }}
+          APPLE_APP_ID_PREFIX: ${{ vars.APPLE_APP_ID_PREFIX }}
+          ANDROID_SHA256_CERTIFICATES: ${{ vars.ANDROID_SHA256_CERTIFICATES }}
+          SUPPORT_EMAIL: ${{ vars.SUPPORT_EMAIL }}
           TWILIO_API_KEY_SID: ${{ secrets.TWILIO_API_KEY_SID }}
           TWILIO_VERIFY_SERVICE_SID: ${{ secrets.TWILIO_VERIFY_SERVICE_SID }}
           TWILIO_API_KEY_SECRET: ${{ secrets.TWILIO_API_KEY_SECRET }}
@@ -164,6 +167,9 @@ jobs:
             printf 'APPLE_TEAM_ID=%s\n'             "$APPLE_TEAM_ID"
             printf 'APPLE_KEY_ID=%s\n'              "$APPLE_KEY_ID"
             printf 'APPLE_SERVICE_ID=%s\n'          "$APPLE_SERVICE_ID"
+            printf 'APPLE_APP_ID_PREFIX=%s\n'       "$APPLE_APP_ID_PREFIX"
+            printf 'ANDROID_SHA256_CERTIFICATES=%s\n' "$ANDROID_SHA256_CERTIFICATES"
+            printf 'SUPPORT_EMAIL=%s\n'             "$SUPPORT_EMAIL"
             printf 'TWILIO_API_KEY_SID=%s\n'        "$TWILIO_API_KEY_SID"
             printf 'TWILIO_VERIFY_SERVICE_SID=%s\n' "$TWILIO_VERIFY_SERVICE_SID"
             printf 'TWILIO_API_KEY_SECRET=%s\n'     "$TWILIO_API_KEY_SECRET"

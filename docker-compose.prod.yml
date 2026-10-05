@@ -70,6 +70,9 @@ services:
       APPLE_TEAM_ID: ${APPLE_TEAM_ID:?set the Apple Developer Team ID}
       APPLE_KEY_ID: ${APPLE_KEY_ID:?set the Sign in with Apple key ID}
       APPLE_SERVICE_ID: ${APPLE_SERVICE_ID:?set the Apple web Services ID}
+      APPLE_APP_ID_PREFIX: ${APPLE_APP_ID_PREFIX:-}
+      ANDROID_SHA256_CERTIFICATES: ${ANDROID_SHA256_CERTIFICATES:-}
+      SUPPORT_EMAIL: ${SUPPORT_EMAIL:?set a monitored public support address}
       APPLE_PRIVATE_KEY_FILE: /run/secrets/apple_private_key
       APPLE_TOKEN_ENCRYPTION_KEY_FILE: /run/secrets/apple_token_encryption_key
       # Secrets are read from these files by the app itself (the Docker
@@ -91,6 +94,7 @@ services:
       COMPATIBLE_AI_BASE_URL: https://openrouter.ai/api/v1
       COMPATIBLE_AI_MODEL: google/gemini-3-flash-preview
       COMPATIBLE_AI_ZDR: "true"
+      RECEIPT_AI_PROCESSORS: OpenRouter and Google (Gemini)
     secrets:
       - session_secret
       - session_secret_previous

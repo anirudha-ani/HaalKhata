@@ -9,6 +9,7 @@ import { newOperationId } from "@/lib/api/operationId";
 import { centsToInput, parseMoneyInput } from "@haalkhata/shared/money/money";
 import { draftItemsFromLines, itemsPayload } from "@/lib/expense/itemDraft";
 import { useItemDraft } from "@/lib/hooks/useItemDraft";
+import { prepareReceiptPhoto } from "../../../utils/prepareReceiptPhoto";
 import { PICKER_OPTIONS } from "../../../constants/imagePicker";
 import type { ExpenseFormInitial } from "../../../utils/initialValues";
 import {
@@ -75,8 +76,11 @@ export function useNewExpense(
   const [error, setError] = useState("");
   // Receipt state. A scan is a way of filling this form in, not a separate
   // flow: the photo is parsed into the same item draft the Items split edits.
+  const [isPickingPhoto, setIsPickingPhoto] = useState(false);
   const [photo, setPhoto] = useState<ReceiptPhoto | null>(null);
   const [provider, setProvider] = useState("");
+  const [acceptedConsentVersion, setAcceptedConsentVersion] = useState("");
+  const receiptConsentGranted = Boolean(expenseAPI.processingInfo) && acceptedConsentVersion === expenseAPI.processingInfo?.consentVersion;
   // One id per attempt at saving: a retry after a lost response sends the
   // same one and gets the expense the first attempt stored, not a second.
   const operationIdRef = useRef(newOperationId());
@@ -206,33 +210,26 @@ export function useNewExpense(
    * @param useCamera - True to open the camera, false for the photo library.
    */
   const pickPhoto = async (useCamera: boolean) => {
-    setError("");
-    if (useCamera) {
-      const permission = await ImagePicker.requestCameraPermissionsAsync();
-      if (!permission.granted) {
-        setError("camera permission is required to scan receipts");
-        return;
+    if (isPickingPhoto || expenseAPI.parse.isPending) return;
+    setError(""); setIsPickingPhoto(true);
+    try {
+      if (useCamera) {
+        const permission = await ImagePicker.requestCameraPermissionsAsync();
+        if (!permission.granted) {
+          setError("Camera access is disabled. Enable it in Settings or choose an existing photo.");
+          return;
+        }
       }
-    }
-    const result = useCamera
-      ? await ImagePicker.launchCameraAsync(PICKER_OPTIONS)
-      : await ImagePicker.launchImageLibraryAsync(PICKER_OPTIONS);
-    if (result.canceled) return;
-    const asset = result.assets[0];
-    if (!asset?.base64) {
-      setError("could not read the photo — try again");
-      return;
-    }
-    setPhoto({
-      uri: asset.uri,
-      base64: asset.base64,
-      // Always JPEG: PICKER_OPTIONS sets `quality`, which makes the picker
-      // re-encode. Passing through asset.mimeType would label an iPhone photo
-      // "image/heic" while the bytes are already JPEG, and the server's
-      // magic-byte check would reject its own successfully converted image.
-      mediaType: "image/jpeg",
-    });
-    setProvider("");
+      const result = useCamera
+        ? await ImagePicker.launchCameraAsync(PICKER_OPTIONS)
+        : await ImagePicker.launchImageLibraryAsync(PICKER_OPTIONS);
+      if (result.canceled) return;
+      const asset = result.assets[0];
+      if (!asset) throw new Error("Could not read the photo. Try again.");
+      setPhoto(await prepareReceiptPhoto(asset));
+      setAcceptedConsentVersion(""); setProvider("");
+    } catch (failure) { setError(errorMessage(failure)); }
+    finally { setIsPickingPhoto(false); }
   };
 
   /**
@@ -243,9 +240,9 @@ export function useNewExpense(
    * Items.
    */
   const parseNow = () => {
-    if (!photo) return;
+    if (!photo || !receiptConsentGranted) return;
     setError("");
-    expenseAPI.parse.mutate(photo, {
+    expenseAPI.parse.mutate({ ...photo, consentVersion: acceptedConsentVersion }, {
       onSuccess: (result) => {
         const receipt = result.receipt;
         if (!receipt) return;
@@ -389,6 +386,13 @@ export function useNewExpense(
     submit,
     isSaving: expenseAPI.create.isPending || expenseAPI.update.isPending,
     // Receipt scanning.
+    receiptConsentGranted,
+    receiptDisclosure: expenseAPI.processingInfo?.disclosure ?? "",
+    receiptConsentError: expenseAPI.processingInfoError ? "Could not load receipt-sharing details. Try again before uploading." : "",
+    retryReceiptDisclosure: () => void expenseAPI.retryProcessingInfo(),
+    /** Accepts only the version displayed for this image and deployment. */
+    setReceiptConsent: (accepted: boolean) => setAcceptedConsentVersion(accepted ? expenseAPI.processingInfo?.consentVersion ?? "" : ""),
+    isPickingPhoto,
     photo,
     pickPhoto,
     parseNow,

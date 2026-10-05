@@ -5,6 +5,7 @@
 
 import { Camera, FileImage, ImageUp, Loader2, ScanLine } from "lucide-react";
 import { useState } from "react";
+import { LegalLinks } from "@/components/legal/LegalLinks";
 import { Spinner } from "@/components/ui/Spinner";
 import { ACCEPTED_IMAGE_INPUT } from "./receiptPanel.constants";
 import type { NewExpenseController } from "../../hooks/useNewExpense";
@@ -137,11 +138,21 @@ export function ReceiptPanel({
         </div>
       ) : null}
 
+      {form.file && !hasReceipt ? <div className="space-y-2 text-sm text-ink-soft">
+        <label className="flex items-start gap-2">
+          <input type="checkbox" checked={form.receiptConsentGranted} disabled={!form.receiptDisclosure || form.isParsing}
+            onChange={(event) => form.setReceiptConsent(event.target.checked)} />
+          <span>{form.receiptDisclosure || "Loading receipt-sharing details…"}</span>
+        </label>
+        {form.receiptConsentError ? <button type="button" className="underline" onClick={form.retryReceiptDisclosure}>Retry sharing details</button> : null}
+        <LegalLinks />
+      </div> : null}
+
       {form.file && !hasReceipt && !form.isPreparing ? (
         <button
           type="button"
           onClick={form.parseNow}
-          disabled={form.isParsing}
+          disabled={form.isParsing || !form.receiptConsentGranted}
           className="flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-brand-600 font-semibold text-white hover:bg-brand-700 disabled:opacity-60"
         >
           <ScanLine className="h-5 w-5" />

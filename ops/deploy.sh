@@ -75,7 +75,7 @@ printf '%s\n' "$CONFIG" | while IFS= read -r line; do
   key="${line%%=*}"
   value="${line#*=}"
   case "$key" in
-    ACME_EMAIL | GOOGLE_CLIENT_ID | GOOGLE_MOBILE_CLIENT_IDS | APPLE_TEAM_ID | APPLE_KEY_ID | APPLE_SERVICE_ID | TWILIO_API_KEY_SID | TWILIO_VERIFY_SERVICE_SID)
+    ACME_EMAIL | GOOGLE_CLIENT_ID | GOOGLE_MOBILE_CLIENT_IDS | APPLE_TEAM_ID | APPLE_KEY_ID | APPLE_SERVICE_ID | APPLE_APP_ID_PREFIX | ANDROID_SHA256_CERTIFICATES | SUPPORT_EMAIL | TWILIO_API_KEY_SID | TWILIO_VERIFY_SERVICE_SID)
       # %s\n, not %s: an empty value is zero bytes, and grep cannot match a
       # line that was never emitted. read -r means a value can never hold a
       # newline, so this is always exactly one line.

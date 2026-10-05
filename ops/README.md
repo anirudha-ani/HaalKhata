@@ -165,9 +165,10 @@ once, including the attacker's.
 but mirroring those deletions would make the offsite copy unable to recover an
 older good backup after local corruption or delayed discovery. Configure the
 bucket itself with versioning/object lock when available and a lifecycle rule
-appropriate to your retention policy (for example, archive after 90 days and
-expire after one year). Filesystem/rsync targets need their own snapshot or
-retention policy for the same reason.
+matching the public privacy policy: expire every archive and old object version
+within 31 days. Filesystem/rsync targets need an equivalent scheduled expiry.
+Verify expiry before publishing the mobile app; a restored archive must also
+reapply account deletions and moderation actions recorded since its creation.
 
 ### Backup failure alerts
 
@@ -246,3 +247,17 @@ encryption. Browser redirects carry one-use state; the initiating client must
 prove possession of its private verifier to receive a session. Local native
 API calls continue to carry bearer sessions, and the web receives HttpOnly
 cookies. No Apple private key or refresh token reaches a client bundle.
+
+## Mobile public endpoints
+
+Set repository variable `SUPPORT_EMAIL` to a monitored mailbox. Set
+`APPLE_APP_ID_PREFIX` only when the registered App ID prefix differs from the
+Team ID. For Android verified links, set `ANDROID_SHA256_CERTIFICATES` to the
+comma-separated, colon-delimited SHA-256 fingerprints of the actual app signing
+certificates (including Play App Signing when used).
+
+After deployment verify `/privacy`, `/support`, `/api/mobile-release`, and
+`/.well-known/apple-app-site-association` over HTTPS. Android additionally needs
+`/.well-known/assetlinks.json`. These URLs are public and must not redirect to
+login. Store EAS builds query `/api/mobile-release` before compilation and fail
+when Apple configuration or the native Google audience is missing.

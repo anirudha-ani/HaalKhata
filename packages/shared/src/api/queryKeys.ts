@@ -5,6 +5,8 @@
  * Static keys are plain tuples; parameterized keys are builder functions.
  */
 export const queryKeys = {
+  /** Receipt processor disclosure fetched before image sharing. */
+  receiptProcessingInfo: ["receipt", "processing-info"] as const,
   /** The signed-in user's profile. */
   me: ["me"] as const,
   /** The list of groups the user belongs to. */

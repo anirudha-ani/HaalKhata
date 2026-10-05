@@ -9,6 +9,7 @@ import { DetailHeader } from "@/components/shell/DetailHeader";
 import { useResponsiveLayout } from "@/components/shell/hooks/useResponsiveLayout";
 import { Screen } from "@/components/shell/Screen";
 import { Avatar } from "@/components/ui/Avatar";
+import { LegalLinks } from "@/components/legal/LegalLinks";
 import { Button } from "@/components/ui/Button";
 import { PhoneField } from "@/components/ui/PhoneField";
 import { Segmented } from "@/components/ui/Segmented";
@@ -117,6 +118,7 @@ function ProfileForm({ me: currentUser }: { me: User }) {
             variant="outline"
           />
           <DeleteAccount />
+          <LegalLinks />
         </View>
 
         <View style={[styles.formCard, isExpanded ? styles.formCardExpanded : null]}>

@@ -37,6 +37,7 @@ export interface ReceiptPhotoInput {
 export function useNewExpenseAPI(editExpenseId: string) {
   const queryClient = useQueryClient();
 
+  const processingInfoQuery = useQuery({ queryKey: queryKeys.receiptProcessingInfo, queryFn: () => receiptClient.getProcessingInfo({}) });
   const currentUserQuery = useQuery({
     queryKey: queryKeys.me,
     queryFn: () => authClient.getMe({}),
@@ -78,14 +79,18 @@ export function useNewExpenseAPI(editExpenseId: string) {
    * filling in this form, not a different kind of expense.
    */
   const parse = useMutation({
-    mutationFn: (photo: ReceiptPhotoInput) =>
+    mutationFn: (photo: ReceiptPhotoInput & { consentVersion: string }) =>
       receiptClient.parseReceipt({
         image: base64ToBytes(photo.base64),
         mediaType: photo.mediaType,
+        consentVersion: photo.consentVersion,
       }),
   });
 
   return {
+    processingInfo: processingInfoQuery.data,
+    processingInfoError: processingInfoQuery.error,
+    retryProcessingInfo: processingInfoQuery.refetch,
     me: currentUserQuery.data,
     groups: groupsQuery.data?.groups ?? [],
     friends: friendsQuery.data?.friends ?? [],

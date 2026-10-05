@@ -84,6 +84,8 @@ export function useNewExpense(
   const [previewUrl, setPreviewUrl] = useState("");
   const [receiptUrl, setReceiptUrl] = useState("");
   const [provider, setProvider] = useState("");
+  const [acceptedConsentVersion, setAcceptedConsentVersion] = useState("");
+  const receiptConsentGranted = Boolean(expenseAPI.processingInfo) && acceptedConsentVersion === expenseAPI.processingInfo?.consentVersion;
   const [isPreparing, setIsPreparing] = useState(false);
   // One id per attempt at saving: a retry after a lost response sends the
   // same one and gets the expense the first attempt stored, not a second.
@@ -296,6 +298,7 @@ export function useNewExpense(
    * @param picked - The image file chosen or captured by the user.
    */
   const pickFile = async (picked: File) => {
+    setAcceptedConsentVersion("");
     setProvider("");
     setError("");
     setReceiptUrl((previousUrl) => {
@@ -331,9 +334,9 @@ export function useNewExpense(
    * the itemized draft with the split switched to match.
    */
   const parseNow = () => {
-    if (!file) return;
+    if (!file || !receiptConsentGranted) return;
     setError("");
-    expenseAPI.parse.mutate(file, {
+    expenseAPI.parse.mutate({ file, consentVersion: acceptedConsentVersion }, {
       onSuccess: (result) => {
         const receipt = result.receipt;
         if (!receipt) return;
@@ -530,6 +533,12 @@ export function useNewExpense(
     submit,
     isSaving: expenseAPI.create.isPending || expenseAPI.update.isPending,
     // Receipt scanning.
+    receiptConsentGranted,
+    receiptDisclosure: expenseAPI.processingInfo?.disclosure ?? "",
+    receiptConsentError: expenseAPI.processingInfoError ? "Could not load receipt-sharing details. Try again before uploading." : "",
+    retryReceiptDisclosure: () => void expenseAPI.retryProcessingInfo(),
+    /** Accepts only the version displayed for this image and deployment. */
+    setReceiptConsent: (accepted: boolean) => setAcceptedConsentVersion(accepted ? expenseAPI.processingInfo?.consentVersion ?? "" : ""),
     file,
     fileName: file?.name ?? "",
     previewUrl,

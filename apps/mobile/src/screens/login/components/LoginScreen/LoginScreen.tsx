@@ -10,6 +10,7 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { LegalLinks } from "@/components/legal/LegalLinks";
 import { Button } from "@/components/ui/Button";
 import { Segmented } from "@/components/ui/Segmented";
 import { TextField } from "@/components/ui/TextField";
@@ -54,6 +55,7 @@ export function LoginScreen() {
 
             <View style={styles.card}>
             <AppleSignInButton />
+            <LegalLinks />
             {GOOGLE_SIGN_IN_CONFIGURED ? (
               <GoogleSignInButton />
             ) : PASSWORD_AUTH_ENABLED ? null : (
