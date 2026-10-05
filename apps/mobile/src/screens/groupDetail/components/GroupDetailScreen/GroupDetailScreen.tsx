@@ -20,7 +20,7 @@ import { Sheet } from "@/components/ui/Sheet";
 import { Spinner } from "@/components/ui/Spinner";
 import { errorMessage } from "@/lib/api/connect";
 import { colors, radii, spacing } from "@/lib/theme/theme";
-import { memberActionPrompt } from "@haalkhata/shared/group/memberActions";
+import { memberActionPrompt, memberRemovalBlock } from "@haalkhata/shared/group/memberActions";
 import { OWNER_ROLE } from "@haalkhata/shared/group/roles";
 import { groupEmoji } from "../../../groups/constants/groupTypes";
 import { TABS } from "../../constants/tabs";
@@ -158,6 +158,12 @@ export function GroupDetailScreen({
         {groupDetail.linkNotice ? (
           <Text style={styles.linkNotice}>{groupDetail.linkNotice}</Text>
         ) : null}
+        {/* A failed share is reported under the strip its button sits in. */}
+        {groupDetail.linkError ? (
+          <Text accessibilityRole="alert" style={styles.linkError}>
+            {groupDetail.linkError}
+          </Text>
+        ) : null}
       </View>
 
       {/* Tabs */}
@@ -182,6 +188,7 @@ export function GroupDetailScreen({
           onToggleSimplified={groupDetail.setSimplified}
           simplified={groupDetail.simplified}
           simplifyPending={groupDetail.simplifyPending}
+          simplifyError={groupDetail.simplifyError}
           userById={groupDetail.userById}
         />
       ) : groupDetail.activityLoading ? (
@@ -229,7 +236,14 @@ export function GroupDetailScreen({
 
               Remove, leave and make owner ask before they act: the first
               tap turns that person's row into the question, and only its
-              confirm button reaches the server. */}
+              confirm button reaches the server.
+
+              Nothing here fails silently. A removal the ledger will refuse
+              is explained instead of offered, with the amount and the way
+              to the balances, and no request is sent. Whatever the server
+              still refuses, or a row's action confirms, shows under that
+              person's row; a line under the whole list is off screen in any
+              group long enough to scroll. */}
           <View style={styles.membersList}>
             {members.map((member, index) => {
               const person = member.user;
@@ -245,7 +259,24 @@ export function GroupDetailScreen({
                 groupDetail.pendingMemberAction?.userId === person.id
                   ? groupDetail.pendingMemberAction.action
                   : null;
-              const prompt = armed ? memberActionPrompt(armed, person.name, isMe) : null;
+              // Only a removal can be refused for a balance; handing the
+              // group over is allowed whatever anyone owes.
+              const block =
+                armed === "remove"
+                  ? memberRemovalBlock(
+                      person.name,
+                      isMe,
+                      groupDetail.balances?.nets.find((position) => position.userId === person.id)
+                        ?.netCents ?? 0,
+                      groupDetail.group?.currency ?? "",
+                    )
+                  : null;
+              const prompt =
+                armed && !block ? memberActionPrompt(armed, person.name, isMe) : null;
+              const note =
+                groupDetail.memberFeedback?.userId === person.id
+                  ? groupDetail.memberFeedback
+                  : null;
               return (
                 <View key={person.id} style={index > 0 ? styles.memberRowDivider : null}>
                   <View style={styles.memberRow}>
@@ -264,7 +295,7 @@ export function GroupDetailScreen({
                         ) : null}
                       </Text>
                     </PersonLink>
-                    {prompt ? null : isMe ? (
+                    {armed ? null : isMe ? (
                       isOwner ? null : (
                         <Button
                           busy={removing}
@@ -330,6 +361,34 @@ export function GroupDetailScreen({
                   {/* The question takes the place of the row's buttons, under
                       the name, so a second tap where the first one landed
                       cannot be the one that confirms. */}
+                  {block ? (
+                    <View accessibilityRole="alert" style={styles.memberBlocked}>
+                      <Text style={styles.memberConfirmText}>
+                        <Text style={styles.memberConfirmQuestion}>{block.title}.</Text>{" "}
+                        {block.detail}
+                      </Text>
+                      <View style={styles.memberConfirmActions}>
+                        <View style={styles.memberConfirmAction}>
+                          <Button
+                            compact
+                            label="Close"
+                            onPress={groupDetail.cancelMemberAction}
+                            variant="outline"
+                          />
+                        </View>
+                        <View style={styles.memberConfirmAction}>
+                          <Button
+                            compact
+                            label="See balances"
+                            onPress={() => {
+                              groupDetail.setViewingMembers(false);
+                              groupDetail.setTab("balances");
+                            }}
+                          />
+                        </View>
+                      </View>
+                    </View>
+                  ) : null}
                   {prompt ? (
                     <View style={styles.memberConfirm}>
                       <Text style={styles.memberConfirmText}>
@@ -355,11 +414,34 @@ export function GroupDetailScreen({
                       </View>
                     </View>
                   ) : null}
+                  {note ? (
+                    <Text
+                      accessibilityRole={note.tone === "error" ? "alert" : "text"}
+                      style={[
+                        styles.memberNote,
+                        note.tone === "error" ? styles.memberNoteError : styles.memberNoteSuccess,
+                      ]}
+                    >
+                      {note.message}
+                    </Text>
+                  ) : null}
                 </View>
               );
             })}
-            {groupDetail.memberError ? (
-              <Text style={styles.addError}>{groupDetail.memberError}</Text>
+            {/* Only what is about the list as a whole lands here, beside the
+                control that caused it; anything about one person is on their row. */}
+            {groupDetail.memberFeedback && groupDetail.memberFeedback.userId === null ? (
+              <Text
+                accessibilityRole={groupDetail.memberFeedback.tone === "error" ? "alert" : "text"}
+                style={[
+                  styles.memberNote,
+                  groupDetail.memberFeedback.tone === "error"
+                    ? styles.memberNoteError
+                    : styles.memberNoteSuccess,
+                ]}
+              >
+                {groupDetail.memberFeedback.message}
+              </Text>
             ) : null}
             {viewerIsOwner ? (
               /* Revocation kills a link every member may have shared — the
@@ -563,6 +645,11 @@ const styles = StyleSheet.create({
   inviteOffer: {
     gap: spacing.sm,
   },
+  linkError: {
+    color: colors.brand600,
+    fontSize: 13,
+    fontWeight: "600",
+  },
   linkNotice: {
     color: colors.pos700,
     fontSize: 13,
@@ -576,6 +663,13 @@ const styles = StyleSheet.create({
   },
   memberAvatars: {
     flexDirection: "row",
+  },
+  memberBlocked: {
+    backgroundColor: colors.neg50,
+    borderRadius: radii.md,
+    gap: spacing.sm,
+    marginBottom: spacing.sm,
+    padding: spacing.md,
   },
   memberConfirm: {
     backgroundColor: colors.paper,
@@ -610,6 +704,23 @@ const styles = StyleSheet.create({
     color: colors.inkSoft,
     flex: 1,
     fontSize: 13,
+  },
+  memberNote: {
+    borderRadius: radii.sm,
+    fontSize: 13,
+    lineHeight: 18,
+    marginBottom: spacing.sm,
+    overflow: "hidden",
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  memberNoteError: {
+    backgroundColor: colors.brand50,
+    color: colors.brand700,
+  },
+  memberNoteSuccess: {
+    backgroundColor: colors.pos50,
+    color: colors.pos700,
   },
   memberOverlap: {
     marginLeft: -8,

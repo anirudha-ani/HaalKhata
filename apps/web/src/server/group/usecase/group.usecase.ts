@@ -603,7 +603,14 @@ export async function removeMemberFromGroup(
       await assertGroupOwner(input.groupId, userId, client);
     }
     if ((await userNetInGroup(input.userId, input.groupId, client)) !== 0) {
-      invalid("cannot remove a member with an outstanding balance — settle up first");
+      // Worded for whoever is reading it: someone leaving is not "a member"
+      // being removed. Clients explain this before asking, with the amount;
+      // this is what a stale client, or a race with a new expense, shows.
+      invalid(
+        input.userId === userId
+          ? "you can't leave while you have an outstanding balance in this group — settle up first"
+          : "cannot remove a member with an outstanding balance — settle up first",
+      );
     }
     await removeMember(input.groupId, input.userId, client);
   });

@@ -1,7 +1,7 @@
 /** Unit tests for the member-action confirmation wording. */
 
 import { describe, expect, it } from "vitest";
-import { memberActionPrompt } from "./memberActions";
+import { memberActionPrompt, memberRemovalBlock } from "./memberActions";
 
 describe("memberActionPrompt", () => {
   it("names the person being removed", () => {
@@ -33,5 +33,39 @@ describe("memberActionPrompt", () => {
     expect(memberActionPrompt("remove", "Leo", false).confirmLabel).toBe("Remove");
     expect(memberActionPrompt("remove", "Leo", true).confirmLabel).toBe("Leave group");
     expect(memberActionPrompt("transfer", "Leo", false).confirmLabel).toBe("Make owner");
+  });
+});
+
+describe("memberRemovalBlock", () => {
+  it("lets a settled member go", () => {
+    expect(memberRemovalBlock("Radhika Sen", false, 0, "USD")).toBeNull();
+    expect(memberRemovalBlock("Anirudha Paul", true, 0, "USD")).toBeNull();
+  });
+
+  it("tells someone leaving what they owe", () => {
+    expect(memberRemovalBlock("Anirudha Paul", true, -5239, "USD")).toEqual({
+      title: "You can't leave this group yet",
+      detail: "You owe $52.39 here. Settle up first, then you can leave.",
+    });
+  });
+
+  it("tells someone leaving what they are owed", () => {
+    // Being owed money blocks leaving just the same: the net has to be zero.
+    const block = memberRemovalBlock("Anirudha Paul", true, 88000, "USD");
+    expect(block?.detail).toBe("You are owed $880.00 here. Once that is settled you can leave.");
+  });
+
+  it("names the member an owner is trying to remove, in either direction", () => {
+    expect(memberRemovalBlock("Diego Fernandez", false, 88000, "USD")).toEqual({
+      title: "Diego Fernandez can't be removed yet",
+      detail: "They are owed $880.00 in this group. That has to be settled first.",
+    });
+    expect(memberRemovalBlock("Leo Chen", false, -1250, "EUR")?.detail).toBe(
+      "They owe €12.50 in this group. That has to be settled first.",
+    );
+  });
+
+  it("never shows a signed amount", () => {
+    expect(memberRemovalBlock("Leo Chen", false, -1250, "USD")?.detail).not.toContain("-");
   });
 });

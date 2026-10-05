@@ -94,6 +94,14 @@ apps/mobile/                 Expo (React Native) app — @haalkhata/mobile
   files (`page.tsx`, `loading.tsx`, `layout.tsx`, `error.tsx`) and those
   same four subfolders, and a `page.tsx` mounts a component rather than
   being one.
+- **Nothing fails silently.** Every action a person takes ends in feedback
+  they can see: a failure is shown beside the control that caused it (or in
+  the pinned `ErrorPopup`), never only in the console, in state nothing
+  renders, or in a spot that can be off screen — a line under a long list is
+  off screen. Every mutation has an `onError` that reaches the UI. When the
+  client already knows an action will be refused (a member with an unsettled
+  balance cannot leave a group), it says why, with the numbers, instead of
+  sending the request and reporting the refusal. Applies to both apps.
 - **Soft-delete on expenses** (set `deleted_at`); balances filter
   `deleted_at IS NULL`.
 - **Auto-migrate before API readiness** runs through `ensureMigrated()` on

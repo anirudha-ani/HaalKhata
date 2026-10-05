@@ -7,13 +7,20 @@ import { useMutation } from "@tanstack/react-query";
 import { ChevronRight, Crown, LogOut, Send, UserMinus, UserPlus } from "lucide-react";
 import type { Member } from "@haalkhata/protogen/group/v1/group_pb";
 import type { User } from "@haalkhata/protogen/common/v1/common_pb";
-import { memberActionPrompt, type MemberAction } from "@haalkhata/shared/group/memberActions";
+import {
+  memberActionPrompt,
+  memberRemovalBlock,
+  type MemberAction,
+  type MemberFeedback,
+} from "@haalkhata/shared/group/memberActions";
 import { OWNER_ROLE } from "@haalkhata/shared/group/roles";
 import { errorMessage, socialClient } from "@/lib/api/connect";
 import { Avatar } from "@/components/ui/Avatar/Avatar";
 import { PersonLink } from "@/components/people/PersonLink/PersonLink";
 import { Modal } from "@/components/ui/Modal/Modal";
 import { ConfirmMemberAction } from "./components/ConfirmMemberAction/ConfirmMemberAction";
+import { MemberActionBlocked } from "./components/MemberActionBlocked/MemberActionBlocked";
+import { MemberFeedbackNote } from "./components/MemberFeedbackNote/MemberFeedbackNote";
 import { rowActionClass } from "./constants/membersModal";
 
 /**
@@ -43,6 +50,14 @@ import { rowActionClass } from "./constants/membersModal";
  * tap now turns that person's row into the question; only its confirm button
  * calls the server. One row asks at a time.
  *
+ * Nothing here fails silently. A removal the ledger will refuse — the
+ * person still owes or is owed money in the group — is explained instead of
+ * offered: the row says how much is outstanding and points to the balances,
+ * and no request is sent. Whatever the server still refuses, and whatever a
+ * row's action confirms, is shown under that person's row, where the tap
+ * was; a line under the whole list is off screen in any group long enough
+ * to scroll.
+ *
  * @returns The members modal.
  */
 export function MembersModal({
@@ -57,7 +72,10 @@ export function MembersModal({
   remindingUserId,
   onResetLink,
   resettingLink,
-  removeError,
+  feedback,
+  nets,
+  currency,
+  onViewBalances,
   onClose,
 }: {
   /** The group's members with their roles, in the order the group returns them. */
@@ -82,12 +100,21 @@ export function MembersModal({
   onResetLink: () => void;
   /** Whether the link reset is in flight. */
   resettingLink: boolean;
-  /** Server message from the last failed removal or transfer, or "" when there is none. */
-  removeError: string;
+  /** The last failure or confirmation from an action here, and the row it belongs under. */
+  feedback: MemberFeedback | null;
+  /** Each member's net in the group (> 0 means they are owed); empty until balances load. */
+  nets: { userId: string; netCents: number }[];
+  /** The group's ISO 4217 currency code, for the amounts in a refusal. */
+  currency: string;
+  /** Closes this list and shows the group's balances. */
+  onViewBalances: () => void;
   /** Called when the modal is dismissed. */
   onClose: () => void;
 }) {
-  const [error, setError] = useState("");
+  // A failed friend request, kept with the row it was sent from.
+  const [requestError, setRequestError] = useState<{ userId: string; message: string } | null>(
+    null,
+  );
   // The server deliberately does not expose outgoing-request state, so this
   // local marker prevents accidental duplicate taps during the open modal.
   const [requestedIds, setRequestedIds] = useState<Set<string>>(new Set());
@@ -103,7 +130,8 @@ export function MembersModal({
     onSuccess: (_acknowledgement, targetUserId) => {
       setRequestedIds((existing) => new Set([...existing, targetUserId]));
     },
-    onError: (mutationError) => setError(errorMessage(mutationError)),
+    onError: (mutationError, targetUserId) =>
+      setRequestError({ userId: targetUserId, message: errorMessage(mutationError) }),
   });
 
   return (
@@ -119,12 +147,30 @@ export function MembersModal({
           const removing = removingUserId === person.id;
           const transferring = transferringUserId === person.id;
           const armed = pending?.userId === person.id ? pending.action : null;
+          // Only a removal can be refused for a balance; handing the group
+          // over is allowed whatever anyone owes.
+          const block =
+            armed === "remove"
+              ? memberRemovalBlock(
+                  person.name,
+                  isMe,
+                  nets.find((position) => position.userId === person.id)?.netCents ?? 0,
+                  currency,
+                )
+              : null;
+          const note: { tone: "error" | "success"; message: string } | null =
+            requestError?.userId === person.id
+              ? { tone: "error", message: requestError.message }
+              : feedback?.userId === person.id
+                ? feedback
+                : null;
           // An owner gets three actions per person, which no name survives
           // sharing a row with: on a phone it was squeezed to an initial.
           // Those rows put the actions on a line of their own under the
           // name; a row with one action keeps it beside the name. A row that
-          // is asking its question always needs the line underneath.
-          const stacked = (viewerIsOwner && !isMe) || armed !== null;
+          // is asking its question, or has something to report, always needs
+          // the line underneath.
+          const stacked = (viewerIsOwner && !isMe) || armed !== null || note !== null;
           return (
             <li
               key={person.id}
@@ -153,7 +199,13 @@ export function MembersModal({
                   </span>
                 </span>
               </PersonLink>
-              {armed ? (
+              {armed && block ? (
+                <MemberActionBlocked
+                  block={block}
+                  onClose={() => setPending(null)}
+                  onViewBalances={onViewBalances}
+                />
+              ) : armed ? (
                 <ConfirmMemberAction
                   prompt={memberActionPrompt(armed, person.name, isMe)}
                   onCancel={() => setPending(null)}
@@ -165,14 +217,16 @@ export function MembersModal({
                 />
               ) : isMe ? (
                 isOwner ? null : (
-                  <button
-                    type="button"
-                    disabled={removing}
-                    onClick={() => setPending({ userId: person.id, action: "remove" })}
-                    className={rowActionClass}
-                  >
-                    <LogOut className="h-3.5 w-3.5" /> {removing ? "Leaving…" : "Leave group"}
-                  </button>
+                  <div className={stacked ? "flex flex-wrap gap-2 sm:pl-10" : "contents"}>
+                    <button
+                      type="button"
+                      disabled={removing}
+                      onClick={() => setPending({ userId: person.id, action: "remove" })}
+                      className={rowActionClass}
+                    >
+                      <LogOut className="h-3.5 w-3.5" /> {removing ? "Leaving…" : "Leave group"}
+                    </button>
+                  </div>
                 )
               ) : (
                 <div className={stacked ? "flex flex-wrap gap-2 sm:pl-10" : "contents"}>
@@ -194,7 +248,10 @@ export function MembersModal({
                     <button
                       type="button"
                       disabled={addFriend.isPending || requested}
-                      onClick={() => addFriend.mutate(person.id)}
+                      onClick={() => {
+                        setRequestError(null);
+                        addFriend.mutate(person.id);
+                      }}
                       className="flex shrink-0 items-center gap-1.5 rounded-lg bg-brand-600 px-2.5 py-2 text-xs font-semibold text-white hover:bg-brand-700 disabled:opacity-50 sm:py-1.5"
                     >
                       <UserPlus className="h-3.5 w-3.5" /> {requested ? "Requested" : "Request"}
@@ -224,12 +281,17 @@ export function MembersModal({
                   ) : null}
                 </div>
               )}
+              {note ? <MemberFeedbackNote tone={note.tone} message={note.message} indented /> : null}
             </li>
           );
         })}
       </ul>
-      {error || removeError ? (
-        <p className="mt-3 text-sm text-brand-600">{error || removeError}</p>
+      {/* Only what is about the list as a whole lands here, beside the
+          control that caused it; anything about one person is on their row. */}
+      {feedback && feedback.userId === null ? (
+        <div className="mt-3">
+          <MemberFeedbackNote tone={feedback.tone} message={feedback.message} />
+        </div>
       ) : null}
       {viewerIsOwner ? (
         /* Revocation kills a link every member may have shared — the

@@ -78,7 +78,15 @@ export function GroupDetailPage({
         sharingInviteLink={groupDetail.sharingInviteLink}
       />
       {groupDetail.linkNotice ? (
-        <p className="text-sm font-medium text-pos-700">{groupDetail.linkNotice}</p>
+        <p role="status" className="text-sm font-medium text-pos-700">
+          {groupDetail.linkNotice}
+        </p>
+      ) : null}
+      {/* A failed share is reported under the strip its button sits in. */}
+      {groupDetail.linkError ? (
+        <p role="alert" className="text-sm font-medium text-brand-600">
+          {groupDetail.linkError}
+        </p>
       ) : null}
 
       {groupDetail.groupShareToken ? (
@@ -123,6 +131,7 @@ export function GroupDetailPage({
           userById={groupDetail.userById}
           simplified={groupDetail.simplified}
           simplifyPending={groupDetail.simplifyPending}
+          simplifyError={groupDetail.simplifyError}
           onToggleSimplified={groupDetail.setSimplified}
           onSettle={(user, cents, received) =>
             groupDetail.setSettleWith({ user, cents, received })
@@ -151,7 +160,13 @@ export function GroupDetailPage({
           remindingUserId={groupDetail.remindingUserId}
           onResetLink={groupDetail.resetInviteLink}
           resettingLink={groupDetail.resettingInviteLink}
-          removeError={groupDetail.memberError}
+          feedback={groupDetail.memberFeedback}
+          nets={groupDetail.balances?.nets ?? []}
+          currency={groupDetail.group.currency}
+          onViewBalances={() => {
+            groupDetail.setViewingMembers(false);
+            groupDetail.setTab("balances");
+          }}
           onClose={() => groupDetail.setViewingMembers(false)}
         />
       ) : null}
