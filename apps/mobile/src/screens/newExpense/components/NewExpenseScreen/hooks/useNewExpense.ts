@@ -254,7 +254,7 @@ export function useNewExpense(
         // should not overwrite what somebody deliberately typed first.
         if (receipt.merchant) setDescription((current) => current || receipt.merchant);
         if (receipt.date) setDate(receipt.date);
-        const everyone = Object.fromEntries(people.map((person) => [person.id, true]));
+        const everyone = Object.fromEntries(people.map((person) => [person.id, 1]));
         itemDraft.replace(
           draftItemsFromLines(receipt.items, currency).map((item) => ({
             ...item,
