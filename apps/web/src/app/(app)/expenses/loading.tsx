@@ -1,6 +1,6 @@
 /** Route loading UI for /expenses. */
 
-import { Spinner } from "@/components/ui/Spinner";
+import { Spinner } from "@/components/ui/Spinner/Spinner";
 
 /**
  * Renders the spinner shown while the /expenses route segment is loading.

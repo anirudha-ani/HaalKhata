@@ -9,13 +9,10 @@ import type { Member } from "@haalkhata/protogen/group/v1/group_pb";
 import type { User } from "@haalkhata/protogen/common/v1/common_pb";
 import { OWNER_ROLE } from "@haalkhata/shared/group/roles";
 import { errorMessage, socialClient } from "@/lib/api/connect";
-import { Avatar } from "@/components/ui/Avatar";
-import { PersonLink } from "@/components/people/PersonLink";
-import { Modal } from "@/components/ui/Modal";
-
-/** Shared styling for the small outline action buttons on a member row. */
-const rowActionClass =
-  "flex shrink-0 items-center gap-1 rounded-lg border border-line px-2.5 py-1.5 text-xs font-semibold text-ink-soft hover:border-brand-200 hover:text-brand-600 disabled:opacity-50";
+import { Avatar } from "@/components/ui/Avatar/Avatar";
+import { PersonLink } from "@/components/people/PersonLink/PersonLink";
+import { Modal } from "@/components/ui/Modal/Modal";
+import { rowActionClass } from "./constants/membersModal";
 
 /**
  * Renders the group's people as a proper list: every member, full name, and

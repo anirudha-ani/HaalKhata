@@ -1,0 +1,96 @@
+/** Activity feed constants: how each event kind looks, and the filter groups. */
+
+import type { GlyphName } from "../../ActivityGlyph/ActivityGlyph";
+
+/** How one kind of feed event is drawn. */
+export interface ActivityLook {
+  /** Which hand-drawn glyph goes in the leading tile. */
+  glyph: GlyphName;
+  /** Tailwind classes for the tile: background, ring and the glyph's colour. */
+  tile: string;
+  /** Screen-reader name for the tile, since a drawing is not a label. */
+  label: string;
+}
+
+/**
+ * Glyph, tile and caption per event kind.
+ *
+ * Custom SVG rather than emoji or an off-the-shelf icon set. Emoji are drawn
+ * by the OS, so the same feed looks like three different apps across
+ * platforms and their fixed colours fight the tile tint; a stock icon set is
+ * consistent but characterless. These are stroked in `currentColor`, so the
+ * tile decides the colour, and the semantics that were broken before stay
+ * fixed: money only flies away on a payment you *made*, and added vs deleted
+ * differ by both tint and drawing.
+ */
+export const ACTIVITY_LOOK: Record<string, ActivityLook> = {
+  expense_added: {
+    glyph: "shockedReceipt",
+    tile: "bg-brand-50 text-brand-600 ring-1 ring-brand-100",
+    label: "Expense added",
+  },
+  expense_updated: {
+    glyph: "sideEye",
+    tile: "bg-neg-50 text-neg-700 ring-1 ring-neg-600/20",
+    label: "Expense updated",
+  },
+  // Muted tile: a deleted expense is inert history and must not read like the
+  // thing that created it.
+  expense_deleted: {
+    glyph: "skull",
+    tile: "bg-card text-ink/70 ring-1 ring-line",
+    label: "Expense deleted",
+  },
+  member_added: {
+    glyph: "buddies",
+    tile: "bg-brand-50 text-brand-600 ring-1 ring-brand-100",
+    label: "Member added",
+  },
+  group_created: {
+    glyph: "partyHat",
+    tile: "bg-ink/8 text-ink ring-1 ring-ink/10",
+    label: "Group created",
+  },
+  ownership_transferred: {
+    glyph: "buddies",
+    tile: "bg-ink/8 text-ink ring-1 ring-ink/10",
+    label: "Ownership handed over",
+  },
+  comment: {
+    glyph: "yapping",
+    tile: "bg-paper text-ink-soft ring-1 ring-line",
+    label: "Comment",
+  },
+  // Muted like a deleted expense: a removed payment is inert history.
+  settlement_deleted: {
+    glyph: "skull",
+    tile: "bg-card text-ink/70 ring-1 ring-line",
+    label: "Payment removed",
+  },
+};
+
+/** Fallback for an event kind this build does not know about. */
+export const UNKNOWN_LOOK: ActivityLook = {
+  glyph: "blank",
+  tile: "bg-paper text-ink-soft ring-1 ring-line",
+  label: "Activity",
+};
+
+/** Money arriving: the reader was paid. */
+export const INBOUND_LOOK: ActivityLook = {
+  glyph: "cashGrin",
+  tile: "bg-pos-50 text-pos-600 ring-1 ring-pos-600/20",
+  label: "You were paid",
+};
+
+/**
+ * Money leaving: the reader paid somebody.
+ *
+ * The winged note belongs here and only here — this is the one event where
+ * money actually flies away from you, which is what the drawing depicts.
+ */
+export const OUTBOUND_LOOK: ActivityLook = {
+  glyph: "wingedCoin",
+  tile: "bg-paper text-ink ring-1 ring-line",
+  label: "You paid",
+};

@@ -12,31 +12,13 @@ import {
   INVALID_PHONE_MESSAGE,
   type ContactDraft,
 } from "@haalkhata/shared/phone/contact";
-import { totalsByCurrency, type CurrencyBucket } from "@haalkhata/shared/money/balances";
+import { totalsByCurrency } from "@haalkhata/shared/money/balances";
 import { matchesTerms, searchTerms } from "@haalkhata/shared/search/filter";
 import { authClient, errorMessage, socialClient } from "@/lib/api/connect";
 import { shareInvite } from "@/lib/invite/share";
 import { queryKeys } from "@haalkhata/shared/api/queryKeys";
 import type { FriendsTab } from "../../../constants/friendsTabs";
-
-/**
- * A friend's position per currency. A server predating `balances` sends only
- * the default-currency scalar, which reads the same way as one bucket.
- *
- * @param friend - A counterparty balance from the friends list.
- * @param defaultCurrency - The caller's default currency.
- * @returns Non-zero buckets, or an empty list when settled.
- */
-export function bucketsOf(
-  friend: { netCents: number; balances: CurrencyBucket[] },
-  defaultCurrency: string,
-): CurrencyBucket[] {
-  const buckets =
-    friend.balances.length > 0
-      ? friend.balances
-      : [{ currency: defaultCurrency, cents: friend.netCents }];
-  return buckets.filter((bucket) => bucket.cents !== 0);
-}
+import { bucketsOf } from "../utils/bucketsOf";
 
 /**
  * Provides all data and behavior the friends page needs: the signed-in user,

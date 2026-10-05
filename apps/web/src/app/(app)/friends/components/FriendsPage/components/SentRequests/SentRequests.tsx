@@ -2,8 +2,8 @@
 /** The "Sent requests" tab: what the current user asked for and is still waiting on. */
 
 import { Clock, Send, X } from "lucide-react";
-import { Avatar } from "@/components/ui/Avatar";
-import { EmptyState } from "@/components/ui/EmptyState";
+import { Avatar } from "@/components/ui/Avatar/Avatar";
+import { EmptyState } from "@/components/ui/EmptyState/EmptyState";
 import type { FriendsController } from "../../hooks/useFriends";
 
 /**

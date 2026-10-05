@@ -3,10 +3,10 @@
 
 import Link from "next/link";
 import { Link2, Plus, UserPlus } from "lucide-react";
-import { Avatar } from "@/components/ui/Avatar";
-import { InviteShareModal } from "@/components/modals/InviteShareModal";
-import { SettleUpModal } from "@/components/modals/SettleUpModal";
-import { Spinner } from "@/components/ui/Spinner";
+import { Avatar } from "@/components/ui/Avatar/Avatar";
+import { InviteShareModal } from "@/components/modals/InviteShareModal/InviteShareModal";
+import { SettleUpModal } from "@/components/modals/SettleUpModal/SettleUpModal";
+import { Spinner } from "@/components/ui/Spinner/Spinner";
 import { errorMessage } from "@/lib/api/connect";
 import { useHydrated } from "@/lib/hooks/useHydrated";
 import { groupEmoji } from "../../../constants/groupTypes";
@@ -14,7 +14,7 @@ import { ActivityPanel } from "./components/ActivityPanel/ActivityPanel";
 import { AddPeopleModal } from "./components/AddPeopleModal/AddPeopleModal";
 import { MembersModal } from "./components/MembersModal/MembersModal";
 import { BalancesPanel } from "./components/BalancesPanel/BalancesPanel";
-import { ExpenseList } from "@/components/expenses/ExpenseList";
+import { ExpenseList } from "@/components/expenses/ExpenseList/ExpenseList";
 import { TABS } from "../../constants/tabs";
 import { useGroupDetail } from "./hooks/useGroupDetail";
 

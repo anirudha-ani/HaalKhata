@@ -3,9 +3,9 @@
 
 import Link from "next/link";
 import { Plus } from "lucide-react";
-import { ExpenseList } from "@/components/expenses/ExpenseList";
-import { SearchField } from "@/components/ui/SearchField";
-import { Spinner } from "@/components/ui/Spinner";
+import { ExpenseList } from "@/components/expenses/ExpenseList/ExpenseList";
+import { SearchField } from "@/components/ui/SearchField/SearchField";
+import { Spinner } from "@/components/ui/Spinner/Spinner";
 import { useHydrated } from "@/lib/hooks/useHydrated";
 import { noExpensesMessage } from "@haalkhata/shared/expense/scopeFilter";
 import { useExpensesList } from "./hooks/useExpensesList";

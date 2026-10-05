@@ -4,9 +4,9 @@
 import { ArrowRight, Wand2 } from "lucide-react";
 import type { BalancesResponse } from "@haalkhata/protogen/expense/v1/expense_pb";
 import type { User } from "@haalkhata/protogen/common/v1/common_pb";
-import { Avatar } from "@/components/ui/Avatar";
-import { Money } from "@/components/ui/Money";
-import { PersonLink } from "@/components/people/PersonLink";
+import { Avatar } from "@/components/ui/Avatar/Avatar";
+import { Money } from "@/components/ui/Money/Money";
+import { PersonLink } from "@/components/people/PersonLink/PersonLink";
 
 /**
  * Renders the balances tab of a group: every member's net position, then the

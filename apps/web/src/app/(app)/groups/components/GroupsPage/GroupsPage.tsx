@@ -3,14 +3,14 @@
 
 import Link from "next/link";
 import { Plus, Users } from "lucide-react";
-import { EmptyState } from "@/components/ui/EmptyState";
-import { FriendChecklist } from "@/components/people/FriendChecklist";
-import { Modal } from "@/components/ui/Modal";
-import { Money } from "@/components/ui/Money";
-import { SearchField } from "@/components/ui/SearchField";
-import { Spinner } from "@/components/ui/Spinner";
+import { EmptyState } from "@/components/ui/EmptyState/EmptyState";
+import { FriendChecklist } from "@/components/people/FriendChecklist/FriendChecklist";
+import { Modal } from "@/components/ui/Modal/Modal";
+import { Money } from "@/components/ui/Money/Money";
+import { SearchField } from "@/components/ui/SearchField/SearchField";
+import { Spinner } from "@/components/ui/Spinner/Spinner";
 import { useHydrated } from "@/lib/hooks/useHydrated";
-import { CurrencySelect } from "@/components/ui/CurrencySelect";
+import { CurrencySelect } from "@/components/ui/CurrencySelect/CurrencySelect";
 import { GROUP_BALANCE_FILTERS, noGroupsMessage } from "@haalkhata/shared/group/balanceFilter";
 import { GROUP_TYPES, groupEmoji } from "../../constants/groupTypes";
 import { useGroups } from "./hooks/useGroups";

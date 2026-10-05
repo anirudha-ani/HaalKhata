@@ -34,10 +34,13 @@ apps/web/                    Next.js app
   src/server/common/         db, errors, logger, rateLimit (shared infra)
   src/server/api/connect/    context.ts (auth/cookies/error map), routes.ts, csrf.ts
   src/pages/api/connect/     [[...connect]].ts — mount point only
-  src/app/<route>/           UI (thin page.tsx → components/<Page>/ + hooks/)
+  src/app/<route>/           UI (thin page.tsx → components/<Page>/<Page>.tsx,
+                             with its own components/, hooks/, constants/, utils/)
   src/lib/                   app-specific utilities (api/ transport, auth/ guard,
                              hooks/ cross-route React hooks)
-  src/components/            shell, ui primitives, providers, modals
+  src/components/<category>/ shared UI by category (ui, shell, people, modals,
+                             providers, …): one folder per component,
+                             <Name>/<Name>.tsx — see "Composition structure"
   migrations/                plain SQL, node-pg-migrate (history in pgmigrations)
 apps/mobile/                 Expo (React Native) app — @haalkhata/mobile
   app/                       expo-router routes — THIN (the page.tsx role)
@@ -76,8 +79,21 @@ apps/mobile/                 Expo (React Native) app — @haalkhata/mobile
 - **Every file has a header doc comment; every exported symbol and
   non-trivial internal function carries JSDoc (`@param`/`@returns`).**
 - **Constants never inline between functions.** Server: one
-  `<domain>.constants.ts` per domain. Frontend: route-scoped `constants/`
-  or the owning folder's `*.constants.ts`.
+  `<domain>.constants.ts` per domain. Frontend: a file in the `constants/`
+  folder of the component (or route) that owns it — never a `*.constants.ts`
+  beside the component.
+- **Composition structure (apps/web UI).** Every component has its own
+  folder and root file, `<Name>/<Name>.tsx`. A folder is either a *category*
+  that holds only component folders (`src/components/ui/`) or a *component*
+  with its root file; never loose files beside folders. Whatever a component
+  needs lives in subfolders of the component that owns it:
+  `components/<Child>/<Child>.tsx`, `constants/<topic>.ts`,
+  `utils/<name>.ts` (tests colocated) and `hooks/use<Name>.ts`. One
+  component, hook or helper per file — no private sub-components at the
+  bottom of another component's file. Route folders hold only Next's own
+  files (`page.tsx`, `loading.tsx`, `layout.tsx`, `error.tsx`) and those
+  same four subfolders, and a `page.tsx` mounts a component rather than
+  being one.
 - **Soft-delete on expenses** (set `deleted_at`); balances filter
   `deleted_at IS NULL`.
 - **Auto-migrate before API readiness** runs through `ensureMigrated()` on

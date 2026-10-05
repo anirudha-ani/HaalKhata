@@ -1,6 +1,6 @@
 /** Route loading UI for /friends/[id]. */
 
-import { Spinner } from "@/components/ui/Spinner";
+import { Spinner } from "@/components/ui/Spinner/Spinner";
 
 /**
  * Renders the spinner shown while the /friends/[id] route segment is loading.

@@ -1,15 +1,12 @@
 "use client";
 /** First-run screen: name, currency, phone — plus the merge confirmation. */
 
-import { CurrencySelect } from "@/components/ui/CurrencySelect";
-import { MergePreview } from "@/components/account/MergePreview";
-import { PhoneField } from "@/components/ui/PhoneField";
+import { CurrencySelect } from "@/components/ui/CurrencySelect/CurrencySelect";
+import { MergePreview } from "@/components/account/MergePreview/MergePreview";
+import { PhoneField } from "@/components/ui/PhoneField/PhoneField";
 import { useOnboarding } from "./hooks/useOnboarding";
 import { MAX_USER_NAME_LENGTH } from "@haalkhata/shared/text/limits";
-
-/** Shared styling for the onboarding inputs. */
-const inputClass =
-  "w-full rounded-xl border border-line bg-card px-3.5 py-3 text-[15px] focus:border-brand-500 focus:outline-none";
+import { inputClass } from "./constants/onboardingPage";
 
 /**
  * Renders the first-run flow: a short profile form, an optional phone number,

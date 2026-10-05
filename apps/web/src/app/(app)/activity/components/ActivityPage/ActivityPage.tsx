@@ -2,11 +2,11 @@
 /** Activity page: searchable, filterable, day-grouped feed with keyset pagination. */
 
 import { Bell, ChevronDown } from "lucide-react";
-import { EmptyState } from "@/components/ui/EmptyState";
-import { SearchField } from "@/components/ui/SearchField";
-import { Spinner } from "@/components/ui/Spinner";
+import { EmptyState } from "@/components/ui/EmptyState/EmptyState";
+import { SearchField } from "@/components/ui/SearchField/SearchField";
+import { Spinner } from "@/components/ui/Spinner/Spinner";
 import { useHydrated } from "@/lib/hooks/useHydrated";
-import { ActivityList } from "@/components/activity/ActivityList";
+import { ActivityList } from "@/components/activity/ActivityList/ActivityList";
 import { ACTIVITY_FILTERS } from "@haalkhata/shared/activity/filters";
 import { monthLabel } from "@haalkhata/shared/activity/format";
 import { useActivity } from "./hooks/useActivity";

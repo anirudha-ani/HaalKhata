@@ -9,13 +9,15 @@ import { MAX_EXPENSE_ITEM_NAME_LENGTH } from "@haalkhata/shared/text/limits";
 import { countClaimedItems, resolveClaimer } from "@/lib/expense/claiming";
 import { percentOfItems } from "@/lib/expense/splitForm";
 import { useMediaQuery } from "@/lib/hooks/useMediaQuery";
-import { Avatar } from "@/components/ui/Avatar";
+import { Avatar } from "@/components/ui/Avatar/Avatar";
 import { ClaimBar } from "./components/ClaimBar/ClaimBar";
+import { Stepper } from "./components/Stepper/Stepper";
 import {
   MAX_ASSIGNEE_WEIGHT,
   MAX_ITEM_QUANTITY,
   PHONE_LAYOUT_MEDIA_QUERY,
   TIP_PERCENT_PRESETS,
+  fieldClass,
 } from "./constants/itemCards";
 import { fullName, shortName } from "./utils/personLabels";
 
@@ -32,16 +34,6 @@ export interface CardItem {
   /** Portion count per user id; absent or 0 means "not on this item". */
   assignees: Record<string, number>;
 }
-
-/**
- * Shared input styling for the cards' text fields.
- *
- * `text-base` on phones is not a size preference: iOS Safari zooms the whole
- * page when a focused input's font is under 16px. It drops to `text-sm` from
- * `sm:` up, where no such rule applies.
- */
-const fieldClass =
-  "h-10 min-w-0 rounded-lg border border-line bg-paper px-3 text-base focus:border-brand-500 focus:outline-none sm:h-9 sm:text-sm";
 
 /**
  * Renders line items as cards: name and amount on the first line, then one
@@ -500,56 +492,5 @@ export function ItemCards({
       </div>
 
     </div>
-  );
-}
-
-/**
- * A minus / count / plus control for small integers.
- *
- * @param props - Component props.
- * @returns The stepper.
- */
-function Stepper({
-  value,
-  min,
-  max,
-  label,
-  onChange,
-}: {
-  /** The current count. */
-  value: number;
-  /** Lowest count the minus button may reach. */
-  min: number;
-  /** Highest count the plus button may reach. */
-  max: number;
-  /** Suffix for the buttons' accessible labels, e.g. "for Adnan". */
-  label: string;
-  /** Called with the new count. */
-  onChange: (next: number) => void;
-}) {
-  return (
-    <span className="inline-flex items-center overflow-hidden rounded-lg border border-line bg-card">
-      <button
-        type="button"
-        disabled={value <= min}
-        onClick={() => onChange(Math.max(min, value - 1))}
-        aria-label={`One fewer ${label}`}
-        className="h-8 w-8 text-base leading-none hover:bg-brand-50 hover:text-brand-700 disabled:opacity-40"
-      >
-        −
-      </button>
-      <output className="min-w-7 text-center text-sm font-semibold tabular-nums">
-        {value}
-      </output>
-      <button
-        type="button"
-        disabled={value >= max}
-        onClick={() => onChange(Math.min(max, value + 1))}
-        aria-label={`One more ${label}`}
-        className="h-8 w-8 text-base leading-none hover:bg-brand-50 hover:text-brand-700 disabled:opacity-40"
-      >
-        +
-      </button>
-    </span>
   );
 }

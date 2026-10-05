@@ -5,7 +5,7 @@ import { ChevronDown, ChevronRight, ChevronUp } from "lucide-react";
 import { useId, useRef, useState } from "react";
 import type { User } from "@haalkhata/protogen/common/v1/common_pb";
 import { formatMoney } from "@haalkhata/shared/money/money";
-import { Avatar } from "@/components/ui/Avatar";
+import { Avatar } from "@/components/ui/Avatar/Avatar";
 import { useScrollEdges } from "@/lib/hooks/useScrollEdges";
 
 /**

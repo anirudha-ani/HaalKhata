@@ -4,19 +4,9 @@
 import { Check, ChevronDown } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 import type { User } from "@haalkhata/protogen/common/v1/common_pb";
-import { Avatar } from "@/components/ui/Avatar";
+import { Avatar } from "@/components/ui/Avatar/Avatar";
 import { fullName, shortName } from "../../utils/personLabels";
-
-/**
- * Words how many items a person is on, for the picker's rows.
- *
- * @param count - The number of items.
- * @returns "No items", "1 item" or "N items".
- */
-function itemCountLabel(count: number): string {
-  if (count === 0) return "No items";
-  return `${count} item${count === 1 ? "" : "s"}`;
-}
+import { itemCountLabel } from "./utils/itemCountLabel";
 
 /**
  * Renders the bar that says whose items are being checked off. It sticks to

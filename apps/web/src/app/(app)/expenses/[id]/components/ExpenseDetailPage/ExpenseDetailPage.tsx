@@ -3,12 +3,12 @@
 
 import Link from "next/link";
 import { Check, Lock, Pencil, Send, Trash2 } from "lucide-react";
-import { Avatar } from "@/components/ui/Avatar";
-import { PersonLink } from "@/components/people/PersonLink";
+import { Avatar } from "@/components/ui/Avatar/Avatar";
+import { PersonLink } from "@/components/people/PersonLink/PersonLink";
 import { settledStatus } from "@haalkhata/shared/expense/settledStatus";
-import { Modal } from "@/components/ui/Modal";
-import { Money } from "@/components/ui/Money";
-import { Spinner } from "@/components/ui/Spinner";
+import { Modal } from "@/components/ui/Modal/Modal";
+import { Money } from "@/components/ui/Money/Money";
+import { Spinner } from "@/components/ui/Spinner/Spinner";
 import { errorMessage } from "@/lib/api/connect";
 import { useHydrated } from "@/lib/hooks/useHydrated";
 import { formatMoney } from "@haalkhata/shared/money/money";

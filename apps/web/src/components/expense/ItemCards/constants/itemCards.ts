@@ -18,3 +18,13 @@ export const PHONE_LAYOUT_MEDIA_QUERY = "(width < 40rem)";
 
 /** One-tap tip percentages offered under the items, of the items subtotal. */
 export const TIP_PERCENT_PRESETS = [10, 15, 18, 20];
+
+/**
+ * Shared input styling for the cards' text fields.
+ *
+ * `text-base` on phones is not a size preference: iOS Safari zooms the whole
+ * page when a focused input's font is under 16px. It drops to `text-sm` from
+ * `sm:` up, where no such rule applies.
+ */
+export const fieldClass =
+  "h-10 min-w-0 rounded-lg border border-line bg-paper px-3 text-base focus:border-brand-500 focus:outline-none sm:h-9 sm:text-sm";
