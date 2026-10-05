@@ -32,7 +32,8 @@ key; see [Receipt AI providers](#receipt-ai-providers-optional) below.
 ## Configuration
 
 All configuration lives in a single `.env` at the repo root: `docker compose`
-reads it directly, and `pnpm dev` loads it via Node's `--env-file-if-exists`.
+reads it directly, and `pnpm dev` loads it through Node's `loadEnvFile` API in
+the Next.js launcher.
 Copy `.env.example` to `.env` to begin; every variable is documented there.
 
 Using your own Postgres instead of the compose service? Set `DATABASE_URL`
@@ -40,6 +41,12 @@ and append `?sslmode=verify-full` (or `&sslmode=verify-full` when the URL
 already has parameters). Remote database connections fail closed without
 certificate-verified TLS. Real shell variables still win over the file, so
 `DATABASE_URL=… pnpm dev` overrides it for a one-off.
+
+For sample data, create a local account, keep `./dev.sh` running, then run
+`pnpm db:seed your-account@example.com`. This works on macOS and Linux and
+adds fictional friends, groups, expenses, comments, and payments to that
+account. Re-running reuses marked demo records; existing data is preserved.
+The command refuses production mode and remote databases.
 
 In development, leaving `SESSION_SECRET` empty generates a signing key and
 persists it under `data/.secret`. Production requires an explicit value.

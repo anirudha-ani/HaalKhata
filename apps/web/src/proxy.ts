@@ -25,7 +25,7 @@ export function createCspNonce(): string {
  * @param request - Incoming application request.
  * @returns A continuation response carrying the request-specific CSP.
  */
-export function middleware(request: NextRequest): NextResponse {
+export function proxy(request: NextRequest): NextResponse {
   const nonce = createCspNonce();
   const policy = contentSecurityPolicy(process.env.NODE_ENV, nonce);
   const requestHeaders = new Headers(request.headers);
@@ -37,7 +37,7 @@ export function middleware(request: NextRequest): NextResponse {
   return response;
 }
 
-/** Applies nonce middleware only to rendered pages, excluding APIs, assets, and prefetches. */
+/** Applies the nonce proxy only to rendered pages, excluding APIs, assets, and prefetches. */
 export const config = {
   matcher: [
     {

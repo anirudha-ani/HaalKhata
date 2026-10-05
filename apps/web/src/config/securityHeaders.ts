@@ -1,4 +1,4 @@
-/** Browser security policy builders shared by middleware and regression tests. */
+/** Browser security policy builders shared by the proxy and regression tests. */
 
 /** CSP directives shared by production and development. */
 const BASE_CSP_DIRECTIVES = [

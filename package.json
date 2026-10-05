@@ -2,7 +2,7 @@
   "name": "haalkhata",
   "version": "0.1.0",
   "private": true,
-  "packageManager": "pnpm@11.9.0",
+  "packageManager": "pnpm@12.9.1",
   "scripts": {
     "gen": "buf generate",
     "proto:lint": "buf lint",
@@ -21,11 +21,15 @@
     "typecheck": "pnpm --filter @haalkhata/web typecheck",
     "db:migrate": "pnpm --filter @haalkhata/web db:migrate",
     "db:new": "pnpm --filter @haalkhata/web db:new",
+    "db:seed": "pnpm --filter @haalkhata/web db:seed",
     "doctor": "pnpm exec react-doctor apps/web/src --no-telemetry --no-supply-chain"
   },
   "devDependencies": {
-    "@bufbuild/buf": "1.71.0",
-    "@bufbuild/protoc-gen-es": "^2.12.1",
-    "react-doctor": "0.9.12"
+    "@bufbuild/buf": "1.73.0",
+    "@bufbuild/protoc-gen-es": "^2.16.0",
+    "react-doctor": "0.9.17"
+  },
+  "engines": {
+    "node": ">=24"
   }
 }
