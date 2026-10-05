@@ -1,0 +1,2 @@
+# Dependency patches use a space-prefixed blank context line as valid diff syntax.
+patches/*.patch -whitespace

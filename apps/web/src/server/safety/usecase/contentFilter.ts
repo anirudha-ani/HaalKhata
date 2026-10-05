@@ -12,4 +12,3 @@ export function assertSafeText(text: string): void {
     invalid("Please remove abusive or threatening language before sharing this text.");
   }
 }
-
