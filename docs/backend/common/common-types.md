@@ -21,10 +21,11 @@ same email, or by verifying the same phone number and merging.
 | name | string | Display name. For shadow users, whatever the inviter typed (or a derived placeholder). |
 | avatar_color | string | Deterministic accent color (e.g. `"#0f8a5f"`), hashed from the account's founding identifier, used for initials avatars. |
 | default_currency | string | ISO 4217 code (e.g. `"USD"`, `"BDT"`). Governs which currency legacy single-number balance fields report. |
-| registered | bool | True when the account has been claimed — a password **or** a linked Google account. False = an unclaimed invite. |
-| phone | string | **Private.** E.164 (e.g. `"+14155552671"`); populated only for the caller's own profile. An account may have an email, a phone, or both. Sign-in is Google-only in production, so a phone *identifies and reaches* someone; it never authenticates them. |
+| registered | bool | True when the account has been claimed — a password **or** a linked Google/Apple account. False = an unclaimed invite. |
+| phone | string | **Private.** E.164 (e.g. `"+14155552671"`); populated only for the caller's own profile. An account may have an email, a phone, or both. Sign-in uses Google or Apple in production, so a phone *identifies and reaches* someone; it never authenticates them. |
 | payment_handles | repeated PaymentHandle | Where this person wants to be paid. **Visible to anyone who shares an expense with them** — exactly who needs it, because settling happens in Venmo/Zelle/Cash App and this app only records that it happened. |
 | onboarded | bool | Whether this person finished (or skipped) the first-run flow. Only ever meaningful about the caller themselves; always `false` on any other user, and clients must not read it off anyone else. |
+| deleted | bool | An anonymous member whose original account was erased. Historical money stays visible; clients exclude this member from new expense selections. |
 | avatar_url | string | Google profile picture URL; empty for invited users and never guaranteed even for Google users. Clients must keep the initials-on-`avatar_color` rendering as the fallback. |
 | phone_verified | bool | **Private**, like `phone` itself. Whether the number has passed SMS possession verification (§35). Stored (`users.phone_verified_at`), not inferred, because numbers written before verification existed carry no stamp. False with a phone set means the clients prompt to verify; until then anyone proving possession can claim the number away (§34). Always `false` in public projections. |
 

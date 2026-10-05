@@ -10,7 +10,8 @@ The Receipt Service is essential for:
   and totals extracted from a photo.
 - **Privacy containment:** the image is never persisted — it lives in memory
   for one request; only the structured draft the user approves is ever
-  saved (as an ordinary `CreateExpense`).
+  saved (as an ordinary `CreateExpense`). Third-party processing requires
+  current explicit consent for each selected image before provider calls.
 
 Implementation: [handler.ts](../../../apps/web/src/server/receipt/handler.ts)
 → [receipt.usecase.ts](../../../apps/web/src/server/receipt/usecase/receipt.usecase.ts),
@@ -113,6 +114,7 @@ promised:
 ## Overview of Endpoints
 
 1. [ParseReceipt](#1-parsereceipt)
+2. [GetProcessingInfo](#2-getprocessinginfo)
 
 ---
 
@@ -123,6 +125,9 @@ promised:
 
 #### Notes
 
+- Missing/stale `consent_version` returns `InvalidArgument` before image
+  processing or a provider call. The client must fetch the current disclosure
+  and ask again; consent is reset whenever a different photo is selected.
 - Providers are tried in configured order until one returns **at least one
   line item**; an itemless "success" counts as a failure and falls through.
   When every provider fails, the per-provider errors go to the operator log
@@ -149,6 +154,7 @@ promised:
 | --- | --- | --- |
 | image | bytes | The photo; ≤ 8 MB. |
 | media_type | string | **Advisory only** — the real format is detected from the bytes (browsers report `""` for HEIC). |
+| consent_version | string | Exact current disclosure version explicitly accepted for this selected image. |
 
 #### Response
 
@@ -200,3 +206,21 @@ The client feeds the reviewed draft into
 `split_type: "itemized"` — where the server recomputes the splits and
 requires items+tax+tip to equal the stated total, so even an approved-but-
 wrong draft cannot create inconsistent money.
+
+### 2. GetProcessingInfo
+
+`POST /api/connect/receipt.v1.ReceiptService/GetProcessingInfo` takes
+`google.protobuf.Empty` and returns `{ disclosure, consent_version }` for the
+current deployment. The authenticated client displays that disclosure and asks
+for an explicit checkbox for each selected image. Picking another image resets
+consent. Failure to load the disclosure leaves manual entry available.
+
+[receiptConsent.usecase.ts](../../../apps/web/src/server/receipt/usecase/receiptConsent.usecase.ts)
+binds the version to processor wording, gateway URL, model, provider chain and
+retention configuration. Changing any of those invalidates older acceptance.
+`ParseReceipt` compares the submitted version before decoding or contacting a
+provider. A public policy link accompanies the disclosure in both apps.
+
+Native uploads first normalize camera/library images, including HEIC, to JPEG
+with a 2,576-pixel long edge and an 8 MB byte bound. The server still independently
+sniffs bytes, enforces its own bounds and normalizes the exact image sent to AI.

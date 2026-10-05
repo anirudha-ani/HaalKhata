@@ -63,18 +63,22 @@ repository variables and secrets it needs.
   repository secret; the deploy pipeline writes it into
   `/srv/haalkhata/.env`, and the production stack refuses to start without
   it. Manual bootstraps without the workflow set it in `.env` directly.
-- **Google is the only way in.** `passwordAuthEnabled()` is false when
+- **Production uses Google and Apple.** `passwordAuthEnabled()` is false when
   `NODE_ENV=production`, so `SignUp`/`LogIn` are rejected.
   `NEXT_PUBLIC_GOOGLE_CLIENT_ID` is inlined at **build** time; a wrong value
   cannot be fixed by restarting with a corrected environment, only by
   rebuilding.
 - **Readiness fails closed.** `/api/health` requires at least 32 decoded bytes
   of `SESSION_SECRET`, waits for migrations, performs a live database query,
-  and, since Google is the only way in, refuses when no Google audience is
-  configured or the id built into the bundle is not one the server accepts.
+  and refuses when no Google audience is configured or the id built into the
+  bundle is not one the server accepts.
   Any of those keeps the container unhealthy and fails
   `docker compose up -d --wait`; the deploy workflow also refuses to build
-  without `NEXT_PUBLIC_GOOGLE_CLIENT_ID`.
+  without `NEXT_PUBLIC_GOOGLE_CLIENT_ID`. Production also requires the Apple
+  team/key/Services ID, private signing key and stable token-encryption key.
+  `/api/mobile-release` checks native audiences and support/link settings too.
+  Follow the [release handoff](mobile-app-store-readiness.md) before adopting
+  this release; provision the two Apple secret files before Compose starts.
 - **Backups must leave the box.** `ops/backup.sh` fails (and alerts) when no
   offsite target is configured, and verifies each archive's size on the
   remote after upload. See [`ops/README.md`](../ops/README.md).

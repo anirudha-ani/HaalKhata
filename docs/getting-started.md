@@ -102,7 +102,7 @@ start the web server with `next dev -H 0.0.0.0` (or set
 builds require an explicit HTTPS origin and reject plaintext bearer-token
 transport; Android release manifests also disable cleartext traffic.
 
-**Sign-in.** Production accepts Google only, so a release build needs its
+**Sign-in.** Production supports Google and Apple. Google uses its
 own native OAuth clients in the same Google Cloud project as the web one: an
 *Android* client for package `com.haalkhata.app` with the signing key's
 SHA-1, and an *iOS* client for bundle `com.haalkhata.app`. Put their ids in
@@ -112,6 +112,9 @@ when building the app, and list the same ids in the server's
 the web one's twin: the server issues a one-time nonce, the native OAuth
 request carries it, and the ID token Google mints is exchanged for a session.
 The bundle id doubles as the OAuth redirect scheme (`app.json` → `scheme`).
+Native iOS Apple sign-in requires the Apple capability and server credentials;
+web and Android use the grouped Services ID. Follow the
+[App Store release handoff](mobile-app-store-readiness.md) for that setup.
 The email/phone + password form only appears in development builds, matching
 the server's password gate.
 
