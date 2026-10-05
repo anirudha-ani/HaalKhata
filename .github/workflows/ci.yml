@@ -118,6 +118,10 @@ jobs:
       - name: 'Shared package: unit tests'
         run: pnpm test:shared
 
+      # The server ships the login callback, public policy and release preflight.
+      - name: 'Web: production artifact compiles'
+        run: pnpm --filter @haalkhata/web build
+
       # Native source, build configuration and contract stay gated together.
       - name: 'Mobile app: TypeScript compiles'
         run: pnpm typecheck:mobile
