@@ -31,6 +31,7 @@ export function toPublicUser(userRow: UserRow) {
     // A Google account has no password, so password_hash alone would read
     // every one of them as an unclaimed invite.
     registered: isRegisteredUser(userRow),
+    deleted: Boolean(userRow.deleted_at),
     phone: "",
     // Absent on a row straight out of an INSERT ... RETURNING *, which has no
     // handles yet by definition.

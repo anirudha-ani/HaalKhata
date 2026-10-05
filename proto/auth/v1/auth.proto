@@ -21,6 +21,8 @@ service AuthService {
   rpc LogInWithApple(LogInWithAppleRequest) returns (AuthResponse);
   rpc CompleteAppleSignIn(CompleteAppleSignInRequest) returns (AuthResponse);
   rpc LogOut(google.protobuf.Empty) returns (google.protobuf.Empty);
+  // Permanently erases the authenticated account; shared cents are anonymized.
+  rpc DeleteAccount(DeleteAccountRequest) returns (google.protobuf.Empty);
   rpc GetMe(google.protobuf.Empty) returns (common.v1.User);
   rpc UpdateProfile(UpdateProfileRequest) returns (common.v1.User);
 
@@ -46,6 +48,11 @@ message SignUpRequest {
   string phone = 2; // E.164, e.g. "+14155552671"
   string name = 3;
   string password = 4;
+}
+
+message DeleteAccountRequest {
+  // Exact text "DELETE", after the client presents the irreversible effects.
+  string confirmation = 1;
 }
 
 message LogInRequest {

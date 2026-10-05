@@ -40,6 +40,8 @@ message User {
   // before verification existed — the clients prompt to verify it, and until
   // then anyone proving possession can claim it away (§34).
   bool phone_verified = 11;
+  // Anonymous historical ledger participant; cannot be invited or added to new expenses.
+  bool deleted = 12;
 }
 
 // One "pay me here" identifier: a Venmo username, a Zelle email or phone, a

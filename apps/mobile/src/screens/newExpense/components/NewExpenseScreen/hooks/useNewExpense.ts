@@ -123,7 +123,7 @@ export function useNewExpense(
     const currentUser = expenseAPI.me;
     if (!currentUser) return [];
     const others = selectedGroup
-      ? selectedGroup.members.flatMap((member) => (member.user ? [member.user] : []))
+      ? selectedGroup.members.flatMap((member) => (member.user && !member.user.deleted ? [member.user] : []))
       : friendIds.flatMap((userId) => {
           const person = usersById.get(userId);
           return person ? [person] : [];
@@ -188,7 +188,7 @@ export function useNewExpense(
     const nextRoster = nextGroupId
       ? (expenseAPI.groups
           .find((groupSummary) => groupSummary.group?.id === nextGroupId)
-          ?.group?.members.flatMap((member) => (member.user ? [member.user.id] : [])) ?? [])
+          ?.group?.members.flatMap((member) => (member.user && !member.user.deleted ? [member.user.id] : [])) ?? [])
       : [currentUserId];
     setGroupId(nextGroupId);
     setFriendIds([]);

@@ -30,6 +30,8 @@ export interface UserRow {
   google_sub: string | null;
   /** Apple account identifier; absent only in legacy test fixtures. */
   apple_sub?: string | null;
+  /** Only fresh anonymous ledger records carry this erasure marker. */
+  deleted_at?: string | null;
   /** When the first-run flow finished; null means the app still redirects there. */
   onboarded_at: string | null;
   /** Id this row was absorbed into by an account merge; null for a live account. */
@@ -113,7 +115,7 @@ export async function setAvatarUrl(userId: string, avatarUrl: string): Promise<v
  * @returns The matching row, or undefined when no such user exists.
  */
 export async function findUserById(userId: string): Promise<UserRow | undefined> {
-  return queryOne<UserRow>(`SELECT ${USER_COLUMNS} FROM users usr WHERE usr.id = $1`, [userId]);
+  return queryOne<UserRow>(`SELECT ${USER_COLUMNS} FROM users usr WHERE usr.id = $1 AND usr.deleted_at IS NULL`, [userId]);
 }
 
 /**
@@ -125,7 +127,7 @@ export async function findUserById(userId: string): Promise<UserRow | undefined>
 export async function findUserByEmail(email: string): Promise<UserRow | undefined> {
   return queryOne<UserRow>(
     `SELECT ${USER_COLUMNS} FROM users usr
-      WHERE lower(usr.email) = lower($1) AND usr.merged_into IS NULL`,
+      WHERE lower(usr.email) = lower($1) AND usr.merged_into IS NULL AND usr.deleted_at IS NULL`,
     [email],
   );
 }
@@ -138,7 +140,7 @@ export async function findUserByEmail(email: string): Promise<UserRow | undefine
  */
 export async function findUserByPhone(phone: string): Promise<UserRow | undefined> {
   return queryOne<UserRow>(
-    `SELECT ${USER_COLUMNS} FROM users usr WHERE usr.phone = $1 AND usr.merged_into IS NULL`,
+    `SELECT ${USER_COLUMNS} FROM users usr WHERE usr.phone = $1 AND usr.merged_into IS NULL AND usr.deleted_at IS NULL`,
     [phone],
   );
 }
@@ -151,7 +153,7 @@ export async function findUserByPhone(phone: string): Promise<UserRow | undefine
  */
 export async function findUserByGoogleSub(googleSub: string): Promise<UserRow | undefined> {
   return queryOne<UserRow>(
-    `SELECT ${USER_COLUMNS} FROM users usr WHERE usr.google_sub = $1 AND usr.merged_into IS NULL`,
+    `SELECT ${USER_COLUMNS} FROM users usr WHERE usr.google_sub = $1 AND usr.merged_into IS NULL AND usr.deleted_at IS NULL`,
     [googleSub],
   );
 }

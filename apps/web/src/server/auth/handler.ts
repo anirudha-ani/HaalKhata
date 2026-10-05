@@ -6,6 +6,7 @@ import type { AuthService } from "@haalkhata/protogen/auth/v1/auth_pb";
 import * as auth from "@/server/auth/usecase/auth.usecase";
 import * as accountMerge from "@/server/auth/usecase/accountMerge.usecase";
 import * as appleSignIn from "@/server/auth/usecase/appleSignIn.usecase";
+import { deleteAccount } from "@/server/auth/usecase/accountDeletion.usecase";
 import { clearSessionCookie, requireUser, runUsecase, setSessionCookie } from "@/server/api/connect/context";
 import { wantsBearerToken } from "@/server/api/connect/credentials";
 import { rateLimitCheck } from "@/server/common/rateLimit";
@@ -76,6 +77,13 @@ function deliverSession<Result extends { token: string }>(
 
 /** AuthService implementation; every method delegates to auth.usecase and only manages cookies here. */
 export const authHandler: ServiceImpl<typeof AuthService> = {
+  /** Permanently erases the authenticated account, then expires the browser session. */
+  async deleteAccount(request, handlerContext) {
+    enforceAuthRateLimit(handlerContext);
+    await runUsecase(async () => deleteAccount(await requireUser(handlerContext), request.confirmation), handlerContext);
+    clearSessionCookie(handlerContext);
+    return {};
+  },
   /** Issues a native Apple nonce or a verifier-bound browser challenge. */
   async beginAppleSignIn(request, handlerContext) {
     enforceAuthRateLimit(handlerContext);

@@ -13,6 +13,7 @@ import { Spinner } from "@/components/ui/Spinner";
 import { useHydrated } from "@/lib/hooks/useHydrated";
 import { CurrencySelect } from "@/components/ui/CurrencySelect";
 import { HANDLE_METHODS } from "@haalkhata/shared/payment/methods";
+import { DeleteAccount } from "@/components/account/DeleteAccount";
 import { useAccountAPI, useProfileForm } from "./hooks/useAccount";
 import { MAX_USER_NAME_LENGTH } from "@haalkhata/shared/text/limits";
 
@@ -278,6 +279,7 @@ function ProfileForm({ me: currentUser }: { me: User }) {
       >
         <LogOut className="h-4 w-4" /> Sign out
       </button>
+      <DeleteAccount />
 
       {form.profileShareToken ? (
         <InviteShareModal

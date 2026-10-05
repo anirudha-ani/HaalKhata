@@ -3,6 +3,7 @@
 import type { User } from "@haalkhata/protogen/common/v1/common_pb";
 import { Check, LogOut, Share2 } from "lucide-react-native";
 import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { DeleteAccount } from "@/components/account/DeleteAccount";
 import { MergePreview } from "@/components/account/MergePreview";
 import { DetailHeader } from "@/components/shell/DetailHeader";
 import { useResponsiveLayout } from "@/components/shell/hooks/useResponsiveLayout";
@@ -115,6 +116,7 @@ function ProfileForm({ me: currentUser }: { me: User }) {
             onPress={() => void form.signOut()}
             variant="outline"
           />
+          <DeleteAccount />
         </View>
 
         <View style={[styles.formCard, isExpanded ? styles.formCardExpanded : null]}>

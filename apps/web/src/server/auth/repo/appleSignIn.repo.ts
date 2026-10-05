@@ -86,7 +86,7 @@ export async function lockAppleIdentity(email: string, client: PoolClient): Prom
  * @returns Matching active account, with provider identity taking precedence.
  */
 export async function findAppleUser(subject: string, email: string, client: PoolClient) {
-  return queryOne<UserRow>(`SELECT * FROM users WHERE merged_into IS NULL AND (apple_sub = $1 OR lower(email) = $2)
+  return queryOne<UserRow>(`SELECT * FROM users WHERE merged_into IS NULL AND deleted_at IS NULL AND (apple_sub = $1 OR lower(email) = $2)
     ORDER BY (apple_sub = $1) DESC NULLS LAST LIMIT 1 FOR UPDATE`, [subject, email], client);
 }
 
@@ -113,7 +113,7 @@ export async function saveAppleIdentity(userId: string, subject: string, name: s
  * @param userId Account being erased.
  * @returns Original clients and encrypted revocation credentials.
  */
-export async function listAppleCredentials(userId: string) {
+export async function listAppleCredentials(userId: string, client?: PoolClient) {
   return query<{ client_id: string; refresh_token_ciphertext: string }>(
-    "SELECT client_id, refresh_token_ciphertext FROM apple_credentials WHERE user_id = $1", [userId]);
+    "SELECT client_id, refresh_token_ciphertext FROM apple_credentials WHERE user_id = $1", [userId], client);
 }
