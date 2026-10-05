@@ -7,7 +7,7 @@ import { colors } from "@/lib/theme/theme";
 
 /**
  * Root layout for every route: wraps the app in the TanStack Query provider
- * (with cache persistence and session hydration) and renders the navigation
+ * (with in-memory caching and session hydration) and renders the navigation
  * stack on the paper background.
  *
  * @returns The provider-wrapped root navigator.

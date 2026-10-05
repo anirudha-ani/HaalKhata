@@ -94,6 +94,8 @@ describe.skipIf(!await databaseReachable())("safety against Postgres", () => {
     moderate("suspend", reportId);
     const users = await import("@/server/auth/repo/users.repo");
     expect(await users.findUserTokenVersion("author")).toBeUndefined();
+    const authentication = await import("@/server/auth/usecase/auth.usecase");
+    expect(await authentication.sessionUser(authentication.createToken("author", 1))).toBeNull();
     moderate("resume", reportId); expect(await users.findUserTokenVersion("author")).toBe(2);
     expect((await database.query("SELECT SUM(owed_cents)::int AS cents FROM expense_splits")).rows[0].cents).toBe(1000);
   });

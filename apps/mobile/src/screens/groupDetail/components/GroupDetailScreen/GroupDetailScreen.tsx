@@ -1,5 +1,6 @@
 /** Group detail orchestrator: header, members strip, expenses/balances/activity tabs, members, add-people and settle sheets. */
 
+import { ErrorState } from "@/components/ui/ErrorState";
 import { SafetyActions } from "@/components/safety/SafetyActions";
 import { useRouter } from "expo-router";
 import { Bell, ChevronDown, ChevronRight, Link2, Plus, Send, UserPlus } from "lucide-react-native";
@@ -61,6 +62,7 @@ export function GroupDetailScreen({
     return (
       <Screen header={<DetailHeader title="Group" />}>
         <View style={styles.notFoundCard}>
+          {groupDetail.groupError ? <ErrorState error={groupDetail.groupError} retry={groupDetail.refresh} /> : null}
           <Text style={styles.notFoundText}>
             {groupDetail.groupError ? errorMessage(groupDetail.groupError) : "Group not found."}
           </Text>
@@ -164,7 +166,9 @@ export function GroupDetailScreen({
       {/* Tabs */}
       <Segmented onChange={groupDetail.setTab} options={TABS} value={groupDetail.tab} />
 
-      {groupDetail.tab === "expenses" ? (
+      {(groupDetail.tab === "expenses" && groupDetail.expensesError) || (groupDetail.tab === "balances" && groupDetail.balancesError) || (groupDetail.tab === "activity" && groupDetail.activityError) ? (
+        <ErrorState error={groupDetail.tab === "expenses" ? groupDetail.expensesError : groupDetail.tab === "balances" ? groupDetail.balancesError : groupDetail.activityError} retry={groupDetail.refresh} />
+      ) : groupDetail.tab === "expenses" ? (
         <ExpenseList
           emptyHint="Add the first expense or scan a receipt to get this ledger going."
           expenses={groupDetail.expenses?.expenses ?? []}

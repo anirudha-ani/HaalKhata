@@ -1,6 +1,7 @@
 "use client";
 /** Account page: view/edit profile (name, default currency) and sign out. */
 
+import { errorMessage } from "@/lib/api/connect";
 import { BlockedPeople } from "@/components/safety/BlockedPeople";
 import { Check, LogOut, Share2 } from "lucide-react";
 import type { User } from "@haalkhata/protogen/common/v1/common_pb";
@@ -89,9 +90,10 @@ function ZelleField({ form }: { form: ReturnType<typeof useProfileForm> }) {
  * @returns The account page content.
  */
 export function AccountPage() {
-  const { me: currentUser, isLoading } = useAccountAPI();
+  const { me: currentUser, isLoading, loadError, retry } = useAccountAPI();
   const hydrated = useHydrated();
-  if (!hydrated || isLoading || !currentUser) return <Spinner />;
+  if (!hydrated || isLoading) return <Spinner />;
+  if (!currentUser) return <div className="space-y-3 p-6"><p role="alert">{errorMessage(loadError)}</p><button type="button" className="underline" onClick={() => { void retry(); }}>Try again</button></div>;
   return <ProfileForm me={currentUser} />;
 }
 

@@ -1,5 +1,6 @@
 /** Typed Connect clients for the browser. Import from client components only. */
 
+import { API_TIMEOUT_MS } from "@haalkhata/shared/api/timeouts";
 import { SafetyService } from "@haalkhata/protogen/safety/v1/safety_pb";
 import { createClient } from "@connectrpc/connect";
 import { createConnectTransport } from "@connectrpc/connect-web";
@@ -11,7 +12,7 @@ import { ReceiptService } from "@haalkhata/protogen/receipt/v1/receipt_pb";
 import { SocialService } from "@haalkhata/protogen/social/v1/social_pb";
 
 /** Connect-Web transport that routes every RPC through the app's `/api/connect` proxy. */
-export const transport = createConnectTransport({ baseUrl: "/api/connect" });
+export const transport = createConnectTransport({ baseUrl: "/api/connect", defaultTimeoutMs: API_TIMEOUT_MS });
 
 /** Typed client for authentication RPCs (sign up, log in, session, log out). */
 export const authClient = createClient(AuthService, transport);

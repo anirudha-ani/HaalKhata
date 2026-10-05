@@ -1,5 +1,6 @@
 /** Groups screen UI: group summary cards and the new-group sheet. */
 
+import { ErrorState } from "@/components/ui/ErrorState";
 import { useRouter } from "expo-router";
 import { Plus, UsersRound } from "lucide-react-native";
 import { Pressable, StyleSheet, Text, View } from "react-native";
@@ -50,6 +51,8 @@ export function GroupsScreen() {
 
       {groupsState.isLoading ? (
         <Spinner label="Loading groups…" />
+      ) : groupsState.listError ? (
+        <ErrorState error={groupsState.listError} retry={groupsState.refresh} />
       ) : groupsState.groups.length === 0 ? (
         <EmptyState
           action={

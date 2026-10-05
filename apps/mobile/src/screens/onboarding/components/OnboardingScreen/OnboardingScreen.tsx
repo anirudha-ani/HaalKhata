@@ -1,5 +1,6 @@
 /** First-run screen: name, currency, phone — plus the verification and merge steps. */
 
+import { ErrorState } from "@/components/ui/ErrorState";
 import {
   KeyboardAvoidingView,
   Platform,
@@ -46,6 +47,8 @@ export function OnboardingScreen() {
         >
           {onboarding.isLoading ? (
             <Spinner />
+          ) : onboarding.loadError ? (
+            <ErrorState error={onboarding.loadError} retry={onboarding.retry} />
           ) : (
             <View style={styles.content}>
               <View style={styles.hero}>

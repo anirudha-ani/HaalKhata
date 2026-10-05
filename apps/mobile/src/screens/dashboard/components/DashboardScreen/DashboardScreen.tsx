@@ -1,5 +1,6 @@
 /** Dashboard screen: balance summary, per-person balances with settle-up, group highlights, recent activity. */
 
+import { ErrorState } from "@/components/ui/ErrorState";
 import { Link, useRouter } from "expo-router";
 import { Plus, UsersRound } from "lucide-react-native";
 import { Pressable, StyleSheet, Text, View } from "react-native";
@@ -55,6 +56,7 @@ export function DashboardScreen() {
             <Text style={styles.greetingSub}>Here&apos;s where your ledger stands.</Text>
           </View>
 
+          {dashboard.loadError ? <ErrorState error={dashboard.loadError} retry={dashboard.refresh} /> : null}
           <VerifyPhoneBanner currentUser={dashboard.me} />
 
           {/* Scanning a receipt is one of the ways to fill this form in, so

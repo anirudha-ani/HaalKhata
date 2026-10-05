@@ -37,6 +37,7 @@ export function useGoogleSignIn() {
   const router = useRouter();
   const [nonce, setNonce] = useState("");
   const [armed, setArmed] = useState(false);
+  const [prompting, setPrompting] = useState(false);
   const [error, setError] = useState("");
 
   const challenge = useMutation({
@@ -79,7 +80,8 @@ export function useGoogleSignIn() {
   useEffect(() => {
     if (!armed || nonce === "" || !request || request.extraParams.nonce !== nonce) return;
     setArmed(false);
-    void promptAsync();
+    setPrompting(true);
+    void promptAsync().catch((promptError) => { setNonce(""); setError(errorMessage(promptError)); }).finally(() => setPrompting(false));
   }, [armed, nonce, request, promptAsync]);
 
   // The nonce is single-use whichever way the prompt ended, so forget it and
@@ -98,7 +100,7 @@ export function useGoogleSignIn() {
 
   return {
     isConfigured: GOOGLE_SIGN_IN_CONFIGURED,
-    isPending: armed || challenge.isPending || exchange.isPending,
+    isPending: armed || prompting || challenge.isPending || exchange.isPending,
     error,
     /** Starts a sign-in: fetch a fresh challenge, then open Google's prompt. */
     signIn: () => {

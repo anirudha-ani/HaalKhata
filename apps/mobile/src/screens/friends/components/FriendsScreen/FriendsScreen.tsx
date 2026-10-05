@@ -1,5 +1,6 @@
 /** Friends screen: four tabs (friends, requests, sent, invited) with an add-friend sheet and settle-up. */
 
+import { ErrorState } from "@/components/ui/ErrorState";
 import { UserPlus } from "lucide-react-native";
 import { StyleSheet, Text, View } from "react-native";
 import { InviteShareSheet } from "@/components/modals/InviteShareSheet";
@@ -10,7 +11,6 @@ import { Button } from "@/components/ui/Button";
 import { Segmented } from "@/components/ui/Segmented";
 import { Spinner } from "@/components/ui/Spinner";
 import { useErrorToast } from "@/components/ui/ToastProvider";
-import { errorMessage } from "@/lib/api/connect";
 import { colors, fonts, radii, spacing } from "@/lib/theme/theme";
 import { FRIENDS_TABS, type FriendsTab } from "../../constants/friendsTabs";
 import { AddFriendSheet } from "./components/AddFriendSheet/AddFriendSheet";
@@ -72,9 +72,7 @@ export function FriendsScreen() {
       {friendsState.isLoading ? (
         <Spinner label="Loading friends…" />
       ) : friendsState.friendsError ? (
-        <Text accessibilityRole="alert" style={styles.loadError}>
-          Couldn&apos;t load your friends: {errorMessage(friendsState.friendsError)}
-        </Text>
+        <ErrorState error={friendsState.friendsError} retry={friendsState.refresh} />
       ) : (
         <>
           <Segmented

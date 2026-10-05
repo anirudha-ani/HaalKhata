@@ -1,5 +1,6 @@
 /** New/edit expense orchestrator: loads data, then mounts ExpenseForm with resolved initial values. */
 
+import { ErrorState } from "@/components/ui/ErrorState";
 import { DetailHeader } from "@/components/shell/DetailHeader";
 import { Screen } from "@/components/shell/Screen";
 import { Spinner } from "@/components/ui/Spinner";
@@ -30,6 +31,8 @@ export function NewExpenseScreen({
 }) {
   const expenseAPI = useNewExpenseAPI(editExpenseId);
   const isEdit = editExpenseId !== "";
+
+  if (expenseAPI.loadError) return <Screen header={<DetailHeader title={isEdit ? "Edit expense" : "Add expense"} />}><ErrorState error={expenseAPI.loadError} retry={expenseAPI.retry} /></Screen>;
 
   if (expenseAPI.isLoading || !expenseAPI.me) {
     return (

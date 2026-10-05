@@ -1,5 +1,6 @@
 /** Expense detail screen: payers, splits, receipt items, history, comments, and delete flow. */
 
+import { ErrorState } from "@/components/ui/ErrorState";
 import { SafetyActions } from "@/components/safety/SafetyActions";
 import { useRouter } from "expo-router";
 import { Check, Lock, Pencil, Send, Trash2 } from "lucide-react-native";
@@ -48,6 +49,7 @@ export function ExpenseDetailScreen({ expenseId }: { expenseId: string }) {
     return (
       <Screen header={<DetailHeader title="Expense" />}>
         <View style={styles.notFoundCard}>
+          {expenseDetail.detailError ? <ErrorState error={expenseDetail.detailError} retry={expenseDetail.retry} /> : null}
           <Text style={styles.notFoundText}>
             {expenseDetail.detailError
               ? errorMessage(expenseDetail.detailError)

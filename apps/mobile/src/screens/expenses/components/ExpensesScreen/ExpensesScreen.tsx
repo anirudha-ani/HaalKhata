@@ -1,5 +1,6 @@
 /** All-expenses screen UI: every expense you're on, searchable, filtered by scope. */
 
+import { ErrorState } from "@/components/ui/ErrorState";
 import { useRouter } from "expo-router";
 import { Plus } from "lucide-react-native";
 import { StyleSheet, Text, View } from "react-native";
@@ -60,6 +61,8 @@ export function ExpensesScreen() {
 
       {listState.isLoading ? (
         <Spinner label="Loading expenses…" />
+      ) : listState.listError ? (
+        <ErrorState error={listState.listError} retry={listState.refresh} />
       ) : (
         <View style={[styles.workspace, isExpanded ? styles.workspaceExpanded : null]}>
           <View style={[styles.filters, isExpanded ? styles.filtersExpanded : null]}>

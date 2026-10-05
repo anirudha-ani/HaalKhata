@@ -735,7 +735,7 @@ export async function sessionUser(token: string) {
   const userId = verifyToken(token);
   if (!userId) return null;
   const user = await findUserById(userId);
-  if (!user || user.merged_into !== null) return null;
+  if (!user || user.merged_into !== null || user.suspended_at) return null;
   if (user.token_version !== tokenVersion(token)) return null;
   return toPrivateUser(user);
 }

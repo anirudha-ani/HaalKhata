@@ -144,6 +144,8 @@ export function useOnboarding() {
 
   return {
     isLoading: meQuery.isPending,
+    loadError: !meQuery.data && meQuery.error,
+    retry: meQuery.refetch,
     name,
     setName,
     currency,

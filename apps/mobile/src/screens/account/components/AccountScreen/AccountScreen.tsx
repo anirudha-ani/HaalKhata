@@ -1,5 +1,6 @@
 /** Account screen: profile (name, phone, currency, payment handles), phone verification and merge, sign out. */
 
+import { ErrorState } from "@/components/ui/ErrorState";
 import { BlockedPeople } from "@/components/safety/BlockedPeople";
 import type { User } from "@haalkhata/protogen/common/v1/common_pb";
 import { Check, LogOut, Share2 } from "lucide-react-native";
@@ -33,10 +34,10 @@ import { useAccountAPI, useProfileForm } from "./hooks/useAccount";
  * @returns The account screen content.
  */
 export function AccountScreen() {
-  const { me: currentUser, isLoading } = useAccountAPI();
+  const { me: currentUser, isLoading, loadError, retry } = useAccountAPI();
   return (
     <Screen header={<DetailHeader title="Account" />}>
-      {isLoading || !currentUser ? <Spinner /> : <ProfileForm me={currentUser} />}
+      {isLoading ? <Spinner /> : !currentUser ? <ErrorState error={loadError} retry={retry} /> : <ProfileForm me={currentUser} />}
     </Screen>
   );
 }
