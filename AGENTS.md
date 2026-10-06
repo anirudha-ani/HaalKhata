@@ -109,6 +109,14 @@ apps/mobile/                 Expo (React Native) app — @haalkhata/mobile
   exactly what it covers and offers nothing to tick — no checklist that
   widens a group's settle or narrows a person's. Both apps read the same
   `readSettlePositions` in `@haalkhata/shared/expense/settlePosition`.
+- **No Claude co-author or attribution on commits or PRs.** Never add a
+  `Co-Authored-By: Claude …` trailer, a "Generated with Claude Code" line, or
+  a session link. A commit is authored by the person whose git identity made
+  it, and nobody else is named. Three things hold this: `.claude/settings.json`
+  turns Claude Code's attribution off, the `commit-msg` hook in `.githooks`
+  strips such a line from any commit however it was made, and this rule covers
+  everything else. A fresh clone enables the hook with
+  `git config core.hooksPath .githooks` (`install-deps.sh` does it).
 - **Soft-delete on expenses** (set `deleted_at`); balances filter
   `deleted_at IS NULL`.
 - **Auto-migrate before API readiness** runs through `ensureMigrated()` on
