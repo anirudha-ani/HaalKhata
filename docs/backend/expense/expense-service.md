@@ -108,6 +108,26 @@ rate). A payment **without** one pays down the pair's balances across scopes:
 This is why paying from the friends tab closes the group's balance too,
 instead of leaving the group demanding money that already changed hands.
 
+### What a settle action covers
+
+The clients offer exactly two things, and which one follows from where the
+button is — there is no checklist to narrow or widen it:
+
+| Opened from | Settles | Request |
+| --- | --- | --- |
+| Beside a total: a person on Home or Friends, the headline on their page | Everything with that person in the currency, on the net | `net_across_scopes: true` + `position_digest`, no `scope_group_ids` |
+| Beside one balance: a group's page, or one row of "Where the balance sits" on a person's page | That balance alone | `scope_group_ids: [<group id>]`, or `[""]` for what is not in any group |
+
+Both read `settle_positions` from `GetFriendLedger` (shared
+`readSettlePositions`), so a row, the dialog it opens and the write agree on
+the figure. When nothing points the other way a settle-everything request
+has nothing to cancel and stores ordinary payments, with no unit.
+
+Balances that cancel exactly (50.00 owed outside groups, 50.00 owed back in a
+group) have a net of zero: no payment exists to record, so the totals offer
+no settle action and the person's page reads "Even overall". Each balance is
+still listed there with its own settle action.
+
 ### Settling on the net (`net_across_scopes`)
 
 Two people can owe each other in different scopes of one currency at once:

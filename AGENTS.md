@@ -102,6 +102,13 @@ apps/mobile/                 Expo (React Native) app — @haalkhata/mobile
   client already knows an action will be refused (a member with an unsettled
   balance cannot leave a group), it says why, with the numbers, instead of
   sending the request and reporting the refusal. Applies to both apps.
+- **A settle button settles what it sits beside.** Beside a total (a person
+  on Home or Friends, the headline on their page) it settles everything with
+  that person on the net; beside one balance (a group's page, a row of
+  "Where the balance sits") it settles that balance alone. The dialog lists
+  exactly what it covers and offers nothing to tick — no checklist that
+  widens a group's settle or narrows a person's. Both apps read the same
+  `readSettlePositions` in `@haalkhata/shared/expense/settlePosition`.
 - **Soft-delete on expenses** (set `deleted_at`); balances filter
   `deleted_at IS NULL`.
 - **Auto-migrate before API readiness** runs through `ensureMigrated()` on

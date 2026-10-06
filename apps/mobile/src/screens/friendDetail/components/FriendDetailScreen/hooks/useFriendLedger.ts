@@ -9,11 +9,16 @@ import { MONEY_KEYS, queryKeys } from "@haalkhata/shared/api/queryKeys";
 /** Which way a settlement being recorded moved the money. */
 export type SettleDirection = "paid" | "received";
 
-/** The settle-up sheet's opening state: direction and currency. */
+/** The settle-up sheet's opening state: direction, currency, and how much it covers. */
 export interface Settling {
   direction: SettleDirection;
   /** ISO 4217 code of the balance being settled. */
   currency: string;
+  /**
+   * The one balance being settled: a group's id, or "" for what is not in
+   * any group. Undefined settles everything with the person.
+   */
+  scopeId?: string;
 }
 
 /** A payment's removal that was refused, and the line it was for. */
@@ -166,9 +171,11 @@ export function useFriendLedger(friendId: string) {
      *
      * @param direction - "paid" when you paid them, "received" when they paid you.
      * @param currency - ISO 4217 code of the balance being settled.
+     * @param scopeId - One balance to settle alone (a group id, or "" for what
+     *   is not in any group); omitted to settle everything with the person.
      */
-    openSettle: (direction: SettleDirection, currency: string) =>
-      setSettling({ direction, currency }),
+    openSettle: (direction: SettleDirection, currency: string, scopeId?: string) =>
+      setSettling({ direction, currency, scopeId }),
     closeSettle: () => setSettling(null),
   };
 }

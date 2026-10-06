@@ -207,7 +207,8 @@ export function GroupDetailPage({
           suggestedCents={groupDetail.settleWith.cents}
           received={groupDetail.settleWith.received}
           currency={groupDetail.group.currency}
-          groupId={groupId}
+          // On the group's page, so it settles this group's balance alone.
+          scopeId={groupId}
           onClose={() => groupDetail.setSettleWith(null)}
         />
       ) : null}

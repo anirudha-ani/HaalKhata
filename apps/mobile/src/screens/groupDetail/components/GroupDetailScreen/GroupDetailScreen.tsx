@@ -566,9 +566,10 @@ export function GroupDetailScreen({
       {groupDetail.settleWith ? (
         <SettleUpModal
           currency={groupDetail.group.currency}
-          groupId={groupId}
           onClose={() => groupDetail.setSettleWith(null)}
           received={groupDetail.settleWith.received}
+          // On the group's screen, so it settles this group's balance alone.
+          scopeId={groupId}
           suggestedCents={groupDetail.settleWith.cents}
           to={groupDetail.settleWith.user}
         />
