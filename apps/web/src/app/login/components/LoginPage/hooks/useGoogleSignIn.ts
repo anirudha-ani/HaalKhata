@@ -2,11 +2,9 @@
 /** Loads Google Identity Services and trades its ID token for a session. */
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { authClient, errorMessage } from "@/lib/api/connect";
-import { nextPathFromLocation } from "@/lib/navigation/nextPath";
-import { clearAccountQueryCache } from "@/lib/api/queryCache";
+import { completeBrowserSignIn } from "@/lib/auth/completeSignIn";
 import { GOOGLE_BUTTON_OPTIONS, GOOGLE_CLIENT_ID } from "@/app/login/constants/googleSignIn";
 import { loadGoogleScript } from "../utils/loadGoogleScript";
 
@@ -24,7 +22,6 @@ import { loadGoogleScript } from "../utils/loadGoogleScript";
  *   `isConfigured` for whether the button will appear at all.
  */
 export function useGoogleSignIn() {
-  const router = useRouter();
   const queryClient = useQueryClient();
   // The host element is held in state rather than a ref so the effect below
   // runs exactly when the div mounts, with no ordering dance against the
@@ -35,10 +32,7 @@ export function useGoogleSignIn() {
 
   const { mutate, isPending } = useMutation({
     mutationFn: (idToken: string) => authClient.logInWithGoogle({ idToken }),
-    onSuccess: () => {
-      clearAccountQueryCache(queryClient);
-      router.push(nextPathFromLocation());
-    },
+    onSuccess: () => completeBrowserSignIn(queryClient),
     onError: (mutationError) => setError(errorMessage(mutationError)),
   });
 

@@ -2,12 +2,10 @@
 /** Login/signup form state and the auth mutation for the login route. */
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { splitIdentifier } from "@haalkhata/shared/auth/identifier";
 import { authClient, errorMessage } from "@/lib/api/connect";
-import { nextPathFromLocation } from "@/lib/navigation/nextPath";
-import { clearAccountQueryCache } from "@/lib/api/queryCache";
+import { completeBrowserSignIn } from "@/lib/auth/completeSignIn";
 
 /** Which form the login page is showing: sign in or create account. */
 export type LoginMode = "login" | "signup";
@@ -23,7 +21,6 @@ export type LoginMode = "login" | "signup";
  *   message, `submit` to run the mutation, and `isPending` while in flight.
  */
 export function useLogin() {
-  const router = useRouter();
   const queryClient = useQueryClient();
   const [mode, setMode] = useState<LoginMode>("login");
   const [identifier, setIdentifier] = useState("");
@@ -39,10 +36,7 @@ export function useLogin() {
         ? authClient.logIn({ email, phone, password })
         : authClient.signUp({ email, phone, name, password });
     },
-    onSuccess: () => {
-      clearAccountQueryCache(queryClient);
-      router.push(nextPathFromLocation());
-    },
+    onSuccess: () => completeBrowserSignIn(queryClient),
     onError: (mutationError) => setError(errorMessage(mutationError)),
   });
 
