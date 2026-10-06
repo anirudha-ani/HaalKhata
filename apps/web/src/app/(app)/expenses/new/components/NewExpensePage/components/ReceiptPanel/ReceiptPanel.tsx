@@ -5,8 +5,8 @@
 
 import { Camera, FileImage, ImageUp, Loader2, ScanLine } from "lucide-react";
 import { useState } from "react";
-import { Spinner } from "@/components/ui/Spinner";
-import { ACCEPTED_IMAGE_INPUT } from "./receiptPanel.constants";
+import { Spinner } from "@/components/ui/Spinner/Spinner";
+import { ACCEPTED_IMAGE_INPUT } from "./constants/receiptPanel";
 import type { NewExpenseController } from "../../hooks/useNewExpense";
 
 /**

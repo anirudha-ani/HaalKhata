@@ -42,6 +42,23 @@ overrides:
   "@xmldom/xmldom@0.8.13": 0.8.15
   "@xmldom/xmldom@0.9.10": 0.9.12
   js-yaml@>=4.0.0 <4.3.2: ^4.3.2
+  compression@<1.8.2: ^1.8.2
+  source-map-js@>=1.0.0 <1.2.2: ^1.2.2
+
+# Advisories with no patched release to move to, reviewed and found
+# unreachable here. Remove an entry once its fix ships and take the upgrade
+# instead — a patched release does not make the audit fail again, so nothing
+# else will prompt it.
+auditConfig:
+  ignoreGhsas:
+    # node-forge RSA signature verification (<=1.4.0, the latest). Reached
+    # only through @expo/cli's expo-updates code signing, which this app does
+    # not configure; node-forge is in neither the web tree nor the app bundle.
+    - GHSA-86w9-cpqp-85rv
+    # braces stack exhaustion on nested patterns (<=3.0.3, the latest). Sits
+    # under micromatch in Metro's file map and Next's eslint plugin, where the
+    # patterns are this repo's own config, never request input.
+    - GHSA-vfj7-8cjw-p6xm
 
 # Native/postinstall packages allowed to run build scripts
 allowBuilds:

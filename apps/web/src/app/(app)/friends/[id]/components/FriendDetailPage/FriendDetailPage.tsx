@@ -4,15 +4,15 @@
 import Link from "next/link";
 import { ArrowLeft, Bell, Check, HandCoins, Plus, UserPlus, Wallet } from "lucide-react";
 import { groupEmoji } from "../../../../groups/constants/groupTypes";
-import { Avatar } from "@/components/ui/Avatar";
-import { Money } from "@/components/ui/Money";
-import { SettleUpModal } from "@/components/modals/SettleUpModal";
-import { Spinner } from "@/components/ui/Spinner";
+import { Avatar } from "@/components/ui/Avatar/Avatar";
+import { Money } from "@/components/ui/Money/Money";
+import { SettleUpModal } from "@/components/modals/SettleUpModal/SettleUpModal";
+import { Spinner } from "@/components/ui/Spinner/Spinner";
 import { errorMessage } from "@/lib/api/connect";
 import { useHydrated } from "@/lib/hooks/useHydrated";
+import { scopeLabel } from "@haalkhata/shared/expense/settlePosition";
 import { outstandingBuckets } from "@haalkhata/shared/money/balances";
-import { formatMoney } from "@haalkhata/shared/money/money";
-import { localDate } from "@haalkhata/shared/time/localTime";
+import { LedgerStatement } from "./components/LedgerStatement/LedgerStatement";
 import { useFriendLedger } from "./hooks/useFriendLedger";
 
 /**
@@ -69,6 +69,22 @@ export function FriendDetailPage({
     currency,
   );
   const isSettled = nets.length === 0;
+  // Nothing changes hands overall, yet balances remain: what is owed one way
+  // in one place equals what is owed back in another. "Settled up" would be
+  // wrong — each of those places still shows its balance.
+  const isEvenOnly = isSettled && groupBalances.some((balance) => balance.netCents !== 0);
+  /**
+   * What a settle dialog would settle for one row of the breakdown, as the
+   * server computes it; undefined when there is nothing to settle there.
+   *
+   * @param scopeGroupId - The row's group id, or "" for what is not in any group.
+   * @param scopeCurrency - The row's currency.
+   * @returns The matching balance from the pair's settle position.
+   */
+  const settleScopeFor = (scopeGroupId: string, scopeCurrency: string) =>
+    (view.ledger?.settlePositions ?? [])
+      .find((position) => position.currency === scopeCurrency)
+      ?.scopes.find((scope) => scope.groupId === scopeGroupId && scope.netCents !== 0);
   const owedToYou = nets.filter((bucket) => bucket.cents > 0);
   const owedByYou = nets.filter((bucket) => bucket.cents < 0);
 
@@ -125,7 +141,9 @@ export function FriendDetailPage({
           ) : null}
         </div>
         <div className="text-right">
-          {isSettled ? (
+          {isEvenOnly ? (
+            <p className="text-lg font-semibold text-ink-soft">Even overall</p>
+          ) : isSettled ? (
             <p className="flex items-center gap-1.5 text-lg font-semibold text-pos-700">
               <Check className="h-5 w-5" /> All settled up
             </p>
@@ -155,9 +173,10 @@ export function FriendDetailPage({
         >
           <Plus className="h-4 w-4" /> Add expense
         </Link>
-        {/* Both directions are always offered: the balance tells you which one
-            you probably want, but recording the other is never blocked. Each
-            opens on its currency; the dialog can switch. */}
+        {/* Beside the totals, so these settle the totals: everything with this
+            person in the currency, whichever places it sits in. Settling one
+            place alone is done from its own row below. Each opens on its
+            currency; the dialog can switch. */}
         {owedByYou.length > 0 ? (
           <button
             type="button"
@@ -229,42 +248,70 @@ export function FriendDetailPage({
             Where the balance sits
           </h2>
           <ul className="divide-y divide-line overflow-hidden rounded-2xl border border-line bg-card">
-            {groupBalances.map((balance) => (
-              <li
-                key={`${balance.groupId || "one-off"}-${balance.currency}`}
-                className="flex items-center justify-between px-4 py-2.5 text-sm"
-              >
-                <span className="flex min-w-0 items-center gap-1.5 truncate">
-                  {balance.groupId ? (
-                    <Link
-                      href={`/groups/${balance.groupId}`}
-                      className="font-medium hover:text-brand-600"
+            {groupBalances.map((balance) => {
+              const label = scopeLabel(balance.groupId, balance.groupName);
+              const settleScope = settleScopeFor(balance.groupId, balance.currency || currency);
+              return (
+                <li
+                  key={`${balance.groupId || "one-off"}-${balance.currency}`}
+                  className="flex items-center gap-2 px-4 py-2.5 text-sm"
+                >
+                  <span className="flex min-w-0 flex-1 items-center gap-1.5">
+                    {balance.groupId ? (
+                      <Link
+                        href={`/groups/${balance.groupId}`}
+                        className="truncate font-medium hover:text-brand-600"
+                      >
+                        {label}
+                      </Link>
+                    ) : (
+                      <span className="truncate text-ink-soft">{label}</span>
+                    )}
+                    {/* A rerouted number needs its label: in a simplified group
+                        what you pay — and whom — is the group's shortest route,
+                        not necessarily who you shared the expense with. */}
+                    {balance.simplified ? (
+                      <span
+                        className="shrink-0 rounded-full bg-paper px-2 py-0.5 text-[11px] text-ink-soft"
+                        title="This group simplifies debts: balances are rerouted across the group so fewer payments settle everyone."
+                      >
+                        simplified
+                      </span>
+                    ) : null}
+                  </span>
+                  {/* Worded the way the dialog it opens words it, so the row
+                      and the dialog are plainly the same balance — and so
+                      the direction does not rest on colour alone. */}
+                  <span className="shrink-0 text-xs text-ink-soft">
+                    {balance.netCents > 0 ? "owes you" : "you owe"}
+                  </span>
+                  <Money
+                    cents={balance.netCents}
+                    currency={balance.currency || currency}
+                    signed
+                    className="shrink-0 font-semibold"
+                  />
+                  {/* On the row, so it settles the row: this one balance and
+                      nothing else. */}
+                  {settleScope ? (
+                    <button
+                      type="button"
+                      aria-label={`Settle ${label} only`}
+                      onClick={() =>
+                        view.openSettle(
+                          settleScope.netCents > 0 ? "received" : "paid",
+                          balance.currency || currency,
+                          balance.groupId,
+                        )
+                      }
+                      className="shrink-0 rounded-full border border-line px-2.5 py-1 text-xs font-semibold text-ink-soft hover:border-brand-200 hover:text-brand-600"
                     >
-                      {balance.groupName || "Group"}
-                    </Link>
-                  ) : (
-                    <span className="text-ink-soft">One-off expenses</span>
-                  )}
-                  {/* A rerouted number needs its label: in a simplified group
-                      what you pay — and whom — is the group's shortest route,
-                      not necessarily who you shared the expense with. */}
-                  {balance.simplified ? (
-                    <span
-                      className="shrink-0 rounded-full bg-paper px-2 py-0.5 text-[11px] text-ink-soft"
-                      title="This group simplifies debts: balances are rerouted across the group so fewer payments settle everyone."
-                    >
-                      simplified
-                    </span>
+                      Settle
+                    </button>
                   ) : null}
-                </span>
-                <Money
-                  cents={balance.netCents}
-                  currency={balance.currency || currency}
-                  signed
-                  className="font-semibold"
-                />
-              </li>
-            ))}
+                </li>
+              );
+            })}
           </ul>
         </section>
       ) : null}
@@ -281,124 +328,14 @@ export function FriendDetailPage({
             </p>
           </div>
         ) : (
-          <div className="overflow-x-auto rounded-2xl border border-line bg-card">
-            <table className="w-full min-w-max border-collapse text-sm">
-              <thead>
-                <tr className="border-b border-line text-xs text-ink-soft">
-                  <th className="py-2 pl-4 text-left font-medium">Date</th>
-                  <th className="py-2 pl-3 text-left font-medium">What</th>
-                  <th className="py-2 pl-3 text-right font-medium">Total</th>
-                  <th className="py-2 pl-3 text-right font-medium">Change</th>
-                  <th className="py-2 pr-4 pl-3 text-right font-medium">Balance</th>
-                </tr>
-              </thead>
-              <tbody>
-                {entries.map((entry) => (
-                  <tr key={`${entry.kind}-${entry.id}`} className="border-b border-line/60">
-                    <td className="py-2.5 pl-4 text-xs whitespace-nowrap text-ink-soft tabular-nums">
-                      {/* A settlement is a moment, shown in the viewer's own
-                          timezone; an expense's date is the calendar day the
-                          user picked, which has no timezone to convert. */}
-                      {entry.createdAt ? localDate(entry.createdAt) : entry.date}
-                    </td>
-                    <td className="py-2.5 pl-3">
-                      {entry.kind === "expense" ? (
-                        <Link
-                          href={`/expenses/${entry.id}`}
-                          className={`font-medium hover:text-brand-600 ${
-                            entry.deleted ? "text-ink-soft line-through" : ""
-                          }`}
-                        >
-                          {entry.description}
-                        </Link>
-                      ) : (
-                        <span
-                          className={`font-medium ${
-                            entry.deleted ? "text-ink-soft line-through" : "text-pos-700"
-                          }`}
-                        >
-                          {entry.description}
-                        </span>
-                      )}
-                      {/* Struck through but kept: a deleted expense or a
-                          removed payment no longer moves the balance, and
-                          the row is what explains why the balance leans the
-                          way it does now. */}
-                      {entry.deleted ? (
-                        <span className="ml-2 rounded-full bg-paper px-2 py-0.5 text-[11px] text-ink-soft">
-                          {entry.kind === "settlement" ? "removed" : "deleted"}
-                        </span>
-                      ) : null}
-                      {/* A payment is a claim one of the two of you typed
-                          in; the statement says which, on every line. */}
-                      {entry.recordedByName ? (
-                        <span className="ml-2 rounded-full bg-paper px-2 py-0.5 text-[11px] text-ink-soft">
-                          recorded by {entry.recordedByName}
-                        </span>
-                      ) : null}
-                      {/* A mistyped payment is the reason this exists. Two
-                          taps: the first arms the button, the second sends. */}
-                      {entry.kind === "settlement" && !entry.deleted ? (
-                        <button
-                          type="button"
-                          onClick={() => view.removeSettlement(entry.id)}
-                          disabled={view.removingSettlementId === entry.id}
-                          aria-label={`Remove the payment ${entry.description}`}
-                          className="ml-2 rounded-full border border-line px-2 py-0.5 text-[11px] font-medium text-ink-soft hover:border-neg-600 hover:text-neg-600 disabled:opacity-50"
-                        >
-                          {view.removingSettlementId === entry.id
-                            ? "Removing…"
-                            : view.confirmingSettlementId === entry.id
-                              ? "Tap again to remove"
-                              : "Remove"}
-                        </button>
-                      ) : null}
-                      {entry.groupName ? (
-                        <span className="ml-2 rounded-full bg-paper px-2 py-0.5 text-[11px] text-ink-soft">
-                          {entry.groupName}
-                        </span>
-                      ) : null}
-                    </td>
-                    <td className="py-2.5 pl-3 text-right text-ink-soft tabular-nums">
-                      {formatMoney(entry.totalCents, entry.currency || currency)}
-                    </td>
-                    {/* The signed column is the one that matters: the expense
-                        total is context, your share of it is the movement. */}
-                    <td
-                      className={`py-2.5 pl-3 text-right font-semibold tabular-nums ${
-                        entry.deleted
-                          ? "text-ink-soft"
-                          : entry.deltaCents > 0
-                            ? "text-pos-700"
-                            : "text-neg-600"
-                      }`}
-                    >
-                      {entry.deleted ? (
-                        "—"
-                      ) : (
-                        <>
-                          {entry.deltaCents > 0 ? "+" : "−"}
-                          {formatMoney(Math.abs(entry.deltaCents), entry.currency || currency)}
-                        </>
-                      )}
-                    </td>
-                    {/* The running balance is per currency: a euro line
-                        continues the euro column, not the dollar one. */}
-                    <td className="py-2.5 pr-4 pl-3 text-right tabular-nums">
-                      {formatMoney(Math.abs(entry.balanceAfterCents), entry.currency || currency)}
-                      <span className="ml-1 text-[11px] text-ink-soft">
-                        {entry.balanceAfterCents === 0
-                          ? "even"
-                          : entry.balanceAfterCents > 0
-                            ? "to you"
-                            : "to them"}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <LedgerStatement
+            entries={entries}
+            currency={currency}
+            confirmingSettlementId={view.confirmingSettlementId}
+            removingSettlementId={view.removingSettlementId}
+            removalError={view.settlementRemovalError}
+            onRemoveSettlement={view.removeSettlement}
+          />
         )}
         {entries.length > 0 ? (
           <p className="text-xs text-ink-soft">
@@ -419,9 +356,12 @@ export function FriendDetailPage({
           to={friend}
           received={view.settling.direction === "received"}
           suggestedCents={Math.abs(
-            nets.find((bucket) => bucket.currency === view.settling?.currency)?.cents ?? 0,
+            view.settling.scopeId === undefined
+              ? (nets.find((bucket) => bucket.currency === view.settling?.currency)?.cents ?? 0)
+              : (settleScopeFor(view.settling.scopeId, view.settling.currency)?.netCents ?? 0),
           )}
           currency={view.settling.currency}
+          scopeId={view.settling.scopeId}
           onClose={view.closeSettle}
         />
       ) : null}

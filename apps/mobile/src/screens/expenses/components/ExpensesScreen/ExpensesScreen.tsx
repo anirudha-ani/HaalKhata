@@ -11,8 +11,9 @@ import { Button } from "@/components/ui/Button";
 import { Chip } from "@/components/ui/Chip";
 import { SearchField } from "@/components/ui/SearchField";
 import { Spinner } from "@/components/ui/Spinner";
-import { noExpensesMessage } from "@haalkhata/shared/expense/scopeFilter";
+import { FIXED_SCOPE_OPTIONS, noExpensesMessage } from "@haalkhata/shared/expense/scopeFilter";
 import { colors, fonts, radii, spacing } from "@/lib/theme/theme";
+import { GroupScopePicker } from "./components/GroupScopePicker/GroupScopePicker";
 import { useExpensesList } from "./hooks/useExpensesList";
 
 /**
@@ -23,7 +24,7 @@ import { useExpensesList } from "./hooks/useExpensesList";
  * This screen exists because one-off expenses had no home of their own: they
  * were reachable only through the friend they were shared with, so "what
  * one-off expenses do I have?" had no answer. The One-off chip is that
- * answer; the group chips come along for free from the same filter.
+ * answer; filtering by one group comes along for free from the same filter.
  *
  * @returns The expenses screen content, with a spinner while the list loads.
  */
@@ -32,13 +33,9 @@ export function ExpensesScreen() {
   const router = useRouter();
   const { isExpanded } = useResponsiveLayout();
 
-  const scopeChips = [
-    { value: "all", label: "All" },
-    { value: "oneoff", label: "One-off" },
-    ...listState.groups.flatMap((summary) =>
-      summary.group ? [{ value: summary.group.id, label: summary.group.name }] : [],
-    ),
-  ];
+  const groupOptions = listState.groups.flatMap((summary) =>
+    summary.group ? [{ id: summary.group.id, name: summary.group.name }] : [],
+  );
   const filteredGroupName = listState.groupNameById.get(listState.scope) ?? "";
   const isFiltered = listState.query !== "" || listState.scope !== "all";
 
@@ -81,14 +78,21 @@ export function ExpensesScreen() {
             </View>
 
             <View style={styles.chips}>
-              {scopeChips.map((chip) => (
+              {FIXED_SCOPE_OPTIONS.map((option) => (
                 <Chip
-                  key={chip.value}
-                  label={chip.label}
-                  onPress={() => listState.setScope(chip.value)}
-                  selected={listState.scope === chip.value}
+                  key={option.value}
+                  label={option.label}
+                  onPress={() => listState.setScope(option.value)}
+                  selected={listState.scope === option.value}
                 />
               ))}
+              {groupOptions.length > 0 ? (
+                <GroupScopePicker
+                  groups={groupOptions}
+                  onSelect={listState.setScope}
+                  selectedId={listState.scope}
+                />
+              ) : null}
             </View>
 
             {/* The list is bounded; the balances are not. Say so rather than

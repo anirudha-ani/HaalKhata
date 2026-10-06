@@ -34,10 +34,13 @@ apps/web/                    Next.js app
   src/server/common/         db, errors, logger, rateLimit (shared infra)
   src/server/api/connect/    context.ts (auth/cookies/error map), routes.ts, csrf.ts
   src/pages/api/connect/     [[...connect]].ts — mount point only
-  src/app/<route>/           UI (thin page.tsx → components/<Page>/ + hooks/)
+  src/app/<route>/           UI (thin page.tsx → components/<Page>/<Page>.tsx,
+                             with its own components/, hooks/, constants/, utils/)
   src/lib/                   app-specific utilities (api/ transport, auth/ guard,
                              hooks/ cross-route React hooks)
-  src/components/            shell, ui primitives, providers, modals
+  src/components/<category>/ shared UI by category (ui, shell, people, modals,
+                             providers, …): one folder per component,
+                             <Name>/<Name>.tsx — see "Composition structure"
   migrations/                plain SQL, node-pg-migrate (history in pgmigrations)
 apps/mobile/                 Expo (React Native) app — @haalkhata/mobile
   app/                       expo-router routes — THIN (the page.tsx role)
@@ -76,8 +79,44 @@ apps/mobile/                 Expo (React Native) app — @haalkhata/mobile
 - **Every file has a header doc comment; every exported symbol and
   non-trivial internal function carries JSDoc (`@param`/`@returns`).**
 - **Constants never inline between functions.** Server: one
-  `<domain>.constants.ts` per domain. Frontend: route-scoped `constants/`
-  or the owning folder's `*.constants.ts`.
+  `<domain>.constants.ts` per domain. Frontend: a file in the `constants/`
+  folder of the component (or route) that owns it — never a `*.constants.ts`
+  beside the component.
+- **Composition structure (apps/web UI).** Every component has its own
+  folder and root file, `<Name>/<Name>.tsx`. A folder is either a *category*
+  that holds only component folders (`src/components/ui/`) or a *component*
+  with its root file; never loose files beside folders. Whatever a component
+  needs lives in subfolders of the component that owns it:
+  `components/<Child>/<Child>.tsx`, `constants/<topic>.ts`,
+  `utils/<name>.ts` (tests colocated) and `hooks/use<Name>.ts`. One
+  component, hook or helper per file — no private sub-components at the
+  bottom of another component's file. Route folders hold only Next's own
+  files (`page.tsx`, `loading.tsx`, `layout.tsx`, `error.tsx`) and those
+  same four subfolders, and a `page.tsx` mounts a component rather than
+  being one.
+- **Nothing fails silently.** Every action a person takes ends in feedback
+  they can see: a failure is shown beside the control that caused it (or in
+  the pinned `ErrorPopup`), never only in the console, in state nothing
+  renders, or in a spot that can be off screen — a line under a long list is
+  off screen. Every mutation has an `onError` that reaches the UI. When the
+  client already knows an action will be refused (a member with an unsettled
+  balance cannot leave a group), it says why, with the numbers, instead of
+  sending the request and reporting the refusal. Applies to both apps.
+- **A settle button settles what it sits beside.** Beside a total (a person
+  on Home or Friends, the headline on their page) it settles everything with
+  that person on the net; beside one balance (a group's page, a row of
+  "Where the balance sits") it settles that balance alone. The dialog lists
+  exactly what it covers and offers nothing to tick — no checklist that
+  widens a group's settle or narrows a person's. Both apps read the same
+  `readSettlePositions` in `@haalkhata/shared/expense/settlePosition`.
+- **No Claude co-author or attribution on commits or PRs.** Never add a
+  `Co-Authored-By: Claude …` trailer, a "Generated with Claude Code" line, or
+  a session link. A commit is authored by the person whose git identity made
+  it, and nobody else is named. Three things hold this: `.claude/settings.json`
+  turns Claude Code's attribution off, the `commit-msg` hook in `.githooks`
+  strips such a line from any commit however it was made, and this rule covers
+  everything else. A fresh clone enables the hook with
+  `git config core.hooksPath .githooks` (`install-deps.sh` does it).
 - **Soft-delete on expenses** (set `deleted_at`); balances filter
   `deleted_at IS NULL`.
 - **Auto-migrate before API readiness** runs through `ensureMigrated()` on
@@ -295,6 +334,20 @@ with colocated tests. Mobile-specific rules:
   handler); the usecase claims it with `beginOperation` inside the ledger
   transaction and `finishOperation` before commit, so a retry replays the
   stored result. Clients mint one per submit (`newOperationId()`).
+- **A balance is read at one instant.** It is assembled from several
+  statements, and a settlement committing between two of them yields a
+  position that never existed. Every read that returns a figure
+  (`getFriendLedger`, `getOverallBalances`, `getGroupBalances`,
+  `listExpenses`, `getExpense`) runs inside `snapshot()` from `common/db.ts`
+  and passes its `client` to every statement, one at a time — one sent to
+  the pool reads outside the snapshot and holds a second connection.
+- **A net settlement is one unit.** Its cash and `offset` rows share a
+  `net_settlements` parent and a deferred constraint trigger refuses a unit
+  that does not cancel out or is only partly removed. Never insert, update
+  or soft-delete one of its rows alone: go through `storeNetSettlement` and
+  `softDeleteNetSettlement`. A net settlement must carry the
+  `position_digest` the person was shown; the write recomputes it under the
+  locks and refuses a ledger that has moved.
 - **Limiters are process-local** (`rateLimit.ts`, `phoneRateLimit.ts`): fine
   for one container, wrong for two replicas — see `docs/plan.txt` §28.
 

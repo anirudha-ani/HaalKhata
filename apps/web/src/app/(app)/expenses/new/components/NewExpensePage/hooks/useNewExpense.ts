@@ -25,18 +25,7 @@ import {
 } from "@/lib/expense/splitForm";
 import type { ExpenseFormInitial } from "../../../utils/initialValues";
 import type { useNewExpenseAPI } from "./useNewExpenseAPI";
-
-/**
- * Returns a copy of `source` without `keyToDrop`.
- *
- * @param source - The record to copy.
- * @param keyToDrop - Key to leave out of the copy.
- * @returns A new record with every other entry of `source`.
- */
-function omitKey<Value>(source: Record<string, Value>, keyToDrop: string): Record<string, Value> {
-  const { [keyToDrop]: _dropped, ...rest } = source;
-  return rest;
-}
+import { omitKey } from "../utils/omitKey";
 
 /**
  * Expense form state. All fields initialize from `initial` (built once from

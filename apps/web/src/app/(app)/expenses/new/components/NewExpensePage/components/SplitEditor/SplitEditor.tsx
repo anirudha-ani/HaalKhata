@@ -1,7 +1,7 @@
 "use client";
 /** Split section: split-type tabs plus per-person participation and value inputs. */
 
-import { Avatar } from "@/components/ui/Avatar";
+import { Avatar } from "@/components/ui/Avatar/Avatar";
 import { SPLIT_TABS, UNIT } from "../../../../constants/splitEditor";
 import { ItemizedEditor } from "../ItemizedEditor/ItemizedEditor";
 import type { NewExpenseController } from "../../hooks/useNewExpense";

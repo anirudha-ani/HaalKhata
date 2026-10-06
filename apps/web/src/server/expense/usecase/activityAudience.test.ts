@@ -16,6 +16,13 @@ import type { CommentRow } from "@/server/expense/repo/comments.repo";
 
 const { transactionClient } = vi.hoisted(() => ({ transactionClient: {} as PoolClient }));
 
+// The reads run inside a database snapshot. Every statement is mocked here,
+// so the snapshot is a pass-through handing out a stand-in client: these
+// tests must not need a database to be running.
+vi.mock("@/server/common/db", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/server/common/db")>()),
+  snapshot: (operation: (client: unknown) => unknown) => operation({}),
+}));
 vi.mock("@/server/expense/repo/expenses.repo", () => ({
   findExpenseById: vi.fn(),
   insertExpense: vi.fn(),
@@ -507,15 +514,15 @@ describe("who hears about a transaction", () => {
 
     const detail = await getExpense(PAYER, "expense-1");
 
-    // Read advisorily, with no transaction client, and narrowed to payments
-    // between the expense's own participants because the mocked group does
-    // not simplify debts.
+    // Read advisorily, on the read's own snapshot rather than under a ledger
+    // lock, and narrowed to payments between the expense's own participants
+    // because the mocked group does not simplify debts.
     expect(detail.hasLaterSettlement).toBe(true);
     expect(scopeHasSettlements).toHaveBeenCalledWith(
       GOA_TRIP,
       [PAYER, OWER],
       "42",
-      undefined,
+      expect.anything(),
       true,
     );
   });
@@ -537,7 +544,7 @@ describe("who hears about a transaction", () => {
       GOA_TRIP,
       [PAYER, OWER],
       "42",
-      undefined,
+      expect.anything(),
       false,
     );
   });

@@ -1,7 +1,7 @@
 "use client";
 /** New/edit expense orchestrator: loads data, mounts ExpenseForm. */
 
-import { Spinner } from "@/components/ui/Spinner";
+import { Spinner } from "@/components/ui/Spinner/Spinner";
 import { useHydrated } from "@/lib/hooks/useHydrated";
 import { buildInitialValues } from "../../utils/initialValues";
 import { ExpenseForm } from "./components/ExpenseForm/ExpenseForm";

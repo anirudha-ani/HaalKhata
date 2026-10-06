@@ -1,7 +1,12 @@
 /** Unit tests for per-currency balance helpers. */
 
 import { describe, expect, it } from "vitest";
-import { leadingBucket, outstandingBuckets, totalsByCurrency } from "./balances";
+import {
+  leadingBucket,
+  outstandingBuckets,
+  positionCaption,
+  totalsByCurrency,
+} from "./balances";
 
 describe("totalsByCurrency", () => {
   it("keeps every currency apart and puts the default first", () => {
@@ -53,5 +58,44 @@ describe("outstandingBuckets", () => {
       { currency: "BDT", cents: -7 },
       { currency: "EUR", cents: 5 },
     ]);
+  });
+});
+
+describe("positionCaption", () => {
+  it("is one phrase when every currency points the same way", () => {
+    expect(positionCaption([])).toBe("settled up");
+    expect(positionCaption([{ currency: "USD", cents: 500 }])).toBe("owes you");
+    expect(
+      positionCaption([
+        { currency: "USD", cents: -500 },
+        { currency: "EUR", cents: -100 },
+      ]),
+    ).toBe("you owe");
+  });
+
+  it("follows the buckets' order when they point both ways", () => {
+    // The row shows $12.69 (you owe) above €75.99 (owes you); the caption has
+    // to read in that order or each phrase lands on the wrong amount.
+    expect(
+      positionCaption([
+        { currency: "USD", cents: -1269 },
+        { currency: "EUR", cents: 7599 },
+      ]),
+    ).toBe("you owe · owes you");
+    expect(
+      positionCaption([
+        { currency: "USD", cents: 1269 },
+        { currency: "EUR", cents: -7599 },
+      ]),
+    ).toBe("owes you · you owe");
+  });
+
+  it("ignores a currency with nothing in it", () => {
+    expect(
+      positionCaption([
+        { currency: "USD", cents: 0 },
+        { currency: "EUR", cents: 7599 },
+      ]),
+    ).toBe("owes you");
   });
 });

@@ -13,6 +13,8 @@ import { Money } from "@/components/ui/Money";
 import { Spinner } from "@/components/ui/Spinner";
 import { errorMessage } from "@/lib/api/connect";
 import { outstandingBuckets } from "@haalkhata/shared/money/balances";
+import { netSettlementTag } from "@haalkhata/shared/expense/netSettlementLines";
+import { scopeLabel } from "@haalkhata/shared/expense/settlePosition";
 import { formatMoney } from "@haalkhata/shared/money/money";
 import { localDate } from "@haalkhata/shared/time/localTime";
 import { colors, fonts, radii, spacing } from "@/lib/theme/theme";
@@ -85,6 +87,22 @@ export function FriendDetailScreen({
     currency,
   );
   const isSettled = nets.length === 0;
+  // Nothing changes hands overall, yet balances remain: what is owed one way
+  // in one place equals what is owed back in another. "Settled up" would be
+  // wrong — each of those places still shows its balance.
+  const isEvenOnly = isSettled && groupBalances.some((balance) => balance.netCents !== 0);
+  /**
+   * What a settle sheet would settle for one row of the breakdown, as the
+   * server computes it; undefined when there is nothing to settle there.
+   *
+   * @param scopeGroupId - The row's group id, or "" for what is not in any group.
+   * @param scopeCurrency - The row's currency.
+   * @returns The matching balance from the pair's settle position.
+   */
+  const settleScopeFor = (scopeGroupId: string, scopeCurrency: string) =>
+    (view.ledger?.settlePositions ?? [])
+      .find((position) => position.currency === scopeCurrency)
+      ?.scopes.find((scope) => scope.groupId === scopeGroupId && scope.netCents !== 0);
   const owedToYou = nets.filter((bucket) => bucket.cents > 0);
   const owedByYou = nets.filter((bucket) => bucket.cents < 0);
   const firstName = friend.name.split(" ")[0];
@@ -142,7 +160,9 @@ export function FriendDetailScreen({
         ) : null}
 
         <View style={styles.balanceBlock}>
-          {isSettled ? (
+          {isEvenOnly ? (
+            <Text style={styles.evenText}>Even overall</Text>
+          ) : isSettled ? (
             <View style={styles.settledRow}>
               <Check color={colors.pos700} size={20} />
               <Text style={styles.settledText}>All settled up</Text>
@@ -176,9 +196,10 @@ export function FriendDetailScreen({
           label="Add expense"
           onPress={() => router.push(`/expenses/new?friend=${friend.id}`)}
         />
-        {/* Both directions are always offered: the balance tells you which one
-            you probably want, but recording the other is never blocked. Each
-            opens on its currency; the sheet can switch. */}
+        {/* Beside the totals, so these settle the totals: everything with this
+            person in the currency, whichever places it sits in. Settling one
+            place alone is done from its own row below. Each opens on its
+            currency; the sheet can switch. */}
         {owedByYou.length > 0 ? (
           <Button
             compact
@@ -245,41 +266,67 @@ export function FriendDetailScreen({
         <View style={[styles.section, isExpanded ? styles.balanceSectionExpanded : null]}>
           <Text style={styles.sectionTitle}>WHERE THE BALANCE SITS</Text>
           <View style={styles.listCard}>
-            {groupBalances.map((balance, index) => (
-              <View
-                key={`${balance.groupId || "one-off"}-${balance.currency}`}
-                style={[styles.row, index > 0 ? styles.rowDivider : null]}
-              >
-                {balance.groupId ? (
-                  <Pressable
-                    onPress={() => router.push(`/groups/${balance.groupId}`)}
-                    style={styles.rowText}
-                  >
-                    <Text numberOfLines={1} style={styles.rowName}>
-                      {balance.groupName || "Group"}
+            {groupBalances.map((balance, index) => {
+              const label = scopeLabel(balance.groupId, balance.groupName);
+              const settleScope = settleScopeFor(balance.groupId, balance.currency || currency);
+              return (
+                <View
+                  key={`${balance.groupId || "one-off"}-${balance.currency}`}
+                  style={[styles.row, index > 0 ? styles.rowDivider : null]}
+                >
+                  {balance.groupId ? (
+                    <Pressable
+                      onPress={() => router.push(`/groups/${balance.groupId}`)}
+                      style={styles.rowText}
+                    >
+                      <Text numberOfLines={1} style={styles.rowName}>
+                        {label}
+                      </Text>
+                    </Pressable>
+                  ) : (
+                    <Text numberOfLines={1} style={[styles.rowName, styles.rowNameSoft]}>
+                      {label}
                     </Text>
-                  </Pressable>
-                ) : (
-                  <Text numberOfLines={1} style={[styles.rowName, styles.rowNameSoft]}>
-                    One-off expenses
+                  )}
+                  {/* A rerouted number needs its label: in a simplified group
+                      what you pay — and whom — is the group's shortest route,
+                      not necessarily who you shared the expense with. */}
+                  {balance.simplified ? (
+                    <View style={styles.pill}>
+                      <Text style={styles.pillText}>simplified</Text>
+                    </View>
+                  ) : null}
+                  {/* Worded the way the sheet it opens words it, so the row
+                      and the sheet are plainly the same balance — and so
+                      the direction does not rest on colour alone. */}
+                  <Text style={styles.rowDirection}>
+                    {balance.netCents > 0 ? "owes you" : "you owe"}
                   </Text>
-                )}
-                {/* A rerouted number needs its label: in a simplified group
-                    what you pay — and whom — is the group's shortest route,
-                    not necessarily who you shared the expense with. */}
-                {balance.simplified ? (
-                  <View style={styles.pill}>
-                    <Text style={styles.pillText}>simplified</Text>
-                  </View>
-                ) : null}
-                <Money
-                  cents={balance.netCents}
-                  currency={balance.currency || currency}
-                  signed
-                  style={styles.rowAmount}
-                />
-              </View>
-            ))}
+                  <Money
+                    cents={balance.netCents}
+                    currency={balance.currency || currency}
+                    signed
+                    style={styles.rowAmount}
+                  />
+                  {/* On the row, so it settles the row: this one balance and
+                      nothing else. */}
+                  {settleScope ? (
+                    <Button
+                      compact
+                      label="Settle"
+                      onPress={() =>
+                        view.openSettle(
+                          settleScope.netCents > 0 ? "received" : "paid",
+                          balance.currency || currency,
+                          balance.groupId,
+                        )
+                      }
+                      variant="outline"
+                    />
+                  ) : null}
+                </View>
+              );
+            })}
           </View>
         </View>
       ) : null}
@@ -300,10 +347,22 @@ export function FriendDetailScreen({
             {entries.map((entry, index) => {
               const isSettlement = entry.kind === "settlement";
               const removing = view.removingSettlementId === entry.id;
+              const netTag = netSettlementTag(entry, entries);
+              const removalError =
+                view.settlementRemovalError?.settlementId === entry.id
+                  ? view.settlementRemovalError.message
+                  : "";
               return (
                 <View
                   key={`${entry.kind}-${entry.id}`}
-                  style={[styles.entry, index > 0 ? styles.rowDivider : null]}
+                  // The lines of one net settlement are marked down their
+                  // left edge: the payment and the balances it cancelled
+                  // were recorded together and are removed together.
+                  style={[
+                    styles.entry,
+                    index > 0 ? styles.rowDivider : null,
+                    entry.netSettlementId ? styles.entryOfNetSettlement : null,
+                  ]}
                 >
                   <View style={styles.entryTop}>
                     {/* A settlement is a moment, shown in the viewer's own
@@ -326,6 +385,15 @@ export function FriendDetailScreen({
                     {entry.deleted ? (
                       <View style={styles.pill}>
                         <Text style={styles.pillText}>{isSettlement ? "removed" : "deleted"}</Text>
+                      </View>
+                    ) : null}
+                    {/* A net settlement is one payment plus the balances it
+                        cancelled against each other. Each of its lines says
+                        which it is, so the cash that moved is never confused
+                        with the amounts that only cancelled. */}
+                    {netTag ? (
+                      <View style={styles.pill}>
+                        <Text style={styles.pillText}>{netTag}</Text>
                       </View>
                     ) : null}
                     {/* A payment is a claim one of the two of you typed in;
@@ -351,9 +419,15 @@ export function FriendDetailScreen({
                   ) : (
                     <Text
                       numberOfLines={2}
+                      // A cancelled balance is not a payment and is not
+                      // coloured as one: nobody received that money.
                       style={[
                         styles.entryTitle,
-                        entry.deleted ? styles.entryTitleDeleted : styles.entryTitleSettlement,
+                        entry.deleted
+                          ? styles.entryTitleDeleted
+                          : entry.offset
+                            ? null
+                            : styles.entryTitleSettlement,
                       ]}
                     >
                       {entry.description}
@@ -406,18 +480,31 @@ export function FriendDetailScreen({
                   </View>
 
                   {/* A mistyped payment is the reason this exists. Two taps:
-                      the first arms the button, the second sends. */}
-                  {isSettlement && !entry.deleted ? (
+                      the first arms the button, the second sends. A cancelled
+                      balance has no remove of its own: it goes when the
+                      payment it belongs to goes, and the second tap says so. */}
+                  {isSettlement && !entry.deleted && !entry.offset ? (
                     <View style={styles.entryAction}>
                       <Button
                         busy={removing}
                         compact
                         label={
-                          view.confirmingSettlementId === entry.id ? "Tap again to remove" : "Remove"
+                          view.confirmingSettlementId !== entry.id
+                            ? "Remove"
+                            : entry.netSettlementId
+                              ? "Tap again: removes it and everything it cancelled"
+                              : "Tap again to remove"
                         }
                         onPress={() => view.removeSettlement(entry.id)}
                         variant="outline"
                       />
+                      {/* On the line that was tapped: the statement can be
+                          screens below anything shown at the top. */}
+                      {removalError ? (
+                        <Text accessibilityRole="alert" style={styles.removalError}>
+                          Not removed — {removalError}
+                        </Text>
+                      ) : null}
                     </View>
                   ) : null}
                 </View>
@@ -445,8 +532,11 @@ export function FriendDetailScreen({
           currency={view.settling.currency}
           onClose={view.closeSettle}
           received={view.settling.direction === "received"}
+          scopeId={view.settling.scopeId}
           suggestedCents={Math.abs(
-            nets.find((bucket) => bucket.currency === view.settling?.currency)?.cents ?? 0,
+            view.settling.scopeId === undefined
+              ? (nets.find((bucket) => bucket.currency === view.settling?.currency)?.cents ?? 0)
+              : (settleScopeFor(view.settling.scopeId, view.settling.currency)?.netCents ?? 0),
           )}
           to={friend}
         />
@@ -516,6 +606,7 @@ const styles = StyleSheet.create({
   },
   entryAction: {
     alignItems: "flex-start",
+    gap: spacing.xs,
     marginTop: spacing.xs,
   },
   entryDate: {
@@ -527,6 +618,11 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: spacing.lg,
     marginTop: spacing.xs,
+  },
+  entryOfNetSettlement: {
+    borderLeftColor: colors.brand200,
+    borderLeftWidth: 3,
+    paddingLeft: spacing.lg - 3,
   },
   entryTitle: {
     color: colors.ink,
@@ -545,6 +641,11 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     flexWrap: "wrap",
     gap: spacing.sm,
+  },
+  evenText: {
+    color: colors.inkSoft,
+    fontSize: 17,
+    fontWeight: "600",
   },
   figure: {
     gap: 2,
@@ -642,6 +743,11 @@ const styles = StyleSheet.create({
     fontSize: 22,
     fontWeight: "700",
   },
+  removalError: {
+    color: colors.neg600,
+    fontSize: 12,
+    fontWeight: "500",
+  },
   removeCancel: {
     color: colors.inkSoft,
     fontSize: 13,
@@ -707,6 +813,10 @@ const styles = StyleSheet.create({
   rowAmount: {
     fontSize: 14,
     fontWeight: "600",
+  },
+  rowDirection: {
+    color: colors.inkSoft,
+    fontSize: 12,
   },
   rowDivider: {
     borderTopColor: colors.line,

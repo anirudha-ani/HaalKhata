@@ -1,6 +1,6 @@
 /** Loading UI for the /activity route. */
 
-import { Spinner } from "@/components/ui/Spinner";
+import { Spinner } from "@/components/ui/Spinner/Spinner";
 
 /**
  * Renders a labelled spinner while the /activity route segment loads.

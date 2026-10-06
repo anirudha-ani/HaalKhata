@@ -24,6 +24,7 @@ export function BalancesPanel({
   userById,
   simplified,
   simplifyPending = false,
+  simplifyError = "",
   onToggleSimplified,
   onSettle,
 }: {
@@ -39,6 +40,8 @@ export function BalancesPanel({
   simplified: boolean;
   /** True while a toggle of the mode is in flight; ignores taps meanwhile. */
   simplifyPending?: boolean;
+  /** Why the last flip of the mode did not take; "" when it did. */
+  simplifyError?: string;
   /** Called with the desired state when the simplify-debts toggle is pressed. */
   onToggleSimplified: (value: boolean) => void;
   /**
@@ -118,6 +121,13 @@ export function BalancesPanel({
                 ? "Debts are combined into the fewest payments. Applies to everyone in this group."
                 : "Debts run person to person, exactly as shared. Turning this on combines them — for everyone in this group."}
             </Text>
+            {/* A switch that silently stays where it was looks broken, or
+                worse, looks like it worked. */}
+            {simplifyError ? (
+              <Text accessibilityRole="alert" style={styles.modeError}>
+                Couldn&apos;t change this: {simplifyError}
+              </Text>
+            ) : null}
           </View>
           <Switch
             accessibilityLabel="Simplify debts"
@@ -260,6 +270,12 @@ const styles = StyleSheet.create({
   modeCardOn: {
     backgroundColor: colors.brand50,
     borderColor: colors.brand200,
+  },
+  modeError: {
+    color: colors.brand600,
+    fontSize: 12,
+    fontWeight: "600",
+    marginTop: 4,
   },
   modeHint: {
     color: colors.inkSoft,

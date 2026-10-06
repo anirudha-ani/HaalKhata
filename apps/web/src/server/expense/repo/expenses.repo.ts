@@ -366,12 +366,14 @@ export async function listOneOffExpensesBetween(
  * @param firstUserId - One of the two participants.
  * @param secondUserId - The other participant.
  * @param includeDeleted - Whether soft-deleted rows are returned too (display only).
+ * @param client - Snapshot or transaction client; omitted, the pool.
  * @returns Expense rows involving both users, newest first.
  */
 export async function listExpensesBetween(
   firstUserId: string,
   secondUserId: string,
   includeDeleted = false,
+  client?: PoolClient,
 ): Promise<ExpenseRow[]> {
   return query<ExpenseRow>(
     `SELECT DISTINCT expense.* FROM expenses expense
@@ -382,6 +384,7 @@ export async function listExpensesBetween(
                    UNION SELECT 1 FROM expense_payers payer WHERE payer.expense_id = expense.id AND payer.user_id = $2)
      ORDER BY expense.expense_date DESC, expense.created_at DESC`,
     [firstUserId, secondUserId, includeDeleted],
+    client,
   );
 }
 
@@ -392,12 +395,14 @@ export async function listExpensesBetween(
  * @param includeDeleted - Whether soft-deleted rows are returned too (display only).
  * @param limit - Most rows to return (display only); omitted, every row —
  *   which the balance math needs and a screen does not.
+ * @param client - Snapshot or transaction client; omitted, the pool.
  * @returns Expense rows involving the user, newest first.
  */
 export async function listExpensesInvolvingUser(
   userId: string,
   includeDeleted = false,
   limit?: number,
+  client?: PoolClient,
 ): Promise<ExpenseRow[]> {
   return query<ExpenseRow>(
     `SELECT DISTINCT expense.* FROM expenses expense
@@ -407,6 +412,7 @@ export async function listExpensesInvolvingUser(
      ORDER BY expense.expense_date DESC, expense.created_at DESC
      LIMIT $3`,
     [userId, includeDeleted, limit ?? null],
+    client,
   );
 }
 
@@ -434,23 +440,29 @@ export async function loadExpenseChildren(
   };
   if (expenseIds.length === 0) return result;
 
-  const [payers, splits, items] = await Promise.all([
+  const loadPayers = () =>
     query<PayerRow>(
       `SELECT * FROM expense_payers WHERE expense_id = ANY($1::text[])`,
       [expenseIds],
       client,
-    ),
+    );
+  const loadSplits = () =>
     query<SplitRow>(
       `SELECT * FROM expense_splits WHERE expense_id = ANY($1::text[])`,
       [expenseIds],
       client,
-    ),
+    );
+  const loadItems = () =>
     query<ItemRow>(
       `SELECT * FROM expense_items WHERE expense_id = ANY($1::text[])`,
       [expenseIds],
       client,
-    ),
-  ]);
+    );
+  // One connection runs one statement at a time, so on a transaction's
+  // client these go in turn; only the pool can run them side by side.
+  const [payers, splits, items] = client
+    ? [await loadPayers(), await loadSplits(), await loadItems()]
+    : await Promise.all([loadPayers(), loadSplits(), loadItems()]);
 
   for (const payerRow of payers) {
     const list = result.payers.get(payerRow.expense_id) ?? [];

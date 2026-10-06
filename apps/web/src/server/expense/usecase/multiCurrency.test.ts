@@ -11,6 +11,13 @@ import type { ExpenseRow, PayerRow, SplitRow } from "@/server/expense/repo/expen
 import type { SettlementRow } from "@/server/expense/repo/settlements.repo";
 import type { UserRow } from "@/server/auth/repo/users.repo";
 
+// The reads run inside a database snapshot. Every statement is mocked here,
+// so the snapshot is a pass-through handing out a stand-in client: these
+// tests must not need a database to be running.
+vi.mock("@/server/common/db", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/server/common/db")>()),
+  snapshot: (operation: (client: unknown) => unknown) => operation({}),
+}));
 vi.mock("@/server/expense/repo/expenses.repo", () => ({
   listExpensesBetween: vi.fn(),
   listExpensesByGroup: vi.fn(),
@@ -257,6 +264,7 @@ describe("balances are kept per currency", () => {
       deleted_at: null,
       recorded_by: ALICE,
       deleted_by: null,
+      net_settlement_id: null,
     });
     expect(await owedByScope(ALICE, BOBBY)).toEqual([]);
     expect(await owedByScope(BOBBY, ALICE)).toEqual([

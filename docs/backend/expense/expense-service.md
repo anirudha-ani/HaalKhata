@@ -108,6 +108,96 @@ rate). A payment **without** one pays down the pair's balances across scopes:
 This is why paying from the friends tab closes the group's balance too,
 instead of leaving the group demanding money that already changed hands.
 
+### What a settle action covers
+
+The clients offer exactly two things, and which one follows from where the
+button is — there is no checklist to narrow or widen it:
+
+| Opened from | Settles | Request |
+| --- | --- | --- |
+| Beside a total: a person on Home or Friends, the headline on their page | Everything with that person in the currency, on the net | `net_across_scopes: true` + `position_digest`, no `scope_group_ids` |
+| Beside one balance: a group's page, or one row of "Where the balance sits" on a person's page | That balance alone | `scope_group_ids: [<group id>]`, or `[""]` for what is not in any group |
+
+Both read `settle_positions` from `GetFriendLedger` (shared
+`readSettlePositions`), so a row, the dialog it opens and the write agree on
+the figure. When nothing points the other way a settle-everything request
+has nothing to cancel and stores ordinary payments, with no unit.
+
+Balances that cancel exactly (50.00 owed outside groups, 50.00 owed back in a
+group) have a net of zero: no payment exists to record, so the totals offer
+no settle action and the person's page reads "Even overall". Each balance is
+still listed there with its own settle action.
+
+### Settling on the net (`net_across_scopes`)
+
+Two people can owe each other in different scopes of one currency at once:
+223.77 one way outside groups, 195.51 and 15.57 back inside two. Every list
+shows the pair as the net of both (12.69), so that is what settling the
+person means. Rule 4 above still holds for an ordinary payment; with
+`net_across_scopes` the opposing scopes are cancelled **in the same
+transaction**, which is the one case where they do absorb the difference.
+
+**What is settled is what was shown.** `GetFriendLedger` returns
+`settle_positions`: per currency, the net, every scope behind it, and a
+`digest` (SHA-256 over the sorted scope debts with their direction). The
+position is produced by `pairScopeDebts` — the same function the write calls
+under its locks — so the dialog and the write cannot be reading different
+ledgers. The request sends the digest back as `position_digest`:
+
+1. Only without a `group_id` and without `scope_group_ids` — it is about
+   everything the pair shares in the currency, never a chosen subset.
+2. Both directions are re-read under the locks and digested again. A missing
+   digest is refused; a different one is refused with "these balances changed
+   since you opened this" — the payment is never settled against a ledger
+   other than the one the person agreed to. The clients re-read the position
+   when that happens.
+3. The payer must be behind overall (net > 0) and the amount must not exceed
+   **the net**.
+4. `planNetSettlement` writes three sets of rows: the cash, placed exactly as
+   an ordinary cross-scope payment of that amount would be; the rest of what
+   the payer owes, up to the opposing total, as offsets; and every opposing
+   balance in full, as offsets recorded the other way round. The two sets of
+   offsets sum to zero cash.
+5. Offsets are stored with method `offset` (never accepted from a client) and
+   announced as `settlement_offset`, so no statement or feed shows one as a
+   payment.
+
+A full payment leaves every scope the pair shares in that currency at zero. A
+partial one clears the opposing scopes and leaves the rest of the net in the
+payer's scopes. Other currencies are untouched. When nothing points the other
+way there is nothing to cancel, and the result is an ordinary payment with no
+unit.
+
+**The rows are one unit, and the database holds them to it.** The cash rows
+and the offsets share a parent in `net_settlements` (`currency`, `cash_cents`,
+`offset_cents`) through `settlements.net_settlement_id`:
+
+| Guard | Refuses |
+| --- | --- |
+| `chk_settlements_offset_has_parent` | an offset row with no unit |
+| `trg_net_settlement_integrity` (constraint trigger, deferred to commit) | a unit that spans more than one currency or pair; cash rows that do not add up to `cash_cents` or are not all from one payer; offsets that are not two equal sides of `offset_cents`; a unit that is only partly removed |
+
+The trigger runs for every insert, update and delete on `settlements`,
+whatever code issues it, so a unit that does not cancel out cannot be
+committed by a bug, a script or a hand-typed statement. It is deferred, so
+multi-statement work on a whole unit (recording it, removing it, an account
+merge repointing its rows) is judged once, at commit.
+
+**It is removed as one unit.** `DeleteSettlement` on any row of a unit — the
+payment or a cancelled balance, by either person — removes every row of it,
+and each scope returns to exactly what it was before the payment. A cancelled
+balance can never be left standing without its counterpart.
+
+**Both people are told the same thing.** The payment's feed line says what it
+left ("settles everything between them in USD" or "USD 6.69 still owed
+overall in USD"); each cancelled balance gets its own `settlement_offset`
+line naming who owed whom, in which scope, and that no money moved; the
+notification gives the amount cancelled each way and what remains. In the
+statement the unit's lines carry `net_settlement_id` and `offset`, and sort
+with the payment first and what it cancelled directly beneath it. Removing
+it is announced the same way, to the other person, with the amounts that are
+owed again.
+
 ## Concurrency
 
 Recording and deleting money runs under transaction-scoped advisory locks
@@ -119,7 +209,7 @@ Recording and deleting money runs under transaction-scoped advisory locks
 | CreateExpense (one-off) | one participant-ledger lock per participant |
 | UpdateExpense / DeleteExpense | expense lock → participant or group locks |
 | RecordSettlement | settlement pair lock → group locks (the explicit group, or **every** group either person belongs to for cross-scope) |
-| DeleteSettlement | pair lock → its group's lock |
+| DeleteSettlement | pair lock → its group's lock (for a net settlement: every group the unit touches) |
 
 The over-settle guard is a read followed by writes; without the locks two
 concurrent settlements (two tabs, two devices, the two scopes' pages) both
@@ -127,6 +217,21 @@ validate against debt the other is consuming. Under the pair lock the second
 one waits, re-reads a ledger that already contains the first, and is refused
 by the guards. The feed rows and notifications ride the same transaction —
 they commit with the money or not at all.
+
+**Reads see one instant.** A balance is assembled from several statements,
+and under READ COMMITTED each sees whatever has committed by the time it
+runs: a settlement committing between two of them would yield one direction
+from before the payment and the other from after — a position that never
+existed, shown to someone as what they owe. Every read that returns a
+figure therefore runs inside `snapshot()` (`common/db.ts`: a
+`REPEATABLE READ READ ONLY` transaction): `GetFriendLedger`,
+`GetOverallBalances`, `GetGroupBalances`, and also `ListExpenses` and
+`GetExpense`, where an expense's amount, its payers and its shares are
+separate statements and an edit committing between them would pair one
+version's amount with another's shares. Every figure in one response
+describes the same ledger. Every statement in a snapshot must use its
+client; one sent to the pool reads outside it. Names, comments and the
+activity feed are read outside it: they carry no computed figure.
 
 ## Idempotency
 
@@ -505,11 +610,16 @@ created.
     refused by name; the amount must not exceed the sum of the selected
     same-currency debts. `allocateSettlement` then stores **one row per
     scope** (one-off slate first, then largest group debt).
+  - Net settlement (`net_across_scopes`): see
+    [Settling on the net](#settling-on-the-net-net_across_scopes) — the
+    position is re-read and its digest compared before anything is stored.
 - **Fan-out:** one `settlement` activity event per stored portion in that
   portion's scope, visible only to the two people (with `credit_user_id` so
   each side's feed says "you were paid" vs "you paid"; "recorded by X" is
   appended when the recipient typed it in), plus one notification to the
-  counterparty. All on the payment's transaction.
+  counterparty. A net settlement adds one `settlement_offset` event per
+  cancelled balance and says in the notification what was cancelled and what
+  remains. All on the payment's transaction.
 - Method falls back to `cash` when unrecognized. Empty currency = caller's
   default.
 
@@ -528,6 +638,8 @@ created.
 | received | bool | True = they paid you. |
 | scope_group_ids | repeated string | Cross-scope only: which scopes to pay down (`""` = the one-off ledger). Empty = every scope where the payer owes. |
 | operation_id | string | **Required.** |
+| net_across_scopes | bool | Settle the pair's net in `currency`, cancelling opposing scopes in the same transaction. Not with `group_id` or `scope_group_ids`. |
+| position_digest | string | **Required with `net_across_scopes`:** the `digest` of the `SettlePosition` the person was shown. |
 
 **Sample Request (JSON):**
 
@@ -574,8 +686,13 @@ per scope; callers only use the response to confirm the recording):
 - Runs under the pair lock + the group's lock; existence is re-checked on
   the locked client. The `settlement_deleted` feed row (the only record of
   who removed it and when) and the notification commit with the removal.
-- Note: this removes **one stored row**. A cross-scope payment recorded as
-  several portions is several settlements; each is removed on its own.
+- **A net settlement is removed whole.** Naming any of its rows — the
+  payment or a cancelled balance — removes every row of the unit under the
+  pair lock and the locks of every group it touches, with one
+  `settlement_deleted` row per removed row and a notification saying what is
+  owed again. The database refuses a partial removal regardless.
+- An ordinary cross-scope payment (no unit) is still **one stored row per
+  portion**; each is removed on its own.
 
 #### Request
 
@@ -698,6 +815,15 @@ per scope; callers only use the response to confirm the recording):
   `NotFound` "friend ledger not found".
 - Truncation: newest 300 lines + `truncated: true`; nets and group balances
   are computed over everything regardless.
+- **`settle_positions` is what a settle dialog works from** — not the
+  statement, but the position the settlement write will recompute, with its
+  `digest`. One per currency with anything outstanding; scopes are signed
+  from the caller's side.
+- **One instant:** the statement, the balances and the settle positions are
+  read inside one snapshot (see [Concurrency](#concurrency)), so they always
+  describe the same ledger.
+- A net settlement's lines sort with the payment first and its cancelled
+  balances directly beneath it, in the same order for both people.
 
 #### Request
 
@@ -719,6 +845,7 @@ per scope; callers only use the response to confirm the recording):
 | is_friend | bool | Whether an explicit friendship exists (the page also works for mutual group members and historical counterparties). |
 | mutual_groups | repeated MutualGroup | Every shared group, settled ones included. |
 | truncated | bool | True when older lines were cut. |
+| settle_positions | repeated SettlePosition | Per currency: `net_cents` (> 0 = they owe you), `scopes` (`group_id`, `group_name`, `net_cents`, `simplified`), and the `digest` a net settlement must send back. |
 
 **FriendLedgerEntry** (signs always read "positive = in your favour"):
 
@@ -734,3 +861,5 @@ per scope; callers only use the response to confirm the recording):
 | deleted | bool | Struck-through line. |
 | recorded_by_name | string | Settlements only: who asserted the payment. |
 | currency | string | The column this line's running balance continues. |
+| net_settlement_id | string | The unit this line belongs to; empty for anything that is not part of a net settlement. |
+| offset | bool | True for a balance that was cancelled (no money moved); false for the payment itself. |

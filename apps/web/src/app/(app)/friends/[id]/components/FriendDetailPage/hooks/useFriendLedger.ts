@@ -10,11 +10,24 @@ import { MONEY_KEYS, queryKeys } from "@haalkhata/shared/api/queryKeys";
 /** Which way a settlement being recorded moved the money. */
 export type SettleDirection = "paid" | "received";
 
-/** The settle-up modal's opening state: direction and currency. */
+/** The settle-up modal's opening state: direction, currency, and how much it covers. */
 export interface Settling {
   direction: SettleDirection;
   /** ISO 4217 code of the balance being settled. */
   currency: string;
+  /**
+   * The one balance being settled: a group's id, or "" for what is not in
+   * any group. Undefined settles everything with the person.
+   */
+  scopeId?: string;
+}
+
+/** A payment's removal that was refused, and the line it was for. */
+export interface SettlementRemovalError {
+  /** The payment line that was tapped. */
+  settlementId: string;
+  /** The reason, as the server worded it. */
+  message: string;
 }
 
 /**
@@ -25,7 +38,7 @@ export interface Settling {
  * @returns The `ledger` response (or undefined while loading), `isLoading`,
  *   the load `error`, `sendReminder` with its `isReminding` flag and the
  *   resulting `reminderNote`, `removeSettlement` with its arming and in-flight
- *   ids, and `settling`/`openSettle`/`closeSettle` driving the settle-up modal.
+ *   ids and the `settlementRemovalError` of a refused one, and `settling`/`openSettle`/`closeSettle` driving the settle-up modal.
  */
 export function useFriendLedger(friendId: string) {
   const queryClient = useQueryClient();
@@ -34,6 +47,8 @@ export function useFriendLedger(friendId: string) {
   const [reminderNote, setReminderNote] = useState("");
   const [friendRequestSent, setFriendRequestSent] = useState(false);
   const [confirmingSettlementId, setConfirmingSettlementId] = useState("");
+  const [settlementRemovalError, setSettlementRemovalError] =
+    useState<SettlementRemovalError | null>(null);
 
   const ledger = useQuery({
     queryKey: queryKeys.friendLedger(friendId),
@@ -62,7 +77,15 @@ export function useFriendLedger(friendId: string) {
         queryClient.invalidateQueries({ queryKey: moneyQueryKey });
       }
     },
-    onError: (mutationError) => setReminderNote(errorMessage(mutationError)),
+    // The refusal goes on the line that was tapped: the statement can be
+    // screens below anything shown at the top. A refusal usually means the
+    // line changed under this view (the other person removed it first), so
+    // the statement is read again as well.
+    onError: (mutationError, settlementId) => {
+      setConfirmingSettlementId("");
+      setSettlementRemovalError({ settlementId, message: errorMessage(mutationError) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.friendLedger(friendId) });
+    },
   });
 
   const [confirmingRemoval, setConfirmingRemoval] = useState(false);
@@ -126,14 +149,15 @@ export function useFriendLedger(friendId: string) {
      * @param settlementId - The payment line being removed.
      */
     removeSettlement: (settlementId: string) => {
+      setSettlementRemovalError(null);
       if (confirmingSettlementId !== settlementId) {
         setConfirmingSettlementId(settlementId);
         return;
       }
-      setReminderNote("");
       removeSettlementMutation.mutate(settlementId);
     },
     confirmingSettlementId,
+    settlementRemovalError,
     removingSettlementId: removeSettlementMutation.isPending
       ? removeSettlementMutation.variables
       : undefined,
@@ -143,9 +167,11 @@ export function useFriendLedger(friendId: string) {
      *
      * @param direction - "paid" when you paid them, "received" when they paid you.
      * @param currency - ISO 4217 code of the balance being settled.
+     * @param scopeId - One balance to settle alone (a group id, or "" for what
+     *   is not in any group); omitted to settle everything with the person.
      */
-    openSettle: (direction: SettleDirection, currency: string) =>
-      setSettling({ direction, currency }),
+    openSettle: (direction: SettleDirection, currency: string, scopeId?: string) =>
+      setSettling({ direction, currency, scopeId }),
     closeSettle: () => setSettling(null),
   };
 }

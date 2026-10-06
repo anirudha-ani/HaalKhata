@@ -4,9 +4,9 @@
 import { ArrowRight, Wand2 } from "lucide-react";
 import type { BalancesResponse } from "@haalkhata/protogen/expense/v1/expense_pb";
 import type { User } from "@haalkhata/protogen/common/v1/common_pb";
-import { Avatar } from "@/components/ui/Avatar";
-import { Money } from "@/components/ui/Money";
-import { PersonLink } from "@/components/people/PersonLink";
+import { Avatar } from "@/components/ui/Avatar/Avatar";
+import { Money } from "@/components/ui/Money/Money";
+import { PersonLink } from "@/components/people/PersonLink/PersonLink";
 
 /**
  * Renders the balances tab of a group: every member's net position, then the
@@ -22,6 +22,7 @@ export function BalancesPanel({
   userById,
   simplified,
   simplifyPending = false,
+  simplifyError = "",
   onToggleSimplified,
   onSettle,
 }: {
@@ -37,6 +38,8 @@ export function BalancesPanel({
   simplified: boolean;
   /** True while a toggle of the mode is in flight; disables the switch. */
   simplifyPending?: boolean;
+  /** Why the last flip of the mode did not take; "" when it did. */
+  simplifyError?: string;
   /** Called with the desired state when the simplify-debts toggle is pressed. */
   onToggleSimplified: (value: boolean) => void;
   /**
@@ -125,6 +128,13 @@ export function BalancesPanel({
                   ? "Debts are combined into the fewest payments, so you may pay a different person than you shared an expense with. Applies to everyone in this group."
                   : "Debts run person to person, exactly as shared. Turning this on combines them into fewer payments — for everyone in this group."}
               </p>
+              {/* A switch that silently stays where it was looks broken, or
+                  worse, looks like it worked. */}
+              {simplifyError ? (
+                <p role="alert" className="mt-1.5 text-xs font-semibold text-brand-600">
+                  Couldn&apos;t change this: {simplifyError}
+                </p>
+              ) : null}
             </div>
             <button
               type="button"

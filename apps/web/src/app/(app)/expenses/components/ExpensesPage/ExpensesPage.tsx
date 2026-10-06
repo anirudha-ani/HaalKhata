@@ -3,11 +3,12 @@
 
 import Link from "next/link";
 import { Plus } from "lucide-react";
-import { ExpenseList } from "@/components/expenses/ExpenseList";
-import { SearchField } from "@/components/ui/SearchField";
-import { Spinner } from "@/components/ui/Spinner";
+import { ExpenseList } from "@/components/expenses/ExpenseList/ExpenseList";
+import { SearchField } from "@/components/ui/SearchField/SearchField";
+import { Spinner } from "@/components/ui/Spinner/Spinner";
 import { useHydrated } from "@/lib/hooks/useHydrated";
 import { noExpensesMessage } from "@haalkhata/shared/expense/scopeFilter";
+import { ScopeFilter } from "./components/ScopeFilter/ScopeFilter";
 import { useExpensesList } from "./hooks/useExpensesList";
 
 /**
@@ -17,7 +18,7 @@ import { useExpensesList } from "./hooks/useExpensesList";
  * This page exists because one-off expenses had no home of their own: they
  * were reachable only through the friend they were shared with, so "what
  * one-off expenses do I have?" had no answer. The One-off chip is that
- * answer; the group chips come along for free from the same filter.
+ * answer; filtering by one group comes along for free from the same filter.
  *
  * @returns The expenses page content, or a spinner while the list loads.
  */
@@ -26,13 +27,6 @@ export function ExpensesPage() {
   const hydrated = useHydrated();
   if (!hydrated || listState.isLoading) return <Spinner label="Loading expenses…" />;
 
-  const scopeChips = [
-    { value: "all", label: "All" },
-    { value: "oneoff", label: "One-off" },
-    ...listState.groups.flatMap((summary) =>
-      summary.group ? [{ value: summary.group.id, label: summary.group.name }] : [],
-    ),
-  ];
   const filteredGroupName = listState.groupNameById.get(listState.scope) ?? "";
 
   return (
@@ -63,23 +57,13 @@ export function ExpensesPage() {
         ) : null}
       </div>
 
-      <div className="flex flex-wrap items-center gap-1.5">
-        {scopeChips.map((chip) => (
-          <button
-            key={chip.value}
-            type="button"
-            aria-pressed={listState.scope === chip.value}
-            onClick={() => listState.setScope(chip.value)}
-            className={`rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
-              listState.scope === chip.value
-                ? "border-brand-600 bg-brand-50 text-brand-700"
-                : "border-line text-ink-soft hover:border-brand-200"
-            }`}
-          >
-            {chip.label}
-          </button>
-        ))}
-      </div>
+      <ScopeFilter
+        scope={listState.scope}
+        onScopeChange={listState.setScope}
+        groups={listState.groups.flatMap((summary) =>
+          summary.group ? [{ id: summary.group.id, name: summary.group.name }] : [],
+        )}
+      />
 
       {/* The list is bounded; the balances are not. Say so rather than let
           an old row's absence read as its deletion. */}

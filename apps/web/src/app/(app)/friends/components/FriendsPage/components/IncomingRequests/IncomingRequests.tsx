@@ -2,8 +2,8 @@
 /** The "Friend requests" tab: people waiting on the current user's answer. */
 
 import { Check, Inbox, X } from "lucide-react";
-import { Avatar } from "@/components/ui/Avatar";
-import { EmptyState } from "@/components/ui/EmptyState";
+import { Avatar } from "@/components/ui/Avatar/Avatar";
+import { EmptyState } from "@/components/ui/EmptyState/EmptyState";
 import type { FriendsController } from "../../hooks/useFriends";
 
 /**

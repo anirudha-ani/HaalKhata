@@ -7,6 +7,8 @@ export const TYPE_EMOJI: Record<string, string> = {
   expense_deleted: "🗑️",
   settlement: "💸",
   settlement_deleted: "↩️",
+  // Balances cancelled against each other: nobody was paid.
+  settlement_offset: "⚖️",
   member_added: "👋",
   group_created: "📒",
   ownership_transferred: "👑",
