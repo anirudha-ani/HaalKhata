@@ -61,6 +61,13 @@ export const ACTIVITY_LOOK: Record<string, ActivityLook> = {
     tile: "bg-paper text-ink-soft ring-1 ring-line",
     label: "Comment",
   },
+  // Balances cancelled against each other when a pair settles on their net.
+  // Nobody was paid this amount, so it is never drawn as money moving.
+  settlement_offset: {
+    glyph: "buddies",
+    tile: "bg-paper text-ink-soft ring-1 ring-line",
+    label: "Balances cancelled",
+  },
   // Muted like a deleted expense: a removed payment is inert history.
   settlement_deleted: {
     glyph: "skull",

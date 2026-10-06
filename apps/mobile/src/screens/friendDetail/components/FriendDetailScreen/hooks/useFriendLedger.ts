@@ -16,6 +16,14 @@ export interface Settling {
   currency: string;
 }
 
+/** A payment's removal that was refused, and the line it was for. */
+export interface SettlementRemovalError {
+  /** The payment line that was tapped. */
+  settlementId: string;
+  /** The reason, as the server worded it. */
+  message: string;
+}
+
 /**
  * Loads the full shared history with one person and holds the settle-up
  * sheet's open/direction state.
@@ -25,7 +33,8 @@ export interface Settling {
  *   the load `error`, `refresh`/`isRefreshing` for pull-to-refresh,
  *   `addFriend` with `isAddingFriend`/`friendRequestSent`, `sendReminder`
  *   with its `isReminding` flag and the resulting `reminderNote`,
- *   `removeSettlement` with its arming and in-flight ids, and
+ *   `removeSettlement` with its arming and in-flight ids and the
+ *   `settlementRemovalError` of a refused one, and
  *   `settling`/`openSettle`/`closeSettle` driving the settle-up sheet.
  */
 export function useFriendLedger(friendId: string) {
@@ -35,6 +44,8 @@ export function useFriendLedger(friendId: string) {
   const [reminderNote, setReminderNote] = useState("");
   const [friendRequestSent, setFriendRequestSent] = useState(false);
   const [confirmingSettlementId, setConfirmingSettlementId] = useState("");
+  const [settlementRemovalError, setSettlementRemovalError] =
+    useState<SettlementRemovalError | null>(null);
 
   const ledger = useQuery({
     queryKey: queryKeys.friendLedger(friendId),
@@ -63,7 +74,15 @@ export function useFriendLedger(friendId: string) {
         queryClient.invalidateQueries({ queryKey: moneyQueryKey });
       }
     },
-    onError: (mutationError) => setReminderNote(errorMessage(mutationError)),
+    // The refusal goes on the line that was tapped: the statement can be
+    // screens below anything shown at the top. A refusal usually means the
+    // line changed under this view (the other person removed it first), so
+    // the statement is read again as well.
+    onError: (mutationError, settlementId) => {
+      setConfirmingSettlementId("");
+      setSettlementRemovalError({ settlementId, message: errorMessage(mutationError) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.friendLedger(friendId) });
+    },
   });
 
   const [confirmingRemoval, setConfirmingRemoval] = useState(false);
@@ -129,14 +148,15 @@ export function useFriendLedger(friendId: string) {
      * @param settlementId - The payment line being removed.
      */
     removeSettlement: (settlementId: string) => {
+      setSettlementRemovalError(null);
       if (confirmingSettlementId !== settlementId) {
         setConfirmingSettlementId(settlementId);
         return;
       }
-      setReminderNote("");
       removeSettlementMutation.mutate(settlementId);
     },
     confirmingSettlementId,
+    settlementRemovalError,
     removingSettlementId: removeSettlementMutation.isPending
       ? removeSettlementMutation.variables
       : undefined,

@@ -11,8 +11,7 @@ import { Spinner } from "@/components/ui/Spinner/Spinner";
 import { errorMessage } from "@/lib/api/connect";
 import { useHydrated } from "@/lib/hooks/useHydrated";
 import { outstandingBuckets } from "@haalkhata/shared/money/balances";
-import { formatMoney } from "@haalkhata/shared/money/money";
-import { localDate } from "@haalkhata/shared/time/localTime";
+import { LedgerStatement } from "./components/LedgerStatement/LedgerStatement";
 import { useFriendLedger } from "./hooks/useFriendLedger";
 
 /**
@@ -281,124 +280,14 @@ export function FriendDetailPage({
             </p>
           </div>
         ) : (
-          <div className="overflow-x-auto rounded-2xl border border-line bg-card">
-            <table className="w-full min-w-max border-collapse text-sm">
-              <thead>
-                <tr className="border-b border-line text-xs text-ink-soft">
-                  <th className="py-2 pl-4 text-left font-medium">Date</th>
-                  <th className="py-2 pl-3 text-left font-medium">What</th>
-                  <th className="py-2 pl-3 text-right font-medium">Total</th>
-                  <th className="py-2 pl-3 text-right font-medium">Change</th>
-                  <th className="py-2 pr-4 pl-3 text-right font-medium">Balance</th>
-                </tr>
-              </thead>
-              <tbody>
-                {entries.map((entry) => (
-                  <tr key={`${entry.kind}-${entry.id}`} className="border-b border-line/60">
-                    <td className="py-2.5 pl-4 text-xs whitespace-nowrap text-ink-soft tabular-nums">
-                      {/* A settlement is a moment, shown in the viewer's own
-                          timezone; an expense's date is the calendar day the
-                          user picked, which has no timezone to convert. */}
-                      {entry.createdAt ? localDate(entry.createdAt) : entry.date}
-                    </td>
-                    <td className="py-2.5 pl-3">
-                      {entry.kind === "expense" ? (
-                        <Link
-                          href={`/expenses/${entry.id}`}
-                          className={`font-medium hover:text-brand-600 ${
-                            entry.deleted ? "text-ink-soft line-through" : ""
-                          }`}
-                        >
-                          {entry.description}
-                        </Link>
-                      ) : (
-                        <span
-                          className={`font-medium ${
-                            entry.deleted ? "text-ink-soft line-through" : "text-pos-700"
-                          }`}
-                        >
-                          {entry.description}
-                        </span>
-                      )}
-                      {/* Struck through but kept: a deleted expense or a
-                          removed payment no longer moves the balance, and
-                          the row is what explains why the balance leans the
-                          way it does now. */}
-                      {entry.deleted ? (
-                        <span className="ml-2 rounded-full bg-paper px-2 py-0.5 text-[11px] text-ink-soft">
-                          {entry.kind === "settlement" ? "removed" : "deleted"}
-                        </span>
-                      ) : null}
-                      {/* A payment is a claim one of the two of you typed
-                          in; the statement says which, on every line. */}
-                      {entry.recordedByName ? (
-                        <span className="ml-2 rounded-full bg-paper px-2 py-0.5 text-[11px] text-ink-soft">
-                          recorded by {entry.recordedByName}
-                        </span>
-                      ) : null}
-                      {/* A mistyped payment is the reason this exists. Two
-                          taps: the first arms the button, the second sends. */}
-                      {entry.kind === "settlement" && !entry.deleted ? (
-                        <button
-                          type="button"
-                          onClick={() => view.removeSettlement(entry.id)}
-                          disabled={view.removingSettlementId === entry.id}
-                          aria-label={`Remove the payment ${entry.description}`}
-                          className="ml-2 rounded-full border border-line px-2 py-0.5 text-[11px] font-medium text-ink-soft hover:border-neg-600 hover:text-neg-600 disabled:opacity-50"
-                        >
-                          {view.removingSettlementId === entry.id
-                            ? "Removing…"
-                            : view.confirmingSettlementId === entry.id
-                              ? "Tap again to remove"
-                              : "Remove"}
-                        </button>
-                      ) : null}
-                      {entry.groupName ? (
-                        <span className="ml-2 rounded-full bg-paper px-2 py-0.5 text-[11px] text-ink-soft">
-                          {entry.groupName}
-                        </span>
-                      ) : null}
-                    </td>
-                    <td className="py-2.5 pl-3 text-right text-ink-soft tabular-nums">
-                      {formatMoney(entry.totalCents, entry.currency || currency)}
-                    </td>
-                    {/* The signed column is the one that matters: the expense
-                        total is context, your share of it is the movement. */}
-                    <td
-                      className={`py-2.5 pl-3 text-right font-semibold tabular-nums ${
-                        entry.deleted
-                          ? "text-ink-soft"
-                          : entry.deltaCents > 0
-                            ? "text-pos-700"
-                            : "text-neg-600"
-                      }`}
-                    >
-                      {entry.deleted ? (
-                        "—"
-                      ) : (
-                        <>
-                          {entry.deltaCents > 0 ? "+" : "−"}
-                          {formatMoney(Math.abs(entry.deltaCents), entry.currency || currency)}
-                        </>
-                      )}
-                    </td>
-                    {/* The running balance is per currency: a euro line
-                        continues the euro column, not the dollar one. */}
-                    <td className="py-2.5 pr-4 pl-3 text-right tabular-nums">
-                      {formatMoney(Math.abs(entry.balanceAfterCents), entry.currency || currency)}
-                      <span className="ml-1 text-[11px] text-ink-soft">
-                        {entry.balanceAfterCents === 0
-                          ? "even"
-                          : entry.balanceAfterCents > 0
-                            ? "to you"
-                            : "to them"}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <LedgerStatement
+            entries={entries}
+            currency={currency}
+            confirmingSettlementId={view.confirmingSettlementId}
+            removingSettlementId={view.removingSettlementId}
+            removalError={view.settlementRemovalError}
+            onRemoveSettlement={view.removeSettlement}
+          />
         )}
         {entries.length > 0 ? (
           <p className="text-xs text-ink-soft">

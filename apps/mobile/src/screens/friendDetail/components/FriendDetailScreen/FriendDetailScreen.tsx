@@ -13,6 +13,7 @@ import { Money } from "@/components/ui/Money";
 import { Spinner } from "@/components/ui/Spinner";
 import { errorMessage } from "@/lib/api/connect";
 import { outstandingBuckets } from "@haalkhata/shared/money/balances";
+import { netSettlementTag } from "@haalkhata/shared/expense/netSettlementLines";
 import { formatMoney } from "@haalkhata/shared/money/money";
 import { localDate } from "@haalkhata/shared/time/localTime";
 import { colors, fonts, radii, spacing } from "@/lib/theme/theme";
@@ -300,10 +301,22 @@ export function FriendDetailScreen({
             {entries.map((entry, index) => {
               const isSettlement = entry.kind === "settlement";
               const removing = view.removingSettlementId === entry.id;
+              const netTag = netSettlementTag(entry, entries);
+              const removalError =
+                view.settlementRemovalError?.settlementId === entry.id
+                  ? view.settlementRemovalError.message
+                  : "";
               return (
                 <View
                   key={`${entry.kind}-${entry.id}`}
-                  style={[styles.entry, index > 0 ? styles.rowDivider : null]}
+                  // The lines of one net settlement are marked down their
+                  // left edge: the payment and the balances it cancelled
+                  // were recorded together and are removed together.
+                  style={[
+                    styles.entry,
+                    index > 0 ? styles.rowDivider : null,
+                    entry.netSettlementId ? styles.entryOfNetSettlement : null,
+                  ]}
                 >
                   <View style={styles.entryTop}>
                     {/* A settlement is a moment, shown in the viewer's own
@@ -326,6 +339,15 @@ export function FriendDetailScreen({
                     {entry.deleted ? (
                       <View style={styles.pill}>
                         <Text style={styles.pillText}>{isSettlement ? "removed" : "deleted"}</Text>
+                      </View>
+                    ) : null}
+                    {/* A net settlement is one payment plus the balances it
+                        cancelled against each other. Each of its lines says
+                        which it is, so the cash that moved is never confused
+                        with the amounts that only cancelled. */}
+                    {netTag ? (
+                      <View style={styles.pill}>
+                        <Text style={styles.pillText}>{netTag}</Text>
                       </View>
                     ) : null}
                     {/* A payment is a claim one of the two of you typed in;
@@ -351,9 +373,15 @@ export function FriendDetailScreen({
                   ) : (
                     <Text
                       numberOfLines={2}
+                      // A cancelled balance is not a payment and is not
+                      // coloured as one: nobody received that money.
                       style={[
                         styles.entryTitle,
-                        entry.deleted ? styles.entryTitleDeleted : styles.entryTitleSettlement,
+                        entry.deleted
+                          ? styles.entryTitleDeleted
+                          : entry.offset
+                            ? null
+                            : styles.entryTitleSettlement,
                       ]}
                     >
                       {entry.description}
@@ -406,18 +434,31 @@ export function FriendDetailScreen({
                   </View>
 
                   {/* A mistyped payment is the reason this exists. Two taps:
-                      the first arms the button, the second sends. */}
-                  {isSettlement && !entry.deleted ? (
+                      the first arms the button, the second sends. A cancelled
+                      balance has no remove of its own: it goes when the
+                      payment it belongs to goes, and the second tap says so. */}
+                  {isSettlement && !entry.deleted && !entry.offset ? (
                     <View style={styles.entryAction}>
                       <Button
                         busy={removing}
                         compact
                         label={
-                          view.confirmingSettlementId === entry.id ? "Tap again to remove" : "Remove"
+                          view.confirmingSettlementId !== entry.id
+                            ? "Remove"
+                            : entry.netSettlementId
+                              ? "Tap again: removes it and everything it cancelled"
+                              : "Tap again to remove"
                         }
                         onPress={() => view.removeSettlement(entry.id)}
                         variant="outline"
                       />
+                      {/* On the line that was tapped: the statement can be
+                          screens below anything shown at the top. */}
+                      {removalError ? (
+                        <Text accessibilityRole="alert" style={styles.removalError}>
+                          Not removed — {removalError}
+                        </Text>
+                      ) : null}
                     </View>
                   ) : null}
                 </View>
@@ -516,6 +557,7 @@ const styles = StyleSheet.create({
   },
   entryAction: {
     alignItems: "flex-start",
+    gap: spacing.xs,
     marginTop: spacing.xs,
   },
   entryDate: {
@@ -527,6 +569,11 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: spacing.lg,
     marginTop: spacing.xs,
+  },
+  entryOfNetSettlement: {
+    borderLeftColor: colors.brand200,
+    borderLeftWidth: 3,
+    paddingLeft: spacing.lg - 3,
   },
   entryTitle: {
     color: colors.ink,
@@ -641,6 +688,11 @@ const styles = StyleSheet.create({
     fontFamily: fonts.display,
     fontSize: 22,
     fontWeight: "700",
+  },
+  removalError: {
+    color: colors.neg600,
+    fontSize: 12,
+    fontWeight: "500",
   },
   removeCancel: {
     color: colors.inkSoft,
