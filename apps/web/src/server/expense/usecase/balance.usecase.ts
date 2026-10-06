@@ -40,6 +40,7 @@ import {
 } from "../domain/settlementAllocation";
 import { listFriendIds } from "@/server/social/repo/friendships.repo";
 import { sumUserNetByGroup } from "@/server/expense/repo/ledger.repo";
+import { snapshot } from "@/server/common/db";
 import { denied, notFound } from "@/server/common/errors";
 import { toInt32Cents } from "@/server/common/money";
 import { toPublicUser } from "@/server/auth/usecase/user.mapper";
@@ -212,10 +213,16 @@ function routeDebts(ledger: LedgerEntry[], simplify: boolean): LedgerEntry[] {
  */
 export async function getGroupBalances(userId: string, groupId: string) {
   if (!(await isMember(groupId, userId))) denied("you are not a member of this group");
-  const pairwise = await groupLedger(groupId);
+  // One instant for the whole group: its expenses, their shares and its
+  // payments are separate statements, and a balance assembled across a
+  // commit is one the group never had.
+  const { pairwise, members } = await snapshot(async (client) => ({
+    pairwise: await groupLedger(groupId, client),
+    members: await listMembers(groupId, client),
+  }));
   const netByUser = netBalances(pairwise);
   // Every member appears, including settled-up ones.
-  for (const member of await listMembers(groupId)) {
+  for (const member of members) {
     if (!netByUser.has(member.id)) netByUser.set(member.id, 0);
   }
   // Aggregates, checked against the wire: two valid rows can already sum
@@ -266,14 +273,16 @@ export async function userNetInGroup(
  *
  * @param userId - User whose positions are computed.
  * @param groupIds - Groups to compute the position in.
+ * @param client - Snapshot or transaction client; omitted, the pool.
  * @returns Map of group id → net cents for that user (> 0 ⇒ owed money);
  *   every requested group is present, at zero when nothing involves them.
  */
 export async function userNetInGroups(
   userId: string,
   groupIds: string[],
+  client?: PoolClient,
 ): Promise<Map<string, number>> {
-  const nets = await sumUserNetByGroup(userId, groupIds);
+  const nets = await sumUserNetByGroup(userId, groupIds, client);
   return new Map(groupIds.map((groupId) => [groupId, nets.get(groupId) ?? 0]));
 }
 
@@ -359,20 +368,27 @@ export async function amountOwed(
  * per currency, never a sum across them.
  *
  * @param userId - User whose positions are computed.
+ * @param client - Snapshot client, so every statement reads the same instant.
  * @returns Map of counterparty id → cents per currency (> 0 ⇒ they owe the
  *   user); counterparties with nothing outstanding in any currency are omitted.
  */
-async function pairNetsForUser(userId: string): Promise<Map<string, CurrencyCents>> {
-  const groups = await listGroupsByUser(userId);
+async function pairNetsForUser(
+  userId: string,
+  client: PoolClient,
+): Promise<Map<string, CurrencyCents>> {
+  const groups = await listGroupsByUser(userId, client);
   const simplifiedGroupIds = new Set(
     groups.filter((group) => group.simplify_debts).map((group) => group.id),
   );
 
-  const expenses = (await listExpensesInvolvingUser(userId)).filter(
+  const expenses = (await listExpensesInvolvingUser(userId, false, undefined, client)).filter(
     (expense) => !simplifiedGroupIds.has(expense.group_id ?? ""),
   );
-  const children = await loadExpenseChildren(expenses.map((expense) => expense.id));
-  const settlements = (await listSettlementsInvolvingUser(userId)).filter(
+  const children = await loadExpenseChildren(
+    expenses.map((expense) => expense.id),
+    client,
+  );
+  const settlements = (await listSettlementsInvolvingUser(userId, client)).filter(
     (settlement) => !simplifiedGroupIds.has(settlement.group_id ?? ""),
   );
 
@@ -390,7 +406,7 @@ async function pairNetsForUser(userId: string): Promise<Map<string, CurrencyCent
   }
   for (const group of groups) {
     if (!group.simplify_debts) continue;
-    for (const edge of routeDebts(await groupLedger(group.id), true)) {
+    for (const edge of routeDebts(await groupLedger(group.id, client), true)) {
       accumulate(group.currency, edge);
     }
   }
@@ -425,15 +441,20 @@ function owedInEntries(entries: LedgerEntry[], payerId: string, creditorId: stri
  *
  * @param userId - The viewer.
  * @param otherUserId - The counterparty.
+ * @param client - Snapshot or transaction client; omitted, the pool.
  * @returns Cents per currency; > 0 ⇒ the other user owes the viewer one-off.
  */
 export async function oneOffNetsBetween(
   userId: string,
   otherUserId: string,
+  client?: PoolClient,
 ): Promise<CurrencyCents> {
-  const expenses = await listOneOffExpensesBetween(userId, otherUserId);
-  const children = await loadExpenseChildren(expenses.map((expense) => expense.id));
-  const settlements = await listOneOffSettlementsBetween(userId, otherUserId);
+  const expenses = await listOneOffExpensesBetween(userId, otherUserId, client);
+  const children = await loadExpenseChildren(
+    expenses.map((expense) => expense.id),
+    client,
+  );
+  const settlements = await listOneOffSettlementsBetween(userId, otherUserId, client);
   const nets: CurrencyCents = new Map();
   for (const [currency, entries] of ledgersByCurrency(expenses, children, settlements)) {
     addCents(
@@ -544,15 +565,22 @@ export interface PairSettlePosition {
 /**
  * A pair's settle positions, one per currency with anything outstanding.
  *
+ * A position is read at one instant. Its two directions and each scope are
+ * separate statements, so without a snapshot a settlement committing between
+ * them would produce a position that never existed — one direction from
+ * before the payment, the other from after.
+ *
  * @param userId - The viewer.
  * @param friendId - The other person.
+ * @param client - Snapshot client, so every scope reads the same instant.
  * @returns Positions by currency code, each with its scopes and digest.
  */
 export async function pairSettlePositions(
   userId: string,
   friendId: string,
+  client: PoolClient,
 ): Promise<PairSettlePosition[]> {
-  const debts = await pairScopeDebts(userId, friendId);
+  const debts = await pairScopeDebts(userId, friendId, client);
   const currencies = [...new Set(debts.map((debt) => debt.currency))].sort();
   return currencies.map((currency) => {
     const scopes = debts
@@ -593,7 +621,7 @@ function largestBucket(buckets: CurrencyCents): number {
  * @throws UsecaseError (not_found) if a counterparty's user row is missing.
  */
 export async function getOverallBalances(userId: string) {
-  const perCounterparty = await pairNetsForUser(userId);
+  const perCounterparty = await snapshot((client) => pairNetsForUser(userId, client));
   const defaultCurrency = (await findUserById(userId))?.default_currency || "USD";
   const totals = new Map<string, { youOweCents: number; owedToYouCents: number }>();
   for (const buckets of perCounterparty.values()) {
@@ -645,7 +673,8 @@ export async function getOverallBalances(userId: string) {
  * @returns Cents per currency; > 0 ⇒ the other user owes the caller.
  */
 export async function netWithUser(userId: string, otherUserId: string): Promise<CurrencyCents> {
-  return (await pairNetsForUser(userId)).get(otherUserId) ?? new Map();
+  const perCounterparty = await snapshot((client) => pairNetsForUser(userId, client));
+  return perCounterparty.get(otherUserId) ?? new Map();
 }
 
 /**
@@ -704,15 +733,19 @@ interface FriendLedgerScopeBalance {
  * Loads names for the groups referenced by statement expenses.
  *
  * @param expenses - Shared expenses whose group labels will be rendered.
+ * @param client - Snapshot client the rest of the statement is read on.
  * @returns Group id to display name.
  */
-async function groupNamesForExpenses(expenses: ExpenseRow[]): Promise<Map<string, string>> {
+async function groupNamesForExpenses(
+  expenses: ExpenseRow[],
+  client: PoolClient,
+): Promise<Map<string, string>> {
   const groupNames = new Map<string, string>();
   const groupIds = new Set(
     expenses.flatMap((expense) => (expense.group_id ? [expense.group_id] : [])),
   );
   for (const groupId of groupIds) {
-    const group = await findGroupById(groupId);
+    const group = await findGroupById(groupId, client);
     if (group) groupNames.set(groupId, group.name);
   }
   return groupNames;
@@ -885,6 +918,7 @@ function historyNetsByScope(lines: FriendLedgerLine[]): Map<string, number> {
  * @param groupNames - Group labels keyed by id.
  * @param userId - Statement viewer.
  * @param friendId - Other person on the statement.
+ * @param client - Snapshot client the rest of the statement is read on.
  * @returns Per-scope balances following each group's routing mode.
  */
 async function friendScopeBalances(
@@ -893,11 +927,12 @@ async function friendScopeBalances(
   groupNames: ReadonlyMap<string, string>,
   userId: string,
   friendId: string,
+  client: PoolClient,
 ): Promise<FriendLedgerScopeBalance[]> {
   const balances: FriendLedgerScopeBalance[] = [];
   for (const group of mutualGroups) {
     if (!group.simplify_debts) continue;
-    const edges = simplifyDebts(netBalances(await groupLedger(group.id)));
+    const edges = simplifyDebts(netBalances(await groupLedger(group.id, client)));
     const routedCents =
       owedInEntries(edges, friendId, userId) - owedInEntries(edges, userId, friendId);
     const scopeKey = friendScopeKey(group.id, group.currency);
@@ -954,94 +989,106 @@ async function friendScopeBalances(
 export async function getFriendLedger(userId: string, friendId: string) {
   const friend = await findUserById(friendId);
   const defaultCurrency = (await findUserById(userId))?.default_currency || "USD";
-
-  const expenses = await listExpensesBetween(userId, friendId, true);
-  const children = await loadExpenseChildren(expenses.map((expense) => expense.id));
-  const settlements = await listSettlementsBetween(userId, friendId, true);
-  const groupNames = await groupNamesForExpenses(expenses);
-  const lines = [
-    ...expenseLedgerLines(expenses, children, groupNames, userId, friendId),
-    ...settlementLedgerLines(settlements, groupNames, userId, friend?.name ?? ""),
-  ];
-  const entries = friendLedgerEntries(lines);
-  // The statement is a display; the balances above it are computed over
-  // everything. Past the cap the oldest lines are left off and the response
-  // says so, rather than shipping an unbounded table to a phone.
-  const truncated = entries.length > LEDGER_DISPLAY_LIMIT;
-  const shownEntries = truncated ? entries.slice(0, LEDGER_DISPLAY_LIMIT) : entries;
-
-  const netByScope = historyNetsByScope(lines);
-
-  // Relationship context, not balance context: which groups both belong to
-  // (settled ones included — "where do I know them from" is not "where does
-  // money move"), and whether an explicit friendship exists.
-  const friendGroupIds = new Set((await listGroupsByUser(friendId)).map((group) => group.id));
-  const mutualGroupRows = (await listGroupsByUser(userId)).filter((group) =>
-    friendGroupIds.has(group.id),
-  );
   const isFriend = (await listFriendIds(userId)).includes(friendId);
-  if (!friend || (!isFriend && mutualGroupRows.length === 0 && entries.length === 0)) {
-    // Identical for an unknown id and an existing unrelated account: callers
-    // cannot use this endpoint as a user-existence oracle.
-    notFound("friend ledger not found");
-  }
 
-  // Per-scope balances, each routed the way its scope routes debt. A group
-  // that simplifies debts contributes the simplified edge between the pair —
-  // possibly zero while their shared history is not (the debt was rerouted
-  // through others), or nonzero between two people who never shared an
-  // expense. Rows where either number is nonzero are kept, so a rerouted
-  // balance always has a line explaining where it went, and the headline is
-  // the sum of these rows — the same routed number the dashboard shows and
-  // the settlement guards enforce, not the raw history total.
-  const groupBalances = await friendScopeBalances(
-    mutualGroupRows,
-    netByScope,
-    groupNames,
-    userId,
-    friendId,
-  );
-  // The headline: one net per currency, each the sum of that currency's
-  // scopes — the same routed numbers the dashboard shows and the settlement
-  // guards enforce.
-  const nets: CurrencyCents = new Map();
-  for (const scope of groupBalances) addCents(nets, scope.currency, scope.netCents);
+  // Every figure below — the statement, the balances above it, and the
+  // position a settle dialog works from — is read at one instant. They are
+  // many statements, and a settlement committing between two of them would
+  // otherwise return a response whose parts describe different ledgers.
+  return snapshot(async (client) => {
+    const expenses = await listExpensesBetween(userId, friendId, true, client);
+    const children = await loadExpenseChildren(
+      expenses.map((expense) => expense.id),
+      client,
+    );
+    const settlements = await listSettlementsBetween(userId, friendId, true, client);
+    const groupNames = await groupNamesForExpenses(expenses, client);
+    const lines = [
+      ...expenseLedgerLines(expenses, children, groupNames, userId, friendId),
+      ...settlementLedgerLines(settlements, groupNames, userId, friend?.name ?? ""),
+    ];
+    const entries = friendLedgerEntries(lines);
+    // The statement is a display; the balances above it are computed over
+    // everything. Past the cap the oldest lines are left off and the response
+    // says so, rather than shipping an unbounded table to a phone.
+    const truncated = entries.length > LEDGER_DISPLAY_LIMIT;
+    const shownEntries = truncated ? entries.slice(0, LEDGER_DISPLAY_LIMIT) : entries;
 
-  // What a settle dialog works from: not the statement above, but the very
-  // position the settlement write will recompute, with its fingerprint.
-  const groupsById = new Map(mutualGroupRows.map((group) => [group.id, group]));
-  const settlePositions = (await pairSettlePositions(userId, friendId)).map((position) => ({
-    currency: position.currency,
-    netCents: toInt32Cents(position.netCents, "a balance"),
-    digest: position.digest,
-    scopes: position.scopes.map((scope) => {
-      const group = scope.groupId ? groupsById.get(scope.groupId) : undefined;
-      return {
-        groupId: scope.groupId ?? "",
-        groupName: group?.name ?? "",
+    const netByScope = historyNetsByScope(lines);
+
+    // Relationship context, not balance context: which groups both belong to
+    // (settled ones included — "where do I know them from" is not "where does
+    // money move"), and whether an explicit friendship exists.
+    const friendGroupIds = new Set(
+      (await listGroupsByUser(friendId, client)).map((group) => group.id),
+    );
+    const mutualGroupRows = (await listGroupsByUser(userId, client)).filter((group) =>
+      friendGroupIds.has(group.id),
+    );
+    if (!friend || (!isFriend && mutualGroupRows.length === 0 && entries.length === 0)) {
+      // Identical for an unknown id and an existing unrelated account: callers
+      // cannot use this endpoint as a user-existence oracle.
+      notFound("friend ledger not found");
+    }
+
+    // Per-scope balances, each routed the way its scope routes debt. A group
+    // that simplifies debts contributes the simplified edge between the pair —
+    // possibly zero while their shared history is not (the debt was rerouted
+    // through others), or nonzero between two people who never shared an
+    // expense. Rows where either number is nonzero are kept, so a rerouted
+    // balance always has a line explaining where it went, and the headline is
+    // the sum of these rows — the same routed number the dashboard shows and
+    // the settlement guards enforce, not the raw history total.
+    const groupBalances = await friendScopeBalances(
+      mutualGroupRows,
+      netByScope,
+      groupNames,
+      userId,
+      friendId,
+      client,
+    );
+    // The headline: one net per currency, each the sum of that currency's
+    // scopes — the same routed numbers the dashboard shows and the settlement
+    // guards enforce.
+    const nets: CurrencyCents = new Map();
+    for (const scope of groupBalances) addCents(nets, scope.currency, scope.netCents);
+
+    // What a settle dialog works from: not the statement above, but the very
+    // position the settlement write will recompute, with its fingerprint.
+    const groupsById = new Map(mutualGroupRows.map((group) => [group.id, group]));
+    const settlePositions = (await pairSettlePositions(userId, friendId, client)).map((position) => ({
+      currency: position.currency,
+      netCents: toInt32Cents(position.netCents, "a balance"),
+      digest: position.digest,
+      scopes: position.scopes.map((scope) => {
+        const group = scope.groupId ? groupsById.get(scope.groupId) : undefined;
+        return {
+          groupId: scope.groupId ?? "",
+          groupName: group?.name ?? "",
+          netCents: toInt32Cents(scope.netCents, "a balance"),
+          simplified: group?.simplify_debts ?? false,
+        };
+      }),
+    }));
+
+    return {
+      friend: toPublicUser(friend),
+      netCents: toInt32Cents(nets.get(defaultCurrency) ?? 0, "this balance"),
+      currency: defaultCurrency,
+      nets: currencyAmounts(nets, defaultCurrency),
+      entries: shownEntries,
+      truncated,
+      settlePositions,
+      groupBalances: groupBalances.map((scope) => ({
+        ...scope,
         netCents: toInt32Cents(scope.netCents, "a balance"),
-        simplified: group?.simplify_debts ?? false,
-      };
-    }),
-  }));
-
-  return {
-    friend: toPublicUser(friend),
-    netCents: toInt32Cents(nets.get(defaultCurrency) ?? 0, "this balance"),
-    currency: defaultCurrency,
-    nets: currencyAmounts(nets, defaultCurrency),
-    entries: shownEntries,
-    truncated,
-    settlePositions,
-    groupBalances: groupBalances.map((scope) => ({
-      ...scope,
-      netCents: toInt32Cents(scope.netCents, "a balance"),
-    })),
-    isFriend,
-    mutualGroups: mutualGroupRows.map((group) => ({
-      groupId: group.id,
-      groupName: group.name,
-      groupType: group.type,
-    })),
-  };
+      })),
+      isFriend,
+      mutualGroups: mutualGroupRows.map((group) => ({
+        groupId: group.id,
+        groupName: group.name,
+        groupType: group.type,
+      })),
+    };
+  });
 }

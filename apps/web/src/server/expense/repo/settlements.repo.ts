@@ -298,12 +298,14 @@ export async function listSettlementsByGroup(
  * @param secondUserId - The other person.
  * @param includeDeleted - Whether removed payments are returned too; only the
  *   friend ledger wants them, struck through — every balance reads without.
+ * @param client - Snapshot or transaction client; omitted, the pool.
  * @returns Settlement rows between the pair, in chronological order.
  */
 export async function listSettlementsBetween(
   firstUserId: string,
   secondUserId: string,
   includeDeleted = false,
+  client?: PoolClient,
 ): Promise<SettlementRow[]> {
   return query<SettlementRow>(
     `SELECT * FROM settlements
@@ -311,6 +313,7 @@ export async function listSettlementsBetween(
        AND ($3::boolean OR deleted_at IS NULL)
      ORDER BY created_at ASC`,
     [firstUserId, secondUserId, includeDeleted],
+    client,
   );
 }
 
@@ -343,14 +346,17 @@ export async function listOneOffSettlementsBetween(
  * Lists every live settlement the user paid or received, oldest first.
  *
  * @param userId - Id of the user involved as payer or recipient.
+ * @param client - Snapshot or transaction client; omitted, the pool.
  * @returns Settlement rows in chronological order.
  */
 export async function listSettlementsInvolvingUser(
   userId: string,
+  client?: PoolClient,
 ): Promise<SettlementRow[]> {
   return query<SettlementRow>(
     `SELECT * FROM settlements WHERE (from_user = $1 OR to_user = $1) AND deleted_at IS NULL
      ORDER BY created_at ASC`,
     [userId],
+    client,
   );
 }

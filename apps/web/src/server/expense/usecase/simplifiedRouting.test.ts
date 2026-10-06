@@ -12,6 +12,13 @@ import type { SettlementRow } from "@/server/expense/repo/settlements.repo";
 import type { UserRow } from "@/server/auth/repo/users.repo";
 import type { GroupRow } from "@/server/group/repo/groups.repo";
 
+// The reads run inside a database snapshot. Every statement is mocked here,
+// so the snapshot is a pass-through handing out a stand-in client: these
+// tests must not need a database to be running.
+vi.mock("@/server/common/db", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/server/common/db")>()),
+  snapshot: (operation: (client: unknown) => unknown) => operation({}),
+}));
 vi.mock("@/server/expense/repo/expenses.repo", () => ({
   listExpensesBetween: vi.fn(),
   listExpensesByGroup: vi.fn(),

@@ -319,6 +319,13 @@ with colocated tests. Mobile-specific rules:
   handler); the usecase claims it with `beginOperation` inside the ledger
   transaction and `finishOperation` before commit, so a retry replays the
   stored result. Clients mint one per submit (`newOperationId()`).
+- **A balance is read at one instant.** It is assembled from several
+  statements, and a settlement committing between two of them yields a
+  position that never existed. Every read that returns a figure
+  (`getFriendLedger`, `getOverallBalances`, `getGroupBalances`,
+  `listExpenses`, `getExpense`) runs inside `snapshot()` from `common/db.ts`
+  and passes its `client` to every statement, one at a time — one sent to
+  the pool reads outside the snapshot and holds a second connection.
 - **A net settlement is one unit.** Its cash and `offset` rows share a
   `net_settlements` parent and a deferred constraint trigger refuses a unit
   that does not cancel out or is only partly removed. Never insert, update

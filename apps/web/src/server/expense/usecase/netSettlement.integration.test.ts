@@ -9,8 +9,9 @@
  * ever be removed together; that the database itself refuses a set that does
  * not cancel out or is only partly removed, whatever code asks; and that a
  * ledger which moved after the dialog opened is refused, not settled
- * differently than agreed. Those take the real queries, the real trigger,
- * and real rows.
+ * differently than agreed; and that a balance is never read half from before
+ * a settlement and half from after it. Those take the real queries, the real
+ * trigger, real rows, and real concurrent connections.
  *
  * Skips itself when no database is reachable, so it is safe in the suite.
  */
@@ -138,11 +139,14 @@ describe.skipIf(!reachable)("net settlement against Postgres", () => {
   let database: Client;
   let recordSettlement: typeof import("./expense.usecase").recordSettlement;
   let deleteSettlement: typeof import("./expense.usecase").deleteSettlement;
+  let listExpenses: typeof import("./expense.usecase").listExpenses;
+  let getExpense: typeof import("./expense.usecase").getExpense;
   let owedByScope: typeof import("./balance.usecase").owedByScope;
   let netWithUser: typeof import("./balance.usecase").netWithUser;
   let userNetInGroup: typeof import("./balance.usecase").userNetInGroup;
   let getFriendLedger: typeof import("./balance.usecase").getFriendLedger;
   let mergeAccounts: typeof import("@/server/auth/repo/accountMerge.repo").mergeAccounts;
+  let snapshot: typeof import("@/server/common/db").snapshot;
   let closePool: () => Promise<void>;
 
   /**
@@ -215,11 +219,14 @@ describe.skipIf(!reachable)("net settlement against Postgres", () => {
     process.env.DATABASE_URL = TEST_URL;
     const dbModule = await import("@/server/common/db");
     await dbModule.ensureMigrated();
+    ({ snapshot } = dbModule);
     closePool = async () => {
       const cache = globalThis as unknown as { __haalkhataPool?: { end(): Promise<void> } };
       await cache.__haalkhataPool?.end();
     };
-    ({ deleteSettlement, recordSettlement } = await import("./expense.usecase"));
+    ({ deleteSettlement, getExpense, listExpenses, recordSettlement } = await import(
+      "./expense.usecase"
+    ));
     ({ getFriendLedger, netWithUser, owedByScope, userNetInGroup } = await import(
       "./balance.usecase"
     ));
@@ -535,6 +542,93 @@ describe.skipIf(!reachable)("net settlement against Postgres", () => {
     });
   });
 
+  /**
+   * Records the keeper settling with Sam on the net of what is on screen.
+   *
+   * @returns The recorded payment.
+   */
+  const settleKeeperOnNet = async () =>
+    recordSettlement(KEEPER, {
+      groupId: "",
+      toUserId: OWED,
+      amountCents: 3000,
+      currency: "USD",
+      method: "cash",
+      note: "",
+      netAcrossScopes: true,
+      positionDigest: await digestShown(KEEPER, OWED),
+    });
+
+  it("reads a position from one instant, even when a settlement commits in the middle of the read", async () => {
+    const describeDebts = (debts: { groupId: string | null; currency: string; owedCents: number }[]) =>
+      debts.map((debt) => `${debt.groupId ?? "direct"} ${debt.currency} ${debt.owedCents}`).sort();
+    let recordedId = "";
+    const seen = await snapshot(async (client) => {
+      // The first statement fixes the instant this read sees.
+      const keeperOwes = describeDebts(await owedByScope(KEEPER, OWED, client));
+      // The pair now settles on the net, on another connection, and it commits.
+      recordedId = (await settleKeeperOnNet()).id;
+      // The second half of the same read. Taken from the ledger as it stands
+      // now it would say Sam owes nothing, beside a first half that still
+      // has the keeper owing 50.00: a position that never existed.
+      const samOwes = describeDebts(await owedByScope(OWED, KEEPER, client));
+      return { keeperOwes, samOwes };
+    });
+    expect(seen).toEqual({ keeperOwes: ["direct USD 5000"], samOwes: ["grp-picnic USD 2000"] });
+    // A read that starts afterwards sees the settlement, whole.
+    expect(await scopesBetween(KEEPER, OWED)).toEqual({ firstOwes: [], secondOwes: [] });
+
+    await deleteSettlement(OWED, recordedId);
+    expect(await scopesBetween(KEEPER, OWED)).toEqual({
+      firstOwes: ["direct USD 5000"],
+      secondOwes: ["grp-picnic USD 2000"],
+    });
+  });
+
+  it("never returns a position that did not exist, however reads and settlements interleave", async () => {
+    // The only two states this pair is ever in while the loop below runs.
+    const OWING = "direct -5000, grp-picnic 2000 = -3000";
+    const SETTLED = "settled";
+    const observed = new Set<string>();
+    const disagreements = new Set<string>();
+    let writing = true;
+
+    const readWhileWriting = async () => {
+      while (writing) {
+        const ledger = await getFriendLedger(KEEPER, OWED);
+        const dollars = ledger.settlePositions.find((position) => position.currency === "USD");
+        observed.add(
+          dollars
+            ? `${dollars.scopes
+                .map((scope) => `${scope.groupId || "direct"} ${scope.netCents}`)
+                .sort()
+                .join(", ")} = ${dollars.netCents}`
+            : SETTLED,
+        );
+        // The headline, the statement's running balance and the settle
+        // position are three readings of one ledger, and must agree.
+        const headline = ledger.nets.find((bucket) => bucket.currency === "USD")?.cents ?? 0;
+        const running =
+          ledger.entries.find((entry) => entry.currency === "USD")?.balanceAfterCents ?? 0;
+        const position = dollars?.netCents ?? 0;
+        if (headline !== position || running !== position) {
+          disagreements.add(`headline ${headline}, statement ${running}, position ${position}`);
+        }
+      }
+    };
+    const readers = Array.from({ length: 6 }, () => readWhileWriting());
+    for (let cycle = 0; cycle < 10; cycle += 1) {
+      const recorded = await settleKeeperOnNet();
+      await deleteSettlement(OWED, recorded.id);
+    }
+    writing = false;
+    await Promise.all(readers);
+
+    expect([...observed].filter((state) => state !== OWING && state !== SETTLED)).toEqual([]);
+    expect([...disagreements]).toEqual([]);
+    expect(observed.has(OWING)).toBe(true);
+  }, 60_000);
+
   it("settles one balance alone when asked to, and leaves the ones pointing the other way standing", async () => {
     // The keeper owes Sam 50.00 outside groups; Sam owes the keeper 20.00 in
     // the picnic group. Settling a single row is a plain payment in that
@@ -619,4 +713,43 @@ describe.skipIf(!reachable)("net settlement against Postgres", () => {
     );
     expect(cash.rows).toEqual([{ from_user: KEEPER, recorded_by: OWED }]);
   });
+
+  it("lists every expense whole: its amount, who paid and who owes always from the same version", async () => {
+    await insertDebt(database, { id: "exp-flip", groupId: null, amountCents: 10000, currency: "USD", paidBy: OWED, owedBy: PAYER });
+    const torn = new Set<string>();
+    let editing = true;
+    /**
+     * Records an expense whose parts do not add up to its amount.
+     *
+     * @param expense - The expense as a read returned it.
+     */
+    const check = (expense: { id: string; amountCents: number; payers: { amountCents: number }[]; splits: { owedCents: number }[] }) => {
+      const paid = expense.payers.reduce((running, payer) => running + payer.amountCents, 0);
+      const owedTotal = expense.splits.reduce((running, split) => running + split.owedCents, 0);
+      if (paid !== expense.amountCents || owedTotal !== expense.amountCents) {
+        torn.add(`${expense.id}: amount ${expense.amountCents}, paid ${paid}, owed ${owedTotal}`);
+      }
+    };
+    const readWhileEditing = async () => {
+      while (editing) {
+        for (const expense of (await listExpenses(PAYER, {})).expenses) check(expense);
+        const detail = (await getExpense(PAYER, "exp-flip")).expense;
+        check(detail);
+      }
+    };
+    const readers = Array.from({ length: 6 }, () => readWhileEditing());
+    // An edit replaces the amount and the shares together, in one
+    // transaction; a read must see all of the old version or all of the new.
+    for (let round = 0; round < 40; round += 1) {
+      const amountCents = round % 2 === 0 ? 12000 : 10000;
+      await database.query("BEGIN");
+      await database.query(`UPDATE expenses SET amount_cents = $1 WHERE id = 'exp-flip'`, [amountCents]);
+      await database.query(`UPDATE expense_payers SET amount_cents = $1 WHERE expense_id = 'exp-flip'`, [amountCents]);
+      await database.query(`UPDATE expense_splits SET owed_cents = $1 WHERE expense_id = 'exp-flip'`, [amountCents]);
+      await database.query("COMMIT");
+    }
+    editing = false;
+    await Promise.all(readers);
+    expect([...torn]).toEqual([]);
+  }, 60_000);
 });

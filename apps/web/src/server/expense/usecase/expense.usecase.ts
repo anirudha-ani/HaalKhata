@@ -58,6 +58,7 @@ import {
   positionDigest,
 } from "@/server/expense/domain/settlementAllocation";
 import { oneOffPairKey, settledExpenseIds } from "@/server/expense/domain/settledExpenses";
+import { snapshot } from "@/server/common/db";
 import { denied, invalid, notFound } from "@/server/common/errors";
 import {
   lockExpenseLedger,
@@ -808,70 +809,89 @@ export async function listExpenses(
   userId: string,
   filter: { groupId?: string; withUserId?: string },
 ) {
-  let rows: ExpenseRow[];
-  // Deleted rows are listed too — struck through on every client — so a
-  // payment made against a since-deleted expense keeps the row that explains
-  // it. They contribute nothing to the balance math, which reads its own,
-  // deleted-excluded queries.
-  if (filter.groupId) {
-    if (!(await isMember(filter.groupId, userId))) {
-      denied("you are not a member of this group");
-    }
-    rows = await listExpensesByGroup(filter.groupId, undefined, true);
-  } else if (filter.withUserId) {
-    rows = await listOneOffExpensesBetween(userId, filter.withUserId, undefined, true);
-  } else {
-    // One past the cap, so the response can say the list is cut without a
-    // second count query.
-    rows = await listExpensesInvolvingUser(userId, true, EXPENSE_LIST_DISPLAY_LIMIT + 1);
+  if (filter.groupId && !(await isMember(filter.groupId, userId))) {
+    denied("you are not a member of this group");
   }
-  const truncated = rows.length > EXPENSE_LIST_DISPLAY_LIMIT;
-  if (truncated) rows = rows.slice(0, EXPENSE_LIST_DISPLAY_LIMIT);
-  const children = await loadExpenseChildren(rows.map((expenseRow) => expenseRow.id));
+  // One instant for the whole list. Each row is assembled from several
+  // statements — the expense, who paid, who owes, its items — and the
+  // "settled" marks from balances read after them; an edit or a payment
+  // committing in between would pair one expense's amount with another
+  // version's shares, or mark a row against a ledger it was not listed from.
+  const listed = await snapshot(async (client) => {
+    let rows: ExpenseRow[];
+    // Deleted rows are listed too — struck through on every client — so a
+    // payment made against a since-deleted expense keeps the row that explains
+    // it. They contribute nothing to the balance math, which reads its own,
+    // deleted-excluded queries.
+    if (filter.groupId) {
+      rows = await listExpensesByGroup(filter.groupId, client, true);
+    } else if (filter.withUserId) {
+      rows = await listOneOffExpensesBetween(userId, filter.withUserId, client, true);
+    } else {
+      // One past the cap, so the response can say the list is cut without a
+      // second count query.
+      rows = await listExpensesInvolvingUser(
+        userId,
+        true,
+        EXPENSE_LIST_DISPLAY_LIMIT + 1,
+        client,
+      );
+    }
+    const truncated = rows.length > EXPENSE_LIST_DISPLAY_LIMIT;
+    if (truncated) rows = rows.slice(0, EXPENSE_LIST_DISPLAY_LIMIT);
+    const children = await loadExpenseChildren(
+      rows.map((expenseRow) => expenseRow.id),
+      client,
+    );
 
-  // Settledness inputs: the viewer's net per group scope, and per one-off
-  // counterparty. Which rows count as settled is decided by the pure
-  // settledExpenseIds — this block only gathers the ledger numbers it needs.
-  // A deleted expense is never "settled": nothing was pending from it.
-  const participants = rows.filter((expenseRow) => !expenseRow.deleted_at).map((expenseRow) => ({
-    id: expenseRow.id,
-    groupId: expenseRow.group_id ?? "",
-    currency: expenseRow.currency,
-    participantIds: moneyParticipantIds(expenseRow.id, children),
-  }));
-  const groupIds = [
-    ...new Set(rows.flatMap((expenseRow) => (expenseRow.group_id ? [expenseRow.group_id] : []))),
-  ];
-  const counterpartyIds = [
-    ...new Set(
-      participants
-        .filter((expense) => expense.groupId === "")
-        .flatMap((expense) => expense.participantIds)
-        .filter((participantId) => participantId !== userId),
-    ),
-  ];
-  const viewerNetByGroupId = await userNetInGroups(userId, groupIds);
-  // One-off slates are per currency, so the settledness lookup is keyed on
-  // the counterparty and the expense's currency.
-  const oneOffNetByPair = new Map<string, number>();
-  await Promise.all(
-    counterpartyIds.map(async (counterpartyId) => {
-      for (const [currency, cents] of await oneOffNetsBetween(userId, counterpartyId)) {
+    // Settledness inputs: the viewer's net per group scope, and per one-off
+    // counterparty. Which rows count as settled is decided by the pure
+    // settledExpenseIds — this block only gathers the ledger numbers it needs.
+    // A deleted expense is never "settled": nothing was pending from it.
+    const participants = rows
+      .filter((expenseRow) => !expenseRow.deleted_at)
+      .map((expenseRow) => ({
+        id: expenseRow.id,
+        groupId: expenseRow.group_id ?? "",
+        currency: expenseRow.currency,
+        participantIds: moneyParticipantIds(expenseRow.id, children),
+      }));
+    const groupIds = [
+      ...new Set(rows.flatMap((expenseRow) => (expenseRow.group_id ? [expenseRow.group_id] : []))),
+    ];
+    const counterpartyIds = [
+      ...new Set(
+        participants
+          .filter((expense) => expense.groupId === "")
+          .flatMap((expense) => expense.participantIds)
+          .filter((participantId) => participantId !== userId),
+      ),
+    ];
+    const viewerNetByGroupId = await userNetInGroups(userId, groupIds, client);
+    // One-off slates are per currency, so the settledness lookup is keyed on
+    // the counterparty and the expense's currency. In turn, not side by side:
+    // one connection runs one statement at a time.
+    const oneOffNetByPair = new Map<string, number>();
+    for (const counterpartyId of counterpartyIds) {
+      for (const [currency, cents] of await oneOffNetsBetween(userId, counterpartyId, client)) {
         oneOffNetByPair.set(oneOffPairKey(counterpartyId, currency), cents);
       }
-    }),
-  );
+    }
+    return { rows, children, truncated, participants, viewerNetByGroupId, oneOffNetByPair };
+  });
 
   return {
-    expenses: rows.map((expenseRow) => toExpense(expenseRow, children)),
-    users: await usersReferenced(rows, children),
+    expenses: listed.rows.map((expenseRow) => toExpense(expenseRow, listed.children)),
+    // Names and avatars, not figures: read once the snapshot's connection is
+    // back in the pool.
+    users: await usersReferenced(listed.rows, listed.children),
     settledExpenseIds: settledExpenseIds(
-      participants,
+      listed.participants,
       userId,
-      viewerNetByGroupId,
-      oneOffNetByPair,
+      listed.viewerNetByGroupId,
+      listed.oneOffNetByPair,
     ),
-    truncated,
+    truncated: listed.truncated,
   };
 }
 
@@ -896,12 +916,84 @@ async function getExpenseProto(expenseId: string) {
  * @throws UsecaseError if the expense is missing or the caller lacks access.
  */
 export async function getExpense(userId: string, expenseId: string) {
-  const expenseRow = await findExpenseById(expenseId);
+  const found = await findExpenseById(expenseId);
   // A deleted expense still has a page: the feed line that announced the
   // deletion links here, and the row explains any payment left behind.
-  if (!expenseRow) notFound("expense not found");
-  await assertCanTouch(userId, expenseRow);
-  const children = await loadExpenseChildren([expenseId]);
+  if (!found) notFound("expense not found");
+  await assertCanTouch(userId, found);
+
+  // The figures on the page — the expense, its shares, whether it is settled
+  // and whether a payment came after it — are read at one instant, so an
+  // edit or a payment committing mid-read cannot pair one version's amount
+  // with another's shares.
+  const { expenseRow, children, settledForViewer, hasLaterSettlement } = await snapshot(
+    async (client) => {
+      // Expenses are never hard-deleted, so the row checked above is still there.
+      const current = (await findExpenseById(expenseId, client)) ?? found;
+      const currentChildren = await loadExpenseChildren([expenseId], client);
+
+      // The same settledness rule the expense list applies, for this one
+      // expense, so the detail page and the row that linked to it can never
+      // disagree.
+      const participantIds = moneyParticipantIds(expenseId, currentChildren);
+      const viewerNetByGroupId = new Map<string, number>();
+      if (current.group_id) {
+        viewerNetByGroupId.set(
+          current.group_id,
+          await userNetInGroup(userId, current.group_id, client),
+        );
+      }
+      const oneOffNetByPair = new Map<string, number>();
+      if (!current.group_id) {
+        for (const participantId of participantIds) {
+          if (participantId === userId) continue;
+          for (const [currency, cents] of await oneOffNetsBetween(userId, participantId, client)) {
+            oneOffNetByPair.set(oneOffPairKey(participantId, currency), cents);
+          }
+        }
+      }
+      const settled =
+        settledExpenseIds(
+          [
+            {
+              id: expenseId,
+              groupId: current.group_id ?? "",
+              currency: current.currency,
+              participantIds,
+            },
+          ],
+          userId,
+          viewerNetByGroupId,
+          oneOffNetByPair,
+        ).length === 1;
+
+      // Whether a payment postdates this expense in its scope, so the detail
+      // view can warn that an edit or a delete will rebalance against it.
+      // Advisory only. In a pairwise group only payments between the
+      // expense's own participants count — a settlement between two
+      // unrelated members says nothing about this expense — while a
+      // simplified group routes debt across everyone, so there any later
+      // payment might have been for it.
+      const scopeGroup = current.group_id
+        ? await findGroupById(current.group_id, client)
+        : undefined;
+      const laterSettlement = await scopeHasSettlements(
+        current.group_id,
+        storedParticipantIds(current, currentChildren),
+        current.ledger_event_order,
+        client,
+        scopeGroup ? !scopeGroup.simplify_debts : false,
+      );
+      return {
+        expenseRow: current,
+        children: currentChildren,
+        settledForViewer: settled,
+        hasLaterSettlement: laterSettlement,
+      };
+    },
+  );
+
+  // Words, not figures: comments and the edit history are read afterwards.
   const comments = await listCommentsByExpense(expenseId);
   // The people to resolve are the comment authors AND whoever touched the
   // expense, looked up together so the history does not cost a second round
@@ -922,55 +1014,6 @@ export async function getExpense(userId: string, expenseId: string) {
     const person = peopleById.get(personId);
     return person ? toPublicUser(person) : undefined;
   };
-
-  // The same settledness rule the expense list applies, for this one expense,
-  // so the detail page and the row that linked to it can never disagree.
-  const participantIds = moneyParticipantIds(expenseId, children);
-  const viewerNetByGroupId = new Map<string, number>();
-  if (expenseRow.group_id) {
-    viewerNetByGroupId.set(expenseRow.group_id, await userNetInGroup(userId, expenseRow.group_id));
-  }
-  const oneOffNetByPair = new Map<string, number>();
-  if (!expenseRow.group_id) {
-    await Promise.all(
-      participantIds
-        .filter((participantId) => participantId !== userId)
-        .map(async (participantId) => {
-          for (const [currency, cents] of await oneOffNetsBetween(userId, participantId)) {
-            oneOffNetByPair.set(oneOffPairKey(participantId, currency), cents);
-          }
-        }),
-    );
-  }
-  const settledForViewer =
-    settledExpenseIds(
-      [
-        {
-          id: expenseId,
-          groupId: expenseRow.group_id ?? "",
-          currency: expenseRow.currency,
-          participantIds,
-        },
-      ],
-      userId,
-      viewerNetByGroupId,
-      oneOffNetByPair,
-    ).length === 1;
-
-  // Whether a payment postdates this expense in its scope, so the detail view
-  // can warn that an edit or a delete will rebalance against it. Advisory
-  // only. In a pairwise group only payments between the expense's own
-  // participants count — a settlement between two unrelated members says
-  // nothing about this expense — while a simplified group routes debt across
-  // everyone, so there any later payment might have been for it.
-  const scopeGroup = expenseRow.group_id ? await findGroupById(expenseRow.group_id) : undefined;
-  const hasLaterSettlement = await scopeHasSettlements(
-    expenseRow.group_id,
-    storedParticipantIds(expenseRow, children),
-    expenseRow.ledger_event_order,
-    undefined,
-    scopeGroup ? !scopeGroup.simplify_debts : false,
-  );
 
   return {
     settledForViewer,

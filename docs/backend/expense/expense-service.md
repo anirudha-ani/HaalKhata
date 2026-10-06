@@ -198,6 +198,21 @@ one waits, re-reads a ledger that already contains the first, and is refused
 by the guards. The feed rows and notifications ride the same transaction —
 they commit with the money or not at all.
 
+**Reads see one instant.** A balance is assembled from several statements,
+and under READ COMMITTED each sees whatever has committed by the time it
+runs: a settlement committing between two of them would yield one direction
+from before the payment and the other from after — a position that never
+existed, shown to someone as what they owe. Every read that returns a
+figure therefore runs inside `snapshot()` (`common/db.ts`: a
+`REPEATABLE READ READ ONLY` transaction): `GetFriendLedger`,
+`GetOverallBalances`, `GetGroupBalances`, and also `ListExpenses` and
+`GetExpense`, where an expense's amount, its payers and its shares are
+separate statements and an edit committing between them would pair one
+version's amount with another's shares. Every figure in one response
+describes the same ledger. Every statement in a snapshot must use its
+client; one sent to the pool reads outside it. Names, comments and the
+activity feed are read outside it: they carry no computed figure.
+
 ## Idempotency
 
 `CreateExpense` and `RecordSettlement` require `operation_id`
@@ -784,6 +799,9 @@ per scope; callers only use the response to confirm the recording):
   statement, but the position the settlement write will recompute, with its
   `digest`. One per currency with anything outstanding; scopes are signed
   from the caller's side.
+- **One instant:** the statement, the balances and the settle positions are
+  read inside one snapshot (see [Concurrency](#concurrency)), so they always
+  describe the same ledger.
 - A net settlement's lines sort with the payment first and its cancelled
   balances directly beneath it, in the same order for both people.
 
