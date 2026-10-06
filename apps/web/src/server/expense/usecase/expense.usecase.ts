@@ -27,7 +27,10 @@ import { insertFriendship, listFriendIds } from "@/server/social/repo/friendship
 import { insertComment, listCommentsByExpense } from "@/server/expense/repo/comments.repo";
 import {
   findSettlementById,
+  insertNetSettlement,
   insertSettlement,
+  listSettlementsByNetSettlement,
+  softDeleteNetSettlement,
   scopeHasSettlements,
   softDeleteSettlement,
   withSettlementPairLock,
@@ -45,10 +48,15 @@ import {
   groupCancelsOut,
   oneOffNetsBetween,
   owedByScope,
+  pairScopeDebts,
   userNetInGroup,
   userNetInGroups,
 } from "./balance.usecase";
-import { allocateSettlement } from "@/server/expense/domain/settlementAllocation";
+import {
+  allocateSettlement,
+  planNetSettlement,
+  positionDigest,
+} from "@/server/expense/domain/settlementAllocation";
 import { oneOffPairKey, settledExpenseIds } from "@/server/expense/domain/settledExpenses";
 import { denied, invalid, notFound } from "@/server/common/errors";
 import {
@@ -72,6 +80,8 @@ import {
   MAX_ITEM_ASSIGNMENTS,
   MAX_MONEY_CENTS,
   MAX_SETTLEMENT_NOTE_LENGTH,
+  OFFSET_ACTIVITY_TYPE,
+  OFFSET_SETTLEMENT_METHOD,
   SETTLEMENT_METHODS,
   SPLIT_TYPES,
   EXPENSE_LIST_DISPLAY_LIMIT,
@@ -1069,6 +1079,26 @@ interface SettlementRequest {
   received?: boolean;
   scopeGroupIds?: string[];
   operationId?: string;
+  /** Settle the pair on their net in the currency, offsetting what points the other way. */
+  netAcrossScopes?: boolean;
+  /** Digest of the position the person was shown; required with `netAcrossScopes`. */
+  positionDigest?: string;
+}
+
+/** What a net settlement did, for the wording that announces it to both people. */
+interface NetOutcome {
+  /** The net parent the rows hang from; null when nothing pointed the other way. */
+  netSettlementId: string | null;
+  /** What was cancelled in each direction; 0 when nothing pointed the other way. */
+  offsetCents: number;
+  /** What the payer still owes the creditor overall once this is recorded. */
+  remainingCents: number;
+}
+
+/** The rows one recording stored, and what it did overall when it was a net settlement. */
+interface StoredSettlement {
+  rows: SettlementRow[];
+  netOutcome: NetOutcome | null;
 }
 
 /** Validated identities and normalized values shared by settlement write stages. */
@@ -1103,6 +1133,12 @@ async function prepareSettlement(
   }
   if (request.note.length > MAX_SETTLEMENT_NOTE_LENGTH) {
     invalid(`settlement note is too long (max ${MAX_SETTLEMENT_NOTE_LENGTH} characters)`);
+  }
+  // Netting is about the pair, across everything they share. One group's
+  // balance, or a hand-picked subset, is a different question with its own
+  // answer; mixing the two would let a client choose what gets cancelled.
+  if (request.netAcrossScopes && (request.groupId || (request.scopeGroupIds ?? []).length > 0)) {
+    invalid("a net settlement covers every balance with this person — it cannot name a group");
   }
   const recipient = await findUserById(request.toUserId);
   if (!recipient) notFound("recipient not found");
@@ -1212,14 +1248,15 @@ async function storeGroupSettlement(
  *
  * @param context - Validated settlement identities and normalized values.
  * @param client - Pair-lock transaction client.
- * @returns Stored rows, with the direct slate first for cross-scope payments.
+ * @returns Stored rows, with the direct slate first for cross-scope payments,
+ *   and the overall outcome when the payment was a net settlement.
  */
 async function storeSettlementPortions(
   context: SettlementContext,
   client: PoolClient,
-): Promise<SettlementRow[]> {
+): Promise<StoredSettlement> {
   const { userId, request, payerId, creditorId, groupId, currency, method } = context;
-  if (groupId) return storeGroupSettlement(context, client);
+  if (groupId) return { rows: await storeGroupSettlement(context, client), netOutcome: null };
 
   // Lock every group either person belongs to before selecting the shared
   // scopes. That snapshot cannot gain an unlocked group midway through the
@@ -1230,6 +1267,7 @@ async function storeSettlementPortions(
     [...payerGroups, ...creditorGroups].map((group) => group.id),
   );
   await lockGroupLedgers(client, [...lockedGroupIds]);
+  if (request.netAcrossScopes) return storeNetSettlement(context, lockedGroupIds, client);
   const selection = new Set(request.scopeGroupIds ?? []);
   // The client chooses scopes, never amounts. Re-read current server balances
   // so a stale selection cannot double-record a payment.
@@ -1283,32 +1321,194 @@ async function storeSettlementPortions(
       ),
     );
   }
-  return rows;
+  return { rows, netOutcome: null };
+}
+
+/**
+ * Stores a payment that settles the pair on their net in one currency: the
+ * cash, plus the entries that cancel balances pointing the other way against
+ * what the payer owes (see {@link planNetSettlement}).
+ *
+ * Three guarantees, in order:
+ * 1. It settles what the person saw. Both directions are re-read here, under
+ *    the locks, by the same function that built the position the dialog
+ *    showed, and the two fingerprints must match. A ledger that moved in
+ *    between is refused rather than settled differently than agreed.
+ * 2. It is checked against the net — the one place a settlement is — because
+ *    the opposing scopes are cancelled in this same transaction, so here they
+ *    do absorb the difference.
+ * 3. Its rows are one unit. They hang from a parent row stating what they
+ *    must add up to, and the database refuses to commit a set that does not
+ *    cancel out, or to leave one partly removed later.
+ *
+ * @param context - Prepared settlement with no group id.
+ * @param lockedGroupIds - Groups locked for this transaction; a scope outside
+ *   them is left alone.
+ * @param client - Pair-lock transaction client.
+ * @returns Stored rows, the cash first, and what the settlement did overall.
+ */
+async function storeNetSettlement(
+  context: SettlementContext,
+  lockedGroupIds: ReadonlySet<string>,
+  client: PoolClient,
+): Promise<StoredSettlement> {
+  const { userId, request, payerId, creditorId, currency, method } = context;
+  const debts = (await pairScopeDebts(payerId, creditorId, client)).filter(
+    (debt) =>
+      (debt.groupId === null || lockedGroupIds.has(debt.groupId)) && debt.currency === currency,
+  );
+  if (!request.positionDigest) invalid("a net settlement must name the balances it settles");
+  if (positionDigest(currency, debts) !== request.positionDigest) {
+    invalid("these balances changed since you opened this — check the amounts and try again");
+  }
+  const owing = debts.filter((debt) => debt.debtorId === payerId);
+  const opposing = debts.filter((debt) => debt.debtorId === creditorId);
+  const total = (scopes: { owedCents: number }[]) =>
+    scopes.reduce((running, scope) => running + scope.owedCents, 0);
+  const offsetCents = total(opposing);
+  const netCents = total(owing) - offsetCents;
+  if (netCents <= 0) {
+    invalid(
+      request.received
+        ? `this person doesn't owe you anything overall in ${currency}`
+        : `you don't owe this person anything overall in ${currency}`,
+    );
+  }
+  if (request.amountCents > netCents) {
+    invalid(
+      `settlement (${formatMoney(request.amountCents, currency)}) exceeds what ${
+        request.received ? "they owe" : "you owe"
+      } overall (${formatMoney(netCents, currency)})`,
+    );
+  }
+
+  const plan = planNetSettlement(owing, opposing, request.amountCents);
+  // Nothing pointing the other way means nothing to cancel: the rows are an
+  // ordinary payment and need no parent.
+  const netSettlementId =
+    offsetCents > 0
+      ? await insertNetSettlement(
+          { currency, cashCents: request.amountCents, offsetCents },
+          client,
+        )
+      : null;
+  const rows: SettlementRow[] = [];
+  /**
+   * Inserts one planned slice as a settlement row of this unit.
+   *
+   * @param portion - The scope and amount.
+   * @param fromUser - Whose debt the row settles.
+   * @param toUser - Who that debt was owed to.
+   * @param rowMethod - The payment method, or the offset marker.
+   * @param note - The row's note.
+   */
+  const store = async (
+    portion: { groupId: string | null; currency: string; amountCents: number },
+    fromUser: string,
+    toUser: string,
+    rowMethod: string,
+    note: string,
+  ) => {
+    rows.push(
+      await insertSettlement(
+        {
+          groupId: portion.groupId,
+          fromUser,
+          toUser,
+          amountCents: portion.amountCents,
+          currency: portion.currency,
+          method: rowMethod,
+          note,
+          recordedBy: userId,
+          netSettlementId,
+        },
+        client,
+      ),
+    );
+  };
+  for (const portion of plan.cash) {
+    await store(portion, payerId, creditorId, method, request.note);
+  }
+  for (const portion of plan.offsetOwing) {
+    await store(portion, payerId, creditorId, OFFSET_SETTLEMENT_METHOD, "");
+  }
+  for (const portion of plan.offsetOpposing) {
+    await store(portion, creditorId, payerId, OFFSET_SETTLEMENT_METHOD, "");
+  }
+  return {
+    rows,
+    netOutcome: { netSettlementId, offsetCents, remainingCents: netCents - request.amountCents },
+  };
+}
+
+/**
+ * Where a settlement row lives, as a phrase for a sentence about it.
+ *
+ * @param group - The row's group, or undefined for the one-off slate.
+ * @returns ` in "Name"`, or " outside groups".
+ */
+function scopePhrase(group: { name: string } | undefined): string {
+  return group ? ` in "${group.name}"` : " outside groups";
 }
 
 /**
  * Writes activity and the counterparty notification for a stored payment on
  * the payment transaction.
  *
+ * A net settlement is announced so that neither person has to work out what
+ * happened: the payment line says it settled the pair up (or how much is
+ * left), every cancelled balance gets its own line in the scope it lived in,
+ * naming who owed whom, and the notification gives the other person the
+ * amounts cancelled and what remains. A cancelled balance is never worded or
+ * typed as a payment; nobody was paid that amount.
+ *
  * @param context - Validated settlement identities and normalized values.
- * @param stored - Settlement portions just inserted.
+ * @param stored - The rows just inserted and, for a net settlement, its outcome.
  * @param client - Pair-lock transaction client.
  */
 async function announceSettlement(
   context: SettlementContext,
-  stored: SettlementRow[],
+  stored: StoredSettlement,
   client: PoolClient,
 ): Promise<void> {
   const { userId, request, recipient, actor, payerId, creditorId, groupId, currency } = context;
   const payerName = request.received ? recipient.name : actor.name;
   const creditorName = request.received ? actor.name : recipient.name;
+  const nameOf = (personId: string) => (personId === payerId ? payerName : creditorName);
   const friendLink = `/friends/${request.toUserId}`;
+  const outcome = stored.netOutcome;
+  const netted = outcome !== null && outcome.offsetCents > 0;
   // Each portion belongs in its own scope's feed, but remains visible only to
   // the payer and recipient rather than every member of a group.
-  for (const settlement of stored) {
+  for (const settlement of stored.rows) {
     const group = settlement.group_id
       ? await findGroupById(settlement.group_id, client)
       : undefined;
+    const amount = formatMoney(settlement.amount_cents, currency);
+    const link = settlement.group_id ? `/groups/${settlement.group_id}` : friendLink;
+    if (settlement.method === OFFSET_SETTLEMENT_METHOD) {
+      const debtorName = nameOf(settlement.from_user);
+      const owedName = nameOf(settlement.to_user);
+      await insertActivity(
+        {
+          groupId: settlement.group_id,
+          actorId: userId,
+          type: OFFSET_ACTIVITY_TYPE,
+          message: `${amount} ${debtorName} owed ${owedName}${scopePhrase(group)} was cancelled against what ${owedName} owed ${debtorName} — no money moved for this part`,
+          link,
+          audience: [...new Set([payerId, creditorId])],
+          amountCents: settlement.amount_cents,
+          currency,
+        },
+        client,
+      );
+      continue;
+    }
+    const settledNote = !netted
+      ? ""
+      : outcome.remainingCents === 0
+        ? ` — settles everything between them in ${currency}`
+        : ` — ${formatMoney(outcome.remainingCents, currency)} still owed overall in ${currency}`;
     await insertActivity(
       {
         groupId: settlement.group_id,
@@ -1316,8 +1516,8 @@ async function announceSettlement(
         // who asserted the payment when the recipient entered it.
         actorId: payerId,
         type: "settlement",
-        message: `${payerName} paid ${creditorName} ${formatMoney(settlement.amount_cents, currency)}${group ? ` in "${group.name}"` : ""}${request.received ? ` — recorded by ${actor.name}` : ""}`,
-        link: settlement.group_id ? `/groups/${settlement.group_id}` : friendLink,
+        message: `${payerName} paid ${creditorName} ${amount}${group ? ` in "${group.name}"` : ""}${settledNote}${request.received ? ` — recorded by ${actor.name}` : ""}`,
+        link,
         audience: [...new Set([payerId, creditorId])],
         amountCents: settlement.amount_cents,
         currency,
@@ -1327,6 +1527,12 @@ async function announceSettlement(
     );
   }
   const notifyGroup = groupId ? await findGroupById(groupId, client) : undefined;
+  const cancelled = netted ? formatMoney(outcome.offsetCents, currency) : "";
+  const nettedBody = !netted
+    ? ""
+    : outcome.remainingCents === 0
+      ? `You two are settled up in ${currency}. ${cancelled} you each owed the other was cancelled, so only the difference was paid.`
+      : `${cancelled} you each owed the other in ${currency} was cancelled. ${payerName} still owes ${creditorName} ${formatMoney(outcome.remainingCents, currency)}.`;
   await insertNotifications(
     [request.toUserId],
     {
@@ -1334,7 +1540,7 @@ async function announceSettlement(
       title: request.received
         ? `${actor.name} recorded your payment of ${formatMoney(request.amountCents, currency)}`
         : `${actor.name} recorded a payment of ${formatMoney(request.amountCents, currency)} to you`,
-      body: notifyGroup ? notifyGroup.name : "Settlement",
+      body: nettedBody || (notifyGroup ? notifyGroup.name : "Settlement"),
       link: groupId ? `/groups/${groupId}` : `/friends/${userId}`,
     },
     client,
@@ -1362,6 +1568,11 @@ async function announceSettlement(
  *
  * `received` says which way the money went. Both directions are needed: a
  * balance in your favour can only be cleared by recording that they paid you.
+ *
+ * With `netAcrossScopes` the payment settles the pair on their net in the
+ * currency: balances pointing the other way are cancelled against what the
+ * payer owes, in the same transaction, so the amount is checked against the
+ * net and a full payment leaves every scope the pair shares at zero.
  *
  * @param userId - Authenticated caller recording the payment.
  * @param request - Settlement details: the other person, amount, direction,
@@ -1401,8 +1612,8 @@ export async function recordSettlement(
       }
       const stored = await storeSettlementPortions(context, client);
       await announceSettlement(context, stored, client);
-      await finishOperation(operation, stored[0].id, client);
-      return stored;
+      await finishOperation(operation, stored.rows[0].id, client);
+      return stored.rows;
     },
   );
   if (settlements.length === 0) notFound("payment not found");
@@ -1415,12 +1626,20 @@ export async function recordSettlement(
  * place in the friend ledger, struck through, while every balance ignores it
  * from here on, so the debt it had paid down comes back exactly.
  *
- * Runs under the pair lock plus the group lock, like recording: a settlement
- * being validated against this payment must see it either counted or gone,
- * never half-way.
+ * A net settlement is removed whole or not at all. Its rows only mean
+ * something together: taking out one cancelled balance while its counterpart
+ * stands would leave a debt cancelled against nothing. So removing any one
+ * of its rows removes all of them, in this one transaction, and every
+ * balance it had settled comes back exactly as it was. The database enforces
+ * the same rule independently, so no other code path can do it by halves.
+ *
+ * Runs under the pair lock plus every affected group lock, like recording: a
+ * settlement being validated against this payment must see it either counted
+ * or gone, never half-way.
  *
  * @param userId - Authenticated caller; must be the payer or the recipient.
- * @param settlementId - Id of the settlement to remove.
+ * @param settlementId - Id of the settlement to remove, or of any row of the
+ *   net settlement to remove.
  * @throws UsecaseError (not_found) when the settlement is missing or already
  *   removed; (permission_denied) when the caller is not on it.
  */
@@ -1432,40 +1651,80 @@ export async function deleteSettlement(userId: string, settlementId: string): Pr
   }
   const actor = (await findUserById(userId))!;
   const otherUserId = existing.from_user === userId ? existing.to_user : existing.from_user;
-  const [payer, creditor] = await Promise.all([
-    findUserById(existing.from_user),
-    findUserById(existing.to_user),
-  ]);
+  const other = await findUserById(otherUserId);
+  const nameOf = (personId: string) =>
+    (personId === userId ? actor.name : other?.name) ?? "someone";
   await withSettlementPairLock(existing.from_user, existing.to_user, async (client) => {
-    if (existing.group_id) await lockGroupLedgers(client, [existing.group_id]);
+    // Every scope the unit touches is locked before anything is removed. The
+    // rows of a net settlement never change scope, so reading them first to
+    // learn which groups to lock is safe.
+    const unit = existing.net_settlement_id
+      ? await listSettlementsByNetSettlement(existing.net_settlement_id, client)
+      : [existing];
+    await lockGroupLedgers(
+      client,
+      unit.flatMap((portion) => (portion.group_id ? [portion.group_id] : [])),
+    );
     const current = await findSettlementById(settlementId, client);
     if (!current || current.deleted_at) notFound("payment not found");
-    await softDeleteSettlement(settlementId, userId, client);
-    // Announced on the same transaction as the removal: the feed row is
-    // the only record of who removed it and when, so it cannot be allowed
-    // to go missing while the removal stands.
-    const group = current.group_id ? await findGroupById(current.group_id, client) : undefined;
-    const amount = formatMoney(current.amount_cents, current.currency);
-    await insertActivity(
-      {
-        groupId: current.group_id,
-        actorId: userId,
-        type: "settlement_deleted",
-        message: `${actor.name} removed the payment "${payer?.name ?? "someone"} paid ${creditor?.name ?? "someone"} ${amount}"${group ? ` in "${group.name}"` : ""}`,
-        link: current.group_id ? `/groups/${current.group_id}` : `/friends/${otherUserId}`,
-        audience: [...new Set([current.from_user, current.to_user])],
-        amountCents: current.amount_cents,
-        currency: current.currency,
-      },
-      client,
-    );
+    let removed: SettlementRow[];
+    if (current.net_settlement_id) {
+      removed = await softDeleteNetSettlement(current.net_settlement_id, userId, client);
+    } else {
+      await softDeleteSettlement(settlementId, userId, client);
+      removed = [current];
+    }
+    const cashRows = removed.filter((portion) => portion.method !== OFFSET_SETTLEMENT_METHOD);
+    const offsetRows = removed.filter((portion) => portion.method === OFFSET_SETTLEMENT_METHOD);
+    const cashCents = cashRows.reduce((running, portion) => running + portion.amount_cents, 0);
+    // Each direction of a net settlement cancels the same amount; one side is it.
+    const cancelledCents = offsetRows
+      .filter((portion) => portion.from_user === offsetRows[0].from_user)
+      .reduce((running, portion) => running + portion.amount_cents, 0);
+    const cashAmount = formatMoney(cashCents, current.currency);
+    // Announced on the same transaction as the removal: the feed rows are
+    // the only record of who removed it and when, so they cannot be allowed
+    // to go missing while the removal stands. One line per scope touched, so
+    // each group's feed says what came back there.
+    for (const portion of removed) {
+      const group = portion.group_id ? await findGroupById(portion.group_id, client) : undefined;
+      const amount = formatMoney(portion.amount_cents, portion.currency);
+      const wasOffset = portion.method === OFFSET_SETTLEMENT_METHOD;
+      await insertActivity(
+        {
+          groupId: portion.group_id,
+          actorId: userId,
+          type: "settlement_deleted",
+          message: wasOffset
+            ? `${actor.name} removed a payment that had cancelled ${amount} ${nameOf(portion.from_user)} owed ${nameOf(portion.to_user)}${scopePhrase(group)} — that is owed again`
+            : `${actor.name} removed the payment "${nameOf(portion.from_user)} paid ${nameOf(portion.to_user)} ${amount}"${group ? ` in "${group.name}"` : ""}${offsetRows.length > 0 ? " and everything it had cancelled" : ""}`,
+          link: portion.group_id ? `/groups/${portion.group_id}` : `/friends/${otherUserId}`,
+          audience: [...new Set([portion.from_user, portion.to_user])],
+          amountCents: portion.amount_cents,
+          currency: portion.currency,
+        },
+        client,
+      );
+    }
+    const notifyGroup =
+      !current.net_settlement_id && current.group_id
+        ? await findGroupById(current.group_id, client)
+        : undefined;
     await insertNotifications(
       [otherUserId],
       {
         type: "settlement_deleted",
-        title: `${actor.name} removed the payment of ${amount}`,
-        body: group ? group.name : "Settlement",
-        link: current.group_id ? `/groups/${current.group_id}` : `/friends/${userId}`,
+        title: `${actor.name} removed the payment of ${cashAmount}`,
+        body:
+          offsetRows.length > 0
+            ? `The ${formatMoney(cancelledCents, current.currency)} it had cancelled each way is owed again, exactly as before the payment.`
+            : notifyGroup
+              ? notifyGroup.name
+              : "Settlement",
+        link:
+          !current.net_settlement_id && current.group_id
+            ? `/groups/${current.group_id}`
+            : `/friends/${userId}`,
       },
       client,
     );

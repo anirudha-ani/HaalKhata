@@ -1,5 +1,7 @@
 /** Allocation of one payment across the scopes where the payer's debt lives — pure. */
 
+import { createHash } from "node:crypto";
+
 /** How much the payer owes the creditor inside one scope, in one currency. */
 export interface ScopeDebt {
   /** Group the debt lives in, or null for the pair's one-off ledger. */
@@ -8,6 +10,41 @@ export interface ScopeDebt {
   currency: string;
   /** Cents the payer owes the creditor in this scope; always > 0. */
   owedCents: number;
+}
+
+/** A scope debt with the two people it runs between named. */
+export interface DirectedScopeDebt extends ScopeDebt {
+  /** Who owes. */
+  debtorId: string;
+  /** Who is owed. */
+  creditorId: string;
+}
+
+/**
+ * Fingerprints everything two people owe each other in one currency.
+ *
+ * A net settlement cancels balances against each other, so what it cancels
+ * has to be exactly what the person agreed to. The dialog is given this
+ * digest with the position it shows and sends it back; the write recomputes
+ * it under its locks and refuses on any difference — a new expense, a
+ * payment from the other side, a debt rerouted by simplification.
+ *
+ * It names people by id and each debt by its own direction, so it is the
+ * same whichever of the two is asking, and whichever way the payment runs.
+ *
+ * @param currency - The currency being settled.
+ * @param debts - The pair's debts in every scope, both directions; other
+ *   currencies are ignored.
+ * @returns A hex SHA-256 over the canonical, sorted list of those debts.
+ */
+export function positionDigest(currency: string, debts: readonly DirectedScopeDebt[]): string {
+  const lines = debts
+    .filter((debt) => debt.currency === currency)
+    .map((debt) => `${debt.groupId ?? ""}|${debt.debtorId}|${debt.creditorId}|${debt.owedCents}`)
+    .sort();
+  return createHash("sha256")
+    .update([currency, ...lines].join("\n"))
+    .digest("hex");
 }
 
 /** One recorded slice of a payment: which scope it pays down, and how much. */
@@ -80,4 +117,68 @@ export function allocateSettlement(
     }
   }
   return portions;
+}
+
+/** A payment settled on a pair's net: the cash that moved, and the entries that cancel what points the other way. */
+export interface NetSettlementPlan {
+  /** Slices of the cash, recorded payer → creditor. */
+  cash: SettlementPortion[];
+  /** Slices of the payer's debt cancelled without cash, recorded payer → creditor. */
+  offsetOwing: SettlementPortion[];
+  /** Each opposing balance, cancelled in full and recorded creditor → payer. */
+  offsetOpposing: SettlementPortion[];
+}
+
+/**
+ * Plans a payment that settles two people on their net in one currency.
+ *
+ * Two people can owe each other in different scopes at once: the payer owes
+ * 300 outside groups while being owed 200 inside one. The pair's balance is
+ * the net, 100, and that is all the cash that should move. But a debt lives
+ * in exactly one scope and each scope reads only its own rows, so 100 in cash
+ * alone would leave the group still showing 200 owed and the direct slate
+ * 200 the other way, for good. The balances that cancel have to be cancelled
+ * where they live.
+ *
+ * So the plan has three parts, and the last two sum to zero cash:
+ * 1. the cash, placed across what the payer owes exactly as an ordinary
+ *    cross-scope payment of that amount would be;
+ * 2. the rest of what the payer owes, up to the opposing total, cancelled;
+ * 3. every opposing balance cancelled in full, recorded the other way round.
+ *
+ * Cash is placed first so its rows are the same ones a plain payment makes;
+ * only what cash did not reach is offset. After a payment of the full net
+ * every scope the pair shares in the currency is at zero. After a partial
+ * one the opposing scopes are at zero and what is left of the net stays in
+ * the payer's scopes, in allocation order.
+ *
+ * The caller must have checked that the payer is behind overall and that
+ * `amountCents` is at most the net; both lists must be in one currency.
+ *
+ * @param owing - Per-scope debts of payer → creditor, every amount > 0.
+ * @param opposing - Per-scope debts of creditor → payer, every amount > 0.
+ * @param amountCents - The cash moving payer → creditor; > 0.
+ * @returns The rows to record, cash first.
+ */
+export function planNetSettlement(
+  owing: readonly ScopeDebt[],
+  opposing: readonly ScopeDebt[],
+  amountCents: number,
+): NetSettlementPlan {
+  const cash = allocateSettlement(owing, amountCents);
+  const paidByScope = new Map(cash.map((portion) => [portion.groupId, portion.amountCents]));
+  const stillOwing = owing
+    .map((scope) => ({
+      ...scope,
+      owedCents: scope.owedCents - (paidByScope.get(scope.groupId) ?? 0),
+    }))
+    .filter((scope) => scope.owedCents > 0);
+  const opposingCents = opposing.reduce((running, scope) => running + scope.owedCents, 0);
+  // Reuses the allocation order, and its guard against mixed currencies.
+  const offsetOpposing = allocateSettlement(opposing, opposingCents);
+  return {
+    cash,
+    offsetOwing: allocateSettlement(stillOwing, opposingCents),
+    offsetOpposing,
+  };
 }

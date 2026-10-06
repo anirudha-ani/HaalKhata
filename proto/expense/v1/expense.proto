@@ -242,6 +242,22 @@ message RecordSettlementRequest {
   // retry of a lost response gets the recording the first attempt made,
   // never a second one.
   string operation_id = 9;
+  // Settle the pair on their net in this currency, across every scope. Only
+  // with an empty group_id and no scope_group_ids. Two people can owe each
+  // other in different scopes at once (you owe them outside groups, they owe
+  // you inside two), and every list shows the pair as the net of both. With
+  // this set, amount_cents is the cash that moves — at most that net — and
+  // the server also records the offsetting entries that cancel the balances
+  // pointing the other way against what the payer owes, so every scope the
+  // pair shares in this currency moves together and a full payment leaves
+  // all of them at zero. Refused when the payer is not behind overall.
+  bool net_across_scopes = 10;
+  // Required with net_across_scopes: the digest of the SettlePosition the
+  // person was shown (FriendLedgerResponse.settle_positions). The server
+  // recomputes the position under its locks and refuses the settlement when
+  // the digests differ, so what gets cancelled is exactly what was on screen
+  // and never a ledger that moved underneath it.
+  string position_digest = 11;
 }
 
 message Settlement {
@@ -327,6 +343,36 @@ message FriendLedgerEntry {
   // running balance runs per currency: a euro line continues the euro
   // column, not the dollar one.
   string currency = 13;
+  // For a settlement line that is part of a net settlement: the id its lines
+  // share. They are removed together, never one at a time. Empty for an
+  // ordinary payment and for expense lines.
+  string net_settlement_id = 14;
+  // True for a net settlement's cancelling line: no money moved, a balance
+  // here was cancelled against one pointing the other way. It has no remove
+  // of its own; removing the payment it belongs to removes it too.
+  bool offset = 15;
+}
+
+// One balance two people share, inside a settle position.
+message SettleScope {
+  string group_id = 1; // empty = the pair's one-off slate
+  string group_name = 2;
+  int32 net_cents = 3; // > 0 = they owe you here
+  bool simplified = 4;
+}
+
+// Everything two people can settle between them in one currency, computed
+// by the same code that records a settlement: every scope they share, each
+// routed the way that scope routes debt, and the net of them. This, not the
+// statement history, is what a settle dialog for a person shows.
+message SettlePosition {
+  string currency = 1;
+  // The net across the scopes: > 0 = they owe you.
+  int32 net_cents = 2;
+  repeated SettleScope scopes = 3;
+  // Fingerprint of this position, to send back as
+  // RecordSettlementRequest.position_digest.
+  string digest = 4;
 }
 
 message FriendGroupBalance {
@@ -377,4 +423,6 @@ message FriendLedgerResponse {
   // True when older lines were left off `entries` to bound the response.
   // The nets and group balances are computed over everything regardless.
   bool truncated = 10;
+  // One entry per currency in which the pair has anything to settle.
+  repeated SettlePosition settle_positions = 11;
 }

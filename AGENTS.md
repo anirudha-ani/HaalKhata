@@ -319,6 +319,13 @@ with colocated tests. Mobile-specific rules:
   handler); the usecase claims it with `beginOperation` inside the ledger
   transaction and `finishOperation` before commit, so a retry replays the
   stored result. Clients mint one per submit (`newOperationId()`).
+- **A net settlement is one unit.** Its cash and `offset` rows share a
+  `net_settlements` parent and a deferred constraint trigger refuses a unit
+  that does not cancel out or is only partly removed. Never insert, update
+  or soft-delete one of its rows alone: go through `storeNetSettlement` and
+  `softDeleteNetSettlement`. A net settlement must carry the
+  `position_digest` the person was shown; the write recomputes it under the
+  locks and refuses a ledger that has moved.
 - **Limiters are process-local** (`rateLimit.ts`, `phoneRateLimit.ts`): fine
   for one container, wrong for two replicas — see `docs/plan.txt` §28.
 

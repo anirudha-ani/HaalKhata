@@ -257,6 +257,7 @@ describe("balances are kept per currency", () => {
       deleted_at: null,
       recorded_by: ALICE,
       deleted_by: null,
+      net_settlement_id: null,
     });
     expect(await owedByScope(ALICE, BOBBY)).toEqual([]);
     expect(await owedByScope(BOBBY, ALICE)).toEqual([

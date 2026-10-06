@@ -33,13 +33,20 @@ import {
   simplifyDebts,
   type LedgerEntry,
 } from "../domain/balances";
-import { type ScopeDebt } from "../domain/settlementAllocation";
+import {
+  positionDigest,
+  type DirectedScopeDebt,
+  type ScopeDebt,
+} from "../domain/settlementAllocation";
 import { listFriendIds } from "@/server/social/repo/friendships.repo";
 import { sumUserNetByGroup } from "@/server/expense/repo/ledger.repo";
 import { denied, notFound } from "@/server/common/errors";
 import { toInt32Cents } from "@/server/common/money";
 import { toPublicUser } from "@/server/auth/usecase/user.mapper";
-import { LEDGER_DISPLAY_LIMIT } from "@/server/expense/expense.constants";
+import {
+  LEDGER_DISPLAY_LIMIT,
+  OFFSET_SETTLEMENT_METHOD,
+} from "@/server/expense/expense.constants";
 
 /**
  * Cents per ISO 4217 code. A balance between two people is one number per
@@ -498,6 +505,72 @@ export async function owedByScope(
 }
 
 /**
+ * Everything two people owe each other, scope by scope, both directions.
+ *
+ * The one reading of a pair's position that settling uses. The settle dialog
+ * is shown it (through {@link pairSettlePositions}) and the net-settlement
+ * write recomputes it under its locks, so the two cannot be looking at
+ * different ledgers: same scopes, same routing, same cancelling-loop rule.
+ *
+ * @param firstId - One of the two people.
+ * @param secondId - The other.
+ * @param client - Settlement transaction client; omitted for ordinary reads.
+ * @returns Each outstanding debt with its debtor and creditor named.
+ */
+export async function pairScopeDebts(
+  firstId: string,
+  secondId: string,
+  client?: PoolClient,
+): Promise<DirectedScopeDebt[]> {
+  const forward = await owedByScope(firstId, secondId, client);
+  const backward = await owedByScope(secondId, firstId, client);
+  return [
+    ...forward.map((scope) => ({ ...scope, debtorId: firstId, creditorId: secondId })),
+    ...backward.map((scope) => ({ ...scope, debtorId: secondId, creditorId: firstId })),
+  ];
+}
+
+/** What two people can settle between them in one currency, from one side. */
+export interface PairSettlePosition {
+  currency: string;
+  /** Net across the scopes from the viewer's side: > 0 means they are owed. */
+  netCents: number;
+  /** The scopes behind it, signed the same way. */
+  scopes: { groupId: string | null; netCents: number }[];
+  /** Fingerprint a net settlement must send back. */
+  digest: string;
+}
+
+/**
+ * A pair's settle positions, one per currency with anything outstanding.
+ *
+ * @param userId - The viewer.
+ * @param friendId - The other person.
+ * @returns Positions by currency code, each with its scopes and digest.
+ */
+export async function pairSettlePositions(
+  userId: string,
+  friendId: string,
+): Promise<PairSettlePosition[]> {
+  const debts = await pairScopeDebts(userId, friendId);
+  const currencies = [...new Set(debts.map((debt) => debt.currency))].sort();
+  return currencies.map((currency) => {
+    const scopes = debts
+      .filter((debt) => debt.currency === currency)
+      .map((debt) => ({
+        groupId: debt.groupId,
+        netCents: debt.creditorId === userId ? debt.owedCents : -debt.owedCents,
+      }));
+    return {
+      currency,
+      netCents: scopes.reduce((running, scope) => running + scope.netCents, 0),
+      scopes,
+      digest: positionDigest(currency, debts),
+    };
+  });
+}
+
+/**
  * The largest single bucket a position holds, for ordering counterparties by
  * how much attention they need. Across currencies the magnitudes are not
  * comparable, so this is a display order and nothing more.
@@ -612,6 +685,10 @@ interface FriendLedgerLine {
   createdAt: string;
   deleted: boolean;
   recordedByName: string;
+  /** The net settlement a settlement line belongs to; "" otherwise. */
+  netSettlementId: string;
+  /** True for a net settlement's cancelling line. */
+  offset: boolean;
 }
 
 /** One routed balance between the pair inside a single scope and currency. */
@@ -680,6 +757,8 @@ function expenseLedgerLines(
       createdAt: "",
       deleted,
       recordedByName: "",
+      netSettlementId: "",
+      offset: false,
     });
   }
   return lines;
@@ -703,21 +782,38 @@ function settlementLedgerLines(
   return settlements.map((settlement) => {
     const paidByYou = settlement.from_user === userId;
     const deleted = settlement.deleted_at !== null;
+    // An offset moved no money; it cancelled this balance against one
+    // pointing the other way elsewhere, and the statement says so.
+    const offset = settlement.method === OFFSET_SETTLEMENT_METHOD;
     return {
       kind: "settlement",
       id: settlement.id,
       date: settlement.created_at.slice(0, 10),
-      description: paidByYou ? "You paid" : `${friendName} paid you`,
+      // Whose debt it was, from the reader's side, so neither person has to
+      // work out which way a cancelled balance ran.
+      description: offset
+        ? paidByYou
+          ? `Cancelled: what you owed ${friendName}`
+          : `Cancelled: what ${friendName} owed you`
+        : paidByYou
+          ? "You paid"
+          : `${friendName} paid you`,
       groupId: settlement.group_id ?? "",
       groupName: settlement.group_id ? (groupNames.get(settlement.group_id) ?? "") : "",
       currency: settlement.currency,
       totalCents: settlement.amount_cents,
       deltaCents: deleted ? 0 : paidByYou ? settlement.amount_cents : -settlement.amount_cents,
-      sortKey: `${settlement.created_at.slice(0, 10)}T${settlement.created_at}`,
+      // A net settlement's rows share one timestamp. Its cancelled balances
+      // sort ahead of its payment, so in the newest-first statement the
+      // payment leads and what it cancelled follows directly beneath it —
+      // in the same order for both people.
+      sortKey: `${settlement.created_at.slice(0, 10)}T${settlement.created_at}${offset ? "0" : "1"}${settlement.id}`,
       createdAt: settlement.created_at,
       deleted,
       // A payment is a claim one of the pair recorded; keep who asserted it.
       recordedByName: settlement.recorded_by === userId ? "you" : friendName,
+      netSettlementId: settlement.net_settlement_id ?? "",
+      offset,
     };
   });
 }
@@ -748,6 +844,8 @@ function friendLedgerEntries(lines: FriendLedgerLine[]) {
       createdAt: line.createdAt,
       deleted: line.deleted,
       recordedByName: line.recordedByName,
+      netSettlementId: line.netSettlementId,
+      offset: line.offset,
     };
   });
   return entries.reverse();
@@ -909,6 +1007,24 @@ export async function getFriendLedger(userId: string, friendId: string) {
   const nets: CurrencyCents = new Map();
   for (const scope of groupBalances) addCents(nets, scope.currency, scope.netCents);
 
+  // What a settle dialog works from: not the statement above, but the very
+  // position the settlement write will recompute, with its fingerprint.
+  const groupsById = new Map(mutualGroupRows.map((group) => [group.id, group]));
+  const settlePositions = (await pairSettlePositions(userId, friendId)).map((position) => ({
+    currency: position.currency,
+    netCents: toInt32Cents(position.netCents, "a balance"),
+    digest: position.digest,
+    scopes: position.scopes.map((scope) => {
+      const group = scope.groupId ? groupsById.get(scope.groupId) : undefined;
+      return {
+        groupId: scope.groupId ?? "",
+        groupName: group?.name ?? "",
+        netCents: toInt32Cents(scope.netCents, "a balance"),
+        simplified: group?.simplify_debts ?? false,
+      };
+    }),
+  }));
+
   return {
     friend: toPublicUser(friend),
     netCents: toInt32Cents(nets.get(defaultCurrency) ?? 0, "this balance"),
@@ -916,6 +1032,7 @@ export async function getFriendLedger(userId: string, friendId: string) {
     nets: currencyAmounts(nets, defaultCurrency),
     entries: shownEntries,
     truncated,
+    settlePositions,
     groupBalances: groupBalances.map((scope) => ({
       ...scope,
       netCents: toInt32Cents(scope.netCents, "a balance"),

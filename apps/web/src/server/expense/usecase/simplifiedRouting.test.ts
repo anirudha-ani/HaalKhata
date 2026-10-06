@@ -235,6 +235,7 @@ function recordTripSettlement(fromUser: string, toUser: string, amountCents: num
     deleted_at: null,
     recorded_by: fromUser,
     deleted_by: null,
+    net_settlement_id: null,
   });
 }
 
