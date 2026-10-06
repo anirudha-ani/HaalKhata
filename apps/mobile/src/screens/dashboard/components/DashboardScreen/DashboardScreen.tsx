@@ -14,7 +14,11 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { Money } from "@/components/ui/Money";
 import { Spinner } from "@/components/ui/Spinner";
 import { errorMessage } from "@/lib/api/connect";
-import { leadingBucket, outstandingBuckets } from "@haalkhata/shared/money/balances";
+import {
+  leadingBucket,
+  outstandingBuckets,
+  positionCaption,
+} from "@haalkhata/shared/money/balances";
 import { formatMoney } from "@haalkhata/shared/money/money";
 import { safeActivityPath } from "@haalkhata/shared/navigation/activityPath";
 import { localDate } from "@haalkhata/shared/time/localTime";
@@ -135,7 +139,10 @@ export function DashboardScreen() {
                       : [{ currency, cents: counterparty.netCents }],
                     currency,
                   );
-                  const toSettle = leadingBucket(buckets.filter((bucket) => bucket.cents < 0));
+                  // The same rule as the Friends screen, so Settle opens the
+                  // same sheet from either place: the largest balance,
+                  // whichever way it runs.
+                  const toSettle = leadingBucket(buckets);
                   return (
                     <View
                       key={person.id}
@@ -148,13 +155,7 @@ export function DashboardScreen() {
                             {person.name}
                           </Text>
                           <Text style={styles.personHint}>
-                            {buckets.length === 0
-                              ? "settled up"
-                              : buckets.every((bucket) => bucket.cents > 0)
-                                ? "owes you"
-                                : buckets.every((bucket) => bucket.cents < 0)
-                                  ? "you owe"
-                                  : "owes you · you owe"}
+                            {positionCaption(buckets)}
                           </Text>
                         </View>
                       </PersonLink>

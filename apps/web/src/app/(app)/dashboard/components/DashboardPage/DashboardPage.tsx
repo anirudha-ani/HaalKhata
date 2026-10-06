@@ -2,7 +2,7 @@
 /** Dashboard page: balance summary, per-person balances with settle-up, recent activity. */
 
 import Link from "next/link";
-import { Plus, Wallet } from "lucide-react";
+import { HandCoins, Plus, Wallet } from "lucide-react";
 import { Avatar } from "@/components/ui/Avatar/Avatar";
 import { EmptyState } from "@/components/ui/EmptyState/EmptyState";
 import { Money } from "@/components/ui/Money/Money";
@@ -11,7 +11,11 @@ import { SettleUpModal } from "@/components/modals/SettleUpModal/SettleUpModal";
 import { Spinner } from "@/components/ui/Spinner/Spinner";
 import { errorMessage } from "@/lib/api/connect";
 import { useHydrated } from "@/lib/hooks/useHydrated";
-import { leadingBucket, outstandingBuckets } from "@haalkhata/shared/money/balances";
+import {
+  leadingBucket,
+  outstandingBuckets,
+  positionCaption,
+} from "@haalkhata/shared/money/balances";
 import { formatMoney } from "@haalkhata/shared/money/money";
 import { safeActivityPath } from "@haalkhata/shared/navigation/activityPath";
 import { localDate } from "@haalkhata/shared/time/localTime";
@@ -118,8 +122,11 @@ export function DashboardPage() {
                   : [{ currency, cents: counterparty.netCents }],
                 currency,
               );
-              const owedByYou = buckets.filter((bucket) => bucket.cents < 0);
-              const toSettle = leadingBucket(owedByYou);
+              // The same rule as the Friends page, so Settle opens the same
+              // dialog from either place: the largest balance, whichever way
+              // it runs. Home used to look only at what you owe, which opened
+              // a different dialog for the same person.
+              const lead = leadingBucket(buckets);
               const person = counterparty.user;
               return (
                 <li key={person.id} className="flex items-center gap-3 px-4 py-3">
@@ -132,13 +139,7 @@ export function DashboardPage() {
                     <span className="min-w-0 flex-1">
                       <span className="block truncate font-medium">{person.name}</span>
                       <span className="block text-xs text-ink-soft">
-                        {buckets.length === 0
-                          ? "settled up"
-                          : buckets.every((bucket) => bucket.cents > 0)
-                            ? "owes you"
-                            : buckets.every((bucket) => bucket.cents < 0)
-                              ? "you owe"
-                              : "owes you · you owe"}
+                        {positionCaption(buckets)}
                       </span>
                     </span>
                   </PersonLink>
@@ -153,18 +154,24 @@ export function DashboardPage() {
                       />
                     ))}
                   </span>
-                  {toSettle ? (
+                  {lead ? (
                     <button
                       type="button"
                       onClick={() =>
                         dashboard.setSettleWith({
                           user: person,
-                          currency: toSettle.currency,
-                          cents: toSettle.cents,
+                          currency: lead.currency,
+                          cents: lead.cents,
                         })
                       }
-                      className="rounded-lg border border-line px-3 py-1.5 text-xs font-semibold text-ink-soft hover:border-pos-600 hover:text-pos-600"
+                      title={lead.cents > 0 ? "Record a payment received" : "Settle up"}
+                      className="flex shrink-0 items-center gap-1.5 rounded-lg border border-line px-3 py-1.5 text-xs font-semibold text-ink-soft hover:border-pos-600 hover:text-pos-600"
                     >
+                      {lead.cents > 0 ? (
+                        <HandCoins className="h-3.5 w-3.5" />
+                      ) : (
+                        <Wallet className="h-3.5 w-3.5" />
+                      )}
                       Settle
                     </button>
                   ) : null}

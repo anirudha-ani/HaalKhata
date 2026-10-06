@@ -16,7 +16,7 @@ import { Money } from "@/components/ui/Money";
 import { SearchField } from "@/components/ui/SearchField";
 import { Spinner } from "@/components/ui/Spinner";
 import { errorMessage } from "@/lib/api/connect";
-import { leadingBucket } from "@haalkhata/shared/money/balances";
+import { leadingBucket, positionCaption } from "@haalkhata/shared/money/balances";
 import { formatMoney } from "@haalkhata/shared/money/money";
 import { colors, fonts, radii, spacing } from "@/lib/theme/theme";
 import { bucketsOf, useFriends } from "./hooks/useFriends";
@@ -195,13 +195,7 @@ export function FriendsScreen() {
                       ) : null}
                     </View>
                     <Text style={styles.balanceHint}>
-                      {buckets.length === 0
-                        ? "settled up"
-                        : buckets.every((bucket) => bucket.cents > 0)
-                          ? "owes you"
-                          : buckets.every((bucket) => bucket.cents < 0)
-                            ? "you owe"
-                            : "owes you · you owe"}
+                      {positionCaption(buckets)}
                     </Text>
                   </View>
                   <View style={styles.amounts}>

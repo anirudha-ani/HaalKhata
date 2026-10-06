@@ -15,7 +15,7 @@ import { SettleUpModal } from "@/components/modals/SettleUpModal/SettleUpModal";
 import { Spinner } from "@/components/ui/Spinner/Spinner";
 import { errorMessage } from "@/lib/api/connect";
 import { useHydrated } from "@/lib/hooks/useHydrated";
-import { leadingBucket } from "@haalkhata/shared/money/balances";
+import { leadingBucket, positionCaption } from "@haalkhata/shared/money/balances";
 import type { FriendsTab } from "../../constants/friendsTabs";
 import { FriendsTabs } from "./components/FriendsTabs/FriendsTabs";
 import { IncomingRequests } from "./components/IncomingRequests/IncomingRequests";
@@ -142,13 +142,7 @@ export function FriendsPage() {
                       <div className="min-w-0 flex-1">
                         <p className="truncate font-medium">{person.name}</p>
                         <p className="text-xs text-ink-soft">
-                          {buckets.length === 0
-                            ? "settled up"
-                            : buckets.every((bucket) => bucket.cents > 0)
-                              ? "owes you"
-                              : buckets.every((bucket) => bucket.cents < 0)
-                                ? "you owe"
-                                : "owes you · you owe"}
+                          {positionCaption(buckets)}
                         </p>
                       </div>
                       <span className="flex flex-col items-end">
