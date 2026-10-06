@@ -2,7 +2,7 @@
 
 import { Check } from "lucide-react-native";
 import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
-import { ItemDraftEditor } from "@/components/expense/ItemDraftEditor";
+import { ItemCards } from "@/components/expense/ItemCards";
 import { Avatar } from "@/components/ui/Avatar";
 import { Segmented } from "@/components/ui/Segmented";
 import { colors, radii, spacing } from "@/lib/theme/theme";
@@ -11,11 +11,11 @@ import type { NewExpenseController } from "../../hooks/useNewExpense";
 
 /**
  * Renders the "Split" section of the expense form: split-type tabs, then
- * either the item editor (for an itemized split — the same one the receipt
- * scan uses, so a scanned expense can be corrected here) or a per-person
+ * either the item cards (for an itemized split, the same cards the receipt
+ * scan fills, so a scanned expense can be corrected here) or a per-person
  * list with participation checkboxes and, for non-equal splits, value
  * inputs; plus either the split validation message or the equal-split
- * per-person summary.
+ * per-person summary. The form renders the who-owes-what summary beneath.
  *
  * @param props - Component props.
  * @returns The split editor section.
@@ -36,11 +36,12 @@ export function SplitEditor({
       <Segmented onChange={form.setSplitType} options={SPLIT_TABS} value={form.splitType} />
 
       {form.isItemized ? (
-        <ItemDraftEditor
+        <ItemCards
           currency={currency}
           draft={form.itemDraft}
           meId={form.me?.id}
           people={form.people}
+          scanned={form.fromReceipt}
         />
       ) : (
       <View style={styles.listCard}>
