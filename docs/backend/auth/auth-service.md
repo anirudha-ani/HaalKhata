@@ -14,8 +14,7 @@ The Auth Service is essential for:
 - **Shadow-user claiming:** an invited person who signs in with the matching
   email (or verifies the matching phone) inherits the expense history written
   against their invitation.
-- **Profile:** display name, default currency, payment handles, onboarding
-  state.
+- **Profile:** display name, default currency, onboarding state.
 
 Implementation: [handler.ts](../../../apps/web/src/server/auth/handler.ts) →
 [auth.usecase.ts](../../../apps/web/src/server/auth/usecase/auth.usecase.ts),
@@ -328,13 +327,15 @@ projection, plus `token` (bearer clients only).
 
 - **Fields:** `name` (required, trimmed, bounded), `default_currency`
   (optional — empty leaves it unchanged; validated against the supported
-  allowlist), `payment_handles` (optional — when present, **replaces the
-  caller's whole set**; an entry with an empty handle removes that method).
-- Handle validation: method must be a known key (`venmo`/`zelle`/`cashapp`/
-  `paypal`), handle ≤ 120 chars, stored verbatim (opaque identifiers).
-- **Atomic:** the whole request is validated up front, then profile row and
-  handles are written in one transaction — the form either fully applies or
-  not at all.
+  allowlist).
+- **`payment_handles` is retired.** Payment methods have their own service
+  ([payment-service.md](../payment/payment-service.md)). A request that
+  still carries a non-blank handle comes from a client loaded before the
+  change and is refused whole with `FailedPrecondition` ("payment methods
+  have moved, refresh the app to edit them"): saving the name while dropping
+  the handle would report success for half of what was typed. Blank or
+  absent handles are ignored, since that older form sends one for every
+  field left empty.
 - Changing `default_currency` changes which currency every legacy
   single-number balance field reports; the per-currency lists are unaffected.
 
@@ -346,18 +347,14 @@ projection, plus `token` (bearer clients only).
 | --- | --- | --- |
 | name | string | New display name (required). |
 | default_currency | string | ISO 4217; empty = unchanged. |
-| payment_handles | repeated PaymentHandle | Full replacement set; empty handle = remove that method. |
+| payment_handles | repeated PaymentHandle | Retired. A non-blank handle refuses the request; see the notes. |
 
 **Sample Request (JSON):**
 
 ```json
 {
   "name": "Anirudha",
-  "defaultCurrency": "BDT",
-  "paymentHandles": [
-    { "method": "venmo", "handle": "@ani-p" },
-    { "method": "zelle", "handle": "" }
-  ]
+  "defaultCurrency": "BDT"
 }
 ```
 

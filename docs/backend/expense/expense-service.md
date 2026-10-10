@@ -596,6 +596,18 @@ created.
   paid me" (stored the other way round). Recording money coming back is the
   only way to clear a balance in your favour. Either person on a payment may
   record it; `recorded_by_user_id` preserves whose claim it is.
+- **How it was paid:** `payment_method_id` may name one of the payment
+  methods of whoever *received* the money (the other person's when paying
+  them, the caller's own when recording money received). The row then takes
+  that method's settlement key (a built-in app's own, `bank` when the method
+  carries bank details, `other` otherwise) and a **copy of its name** in
+  `method_label`, and `method` is ignored. A copy on purpose: renaming or
+  removing the method later does not rewrite the history. An id that does
+  not resolve, because the method was removed since the dialog opened or was
+  never theirs, **never fails the payment**: it is recorded from `method`
+  with no name. A net settlement's cancelling rows carry no name, since they
+  moved no money by any method. The friend statement reads "You paid via
+  bKash" when a name was kept.
 - **Validation (pre-lock):** not yourself; amount positive and bounded; note
   bounded; recipient exists; for a group — both people members, currency
   must be the group's.
@@ -640,6 +652,7 @@ created.
 | operation_id | string | **Required.** |
 | net_across_scopes | bool | Settle the pair's net in `currency`, cancelling opposing scopes in the same transaction. Not with `group_id` or `scope_group_ids`. |
 | position_digest | string | **Required with `net_across_scopes`:** the `digest` of the `SettlePosition` the person was shown. |
+| payment_method_id | string | Optional: the recipient's payment method the money moved through. Overrides `method` when it resolves; ignored, never refused, when it does not. |
 
 **Sample Request (JSON):**
 
@@ -668,6 +681,7 @@ per scope; callers only use the response to confirm the recording):
 | amount_cents / currency / method / note | | This portion's slice. |
 | created_at | string | ISO-8601 UTC. |
 | recorded_by_user_id | string | Who typed it in — one of the two, not necessarily the payer. A payment is a claim; this says whose. |
+| method_label | string | Name of the payment method used ("bKash"), as it was called when the payment was recorded. Empty for cash and for payments that named none. |
 
 ---
 
@@ -822,6 +836,12 @@ per scope; callers only use the response to confirm the recording):
 - **One instant:** the statement, the balances and the settle positions are
   read inside one snapshot (see [Concurrency](#concurrency)), so they always
   describe the same ledger.
+- **`payee_methods` is how the friend wants to be paid**, and this response
+  is the only place one person's payment methods reach another. It is filled
+  only while the caller owes the friend: in any currency, or inside any one
+  scope, since a single balance can be settled alone even when the pair's
+  net points the other way. Otherwise it is empty and the methods are never
+  read. See [payment-service.md](../payment/payment-service.md).
 - A net settlement's lines sort with the payment first and its cancelled
   balances directly beneath it, in the same order for both people.
 
@@ -846,6 +866,7 @@ per scope; callers only use the response to confirm the recording):
 | mutual_groups | repeated MutualGroup | Every shared group, settled ones included. |
 | truncated | bool | True when older lines were cut. |
 | settle_positions | repeated SettlePosition | Per currency: `net_cents` (> 0 = they owe you), `scopes` (`group_id`, `group_name`, `net_cents`, `simplified`), and the `digest` a net settlement must send back. |
+| payee_methods | repeated payment.v1.PaymentMethod | The friend's payment methods, oldest first. Empty unless the caller owes them. |
 
 **FriendLedgerEntry** (signs always read "positive = in your favour"):
 
