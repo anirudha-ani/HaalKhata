@@ -20,3 +20,9 @@ export const PAYMENT_METHOD_WRITE_SCOPE = "write-payment-method";
  * else alike, so the answer never confirms that an id is real.
  */
 export const METHOD_NOT_FOUND_MESSAGE = "payment method not found";
+
+/**
+ * Most method names a reminder lists for one currency when none is starred.
+ * A notification is one line; past three the list reads as noise.
+ */
+export const MAX_HINT_METHOD_NAMES = 3;

@@ -44,6 +44,7 @@ import { snapshot } from "@/server/common/db";
 import { denied, notFound } from "@/server/common/errors";
 import { toInt32Cents } from "@/server/common/money";
 import { toPublicUser } from "@/server/auth/usecase/user.mapper";
+import { listPayeeMethods } from "@/server/payment/usecase/paymentMethod.usecase";
 import {
   LEDGER_DISPLAY_LIMIT,
   OFFSET_SETTLEMENT_METHOD,
@@ -1071,6 +1072,15 @@ export async function getFriendLedger(userId: string, friendId: string) {
       }),
     }));
 
+    // How the friend wants to be paid goes only to someone about to pay
+    // them. A scope counts on its own, not just the net: one balance can be
+    // settled alone, so a caller who owes inside one group needs the details
+    // even when the friend owes them more somewhere else.
+    const callerOwes = settlePositions.some(
+      (position) => position.netCents < 0 || position.scopes.some((scope) => scope.netCents < 0),
+    );
+    const payeeMethods = callerOwes ? await listPayeeMethods(friendId, client) : [];
+
     return {
       friend: toPublicUser(friend),
       netCents: toInt32Cents(nets.get(defaultCurrency) ?? 0, "this balance"),
@@ -1079,6 +1089,7 @@ export async function getFriendLedger(userId: string, friendId: string) {
       entries: shownEntries,
       truncated,
       settlePositions,
+      payeeMethods,
       groupBalances: groupBalances.map((scope) => ({
         ...scope,
         netCents: toInt32Cents(scope.netCents, "a balance"),

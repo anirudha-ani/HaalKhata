@@ -43,6 +43,9 @@ vi.mock("@/server/auth/repo/users.repo", () => ({
   findUsersByIds: vi.fn(),
 }));
 vi.mock("@/server/social/repo/friendships.repo", () => ({ listFriendIds: vi.fn() }));
+vi.mock("@/server/payment/repo/paymentMethods.repo", () => ({
+  listPaymentMethodsByUser: vi.fn(async () => []),
+}));
 
 import {
   amountOwed,
@@ -169,7 +172,6 @@ function userRow(userId: string): UserRow {
     password_hash: "hash",
     google_sub: null,
     phone: null,
-    payment_handles: [],
     onboarded_at: "2026-08-01T00:00:00Z",
   } as unknown as UserRow;
 }

@@ -4,6 +4,7 @@ package expense.v1;
 
 import "google/protobuf/empty.proto";
 import "common/v1/common.proto";
+import "payment/v1/payment.proto";
 
 // Expenses, settlements and balances. All money is integer cents in the
 // expense's currency; splits always reconcile to the exact total.
@@ -425,4 +426,11 @@ message FriendLedgerResponse {
   bool truncated = 10;
   // One entry per currency in which the pair has anything to settle.
   repeated SettlePosition settle_positions = 11;
+  // How this person wants to be paid: every payment method of theirs, oldest
+  // first. Filled only while the caller owes them something, in any currency
+  // and in any one scope, since a single balance can be settled on its own
+  // even when the pair's net points the other way. Empty otherwise: an
+  // account number is for the person about to use it, and nobody else. This
+  // response is the only way one person's methods reach another.
+  repeated payment.v1.PaymentMethod payee_methods = 12;
 }

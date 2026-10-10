@@ -214,7 +214,8 @@ export function normalizePhone(phone: string): string | null {
 }
 
 /**
- * Maximum length of a payment handle. Generous next to a Venmo username or a
- * $cashtag, but bounded — handles are stored verbatim and rendered as-is.
+ * Said to a client that still sends payment handles with a profile save.
+ * Worded for the person at that older form, who can act on it.
  */
-export const MAX_PAYMENT_HANDLE_LENGTH = 120;
+export const PAYMENT_HANDLES_RETIRED_MESSAGE =
+  "payment methods have moved, refresh the app to edit them";

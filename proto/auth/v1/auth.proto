@@ -129,7 +129,10 @@ message ConfirmPhoneMergeRequest {
 message UpdateProfileRequest {
   string name = 1;
   string default_currency = 2;
-  // Replaces the caller's whole set of payment handles. An entry with an
-  // empty handle removes that method.
-  repeated common.v1.PaymentHandle payment_handles = 3;
+  // Retired. Payment methods are edited through
+  // payment.v1.PaymentMethodService. A request that still carries a
+  // non-blank handle is refused with failed_precondition, so a client from
+  // before the change fails where its user can see it instead of saving into
+  // nothing; blank or absent handles are ignored.
+  repeated common.v1.PaymentHandle payment_handles = 3 [deprecated = true];
 }

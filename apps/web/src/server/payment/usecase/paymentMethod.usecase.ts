@@ -93,6 +93,23 @@ export async function listMyPaymentMethods(userId: string) {
 }
 
 /**
+ * Lists the payment methods of the person a payer is about to pay.
+ *
+ * This is the one place another person's methods are read, and it does not
+ * decide who may see them: the caller does, and must only call it for a
+ * payer who owes the payee (see getFriendLedger). It reads on the caller's
+ * client so the methods belong to the same instant as the balances they are
+ * shown beside.
+ *
+ * @param payeeId - Owner of the methods.
+ * @param client - The ledger read's snapshot client.
+ * @returns The payee's methods in proto shape, oldest first.
+ */
+export async function listPayeeMethods(payeeId: string, client: PoolClient) {
+  return (await listPaymentMethodsByUser(payeeId, client)).map(toPaymentMethod);
+}
+
+/**
  * Adds a payment method to the caller's list.
  *
  * @param userId - Id of the authenticated caller.
