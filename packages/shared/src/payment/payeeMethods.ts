@@ -1,4 +1,8 @@
-/** Which of a person's payment methods a payer is shown for a currency, and which one comes first. */
+/** Which of a person's payment methods a payer is shown for a currency, which one comes first, and how the choice is recorded. */
+
+import { BANK_DETAIL_KINDS } from "./payment.constants";
+import { isPreset } from "./templates";
+import type { PaymentMethodFields } from "./types";
 
 /** The two facts about a method that decide where it sits for a payer. */
 export interface PayableMethod {
@@ -100,4 +104,58 @@ export function preferredMethod<Method extends PayableMethod>(
 ): Method | undefined {
   const best = defaultMethod(methods, currency);
   return best?.preferred ? best : undefined;
+}
+
+/** One way of paying that needs no details from anybody. */
+export interface PlainPayChoice {
+  /** Key stored on the settlement. */
+  key: string;
+  /** Text on its chip. */
+  label: string;
+}
+
+/** Key of the "Cash" choice, which is also what a settle dialog falls back to. */
+export const CASH_CHOICE = "cash";
+
+/**
+ * The choices offered after a person's own methods: money handed over, and
+ * anything this app has no word for. Their keys are settlement method keys.
+ */
+export const PLAIN_PAY_CHOICES: readonly PlainPayChoice[] = [
+  { key: CASH_CHOICE, label: "Cash" },
+  { key: "other", label: "Other" },
+];
+
+/**
+ * What a settle dialog has selected when it opens for a currency.
+ *
+ * @param methods - The methods offered, in the owner's order.
+ * @param currency - ISO 4217 code of the payment.
+ * @returns The id of the best usable method, or {@link CASH_CHOICE} when none works in that currency.
+ */
+export function defaultPayChoice<Method extends PayableMethod & { id: string }>(
+  methods: readonly Method[],
+  currency: string,
+): string {
+  return defaultMethod(methods, currency)?.id ?? CASH_CHOICE;
+}
+
+/**
+ * The method key a settlement is recorded under for the way it was paid.
+ *
+ * Settlements keep one of a fixed set of keys. A built-in app has its own; a
+ * method the person defined is a bank transfer when it carries bank details
+ * and "other" when it does not.
+ *
+ * @param choice - A plain choice's key, used when no method was picked.
+ * @param method - The payment method picked, if any.
+ * @returns A settlement method key: venmo, zelle, cashapp, paypal, cash, bank or other.
+ */
+export function settlementMethodKey(
+  choice: string,
+  method?: Pick<PaymentMethodFields, "preset" | "details">,
+): string {
+  if (!method) return PLAIN_PAY_CHOICES.some((plain) => plain.key === choice) ? choice : "other";
+  if (isPreset(method.preset)) return method.preset;
+  return method.details.some((detail) => BANK_DETAIL_KINDS.includes(detail.kind)) ? "bank" : "other";
 }

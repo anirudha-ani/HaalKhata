@@ -23,5 +23,6 @@ export function toPaymentMethod(methodRow: PaymentMethodRow) {
     note: methodRow.note,
     preferred: methodRow.is_preferred,
     updatedAt: methodRow.updated_at,
+    createdAt: methodRow.created_at,
   };
 }

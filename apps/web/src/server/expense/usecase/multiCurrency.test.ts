@@ -255,6 +255,7 @@ describe("balances are kept per currency", () => {
         note: "",
         preferred: false,
         updatedAt: "2026-08-01T00:00:00Z",
+        createdAt: "2026-08-01T00:00:00Z",
       },
     ]);
     // Read inside the ledger's snapshot, on its client.

@@ -51,6 +51,10 @@ message PaymentMethod {
   // move it. A payer is shown a recent change, since details that suddenly
   // differ are the mark of a payment being redirected.
   string updated_at = 8;
+  // When the method was added. Equal to updated_at for a method that has
+  // never been edited, which lets a client say "added" instead of "changed":
+  // new details and altered details are different news to a payer.
+  string created_at = 9;
 }
 
 // One labelled identifier of a payment method.

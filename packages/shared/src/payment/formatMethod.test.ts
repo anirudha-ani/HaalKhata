@@ -3,10 +3,12 @@
 import { describe, expect, test } from "vitest";
 import {
   detailCopyText,
+  keyedDetails,
   linkHost,
   methodCopyText,
   methodCurrencyLabel,
   methodSummary,
+  recentChange,
   valueTail,
 } from "./formatMethod";
 import { detailLabel, detailValueText } from "./detailKinds";
@@ -135,5 +137,78 @@ describe("small helpers", () => {
   test("an any-currency method says so where a code would be", () => {
     expect(methodCurrencyLabel({ currency: "BDT" })).toBe("BDT");
     expect(methodCurrencyLabel({ currency: "" })).toBe("Any");
+  });
+});
+
+describe("recentChange", () => {
+  const nowMs = Date.parse("2026-10-10T12:00:00.000Z");
+  const daysAgo = (days: number) => new Date(nowMs - days * 24 * 60 * 60 * 1000).toISOString();
+  /**
+   * Builds the stamps of a method edited some days after it was added.
+   *
+   * @param editedDaysAgo - How long ago it was last edited.
+   * @returns The stamps, with the method added a year ago.
+   */
+  const edited = (editedDaysAgo: number) => ({
+    createdAt: daysAgo(365),
+    updatedAt: daysAgo(editedDaysAgo),
+  });
+  /**
+   * Builds the stamps of a method that was added and never edited.
+   *
+   * @param addedDaysAgo - How long ago it was added.
+   * @returns The stamps, equal to each other.
+   */
+  const untouched = (addedDaysAgo: number) => ({
+    createdAt: daysAgo(addedDaysAgo),
+    updatedAt: daysAgo(addedDaysAgo),
+  });
+
+  test("an edited method says how recently it changed, for two weeks", () => {
+    expect(recentChange(edited(0), nowMs)).toEqual({ text: "Changed today", edited: true });
+    expect(recentChange(edited(1), nowMs)).toEqual({ text: "Changed yesterday", edited: true });
+    expect(recentChange(edited(2), nowMs)).toEqual({ text: "Changed 2 days ago", edited: true });
+    expect(recentChange(edited(14), nowMs)?.text).toBe("Changed 14 days ago");
+  });
+
+  test("a method that was only ever added says so, without the alarm", () => {
+    expect(recentChange(untouched(0), nowMs)).toEqual({ text: "Added today", edited: false });
+    expect(recentChange(untouched(3), nowMs)).toEqual({ text: "Added 3 days ago", edited: false });
+  });
+
+  test("says nothing once the change is old, in the future, or unreadable", () => {
+    expect(recentChange(edited(15), nowMs)).toBeUndefined();
+    expect(recentChange(untouched(400), nowMs)).toBeUndefined();
+    expect(recentChange(edited(-2), nowMs)).toBeUndefined();
+    expect(recentChange({ createdAt: "", updatedAt: "" }, nowMs)).toBeUndefined();
+    expect(recentChange({ createdAt: daysAgo(3), updatedAt: "not a date" }, nowMs)).toBeUndefined();
+  });
+
+  test("a method copied from an old handle is dated before today and says nothing", () => {
+    // The backfill dates a method from its owner's account, and created_at
+    // sits a few milliseconds after updated_at to keep the old order.
+    const copied = { createdAt: "2026-07-04T12:00:00.002Z", updatedAt: "2026-07-04T12:00:00.000Z" };
+    expect(recentChange(copied, nowMs)).toBeUndefined();
+  });
+
+  test("an unreadable creation stamp falls back to the louder wording", () => {
+    expect(recentChange({ createdAt: "", updatedAt: daysAgo(1) }, nowMs)?.edited).toBe(true);
+  });
+});
+
+describe("keyedDetails", () => {
+  test("keys are unique even when a method lists the same thing twice", () => {
+    const same = { kind: "custom", label: "Branch", value: "Downtown" };
+    const keys = keyedDetails([same, { ...same }, { kind: "email", label: "", value: "a@b.co" }]).map(
+      (entry) => entry.key,
+    );
+    expect(new Set(keys).size).toBe(3);
+  });
+
+  test("a detail keeps its key when another is put in front of it", () => {
+    const email = { kind: "email", label: "", value: "a@b.co" };
+    const [alone] = keyedDetails([email]);
+    const moved = keyedDetails([{ kind: "phone", label: "", value: "+14155552671" }, email]);
+    expect(moved[1]?.key).toBe(alone?.key);
   });
 });

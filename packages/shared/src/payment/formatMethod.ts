@@ -2,7 +2,12 @@
 
 import { detailLabel, detailValueText, findDetailKind } from "./detailKinds";
 import { displayHandle } from "./methods";
-import { HTTPS_LINK_PATTERN, MASK_VISIBLE_CHARACTERS } from "./payment.constants";
+import {
+  DAY_MS,
+  HTTPS_LINK_PATTERN,
+  MASK_VISIBLE_CHARACTERS,
+  RECENT_CHANGE_DAYS,
+} from "./payment.constants";
 import { isPreset } from "./templates";
 import type { PaymentDetailFields, PaymentMethodFields } from "./types";
 
@@ -128,4 +133,74 @@ export function methodCopyText(method: PaymentMethodFields): string {
   ];
   if (method.note.trim() !== "") lines.push(`Note: ${method.note.trim()}`);
   return lines.join("\n");
+}
+
+/** One detail paired with a key that is stable and unique within its method. */
+export interface KeyedDetail {
+  /** List key: the detail's content, numbered when the same content repeats. */
+  key: string;
+  detail: PaymentDetailFields;
+}
+
+/**
+ * Pairs each detail with a list key. Details have no id of their own, and
+ * an index would be the only thing telling two of them apart if they were
+ * ever reordered, so the key is the content itself, with a counter for the
+ * rare method that lists the same thing twice.
+ *
+ * @param details - A method's details, in order.
+ * @returns The details with their keys, in the same order.
+ */
+export function keyedDetails(details: readonly PaymentDetailFields[]): KeyedDetail[] {
+  const seen = new Map<string, number>();
+  return details.map((detail) => {
+    const content = `${detail.kind}:${detail.label}:${detail.value}`;
+    const occurrence = seen.get(content) ?? 0;
+    seen.set(content, occurrence + 1);
+    return { key: `${content}#${occurrence}`, detail };
+  });
+}
+
+/** What a payer is told about how recently a method's details came to be what they are. */
+export interface RecentChange {
+  /** "Added today", "Changed 3 days ago", and so on. */
+  text: string;
+  /**
+   * True when the method was edited after it was added. Altered details
+   * warrant a warning; a method that is simply new warrants a mention.
+   */
+  edited: boolean;
+}
+
+/**
+ * What a payer is told when a method is new or its details changed recently.
+ *
+ * Details that suddenly differ are the mark of a payment being redirected,
+ * by a compromised account or by someone with the owner's phone. The app
+ * cannot tell an honest change from that, so it says the one thing it knows
+ * and lets the payer ask. A method that was added and never touched is said
+ * more quietly: everyone's methods are new once, and a warning shown to
+ * every payer is a warning nobody reads.
+ *
+ * @param method - The method's creation and last-change stamps (ISO 8601).
+ * @param nowMs - The current time in milliseconds, passed in so the answer can be tested.
+ * @returns The wording and whether it is an edit; undefined once the change
+ *   is older than {@link RECENT_CHANGE_DAYS} or the stamp does not parse.
+ */
+export function recentChange(
+  method: { createdAt: string; updatedAt: string },
+  nowMs: number,
+): RecentChange | undefined {
+  const changedMs = Date.parse(method.updatedAt);
+  if (Number.isNaN(changedMs)) return undefined;
+  const days = Math.floor((nowMs - changedMs) / DAY_MS);
+  if (days < 0 || days > RECENT_CHANGE_DAYS) return undefined;
+  const createdMs = Date.parse(method.createdAt);
+  // An unreadable creation stamp is treated as an edit: the louder wording
+  // is the safe one to fall back to.
+  const edited = Number.isNaN(createdMs) || changedMs > createdMs;
+  const verb = edited ? "Changed" : "Added";
+  if (days === 0) return { text: `${verb} today`, edited };
+  if (days === 1) return { text: `${verb} yesterday`, edited };
+  return { text: `${verb} ${days} days ago`, edited };
 }

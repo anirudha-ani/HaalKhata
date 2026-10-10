@@ -1,21 +1,14 @@
 "use client";
-/** Modal for settling up: shows exactly which balances a payment settles, takes the amount and the app the money moved through, then records it. */
+/** Modal for settling up: shows exactly which balances a payment settles, takes the amount and how the money moved, shows where to send it, then records it. */
 
 import { useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, Copy, ExternalLink } from "lucide-react";
 import type { User } from "@haalkhata/protogen/common/v1/common_pb";
 import { errorMessage, expenseClient } from "@/lib/api/connect";
-import { copyText } from "@/lib/clipboard/copyText";
 import { newOperationId } from "@/lib/operations/operationId";
 import { centsToInput, parseMoneyInput } from "@haalkhata/shared/money/money";
 import { MONEY_KEYS, queryKeys } from "@haalkhata/shared/api/queryKeys";
-import {
-  PAYMENT_METHODS,
-  displayHandle,
-  findPaymentMethod,
-  paymentLink,
-} from "@haalkhata/shared/payment/methods";
+import { CASH_CHOICE } from "@haalkhata/shared/payment/payeeMethods";
 import { Avatar } from "@/components/ui/Avatar/Avatar";
 import { Modal } from "@/components/ui/Modal/Modal";
 import { Money } from "@/components/ui/Money/Money";
@@ -24,12 +17,16 @@ import {
   readSettlePositions,
   settleOverLimitMessage,
 } from "@haalkhata/shared/expense/settlePosition";
+import { PayMethodChips } from "./components/PayMethodChips/PayMethodChips";
+import { PayeeMethodDetails } from "./components/PayeeMethodDetails/PayeeMethodDetails";
+import { usePayMethods } from "./hooks/usePayMethods";
 
 /**
  * Renders the settle-up modal: who is paying whom, exactly which balances
- * the payment settles, the amount, which app the money moves through, and —
- * the part that actually saves time — the recipient's handle for that app,
- * ready to copy or open.
+ * the payment settles, the amount, how the money moves, and — the part that
+ * actually saves time — the recipient's own payment methods for the
+ * currency being paid, their preferred one already selected, every detail
+ * ready to copy.
  *
  * What it settles follows from where it was opened, and there is nothing to
  * pick inside it:
@@ -52,18 +49,14 @@ import {
  * What gets settled is what was on screen. The direction is whichever way
  * the listed balances point, so it follows the currency.
  *
- * Two things this deliberately does not pretend:
- * - It never moves money. It records that a payment happened, which is stated
- *   on the button's own line rather than left to be discovered.
- * - It only offers a link where one exists and only claims a prefilled amount
- *   where the app accepts one — Zelle has no universal link at all and Cash
- *   App cannot carry an amount.
+ * It never moves money. It records that a payment happened, which is stated
+ * on the button's own line rather than left to be discovered.
  *
- * The handle block appears only when *you* are the one paying. Recording a
- * payment received logs money that has already arrived: there is nobody to
- * send anything to, and surfacing your own handle there would offer a link
- * that opens Venmo to pay yourself. Telling someone where to send money is the
- * reminder's job, not this form's.
+ * Whose methods "How" lists follows the direction. Paying someone, they are
+ * that person's, and the selected one's details are shown. They arrive on
+ * the friend ledger, which sends them only to someone who owes that person.
+ * Recording a payment received, they are your own, to note how the money
+ * arrived, and no details are shown: there is nobody to send anything to.
  *
  * A payment moves in one currency and settles balances in that currency
  * only — nothing converts. When there is something to settle in more than
@@ -104,10 +97,8 @@ export function SettleUpModal({
   const [typedAmount, setTypedAmount] = useState("");
   const [amountEdited, setAmountEdited] = useState(false);
   const [chosenCurrency, setChosenCurrency] = useState(initialCurrency);
-  const [methodKey, setMethodKey] = useState("venmo");
   const [note, setNote] = useState("");
   const [error, setError] = useState("");
-  const [copied, setCopied] = useState(false);
   // One id per attempt at recording: a retry after a lost response sends
   // the same one and gets the first recording back, never a second.
   const operationIdRef = useRef(newOperationId());
@@ -132,6 +123,11 @@ export function SettleUpModal({
   const payableCents = Math.abs(reading.netCents);
   const received = reading.netCents !== 0 ? reading.netCents > 0 : receivedHint;
   const firstName = other.name.split(" ")[0];
+  const payMethods = usePayMethods({
+    payeeMethods: ledgerQuery.data?.payeeMethods ?? [],
+    currency,
+    received,
+  });
 
   // Derived, not synced: the amount is what is being settled until the payer
   // types one, and falls back to the caller's suggestion while the balances
@@ -147,7 +143,7 @@ export function SettleUpModal({
         toUserId: other.id,
         amountCents,
         currency,
-        method: methodKey,
+        method: payMethods.settlementKey,
         note,
         received,
         // One balance: the server records the payment in that scope alone.
@@ -173,41 +169,23 @@ export function SettleUpModal({
     },
   });
 
-  const method = findPaymentMethod(methodKey);
-  // Only ever the person being paid, and only when that is not you — see the
-  // note on the component.
-  const handle = received
-    ? ""
-    : (other.paymentHandles.find((entry) => entry.method === methodKey)?.handle ?? "");
   const amountCents = parseMoneyInput(amount, currency) ?? 0;
-  const link = paymentLink(methodKey, handle, amountCents, note);
-  // Storage keeps the bare identifier; the payer wants the form printed on a
-  // profile. "@jordan-lee" is what they will search for and what pastes
-  // cleanly into the app, so it is both what is shown and what gets copied.
-  const shownHandle = displayHandle(methodKey, handle);
+  // Said only when there is a payment to make: with nothing owed the
+  // methods are not sent at all, and "has not added one" would be untrue.
+  const canPay = loaded && !received && reading.rows.length > 0;
 
   /**
-   * Switches the payment's currency: the list, the amount and the request
-   * all follow, and any typed amount is dropped since it was in the old
-   * currency.
+   * Switches the payment's currency: the list, the amount, the methods
+   * offered and the request all follow. A typed amount is dropped since it
+   * was in the old currency, and so is a picked method, so the selection
+   * goes back to that currency's preferred one.
    *
    * @param nextCurrency - ISO 4217 code to pay in.
    */
   const switchCurrency = (nextCurrency: string) => {
     setChosenCurrency(nextCurrency);
     setAmountEdited(false);
-  };
-
-  /**
-   * Copies the recipient's handle and flips the button to a confirmation.
-   * Only confirms on success: `navigator.clipboard` is absent outside a
-   * secure context, so a phone on plain http takes the fallback path, and
-   * saying "Copied" when nothing was copied is worse than saying nothing.
-   */
-  const copyHandle = async () => {
-    if (!(await copyText(shownHandle))) return;
-    setCopied(true);
-    window.setTimeout(() => setCopied(false), 1500);
+    payMethods.resetPick();
   };
 
   /** Validates the amount against what is being settled, then records the settlement. */
@@ -358,81 +336,32 @@ export function SettleUpModal({
 
         <div className="space-y-2">
           <p className="text-sm font-medium">How</p>
-          <div className="flex flex-wrap gap-1.5">
-            {PAYMENT_METHODS.map((option) => {
-              // Marks where this person can be paid. Meaningless when logging
-              // money already received, so it is not shown then.
-              const hasHandle =
-                !received &&
-                other.paymentHandles.some(
-                  (entry) => entry.method === option.key && entry.handle,
-                );
-              return (
-                <button
-                  key={option.key}
-                  type="button"
-                  onClick={() => setMethodKey(option.key)}
-                  className={`rounded-full border px-3 py-1.5 text-sm ${
-                    methodKey === option.key
-                      ? "border-brand-600 bg-brand-50 font-medium text-brand-700"
-                      : "border-line text-ink-soft hover:border-brand-200"
-                  }`}
-                >
-                  {option.label}
-                  {/* A dot marks the apps this person can actually be paid on,
-                      so the right one is obvious before anything is clicked. */}
-                  {hasHandle ? (
-                    <span className="ml-1.5 inline-block h-1.5 w-1.5 rounded-full bg-pos-600 align-middle" />
-                  ) : null}
-                </button>
-              );
-            })}
-          </div>
+          <PayMethodChips
+            usable={payMethods.usable}
+            others={payMethods.others}
+            choice={payMethods.choice}
+            onPick={payMethods.pick}
+          />
+          {/* Why the list is short, said by name and currency, so nobody
+              takes "no bKash here" for "the app does not do bKash". */}
+          {canPay && payMethods.usable.length === 0 ? (
+            <p className="rounded-xl border border-dashed border-line px-3 py-2.5 text-sm text-ink-soft">
+              {payMethods.hasAnyMethod
+                ? `${firstName} has not added a way to be paid in ${currency}.`
+                : `${firstName} has not added a way to be paid yet.`}
+            </p>
+          ) : null}
         </div>
 
-        {!received && method?.takesHandle ? (
-          handle ? (
-            <div className="space-y-2 rounded-xl border border-line bg-paper p-3">
-              <p className="text-xs font-medium tracking-wide text-ink-soft uppercase">
-                {firstName}&apos;s {method.label}
-              </p>
-              <div className="flex items-center gap-2">
-                <code className="min-w-0 flex-1 truncate rounded-lg bg-card px-3 py-2 font-mono text-sm">
-                  {shownHandle}
-                </code>
-                <button
-                  type="button"
-                  onClick={copyHandle}
-                  className="flex shrink-0 items-center gap-1.5 rounded-lg border border-line px-3 py-2 text-sm font-medium text-ink-soft hover:border-brand-500 hover:text-brand-700"
-                >
-                  {copied ? <Check className="h-4 w-4 text-pos-600" /> : <Copy className="h-4 w-4" />}
-                  {copied ? "Copied" : "Copy"}
-                </button>
-              </div>
-              {link ? (
-                <a
-                  href={link}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-center justify-center gap-1.5 rounded-lg bg-brand-600 py-2 text-sm font-semibold text-white hover:bg-brand-700"
-                >
-                  <ExternalLink className="h-4 w-4" />
-                  Open {method.label}
-                </a>
-              ) : null}
-              <p className="text-xs text-ink-soft">
-                {!method.linkable
-                  ? `${method.label} has no shareable link — paste this into your banking app.`
-                  : method.linkCarriesAmount
-                    ? `Opens ${method.label} with the amount filled in. You still confirm it there.`
-                    : `${method.label} can't carry an amount in a link — type it in the app.`}
-              </p>
-            </div>
-          ) : (
-            <p className="rounded-xl border border-dashed border-line px-3 py-2.5 text-sm text-ink-soft">
-              {firstName} hasn&apos;t added a {method.label} handle yet.
-            </p>
-          )
+        {!received && payMethods.method ? (
+          <PayeeMethodDetails
+            // A different method is a different card: its "Copied" marks reset.
+            key={payMethods.method.id}
+            method={payMethods.method}
+            firstName={firstName}
+            amountCents={amountCents}
+            note={note}
+          />
         ) : null}
 
         <input
@@ -462,13 +391,14 @@ export function SettleUpModal({
           <p className="text-center text-xs text-ink-soft">
             {received ? (
               <>
-                Logs money {firstName} has already sent you — it doesn&apos;t
-                request anything.
+                Logs money {firstName} has already sent you. It doesn&apos;t request anything.
               </>
+            ) : payMethods.choice === CASH_CHOICE ? (
+              <>This only updates the balance here. Hand over the cash first.</>
             ) : (
               <>
-                This only updates the balance here — move the money in{" "}
-                {method?.takesHandle ? method.label : "your app of choice"} first.
+                This only updates the balance here. Move the money in{" "}
+                {payMethods.method?.name ?? "your app of choice"} first.
               </>
             )}
           </p>

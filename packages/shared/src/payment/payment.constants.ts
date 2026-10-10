@@ -42,3 +42,25 @@ export const CONTROL_CHARACTER_PATTERN = /\p{Cc}/u;
 
 /** How many trailing characters of a masked value stay visible. */
 export const MASK_VISIBLE_CHARACTERS = 4;
+
+/**
+ * How long after an edit a payer is told that a method's details changed.
+ * Long enough to cover someone who pays every other week, short enough that
+ * the note means something when it appears.
+ */
+export const RECENT_CHANGE_DAYS = 14;
+
+/** Milliseconds in a day, for turning a change's age into days. */
+export const DAY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Detail kinds that make a method a bank transfer in the settlement record.
+ * A method the person defined has no category of its own; holding one of
+ * these is what a bank account looks like.
+ */
+export const BANK_DETAIL_KINDS: readonly string[] = [
+  "account_number",
+  "iban",
+  "routing_number",
+  "swift",
+];
