@@ -48,6 +48,7 @@ describe("queryKeys", () => {
       queryKeys.activity(),
       queryKeys.activityFeed(),
       queryKeys.notifications,
+      queryKeys.paymentMethods,
     ].map(hash);
     expect(new Set(keys).size).toBe(keys.length);
   });

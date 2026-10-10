@@ -1,0 +1,105 @@
+syntax = "proto3";
+
+package payment.v1;
+
+import "google/protobuf/empty.proto";
+
+// Where a person wants to be paid. Settling in this app only records that a
+// payment happened: the money moves in a wallet or a bank app, so what the
+// payer needs is the recipient's details for whichever of those they use.
+//
+// A method is defined by the person who owns it, not chosen from a list this
+// app maintains: a name, the currency it works in, and a few labelled
+// details. That is what lets bKash, UPI or a bank account in any country
+// exist here without a code change.
+//
+// Every RPC acts on the caller's own methods. Nothing here reads another
+// person's: those travel on the friend ledger, and only to someone who owes
+// that person.
+service PaymentMethodService {
+  rpc ListMyPaymentMethods(google.protobuf.Empty) returns (ListPaymentMethodsResponse);
+  rpc CreatePaymentMethod(CreatePaymentMethodRequest) returns (PaymentMethod);
+  rpc UpdatePaymentMethod(UpdatePaymentMethodRequest) returns (PaymentMethod);
+  rpc DeletePaymentMethod(DeletePaymentMethodRequest) returns (google.protobuf.Empty);
+
+  // The star on a list row. Moves, sets or clears the star for the method's
+  // currency and returns the whole list, since starring one method can
+  // un-star another.
+  rpc SetPreferredPaymentMethod(SetPreferredPaymentMethodRequest) returns (ListPaymentMethodsResponse);
+}
+
+message PaymentMethod {
+  string id = 1;
+  // What the owner calls it: "bKash", "Chase checking", "Wise EUR".
+  string name = 2;
+  // ISO 4217 code the method works in, e.g. "BDT". Empty = any currency.
+  string currency = 3;
+  // venmo | zelle | cashapp | paypal when the method was started from one of
+  // the built-in apps, whose prefix and link the clients know. Empty for a
+  // method the person defined. Fixed when the method is created.
+  string preset = 4;
+  // What the payer needs, in the order the owner arranged it. A preset
+  // carries exactly one.
+  repeated PaymentDetail details = 5;
+  // Optional instruction for the payer, e.g. "Use Send Money, not Payment".
+  string note = 6;
+  // Whether this is the owner's preferred method for its currency. At most
+  // one method per currency carries it, with "any currency" counted as a
+  // currency of its own.
+  bool preferred = 7;
+  // When the name, currency, details or note last changed. Starring does not
+  // move it. A payer is shown a recent change, since details that suddenly
+  // differ are the mark of a payment being redirected.
+  string updated_at = 8;
+}
+
+// One labelled identifier of a payment method.
+message PaymentDetail {
+  // phone | email | username | account_name | bank_name | account_type |
+  // account_number | routing_number | swift | iban | link | custom
+  string kind = 1;
+  // The owner's own label, e.g. "IFSC" or "Sort code". Set only when kind is
+  // custom: every other kind takes its label from the shared catalog.
+  string label = 2;
+  // Stored as typed apart from trimming, except a phone (E.164), a SWIFT
+  // code or IBAN (capitals, no spaces) and an account_type (its key).
+  string value = 3;
+}
+
+message CreatePaymentMethodRequest {
+  string name = 1;
+  string currency = 2;
+  string preset = 3;
+  // Rows with a blank value are dropped.
+  repeated PaymentDetail details = 4;
+  string note = 5;
+  // Star it for its currency, taking the star from whichever method held it.
+  bool preferred = 6;
+}
+
+// A full replacement of everything the form shows, so one save is one write.
+message UpdatePaymentMethodRequest {
+  string id = 1;
+  string name = 2;
+  string currency = 3;
+  // The complete new list. Rows with a blank value are dropped.
+  repeated PaymentDetail details = 4;
+  string note = 5;
+  // The star as the form left it: true takes it for the method's (possibly
+  // new) currency, false gives it up.
+  bool preferred = 6;
+}
+
+message DeletePaymentMethodRequest {
+  string id = 1;
+}
+
+message SetPreferredPaymentMethodRequest {
+  string id = 1;
+  bool preferred = 2;
+}
+
+message ListPaymentMethodsResponse {
+  // Oldest first.
+  repeated PaymentMethod methods = 1;
+}
