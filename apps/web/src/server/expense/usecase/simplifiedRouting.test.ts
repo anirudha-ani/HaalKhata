@@ -238,6 +238,7 @@ function recordTripSettlement(fromUser: string, toUser: string, amountCents: num
     amount_cents: amountCents,
     currency: "USD",
     method: "cash",
+    method_label: "",
     note: "",
     created_at: "2026-08-02T00:00:00Z",
     ledger_event_order: "2",

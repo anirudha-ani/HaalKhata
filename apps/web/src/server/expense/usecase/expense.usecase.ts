@@ -88,6 +88,8 @@ import {
   EXPENSE_LIST_DISPLAY_LIMIT,
 } from "@/server/expense/expense.constants";
 import { toExpense, toSettlement } from "./expense.mapper";
+import { findPaymentMethod } from "@/server/payment/repo/paymentMethods.repo";
+import { settlementMethodKey } from "@haalkhata/shared/payment/payeeMethods";
 
 /**
  * Formats an integer cent amount for human-readable messages, e.g. "USD 12.50".
@@ -1126,6 +1128,8 @@ interface SettlementRequest {
   netAcrossScopes?: boolean;
   /** Digest of the position the person was shown; required with `netAcrossScopes`. */
   positionDigest?: string;
+  /** The recipient's payment method the money moved through, when one was picked. */
+  paymentMethodId?: string;
 }
 
 /** What a net settlement did, for the wording that announces it to both people. */
@@ -1155,6 +1159,46 @@ interface SettlementContext {
   groupId: string | null;
   currency: string;
   method: string;
+  /** Name of the payment method used; "" when the payment names none. */
+  methodLabel: string;
+}
+
+/**
+ * Resolves how a payment was made into what the settlement row stores.
+ *
+ * A payment can name one of the recipient's own payment methods. When it
+ * does, the row takes that method's key and keeps a copy of its name, so
+ * the record still says "bKash" after the method is renamed or removed.
+ *
+ * The method must belong to whoever received the money. An id that does not
+ * resolve (removed since the dialog opened, or never theirs) is not an
+ * error: the payment happened either way, so it is recorded from the plain
+ * method key with no name rather than refused.
+ *
+ * @param request - The settlement request.
+ * @param creditorId - Who received the money.
+ * @returns The settlement method key and the name to keep with it.
+ */
+async function resolveSettlementMethod(
+  request: SettlementRequest,
+  creditorId: string,
+): Promise<{ method: string; methodLabel: string }> {
+  const paymentMethod = request.paymentMethodId
+    ? await findPaymentMethod(request.paymentMethodId, creditorId)
+    : undefined;
+  if (!paymentMethod) {
+    return {
+      method: SETTLEMENT_METHODS.has(request.method) ? request.method : "cash",
+      methodLabel: "",
+    };
+  }
+  return {
+    method: settlementMethodKey("", {
+      preset: paymentMethod.preset ?? "",
+      details: paymentMethod.details,
+    }),
+    methodLabel: paymentMethod.name,
+  };
 }
 
 /**
@@ -1223,7 +1267,7 @@ async function prepareSettlement(
     creditorId,
     groupId,
     currency,
-    method: SETTLEMENT_METHODS.has(request.method) ? request.method : "cash",
+    ...(await resolveSettlementMethod(request, creditorId)),
   };
 }
 
@@ -1238,7 +1282,7 @@ async function storeGroupSettlement(
   context: SettlementContext,
   client: PoolClient,
 ): Promise<SettlementRow[]> {
-  const { userId, request, payerId, creditorId, groupId, currency, method } = context;
+  const { userId, request, payerId, creditorId, groupId, currency, method, methodLabel } = context;
   if (!groupId) throw new Error("storeGroupSettlement requires a group id");
   await lockGroupLedgers(client, [groupId]);
   const callerIsMember = await isMember(groupId, userId, client);
@@ -1277,6 +1321,7 @@ async function storeGroupSettlement(
         amountCents: request.amountCents,
         currency,
         method,
+        methodLabel,
         note: request.note,
         recordedBy: userId,
       },
@@ -1298,7 +1343,7 @@ async function storeSettlementPortions(
   context: SettlementContext,
   client: PoolClient,
 ): Promise<StoredSettlement> {
-  const { userId, request, payerId, creditorId, groupId, currency, method } = context;
+  const { userId, request, payerId, creditorId, groupId, currency, method, methodLabel } = context;
   if (groupId) return { rows: await storeGroupSettlement(context, client), netOutcome: null };
 
   // Lock every group either person belongs to before selecting the shared
@@ -1357,6 +1402,7 @@ async function storeSettlementPortions(
           amountCents: portion.amountCents,
           currency: portion.currency,
           method,
+          methodLabel,
           note: request.note,
           recordedBy: userId,
         },
@@ -1395,7 +1441,7 @@ async function storeNetSettlement(
   lockedGroupIds: ReadonlySet<string>,
   client: PoolClient,
 ): Promise<StoredSettlement> {
-  const { userId, request, payerId, creditorId, currency, method } = context;
+  const { userId, request, payerId, creditorId, currency, method, methodLabel } = context;
   const debts = (await pairScopeDebts(payerId, creditorId, client)).filter(
     (debt) =>
       (debt.groupId === null || lockedGroupIds.has(debt.groupId)) && debt.currency === currency,
@@ -1443,6 +1489,7 @@ async function storeNetSettlement(
    * @param fromUser - Whose debt the row settles.
    * @param toUser - Who that debt was owed to.
    * @param rowMethod - The payment method, or the offset marker.
+   * @param rowMethodLabel - The method's name; "" for an offset, which moved no money.
    * @param note - The row's note.
    */
   const store = async (
@@ -1450,6 +1497,7 @@ async function storeNetSettlement(
     fromUser: string,
     toUser: string,
     rowMethod: string,
+    rowMethodLabel: string,
     note: string,
   ) => {
     rows.push(
@@ -1461,6 +1509,7 @@ async function storeNetSettlement(
           amountCents: portion.amountCents,
           currency: portion.currency,
           method: rowMethod,
+          methodLabel: rowMethodLabel,
           note,
           recordedBy: userId,
           netSettlementId,
@@ -1470,13 +1519,13 @@ async function storeNetSettlement(
     );
   };
   for (const portion of plan.cash) {
-    await store(portion, payerId, creditorId, method, request.note);
+    await store(portion, payerId, creditorId, method, methodLabel, request.note);
   }
   for (const portion of plan.offsetOwing) {
-    await store(portion, payerId, creditorId, OFFSET_SETTLEMENT_METHOD, "");
+    await store(portion, payerId, creditorId, OFFSET_SETTLEMENT_METHOD, "", "");
   }
   for (const portion of plan.offsetOpposing) {
-    await store(portion, creditorId, payerId, OFFSET_SETTLEMENT_METHOD, "");
+    await store(portion, creditorId, payerId, OFFSET_SETTLEMENT_METHOD, "", "");
   }
   return {
     rows,

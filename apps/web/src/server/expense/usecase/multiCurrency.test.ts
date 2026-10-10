@@ -325,6 +325,7 @@ describe("balances are kept per currency", () => {
       amount_cents: 1000,
       currency: "USD",
       method: "cash",
+      method_label: "",
       note: "",
       created_at: "2026-08-03T00:00:00Z",
       ledger_event_order: "3",

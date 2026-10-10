@@ -259,6 +259,14 @@ message RecordSettlementRequest {
   // the digests differ, so what gets cancelled is exactly what was on screen
   // and never a ledger that moved underneath it.
   string position_digest = 11;
+  // The payment method the money moved through: one of the methods of
+  // whoever received it (the other person's when paying them, the caller's
+  // own when recording money received). Optional. When it names such a
+  // method, the server records the payment under that method's key and
+  // copies its name onto the settlement, and `method` is ignored. An id that
+  // does not resolve, because the method was removed or was never theirs,
+  // never fails the payment: it is recorded from `method` with no name.
+  string payment_method_id = 12;
 }
 
 message Settlement {
@@ -274,6 +282,10 @@ message Settlement {
   // The authenticated user who typed the payment in: one of the two people
   // on it, not necessarily the payer. A payment is a claim; this says whose.
   string recorded_by_user_id = 10;
+  // Name of the payment method used, e.g. "bKash", as it was called when the
+  // payment was recorded. A copy: renaming or removing the method later does
+  // not change it. Empty for cash and for payments recorded without one.
+  string method_label = 11;
 }
 
 message GetGroupBalancesRequest {

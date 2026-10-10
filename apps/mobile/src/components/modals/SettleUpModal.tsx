@@ -148,6 +148,9 @@ export function SettleUpModal({
         amountCents,
         currency,
         method: payMethods.settlementKey,
+        // The server keeps the method's name with the payment, so the
+        // history can say how the money moved.
+        paymentMethodId: payMethods.method?.id ?? "",
         note,
         received,
         // One balance: the server records the payment in that scope alone.

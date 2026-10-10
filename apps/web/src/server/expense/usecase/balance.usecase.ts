@@ -829,9 +829,10 @@ function settlementLedgerLines(
         ? paidByYou
           ? `Cancelled: what you owed ${friendName}`
           : `Cancelled: what ${friendName} owed you`
-        : paidByYou
-          ? "You paid"
-          : `${friendName} paid you`,
+        : `${paidByYou ? "You paid" : `${friendName} paid you`}${
+            // How the money moved, when the payment named a method.
+            settlement.method_label ? ` via ${settlement.method_label}` : ""
+          }`,
       groupId: settlement.group_id ?? "",
       groupName: settlement.group_id ? (groupNames.get(settlement.group_id) ?? "") : "",
       currency: settlement.currency,
