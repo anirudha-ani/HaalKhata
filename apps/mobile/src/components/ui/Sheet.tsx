@@ -22,11 +22,16 @@ import { SHEET_MAX_HEIGHT_RATIO } from "./ui.constants";
  * Renders a bottom sheet with a titled header, a close button, and
  * backdrop-tap dismissal. Content scrolls when taller than the sheet and the
  * sheet rises above the keyboard while editing.
+ *
+ * A `footer` stays pinned under the scrolling content. It is for a form
+ * taller than the screen: an action that has scrolled out of reach looks
+ * like a form with no way to finish it.
  */
 export function Sheet({
   title,
   onClose,
   children,
+  footer,
 }: {
   /** Heading text, also used as the sheet's accessible label. */
   title: string;
@@ -34,6 +39,8 @@ export function Sheet({
   onClose: () => void;
   /** Sheet body content. */
   children: ReactNode;
+  /** Content pinned to the bottom of the sheet while the body scrolls above it. */
+  footer?: ReactNode;
 }) {
   const { height: windowHeight } = useWindowDimensions();
   const { isTablet } = useResponsiveLayout();
@@ -66,6 +73,7 @@ export function Sheet({
           <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
             {children}
           </ScrollView>
+          {footer ? <View style={styles.footer}>{footer}</View> : null}
         </View>
       </KeyboardAvoidingView>
     </Modal>
@@ -93,6 +101,12 @@ const styles = StyleSheet.create({
   closeButton: {
     borderRadius: radii.full,
     padding: 6,
+  },
+  footer: {
+    borderTopColor: colors.line,
+    borderTopWidth: 1,
+    marginTop: spacing.md,
+    paddingTop: spacing.md,
   },
   header: {
     alignItems: "center",

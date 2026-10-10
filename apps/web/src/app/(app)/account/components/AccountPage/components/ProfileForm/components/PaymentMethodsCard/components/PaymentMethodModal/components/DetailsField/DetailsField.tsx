@@ -19,6 +19,7 @@ export function DetailsField({
   kinds,
   errors,
   canAdd,
+  canRemove,
   onKindChange,
   onChange,
   onRemove,
@@ -34,6 +35,8 @@ export function DetailsField({
   errors: PaymentMethodErrors;
   /** Whether another row may be added. */
   canAdd: boolean;
+  /** Whether a row may be dropped: not a built-in app's one detail, and not the last row. */
+  canRemove: boolean;
   /** Called with a row's id and the kind picked for it. */
   onKindChange: (rowId: string, kindKey: string) => void;
   /** Called with a row's id and the typed fields that changed. */
@@ -43,8 +46,6 @@ export function DetailsField({
   /** Called when another row is asked for. */
   onAdd: () => void;
 }) {
-  // A built-in app's link is built from its one detail, so that row stays.
-  const canRemove = preset === "" && details.length > 1;
   return (
     <div className="space-y-2">
       <div>

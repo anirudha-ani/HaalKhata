@@ -103,6 +103,7 @@ export function PaymentMethodModal({
           kinds={form.kinds}
           errors={errors}
           canAdd={form.canAddDetail}
+          canRemove={form.canRemoveDetail}
           onKindChange={form.setDetailKind}
           onChange={form.setDetail}
           onRemove={form.removeDetail}

@@ -76,11 +76,7 @@ export function useOnboarding() {
   const save = useMutation({
     mutationFn: async () => {
       setError("");
-      await authClient.updateProfile({
-        name,
-        defaultCurrency: currency,
-        paymentHandles: [],
-      });
+      await authClient.updateProfile({ name, defaultCurrency: currency });
       // Only touch the phone when it actually changed — resending the same
       // number the account already has is a no-op the server would still
       // process, and an empty field must not clear a number that is set.

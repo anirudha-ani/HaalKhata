@@ -62,6 +62,17 @@ export function methodCurrencyLabel(method: Pick<PaymentMethodFields, "currency"
 }
 
 /**
+ * The currency a method works in, as it reads inside a sentence: "preferred
+ * method for BDT", "preferred method for any currency".
+ *
+ * @param method - The method being described.
+ * @returns Its ISO code, or "any currency".
+ */
+export function methodCurrencyPhrase(method: Pick<PaymentMethodFields, "currency">): string {
+  return method.currency || `${ANY_CURRENCY_LABEL.toLowerCase()} currency`;
+}
+
+/**
  * One detail as a short phrase for the owner's list.
  *
  * @param detail - The detail to describe.

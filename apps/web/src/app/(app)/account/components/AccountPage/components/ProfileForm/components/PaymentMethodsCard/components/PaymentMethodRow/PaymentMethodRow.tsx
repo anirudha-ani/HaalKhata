@@ -3,7 +3,11 @@
 
 import { Pencil, Star } from "lucide-react";
 import type { PaymentMethod } from "@haalkhata/protogen/payment/v1/payment_pb";
-import { methodCurrencyLabel, methodSummary } from "@haalkhata/shared/payment/formatMethod";
+import {
+  methodCurrencyLabel,
+  methodCurrencyPhrase,
+  methodSummary,
+} from "@haalkhata/shared/payment/formatMethod";
 
 /**
  * Renders one of the owner's payment methods.
@@ -31,6 +35,7 @@ export function PaymentMethodRow({
   onEdit: () => void;
 }) {
   const currencyLabel = methodCurrencyLabel(method);
+  const currencyPhrase = methodCurrencyPhrase(method);
   return (
     <li className="rounded-xl border border-line bg-paper px-3 py-2">
       <div className="flex items-center gap-1">
@@ -59,8 +64,8 @@ export function PaymentMethodRow({
           aria-pressed={method.preferred}
           aria-label={
             method.preferred
-              ? `${method.name} is your preferred method for ${currencyLabel}. Remove the star`
-              : `Make ${method.name} your preferred method for ${currencyLabel}`
+              ? `${method.name} is your preferred method for ${currencyPhrase}. Remove the star`
+              : `Make ${method.name} your preferred method for ${currencyPhrase}`
           }
           className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-ink-soft hover:bg-card hover:text-pos-700"
         >

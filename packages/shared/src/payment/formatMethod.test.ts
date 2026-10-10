@@ -7,6 +7,7 @@ import {
   linkHost,
   methodCopyText,
   methodCurrencyLabel,
+  methodCurrencyPhrase,
   methodSummary,
   recentChange,
   valueTail,
@@ -137,6 +138,9 @@ describe("small helpers", () => {
   test("an any-currency method says so where a code would be", () => {
     expect(methodCurrencyLabel({ currency: "BDT" })).toBe("BDT");
     expect(methodCurrencyLabel({ currency: "" })).toBe("Any");
+    // The tag is one word; inside a sentence it has to read as a phrase.
+    expect(methodCurrencyPhrase({ currency: "BDT" })).toBe("BDT");
+    expect(methodCurrencyPhrase({ currency: "" })).toBe("any currency");
   });
 });
 
