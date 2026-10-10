@@ -22,6 +22,12 @@ export interface DetailKind {
   example: string;
   /** The control the value is edited with. */
   input: DetailInput;
+  /**
+   * How a keyboard should capitalise the value: not at all for an
+   * identifier, each word for a name, every letter for a bank code. Both
+   * apps pass it straight to their `autoCapitalize`.
+   */
+  capitals: "none" | "words" | "characters";
   /** Longest value accepted. */
   maxLength: number;
   /**
@@ -49,6 +55,7 @@ export const DETAIL_KINDS: readonly DetailKind[] = [
     label: "Phone number",
     example: "",
     input: "phone",
+    capitals: "none",
     maxLength: MAX_PAYMENT_DETAIL_VALUE_LENGTH,
     masked: false,
   },
@@ -57,6 +64,7 @@ export const DETAIL_KINDS: readonly DetailKind[] = [
     label: "Email",
     example: "jordan@example.com",
     input: "email",
+    capitals: "none",
     maxLength: MAX_PAYMENT_DETAIL_VALUE_LENGTH,
     masked: false,
   },
@@ -65,6 +73,7 @@ export const DETAIL_KINDS: readonly DetailKind[] = [
     label: "Username or ID",
     example: "jordan-lee",
     input: "text",
+    capitals: "none",
     maxLength: MAX_PAYMENT_DETAIL_VALUE_LENGTH,
     masked: false,
   },
@@ -73,6 +82,7 @@ export const DETAIL_KINDS: readonly DetailKind[] = [
     label: "Account holder name",
     example: "Jordan Lee",
     input: "text",
+    capitals: "words",
     maxLength: MAX_PAYMENT_DETAIL_VALUE_LENGTH,
     masked: false,
   },
@@ -81,6 +91,7 @@ export const DETAIL_KINDS: readonly DetailKind[] = [
     label: "Bank name",
     example: "",
     input: "text",
+    capitals: "words",
     maxLength: MAX_PAYMENT_DETAIL_VALUE_LENGTH,
     masked: false,
   },
@@ -89,6 +100,7 @@ export const DETAIL_KINDS: readonly DetailKind[] = [
     label: "Account type",
     example: "",
     input: "choice",
+    capitals: "none",
     maxLength: MAX_PAYMENT_DETAIL_VALUE_LENGTH,
     masked: false,
   },
@@ -97,6 +109,7 @@ export const DETAIL_KINDS: readonly DetailKind[] = [
     label: "Account number",
     example: "000123456789",
     input: "text",
+    capitals: "none",
     maxLength: MAX_PAYMENT_DETAIL_VALUE_LENGTH,
     masked: true,
   },
@@ -105,6 +118,7 @@ export const DETAIL_KINDS: readonly DetailKind[] = [
     label: "Routing number",
     example: "000000000",
     input: "number",
+    capitals: "none",
     maxLength: MAX_PAYMENT_DETAIL_VALUE_LENGTH,
     masked: false,
   },
@@ -113,6 +127,7 @@ export const DETAIL_KINDS: readonly DetailKind[] = [
     label: "SWIFT / BIC",
     example: "ABCDUS33",
     input: "text",
+    capitals: "characters",
     maxLength: MAX_PAYMENT_DETAIL_VALUE_LENGTH,
     masked: false,
   },
@@ -121,6 +136,7 @@ export const DETAIL_KINDS: readonly DetailKind[] = [
     label: "IBAN",
     example: "",
     input: "text",
+    capitals: "characters",
     maxLength: MAX_PAYMENT_DETAIL_VALUE_LENGTH,
     masked: true,
   },
@@ -129,6 +145,7 @@ export const DETAIL_KINDS: readonly DetailKind[] = [
     label: "Payment link",
     example: "https://",
     input: "link",
+    capitals: "none",
     maxLength: MAX_PAYMENT_LINK_LENGTH,
     masked: false,
   },
@@ -137,6 +154,7 @@ export const DETAIL_KINDS: readonly DetailKind[] = [
     label: "",
     example: "",
     input: "text",
+    capitals: "none",
     maxLength: MAX_PAYMENT_DETAIL_VALUE_LENGTH,
     masked: false,
   },
@@ -175,6 +193,18 @@ export const ACCOUNT_TYPES: readonly AccountType[] = [
  */
 export function findDetailKind(kindKey: string): DetailKind | undefined {
   return DETAIL_KINDS.find((detailKind) => detailKind.key === kindKey);
+}
+
+/**
+ * What a picker calls a kind of detail.
+ *
+ * @param kindKey - Kind key.
+ * @returns The kind's label, or {@link CUSTOM_DETAIL_PICKER_LABEL} for the
+ *   custom kind, which has none of its own; the raw key for an unknown kind.
+ */
+export function detailKindName(kindKey: string): string {
+  if (kindKey === CUSTOM_DETAIL_KIND) return CUSTOM_DETAIL_PICKER_LABEL;
+  return findDetailKind(kindKey)?.label ?? kindKey;
 }
 
 /**
