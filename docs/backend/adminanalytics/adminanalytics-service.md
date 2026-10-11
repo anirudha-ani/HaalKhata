@@ -71,8 +71,16 @@ the app**.
 - `ADMIN_EMAILS` (comma separated) is the allowlist. Empty means nobody.
 - `SignIn` verifies the Google ID token exactly as the app's sign-in does
   (signature, issuer, expiry, verified email, single-use server nonce), but
-  accepts **only the web client's id** as its audience, so a token minted
-  for the Android or iOS app cannot be replayed here.
+  accepts **exactly one audience**: the client the admin page signs in with.
+  A token minted for the Android or iOS app cannot be replayed here.
+- That client is `ADMIN_GOOGLE_CLIENT_ID` when set, otherwise the app's web
+  client. A dedicated client, authorized for the admin origin only, is the
+  stricter setup: Google mints a token for a client only from one of its
+  authorized origins, so with a shared client a script injected into the app
+  could ask Google for a token as the signed-in operator and present it
+  here, and with a dedicated one no page on the app's origin can obtain a
+  token this surface accepts. The page receives the id from the server at
+  request time, so it is not a build argument.
 - It then checks the verified address against the allowlist. Nothing is
   written unless it matches, and **no `users` row is created, linked or read
   either way**.

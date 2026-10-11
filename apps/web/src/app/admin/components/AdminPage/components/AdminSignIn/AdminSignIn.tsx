@@ -13,9 +13,12 @@ import { useAdminSignIn } from "../../hooks/useAdminSignIn";
  * @returns The sign-in card.
  */
 export function AdminSignIn({
+  googleClientId,
   onSignedIn,
   sessionEnded,
 }: {
+  /** The OAuth client id Google's button is rendered for; "" when unconfigured. */
+  googleClientId: string;
   /** Called once the admin session cookie is set. */
   onSignedIn: () => void;
   /** Whether the operator was signed in a moment ago and no longer is. */
@@ -24,7 +27,10 @@ export function AdminSignIn({
   // Destructured, not kept as one object: `setButtonElement` is handed to a
   // `ref`, and reading sibling fields off the same object would look to the
   // compiler like reading a ref during render.
-  const { setButtonElement, error, isPending, isConfigured } = useAdminSignIn({ onSignedIn });
+  const { setButtonElement, error, isPending, isConfigured } = useAdminSignIn({
+    googleClientId,
+    onSignedIn,
+  });
 
   return (
     <div className="mx-auto mt-[12vh] max-w-sm rounded-2xl border border-line bg-card p-6 text-center">

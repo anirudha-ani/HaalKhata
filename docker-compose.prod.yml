@@ -72,6 +72,10 @@ services:
       # the page shows a sign-in that refuses everyone.
       ADMIN_HOST: admin.haalkhata.app
       ADMIN_EMAILS: ${ADMIN_EMAILS:-}
+      # Optional OAuth client for the usage page alone, whose only authorized
+      # JavaScript origin is the admin hostname. Unset, the page signs in
+      # with GOOGLE_CLIENT_ID. Read at runtime, not a build argument.
+      ADMIN_GOOGLE_CLIENT_ID: ${ADMIN_GOOGLE_CLIENT_ID:-}
       # Secrets are read from these files by the app itself (the Docker
       # `_FILE` convention); nothing exports them into the environment.
       SESSION_SECRET_FILE: /run/secrets/session_secret

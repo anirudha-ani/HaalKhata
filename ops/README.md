@@ -100,6 +100,7 @@ against its allowlist before touching the file:
 | `GOOGLE_CLIENT_ID` | Variable `NEXT_PUBLIC_GOOGLE_CLIENT_ID` | Same id the browser bundle is built with, by contract |
 | `GOOGLE_MOBILE_CLIENT_IDS` | Variable `GOOGLE_MOBILE_CLIENT_IDS` | Optional |
 | `ADMIN_EMAILS` | Secret `ADMIN_EMAILS` | Optional; Google addresses allowed to sign in to the usage page, comma separated. Unset means nobody can. A secret only to keep a personal address out of public workflow logs, like `ACME_EMAIL` |
+| `ADMIN_GOOGLE_CLIENT_ID` | Variable `ADMIN_GOOGLE_CLIENT_ID` | Optional; an OAuth client for the usage page alone. Unset, that page signs in with `GOOGLE_CLIENT_ID` |
 | `TWILIO_API_KEY_SID` | Secret `TWILIO_API_KEY_SID` | Optional; identifies but does not authenticate |
 | `TWILIO_VERIFY_SERVICE_SID` | Secret `TWILIO_VERIFY_SERVICE_SID` | Optional |
 
@@ -176,12 +177,21 @@ First-time setup, **in this order**:
    Caddy requests the certificate when it starts with the new `Caddyfile`
    and keeps retrying while the name does not resolve here. The app's own
    hostnames are unaffected either way.
-2. **Google.** In the Google Cloud Console, add
-   `https://admin.haalkhata.app` to the web OAuth client's "Authorized
-   JavaScript origins". Without it Google's button refuses to render there.
-3. **`deploy.sh`.** The pipeline now sends an `ADMIN_EMAILS` key, and the
-   copy of `deploy.sh` already on the server refuses any key it does not
-   know. It cannot update itself through the forced command, so copy the new
+2. **Google.** The usage page needs an OAuth client that lists
+   `https://admin.haalkhata.app` under "Authorized JavaScript origins";
+   without one Google's button refuses to render there. Two ways:
+   - *Recommended:* create a second OAuth client of type "Web application"
+     whose **only** authorized origin is `https://admin.haalkhata.app`, and
+     set its id as the `ADMIN_GOOGLE_CLIENT_ID` repository variable. Google
+     mints a token for a client only from one of that client's origins, so
+     no page on `haalkhata.app` can ever obtain a token the usage page
+     accepts, even if a script were injected into the app.
+   - *Simpler:* add the origin to the existing web client and leave
+     `ADMIN_GOOGLE_CLIENT_ID` unset. The allowlist still decides who gets
+     in; what is given up is that separation between the two origins.
+3. **`deploy.sh`.** The pipeline now sends `ADMIN_EMAILS` and
+   `ADMIN_GOOGLE_CLIENT_ID` keys, and the copy of `deploy.sh` already on the
+   server refuses any key it does not know. It cannot update itself through the forced command, so copy the new
    one up once, before the first deploy that carries this change:
 
    ```sh

@@ -19,6 +19,7 @@ import { UsageDashboard } from "./components/UsageDashboard/UsageDashboard";
  */
 export function AdminPage({
   initiallySignedIn,
+  googleClientId,
 }: {
   /**
    * Whether the request that rendered the page carried a live admin
@@ -26,6 +27,8 @@ export function AdminPage({
    * here, in the browser, without another page load.
    */
   initiallySignedIn: boolean;
+  /** The OAuth client id Google's button is rendered for; "" when unconfigured. */
+  googleClientId: string;
 }) {
   const [isSignedIn, setSignedIn] = useState(initiallySignedIn);
   const [sessionEnded, setSessionEnded] = useState(false);
@@ -45,7 +48,11 @@ export function AdminPage({
       {isSignedIn ? (
         <UsageDashboard onSessionEnded={handleSessionEnded} />
       ) : (
-        <AdminSignIn onSignedIn={handleSignedIn} sessionEnded={sessionEnded} />
+        <AdminSignIn
+          googleClientId={googleClientId}
+          onSignedIn={handleSignedIn}
+          sessionEnded={sessionEnded}
+        />
       )}
     </main>
   );

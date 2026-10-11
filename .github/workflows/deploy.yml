@@ -24,6 +24,10 @@
 #             personal address and workflow logs are public. Unset means
 #             nobody can sign in there. The server's deploy.sh must already
 #             know this key (ops/README.md), or it refuses the deploy.
+#   Variable  ADMIN_GOOGLE_CLIENT_ID         optional; an OAuth client for the
+#             usage page alone, authorized for the admin origin only. Unset,
+#             that page signs in with NEXT_PUBLIC_GOOGLE_CLIENT_ID. Not secret,
+#             and not a build argument: the server reads it at runtime.
 #   Secret    TWILIO_API_KEY_SID             optional; phone verification
 #   Secret    TWILIO_VERIFY_SERVICE_SID      optional; phone verification
 #   Secret    TWILIO_API_KEY_SECRET          optional; lands as the server's
@@ -146,6 +150,7 @@ jobs:
           GOOGLE_CLIENT_ID: ${{ vars.NEXT_PUBLIC_GOOGLE_CLIENT_ID }}
           GOOGLE_MOBILE_CLIENT_IDS: ${{ vars.GOOGLE_MOBILE_CLIENT_IDS }}
           ADMIN_EMAILS: ${{ secrets.ADMIN_EMAILS }}
+          ADMIN_GOOGLE_CLIENT_ID: ${{ vars.ADMIN_GOOGLE_CLIENT_ID }}
           TWILIO_API_KEY_SID: ${{ secrets.TWILIO_API_KEY_SID }}
           TWILIO_VERIFY_SERVICE_SID: ${{ secrets.TWILIO_VERIFY_SERVICE_SID }}
           TWILIO_API_KEY_SECRET: ${{ secrets.TWILIO_API_KEY_SECRET }}
@@ -166,6 +171,7 @@ jobs:
             printf 'GOOGLE_CLIENT_ID=%s\n'          "$GOOGLE_CLIENT_ID"
             printf 'GOOGLE_MOBILE_CLIENT_IDS=%s\n'  "$GOOGLE_MOBILE_CLIENT_IDS"
             printf 'ADMIN_EMAILS=%s\n'              "$ADMIN_EMAILS"
+            printf 'ADMIN_GOOGLE_CLIENT_ID=%s\n'    "$ADMIN_GOOGLE_CLIENT_ID"
             printf 'TWILIO_API_KEY_SID=%s\n'        "$TWILIO_API_KEY_SID"
             printf 'TWILIO_VERIFY_SERVICE_SID=%s\n' "$TWILIO_VERIFY_SERVICE_SID"
             printf 'TWILIO_API_KEY_SECRET=%s\n'     "$TWILIO_API_KEY_SECRET"

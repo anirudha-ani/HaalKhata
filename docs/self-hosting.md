@@ -103,9 +103,11 @@ counted from the ledger on each visit.
 
 It is served by the same container on its own hostname. Set `ADMIN_HOST`
 (the production compose file uses `admin.haalkhata.app`; change it and the
-second site in the `Caddyfile` to your own), point DNS at the server, add
-that origin to the Google OAuth client's "Authorized JavaScript origins",
-and put the Google addresses allowed to sign in into `ADMIN_EMAILS`. With
+second site in the `Caddyfile` to your own), point DNS at the server, give
+it a Google OAuth client authorized for that origin (ideally one of its own,
+set as `ADMIN_GOOGLE_CLIENT_ID`; otherwise add the origin to the existing
+client), and put the Google addresses allowed to sign in into
+`ADMIN_EMAILS`. With
 `ADMIN_HOST` unset there is no usage page in production; with `ADMIN_EMAILS`
 empty nobody can sign in to it. Signing in there creates no account, and an
 app session does not open it. [`ops/README.md`](../ops/README.md) has the

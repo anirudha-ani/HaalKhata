@@ -8,7 +8,6 @@
  */
 
 import crypto from "node:crypto";
-import { GOOGLE_CLIENT_ID } from "@/server/auth/auth.constants";
 import { beginGoogleSignIn, verifyGoogleSignIn } from "@/server/auth/usecase/auth.usecase";
 import { UsecaseError, denied } from "@/server/common/errors";
 import { logEvent } from "@/server/common/logger";
@@ -17,6 +16,7 @@ import {
   ADMIN_SESSION_TOKEN_BYTES,
   ADMIN_SESSION_TOKEN_PATTERN,
   adminEmails,
+  adminGoogleClientId,
 } from "@/server/adminanalytics/adminanalytics.constants";
 import {
   deleteAdminSession,
@@ -50,10 +50,11 @@ export async function beginAdminSignIn(): Promise<{ nonce: string }> {
 /**
  * Starts an admin session for a verified Google identity on the allowlist.
  *
- * Only the web client's id is accepted as the token's audience. The admin
- * page is a web page; a token minted for the Android or iOS app has no
- * business here, and refusing it means a credential lifted from a phone
- * cannot be replayed against this surface.
+ * Exactly one audience is accepted: the client the admin page itself signs
+ * in with (see adminGoogleClientId). A token minted for the Android or iOS
+ * app has no business here, so a credential lifted from a phone cannot be
+ * replayed against this surface; and when the admin page has a client of
+ * its own, neither can one minted for the app's web sign-in.
  *
  * Nothing is written unless the address is allowlisted, and no users row is
  * read or written either way.
@@ -64,7 +65,7 @@ export async function beginAdminSignIn(): Promise<{ nonce: string }> {
  * @throws UsecaseError "permission_denied" when the address is not an admin.
  */
 export async function signInAdmin(idToken: string): Promise<{ token: string }> {
-  const identity = await verifyGoogleSignIn(idToken, [GOOGLE_CLIENT_ID]);
+  const identity = await verifyGoogleSignIn(idToken, [adminGoogleClientId()]);
   if (!adminEmails().has(identity.email)) {
     // Logged without the address: a refused stranger's email is not ours to keep.
     logEvent("warn", "admin sign-in refused: address is not on the allowlist");

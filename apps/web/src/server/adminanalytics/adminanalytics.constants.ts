@@ -1,5 +1,7 @@
 /** Admin analytics domain constants: the operator allowlist, session settings and read limits. */
 
+import { GOOGLE_CLIENT_ID } from "@/server/auth/auth.constants";
+
 /**
  * Name of the cookie that carries an admin session. Never the app's session
  * cookie under another host: the two are different credentials, and a
@@ -66,6 +68,27 @@ export function adminEmails(): ReadonlySet<string> {
       .map((email) => email.trim().toLowerCase())
       .filter((email) => email.length > 0),
   );
+}
+
+/**
+ * The OAuth client id the admin page signs in with, and the only audience
+ * an admin sign-in token may name.
+ *
+ * ADMIN_GOOGLE_CLIENT_ID when set, otherwise the app's own web client.
+ * A dedicated client is the stricter setup, and the reason is the origin
+ * list Google keeps per client. Google mints an ID token only for a page on
+ * one of the client's authorized JavaScript origins. With one client shared
+ * by both hostnames, a script injected into the app could ask Google for a
+ * token as the signed-in operator and present it here; with a client whose
+ * only authorized origin is the admin hostname, no page on the app's origin
+ * can obtain a token this surface accepts.
+ *
+ * Read at call time, like the allowlist. Public, like every client id.
+ *
+ * @returns The client id, or "" when Google sign-in is not configured at all.
+ */
+export function adminGoogleClientId(): string {
+  return (process.env.ADMIN_GOOGLE_CLIENT_ID ?? "").trim() || GOOGLE_CLIENT_ID;
 }
 
 /**

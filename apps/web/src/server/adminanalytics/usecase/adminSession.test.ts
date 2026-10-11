@@ -91,6 +91,17 @@ describe("signInAdmin", () => {
     ]);
   });
 
+  it("accepts only the admin page's own client when it has one, not the app's", async () => {
+    vi.stubEnv("ADMIN_GOOGLE_CLIENT_ID", " admin-client.apps.googleusercontent.com ");
+    googleVerifies(OPERATOR);
+
+    await signInAdmin("id-token");
+
+    expect(verifyGoogleSignIn).toHaveBeenCalledWith("id-token", [
+      "admin-client.apps.googleusercontent.com",
+    ]);
+  });
+
   it("refuses a verified Google account that is not on the allowlist, and writes nothing", async () => {
     googleVerifies("stranger@example.com");
 
@@ -163,7 +174,8 @@ describe("requireAdminSession", () => {
   });
 
   it("refuses anything that is not shaped like an admin token, including an app session token", async () => {
-    const appSessionToken = "v2.user-id.0.1900000000.c2lnbmF0dXJl";
+    // The app's own session format: version, user id, token version, expiry, signature.
+    const appSessionToken = ["v2", "user-id", "0", "1900000000", "signature"].join(".");
 
     for (const candidate of ["", "short", appSessionToken, `${TOKEN}x`, `${TOKEN.slice(1)}=`]) {
       await expect(requireAdminSession(candidate)).rejects.toMatchObject({

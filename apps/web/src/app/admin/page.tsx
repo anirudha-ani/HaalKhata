@@ -3,6 +3,7 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { adminSignedIn, onAdminSurface } from "@/lib/auth/adminSession.server";
+import { adminGoogleClientId } from "@/server/adminanalytics/adminanalytics.constants";
 import { AdminPage } from "./components/AdminPage/AdminPage";
 
 /** Kept out of search results: this page is for one person. */
@@ -18,9 +19,20 @@ export const metadata: Metadata = {
  * here: the figures are fetched over the admin RPC, which checks the
  * session itself on every call.
  *
+ * The Google client id is handed down from here, read from the server's
+ * environment at request time. The app's own sign-in gets its id from a
+ * NEXT_PUBLIC_ variable inlined at build; doing the same for this page
+ * would mean a second build argument for something only the server needs to
+ * agree with itself about.
+ *
  * @returns The admin page element (or never, when the surface is wrong).
  */
 export default async function Admin() {
   if (!(await onAdminSurface())) notFound();
-  return <AdminPage initiallySignedIn={await adminSignedIn()} />;
+  return (
+    <AdminPage
+      initiallySignedIn={await adminSignedIn()}
+      googleClientId={adminGoogleClientId()}
+    />
+  );
 }

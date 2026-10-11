@@ -4,7 +4,7 @@
 import { useEffect, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { adminAnalyticsClient, errorMessage } from "@/lib/api/connect";
-import { GOOGLE_BUTTON_OPTIONS, GOOGLE_CLIENT_ID } from "@/app/login/constants/googleSignIn";
+import { GOOGLE_BUTTON_OPTIONS } from "@/app/login/constants/googleSignIn";
 import { loadGoogleScript } from "@/app/login/components/LoginPage/utils/loadGoogleScript";
 
 /**
@@ -21,18 +21,26 @@ import { loadGoogleScript } from "@/app/login/components/LoginPage/utils/loadGoo
  * wrong one would fail a second time for a reason nobody could see.
  *
  * @param options - Hook options.
+ * @param options.googleClientId - The OAuth client id to render the button
+ *   for, as the server reported it; "" when sign-in is not configured.
  * @param options.onSignedIn - Called once the admin session cookie is set.
  * @returns `setButtonElement` to pass as a callback ref on an empty div, the
  *   last `error` message, `isPending` while the token is being exchanged, and
  *   `isConfigured` for whether the button will appear at all.
  */
-export function useAdminSignIn({ onSignedIn }: { onSignedIn: () => void }) {
+export function useAdminSignIn({
+  googleClientId,
+  onSignedIn,
+}: {
+  googleClientId: string;
+  onSignedIn: () => void;
+}) {
   // Held in state rather than a ref so the effect below runs exactly when
   // the div mounts, with no ordering dance against the script load.
   const [buttonElement, setButtonElement] = useState<HTMLDivElement | null>(null);
   const [error, setError] = useState("");
   const [attempt, setAttempt] = useState(0);
-  const isConfigured = GOOGLE_CLIENT_ID.length > 0;
+  const isConfigured = googleClientId.length > 0;
 
   const { mutate, isPending } = useMutation({
     mutationFn: (idToken: string) => adminAnalyticsClient.signIn({ idToken }),
@@ -51,7 +59,7 @@ export function useAdminSignIn({ onSignedIn }: { onSignedIn: () => void }) {
       .then(([_scriptReady, challenge]) => {
         if (cancelled || !window.google) return;
         window.google.accounts.id.initialize({
-          client_id: GOOGLE_CLIENT_ID,
+          client_id: googleClientId,
           nonce: challenge.nonce,
           callback: (response) => {
             setError("");
@@ -69,7 +77,7 @@ export function useAdminSignIn({ onSignedIn }: { onSignedIn: () => void }) {
     };
     // `mutate` is referentially stable in React Query; `attempt` is here on
     // purpose, to redo the setup with a fresh nonce after a failure.
-  }, [isConfigured, buttonElement, mutate, attempt]);
+  }, [isConfigured, googleClientId, buttonElement, mutate, attempt]);
 
   return { setButtonElement, error, isPending, isConfigured };
 }
