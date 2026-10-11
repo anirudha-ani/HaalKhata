@@ -4,6 +4,10 @@
 import type { PaymentMethod } from "@haalkhata/protogen/payment/v1/payment_pb";
 import { Modal } from "@/components/ui/Modal/Modal";
 import {
+  METHOD_NAME_PLACEHOLDER,
+  METHOD_NOTE_PLACEHOLDER,
+} from "@haalkhata/shared/payment/copy";
+import {
   MAX_PAYMENT_METHOD_NAME_LENGTH,
   MAX_PAYMENT_METHOD_NOTE_LENGTH,
 } from "@haalkhata/shared/text/limits";
@@ -95,7 +99,7 @@ export function PaymentMethodModal({
             value={draft.name}
             onChange={(event) => form.setName(event.target.value)}
             maxLength={MAX_PAYMENT_METHOD_NAME_LENGTH}
-            placeholder="What you call it: bKash, Chase checking…"
+            placeholder={METHOD_NAME_PLACEHOLDER}
             autoComplete="off"
             className={`mt-1 ${DETAIL_INPUT_CLASS}`}
           />
@@ -129,7 +133,7 @@ export function PaymentMethodModal({
             value={draft.note}
             onChange={(event) => form.setNote(event.target.value)}
             maxLength={MAX_PAYMENT_METHOD_NOTE_LENGTH}
-            placeholder="Use Send Money, not Payment"
+            placeholder={METHOD_NOTE_PLACEHOLDER}
             autoComplete="off"
             className={`mt-1 ${DETAIL_INPUT_CLASS}`}
           />

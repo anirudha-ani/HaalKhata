@@ -8,6 +8,10 @@ import { Chip } from "@/components/ui/Chip";
 import { CurrencyPicker } from "@/components/ui/CurrencyPicker";
 import { Sheet } from "@/components/ui/Sheet";
 import { TextField } from "@/components/ui/TextField";
+import {
+  METHOD_NAME_PLACEHOLDER,
+  METHOD_NOTE_PLACEHOLDER,
+} from "@haalkhata/shared/payment/copy";
 import { METHOD_TEMPLATES } from "@haalkhata/shared/payment/templates";
 import {
   MAX_PAYMENT_METHOD_NAME_LENGTH,
@@ -100,7 +104,7 @@ export function PaymentMethodSheet({
             label="Name"
             maxLength={MAX_PAYMENT_METHOD_NAME_LENGTH}
             onChangeText={form.setName}
-            placeholder="What you call it: bKash, Chase checking…"
+            placeholder={METHOD_NAME_PLACEHOLDER}
             value={draft.name}
           />
           {errors.name ? <Text style={styles.error}>{errors.name}</Text> : null}
@@ -160,7 +164,7 @@ export function PaymentMethodSheet({
             label="Note to the payer (optional)"
             maxLength={MAX_PAYMENT_METHOD_NOTE_LENGTH}
             onChangeText={form.setNote}
-            placeholder="Use Send Money, not Payment"
+            placeholder={METHOD_NOTE_PLACEHOLDER}
             value={draft.note}
           />
           {errors.note ? <Text style={styles.error}>{errors.note}</Text> : null}

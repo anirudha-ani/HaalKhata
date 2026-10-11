@@ -30,10 +30,10 @@ both clients run the same code for their forms.
 
 | Part | Rule |
 | --- | --- |
-| Name | Required, 1 to 40 characters: "bKash", "Chase checking". |
+| Name | Required, 1 to 40 characters: "Chase checking", "bKash". |
 | Currency | One ISO 4217 code from the catalog, or empty for "any currency". |
 | Details | 1 to 8, in the owner's order. Each has a kind and a value. |
-| Note | Optional, up to 200 characters, one line: "Use Send Money, not Payment". |
+| Note | Optional, up to 200 characters, one line: "Send as friends and family". |
 | Preferred | At most one method per person per currency, with "any currency" a bucket of its own. |
 | Preset | `venmo`, `zelle`, `cashapp` or `paypal` when started from a built-in app, otherwise empty. Fixed at creation. A preset carries exactly one detail. |
 

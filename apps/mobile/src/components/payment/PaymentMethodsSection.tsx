@@ -3,6 +3,7 @@
 import { Plus } from "lucide-react-native";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { Button } from "@/components/ui/Button";
+import { EMPTY_METHODS_HINT } from "@haalkhata/shared/payment/copy";
 import { MAX_PAYMENT_METHODS_PER_USER } from "@haalkhata/shared/payment/payment.constants";
 import { colors, fonts, radii, spacing } from "@/lib/theme/theme";
 import { PaymentMethodRow } from "./PaymentMethodRow";
@@ -50,9 +51,7 @@ export function PaymentMethodsSection({
           </Pressable>
         </View>
       ) : view.methods.length === 0 ? (
-        <Text style={styles.placeholder}>
-          Nothing here yet. Add bKash, a bank account, Venmo, or whatever you use.
-        </Text>
+        <Text style={styles.placeholder}>{EMPTY_METHODS_HINT}</Text>
       ) : (
         <View style={styles.list}>
           {view.methods.map((method) => (

@@ -10,6 +10,7 @@ import {
   detailKindName,
   findDetailKind,
 } from "@haalkhata/shared/payment/detailKinds";
+import { CUSTOM_LABEL_PLACEHOLDER } from "@haalkhata/shared/payment/copy";
 import { findPaymentMethod } from "@haalkhata/shared/payment/methods";
 import type { DetailDraft } from "@haalkhata/shared/payment/methodDraft";
 import { MAX_PAYMENT_DETAIL_LABEL_LENGTH } from "@haalkhata/shared/text/limits";
@@ -109,7 +110,7 @@ export function DetailValueField({
         autoCorrect={false}
         maxLength={MAX_PAYMENT_DETAIL_LABEL_LENGTH}
         onChangeText={(labelText) => onChange({ label: labelText })}
-        placeholder="What is it called? IFSC, Sort code…"
+        placeholder={CUSTOM_LABEL_PLACEHOLDER}
         value={detail.label}
       />
       {valueInput}

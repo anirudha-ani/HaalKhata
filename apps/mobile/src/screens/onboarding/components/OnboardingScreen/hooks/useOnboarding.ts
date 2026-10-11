@@ -186,7 +186,7 @@ export function useOnboarding() {
     save: () => save.mutate(),
     /** Leaves the profile step without saving it; the payment step still follows. */
     skip: toPaymentStep,
-    /** Marks onboarding done and opens the ledger; the payment step's one button. */
+    /** Marks onboarding done and opens the app; the payment step's one button. */
     complete: () => {
       setError("");
       complete.mutate();

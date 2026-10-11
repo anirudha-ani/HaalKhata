@@ -2,6 +2,7 @@
 /** The "Get paid" card: the owner's payment methods, with add, edit, remove and star. Shown on the account page and at the end of onboarding. */
 
 import { Plus } from "lucide-react";
+import { EMPTY_METHODS_HINT } from "@haalkhata/shared/payment/copy";
 import { MAX_PAYMENT_METHODS_PER_USER } from "@haalkhata/shared/payment/payment.constants";
 import { PaymentMethodModal } from "@/components/payment/PaymentMethodModal/PaymentMethodModal";
 import { PaymentMethodRow } from "./components/PaymentMethodRow/PaymentMethodRow";
@@ -58,7 +59,7 @@ export function PaymentMethodsCard({
         </div>
       ) : view.methods.length === 0 ? (
         <p className="rounded-xl border border-dashed border-line px-3 py-2.5 text-sm text-ink-soft">
-          Nothing here yet. Add bKash, a bank account, Venmo, or whatever you use.
+          {EMPTY_METHODS_HINT}
         </p>
       ) : (
         <ul className="space-y-2">
