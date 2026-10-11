@@ -32,6 +32,10 @@ export function usePaymentMethods() {
    * @param method - The method whose star was tapped.
    */
   const toggleStar = (method: PaymentMethod) => {
+    // One star change at a time. Two in flight could finish out of order,
+    // and the refusal of the first would be undone on screen by the second
+    // without ever being shown.
+    if (star.isPending) return;
     setStarError({ methodId: "", message: "" });
     star.mutate(
       { id: method.id, preferred: !method.preferred },
@@ -52,6 +56,8 @@ export function usePaymentMethods() {
     openEdit: (method: PaymentMethod) => setSheet({ kind: "edit", method }),
     closeSheet: () => setSheet({ kind: "closed" }),
     toggleStar,
+    /** True while a star change is on its way; the stars wait for it. */
+    isStarring: star.isPending,
     starError,
     /** False at the cap, where the Add button says why instead of failing after a tap. */
     canAdd: methods.length < MAX_PAYMENT_METHODS_PER_USER,

@@ -25,6 +25,7 @@ import { colors, radii, spacing } from "@/lib/theme/theme";
 export function PaymentMethodRow({
   method,
   error,
+  starring,
   onToggleStar,
   onEdit,
 }: {
@@ -32,6 +33,8 @@ export function PaymentMethodRow({
   method: PaymentMethod;
   /** Why the last star tap on this row was refused; empty when it was not. */
   error: string;
+  /** Whether a star change is on its way, on this row or another; the star waits for it. */
+  starring: boolean;
   /** Called when the star is tapped. */
   onToggleStar: () => void;
   /** Called when the edit button is tapped. */
@@ -63,9 +66,10 @@ export function PaymentMethodRow({
               : `Make ${method.name} your preferred method for ${currencyPhrase}`
           }
           accessibilityRole="button"
-          accessibilityState={{ selected: method.preferred }}
+          accessibilityState={{ selected: method.preferred, disabled: starring }}
+          disabled={starring}
           onPress={onToggleStar}
-          style={styles.iconButton}
+          style={[styles.iconButton, starring ? styles.waiting : null]}
         >
           <Star
             color={method.preferred ? colors.pos600 : colors.inkSoft}
@@ -157,5 +161,8 @@ const styles = StyleSheet.create({
     flex: 1,
     gap: 3,
     minWidth: 0,
+  },
+  waiting: {
+    opacity: 0.6,
   },
 });

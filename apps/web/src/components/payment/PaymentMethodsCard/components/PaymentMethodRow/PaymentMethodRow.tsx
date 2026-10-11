@@ -22,6 +22,7 @@ import {
 export function PaymentMethodRow({
   method,
   error,
+  starring,
   onToggleStar,
   onEdit,
 }: {
@@ -29,6 +30,8 @@ export function PaymentMethodRow({
   method: PaymentMethod;
   /** Why the last star tap on this row was refused; empty when it was not. */
   error: string;
+  /** Whether a star change is on its way, on this row or another; the star waits for it. */
+  starring: boolean;
   /** Called when the star is tapped. */
   onToggleStar: () => void;
   /** Called when the edit button is tapped. */
@@ -61,13 +64,14 @@ export function PaymentMethodRow({
         <button
           type="button"
           onClick={onToggleStar}
+          disabled={starring}
           aria-pressed={method.preferred}
           aria-label={
             method.preferred
               ? `${method.name} is your preferred method for ${currencyPhrase}. Remove the star`
               : `Make ${method.name} your preferred method for ${currencyPhrase}`
           }
-          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-ink-soft hover:bg-card hover:text-pos-700"
+          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-ink-soft hover:bg-card hover:text-pos-700 disabled:opacity-60"
         >
           <Star
             className={`h-5 w-5 ${method.preferred ? "fill-pos-600 text-pos-600" : ""}`}

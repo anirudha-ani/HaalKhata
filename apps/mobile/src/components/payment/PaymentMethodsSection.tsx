@@ -61,6 +61,7 @@ export function PaymentMethodsSection({
               method={method}
               onEdit={() => view.openEdit(method)}
               onToggleStar={() => view.toggleStar(method)}
+              starring={view.isStarring}
             />
           ))}
         </View>

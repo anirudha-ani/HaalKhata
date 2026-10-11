@@ -68,6 +68,7 @@ export function PaymentMethodsCard({
               key={method.id}
               method={method}
               error={view.starError.methodId === method.id ? view.starError.message : ""}
+              starring={view.isStarring}
               onToggleStar={() => view.toggleStar(method)}
               onEdit={() => view.openEdit(method)}
             />

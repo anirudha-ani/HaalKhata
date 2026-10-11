@@ -81,6 +81,9 @@ export function usePaymentMethodsAPI({ enabled = true }: { enabled?: boolean } =
       if (context?.previous) {
         queryClient.setQueryData(queryKeys.paymentMethods, context.previous);
       }
+      // The snapshot is only what this tap saw. Reading the list again is
+      // what makes the stars on screen the server's, whatever else moved.
+      void refresh();
     },
     // The response is the whole list as the server now has it.
     onSuccess: (result) => queryClient.setQueryData(queryKeys.paymentMethods, result),
