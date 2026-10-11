@@ -3,9 +3,12 @@
 
 import type { GroupActivity } from "@haalkhata/protogen/personalanalytics/v1/personalanalytics_pb";
 import { BarList } from "@/components/charts/BarList/BarList";
-import { countLabel } from "@haalkhata/shared/analytics/insights";
+import {
+  countLabel,
+  OUTSIDE_GROUPS_EMOJI,
+  OUTSIDE_GROUPS_LABEL,
+} from "@haalkhata/shared/analytics/insights";
 import { groupEmoji } from "@/app/(app)/groups/constants/groupTypes";
-import { OUTSIDE_GROUPS_EMOJI, OUTSIDE_GROUPS_LABEL } from "../../constants/insightsPanel";
 import { InsightCard } from "../InsightCard/InsightCard";
 
 /**

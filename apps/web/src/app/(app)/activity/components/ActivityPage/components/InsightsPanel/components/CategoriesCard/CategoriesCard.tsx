@@ -6,13 +6,13 @@ import { BarList } from "@/components/charts/BarList/BarList";
 import { CATEGORY_EMOJI } from "@/components/expenses/ExpenseList/constants/categoryEmoji";
 import {
   categoryLabel,
+  FALLBACK_CATEGORY_EMOJI,
   foldTail,
   OTHER_CATEGORY,
   percentLabel,
   RANKED_LIST_LIMIT,
 } from "@haalkhata/shared/analytics/insights";
 import { formatMoney } from "@haalkhata/shared/money/money";
-import { FALLBACK_CATEGORY_EMOJI } from "../../constants/insightsPanel";
 import { InsightCard } from "../InsightCard/InsightCard";
 
 /**

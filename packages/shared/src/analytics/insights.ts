@@ -35,6 +35,15 @@ export const RANKED_LIST_LIMIT = 5;
 /** Category key the folded tail of a ranked category list is filed under. */
 export const OTHER_CATEGORY = "other";
 
+/** Emoji for a category this build has no picture for, and for the folded tail. */
+export const FALLBACK_CATEGORY_EMOJI = "🧾";
+
+/** Emoji for the row that stands for expenses outside any group. */
+export const OUTSIDE_GROUPS_EMOJI = "🤝";
+
+/** Label for the row that stands for expenses outside any group. */
+export const OUTSIDE_GROUPS_LABEL = "Outside groups";
+
 /** What each split type is called, matching the tabs of the expense form. */
 const SPLIT_TYPE_LABELS: Record<string, string> = {
   equal: "Equally",
