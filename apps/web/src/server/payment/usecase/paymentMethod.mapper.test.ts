@@ -19,6 +19,7 @@ function rowWith(overrides: Partial<PaymentMethodRow>): PaymentMethodRow {
     preset: null,
     note: "",
     is_preferred: false,
+    preferred_at: null,
     created_at: "2026-10-01T00:00:00.000Z",
     updated_at: "2026-10-01T00:00:00.000Z",
     details: [{ kind: "account_number", label: "", value: "000123456789" }],

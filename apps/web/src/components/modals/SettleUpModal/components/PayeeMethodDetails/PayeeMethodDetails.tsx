@@ -28,6 +28,9 @@ import { OwnerLinks } from "./components/OwnerLinks/OwnerLinks";
  */
 export function PayeeMethodDetails({
   method,
+  methods,
+  readAt,
+  removedAt,
   firstName,
   amountCents,
   currency,
@@ -35,6 +38,12 @@ export function PayeeMethodDetails({
 }: {
   /** The method being paid into. */
   method: PaymentMethod;
+  /** All of the payee's methods, which the change note compares this one with. */
+  methods: readonly PaymentMethod[];
+  /** The server's clock when the methods were read; "" when it sent none. */
+  readAt: string;
+  /** When the payee last removed a method; "" when never. */
+  removedAt: string;
   /** First name of the person being paid. */
   firstName: string;
   /** The amount being paid, for an app link that can carry it. */
@@ -61,6 +70,15 @@ export function PayeeMethodDetails({
       <p className="text-xs font-medium tracking-wide text-ink-soft uppercase">
         {firstName}&apos;s {methodDisplayName(method)}
       </p>
+
+      {/* Before the details, not after them: it is about whether to use them. */}
+      <ChangeNote
+        method={method}
+        methods={methods}
+        readAt={readAt}
+        removedAt={removedAt}
+        firstName={firstName}
+      />
 
       <ul className="space-y-2.5">
         {keyedDetails(method.details).map(({ key, detail }) => (
@@ -94,12 +112,6 @@ export function PayeeMethodDetails({
       ) : null}
 
       {method.details.length > 1 ? <CopyAllButton text={methodCopyText(method)} /> : null}
-
-      <ChangeNote
-        createdAt={method.createdAt}
-        updatedAt={method.updatedAt}
-        firstName={firstName}
-      />
     </div>
   );
 }

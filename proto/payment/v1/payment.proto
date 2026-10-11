@@ -55,6 +55,11 @@ message PaymentMethod {
   // never been edited, which lets a client say "added" instead of "changed":
   // new details and altered details are different news to a payer.
   string created_at = 9;
+  // When this method was given the star for its currency. Empty when it is
+  // not starred, and for a star given before this was recorded. Keeping the
+  // star through an edit does not move it. A payer is told when the method
+  // they are shown first only recently became that.
+  string preferred_at = 10;
 }
 
 // One labelled identifier of a payment method.

@@ -44,6 +44,7 @@ vi.mock("@/server/auth/repo/users.repo", () => ({
 }));
 vi.mock("@/server/social/repo/friendships.repo", () => ({ listFriendIds: vi.fn() }));
 vi.mock("@/server/payment/repo/paymentMethods.repo", () => ({
+  findMethodRemoval: vi.fn(async () => undefined),
   listPaymentMethodsByUser: vi.fn(async () => []),
 }));
 

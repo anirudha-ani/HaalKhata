@@ -1080,7 +1080,9 @@ export async function getFriendLedger(userId: string, friendId: string) {
     const callerOwes = settlePositions.some(
       (position) => position.netCents < 0 || position.scopes.some((scope) => scope.netCents < 0),
     );
-    const payeeMethods = callerOwes ? await listPayeeMethods(friendId, client) : [];
+    const payee = callerOwes
+      ? await listPayeeMethods(friendId, client)
+      : { methods: [], removedAt: "" };
 
     return {
       friend: toPublicUser(friend),
@@ -1090,7 +1092,11 @@ export async function getFriendLedger(userId: string, friendId: string) {
       entries: shownEntries,
       truncated,
       settlePositions,
-      payeeMethods,
+      payeeMethods: payee.methods,
+      // The server's own clock, so "changed 2 days ago" does not depend on
+      // the payer's device being set right.
+      readAt: new Date().toISOString(),
+      payeeMethodRemovedAt: payee.removedAt,
       groupBalances: groupBalances.map((scope) => ({
         ...scope,
         netCents: toInt32Cents(scope.netCents, "a balance"),

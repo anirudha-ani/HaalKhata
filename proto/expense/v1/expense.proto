@@ -445,4 +445,14 @@ message FriendLedgerResponse {
   // account number is for the person about to use it, and nobody else. This
   // response is the only way one person's methods reach another.
   repeated payment.v1.PaymentMethod payee_methods = 12;
+  // The server's clock when this was read (ISO 8601). A client works out
+  // "changed 2 days ago" against this, not against its own clock, which can
+  // be wrong by minutes or by years, and wrong in the direction that hides
+  // the freshest change.
+  string read_at = 13;
+  // When this person last removed one of their payment methods; empty when
+  // they never have, and whenever payee_methods is empty. With it, a method
+  // added in place of a removed one is not mistaken for one that is merely
+  // new.
+  string payee_method_removed_at = 14;
 }

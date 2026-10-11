@@ -23,6 +23,8 @@ export interface PaymentMethodRow {
   preset: string | null;
   note: string;
   is_preferred: boolean;
+  /** When it was given the star; null when unstarred, or starred before this was recorded. */
+  preferred_at: string | null;
   created_at: string;
   /** When the name, currency, details or note last changed; starring does not move it. */
   updated_at: string;
@@ -156,8 +158,9 @@ export async function insertPaymentMethod(
   client: PoolClient,
 ): Promise<PaymentMethodRow> {
   await execute(
-    `INSERT INTO payment_methods (id, user_id, name, currency, preset, note, is_preferred)
-     VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+    `INSERT INTO payment_methods
+            (id, user_id, name, currency, preset, note, is_preferred, preferred_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, CASE WHEN $7 THEN now() END)`,
     [
       input.id,
       input.userId,
@@ -267,7 +270,7 @@ export async function clearPreferred(
   client: PoolClient,
 ): Promise<void> {
   await execute(
-    `UPDATE payment_methods SET is_preferred = FALSE
+    `UPDATE payment_methods SET is_preferred = FALSE, preferred_at = NULL
       WHERE user_id = $1 AND is_preferred
         AND COALESCE(currency, '') = COALESCE($2::text, '')`,
     [userId, currency],
@@ -276,8 +279,10 @@ export async function clearPreferred(
 }
 
 /**
- * Sets or clears the star on one of a person's methods. The caller clears
- * the currency bucket first when setting it.
+ * Sets or clears the star on one of a person's methods, and with it the
+ * time the star was given. The caller clears the currency bucket first when
+ * setting it, and does not call this for a method that is keeping a star it
+ * already has: that would date an old star as new.
  *
  * @param methodId - Id of the method.
  * @param preferred - Whether it carries the star.
@@ -291,8 +296,44 @@ export async function setPreferred(
   client: PoolClient,
 ): Promise<void> {
   await execute(
-    `UPDATE payment_methods SET is_preferred = $2 WHERE id = $1 AND user_id = $3`,
+    `UPDATE payment_methods
+        SET is_preferred = $2, preferred_at = CASE WHEN $2 THEN now() END
+      WHERE id = $1 AND user_id = $3`,
     [methodId, preferred, userId],
     client,
   );
+}
+
+/**
+ * Remembers that a person removed a payment method just now.
+ *
+ * @param userId - Who removed one.
+ * @param client - The transaction's client.
+ */
+export async function recordMethodRemoval(userId: string, client: PoolClient): Promise<void> {
+  await execute(
+    `INSERT INTO payment_method_removals (user_id, removed_at) VALUES ($1, now())
+     ON CONFLICT (user_id) DO UPDATE SET removed_at = EXCLUDED.removed_at`,
+    [userId],
+    client,
+  );
+}
+
+/**
+ * Reads when a person last removed a payment method.
+ *
+ * @param userId - Whose removals to look up.
+ * @param client - Optional client, for reading inside a snapshot.
+ * @returns The time, or undefined when they never removed one.
+ */
+export async function findMethodRemoval(
+  userId: string,
+  client?: PoolClient,
+): Promise<string | undefined> {
+  const found = await queryOne<{ removed_at: string }>(
+    `SELECT removed_at FROM payment_method_removals WHERE user_id = $1`,
+    [userId],
+    client,
+  );
+  return found?.removed_at;
 }

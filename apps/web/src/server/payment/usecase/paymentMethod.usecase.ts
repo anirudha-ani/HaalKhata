@@ -10,10 +10,12 @@ import {
   clearPreferred,
   countPaymentMethods,
   deletePaymentMethod as deletePaymentMethodRow,
+  findMethodRemoval,
   findPaymentMethod,
   forgetLegacyHandle,
   insertPaymentMethod,
   listPaymentMethodsByUser,
+  recordMethodRemoval,
   setPreferred,
   updatePaymentMethod as updatePaymentMethodRow,
   type PaymentMethodRow,
@@ -102,12 +104,20 @@ export async function listMyPaymentMethods(userId: string) {
  * client so the methods belong to the same instant as the balances they are
  * shown beside.
  *
+ * Alongside the methods it reads when the payee last removed one. A payer
+ * is warned about details that only recently became what they are, and a
+ * method added in place of a removed one would otherwise pass as merely new.
+ *
  * @param payeeId - Owner of the methods.
  * @param client - The ledger read's snapshot client.
- * @returns The payee's methods in proto shape, oldest first.
+ * @returns The payee's methods in proto shape, oldest first, and the time of
+ *   their last removal ("" when they never removed one).
  */
 export async function listPayeeMethods(payeeId: string, client: PoolClient) {
-  return (await listPaymentMethodsByUser(payeeId, client)).map(toPaymentMethod);
+  // One at a time: both statements share the snapshot's one connection.
+  const methods = (await listPaymentMethodsByUser(payeeId, client)).map(toPaymentMethod);
+  const removedAt = (await findMethodRemoval(payeeId, client)) ?? "";
+  return { methods, removedAt };
 }
 
 /**
@@ -171,10 +181,18 @@ export async function updatePaymentMethod(
     if (!existing) notFound(METHOD_NOT_FOUND_MESSAGE);
     const write = validatedWrite({ ...input, preset: existing.preset ?? "" });
 
-    // Unstar before the currency can move: a starred method carried into a
-    // currency that already has a star would break the unique index, and
-    // which of the two keeps it is decided below, not by arrival order.
-    if (existing.is_preferred) await setPreferred(existing.id, false, userId, client);
+    // A method that had the star and keeps it, in the same currency, is not
+    // touched: the star's time is what tells a payer the preferred method
+    // changed recently, and re-saving the form must not make an old star new.
+    const keepsStar =
+      existing.is_preferred && input.preferred && existing.currency === write.currency;
+    // Otherwise unstar before the currency can move: a starred method
+    // carried into a currency that already has a star would break the unique
+    // index, and which of the two keeps it is decided below, not by arrival
+    // order.
+    if (existing.is_preferred && !keepsStar) {
+      await setPreferred(existing.id, false, userId, client);
+    }
     if (differs(existing, write)) {
       if (!(await updatePaymentMethodRow(existing.id, write, userId, client))) {
         notFound(METHOD_NOT_FOUND_MESSAGE);
@@ -183,7 +201,9 @@ export async function updatePaymentMethod(
       // what the method says.
       await forgetLegacyHandle(existing.id, userId, client);
     }
-    if (input.preferred) await takeStar(client, userId, existing.id, write.currency);
+    if (input.preferred && !keepsStar) {
+      await takeStar(client, userId, existing.id, write.currency);
+    }
 
     const saved = await findPaymentMethod(existing.id, userId, client);
     if (!saved) notFound(METHOD_NOT_FOUND_MESSAGE);
@@ -209,6 +229,9 @@ export async function deletePaymentMethod(userId: string, methodId: string): Pro
       notFound(METHOD_NOT_FOUND_MESSAGE);
     }
     await forgetLegacyHandle(methodId, userId, client);
+    // Remembered so that a method added in its place is not shown to a
+    // payer as merely new.
+    await recordMethodRemoval(userId, client);
   });
 }
 
@@ -229,8 +252,13 @@ export async function setPreferredPaymentMethod(
     await lockPaymentMethods(client, userId);
     const existing = await findPaymentMethod(input.id, userId, client);
     if (!existing) notFound(METHOD_NOT_FOUND_MESSAGE);
-    if (input.preferred) await takeStar(client, userId, existing.id, existing.currency);
-    else await setPreferred(existing.id, false, userId, client);
+    // Starring what is already starred changes nothing, and must not date
+    // the star as new.
+    if (input.preferred && !existing.is_preferred) {
+      await takeStar(client, userId, existing.id, existing.currency);
+    } else if (!input.preferred) {
+      await setPreferred(existing.id, false, userId, client);
+    }
     return { methods: (await listPaymentMethodsByUser(userId, client)).map(toPaymentMethod) };
   });
 }

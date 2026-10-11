@@ -2,6 +2,7 @@
 
 import { describe, expect, test } from "vitest";
 import {
+  changeClock,
   detailCopyText,
   keyedDetails,
   linkHost,
@@ -12,6 +13,8 @@ import {
   methodSummary,
   recentChange,
   valueTail,
+  type ChangeContext,
+  type ChangeMarked,
 } from "./formatMethod";
 import { detailLabel, detailValueText } from "./detailKinds";
 import type { PaymentMethodFields } from "./types";
@@ -148,56 +151,178 @@ describe("small helpers", () => {
 describe("recentChange", () => {
   const nowMs = Date.parse("2026-10-10T12:00:00.000Z");
   const daysAgo = (days: number) => new Date(nowMs - days * 24 * 60 * 60 * 1000).toISOString();
+
   /**
-   * Builds the stamps of a method edited some days after it was added.
+   * Builds a method's stamps.
    *
-   * @param editedDaysAgo - How long ago it was last edited.
-   * @returns The stamps, with the method added a year ago.
+   * @param overrides - Stamps to replace on a method added a year ago and never touched.
+   * @returns The method.
    */
-  const edited = (editedDaysAgo: number) => ({
+  const marked = (overrides: Partial<ChangeMarked>): ChangeMarked => ({
+    id: "method-shown",
+    currency: "USD",
     createdAt: daysAgo(365),
-    updatedAt: daysAgo(editedDaysAgo),
+    updatedAt: daysAgo(365),
+    preferred: false,
+    preferredAt: "",
+    ...overrides,
   });
   /**
-   * Builds the stamps of a method that was added and never edited.
+   * Reads the note for a method whose owner has no other methods and never removed one.
    *
-   * @param addedDaysAgo - How long ago it was added.
-   * @returns The stamps, equal to each other.
+   * @param method - The method being shown.
+   * @param context - Parts of the context to replace.
+   * @returns The note.
    */
-  const untouched = (addedDaysAgo: number) => ({
-    createdAt: daysAgo(addedDaysAgo),
-    updatedAt: daysAgo(addedDaysAgo),
-  });
+  const noteFor = (method: ChangeMarked, context: Partial<ChangeContext> = {}) =>
+    recentChange(method, { nowMs, removedAt: "", methods: [method], ...context });
+  const edited = (editedDaysAgo: number) => marked({ updatedAt: daysAgo(editedDaysAgo) });
+  const added = (addedDaysAgo: number) =>
+    marked({ createdAt: daysAgo(addedDaysAgo), updatedAt: daysAgo(addedDaysAgo) });
 
   test("an edited method says how recently it changed, for two weeks", () => {
-    expect(recentChange(edited(0), nowMs)).toEqual({ text: "Changed today", edited: true });
-    expect(recentChange(edited(1), nowMs)).toEqual({ text: "Changed yesterday", edited: true });
-    expect(recentChange(edited(2), nowMs)).toEqual({ text: "Changed 2 days ago", edited: true });
-    expect(recentChange(edited(14), nowMs)?.text).toBe("Changed 14 days ago");
+    expect(noteFor(edited(0))).toEqual({ text: "Changed today", caution: true });
+    expect(noteFor(edited(1))).toEqual({ text: "Changed yesterday", caution: true });
+    expect(noteFor(edited(2))).toEqual({ text: "Changed 2 days ago", caution: true });
+    expect(noteFor(edited(14))?.text).toBe("Changed 14 days ago");
+    expect(noteFor(edited(15))).toBeUndefined();
   });
 
   test("a method that was only ever added says so, without the alarm", () => {
-    expect(recentChange(untouched(0), nowMs)).toEqual({ text: "Added today", edited: false });
-    expect(recentChange(untouched(3), nowMs)).toEqual({ text: "Added 3 days ago", edited: false });
+    expect(noteFor(added(0))).toEqual({ text: "Added today", caution: false });
+    expect(noteFor(added(3))).toEqual({ text: "Added 3 days ago", caution: false });
+    expect(noteFor(added(400))).toBeUndefined();
   });
 
-  test("says nothing once the change is old, in the future, or unreadable", () => {
-    expect(recentChange(edited(15), nowMs)).toBeUndefined();
-    expect(recentChange(untouched(400), nowMs)).toBeUndefined();
-    expect(recentChange(edited(-2), nowMs)).toBeUndefined();
-    expect(recentChange({ createdAt: "", updatedAt: "" }, nowMs)).toBeUndefined();
-    expect(recentChange({ createdAt: daysAgo(3), updatedAt: "not a date" }, nowMs)).toBeUndefined();
+  test("a change the clock puts in the future is a change made today, not nothing", () => {
+    // A payer whose clock is two minutes slow, looking at an edit made a minute ago.
+    const aMinuteAhead = new Date(nowMs + 60_000).toISOString();
+    expect(noteFor(marked({ updatedAt: aMinuteAhead }))).toEqual({
+      text: "Changed today",
+      caution: true,
+    });
+    expect(noteFor(edited(-2))).toEqual({ text: "Changed today", caution: true });
+  });
+
+  test("a new method whose owner removed another one recently is a replacement, and a warning", () => {
+    expect(noteFor(added(0), { removedAt: daysAgo(0) })).toEqual({
+      text: "Added today, and another method was removed recently",
+      caution: true,
+    });
+    // Whichever came first: removed then added, or added then removed.
+    expect(noteFor(added(2), { removedAt: daysAgo(5) })?.caution).toBe(true);
+    expect(noteFor(added(5), { removedAt: daysAgo(2) })?.caution).toBe(true);
+    // A removal long ago has nothing to do with a method added now.
+    expect(noteFor(added(1), { removedAt: daysAgo(60) })).toEqual({
+      text: "Added yesterday",
+      caution: false,
+    });
+    // And an old method is not made suspect by a removal.
+    expect(noteFor(marked({}), { removedAt: daysAgo(0) })).toBeUndefined();
+  });
+
+  test("a method that recently took the star from an older one is a warning", () => {
+    const older = marked({ id: "method-older" });
+    const starred = marked({ preferred: true, preferredAt: daysAgo(1) });
+    expect(noteFor(starred, { methods: [older, starred] })).toEqual({
+      text: "Made the preferred method yesterday",
+      caution: true,
+    });
+    // A brand-new method added already starred, with an older one beside it.
+    const newcomer = marked({
+      createdAt: daysAgo(0),
+      updatedAt: daysAgo(0),
+      preferred: true,
+      preferredAt: daysAgo(0),
+    });
+    expect(noteFor(newcomer, { methods: [older, newcomer] })).toEqual({
+      text: "Made the preferred method today",
+      caution: true,
+    });
+  });
+
+  test("a first method added with its star is simply new", () => {
+    const first = marked({
+      createdAt: daysAgo(0),
+      updatedAt: daysAgo(0),
+      preferred: true,
+      preferredAt: daysAgo(0),
+    });
+    expect(noteFor(first)).toEqual({ text: "Added today", caution: false });
+  });
+
+  test("an older method in another currency was never a rival for the star", () => {
+    const taka = marked({ id: "method-taka", currency: "BDT" });
+    const dollars = marked({
+      createdAt: daysAgo(0),
+      updatedAt: daysAgo(0),
+      preferred: true,
+      preferredAt: daysAgo(0),
+    });
+    expect(noteFor(dollars, { methods: [taka, dollars] })).toEqual({
+      text: "Added today",
+      caution: false,
+    });
+    // One that works in any currency was.
+    const anyCurrency = marked({ id: "method-any", currency: "" });
+    expect(noteFor(dollars, { methods: [anyCurrency, dollars] })?.caution).toBe(true);
+  });
+
+  test("an old star, a lost star and a star of unknown date say nothing", () => {
+    const older = marked({ id: "method-older" });
+    const oldStar = marked({ preferred: true, preferredAt: daysAgo(40) });
+    const lostStar = marked({ preferred: false, preferredAt: daysAgo(1) });
+    const undated = marked({ preferred: true, preferredAt: "" });
+    for (const method of [oldStar, lostStar, undated]) {
+      expect(noteFor(method, { methods: [older, method] })).toBeUndefined();
+    }
+  });
+
+  test("an edit outranks a replacement, which outranks a moved star", () => {
+    const older = marked({ id: "method-older" });
+    const everything = marked({
+      createdAt: daysAgo(3),
+      updatedAt: daysAgo(1),
+      preferred: true,
+      preferredAt: daysAgo(2),
+    });
+    const context = { removedAt: daysAgo(3), methods: [older, everything] };
+    expect(noteFor(everything, context)?.text).toBe("Changed yesterday");
+    expect(noteFor({ ...everything, updatedAt: everything.createdAt }, context)?.text).toBe(
+      "Added 3 days ago, and another method was removed recently",
+    );
+    expect(
+      noteFor({ ...everything, updatedAt: everything.createdAt }, { methods: [older, everything] })
+        ?.text,
+    ).toBe("Made the preferred method 2 days ago");
   });
 
   test("a method copied from an old handle is dated before today and says nothing", () => {
     // The backfill dates a method from its owner's account, and created_at
     // sits a few milliseconds after updated_at to keep the old order.
-    const copied = { createdAt: "2026-07-04T12:00:00.002Z", updatedAt: "2026-07-04T12:00:00.000Z" };
-    expect(recentChange(copied, nowMs)).toBeUndefined();
+    const copied = marked({
+      createdAt: "2026-07-04T12:00:00.002Z",
+      updatedAt: "2026-07-04T12:00:00.000Z",
+    });
+    expect(noteFor(copied)).toBeUndefined();
   });
 
-  test("an unreadable creation stamp falls back to the louder wording", () => {
-    expect(recentChange({ createdAt: "", updatedAt: daysAgo(1) }, nowMs)?.edited).toBe(true);
+  test("unreadable stamps fall back to the louder wording, or to nothing at all", () => {
+    expect(noteFor(marked({ createdAt: "", updatedAt: daysAgo(1) }))?.caution).toBe(true);
+    expect(noteFor(marked({ createdAt: "", updatedAt: "" }))).toBeUndefined();
+    expect(noteFor(marked({ createdAt: daysAgo(3), updatedAt: "not a date" }))).toEqual({
+      text: "Added 3 days ago",
+      caution: false,
+    });
+    expect(noteFor(added(1), { removedAt: "not a date" })?.caution).toBe(false);
+  });
+});
+
+describe("changeClock", () => {
+  test("uses the server's clock when it sent one, and the device's when it did not", () => {
+    expect(changeClock("2026-10-10T12:00:00.000Z", 5)).toBe(Date.parse("2026-10-10T12:00:00.000Z"));
+    expect(changeClock("", 5)).toBe(5);
+    expect(changeClock("soon", 5)).toBe(5);
   });
 });
 

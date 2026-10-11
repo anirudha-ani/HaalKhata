@@ -394,6 +394,9 @@ export function SettleUpModal({
             // A different method is a different card: its "Copied" marks reset.
             key={payMethods.method.id}
             method={payMethods.method}
+            methods={ledgerQuery.data?.payeeMethods ?? []}
+            readAt={ledgerQuery.data?.readAt ?? ""}
+            removedAt={ledgerQuery.data?.payeeMethodRemovedAt ?? ""}
             firstName={firstName}
             amountCents={amountCents}
             currency={currency}

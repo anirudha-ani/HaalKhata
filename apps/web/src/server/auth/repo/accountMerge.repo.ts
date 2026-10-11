@@ -402,7 +402,9 @@ export async function mergeAccounts(
     // one-star-per-currency index true whatever the two rows had set.
     // (The retired payment_handles table is left as it is; nothing reads it.)
     await client.query(
-      `UPDATE payment_methods SET user_id = $1, is_preferred = FALSE WHERE user_id = $2`,
+      `UPDATE payment_methods
+          SET user_id = $1, is_preferred = FALSE, preferred_at = NULL
+        WHERE user_id = $2`,
       [keeperId, loserId],
     );
 

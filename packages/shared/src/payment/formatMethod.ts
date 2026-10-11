@@ -193,46 +193,148 @@ export function keyedDetails(details: readonly PaymentDetailFields[]): KeyedDeta
   });
 }
 
-/** What a payer is told about how recently a method's details came to be what they are. */
+/** The stamps of a payment method that a payer's warning is worked out from. */
+export interface ChangeMarked {
+  id: string;
+  /** ISO 4217 code; "" means any currency. */
+  currency: string;
+  /** When the method was added (ISO 8601). */
+  createdAt: string;
+  /** When its name, currency, details or note last changed. */
+  updatedAt: string;
+  /** Whether it carries the star for its currency. */
+  preferred: boolean;
+  /** When it was given that star; "" when unstarred or not known. */
+  preferredAt: string;
+}
+
+/** What the warning is measured against. */
+export interface ChangeContext {
+  /**
+   * The current time in milliseconds, by the server's clock where the
+   * server sent one. Passed in, so the answer can be tested and does not
+   * depend on the payer's device being set right.
+   */
+  nowMs: number;
+  /** When the owner last removed one of their methods (ISO 8601); "" when never. */
+  removedAt: string;
+  /** Every method of the owner, this one included. */
+  methods: readonly ChangeMarked[];
+}
+
+/** What a payer is told about how recently a method came to be what they are being shown. */
 export interface RecentChange {
-  /** "Added today", "Changed 3 days ago", and so on. */
+  /** "Added today", "Changed 3 days ago", "Made the preferred method yesterday". */
   text: string;
   /**
-   * True when the method was edited after it was added. Altered details
-   * warrant a warning; a method that is simply new warrants a mention.
+   * True when the payer should be asked to check before paying: the details
+   * were edited, the method replaced another, or it only recently became the
+   * one shown first. False for a method that is simply new.
    */
-  edited: boolean;
+  caution: boolean;
 }
 
 /**
- * What a payer is told when a method is new or its details changed recently.
+ * Says how long ago something happened, in the words the note uses.
+ *
+ * @param days - Whole days ago; zero for anything within the last day.
+ * @returns "today", "yesterday" or "3 days ago".
+ */
+function daysAgoText(days: number): string {
+  if (days === 0) return "today";
+  return days === 1 ? "yesterday" : `${days} days ago`;
+}
+
+/**
+ * Picks the time to measure a method's stamps against.
+ *
+ * @param readAt - The server's clock when the methods were read (ISO 8601); "" from a server that sent none.
+ * @param deviceNowMs - The device's clock, used only when the server's is missing or unreadable.
+ * @returns Milliseconds since the epoch.
+ */
+export function changeClock(readAt: string, deviceNowMs: number): number {
+  const serverMs = Date.parse(readAt);
+  return Number.isNaN(serverMs) ? deviceNowMs : serverMs;
+}
+
+/**
+ * What a payer is told when the place they are being sent changed recently.
  *
  * Details that suddenly differ are the mark of a payment being redirected,
  * by a compromised account or by someone with the owner's phone. The app
  * cannot tell an honest change from that, so it says the one thing it knows
- * and lets the payer ask. A method that was added and never touched is said
- * more quietly: everyone's methods are new once, and a warning shown to
- * every payer is a warning nobody reads.
+ * and lets the payer ask. Three things count as a change, most telling first:
  *
- * @param method - The method's creation and last-change stamps (ISO 8601).
- * @param nowMs - The current time in milliseconds, passed in so the answer can be tested.
- * @returns The wording and whether it is an edit; undefined once the change
- *   is older than {@link RECENT_CHANGE_DAYS} or the stamp does not parse.
+ * 1. The method's details were edited.
+ * 2. The method is new and its owner removed another one about the same
+ *    time, in either order. Removing a method and adding one in its place
+ *    is an edit by another route, and must not read as a merely new method.
+ *    Every recently added method of that owner says so, since nothing
+ *    records which one the removed method made way for.
+ * 3. The method only recently took the star while an older method that
+ *    could take the same money was there. The star decides which method a
+ *    payer is shown first and has selected for them.
+ *
+ * A method that is new and none of these is mentioned quietly: everyone's
+ * methods are new once, and a warning shown to every payer is a warning
+ * nobody reads.
+ *
+ * A stamp ahead of the clock counts as "today", never as nothing. The
+ * freshest change is the one that matters most, and it is exactly the one a
+ * slow clock would put in the future.
+ *
+ * @param method - The method being shown.
+ * @param context - The clock, the owner's last removal, and their other methods.
+ * @returns The wording and whether it is a warning; undefined when nothing
+ *   happened within {@link RECENT_CHANGE_DAYS}.
  */
-export function recentChange(
-  method: { createdAt: string; updatedAt: string },
-  nowMs: number,
-): RecentChange | undefined {
-  const changedMs = Date.parse(method.updatedAt);
-  if (Number.isNaN(changedMs)) return undefined;
-  const days = Math.floor((nowMs - changedMs) / DAY_MS);
-  if (days < 0 || days > RECENT_CHANGE_DAYS) return undefined;
+export function recentChange(method: ChangeMarked, context: ChangeContext): RecentChange | undefined {
+  /**
+   * How many whole days ago a stamp is, if it is recent enough to mention.
+   *
+   * @param stamp - An ISO 8601 time, possibly empty.
+   * @returns The days, or undefined when the stamp is unreadable or older than the window.
+   */
+  const recentDays = (stamp: string): number | undefined => {
+    const stampMs = Date.parse(stamp);
+    if (Number.isNaN(stampMs)) return undefined;
+    const days = Math.max(0, Math.floor((context.nowMs - stampMs) / DAY_MS));
+    return days > RECENT_CHANGE_DAYS ? undefined : days;
+  };
+
   const createdMs = Date.parse(method.createdAt);
+  const changedMs = Date.parse(method.updatedAt);
+  const changedDays = recentDays(method.updatedAt);
   // An unreadable creation stamp is treated as an edit: the louder wording
   // is the safe one to fall back to.
-  const edited = Number.isNaN(createdMs) || changedMs > createdMs;
-  const verb = edited ? "Changed" : "Added";
-  if (days === 0) return { text: `${verb} today`, edited };
-  if (days === 1) return { text: `${verb} yesterday`, edited };
-  return { text: `${verb} ${days} days ago`, edited };
+  const edited = !Number.isNaN(changedMs) && (Number.isNaN(createdMs) || changedMs > createdMs);
+  if (edited && changedDays !== undefined) {
+    return { text: `Changed ${daysAgoText(changedDays)}`, caution: true };
+  }
+
+  const addedDays = recentDays(method.createdAt);
+  if (addedDays !== undefined && recentDays(context.removedAt) !== undefined) {
+    return {
+      text: `Added ${daysAgoText(addedDays)}, and another method was removed recently`,
+      caution: true,
+    };
+  }
+
+  const starredDays = method.preferred ? recentDays(method.preferredAt) : undefined;
+  if (starredDays !== undefined) {
+    const starredMs = Date.parse(method.preferredAt);
+    const tookOver = context.methods.some(
+      (other) =>
+        other.id !== method.id &&
+        Date.parse(other.createdAt) < starredMs &&
+        (other.currency === method.currency || other.currency === "" || method.currency === ""),
+    );
+    if (tookOver) {
+      return { text: `Made the preferred method ${daysAgoText(starredDays)}`, caution: true };
+    }
+  }
+
+  return addedDays === undefined
+    ? undefined
+    : { text: `Added ${daysAgoText(addedDays)}`, caution: false };
 }

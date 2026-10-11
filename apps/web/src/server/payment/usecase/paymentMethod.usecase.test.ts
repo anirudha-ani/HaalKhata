@@ -12,10 +12,12 @@ vi.mock("@/server/payment/repo/paymentMethods.repo", () => ({
   clearPreferred: vi.fn(),
   countPaymentMethods: vi.fn(),
   deletePaymentMethod: vi.fn(),
+  findMethodRemoval: vi.fn(),
   findPaymentMethod: vi.fn(),
   forgetLegacyHandle: vi.fn(),
   insertPaymentMethod: vi.fn(),
   listPaymentMethodsByUser: vi.fn(),
+  recordMethodRemoval: vi.fn(),
   setPreferred: vi.fn(),
   updatePaymentMethod: vi.fn(),
 }));
@@ -31,10 +33,12 @@ import {
   clearPreferred,
   countPaymentMethods,
   deletePaymentMethod as deletePaymentMethodRow,
+  findMethodRemoval,
   findPaymentMethod,
   forgetLegacyHandle,
   insertPaymentMethod,
   listPaymentMethodsByUser,
+  recordMethodRemoval,
   setPreferred,
   updatePaymentMethod as updatePaymentMethodRow,
 } from "@/server/payment/repo/paymentMethods.repo";
@@ -43,6 +47,7 @@ import {
   createPaymentMethod,
   deletePaymentMethod,
   listMyPaymentMethods,
+  listPayeeMethods,
   setPreferredPaymentMethod,
   updatePaymentMethod,
 } from "./paymentMethod.usecase";
@@ -58,6 +63,7 @@ const bkashRow: PaymentMethodRow = {
   preset: null,
   note: "",
   is_preferred: false,
+  preferred_at: null,
   created_at: "2026-10-01T00:00:00.000Z",
   updated_at: "2026-10-01T00:00:00.000Z",
   details: [{ kind: "phone", label: "", value: "+8801712345678" }],
@@ -124,6 +130,7 @@ describe("listMyPaymentMethods", () => {
           preferred: true,
           updatedAt: "2026-10-01T00:00:00.000Z",
           createdAt: "2026-10-01T00:00:00.000Z",
+          preferredAt: "",
         },
       ],
     });
@@ -272,6 +279,18 @@ describe("updatePaymentMethod", () => {
     expect(writeOrder()).toEqual(["clearPreferred(BDT)", "setPreferred(true)"]);
   });
 
+  it("a starred method re-saved with its star keeps the star, and the star's time, untouched", async () => {
+    vi.mocked(findPaymentMethod).mockResolvedValue({
+      ...bkashRow,
+      is_preferred: true,
+      preferred_at: "2026-01-01T00:00:00.000Z",
+    });
+
+    await updatePaymentMethod(CALLER, { ...update, note: "changed", preferred: true });
+
+    expect(writeOrder()).toEqual(["update"]);
+  });
+
   it("gives the star up when the form unticks it", async () => {
     vi.mocked(findPaymentMethod).mockResolvedValue({ ...bkashRow, is_preferred: true });
 
@@ -330,6 +349,11 @@ describe("deletePaymentMethod", () => {
     expect(forgetLegacyHandle).toHaveBeenCalledWith("method-bkash", CALLER, transactionClient);
   });
 
+  it("remembers the removal, so a method added in its place is not shown as merely new", async () => {
+    await deletePaymentMethod(CALLER, "method-bkash");
+    expect(recordMethodRemoval).toHaveBeenCalledWith(CALLER, transactionClient);
+  });
+
   it("reports not found when nothing of the caller's was deleted", async () => {
     vi.mocked(deletePaymentMethodRow).mockResolvedValue(false);
 
@@ -337,6 +361,25 @@ describe("deletePaymentMethod", () => {
       code: "not_found",
     });
     expect(forgetLegacyHandle).not.toHaveBeenCalled();
+    expect(recordMethodRemoval).not.toHaveBeenCalled();
+  });
+});
+
+describe("listPayeeMethods", () => {
+  it("returns the payee's methods with the time of their last removal, read on the snapshot", async () => {
+    vi.mocked(findMethodRemoval).mockResolvedValue("2026-10-09T08:00:00.000Z");
+
+    const payee = await listPayeeMethods("user-payee", transactionClient);
+
+    expect(listPaymentMethodsByUser).toHaveBeenCalledWith("user-payee", transactionClient);
+    expect(findMethodRemoval).toHaveBeenCalledWith("user-payee", transactionClient);
+    expect(payee.methods).toHaveLength(1);
+    expect(payee.removedAt).toBe("2026-10-09T08:00:00.000Z");
+  });
+
+  it("says nothing about removals for someone who never removed a method", async () => {
+    vi.mocked(findMethodRemoval).mockResolvedValue(undefined);
+    expect((await listPayeeMethods("user-payee", transactionClient)).removedAt).toBe("");
   });
 });
 
@@ -359,6 +402,18 @@ describe("setPreferredPaymentMethod", () => {
     await setPreferredPaymentMethod(CALLER, { id: "method-bkash", preferred: true });
 
     expect(clearPreferred).toHaveBeenCalledWith(CALLER, null, transactionClient);
+  });
+
+  it("starring a method that already has the star changes nothing", async () => {
+    vi.mocked(findPaymentMethod).mockResolvedValue({
+      ...bkashRow,
+      is_preferred: true,
+      preferred_at: "2026-01-01T00:00:00.000Z",
+    });
+
+    await setPreferredPaymentMethod(CALLER, { id: "method-bkash", preferred: true });
+
+    expect(writeOrder()).toEqual([]);
   });
 
   it("clearing the star touches only that method", async () => {

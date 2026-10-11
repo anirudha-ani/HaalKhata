@@ -115,6 +115,7 @@ function methodRow(
     preset: null,
     note: "",
     is_preferred: preferred,
+    preferred_at: null,
     created_at: "2026-08-01T00:00:00Z",
     updated_at: "2026-08-01T00:00:00Z",
     details: [{ kind: "username", label: "", value }],

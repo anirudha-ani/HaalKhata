@@ -12,7 +12,7 @@
  */
 
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { Client } from "pg";
+import { Client, type PoolClient } from "pg";
 
 const ADMIN_URL =
   process.env.MERGE_TEST_ADMIN_URL ?? "postgres://haalkhata:change-me@127.0.0.1:5432/postgres";
@@ -24,6 +24,7 @@ const STRANGER = "stranger-1";
 const HOARDER = "hoarder-1";
 const LEAVER = "leaver-1";
 const RACER = "racer-1";
+const MARKER = "marker-1";
 
 /**
  * Checks whether the admin database accepts a connection.
@@ -508,5 +509,60 @@ describe.skipIf(!reachable)("payment methods against Postgres", () => {
     });
     // Only the handle that method came from; another person's is untouched.
     expect(await handles()).toEqual([`${OWNER}:venmo`]);
+  });
+
+  it("dates a star when it is given, keeps the date through an edit, and remembers a removal", async () => {
+    await database.query(
+      `INSERT INTO users (id, email, name, avatar_color, onboarded_at, google_sub)
+       VALUES ($1, 'marker@example.com', 'Mo Marker', '#0e7490', now(), 'google-marker')`,
+      [MARKER],
+    );
+    const snapshot = database as unknown as PoolClient;
+
+    const first = await usecase.createPaymentMethod(MARKER, wallet("First", "BDT", true));
+    expect(first.preferredAt).not.toBe("");
+
+    // Re-saved with its star: the details changed, the star did not.
+    const renamed = await usecase.updatePaymentMethod(MARKER, {
+      ...wallet("First renamed", "BDT", true),
+      id: first.id,
+    });
+    expect(renamed.preferredAt).toBe(first.preferredAt);
+    expect(Date.parse(renamed.updatedAt)).toBeGreaterThanOrEqual(Date.parse(first.updatedAt));
+
+    const second = await usecase.createPaymentMethod(MARKER, wallet("Second", "BDT"));
+    expect(second.preferredAt).toBe("");
+
+    // The star moves: the old holder loses its date, the new one gets one.
+    const moved = await usecase.setPreferredPaymentMethod(MARKER, { id: second.id, preferred: true });
+    const byName = new Map(moved.methods.map((method) => [method.name, method]));
+    expect(byName.get("First renamed")?.preferredAt).toBe("");
+    const starredAt = byName.get("Second")?.preferredAt ?? "";
+    expect(starredAt).not.toBe("");
+
+    // Starring it again is not a new star.
+    const again = await usecase.setPreferredPaymentMethod(MARKER, { id: second.id, preferred: true });
+    expect(again.methods.find((method) => method.name === "Second")?.preferredAt).toBe(starredAt);
+
+    // Giving the star up clears its date; the database insists on that.
+    const cleared = await usecase.setPreferredPaymentMethod(MARKER, { id: second.id, preferred: false });
+    expect(cleared.methods.every((method) => method.preferredAt === "")).toBe(true);
+    await expect(
+      database.query(`UPDATE payment_methods SET preferred_at = now() WHERE id = $1`, [second.id]),
+    ).rejects.toMatchObject({ code: "23514" });
+
+    expect((await usecase.listPayeeMethods(MARKER, snapshot)).removedAt).toBe("");
+    await usecase.deletePaymentMethod(MARKER, first.id);
+    const afterFirst = (await usecase.listPayeeMethods(MARKER, snapshot)).removedAt;
+    expect(afterFirst).not.toBe("");
+    // A later removal moves the one remembered time forward; it does not add a row.
+    await usecase.deletePaymentMethod(MARKER, second.id);
+    const afterSecond = (await usecase.listPayeeMethods(MARKER, snapshot)).removedAt;
+    expect(Date.parse(afterSecond)).toBeGreaterThanOrEqual(Date.parse(afterFirst));
+    const { rows } = await database.query(
+      `SELECT count(*)::int AS total FROM payment_method_removals WHERE user_id = $1`,
+      [MARKER],
+    );
+    expect(rows[0].total).toBe(1);
   });
 });

@@ -8,6 +8,7 @@ import { Linking, StyleSheet, Text, View } from "react-native";
 import { Button } from "@/components/ui/Button";
 import { detailLabel, detailValueText } from "@haalkhata/shared/payment/detailKinds";
 import {
+  changeClock,
   detailCopyText,
   keyedDetails,
   linkHost,
@@ -45,6 +46,9 @@ import { COPIED_BADGE_MS, COPY_ALL_KEY, OPEN_LINK_FAILED } from "./modals.consta
  */
 export function PayeeMethodDetails({
   method,
+  methods,
+  readAt,
+  removedAt,
   firstName,
   amountCents,
   currency,
@@ -52,6 +56,12 @@ export function PayeeMethodDetails({
 }: {
   /** The method being paid into. */
   method: PaymentMethod;
+  /** All of the payee's methods, which the change note compares this one with. */
+  methods: readonly PaymentMethod[];
+  /** The server's clock when the methods were read; "" when it sent none. */
+  readAt: string;
+  /** When the payee last removed a method; "" when never. */
+  removedAt: string;
   /** First name of the person being paid. */
   firstName: string;
   /** The amount being paid, for an app link that can carry it. */
@@ -68,8 +78,8 @@ export function PayeeMethodDetails({
   const [failedKey, setFailedKey] = useState("");
   // Set when a link button could not open its link.
   const [linkFailed, setLinkFailed] = useState(false);
-  // Read once per mount: the clock is not a render input, and a note that
-  // is right when the sheet opens is right for as long as it stays open.
+  // The device's clock is read once per mount and only stands in when the
+  // server sent none: the clock is not a render input.
   const [openedAtMs] = useState(() => Date.now());
 
   // The "Copied" confirmation, and the failure, clear themselves.
@@ -142,13 +152,26 @@ export function PayeeMethodDetails({
   const ownerLinks = method.details
     .filter((detail) => detail.kind === "link" && linkHost(detail.value) !== "")
     .map((detail) => detail.value);
-  const change = recentChange(method, openedAtMs);
+  const change = recentChange(method, {
+    nowMs: changeClock(readAt, openedAtMs),
+    removedAt,
+    methods,
+  });
 
   return (
     <View style={styles.card}>
       <Text style={styles.title}>
         {firstName.toUpperCase()}&apos;S {methodDisplayName(method).toUpperCase()}
       </Text>
+
+      {/* Before the details, not after them: it is about whether to use them. */}
+      {change?.caution ? (
+        <Text accessibilityRole="alert" style={styles.changed}>
+          {change.text}. If that is unexpected, check with {firstName} before you pay.
+        </Text>
+      ) : change ? (
+        <Text style={styles.hint}>{change.text}.</Text>
+      ) : null}
 
       <View style={styles.lines}>
         {keyedDetails(method.details).map(({ key, detail }) => (
@@ -235,13 +258,6 @@ export function PayeeMethodDetails({
         />
       ) : null}
 
-      {change?.edited ? (
-        <Text style={styles.changed}>
-          {change.text}. If that is unexpected, check with {firstName} before you pay.
-        </Text>
-      ) : change ? (
-        <Text style={styles.hint}>{change.text}.</Text>
-      ) : null}
     </View>
   );
 }

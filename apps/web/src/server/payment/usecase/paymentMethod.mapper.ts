@@ -50,5 +50,6 @@ export function toPaymentMethod(methodRow: PaymentMethodRow) {
     preferred: cleaned.is_preferred,
     updatedAt: cleaned.updated_at,
     createdAt: cleaned.created_at,
+    preferredAt: cleaned.preferred_at ?? "",
   };
 }
