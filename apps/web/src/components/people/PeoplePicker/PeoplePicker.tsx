@@ -22,8 +22,8 @@ export interface PickerGroup {
  *
  * Group and ad-hoc people are alternatives, not layers — the server requires
  * every participant of a group expense to be a member of it, so picking a
- * group takes over the cast and hides the add-people control. Picking "No
- * group" hands it back.
+ * group supplies the available people, who can still be removed or restored.
+ * Picking "No group" hands it back.
  *
  * When editing, only the scope is locked: a saved expense cannot move
  * between a group and a one-off ledger (the server pins it, because
@@ -39,9 +39,9 @@ export function PeoplePicker({
   friends,
   groups,
   groupId,
-  friendIds,
+  groupMembers,
   onGroupChange,
-  onToggleFriend,
+  onTogglePerson,
   scopeLocked = false,
 }: {
   /** The signed-in user, pinned as the first chip and labelled "You". */
@@ -54,12 +54,12 @@ export function PeoplePicker({
   groups: PickerGroup[];
   /** Currently selected group id, or "" for a one-off expense. */
   groupId: string;
-  /** Ids of the ad-hoc participants (empty while a group is selected). */
-  friendIds: string[];
+  /** Full roster available when selecting people for the chosen group. */
+  groupMembers: User[];
   /** Called with the new group id ("" for none) when the group select changes. */
   onGroupChange: (groupId: string) => void;
-  /** Called with a friend's id to add or remove them from the ad-hoc cast. */
-  onToggleFriend: (userId: string) => void;
+  /** Called with a person's id to add or remove them from this expense. */
+  onTogglePerson: (userId: string) => void;
   /** Whether the group/one-off choice is locked (a saved expense cannot change scope). */
   scopeLocked?: boolean;
 }) {
@@ -75,13 +75,18 @@ export function PeoplePicker({
 
   const isGroupExpense = groupId !== "";
   const selectedGroupName = groups.find((group) => group.id === groupId)?.name ?? "";
+  const availablePeople = useMemo(
+    () => (isGroupExpense ? groupMembers : friends).filter((person) => person.id !== currentUser?.id),
+    [isGroupExpense, groupMembers, friends, currentUser?.id],
+  );
+  const selectedIds = people.map((person) => person.id);
   // §33: an Invited person can be a friend but never on a transaction.
   // Shown-but-disabled beats hidden ("why isn't Rifat here?" answers itself),
   // and the checklist sinks them below everyone who can be picked. Memoised
   // so the checklist does not re-sort on every keystroke elsewhere in the form.
   const invitedIds = useMemo(
-    () => new Set(friends.filter((friend) => !friend.registered).map((friend) => friend.id)),
-    [friends],
+    () => new Set(availablePeople.filter((person) => !person.registered).map((person) => person.id)),
+    [availablePeople],
   );
 
   if (groups.length === 0 && friends.length === 0) {
@@ -107,6 +112,30 @@ export function PeoplePicker({
 
   return (
     <section className="space-y-2">
+      <div className="flex items-center gap-3 rounded-2xl border border-line bg-card p-3">
+        <label htmlFor={`${fieldId}-group`} className="text-sm font-medium text-ink-soft">
+          Group
+        </label>
+        <select
+          id={`${fieldId}-group`}
+          value={groupId}
+          onChange={(event) => onGroupChange(event.target.value)}
+          disabled={scopeLocked || groups.length === 0}
+          title={scopeLocked ? "A saved expense cannot move between groups" : undefined}
+          className="min-w-0 flex-1 rounded-xl border border-line bg-card px-3 py-2 text-sm focus:border-brand-500 focus:outline-none disabled:opacity-50"
+        >
+          <option value="">No group (one-off)</option>
+          {groups.map((group) => (
+            <option key={group.id} value={group.id}>
+              {group.name}
+            </option>
+          ))}
+        </select>
+        {scopeLocked ? (
+          <span className="shrink-0 text-xs text-ink-soft">can&apos;t change once saved</span>
+        ) : null}
+      </div>
+
       <h2 className="text-sm font-semibold tracking-wide text-ink-soft uppercase">
         Who&apos;s on this?
       </h2>
@@ -115,9 +144,8 @@ export function PeoplePicker({
         <ul className="flex flex-wrap items-center gap-1.5">
           {people.map((person) => {
             const isSelf = person.id === currentUser?.id;
-            // You are always on your own expense, and a group's members come
-            // from the group — neither is removable here.
-            const isRemovable = !isSelf && !isGroupExpense;
+            // The signed-in person stays pinned; other people can leave this expense.
+            const isRemovable = !isSelf;
             return (
               <li key={person.id}>
                 <span
@@ -132,7 +160,7 @@ export function PeoplePicker({
                   {isRemovable ? (
                     <button
                       type="button"
-                      onClick={() => onToggleFriend(person.id)}
+                      onClick={() => onTogglePerson(person.id)}
                       aria-label={`Remove ${person.name}`}
                       className="flex h-6 w-6 items-center justify-center rounded-full text-ink-soft hover:bg-line hover:text-ink"
                     >
@@ -147,17 +175,18 @@ export function PeoplePicker({
 
         {isGroupExpense ? (
           <p className="text-sm text-ink-soft">
-            Everyone in {selectedGroupName} is on this — leave someone out by
-            unchecking them under Split.
+            Choose who took part in {selectedGroupName}. Remove people with the × beside their name.
           </p>
-        ) : friends.length === 0 ? (
+        ) : null}
+
+        {availablePeople.length === 0 && !isGroupExpense ? (
           <p className="text-sm text-ink-soft">
             <Link href="/friends" className="font-medium text-brand-600">
               Add a friend
             </Link>{" "}
-            to split this with someone, or pick a group below.
+            to split this with someone, or pick a group above.
           </p>
-        ) : (
+        ) : availablePeople.length > 0 ? (
           <>
             <button
               type="button"
@@ -166,22 +195,25 @@ export function PeoplePicker({
                 setFocusSearch(true);
               }}
               aria-expanded={isOpen}
+              aria-controls={`${fieldId}-people`}
               className="flex items-center gap-1.5 text-sm font-semibold text-brand-600"
             >
               <UserPlus className="h-4 w-4" />
-              Add people
+              {isGroupExpense ? "Choose group members" : "Add people"}
               <ChevronDown
                 className={`h-4 w-4 transition-transform ${isOpen ? "rotate-180" : ""}`}
               />
             </button>
 
             {isOpen ? (
-              <div className="rounded-xl border border-line bg-paper p-2">
+              <div id={`${fieldId}-people`} className="rounded-xl border border-line bg-paper p-2">
                 <FriendChecklist
-                  people={friends}
-                  selectedIds={friendIds}
-                  onToggle={onToggleFriend}
-                  legend="Friends on this expense"
+                  key={groupId || "friends"}
+                  people={availablePeople}
+                  selectedIds={selectedIds}
+                  onToggle={onTogglePerson}
+                  legend={isGroupExpense ? "Group members on this expense" : "Friends on this expense"}
+                  searchLabel={isGroupExpense ? "Search group members" : "Search friends"}
                   autoFocus={focusSearch}
                   disabledIds={invitedIds}
                   disabledHint="invited, hasn't joined yet"
@@ -189,31 +221,7 @@ export function PeoplePicker({
               </div>
             ) : null}
           </>
-        )}
-
-        <div className="flex items-center gap-3 border-t border-line pt-3">
-          <label htmlFor={`${fieldId}-group`} className="text-sm font-medium text-ink-soft">
-            Group
-          </label>
-          <select
-            id={`${fieldId}-group`}
-            value={groupId}
-            onChange={(event) => onGroupChange(event.target.value)}
-            disabled={scopeLocked || groups.length === 0}
-            title={scopeLocked ? "A saved expense cannot move between groups" : undefined}
-            className="min-w-0 flex-1 rounded-xl border border-line bg-card px-3 py-2 text-sm focus:border-brand-500 focus:outline-none disabled:opacity-50"
-          >
-            <option value="">No group (one-off)</option>
-            {groups.map((group) => (
-              <option key={group.id} value={group.id}>
-                {group.name}
-              </option>
-            ))}
-          </select>
-          {scopeLocked ? (
-            <span className="shrink-0 text-xs text-ink-soft">can&apos;t change once saved</span>
-          ) : null}
-        </div>
+        ) : null}
       </div>
     </section>
   );

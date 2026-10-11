@@ -82,9 +82,11 @@ export function ExpenseForm({
         friends={form.friends.flatMap((friendship) => (friendship.user ? [friendship.user] : []))}
         groups={form.groups.flatMap((summary) => (summary.group ? [summary.group] : []))}
         groupId={form.groupId}
-        friendIds={form.friendIds}
+        groupMembers={
+          form.selectedGroup?.members.flatMap((member) => (member.user ? [member.user] : [])) ?? []
+        }
         onGroupChange={form.setGroupId}
-        onToggleFriend={form.toggleFriend}
+        onTogglePerson={form.togglePerson}
         scopeLocked={form.isEdit}
       />
 
