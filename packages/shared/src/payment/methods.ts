@@ -40,6 +40,15 @@ export interface PaymentMethod {
    * lie the UI tells.
    */
   linkCarriesAmount: boolean;
+  /**
+   * The shape of this app's username, when it has one. Its link is built
+   * from the username, so anything else (a space, a slash, a whole URL that
+   * could not be unpicked) would be stored only to open a page that does not
+   * exist. Absent for apps reached by something else.
+   */
+  handlePattern?: RegExp;
+  /** What to tell someone whose username does not have that shape. */
+  handleRule?: string;
 }
 
 /**
@@ -56,6 +65,8 @@ export const PAYMENT_METHODS: readonly PaymentMethod[] = [
     takesHandle: true,
     linkable: true,
     linkCarriesAmount: true,
+    handlePattern: /^[A-Za-z0-9_-]{1,30}$/,
+    handleRule: "a Venmo username is letters, numbers, dashes and underscores, as on your profile",
   },
   {
     key: "zelle",
@@ -79,6 +90,8 @@ export const PAYMENT_METHODS: readonly PaymentMethod[] = [
     takesHandle: true,
     linkable: true,
     linkCarriesAmount: false,
+    handlePattern: /^[A-Za-z0-9_-]{1,20}$/,
+    handleRule: "a $cashtag is up to 20 letters and numbers",
   },
   {
     key: "paypal",
@@ -91,6 +104,8 @@ export const PAYMENT_METHODS: readonly PaymentMethod[] = [
     takesHandle: true,
     linkable: true,
     linkCarriesAmount: true,
+    handlePattern: /^[A-Za-z0-9._-]{1,40}$/,
+    handleRule: "a PayPal.Me name is letters and numbers, the part after paypal.me/",
   },
   {
     key: "cash",
@@ -143,7 +158,9 @@ export function findPaymentMethod(methodKey: string): PaymentMethod | undefined 
  *
  * The field shows its prefix as static text, so a careful user types only the
  * bare part. This exists for the careless path: pasting `@jordan-lee` off a
- * Venmo profile, or the whole `https://paypal.me/jordanlee` off a browser bar.
+ * Venmo profile, or a whole `https://paypal.me/jordanlee`,
+ * `https://venmo.com/u/jordan-lee` or `https://cash.app/$jordanlee` off a
+ * browser bar.
  * Without it those become `@@jordan-lee` and `paypal.me/https://paypal.me/...`
  * once the prefix is rendered back.
  *
@@ -155,16 +172,21 @@ export function findPaymentMethod(methodKey: string): PaymentMethod | undefined 
  * @returns The bare identifier, trimmed.
  */
 export function stripHandlePrefix(methodKey: string, typed: string): string {
-  let handle = typed.trim();
-  if (methodKey === "venmo") return handle.replace(/^@+/, "");
-  if (methodKey === "cashapp") return handle.replace(/^\$+/, "");
-  if (methodKey === "paypal") {
-    // Longest first: the scheme has to go before the bare host would match.
-    handle = handle.replace(/^https?:\/\//i, "");
-    handle = handle.replace(/^(?:www\.)?paypal\.me\//i, "");
-    return dropTrailingSlashes(handle);
+  // Longest first: the scheme has to go before the bare host would match.
+  const pasted = typed.trim().replace(/^https?:\/\//i, "");
+  if (methodKey === "venmo") {
+    const handle = pasted.replace(/^(?:www\.|account\.)?venmo\.com\/(?:u\/)?/i, "");
+    // Trimmed again: "@ jordan" leaves a space behind its sigil.
+    return dropTrailingSlashes(handle).replace(/^@+/, "").trim();
   }
-  return handle;
+  if (methodKey === "cashapp") {
+    const handle = pasted.replace(/^(?:www\.)?cash\.app\//i, "");
+    return dropTrailingSlashes(handle).replace(/^\$+/, "").trim();
+  }
+  if (methodKey === "paypal") {
+    return dropTrailingSlashes(pasted.replace(/^(?:www\.)?paypal\.me\//i, "")).trim();
+  }
+  return typed.trim();
 }
 
 /**

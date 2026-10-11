@@ -484,3 +484,110 @@ describe("checkPaymentMethod and characters nobody can see", () => {
     expect(check.method.details[0]!.value).toBe("jordan-lee");
   });
 });
+
+describe("checkPaymentMethod and what a value may look like", () => {
+  test("a method's name may not ask for a secret either", () => {
+    expect(checkPaymentMethod(draftWith({ name: "Chase PIN 4821" })).errors.name).toContain(
+      "never share",
+    );
+    expect(checkPaymentMethod(draftWith({ name: "Debit card" })).errors.name).toContain(
+      "never share",
+    );
+    expect(checkPaymentMethod(draftWith({ name: "Chase checking" })).valid).toBe(true);
+  });
+
+  test("labels that ask for a card or its code are refused however they are spelled", () => {
+    for (const label of ["Security code", "Card number", "P I N", "CVV2", "\uFF30\uFF29\uFF2E"]) {
+      const check = checkPaymentMethod(
+        draftWith({ details: [{ kind: "custom", label, value: "4821" }] }),
+      );
+      expect(check.errors.detailRows[0]).toContain("never share");
+    }
+  });
+
+  test("an account number is letters and digits with the usual separators", () => {
+    const accept = ["000123456789", "19-2000145399/0800", "GB29 NWBK 6016", "12.345.678-9", "\u09E7\u09E8\u09E9\u09EA"];
+    for (const value of accept) {
+      expect(
+        checkPaymentMethod(draftWith({ details: [{ kind: "account_number", label: "", value }] }))
+          .valid,
+      ).toBe(true);
+    }
+    const refuse = ["1' OR '1'='1", "abc", "<script>", "12=34", "-1234"];
+    for (const value of refuse) {
+      expect(
+        checkPaymentMethod(draftWith({ details: [{ kind: "account_number", label: "", value }] }))
+          .errors.detailRows[0],
+      ).toContain("an account number is");
+    }
+  });
+
+  test("a routing number needs a digit and takes no punctuation but spaces and dashes", () => {
+    for (const value of ["021000021", "12-34-56", "00123 456", "HDFC0001234"]) {
+      expect(
+        checkPaymentMethod(draftWith({ details: [{ kind: "routing_number", label: "", value }] }))
+          .valid,
+      ).toBe(true);
+    }
+    for (const value of ["abc", "12/34", "1;2"]) {
+      expect(
+        checkPaymentMethod(draftWith({ details: [{ kind: "routing_number", label: "", value }] }))
+          .errors.detailRows[0],
+      ).toContain("a routing number is");
+    }
+  });
+
+  /**
+   * Checks a built-in app's method with one username.
+   *
+   * @param preset - venmo, cashapp or paypal.
+   * @param value - The username as typed.
+   * @returns The check.
+   */
+  function builtInWith(preset: string, value: string) {
+    return checkPaymentMethod(
+      draftWith({ name: "App", currency: "USD", preset, details: [{ kind: "username", label: "", value }] }),
+    );
+  }
+
+  test("a built-in app's username has the shape the app issues", () => {
+    expect(builtInWith("venmo", "jordan-lee_9").valid).toBe(true);
+    expect(builtInWith("cashapp", "$jordanlee").method.details[0]!.value).toBe("jordanlee");
+    expect(builtInWith("paypal", "jordan.lee").valid).toBe(true);
+    for (const value of ["jordan lee", "jordan/../evil?amount=999", "jordan&amount=1", "j".repeat(31)]) {
+      expect(builtInWith("venmo", value).errors.detailRows[0]).toContain("a Venmo username is");
+    }
+    expect(builtInWith("cashapp", "jordan lee").errors.detailRows[0]).toContain("a $cashtag is");
+    expect(builtInWith("paypal", "jordan lee").errors.detailRows[0]).toContain("a PayPal.Me name is");
+  });
+
+  test("a profile link pasted whole is unpicked to the username", () => {
+    expect(builtInWith("venmo", "https://venmo.com/u/jordan-lee").method.details[0]!.value).toBe(
+      "jordan-lee",
+    );
+    expect(builtInWith("venmo", "account.venmo.com/u/jordan-lee/").method.details[0]!.value).toBe(
+      "jordan-lee",
+    );
+    expect(builtInWith("venmo", "@ jordan-lee").method.details[0]!.value).toBe("jordan-lee");
+    expect(builtInWith("cashapp", "https://cash.app/$jordanlee").method.details[0]!.value).toBe(
+      "jordanlee",
+    );
+    expect(builtInWith("paypal", "https://www.paypal.me/jordanlee/").method.details[0]!.value).toBe(
+      "jordanlee",
+    );
+  });
+
+  test("an over-long username is told its length, not its shape", () => {
+    expect(builtInWith("venmo", "j".repeat(200)).errors.detailRows[0]).toBe(
+      "keep this under 120 characters",
+    );
+  });
+
+  test("a username outside a built-in app is not held to any app's shape", () => {
+    expect(
+      checkPaymentMethod(
+        draftWith({ details: [{ kind: "username", label: "", value: "jordan@upi" }] }),
+      ).valid,
+    ).toBe(true);
+  });
+});

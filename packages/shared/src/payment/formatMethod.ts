@@ -1,7 +1,7 @@
 /** How a payment method reads: its one-line summary, its copy text, and the host of a payment link. */
 
 import { detailLabel, detailValueText, findDetailKind } from "./detailKinds";
-import { displayHandle } from "./methods";
+import { displayHandle, findPaymentMethod } from "./methods";
 import {
   DAY_MS,
   HTTPS_LINK_PATTERN,
@@ -49,6 +49,27 @@ export function valueTail(value: string): string {
  */
 export function linkHost(link: string): string {
   return HTTPS_LINK_PATTERN.exec(link.trim())?.[1]?.toLowerCase() ?? "";
+}
+
+/**
+ * What a payer is shown as a method's name.
+ *
+ * A built-in app's method can be given any name by its owner, and its
+ * details and its "Open" button still belong to the app it was made for.
+ * When the name does not say which app that is, the app is added, so a
+ * Venmo method named "Totally Zelle" reads "Totally Zelle (Venmo)".
+ *
+ * @param method - The method being shown.
+ * @returns The owner's name for it, followed by the app's name in brackets
+ *   when the name alone would not tell a payer which app to open.
+ */
+export function methodDisplayName(method: Pick<PaymentMethodFields, "name" | "preset">): string {
+  const builtIn = isPreset(method.preset) ? findPaymentMethod(method.preset) : undefined;
+  if (!builtIn) return method.name;
+  const lettersOf = (text: string) => text.toLowerCase().replace(/[^\p{L}\p{Nd}]+/gu, "");
+  return lettersOf(method.name).includes(lettersOf(builtIn.label))
+    ? method.name
+    : `${method.name} (${builtIn.label})`;
 }
 
 /**

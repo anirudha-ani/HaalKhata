@@ -4,6 +4,7 @@ import type { PaymentMethod } from "@haalkhata/protogen/payment/v1/payment_pb";
 import { Star } from "lucide-react-native";
 import { StyleSheet, Text, View } from "react-native";
 import { Chip } from "@/components/ui/Chip";
+import { methodDisplayName } from "@haalkhata/shared/payment/formatMethod";
 import { PLAIN_PAY_CHOICES } from "@haalkhata/shared/payment/payeeMethods";
 import { colors, spacing } from "@/lib/theme/theme";
 
@@ -47,7 +48,11 @@ export function PayMethodChips({
             }
             key={method.id}
             // Read out too: a star alone says nothing to a screen reader.
-            label={method.preferred ? `${method.name} · Preferred` : method.name}
+            label={
+              method.preferred
+                ? `${methodDisplayName(method)} · Preferred`
+                : methodDisplayName(method)
+            }
             onPress={() => onPick(method.id)}
             selected={choice === method.id}
           />
@@ -68,7 +73,7 @@ export function PayMethodChips({
             {others.map((method) => (
               <Chip
                 key={method.id}
-                label={`${method.name} · ${method.currency}`}
+                label={`${methodDisplayName(method)} · ${method.currency}`}
                 onPress={() => onPick(method.id)}
                 selected={choice === method.id}
               />

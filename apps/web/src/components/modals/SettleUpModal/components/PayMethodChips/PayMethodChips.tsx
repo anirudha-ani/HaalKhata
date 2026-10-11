@@ -2,6 +2,7 @@
 /** The "How" chips of the settle dialog: the person's payment methods for this currency, then Cash and Other. */
 
 import type { PaymentMethod } from "@haalkhata/protogen/payment/v1/payment_pb";
+import { methodDisplayName } from "@haalkhata/shared/payment/formatMethod";
 import { PLAIN_PAY_CHOICES } from "@haalkhata/shared/payment/payeeMethods";
 import { CHIP_CLASS } from "./constants/chips";
 
@@ -49,7 +50,7 @@ export function PayMethodChips({
             onClick={() => onPick(method.id)}
             className={chipClass(method.id)}
           >
-            {method.name}
+            {methodDisplayName(method)}
             {method.preferred ? (
               <span className="ml-1.5 rounded-full bg-pos-50 px-1.5 py-0.5 text-[11px] font-semibold text-pos-700">
                 Preferred
@@ -81,7 +82,7 @@ export function PayMethodChips({
                 onClick={() => onPick(method.id)}
                 className={chipClass(method.id)}
               >
-                {method.name}
+                {methodDisplayName(method)}
                 <span className="ml-1.5 text-xs text-ink-soft">{method.currency}</span>
               </button>
             ))}

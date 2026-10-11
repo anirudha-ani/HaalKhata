@@ -11,7 +11,9 @@ import {
 import { ACCOUNT_TYPES, CUSTOM_DETAIL_KIND, findDetailKind } from "./detailKinds";
 import { findPaymentMethod, stripHandlePrefix } from "./methods";
 import {
+  ACCOUNT_NUMBER_PATTERN,
   CONTROL_CHARACTER_PATTERN,
+  DIGIT_PATTERN,
   HTTPS_LINK_PATTERN,
   IBAN_PATTERN,
   MAX_ECHOED_CHARACTERS,
@@ -19,9 +21,11 @@ import {
   MAX_RAW_DETAIL_ROWS,
   MAX_RAW_FIELD_LENGTH,
   PAYMENT_EMAIL_PATTERN,
-  SECRET_LABEL_PATTERN,
+  ROUTING_NUMBER_PATTERN,
+  SECRET_REFUSAL,
   SWIFT_PATTERN,
 } from "./payment.constants";
+import { namesSecret } from "./secrets";
 import { allowedDetailKinds, isPreset } from "./templates";
 import type { PaymentDetailFields, PaymentMethodFields } from "./types";
 
@@ -148,6 +152,24 @@ function checkDetailValue(kindKey: string, typed: string): DetailOutcome {
   if (kindKey === "link" && !HTTPS_LINK_PATTERN.test(typed)) {
     return { value: typed, error: "enter a link that starts with https://" };
   }
+  if (
+    kindKey === "account_number" &&
+    !(ACCOUNT_NUMBER_PATTERN.test(typed) && DIGIT_PATTERN.test(typed))
+  ) {
+    return {
+      value: typed,
+      error: "an account number is digits and letters, with spaces, dashes, dots or slashes between them",
+    };
+  }
+  if (
+    kindKey === "routing_number" &&
+    !(ROUTING_NUMBER_PATTERN.test(typed) && DIGIT_PATTERN.test(typed))
+  ) {
+    return {
+      value: typed,
+      error: "a routing number is digits and letters, with spaces or dashes between them",
+    };
+  }
   return { value: typed };
 }
 
@@ -167,9 +189,7 @@ function checkCustomLabel(typed: string): string | undefined {
   if (label.length > MAX_PAYMENT_DETAIL_LABEL_LENGTH) {
     return `keep the label under ${MAX_PAYMENT_DETAIL_LABEL_LENGTH} characters`;
   }
-  if (SECRET_LABEL_PATTERN.test(label)) {
-    return "never share a PIN, password or card security code here";
-  }
+  if (namesSecret(label)) return SECRET_REFUSAL;
   return undefined;
 }
 
@@ -198,7 +218,7 @@ export function checkPaymentMethod(draft: PaymentMethodFields): PaymentMethodChe
   else if (CONTROL_CHARACTER_PATTERN.test(name)) errors.name = "remove the line break";
   else if (name.length > MAX_PAYMENT_METHOD_NAME_LENGTH) {
     errors.name = `keep the name under ${MAX_PAYMENT_METHOD_NAME_LENGTH} characters`;
-  }
+  } else if (namesSecret(name)) errors.name = SECRET_REFUSAL;
 
   const currency = oversized(draft.currency) ? "" : draft.currency.trim().toUpperCase();
   if (oversized(draft.currency)) errors.currency = "choose a currency from the list";
@@ -246,6 +266,16 @@ export function checkPaymentMethod(draft: PaymentMethodFields): PaymentMethodChe
     }
     if (allowedKinds.length > 0 && !allowedKinds.includes(kindKey)) {
       errors.detailRows[draftIndex] = `${presetLabel} does not take this kind of detail`;
+      return;
+    }
+    // A built-in app's link is built from its username, so the username has
+    // to be one the app could have issued.
+    const builtIn = findPaymentMethod(preset);
+    if (kindKey === "username" && builtIn?.handlePattern && !builtIn.handlePattern.test(typed)) {
+      errors.detailRows[draftIndex] =
+        typed.length > (findDetailKind(kindKey)?.maxLength ?? 0)
+          ? `keep this under ${findDetailKind(kindKey)?.maxLength ?? 0} characters`
+          : (builtIn.handleRule ?? `${presetLabel} does not take this username`);
       return;
     }
     const isCustom = kindKey === CUSTOM_DETAIL_KIND;

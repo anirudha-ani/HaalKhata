@@ -12,6 +12,7 @@ import {
   keyedDetails,
   linkHost,
   methodCopyText,
+  methodDisplayName,
   recentChange,
 } from "@haalkhata/shared/payment/formatMethod";
 import { displayHandle, findPaymentMethod, paymentLink } from "@haalkhata/shared/payment/methods";
@@ -97,7 +98,7 @@ export function PayeeMethodDetails({
   return (
     <View style={styles.card}>
       <Text style={styles.title}>
-        {firstName.toUpperCase()}&apos;S {method.name.toUpperCase()}
+        {firstName.toUpperCase()}&apos;S {methodDisplayName(method).toUpperCase()}
       </Text>
 
       <View style={styles.lines}>

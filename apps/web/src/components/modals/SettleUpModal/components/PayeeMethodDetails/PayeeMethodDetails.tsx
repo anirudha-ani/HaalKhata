@@ -7,6 +7,7 @@ import {
   detailCopyText,
   keyedDetails,
   methodCopyText,
+  methodDisplayName,
 } from "@haalkhata/shared/payment/formatMethod";
 import { displayHandle, findPaymentMethod, paymentLink } from "@haalkhata/shared/payment/methods";
 import { AppLink } from "./components/AppLink/AppLink";
@@ -46,7 +47,7 @@ export function PayeeMethodDetails({
   return (
     <div className="space-y-3 rounded-xl border border-line bg-paper p-3">
       <p className="text-xs font-medium tracking-wide text-ink-soft uppercase">
-        {firstName}&apos;s {method.name}
+        {firstName}&apos;s {methodDisplayName(method)}
       </p>
 
       <ul className="space-y-2.5">

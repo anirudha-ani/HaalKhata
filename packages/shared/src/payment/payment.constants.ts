@@ -49,10 +49,65 @@ export const HTTPS_LINK_PATTERN =
   /^https:\/\/((?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,})(?::\d{1,5})?(?:[/?#]\S*)?$/i;
 
 /**
- * Labels that name a secret. A payment method holds what someone needs to
- * send money, never what would let them take it.
+ * Words that name a secret when one stands as a whole word in a label. A
+ * payment method holds what someone needs to send money, never what would
+ * let them take it.
+ *
+ * "pincode", written as one word, is deliberately absent: it is what India
+ * calls a postal code. "PIN code" as two words is still refused, because the
+ * word "pin" standing alone is.
  */
-export const SECRET_LABEL_PATTERN = /\b(?:pin|password|passcode|cvv|cvc|otp)\b/i;
+export const SECRET_WORDS: readonly string[] = [
+  "pin",
+  "pins",
+  "mpin",
+  "tpin",
+  "password",
+  "passwords",
+  "passcode",
+  "passcodes",
+  "passphrase",
+  "cvv",
+  "cvv2",
+  "cvc",
+  "cvc2",
+  "otp",
+  "otps",
+];
+
+/**
+ * Two-word names of a secret or of a payment card, written run together the
+ * way they are matched: "security code", "card number". A card is here
+ * because its number is what pays, not what gets paid.
+ */
+export const SECRET_PHRASES: readonly string[] = [
+  "securitycode",
+  "verificationcode",
+  "cardnumber",
+  "cardno",
+  "cardnum",
+  "debitcard",
+  "creditcard",
+  "cardexpiry",
+  "expirydate",
+  "expirationdate",
+];
+
+/** What a refused secret is told, wherever the check runs. */
+export const SECRET_REFUSAL = "never share a PIN, password, card number or security code here";
+
+/**
+ * The characters an account number is made of in any country: letters and
+ * digits, with a space, dash, dot or slash between groups. A Czech account
+ * carries a slash, a German one nothing but digits.
+ */
+export const ACCOUNT_NUMBER_PATTERN = /^[\p{L}\p{Nd}][\p{L}\p{Nd} ./-]*$/u;
+
+/** The characters a routing number, sort code or transit number is made of. */
+export const ROUTING_NUMBER_PATTERN = /^[\p{L}\p{Nd}][\p{L}\p{Nd} -]*$/u;
+
+/** A digit in any script; an account or routing number has at least one. */
+export const DIGIT_PATTERN = /\p{Nd}/u;
 
 /**
  * Anything that starts a new line or does not print: the control characters

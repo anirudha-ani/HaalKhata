@@ -6,6 +6,7 @@ import {
   keyedDetails,
   linkHost,
   methodCopyText,
+  methodDisplayName,
   methodCurrencyLabel,
   methodCurrencyPhrase,
   methodSummary,
@@ -214,5 +215,26 @@ describe("keyedDetails", () => {
     const [alone] = keyedDetails([email]);
     const moved = keyedDetails([{ kind: "phone", label: "", value: "+14155552671" }, email]);
     expect(moved[1]?.key).toBe(alone?.key);
+  });
+});
+
+describe("methodDisplayName", () => {
+  test("a method the person defined is shown by its name alone", () => {
+    expect(methodDisplayName({ name: "Chase checking", preset: "" })).toBe("Chase checking");
+  });
+
+  test("a built-in app's method names its app when its own name does not", () => {
+    expect(methodDisplayName({ name: "Totally Zelle", preset: "venmo" })).toBe(
+      "Totally Zelle (Venmo)",
+    );
+    expect(methodDisplayName({ name: "Business", preset: "cashapp" })).toBe("Business (Cash App)");
+  });
+
+  test("the app is not repeated when the name already says it", () => {
+    expect(methodDisplayName({ name: "Venmo", preset: "venmo" })).toBe("Venmo");
+    expect(methodDisplayName({ name: "venmo (business)", preset: "venmo" })).toBe(
+      "venmo (business)",
+    );
+    expect(methodDisplayName({ name: "CashApp", preset: "cashapp" })).toBe("CashApp");
   });
 });
