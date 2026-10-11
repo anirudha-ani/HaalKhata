@@ -62,13 +62,16 @@ export function DashboardScreen() {
 
           <VerifyPhoneBanner currentUser={dashboard.me} />
 
-          {/* Only with real balances: a failed read must not prompt about
-              debts the screen cannot show. */}
-          {!balancesFailed && dashboard.balances ? (
+          {/* Shown only with real balances: a failed read must not prompt
+              about debts the screen cannot show. It stays mounted through a
+              failed refresh, though, so an add sheet opened from it is not
+              torn down with everything typed in it. */}
+          {dashboard.balances ? (
             <PayMethodPrompt
               counterparties={dashboard.balances.counterparties}
               currencyOrder={dashboard.totals.map((total) => total.currency)}
               defaultCurrency={currency}
+              hidden={balancesFailed}
             />
           ) : null}
 

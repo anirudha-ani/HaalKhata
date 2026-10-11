@@ -60,3 +60,17 @@ export const COPY_FAILED_LABEL = "Couldn't copy";
 export function ownMethodsFailedLine(reason: string): string {
   return `Your payment methods could not be loaded (${reason}). You can still record this payment.`;
 }
+
+/**
+ * What the Home prompt says in place of its "Add" button when the person
+ * already has as many payment methods as are allowed. Said up front, with
+ * the number: opening a form the server is certain to refuse would be
+ * finding out the hard way.
+ *
+ * @param limit - The most methods a person can keep.
+ * @param currency - The currency they have no method for.
+ * @returns The sentence to show.
+ */
+export function methodCapLine(limit: number, currency: string): string {
+  return `You have ${limit} payment methods, the most allowed. Remove one in Account to add one for ${currency}.`;
+}

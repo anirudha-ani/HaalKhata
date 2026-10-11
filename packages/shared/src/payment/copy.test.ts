@@ -7,6 +7,7 @@ import {
   METHOD_NAME_PLACEHOLDER,
   METHOD_NOTE_PLACEHOLDER,
   finishOnboardingLabel,
+  methodCapLine,
   notSavedLine,
   ownMethodsFailedLine,
 } from "./copy";
@@ -63,6 +64,12 @@ describe("lines that say why something did not happen", () => {
   test("a failed read of your own methods says the payment can still be recorded", () => {
     expect(ownMethodsFailedLine("network error")).toBe(
       "Your payment methods could not be loaded (network error). You can still record this payment.",
+    );
+  });
+
+  test("a full list is said with its number and the currency that is missing", () => {
+    expect(methodCapLine(12, "BDT")).toBe(
+      "You have 12 payment methods, the most allowed. Remove one in Account to add one for BDT.",
     );
   });
 });

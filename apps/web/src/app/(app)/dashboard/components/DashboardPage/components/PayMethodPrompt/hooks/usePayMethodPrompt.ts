@@ -4,6 +4,7 @@
 import { useState, useSyncExternalStore } from "react";
 import type { CounterpartyBalance } from "@haalkhata/protogen/common/v1/common_pb";
 import { usePaymentMethodsAPI } from "@/lib/hooks/usePaymentMethodsAPI";
+import { MAX_PAYMENT_METHODS_PER_USER } from "@haalkhata/shared/payment/payment.constants";
 import { findPayPrompt } from "@haalkhata/shared/payment/payPrompt";
 import { PAY_PROMPT_DISMISS_KEY } from "../constants/payMethodPrompt";
 
@@ -83,6 +84,11 @@ export function usePayMethodPrompt({
   return {
     prompt,
     methods: methods ?? [],
+    /**
+     * True when the list is full. The prompt then says so, with the number,
+     * where it would have offered a form the server is certain to refuse.
+     */
+    atCap: (methods?.length ?? 0) >= MAX_PAYMENT_METHODS_PER_USER,
     addingFor,
     openAdd: () => setAddingFor(prompt?.currency ?? ""),
     closeAdd: () => setAddingFor(""),
