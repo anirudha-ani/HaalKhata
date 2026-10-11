@@ -359,6 +359,7 @@ export function SettleUpModal({
         {!received && payMethods.method ? (
           <PayeeMethodDetails
             amountCents={amountCents}
+            currency={currency}
             firstName={firstName}
             // A different method is a different card: its "Copied" marks reset.
             key={payMethods.method.id}

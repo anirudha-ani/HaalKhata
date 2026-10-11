@@ -363,6 +363,7 @@ export function SettleUpModal({
             method={payMethods.method}
             firstName={firstName}
             amountCents={amountCents}
+            currency={currency}
             note={note}
           />
         ) : null}

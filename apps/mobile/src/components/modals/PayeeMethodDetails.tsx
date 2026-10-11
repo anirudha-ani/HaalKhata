@@ -15,7 +15,8 @@ import {
   methodDisplayName,
   recentChange,
 } from "@haalkhata/shared/payment/formatMethod";
-import { displayHandle, findPaymentMethod, paymentLink } from "@haalkhata/shared/payment/methods";
+import { appPaymentLink } from "@haalkhata/shared/payment/appLink";
+import { displayHandle, findPaymentMethod } from "@haalkhata/shared/payment/methods";
 import { colors, radii, spacing } from "@/lib/theme/theme";
 import { COPIED_BADGE_MS, COPY_ALL_KEY } from "./modals.constants";
 
@@ -45,6 +46,7 @@ export function PayeeMethodDetails({
   method,
   firstName,
   amountCents,
+  currency,
   note,
 }: {
   /** The method being paid into. */
@@ -53,6 +55,8 @@ export function PayeeMethodDetails({
   firstName: string;
   /** The amount being paid, for an app link that can carry it. */
   amountCents: number;
+  /** The currency being paid in, which decides whether a link may carry the amount. */
+  currency: string;
   /** The payment note, for an app link that can carry it. */
   note: string;
 }) {
@@ -86,10 +90,16 @@ export function PayeeMethodDetails({
   };
 
   const builtIn = findPaymentMethod(method.preset);
-  // A built-in app's link is built from its one detail.
-  const appLink = builtIn
-    ? paymentLink(method.preset, method.details[0]?.value ?? "", amountCents, note)
-    : "";
+  // A built-in app's link is built from its one detail. It carries the
+  // amount only when the app would read it as the money actually owed.
+  const appLink = appPaymentLink({
+    preset: method.preset,
+    handle: method.details[0]?.value ?? "",
+    methodCurrency: method.currency,
+    amountCents,
+    currency,
+    note,
+  });
   const ownerLinks = method.details
     .filter((detail) => detail.kind === "link" && linkHost(detail.value) !== "")
     .map((detail) => detail.value);
@@ -139,22 +149,16 @@ export function PayeeMethodDetails({
         />
       ))}
 
-      {builtIn ? (
+      {appLink ? (
         <>
-          {appLink ? (
+          {appLink.url ? (
             <Button
               icon={<ExternalLink color={colors.white} size={16} />}
-              label={`Open ${builtIn.label}`}
-              onPress={() => void Linking.openURL(appLink)}
+              label={`Open ${appLink.label}`}
+              onPress={() => void Linking.openURL(appLink.url)}
             />
           ) : null}
-          <Text style={styles.hint}>
-            {!builtIn.linkable
-              ? `${builtIn.label} has no shareable link. Paste this into your banking app.`
-              : builtIn.linkCarriesAmount
-                ? `Opens ${builtIn.label} with the amount filled in. You still confirm it there.`
-                : `${builtIn.label} can't carry an amount in a link. Type it in the app.`}
-          </Text>
+          <Text style={styles.hint}>{appLink.hint}</Text>
         </>
       ) : null}
 

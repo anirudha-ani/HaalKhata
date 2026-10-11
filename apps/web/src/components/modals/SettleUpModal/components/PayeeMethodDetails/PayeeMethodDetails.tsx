@@ -9,7 +9,8 @@ import {
   methodCopyText,
   methodDisplayName,
 } from "@haalkhata/shared/payment/formatMethod";
-import { displayHandle, findPaymentMethod, paymentLink } from "@haalkhata/shared/payment/methods";
+import { appPaymentLink } from "@haalkhata/shared/payment/appLink";
+import { displayHandle, findPaymentMethod } from "@haalkhata/shared/payment/methods";
 import { AppLink } from "./components/AppLink/AppLink";
 import { ChangeNote } from "./components/ChangeNote/ChangeNote";
 import { CopyAllButton } from "./components/CopyAllButton/CopyAllButton";
@@ -29,6 +30,7 @@ export function PayeeMethodDetails({
   method,
   firstName,
   amountCents,
+  currency,
   note,
 }: {
   /** The method being paid into. */
@@ -37,12 +39,22 @@ export function PayeeMethodDetails({
   firstName: string;
   /** The amount being paid, for an app link that can carry it. */
   amountCents: number;
+  /** The currency being paid in, which decides whether a link may carry the amount. */
+  currency: string;
   /** The payment note, for an app link that can carry it. */
   note: string;
 }) {
   const builtIn = findPaymentMethod(method.preset);
-  // A built-in app's link is built from its one detail.
-  const handle = method.details[0]?.value ?? "";
+  // A built-in app's link is built from its one detail. It carries the
+  // amount only when the app would read it as the money actually owed.
+  const appLink = appPaymentLink({
+    preset: method.preset,
+    handle: method.details[0]?.value ?? "",
+    methodCurrency: method.currency,
+    amountCents,
+    currency,
+    note,
+  });
 
   return (
     <div className="space-y-3 rounded-xl border border-line bg-paper p-3">
@@ -72,9 +84,7 @@ export function PayeeMethodDetails({
           .map((detail) => detail.value)}
       />
 
-      {builtIn ? (
-        <AppLink builtIn={builtIn} link={paymentLink(method.preset, handle, amountCents, note)} />
-      ) : null}
+      {appLink ? <AppLink link={appLink} /> : null}
 
       {method.note ? (
         <p className="rounded-lg bg-card px-3 py-2 text-sm">

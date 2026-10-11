@@ -117,6 +117,48 @@ export const DIGIT_PATTERN = /\p{Nd}/u;
  */
 export const CONTROL_CHARACTER_PATTERN = /[\p{Cc}\p{Zl}\p{Zp}]/u;
 
+/** The one currency Venmo moves. */
+export const VENMO_CURRENCY = "USD";
+
+/** Decimals a Venmo link takes for an amount. */
+export const VENMO_AMOUNT_DIGITS = 2;
+
+/**
+ * The currencies PayPal moves between accounts in different countries, and
+ * the decimals it accepts for each. Forints, yen and New Taiwan dollars are
+ * whole numbers there. Reals, ringgit and yuan are left out: PayPal holds
+ * them only for accounts inside their own country.
+ */
+export const PAYPAL_CURRENCY_DIGITS: Readonly<Record<string, number>> = {
+  AUD: 2,
+  CAD: 2,
+  CHF: 2,
+  CZK: 2,
+  DKK: 2,
+  EUR: 2,
+  GBP: 2,
+  HKD: 2,
+  HUF: 0,
+  ILS: 2,
+  JPY: 0,
+  MXN: 2,
+  NOK: 2,
+  NZD: 2,
+  PHP: 2,
+  PLN: 2,
+  SEK: 2,
+  SGD: 2,
+  THB: 2,
+  TWD: 0,
+  USD: 2,
+};
+
+/**
+ * Most currencies a sentence names when saying what an app sends. Past
+ * this, it says which one the app does not send instead.
+ */
+export const MAX_LISTED_CURRENCIES = 3;
+
 /** How many trailing characters of a masked value stay visible. */
 export const MASK_VISIBLE_CHARACTERS = 4;
 
