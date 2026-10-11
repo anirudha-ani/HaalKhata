@@ -14,7 +14,7 @@ import { findPaymentMethod } from "@haalkhata/shared/payment/methods";
 import type { DetailDraft } from "@haalkhata/shared/payment/methodDraft";
 import { MAX_PAYMENT_DETAIL_LABEL_LENGTH } from "@haalkhata/shared/text/limits";
 import { colors, radii, spacing } from "@/lib/theme/theme";
-import { DETAIL_KEYBOARDS } from "../../constants/account";
+import { DETAIL_KEYBOARDS } from "./payment.constants";
 
 /**
  * Renders the control a detail's value is typed into.

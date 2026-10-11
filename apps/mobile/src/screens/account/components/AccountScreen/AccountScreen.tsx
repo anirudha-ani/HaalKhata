@@ -18,7 +18,7 @@ import { TextField } from "@/components/ui/TextField";
 import { CurrencyPicker } from "@/components/ui/CurrencyPicker";
 import { MAX_USER_NAME_LENGTH } from "@haalkhata/shared/text/limits";
 import { colors, radii, spacing } from "@/lib/theme/theme";
-import { PaymentMethodsSection } from "../PaymentMethodsSection/PaymentMethodsSection";
+import { PaymentMethodsSection } from "@/components/payment/PaymentMethodsSection";
 import { useAccountAPI, useProfileForm } from "./hooks/useAccount";
 
 /**

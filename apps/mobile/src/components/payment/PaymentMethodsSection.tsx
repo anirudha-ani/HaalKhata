@@ -1,12 +1,12 @@
-/** The "Get paid" section of the account screen: the owner's payment methods, with add, edit, remove and star. */
+/** The "Get paid" section: the owner's payment methods, with add, edit, remove and star. Shown on the account screen and at the end of onboarding. */
 
 import { Plus } from "lucide-react-native";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { Button } from "@/components/ui/Button";
 import { MAX_PAYMENT_METHODS_PER_USER } from "@haalkhata/shared/payment/payment.constants";
 import { colors, fonts, radii, spacing } from "@/lib/theme/theme";
-import { PaymentMethodRow } from "../PaymentMethodRow/PaymentMethodRow";
-import { PaymentMethodSheet } from "../PaymentMethodSheet/PaymentMethodSheet";
+import { PaymentMethodRow } from "./PaymentMethodRow";
+import { PaymentMethodSheet } from "./PaymentMethodSheet";
 import { usePaymentMethods } from "./hooks/usePaymentMethods";
 
 /**

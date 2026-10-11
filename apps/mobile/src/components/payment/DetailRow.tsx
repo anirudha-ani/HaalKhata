@@ -7,7 +7,7 @@ import { Chip } from "@/components/ui/Chip";
 import { detailKindName } from "@haalkhata/shared/payment/detailKinds";
 import type { DetailDraft } from "@haalkhata/shared/payment/methodDraft";
 import { colors, spacing } from "@/lib/theme/theme";
-import { DetailValueField } from "../DetailValueField/DetailValueField";
+import { DetailValueField } from "./DetailValueField";
 
 /**
  * Renders one detail of the method being edited: its kind on the first
