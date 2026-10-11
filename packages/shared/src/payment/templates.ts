@@ -58,11 +58,22 @@ const PRESET_CURRENCIES: Readonly<Record<string, string>> = {
 };
 
 /**
- * Every starting point, in the order the add form offers them: the two
- * open-ended ones most people outside the US need first, then the built-in
- * apps, then the blank one.
+ * Every starting point, in the order the add form offers them: the built-in
+ * apps first, Venmo and Zelle leading because they are what most people
+ * here are paid with, then the two open-ended shapes that cover everything
+ * else (a wallet such as bKash, a bank account in any country), then the
+ * blank one.
  */
 export const METHOD_TEMPLATES: readonly MethodTemplate[] = [
+  ...PRESET_KEYS.map((presetKey) => ({
+    key: presetKey,
+    label: findPaymentMethod(presetKey)?.label ?? presetKey,
+    preset: presetKey,
+    name: findPaymentMethod(presetKey)?.label ?? presetKey,
+    currency: PRESET_CURRENCIES[presetKey] ?? "",
+    detailKinds: (PRESET_DETAIL_KINDS[presetKey] ?? []).slice(0, 1),
+    allowedKinds: PRESET_DETAIL_KINDS[presetKey] ?? [],
+  })),
   {
     key: "wallet",
     label: "Mobile wallet or app",
@@ -88,15 +99,6 @@ export const METHOD_TEMPLATES: readonly MethodTemplate[] = [
     ],
     allowedKinds: [],
   },
-  ...PRESET_KEYS.map((presetKey) => ({
-    key: presetKey,
-    label: findPaymentMethod(presetKey)?.label ?? presetKey,
-    preset: presetKey,
-    name: findPaymentMethod(presetKey)?.label ?? presetKey,
-    currency: PRESET_CURRENCIES[presetKey] ?? "",
-    detailKinds: (PRESET_DETAIL_KINDS[presetKey] ?? []).slice(0, 1),
-    allowedKinds: PRESET_DETAIL_KINDS[presetKey] ?? [],
-  })),
   {
     key: CUSTOM_TEMPLATE_KEY,
     label: "Something else",
@@ -107,6 +109,13 @@ export const METHOD_TEMPLATES: readonly MethodTemplate[] = [
     allowedKinds: [],
   },
 ];
+
+/**
+ * The starting point the add form opens on: the first one offered. Derived
+ * rather than named, so the chip that is selected when the form opens is
+ * always the chip that comes first, whatever order the list is given.
+ */
+export const DEFAULT_TEMPLATE_KEY = METHOD_TEMPLATES[0]!.key;
 
 /**
  * Whether a preset key names one of the built-in apps.

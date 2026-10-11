@@ -3,6 +3,7 @@
 import { describe, expect, test } from "vitest";
 import { DETAIL_KIND_KEYS } from "./detailKinds";
 import {
+  DEFAULT_TEMPLATE_KEY,
   METHOD_TEMPLATES,
   PRESET_KEYS,
   allowedDetailKinds,
@@ -12,17 +13,22 @@ import {
 import { checkPaymentMethod } from "./validateMethod";
 
 describe("method templates", () => {
-  test("offers the open-ended starting points first, then the built-in apps", () => {
+  test("offers the built-in apps first, Venmo and Zelle leading, then the open-ended shapes", () => {
     expect(METHOD_TEMPLATES.map((template) => template.key)).toEqual([
-      "wallet",
-      "bank",
       "venmo",
       "zelle",
       "cashapp",
       "paypal",
+      "wallet",
+      "bank",
       "custom",
     ]);
     expect(PRESET_KEYS).toEqual(["venmo", "zelle", "cashapp", "paypal"]);
+  });
+
+  test("the form opens on whichever starting point comes first", () => {
+    expect(DEFAULT_TEMPLATE_KEY).toBe(METHOD_TEMPLATES[0]?.key);
+    expect(DEFAULT_TEMPLATE_KEY).toBe("venmo");
   });
 
   test("every row a template opens with is a real kind the template allows", () => {

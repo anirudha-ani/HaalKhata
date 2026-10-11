@@ -10,6 +10,20 @@ import {
 } from "./methodForm";
 
 /**
+ * Opens the add form and switches it to the wallet starting point, the
+ * open-ended shape most of these tests exercise.
+ *
+ * @param defaultCurrency - The owner's default currency.
+ * @returns The form, shaped as a wallet and not yet typed in.
+ */
+function walletForm(defaultCurrency: string): MethodFormState {
+  return methodFormReducer(initialMethodForm(undefined, defaultCurrency), {
+    type: "pickTemplate",
+    templateKey: "wallet",
+  });
+}
+
+/**
  * Applies a run of actions to a form.
  *
  * @param state - Where the form starts.
@@ -27,12 +41,24 @@ const STORED = [
 ];
 
 describe("opening the form", () => {
-  test("adding opens on a wallet in the owner's currency, quiet", () => {
+  test("adding opens on the first starting point, Venmo, quiet", () => {
     const state = initialMethodForm(undefined, "BDT");
-    expect(state.templateKey).toBe("wallet");
+    expect(state.templateKey).toBe("venmo");
+    // A built-in app brings its own name and currency, whatever the owner's is.
+    expect(state.draft).toMatchObject({
+      name: "Venmo",
+      currency: "USD",
+      preset: "venmo",
+      preferred: false,
+    });
+    expect(state.draft.details.map((detail) => detail.kind)).toEqual(["username"]);
+    expect(readMethodForm(state, STORED, "").errors).toEqual({ detailRows: {} });
+  });
+
+  test("an open-ended starting point takes the owner's currency", () => {
+    const state = walletForm("BDT");
     expect(state.draft).toMatchObject({ name: "", currency: "BDT", preset: "", preferred: false });
     expect(state.draft.details.map((detail) => detail.kind)).toEqual(["phone"]);
-    expect(readMethodForm(state, STORED, "").errors).toEqual({ detailRows: {} });
   });
 
   test("editing opens on the stored method, star included", () => {
@@ -55,7 +81,7 @@ describe("opening the form", () => {
 
 describe("errors", () => {
   test("stay hidden until a save is attempted, then follow the typing", () => {
-    const opened = initialMethodForm(undefined, "USD");
+    const opened = walletForm("USD");
     const attempted = after(opened, { type: "attemptSave" });
     expect(readMethodForm(attempted, STORED, "").errors.name).toBe("give this method a name");
     const named = after(attempted, { type: "setName", name: "bKash" });
@@ -74,7 +100,7 @@ describe("errors", () => {
 describe("currency", () => {
   test("any currency remembers the one it replaced", () => {
     const state = after(
-      initialMethodForm(undefined, "USD"),
+      walletForm("USD"),
       { type: "setCurrency", currency: "BDT" },
       { type: "setAnyCurrency", anyCurrency: true },
     );
@@ -98,7 +124,7 @@ describe("currency", () => {
 
 describe("details", () => {
   test("rows are added on a kind the method lacks, changed and removed by id", () => {
-    const opened = initialMethodForm(undefined, "BDT");
+    const opened = walletForm("BDT");
     const added = after(opened, { type: "addDetail" });
     expect(added.draft.details.map((detail) => detail.kind)).toEqual(["phone", "email"]);
     const [phoneRow, emailRow] = added.draft.details;
@@ -135,7 +161,7 @@ describe("details", () => {
   });
 
   test("the last row of any method cannot be dropped", () => {
-    const wallet = initialMethodForm(undefined, "BDT");
+    const wallet = walletForm("BDT");
     expect(readMethodForm(wallet, STORED, "").canRemoveDetail).toBe(false);
     expect(readMethodForm(after(wallet, { type: "addDetail" }), STORED, "").canRemoveDetail).toBe(true);
   });
@@ -150,7 +176,7 @@ describe("the star", () => {
    */
   const starredIn = (currency: string) =>
     after(
-      initialMethodForm(undefined, "USD"),
+      walletForm("USD"),
       { type: "setName", name: "Nagad" },
       currency === ""
         ? { type: "setAnyCurrency", anyCurrency: true }

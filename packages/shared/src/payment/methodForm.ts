@@ -1,6 +1,7 @@
 /** The add-and-edit payment method form as plain state and transitions, so the web and the mobile app run one form and only draw it differently. */
 
 import { methodCurrencyPhrase } from "./formatMethod";
+import { DEFAULT_TEMPLATE_KEY } from "./templates";
 import {
   canAddDetail,
   detailDraft,
@@ -19,13 +20,6 @@ import {
   type PaymentMethodCheck,
   type PaymentMethodErrors,
 } from "./validateMethod";
-
-/**
- * The starting point the add form opens on. A wallet reached by phone is the
- * most common method outside the built-in apps, and opening on a filled-in
- * shape shows what the form is for before anything is picked.
- */
-export const DEFAULT_TEMPLATE_KEY = "wallet";
 
 /** Everything the form remembers between renders. */
 export interface MethodFormState {
