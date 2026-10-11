@@ -2,7 +2,7 @@
 
 import type { PaymentMethod } from "@haalkhata/protogen/payment/v1/payment_pb";
 import * as Clipboard from "expo-clipboard";
-import { Check, ClipboardList, Copy, ExternalLink } from "lucide-react-native";
+import { Check, ClipboardList, Copy, ExternalLink, TriangleAlert } from "lucide-react-native";
 import { useEffect, useState } from "react";
 import { Linking, StyleSheet, Text, View } from "react-native";
 import { Button } from "@/components/ui/Button";
@@ -18,7 +18,8 @@ import {
 import { appPaymentLink } from "@haalkhata/shared/payment/appLink";
 import { displayHandle, findPaymentMethod } from "@haalkhata/shared/payment/methods";
 import { colors, radii, spacing } from "@/lib/theme/theme";
-import { COPIED_BADGE_MS, COPY_ALL_KEY } from "./modals.constants";
+import { COPY_FAILED_LABEL } from "@haalkhata/shared/payment/copy";
+import { COPIED_BADGE_MS, COPY_ALL_KEY, OPEN_LINK_FAILED } from "./modals.constants";
 
 /**
  * Renders where to send the money for the method the payer selected: each
@@ -62,16 +63,24 @@ export function PayeeMethodDetails({
 }) {
   // Which Copy button last succeeded: a detail's key, or the "copy all" key.
   const [copiedKey, setCopiedKey] = useState("");
+  // Which Copy button last failed. Said on the button: a payer who is told
+  // nothing pastes whatever was on the clipboard before.
+  const [failedKey, setFailedKey] = useState("");
+  // Set when a link button could not open its link.
+  const [linkFailed, setLinkFailed] = useState(false);
   // Read once per mount: the clock is not a render input, and a note that
   // is right when the sheet opens is right for as long as it stays open.
   const [openedAtMs] = useState(() => Date.now());
 
-  // The "Copied" confirmation clears itself.
+  // The "Copied" confirmation, and the failure, clear themselves.
   useEffect(() => {
-    if (copiedKey === "") return;
-    const timer = setTimeout(() => setCopiedKey(""), COPIED_BADGE_MS);
+    if (copiedKey === "" && failedKey === "") return;
+    const timer = setTimeout(() => {
+      setCopiedKey("");
+      setFailedKey("");
+    }, COPIED_BADGE_MS);
     return () => clearTimeout(timer);
-  }, [copiedKey]);
+  }, [copiedKey, failedKey]);
 
   /**
    * Copies some text and marks its button as done. Only on success: saying
@@ -83,10 +92,40 @@ export function PayeeMethodDetails({
   const copy = async (buttonKey: string, text: string) => {
     try {
       await Clipboard.setStringAsync(text);
+      setFailedKey("");
       setCopiedKey(buttonKey);
     } catch {
-      // Nothing was copied, so nothing is confirmed.
+      // Nothing was copied, and the button says so.
+      setCopiedKey("");
+      setFailedKey(buttonKey);
     }
+  };
+
+  /**
+   * Opens a link, and says so under the buttons when the device has nothing
+   * to open it with.
+   *
+   * @param link - The https link to open.
+   */
+  const openLink = async (link: string) => {
+    setLinkFailed(false);
+    try {
+      await Linking.openURL(link);
+    } catch {
+      setLinkFailed(true);
+    }
+  };
+
+  /**
+   * What a Copy button shows for its last press.
+   *
+   * @param buttonKey - Which button.
+   * @param resting - Its label when nothing has just happened.
+   * @returns The label to show.
+   */
+  const copyLabel = (buttonKey: string, resting: string) => {
+    if (copiedKey === buttonKey) return "Copied";
+    return failedKey === buttonKey ? COPY_FAILED_LABEL : resting;
   };
 
   const builtIn = findPaymentMethod(method.preset);
@@ -128,11 +167,13 @@ export function PayeeMethodDetails({
               icon={
                 copiedKey === key ? (
                   <Check color={colors.pos600} size={14} />
+                ) : failedKey === key ? (
+                  <TriangleAlert color={colors.brand600} size={14} />
                 ) : (
                   <Copy color={colors.inkSoft} size={14} />
                 )
               }
-              label={copiedKey === key ? "Copied" : "Copy"}
+              label={copyLabel(key, "Copy")}
               onPress={() => void copy(key, detailCopyText(method, detail))}
               variant="outline"
             />
@@ -145,7 +186,7 @@ export function PayeeMethodDetails({
           icon={<ExternalLink color={colors.white} size={16} />}
           key={link}
           label={`Open ${linkHost(link)}`}
-          onPress={() => void Linking.openURL(link)}
+          onPress={() => void openLink(link)}
         />
       ))}
 
@@ -155,11 +196,17 @@ export function PayeeMethodDetails({
             <Button
               icon={<ExternalLink color={colors.white} size={16} />}
               label={`Open ${appLink.label}`}
-              onPress={() => void Linking.openURL(appLink.url)}
+              onPress={() => void openLink(appLink.url)}
             />
           ) : null}
           <Text style={styles.hint}>{appLink.hint}</Text>
         </>
+      ) : null}
+
+      {linkFailed ? (
+        <Text accessibilityRole="alert" style={styles.linkFailed}>
+          {OPEN_LINK_FAILED}
+        </Text>
       ) : null}
 
       {method.note ? (
@@ -176,11 +223,13 @@ export function PayeeMethodDetails({
           icon={
             copiedKey === COPY_ALL_KEY ? (
               <Check color={colors.pos600} size={16} />
+            ) : failedKey === COPY_ALL_KEY ? (
+              <TriangleAlert color={colors.brand600} size={16} />
             ) : (
               <ClipboardList color={colors.inkSoft} size={16} />
             )
           }
-          label={copiedKey === COPY_ALL_KEY ? "Copied" : "Copy all"}
+          label={copyLabel(COPY_ALL_KEY, "Copy all")}
           onPress={() => void copy(COPY_ALL_KEY, methodCopyText(method))}
           variant="outline"
         />
@@ -235,6 +284,12 @@ const styles = StyleSheet.create({
     flex: 1,
     gap: 1,
     minWidth: 0,
+  },
+  linkFailed: {
+    color: colors.brand600,
+    fontSize: 12,
+    fontWeight: "500",
+    lineHeight: 17,
   },
   lineValue: {
     color: colors.ink,

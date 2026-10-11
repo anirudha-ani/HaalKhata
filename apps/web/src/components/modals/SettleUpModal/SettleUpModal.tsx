@@ -8,6 +8,7 @@ import { errorMessage, expenseClient } from "@/lib/api/connect";
 import { newOperationId } from "@/lib/operations/operationId";
 import { centsToInput, parseMoneyInput } from "@haalkhata/shared/money/money";
 import { MONEY_KEYS, queryKeys } from "@haalkhata/shared/api/queryKeys";
+import { ownMethodsFailedLine } from "@haalkhata/shared/payment/copy";
 import { CASH_CHOICE } from "@haalkhata/shared/payment/payeeMethods";
 import { Avatar } from "@/components/ui/Avatar/Avatar";
 import { Modal } from "@/components/ui/Modal/Modal";
@@ -256,7 +257,25 @@ export function SettleUpModal({
             opened beside that. Nothing to tick. */}
         <div className="space-y-2">
           <p className="text-sm font-medium">What this settles</p>
-          {!loaded ? (
+          {!loaded && ledgerQuery.isError ? (
+            // Said here, with a way to try again: "Loading balances…" under
+            // a read that has already failed would never change.
+            <div
+              role="alert"
+              className="space-y-1 rounded-xl border border-brand-200 bg-brand-50 px-3 py-2.5 text-sm"
+            >
+              <p className="font-medium text-brand-700">
+                Balances could not be loaded: {errorMessage(ledgerQuery.error)}
+              </p>
+              <button
+                type="button"
+                onClick={() => void ledgerQuery.refetch()}
+                className="font-semibold text-brand-700 underline"
+              >
+                Try again
+              </button>
+            </div>
+          ) : !loaded ? (
             <p className="rounded-xl border border-dashed border-line px-3 py-2.5 text-sm text-ink-soft">
               Loading balances…
             </p>
@@ -345,6 +364,20 @@ export function SettleUpModal({
             choice={payMethods.choice}
             onPick={payMethods.pick}
           />
+          {payMethods.ownMethodsError ? (
+            <div role="alert" className="space-y-1 text-sm">
+              <p className="font-medium text-brand-600">
+                {ownMethodsFailedLine(payMethods.ownMethodsError)}
+              </p>
+              <button
+                type="button"
+                onClick={payMethods.retryOwnMethods}
+                className="font-semibold text-brand-600 underline"
+              >
+                Try again
+              </button>
+            </div>
+          ) : null}
           {/* Why the list is short, said by name and currency, so nobody
               takes "no bKash here" for "the app does not do bKash". */}
           {canPay && payMethods.usable.length === 0 ? (

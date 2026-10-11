@@ -1,10 +1,9 @@
 "use client";
 /** One detail of the method being paid into: its label, its value in full, and a Copy button. */
 
-import { useState } from "react";
-import { Check, Copy } from "lucide-react";
-import { copyText } from "@/lib/clipboard/copyText";
-import { COPIED_BADGE_MS } from "../../constants/copy";
+import { Check, Copy, TriangleAlert } from "lucide-react";
+import { COPY_FAILED_LABEL } from "@haalkhata/shared/payment/copy";
+import { useCopyFeedback } from "../../hooks/useCopyFeedback";
 
 /**
  * Renders one labelled value a payer needs, with its own Copy button.
@@ -12,6 +11,10 @@ import { COPIED_BADGE_MS } from "../../constants/copy";
  * The value wraps and is never cut short. An ellipsis is harmless on a
  * username and wrong on an account number: a payer who types what they see
  * must be seeing all of it.
+ *
+ * The button says "Copied" only when the copy happened, and says so when it
+ * did not: a browser can refuse the clipboard, and a payer who is told
+ * nothing pastes whatever was there before.
  *
  * @param props - Component props.
  * @returns The line.
@@ -28,18 +31,7 @@ export function DetailLine({
   /** What the Copy button puts on the clipboard. */
   copyValue: string;
 }) {
-  const [copied, setCopied] = useState(false);
-
-  /**
-   * Copies the value and flips the button to a confirmation. Only confirms
-   * on success: `navigator.clipboard` is absent outside a secure context,
-   * and saying "Copied" when nothing was copied is worse than saying nothing.
-   */
-  const copy = async () => {
-    if (!(await copyText(copyValue))) return;
-    setCopied(true);
-    window.setTimeout(() => setCopied(false), COPIED_BADGE_MS);
-  };
+  const { outcome, copy } = useCopyFeedback();
 
   return (
     <li className="flex items-center gap-2">
@@ -49,16 +41,20 @@ export function DetailLine({
       </div>
       <button
         type="button"
-        onClick={copy}
+        onClick={() => void copy(copyValue)}
         aria-label={`Copy ${label}`}
         className="flex h-11 shrink-0 items-center gap-1.5 rounded-lg border border-line bg-card px-3 text-sm font-medium text-ink-soft hover:border-brand-500 hover:text-brand-700"
       >
-        {copied ? (
+        {outcome === "copied" ? (
           <Check className="h-4 w-4 text-pos-600" aria-hidden="true" />
+        ) : outcome === "failed" ? (
+          <TriangleAlert className="h-4 w-4 text-brand-600" aria-hidden="true" />
         ) : (
           <Copy className="h-4 w-4" aria-hidden="true" />
         )}
-        {copied ? "Copied" : "Copy"}
+        <span aria-live="polite">
+          {outcome === "copied" ? "Copied" : outcome === "failed" ? COPY_FAILED_LABEL : "Copy"}
+        </span>
       </button>
     </li>
   );

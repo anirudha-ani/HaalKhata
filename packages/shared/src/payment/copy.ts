@@ -46,3 +46,17 @@ export function finishOnboardingLabel(hasMethods: boolean): string {
 export function notSavedLine(problem: string): string {
   return `Not saved yet: ${problem}.`;
 }
+
+/** What a Copy button says for a moment when nothing reached the clipboard. */
+export const COPY_FAILED_LABEL = "Couldn't copy";
+
+/**
+ * The line under the choices in a settle screen when the person's own
+ * payment methods could not be loaded. The payment can still be recorded.
+ *
+ * @param reason - Why the read failed, as the server or the network put it.
+ * @returns The sentence to show.
+ */
+export function ownMethodsFailedLine(reason: string): string {
+  return `Your payment methods could not be loaded (${reason}). You can still record this payment.`;
+}

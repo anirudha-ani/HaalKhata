@@ -1,10 +1,9 @@
 /** The payment methods a settle sheet offers for a currency, and which one is selected. */
 
-import { useQuery } from "@tanstack/react-query";
 import type { PaymentMethod } from "@haalkhata/protogen/payment/v1/payment_pb";
 import { useState } from "react";
-import { paymentClient } from "@/lib/api/connect";
-import { queryKeys } from "@haalkhata/shared/api/queryKeys";
+import { usePaymentMethodsAPI } from "@/components/payment/hooks/usePaymentMethodsAPI";
+import { errorMessage } from "@/lib/api/connect";
 import {
   PLAIN_PAY_CHOICES,
   defaultPayChoice,
@@ -42,11 +41,7 @@ export function usePayMethods({
   /** True when the sheet records money the caller received. */
   received: boolean;
 }) {
-  const ownMethodsQuery = useQuery({
-    queryKey: queryKeys.paymentMethods,
-    queryFn: () => paymentClient.listMyPaymentMethods({}),
-    enabled: received,
-  });
+  const { methodsQuery: ownMethodsQuery } = usePaymentMethodsAPI({ enabled: received });
   const offered = received ? (ownMethodsQuery.data?.methods ?? []) : payeeMethods;
   const { usable, others } = methodsForCurrency(offered, currency);
 
@@ -74,5 +69,14 @@ export function usePayMethods({
     pick: setPicked,
     /** Forgets the pick, so the selection goes back to following the currency. */
     resetPick: () => setPicked(""),
+    /**
+     * Why the caller's own methods could not be read, when recording money
+     * received; "" otherwise. Without it the choices would quietly shrink
+     * to Cash and Other, as though the person had no methods at all.
+     */
+    ownMethodsError:
+      received && ownMethodsQuery.error ? errorMessage(ownMethodsQuery.error) : "",
+    /** Reads the caller's own methods again. */
+    retryOwnMethods: () => void ownMethodsQuery.refetch(),
   };
 }

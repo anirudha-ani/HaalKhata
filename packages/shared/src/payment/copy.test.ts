@@ -8,6 +8,7 @@ import {
   METHOD_NOTE_PLACEHOLDER,
   finishOnboardingLabel,
   notSavedLine,
+  ownMethodsFailedLine,
 } from "./copy";
 
 /** Terms from outside the US: welcome in an example, never the first thing in it. */
@@ -57,5 +58,11 @@ describe("finishOnboardingLabel", () => {
 describe("lines that say why something did not happen", () => {
   test("the save button's line names the problem", () => {
     expect(notSavedLine("give this method a name")).toBe("Not saved yet: give this method a name.");
+  });
+
+  test("a failed read of your own methods says the payment can still be recorded", () => {
+    expect(ownMethodsFailedLine("network error")).toBe(
+      "Your payment methods could not be loaded (network error). You can still record this payment.",
+    );
   });
 });

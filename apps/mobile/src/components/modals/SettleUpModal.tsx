@@ -14,6 +14,7 @@ import { errorMessage, expenseClient } from "@/lib/api/connect";
 import { newOperationId } from "@/lib/api/operationId";
 import { MONEY_KEYS, queryKeys } from "@haalkhata/shared/api/queryKeys";
 import { centsToInput, parseMoneyInput } from "@haalkhata/shared/money/money";
+import { ownMethodsFailedLine } from "@haalkhata/shared/payment/copy";
 import { CASH_CHOICE } from "@haalkhata/shared/payment/payeeMethods";
 import { MAX_SETTLEMENT_NOTE_LENGTH } from "@haalkhata/shared/text/limits";
 import {
@@ -251,7 +252,21 @@ export function SettleUpModal({
             opened beside that. Nothing to tick. */}
         <View style={styles.block}>
           <Text style={styles.blockTitle}>What this settles</Text>
-          {!loaded ? (
+          {!loaded && ledgerQuery.isError ? (
+            // Said here, with a way to try again: "Loading balances…" under
+            // a read that has already failed would never change.
+            <View accessibilityRole="alert" style={styles.failed}>
+              <Text style={styles.error}>
+                Balances could not be loaded: {errorMessage(ledgerQuery.error)}
+              </Text>
+              <Button
+                compact
+                label="Try again"
+                onPress={() => void ledgerQuery.refetch()}
+                variant="outline"
+              />
+            </View>
+          ) : !loaded ? (
             <Text style={styles.placeholder}>Loading balances…</Text>
           ) : reading.rows.length === 0 ? (
             <Text style={styles.placeholder}>
@@ -345,6 +360,17 @@ export function SettleUpModal({
             others={payMethods.others}
             usable={payMethods.usable}
           />
+          {payMethods.ownMethodsError ? (
+            <View accessibilityRole="alert" style={styles.failed}>
+              <Text style={styles.error}>{ownMethodsFailedLine(payMethods.ownMethodsError)}</Text>
+              <Button
+                compact
+                label="Try again"
+                onPress={payMethods.retryOwnMethods}
+                variant="outline"
+              />
+            </View>
+          ) : null}
           {/* Why the list is short, said by name and currency, so nobody
               takes "no bKash here" for "the app does not do bKash". */}
           {canPay && payMethods.usable.length === 0 ? (
@@ -429,6 +455,10 @@ const styles = StyleSheet.create({
   error: {
     color: colors.brand600,
     fontSize: 14,
+  },
+  failed: {
+    alignItems: "flex-start",
+    gap: spacing.sm,
   },
   methods: {
     flexDirection: "row",
