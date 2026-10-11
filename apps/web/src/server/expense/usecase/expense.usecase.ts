@@ -90,17 +90,22 @@ import {
 import { toExpense, toSettlement } from "./expense.mapper";
 import { findPaymentMethod } from "@/server/payment/repo/paymentMethods.repo";
 import { cleanMethodRow } from "@/server/payment/usecase/paymentMethod.mapper";
+import { centsToInput } from "@haalkhata/shared/money/money";
 import { settlementMethodKey } from "@haalkhata/shared/payment/payeeMethods";
 
 /**
- * Formats an integer cent amount for human-readable messages, e.g. "USD 12.50".
+ * Formats an amount for human-readable messages, e.g. "USD 12.50".
  *
- * @param cents - Amount in integer cents.
+ * The amount is in the currency's own minor unit, so it is written with
+ * that currency's number of decimals: 7000 is "JPY 7000", not "JPY 70.00",
+ * and 12500 is "KWD 12.500".
+ *
+ * @param cents - Amount in the currency's minor units.
  * @param currency - Currency code to prefix the amount with.
  * @returns The formatted amount string.
  */
 function formatMoney(cents: number, currency: string): string {
-  return `${currency} ${(cents / 100).toFixed(2)}`;
+  return `${currency} ${centsToInput(cents, currency)}`;
 }
 
 /**
