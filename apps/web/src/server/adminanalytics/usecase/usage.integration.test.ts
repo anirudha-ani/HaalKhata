@@ -21,6 +21,9 @@ const ADMIN_URL =
 const TEST_DATABASE = "haalkhata_usage_test";
 const TEST_URL = ADMIN_URL.replace(/\/[^/]*$/, `/${TEST_DATABASE}`);
 
+const EMAIL_AS_NAME = "user-emailname-3b1c";
+const PHONE_AS_NAME = "user-phonename-8d2e";
+const LOCAL_PART_AS_NAME = "user-localpart-4f6a";
 const ANIKA = "user-anika-7f3a";
 const RIFAT = "user-rifat-91bc";
 const LATECOMER = "user-latecomer-2d4e";
@@ -46,6 +49,9 @@ const PRIVATE_VALUES = [
   "Private comment body",
   "Invited Placeholder",
   "987654",
+  "typed.my.email@example.com",
+  "+1 (415) 555-0199",
+  "jsmith1987",
 ];
 
 /**
@@ -90,6 +96,19 @@ async function seed(database: Client): Promise<void> {
     `INSERT INTO users (id, email, name, avatar_color, google_sub, merged_into, created_at)
      VALUES ($1, NULL, 'Merged Away', '#857a68', NULL, $2, now() - interval '5 days')`,
     [TOMBSTONE, ANIKA],
+  );
+
+  // Three people whose display name is itself a way to reach them. They
+  // joined long ago, so they sort last and stay out of the other checks.
+  await database.query(
+    `INSERT INTO users (id, email, name, avatar_color, google_sub, onboarded_at, created_at) VALUES
+       ($1, 'a.private@example.com', 'typed.my.email@example.com', '#857a68', 'google-sub-e',
+        now() - interval '400 days', now() - interval '400 days'),
+       ($2, 'b.private@example.com', '+1 (415) 555-0199', '#857a68', 'google-sub-p',
+        now() - interval '401 days', now() - interval '401 days'),
+       ($3, 'jsmith1987@example.com', 'JSmith1987', '#857a68', 'google-sub-l',
+        now() - interval '402 days', now() - interval '402 days')`,
+    [EMAIL_AS_NAME, PHONE_AS_NAME, LOCAL_PART_AS_NAME],
   );
 
   await database.query(
@@ -185,7 +204,8 @@ describe.skipIf(!reachable)("usage overview against Postgres", () => {
   it("counts people who signed in apart from placeholders and merge tombstones", async () => {
     const { totals } = await getUsageOverview();
 
-    expect(totals.registeredUserCount).toBe(3);
+    // Anika, Rifat, the latecomer, and the three whose names are withheld.
+    expect(totals.registeredUserCount).toBe(6);
     expect(totals.invitedUserCount).toBe(1);
   });
 
@@ -219,7 +239,11 @@ describe.skipIf(!reachable)("usage overview against Postgres", () => {
     const { users, usersTruncated } = await getUsageOverview();
 
     expect(usersTruncated).toBe(false);
-    expect(users.map((person) => person.name)).toEqual(["Late Comer", "Rifat Khan", "Anika Rahman"]);
+    expect(users.slice(0, 3).map((person) => person.name)).toEqual([
+      "Late Comer",
+      "Rifat Khan",
+      "Anika Rahman",
+    ]);
     expect(users[0]).toMatchObject({
       expensesBySplitType: [],
       paymentCount: 0,
@@ -268,7 +292,7 @@ describe.skipIf(!reachable)("usage overview against Postgres", () => {
     }
     const totalOf = (pick: (week: (typeof weeks)[number]) => number) =>
       weeks.reduce((total, week) => total + pick(week), 0);
-    // Within twelve weeks: all three sign-ups; four of five expenses (one is
+    // Within twelve weeks: the three recent sign-ups; four of five expenses (one is
     // 100 days old); two of three payments (one is 200 days old); all scans.
     expect(totalOf((week) => week.newUserCount)).toBe(3);
     expect(totalOf((week) => week.expenseCount)).toBe(4);
@@ -288,6 +312,29 @@ describe.skipIf(!reachable)("usage overview against Postgres", () => {
 
     const joinedWeek = weeks.find((week) => week.weekStart === rows[0].week_start);
     expect(joinedWeek?.newUserCount).toBeGreaterThanOrEqual(1);
+  });
+
+  it("withholds a display name that is really an email, a phone number, or the start of the email", async () => {
+    const { users } = await getUsageOverview();
+
+    // Still counted and still listed, so the totals and the table agree;
+    // only the name is gone.
+    expect(users).toHaveLength(6);
+    expect(users.slice(3).map((person) => person.name)).toEqual(["", "", ""]);
+  });
+
+  it("does not withhold an ordinary name that merely contains digits or punctuation", async () => {
+    await database.query(
+      `INSERT INTO users (id, email, name, avatar_color, google_sub, onboarded_at, created_at) VALUES
+         ('user-plain-1', 'c.private@example.com', 'Mary-Jane O''Neil 2nd', '#857a68', 'google-sub-m',
+          now() - interval '500 days', now() - interval '500 days')`,
+    );
+    try {
+      const { users } = await getUsageOverview();
+      expect(users[users.length - 1].name).toBe("Mary-Jane O'Neil 2nd");
+    } finally {
+      await database.query(`DELETE FROM users WHERE id = 'user-plain-1'`);
+    }
   });
 
   it("carries names and counts and nothing else a person would call private", async () => {

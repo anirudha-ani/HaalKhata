@@ -5,7 +5,8 @@
  * No statement selects an email, a phone number, an avatar, an amount of
  * money, a description, a group name or a user id, so there is no column
  * for a later layer to forget to drop: what the admin page must not show
- * never leaves the database.
+ * never leaves the database. A display name that is itself contact
+ * information is withheld here too (see DISPLAY_NAME).
  */
 
 import type { PoolClient } from "pg";
@@ -25,6 +26,34 @@ const REGISTERED = `usr.merged_into IS NULL AND (usr.google_sub IS NOT NULL OR u
  * to created_at for the rare account still mid-onboarding.
  */
 const JOINED_AT = `COALESCE(usr.onboarded_at, usr.created_at)`;
+
+/**
+ * A person's display name, or '' when the name is itself a way to reach
+ * them. Written for a `users usr` alias.
+ *
+ * A display name is free text the person typed, and "names only" is a
+ * promise about what the operator sees, not about what a column is called.
+ * Three cases are withheld:
+ *
+ * - it contains "@": an email address typed as a name;
+ * - it is made of digits and phone punctuation: a number typed as a name;
+ * - it equals the part of their email before the "@". Sign-in falls back to
+ *   exactly that when Google supplies no name, and with the domain almost
+ *   always guessable it is the address in all but name.
+ *
+ * The last case compares against the email inside the database and returns
+ * only the verdict, so the address still never leaves it. It will also
+ * withhold a real name that happens to match (someone called "Ani" at
+ * ani@...), which costs the operator one name and is the right way round to
+ * be wrong.
+ */
+const DISPLAY_NAME = `CASE
+    WHEN usr.name LIKE '%@%' THEN ''
+    WHEN usr.name ~ '^[+0-9 ().-]{7,}$' THEN ''
+    WHEN usr.email IS NOT NULL
+         AND lower(btrim(usr.name)) = lower(split_part(usr.email, '@', 1)) THEN ''
+    ELSE usr.name
+  END`;
 
 /** Product-wide totals. */
 export interface UsageTotalsRow {
@@ -162,6 +191,7 @@ export async function listWeeklyCounts(
 
 /** One person's usage: a name, a day, and counts. */
 export interface UserUsageRow {
+  /** Their display name; '' when it was withheld as contact information. */
   name: string;
   /** The day they finished signing up, "YYYY-MM-DD", UTC. */
   joined_on: string;
@@ -185,7 +215,7 @@ export interface UserUsageRow {
  */
 export async function listUserUsage(limit: number, client: PoolClient): Promise<UserUsageRow[]> {
   return query<UserUsageRow>(
-    `SELECT usr.name,
+    `SELECT ${DISPLAY_NAME} AS name,
             to_char(${JOINED_AT} AT TIME ZONE 'UTC', 'YYYY-MM-DD') AS joined_on,
             COALESCE(added.by_split_type, '{}'::json) AS expenses_by_split_type,
             COALESCE(recorded.payment_count, 0) AS payment_count,

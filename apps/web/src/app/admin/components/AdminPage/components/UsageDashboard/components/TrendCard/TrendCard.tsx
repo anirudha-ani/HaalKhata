@@ -6,21 +6,8 @@ import { ColumnChart } from "@/components/charts/ColumnChart/ColumnChart";
 import { SegmentedControl } from "@/components/ui/SegmentedControl/SegmentedControl";
 import { compactNumber, countCeiling } from "@haalkhata/shared/analytics/chart";
 import { TREND_METRICS, type TrendMetric } from "../../../../constants/adminPage";
-import { weekLabel } from "../../../../utils/peopleUsage";
-
-/**
- * Reads one series' count off a week.
- *
- * @param week - One week of usage.
- * @param metric - Which series to read.
- * @returns That series' count for the week.
- */
-function countFor(week: WeekUsage, metric: TrendMetric): number {
-  if (metric === "users") return week.newUserCount;
-  if (metric === "payments") return week.paymentCount;
-  if (metric === "scans") return week.receiptScanCount;
-  return week.expenseCount;
-}
+import { weekLabel } from "../../../../utils/weekLabel";
+import { weeklyCount } from "../../../../utils/weeklyCount";
 
 /**
  * Renders the last twelve weeks of one series.
@@ -59,7 +46,7 @@ export function TrendCard({
     `${count.toLocaleString()} ${count === 1 ? series.singular : series.plural}`;
 
   const columns = weeks.map((week) => {
-    const count = countFor(week, metric);
+    const count = weeklyCount(week, metric);
     return {
       key: week.weekStart,
       axisLabel: weekLabel(week.weekStart),

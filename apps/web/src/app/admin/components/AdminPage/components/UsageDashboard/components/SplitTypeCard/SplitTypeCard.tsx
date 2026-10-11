@@ -3,7 +3,8 @@
 
 import type { SplitTypeCount } from "@haalkhata/protogen/adminanalytics/v1/adminanalytics_pb";
 import { BarList } from "@/components/charts/BarList/BarList";
-import { percentLabel, splitTypeLabel } from "@haalkhata/shared/analytics/insights";
+import { percentLabel } from "@haalkhata/shared/analytics/insights";
+import { splitTypeName } from "../../../../utils/splitTypeName";
 
 /**
  * Renders how expenses were split across the whole product, most used first.
@@ -34,7 +35,7 @@ export function SplitTypeCard({
         <BarList
           rows={splitTypes.map((entry) => ({
             key: entry.splitType,
-            label: splitTypeLabel(entry.splitType),
+            label: splitTypeName(entry.splitType),
             value: entry.count,
             valueLabel: entry.count.toLocaleString(),
             detail: percentLabel(entry.count, total),

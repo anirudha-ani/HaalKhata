@@ -3,14 +3,17 @@
 
 import type { UserUsage } from "@haalkhata/protogen/adminanalytics/v1/adminanalytics_pb";
 import { SearchField } from "@/components/ui/SearchField/SearchField";
-import { calendarDayLabel, splitTypeLabel } from "@haalkhata/shared/analytics/insights";
+import { calendarDayLabel } from "@haalkhata/shared/analytics/insights";
 import {
   ALL_SPLIT_TYPES,
   SPLIT_TYPE_ORDER,
+  SPLIT_TYPE_WORDING,
+  WITHHELD_NAME_LABEL,
   type PeopleSortKey,
   type SortDirection,
 } from "../../../../constants/adminPage";
-import { expenseCountOf } from "../../../../utils/peopleUsage";
+import { expenseCountOf } from "../../../../utils/expenseCountOf";
+import { splitTypeName } from "../../../../utils/splitTypeName";
 import { SortHeader } from "./components/SortHeader/SortHeader";
 
 /**
@@ -19,7 +22,7 @@ import { SortHeader } from "./components/SortHeader/SortHeader";
  * The filters sit in one row directly above the table, the only thing they
  * scope: a name search, and the split type the Expenses column counts. The
  * active type stays visibly pressed for as long as it is narrowing the
- * column, and the column's heading names it.
+ * column, and the line under the filters says which type is being counted.
  *
  * A name and counts are all a row holds because they are all the overview
  * carries. On a narrow screen the joined date moves under the name rather
@@ -60,13 +63,14 @@ export function PeopleTable({
 }) {
   const typeOptions = [
     { value: ALL_SPLIT_TYPES, label: "All types" },
-    ...SPLIT_TYPE_ORDER.map((value) => ({ value: value as string, label: splitTypeLabel(value) })),
+    ...SPLIT_TYPE_ORDER.map((value) => ({ value: value as string, label: splitTypeName(value) })),
   ];
   const expensesShown = people.reduce(
     (total, person) => total + expenseCountOf(person, splitType),
     0,
   );
-  const filtered = splitType !== ALL_SPLIT_TYPES;
+  // "12 expenses added" for every type, "12 expenses split equally" for one.
+  const expensesPhrase = SPLIT_TYPE_WORDING[splitType]?.phrase ?? "added";
 
   return (
     <section className="space-y-3">
@@ -108,8 +112,8 @@ export function PeopleTable({
           ? `${totalPeople.toLocaleString()} people`
           : `${people.length.toLocaleString()} of ${totalPeople.toLocaleString()} people`}
         {" · "}
-        {expensesShown.toLocaleString()} {filtered ? `${splitTypeLabel(splitType).toLowerCase()} ` : ""}
-        {expensesShown === 1 ? "expense" : "expenses"} added
+        {expensesShown.toLocaleString()} {expensesShown === 1 ? "expense" : "expenses"}{" "}
+        {expensesPhrase}
         {truncated ? " · showing the most recent people only" : ""}
       </p>
 
@@ -138,12 +142,7 @@ export function PeopleTable({
                   align="left"
                   className="hidden sm:table-cell"
                 />
-                <SortHeader
-                  label={filtered ? splitTypeLabel(splitType) : "Expenses"}
-                  sortKey="expenses"
-                  sort={sort}
-                  onSort={onSort}
-                />
+                <SortHeader label="Expenses" sortKey="expenses" sort={sort} onSort={onSort} />
                 <SortHeader label="Payments" sortKey="payments" sort={sort} onSort={onSort} />
                 <SortHeader label="Scans" sortKey="scans" sort={sort} onSort={onSort} />
               </tr>
@@ -158,7 +157,15 @@ export function PeopleTable({
                       this row identifies a person by, and an ellipsis would
                       make two people with long names indistinguishable. */}
                   <th scope="row" className="py-2.5 pr-2 pl-4 text-left font-medium break-words">
-                    <span className="block">{person.name}</span>
+                    {person.name ? (
+                      <span className="block">{person.name}</span>
+                    ) : (
+                      // The server withholds a name that is really an email
+                      // address or a phone number; say so rather than leave a gap.
+                      <span className="block font-normal text-ink-soft italic">
+                        {WITHHELD_NAME_LABEL}
+                      </span>
+                    )}
                     <span className="block text-xs font-normal text-ink-soft sm:hidden">
                       Joined {calendarDayLabel(person.joinedOn)}
                     </span>

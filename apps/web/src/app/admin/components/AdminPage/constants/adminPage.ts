@@ -21,11 +21,29 @@ export const TREND_METRICS: readonly {
 /** The series the trend opens on: expenses are what the product is for. */
 export const DEFAULT_TREND_METRIC: TrendMetric = "expenses";
 
+/**
+ * Shown in the people table where the server withheld a display name
+ * because the name was itself an email address or a phone number.
+ */
+export const WITHHELD_NAME_LABEL = "Name hidden";
+
 /** Filter value meaning "every split type". */
 export const ALL_SPLIT_TYPES = "all";
 
 /** Every split type the product has, in the order the expense form offers them. */
 export const SPLIT_TYPE_ORDER = ["equal", "exact", "percent", "shares", "itemized"] as const;
+
+/**
+ * How the usage page words each split type: `name` where it stands alone (a
+ * filter, a list row), `phrase` where it finishes "12 expenses ...".
+ */
+export const SPLIT_TYPE_WORDING: Record<string, { name: string; phrase: string }> = {
+  equal: { name: "Equal", phrase: "split equally" },
+  exact: { name: "Exact amounts", phrase: "split by exact amounts" },
+  percent: { name: "Percent", phrase: "split by percent" },
+  shares: { name: "Shares", phrase: "split by shares" },
+  itemized: { name: "Itemized", phrase: "split by item" },
+};
 
 /** A column the people table can be ordered by. */
 export type PeopleSortKey = "name" | "joined" | "expenses" | "payments" | "scans";

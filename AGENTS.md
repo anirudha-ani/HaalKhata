@@ -371,12 +371,18 @@ with colocated tests. Mobile-specific rules:
   identity (`ADMIN_EMAILS`) with its own cookie and its own table. Never
   accept an app session, a bearer token, or a `users` row as proof of it,
   and never let the admin sign-in create or link an account.
+- **The app and the admin page are the same site.** `SameSite` does not
+  separate `haalkhata.app` from `admin.haalkhata.app`: a request to the
+  admin host started on the app's hostname carries the admin cookie. Every
+  admin RPC therefore checks that `Origin` equals `Host` itself, with no
+  bearer exemption, and the admin host sends no CORS header. Keep both.
 - **The usage overview is counts and display names, enforced in SQL.** No
   statement in `adminanalytics/repo/usage.repo.ts` selects an email, phone,
   avatar, id, amount, description or group name, and an integration test
-  searches the whole response for them. A new figure there is a new count;
-  if it needs a column a person would call private, it does not belong on
-  that page.
+  searches the whole response for them. A display name that is itself an
+  email address, a phone number or the start of the person's email is
+  withheld in the same SQL. A new figure there is a new count; if it needs
+  a column a person would call private, it does not belong on that page.
 - **Analytics are counted, not collected.** Personal insights and the usage
   overview are aggregates over rows the product already keeps. The single
   purpose-built tally is `receipt_scans` (who, when, parsed or failed),

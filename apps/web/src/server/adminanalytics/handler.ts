@@ -39,6 +39,51 @@ function requireAdminSurface(handlerContext: HandlerContext): void {
 }
 
 /**
+ * Refuses a request that was not started by the admin page itself: its
+ * Origin must name the very host it was sent to.
+ *
+ * The app and the admin page are different origins but the same site, so
+ * SameSite does nothing between them: a request to this host started by a
+ * script on the app's hostname would arrive with the admin cookie attached.
+ * The mount's CSRF guard already refuses that, but it was written for the
+ * app, where a bearer token is a legitimate credential and exempts a
+ * request from the check. Nothing here is ever authorized by a bearer
+ * token, so this service makes the check itself, with no exemption and
+ * whether or not a cookie came along. A browser sends Origin on every POST
+ * it makes; only something that is not the admin page lacks a matching one.
+ *
+ * @param handlerContext - Connect handler context for the current request.
+ * @throws ConnectError with Code.PermissionDenied for a missing, malformed
+ *   or foreign Origin.
+ */
+function requireSameOrigin(handlerContext: HandlerContext): void {
+  const requestHost = handlerContext.requestHeader.get("host") ?? "";
+  let originHost = "";
+  try {
+    originHost = new URL(handlerContext.requestHeader.get("origin") ?? "").host;
+  } catch {
+    // Absent or malformed: falls through to the refusal below.
+  }
+  if (originHost === "" || originHost !== requestHost) {
+    throw new ConnectError("cross-origin request blocked", Code.PermissionDenied);
+  }
+}
+
+/**
+ * Confirms a request belongs on this service at all: it arrived on the
+ * admin surface, and the admin page is what sent it. Every method starts
+ * here, before reading a cookie or spending a rate-limit slot.
+ *
+ * @param handlerContext - Connect handler context for the current request.
+ * @throws ConnectError NotFound on the app surface, PermissionDenied for a
+ *   request another origin started.
+ */
+function requireAdminPageRequest(handlerContext: HandlerContext): void {
+  requireAdminSurface(handlerContext);
+  requireSameOrigin(handlerContext);
+}
+
+/**
  * Enforces the per-address sign-in limit.
  *
  * @param handlerContext - Connect handler context for the current request.
@@ -64,18 +109,18 @@ function adminSessionToken(handlerContext: HandlerContext): string | null {
   return uniqueCookieValue(handlerContext.requestHeader.get("cookie"), ADMIN_SESSION_COOKIE);
 }
 
-/** AdminAnalyticsService implementation. Every method starts by confirming the surface. */
+/** AdminAnalyticsService implementation. Every method starts by confirming the surface and the origin. */
 export const adminAnalyticsHandler: ServiceImpl<typeof AdminAnalyticsService> = {
   /** Issues the nonce for an admin sign-in. */
   async beginSignIn(_request, handlerContext) {
-    requireAdminSurface(handlerContext);
+    requireAdminPageRequest(handlerContext);
     enforceAdminAuthRateLimit(handlerContext);
     return runUsecase(() => adminSession.beginAdminSignIn(), handlerContext);
   },
 
   /** Verifies the Google identity and, for an allowlisted address, sets the admin cookie. */
   async signIn(request, handlerContext) {
-    requireAdminSurface(handlerContext);
+    requireAdminPageRequest(handlerContext);
     enforceAdminAuthRateLimit(handlerContext);
     const { token } = await runUsecase(
       () => adminSession.signInAdmin(request.idToken),
@@ -88,23 +133,29 @@ export const adminAnalyticsHandler: ServiceImpl<typeof AdminAnalyticsService> = 
     return {};
   },
 
-  /** Ends the session on the server, then expires the cookie whatever the server said. */
+  /**
+   * Ends the session on the server and, only once that has happened,
+   * expires the cookie.
+   *
+   * The order is the point. The cookie is the browser's only handle on the
+   * session. Expiring it when the row could not be deleted would leave a
+   * session that is still valid on the server and that the operator can no
+   * longer end, while telling them they are signed out. Kept, they are
+   * still signed in, are told so, and can try again.
+   */
   async signOut(_request, handlerContext) {
-    requireAdminSurface(handlerContext);
-    try {
-      await runUsecase(
-        () => adminSession.signOutAdmin(adminSessionToken(handlerContext)),
-        handlerContext,
-      );
-    } finally {
-      handlerContext.responseHeader.append("set-cookie", adminSessionCookieAttributes("", 0));
-    }
+    requireAdminPageRequest(handlerContext);
+    await runUsecase(
+      () => adminSession.signOutAdmin(adminSessionToken(handlerContext)),
+      handlerContext,
+    );
+    handlerContext.responseHeader.append("set-cookie", adminSessionCookieAttributes("", 0));
     return {};
   },
 
   /** The usage overview, for a live admin session only. */
   async getUsageOverview(_request, handlerContext) {
-    requireAdminSurface(handlerContext);
+    requireAdminPageRequest(handlerContext);
     return runUsecase(async () => {
       await adminSession.requireAdminSession(adminSessionToken(handlerContext));
       if (!rateLimitCheck("admin-usage-overview", ADMIN_READ_RATE_LIMIT)) {

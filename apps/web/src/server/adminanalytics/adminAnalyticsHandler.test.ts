@@ -29,10 +29,13 @@ import { rateLimitCheck } from "@/server/common/rateLimit";
 import { adminAnalyticsHandler } from "./handler";
 
 const ADMIN_HOST = "admin.haalkhata.app";
+const ADMIN_ORIGIN = `https://${ADMIN_HOST}`;
 const TOKEN = "T".repeat(43);
 
 /**
  * Builds the slice of a Connect handler context the admin handlers read.
+ * Unless a test says otherwise the request carries the admin page's own
+ * Origin, as every request the page makes does.
  *
  * @param requestHeaders - Request headers, including Host and Cookie.
  * @returns The context and the response headers it collects.
@@ -44,7 +47,7 @@ function contextFor(requestHeaders: Record<string, string>): {
   const responseHeader = new Headers();
   return {
     context: {
-      requestHeader: new Headers(requestHeaders),
+      requestHeader: new Headers({ origin: ADMIN_ORIGIN, ...requestHeaders }),
       responseHeader,
     } as unknown as HandlerContext,
     responseHeader,
@@ -85,6 +88,77 @@ describe("admin handlers on the app's hostname", () => {
     expect(signOutAdmin).not.toHaveBeenCalled();
     expect(requireAdminSession).not.toHaveBeenCalled();
     expect(getUsageOverview).not.toHaveBeenCalled();
+  });
+});
+
+describe("admin handlers and requests the admin page did not start", () => {
+  const empty = create(EmptySchema);
+
+  /**
+   * Calls every method with the given headers and collects how each ended.
+   *
+   * @param requestHeaders - Request headers for all four calls.
+   * @returns The Connect code each method was refused with.
+   */
+  async function refusalCodes(requestHeaders: Record<string, string>): Promise<unknown[]> {
+    const { context } = contextFor(requestHeaders);
+    const calls = [
+      async () => adminAnalyticsHandler.beginSignIn(empty, context),
+      async () =>
+        adminAnalyticsHandler.signIn(create(SignInRequestSchema, { idToken: "token" }), context),
+      async () => adminAnalyticsHandler.signOut(empty, context),
+      async () => adminAnalyticsHandler.getUsageOverview(empty, context),
+    ];
+    const codes: unknown[] = [];
+    for (const call of calls) {
+      try {
+        await call();
+        codes.push("served");
+      } catch (error) {
+        codes.push((error as { code?: unknown }).code);
+      }
+    }
+    return codes;
+  }
+
+  it("refuse the app's own origin, although it is the same site and the cookie comes along", async () => {
+    const codes = await refusalCodes({
+      host: ADMIN_HOST,
+      origin: "https://haalkhata.app",
+      cookie: `hk_admin=${TOKEN}`,
+    });
+
+    expect(codes).toEqual(Array(4).fill(Code.PermissionDenied));
+    expect(requireAdminSession).not.toHaveBeenCalled();
+    expect(getUsageOverview).not.toHaveBeenCalled();
+    expect(signOutAdmin).not.toHaveBeenCalled();
+    expect(signInAdmin).not.toHaveBeenCalled();
+  });
+
+  it("are not talked round by a bearer header, which exempts a request from the app's own guard", async () => {
+    const codes = await refusalCodes({
+      host: ADMIN_HOST,
+      origin: "https://haalkhata.app",
+      authorization: `Bearer ${TOKEN}`,
+      cookie: `hk_admin=${TOKEN}`,
+    });
+
+    expect(codes).toEqual(Array(4).fill(Code.PermissionDenied));
+    expect(getUsageOverview).not.toHaveBeenCalled();
+  });
+
+  it("refuse a request with no Origin, a malformed one, or a lookalike host", async () => {
+    for (const origin of ["", "not a url", "https://admin.haalkhata.app.evil.example", "null"]) {
+      const codes = await refusalCodes({ host: ADMIN_HOST, origin, cookie: `hk_admin=${TOKEN}` });
+      expect(codes).toEqual(Array(4).fill(Code.PermissionDenied));
+    }
+    expect(getUsageOverview).not.toHaveBeenCalled();
+  });
+
+  it("do not spend a sign-in attempt on a request they refuse", async () => {
+    await refusalCodes({ host: ADMIN_HOST, origin: "https://haalkhata.app" });
+
+    expect(rateLimitCheck).not.toHaveBeenCalled();
   });
 });
 
@@ -209,11 +283,12 @@ describe("admin sign-out", () => {
     expect(responseHeader.get("set-cookie")).toContain("Max-Age=0");
   });
 
-  it("still expires the cookie when the server could not end the session", async () => {
+  it("keeps the cookie when the server could not end the session, so sign-out can be retried", async () => {
     vi.mocked(signOutAdmin).mockRejectedValue(new Error("database unavailable"));
     const { context, responseHeader } = contextFor({ host: ADMIN_HOST, cookie: `hk_admin=${TOKEN}` });
 
     await expect(adminAnalyticsHandler.signOut(create(EmptySchema), context)).rejects.toThrow();
-    expect(responseHeader.get("set-cookie")).toContain("Max-Age=0");
+    // Expiring it here would strand a session that is still valid on the server.
+    expect(responseHeader.get("set-cookie")).toBeNull();
   });
 });

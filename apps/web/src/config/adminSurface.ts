@@ -7,9 +7,14 @@
  * admin.haalkhata.app) by the same server as the app. Two things follow
  * from keeping them on separate origins rather than separate paths:
  *
- * - The browser keeps them apart. Session cookies here are host-only, so a
- *   script running on the app's origin has no admin cookie to send and
- *   cannot read an admin response.
+ * - A page on one cannot read the other. They are different origins and
+ *   nothing here sends a CORS header, so a script running on the app's
+ *   origin cannot read an admin response. It could still *send* a request:
+ *   the two hostnames are the same site, so the browser would attach the
+ *   admin cookie and SameSite would not object. What refuses that request
+ *   is the Origin check every admin RPC makes for itself
+ *   (adminanalytics/handler.ts), which is why that check is not optional
+ *   and why this host must never grow a CORS header.
  * - Each origin serves only its own half. The admin host never renders a
  *   page that shows what users typed, and the app host has no admin page or
  *   admin API to probe.
@@ -89,8 +94,9 @@ function isAdminPagePath(pathname: string): boolean {
  * On the admin host only the admin page exists, plus the root, which the
  * root route turns into a redirect to it; on the app host the admin page
  * does not exist. Everything else is a 404 rather than a redirect, in both
- * directions: a redirect would tell a stranger probing the app that an
- * admin page is there to be found.
+ * directions, so that neither hostname ever hands a visitor across to the
+ * other. This is about keeping the two apart, not about hiding the admin
+ * page: its hostname is in this repository for anyone to read.
  *
  * The root is redirected by the route rather than rewritten here. A proxy
  * rewrite is resolved against the address the server is bound to, and when

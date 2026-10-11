@@ -83,11 +83,18 @@ export function adminEmails(): ReadonlySet<string> {
  * only authorized origin is the admin hostname, no page on the app's origin
  * can obtain a token this surface accepts.
  *
+ * A dedicated client is an addition to GOOGLE_CLIENT_ID, not a substitute:
+ * the sign-in challenge and the token verifier are the app's own and are
+ * only set up when the app's client is configured. So without
+ * GOOGLE_CLIENT_ID this reports "not configured" whatever else is set,
+ * rather than offering a button whose first request would be refused.
+ *
  * Read at call time, like the allowlist. Public, like every client id.
  *
- * @returns The client id, or "" when Google sign-in is not configured at all.
+ * @returns The client id, or "" when Google sign-in is not configured.
  */
 export function adminGoogleClientId(): string {
+  if (GOOGLE_CLIENT_ID.length === 0) return "";
   return (process.env.ADMIN_GOOGLE_CLIENT_ID ?? "").trim() || GOOGLE_CLIENT_ID;
 }
 
@@ -96,8 +103,9 @@ export function adminGoogleClientId(): string {
  *
  * SameSite=Strict, where the app's cookie is Lax: nothing links into the
  * admin page from elsewhere, so there is no cross-site navigation to keep
- * working, and Strict means the cookie is never sent on a request another
- * site started.
+ * working, and Strict keeps the cookie off every request another site
+ * starts. It does nothing against the app's own hostname, which is the same
+ * site as this one; the admin handlers' Origin check is what covers that.
  *
  * @param token - Session token value, or empty string to clear the cookie.
  * @param maxAge - Lifetime in seconds; pass 0 to expire immediately.

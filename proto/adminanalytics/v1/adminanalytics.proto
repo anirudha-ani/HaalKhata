@@ -100,6 +100,9 @@ message WeekUsage {
 // One person's usage. A display name and counts, and deliberately nothing
 // that could be used to contact or look up the person.
 message UserUsage {
+  // The person's display name. Empty when the name they go by is itself a
+  // way to reach them (an email address, a phone number, or the first part
+  // of their email): the page says a name was withheld instead of showing it.
   string name = 1;
   // The day they finished signing up, "YYYY-MM-DD", UTC.
   string joined_on = 2;

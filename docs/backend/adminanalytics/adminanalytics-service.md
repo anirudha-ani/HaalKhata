@@ -30,7 +30,15 @@ joined on the user id **inside the database** and the id is not selected.
 
 What it does contain about a person: the display name they chose, the day
 they finished signing up, and how many expenses, payments and receipt scans
-they added. People who were invited but never signed in are counted and
+they added.
+
+A display name is free text, so "names only" is enforced on its content as
+well: a name that contains `@`, a name made of digits and phone punctuation,
+and a name equal to the part of the person's email before the `@` (what
+sign-in falls back to when Google supplies no name) all come back empty, and
+the page shows "Name hidden". The last comparison happens inside the
+database and returns only the verdict. The person is still counted and
+listed, so the totals and the table agree. People who were invited but never signed in are counted and
 never listed: they have not joined and did not choose to be here.
 
 An integration test seeds people with emails, a phone number, a picture URL,
@@ -55,13 +63,21 @@ The page and this service are served from their own hostname (`ADMIN_HOST`;
 - With `ADMIN_HOST` unset, production has **no admin surface at all**.
   Development serves both from whatever host it runs on, since there is only
   one localhost.
-- 404 rather than a redirect in both directions: a redirect would tell a
-  stranger probing the app that an admin page exists.
+- 404 rather than a redirect in both directions, so neither hostname ever
+  hands a visitor across to the other. This keeps the two apart; it does not
+  hide the admin page, whose hostname is in this repository.
 - The `Host` header is the caller's to choose, so the surface is not the
   access control. That is the session, below. What the separate origin buys
-  is browser isolation (session cookies here are host-only, so a script on
-  the app's origin has no admin cookie to send) and a smaller attack surface
-  on each side.
+  is a smaller attack surface on each side, and that a page on one origin
+  cannot read the other's responses.
+- **The two hostnames are the same site**, so `SameSite` does not separate
+  them: a request to the admin host started by a script on the app's
+  hostname would carry the admin cookie. Two things stop it, and both are
+  load-bearing. Every admin RPC checks for itself that the request's
+  `Origin` is the admin host (no exemption for a bearer header, unlike the
+  app's CSRF guard, and whether or not a cookie is present). And nothing
+  sends a CORS header, so such a script could not read a response anyway.
+  **Never add CORS headers on the admin host.**
 
 ## Sign-in and Sessions
 
@@ -80,7 +96,8 @@ the app**.
   could ask Google for a token as the signed-in operator and present it
   here, and with a dedicated one no page on the app's origin can obtain a
   token this surface accepts. The page receives the id from the server at
-  request time, so it is not a build argument.
+  request time, so it is not a build argument. It is in addition to
+  `GOOGLE_CLIENT_ID`, which must be set either way.
 - It then checks the verified address against the allowlist. Nothing is
   written unless it matches, and **no `users` row is created, linked or read
   either way**.
@@ -88,14 +105,19 @@ the app**.
   in `admin_sessions`. It lives in a host-only, `HttpOnly`,
   `SameSite=Strict` cookie (`__Host-hk_admin` in production) for 8 hours
   with no renewal.
-- `SignOut` deletes the row; the token is dead at once.
+- `SignOut` deletes the row; the token is dead at once. The cookie is
+  expired only after the row is gone: if the delete fails the operator is
+  still signed in, is told so, and can try again, rather than being left
+  with a live session they have no way to end.
 - The allowlist is checked again on **every request**. Removing an address
   from `ADMIN_EMAILS` ends its sessions as soon as the server restarts with
   the new value.
 - An app session is not an admin session: it has the wrong shape, lives in a
   different cookie, and an `Authorization` header is never read here.
-- Cookie-carrying POSTs go through the same CSRF guard as the app's (the
-  `Origin` must match the `Host`).
+- Every RPC of this service, sign-in included, requires an `Origin` that
+  names the admin host itself; anything else is `PermissionDenied` before a
+  cookie is read or a rate-limit slot is spent. This is in addition to the
+  mount's CSRF guard.
 
 ## Rate Limits (this service)
 
@@ -183,8 +205,9 @@ the app**.
 
 #### Notes
 
-- Deletes the session row and expires the cookie. The cookie is expired even
-  when the row could not be deleted.
+- Deletes the session row, then expires the cookie. When the row could not
+  be deleted the call fails and the cookie is left alone, so sign-out can be
+  retried.
 - Safe to repeat, and not an error without a session.
 
 ---
@@ -217,7 +240,7 @@ the app**.
 
 | Field | Type | Description |
 | --- | --- | --- |
-| name | string | The person's display name. |
+| name | string | The person's display name; empty when the name is itself contact information (see above). |
 | joined_on | string | The day they finished signing up, `YYYY-MM-DD`, UTC. |
 | expenses_by_split_type | repeated SplitTypeCount | Expenses they added, by split type. |
 | payment_count | int32 | Payments they recorded. |

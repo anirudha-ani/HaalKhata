@@ -10,8 +10,10 @@ import {
   type PeopleSortKey,
   type TrendMetric,
 } from "../constants/adminPage";
-import { searchPeople, sortPeople } from "../utils/peopleUsage";
-import { isSessionEnded, useAdminAnalyticsAPI } from "./useAdminAnalyticsAPI";
+import { isSessionEnded } from "../utils/isSessionEnded";
+import { searchPeople } from "../utils/searchPeople";
+import { sortPeople } from "../utils/sortPeople";
+import { useAdminAnalyticsAPI } from "./useAdminAnalyticsAPI";
 
 /**
  * Holds what the operator has chosen on the usage dashboard and derives the
@@ -28,7 +30,9 @@ import { isSessionEnded, useAdminAnalyticsAPI } from "./useAdminAnalyticsAPI";
  *   setter, and the query's loading, refreshing and error state.
  */
 export function useUsageDashboard({ onSessionEnded }: { onSessionEnded: () => void }) {
-  const { query, signOut } = useAdminAnalyticsAPI({ onSignedOut: onSessionEnded });
+  const { query, signOut, forgetOverview } = useAdminAnalyticsAPI({
+    onSignedOut: onSessionEnded,
+  });
   const [trendMetric, setTrendMetric] = useState<TrendMetric>(DEFAULT_TREND_METRIC);
   const [chosenWeek, setChosenWeek] = useState("");
   const [splitType, setSplitType] = useState(ALL_SPLIT_TYPES);
@@ -37,9 +41,13 @@ export function useUsageDashboard({ onSessionEnded }: { onSessionEnded: () => vo
 
   const sessionEnded = isSessionEnded(query.error);
   // An ended session is not an error to read; it is a reason to sign in.
+  // The cached overview goes first: its figures must not outlive the
+  // session, and its error must not be what the next dashboard reads.
   useEffect(() => {
-    if (sessionEnded) onSessionEnded();
-  }, [sessionEnded, onSessionEnded]);
+    if (!sessionEnded) return;
+    forgetOverview();
+    onSessionEnded();
+  }, [sessionEnded, forgetOverview, onSessionEnded]);
 
   const overview = query.data;
   const weeks = overview?.weeks ?? [];
