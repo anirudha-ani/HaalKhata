@@ -149,9 +149,14 @@ export function PayeeMethodDetails({
     currency,
     note,
   });
-  const ownerLinks = method.details
-    .filter((detail) => detail.kind === "link" && linkHost(detail.value) !== "")
-    .map((detail) => detail.value);
+  // Listed once each: the same link twice is one button, and one list key.
+  const ownerLinks = [
+    ...new Set(
+      method.details
+        .filter((detail) => detail.kind === "link" && linkHost(detail.value) !== "")
+        .map((detail) => detail.value),
+    ),
+  ];
   const change = recentChange(method, {
     nowMs: changeClock(readAt, openedAtMs),
     removedAt,

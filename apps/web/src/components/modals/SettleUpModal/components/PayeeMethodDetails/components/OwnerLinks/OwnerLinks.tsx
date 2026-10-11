@@ -20,7 +20,8 @@ export function OwnerLinks({
   /** The values of the method's link details. */
   links: readonly string[];
 }) {
-  return links
+  // Listed once each: the same link twice is one button, and one list key.
+  return [...new Set(links)]
     .filter((link) => linkHost(link) !== "")
     .map((link) => (
       <a
@@ -28,10 +29,13 @@ export function OwnerLinks({
         href={link}
         target="_blank"
         rel="noopener noreferrer"
-        className="flex min-h-11 items-center justify-center gap-1.5 rounded-lg bg-brand-600 px-3 text-sm font-semibold text-white hover:bg-brand-700"
+        className="flex min-h-11 items-center justify-center gap-1.5 rounded-lg bg-brand-600 px-3 py-2 text-sm font-semibold text-white hover:bg-brand-700"
       >
         <ExternalLink className="h-4 w-4 shrink-0" aria-hidden="true" />
-        <span className="min-w-0 truncate">Open {linkHost(link)}</span>
+        {/* Wrapped, never cut short. The end of a host name is the part that
+            says whose site it is: "paypal.com.pay.example" cut to
+            "paypal.com.pay…" would name the wrong one. */}
+        <span className="min-w-0 break-all">Open {linkHost(link)}</span>
       </a>
     ));
 }
