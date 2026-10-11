@@ -285,3 +285,106 @@ describe("firstPaymentMethodError", () => {
     expect(firstPaymentMethodError({ detailRows: {} })).toBe("");
   });
 });
+
+describe("checkPaymentMethod on input sized to hurt", () => {
+  /**
+   * Runs a check and reports how long it took.
+   *
+   * @param draft - The draft to check.
+   * @returns The check and the milliseconds it took.
+   */
+  function timed(draft: PaymentMethodFields) {
+    const started = performance.now();
+    const check = checkPaymentMethod(draft);
+    return { check, tookMs: performance.now() - started };
+  }
+
+  // The slash-trimming pattern this replaces took 1.7 s on 80,000 slashes
+  // and four times as long for each doubling, so 300,000 would be near half
+  // a minute. A second is a generous bound for work that no longer scales.
+  test("a megabyte-scale run of slashes in a PayPal handle is refused at once", () => {
+    const { check, tookMs } = timed(
+      draftWith({
+        name: "PayPal",
+        currency: "",
+        preset: "paypal",
+        details: [{ kind: "username", label: "", value: `${"/".repeat(300_000)}x` }],
+      }),
+    );
+    expect(check.valid).toBe(false);
+    expect(check.errors.detailRows[0]).toBe("keep this under 120 characters");
+    expect(tookMs).toBeLessThan(1000);
+  });
+
+  test("a hundred thousand rows are refused without being read", () => {
+    const { check, tookMs } = timed(
+      draftWith({
+        details: Array.from({ length: 100_000 }, () => ({
+          kind: "phone",
+          label: "",
+          value: "+8801712345678",
+        })),
+      }),
+    );
+    expect(check.valid).toBe(false);
+    expect(check.errors.details).toBe("a method can have at most 8 details");
+    expect(check.errors.detailRows).toEqual({});
+    expect(check.method.details).toEqual([]);
+    expect(tookMs).toBeLessThan(200);
+  });
+
+  test("every other field is measured before it is read", () => {
+    const huge = "x".repeat(500_000);
+    const { check, tookMs } = timed(
+      draftWith({
+        name: huge,
+        currency: huge,
+        preset: huge,
+        note: huge,
+        details: [{ kind: "custom", label: huge, value: huge }],
+      }),
+    );
+    expect(check.valid).toBe(false);
+    expect(check.errors.name).toBe("keep the name under 40 characters");
+    expect(check.errors.currency).toBe("choose a currency from the list");
+    expect(check.errors.preset).toBe("unknown payment app");
+    expect(check.errors.note).toBe("keep the note under 200 characters");
+    expect(check.errors.detailRows[0]).toBe("keep this under 120 characters");
+    expect(tookMs).toBeLessThan(200);
+  });
+
+  test("an error repeats back only the start of what was refused", () => {
+    const check = checkPaymentMethod(
+      draftWith({
+        currency: "Q".repeat(200),
+        preset: "p".repeat(200),
+        details: [{ kind: "k".repeat(200), label: "", value: "abc" }],
+      }),
+    );
+    for (const message of [
+      check.errors.currency,
+      check.errors.preset,
+      check.errors.detailRows[0],
+    ]) {
+      expect(message).toBeDefined();
+      expect(message!.length).toBeLessThan(80);
+    }
+  });
+
+  test("padding around a paste is still trimmed, not counted", () => {
+    const check = checkPaymentMethod(draftWith({ name: `${" ".repeat(300)}bKash${" ".repeat(300)}` }));
+    expect(check.valid).toBe(true);
+    expect(check.method.name).toBe("bKash");
+  });
+
+  test("blank rows beyond the eight a method keeps are dropped, not refused", () => {
+    const blank = { kind: "custom", label: "", value: "  " };
+    const check = checkPaymentMethod(
+      draftWith({
+        details: [...Array.from({ length: 20 }, () => blank), { kind: "phone", label: "", value: "+8801712345678" }],
+      }),
+    );
+    expect(check.valid).toBe(true);
+    expect(check.method.details).toHaveLength(1);
+  });
+});

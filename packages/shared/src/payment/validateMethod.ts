@@ -13,7 +13,10 @@ import {
   CONTROL_CHARACTER_PATTERN,
   HTTPS_LINK_PATTERN,
   IBAN_PATTERN,
+  MAX_ECHOED_CHARACTERS,
   MAX_PAYMENT_DETAILS_PER_METHOD,
+  MAX_RAW_DETAIL_ROWS,
+  MAX_RAW_FIELD_LENGTH,
   PAYMENT_EMAIL_PATTERN,
   SECRET_LABEL_PATTERN,
   SWIFT_PATTERN,
@@ -59,6 +62,31 @@ interface DetailOutcome {
   value: string;
   /** Why the value was refused; absent when it is fine. */
   error?: string;
+}
+
+/**
+ * Whether a field is too long to be worth reading. Checked on the text as it
+ * arrived, before it is trimmed or matched against anything, so the work
+ * done on a field never depends on how much of it someone chose to send.
+ *
+ * @param typed - The field as it arrived.
+ * @returns True when the field must be refused unread.
+ */
+function oversized(typed: string): boolean {
+  return typed.length > MAX_RAW_FIELD_LENGTH;
+}
+
+/**
+ * A refused value as an error message may repeat it: its first few
+ * characters, so the message stays one line whatever was sent.
+ *
+ * @param refused - The value being quoted back.
+ * @returns The value, cut short with an ellipsis when it is long.
+ */
+function echoed(refused: string): string {
+  return refused.length > MAX_ECHOED_CHARACTERS
+    ? `${refused.slice(0, MAX_ECHOED_CHARACTERS)}…`
+    : refused;
 }
 
 /**
@@ -114,16 +142,20 @@ function checkDetailValue(kindKey: string, typed: string): DetailOutcome {
 /**
  * Cleans and checks the label of a custom detail.
  *
- * @param typed - The label as typed, already trimmed.
+ * @param typed - The label as it arrived.
  * @returns The reason it was refused, or undefined when it is fine.
  */
 function checkCustomLabel(typed: string): string | undefined {
-  if (typed === "") return "give this detail a label";
-  if (CONTROL_CHARACTER_PATTERN.test(typed)) return "remove the line break";
-  if (typed.length > MAX_PAYMENT_DETAIL_LABEL_LENGTH) {
+  if (oversized(typed)) {
     return `keep the label under ${MAX_PAYMENT_DETAIL_LABEL_LENGTH} characters`;
   }
-  if (SECRET_LABEL_PATTERN.test(typed)) {
+  const label = typed.trim();
+  if (label === "") return "give this detail a label";
+  if (CONTROL_CHARACTER_PATTERN.test(label)) return "remove the line break";
+  if (label.length > MAX_PAYMENT_DETAIL_LABEL_LENGTH) {
+    return `keep the label under ${MAX_PAYMENT_DETAIL_LABEL_LENGTH} characters`;
+  }
+  if (SECRET_LABEL_PATTERN.test(label)) {
     return "never share a PIN, password or card security code here";
   }
   return undefined;
@@ -142,24 +174,36 @@ function checkCustomLabel(typed: string): string | undefined {
  */
 export function checkPaymentMethod(draft: PaymentMethodFields): PaymentMethodCheck {
   const errors: PaymentMethodErrors = { detailRows: {} };
+  const tooManyDetails = `a method can have at most ${MAX_PAYMENT_DETAILS_PER_METHOD} details`;
 
-  const name = draft.name.trim();
-  if (name === "") errors.name = "give this method a name";
+  // Every field is measured before it is read. A request can be megabytes
+  // long, and trimming, matching or parsing that much is work one caller
+  // would be making the whole server do.
+  const name = oversized(draft.name) ? "" : draft.name.trim();
+  if (oversized(draft.name)) {
+    errors.name = `keep the name under ${MAX_PAYMENT_METHOD_NAME_LENGTH} characters`;
+  } else if (name === "") errors.name = "give this method a name";
   else if (CONTROL_CHARACTER_PATTERN.test(name)) errors.name = "remove the line break";
   else if (name.length > MAX_PAYMENT_METHOD_NAME_LENGTH) {
     errors.name = `keep the name under ${MAX_PAYMENT_METHOD_NAME_LENGTH} characters`;
   }
 
-  const currency = draft.currency.trim().toUpperCase();
-  if (currency !== "" && !currencyInfo(currency)) {
-    errors.currency = `${currency} is not a currency this app knows`;
+  const currency = oversized(draft.currency) ? "" : draft.currency.trim().toUpperCase();
+  if (oversized(draft.currency)) errors.currency = "choose a currency from the list";
+  else if (currency !== "" && !currencyInfo(currency)) {
+    errors.currency = `${echoed(currency)} is not a currency this app knows`;
   }
 
-  const preset = draft.preset.trim();
-  if (preset !== "" && !isPreset(preset)) errors.preset = `unknown payment app "${preset}"`;
+  const preset = oversized(draft.preset) ? "" : draft.preset.trim();
+  if (oversized(draft.preset)) errors.preset = "unknown payment app";
+  else if (preset !== "" && !isPreset(preset)) {
+    errors.preset = `unknown payment app "${echoed(preset)}"`;
+  }
 
-  const note = draft.note.trim();
-  if (CONTROL_CHARACTER_PATTERN.test(note)) errors.note = "keep the note to one line";
+  const note = oversized(draft.note) ? "" : draft.note.trim();
+  if (oversized(draft.note)) {
+    errors.note = `keep the note under ${MAX_PAYMENT_METHOD_NOTE_LENGTH} characters`;
+  } else if (CONTROL_CHARACTER_PATTERN.test(note)) errors.note = "keep the note to one line";
   else if (note.length > MAX_PAYMENT_METHOD_NOTE_LENGTH) {
     errors.note = `keep the note under ${MAX_PAYMENT_METHOD_NOTE_LENGTH} characters`;
   }
@@ -167,8 +211,16 @@ export function checkPaymentMethod(draft: PaymentMethodFields): PaymentMethodChe
   const allowedKinds = allowedDetailKinds(preset);
   const presetLabel = findPaymentMethod(preset)?.label ?? preset;
   const details: PaymentDetailFields[] = [];
-  draft.details.forEach((detail, draftIndex) => {
+  // More rows than any form can send are refused without being read; the
+  // rows themselves are what would cost the time.
+  const rows = draft.details.length > MAX_RAW_DETAIL_ROWS ? [] : draft.details;
+  rows.forEach((detail, draftIndex) => {
     const kindKey = detail.kind;
+    if (oversized(detail.value)) {
+      const maxLength = findDetailKind(kindKey)?.maxLength ?? MAX_RAW_FIELD_LENGTH;
+      errors.detailRows[draftIndex] = `keep this under ${maxLength} characters`;
+      return;
+    }
     // A built-in app stores the bare identifier; its sigil is furniture.
     const typed = isPreset(preset)
       ? stripHandlePrefix(preset, detail.value)
@@ -176,25 +228,27 @@ export function checkPaymentMethod(draft: PaymentMethodFields): PaymentMethodChe
     if (typed === "") return;
 
     if (!findDetailKind(kindKey)) {
-      errors.detailRows[draftIndex] = `unknown kind of detail "${kindKey}"`;
+      errors.detailRows[draftIndex] = `unknown kind of detail "${echoed(kindKey)}"`;
       return;
     }
     if (allowedKinds.length > 0 && !allowedKinds.includes(kindKey)) {
       errors.detailRows[draftIndex] = `${presetLabel} does not take this kind of detail`;
       return;
     }
-    const label = kindKey === CUSTOM_DETAIL_KIND ? detail.label.trim() : "";
-    const labelError = kindKey === CUSTOM_DETAIL_KIND ? checkCustomLabel(label) : undefined;
+    const isCustom = kindKey === CUSTOM_DETAIL_KIND;
+    const label = isCustom && !oversized(detail.label) ? detail.label.trim() : "";
+    const labelError = isCustom ? checkCustomLabel(detail.label) : undefined;
     const outcome = checkDetailValue(kindKey, typed);
     const rowError = labelError ?? outcome.error;
     if (rowError) errors.detailRows[draftIndex] = rowError;
     details.push({ kind: kindKey, label, value: outcome.value });
   });
 
-  if (details.length === 0 && Object.keys(errors.detailRows).length === 0) {
+  if (draft.details.length > MAX_RAW_DETAIL_ROWS) errors.details = tooManyDetails;
+  else if (details.length === 0 && Object.keys(errors.detailRows).length === 0) {
     errors.details = "add at least one detail a payer can use";
   } else if (details.length > MAX_PAYMENT_DETAILS_PER_METHOD) {
-    errors.details = `a method can have at most ${MAX_PAYMENT_DETAILS_PER_METHOD} details`;
+    errors.details = tooManyDetails;
   } else if (isPreset(preset) && details.length > 1) {
     // Its link is built from one identifier; a second has nowhere to go.
     errors.details = `${presetLabel} takes a single detail`;

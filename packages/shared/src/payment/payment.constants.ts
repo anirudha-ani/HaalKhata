@@ -6,6 +6,23 @@ export const MAX_PAYMENT_METHODS_PER_USER = 12;
 /** Most details one payment method can carry. */
 export const MAX_PAYMENT_DETAILS_PER_METHOD = 8;
 
+/**
+ * Longest text a field is read at all. Far above every real limit, so that
+ * padding around a paste never trips it, and low enough that nothing typed
+ * or sent can make a pattern or a phone-number parse run on megabytes.
+ */
+export const MAX_RAW_FIELD_LENGTH = 1000;
+
+/**
+ * Most detail rows a draft is read at all, blank ones included. A form sends
+ * at most {@link MAX_PAYMENT_DETAILS_PER_METHOD}; the room above that is for
+ * blank rows, which are dropped rather than counted.
+ */
+export const MAX_RAW_DETAIL_ROWS = 32;
+
+/** How much of a refused value an error message repeats back. */
+export const MAX_ECHOED_CHARACTERS = 20;
+
 /** Loose sanity check for an email detail: something@something.tld, no whitespace. */
 export const PAYMENT_EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 

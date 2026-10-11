@@ -162,9 +162,26 @@ export function stripHandlePrefix(methodKey: string, typed: string): string {
     // Longest first: the scheme has to go before the bare host would match.
     handle = handle.replace(/^https?:\/\//i, "");
     handle = handle.replace(/^(?:www\.)?paypal\.me\//i, "");
-    return handle.replace(/\/+$/, "");
+    return dropTrailingSlashes(handle);
   }
   return handle;
+}
+
+/**
+ * Removes the slashes a pasted URL ends with.
+ *
+ * Walks back from the end instead of using a pattern. The obvious pattern,
+ * one or more slashes anchored at the end, retries from every slash in a
+ * long run that does not reach the end, so its cost grows with the square of
+ * the input and one megabyte of slashes holds the thread for minutes.
+ *
+ * @param text - The text to shorten.
+ * @returns The text without its trailing slashes.
+ */
+function dropTrailingSlashes(text: string): string {
+  let kept = text.length;
+  while (kept > 0 && text[kept - 1] === "/") kept -= 1;
+  return text.slice(0, kept);
 }
 
 /**

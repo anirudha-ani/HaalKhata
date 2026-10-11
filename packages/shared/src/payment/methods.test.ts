@@ -102,6 +102,13 @@ describe("stripHandlePrefix", () => {
     expect(stripHandlePrefix("zelle", "+14015550147")).toBe("+14015550147");
   });
 
+  test("trailing slashes come off in time that grows with the input, not its square", () => {
+    expect(stripHandlePrefix("paypal", "jordanlee///")).toBe("jordanlee");
+    const started = performance.now();
+    expect(stripHandlePrefix("paypal", `${"/".repeat(300_000)}x`)).toHaveLength(300_001);
+    expect(performance.now() - started).toBeLessThan(1000);
+  });
+
   test("trims surrounding whitespace from a paste", () => {
     expect(stripHandlePrefix("venmo", "  @jordan-lee  ")).toBe("jordan-lee");
   });
