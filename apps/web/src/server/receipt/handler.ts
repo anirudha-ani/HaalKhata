@@ -2,7 +2,7 @@
 
 import { Code, ConnectError, type ServiceImpl } from "@connectrpc/connect";
 import type { ReceiptService } from "@haalkhata/protogen/receipt/v1/receipt_pb";
-import { parseReceipt } from "@/server/receipt/usecase/receipt.usecase";
+import { scanReceipt } from "@/server/receipt/usecase/receipt.usecase";
 import { runUsecase } from "@/server/api/connect/context";
 import {
   MAX_CONCURRENT_RECEIPT_PARSES,
@@ -19,10 +19,11 @@ export const receiptHandler: ServiceImpl<typeof ReceiptService> = {
    * Parses an uploaded receipt image into structured line items for the
    * signed-in user, and hands back the JPEG the provider was shown so the
    * client can display it next to the extracted values. The image is not
-   * stored anywhere — it only round-trips through this response.
+   * stored anywhere — it only round-trips through this response. The attempt
+   * itself is counted (who, when, whether it worked), nothing about the bill.
    */
   async parseReceipt(request, handlerContext) {
-    await requireRateLimitedUser(
+    const userId = await requireRateLimitedUser(
       handlerContext,
       "parse-receipt",
       RPC_RATE_LIMITS.parseReceipt,
@@ -32,7 +33,7 @@ export const receiptHandler: ServiceImpl<typeof ReceiptService> = {
     }
     activeReceiptParses += 1;
     try {
-      return await runUsecase(() => parseReceipt(request.image), handlerContext);
+      return await runUsecase(() => scanReceipt(userId, request.image), handlerContext);
     } finally {
       activeReceiptParses -= 1;
     }

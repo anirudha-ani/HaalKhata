@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Code, type HandlerContext } from "@connectrpc/connect";
 import type { ParseReceiptRequest } from "@haalkhata/protogen/receipt/v1/receipt_pb";
 
-vi.mock("@/server/receipt/usecase/receipt.usecase", () => ({ parseReceipt: vi.fn() }));
+vi.mock("@/server/receipt/usecase/receipt.usecase", () => ({ scanReceipt: vi.fn() }));
 vi.mock("@/server/api/connect/context", () => ({
   runUsecase: vi.fn((operation: () => Promise<unknown>) => operation()),
 }));
@@ -14,7 +14,7 @@ vi.mock("@/server/api/connect/rpcRateLimit", () => ({
   requireRateLimitedUser: vi.fn().mockResolvedValue("user-123"),
 }));
 
-import { parseReceipt } from "@/server/receipt/usecase/receipt.usecase";
+import { scanReceipt } from "@/server/receipt/usecase/receipt.usecase";
 import { receiptHandler } from "./handler";
 
 beforeEach(() => vi.clearAllMocks());
@@ -22,7 +22,7 @@ beforeEach(() => vi.clearAllMocks());
 describe("receipt handler concurrency", () => {
   it("rejects work above the process-wide provider limit", async () => {
     const releases: Array<() => void> = [];
-    vi.mocked(parseReceipt).mockImplementation(
+    vi.mocked(scanReceipt).mockImplementation(
       () => new Promise((resolve) => releases.push(() => resolve({} as never))),
     );
     const context = {} as HandlerContext;
@@ -30,7 +30,7 @@ describe("receipt handler concurrency", () => {
 
     const first = receiptHandler.parseReceipt(request, context);
     const second = receiptHandler.parseReceipt(request, context);
-    await vi.waitFor(() => expect(parseReceipt).toHaveBeenCalledTimes(2));
+    await vi.waitFor(() => expect(scanReceipt).toHaveBeenCalledTimes(2));
 
     await expect(
       receiptHandler.parseReceipt(request, context),
@@ -38,5 +38,14 @@ describe("receipt handler concurrency", () => {
 
     for (const release of releases) release();
     await Promise.all([first, second]);
+  });
+
+  it("hands the usecase the caller, so the attempt is counted against them", async () => {
+    vi.mocked(scanReceipt).mockResolvedValue({} as never);
+    const image = new Uint8Array([1, 2, 3]);
+
+    await receiptHandler.parseReceipt({ image } as ParseReceiptRequest, {} as HandlerContext);
+
+    expect(scanReceipt).toHaveBeenCalledWith("user-123", image);
   });
 });
