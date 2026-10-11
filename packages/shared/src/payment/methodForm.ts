@@ -28,6 +28,12 @@ export interface MethodFormState {
   templateKey: string;
   /** The method as typed so far. */
   draft: MethodDraft;
+  /**
+   * What was typed under each starting point that was switched away from,
+   * by template key. Coming back to one brings its draft back, so a tap on
+   * the wrong chip never costs what was typed.
+   */
+  parked: Readonly<Record<string, MethodDraft>>;
   /** What "one currency" goes back to after "any currency" is ticked and unticked. */
   lastCurrency: string;
   /**
@@ -140,6 +146,7 @@ export function initialMethodForm(
   return {
     templateKey,
     draft: method ? methodDraft(method, method.preferred) : templateDraft(templateKey, startCurrency),
+    parked: {},
     lastCurrency: method?.currency || startCurrency,
     defaultCurrency: startCurrency,
     attempted: false,
@@ -179,13 +186,21 @@ export function methodFormReducer(
   const { draft } = state;
   switch (action.type) {
     case "pickTemplate": {
-      // Starting over from another shape: nothing typed is kept, and the
-      // form is quiet again until the next save attempt.
-      const nextDraft = templateDraft(action.templateKey, state.defaultCurrency);
+      // The chip that is already selected: nothing to do, and above all
+      // nothing to wipe.
+      if (action.templateKey === state.templateKey) return state;
+      // Another shape has other rows, so what was typed cannot be carried
+      // across. It is put aside under the shape it was typed in and comes
+      // back when that chip is picked again. The form is quiet again until
+      // the next save attempt.
+      const parked = { ...state.parked, [state.templateKey]: draft };
+      const nextDraft =
+        parked[action.templateKey] ?? templateDraft(action.templateKey, state.defaultCurrency);
       return {
         ...state,
         templateKey: action.templateKey,
         draft: nextDraft,
+        parked,
         lastCurrency: nextDraft.currency || state.defaultCurrency,
         attempted: false,
       };

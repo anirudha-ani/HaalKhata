@@ -297,3 +297,65 @@ describe("the one problem stated beside the save button", () => {
     expect(view.blockedField).toBe("note");
   });
 });
+
+describe("switching between starting points", () => {
+  /**
+   * Types a name, a note and a phone number into a wallet form.
+   *
+   * @returns The filled-in form.
+   */
+  function filledWallet(): MethodFormState {
+    const form = walletForm("BDT");
+    return after(
+      form,
+      { type: "setName", name: "bKash" },
+      { type: "setNote", note: "Personal number" },
+      {
+        type: "setDetail",
+        rowId: form.draft.details[0]!.rowId,
+        patch: { region: "BD", nationalNumber: "1712345678" },
+      },
+    );
+  }
+
+  test("tapping the chip that is already selected changes nothing", () => {
+    const filled = filledWallet();
+    expect(after(filled, { type: "pickTemplate", templateKey: "wallet" })).toBe(filled);
+  });
+
+  test("a stray tap on another chip is undone by tapping back", () => {
+    const filled = filledWallet();
+    const strayed = after(filled, { type: "pickTemplate", templateKey: "bank" });
+    expect(strayed.draft.name).toBe("");
+    expect(strayed.draft.details).toHaveLength(6);
+
+    const back = after(strayed, { type: "pickTemplate", templateKey: "wallet" });
+    expect(back.draft).toEqual(filled.draft);
+  });
+
+  test("each starting point keeps what was typed under it", () => {
+    const filled = filledWallet();
+    const onBank = after(
+      filled,
+      { type: "pickTemplate", templateKey: "bank" },
+      { type: "setName", name: "Chase checking" },
+    );
+    const roundTrip = after(
+      onBank,
+      { type: "pickTemplate", templateKey: "wallet" },
+      { type: "pickTemplate", templateKey: "venmo" },
+      { type: "pickTemplate", templateKey: "bank" },
+    );
+    expect(roundTrip.draft.name).toBe("Chase checking");
+    expect(after(roundTrip, { type: "pickTemplate", templateKey: "wallet" }).draft.name).toBe(
+      "bKash",
+    );
+  });
+
+  test("a starting point not visited yet still opens blank", () => {
+    const fresh = after(filledWallet(), { type: "pickTemplate", templateKey: "custom" });
+    expect(fresh.draft.name).toBe("");
+    expect(fresh.draft.details.map((detail) => detail.kind)).toEqual(["custom"]);
+  });
+});
+
