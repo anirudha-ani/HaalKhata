@@ -2,12 +2,19 @@
 /** Dialog shell (bottom sheet on mobile, centered on desktop) with Escape/backdrop close. */
 
 import { X } from "lucide-react";
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 
 /**
  * Renders a dialog shell — a bottom sheet on mobile, a centered card on
  * desktop — with a titled header, a close button, and Escape/backdrop-click
  * dismissal.
+ *
+ * Dismissal is deliberate or it does not happen. Escape closes the dialog
+ * only when nothing inside it used the key first: a picker that closes its
+ * own list on Escape marks the event handled, and the dialog, with a form
+ * half typed in it, stays. A click closes it only when it both started and
+ * ended on the backdrop, so selecting text and letting go outside the card
+ * does not.
  *
  * A `footer` is pinned under the body instead of scrolling with it. It is
  * for a form taller than a phone screen: an action that has scrolled out of
@@ -32,16 +39,25 @@ export function Modal({
 }) {
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
+      if (event.key !== "Escape" || event.defaultPrevented) return;
+      onClose();
     };
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
   }, [onClose]);
 
+  // Whether the press that a click ends began on the backdrop itself.
+  const pressedOnBackdrop = useRef(false);
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-end justify-center bg-ink/40 p-0 backdrop-blur-[2px] sm:items-center sm:p-6"
-      onClick={onClose}
+      onMouseDown={(pressEvent) => {
+        pressedOnBackdrop.current = pressEvent.target === pressEvent.currentTarget;
+      }}
+      onClick={(clickEvent) => {
+        if (clickEvent.target === clickEvent.currentTarget && pressedOnBackdrop.current) onClose();
+      }}
       role="presentation"
     >
       <div
