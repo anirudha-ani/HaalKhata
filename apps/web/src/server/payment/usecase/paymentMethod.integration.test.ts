@@ -23,6 +23,7 @@ const OWNER = "owner-1";
 const STRANGER = "stranger-1";
 const HOARDER = "hoarder-1";
 const LEAVER = "leaver-1";
+const RACER = "racer-1";
 
 /**
  * Checks whether the admin database accepts a connection.
@@ -422,5 +423,90 @@ describe.skipIf(!reachable)("payment methods against Postgres", () => {
       code: "23514",
     });
     await insertDetail(0, "phone", "", "+8801712345678");
+  });
+
+  it("an edit and a removal of the same method at the same moment never fail, whichever wins", async () => {
+    await database.query(
+      `INSERT INTO users (id, email, name, avatar_color, onboarded_at, google_sub)
+       VALUES ($1, 'racer@example.com', 'Rae Racer', '#7c3aed', now(), 'google-racer')`,
+      [RACER],
+    );
+    const created = await Promise.all(
+      Array.from({ length: 8 }, (_unused, index) =>
+        usecase.createPaymentMethod(RACER, wallet(`Race ${index}`, "BDT")),
+      ),
+    );
+    const outcomes = await Promise.allSettled(
+      created.flatMap((method) => [
+        usecase.updatePaymentMethod(RACER, {
+          ...wallet("Edited", "EUR", true),
+          id: method.id,
+          note: "edited",
+        }),
+        usecase.deletePaymentMethod(RACER, method.id),
+      ]),
+    );
+    // Every removal goes through. Each edit either landed before its
+    // removal or found the method gone; nothing ends as a server failure.
+    const refused = outcomes.flatMap((outcome) =>
+      outcome.status === "rejected" ? [(outcome.reason as { code?: string }).code] : [],
+    );
+    expect(refused.every((code) => code === "not_found")).toBe(true);
+    expect(outcomes.filter((outcome, index) => index % 2 === 1 && outcome.status === "fulfilled")).toHaveLength(8);
+    expect((await usecase.listMyPaymentMethods(RACER)).methods).toEqual([]);
+  });
+
+  it("removing or editing a method copied from an old handle removes that handle too", async () => {
+    const derivedId = async (method: string) =>
+      (
+        await database.query<{ id: string }>(
+          `SELECT md5('payment-handle:' || $1 || ':' || $2)::uuid::text AS id`,
+          [STRANGER, method],
+        )
+      ).rows[0]!.id;
+    const handles = async () =>
+      (
+        await database.query<{ user_id: string; method: string }>(
+          `SELECT user_id, method FROM payment_handles ORDER BY user_id, method`,
+        )
+      ).rows.map((handle) => `${handle.user_id}:${handle.method}`);
+
+    await database.query(
+      `INSERT INTO payment_handles (user_id, method, handle) VALUES
+         ($1, 'venmo', 'sam-stranger'), ($1, 'paypal', 'samstranger'), ($2, 'venmo', 'olive-owner')`,
+      [STRANGER, OWNER],
+    );
+    for (const method of ["venmo", "paypal"]) {
+      await database.query(
+        `WITH made AS (
+           INSERT INTO payment_methods (id, user_id, name, currency, preset)
+           VALUES ($1, $2, $3, $4, $5) RETURNING id
+         )
+         INSERT INTO payment_method_details (method_id, position, kind, value)
+         SELECT id, 0, 'username', $6 FROM made`,
+        [
+          await derivedId(method),
+          STRANGER,
+          method === "venmo" ? "Venmo" : "PayPal",
+          method === "venmo" ? "USD" : null,
+          method,
+          method === "venmo" ? "sam-stranger" : "samstranger",
+        ],
+      );
+    }
+
+    await usecase.deletePaymentMethod(STRANGER, await derivedId("venmo"));
+    expect(await handles()).toEqual([`${OWNER}:venmo`, `${STRANGER}:paypal`]);
+
+    await usecase.updatePaymentMethod(STRANGER, {
+      id: await derivedId("paypal"),
+      name: "PayPal",
+      currency: "",
+      details: [{ kind: "username", label: "", value: "samstranger2" }],
+      note: "",
+      preferred: false,
+    });
+    // Only the handle that method came from; another person's is untouched.
+    expect(await handles()).toEqual([`${OWNER}:venmo`]);
   });
 });

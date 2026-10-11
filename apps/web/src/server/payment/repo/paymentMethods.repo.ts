@@ -174,44 +174,50 @@ export async function insertPaymentMethod(
 }
 
 /**
- * Replaces everything a method's owner typed and stamps the change.
+ * Replaces one of a person's methods and its details.
  *
- * Delete-then-insert for the details rather than a diff: the request carries
- * the full list, and positions are the primary key, so reordering in place
- * would collide with itself.
+ * The owner is part of the statement, not only of the lookup that came
+ * before it: a method that is not this person's, or was removed a moment
+ * ago, matches nothing, and then its details are left alone too.
  *
- * @param methodId - Method to rewrite.
- * @param write - The complete new name, currency, note and details.
- * @param client - Transaction client; the row and its details commit together.
+ * @param methodId - Id of the method to replace.
+ * @param write - Its new name, currency, note and details.
+ * @param userId - Owner of the method.
+ * @param client - The transaction's client.
+ * @returns False when the person has no such method any more.
  */
 export async function updatePaymentMethod(
   methodId: string,
   write: PaymentMethodWrite,
+  userId: string,
   client: PoolClient,
-): Promise<void> {
-  await execute(
+): Promise<boolean> {
+  const updated = await query<{ id: string }>(
     `UPDATE payment_methods
-        SET name = $2, currency = $3, note = $4, updated_at = now()
-      WHERE id = $1`,
-    [methodId, write.name, write.currency, write.note],
+        SET name = $3, currency = $4, note = $5, updated_at = now()
+      WHERE id = $1 AND user_id = $2
+      RETURNING id`,
+    [methodId, userId, write.name, write.currency, write.note],
     client,
   );
+  if (updated.length === 0) return false;
   await execute(`DELETE FROM payment_method_details WHERE method_id = $1`, [methodId], client);
   await insertDetails(methodId, write.details, client);
+  return true;
 }
 
 /**
- * Deletes one of a person's payment methods; its details go with it.
+ * Deletes one of a person's methods; its details go with it.
  *
- * @param methodId - Method to delete.
- * @param userId - Who must own it.
- * @param client - Existing transaction client; omitted to use the shared pool.
- * @returns True when a method of theirs was deleted.
+ * @param methodId - Id of the method to delete.
+ * @param userId - Owner of the method.
+ * @param client - The transaction's client.
+ * @returns False when the person has no such method.
  */
 export async function deletePaymentMethod(
   methodId: string,
   userId: string,
-  client?: PoolClient,
+  client: PoolClient,
 ): Promise<boolean> {
   const deleted = await query<{ id: string }>(
     `DELETE FROM payment_methods WHERE id = $1 AND user_id = $2 RETURNING id`,
@@ -219,6 +225,33 @@ export async function deletePaymentMethod(
     client,
   );
   return deleted.length > 0;
+}
+
+/**
+ * Deletes the old payment handle a method was copied from, if it was.
+ *
+ * The backfill gave each copied method an id derived from its handle's key,
+ * and left the handles table in place so the copy could be undone. That
+ * table would otherwise keep a handle its owner has since removed or
+ * replaced, and running the copy again would bring a removed method back.
+ * This goes when the table does.
+ *
+ * @param methodId - Id of the method that was changed or removed.
+ * @param userId - Owner of the method.
+ * @param client - The transaction's client.
+ */
+export async function forgetLegacyHandle(
+  methodId: string,
+  userId: string,
+  client: PoolClient,
+): Promise<void> {
+  await execute(
+    `DELETE FROM payment_handles
+      WHERE user_id = $2
+        AND md5('payment-handle:' || user_id || ':' || method)::uuid::text = $1`,
+    [methodId, userId],
+    client,
+  );
 }
 
 /**
@@ -243,21 +276,23 @@ export async function clearPreferred(
 }
 
 /**
- * Sets or clears the star on one method. Leaves updated_at alone: a star
- * changes which method is suggested, not where the money goes.
+ * Sets or clears the star on one of a person's methods. The caller clears
+ * the currency bucket first when setting it.
  *
- * @param methodId - Method to mark.
+ * @param methodId - Id of the method.
  * @param preferred - Whether it carries the star.
- * @param client - Transaction client holding the owner's payment-methods lock.
+ * @param userId - Owner of the method.
+ * @param client - The transaction's client.
  */
 export async function setPreferred(
   methodId: string,
   preferred: boolean,
+  userId: string,
   client: PoolClient,
 ): Promise<void> {
   await execute(
-    `UPDATE payment_methods SET is_preferred = $2 WHERE id = $1`,
-    [methodId, preferred],
+    `UPDATE payment_methods SET is_preferred = $2 WHERE id = $1 AND user_id = $3`,
+    [methodId, preferred, userId],
     client,
   );
 }

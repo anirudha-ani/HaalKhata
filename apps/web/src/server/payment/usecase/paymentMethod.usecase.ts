@@ -11,6 +11,7 @@ import {
   countPaymentMethods,
   deletePaymentMethod as deletePaymentMethodRow,
   findPaymentMethod,
+  forgetLegacyHandle,
   insertPaymentMethod,
   listPaymentMethodsByUser,
   setPreferred,
@@ -79,7 +80,7 @@ async function takeStar(
   currency: string | null,
 ): Promise<void> {
   await clearPreferred(userId, currency, client);
-  await setPreferred(methodId, true, client);
+  await setPreferred(methodId, true, userId, client);
 }
 
 /**
@@ -173,11 +174,20 @@ export async function updatePaymentMethod(
     // Unstar before the currency can move: a starred method carried into a
     // currency that already has a star would break the unique index, and
     // which of the two keeps it is decided below, not by arrival order.
-    if (existing.is_preferred) await setPreferred(existing.id, false, client);
-    if (differs(existing, write)) await updatePaymentMethodRow(existing.id, write, client);
+    if (existing.is_preferred) await setPreferred(existing.id, false, userId, client);
+    if (differs(existing, write)) {
+      if (!(await updatePaymentMethodRow(existing.id, write, userId, client))) {
+        notFound(METHOD_NOT_FOUND_MESSAGE);
+      }
+      // The handle this method may have been copied from no longer says
+      // what the method says.
+      await forgetLegacyHandle(existing.id, userId, client);
+    }
     if (input.preferred) await takeStar(client, userId, existing.id, write.currency);
 
-    return toPaymentMethod((await findPaymentMethod(existing.id, userId, client))!);
+    const saved = await findPaymentMethod(existing.id, userId, client);
+    if (!saved) notFound(METHOD_NOT_FOUND_MESSAGE);
+    return toPaymentMethod(saved);
   });
 }
 
@@ -189,7 +199,17 @@ export async function updatePaymentMethod(
  * @throws UsecaseError "not_found" when the caller has no such method.
  */
 export async function deletePaymentMethod(userId: string, methodId: string): Promise<void> {
-  if (!(await deletePaymentMethodRow(methodId, userId))) notFound(METHOD_NOT_FOUND_MESSAGE);
+  await transaction(async (client) => {
+    // Under the same lock as every other write. Without it a removal could
+    // land in the middle of an edit of the same method, which then failed
+    // on a row that had just gone, or in the middle of a star change, which
+    // took the star from one method and gave it to nothing.
+    await lockPaymentMethods(client, userId);
+    if (!(await deletePaymentMethodRow(methodId, userId, client))) {
+      notFound(METHOD_NOT_FOUND_MESSAGE);
+    }
+    await forgetLegacyHandle(methodId, userId, client);
+  });
 }
 
 /**
@@ -210,7 +230,7 @@ export async function setPreferredPaymentMethod(
     const existing = await findPaymentMethod(input.id, userId, client);
     if (!existing) notFound(METHOD_NOT_FOUND_MESSAGE);
     if (input.preferred) await takeStar(client, userId, existing.id, existing.currency);
-    else await setPreferred(existing.id, false, client);
+    else await setPreferred(existing.id, false, userId, client);
     return { methods: (await listPaymentMethodsByUser(userId, client)).map(toPaymentMethod) };
   });
 }

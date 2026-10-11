@@ -13,6 +13,7 @@ vi.mock("@/server/payment/repo/paymentMethods.repo", () => ({
   countPaymentMethods: vi.fn(),
   deletePaymentMethod: vi.fn(),
   findPaymentMethod: vi.fn(),
+  forgetLegacyHandle: vi.fn(),
   insertPaymentMethod: vi.fn(),
   listPaymentMethodsByUser: vi.fn(),
   setPreferred: vi.fn(),
@@ -31,6 +32,7 @@ import {
   countPaymentMethods,
   deletePaymentMethod as deletePaymentMethodRow,
   findPaymentMethod,
+  forgetLegacyHandle,
   insertPaymentMethod,
   listPaymentMethodsByUser,
   setPreferred,
@@ -101,6 +103,7 @@ beforeEach(() => {
   vi.mocked(insertPaymentMethod).mockResolvedValue(bkashRow);
   vi.mocked(listPaymentMethodsByUser).mockResolvedValue([bkashRow]);
   vi.mocked(deletePaymentMethodRow).mockResolvedValue(true);
+  vi.mocked(updatePaymentMethodRow).mockResolvedValue(true);
 });
 
 describe("listMyPaymentMethods", () => {
@@ -246,8 +249,20 @@ describe("updatePaymentMethod", () => {
         note: "Use Send Money",
         details: [{ kind: "phone", label: "", value: "+8801812345678" }],
       },
+      CALLER,
       transactionClient,
     );
+    // The handle it may have been copied from is out of date now.
+    expect(forgetLegacyHandle).toHaveBeenCalledWith("method-bkash", CALLER, transactionClient);
+  });
+
+  it("reads a method removed in the middle of the edit as not found, not as a failure", async () => {
+    vi.mocked(updatePaymentMethodRow).mockResolvedValue(false);
+
+    await expect(
+      updatePaymentMethod(CALLER, { ...update, note: "changed" }),
+    ).rejects.toMatchObject({ code: "not_found" });
+    expect(forgetLegacyHandle).not.toHaveBeenCalled();
   });
 
   it("only moving the star does not rewrite the row", async () => {
@@ -300,9 +315,19 @@ describe("updatePaymentMethod", () => {
 });
 
 describe("deletePaymentMethod", () => {
-  it("deletes a method scoped to the caller", async () => {
+  it("deletes a method scoped to the caller, taking turns with their other writes", async () => {
     await deletePaymentMethod(CALLER, "method-bkash");
-    expect(deletePaymentMethodRow).toHaveBeenCalledWith("method-bkash", CALLER);
+
+    expect(lockPaymentMethods).toHaveBeenCalledWith(transactionClient, CALLER);
+    expect(deletePaymentMethodRow).toHaveBeenCalledWith("method-bkash", CALLER, transactionClient);
+    expect(vi.mocked(lockPaymentMethods).mock.invocationCallOrder[0]).toBeLessThan(
+      vi.mocked(deletePaymentMethodRow).mock.invocationCallOrder[0]!,
+    );
+  });
+
+  it("removes the old handle the method was copied from", async () => {
+    await deletePaymentMethod(CALLER, "method-bkash");
+    expect(forgetLegacyHandle).toHaveBeenCalledWith("method-bkash", CALLER, transactionClient);
   });
 
   it("reports not found when nothing of the caller's was deleted", async () => {
@@ -311,6 +336,7 @@ describe("deletePaymentMethod", () => {
     await expect(deletePaymentMethod(CALLER, "method-other")).rejects.toMatchObject({
       code: "not_found",
     });
+    expect(forgetLegacyHandle).not.toHaveBeenCalled();
   });
 });
 
