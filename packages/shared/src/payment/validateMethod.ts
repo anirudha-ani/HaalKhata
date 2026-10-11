@@ -2,6 +2,7 @@
 
 import { parsePhoneNumberFromString } from "libphonenumber-js";
 import { currencyInfo } from "../money/money.constants";
+import { stripHiddenCharacters } from "../text/hiddenCharacters";
 import {
   MAX_PAYMENT_DETAIL_LABEL_LENGTH,
   MAX_PAYMENT_METHOD_NAME_LENGTH,
@@ -77,6 +78,17 @@ function oversized(typed: string): boolean {
 }
 
 /**
+ * A field of words as it is read: hidden characters removed, then trimmed.
+ * Removed first, so that text made only of them counts as the blank it is.
+ *
+ * @param typed - The field as it arrived, already known not to be oversized.
+ * @returns What a reader would see of it.
+ */
+function readWords(typed: string): string {
+  return stripHiddenCharacters(typed, true).trim();
+}
+
+/**
  * A refused value as an error message may repeat it: its first few
  * characters, so the message stays one line whatever was sent.
  *
@@ -149,7 +161,7 @@ function checkCustomLabel(typed: string): string | undefined {
   if (oversized(typed)) {
     return `keep the label under ${MAX_PAYMENT_DETAIL_LABEL_LENGTH} characters`;
   }
-  const label = typed.trim();
+  const label = readWords(typed);
   if (label === "") return "give this detail a label";
   if (CONTROL_CHARACTER_PATTERN.test(label)) return "remove the line break";
   if (label.length > MAX_PAYMENT_DETAIL_LABEL_LENGTH) {
@@ -179,7 +191,7 @@ export function checkPaymentMethod(draft: PaymentMethodFields): PaymentMethodChe
   // Every field is measured before it is read. A request can be megabytes
   // long, and trimming, matching or parsing that much is work one caller
   // would be making the whole server do.
-  const name = oversized(draft.name) ? "" : draft.name.trim();
+  const name = oversized(draft.name) ? "" : readWords(draft.name);
   if (oversized(draft.name)) {
     errors.name = `keep the name under ${MAX_PAYMENT_METHOD_NAME_LENGTH} characters`;
   } else if (name === "") errors.name = "give this method a name";
@@ -200,7 +212,7 @@ export function checkPaymentMethod(draft: PaymentMethodFields): PaymentMethodChe
     errors.preset = `unknown payment app "${echoed(preset)}"`;
   }
 
-  const note = oversized(draft.note) ? "" : draft.note.trim();
+  const note = oversized(draft.note) ? "" : readWords(draft.note);
   if (oversized(draft.note)) {
     errors.note = `keep the note under ${MAX_PAYMENT_METHOD_NOTE_LENGTH} characters`;
   } else if (CONTROL_CHARACTER_PATTERN.test(note)) errors.note = "keep the note to one line";
@@ -221,10 +233,11 @@ export function checkPaymentMethod(draft: PaymentMethodFields): PaymentMethodChe
       errors.detailRows[draftIndex] = `keep this under ${maxLength} characters`;
       return;
     }
+    // Words keep the joiners their script needs; an identifier, which is
+    // what gets copied into a bank app, keeps nothing a reader cannot see.
+    const visible = stripHiddenCharacters(detail.value, findDetailKind(kindKey)?.prose ?? false);
     // A built-in app stores the bare identifier; its sigil is furniture.
-    const typed = isPreset(preset)
-      ? stripHandlePrefix(preset, detail.value)
-      : detail.value.trim();
+    const typed = isPreset(preset) ? stripHandlePrefix(preset, visible) : visible.trim();
     if (typed === "") return;
 
     if (!findDetailKind(kindKey)) {
@@ -236,7 +249,7 @@ export function checkPaymentMethod(draft: PaymentMethodFields): PaymentMethodChe
       return;
     }
     const isCustom = kindKey === CUSTOM_DETAIL_KIND;
-    const label = isCustom && !oversized(detail.label) ? detail.label.trim() : "";
+    const label = isCustom && !oversized(detail.label) ? readWords(detail.label) : "";
     const labelError = isCustom ? checkCustomLabel(detail.label) : undefined;
     const outcome = checkDetailValue(kindKey, typed);
     const rowError = labelError ?? outcome.error;

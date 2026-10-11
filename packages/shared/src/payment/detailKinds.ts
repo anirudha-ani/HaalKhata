@@ -36,6 +36,13 @@ export interface DetailKind {
    * number does not need to be legible over a shoulder.
    */
   masked: boolean;
+  /**
+   * Whether the value is words a person reads (a holder's name, a bank's
+   * name) and not an identifier someone copies. Words may be in any script
+   * and keep the joiners some scripts need; an identifier keeps nothing
+   * invisible at all.
+   */
+  prose: boolean;
 }
 
 /** Key of the one kind whose label the owner types. */
@@ -58,6 +65,7 @@ export const DETAIL_KINDS: readonly DetailKind[] = [
     capitals: "none",
     maxLength: MAX_PAYMENT_DETAIL_VALUE_LENGTH,
     masked: false,
+    prose: false,
   },
   {
     key: "email",
@@ -67,6 +75,7 @@ export const DETAIL_KINDS: readonly DetailKind[] = [
     capitals: "none",
     maxLength: MAX_PAYMENT_DETAIL_VALUE_LENGTH,
     masked: false,
+    prose: false,
   },
   {
     key: "username",
@@ -76,6 +85,7 @@ export const DETAIL_KINDS: readonly DetailKind[] = [
     capitals: "none",
     maxLength: MAX_PAYMENT_DETAIL_VALUE_LENGTH,
     masked: false,
+    prose: false,
   },
   {
     key: "account_name",
@@ -85,6 +95,7 @@ export const DETAIL_KINDS: readonly DetailKind[] = [
     capitals: "words",
     maxLength: MAX_PAYMENT_DETAIL_VALUE_LENGTH,
     masked: false,
+    prose: true,
   },
   {
     key: "bank_name",
@@ -94,6 +105,7 @@ export const DETAIL_KINDS: readonly DetailKind[] = [
     capitals: "words",
     maxLength: MAX_PAYMENT_DETAIL_VALUE_LENGTH,
     masked: false,
+    prose: true,
   },
   {
     key: "account_type",
@@ -103,6 +115,7 @@ export const DETAIL_KINDS: readonly DetailKind[] = [
     capitals: "none",
     maxLength: MAX_PAYMENT_DETAIL_VALUE_LENGTH,
     masked: false,
+    prose: false,
   },
   {
     key: "account_number",
@@ -112,6 +125,7 @@ export const DETAIL_KINDS: readonly DetailKind[] = [
     capitals: "none",
     maxLength: MAX_PAYMENT_DETAIL_VALUE_LENGTH,
     masked: true,
+    prose: false,
   },
   {
     key: "routing_number",
@@ -121,6 +135,7 @@ export const DETAIL_KINDS: readonly DetailKind[] = [
     capitals: "none",
     maxLength: MAX_PAYMENT_DETAIL_VALUE_LENGTH,
     masked: false,
+    prose: false,
   },
   {
     key: "swift",
@@ -130,6 +145,7 @@ export const DETAIL_KINDS: readonly DetailKind[] = [
     capitals: "characters",
     maxLength: MAX_PAYMENT_DETAIL_VALUE_LENGTH,
     masked: false,
+    prose: false,
   },
   {
     key: "iban",
@@ -139,6 +155,7 @@ export const DETAIL_KINDS: readonly DetailKind[] = [
     capitals: "characters",
     maxLength: MAX_PAYMENT_DETAIL_VALUE_LENGTH,
     masked: true,
+    prose: false,
   },
   {
     key: "link",
@@ -148,6 +165,7 @@ export const DETAIL_KINDS: readonly DetailKind[] = [
     capitals: "none",
     maxLength: MAX_PAYMENT_LINK_LENGTH,
     masked: false,
+    prose: false,
   },
   {
     key: CUSTOM_DETAIL_KIND,
@@ -157,6 +175,7 @@ export const DETAIL_KINDS: readonly DetailKind[] = [
     capitals: "none",
     maxLength: MAX_PAYMENT_DETAIL_VALUE_LENGTH,
     masked: false,
+    prose: true,
   },
 ];
 

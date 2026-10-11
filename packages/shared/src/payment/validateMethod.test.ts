@@ -388,3 +388,99 @@ describe("checkPaymentMethod on input sized to hurt", () => {
     expect(check.method.details).toHaveLength(1);
   });
 });
+
+describe("checkPaymentMethod and characters nobody can see", () => {
+  test("an account number is stored as the digits a payer reads", () => {
+    const check = checkPaymentMethod(
+      draftWith({
+        details: [
+          { kind: "account_number", label: "", value: "123\u202E456789" },
+          { kind: "routing_number", label: "", value: "0210\u200B00021" },
+          { kind: "username", label: "", value: "\uFEFFjordan\u00ADlee" },
+        ],
+      }),
+    );
+    expect(check.valid).toBe(true);
+    expect(check.method.details.map((detail) => detail.value)).toEqual([
+      "123456789",
+      "021000021",
+      "jordanlee",
+    ]);
+  });
+
+  test("a name, note or label made only of hidden characters is blank", () => {
+    expect(checkPaymentMethod(draftWith({ name: "\u200B\u200B" })).errors.name).toBe(
+      "give this method a name",
+    );
+    expect(checkPaymentMethod(draftWith({ name: "\u200D\u3164" })).errors.name).toBe(
+      "give this method a name",
+    );
+    expect(
+      checkPaymentMethod(
+        draftWith({ details: [{ kind: "custom", label: "\u2060", value: "ABCD0001234" }] }),
+      ).errors.detailRows[0],
+    ).toBe("give this detail a label");
+    expect(checkPaymentMethod(draftWith({ note: "\u200B" })).method.note).toBe("");
+  });
+
+  test("a value made only of hidden characters is a blank row, and blank rows are dropped", () => {
+    const check = checkPaymentMethod(
+      draftWith({ details: [{ kind: "account_number", label: "", value: "\u200B\u202E" }] }),
+    );
+    expect(check.errors.details).toBe("add at least one detail a payer can use");
+  });
+
+  test("direction marks are taken out of a name instead of reordering what follows it", () => {
+    const check = checkPaymentMethod(
+      draftWith({ name: "Zelle \u202Eknab", note: "send \u2066here\u2069 only" }),
+    );
+    expect(check.valid).toBe(true);
+    expect(check.method.name).toBe("Zelle knab");
+    expect(check.method.note).toBe("send here only");
+  });
+
+  test("a name in Bengali keeps the joiner its letters need", () => {
+    const name = "\u09B0\u200D\u09CD\u09AF\u09BE\u09AC";
+    const check = checkPaymentMethod(
+      draftWith({ name, details: [{ kind: "account_name", label: "", value: name }] }),
+    );
+    expect(check.valid).toBe(true);
+    expect(check.method.name).toBe(name);
+    expect(check.method.details[0]!.value).toBe(name);
+  });
+
+  test("a line or paragraph separator is a line break like any other", () => {
+    expect(checkPaymentMethod(draftWith({ name: "Chase\u2028checking" })).errors.name).toBe(
+      "remove the line break",
+    );
+    expect(checkPaymentMethod(draftWith({ note: "one\u2029two" })).errors.note).toBe(
+      "keep the note to one line",
+    );
+    expect(
+      checkPaymentMethod(
+        draftWith({ details: [{ kind: "custom", label: "Branch", value: "Gulshan\u2028Account: 9" }] }),
+      ).errors.detailRows[0],
+    ).toBe("remove the line break");
+  });
+
+  test("a link keeps its host and loses what hides in its path", () => {
+    const check = checkPaymentMethod(
+      draftWith({ details: [{ kind: "link", label: "", value: "https://pay.example/\u202Egnp.moc" }] }),
+    );
+    expect(check.valid).toBe(true);
+    expect(check.method.details[0]!.value).toBe("https://pay.example/gnp.moc");
+  });
+
+  test("a built-in app's handle is cleaned before its sigil is stripped", () => {
+    const check = checkPaymentMethod(
+      draftWith({
+        name: "Venmo",
+        currency: "USD",
+        preset: "venmo",
+        details: [{ kind: "username", label: "", value: "\u200B@jordan-lee\u200B" }],
+      }),
+    );
+    expect(check.valid).toBe(true);
+    expect(check.method.details[0]!.value).toBe("jordan-lee");
+  });
+});

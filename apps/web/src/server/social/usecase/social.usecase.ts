@@ -67,6 +67,7 @@ import { formatMoney } from "@haalkhata/shared/money/money";
 import { safeActivityPath } from "@haalkhata/shared/navigation/activityPath";
 import { listPaymentMethodsByUser } from "@/server/payment/repo/paymentMethods.repo";
 import { reminderPaymentHint } from "@/server/payment/usecase/paymentHint";
+import { cleanMethodRow } from "@/server/payment/usecase/paymentMethod.mapper";
 import { getOverallBalances, netWithUser } from "@/server/expense/usecase/balance.usecase";
 import { denied, invalid, notFound, UsecaseError } from "@/server/common/errors";
 import { transaction } from "@/server/common/db";
@@ -938,7 +939,7 @@ export async function sendReminder(userId: string, debtorId: string): Promise<vo
     // stored row, and an account number has no business outliving the debt.
     const payHint = reminderPaymentHint(
       sender.name,
-      (await listPaymentMethodsByUser(userId, client)).map((method) => ({
+      (await listPaymentMethodsByUser(userId, client)).map(cleanMethodRow).map((method) => ({
         name: method.name,
         currency: method.currency ?? "",
         preferred: method.is_preferred,

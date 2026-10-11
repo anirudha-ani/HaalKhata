@@ -54,8 +54,13 @@ export const HTTPS_LINK_PATTERN =
  */
 export const SECRET_LABEL_PATTERN = /\b(?:pin|password|passcode|cvv|cvc|otp)\b/i;
 
-/** Any control character, including a line break: every field here is one line. */
-export const CONTROL_CHARACTER_PATTERN = /\p{Cc}/u;
+/**
+ * Anything that starts a new line or does not print: the control characters
+ * (a line break and a tab among them) and the Unicode line and paragraph
+ * separators, which sit unseen in one line on screen and become a line break
+ * once the text is pasted somewhere else. Every field here is one line.
+ */
+export const CONTROL_CHARACTER_PATTERN = /[\p{Cc}\p{Zl}\p{Zp}]/u;
 
 /** How many trailing characters of a masked value stay visible. */
 export const MASK_VISIBLE_CHARACTERS = 4;

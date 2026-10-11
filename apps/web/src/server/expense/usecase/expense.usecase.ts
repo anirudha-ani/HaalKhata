@@ -89,6 +89,7 @@ import {
 } from "@/server/expense/expense.constants";
 import { toExpense, toSettlement } from "./expense.mapper";
 import { findPaymentMethod } from "@/server/payment/repo/paymentMethods.repo";
+import { cleanMethodRow } from "@/server/payment/usecase/paymentMethod.mapper";
 import { settlementMethodKey } from "@haalkhata/shared/payment/payeeMethods";
 
 /**
@@ -1183,9 +1184,11 @@ async function resolveSettlementMethod(
   request: SettlementRequest,
   creditorId: string,
 ): Promise<{ method: string; methodLabel: string }> {
-  const paymentMethod = request.paymentMethodId
+  const stored = request.paymentMethodId
     ? await findPaymentMethod(request.paymentMethodId, creditorId)
     : undefined;
+  // The name is copied into the payment record, which both people read.
+  const paymentMethod = stored ? cleanMethodRow(stored) : undefined;
   if (!paymentMethod) {
     return {
       method: SETTLEMENT_METHODS.has(request.method) ? request.method : "cash",
