@@ -28,7 +28,9 @@ import { SplitTypesCard } from "./components/SplitTypesCard/SplitTypesCard";
  * touch it. On a tablet the smaller cards pair up two to a row.
  *
  * A failure is stated here, in the panel, with a way to try again: a toast
- * would vanish and leave an empty view with no explanation.
+ * would vanish and leave an empty view with no explanation. The period
+ * control is drawn whatever state the data is in, because it is the way out
+ * of a period that failed to load.
  *
  * @returns The panel.
  */
@@ -56,47 +58,45 @@ export function InsightsPanel({
         </View>
       ) : null}
 
+      {state.insights?.journey ? <JourneyCard journey={state.insights.journey} /> : null}
+
+      <View style={styles.filters}>
+        <Segmented onChange={state.setRange} options={INSIGHT_RANGES} value={state.range} />
+        {state.currencies.length > 1 ? (
+          <View style={styles.currencies}>
+            {state.currencies.map((block) => (
+              <Chip
+                key={block.currency}
+                label={block.currency}
+                onPress={() => state.setCurrency(block.currency)}
+                selected={state.currencyBlock?.currency === block.currency}
+              />
+            ))}
+          </View>
+        ) : null}
+      </View>
+
       {state.isLoading ? (
         <Spinner label="Adding it all up…" />
       ) : state.insights ? (
-        <>
-          {state.insights.journey ? <JourneyCard journey={state.insights.journey} /> : null}
-
-          <View style={styles.filters}>
-            <Segmented onChange={state.setRange} options={INSIGHT_RANGES} value={state.range} />
-            {state.currencies.length > 1 ? (
-              <View style={styles.currencies}>
-                {state.currencies.map((block) => (
-                  <Chip
-                    key={block.currency}
-                    label={block.currency}
-                    onPress={() => state.setCurrency(block.currency)}
-                    selected={state.currencyBlock?.currency === block.currency}
-                  />
-                ))}
-              </View>
-            ) : null}
-          </View>
-
-          {/* While another period loads, the previous one stays, dimmed:
-              no spinner, no jump in the screen's height. */}
-          <View
-            accessibilityState={{ busy: state.isSwitching }}
-            style={[styles.cards, state.isSwitching ? styles.cardsSwitching : null]}
-          >
-            <SpendingCard
-              activeMonth={state.activeMonth}
-              block={state.currencyBlock}
-              months={state.insights.months}
-              onActivateMonth={state.setActiveMonth}
-              style={styles.full}
-            />
-            <CategoriesCard block={state.currencyBlock} style={half ?? styles.full} />
-            <CompanionsCard companions={state.insights.companions} style={half ?? styles.full} />
-            <PlacesCard groups={state.insights.groups} style={half ?? styles.full} />
-            <SplitTypesCard splitTypes={state.insights.splitTypes} style={half ?? styles.full} />
-          </View>
-        </>
+        // While another period loads, the previous one stays, dimmed: no
+        // spinner, no jump in the screen's height.
+        <View
+          accessibilityState={{ busy: state.isSwitching }}
+          style={[styles.cards, state.isSwitching ? styles.cardsSwitching : null]}
+        >
+          <SpendingCard
+            activeMonth={state.activeMonth}
+            block={state.currencyBlock}
+            months={state.insights.months}
+            onActivateMonth={state.setActiveMonth}
+            style={styles.full}
+          />
+          <CategoriesCard block={state.currencyBlock} style={half ?? styles.full} />
+          <CompanionsCard companions={state.insights.companions} style={half ?? styles.full} />
+          <PlacesCard groups={state.insights.groups} style={half ?? styles.full} />
+          <SplitTypesCard splitTypes={state.insights.splitTypes} style={half ?? styles.full} />
+        </View>
       ) : null}
     </View>
   );

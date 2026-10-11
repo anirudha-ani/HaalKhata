@@ -3,22 +3,22 @@
 import { snapshot } from "@/server/common/db";
 import { UsecaseError } from "@/server/common/errors";
 import { toInt32Cents } from "@/server/common/money";
-import {
-  assembleCurrencyInsights,
-  countExpensesByMonth,
-} from "@/server/personalanalytics/domain/currencyInsights";
+import { assembleCurrencyInsights } from "@/server/personalanalytics/domain/currencyInsights";
 import { insightWindow } from "@/server/personalanalytics/domain/insightWindow";
+import {
+  categorySpendingOf,
+  monthlySpendingOf,
+  placeActivityOf,
+  splitTypeUseOf,
+} from "@/server/personalanalytics/domain/spendingBreakdown";
 import {
   TOP_COMPANION_LIMIT,
   TOP_GROUP_LIMIT,
 } from "@/server/personalanalytics/personalanalytics.constants";
 import {
   findJourney,
-  listCategorySpending,
   listCompanions,
-  listGroupActivity,
-  listMonthlySpending,
-  listSplitTypeCounts,
+  listSpendingBreakdown,
   sumPayments,
 } from "@/server/personalanalytics/repo/insights.repo";
 
@@ -30,10 +30,12 @@ import {
  * statement is keyed on the caller's own id, so the answer is about them
  * and cannot be about anyone else.
  *
- * The statements run inside one snapshot, one at a time on its client. The
- * figures are shown side by side (a total above the months that add up to
- * it), and an expense committing between two statements would otherwise
- * show a total its own chart disagrees with.
+ * Four statements, whatever the size of the caller's history: lifetime
+ * figures, the window's spending grouped once and regrouped here, the
+ * people they split with, and their payments. They run one at a time inside
+ * one snapshot, on its client. The figures are shown side by side (a total
+ * above the months that add up to it), and an expense committing between
+ * two statements would otherwise show a total its own chart disagrees with.
  *
  * @param userId - Id of the authenticated caller.
  * @param options - Window size in months and the caller's current "YYYY-MM".
@@ -52,31 +54,28 @@ export async function getInsights(
     const journey = await findJourney(userId, client);
     if (!journey) throw new UsecaseError("unauthenticated", "account no longer exists");
 
-    const monthlyRows = await listMonthlySpending(userId, window, client);
-    const categoryRows = await listCategorySpending(userId, window, client);
-    const splitTypeRows = await listSplitTypeCounts(userId, window, client);
-    const groupRows = await listGroupActivity(userId, window, TOP_GROUP_LIMIT, client);
+    const breakdownRows = await listSpendingBreakdown(userId, window, client);
     const companionRows = await listCompanions(userId, window, TOP_COMPANION_LIMIT, client);
     const paymentRows = await sumPayments(userId, window.startInstant, client);
 
-    const monthly = monthlyRows.map((monthRow) => ({
-      currency: monthRow.currency,
-      month: monthRow.month,
-      shareCents: Number(monthRow.share_cents),
-      paidCents: Number(monthRow.paid_cents),
-      expenseCount: monthRow.expense_count,
+    const cells = breakdownRows.map((breakdownRow) => ({
+      currency: breakdownRow.currency,
+      month: breakdownRow.month,
+      category: breakdownRow.category,
+      splitType: breakdownRow.split_type,
+      groupId: breakdownRow.group_id ?? "",
+      groupName: breakdownRow.group_name ?? "",
+      groupType: breakdownRow.group_type ?? "",
+      isMember: breakdownRow.is_member,
+      shareCents: Number(breakdownRow.share_cents),
+      paidCents: Number(breakdownRow.paid_cents),
+      expenseCount: breakdownRow.expense_count,
     }));
-    const monthlyExpenseCounts = countExpensesByMonth(window.months, monthly);
     const currencies = assembleCurrencyInsights(
       window.months,
       journey.default_currency,
-      monthly,
-      categoryRows.map((categoryRow) => ({
-        currency: categoryRow.currency,
-        category: categoryRow.category,
-        shareCents: Number(categoryRow.share_cents),
-        expenseCount: categoryRow.expense_count,
-      })),
+      monthlySpendingOf(cells),
+      categorySpendingOf(cells),
       paymentRows.map((paymentRow) => ({
         currency: paymentRow.currency,
         paidCents: Number(paymentRow.paid_cents),
@@ -95,8 +94,6 @@ export async function getInsights(
         receiptScanCount: journey.receipt_scan_count,
       },
       months: window.months,
-      expenseCount: monthlyExpenseCounts.reduce((total, count) => total + count, 0),
-      monthlyExpenseCounts,
       // Every stored amount fits an int32, but a sum of them need not; each
       // total is checked on its way out rather than crashing the encoder.
       currencies: currencies.map((block) => ({
@@ -109,16 +106,11 @@ export async function getInsights(
         categories: block.categories.map((category) => ({
           category: category.category,
           shareCents: toInt32Cents(category.shareCents, "your spending"),
-          expenseCount: category.expenseCount,
         })),
         settledOutCents: toInt32Cents(block.settledOutCents, "what you paid back"),
         settledInCents: toInt32Cents(block.settledInCents, "what you were paid back"),
-        expenseCount: block.expenseCount,
       })),
-      splitTypes: splitTypeRows.map((splitTypeRow) => ({
-        splitType: splitTypeRow.split_type,
-        expenseCount: splitTypeRow.expense_count,
-      })),
+      splitTypes: splitTypeUseOf(cells),
       companions: companionRows.map((companionRow) => ({
         userId: companionRow.id,
         name: companionRow.name,
@@ -126,12 +118,7 @@ export async function getInsights(
         avatarUrl: companionRow.avatar_url ?? "",
         sharedExpenseCount: companionRow.shared_expense_count,
       })),
-      groups: groupRows.map((groupRow) => ({
-        groupId: groupRow.group_id ?? "",
-        name: groupRow.name ?? "",
-        type: groupRow.type ?? "",
-        expenseCount: groupRow.expense_count,
-      })),
+      groups: placeActivityOf(cells, TOP_GROUP_LIMIT),
     };
   });
 }

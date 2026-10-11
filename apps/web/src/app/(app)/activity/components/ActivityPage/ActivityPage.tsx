@@ -15,6 +15,7 @@ import { ActivityFeed } from "./components/ActivityFeed/ActivityFeed";
 import { InsightsPanel } from "./components/InsightsPanel/InsightsPanel";
 import { SIDE_BY_SIDE_QUERY } from "./constants/activityPage";
 import { useActivity } from "./hooks/useActivity";
+import { useInsights } from "./hooks/useInsights";
 
 /**
  * Renders Activity as two views of the same history: the feed (what
@@ -25,17 +26,29 @@ import { useActivity } from "./hooks/useActivity";
  * it opens on the feed: this page is where the notification bell leads, and
  * someone following a badge wants the news before the totals.
  *
- * A view that is not showing is not mounted, so a phone never fetches
- * insights nobody asked to see.
+ * Both views keep their state here, on the page. A view that is not showing
+ * is not mounted and its data is not fetched, but what the person chose in
+ * it (a search, a period, a currency) is still there when they come back.
+ * The two load independently: the feed reloading for another month shows a
+ * spinner in the feed's place only, and leaves the charts beside it alone.
  *
  * @returns The activity page content.
  */
 export function ActivityPage() {
-  const activity = useActivity();
   const hydrated = useHydrated();
   const sideBySide = useMediaQuery(SIDE_BY_SIDE_QUERY);
   const [view, setView] = useState<ActivityView>(DEFAULT_ACTIVITY_VIEW);
-  if (!hydrated || activity.isLoading) return <Spinner label="Loading activity…" />;
+  const activity = useActivity();
+  // Not before hydration: the server render cannot know the screen's width,
+  // and a phone must not fetch insights it will not show.
+  const insights = useInsights(hydrated && (sideBySide || view === "insights"));
+  if (!hydrated) return <Spinner label="Loading activity…" />;
+
+  const feed = activity.isLoading ? (
+    <Spinner label="Loading activity…" />
+  ) : (
+    <ActivityFeed activity={activity} />
+  );
 
   return (
     <div className={`mx-auto space-y-5 ${sideBySide ? "" : "max-w-3xl"}`}>
@@ -53,13 +66,13 @@ export function ActivityPage() {
 
       {sideBySide ? (
         <div className="grid grid-cols-[minmax(0,1fr)_24rem] items-start gap-8">
-          <ActivityFeed activity={activity} />
-          <InsightsPanel showHeading />
+          {feed}
+          <InsightsPanel state={insights} showHeading />
         </div>
       ) : view === "feed" ? (
-        <ActivityFeed activity={activity} />
+        feed
       ) : (
-        <InsightsPanel />
+        <InsightsPanel state={insights} />
       )}
     </div>
   );

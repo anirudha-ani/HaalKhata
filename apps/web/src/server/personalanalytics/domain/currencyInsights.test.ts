@@ -1,7 +1,7 @@
 /** Tests for assembling per-currency insights: zero-filled months, ordering, and currencies kept apart. */
 
 import { describe, expect, it } from "vitest";
-import { assembleCurrencyInsights, countExpensesByMonth } from "./currencyInsights";
+import { assembleCurrencyInsights } from "./currencyInsights";
 
 const MONTHS = ["2026-08", "2026-09", "2026-10"];
 
@@ -15,8 +15,8 @@ describe("assembleCurrencyInsights", () => {
       MONTHS,
       "USD",
       [
-        { currency: "USD", month: "2026-10", shareCents: 4000, paidCents: 9000, expenseCount: 2 },
-        { currency: "USD", month: "2026-08", shareCents: 1500, paidCents: 0, expenseCount: 1 },
+        { currency: "USD", month: "2026-10", shareCents: 4000, paidCents: 9000 },
+        { currency: "USD", month: "2026-08", shareCents: 1500, paidCents: 0 },
       ],
       [],
       [],
@@ -25,7 +25,6 @@ describe("assembleCurrencyInsights", () => {
     expect(block.monthlyShareCents).toEqual([1500, 0, 4000]);
     expect(block.shareCents).toBe(5500);
     expect(block.paidCents).toBe(9000);
-    expect(block.expenseCount).toBe(3);
   });
 
   it("never adds one currency into another", () => {
@@ -33,8 +32,8 @@ describe("assembleCurrencyInsights", () => {
       MONTHS,
       "USD",
       [
-        { currency: "USD", month: "2026-10", shareCents: 1000, paidCents: 1000, expenseCount: 1 },
-        { currency: "EUR", month: "2026-10", shareCents: 700, paidCents: 0, expenseCount: 1 },
+        { currency: "USD", month: "2026-10", shareCents: 1000, paidCents: 1000 },
+        { currency: "EUR", month: "2026-10", shareCents: 700, paidCents: 0 },
       ],
       [],
       [],
@@ -51,9 +50,9 @@ describe("assembleCurrencyInsights", () => {
       MONTHS,
       "USD",
       [
-        { currency: "BDT", month: "2026-10", shareCents: 900000, paidCents: 0, expenseCount: 4 },
-        { currency: "EUR", month: "2026-10", shareCents: 5000, paidCents: 0, expenseCount: 1 },
-        { currency: "USD", month: "2026-10", shareCents: 100, paidCents: 0, expenseCount: 1 },
+        { currency: "BDT", month: "2026-10", shareCents: 900000, paidCents: 0 },
+        { currency: "EUR", month: "2026-10", shareCents: 5000, paidCents: 0 },
+        { currency: "USD", month: "2026-10", shareCents: 100, paidCents: 0 },
       ],
       [],
       [],
@@ -67,9 +66,9 @@ describe("assembleCurrencyInsights", () => {
       MONTHS,
       "USD",
       [
-        { currency: "GBP", month: "2026-10", shareCents: 500, paidCents: 0, expenseCount: 1 },
-        { currency: "EUR", month: "2026-10", shareCents: 500, paidCents: 0, expenseCount: 1 },
-        { currency: "JPY", month: "2026-10", shareCents: 9000, paidCents: 0, expenseCount: 1 },
+        { currency: "GBP", month: "2026-10", shareCents: 500, paidCents: 0 },
+        { currency: "EUR", month: "2026-10", shareCents: 500, paidCents: 0 },
+        { currency: "JPY", month: "2026-10", shareCents: 9000, paidCents: 0 },
       ],
       [],
       [],
@@ -82,12 +81,12 @@ describe("assembleCurrencyInsights", () => {
     const [block] = assembleCurrencyInsights(
       MONTHS,
       "USD",
-      [{ currency: "USD", month: "2026-10", shareCents: 6000, paidCents: 0, expenseCount: 3 }],
+      [{ currency: "USD", month: "2026-10", shareCents: 6000, paidCents: 0 }],
       [
-        { currency: "USD", category: "travel", shareCents: 1000, expenseCount: 1 },
-        { currency: "USD", category: "food", shareCents: 4000, expenseCount: 1 },
-        { currency: "USD", category: "general", shareCents: 1000, expenseCount: 1 },
-        { currency: "EUR", category: "food", shareCents: 99999, expenseCount: 1 },
+        { currency: "USD", category: "travel", shareCents: 1000 },
+        { currency: "USD", category: "food", shareCents: 4000 },
+        { currency: "USD", category: "general", shareCents: 1000 },
+        { currency: "EUR", category: "food", shareCents: 99999 },
       ],
       [],
     );
@@ -117,7 +116,6 @@ describe("assembleCurrencyInsights", () => {
         categories: [],
         settledOutCents: 2500,
         settledInCents: 400,
-        expenseCount: 0,
       },
     ]);
   });
@@ -127,8 +125,8 @@ describe("assembleCurrencyInsights", () => {
       MONTHS,
       "USD",
       [
-        { currency: "USD", month: "2026-07", shareCents: 9999, paidCents: 9999, expenseCount: 9 },
-        { currency: "USD", month: "2026-09", shareCents: 100, paidCents: 0, expenseCount: 1 },
+        { currency: "USD", month: "2026-07", shareCents: 9999, paidCents: 9999 },
+        { currency: "USD", month: "2026-09", shareCents: 100, paidCents: 0 },
       ],
       [],
       [],
@@ -136,21 +134,5 @@ describe("assembleCurrencyInsights", () => {
 
     expect(block.monthlyShareCents).toEqual([0, 100, 0]);
     expect(block.shareCents).toBe(100);
-  });
-});
-
-describe("countExpensesByMonth", () => {
-  it("adds counts across currencies, which money never is", () => {
-    expect(
-      countExpensesByMonth(MONTHS, [
-        { currency: "USD", month: "2026-10", shareCents: 1, paidCents: 0, expenseCount: 2 },
-        { currency: "EUR", month: "2026-10", shareCents: 1, paidCents: 0, expenseCount: 3 },
-        { currency: "USD", month: "2026-08", shareCents: 1, paidCents: 0, expenseCount: 1 },
-      ]),
-    ).toEqual([1, 0, 5]);
-  });
-
-  it("returns a zero for every month of an empty window", () => {
-    expect(countExpensesByMonth(MONTHS, [])).toEqual([0, 0, 0]);
   });
 });

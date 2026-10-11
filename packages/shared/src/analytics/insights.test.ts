@@ -7,10 +7,12 @@ import {
   categoryLabel,
   countLabel,
   currentLocalMonth,
-  foldTail,
   memberDuration,
   monthShortLabel,
   percentLabel,
+  pickActiveMonth,
+  pickCurrencyBlock,
+  rankCategorySpending,
   splitTypeLabel,
 } from "./insights";
 
@@ -82,6 +84,13 @@ describe("memberDuration", () => {
     expect(memberDuration(new Date(2026, 8, 12, 9, 0).toISOString(), nowTime)).toBe("29 days");
   });
 
+  it("reaches a month on the 1st after a month too short to hold the join day", () => {
+    const joined = new Date(2026, 0, 31, 9, 0).toISOString();
+    // February has no 31st: still a day count on its last day.
+    expect(memberDuration(joined, new Date(2026, 1, 28, 12, 0))).toBe("28 days");
+    expect(memberDuration(joined, new Date(2026, 2, 1, 12, 0))).toBe("1 month");
+  });
+
   it("switches to years, with the leftover months", () => {
     expect(memberDuration(new Date(2025, 9, 11, 9, 0).toISOString(), nowTime)).toBe("1 year");
     expect(memberDuration(new Date(2024, 5, 1, 9, 0).toISOString(), nowTime)).toBe(
@@ -140,42 +149,114 @@ describe("averagePerMonth", () => {
   });
 });
 
-describe("foldTail", () => {
-  /** Sums a tail into one entry labelled "other". */
-  const fold = (tail: readonly { name: string; value: number }[]) => ({
-    name: "other",
-    value: tail.reduce((total, entry) => total + entry.value, 0),
-  });
-  const ranked = [
-    { name: "food", value: 50 },
-    { name: "travel", value: 30 },
-    { name: "housing", value: 10 },
-    { name: "health", value: 6 },
-    { name: "shopping", value: 4 },
+describe("rankCategorySpending", () => {
+  /**
+   * Builds a category row.
+   *
+   * @param category - Category key.
+   * @param shareCents - The person's share.
+   * @returns The row.
+   */
+  const share = (category: string, shareCents: number) => ({ category, shareCents });
+  const sixCategories = [
+    share("food", 5000),
+    share("travel", 3000),
+    share("housing", 1000),
+    share("health", 600),
+    share("shopping", 400),
+    share("transport", 200),
   ];
 
-  it("leaves a list that already fits alone", () => {
-    expect(foldTail(ranked, 5, fold)).toEqual(ranked);
-    expect(foldTail(ranked.slice(0, 2), 5, fold)).toEqual(ranked.slice(0, 2));
+  it("leaves a list that already fits alone, largest first", () => {
+    expect(rankCategorySpending([share("travel", 3000), share("food", 5000)], 5)).toEqual([
+      share("food", 5000),
+      share("travel", 3000),
+    ]);
   });
 
-  it("folds everything past the head into one trailing entry", () => {
-    expect(foldTail(ranked, 3, fold)).toEqual([
-      { name: "food", value: 50 },
-      { name: "travel", value: 30 },
-      { name: "other", value: 20 },
+  it("drops a category with no share of the person's own in it", () => {
+    expect(rankCategorySpending([share("food", 5000), share("general", 0)], 5)).toEqual([
+      share("food", 5000),
+    ]);
+  });
+
+  it("folds everything past the head into one trailing row", () => {
+    expect(rankCategorySpending(sixCategories, 5)).toEqual([
+      share("food", 5000),
+      share("travel", 3000),
+      share("housing", 1000),
+      share("health", 600),
+      share("other", 600),
     ]);
   });
 
   it("loses nothing: the folded list adds up to the original", () => {
-    const total = (entries: readonly { value: number }[]) =>
-      entries.reduce((runningTotal, entry) => runningTotal + entry.value, 0);
-    expect(total(foldTail(ranked, 2, fold))).toBe(total(ranked));
+    const total = (entries: readonly { shareCents: number }[]) =>
+      entries.reduce((running, entry) => running + entry.shareCents, 0);
+    expect(total(rankCategorySpending(sixCategories, 3))).toBe(total(sixCategories));
+  });
+
+  it("merges a real 'other' category into the folded row instead of showing two", () => {
+    // The real "other" ranks second, well inside the head.
+    const withRealOther = [...sixCategories, share("other", 4000)];
+
+    const ranked = rankCategorySpending(withRealOther, 5);
+
+    expect(ranked.map((entry) => entry.category)).toEqual([
+      "food",
+      "travel",
+      "housing",
+      "health",
+      "other",
+    ]);
+    expect(new Set(ranked.map((entry) => entry.category)).size).toBe(ranked.length);
+    // The real row (4000) plus the two folded small ones (400 + 200).
+    expect(ranked[4]).toEqual(share("other", 4600));
+  });
+
+  it("keeps a real 'other' in its own ranked place when nothing is folded", () => {
+    expect(
+      rankCategorySpending([share("food", 100), share("other", 900), share("travel", 500)], 5),
+    ).toEqual([share("other", 900), share("travel", 500), share("food", 100)]);
   });
 
   it("does not mutate the list it was given", () => {
-    const copy = [...ranked];
-    foldTail(ranked, 2, fold);
-    expect(ranked).toEqual(copy);
+    const original = [...sixCategories];
+    rankCategorySpending(sixCategories, 2);
+    expect(sixCategories).toEqual(original);
+  });
+});
+
+describe("pickCurrencyBlock", () => {
+  const blocks = [{ currency: "USD" }, { currency: "EUR" }];
+
+  it("shows the chosen currency when the data has it", () => {
+    expect(pickCurrencyBlock(blocks, "EUR")).toBe(blocks[1]);
+  });
+
+  it("falls back to the first block for no choice or one the data lacks", () => {
+    expect(pickCurrencyBlock(blocks, "")).toBe(blocks[0]);
+    expect(pickCurrencyBlock(blocks, "JPY")).toBe(blocks[0]);
+  });
+
+  it("has nothing to show when there is no money in the window", () => {
+    expect(pickCurrencyBlock([], "USD")).toBeUndefined();
+  });
+});
+
+describe("pickActiveMonth", () => {
+  const months = ["2026-08", "2026-09", "2026-10"];
+
+  it("keeps a chosen month that is still in the window", () => {
+    expect(pickActiveMonth(months, "2026-09")).toBe("2026-09");
+  });
+
+  it("falls back to the newest month", () => {
+    expect(pickActiveMonth(months, "")).toBe("2026-10");
+    expect(pickActiveMonth(months, "2025-01")).toBe("2026-10");
+  });
+
+  it("is empty for an empty window", () => {
+    expect(pickActiveMonth([], "2026-10")).toBe("");
   });
 });

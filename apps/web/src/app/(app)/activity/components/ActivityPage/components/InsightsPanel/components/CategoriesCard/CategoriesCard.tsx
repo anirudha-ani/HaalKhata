@@ -7,10 +7,8 @@ import { CATEGORY_EMOJI } from "@/components/expenses/ExpenseList/constants/cate
 import {
   categoryLabel,
   FALLBACK_CATEGORY_EMOJI,
-  foldTail,
-  OTHER_CATEGORY,
   percentLabel,
-  RANKED_LIST_LIMIT,
+  rankCategorySpending,
 } from "@haalkhata/shared/analytics/insights";
 import { formatMoney } from "@haalkhata/shared/money/money";
 import { InsightCard } from "../InsightCard/InsightCard";
@@ -18,9 +16,8 @@ import { InsightCard } from "../InsightCard/InsightCard";
 /**
  * Renders the person's share by category, largest first, with the small
  * categories folded into one "Other" row so the list stays a glance long.
- *
- * A category they only paid for on someone else's behalf has no share of
- * theirs in it and is left out: it is not somewhere their money went.
+ * Which rows there are is decided by the shared `rankCategorySpending`, so
+ * the website and the mobile app always list the same ones.
  *
  * @param props - Component props.
  * @returns The card, or nothing when there is no spending to break down.
@@ -31,15 +28,8 @@ export function CategoriesCard({
   /** The window's money in the chosen currency; undefined when there is none. */
   block: CurrencyInsights | undefined;
 }) {
-  const spent = (block?.categories ?? []).filter((entry) => entry.shareCents > 0);
-  if (!block || spent.length === 0) return null;
-
-  const ranked = foldTail(spent, RANKED_LIST_LIMIT, (tail) => ({
-    ...tail[0],
-    category: OTHER_CATEGORY,
-    shareCents: tail.reduce((total, entry) => total + entry.shareCents, 0),
-    expenseCount: tail.reduce((total, entry) => total + entry.expenseCount, 0),
-  }));
+  const ranked = rankCategorySpending(block?.categories ?? []);
+  if (!block || ranked.length === 0) return null;
 
   return (
     <InsightCard title="Where it went" subtitle="Your share, by category.">

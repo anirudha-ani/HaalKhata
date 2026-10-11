@@ -33,21 +33,16 @@ message GetInsightsResponse {
   // Every per-month list in this response has one entry per month here, in
   // this order, zeros included.
   repeated string months = 2;
-  // Live expenses the caller is on in the window, across currencies. A
-  // count, so adding across currencies is sound; money never is.
-  int32 expense_count = 3;
-  // The same count per month of `months`.
-  repeated int32 monthly_expense_counts = 4;
   // One entry per currency the caller spent or settled in during the
   // window: their default currency first, then by how much they spent.
   // Kept apart because a dollar and a euro are not the same cent.
-  repeated CurrencyInsights currencies = 5;
+  repeated CurrencyInsights currencies = 3;
   // How the window's expenses were split, most used first.
-  repeated SplitTypeCount split_types = 6;
+  repeated SplitTypeCount split_types = 4;
   // The people the caller shared the most expenses with, most first.
-  repeated Companion companions = 7;
+  repeated Companion companions = 5;
   // Where the window's expenses happened, busiest first.
-  repeated GroupActivity groups = 8;
+  repeated GroupActivity groups = 6;
 }
 
 // How long the caller has been here and what they have done in total.
@@ -86,15 +81,12 @@ message CurrencyInsights {
   int32 settled_out_cents = 6;
   // Payments the caller received during the window.
   int32 settled_in_cents = 7;
-  // Live expenses in this currency the caller is on in the window.
-  int32 expense_count = 8;
 }
 
 message CategorySpending {
   // An expense category key, e.g. "food"; see the shared CATEGORIES list.
   string category = 1;
   int32 share_cents = 2;
-  int32 expense_count = 3;
 }
 
 message SplitTypeCount {
@@ -119,4 +111,8 @@ message GroupActivity {
   string name = 2;
   string type = 3;
   int32 expense_count = 4;
+  // Whether the caller still belongs to the group. Their expenses in a
+  // group they have since left are still theirs and still counted, but the
+  // group's page is closed to them, so a client must not link to it.
+  bool is_member = 5;
 }

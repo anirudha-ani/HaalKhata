@@ -101,138 +101,70 @@ export async function findJourney(
   );
 }
 
-/** One currency's spending in one calendar month. */
-export interface MonthlySpendingRow {
+/**
+ * The window's expenses, grouped as finely as the dashboard ever slices
+ * them: one row per currency, month, category, split type and group that
+ * has any expense. Sums arrive as text: pg does not narrow BIGINT.
+ */
+export interface SpendingBreakdownRow {
   currency: string;
   /** "YYYY-MM". */
   month: string;
+  category: string;
+  split_type: string;
+  /** Null for expenses outside any group. */
+  group_id: string | null;
+  group_name: string | null;
+  group_type: string | null;
+  /** Whether the person still belongs to that group; false outside any group. */
+  is_member: boolean;
   share_cents: string;
   paid_cents: string;
   expense_count: number;
 }
 
 /**
- * A person's share and outlay per currency per month of the window.
+ * Reads the window's spending once, grouped by every dimension the
+ * dashboard shows it by.
+ *
+ * The monthly chart, the category list, the split-type list and the list of
+ * places are four regroupings of the same rows. Asking the database for
+ * each separately would walk the person's whole split and payer history
+ * four times; this walks it once and leaves the regrouping, which is a few
+ * hundred rows at most, to the caller.
+ *
+ * Group names and membership are joined after the grouping, onto the
+ * handful of grouped rows rather than onto every expense.
  *
  * @param userId - The person asking about themselves.
  * @param bounds - The window's calendar-day range.
  * @param client - The snapshot's client.
- * @returns One row per currency and month that has any expense.
+ * @returns One row per combination that has any expense.
  */
-export async function listMonthlySpending(
+export async function listSpendingBreakdown(
   userId: string,
   bounds: InsightBounds,
   client: PoolClient,
-): Promise<MonthlySpendingRow[]> {
-  return query<MonthlySpendingRow>(
-    `${MY_EXPENSES}
-     SELECT mine.currency, substr(mine.expense_date, 1, 7) AS month,
-            SUM(mine.share_cents)::bigint AS share_cents,
-            SUM(mine.paid_cents)::bigint AS paid_cents,
-            COUNT(*)::int AS expense_count
-       FROM mine
-      GROUP BY mine.currency, month`,
+): Promise<SpendingBreakdownRow[]> {
+  return query<SpendingBreakdownRow>(
+    `${MY_EXPENSES}, breakdown AS (
+       SELECT mine.currency, substr(mine.expense_date, 1, 7) AS month,
+              mine.category, mine.split_type, mine.group_id,
+              SUM(mine.share_cents)::bigint AS share_cents,
+              SUM(mine.paid_cents)::bigint AS paid_cents,
+              COUNT(*)::int AS expense_count
+         FROM mine
+        GROUP BY mine.currency, month, mine.category, mine.split_type, mine.group_id
+     )
+     SELECT breakdown.currency, breakdown.month, breakdown.category, breakdown.split_type,
+            breakdown.group_id, grp.name AS group_name, grp.type AS group_type,
+            (mem.user_id IS NOT NULL) AS is_member,
+            breakdown.share_cents, breakdown.paid_cents, breakdown.expense_count
+       FROM breakdown
+       LEFT JOIN groups grp ON grp.id = breakdown.group_id
+       LEFT JOIN group_members mem
+              ON mem.group_id = breakdown.group_id AND mem.user_id = $1`,
     [userId, bounds.startDate, bounds.endDate],
-    client,
-  );
-}
-
-/** One currency's spending in one expense category. */
-export interface CategorySpendingRow {
-  currency: string;
-  category: string;
-  share_cents: string;
-  expense_count: number;
-}
-
-/**
- * A person's share per currency per category over the window.
- *
- * @param userId - The person asking about themselves.
- * @param bounds - The window's calendar-day range.
- * @param client - The snapshot's client.
- * @returns One row per currency and category that has any expense.
- */
-export async function listCategorySpending(
-  userId: string,
-  bounds: InsightBounds,
-  client: PoolClient,
-): Promise<CategorySpendingRow[]> {
-  return query<CategorySpendingRow>(
-    `${MY_EXPENSES}
-     SELECT mine.currency, mine.category,
-            SUM(mine.share_cents)::bigint AS share_cents,
-            COUNT(*)::int AS expense_count
-       FROM mine
-      GROUP BY mine.currency, mine.category`,
-    [userId, bounds.startDate, bounds.endDate],
-    client,
-  );
-}
-
-/** How many of the window's expenses used one split type. */
-export interface SplitTypeCountRow {
-  split_type: string;
-  expense_count: number;
-}
-
-/**
- * How the window's expenses were split.
- *
- * @param userId - The person asking about themselves.
- * @param bounds - The window's calendar-day range.
- * @param client - The snapshot's client.
- * @returns One row per split type in use, most used first.
- */
-export async function listSplitTypeCounts(
-  userId: string,
-  bounds: InsightBounds,
-  client: PoolClient,
-): Promise<SplitTypeCountRow[]> {
-  return query<SplitTypeCountRow>(
-    `${MY_EXPENSES}
-     SELECT mine.split_type, COUNT(*)::int AS expense_count
-       FROM mine
-      GROUP BY mine.split_type
-      ORDER BY expense_count DESC, mine.split_type`,
-    [userId, bounds.startDate, bounds.endDate],
-    client,
-  );
-}
-
-/** How many of the window's expenses happened in one place. */
-export interface GroupActivityRow {
-  /** Null for expenses outside any group. */
-  group_id: string | null;
-  name: string | null;
-  type: string | null;
-  expense_count: number;
-}
-
-/**
- * Where the window's expenses happened: the busiest groups, with expenses
- * outside any group as one row of their own.
- *
- * @param userId - The person asking about themselves.
- * @param bounds - The window's calendar-day range.
- * @param limit - Most rows to return.
- * @param client - The snapshot's client.
- * @returns Rows, busiest first.
- */
-export async function listGroupActivity(
-  userId: string,
-  bounds: InsightBounds,
-  limit: number,
-  client: PoolClient,
-): Promise<GroupActivityRow[]> {
-  return query<GroupActivityRow>(
-    `${MY_EXPENSES}
-     SELECT mine.group_id, grp.name, grp.type, COUNT(*)::int AS expense_count
-       FROM mine LEFT JOIN groups grp ON grp.id = mine.group_id
-      GROUP BY mine.group_id, grp.name, grp.type
-      ORDER BY expense_count DESC, grp.name NULLS LAST, mine.group_id
-      LIMIT $4`,
-    [userId, bounds.startDate, bounds.endDate, limit],
     client,
   );
 }

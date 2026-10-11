@@ -80,12 +80,20 @@ of it. The dashboard charts the first and states the second.
 
 ## Consistency and Cost
 
+- **Four statements per call, whatever the size of the history:** lifetime
+  figures, the window's spending, the people split with, and payments. There
+  is no query per row anywhere.
+- The window's spending is read **once**, grouped by currency, month,
+  category, split type and group, and regrouped in the domain layer into the
+  monthly chart, the category list, the split-type list and the list of
+  places. Those are four views of the same rows; four queries would walk the
+  caller's split and payer history four times.
 - The statements run one at a time inside one `snapshot()` (REPEATABLE READ,
   READ ONLY), so the total at the top of the dashboard always equals the
   months charted beneath it.
-- Every windowed statement is driven from `idx_splits_user` and
-  `idx_payers_user` and joins `expenses` by primary key: the cost follows the
-  size of the caller's own history, not the size of the table.
+- Every statement is driven from `idx_splits_user` and `idx_payers_user` and
+  joins `expenses` by primary key: the cost follows the size of the caller's
+  own history, not the size of the table.
 
 ## Rate Limits (this service)
 
@@ -130,12 +138,20 @@ of it. The dashboard charts the first and states the second.
 | --- | --- | --- |
 | journey | Journey | Lifetime figures (below). Not bounded by the window. |
 | months | repeated string | The window's months, `YYYY-MM`, oldest first, no gaps. Every per-month list has one entry per month here, zeros included. |
-| expense_count | int32 | Live expenses the caller is on in the window, across currencies. |
-| monthly_expense_counts | repeated int32 | The same count per month of `months`. |
 | currencies | repeated CurrencyInsights | One block per currency, default first, then by spending. |
 | split_types | repeated SplitTypeCount | How the window's expenses were split, most used first. |
 | companions | repeated Companion | The five people the caller shared the most expenses with. |
 | groups | repeated GroupActivity | The five busiest places; an empty `group_id` is the row for expenses outside any group. |
+
+**GroupActivity:**
+
+| Field | Type | Description |
+| --- | --- | --- |
+| group_id | string | Empty for expenses outside any group. |
+| name | string | The group's name; empty outside any group. |
+| type | string | The group's type; empty outside any group. |
+| expense_count | int32 | The caller's expenses there in the window. |
+| is_member | bool | Whether the caller still belongs to the group. Expenses in a group they have left are still counted, but clients must not link to a page that is closed to them. |
 
 **Journey:**
 
@@ -160,4 +176,3 @@ of it. The dashboard charts the first and states the second.
 | categories | repeated CategorySpending | `share_cents` by expense category, largest first. |
 | settled_out_cents | int32 | Payments they made during the window. |
 | settled_in_cents | int32 | Payments they received during the window. |
-| expense_count | int32 | Live expenses in this currency in the window. |

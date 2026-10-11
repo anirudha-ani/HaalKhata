@@ -3,9 +3,9 @@
 
 import type { CurrencyInsights } from "@haalkhata/protogen/personalanalytics/v1/personalanalytics_pb";
 import { ColumnChart } from "@/components/charts/ColumnChart/ColumnChart";
-import { monthLabel } from "@haalkhata/shared/activity/format";
-import { compactMoney, moneyCeiling } from "@haalkhata/shared/analytics/chart";
-import { averagePerMonth, monthShortLabel } from "@haalkhata/shared/analytics/insights";
+import { compactMoney } from "@haalkhata/shared/analytics/chart";
+import { averagePerMonth } from "@haalkhata/shared/analytics/insights";
+import { spendingColumns } from "@haalkhata/shared/analytics/spendingChart";
 import { formatMoney } from "@haalkhata/shared/money/money";
 import { InsightCard } from "../InsightCard/InsightCard";
 
@@ -51,20 +51,7 @@ export function SpendingCard({
   }
 
   const currency = block.currency;
-  const columns = months.map((month, index) => {
-    const cents = block.monthlyShareCents[index] ?? 0;
-    return {
-      key: month,
-      axisLabel: monthShortLabel(month),
-      name: monthLabel(month),
-      value: cents,
-      valueLabel: formatMoney(cents, currency),
-    };
-  });
-  const ceiling = moneyCeiling(
-    columns.reduce((maximum, column) => Math.max(maximum, column.value), 0),
-    currency,
-  );
+  const { columns, ceiling } = spendingColumns(months, block.monthlyShareCents, currency);
   const active = columns.find((column) => column.key === activeMonth);
 
   return (

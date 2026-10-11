@@ -141,9 +141,12 @@ export function memberSinceLabel(memberSince: string): string {
  * "a few hours", "12 days", "3 months", "1 year", "2 years, 4 months".
  * Each reads as the end of "Member for ...".
  *
- * Counted in calendar terms rather than by dividing milliseconds: someone
- * who joined on 31 January has been here "1 month" on 28 February, not
- * "28 days".
+ * Counted by the calendar, not by dividing milliseconds by thirty: a month
+ * has passed when the day of the month comes round again, so someone who
+ * joined on the 15th has been here "1 month" on the 15th of the next month,
+ * whether that month had 28 days or 31. Someone who joined on a day the
+ * next month does not have (the 31st, into February) reaches "1 month" on
+ * the 1st of the month after, and reads as a day count until then.
  *
  * @param memberSince - RFC 3339 instant they joined.
  * @param nowTime - The current time; injected so this stays testable.
@@ -215,24 +218,90 @@ export function averagePerMonth(totalCents: number, monthCount: number): number 
   return monthCount > 0 ? Math.round(totalCents / monthCount) : 0;
 }
 
+/** One category's share of someone's spending, as both apps receive it. */
+export interface CategoryShare {
+  /** An expense category key, e.g. "food". */
+  category: string;
+  /** Their share in that category, in the currency's minor units. */
+  shareCents: number;
+}
+
 /**
- * Keeps the head of a ranked list and folds everything after it into one
- * trailing entry, so a long tail of small categories reads as "Other"
- * instead of pushing the chart off the screen. The folded entry takes one of
- * the rows itself, so it always stands for at least two entries: a single
- * leftover is never swapped for a row that only hides its name.
+ * Turns a currency's categories into the rows of the "where it went" list:
+ * largest first, at most `limit` rows, with everything past the head folded
+ * into one trailing "Other" row so a long tail of small categories does not
+ * push the list off the screen.
  *
- * @param ranked - Entries, largest first.
+ * Categories with no share are left out. Someone who only paid for a
+ * category on another person's behalf did not spend anything in it.
+ *
+ * "other" is also a real category that older expenses carry. When a fold
+ * happens, that real row goes into the folded one rather than standing
+ * beside it: two rows both called "Other" would be indistinguishable, and
+ * they would share a key. When everything fits, nothing is folded and a
+ * real "other" keeps its own place in the ranking.
+ *
+ * The folded row takes one of the rows itself, so it always stands for at
+ * least two categories: a single leftover is never swapped for a row that
+ * only hides its name.
+ *
+ * @param categories - One currency's categories, in any order.
  * @param limit - How many rows the list may show, the folded one included.
- * @param fold - Builds the trailing entry from the entries it replaces.
- * @returns At most `limit` entries.
+ * @returns At most `limit` rows, each with a distinct category key.
  */
-export function foldTail<Entry>(
-  ranked: readonly Entry[],
-  limit: number,
-  fold: (tail: readonly Entry[]) => Entry,
-): Entry[] {
-  if (ranked.length <= limit) return [...ranked];
-  const head = ranked.slice(0, Math.max(limit - 1, 0));
-  return [...head, fold(ranked.slice(head.length))];
+export function rankCategorySpending(
+  categories: readonly CategoryShare[],
+  limit: number = RANKED_LIST_LIMIT,
+): CategoryShare[] {
+  const spent = categories
+    .filter((entry) => entry.shareCents > 0)
+    .map((entry) => ({ category: entry.category, shareCents: entry.shareCents }))
+    .sort(
+      (first, second) =>
+        second.shareCents - first.shareCents || first.category.localeCompare(second.category),
+    );
+  if (spent.length <= limit) return spent;
+
+  const head = spent
+    .filter((entry) => entry.category !== OTHER_CATEGORY)
+    .slice(0, Math.max(limit - 1, 0));
+  const kept = new Set(head.map((entry) => entry.category));
+  const tail = spent.filter((entry) => !kept.has(entry.category));
+  return [
+    ...head,
+    {
+      category: OTHER_CATEGORY,
+      shareCents: tail.reduce((total, entry) => total + entry.shareCents, 0),
+    },
+  ];
+}
+
+/**
+ * Resolves which currency's figures to show. A choice that the loaded data
+ * no longer contains (a currency with no spending in a shorter window)
+ * falls back to the first block, which the server makes the person's
+ * default currency; the choice itself is kept by the caller, so widening
+ * the window again restores it.
+ *
+ * @param currencies - The loaded per-currency blocks, default currency first.
+ * @param chosenCurrency - The currency the person picked; "" for none.
+ * @returns The block to show, or undefined when there is no money to show.
+ */
+export function pickCurrencyBlock<Block extends { currency: string }>(
+  currencies: readonly Block[],
+  chosenCurrency: string,
+): Block | undefined {
+  return currencies.find((block) => block.currency === chosenCurrency) ?? currencies[0];
+}
+
+/**
+ * Resolves which month is selected. A month that has scrolled out of the
+ * window falls back to the newest one, the one a person looks for first.
+ *
+ * @param months - The window's "YYYY-MM" keys, oldest first.
+ * @param chosenMonth - The month the person picked; "" for none.
+ * @returns The selected month's key, or "" for an empty window.
+ */
+export function pickActiveMonth(months: readonly string[], chosenMonth: string): string {
+  return months.includes(chosenMonth) ? chosenMonth : (months[months.length - 1] ?? "");
 }

@@ -299,12 +299,10 @@ describe.skipIf(!reachable)("getInsights against Postgres", () => {
     });
   });
 
-  it("lays the window out month by month", async () => {
+  it("covers whole months, oldest first", async () => {
     const insights = await getInsights(CALLER, { months: 2, localMonth: "" });
 
     expect(insights.months).toEqual([LAST_MONTH, THIS_MONTH]);
-    expect(insights.expenseCount).toBe(4);
-    expect(insights.monthlyExpenseCounts).toEqual([1, 3]);
   });
 
   it("keeps each currency's share, outlay and settling apart", async () => {
@@ -319,23 +317,21 @@ describe.skipIf(!reachable)("getInsights against Postgres", () => {
         paidCents: 14000,
         monthlyShareCents: [1000, 5000],
         categories: [
-          { category: "food", shareCents: 5000, expenseCount: 1 },
-          { category: "transport", shareCents: 1000, expenseCount: 1 },
-          { category: "general", shareCents: 0, expenseCount: 1 },
+          { category: "food", shareCents: 5000 },
+          { category: "transport", shareCents: 1000 },
+          { category: "general", shareCents: 0 },
         ],
         settledOutCents: 1500,
         settledInCents: 500,
-        expenseCount: 3,
       },
       {
         currency: "EUR",
         shareCents: 2000,
         paidCents: 0,
         monthlyShareCents: [0, 2000],
-        categories: [{ category: "food", shareCents: 2000, expenseCount: 1 }],
+        categories: [{ category: "food", shareCents: 2000 }],
         settledOutCents: 0,
         settledInCents: 0,
-        expenseCount: 1,
       },
     ]);
   });
@@ -365,17 +361,43 @@ describe.skipIf(!reachable)("getInsights against Postgres", () => {
       },
     ]);
     expect(insights.groups).toEqual([
-      { groupId: "", name: "", type: "", expenseCount: 3 },
-      { groupId: "grp-trip", name: "Cox's Bazar", type: "trip", expenseCount: 1 },
+      { groupId: "", name: "", type: "", isMember: false, expenseCount: 3 },
+      { groupId: "grp-trip", name: "Cox's Bazar", type: "trip", isMember: true, expenseCount: 1 },
     ]);
+  });
+
+  it("still counts a group the caller has left, and says they are no longer in it", async () => {
+    // Anika left the trip after the dinner; her share of it is still hers.
+    await database.query(`DELETE FROM group_members WHERE group_id = 'grp-trip' AND user_id = $1`, [
+      ANIKA,
+    ]);
+    try {
+      const insights = await getInsights(ANIKA, { months: 2, localMonth: "" });
+
+      expect(insights.groups.find((place) => place.groupId === "grp-trip")).toEqual({
+        groupId: "grp-trip",
+        name: "Cox's Bazar",
+        type: "trip",
+        isMember: false,
+        expenseCount: 1,
+      });
+      expect(insights.groups.find((place) => place.groupId === "grp-theirs")).toMatchObject({
+        isMember: true,
+      });
+    } finally {
+      await database.query(
+        `INSERT INTO group_members (group_id, user_id, role) VALUES ('grp-trip', $1, 'member')`,
+        [ANIKA],
+      );
+    }
   });
 
   it("widens to the older expense when the window does", async () => {
     const insights = await getInsights(CALLER, { months: 24, localMonth: "" });
 
     expect(insights.months).toHaveLength(24);
-    // 30 months back is still outside two years.
-    expect(insights.expenseCount).toBe(4);
+    // 30 months back is still outside two years: the same four expenses.
+    expect(insights.splitTypes.reduce((count, entry) => count + entry.expenseCount, 0)).toBe(4);
   });
 
   it("returns an empty dashboard, not an error, for someone with no history", async () => {
@@ -390,8 +412,8 @@ describe.skipIf(!reachable)("getInsights against Postgres", () => {
       receiptScanCount: 0,
     });
     expect(insights.months).toHaveLength(3);
-    expect(insights.monthlyExpenseCounts).toEqual([0, 0, 0]);
     expect(insights.currencies).toEqual([]);
+    expect(insights.splitTypes).toEqual([]);
     expect(insights.companions).toEqual([]);
     expect(insights.groups).toEqual([]);
   });
@@ -401,7 +423,7 @@ describe.skipIf(!reachable)("getInsights against Postgres", () => {
 
     // Rifat fronted the euro bill and owes half of the one in Anika's group;
     // nothing of the caller's dinner, cab or treat reaches him.
-    expect(insights.expenseCount).toBe(2);
+    expect(insights.splitTypes.reduce((count, entry) => count + entry.expenseCount, 0)).toBe(2);
     expect(
       insights.currencies.map((block) => [block.currency, block.shareCents, block.paidCents]),
     ).toEqual([

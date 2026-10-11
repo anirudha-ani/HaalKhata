@@ -7,7 +7,6 @@ export interface MonthlySpending {
   month: string;
   shareCents: number;
   paidCents: number;
-  expenseCount: number;
 }
 
 /** One currency's spending in one expense category. */
@@ -15,7 +14,6 @@ export interface CategorySpending {
   currency: string;
   category: string;
   shareCents: number;
-  expenseCount: number;
 }
 
 /** What was paid and received settling up in one currency. */
@@ -33,10 +31,9 @@ export interface CurrencyInsights {
   /** One entry per month of the window, zeros included. */
   monthlyShareCents: number[];
   /** Largest share first. */
-  categories: { category: string; shareCents: number; expenseCount: number }[];
+  categories: { category: string; shareCents: number }[];
   settledOutCents: number;
   settledInCents: number;
-  expenseCount: number;
 }
 
 /**
@@ -76,7 +73,6 @@ export function assembleCurrencyInsights(
         categories: [],
         settledOutCents: 0,
         settledInCents: 0,
-        expenseCount: 0,
       };
       blocks.set(currency, block);
     }
@@ -91,14 +87,12 @@ export function assembleCurrencyInsights(
     const block = blockFor(spending.currency);
     block.shareCents += spending.shareCents;
     block.paidCents += spending.paidCents;
-    block.expenseCount += spending.expenseCount;
     block.monthlyShareCents[position] += spending.shareCents;
   }
   for (const spending of categories) {
     blockFor(spending.currency).categories.push({
       category: spending.category,
       shareCents: spending.shareCents,
-      expenseCount: spending.expenseCount,
     });
   }
   for (const totals of payments) {
@@ -118,24 +112,4 @@ export function assembleCurrencyInsights(
     if (second.currency === defaultCurrency) return 1;
     return second.shareCents - first.shareCents || first.currency.localeCompare(second.currency);
   });
-}
-
-/**
- * Counts the window's expenses per month, across currencies.
- *
- * @param months - The window's "YYYY-MM" keys, oldest first.
- * @param monthly - Spending grouped by currency and month.
- * @returns One count per month of the window, zeros included.
- */
-export function countExpensesByMonth(
-  months: readonly string[],
-  monthly: readonly MonthlySpending[],
-): number[] {
-  const monthIndex = new Map(months.map((month, index) => [month, index]));
-  const counts = months.map(() => 0);
-  for (const spending of monthly) {
-    const position = monthIndex.get(spending.month);
-    if (position !== undefined) counts[position] += spending.expenseCount;
-  }
-  return counts;
 }

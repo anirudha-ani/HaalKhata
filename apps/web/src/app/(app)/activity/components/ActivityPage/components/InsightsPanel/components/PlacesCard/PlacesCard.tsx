@@ -13,8 +13,9 @@ import { InsightCard } from "../InsightCard/InsightCard";
 
 /**
  * Renders the busiest places the person split in over the window: their
- * groups, plus one row for expenses outside any group. A group's row leads
- * to the group; the outside-groups row has nowhere of its own to lead.
+ * groups, plus one row for expenses outside any group. A row leads to the
+ * group when the person is still in it; the outside-groups row, and a group
+ * they have since left, have nowhere they can be taken.
  *
  * @param props - Component props.
  * @returns The card, or nothing when there were no expenses.
@@ -41,7 +42,9 @@ export function PlacesCard({
             label: outside ? OUTSIDE_GROUPS_LABEL : place.name,
             value: place.expenseCount,
             valueLabel: countLabel(place.expenseCount, "expense"),
-            href: outside ? undefined : `/groups/${place.groupId}`,
+            // A group they have left is still part of their history, but
+            // its page is closed to them: a link there would lead to a refusal.
+            href: place.isMember ? `/groups/${place.groupId}` : undefined,
           };
         })}
       />

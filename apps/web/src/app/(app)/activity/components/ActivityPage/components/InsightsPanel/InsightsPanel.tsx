@@ -5,13 +5,13 @@ import { RotateCw } from "lucide-react";
 import { SegmentedControl } from "@/components/ui/SegmentedControl/SegmentedControl";
 import { Spinner } from "@/components/ui/Spinner/Spinner";
 import { INSIGHT_RANGES } from "@haalkhata/shared/analytics/insights";
+import type { useInsights } from "../../hooks/useInsights";
 import { CategoriesCard } from "./components/CategoriesCard/CategoriesCard";
 import { CompanionsCard } from "./components/CompanionsCard/CompanionsCard";
 import { JourneyCard } from "./components/JourneyCard/JourneyCard";
 import { PlacesCard } from "./components/PlacesCard/PlacesCard";
 import { SpendingCard } from "./components/SpendingCard/SpendingCard";
 import { SplitTypesCard } from "./components/SplitTypesCard/SplitTypesCard";
-import { useInsights } from "./hooks/useInsights";
 
 /**
  * Renders the insights dashboard: lifetime figures, then one row of filters
@@ -23,6 +23,11 @@ import { useInsights } from "./hooks/useInsights";
  * same currency. The lifetime card is above that row because the period
  * does not touch it.
  *
+ * The period control is drawn whatever state the data is in. It is the way
+ * out of a period that failed to load: hiding it with the charts would
+ * leave only "Try again" on the request that just failed, and no way back
+ * to the period that was working.
+ *
  * Laid out by its own width, not the viewport's: one column as a rail
  * beside the feed or on a phone, two when it has a page to itself.
  *
@@ -30,13 +35,14 @@ import { useInsights } from "./hooks/useInsights";
  * @returns The panel.
  */
 export function InsightsPanel({
+  state,
   showHeading = false,
 }: {
+  /** The dashboard's data and controls, from the page's `useInsights`. */
+  state: ReturnType<typeof useInsights>;
   /** Whether to title the panel; true when it shares the page with the feed. */
   showHeading?: boolean;
 }) {
-  const state = useInsights();
-
   return (
     <section className="@container space-y-4" aria-label="Your insights">
       {showHeading ? <h2 className="text-xl font-semibold">Insights</h2> : null}
@@ -57,57 +63,55 @@ export function InsightsPanel({
         </div>
       ) : null}
 
+      {state.insights?.journey ? <JourneyCard journey={state.insights.journey} /> : null}
+
+      <div className="flex flex-wrap items-center gap-2">
+        <SegmentedControl
+          label="Period"
+          size="sm"
+          options={INSIGHT_RANGES}
+          value={state.range}
+          onChange={state.setRange}
+        />
+        {state.currencies.length > 1 ? (
+          <select
+            aria-label="Currency"
+            value={state.currencyBlock?.currency ?? ""}
+            onChange={(event) => state.setCurrency(event.target.value)}
+            className="rounded-xl border border-line bg-card px-3 py-1.5 text-xs font-semibold text-ink focus:border-brand-500 focus:outline-none"
+          >
+            {state.currencies.map((block) => (
+              <option key={block.currency} value={block.currency}>
+                {block.currency}
+              </option>
+            ))}
+          </select>
+        ) : null}
+      </div>
+
       {state.isLoading ? (
         <Spinner label="Adding it all up…" />
       ) : state.insights ? (
-        <>
-          {state.insights.journey ? <JourneyCard journey={state.insights.journey} /> : null}
-
-          <div className="flex flex-wrap items-center gap-2">
-            <SegmentedControl
-              label="Period"
-              size="sm"
-              options={INSIGHT_RANGES}
-              value={state.range}
-              onChange={state.setRange}
-            />
-            {state.currencies.length > 1 ? (
-              <select
-                aria-label="Currency"
-                value={state.currencyBlock?.currency ?? ""}
-                onChange={(event) => state.setCurrency(event.target.value)}
-                className="rounded-xl border border-line bg-card px-3 py-1.5 text-xs font-semibold text-ink focus:border-brand-500 focus:outline-none"
-              >
-                {state.currencies.map((block) => (
-                  <option key={block.currency} value={block.currency}>
-                    {block.currency}
-                  </option>
-                ))}
-              </select>
-            ) : null}
-          </div>
-
-          {/* While another period loads, the previous one stays, dimmed:
-              no spinner, no jump in the page's height. */}
-          <div
-            className={`grid gap-4 transition-opacity @3xl:grid-cols-2 ${
-              state.isRefreshing ? "opacity-60" : ""
-            }`}
-            aria-busy={state.isRefreshing}
-          >
-            <SpendingCard
-              months={state.insights.months}
-              block={state.currencyBlock}
-              activeMonth={state.activeMonth}
-              onActivateMonth={state.setActiveMonth}
-              className="@3xl:col-span-2"
-            />
-            <CategoriesCard block={state.currencyBlock} />
-            <CompanionsCard companions={state.insights.companions} />
-            <PlacesCard groups={state.insights.groups} />
-            <SplitTypesCard splitTypes={state.insights.splitTypes} />
-          </div>
-        </>
+        // While another period loads, the previous one stays, dimmed: no
+        // spinner, no jump in the page's height.
+        <div
+          className={`grid gap-4 transition-opacity @3xl:grid-cols-2 ${
+            state.isSwitching ? "opacity-60" : ""
+          }`}
+          aria-busy={state.isSwitching}
+        >
+          <SpendingCard
+            months={state.insights.months}
+            block={state.currencyBlock}
+            activeMonth={state.activeMonth}
+            onActivateMonth={state.setActiveMonth}
+            className="@3xl:col-span-2"
+          />
+          <CategoriesCard block={state.currencyBlock} />
+          <CompanionsCard companions={state.insights.companions} />
+          <PlacesCard groups={state.insights.groups} />
+          <SplitTypesCard splitTypes={state.insights.splitTypes} />
+        </div>
       ) : null}
     </section>
   );

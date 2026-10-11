@@ -4,6 +4,8 @@ import { useState } from "react";
 import { errorMessage } from "@/lib/api/connect";
 import {
   DEFAULT_INSIGHT_RANGE,
+  pickActiveMonth,
+  pickCurrencyBlock,
   type InsightRange,
 } from "@haalkhata/shared/analytics/insights";
 import { useInsightsAPI } from "./useInsightsAPI";
@@ -35,19 +37,15 @@ export function useInsights(enabled: boolean) {
 
   const insights = query.data;
   const currencies = insights?.currencies ?? [];
-  const months = insights?.months ?? [];
 
   return {
     insights,
     range,
     setRange,
     currencies,
-    // The server lists the person's default currency first.
-    currencyBlock:
-      currencies.find((block) => block.currency === chosenCurrency) ?? currencies[0],
+    currencyBlock: pickCurrencyBlock(currencies, chosenCurrency),
     setCurrency: setChosenCurrency,
-    // The newest month is the one a person looks for first.
-    activeMonth: months.includes(chosenMonth) ? chosenMonth : (months[months.length - 1] ?? ""),
+    activeMonth: pickActiveMonth(insights?.months ?? [], chosenMonth),
     setActiveMonth: setChosenMonth,
     isLoading: query.isLoading,
     /** True while a different window is loading over the one still shown. */
