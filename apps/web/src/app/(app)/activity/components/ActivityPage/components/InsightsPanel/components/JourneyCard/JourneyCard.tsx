@@ -7,6 +7,7 @@ import {
   calendarDayLabel,
   memberDuration,
   memberSinceLabel,
+  UNKNOWN_DURATION_LABEL,
 } from "@haalkhata/shared/analytics/insights";
 import { InsightCard } from "../InsightCard/InsightCard";
 
@@ -36,7 +37,7 @@ export function JourneyCard({
       className={className}
     >
       <div className="grid grid-cols-2 gap-2 @md:grid-cols-3 @3xl:grid-cols-6">
-        <StatTile label="Member for" value={memberDuration(journey.memberSince) || "—"} />
+        <StatTile label="Member for" value={memberDuration(journey.memberSince) || UNKNOWN_DURATION_LABEL} />
         <StatTile
           label="Expenses"
           value={journey.expenseCount.toLocaleString()}

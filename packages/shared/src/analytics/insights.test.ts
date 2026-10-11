@@ -62,8 +62,10 @@ describe("labels", () => {
 describe("memberDuration", () => {
   const nowTime = new Date(2026, 9, 11, 15, 0);
 
-  it("says today for someone who joined this morning", () => {
-    expect(memberDuration(new Date(2026, 9, 11, 8, 0).toISOString(), nowTime)).toBe("today");
+  it("does not count a first day as zero days", () => {
+    expect(memberDuration(new Date(2026, 9, 11, 8, 0).toISOString(), nowTime)).toBe(
+      "a few hours",
+    );
   });
 
   it("counts days inside the first month", () => {

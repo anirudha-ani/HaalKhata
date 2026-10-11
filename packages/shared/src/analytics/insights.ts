@@ -44,6 +44,9 @@ export const OUTSIDE_GROUPS_EMOJI = "🤝";
 /** Label for the row that stands for expenses outside any group. */
 export const OUTSIDE_GROUPS_LABEL = "Outside groups";
 
+/** Shown in place of a duration when the join date cannot be read. */
+export const UNKNOWN_DURATION_LABEL = "Not known";
+
 /** What each split type is called, matching the tabs of the expense form. */
 const SPLIT_TYPE_LABELS: Record<string, string> = {
   equal: "Equally",
@@ -135,7 +138,8 @@ export function memberSinceLabel(memberSince: string): string {
 
 /**
  * How long someone has been a member, in the largest unit that fits:
- * "today", "12 days", "3 months", "1 year", "2 years, 4 months".
+ * "a few hours", "12 days", "3 months", "1 year", "2 years, 4 months".
+ * Each reads as the end of "Member for ...".
  *
  * Counted in calendar terms rather than by dividing milliseconds: someone
  * who joined on 31 January has been here "1 month" on 28 February, not
@@ -158,7 +162,7 @@ export function memberDuration(memberSince: string, nowTime: Date = new Date()):
     const startOfToday = new Date(nowTime.getFullYear(), nowTime.getMonth(), nowTime.getDate());
     const startOfJoined = new Date(joined.getFullYear(), joined.getMonth(), joined.getDate());
     const days = Math.round((startOfToday.getTime() - startOfJoined.getTime()) / 86_400_000);
-    return days < 1 ? "today" : countLabel(days, "day");
+    return days < 1 ? "a few hours" : countLabel(days, "day");
   }
   if (months < 12) return countLabel(months, "month");
   const years = Math.floor(months / 12);

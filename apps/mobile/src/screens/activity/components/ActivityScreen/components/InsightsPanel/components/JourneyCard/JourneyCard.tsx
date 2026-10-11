@@ -8,6 +8,7 @@ import {
   calendarDayLabel,
   memberDuration,
   memberSinceLabel,
+  UNKNOWN_DURATION_LABEL,
 } from "@haalkhata/shared/analytics/insights";
 import { spacing } from "@/lib/theme/theme";
 import { InsightCard } from "../InsightCard/InsightCard";
@@ -34,7 +35,7 @@ export function JourneyCard({
     >
       <View style={styles.grid}>
         <View style={tileStyle}>
-          <StatTile label="Member for" value={memberDuration(journey.memberSince) || "—"} />
+          <StatTile label="Member for" value={memberDuration(journey.memberSince) || UNKNOWN_DURATION_LABEL} />
         </View>
         <View style={tileStyle}>
           <StatTile
