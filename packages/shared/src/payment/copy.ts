@@ -34,3 +34,15 @@ export const CUSTOM_LABEL_PLACEHOLDER = "What is it called? Branch, Sort code, I
 export function finishOnboardingLabel(hasMethods: boolean): string {
   return hasMethods ? "Open your HaalKhata" : "Skip and open your HaalKhata";
 }
+
+/**
+ * The line beside the save button when the form cannot be saved yet. The
+ * button is always on screen; the field with the problem may be scrolled
+ * out of sight, and a button that does nothing when pressed reads as broken.
+ *
+ * @param problem - The first problem, as the validator words it.
+ * @returns "Not saved yet: give this method a name."
+ */
+export function notSavedLine(problem: string): string {
+  return `Not saved yet: ${problem}.`;
+}

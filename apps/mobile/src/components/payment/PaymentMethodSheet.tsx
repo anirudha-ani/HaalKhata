@@ -20,6 +20,7 @@ import {
 import { colors, radii, spacing } from "@/lib/theme/theme";
 import { DetailRow } from "./DetailRow";
 import { usePaymentMethodForm } from "./hooks/usePaymentMethodForm";
+import { useScrollToFormField } from "./hooks/useScrollToFormField";
 
 /**
  * Renders the add-and-edit form for a payment method, top to bottom in the
@@ -64,12 +65,20 @@ export function PaymentMethodSheet({
     onDone: onClose,
   });
   const { draft, errors } = form;
+  const fieldScroll = useScrollToFormField(form.failedSaves, form.blockedField);
+  // A save or a removal in flight finishes where its outcome can be read:
+  // closing now would send a refusal to a sheet that is no longer there.
+  const busy = form.isSaving || form.isRemoving;
 
   return (
     <Sheet
       footer={
         <View style={styles.footer}>
-          {form.serverError ? <Text style={styles.error}>{form.serverError}</Text> : null}
+          {form.saveError ? (
+            <Text accessibilityLiveRegion="polite" accessibilityRole="alert" style={styles.error}>
+              {form.saveError}
+            </Text>
+          ) : null}
           <Button
             busy={form.isSaving}
             disabled={form.isRemoving}
@@ -78,7 +87,10 @@ export function PaymentMethodSheet({
           />
         </View>
       }
-      onClose={onClose}
+      onClose={() => {
+        if (!busy) onClose();
+      }}
+      scrollRef={fieldScroll.scrollRef}
       title={method ? "Edit payment method" : "Add payment method"}
     >
       <View style={styles.body}>
@@ -98,7 +110,7 @@ export function PaymentMethodSheet({
           </View>
         )}
 
-        <View style={styles.block}>
+        <View onLayout={fieldScroll.onFieldLayout("name")} style={styles.block}>
           <TextField
             autoComplete="off"
             label="Name"
@@ -110,7 +122,7 @@ export function PaymentMethodSheet({
           {errors.name ? <Text style={styles.error}>{errors.name}</Text> : null}
         </View>
 
-        <View style={styles.block}>
+        <View onLayout={fieldScroll.onFieldLayout("currency")} style={styles.block}>
           <Text style={styles.label}>Currency it works in</Text>
           {form.anyCurrency ? null : (
             <CurrencyPicker onChange={form.setCurrency} value={draft.currency} />
@@ -128,7 +140,7 @@ export function PaymentMethodSheet({
           {errors.currency ? <Text style={styles.error}>{errors.currency}</Text> : null}
         </View>
 
-        <View style={styles.block}>
+        <View onLayout={fieldScroll.onFieldLayout("details")} style={styles.block}>
           <Text style={styles.label}>Details</Text>
           <Text style={styles.hint}>
             Only what someone needs to send you money. Never a card number, PIN or password. Leave
@@ -158,7 +170,7 @@ export function PaymentMethodSheet({
           ) : null}
         </View>
 
-        <View style={styles.block}>
+        <View onLayout={fieldScroll.onFieldLayout("note")} style={styles.block}>
           <TextField
             autoComplete="off"
             label="Note to the payer (optional)"
@@ -205,7 +217,12 @@ export function PaymentMethodSheet({
               </Text>
               <View style={styles.removeActions}>
                 <View style={styles.removeAction}>
-                  <Button busy={form.isRemoving} label="Remove" onPress={form.removeMethod} />
+                  <Button
+                    busy={form.isRemoving}
+                    disabled={form.isSaving}
+                    label="Remove"
+                    onPress={form.removeMethod}
+                  />
                 </View>
                 <View style={styles.removeAction}>
                   <Button
@@ -218,7 +235,13 @@ export function PaymentMethodSheet({
               </View>
             </View>
           ) : (
-            <Pressable accessibilityRole="button" onPress={form.askRemove} style={styles.removeLink}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityState={{ disabled: form.isSaving }}
+              disabled={form.isSaving}
+              onPress={form.askRemove}
+              style={styles.removeLink}
+            >
               <Text style={styles.removeLinkText}>Remove this method</Text>
             </Pressable>
           )

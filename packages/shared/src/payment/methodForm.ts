@@ -17,6 +17,7 @@ import {
 import type { PaymentMethodFields } from "./types";
 import {
   checkPaymentMethod,
+  firstPaymentMethodError,
   type PaymentMethodCheck,
   type PaymentMethodErrors,
 } from "./validateMethod";
@@ -65,12 +66,23 @@ export interface StarredMethod {
   preferred: boolean;
 }
 
+/** A part of the form a problem can be in, so the form can bring that part into view. */
+export type MethodFormField = "name" | "currency" | "details" | "note";
+
 /** Everything a form draws that is worked out from its state rather than stored. */
 export interface MethodFormView {
   /** The validator's verdict on the draft, including the cleaned method to send. */
   check: PaymentMethodCheck;
   /** The errors to show: none before the first save attempt, the validator's after. */
   errors: PaymentMethodErrors;
+  /**
+   * The one problem to state beside the save button, which is always on
+   * screen where the field it belongs to may not be. Empty before the first
+   * save attempt and once nothing is wrong.
+   */
+  blockedBy: string;
+  /** Which part of the form that problem is in; "" when there is none. */
+  blockedField: MethodFormField | "";
   /** Kinds a detail row of this method may be switched between. */
   kinds: readonly string[];
   /** Whether "Add another detail" is offered. */
@@ -87,6 +99,21 @@ export interface MethodFormView {
 
 /** What the form shows before the first save attempt: no errors at all. */
 const NO_ERRORS: PaymentMethodErrors = { detailRows: {} };
+
+/**
+ * Finds which part of the form the first problem is in, in the order the
+ * form reads and {@link firstPaymentMethodError} reports.
+ *
+ * @param errors - The problems being shown.
+ * @returns The field, or "" when nothing is wrong.
+ */
+function firstErrorField(errors: PaymentMethodErrors): MethodFormField | "" {
+  if (errors.name !== undefined) return "name";
+  if (errors.currency !== undefined) return "currency";
+  if (errors.preset !== undefined || errors.details !== undefined) return "details";
+  if (Object.keys(errors.detailRows).length > 0) return "details";
+  return errors.note === undefined ? "" : "note";
+}
 
 /**
  * Builds the form's first state.
@@ -242,9 +269,12 @@ export function readMethodForm(
           other.preferred && other.id !== editingId && other.currency === check.method.currency,
       )
     : undefined;
+  const errors = state.attempted ? check.errors : NO_ERRORS;
   return {
     check,
-    errors: state.attempted ? check.errors : NO_ERRORS,
+    errors,
+    blockedBy: firstPaymentMethodError(errors),
+    blockedField: firstErrorField(errors),
     kinds: selectableDetailKinds(draft.preset),
     canAddDetail: canAddDetail(draft),
     canRemoveDetail: draft.preset === "" && draft.details.length > 1,

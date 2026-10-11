@@ -20,6 +20,7 @@ import { SaveBar } from "./components/SaveBar/SaveBar";
 import { StartingPoints } from "./components/StartingPoints/StartingPoints";
 import { PAYMENT_METHOD_FORM_ID } from "./constants/paymentMethodForm";
 import { usePaymentMethodForm } from "./hooks/usePaymentMethodForm";
+import { useScrollToFirstError } from "./hooks/useScrollToFirstError";
 
 /**
  * Renders the add-and-edit form for a payment method, top to bottom in the
@@ -66,19 +67,25 @@ export function PaymentMethodModal({
     onDone: onClose,
   });
   const { draft, errors } = form;
+  useScrollToFirstError(form.failedSaves);
+  // A save or a removal in flight finishes where its outcome can be read:
+  // closing now would send a refusal to a dialog that is no longer there.
+  const busy = form.isSaving || form.isRemoving;
 
   return (
     <Modal
       title={method ? "Edit payment method" : "Add payment method"}
-      onClose={onClose}
+      onClose={() => {
+        if (!busy) onClose();
+      }}
       footer={
         <SaveBar
           formId={PAYMENT_METHOD_FORM_ID}
           label={method ? "Save changes" : "Add method"}
           pendingLabel="Saving…"
           pending={form.isSaving}
-          disabled={form.isSaving || form.isRemoving}
-          error={form.serverError}
+          disabled={busy}
+          error={form.saveError}
         />
       }
     >
@@ -101,9 +108,17 @@ export function PaymentMethodModal({
             maxLength={MAX_PAYMENT_METHOD_NAME_LENGTH}
             placeholder={METHOD_NAME_PLACEHOLDER}
             autoComplete="off"
+            aria-invalid={errors.name !== undefined}
             className={`mt-1 ${DETAIL_INPUT_CLASS}`}
           />
-          <span className="mt-1 block text-sm font-medium text-brand-600">{errors.name}</span>
+          {errors.name ? (
+            <span
+              data-form-error
+              className="mt-1 block text-sm font-medium text-brand-600"
+            >
+              {errors.name}
+            </span>
+          ) : null}
         </label>
 
         <CurrencyField
@@ -135,9 +150,17 @@ export function PaymentMethodModal({
             maxLength={MAX_PAYMENT_METHOD_NOTE_LENGTH}
             placeholder={METHOD_NOTE_PLACEHOLDER}
             autoComplete="off"
+            aria-invalid={errors.note !== undefined}
             className={`mt-1 ${DETAIL_INPUT_CLASS}`}
           />
-          <span className="mt-1 block text-sm font-medium text-brand-600">{errors.note}</span>
+          {errors.note ? (
+            <span
+              data-form-error
+              className="mt-1 block text-sm font-medium text-brand-600"
+            >
+              {errors.note}
+            </span>
+          ) : null}
         </label>
 
         <PreferredField
@@ -152,6 +175,7 @@ export function PaymentMethodModal({
             name={method.name}
             confirming={form.confirmingRemove}
             pending={form.isRemoving}
+            disabled={form.isSaving}
             onAsk={form.askRemove}
             onCancel={form.cancelRemove}
             onConfirm={form.removeMethod}

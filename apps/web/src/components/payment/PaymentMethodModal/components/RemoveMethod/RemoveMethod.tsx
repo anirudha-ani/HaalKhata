@@ -14,6 +14,7 @@ export function RemoveMethod({
   name,
   confirming,
   pending,
+  disabled,
   onAsk,
   onCancel,
   onConfirm,
@@ -24,6 +25,8 @@ export function RemoveMethod({
   confirming: boolean;
   /** Whether the removal is in flight. */
   pending: boolean;
+  /** Whether removing is unavailable for now, because a save is in flight. */
+  disabled: boolean;
   /** Called when the link is tapped. */
   onAsk: () => void;
   /** Called when the owner backs out. */
@@ -36,7 +39,8 @@ export function RemoveMethod({
       <button
         type="button"
         onClick={onAsk}
-        className="block w-full py-2 text-center text-sm font-semibold text-ink-soft underline-offset-2 hover:text-brand-600 hover:underline"
+        disabled={disabled}
+        className="block w-full py-2 text-center text-sm font-semibold text-ink-soft underline-offset-2 hover:text-brand-600 hover:underline disabled:opacity-50 disabled:hover:no-underline"
       >
         Remove this method
       </button>
@@ -51,7 +55,7 @@ export function RemoveMethod({
         <button
           type="button"
           onClick={onConfirm}
-          disabled={pending}
+          disabled={pending || disabled}
           className="flex-1 rounded-xl bg-brand-600 py-2.5 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-50"
         >
           {pending ? "Removing…" : "Remove"}

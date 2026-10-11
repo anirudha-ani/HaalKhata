@@ -7,6 +7,7 @@ import {
   METHOD_NAME_PLACEHOLDER,
   METHOD_NOTE_PLACEHOLDER,
   finishOnboardingLabel,
+  notSavedLine,
 } from "./copy";
 
 /** Terms from outside the US: welcome in an example, never the first thing in it. */
@@ -50,5 +51,11 @@ describe("finishOnboardingLabel", () => {
   test("says skip while nothing has been added, and only then", () => {
     expect(finishOnboardingLabel(false)).toBe("Skip and open your HaalKhata");
     expect(finishOnboardingLabel(true)).toBe("Open your HaalKhata");
+  });
+});
+
+describe("lines that say why something did not happen", () => {
+  test("the save button's line names the problem", () => {
+    expect(notSavedLine("give this method a name")).toBe("Not saved yet: give this method a name.");
   });
 });

@@ -81,7 +81,11 @@ export function DetailRow({
           <DetailValueField detail={detail} preset={preset} onChange={onChange} />
         </div>
       </div>
-      {error ? <p className="text-sm font-medium text-brand-600">{error}</p> : null}
+      {error ? (
+        <p data-form-error className="text-sm font-medium text-brand-600">
+          {error}
+        </p>
+      ) : null}
     </li>
   );
 }

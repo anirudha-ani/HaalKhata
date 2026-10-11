@@ -239,3 +239,61 @@ describe("the star", () => {
     expect(readMethodForm(starredIn("BDT"), STORED, "method-bkash").displacedName).toBe("");
   });
 });
+
+describe("the one problem stated beside the save button", () => {
+  test("nothing is said before the first save attempt", () => {
+    const view = readMethodForm(walletForm("USD"), STORED, "");
+    expect(view.blockedBy).toBe("");
+    expect(view.blockedField).toBe("");
+  });
+
+  test("after an attempt it names the first problem in reading order and where it is", () => {
+    const attempted = after(walletForm("USD"), { type: "attemptSave" });
+    const view = readMethodForm(attempted, STORED, "");
+    expect(view.blockedBy).toBe("give this method a name");
+    expect(view.blockedField).toBe("name");
+  });
+
+  test("it moves on to the next problem as each is fixed, then goes quiet", () => {
+    const named = after(walletForm("USD"), { type: "attemptSave" }, { type: "setName", name: "bKash" });
+    const view = readMethodForm(named, STORED, "");
+    expect(view.blockedBy).toBe("add at least one detail a payer can use");
+    expect(view.blockedField).toBe("details");
+
+    const rowId = named.draft.details[0]!.rowId;
+    const badRow = after(named, {
+      type: "setDetail",
+      rowId,
+      patch: { region: "US", nationalNumber: "12" },
+    });
+    expect(readMethodForm(badRow, STORED, "").blockedField).toBe("details");
+
+    const filled = after(named, {
+      type: "setDetail",
+      rowId,
+      patch: { region: "US", nationalNumber: "4155552671" },
+    });
+    const done = readMethodForm(filled, STORED, "");
+    expect(done.check.valid).toBe(true);
+    expect(done.blockedBy).toBe("");
+    expect(done.blockedField).toBe("");
+  });
+
+  test("a problem in the note is the last one reported", () => {
+    const noted = after(
+      walletForm("USD"),
+      { type: "attemptSave" },
+      { type: "setName", name: "bKash" },
+      { type: "setNote", note: "n".repeat(201) },
+    );
+    const rowId = noted.draft.details[0]!.rowId;
+    const filled = after(noted, {
+      type: "setDetail",
+      rowId,
+      patch: { region: "US", nationalNumber: "4155552671" },
+    });
+    const view = readMethodForm(filled, STORED, "");
+    expect(view.blockedBy).toBe("keep the note under 200 characters");
+    expect(view.blockedField).toBe("note");
+  });
+});

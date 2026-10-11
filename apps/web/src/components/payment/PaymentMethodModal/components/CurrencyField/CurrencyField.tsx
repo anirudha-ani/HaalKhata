@@ -32,7 +32,7 @@ export function CurrencyField({
   onAnyCurrencyChange: (anyCurrency: boolean) => void;
 }) {
   return (
-    <div className="space-y-1.5 text-sm font-medium">
+    <div data-form-field className="space-y-1.5 text-sm font-medium">
       <span>Currency it works in</span>
       {anyCurrency ? null : (
         <CurrencySelect
@@ -50,7 +50,11 @@ export function CurrencyField({
         />
         Works in any currency
       </label>
-      {error ? <p className="text-sm font-medium text-brand-600">{error}</p> : null}
+      {error ? (
+        <p data-form-error className="text-sm font-medium text-brand-600">
+          {error}
+        </p>
+      ) : null}
     </div>
   );
 }

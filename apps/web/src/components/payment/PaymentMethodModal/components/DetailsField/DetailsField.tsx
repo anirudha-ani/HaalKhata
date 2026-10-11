@@ -47,7 +47,7 @@ export function DetailsField({
   onAdd: () => void;
 }) {
   return (
-    <div className="space-y-2">
+    <div data-form-field className="space-y-2">
       <div>
         <p className="text-sm font-medium">Details</p>
         <p className="text-xs text-ink-soft">
@@ -71,7 +71,9 @@ export function DetailsField({
         ))}
       </ul>
       {errors.details ? (
-        <p className="text-sm font-medium text-brand-600">{errors.details}</p>
+        <p data-form-error className="text-sm font-medium text-brand-600">
+          {errors.details}
+        </p>
       ) : null}
       {canAdd ? (
         <button

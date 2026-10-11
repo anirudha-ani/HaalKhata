@@ -4,6 +4,7 @@
 import { useReducer, useState } from "react";
 import type { PaymentMethod } from "@haalkhata/protogen/payment/v1/payment_pb";
 import { errorMessage } from "@/lib/api/connect";
+import { notSavedLine } from "@haalkhata/shared/payment/copy";
 import type { DetailDraft } from "@haalkhata/shared/payment/methodDraft";
 import {
   initialMethodForm,
@@ -49,13 +50,19 @@ export function usePaymentMethodForm({
   );
   const [serverError, setServerError] = useState("");
   const [confirmingRemove, setConfirmingRemove] = useState(false);
+  // Counts saves refused by the form's own check, so the dialog can bring
+  // the first problem into view each time, not only the first.
+  const [failedSaves, setFailedSaves] = useState(0);
   const view = readMethodForm(state, methods, method?.id ?? "");
 
   /** Validates the draft and, when it passes, creates or updates the method. */
   const save = async () => {
     dispatch({ type: "attemptSave" });
     setServerError("");
-    if (!view.check.valid) return;
+    if (!view.check.valid) {
+      setFailedSaves((count) => count + 1);
+      return;
+    }
     const fields = { ...view.check.method, preferred: state.draft.preferred };
     try {
       if (method) await update.mutateAsync({ ...fields, id: method.id });
@@ -84,7 +91,10 @@ export function usePaymentMethodForm({
     ...view,
     templateKey: state.templateKey,
     draft: state.draft,
-    serverError,
+    // One line for the pinned footer: the server's refusal, or the form's
+    // own first problem. Either way the press ends in something visible.
+    saveError: serverError || (view.blockedBy ? notSavedLine(view.blockedBy) : ""),
+    failedSaves,
     /**
      * Starts the form over from another starting point. Only offered while
      * adding, where the form has nothing saved to lose.

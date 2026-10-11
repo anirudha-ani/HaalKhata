@@ -1,7 +1,7 @@
 /** Bottom-sheet dialog shell (the mobile counterpart of the web's Modal) with backdrop dismissal. */
 
 import { X } from "lucide-react-native";
-import type { ReactNode } from "react";
+import type { ReactNode, RefObject } from "react";
 import {
   KeyboardAvoidingView,
   Modal,
@@ -32,6 +32,7 @@ export function Sheet({
   onClose,
   children,
   footer,
+  scrollRef,
 }: {
   /** Heading text, also used as the sheet's accessible label. */
   title: string;
@@ -41,6 +42,11 @@ export function Sheet({
   children: ReactNode;
   /** Content pinned to the bottom of the sheet while the body scrolls above it. */
   footer?: ReactNode;
+  /**
+   * Ref to the scrolling body, for a caller that needs to bring part of its
+   * content into view, such as a form showing where its first problem is.
+   */
+  scrollRef?: RefObject<ScrollView | null>;
 }) {
   const { height: windowHeight } = useWindowDimensions();
   const { isTablet } = useResponsiveLayout();
@@ -70,7 +76,11 @@ export function Sheet({
               <X color={colors.inkSoft} size={20} />
             </Pressable>
           </View>
-          <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+          <ScrollView
+            keyboardShouldPersistTaps="handled"
+            ref={scrollRef}
+            showsVerticalScrollIndicator={false}
+          >
             {children}
           </ScrollView>
           {footer ? <View style={styles.footer}>{footer}</View> : null}
