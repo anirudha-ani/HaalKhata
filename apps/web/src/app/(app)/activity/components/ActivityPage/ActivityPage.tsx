@@ -1,119 +1,65 @@
 "use client";
-/** Activity page: searchable, filterable, day-grouped feed with keyset pagination. */
+/** Activity page: the feed of what happened, and the person's own insights drawn from it. */
 
-import { Bell, ChevronDown } from "lucide-react";
-import { EmptyState } from "@/components/ui/EmptyState/EmptyState";
-import { SearchField } from "@/components/ui/SearchField/SearchField";
+import { useState } from "react";
+import { SegmentedControl } from "@/components/ui/SegmentedControl/SegmentedControl";
 import { Spinner } from "@/components/ui/Spinner/Spinner";
 import { useHydrated } from "@/lib/hooks/useHydrated";
-import { ActivityList } from "@/components/activity/ActivityList/ActivityList";
-import { ACTIVITY_FILTERS } from "@haalkhata/shared/activity/filters";
-import { monthLabel } from "@haalkhata/shared/activity/format";
+import { useMediaQuery } from "@/lib/hooks/useMediaQuery";
+import {
+  ACTIVITY_VIEWS,
+  DEFAULT_ACTIVITY_VIEW,
+  type ActivityView,
+} from "@haalkhata/shared/analytics/insights";
+import { ActivityFeed } from "./components/ActivityFeed/ActivityFeed";
+import { InsightsPanel } from "./components/InsightsPanel/InsightsPanel";
+import { SIDE_BY_SIDE_QUERY } from "./constants/activityPage";
 import { useActivity } from "./hooks/useActivity";
 
 /**
- * Renders the activity feed: search, type filters, a month window, and the
- * events grouped by day with a Load more button.
+ * Renders Activity as two views of the same history: the feed (what
+ * happened, newest first) and insights (what it adds up to).
  *
- * Load more rather than infinite scroll: an audit trail is task-driven
- * reading, where an explicit control beats content that appears on its own.
+ * On a wide screen both are on the page at once, the feed beside a rail of
+ * charts. Anywhere narrower there is room for one, so a switch chooses, and
+ * it opens on the feed: this page is where the notification bell leads, and
+ * someone following a badge wants the news before the totals.
+ *
+ * A view that is not showing is not mounted, so a phone never fetches
+ * insights nobody asked to see.
  *
  * @returns The activity page content.
  */
 export function ActivityPage() {
   const activity = useActivity();
   const hydrated = useHydrated();
+  const sideBySide = useMediaQuery(SIDE_BY_SIDE_QUERY);
+  const [view, setView] = useState<ActivityView>(DEFAULT_ACTIVITY_VIEW);
   if (!hydrated || activity.isLoading) return <Spinner label="Loading activity…" />;
 
-  const isFiltered =
-    activity.query !== "" || activity.filter !== "all" || activity.month !== "";
-
   return (
-    <div className="mx-auto max-w-3xl space-y-5">
+    <div className={`mx-auto space-y-5 ${sideBySide ? "" : "max-w-3xl"}`}>
       <header className="flex flex-wrap items-end justify-between gap-3">
         <h1 className="text-3xl font-bold">Activity</h1>
-        {activity.months.length > 0 ? (
-          <label className="flex items-center gap-2 text-sm text-ink-soft">
-            Month
-            <select
-              value={activity.month}
-              onChange={(event) => activity.setMonth(event.target.value)}
-              className="rounded-xl border border-line bg-card px-3 py-2 text-sm text-ink focus:border-brand-500 focus:outline-none"
-            >
-              <option value="">All time</option>
-              {activity.months.map((monthKey) => (
-                <option key={monthKey} value={monthKey}>
-                  {monthLabel(monthKey)}
-                </option>
-              ))}
-            </select>
-          </label>
-        ) : null}
+        {sideBySide ? null : (
+          <SegmentedControl
+            label="Activity view"
+            options={ACTIVITY_VIEWS}
+            value={view}
+            onChange={setView}
+          />
+        )}
       </header>
 
-      {activity.events.length === 0 && !isFiltered ? (
-        <EmptyState
-          icon={<Bell />}
-          title="It's giving empty"
-          hint="Expenses, payments and group drama involving you will land here."
-        />
+      {sideBySide ? (
+        <div className="grid grid-cols-[minmax(0,1fr)_24rem] items-start gap-8">
+          <ActivityFeed activity={activity} />
+          <InsightsPanel showHeading />
+        </div>
+      ) : view === "feed" ? (
+        <ActivityFeed activity={activity} />
       ) : (
-        <>
-          <SearchField
-            value={activity.query}
-            onChange={activity.setQuery}
-            placeholder="Search activity"
-          />
-
-          {/* Filter state has to stay visible while it hides rows, so the
-              active button is styled, not just remembered. */}
-          <div className="flex flex-wrap items-center gap-1.5">
-            {ACTIVITY_FILTERS.map((entry) => (
-              <button
-                key={entry.value}
-                type="button"
-                aria-pressed={activity.filter === entry.value}
-                onClick={() => activity.setFilter(entry.value)}
-                className={`rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
-                  activity.filter === entry.value
-                    ? "border-brand-600 bg-brand-50 text-brand-700"
-                    : "border-line text-ink-soft hover:border-brand-200"
-                }`}
-              >
-                {entry.label}
-              </button>
-            ))}
-            {activity.visibleEvents.length !== activity.events.length ? (
-              <span className="ml-auto text-sm text-ink-soft tabular-nums">
-                {activity.visibleEvents.length} of {activity.events.length} loaded
-              </span>
-            ) : null}
-          </div>
-
-          {activity.visibleEvents.length === 0 ? (
-            <p className="rounded-2xl border border-line bg-card px-4 py-8 text-center text-sm text-ink-soft">
-              Crickets. Nothing matches that.
-            </p>
-          ) : (
-            <ActivityList events={activity.visibleEvents} now={new Date()} />
-          )}
-
-          {activity.hasMore ? (
-            <button
-              type="button"
-              onClick={activity.loadMore}
-              disabled={activity.isLoadingMore}
-              className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-line bg-card py-3 text-sm font-semibold text-ink-soft hover:border-brand-200 hover:text-brand-600 disabled:opacity-50"
-            >
-              <ChevronDown className="h-4 w-4" />
-              {activity.isLoadingMore ? "Loading…" : "Show me more"}
-            </button>
-          ) : activity.events.length > 0 ? (
-            <p className="pb-2 text-center text-xs text-ink-soft">
-              You&apos;ve hit the bottom{activity.month ? ` of ${monthLabel(activity.month)}` : ""}.
-            </p>
-          ) : null}
-        </>
+        <InsightsPanel />
       )}
     </div>
   );
