@@ -12,7 +12,7 @@
  * Skips itself when no database is reachable, so it is safe in the suite.
  */
 
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { Client } from "pg";
 
 const ADMIN_URL =
@@ -253,6 +253,36 @@ describe.skipIf(!reachable)("the payment method kept on a settlement, against Po
     });
 
     expect(await stored(settlement.id)).toEqual({ method: "other", method_label: "" });
+  });
+
+  it("does not look a named method up for someone the debt check turns away", async () => {
+    const repo = await import("@/server/payment/repo/paymentMethods.repo");
+    const lookedUp = vi.spyOn(repo, "findPaymentMethod");
+    try {
+      // Rahim owes Pia nothing outside groups, so "Rahim pays Pia" is refused.
+      // Naming one of Pia's methods must not get it read on the way there.
+      await expect(
+        recordSettlement(PAYEE, {
+          groupId: "",
+          toUserId: PAYER,
+          amountCents: 500,
+          currency: "USD",
+          method: "cash",
+          note: "",
+          scopeGroupIds: [""],
+          paymentMethodId: payerZelleId,
+        }),
+      ).rejects.toMatchObject({ code: "invalid_argument" });
+      expect(lookedUp).not.toHaveBeenCalled();
+
+      // The same call from someone who does owe reads it, inside the write.
+      await payRahim(500, { paymentMethodId: payeeMethod["Chase checking"] });
+      expect(lookedUp).toHaveBeenCalledTimes(1);
+      expect(lookedUp.mock.calls[0]?.slice(0, 2)).toEqual([payeeMethod["Chase checking"], PAYEE]);
+      expect(lookedUp.mock.calls[0]?.[2]).toBeDefined();
+    } finally {
+      lookedUp.mockRestore();
+    }
   });
 
   it("keeps a plain payment exactly as before", async () => {

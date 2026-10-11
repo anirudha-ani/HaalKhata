@@ -1159,9 +1159,6 @@ interface SettlementContext {
   creditorId: string;
   groupId: string | null;
   currency: string;
-  method: string;
-  /** Name of the payment method used; "" when the payment names none. */
-  methodLabel: string;
 }
 
 /**
@@ -1176,16 +1173,25 @@ interface SettlementContext {
  * error: the payment happened either way, so it is recorded from the plain
  * method key with no name rather than refused.
  *
+ * Call it only once the write has established that the payer owes the
+ * recipient, never before. Reading the method is reading something that is
+ * shown only to a person who owes, and the name read here is copied into a
+ * record both people can see: looked up ahead of the debt check, it would
+ * be one changed line away from telling anyone who can name an id what a
+ * stranger calls their bank account.
+ *
  * @param request - The settlement request.
  * @param creditorId - Who received the money.
+ * @param client - The settlement's transaction, so the read belongs to it.
  * @returns The settlement method key and the name to keep with it.
  */
 async function resolveSettlementMethod(
   request: SettlementRequest,
   creditorId: string,
+  client: PoolClient,
 ): Promise<{ method: string; methodLabel: string }> {
   const stored = request.paymentMethodId
-    ? await findPaymentMethod(request.paymentMethodId, creditorId)
+    ? await findPaymentMethod(request.paymentMethodId, creditorId, client)
     : undefined;
   // The name is copied into the payment record, which both people read.
   const paymentMethod = stored ? cleanMethodRow(stored) : undefined;
@@ -1206,7 +1212,8 @@ async function resolveSettlementMethod(
 
 /**
  * Validates a settlement request and resolves its normalized identities,
- * currency, scope, and payment method.
+ * currency and scope. The payment method it names is resolved later, by the
+ * write, once the debt has been checked.
  *
  * @param userId - Authenticated caller recording the payment.
  * @param request - Raw settlement request.
@@ -1270,7 +1277,6 @@ async function prepareSettlement(
     creditorId,
     groupId,
     currency,
-    ...(await resolveSettlementMethod(request, creditorId)),
   };
 }
 
@@ -1285,7 +1291,7 @@ async function storeGroupSettlement(
   context: SettlementContext,
   client: PoolClient,
 ): Promise<SettlementRow[]> {
-  const { userId, request, payerId, creditorId, groupId, currency, method, methodLabel } = context;
+  const { userId, request, payerId, creditorId, groupId, currency } = context;
   if (!groupId) throw new Error("storeGroupSettlement requires a group id");
   await lockGroupLedgers(client, [groupId]);
   const callerIsMember = await isMember(groupId, userId, client);
@@ -1315,6 +1321,7 @@ async function storeGroupSettlement(
       } (${formatMoney(outstandingCents, currency)})`,
     );
   }
+  const { method, methodLabel } = await resolveSettlementMethod(request, creditorId, client);
   return [
     await insertSettlement(
       {
@@ -1346,7 +1353,7 @@ async function storeSettlementPortions(
   context: SettlementContext,
   client: PoolClient,
 ): Promise<StoredSettlement> {
-  const { userId, request, payerId, creditorId, groupId, currency, method, methodLabel } = context;
+  const { userId, request, payerId, creditorId, groupId, currency } = context;
   if (groupId) return { rows: await storeGroupSettlement(context, client), netOutcome: null };
 
   // Lock every group either person belongs to before selecting the shared
@@ -1394,6 +1401,7 @@ async function storeSettlementPortions(
     );
   }
 
+  const { method, methodLabel } = await resolveSettlementMethod(request, creditorId, client);
   const rows: SettlementRow[] = [];
   for (const portion of allocateSettlement(scopes, request.amountCents)) {
     rows.push(
@@ -1444,7 +1452,7 @@ async function storeNetSettlement(
   lockedGroupIds: ReadonlySet<string>,
   client: PoolClient,
 ): Promise<StoredSettlement> {
-  const { userId, request, payerId, creditorId, currency, method, methodLabel } = context;
+  const { userId, request, payerId, creditorId, currency } = context;
   const debts = (await pairScopeDebts(payerId, creditorId, client)).filter(
     (debt) =>
       (debt.groupId === null || lockedGroupIds.has(debt.groupId)) && debt.currency === currency,
@@ -1474,6 +1482,7 @@ async function storeNetSettlement(
     );
   }
 
+  const { method, methodLabel } = await resolveSettlementMethod(request, creditorId, client);
   const plan = planNetSettlement(owing, opposing, request.amountCents);
   // Nothing pointing the other way means nothing to cancel: the rows are an
   // ordinary payment and need no parent.
