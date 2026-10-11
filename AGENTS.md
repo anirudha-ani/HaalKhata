@@ -363,6 +363,14 @@ with colocated tests. Mobile-specific rules:
   a closed set, listed once in `packages/shared/src/payment/detailKinds.ts`
   and repeated in the database CHECK; validation is the shared
   `checkPaymentMethod`, which both forms and the server run.
+- **A payment method's text is read by someone other than who typed it.**
+  The shared validator measures every field before it trims, matches or
+  parses it (a megabyte in a field must cost nothing), removes characters
+  nobody can see, and refuses labels that ask for a secret. Add a field or a
+  kind there, not in a form. An "Open Venmo" link carries the amount only
+  when the app would read it as the money owed: `appPaymentLink` checks the
+  app's currencies, the method's currency and the decimals, and returns the
+  line shown with the link. Never build such a link by hand.
 - **Limiters are process-local** (`rateLimit.ts`, `phoneRateLimit.ts`): fine
   for one container, wrong for two replicas — see `docs/plan.txt` §28.
 

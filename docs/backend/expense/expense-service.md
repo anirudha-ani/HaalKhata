@@ -605,7 +605,9 @@ created.
   removing the method later does not rewrite the history. An id that does
   not resolve, because the method was removed since the dialog opened or was
   never theirs, **never fails the payment**: it is recorded from `method`
-  with no name. A net settlement's cancelling rows carry no name, since they
+  with no name. The method is looked up inside the write, after the check
+  that the payer owes the recipient, so naming an id never causes a method
+  to be read for someone the debt check turns away. A net settlement's cancelling rows carry no name, since they
   moved no money by any method. The friend statement reads "You paid via
   bKash" when a name was kept.
 - **Validation (pre-lock):** not yourself; amount positive and bounded; note
@@ -842,6 +844,11 @@ per scope; callers only use the response to confirm the recording):
   scope, since a single balance can be settled alone even when the pair's
   net points the other way. Otherwise it is empty and the methods are never
   read. See [payment-service.md](../payment/payment-service.md).
+- **`read_at` is the server's clock** at the moment of the read. A client
+  measures "changed 2 days ago" against it instead of the device's clock,
+  which can be wrong in the direction that hides the freshest change.
+  `payee_method_removed_at` says when the friend last removed a method, and
+  is empty whenever `payee_methods` is.
 - A net settlement's lines sort with the payment first and its cancelled
   balances directly beneath it, in the same order for both people.
 
@@ -867,6 +874,8 @@ per scope; callers only use the response to confirm the recording):
 | truncated | bool | True when older lines were cut. |
 | settle_positions | repeated SettlePosition | Per currency: `net_cents` (> 0 = they owe you), `scopes` (`group_id`, `group_name`, `net_cents`, `simplified`), and the `digest` a net settlement must send back. |
 | payee_methods | repeated payment.v1.PaymentMethod | The friend's payment methods, oldest first. Empty unless the caller owes them. |
+| read_at | string | The server's clock when this was read (ISO 8601). |
+| payee_method_removed_at | string | When the friend last removed a payment method; empty when never, and whenever `payee_methods` is empty. |
 
 **FriendLedgerEntry** (signs always read "positive = in your favour"):
 
