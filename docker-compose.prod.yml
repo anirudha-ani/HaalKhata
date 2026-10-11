@@ -65,6 +65,13 @@ services:
       # without this would start, pass readiness, and lock everyone out.
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:?GOOGLE_CLIENT_ID is required — production signs in with Google only}
       GOOGLE_MOBILE_CLIENT_IDS: ${GOOGLE_MOBILE_CLIENT_IDS:-}
+      # The operator's usage page. ADMIN_HOST is the one hostname it is
+      # served on (the Caddyfile's second site); on every other hostname the
+      # page and its API do not exist. ADMIN_EMAILS is the Google addresses
+      # allowed to sign in there, comma separated. Left empty, nobody can:
+      # the page shows a sign-in that refuses everyone.
+      ADMIN_HOST: admin.haalkhata.app
+      ADMIN_EMAILS: ${ADMIN_EMAILS:-}
       # Secrets are read from these files by the app itself (the Docker
       # `_FILE` convention); nothing exports them into the environment.
       SESSION_SECRET_FILE: /run/secrets/session_secret

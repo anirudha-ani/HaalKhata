@@ -99,6 +99,7 @@ against its allowlist before touching the file:
 | `ACME_EMAIL` | Secret `ACME_EMAIL` | Required — the deploy job refuses to run without it; Caddy registers it with the CA for expiry/problem notices. A secret only so the address stays out of public workflow logs; it is not authenticating material |
 | `GOOGLE_CLIENT_ID` | Variable `NEXT_PUBLIC_GOOGLE_CLIENT_ID` | Same id the browser bundle is built with, by contract |
 | `GOOGLE_MOBILE_CLIENT_IDS` | Variable `GOOGLE_MOBILE_CLIENT_IDS` | Optional |
+| `ADMIN_EMAILS` | Secret `ADMIN_EMAILS` | Optional; Google addresses allowed to sign in to the usage page, comma separated. Unset means nobody can. A secret only to keep a personal address out of public workflow logs, like `ACME_EMAIL` |
 | `TWILIO_API_KEY_SID` | Secret `TWILIO_API_KEY_SID` | Optional; identifies but does not authenticate |
 | `TWILIO_VERIFY_SERVICE_SID` | Secret `TWILIO_VERIFY_SERVICE_SID` | Optional |
 
@@ -158,6 +159,56 @@ recreate `web` — the old key must not stay accepted indefinitely.
 *Break-glass* (suspected token theft): write the new key, make sure
 `session_secret_previous` is empty, recreate `web`. Every session ends at
 once, including the attacker's.
+
+## Usage page (`admin.haalkhata.app`)
+
+The operator's usage page is served by the same `web` container as the app,
+on its own hostname. The app decides what to serve by the `Host` header:
+`admin.haalkhata.app` reaches the usage page and its API and nothing else,
+and the app's hostnames reach neither. It shows product-wide counts and
+display names only; see
+[`docs/backend/adminanalytics/adminanalytics-service.md`](../docs/backend/adminanalytics/adminanalytics-service.md).
+
+First-time setup, **in this order**:
+
+1. **DNS.** Add an `A` record (and `AAAA` if the server has IPv6) for
+   `admin.haalkhata.app` pointing at this server. Do this before the deploy:
+   Caddy requests the certificate when it starts with the new `Caddyfile`
+   and keeps retrying while the name does not resolve here. The app's own
+   hostnames are unaffected either way.
+2. **Google.** In the Google Cloud Console, add
+   `https://admin.haalkhata.app` to the web OAuth client's "Authorized
+   JavaScript origins". Without it Google's button refuses to render there.
+3. **`deploy.sh`.** The pipeline now sends an `ADMIN_EMAILS` key, and the
+   copy of `deploy.sh` already on the server refuses any key it does not
+   know. It cannot update itself through the forced command, so copy the new
+   one up once, before the first deploy that carries this change:
+
+   ```sh
+   scp ops/deploy.sh deploy@haalkhata.app:/srv/haalkhata/deploy.sh
+   ```
+
+   If this step is skipped the deploy fails loudly with `refusing:
+   'ADMIN_EMAILS' is not a pipeline-managed key` and the running stack is
+   left as it was.
+4. **Allowlist.** Set the `ADMIN_EMAILS` repository secret to the Google
+   address (or addresses, comma separated) that may sign in.
+5. **Deploy** as usual.
+
+Afterwards:
+
+- **Revoking access** is removing the address from the `ADMIN_EMAILS` secret
+  and deploying. The allowlist is checked on every request, so existing
+  sessions for that address end when the new container starts.
+- **Sessions** last eight hours and do not renew. To end every admin session
+  at once: `docker compose -f docker-compose.prod.yml exec -T db psql -U
+  haalkhata -d haalkhata -c 'DELETE FROM admin_sessions'`.
+- **Turning the page off** is emptying `ADMIN_EMAILS` (nobody can sign in),
+  or removing `ADMIN_HOST` from the compose file and the second site from
+  the `Caddyfile` (the page and its API then do not exist at all).
+- An admin is a Google identity on the allowlist, not an app account.
+  Signing in there creates nothing in `users`, and an app session opens
+  nothing there.
 
 ### Offsite backup retention
 

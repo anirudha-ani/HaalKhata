@@ -1,6 +1,6 @@
 # HaalKhata Backend Service Documentation
 
-HaalKhata's backend is a set of five ConnectRPC services served by the Next.js
+HaalKhata's backend is a set of seven ConnectRPC services served by the Next.js
 web app (`apps/web`). Every service is defined by a protobuf contract under
 `proto/` and implemented in `apps/web/src/server/<domain>/` following one
 layering rule:
@@ -39,6 +39,8 @@ HTTP; JSON or binary protobuf). The mount lives at
 | `expense.v1.ExpenseService` | [expense.proto](../../proto/expense/v1/expense.proto) | [expense/expense-service.md](expense/expense-service.md) | Expenses, splits, comments, settlements, every balance and ledger read |
 | `social.v1.SocialService` | [social.proto](../../proto/social/v1/social.proto) | [social/social-service.md](social/social-service.md) | Friend requests (incoming, sent, cancel), friends list, activity feed, notifications, reminders |
 | `receipt.v1.ReceiptService` | [receipt.proto](../../proto/receipt/v1/receipt.proto) | [receipt/receipt-service.md](receipt/receipt-service.md) | AI receipt itemization (image → draft expense) |
+| `personalanalytics.v1.PersonalAnalyticsService` | [personalanalytics.proto](../../proto/personalanalytics/v1/personalanalytics.proto) | [personalanalytics/personalanalytics-service.md](personalanalytics/personalanalytics-service.md) | A person's own insights: spending by month and category, who they split with, lifetime figures |
+| `adminanalytics.v1.AdminAnalyticsService` | [adminanalytics.proto](../../proto/adminanalytics/v1/adminanalytics.proto) | [adminanalytics/adminanalytics-service.md](adminanalytics/adminanalytics-service.md) | The operator's usage overview (counts and display names only), with its own sign-in, on the admin hostname |
 
 ## Cross-Cutting Documentation
 

@@ -92,6 +92,25 @@ listed test users. `.env.example` walks through the console setup, and the
 [mobile section of Getting started](getting-started.md#mobile-app-expo)
 covers the native Android and iOS clients.
 
+### Usage page (optional)
+
+An operator-only page with product-wide counts: how many people have signed
+in, how many are active, expenses by split type, payments, receipt scans, a
+twelve-week trend, and per person a display name with what they have added.
+Counts and names only. No email, phone, amount or expense content is loaded
+on it, and nothing about a person is tracked to produce it: the figures are
+counted from the ledger on each visit.
+
+It is served by the same container on its own hostname. Set `ADMIN_HOST`
+(the production compose file uses `admin.haalkhata.app`; change it and the
+second site in the `Caddyfile` to your own), point DNS at the server, add
+that origin to the Google OAuth client's "Authorized JavaScript origins",
+and put the Google addresses allowed to sign in into `ADMIN_EMAILS`. With
+`ADMIN_HOST` unset there is no usage page in production; with `ADMIN_EMAILS`
+empty nobody can sign in to it. Signing in there creates no account, and an
+app session does not open it. [`ops/README.md`](../ops/README.md) has the
+setup order; in development the page is at `/admin`.
+
 ### Phone verification (optional)
 
 Verified phone numbers let people invited by phone claim their history when
