@@ -1,7 +1,7 @@
 /** The add-and-edit payment method form as plain state and transitions, so the web and the mobile app run one form and only draw it differently. */
 
 import { methodCurrencyPhrase } from "./formatMethod";
-import { DEFAULT_TEMPLATE_KEY } from "./templates";
+import { DEFAULT_TEMPLATE_KEY, templateKeyForCurrency } from "./templates";
 import {
   canAddDetail,
   detailDraft,
@@ -29,7 +29,10 @@ export interface MethodFormState {
   draft: MethodDraft;
   /** What "one currency" goes back to after "any currency" is ticked and unticked. */
   lastCurrency: string;
-  /** The owner's default currency, which a starting point without its own opens on. */
+  /**
+   * The currency a starting point without its own opens on: the owner's
+   * default, or the currency the form was opened for.
+   */
   defaultCurrency: string;
   /**
    * Whether a save has been attempted. Errors are shown only after it: a
@@ -88,21 +91,30 @@ const NO_ERRORS: PaymentMethodErrors = { detailRows: {} };
 /**
  * Builds the form's first state.
  *
+ * Adding normally opens on the first starting point in the owner's default
+ * currency. When the form was opened to answer "how do you want to be paid
+ * in this currency?" (`forCurrency`), it opens on a shape that works in that
+ * currency instead, and every open-ended starting point picked afterwards
+ * stays in it.
+ *
  * @param method - The stored method being edited, or undefined to add one.
  * @param defaultCurrency - The owner's default currency.
+ * @param forCurrency - The currency a new method is wanted for, when the
+ *   form was opened for one; ignored when editing.
  * @returns The state the form opens with.
  */
 export function initialMethodForm(
   method: (PaymentMethodFields & { preferred: boolean }) | undefined,
   defaultCurrency: string,
+  forCurrency = "",
 ): MethodFormState {
+  const startCurrency = forCurrency || defaultCurrency;
+  const templateKey = forCurrency ? templateKeyForCurrency(forCurrency) : DEFAULT_TEMPLATE_KEY;
   return {
-    templateKey: DEFAULT_TEMPLATE_KEY,
-    draft: method
-      ? methodDraft(method, method.preferred)
-      : templateDraft(DEFAULT_TEMPLATE_KEY, defaultCurrency),
-    lastCurrency: method?.currency || defaultCurrency,
-    defaultCurrency,
+    templateKey,
+    draft: method ? methodDraft(method, method.preferred) : templateDraft(templateKey, startCurrency),
+    lastCurrency: method?.currency || startCurrency,
+    defaultCurrency: startCurrency,
     attempted: false,
   };
 }

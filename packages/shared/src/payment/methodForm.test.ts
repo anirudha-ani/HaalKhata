@@ -79,6 +79,45 @@ describe("opening the form", () => {
   });
 });
 
+describe("opening the form for one currency", () => {
+  test("a currency no built-in app is tied to opens on a wallet in that currency", () => {
+    const state = initialMethodForm(undefined, "USD", "BDT");
+    expect(state.templateKey).toBe("wallet");
+    expect(state.draft).toMatchObject({ currency: "BDT", preset: "" });
+    expect(state.draft.details.map((detail) => detail.kind)).toEqual(["phone"]);
+  });
+
+  test("dollars open on the first dollar starting point, Venmo", () => {
+    const state = initialMethodForm(undefined, "BDT", "USD");
+    expect(state.templateKey).toBe("venmo");
+    expect(state.draft.currency).toBe("USD");
+  });
+
+  test("an open-ended starting point picked afterwards stays in that currency", () => {
+    const bank = after(initialMethodForm(undefined, "USD", "BDT"), {
+      type: "pickTemplate",
+      templateKey: "bank",
+    });
+    expect(bank.draft.currency).toBe("BDT");
+    // "Any currency" off again goes back to it too, not to the owner's default.
+    const narrowed = after(
+      bank,
+      { type: "setAnyCurrency", anyCurrency: true },
+      { type: "setAnyCurrency", anyCurrency: false },
+    );
+    expect(narrowed.draft.currency).toBe("BDT");
+  });
+
+  test("editing ignores it: a stored method opens as it is", () => {
+    const state = initialMethodForm(
+      { name: "Venmo", currency: "USD", preset: "venmo", details: [], note: "", preferred: false },
+      "USD",
+      "BDT",
+    );
+    expect(state.draft).toMatchObject({ name: "Venmo", currency: "USD" });
+  });
+});
+
 describe("errors", () => {
   test("stay hidden until a save is attempted, then follow the typing", () => {
     const opened = walletForm("USD");

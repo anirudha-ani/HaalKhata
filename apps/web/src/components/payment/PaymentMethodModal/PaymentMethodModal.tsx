@@ -36,6 +36,7 @@ export function PaymentMethodModal({
   method,
   methods,
   defaultCurrency,
+  forCurrency,
   onClose,
 }: {
   /** The method being edited; omitted to add one. */
@@ -44,10 +45,22 @@ export function PaymentMethodModal({
   methods: readonly PaymentMethod[];
   /** The owner's default currency, which a new method starts on. */
   defaultCurrency: string;
+  /**
+   * The currency a new method is wanted for, when the dialog was opened to
+   * answer "how do you want to be paid in this currency?". The form then
+   * opens on a starting point that works in it.
+   */
+  forCurrency?: string;
   /** Called when the dialog is dismissed, or the method is saved or removed. */
   onClose: () => void;
 }) {
-  const form = usePaymentMethodForm({ method, methods, defaultCurrency, onDone: onClose });
+  const form = usePaymentMethodForm({
+    method,
+    methods,
+    defaultCurrency,
+    forCurrency,
+    onDone: onClose,
+  });
   const { draft, errors } = form;
 
   return (

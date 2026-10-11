@@ -118,6 +118,23 @@ export const METHOD_TEMPLATES: readonly MethodTemplate[] = [
 export const DEFAULT_TEMPLATE_KEY = METHOD_TEMPLATES[0]!.key;
 
 /**
+ * The starting point to open on when the form is asked for a method in one
+ * particular currency: the first one offered that is tied to that currency,
+ * and the wallet for every currency none of them is tied to.
+ *
+ * Someone owed taka who is asked "how do you want to be paid in BDT?" should
+ * not be handed a Venmo form in dollars. The built-in apps are US dollar
+ * services, so in practice this is Venmo for USD and a wallet elsewhere.
+ *
+ * @param currency - ISO 4217 code the method is wanted for.
+ * @returns A template key.
+ */
+export function templateKeyForCurrency(currency: string): string {
+  const wanted = currency.trim().toUpperCase();
+  return METHOD_TEMPLATES.find((template) => template.currency === wanted)?.key ?? "wallet";
+}
+
+/**
  * Whether a preset key names one of the built-in apps.
  *
  * @param preset - Preset key, or "" for none.

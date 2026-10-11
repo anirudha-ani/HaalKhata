@@ -11,20 +11,25 @@ import type { PaymentMethodFields } from "@haalkhata/shared/payment/types";
 export type PaymentMethodSave = PaymentMethodFields & { preferred: boolean };
 
 /**
- * Wraps every payment-method RPC the account page makes.
+ * Wraps every RPC that reads or changes the caller's own payment methods.
+ * A cross-route hook: the account page, onboarding and the Home prompt all
+ * manage the same list.
  *
  * Saves and removals refetch the list rather than patching it: a save can
  * move the star off another method, and the server's answer is the only
  * place that is written down. The star is the exception. It is one tap on a
  * row, so it shows at once and is put back if the server refuses.
  *
+ * @param options - `enabled: false` holds the list query back, for a screen
+ *   that only needs the list in some states.
  * @returns The list query and the four mutations.
  */
-export function usePaymentMethodsAPI() {
+export function usePaymentMethodsAPI({ enabled = true }: { enabled?: boolean } = {}) {
   const queryClient = useQueryClient();
   const methodsQuery = useQuery({
     queryKey: queryKeys.paymentMethods,
     queryFn: () => paymentClient.listMyPaymentMethods({}),
+    enabled,
   });
   const refresh = () => queryClient.invalidateQueries({ queryKey: queryKeys.paymentMethods });
 

@@ -12,7 +12,7 @@ import { PhoneField } from "@/components/ui/PhoneField/PhoneField";
 import { CurrencySelect } from "@/components/ui/CurrencySelect/CurrencySelect";
 import { useProfileForm } from "./hooks/useProfileForm";
 import { MAX_USER_NAME_LENGTH } from "@haalkhata/shared/text/limits";
-import { PaymentMethodsCard } from "./components/PaymentMethodsCard/PaymentMethodsCard";
+import { PaymentMethodsCard } from "@/components/payment/PaymentMethodsCard/PaymentMethodsCard";
 
 /**
  * Renders the profile summary card, the editable profile form (display name,

@@ -10,7 +10,7 @@ import {
   methodFormReducer,
   readMethodForm,
 } from "@haalkhata/shared/payment/methodForm";
-import { usePaymentMethodsAPI } from "../../../hooks/usePaymentMethodsAPI";
+import { usePaymentMethodsAPI } from "@/lib/hooks/usePaymentMethodsAPI";
 
 /**
  * Holds one payment method while it is being added or edited.
@@ -21,13 +21,15 @@ import { usePaymentMethodsAPI } from "../../../hooks/usePaymentMethodsAPI";
  * refusal from the server is put.
  *
  * @param options - The method being edited (absent when adding), the
- *   owner's other methods, their default currency, and what to do when done.
+ *   owner's other methods, their default currency, the currency a new method
+ *   is wanted for (when the form was opened for one), and what to do when done.
  * @returns The draft with its setters, the errors to show, and the actions.
  */
 export function usePaymentMethodForm({
   method,
   methods,
   defaultCurrency,
+  forCurrency,
   onDone,
 }: {
   /** The method being edited; undefined when adding one. */
@@ -36,12 +38,14 @@ export function usePaymentMethodForm({
   methods: readonly PaymentMethod[];
   /** The owner's default currency, which a new method starts on. */
   defaultCurrency: string;
+  /** The currency a new method is wanted for; the form opens on a shape that works in it. */
+  forCurrency?: string;
   /** Called once the method is saved or removed. */
   onDone: () => void;
 }) {
   const { create, update, remove } = usePaymentMethodsAPI();
   const [state, dispatch] = useReducer(methodFormReducer, undefined, () =>
-    initialMethodForm(method, defaultCurrency),
+    initialMethodForm(method, defaultCurrency, forCurrency),
   );
   const [serverError, setServerError] = useState("");
   const [confirmingRemove, setConfirmingRemove] = useState(false);

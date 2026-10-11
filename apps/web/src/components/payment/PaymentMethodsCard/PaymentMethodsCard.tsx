@@ -1,9 +1,9 @@
 "use client";
-/** The "Get paid" card of the account page: the owner's payment methods, with add, edit, remove and star. */
+/** The "Get paid" card: the owner's payment methods, with add, edit, remove and star. Shown on the account page and at the end of onboarding. */
 
 import { Plus } from "lucide-react";
 import { MAX_PAYMENT_METHODS_PER_USER } from "@haalkhata/shared/payment/payment.constants";
-import { PaymentMethodModal } from "./components/PaymentMethodModal/PaymentMethodModal";
+import { PaymentMethodModal } from "@/components/payment/PaymentMethodModal/PaymentMethodModal";
 import { PaymentMethodRow } from "./components/PaymentMethodRow/PaymentMethodRow";
 import { usePaymentMethods } from "./hooks/usePaymentMethods";
 

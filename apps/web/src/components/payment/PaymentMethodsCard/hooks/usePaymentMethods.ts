@@ -5,7 +5,7 @@ import { useState } from "react";
 import type { PaymentMethod } from "@haalkhata/protogen/payment/v1/payment_pb";
 import { errorMessage } from "@/lib/api/connect";
 import { MAX_PAYMENT_METHODS_PER_USER } from "@haalkhata/shared/payment/payment.constants";
-import { usePaymentMethodsAPI } from "./usePaymentMethodsAPI";
+import { usePaymentMethodsAPI } from "@/lib/hooks/usePaymentMethodsAPI";
 
 /** What the add-and-edit dialog is open on: nothing, a new method, or an existing one. */
 type DialogTarget = { kind: "closed" } | { kind: "new" } | { kind: "edit"; method: PaymentMethod };
