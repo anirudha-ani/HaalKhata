@@ -32,7 +32,7 @@ export const ADMIN_RPC_PREFIX = "/api/connect/adminanalytics.v1.AdminAnalyticsSe
 export type RequestSurface = "app" | "admin" | "both";
 
 /** What the page proxy should do with a request. */
-export type PageVerdict = "serve" | "rewrite-to-admin" | "not-found";
+export type PageVerdict = "serve" | "not-found";
 
 /**
  * Strips a port from a Host header value.
@@ -86,15 +86,22 @@ function isAdminPagePath(pathname: string): boolean {
 /**
  * Decides what a page request gets on its surface.
  *
- * On the admin host the root is the admin page and nothing else exists; on
- * the app host the admin page does not exist. A 404 rather than a redirect
- * in both directions: a redirect would tell a stranger probing the app that
- * an admin page is there to be found.
+ * On the admin host only the admin page exists, plus the root, which the
+ * root route turns into a redirect to it; on the app host the admin page
+ * does not exist. Everything else is a 404 rather than a redirect, in both
+ * directions: a redirect would tell a stranger probing the app that an
+ * admin page is there to be found.
+ *
+ * The root is redirected by the route rather than rewritten here. A proxy
+ * rewrite is resolved against the address the server is bound to, and when
+ * that differs from the URL the proxy was handed (as it does on a server
+ * bound to 127.0.0.1) Next treats the rewrite as a hop to another origin
+ * and the request comes back in under the wrong hostname.
  *
  * @param pathname - URL pathname of the page request.
  * @param hostHeader - The request's Host header.
  * @param environment - Process environment; injected for tests.
- * @returns Serve as is, rewrite to the admin page, or answer 404.
+ * @returns Serve as is, or answer 404.
  */
 export function pageVerdict(
   pathname: string,
@@ -104,8 +111,7 @@ export function pageVerdict(
   const surface = requestSurface(hostHeader, environment);
   if (surface === "both") return "serve";
   if (surface === "admin") {
-    if (pathname === "/") return "rewrite-to-admin";
-    return pathname === ADMIN_PAGE_PATH ? "serve" : "not-found";
+    return pathname === "/" || pathname === ADMIN_PAGE_PATH ? "serve" : "not-found";
   }
   return isAdminPagePath(pathname) ? "not-found" : "serve";
 }

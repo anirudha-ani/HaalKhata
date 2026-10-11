@@ -2,7 +2,7 @@
 
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
-import { ADMIN_PAGE_PATH, pageVerdict } from "@/config/adminSurface";
+import { pageVerdict } from "@/config/adminSurface";
 import { contentSecurityPolicy } from "@/config/securityHeaders";
 
 /** Number of random bytes used for each one-time CSP nonce. */
@@ -47,19 +47,13 @@ function isPrefetch(request: NextRequest): boolean {
  * @returns A 404, or a continuation response carrying the request-specific CSP.
  */
 export function proxy(request: NextRequest): NextResponse {
-  const verdict = pageVerdict(request.nextUrl.pathname, request.headers.get("host"));
-  if (verdict === "not-found") {
+  if (pageVerdict(request.nextUrl.pathname, request.headers.get("host")) === "not-found") {
     return new NextResponse("Not found", {
       status: 404,
       headers: { "Cache-Control": "no-store", "Content-Type": "text/plain; charset=utf-8" },
     });
   }
-  const adminPage =
-    verdict === "rewrite-to-admin" ? new URL(ADMIN_PAGE_PATH, request.url) : null;
-
-  if (isPrefetch(request)) {
-    return adminPage ? NextResponse.rewrite(adminPage) : NextResponse.next();
-  }
+  if (isPrefetch(request)) return NextResponse.next();
 
   const nonce = createCspNonce();
   const policy = contentSecurityPolicy(process.env.NODE_ENV, nonce);
@@ -67,10 +61,7 @@ export function proxy(request: NextRequest): NextResponse {
   requestHeaders.set("x-nonce", nonce);
   requestHeaders.set("Content-Security-Policy", policy);
 
-  const forwarded = { request: { headers: requestHeaders } };
-  const response = adminPage
-    ? NextResponse.rewrite(adminPage, forwarded)
-    : NextResponse.next(forwarded);
+  const response = NextResponse.next({ request: { headers: requestHeaders } });
   response.headers.set("Content-Security-Policy", policy);
   return response;
 }

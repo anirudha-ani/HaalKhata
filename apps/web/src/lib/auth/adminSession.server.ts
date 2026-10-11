@@ -23,6 +23,17 @@ export async function onAdminSurface(): Promise<boolean> {
 }
 
 /**
+ * Whether this render is on the admin hostname itself, as opposed to the
+ * app's hostname or a development host that serves both. The root route
+ * uses it to send the admin hostname's "/" to the admin page.
+ *
+ * @returns True only when a dedicated admin hostname is configured and matched.
+ */
+export async function onAdminHost(): Promise<boolean> {
+  return requestSurface((await headers()).get("host")) === "admin";
+}
+
+/**
  * Whether the request carries a live admin session.
  *
  * Reads the raw Cookie header through the same duplicate-rejecting parser

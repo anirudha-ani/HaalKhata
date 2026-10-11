@@ -30,12 +30,21 @@ afterEach(() => {
 });
 
 describe("page proxy hostname routing", () => {
-  it("renders the admin page at the admin host's root, under a nonce policy", () => {
-    const response = proxy(pageRequest("admin.haalkhata.app", "/"));
+  it("serves the admin page on the admin host, under a nonce policy", () => {
+    const response = proxy(pageRequest("admin.haalkhata.app", "/admin"));
 
-    expect(response.headers.get("x-middleware-rewrite")).toBe("https://admin.haalkhata.app/admin");
+    expect(response.status).toBe(200);
     expect(response.headers.get("Content-Security-Policy")).toContain("'nonce-");
     expect(response.headers.get("x-middleware-override-headers")).toContain("x-nonce");
+  });
+
+  it("lets the admin host's root through to the route that redirects it, without rewriting", () => {
+    const response = proxy(pageRequest("admin.haalkhata.app", "/"));
+
+    expect(response.status).toBe(200);
+    // A rewrite here is resolved against the server's bind address and can
+    // leave the hostname; the redirect belongs to the root route.
+    expect(response.headers.get("x-middleware-rewrite")).toBeNull();
   });
 
   it("answers 404 for every app page on the admin host", () => {

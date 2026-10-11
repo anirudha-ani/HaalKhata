@@ -57,8 +57,8 @@ describe("requestSurface", () => {
 });
 
 describe("pageVerdict", () => {
-  it("serves the admin page at the admin host's root", () => {
-    expect(pageVerdict("/", "admin.haalkhata.app", PRODUCTION)).toBe("rewrite-to-admin");
+  it("serves the admin page and the root that redirects to it on the admin host", () => {
+    expect(pageVerdict("/", "admin.haalkhata.app", PRODUCTION)).toBe("serve");
     expect(pageVerdict("/admin", "admin.haalkhata.app", PRODUCTION)).toBe("serve");
   });
 
