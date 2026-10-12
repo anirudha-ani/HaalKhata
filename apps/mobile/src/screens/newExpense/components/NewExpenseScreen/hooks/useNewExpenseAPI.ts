@@ -10,6 +10,8 @@ import {
   receiptClient,
   socialClient,
 } from "@/lib/api/connect";
+import { GroupStatus } from "@haalkhata/shared/group/status";
+import { groupsByStatus } from "@haalkhata/shared/group/archiving";
 import { MONEY_KEYS, queryKeys } from "@haalkhata/shared/api/queryKeys";
 import { base64ToBytes } from "@/lib/encoding/encoding";
 
@@ -87,7 +89,8 @@ export function useNewExpenseAPI(editExpenseId: string) {
 
   return {
     me: currentUserQuery.data,
-    groups: groupsQuery.data?.groups ?? [],
+    groups: groupsByStatus(groupsQuery.data?.groups ?? []),
+    archivedGroups: groupsByStatus(groupsQuery.data?.groups ?? [], GroupStatus.ARCHIVED),
     friends: friendsQuery.data?.friends ?? [],
     editing: editingQuery.data,
     isLoading:

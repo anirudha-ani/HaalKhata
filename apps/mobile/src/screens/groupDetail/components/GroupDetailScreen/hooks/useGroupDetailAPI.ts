@@ -2,6 +2,7 @@
 
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { authClient, expenseClient, groupClient, socialClient } from "@/lib/api/connect";
+import type { GroupStatus } from "@haalkhata/shared/group/status";
 import { MONEY_KEYS, queryKeys } from "@haalkhata/shared/api/queryKeys";
 
 /**
@@ -99,6 +100,16 @@ export function useGroupDetailAPI(groupId: string) {
       socialClient.addFriend({ email: "", phone: "", name: "", userId }),
   });
 
+  /** Archives or restores the group and refreshes lists and open group views. */
+  const setStatus = useMutation({
+    mutationFn: (status: GroupStatus) => groupClient.setStatus({ groupId, status }),
+    onSuccess: (updatedGroup) => {
+      queryClient.setQueryData(queryKeys.group(groupId), updatedGroup);
+      queryClient.invalidateQueries({ queryKey: queryKeys.groups });
+      queryClient.invalidateQueries({ queryKey: queryKeys.group(groupId) });
+    },
+  });
+
   /**
    * Flips the group's simplify-debts mode. It changes which debts every
    * money surface shows — this group's balances, friend ledgers, the
@@ -135,6 +146,7 @@ export function useGroupDetailAPI(groupId: string) {
     transferOwnership,
     addFriend,
     setSimplify,
+    setStatus,
     activityEvents: (activity.data?.pages ?? []).flatMap((page) => page.events),
     activityLoading: activity.isLoading,
     activityHasMore: activity.hasNextPage,

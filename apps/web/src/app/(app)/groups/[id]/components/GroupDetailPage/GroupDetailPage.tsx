@@ -2,14 +2,20 @@
 /** Group detail orchestrator: header, members strip, expenses/balances tabs, add-people and settle modals. */
 
 import Link from "next/link";
-import { Plus } from "lucide-react";
+import { Archive, ArchiveRestore, Plus } from "lucide-react";
 import { InviteShareModal } from "@/components/modals/InviteShareModal/InviteShareModal";
 import { SettleUpModal } from "@/components/modals/SettleUpModal/SettleUpModal";
 import { Spinner } from "@/components/ui/Spinner/Spinner";
+import {
+  ARCHIVED_GROUP_HINT,
+  GROUP_ARCHIVE_ACTIONS,
+} from "@haalkhata/shared/group/archiving";
 import { errorMessage } from "@/lib/api/connect";
 import { useHydrated } from "@/lib/hooks/useHydrated";
+import { GroupStatus } from "@haalkhata/shared/group/status";
 import { groupEmoji } from "../../../constants/groupTypes";
 import { ActivityPanel } from "./components/ActivityPanel/ActivityPanel";
+import { ArchiveGroupModal } from "./components/ArchiveGroupModal/ArchiveGroupModal";
 import { AddPeopleModal } from "./components/AddPeopleModal/AddPeopleModal";
 import { MembersModal } from "./components/MembersModal/MembersModal";
 import { MembersStrip } from "./components/MembersStrip/MembersStrip";
@@ -58,16 +64,50 @@ export function GroupDetailPage({
             </p>
           </div>
         </div>
-        {/* One button, not two: scanning a receipt is how you fill the expense
-            form in, so "Scan receipt" was a second door to the same room. */}
-        <Link
-          href={`/expenses/new?group=${groupId}`}
-          className="flex items-center gap-2 rounded-xl bg-brand-600 px-3.5 py-2.5 text-sm font-semibold text-white hover:bg-brand-700"
-        >
-          <Plus className="h-4 w-4" />
-          Add expense
-        </Link>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            disabled={groupDetail.archivePending}
+            onClick={groupDetail.openArchiveDialog}
+            className="flex items-center gap-2 rounded-xl border border-line px-3.5 py-2.5 text-sm font-semibold text-ink-soft hover:border-brand-200 disabled:opacity-50"
+          >
+            {groupDetail.group.status === GroupStatus.ARCHIVED ? (
+              <ArchiveRestore className="h-4 w-4" />
+            ) : (
+              <Archive className="h-4 w-4" />
+            )}
+            {groupDetail.archivePending
+              ? GROUP_ARCHIVE_ACTIONS.saving
+              : groupDetail.group.status === GroupStatus.ARCHIVED ? GROUP_ARCHIVE_ACTIONS.unarchive : GROUP_ARCHIVE_ACTIONS.archive}
+          </button>
+          {groupDetail.group.status === GroupStatus.ACTIVE ? (
+            <Link
+              href={`/expenses/new?group=${groupId}`}
+              className="flex items-center gap-2 rounded-xl bg-brand-600 px-3.5 py-2.5 text-sm font-semibold text-white hover:bg-brand-700"
+            >
+              <Plus className="h-4 w-4" />
+              Add expense
+            </Link>
+          ) : null}
+        </div>
       </header>
+
+      {groupDetail.group.status === GroupStatus.ARCHIVED ? (
+        <p className="rounded-xl border border-line bg-card px-4 py-3 text-sm text-ink-soft">
+          {ARCHIVED_GROUP_HINT}
+        </p>
+      ) : null}
+
+      {groupDetail.archivePrompt ? (
+        <ArchiveGroupModal
+          prompt={groupDetail.archivePrompt}
+          pending={groupDetail.archivePending}
+          error={groupDetail.archiveError}
+          onConfirm={groupDetail.confirmArchiveChange}
+          onClose={groupDetail.closeArchiveDialog}
+          onViewBalances={groupDetail.viewArchiveBalances}
+        />
+      ) : null}
 
       <MembersStrip
         members={groupDetail.group.members ?? []}
