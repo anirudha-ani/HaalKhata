@@ -436,6 +436,9 @@ importers:
 
   packages/shared:
     dependencies:
+      '@haalkhata/protogen':
+        specifier: workspace:*
+        version: link:../protogen
       currency-codes:
         specifier: ^2.2.0
         version: 2.2.0
