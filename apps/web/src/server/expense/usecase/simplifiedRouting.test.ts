@@ -43,6 +43,10 @@ vi.mock("@/server/auth/repo/users.repo", () => ({
   findUsersByIds: vi.fn(),
 }));
 vi.mock("@/server/social/repo/friendships.repo", () => ({ listFriendIds: vi.fn() }));
+vi.mock("@/server/payment/repo/paymentMethods.repo", () => ({
+  findMethodRemoval: vi.fn(async () => undefined),
+  listPaymentMethodsByUser: vi.fn(async () => []),
+}));
 
 import {
   amountOwed,
@@ -169,7 +173,6 @@ function userRow(userId: string): UserRow {
     password_hash: "hash",
     google_sub: null,
     phone: null,
-    payment_handles: [],
     onboarded_at: "2026-08-01T00:00:00Z",
   } as unknown as UserRow;
 }
@@ -236,6 +239,7 @@ function recordTripSettlement(fromUser: string, toUser: string, amountCents: num
     amount_cents: amountCents,
     currency: "USD",
     method: "cash",
+    method_label: "",
     note: "",
     created_at: "2026-08-02T00:00:00Z",
     ledger_event_order: "2",

@@ -24,6 +24,9 @@ packages/shared/             @haalkhata/shared — hand-written TS used by BOTH 
   src/expense/                 allocate.ts + splits.ts — cent-exact split math,
                                run by the SERVER usecase and by the client for
                                its live per-person preview (one implementation)
+  src/payment/                 payment methods: detail kinds, starting points,
+                               the validator (server + both forms), the form's
+                               reducer, payer ordering and formatting
   src/greeting.ts              time-of-day greeting
 apps/web/                    Next.js app
   src/server/<domain>/       per-domain fan-out mirroring /proto:
@@ -348,6 +351,26 @@ with colocated tests. Mobile-specific rules:
   `softDeleteNetSettlement`. A net settlement must carry the
   `position_digest` the person was shown; the write recomputes it under the
   locks and refuses a ledger that has moved.
+- **A person's payment methods reach only someone who owes them.** They are
+  not on `User`. The one read of another person's methods is
+  `listPayeeMethods`, called from `getFriendLedger` when the caller owes in
+  any currency or inside any one scope. Never add them to a user projection,
+  a list response, a notification or an activity row: a reminder names the
+  method and stops there, and a settlement keeps only the method's name.
+- **A payment method is defined by its owner, not by this codebase.** A new
+  wallet or a bank in another country is a `custom` detail with its own
+  label, never a new kind, a new preset or a per-country rule. The kinds are
+  a closed set, listed once in `packages/shared/src/payment/detailKinds.ts`
+  and repeated in the database CHECK; validation is the shared
+  `checkPaymentMethod`, which both forms and the server run.
+- **A payment method's text is read by someone other than who typed it.**
+  The shared validator measures every field before it trims, matches or
+  parses it (a megabyte in a field must cost nothing), removes characters
+  nobody can see, and refuses labels that ask for a secret. Add a field or a
+  kind there, not in a form. An "Open Venmo" link carries the amount only
+  when the app would read it as the money owed: `appPaymentLink` checks the
+  app's currencies, the method's currency and the decimals, and returns the
+  line shown with the link. Never build such a link by hand.
 - **Limiters are process-local** (`rateLimit.ts`, `phoneRateLimit.ts`): fine
   for one container, wrong for two replicas — see `docs/plan.txt` §28.
 

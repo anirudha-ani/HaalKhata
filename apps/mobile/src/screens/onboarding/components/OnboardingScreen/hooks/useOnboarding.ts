@@ -1,4 +1,4 @@
-/** First-run flow state: profile fields, the phone claim, and its merge confirmation. */
+/** First-run flow state: profile fields, the phone claim and its merge confirmation, then the payment step. */
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { MergePreview } from "@haalkhata/protogen/auth/v1/auth_pb";
@@ -21,9 +21,14 @@ import { INVALID_PHONE_MESSAGE } from "@haalkhata/shared/phone/contact";
  * matching the two controls that edit it; `save` joins them into the E.164 the
  * server stores.
  *
- * @returns Field values with setters, the pending merge preview when one is
- *   waiting, actions for saving / verifying / confirming / skipping, and the
- *   busy flag.
+ * The flow has two steps. The profile step (name, phone, currency) ends,
+ * however it ends, on the payment step: saved, verified, merged or skipped.
+ * Only the payment step leaves onboarding, so everyone is asked once how
+ * they want to be paid, and nobody is asked before their currency is known.
+ *
+ * @returns The step, field values with setters, the pending merge preview
+ *   when one is waiting, actions for saving / verifying / confirming /
+ *   skipping / finishing, and the busy flag.
  */
 export function useOnboarding() {
   const router = useRouter();
@@ -60,6 +65,14 @@ export function useOnboarding() {
     }
   }
 
+  const [step, setStep] = useState<"profile" | "payment">("profile");
+
+  /** Moves on from the profile step, however it ended, with a clean slate. */
+  const toPaymentStep = () => {
+    setError("");
+    setStep("payment");
+  };
+
   /**
    * Leaves onboarding, marking it done so it never asks again. The profile
    * is re-read into the cache *before* navigating: the authed layout
@@ -76,11 +89,7 @@ export function useOnboarding() {
   const save = useMutation({
     mutationFn: async () => {
       setError("");
-      await authClient.updateProfile({
-        name,
-        defaultCurrency: currency,
-        paymentHandles: [],
-      });
+      await authClient.updateProfile({ name, defaultCurrency: currency });
       // Only touch the phone when it actually changed — resending the same
       // number the account already has is a no-op the server would still
       // process, and an empty field must not clear a number that is set.
@@ -96,9 +105,14 @@ export function useOnboarding() {
         if (result.verificationSent) setVerificationPhone(claimedPhone);
         return;
       }
-      await finish();
+      toPaymentStep();
     },
     onError: (mutationError) => setError(errorMessage(mutationError)),
+    // Settled, not success: the profile write lands before the phone claim,
+    // so a refused number still leaves a changed name or currency on the
+    // server. Leaving onboarding used to refresh this; the payment step now
+    // sits in between, and it must not run on a profile from before the save.
+    onSettled: () => queryClient.invalidateQueries({ queryKey: queryKeys.me }),
   });
 
   const verifyPhone = useMutation({
@@ -111,7 +125,8 @@ export function useOnboarding() {
         setMergeToken(result.mergeToken);
         return;
       }
-      await finish();
+      await queryClient.invalidateQueries({ queryKey: queryKeys.me });
+      toPaymentStep();
     },
     onError: (mutationError) => setError(errorMessage(mutationError)),
   });
@@ -121,9 +136,10 @@ export function useOnboarding() {
       setError("");
       await authClient.confirmPhoneMerge({ mergeToken });
       setPendingMerge(undefined);
-      await finish();
+      toPaymentStep();
     },
     onError: (mutationError) => setError(errorMessage(mutationError)),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.me }),
   });
 
   /** Backs out of a merge, leaving both accounts untouched and the number unset. */
@@ -137,13 +153,15 @@ export function useOnboarding() {
     setError("");
   };
 
-  const skip = useMutation({
+  const complete = useMutation({
     mutationFn: finish,
     onError: (mutationError) => setError(errorMessage(mutationError)),
   });
 
   return {
     isLoading: meQuery.isPending,
+    /** Which of the two steps is showing. */
+    step,
     name,
     setName,
     currency,
@@ -166,7 +184,14 @@ export function useOnboarding() {
     confirmMerge: () => confirmMerge.mutate(),
     declineMerge,
     save: () => save.mutate(),
-    skip: () => skip.mutate(),
-    isPending: save.isPending || verifyPhone.isPending || confirmMerge.isPending || skip.isPending,
+    /** Leaves the profile step without saving it; the payment step still follows. */
+    skip: toPaymentStep,
+    /** Marks onboarding done and opens the app; the payment step's one button. */
+    complete: () => {
+      setError("");
+      complete.mutate();
+    },
+    isPending:
+      save.isPending || verifyPhone.isPending || confirmMerge.isPending || complete.isPending,
   };
 }

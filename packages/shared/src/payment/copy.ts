@@ -1,0 +1,76 @@
+/**
+ * Wording both apps show around payment methods, kept in one place so the
+ * web and the mobile app cannot drift apart on it.
+ *
+ * One rule runs through every example here: this is mainly a US product, so
+ * an example leads with what people in the US use (Venmo, Zelle, a bank
+ * account). bKash and UPI are named, because the people who use them should
+ * recognise themselves, but never first.
+ */
+
+/** Shown in the "Get paid" list while it is empty. */
+export const EMPTY_METHODS_HINT =
+  "Nothing here yet. Add Venmo, Zelle, a bank account, bKash, UPI, or whatever you use.";
+
+/** Placeholder of the method name field, for the starting points that leave the name blank. */
+export const METHOD_NAME_PLACEHOLDER = "What you call it: Chase checking, bKash…";
+
+/** Placeholder of the note to the payer: an instruction a payer could actually need. */
+export const METHOD_NOTE_PLACEHOLDER = "Send as friends and family";
+
+/** Placeholder of the label of a custom detail. */
+export const CUSTOM_LABEL_PLACEHOLDER = "What is it called? Branch, Sort code, IFSC…";
+
+/**
+ * The label of the button that ends onboarding on the payment step.
+ *
+ * It says what pressing it does in the state the screen is in. With nothing
+ * added, leaving is skipping, and the button says so instead of reading as
+ * though the step had been completed.
+ *
+ * @param hasMethods - Whether the person has added at least one payment method.
+ * @returns "Open your HaalKhata", or "Skip and open your HaalKhata".
+ */
+export function finishOnboardingLabel(hasMethods: boolean): string {
+  return hasMethods ? "Open your HaalKhata" : "Skip and open your HaalKhata";
+}
+
+/**
+ * The line beside the save button when the form cannot be saved yet. The
+ * button is always on screen; the field with the problem may be scrolled
+ * out of sight, and a button that does nothing when pressed reads as broken.
+ *
+ * @param problem - The first problem, as the validator words it.
+ * @returns "Not saved yet: give this method a name."
+ */
+export function notSavedLine(problem: string): string {
+  return `Not saved yet: ${problem}.`;
+}
+
+/** What a Copy button says for a moment when nothing reached the clipboard. */
+export const COPY_FAILED_LABEL = "Couldn't copy";
+
+/**
+ * The line under the choices in a settle screen when the person's own
+ * payment methods could not be loaded. The payment can still be recorded.
+ *
+ * @param reason - Why the read failed, as the server or the network put it.
+ * @returns The sentence to show.
+ */
+export function ownMethodsFailedLine(reason: string): string {
+  return `Your payment methods could not be loaded (${reason}). You can still record this payment.`;
+}
+
+/**
+ * What the Home prompt says in place of its "Add" button when the person
+ * already has as many payment methods as are allowed. Said up front, with
+ * the number: opening a form the server is certain to refuse would be
+ * finding out the hard way.
+ *
+ * @param limit - The most methods a person can keep.
+ * @param currency - The currency they have no method for.
+ * @returns The sentence to show.
+ */
+export function methodCapLine(limit: number, currency: string): string {
+  return `You have ${limit} payment methods, the most allowed. Remove one in Account to add one for ${currency}.`;
+}

@@ -37,9 +37,6 @@ vi.mock("@/server/auth/repo/users.repo", () => ({
   updateUserProfile: vi.fn(),
 }));
 
-vi.mock("@/server/auth/repo/paymentHandles.repo", () => ({
-  replacePaymentHandles: vi.fn(),
-}));
 
 vi.mock("@/server/auth/repo/googleSignInNonces.repo", () => ({
   consumeGoogleSignInNonce: vi.fn(),
@@ -75,7 +72,6 @@ import {
   setAvatarUrl,
   updateUserProfile,
 } from "@/server/auth/repo/users.repo";
-import { replacePaymentHandles } from "@/server/auth/repo/paymentHandles.repo";
 import {
   GOOGLE_SIGN_IN_NONCE_LIFETIME_SECONDS,
   MAX_USER_NAME_LENGTH,
@@ -104,7 +100,6 @@ function userRow(overrides: Partial<UserRow> = {}): UserRow {
     merged_into: null,
     token_version: 0,
     created_at: "2026-07-27T00:00:00.000Z",
-    payment_handles: [],
     ...overrides,
   };
 }
@@ -430,26 +425,45 @@ describe("profile persisted input bounds", () => {
   it("normalizes a valid profile currency before writing", async () => {
     await updateProfile("user-1", { name: " Ani ", defaultCurrency: " eur " });
 
-    expect(updateUserProfile).toHaveBeenCalledWith(
-      "user-1",
-      {
-        name: "Ani",
-        defaultCurrency: "EUR",
-      },
-      expect.anything(),
-    );
+    expect(updateUserProfile).toHaveBeenCalledWith("user-1", {
+      name: "Ani",
+      defaultCurrency: "EUR",
+    });
   });
 
-  it("validates payment handles before changing any profile field", async () => {
+  it("refuses a save that still carries a payment handle, changing nothing", async () => {
+    // A form loaded before payment methods existed. Saving the name while
+    // dropping the handle would report success for half of what was typed.
     await expect(
       updateProfile("user-1", {
         name: "Ani",
         defaultCurrency: "USD",
-        paymentHandles: [{ method: "carrier-pigeon", handle: "roof" }],
+        paymentHandles: [
+          { method: "venmo", handle: "" },
+          { method: "zelle", handle: "ani@example.com" },
+        ],
       }),
-    ).rejects.toThrow(/unknown payment method/);
+    ).rejects.toMatchObject({
+      code: "failed_precondition",
+      message: "payment methods have moved, refresh the app to edit them",
+    });
 
     expect(updateUserProfile).not.toHaveBeenCalled();
-    expect(replacePaymentHandles).not.toHaveBeenCalled();
+  });
+
+  it("ignores blank handles, which that older form sends for every empty field", async () => {
+    await updateProfile("user-1", {
+      name: "Ani",
+      defaultCurrency: "USD",
+      paymentHandles: [
+        { method: "venmo", handle: "" },
+        { method: "zelle", handle: "   " },
+      ],
+    });
+
+    expect(updateUserProfile).toHaveBeenCalledWith("user-1", {
+      name: "Ani",
+      defaultCurrency: "USD",
+    });
   });
 });

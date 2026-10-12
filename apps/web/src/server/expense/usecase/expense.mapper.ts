@@ -67,6 +67,7 @@ export function toSettlement(settlementRow: SettlementRow) {
     amountCents: settlementRow.amount_cents,
     currency: settlementRow.currency,
     method: settlementRow.method,
+    methodLabel: settlementRow.method_label ?? "",
     note: settlementRow.note,
     createdAt: settlementRow.created_at,
     recordedByUserId: settlementRow.recorded_by,

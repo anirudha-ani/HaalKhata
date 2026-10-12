@@ -71,7 +71,7 @@ Every currency stays its own currency. A trip in taka and an apartment in dollar
   <img src="docs/screenshots/settle-up.webp" alt="The record-a-payment dialog: who pays whom, which balances it clears, the amount, and Venmo, Zelle, Cash App, PayPal, cash, or bank transfer" width="100%">
 </p>
 
-Record a payment with the method you actually used: Venmo, Zelle, Cash App, PayPal, cash, or a bank transfer. Friends can save their handles so paying them is a tap away. Who recorded a payment is part of the ledger, the other person sees it immediately, and either side can remove it. When someone forgets, a gentle in-app reminder does the awkward part for you.
+Record a payment with the method you actually used. Everyone adds their own ways to be paid, whatever those are where they live: Venmo, Zelle, a bank account, bKash, UPI. Each has a name, a currency and the details a payer needs, and one per currency can be marked preferred. When you settle up you see the other person's methods for that currency, their preferred one first, with every detail ready to copy. Those details are shown only to people who owe them. Who recorded a payment is part of the ledger, the other person sees it immediately, and either side can remove it. When someone forgets, a gentle in-app reminder does the awkward part for you.
 
 ## Friends, groups, and one link to invite anyone
 

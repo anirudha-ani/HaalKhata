@@ -53,9 +53,6 @@ vi.mock("@/server/auth/repo/phoneVerifications.repo", () => ({
 
 vi.mock("@/server/common/logger", () => ({ logEvent: vi.fn(), logError: vi.fn() }));
 
-vi.mock("@/server/auth/repo/paymentHandles.repo", () => ({
-  replacePaymentHandles: vi.fn(),
-}));
 
 vi.mock("./phoneVerification", () => ({
   startPhoneVerification: startPhoneVerificationMock,
@@ -105,7 +102,6 @@ function userRow(overrides: Partial<UserRow> = {}): UserRow {
     merged_into: null,
     token_version: 0,
     created_at: "2026-07-27T00:00:00.000Z",
-    payment_handles: [],
     ...overrides,
   };
 }

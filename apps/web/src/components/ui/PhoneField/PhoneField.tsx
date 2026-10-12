@@ -58,15 +58,21 @@ export function PhoneField({
   useEffect(() => {
     if (!isOpen) return;
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setIsOpen(false);
+      if (event.key !== "Escape") return;
+      // Handled here, and marked as handled: this field often sits inside a
+      // dialog that also closes on Escape, and the key that shuts a country
+      // list must not also throw away the form around it.
+      event.preventDefault();
+      setIsOpen(false);
     };
     const onPointerDown = (event: MouseEvent) => {
       if (!containerRef.current?.contains(event.target as Node)) setIsOpen(false);
     };
-    document.addEventListener("keydown", onKeyDown);
+    // On the way down, so it runs before any other handler of the key.
+    document.addEventListener("keydown", onKeyDown, true);
     document.addEventListener("mousedown", onPointerDown);
     return () => {
-      document.removeEventListener("keydown", onKeyDown);
+      document.removeEventListener("keydown", onKeyDown, true);
       document.removeEventListener("mousedown", onPointerDown);
     };
   }, [isOpen]);
@@ -130,7 +136,17 @@ export function PhoneField({
       </div>
 
       {isOpen ? (
-        <div className="absolute z-50 mt-1 w-full overflow-hidden rounded-xl border border-line bg-card shadow-lg">
+        <div
+          className="absolute z-50 mt-1 w-full overflow-hidden rounded-xl border border-line bg-card shadow-lg"
+          // Enter in the search box picks the first match. Left alone it
+          // would submit whatever form this field is part of, half filled in.
+          onKeyDown={(event) => {
+            if (event.key !== "Enter" || !(event.target instanceof HTMLInputElement)) return;
+            event.preventDefault();
+            const firstMatch = matches[0];
+            if (firstMatch) choose(firstMatch.region);
+          }}
+        >
           <div className="p-2">
             <SearchField
               value={query}

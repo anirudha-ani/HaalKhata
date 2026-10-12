@@ -8,6 +8,7 @@ import { GroupService } from "@haalkhata/protogen/group/v1/group_pb";
 import { ExpenseService } from "@haalkhata/protogen/expense/v1/expense_pb";
 import { ReceiptService } from "@haalkhata/protogen/receipt/v1/receipt_pb";
 import { SocialService } from "@haalkhata/protogen/social/v1/social_pb";
+import { PaymentMethodService } from "@haalkhata/protogen/payment/v1/payment_pb";
 
 /** Connect-Web transport that routes every RPC through the app's `/api/connect` proxy. */
 export const transport = createConnectTransport({ baseUrl: "/api/connect" });
@@ -22,6 +23,8 @@ export const expenseClient = createClient(ExpenseService, transport);
 export const receiptClient = createClient(ReceiptService, transport);
 /** Typed client for social RPCs (friends, activity, notifications). */
 export const socialClient = createClient(SocialService, transport);
+/** Typed client for the caller's own payment methods (list, add, edit, remove, star). */
+export const paymentClient = createClient(PaymentMethodService, transport);
 
 /**
  * Extracts a human-readable message from a ConnectError (or any thrown value).
