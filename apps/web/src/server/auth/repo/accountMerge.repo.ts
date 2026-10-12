@@ -401,16 +401,17 @@ export async function mergeAccounts(
       [keeperId, loserId],
     );
 
-    // --- payment handles: the keeper's own choices win ----------------------
+    // --- payment methods: the keeper's own choices win ----------------------
+    // Moved across without their stars: a star says "pay me here first", and
+    // the keeper is the one who chose theirs. Unstarring also keeps the
+    // one-star-per-currency index true whatever the two rows had set.
+    // (The retired payment_handles table is left as it is; nothing reads it.)
     await client.query(
-      `DELETE FROM payment_handles
-        WHERE user_id = $2 AND method IN (SELECT method FROM payment_handles WHERE user_id = $1)`,
+      `UPDATE payment_methods
+          SET user_id = $1, is_preferred = FALSE, preferred_at = NULL
+        WHERE user_id = $2`,
       [keeperId, loserId],
     );
-    await client.query(`UPDATE payment_handles SET user_id = $1 WHERE user_id = $2`, [
-      keeperId,
-      loserId,
-    ]);
 
     // --- straight repoints, no collision possible ---------------------------
     for (const [table, column] of DIRECT_MERGE_TARGETS) {

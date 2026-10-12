@@ -22,6 +22,7 @@ import { localDate } from "@haalkhata/shared/time/localTime";
 import { getGreeting } from "@haalkhata/shared/greeting";
 import { groupEmoji } from "../../../groups/constants/groupTypes";
 import { useDashboard } from "./hooks/useDashboard";
+import { PayMethodPrompt } from "./components/PayMethodPrompt/PayMethodPrompt";
 import { SummaryCard } from "./components/SummaryCard/SummaryCard";
 
 /**
@@ -59,6 +60,19 @@ export function DashboardPage() {
           <Plus className="h-4 w-4" /> Add expense
         </Link>
       </header>
+
+      {/* Shown only with real balances: a failed read must not prompt about
+          debts the page cannot show. It stays mounted through a failed
+          refresh, though, so an add dialog opened from it is not torn down
+          with everything typed in it. */}
+      {dashboard.balances ? (
+        <PayMethodPrompt
+          counterparties={dashboard.balances.counterparties}
+          currencyOrder={dashboard.totals.map((total) => total.currency)}
+          defaultCurrency={currency}
+          hidden={balancesFailed}
+        />
+      ) : null}
 
       {balancesFailed ? (
         <p

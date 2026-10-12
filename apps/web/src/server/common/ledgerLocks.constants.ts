@@ -25,3 +25,10 @@ export const REMINDER_LOCK_PREFIX = "reminder:";
  * exclude nothing.
  */
 export const FRIEND_REQUEST_INBOX_LOCK_PREFIX = "friend-request-inbox:";
+
+/**
+ * Advisory-lock key prefix serializing changes to one person's payment
+ * methods. The cap on how many they keep and the one-star-per-currency rule
+ * are both read-then-write, so two saves for the same person take turns.
+ */
+export const PAYMENT_METHODS_LOCK_PREFIX = "payment-methods:";

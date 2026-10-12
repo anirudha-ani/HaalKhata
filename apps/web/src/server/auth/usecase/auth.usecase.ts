@@ -20,12 +20,10 @@ import {
   updateUserProfile,
   type UserRow,
 } from "@/server/auth/repo/users.repo";
-import { replacePaymentHandles } from "@/server/auth/repo/paymentHandles.repo";
 import {
   consumeGoogleSignInNonce,
   insertGoogleSignInNonce,
 } from "@/server/auth/repo/googleSignInNonces.repo";
-import { PAYMENT_METHOD_KEYS } from "@haalkhata/shared/payment/methods";
 import { UsecaseError, invalid } from "@/server/common/errors";
 import { readSecret } from "@/server/common/secrets";
 import {
@@ -37,7 +35,7 @@ import {
   GOOGLE_SIGN_IN_NONCE_BYTES,
   GOOGLE_SIGN_IN_NONCE_LIFETIME_SECONDS,
   GOOGLE_SIGN_IN_NONCE_PATTERN,
-  MAX_PAYMENT_HANDLE_LENGTH,
+  PAYMENT_HANDLES_RETIRED_MESSAGE,
   MAX_USER_NAME_LENGTH,
   MIN_SESSION_SECRET_BYTES,
   PASSWORD_MAX_LENGTH,
@@ -51,7 +49,7 @@ import {
   passwordAuthEnabled,
 } from "@/server/auth/auth.constants";
 import { normalizeCurrencyCode } from "@/server/common/validation";
-import { isUniqueViolation, transaction } from "@/server/common/db";
+import { isUniqueViolation } from "@/server/common/db";
 import { toPrivateUser } from "./user.mapper";
 
 /**
@@ -725,10 +723,18 @@ export async function logOut(userId: string): Promise<void> {
 /**
  * Updates the calling user's display name and default currency.
  *
+ * Payment handles used to ride along on this request. They are now payment
+ * methods with their own service, and a request that still carries a handle
+ * comes from a client loaded before the change. It is refused whole rather
+ * than saved without the handle: a form that says "Saved" after dropping
+ * part of what was typed is a failure nobody sees. Blank handles are
+ * ignored, since that same older form sends them for every field left empty.
+ *
  * @param userId - Id of the authenticated caller.
  * @param input - New profile values; an empty defaultCurrency leaves the currency unchanged.
  * @returns The refreshed user in proto shape.
- * @throws UsecaseError "invalid_argument" when the trimmed name is empty.
+ * @throws UsecaseError "invalid_argument" when the trimmed name is empty;
+ *   "failed_precondition" when the request carries a non-blank payment handle.
  */
 export async function updateProfile(
   userId: string,
@@ -742,25 +748,10 @@ export async function updateProfile(
   const defaultCurrency = input.defaultCurrency
     ? normalizeCurrencyCode(input.defaultCurrency)
     : undefined;
-  if (input.paymentHandles !== undefined) {
-    for (const entry of input.paymentHandles) {
-      if (!PAYMENT_METHOD_KEYS.includes(entry.method)) {
-        invalid(`unknown payment method "${entry.method}"`);
-      }
-      if (entry.handle.length > MAX_PAYMENT_HANDLE_LENGTH) {
-        invalid(`that ${entry.method} handle is too long`);
-      }
-    }
+  if (input.paymentHandles?.some((entry) => entry.handle.trim() !== "")) {
+    throw new UsecaseError("failed_precondition", PAYMENT_HANDLES_RETIRED_MESSAGE);
   }
-  // Validate the entire request before opening the transaction. The profile
-  // and its handles are one form submission, so they either both change or
-  // neither does.
-  await transaction(async (client) => {
-    await updateUserProfile(userId, { name, defaultCurrency }, client);
-    if (input.paymentHandles !== undefined) {
-      await replacePaymentHandles(userId, input.paymentHandles, client);
-    }
-  });
+  await updateUserProfile(userId, { name, defaultCurrency });
   return getMe(userId);
 }
 

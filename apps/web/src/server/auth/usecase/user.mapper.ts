@@ -4,9 +4,9 @@ import type { UserRow } from "@/server/auth/repo/users.repo";
 
 /**
  * Maps a users table row to the public common.v1.User shape used when another
- * account is the viewer. Email, phone, and onboarding state are private;
- * payment handles remain visible because expense counterparties need them to
- * settle outside the app.
+ * account is the viewer. Email, phone, and onboarding state are private.
+ * How a person wants to be paid is not on a user at all any more: it reaches
+ * someone who owes them through the friend ledger, and nobody else.
  *
  * @param userRow - Database row to convert.
  * @returns Public proto User fields with private contact/state fields cleared.
@@ -23,15 +23,14 @@ export function toPublicUser(userRow: UserRow) {
     // every one of them as an unclaimed invite.
     registered: userRow.password_hash !== null || userRow.google_sub !== null,
     phone: "",
-    // Absent on a row straight out of an INSERT ... RETURNING *, which has no
-    // handles yet by definition.
-    paymentHandles: userRow.payment_handles ?? [],
+    // Retired field, declared for older clients and always empty.
+    paymentHandles: [],
     onboarded: false,
   };
 }
 
 /**
- * Maps a friend-request sender without exposing contact, payment, currency,
+ * Maps a friend-request sender without exposing contact, currency,
  * registration, or onboarding details before the recipient accepts.
  *
  * @param userRow - Requesting account shown to the request recipient.

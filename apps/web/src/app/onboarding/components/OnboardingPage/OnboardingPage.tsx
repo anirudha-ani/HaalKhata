@@ -1,17 +1,19 @@
 "use client";
-/** First-run screen: name, currency, phone — plus the merge confirmation. */
+/** First-run screen: name, currency, phone, plus the merge confirmation, then an optional payment step. */
 
 import { CurrencySelect } from "@/components/ui/CurrencySelect/CurrencySelect";
 import { MergePreview } from "@/components/account/MergePreview/MergePreview";
 import { PhoneField } from "@/components/ui/PhoneField/PhoneField";
 import { useOnboarding } from "./hooks/useOnboarding";
+import { PaymentStep } from "./components/PaymentStep/PaymentStep";
 import { MAX_USER_NAME_LENGTH } from "@haalkhata/shared/text/limits";
 import { inputClass } from "./constants/onboardingPage";
 
 /**
  * Renders the first-run flow: a short profile form, an optional phone number,
  * and — when that number turns out to belong to an invitation someone already
- * created — a confirmation naming exactly what would be absorbed.
+ * created — a confirmation naming exactly what would be absorbed. It ends on
+ * an optional step for saying how you want to be paid.
  *
  * @returns The onboarding screen.
  */
@@ -24,23 +26,40 @@ export function OnboardingPage() {
 
   const merge = onboarding.pendingMerge;
   const verifying = onboarding.verificationPhone !== "";
+  const paying = onboarding.step === "payment";
 
   return (
     <main className="flex min-h-dvh items-center justify-center bg-paper px-4 py-10">
       <div className="w-full max-w-sm">
         <div className="mb-8 text-center">
           <h1 className="font-display text-3xl font-bold text-ink">
-            {merge ? "Is this you?" : verifying ? "Verify your phone" : "Welcome to HaalKhata"}
+            {paying
+              ? "How do you want to be paid?"
+              : merge
+                ? "Is this you?"
+                : verifying
+                  ? "Verify your phone"
+                  : "Welcome to HaalKhata"}
           </h1>
           <p className="mt-3 text-sm text-ink-soft">
-            {merge
-              ? "Someone already added this number to shared expenses."
-              : verifying
-                ? `Enter the code sent to ${onboarding.verificationPhone}.`
-              : "A couple of details, so friends can find you. You can skip any of it."}
+            {paying
+              ? "Optional. Add it now so nobody has to ask where to send money, or do it later."
+              : merge
+                ? "Someone already added this number to shared expenses."
+                : verifying
+                  ? `Enter the code sent to ${onboarding.verificationPhone}.`
+                  : "A couple of details, so friends can find you. You can skip any of it."}
           </p>
         </div>
 
+        {paying ? (
+          <PaymentStep
+            defaultCurrency={onboarding.currency || "USD"}
+            error={onboarding.error}
+            pending={onboarding.isPending}
+            onFinish={onboarding.complete}
+          />
+        ) : (
         <div className="rounded-2xl border border-line bg-card p-6 shadow-sm">
           {merge ? (
             <div className="flex flex-col gap-4">
@@ -157,7 +176,7 @@ export function OnboardingPage() {
                 disabled={onboarding.isPending}
                 className="mt-3 w-full rounded-xl bg-brand-600 py-3 font-semibold text-white transition-colors hover:bg-brand-700 disabled:opacity-50"
               >
-                {onboarding.isPending ? "One moment…" : "Open your ledger"}
+                {onboarding.isPending ? "One moment…" : "Continue"}
               </button>
               <button
                 type="button"
@@ -170,6 +189,7 @@ export function OnboardingPage() {
             </form>
           )}
         </div>
+        )}
       </div>
     </main>
   );

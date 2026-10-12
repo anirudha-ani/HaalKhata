@@ -48,6 +48,7 @@ describe("queryKeys", () => {
       queryKeys.activity(),
       queryKeys.activityFeed(),
       queryKeys.notifications,
+      queryKeys.paymentMethods,
       queryKeys.insights(6),
       queryKeys.adminUsage,
     ].map(hash);

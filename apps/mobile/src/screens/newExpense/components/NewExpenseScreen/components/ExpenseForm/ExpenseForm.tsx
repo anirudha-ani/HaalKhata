@@ -90,7 +90,9 @@ export function ExpenseForm({
         {isExpanded ? <SplitSummary layout="panel" {...summaryProps} /> : null}
 
         <PeoplePicker
-          friendIds={form.friendIds}
+          groupMembers={
+            form.selectedGroup?.members.flatMap((member) => (member.user ? [member.user] : [])) ?? []
+          }
           friends={form.friends.flatMap((friend) => (friend.user ? [friend.user] : []))}
           groupId={form.groupId}
           groups={form.groups.flatMap((summary) =>
@@ -98,7 +100,7 @@ export function ExpenseForm({
           )}
           me={form.me}
           onGroupChange={form.setGroupId}
-          onToggleFriend={form.toggleFriend}
+          onTogglePerson={form.togglePerson}
           people={form.people}
           scopeLocked={form.isEdit}
         />

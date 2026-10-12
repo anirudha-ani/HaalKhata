@@ -16,7 +16,6 @@ import {
   splitE164,
 } from "@haalkhata/shared/phone/phone";
 import { INVALID_PHONE_MESSAGE } from "@haalkhata/shared/phone/contact";
-import { stripHandlePrefix } from "@haalkhata/shared/payment/methods";
 import { SAVED_BADGE_MS } from "../constants/profileForm";
 
 /**
@@ -30,7 +29,7 @@ import { SAVED_BADGE_MS } from "../constants/profileForm";
  *
  * @param currentUser - The already-loaded signed-in user used to seed the form fields.
  * @returns Form field values (`name`, `currency`, `region`, `nationalNumber`,
- *   `handles`, `message`) with their setters, a `save` action with its
+ *   `message`) with their setters, a `save` action with its
  *   `isSaving` flag, the `pendingMerge` preview with `confirmMerge` /
  *   `declineMerge`, and a `signOut` action.
  */
@@ -57,35 +56,6 @@ export function useProfileForm(currentUser: User) {
   const [mergeToken, setMergeToken] = useState("");
   const [verificationPhone, setVerificationPhone] = useState("");
   const [verificationCode, setVerificationCode] = useState("");
-  const [handles, setHandles] = useState<Record<string, string>>(() =>
-    Object.fromEntries(
-      currentUser.paymentHandles.map((entry) => [entry.method, entry.handle]),
-    ),
-  );
-
-  // Zelle is reached by whichever of a phone or an email the recipient
-  // registered with their bank, so the field is a choice rather than one box.
-  // The stored value is a plain string either way; the mode is inferred from
-  // it on open, so returning to the page shows the field it was filled in as.
-  const storedZelle = handles.zelle ?? "";
-  const [zelleMode, setZelleMode] = useState<"phone" | "email">(() =>
-    storedZelle.includes("@") || storedZelle === "" ? "email" : "phone",
-  );
-  const [zelleRegion, setZelleRegion] = useState<string>(
-    () => splitE164(storedZelle)?.region ?? DEFAULT_PHONE_REGION,
-  );
-  const [zelleNationalNumber, setZelleNationalNumber] = useState(
-    () => splitE164(storedZelle)?.nationalNumber ?? "",
-  );
-
-  /**
-   * The Zelle handle as it should be stored: E.164 in phone mode, the typed
-   * address in email mode. Composed at save time rather than mirrored into
-   * `handles` on every keystroke, so the two halves cannot drift apart.
-   */
-  const zelleHandle = (): string =>
-    zelleMode === "phone" ? composeE164(zelleRegion, zelleNationalNumber) : (handles.zelle ?? "");
-
   // The confirmation clears itself. Setting it in a timer rather than
   // synchronously in the effect body is deliberate — a synchronous setState
   // there is a cascading render, which the lint rule correctly rejects.
@@ -97,16 +67,7 @@ export function useProfileForm(currentUser: User) {
 
   const save = useMutation({
     mutationFn: async () => {
-      await authClient.updateProfile({
-        name,
-        defaultCurrency: currency,
-        // Normalize on the way out so storage is always the bare identifier,
-        // whatever was typed or pasted. The inputs render their sigil as
-        // static text, but a paste from a Venmo profile still carries one.
-        paymentHandles: Object.entries({ ...handles, zelle: zelleHandle() }).map(
-          ([method, handle]) => ({ method, handle: stripHandlePrefix(method, handle) }),
-        ),
-      });
+      await authClient.updateProfile({ name, defaultCurrency: currency });
       // Only send the phone when it actually changed. Comparing in E.164 is
       // what makes that honest — the same number re-typed with different
       // spacing has to count as unchanged, and re-claiming a number you
@@ -295,23 +256,8 @@ export function useProfileForm(currentUser: User) {
       resetProfileLink.mutate();
     },
     isResettingProfileLink: resetProfileLink.isPending,
-    handles,
     /** True while the button shows its confirmed state. */
     saved: message !== "",
-    zelleMode,
-    setZelleMode,
-    zelleRegion,
-    setZelleRegion,
-    zelleNationalNumber,
-    setZelleNationalNumber,
-    /**
-     * Sets one payment handle in the draft.
-     *
-     * @param method - Payment method key, e.g. "venmo".
-     * @param handle - The handle as typed; blank removes it on save.
-     */
-    setHandle: (method: string, handle: string) =>
-      setHandles((current) => ({ ...current, [method]: handle })),
     message,
     error,
     save: () => {

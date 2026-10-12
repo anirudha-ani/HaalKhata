@@ -42,6 +42,10 @@ vi.mock("@/server/auth/repo/users.repo", () => ({
   findUsersByIds: vi.fn(),
 }));
 vi.mock("@/server/social/repo/friendships.repo", () => ({ listFriendIds: vi.fn() }));
+vi.mock("@/server/payment/repo/paymentMethods.repo", () => ({
+  findMethodRemoval: vi.fn(async () => undefined),
+  listPaymentMethodsByUser: vi.fn(),
+}));
 
 import {
   getFriendLedger,
@@ -64,6 +68,10 @@ import {
 import { listGroupsByUser } from "@/server/group/repo/groups.repo";
 import { findUserById, findUsersByIds } from "@/server/auth/repo/users.repo";
 import { listFriendIds } from "@/server/social/repo/friendships.repo";
+import {
+  findMethodRemoval,
+  listPaymentMethodsByUser,
+} from "@/server/payment/repo/paymentMethods.repo";
 
 const ALICE = "user-alice";
 const BOBBY = "user-bob";
@@ -134,7 +142,6 @@ function userRow(userId: string): UserRow {
     password_hash: "hash",
     google_sub: null,
     phone: null,
-    payment_handles: [],
     onboarded_at: "2026-08-01T00:00:00Z",
   } as unknown as UserRow;
 }
@@ -159,6 +166,23 @@ beforeEach(() => {
   vi.mocked(listSettlementsInvolvingUser).mockImplementation(async () => settlementRows);
   vi.mocked(listSettlementsBetween).mockImplementation(async () => settlementRows);
   vi.mocked(listOneOffSettlementsBetween).mockImplementation(async () => settlementRows);
+  // Everyone has one payment method, named after its owner, so a test can
+  // tell whose methods a ledger carried.
+  vi.mocked(listPaymentMethodsByUser).mockImplementation(async (ownerId: string) => [
+    {
+      id: `method-${ownerId}`,
+      user_id: ownerId,
+      name: `${ownerId} wallet`,
+      currency: null,
+      preset: null,
+      note: "",
+      is_preferred: false,
+      preferred_at: null,
+      created_at: "2026-08-01T00:00:00Z",
+      updated_at: "2026-08-01T00:00:00Z",
+      details: [{ kind: "phone", label: "", value: "+8801712345678" }],
+    },
+  ]);
 });
 
 describe("balances are kept per currency", () => {
@@ -223,6 +247,70 @@ describe("balances are kept per currency", () => {
     ]);
   });
 
+  it("sends the friend's payment methods to a caller who owes them", async () => {
+    // Alice owes Bob dollars, so she is about to pay him and needs to know where.
+    const ledger = await getFriendLedger(ALICE, BOBBY);
+    expect(ledger.payeeMethods).toEqual([
+      {
+        id: `method-${BOBBY}`,
+        name: `${BOBBY} wallet`,
+        currency: "",
+        preset: "",
+        details: [{ kind: "phone", label: "", value: "+8801712345678" }],
+        note: "",
+        preferred: false,
+        updatedAt: "2026-08-01T00:00:00Z",
+        createdAt: "2026-08-01T00:00:00Z",
+        preferredAt: "",
+      },
+    ]);
+    // Read inside the ledger's snapshot, on its client.
+    expect(listPaymentMethodsByUser).toHaveBeenCalledWith(BOBBY, {});
+  });
+
+  it("stamps the read with the server's clock and passes on the payee's last removal", async () => {
+    vi.mocked(findMethodRemoval).mockResolvedValue("2026-08-20T00:00:00Z");
+    const before = Date.now();
+
+    const ledger = await getFriendLedger(ALICE, BOBBY);
+
+    expect(Date.parse(ledger.readAt)).toBeGreaterThanOrEqual(before);
+    expect(Date.parse(ledger.readAt)).toBeLessThanOrEqual(Date.now());
+    expect(ledger.payeeMethodRemovedAt).toBe("2026-08-20T00:00:00Z");
+    expect(findMethodRemoval).toHaveBeenCalledWith(BOBBY, {});
+  });
+
+  it("owing in one currency is enough, even while owed in another", async () => {
+    // Bob is owed dollars but owes Alice euros: he still has a payment to make.
+    const ledger = await getFriendLedger(BOBBY, ALICE);
+    expect(ledger.payeeMethods.map((method) => method.name)).toEqual([`${ALICE} wallet`]);
+  });
+
+  it("withholds the friend's payment methods from a caller who is only owed", async () => {
+    // Only the dollar expense exists: Alice owes Bob, and Bob owes nothing.
+    vi.mocked(listExpensesBetween).mockResolvedValue([dollars]);
+    vi.mocked(listOneOffExpensesBetween).mockResolvedValue([dollars]);
+
+    const ledger = await getFriendLedger(BOBBY, ALICE);
+
+    expect(ledger.payeeMethods).toEqual([]);
+    // Not merely filtered out of the response: never read.
+    expect(listPaymentMethodsByUser).not.toHaveBeenCalled();
+    // Nor is when they last removed one, which would say they have methods.
+    expect(findMethodRemoval).not.toHaveBeenCalled();
+    expect(ledger.payeeMethodRemovedAt).toBe("");
+  });
+
+  it("withholds them from friends with nothing between them", async () => {
+    vi.mocked(listExpensesBetween).mockResolvedValue([]);
+    vi.mocked(listOneOffExpensesBetween).mockResolvedValue([]);
+
+    const ledger = await getFriendLedger(ALICE, BOBBY);
+
+    expect(ledger.payeeMethods).toEqual([]);
+    expect(listPaymentMethodsByUser).not.toHaveBeenCalled();
+  });
+
   it("refuses, by name, an aggregate the int32 wire field cannot carry", async () => {
     // Two rows at the per-row cap are each valid; their sum is not
     // representable. The encoder would throw an opaque internal error;
@@ -258,6 +346,7 @@ describe("balances are kept per currency", () => {
       amount_cents: 1000,
       currency: "USD",
       method: "cash",
+      method_label: "",
       note: "",
       created_at: "2026-08-03T00:00:00Z",
       ledger_event_order: "3",

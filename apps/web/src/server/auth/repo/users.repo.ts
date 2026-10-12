@@ -35,23 +35,7 @@ export interface UserRow {
   /** Monotonic counter baked into issued tokens; bumping it invalidates outstanding tokens. */
   token_version: number;
   created_at: string;
-  /** Where this person wants to be paid; empty array when they have set none. */
-  payment_handles: { method: string; handle: string }[];
 }
-
-/**
- * Every users column plus the user's payment handles as a JSON array.
- *
- * Folded into the lookups themselves so a User is never handed out without
- * them: the settle modal is reached from four different screens, each with a
- * different source for the recipient, and threading a separate handle fetch
- * through all four would guarantee one of them silently lacks it.
- */
-const USER_COLUMNS = `usr.*, COALESCE((
-  SELECT json_agg(json_build_object('method', handles.method, 'handle', handles.handle)
-                  ORDER BY handles.method)
-  FROM payment_handles handles WHERE handles.user_id = usr.id
-), '[]'::json) AS payment_handles`;
 
 /**
  * Inserts a new users row with a freshly generated id.
@@ -110,7 +94,7 @@ export async function setAvatarUrl(userId: string, avatarUrl: string): Promise<v
  * @returns The matching row, or undefined when no such user exists.
  */
 export async function findUserById(userId: string): Promise<UserRow | undefined> {
-  return queryOne<UserRow>(`SELECT ${USER_COLUMNS} FROM users usr WHERE usr.id = $1`, [userId]);
+  return queryOne<UserRow>(`SELECT usr.* FROM users usr WHERE usr.id = $1`, [userId]);
 }
 
 /**
@@ -121,7 +105,7 @@ export async function findUserById(userId: string): Promise<UserRow | undefined>
  */
 export async function findUserByEmail(email: string): Promise<UserRow | undefined> {
   return queryOne<UserRow>(
-    `SELECT ${USER_COLUMNS} FROM users usr
+    `SELECT usr.* FROM users usr
       WHERE lower(usr.email) = lower($1) AND usr.merged_into IS NULL`,
     [email],
   );
@@ -135,7 +119,7 @@ export async function findUserByEmail(email: string): Promise<UserRow | undefine
  */
 export async function findUserByPhone(phone: string): Promise<UserRow | undefined> {
   return queryOne<UserRow>(
-    `SELECT ${USER_COLUMNS} FROM users usr WHERE usr.phone = $1 AND usr.merged_into IS NULL`,
+    `SELECT usr.* FROM users usr WHERE usr.phone = $1 AND usr.merged_into IS NULL`,
     [phone],
   );
 }
@@ -148,7 +132,7 @@ export async function findUserByPhone(phone: string): Promise<UserRow | undefine
  */
 export async function findUserByGoogleSub(googleSub: string): Promise<UserRow | undefined> {
   return queryOne<UserRow>(
-    `SELECT ${USER_COLUMNS} FROM users usr WHERE usr.google_sub = $1 AND usr.merged_into IS NULL`,
+    `SELECT usr.* FROM users usr WHERE usr.google_sub = $1 AND usr.merged_into IS NULL`,
     [googleSub],
   );
 }
@@ -184,7 +168,7 @@ export async function linkGoogleAccount(
  */
 export async function findUsersByIds(userIds: string[]): Promise<UserRow[]> {
   if (userIds.length === 0) return [];
-  return query<UserRow>(`SELECT ${USER_COLUMNS} FROM users usr WHERE usr.id = ANY($1::text[])`, [
+  return query<UserRow>(`SELECT usr.* FROM users usr WHERE usr.id = ANY($1::text[])`, [
     userIds,
   ]);
 }

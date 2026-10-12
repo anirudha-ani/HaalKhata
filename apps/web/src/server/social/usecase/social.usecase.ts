@@ -65,7 +65,9 @@ import {
 } from "@/server/common/ledgerLocks";
 import { formatMoney } from "@haalkhata/shared/money/money";
 import { safeActivityPath } from "@haalkhata/shared/navigation/activityPath";
-import { findPaymentMethod } from "@haalkhata/shared/payment/methods";
+import { listPaymentMethodsByUser } from "@/server/payment/repo/paymentMethods.repo";
+import { reminderPaymentHint } from "@/server/payment/usecase/paymentHint";
+import { cleanMethodRow } from "@/server/payment/usecase/paymentMethod.mapper";
 import { getOverallBalances, netWithUser } from "@/server/expense/usecase/balance.usecase";
 import { denied, invalid, notFound, UsecaseError } from "@/server/common/errors";
 import { transaction } from "@/server/common/db";
@@ -884,7 +886,8 @@ export async function removeFriend(userId: string, friendId: string): Promise<vo
 
 /**
  * Nudges someone who owes the caller money, as an in-app notification that
- * includes the caller's payment handles so the debtor knows where to send it.
+ * names how the caller wants to be paid, so the debtor knows which app to
+ * open. Names only: the details are read fresh in the settle dialog.
  *
  * Two guards, both server-side because the client is not the party that
  * suffers when they are missing: you can only remind somebody who actually
@@ -930,15 +933,19 @@ export async function sendReminder(userId: string, debtorId: string): Promise<vo
     );
     if (owedBuckets.length === 0) invalid("they don't owe you anything right now");
 
-    // The nudge carries the sender's handles, because "where do I send it?" is
-    // the very next question and making the debtor ask defeats the reminder.
-    const payTo = (sender.payment_handles ?? [])
-      .filter((entry) => entry.handle)
-      .map((entry) => {
-        const method = findPaymentMethod(entry.method);
-        return `${method?.label ?? entry.method}: ${entry.handle}`;
-      })
-      .join(" · ");
+    // The nudge says how the sender wants to be paid, because "where do I
+    // send it?" is the very next question and making the debtor ask defeats
+    // the reminder. It names the method and stops there: a notification is a
+    // stored row, and an account number has no business outliving the debt.
+    const payHint = reminderPaymentHint(
+      sender.name,
+      (await listPaymentMethodsByUser(userId, client)).map(cleanMethodRow).map((method) => ({
+        name: method.name,
+        currency: method.currency ?? "",
+        preferred: method.is_preferred,
+      })),
+      owedBuckets.map(([currency]) => currency),
+    );
     const owed = owedBuckets.map(([currency, cents]) => formatMoney(cents, currency)).join(" and ");
 
     await insertNotifications(
@@ -946,7 +953,7 @@ export async function sendReminder(userId: string, debtorId: string): Promise<vo
       {
         type: "reminder",
         title: `${sender.name} sent you a reminder`,
-        body: payTo ? `You owe ${owed} — pay via ${payTo}` : `You owe ${owed}`,
+        body: payHint ? `You owe ${owed}. ${payHint}` : `You owe ${owed}`,
         link,
       },
       client,

@@ -71,7 +71,6 @@ function userRow(overrides: Partial<UserRow> = {}): UserRow {
     merged_into: null,
     token_version: 0,
     created_at: "2026-09-01T00:00:00Z",
-    payment_handles: [],
     ...overrides,
   };
 }

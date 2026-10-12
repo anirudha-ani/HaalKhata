@@ -74,6 +74,12 @@ export const queryKeys = {
   /** The user's notification list and unread count. */
   notifications: ["notifications"] as const,
   /**
+   * The signed-in user's own payment methods. A key of its own rather than
+   * one nested under `me`: invalidating the profile must not refetch these,
+   * and nothing a payment or an expense does changes them.
+   */
+  paymentMethods: ["paymentMethods"] as const,
+  /**
    * The user's own insights for one window size.
    * @param months - How many calendar months the window covers.
    * @returns The query key tuple for that window.

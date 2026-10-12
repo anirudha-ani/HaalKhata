@@ -25,6 +25,7 @@ import { localDate } from "@haalkhata/shared/time/localTime";
 import { getGreeting } from "@haalkhata/shared/greeting";
 import { colors, fonts, radii, spacing } from "@/lib/theme/theme";
 import { groupEmoji } from "../../../groups/constants/groupTypes";
+import { PayMethodPrompt } from "../PayMethodPrompt/PayMethodPrompt";
 import { useDashboard } from "./hooks/useDashboard";
 
 /**
@@ -60,6 +61,19 @@ export function DashboardScreen() {
           </View>
 
           <VerifyPhoneBanner currentUser={dashboard.me} />
+
+          {/* Shown only with real balances: a failed read must not prompt
+              about debts the screen cannot show. It stays mounted through a
+              failed refresh, though, so an add sheet opened from it is not
+              torn down with everything typed in it. */}
+          {dashboard.balances ? (
+            <PayMethodPrompt
+              counterparties={dashboard.balances.counterparties}
+              currencyOrder={dashboard.totals.map((total) => total.currency)}
+              defaultCurrency={currency}
+              hidden={balancesFailed}
+            />
+          ) : null}
 
           {/* Scanning a receipt is one of the ways to fill this form in, so
               it is not a second button beside it. */}

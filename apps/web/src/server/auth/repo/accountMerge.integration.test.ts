@@ -200,15 +200,21 @@ describe.skipIf(!reachable)("mergeAccounts against Postgres", () => {
     expect([...rows[0].audience].sort()).toEqual([KEEPER, RAHUL]);
   });
 
-  it("keeps the account's own payment handles and adopts the rest", async () => {
+  it("adopts the absorbed row's payment methods without their stars", async () => {
     const { rows } = await database.query(
-      `SELECT method, handle FROM payment_handles WHERE user_id = $1 ORDER BY method`,
+      `SELECT name, is_preferred FROM payment_methods WHERE user_id = $1 ORDER BY name`,
       [KEEPER],
     );
+    // Both rows had starred a BDT method. The keeper's star stands; the
+    // adopted one arrives unstarred, so the one-star-per-currency index holds.
     expect(rows).toEqual([
-      { method: "venmo", handle: "keeper-venmo" },
-      { method: "zelle", handle: "loser-zelle" },
+      { name: "Keeper bKash", is_preferred: true },
+      { name: "Loser Nagad", is_preferred: false },
     ]);
+    const details = await database.query(
+      `SELECT value FROM payment_method_details WHERE method_id = 'pm-loser'`,
+    );
+    expect(details.rows).toEqual([{ value: "+8801812345678" }]);
   });
 
   it("moves the phone across and tombstones the absorbed row", async () => {
@@ -237,7 +243,7 @@ describe.skipIf(!reachable)("mergeAccounts against Postgres", () => {
        + (SELECT COUNT(*) FROM activity WHERE actor_id = $1 OR credit_user_id = $1
             OR audience @> to_jsonb($1::text))
        + (SELECT COUNT(*) FROM notifications WHERE user_id = $1)
-       + (SELECT COUNT(*) FROM payment_handles WHERE user_id = $1)
+       + (SELECT COUNT(*) FROM payment_methods WHERE user_id = $1)
        + (SELECT COUNT(*) FROM operations WHERE user_id = $1)
        + (SELECT COUNT(*) FROM receipt_scans WHERE user_id = $1)
        + (SELECT COUNT(*) FROM expenses WHERE created_by = $1 OR deleted_by = $1)
@@ -360,9 +366,13 @@ async function seed(database: Client): Promise<void> {
   );
 
   await database.query(
-    `INSERT INTO payment_handles (user_id, method, handle) VALUES
-       ($1, 'venmo', 'keeper-venmo'), ($2, 'venmo', 'loser-venmo'), ($2, 'zelle', 'loser-zelle')`,
+    `INSERT INTO payment_methods (id, user_id, name, currency, is_preferred) VALUES
+       ('pm-keeper', $1, 'Keeper bKash', 'BDT', TRUE), ('pm-loser', $2, 'Loser Nagad', 'BDT', TRUE)`,
     [KEEPER, LOSER],
+  );
+  await database.query(
+    `INSERT INTO payment_method_details (method_id, position, kind, value) VALUES
+       ('pm-keeper', 0, 'phone', '+8801712345678'), ('pm-loser', 0, 'phone', '+8801812345678')`,
   );
 
   await database.query(
