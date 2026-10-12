@@ -401,8 +401,9 @@ with colocated tests. Mobile-specific rules:
   bearer exemption, and the admin host sends no CORS header. Keep both.
 - **The usage overview is counts and display names, enforced in SQL.** No
   statement in `adminanalytics/repo/usage.repo.ts` selects an email, phone,
-  avatar, id, amount, description or group name, and an integration test
-  searches the whole response for them. A display name that is itself an
+  avatar, id, amount, description, group name or anything about a payment
+  method beyond how many exist, and an integration test searches the whole
+  response for them. A display name that is itself an
   email address, a phone number or the start of the person's email is
   withheld in the same SQL. A new figure there is a new count; if it needs
   a column a person would call private, it does not belong on that page.

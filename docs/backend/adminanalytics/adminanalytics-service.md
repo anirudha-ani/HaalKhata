@@ -23,7 +23,7 @@ The hostname routing lives in
 ## What the Overview Never Contains
 
 No email, phone number, avatar, account id, amount of money, expense
-description, group name or comment text. This is a property of the SQL, not
+description, group name, comment text or payment method. This is a property of the SQL, not
 of a mapper: no statement in `usage.repo.ts` selects any of those columns, so
 there is nothing for a later layer to forget to drop. Per-person counts are
 joined on the user id **inside the database** and the id is not selected.
@@ -139,6 +139,11 @@ the app**.
   `deleted_expense_count` says how many were later deleted.
 - **Payments** exclude a net settlement's cancelling (`offset`) entries.
 - **Receipt scans** are counted from the day scan counting shipped.
+- **Payment methods** are counted, and how many people have saved one. A
+  method's name and details, and the name a payment keeps of the method it
+  was made with (`settlements.method_label`), are never read here: they say
+  where a person's money goes, and reach only someone who owes that person
+  (see [payment-service.md](../payment/payment-service.md)).
 - Weeks start on **Monday, UTC**, the boundary `date_trunc('week')` uses.
 - The whole overview is read inside one `snapshot()`.
 

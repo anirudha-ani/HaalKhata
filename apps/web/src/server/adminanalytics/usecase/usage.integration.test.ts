@@ -7,8 +7,9 @@
  * tombstones, deleted expenses still counted as added, each person credited
  * with what they did. The other is the promise the admin page is built on:
  * that the overview carries names and counts and nothing else. The suite
- * seeds people with emails, phone numbers, pictures, amounts, descriptions
- * and group names, then searches the entire response for every one of them.
+ * seeds people with emails, phone numbers, pictures, amounts, descriptions,
+ * group names and payment methods, then searches the entire response for
+ * every one of them.
  *
  * Skips itself when no database is reachable, so it is safe in the suite.
  */
@@ -52,6 +53,11 @@ const PRIVATE_VALUES = [
   "typed.my.email@example.com",
   "+1 (415) 555-0199",
   "jsmith1987",
+  "Secret Bank Method",
+  "secret-venmo-handle",
+  "Routing 021000021",
+  "Pay me before Friday",
+  "Label Kept On Payment",
 ];
 
 /**
@@ -138,6 +144,25 @@ async function seed(database: Client): Promise<void> {
             ('stl-3', $2, $1, 200, 'USD', 'cash', $2, now() - interval '200 days')`,
     [ANIKA, RIFAT],
   );
+  // Anika has saved two payment methods and Rifat one; one of Anika's
+  // payments also kept the name of the method it was made with.
+  await database.query(
+    `INSERT INTO payment_methods (id, user_id, name, currency, preset, note) VALUES
+       ('pm-1', $1, 'Venmo', 'USD', 'venmo', 'Pay me before Friday'),
+       ('pm-2', $1, 'Secret Bank Method', NULL, NULL, ''),
+       ('pm-3', $2, 'Zelle', 'USD', 'zelle', '')`,
+    [ANIKA, RIFAT],
+  );
+  await database.query(
+    `INSERT INTO payment_method_details (method_id, position, kind, label, value) VALUES
+       ('pm-1', 0, 'username', '', 'secret-venmo-handle'),
+       ('pm-2', 0, 'custom', 'Routing', 'Routing 021000021'),
+       ('pm-3', 0, 'email', '', 'rifat.private@example.com')`,
+  );
+  await database.query(
+    `UPDATE settlements SET method_label = 'Label Kept On Payment' WHERE id = 'stl-1'`,
+  );
+
   await database.query(
     `INSERT INTO comments (id, expense_id, user_id, body) VALUES
        ('cmt-1', 'exp-1', $1, 'Private comment body'), ('cmt-2', 'exp-1', $2, 'another')`,
@@ -227,6 +252,8 @@ describe.skipIf(!reachable)("usage overview against Postgres", () => {
       receiptScanCount: 4,
       parsedReceiptScanCount: 3,
       commentCount: 2,
+      paymentMethodCount: 3,
+      paymentMethodUserCount: 2,
     });
     expect(expensesBySplitType).toEqual([
       { splitType: "equal", count: 3 },

@@ -7,6 +7,11 @@
  * for a later layer to forget to drop: what the admin page must not show
  * never leaves the database. A display name that is itself contact
  * information is withheld here too (see DISPLAY_NAME).
+ *
+ * Payment methods are counted and nothing more. A method's name, its
+ * details and the name a payment keeps of the method it was made with
+ * (settlements.method_label) say where a person's money goes; they reach
+ * only someone who owes that person, and this page is not that.
  */
 
 import type { PoolClient } from "pg";
@@ -68,6 +73,8 @@ export interface UsageTotalsRow {
   receipt_scan_count: number;
   parsed_receipt_scan_count: number;
   comment_count: number;
+  payment_method_count: number;
+  payment_method_user_count: number;
 }
 
 /**
@@ -101,7 +108,9 @@ export async function findUsageTotals(
        (SELECT COUNT(*)::int FROM settlements WHERE method <> 'offset') AS payment_count,
        (SELECT COUNT(*)::int FROM receipt_scans) AS receipt_scan_count,
        (SELECT COUNT(*)::int FROM receipt_scans WHERE outcome = 'parsed') AS parsed_receipt_scan_count,
-       (SELECT COUNT(*)::int FROM comments) AS comment_count`,
+       (SELECT COUNT(*)::int FROM comments) AS comment_count,
+       (SELECT COUNT(*)::int FROM payment_methods) AS payment_method_count,
+       (SELECT COUNT(DISTINCT user_id)::int FROM payment_methods) AS payment_method_user_count`,
     [activeDays.week, activeDays.month],
     client,
   );

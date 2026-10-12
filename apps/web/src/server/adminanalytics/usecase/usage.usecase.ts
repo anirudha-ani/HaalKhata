@@ -60,6 +60,8 @@ export async function getUsageOverview() {
         receiptScanCount: totals.receipt_scan_count,
         parsedReceiptScanCount: totals.parsed_receipt_scan_count,
         commentCount: totals.comment_count,
+        paymentMethodCount: totals.payment_method_count,
+        paymentMethodUserCount: totals.payment_method_user_count,
       },
       expensesBySplitType: splitTypes.map((splitTypeRow) => ({
         splitType: splitTypeRow.split_type,

@@ -79,6 +79,12 @@ message UsageTotals {
   // How many of those a provider could read.
   int32 parsed_receipt_scan_count = 10;
   int32 comment_count = 11;
+  // Payment methods people have saved, including the ones carried over from
+  // the old per-app handles. A count only: what a method is called and
+  // where it sends money are never read for this page.
+  int32 payment_method_count = 12;
+  // How many people have saved at least one.
+  int32 payment_method_user_count = 13;
 }
 
 message SplitTypeCount {
