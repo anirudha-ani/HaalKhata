@@ -25,8 +25,8 @@ export interface PickerGroup {
  *
  * Group and ad-hoc people are alternatives, not layers — the server requires
  * every participant of a group expense to be a member of it, so picking a
- * group takes over the cast and hides the add-people control. Clearing the
- * group hands it back.
+ * group supplies the available people, who can still be removed or restored.
+ * Clearing the group hands it back.
  *
  * When editing, only the scope is locked: a saved expense cannot move
  * between a group and a one-off ledger (the server pins it, because
@@ -46,9 +46,9 @@ export function PeoplePicker({
   friends,
   groups,
   groupId,
-  friendIds,
+  groupMembers,
   onGroupChange,
-  onToggleFriend,
+  onTogglePerson,
   scopeLocked = false,
 }: {
   /** The signed-in user, pinned as the first chip and labelled "You". */
@@ -61,12 +61,12 @@ export function PeoplePicker({
   groups: PickerGroup[];
   /** Currently selected group id, or "" for a one-off expense. */
   groupId: string;
-  /** Ids of the ad-hoc participants (empty while a group is selected). */
-  friendIds: string[];
+  /** Full roster available when selecting people for the chosen group. */
+  groupMembers: User[];
   /** Called with the new group id ("" for none) when a group chip is tapped. */
   onGroupChange: (groupId: string) => void;
-  /** Called with a friend's id to add or remove them from the ad-hoc cast. */
-  onToggleFriend: (userId: string) => void;
+  /** Called with a person's id to add or remove them from this expense. */
+  onTogglePerson: (userId: string) => void;
   /** Whether the group/one-off choice is locked (a saved expense cannot change scope). */
   scopeLocked?: boolean;
 }) {
@@ -79,12 +79,17 @@ export function PeoplePicker({
 
   const isGroupExpense = groupId !== "";
   const selectedGroupName = groups.find((group) => group.id === groupId)?.name ?? "";
+  const availablePeople = useMemo(
+    () => (isGroupExpense ? groupMembers : friends).filter((person) => person.id !== currentUser?.id),
+    [isGroupExpense, groupMembers, friends, currentUser?.id],
+  );
+  const selectedIds = people.map((person) => person.id);
   // §33: an Invited person can be a friend but never on a transaction.
   // Shown-but-disabled beats hidden ("why isn't Rifat here?" answers itself),
   // and the checklist sinks them below everyone who can be picked.
   const invitedIds = useMemo(
-    () => new Set(friends.filter((friend) => !friend.registered).map((friend) => friend.id)),
-    [friends],
+    () => new Set(availablePeople.filter((person) => !person.registered).map((person) => person.id)),
+    [availablePeople],
   );
 
   if (groups.length === 0 && friends.length === 0) {
@@ -114,15 +119,35 @@ export function PeoplePicker({
 
   return (
     <View style={styles.section}>
+      {groups.length > 0 ? (
+        <View style={styles.groupBlock}>
+          <Text style={styles.groupLabel}>
+            {scopeLocked ? "Group — can't change once saved" : "Group"}
+          </Text>
+          <View style={styles.chips}>
+            {groups.map((group) => (
+              <Chip
+                disabled={scopeLocked}
+                key={group.id}
+                label={group.name}
+                // Re-tapping the selected group clears it, which is the
+                // only way back to a one-off with no extra control.
+                onPress={() => onGroupChange(groupId === group.id ? "" : group.id)}
+                selected={groupId === group.id}
+              />
+            ))}
+          </View>
+        </View>
+      ) : null}
+
       <Text style={styles.sectionTitle}>WHO&apos;S ON THIS?</Text>
 
       <View style={styles.card}>
         <View style={styles.cast}>
           {people.map((person) => {
             const isSelf = person.id === currentUser?.id;
-            // You are always on your own expense, and a group's members come
-            // from the group — neither is removable here.
-            const isRemovable = !isSelf && !isGroupExpense;
+            // The signed-in person stays pinned; other people can leave this expense.
+            const isRemovable = !isSelf;
             return (
               <View key={person.id} style={styles.castChip}>
                 <Avatar size="sm" user={person} />
@@ -132,8 +157,9 @@ export function PeoplePicker({
                 {isRemovable ? (
                   <Pressable
                     accessibilityLabel={`Remove ${person.name}`}
+                    accessibilityRole="button"
                     hitSlop={6}
-                    onPress={() => onToggleFriend(person.id)}
+                    onPress={() => onTogglePerson(person.id)}
                     style={styles.castRemove}
                   >
                     <X color={colors.inkSoft} size={14} />
@@ -146,12 +172,13 @@ export function PeoplePicker({
 
         {isGroupExpense ? (
           <Text style={styles.hint}>
-            Everyone in {selectedGroupName} is on this — leave someone out by unchecking them
-            under Split.
+            Choose who took part in {selectedGroupName}. Remove people with the × beside their name.
           </Text>
-        ) : friends.length === 0 ? (
+        ) : null}
+
+        {availablePeople.length === 0 && !isGroupExpense ? (
           <View style={styles.hintActions}>
-            <Text style={styles.hint}>Add a friend to split this with someone, or pick a group below.</Text>
+            <Text style={styles.hint}>Add a friend to split this with someone, or pick a group above.</Text>
             <Button
               compact
               label="Add a friend"
@@ -159,7 +186,7 @@ export function PeoplePicker({
               variant="outline"
             />
           </View>
-        ) : (
+        ) : availablePeople.length > 0 ? (
           <>
             <Pressable
               accessibilityRole="button"
@@ -168,7 +195,9 @@ export function PeoplePicker({
               style={styles.addToggle}
             >
               <UserPlus color={colors.brand600} size={16} />
-              <Text style={styles.addToggleText}>Add people</Text>
+              <Text style={styles.addToggleText}>
+                {isGroupExpense ? "Choose group members" : "Add people"}
+              </Text>
               {isOpen ? (
                 <ChevronUp color={colors.brand600} size={16} />
               ) : (
@@ -178,35 +207,15 @@ export function PeoplePicker({
 
             {isOpen ? (
               <PersonChecklist
+                key={groupId || "friends"}
                 disabledHint="invited, hasn't joined yet"
                 disabledIds={invitedIds}
-                onToggle={onToggleFriend}
-                people={friends}
-                selectedIds={friendIds}
+                onToggle={onTogglePerson}
+                people={availablePeople}
+                selectedIds={selectedIds}
               />
             ) : null}
           </>
-        )}
-
-        {groups.length > 0 ? (
-          <View style={styles.groupBlock}>
-            <Text style={styles.groupLabel}>
-              {scopeLocked ? "Group — can't change once saved" : "…or a group instead"}
-            </Text>
-            <View style={styles.chips}>
-              {groups.map((group) => (
-                <Chip
-                  disabled={scopeLocked}
-                  key={group.id}
-                  label={group.name}
-                  // Re-tapping the selected group clears it, which is the
-                  // only way back to a one-off with no extra control.
-                  onPress={() => onGroupChange(groupId === group.id ? "" : group.id)}
-                  selected={groupId === group.id}
-                />
-              ))}
-            </View>
-          </View>
         ) : null}
       </View>
     </View>
@@ -266,10 +275,7 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   groupBlock: {
-    borderTopColor: colors.line,
-    borderTopWidth: 1,
     gap: spacing.sm,
-    paddingTop: spacing.md,
   },
   groupLabel: {
     color: colors.inkSoft,
