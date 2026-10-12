@@ -44,8 +44,10 @@ overrides:
   js-yaml@>=4.0.0 <4.3.2: ^4.3.2
   compression@<1.8.2: ^1.8.2
   source-map-js@>=1.0.0 <1.2.2: ^1.2.2
-  # GHSA-pqg4-j6r4-53mv: reject unsafe line breaks after shell comments.
-  "shell-quote@>=1.8.4 <1.11.0": 1.11.0
+  # shell-quote command-injection advisory (GHSA-pqg4-j6r4-53mv). Reached
+  # through react-devtools-core under React Native, which still asks for the
+  # 1.10 line; 1.11.0 is the patched release of the same major.
+  "shell-quote@1.10.0": 1.11.0
 
 # Advisories with no patched release to move to, reviewed and found
 # unreachable here. Remove an entry once its fix ships and take the upgrade

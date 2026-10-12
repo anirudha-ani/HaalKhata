@@ -44,6 +44,7 @@ import { snapshot } from "@/server/common/db";
 import { denied, notFound } from "@/server/common/errors";
 import { toInt32Cents } from "@/server/common/money";
 import { toPublicUser } from "@/server/auth/usecase/user.mapper";
+import { listPayeeMethods } from "@/server/payment/usecase/paymentMethod.usecase";
 import {
   LEDGER_DISPLAY_LIMIT,
   OFFSET_SETTLEMENT_METHOD,
@@ -828,9 +829,10 @@ function settlementLedgerLines(
         ? paidByYou
           ? `Cancelled: what you owed ${friendName}`
           : `Cancelled: what ${friendName} owed you`
-        : paidByYou
-          ? "You paid"
-          : `${friendName} paid you`,
+        : `${paidByYou ? "You paid" : `${friendName} paid you`}${
+            // How the money moved, when the payment named a method.
+            settlement.method_label ? ` via ${settlement.method_label}` : ""
+          }`,
       groupId: settlement.group_id ?? "",
       groupName: settlement.group_id ? (groupNames.get(settlement.group_id) ?? "") : "",
       currency: settlement.currency,
@@ -1071,6 +1073,17 @@ export async function getFriendLedger(userId: string, friendId: string) {
       }),
     }));
 
+    // How the friend wants to be paid goes only to someone about to pay
+    // them. A scope counts on its own, not just the net: one balance can be
+    // settled alone, so a caller who owes inside one group needs the details
+    // even when the friend owes them more somewhere else.
+    const callerOwes = settlePositions.some(
+      (position) => position.netCents < 0 || position.scopes.some((scope) => scope.netCents < 0),
+    );
+    const payee = callerOwes
+      ? await listPayeeMethods(friendId, client)
+      : { methods: [], removedAt: "" };
+
     return {
       friend: toPublicUser(friend),
       netCents: toInt32Cents(nets.get(defaultCurrency) ?? 0, "this balance"),
@@ -1079,6 +1092,11 @@ export async function getFriendLedger(userId: string, friendId: string) {
       entries: shownEntries,
       truncated,
       settlePositions,
+      payeeMethods: payee.methods,
+      // The server's own clock, so "changed 2 days ago" does not depend on
+      // the payer's device being set right.
+      readAt: new Date().toISOString(),
+      payeeMethodRemovedAt: payee.removedAt,
       groupBalances: groupBalances.map((scope) => ({
         ...scope,
         netCents: toInt32Cents(scope.netCents, "a balance"),

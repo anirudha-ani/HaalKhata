@@ -1,5 +1,7 @@
 /** The P2P apps people actually settle with, and what each one can be handed. */
 
+import { PAYPAL_CURRENCY_DIGITS, VENMO_CURRENCY } from "./payment.constants";
+
 /** One way of paying somebody back. */
 export interface PaymentMethod {
   /** Stable key stored on settlements and payment handles. */
@@ -40,6 +42,22 @@ export interface PaymentMethod {
    * lie the UI tells.
    */
   linkCarriesAmount: boolean;
+  /**
+   * The shape of this app's username, when it has one. Its link is built
+   * from the username, so anything else (a space, a slash, a whole URL that
+   * could not be unpicked) would be stored only to open a page that does not
+   * exist. Absent for apps reached by something else.
+   */
+  handlePattern?: RegExp;
+  /** What to tell someone whose username does not have that shape. */
+  handleRule?: string;
+  /**
+   * The currencies the app moves, for the four that are services. An amount
+   * owed in any other currency cannot be sent through it as it stands, which
+   * the settle screen says instead of handing the app a number it would read
+   * as its own currency.
+   */
+  currencies?: readonly string[];
 }
 
 /**
@@ -56,6 +74,9 @@ export const PAYMENT_METHODS: readonly PaymentMethod[] = [
     takesHandle: true,
     linkable: true,
     linkCarriesAmount: true,
+    handlePattern: /^[A-Za-z0-9_-]{1,30}$/,
+    handleRule: "a Venmo username is letters, numbers, dashes and underscores, as on your profile",
+    currencies: [VENMO_CURRENCY],
   },
   {
     key: "zelle",
@@ -70,6 +91,7 @@ export const PAYMENT_METHODS: readonly PaymentMethod[] = [
     takesHandle: true,
     linkable: false,
     linkCarriesAmount: false,
+    currencies: ["USD"],
   },
   {
     key: "cashapp",
@@ -79,6 +101,9 @@ export const PAYMENT_METHODS: readonly PaymentMethod[] = [
     takesHandle: true,
     linkable: true,
     linkCarriesAmount: false,
+    handlePattern: /^[A-Za-z0-9_-]{1,20}$/,
+    handleRule: "a $cashtag is up to 20 letters and numbers",
+    currencies: ["USD", "GBP"],
   },
   {
     key: "paypal",
@@ -91,6 +116,9 @@ export const PAYMENT_METHODS: readonly PaymentMethod[] = [
     takesHandle: true,
     linkable: true,
     linkCarriesAmount: true,
+    handlePattern: /^[A-Za-z0-9._-]{1,40}$/,
+    handleRule: "a PayPal.Me name is letters and numbers, the part after paypal.me/",
+    currencies: Object.keys(PAYPAL_CURRENCY_DIGITS),
   },
   {
     key: "cash",
@@ -143,7 +171,9 @@ export function findPaymentMethod(methodKey: string): PaymentMethod | undefined 
  *
  * The field shows its prefix as static text, so a careful user types only the
  * bare part. This exists for the careless path: pasting `@jordan-lee` off a
- * Venmo profile, or the whole `https://paypal.me/jordanlee` off a browser bar.
+ * Venmo profile, or a whole `https://paypal.me/jordanlee`,
+ * `https://venmo.com/u/jordan-lee` or `https://cash.app/$jordanlee` off a
+ * browser bar.
  * Without it those become `@@jordan-lee` and `paypal.me/https://paypal.me/...`
  * once the prefix is rendered back.
  *
@@ -155,16 +185,38 @@ export function findPaymentMethod(methodKey: string): PaymentMethod | undefined 
  * @returns The bare identifier, trimmed.
  */
 export function stripHandlePrefix(methodKey: string, typed: string): string {
-  let handle = typed.trim();
-  if (methodKey === "venmo") return handle.replace(/^@+/, "");
-  if (methodKey === "cashapp") return handle.replace(/^\$+/, "");
-  if (methodKey === "paypal") {
-    // Longest first: the scheme has to go before the bare host would match.
-    handle = handle.replace(/^https?:\/\//i, "");
-    handle = handle.replace(/^(?:www\.)?paypal\.me\//i, "");
-    return handle.replace(/\/+$/, "");
+  // Longest first: the scheme has to go before the bare host would match.
+  const pasted = typed.trim().replace(/^https?:\/\//i, "");
+  if (methodKey === "venmo") {
+    const handle = pasted.replace(/^(?:www\.|account\.)?venmo\.com\/(?:u\/)?/i, "");
+    // Trimmed again: "@ jordan" leaves a space behind its sigil.
+    return dropTrailingSlashes(handle).replace(/^@+/, "").trim();
   }
-  return handle;
+  if (methodKey === "cashapp") {
+    const handle = pasted.replace(/^(?:www\.)?cash\.app\//i, "");
+    return dropTrailingSlashes(handle).replace(/^\$+/, "").trim();
+  }
+  if (methodKey === "paypal") {
+    return dropTrailingSlashes(pasted.replace(/^(?:www\.)?paypal\.me\//i, "")).trim();
+  }
+  return typed.trim();
+}
+
+/**
+ * Removes the slashes a pasted URL ends with.
+ *
+ * Walks back from the end instead of using a pattern. The obvious pattern,
+ * one or more slashes anchored at the end, retries from every slash in a
+ * long run that does not reach the end, so its cost grows with the square of
+ * the input and one megabyte of slashes holds the thread for minutes.
+ *
+ * @param text - The text to shorten.
+ * @returns The text without its trailing slashes.
+ */
+function dropTrailingSlashes(text: string): string {
+  let kept = text.length;
+  while (kept > 0 && text[kept - 1] === "/") kept -= 1;
+  return text.slice(0, kept);
 }
 
 /**
@@ -182,47 +234,4 @@ export function displayHandle(methodKey: string, handle: string): string {
   const bare = stripHandlePrefix(methodKey, handle);
   if (bare === "") return "";
   return `${findPaymentMethod(methodKey)?.handlePrefix ?? ""}${bare}`;
-}
-
-/**
- * Builds a link that opens the payer's app on the right person, prefilled as
- * far as that app allows.
- *
- * Only web URLs are produced, never custom schemes: `venmo://` shows a
- * browser error when the app is not installed, whereas venmo.com redirects
- * into the app when it is and works in the browser when it is not.
- *
- * @param methodKey - Which app to open.
- * @param handle - The recipient's handle for that app.
- * @param amountCents - Amount to prefill, ignored by methods that cannot take one.
- * @param note - Payment note, included only where the app accepts one.
- * @returns The URL, or "" when this method has no link.
- */
-export function paymentLink(
-  methodKey: string,
-  handle: string,
-  amountCents: number,
-  note: string,
-): string {
-  const method = findPaymentMethod(methodKey);
-  // Stored handles are bare, but rows written before the prefix became static
-  // text may still carry one — and a user can always paste. Normalising here
-  // keeps every link correct regardless of which.
-  const bare = stripHandlePrefix(methodKey, handle);
-  if (!method?.linkable || bare === "") return "";
-  const amount = (amountCents / 100).toFixed(2);
-
-  if (methodKey === "venmo") {
-    const parameters = new URLSearchParams({ txn: "pay", amount });
-    if (note.trim()) parameters.set("note", note.trim());
-    return `https://venmo.com/${encodeURIComponent(bare)}?${parameters}`;
-  }
-  if (methodKey === "cashapp") {
-    // The $cashtag link cannot carry an amount; the sender types it.
-    return `https://cash.app/$${encodeURIComponent(bare)}`;
-  }
-  if (methodKey === "paypal") {
-    return `https://paypal.me/${encodeURIComponent(bare)}/${amount}`;
-  }
-  return "";
 }

@@ -352,9 +352,14 @@ account?").
      sends all read "no previous reminder" before any commits.
 - Ordering of the guards is deliberate: the cooldown (one indexed lookup)
   runs before the full ledger walk, so rejected spam is cheap.
-- The notification **carries the sender's payment handles** ("pay via
-  Venmo: @ani-p …") — "where do I send it?" is the next question, and making
-  the debtor ask defeats the reminder. Amounts are named per currency.
+- The notification **names how the sender wants to be paid** ("You owe
+  $80.00. Pia prefers Zelle."), because "where do I send it?" is the next
+  question and making the debtor ask defeats the reminder. It says "prefers"
+  only of a starred method; with none starred it lists up to three that work
+  in the currency ("takes bKash and Nagad"). Names only: a notification is a
+  stored row, and an account number has no business outliving the debt. The
+  debtor opens the settle dialog for the details. Amounts are named per
+  currency.
 - Errors: reminding yourself, a debtor who owes nothing, and a running
   cooldown (with hours remaining) are `InvalidArgument`; a vanished account
   is denied. Rate-limited 10/min on top of the cooldown.

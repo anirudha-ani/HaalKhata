@@ -73,6 +73,12 @@ export const queryKeys = {
     ["activity", groupId ?? "", month ?? "", "feed"] as const,
   /** The user's notification list and unread count. */
   notifications: ["notifications"] as const,
+  /**
+   * The signed-in user's own payment methods. A key of its own rather than
+   * one nested under `me`: invalidating the profile must not refetch these,
+   * and nothing a payment or an expense does changes them.
+   */
+  paymentMethods: ["paymentMethods"] as const,
 };
 
 /** Everything money-related that a new expense/settlement can change — invalidate these key prefixes after mutations. */

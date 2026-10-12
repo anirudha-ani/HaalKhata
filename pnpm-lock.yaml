@@ -191,7 +191,7 @@ overrides:
   js-yaml@>=4.0.0 <4.3.2: ^4.3.2
   compression@<1.8.2: ^1.8.2
   source-map-js@>=1.0.0 <1.2.2: ^1.2.2
-  shell-quote@>=1.8.4 <1.11.0: 1.11.0
+  shell-quote@1.10.0: 1.11.0
 
 importers:
 

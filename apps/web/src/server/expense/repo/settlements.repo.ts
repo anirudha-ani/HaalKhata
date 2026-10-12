@@ -15,8 +15,13 @@ export interface SettlementRow {
   to_user: string;
   amount_cents: number;
   currency: string;
-  /** Free-form payment method label, e.g. "cash" or "bank transfer". */
+  /** Settlement method key: venmo, zelle, cashapp, paypal, cash, bank, other, or offset. */
   method: string;
+  /**
+   * Name of the payment method used ("bKash"), copied when the payment was
+   * recorded; empty for cash, for an offset, and for older rows.
+   */
+  method_label: string;
   note: string;
   created_at: string;
   /** Monotonic order shared with expenses for mutation-safety checks. */
@@ -126,7 +131,7 @@ export async function scopeHasSettlements(
  * Inserts a recorded settlement (a real-world payment between two users).
  *
  * @param input - Settlement details: payer, recipient, amount, currency,
- *   method, note, and who typed it in.
+ *   method and the name it went by, note, and who typed it in.
  * @param client - Transaction client when the insert must commit with a
  *   surrounding {@link withSettlementPairLock} window; omitted, it autocommits.
  * @returns The inserted row, including its generated id and timestamp.
@@ -139,6 +144,8 @@ export async function insertSettlement(
     amountCents: number;
     currency: string;
     method: string;
+    /** Name of the payment method used; omitted when there is none to keep. */
+    methodLabel?: string;
     note: string;
     recordedBy: string;
     /** The net settlement this row belongs to; omitted for an ordinary payment. */
@@ -148,8 +155,8 @@ export async function insertSettlement(
 ): Promise<SettlementRow> {
   const text = `INSERT INTO settlements
        (id, group_id, from_user, to_user, amount_cents, currency, method, note, recorded_by,
-        net_settlement_id)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+        net_settlement_id, method_label)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
      RETURNING *`;
   const params = [
     newId(),
@@ -162,6 +169,7 @@ export async function insertSettlement(
     input.note,
     input.recordedBy,
     input.netSettlementId ?? null,
+    input.methodLabel ?? "",
   ];
   if (client) {
     const { rows } = await client.query<SettlementRow>(text, params as never[]);

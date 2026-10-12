@@ -1,5 +1,5 @@
 "use client";
-/** Profile form of the account page: the summary card, the editable profile fields, and sign-out. */
+/** Profile form of the account page: the summary card, the editable profile fields, the payment methods, and sign-out. */
 
 import { Check, LogOut, Share2 } from "lucide-react";
 import type { User } from "@haalkhata/protogen/common/v1/common_pb";
@@ -10,14 +10,14 @@ import { InviteShareModal } from "@/components/modals/InviteShareModal/InviteSha
 import { shareProfileInvite } from "@/lib/invite/share";
 import { PhoneField } from "@/components/ui/PhoneField/PhoneField";
 import { CurrencySelect } from "@/components/ui/CurrencySelect/CurrencySelect";
-import { HANDLE_METHODS } from "@haalkhata/shared/payment/methods";
 import { useProfileForm } from "./hooks/useProfileForm";
 import { MAX_USER_NAME_LENGTH } from "@haalkhata/shared/text/limits";
-import { ZelleField } from "./components/ZelleField/ZelleField";
+import { PaymentMethodsCard } from "@/components/payment/PaymentMethodsCard/PaymentMethodsCard";
 
 /**
- * Renders the profile summary card, the editable profile form (display name
- * and default currency), and the sign-out button.
+ * Renders the profile summary card, the editable profile form (display name,
+ * phone and default currency), the payment methods card, and the sign-out
+ * button.
  *
  * @param props - Component props.
  * @param props.me - The signed-in user whose profile is shown and edited.
@@ -90,7 +90,7 @@ export function ProfileForm({ me: currentUser }: { me: User }) {
           {/* Beside the field it is about, not with the save button at the
               bottom of the form: a rejected number is something to correct
               here, and "already on another account" makes no sense read under
-              the payment handles. */}
+              the currency. */}
           {form.error ? (
             <p className="mt-1.5 text-sm font-medium text-brand-600">{form.error}</p>
           ) : (
@@ -113,41 +113,6 @@ export function ProfileForm({ me: currentUser }: { me: User }) {
           Default currency
           <CurrencySelect value={form.currency} onChange={form.setCurrency} ariaLabel="Default currency" />
         </label>
-        <fieldset className="space-y-2 border-t border-line pt-4">
-          <legend className="sr-only">Payment handles</legend>
-          <p className="text-sm font-medium">Get paid</p>
-          <p className="text-xs text-ink-soft">
-            Whoever owes you sees these when they settle up, so they can pay you without
-            asking where to send it. Leave one blank if you don&apos;t use it.
-          </p>
-          {HANDLE_METHODS.map((method) =>
-            method.key === "zelle" ? (
-              <ZelleField key={method.key} form={form} />
-            ) : (
-              <label key={method.key} className="flex items-center gap-3 text-sm">
-                <span className="w-24 shrink-0 text-ink-soft">{method.label}</span>
-                {/* The sigil is furniture, not something to type. Rendering it
-                    inside the border — with focus-within lighting the whole
-                    group — keeps it reading as one field while removing the
-                    question of whether it belongs in the value. */}
-                <span className="flex min-w-0 flex-1 items-center rounded-xl border border-line bg-card focus-within:border-brand-500">
-                  {method.handlePrefix ? (
-                    <span className="pl-3 text-ink-soft select-none">{method.handlePrefix}</span>
-                  ) : null}
-                  <input
-                    value={form.handles[method.key] ?? ""}
-                    onChange={(event) => form.setHandle(method.key, event.target.value)}
-                    placeholder={method.handleExample}
-                    aria-label={`${method.label} username`}
-                    className={`min-w-0 flex-1 bg-transparent py-2 pr-3 focus:outline-none ${
-                      method.handlePrefix ? "pl-0.5" : "pl-3"
-                    }`}
-                  />
-                </span>
-              </label>
-            ),
-          )}
-        </fieldset>
 
         {/* The status lives on the button that caused it. An earlier version
             put "Saved ✓" in a paragraph above — which pushed the button down
@@ -167,6 +132,9 @@ export function ProfileForm({ me: currentUser }: { me: User }) {
           </span>
         </button>
       </form>
+
+      {/* Outside the form above on purpose: each method saves on its own. */}
+      <PaymentMethodsCard defaultCurrency={currentUser.defaultCurrency || "USD"} />
 
       {/* The add-me link: the frictionless way for others to find you.
           Accepting it sends you a normal friend request to confirm. */}
