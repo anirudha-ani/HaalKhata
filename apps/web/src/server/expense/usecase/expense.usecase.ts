@@ -22,6 +22,7 @@ import {
   listGroupsByUser,
   listMembers,
 } from "@/server/group/repo/groups.repo";
+import { assertGroupActive } from "@/server/group/usecase/groupArchive";
 import { findUserById, findUsersByIds, type UserRow } from "@/server/auth/repo/users.repo";
 import { insertFriendship, listFriendIds } from "@/server/social/repo/friendships.repo";
 import { insertComment, listCommentsByExpense } from "@/server/expense/repo/comments.repo";
@@ -200,6 +201,7 @@ async function resolveExpenseScope(
     if (!group) notFound("group not found");
     groupMemberIds = new Set((await listMembers(groupId)).map((member) => member.id));
     if (!groupMemberIds.has(userId)) denied("you are not a member of this group");
+    await assertGroupActive(groupId);
     currency = group.currency;
   }
   if (!currency) currency = (await findUserById(userId))?.default_currency ?? "USD";
@@ -451,6 +453,7 @@ async function assertLockedGroupParticipants(
 ): Promise<void> {
   const memberIds = new Set((await listMembers(groupId, client)).map((member) => member.id));
   if (!memberIds.has(actorId)) denied("you are not a member of this group");
+  await assertGroupActive(groupId, client);
   if (participantIds.some((participantId) => !memberIds.has(participantId))) {
     invalid("all participants must be group members");
   }
@@ -774,6 +777,7 @@ export async function deleteExpense(userId: string, expenseId: string): Promise<
     const participantIds = storedParticipantIds(existing, children);
     if (existing.group_id) {
       await lockGroupLedgers(client, [existing.group_id]);
+      await assertGroupActive(existing.group_id, client);
     } else {
       await lockParticipantLedgers(client, participantIds);
     }
@@ -1299,6 +1303,7 @@ async function storeGroupSettlement(
   const { userId, request, payerId, creditorId, groupId, currency } = context;
   if (!groupId) throw new Error("storeGroupSettlement requires a group id");
   await lockGroupLedgers(client, [groupId]);
+  await assertGroupActive(groupId, client);
   const callerIsMember = await isMember(groupId, userId, client);
   const recipientIsMember = await isMember(groupId, request.toUserId, client);
   if (!callerIsMember || !recipientIsMember) {
@@ -1409,6 +1414,7 @@ async function storeSettlementPortions(
   const { method, methodLabel } = await resolveSettlementMethod(request, creditorId, client);
   const rows: SettlementRow[] = [];
   for (const portion of allocateSettlement(scopes, request.amountCents)) {
+    if (portion.groupId) await assertGroupActive(portion.groupId, client);
     rows.push(
       await insertSettlement(
         {
@@ -1517,6 +1523,7 @@ async function storeNetSettlement(
     rowMethodLabel: string,
     note: string,
   ) => {
+    if (portion.groupId) await assertGroupActive(portion.groupId, client);
     rows.push(
       await insertSettlement(
         {
@@ -1770,12 +1777,13 @@ export async function deleteSettlement(userId: string, settlementId: string): Pr
     const unit = existing.net_settlement_id
       ? await listSettlementsByNetSettlement(existing.net_settlement_id, client)
       : [existing];
-    await lockGroupLedgers(
-      client,
-      unit.flatMap((portion) => (portion.group_id ? [portion.group_id] : [])),
-    );
+    const groupIds = [...new Set(unit.flatMap((portion) => (portion.group_id ? [portion.group_id] : [])))];
+    await lockGroupLedgers(client, groupIds);
     const current = await findSettlementById(settlementId, client);
     if (!current || current.deleted_at) notFound("payment not found");
+    // Removing a net settlement reopens every scope in its unit, even when
+    // the selected row itself lives outside an archived group.
+    for (const groupId of groupIds) await assertGroupActive(groupId, client);
     let removed: SettlementRow[];
     if (current.net_settlement_id) {
       removed = await softDeleteNetSettlement(current.net_settlement_id, userId, client);

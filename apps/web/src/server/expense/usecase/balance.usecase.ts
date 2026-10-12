@@ -288,6 +288,24 @@ export async function userNetInGroups(
 }
 
 /**
+ * Checks every participant's net in every currency before archiving. Empty
+ * ledgers and cancelling debt cycles are settled; currencies never offset
+ * each other, including historical rows predating currency constraints.
+ *
+ * @param groupId - Group whose full ledger is checked.
+ * @param client - Transaction client holding the group-ledger lock.
+ * @returns True when no participant has an outstanding balance in any currency.
+ */
+export async function groupIsSettled(groupId: string, client: PoolClient): Promise<boolean> {
+  const expenses = await listExpensesByGroup(groupId, client);
+  const children = await loadExpenseChildren(expenses.map((expense) => expense.id), client);
+  const settlements = await listSettlementsByGroup(groupId, client);
+  return [...ledgersByCurrency(expenses, children, settlements).values()].every(
+    (ledger) => [...netBalances(ledger).values()].every((netCents) => netCents === 0),
+  );
+}
+
+/**
  * Whether a group's pairwise debts cancel out around a loop: every member's
  * net is zero while pairwise edges remain (A→B→C→A). Money-wise nobody owes
  * anybody, so no edge of the loop is a debt a payment should pay down — a

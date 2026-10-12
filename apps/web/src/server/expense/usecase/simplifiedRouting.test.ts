@@ -99,6 +99,7 @@ function tripRow(): GroupRow {
     created_by: ALICE,
     created_at: "2026-08-01T00:00:00Z",
     simplify_debts: simplify,
+    status: "active",
   };
 }
 

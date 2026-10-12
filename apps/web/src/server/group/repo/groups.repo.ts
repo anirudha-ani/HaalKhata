@@ -3,6 +3,7 @@
 import type { PoolClient } from "pg";
 import { execute, newId, query, queryOne, transaction } from "@/server/common/db";
 import type { UserRow } from "@/server/auth/repo/users.repo";
+import type { GroupStatusValue } from "@/server/group/group.constants";
 
 /** A row from the groups table (column names mirror SQL). */
 export interface GroupRow {
@@ -17,6 +18,8 @@ export interface GroupRow {
   created_at: string;
   /** Whether the group's debts are routed as the min-cash-flow simplification. */
   simplify_debts: boolean;
+  /** Lifecycle state from the PostgreSQL group_status enum. */
+  status: GroupStatusValue;
 }
 
 /** A group member: the user row joined with their group_members role. */
@@ -108,6 +111,22 @@ export async function updateSimplifyDebts(
     [groupId, simplify],
     client,
   );
+}
+
+/**
+ * Persists a group's lifecycle status.
+ *
+ * @param groupId - Group whose lifecycle status changes.
+ * @param status - Desired PostgreSQL lifecycle value.
+ * @param client - Transaction client holding the group-ledger lock.
+ * @returns A promise that resolves after the state is persisted.
+ */
+export async function updateGroupStatus(
+  groupId: string,
+  status: GroupStatusValue,
+  client: PoolClient,
+): Promise<void> {
+  await execute(`UPDATE groups SET status = $2 WHERE id = $1`, [groupId, status], client);
 }
 
 /**

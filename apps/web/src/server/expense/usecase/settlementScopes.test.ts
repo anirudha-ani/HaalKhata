@@ -83,7 +83,7 @@ function armRepos(): void {
     >;
   });
   vi.mocked(findGroupById).mockImplementation(async (groupId: string) => {
-    return { id: groupId, name: `Group ${groupId}`, currency: "USD" } as Awaited<
+    return { id: groupId, name: `Group ${groupId}`, currency: "USD", status: "active" } as Awaited<
       ReturnType<typeof findGroupById>
     >;
   });

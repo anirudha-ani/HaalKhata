@@ -58,6 +58,14 @@ export const groupHandler: ServiceImpl<typeof GroupService> = {
     );
   },
 
+  /** Archives a settled group or unarchives it; any member may. */
+  async setStatus(request, context) {
+    return runUsecase(
+      async () => groups.setStatus(await requireUser(context), request),
+      context,
+    );
+  },
+
   /** Hands the group to another member; only the current owner may. */
   async transferOwnership(request, context) {
     return runUsecase(
