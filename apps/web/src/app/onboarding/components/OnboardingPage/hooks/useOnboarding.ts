@@ -2,7 +2,6 @@
 /** First-run flow state: profile fields, the phone claim and its merge confirmation, then the payment step. */
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { queryKeys } from "@haalkhata/shared/api/queryKeys";
 import type { MergePreview } from "@haalkhata/protogen/auth/v1/auth_pb";
@@ -32,7 +31,6 @@ import { INVALID_PHONE_MESSAGE } from "@haalkhata/shared/phone/contact";
  *   finishing, and the busy flag.
  */
 export function useOnboarding() {
-  const router = useRouter();
   const queryClient = useQueryClient();
 
   const meQuery = useQuery({ queryKey: queryKeys.me, queryFn: () => authClient.getMe({}) });
@@ -73,11 +71,15 @@ export function useOnboarding() {
     }
   }
 
-  /** Leaves onboarding, marking it done so it never asks again. */
+  /**
+   * Persists completion, then loads a fresh authenticated document. TanStack
+   * Query and the App Router maintain separate caches; document navigation
+   * reruns the destination's guards against the saved completion state.
+   */
   const finish = async () => {
-    await authClient.completeOnboarding({});
-    await queryClient.invalidateQueries({ queryKey: queryKeys.me });
-    router.push("/dashboard");
+    const completedUser = await authClient.completeOnboarding({});
+    queryClient.setQueryData(queryKeys.me, completedUser);
+    window.location.replace("/dashboard");
   };
 
   const save = useMutation({

@@ -1,8 +1,8 @@
 "use client";
 /** Avatar circle: the person's Google picture, falling back to tinted initials. */
 
-import { useState } from "react";
 import type { User } from "@haalkhata/protogen/common/v1/common_pb";
+import { AvatarPicture } from "./components/AvatarPicture/AvatarPicture";
 import { AVATAR_SIZES } from "./constants/avatarSizes";
 
 /**
@@ -21,20 +21,18 @@ export function Avatar({
   size = "md",
   ring = false,
 }: {
-  /** The user to represent; `name`, `avatarColor` and `avatarUrl` are used. */
-  user: Pick<User, "name" | "avatarColor" | "avatarUrl">;
+  /** The user's identity, display name, tint and profile picture. */
+  user: Pick<User, "id" | "name" | "avatarColor" | "avatarUrl">;
   /** Size variant; defaults to "md". */
   size?: keyof typeof AVATAR_SIZES;
   /** Whether to draw a card-colored ring around the circle (for overlapping stacks). */
   ring?: boolean;
 }) {
-  const [pictureFailed, setPictureFailed] = useState(false);
   const initials = user.name
     .split(/\s+/)
     .slice(0, 2)
     .map((part) => part[0]?.toUpperCase() ?? "")
     .join("");
-  const showPicture = user.avatarUrl.length > 0 && !pictureFailed;
 
   return (
     <span
@@ -42,24 +40,13 @@ export function Avatar({
       className={`inline-flex shrink-0 items-center justify-center overflow-hidden rounded-full font-semibold text-white select-none ${AVATAR_SIZES[size]} ${ring ? "ring-2 ring-card" : ""}`}
       style={{ backgroundColor: user.avatarColor || "#857a68" }}
     >
-      {showPicture ? (
-        // Plain <img>, not next/image: these are third-party URLs that would
-        // otherwise need a remotePatterns entry, and there is nothing to
-        // optimize about an already-tiny square served from a CDN. Routing
-        // them through next/image would hide viewers' IPs from Google, which
-        // is the one real argument for it — revisit if that matters more than
-        // the added config and per-request work.
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          src={user.avatarUrl}
-          alt=""
-          referrerPolicy="no-referrer"
-          className="h-full w-full object-cover"
-          onError={() => setPictureFailed(true)}
-        />
-      ) : (
-        (initials || "?")
-      )}
+      {/* Replacing the identity or URL replaces the image node and its error
+          state together, so an old image/load event cannot follow new props. */}
+      <AvatarPicture
+        key={JSON.stringify([user.id, user.avatarUrl])}
+        avatarUrl={user.avatarUrl}
+        initials={initials || "?"}
+      />
     </span>
   );
 }
