@@ -2,6 +2,7 @@
   "expo": {
     "name": "HaalKhata",
     "slug": "haalkhata",
+    "owner": "anirudha_ani",
     "version": "1.0.0",
     "scheme": [
       "haalkhata",
@@ -87,6 +88,11 @@
         }
       ],
       "expo-apple-authentication"
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "b3d23443-3d98-4a14-88db-797a8de551f1"
+      }
+    }
   }
 }
