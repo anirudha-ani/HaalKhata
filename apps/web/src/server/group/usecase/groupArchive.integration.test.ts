@@ -2,7 +2,7 @@
 
 import { randomUUID } from "node:crypto";
 import { Client } from "pg";
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { GroupStatus } from "@haalkhata/protogen/group/v1/group_pb";
 import type { CreateExpenseRequest } from "@haalkhata/protogen/expense/v1/expense_pb";
 import { GROUP_LEDGER_LOCK_PREFIX } from "@/server/common/ledgerLocks.constants";
@@ -12,6 +12,7 @@ const TEST_DATABASE = "haalkhata_group_archive_test";
 const TEST_URL = ADMIN_URL.replace(/\/[^/]*$/, `/${TEST_DATABASE}`);
 const OWNER = "archive-owner";
 const MEMBER = "archive-member";
+const THIRD = "archive-third";
 
 /**
  * Checks database availability while always closing the probe connection.
@@ -36,6 +37,8 @@ describe.skipIf(!reachable)("group archive against Postgres", () => {
   let groupId: string;
   let createExpense: typeof import("@/server/expense/usecase/expense.usecase").createExpense;
   let setStatus: typeof import("./group.usecase").setStatus;
+  let getOverallBalances: typeof import("@/server/expense/usecase/balance.usecase").getOverallBalances;
+  let getFriendLedger: typeof import("@/server/expense/usecase/balance.usecase").getFriendLedger;
   let closePool: () => Promise<void>;
 
   /**
@@ -114,22 +117,26 @@ describe.skipIf(!reachable)("group archive against Postgres", () => {
     };
     ({ createExpense } = await import("@/server/expense/usecase/expense.usecase"));
     ({ setStatus } = await import("./group.usecase"));
+    ({ getOverallBalances, getFriendLedger } = await import("@/server/expense/usecase/balance.usecase"));
     database = new Client({ connectionString: TEST_URL });
     await database.connect();
     await database.query(
       `INSERT INTO users (id, email, name, avatar_color, google_sub) VALUES
        ($1, 'archive-owner@example.com', 'Owner', '#336699', 'google-archive-owner'),
-       ($2, 'archive-member@example.com', 'Member', '#336699', 'google-archive-member')`,
-      [OWNER, MEMBER],
+       ($2, 'archive-member@example.com', 'Member', '#336699', 'google-archive-member'),
+       ($3, 'archive-third@example.com', 'Third', '#336699', 'google-archive-third')`,
+      [OWNER, MEMBER, THIRD],
     );
   }, 60_000);
 
   beforeEach(async () => {
+    // This dedicated database keeps users but gives each case its own ledger.
+    await database.query("TRUNCATE groups CASCADE");
     groupId = randomUUID();
     await database.query("INSERT INTO groups (id, name, created_by) VALUES ($1, 'Archive test', $2)", [groupId, OWNER]);
     await database.query(
-      "INSERT INTO group_members (group_id, user_id, role) VALUES ($1, $2, 'owner'), ($1, $3, 'member')",
-      [groupId, OWNER, MEMBER],
+      "INSERT INTO group_members (group_id, user_id, role) VALUES ($1, $2, 'owner'), ($1, $3, 'member'), ($1, $4, 'member')",
+      [groupId, OWNER, MEMBER, THIRD],
     );
   });
 
@@ -254,5 +261,50 @@ describe.skipIf(!reachable)("group archive against Postgres", () => {
     await expect(setStatus(OWNER, { groupId, status: GroupStatus.ARCHIVED })).rejects.toMatchObject({
       code: "failed_precondition",
     });
+  });
+
+  it("keeps archived debt cycles out of payable balances while retaining history", async () => {
+    for (const [payerId, owerId] of [[OWNER, MEMBER], [MEMBER, THIRD], [THIRD, OWNER]]) {
+      const request = expenseRequest();
+      request.payers[0].userId = payerId;
+      request.splitSpecs[0].userId = owerId;
+      await createExpense(OWNER, request);
+    }
+    expect((await getOverallBalances(OWNER)).youOweCents).toBe(1000);
+    await setStatus(MEMBER, { groupId, status: GroupStatus.ARCHIVED });
+    const balances = await getOverallBalances(OWNER);
+    expect(balances.youOweCents).toBe(0);
+    expect(balances.owedToYouCents).toBe(0);
+    expect(balances.counterparties).toEqual([]);
+    const ledger = await getFriendLedger(OWNER, MEMBER);
+    expect(ledger.nets).toEqual([]);
+    expect(ledger.settlePositions).toEqual([]);
+    expect(ledger.entries.length).toBeGreaterThan(0);
+  });
+
+  it("uses the same query count for one and eleven simplified groups", async () => {
+    await database.query("UPDATE groups SET simplify_debts = TRUE WHERE id = $1", [groupId]);
+    await createExpense(OWNER, expenseRequest());
+    const queries = vi.spyOn(Client.prototype, "query");
+    try {
+      await getOverallBalances(OWNER);
+      const initialCount = queries.mock.calls.length;
+      for (let index = 0; index < 10; index++) {
+        const additionalId = randomUUID();
+        await database.query(
+          "INSERT INTO groups (id, name, created_by, simplify_debts) VALUES ($1, 'Query cost test', $2, TRUE)",
+          [additionalId, OWNER],
+        );
+        await database.query("INSERT INTO group_members (group_id, user_id, role) VALUES ($1, $2, 'owner')", [additionalId, OWNER]);
+        await createExpense(OWNER, { ...expenseRequest(), groupId: additionalId });
+      }
+      queries.mockClear();
+      await getOverallBalances(OWNER);
+      expect(queries.mock.calls.length).toBe(initialCount);
+      const statements = queries.mock.calls.map(([statement]) => statement).filter((statement) => typeof statement === "string");
+      expect(statements.some((statement) => statement.includes("expense_items"))).toBe(false);
+    } finally {
+      queries.mockRestore();
+    }
   });
 });

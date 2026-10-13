@@ -17,12 +17,13 @@ import {
 } from "@/server/expense/repo/expenses.repo";
 import {
   findGroupById,
+  findGroupsByIds,
   isMember,
   listCoMemberIds,
   listGroupsByUser,
   listMembers,
 } from "@/server/group/repo/groups.repo";
-import { assertGroupActive } from "@/server/group/usecase/groupArchive";
+import { assertGroupActive, assertGroupsActive } from "@/server/group/usecase/groupArchive";
 import { findUserById, findUsersByIds, type UserRow } from "@/server/auth/repo/users.repo";
 import { insertFriendship, listFriendIds } from "@/server/social/repo/friendships.repo";
 import { insertComment, listCommentsByExpense } from "@/server/expense/repo/comments.repo";
@@ -1415,8 +1416,9 @@ async function storeSettlementPortions(
 
   const { method, methodLabel } = await resolveSettlementMethod(request, creditorId, client);
   const rows: SettlementRow[] = [];
-  for (const portion of allocateSettlement(scopes, request.amountCents)) {
-    if (portion.groupId) await assertGroupActive(portion.groupId, client);
+  const portions = allocateSettlement(scopes, request.amountCents);
+  await assertGroupsActive(portions.flatMap((portion) => portion.groupId ? [portion.groupId] : []), client);
+  for (const portion of portions) {
     rows.push(
       await insertSettlement(
         {
@@ -1497,6 +1499,9 @@ async function storeNetSettlement(
 
   const { method, methodLabel } = await resolveSettlementMethod(request, creditorId, client);
   const plan = planNetSettlement(owing, opposing, request.amountCents);
+  await assertGroupsActive([...plan.cash, ...plan.offsetOwing, ...plan.offsetOpposing].flatMap(
+    (portion) => portion.groupId ? [portion.groupId] : [],
+  ), client);
   // Nothing pointing the other way means nothing to cancel: the rows are an
   // ordinary payment and need no parent.
   const netSettlementId =
@@ -1525,7 +1530,6 @@ async function storeNetSettlement(
     rowMethodLabel: string,
     note: string,
   ) => {
-    if (portion.groupId) await assertGroupActive(portion.groupId, client);
     rows.push(
       await insertSettlement(
         {
@@ -1596,12 +1600,13 @@ async function announceSettlement(
   const friendLink = `/friends/${request.toUserId}`;
   const outcome = stored.netOutcome;
   const netted = outcome !== null && outcome.offsetCents > 0;
+  const groupIds = [...new Set(stored.rows.flatMap((entry) => entry.group_id ? [entry.group_id] : []))];
+  const groups = groupIds.length > 0 ? await findGroupsByIds(groupIds, client) : [];
+  const groupsById = new Map(groups.map((group) => [group.id, group]));
   // Each portion belongs in its own scope's feed, but remains visible only to
   // the payer and recipient rather than every member of a group.
   for (const settlement of stored.rows) {
-    const group = settlement.group_id
-      ? await findGroupById(settlement.group_id, client)
-      : undefined;
+    const group = settlement.group_id ? groupsById.get(settlement.group_id) : undefined;
     const amount = formatMoney(settlement.amount_cents, currency);
     const link = settlement.group_id ? `/groups/${settlement.group_id}` : friendLink;
     if (settlement.method === OFFSET_SETTLEMENT_METHOD) {
@@ -1644,7 +1649,7 @@ async function announceSettlement(
       client,
     );
   }
-  const notifyGroup = groupId ? await findGroupById(groupId, client) : undefined;
+  const notifyGroup = groupId ? groupsById.get(groupId) : undefined;
   const cancelled = netted ? formatMoney(outcome.offsetCents, currency) : "";
   const nettedBody = !netted
     ? ""
@@ -1785,7 +1790,7 @@ export async function deleteSettlement(userId: string, settlementId: string): Pr
     if (!current || current.deleted_at) notFound("payment not found");
     // Removing a net settlement reopens every scope in its unit, even when
     // the selected row itself lives outside an archived group.
-    for (const groupId of groupIds) await assertGroupActive(groupId, client);
+    const groupsById = await assertGroupsActive(groupIds, client);
     let removed: SettlementRow[];
     if (current.net_settlement_id) {
       removed = await softDeleteNetSettlement(current.net_settlement_id, userId, client);
@@ -1806,7 +1811,7 @@ export async function deleteSettlement(userId: string, settlementId: string): Pr
     // to go missing while the removal stands. One line per scope touched, so
     // each group's feed says what came back there.
     for (const portion of removed) {
-      const group = portion.group_id ? await findGroupById(portion.group_id, client) : undefined;
+      const group = portion.group_id ? groupsById.get(portion.group_id) : undefined;
       const amount = formatMoney(portion.amount_cents, portion.currency);
       const wasOffset = portion.method === OFFSET_SETTLEMENT_METHOD;
       await insertActivity(

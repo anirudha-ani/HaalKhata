@@ -35,6 +35,7 @@ vi.mock("@/server/expense/repo/expenses.repo", () => ({
 }));
 vi.mock("@/server/group/repo/groups.repo", () => ({
   findGroupById: vi.fn(),
+  findGroupsByIds: vi.fn(),
   isMember: vi.fn(),
   listCoMemberIds: vi.fn(),
   listGroupsByUser: vi.fn(),
@@ -97,6 +98,7 @@ import {
 import { findUserById, findUsersByIds } from "@/server/auth/repo/users.repo";
 import {
   findGroupById,
+  findGroupsByIds,
   isMember,
   listCoMemberIds,
   listGroupsByUser,
@@ -188,6 +190,10 @@ beforeEach(() => {
   ] as never);
   vi.mocked(listFriendIds).mockResolvedValue([]);
   vi.mocked(listCoMemberIds).mockResolvedValue([]);
+  vi.mocked(findGroupsByIds).mockImplementation(async (groupIds, client) => {
+    const groups = await Promise.all(groupIds.map((groupId) => findGroupById(groupId, client)));
+    return groups.filter((group) => group !== undefined);
+  });
   vi.mocked(listGroupsByUser).mockResolvedValue([]);
   vi.mocked(scopeHasSettlements).mockResolvedValue(false);
   vi.mocked(insertExpense).mockResolvedValue("expense-1");

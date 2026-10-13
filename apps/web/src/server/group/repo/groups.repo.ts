@@ -74,6 +74,17 @@ export async function findGroupById(
 }
 
 /**
+ * Loads group metadata for many ledger scopes in one statement.
+ * @param groupIds - Group identifiers to load.
+ * @param client - Snapshot or ledger transaction client.
+ * @returns Existing group rows; an empty request performs no query.
+ */
+export async function findGroupsByIds(groupIds: readonly string[], client?: PoolClient): Promise<GroupRow[]> {
+  if (groupIds.length === 0) return [];
+  return query<GroupRow>("SELECT * FROM groups WHERE id = ANY($1::text[])", [[...new Set(groupIds)]], client);
+}
+
+/**
  * Lists every group the given user belongs to, newest first.
  *
  * @param userId - Id of the user whose memberships to look up.

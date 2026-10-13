@@ -22,6 +22,7 @@ vi.mock("@/server/common/db", async (importOriginal) => ({
 vi.mock("@/server/expense/repo/expenses.repo", () => ({
   listExpensesBetween: vi.fn(),
   listExpensesByGroup: vi.fn(),
+  listExpensesByGroups: vi.fn(),
   listExpensesInvolvingUser: vi.fn(),
   listOneOffExpensesBetween: vi.fn(),
   loadExpenseChildren: vi.fn(),
@@ -30,10 +31,12 @@ vi.mock("@/server/expense/repo/settlements.repo", () => ({
   listOneOffSettlementsBetween: vi.fn(),
   listSettlementsBetween: vi.fn(),
   listSettlementsByGroup: vi.fn(),
+  listSettlementsByGroups: vi.fn(),
   listSettlementsInvolvingUser: vi.fn(),
 }));
 vi.mock("@/server/group/repo/groups.repo", () => ({
   findGroupById: vi.fn(),
+  findGroupsByIds: vi.fn(),
   isMember: vi.fn(),
   listGroupsByUser: vi.fn(),
   listMembers: vi.fn(),
@@ -60,6 +63,7 @@ import {
 import {
   listExpensesBetween,
   listExpensesByGroup,
+  listExpensesByGroups,
   listExpensesInvolvingUser,
   listOneOffExpensesBetween,
   loadExpenseChildren,
@@ -68,9 +72,10 @@ import {
   listOneOffSettlementsBetween,
   listSettlementsBetween,
   listSettlementsByGroup,
+  listSettlementsByGroups,
   listSettlementsInvolvingUser,
 } from "@/server/expense/repo/settlements.repo";
-import { findGroupById, listGroupsByUser, listMembers } from "@/server/group/repo/groups.repo";
+import { findGroupsByIds, findGroupById, listGroupsByUser, listMembers } from "@/server/group/repo/groups.repo";
 import { findUserById, findUsersByIds } from "@/server/auth/repo/users.repo";
 import { listFriendIds } from "@/server/social/repo/friendships.repo";
 
@@ -181,6 +186,9 @@ function userRow(userId: string): UserRow {
 beforeEach(() => {
   vi.clearAllMocks();
   simplify = true;
+  vi.mocked(findGroupsByIds).mockImplementation(async (groupIds) => groupIds.includes(TRIP) ? [tripRow()] : []);
+  vi.mocked(listExpensesByGroups).mockImplementation(async (groupIds) => groupIds.includes(TRIP) ? [groceries, dinner] : []);
+  vi.mocked(listSettlementsByGroups).mockImplementation(async (groupIds) => settlementRows.filter((entry) => groupIds.includes(entry.group_id ?? "")));
   settlementRows = [];
 
   vi.mocked(findGroupById).mockImplementation(async () => tripRow());
