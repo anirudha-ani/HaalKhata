@@ -19,6 +19,8 @@ import { localDateTime } from "@haalkhata/shared/time/localTime";
 import { colors, fonts, radii, spacing } from "@/lib/theme/theme";
 import { useExpenseDetail } from "./hooks/useExpenseDetail";
 import { MAX_COMMENT_LENGTH } from "@haalkhata/shared/text/limits";
+import { GroupStatus } from "@haalkhata/shared/group/status";
+import { ARCHIVED_GROUP_HINT, GROUP_ARCHIVE_ACTIONS } from "@haalkhata/shared/group/archiving";
 
 /**
  * Renders a single expense: header (description, date, category, amount),
@@ -88,6 +90,7 @@ export function ExpenseDetailScreen({ expenseId }: { expenseId: string }) {
     expense.splits.some((split) => split.userId === meId);
   const hasLaterSettlement = expenseDetail.detail?.hasLaterSettlement === true;
   const isDeleted = expense.deletedAt !== "";
+  const isArchived = expenseDetail.detail?.groupStatus === GroupStatus.ARCHIVED;
   const deletion = expenseDetail.deletion;
   // Same wording as the list rows, from the same function — the list only
   // has room for the short label, so this screen is where the full sentence
@@ -152,7 +155,18 @@ export function ExpenseDetailScreen({ expenseId }: { expenseId: string }) {
         </View>
       ) : null}
 
-      {isParticipant && !isDeleted ? (
+      {isArchived ? (
+        <View style={styles.settlementNoteCard}>
+          <Text style={styles.settlementNoteText}>{ARCHIVED_GROUP_HINT}</Text>
+          <Button
+            label={GROUP_ARCHIVE_ACTIONS.open}
+            onPress={() => router.push(`/groups/${expense.groupId}`)}
+            variant="outline"
+          />
+        </View>
+      ) : null}
+
+      {isParticipant && !isDeleted && !isArchived ? (
         <View style={styles.actions}>
           <Button
             compact
@@ -173,7 +187,7 @@ export function ExpenseDetailScreen({ expenseId }: { expenseId: string }) {
         </View>
       ) : null}
 
-      {isParticipant && !isDeleted && hasLaterSettlement ? (
+      {isParticipant && !isDeleted && !isArchived && hasLaterSettlement ? (
         <View style={styles.settlementNoteCard}>
           <Lock color={colors.inkSoft} size={16} />
           <Text style={styles.settlementNoteText}>
@@ -375,11 +389,13 @@ export function ExpenseDetailScreen({ expenseId }: { expenseId: string }) {
       {expenseDetail.confirmingDelete ? (
         <Sheet onClose={() => expenseDetail.setConfirmingDelete(false)} title="Delete expense?">
           <View style={styles.deleteSheet}>
+            {isArchived ? <Text style={styles.deleteText}>{ARCHIVED_GROUP_HINT}</Text> : null}
             <Text style={styles.deleteText}>
               “{expense.description}” ({formatMoney(expense.amountCents, expense.currency)}) will
               stop counting toward anyone&apos;s balance. It stays visible, marked deleted, and any
               payment already made against it stays on the ledger.
             </Text>
+            {expenseDetail.error ? <Text accessibilityRole="alert" style={styles.error}>{expenseDetail.error}</Text> : null}
             <View style={styles.deleteActions}>
               <View style={styles.deleteAction}>
                 <Button
@@ -391,6 +407,7 @@ export function ExpenseDetailScreen({ expenseId }: { expenseId: string }) {
               <View style={styles.deleteAction}>
                 <Button
                   busy={expenseDetail.isRemoving}
+                  disabled={isArchived}
                   label="Delete"
                   onPress={expenseDetail.remove}
                 />

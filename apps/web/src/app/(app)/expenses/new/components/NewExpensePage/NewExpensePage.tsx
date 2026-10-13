@@ -2,6 +2,8 @@
 /** New/edit expense orchestrator: loads data, mounts ExpenseForm. */
 
 import { Spinner } from "@/components/ui/Spinner/Spinner";
+import Link from "next/link";
+import { ARCHIVED_GROUP_HINT, GROUP_ARCHIVE_ACTIONS } from "@haalkhata/shared/group/archiving";
 import { useHydrated } from "@/lib/hooks/useHydrated";
 import { buildInitialValues } from "../../utils/initialValues";
 import { ExpenseForm } from "./components/ExpenseForm/ExpenseForm";
@@ -30,6 +32,20 @@ export function NewExpensePage({
   const hydrated = useHydrated();
 
   if (!hydrated || expenseAPI.isLoading || !expenseAPI.me) return <Spinner />;
+
+  const requestedGroupId = editExpenseId
+    ? expenseAPI.editing?.expense?.groupId ?? ""
+    : initialGroupId;
+  if (expenseAPI.archivedGroups.some((summary) => summary.group?.id === requestedGroupId)) {
+    return (
+      <div className="space-y-3 rounded-2xl border border-line bg-card p-6">
+        <p className="text-ink-soft">{ARCHIVED_GROUP_HINT}</p>
+        <Link href={`/groups/${requestedGroupId}`} className="font-semibold text-brand-600">
+          {GROUP_ARCHIVE_ACTIONS.open}
+        </Link>
+      </div>
+    );
+  }
 
   const initial = buildInitialValues(
     { initialGroupId, initialFriendId },

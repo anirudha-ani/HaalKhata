@@ -1,14 +1,26 @@
 /** Unit tests for the batched per-group net query. */
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { PoolClient } from "pg";
 
-vi.mock("@/server/common/db", () => ({ query: vi.fn() }));
+vi.mock("@/server/common/db", () => ({ query: vi.fn(), queryOne: vi.fn() }));
 
-import { query } from "@/server/common/db";
-import { sumUserNetByGroup } from "./ledger.repo";
+import { query, queryOne } from "@/server/common/db";
+import { hasUnsettledGroupBalances, sumUserNetByGroup } from "./ledger.repo";
 
 beforeEach(() => {
   vi.clearAllMocks();
+});
+
+describe("hasUnsettledGroupBalances", () => {
+  it.each([undefined, { unsettled: 1 }])("checks eligibility with one bounded query on the locked client", async (result) => {
+    const client = {} as PoolClient;
+    vi.mocked(queryOne).mockResolvedValue(result);
+    expect(await hasUnsettledGroupBalances("trip", client)).toBe(result !== undefined);
+    expect(queryOne).toHaveBeenCalledTimes(1);
+    expect(queryOne).toHaveBeenCalledWith(expect.stringContaining("LIMIT 1"), ["trip"], client);
+    expect(query).not.toHaveBeenCalled();
+  });
 });
 
 describe("sumUserNetByGroup", () => {

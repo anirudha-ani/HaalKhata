@@ -1,7 +1,7 @@
 # Group Service (`group.v1.GroupService`)
 
 Groups: shared ledgers with a member roster, an owner, one currency, and a
-debt-routing mode.
+debt-routing mode, and a lifecycle status.
 
 The Group Service is essential for:
 
@@ -30,6 +30,7 @@ SQL in [groups.repo.ts](../../../apps/web/src/server/group/repo/groups.repo.ts).
 | Remove somebody else | owner only | The destructive direction — and still gated on a settled balance. |
 | Remove yourself | any non-owner member | Membership is consensual only if the person a co-member enrolled can walk out again. Same zero-balance gate. |
 | Transfer ownership | owner only | Also how an owner leaves: hand the role on, become an ordinary member, then leave like anyone else. |
+| Archive / unarchive | **any member** | Archiving requires every participant to be settled in every currency; unarchiving restores money writes. |
 | Flip simplify-debts | **any member** | Same trust level as adding people: a routing mode over fully derived balances — rewrites nothing, always reversible. |
 
 **Who may be added (§33c): registered, connected people only.** A group
@@ -93,6 +94,7 @@ three times is noise.
 5. [RemoveMember](#5-removemember)
 6. [TransferOwnership](#6-transferownership)
 7. [SetSimplifyDebts](#7-setsimplifydebts)
+8. [SetStatus](#8-setstatus)
 
 ---
 
@@ -153,6 +155,7 @@ three times is noise.
 | created_at | string | ISO-8601 UTC. |
 | members | repeated Member | `{ user (public projection), role }` for every member. |
 | simplify_debts | bool | Starts false. |
+| status | GroupStatus | Starts `ACTIVE`. `ARCHIVED` preserves history and rejects ledger changes; `DELETED` is reserved for a future soft-delete flow. |
 
 ---
 
@@ -164,6 +167,9 @@ three times is noise.
 #### Notes
 
 - **Rate-limited:** 60/min per account (a full-ledger read).
+- Includes active and archived groups. Both clients show separate Active groups
+  and Archived groups pathways; expense selectors and dashboard highlights
+  use only active groups. Expense-history filters retain archived groups.
 - Newest first. Each entry carries the full member list, the member count,
   and **the caller's net position** in the group.
 - The nets are computed by one batched SQL sum across all groups
@@ -351,3 +357,46 @@ three times is noise.
 #### Response
 
 **Group** — with `simplify_debts` reflecting the (possibly unchanged) state.
+
+
+---
+
+### 8. SetStatus
+
+**Method:** `SetStatus`
+**Route:** `POST /api/connect/group.v1.GroupService/SetStatus`
+
+**Request:** `{ "groupId": "…", "status": "GROUP_STATUS_ARCHIVED" }`
+(`GROUP_STATUS_ACTIVE` restores the group).
+**Response:** the updated `Group`, including members and `status`.
+
+`GroupStatus` defines `UNSPECIFIED`, `ACTIVE`, `ARCHIVED`, and `DELETED`. The
+RPC accepts only `ACTIVE` and `ARCHIVED`; unspecified, unknown, or deleted
+requests return `invalid_argument`. `DELETED` is reserved for a future
+deletion flow and cannot be used to bypass balance checks or revive a deleted
+group. Deleted records are omitted from group lists and refuse ledger writes.
+
+Postgres stores the lifecycle in its `group_status` enum. A new migration
+converts the previous archive flag while preserving every group’s state; the
+boolean column is then removed. Both clients use the generated protobuf enum.
+
+Any member can archive or unarchive. Archiving checks the entire ledger under
+its group advisory lock and requires every participant's net to be exactly
+zero in every currency. Empty groups and debt cycles with zero member nets
+qualify. A settled caller cannot archive a group while other members owe money.
+Unsettled balances return `failed_precondition`; repeating the current state
+is a no-op. Non-members are refused in both directions.
+
+Archived history remains readable. Creating, updating or deleting expenses,
+and recording or removing group payments, requires unarchiving first. Every
+ledger mutation rechecks the archive state under the same lock, so a stale
+expense form cannot reopen the balance after archiving commits. The clients
+refresh group details and the shared group list after a state change.
+
+
+On both clients, the archive button opens a popup. Unsettled groups explain
+what must be paid, with a way to see balances; settled groups ask for
+confirmation and explain that the group moves to Archived groups for every
+member and disappears from expense selectors while preserving history.
+No archive mutation is sent until that confirmation. Restoring a group also
+asks for confirmation, and server refusals stay visible inside the popup.

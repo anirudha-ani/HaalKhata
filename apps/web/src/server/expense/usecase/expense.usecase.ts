@@ -17,11 +17,15 @@ import {
 } from "@/server/expense/repo/expenses.repo";
 import {
   findGroupById,
+  findGroupsByIds,
   isMember,
   listCoMemberIds,
   listGroupsByUser,
   listMembers,
 } from "@/server/group/repo/groups.repo";
+import { assertGroupActive, assertGroupsActive } from "@/server/group/usecase/groupArchive";
+import { GROUP_STATUS_PROTO } from "@/server/group/group.constants";
+import { GroupStatus } from "@haalkhata/protogen/group/v1/group_pb";
 import { findUserById, findUsersByIds, type UserRow } from "@/server/auth/repo/users.repo";
 import { insertFriendship, listFriendIds } from "@/server/social/repo/friendships.repo";
 import { insertComment, listCommentsByExpense } from "@/server/expense/repo/comments.repo";
@@ -451,6 +455,7 @@ async function assertLockedGroupParticipants(
 ): Promise<void> {
   const memberIds = new Set((await listMembers(groupId, client)).map((member) => member.id));
   if (!memberIds.has(actorId)) denied("you are not a member of this group");
+  await assertGroupActive(groupId, client);
   if (participantIds.some((participantId) => !memberIds.has(participantId))) {
     invalid("all participants must be group members");
   }
@@ -565,6 +570,8 @@ export async function createExpense(userId: string, request: CreateExpenseReques
     // will not touch.
     const claim = await beginOperation(operation, request, client);
     if (claim.replayOf !== null) return claim.replayOf;
+    // A saved operation still replays after archiving. Only a new write
+    // needs the active-state check, under the ledger lock below.
     if (write.groupId) {
       await lockGroupLedgers(client, [write.groupId]);
       await assertLockedGroupParticipants(write.groupId, userId, participantIds, client);
@@ -774,6 +781,8 @@ export async function deleteExpense(userId: string, expenseId: string): Promise<
     const participantIds = storedParticipantIds(existing, children);
     if (existing.group_id) {
       await lockGroupLedgers(client, [existing.group_id]);
+      await assertCanDelete(userId, existing, client);
+      await assertGroupActive(existing.group_id, client);
     } else {
       await lockParticipantLedgers(client, participantIds);
     }
@@ -934,7 +943,7 @@ export async function getExpense(userId: string, expenseId: string) {
   // and whether a payment came after it — are read at one instant, so an
   // edit or a payment committing mid-read cannot pair one version's amount
   // with another's shares.
-  const { expenseRow, children, settledForViewer, hasLaterSettlement } = await snapshot(
+  const { expenseRow, children, settledForViewer, hasLaterSettlement, groupStatus } = await snapshot(
     async (client) => {
       // Expenses are never hard-deleted, so the row checked above is still there.
       const current = (await findExpenseById(expenseId, client)) ?? found;
@@ -997,6 +1006,7 @@ export async function getExpense(userId: string, expenseId: string) {
         children: currentChildren,
         settledForViewer: settled,
         hasLaterSettlement: laterSettlement,
+        groupStatus: scopeGroup ? GROUP_STATUS_PROTO[scopeGroup.status] : GroupStatus.UNSPECIFIED,
       };
     },
   );
@@ -1026,6 +1036,7 @@ export async function getExpense(userId: string, expenseId: string) {
   return {
     settledForViewer,
     hasLaterSettlement,
+    groupStatus,
     expense: toExpense(expenseRow, children),
     comments: comments.map((comment) => ({
       id: comment.id,
@@ -1299,6 +1310,7 @@ async function storeGroupSettlement(
   const { userId, request, payerId, creditorId, groupId, currency } = context;
   if (!groupId) throw new Error("storeGroupSettlement requires a group id");
   await lockGroupLedgers(client, [groupId]);
+  await assertGroupActive(groupId, client);
   const callerIsMember = await isMember(groupId, userId, client);
   const recipientIsMember = await isMember(groupId, request.toUserId, client);
   if (!callerIsMember || !recipientIsMember) {
@@ -1408,7 +1420,9 @@ async function storeSettlementPortions(
 
   const { method, methodLabel } = await resolveSettlementMethod(request, creditorId, client);
   const rows: SettlementRow[] = [];
-  for (const portion of allocateSettlement(scopes, request.amountCents)) {
+  const portions = allocateSettlement(scopes, request.amountCents);
+  await assertGroupsActive(portions.flatMap((portion) => portion.groupId ? [portion.groupId] : []), client);
+  for (const portion of portions) {
     rows.push(
       await insertSettlement(
         {
@@ -1489,6 +1503,9 @@ async function storeNetSettlement(
 
   const { method, methodLabel } = await resolveSettlementMethod(request, creditorId, client);
   const plan = planNetSettlement(owing, opposing, request.amountCents);
+  await assertGroupsActive([...plan.cash, ...plan.offsetOwing, ...plan.offsetOpposing].flatMap(
+    (portion) => portion.groupId ? [portion.groupId] : [],
+  ), client);
   // Nothing pointing the other way means nothing to cancel: the rows are an
   // ordinary payment and need no parent.
   const netSettlementId =
@@ -1587,12 +1604,13 @@ async function announceSettlement(
   const friendLink = `/friends/${request.toUserId}`;
   const outcome = stored.netOutcome;
   const netted = outcome !== null && outcome.offsetCents > 0;
+  const groupIds = [...new Set(stored.rows.flatMap((entry) => entry.group_id ? [entry.group_id] : []))];
+  const groups = groupIds.length > 0 ? await findGroupsByIds(groupIds, client) : [];
+  const groupsById = new Map(groups.map((group) => [group.id, group]));
   // Each portion belongs in its own scope's feed, but remains visible only to
   // the payer and recipient rather than every member of a group.
   for (const settlement of stored.rows) {
-    const group = settlement.group_id
-      ? await findGroupById(settlement.group_id, client)
-      : undefined;
+    const group = settlement.group_id ? groupsById.get(settlement.group_id) : undefined;
     const amount = formatMoney(settlement.amount_cents, currency);
     const link = settlement.group_id ? `/groups/${settlement.group_id}` : friendLink;
     if (settlement.method === OFFSET_SETTLEMENT_METHOD) {
@@ -1635,7 +1653,7 @@ async function announceSettlement(
       client,
     );
   }
-  const notifyGroup = groupId ? await findGroupById(groupId, client) : undefined;
+  const notifyGroup = groupId ? groupsById.get(groupId) : undefined;
   const cancelled = netted ? formatMoney(outcome.offsetCents, currency) : "";
   const nettedBody = !netted
     ? ""
@@ -1770,12 +1788,13 @@ export async function deleteSettlement(userId: string, settlementId: string): Pr
     const unit = existing.net_settlement_id
       ? await listSettlementsByNetSettlement(existing.net_settlement_id, client)
       : [existing];
-    await lockGroupLedgers(
-      client,
-      unit.flatMap((portion) => (portion.group_id ? [portion.group_id] : [])),
-    );
+    const groupIds = [...new Set(unit.flatMap((portion) => (portion.group_id ? [portion.group_id] : [])))];
+    await lockGroupLedgers(client, groupIds);
     const current = await findSettlementById(settlementId, client);
     if (!current || current.deleted_at) notFound("payment not found");
+    // Removing a net settlement reopens every scope in its unit, even when
+    // the selected row itself lives outside an archived group.
+    const groupsById = await assertGroupsActive(groupIds, client);
     let removed: SettlementRow[];
     if (current.net_settlement_id) {
       removed = await softDeleteNetSettlement(current.net_settlement_id, userId, client);
@@ -1796,7 +1815,7 @@ export async function deleteSettlement(userId: string, settlementId: string): Pr
     // to go missing while the removal stands. One line per scope touched, so
     // each group's feed says what came back there.
     for (const portion of removed) {
-      const group = portion.group_id ? await findGroupById(portion.group_id, client) : undefined;
+      const group = portion.group_id ? groupsById.get(portion.group_id) : undefined;
       const amount = formatMoney(portion.amount_cents, portion.currency);
       const wasOffset = portion.method === OFFSET_SETTLEMENT_METHOD;
       await insertActivity(

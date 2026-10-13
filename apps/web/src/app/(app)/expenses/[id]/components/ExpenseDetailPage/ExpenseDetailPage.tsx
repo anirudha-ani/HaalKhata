@@ -18,6 +18,8 @@ import { itemShareCents } from "@haalkhata/shared/expense/splits";
 import { ITEM_AVATAR_SLOTS } from "./constants/expenseDetailPage";
 import { useExpenseDetail } from "./hooks/useExpenseDetail";
 import { MAX_COMMENT_LENGTH } from "@haalkhata/shared/text/limits";
+import { GroupStatus } from "@haalkhata/shared/group/status";
+import { ARCHIVED_GROUP_HINT, GROUP_ARCHIVE_ACTIONS } from "@haalkhata/shared/group/archiving";
 
 /**
  * Renders a single expense: header (description, date, category, amount),
@@ -74,6 +76,7 @@ export function ExpenseDetailPage({ expenseId }: { expenseId: string }) {
     expense.splits.some((split) => split.userId === meId);
   const hasLaterSettlement = expenseDetail.detail?.hasLaterSettlement === true;
   const isDeleted = expense.deletedAt !== "";
+  const isArchived = expenseDetail.detail?.groupStatus === GroupStatus.ARCHIVED;
   const deletion = expenseDetail.deletion;
   // Same wording as the list rows, from the same function — the list's
   // tooltip is invisible on phones, so this page is where the full sentence
@@ -144,7 +147,16 @@ export function ExpenseDetailPage({ expenseId }: { expenseId: string }) {
         </p>
       ) : null}
 
-      {isParticipant && !isDeleted ? (
+      {isArchived ? (
+        <div className="space-y-2 rounded-2xl border border-line bg-card p-4 text-sm text-ink-soft">
+          <p>{ARCHIVED_GROUP_HINT}</p>
+          <Link href={`/groups/${expense.groupId}`} className="font-semibold text-brand-600">
+            {GROUP_ARCHIVE_ACTIONS.open}
+          </Link>
+        </div>
+      ) : null}
+
+      {isParticipant && !isDeleted && !isArchived ? (
         <div className="flex gap-2">
           <Link
             href={`/expenses/new?edit=${expense.id}`}
@@ -164,7 +176,7 @@ export function ExpenseDetailPage({ expenseId }: { expenseId: string }) {
         </div>
       ) : null}
 
-      {isParticipant && !isDeleted && hasLaterSettlement ? (
+      {isParticipant && !isDeleted && !isArchived && hasLaterSettlement ? (
         <p className="flex items-start gap-2 rounded-2xl border border-line bg-card px-4 py-3 text-sm text-ink-soft">
           <Lock className="mt-0.5 h-4 w-4 shrink-0" />
           <span>
@@ -403,11 +415,13 @@ export function ExpenseDetailPage({ expenseId }: { expenseId: string }) {
 
       {expenseDetail.confirmingDelete ? (
         <Modal title="Delete expense?" onClose={() => expenseDetail.setConfirmingDelete(false)}>
+          {isArchived ? <p className="mb-3 text-sm text-ink-soft">{ARCHIVED_GROUP_HINT}</p> : null}
           <p className="text-sm text-ink-soft">
             “{expense.description}” ({formatMoney(expense.amountCents, expense.currency)}) will stop
             counting toward anyone&apos;s balance. It stays visible, marked deleted, and any payment
             already made against it stays on the ledger.
           </p>
+          {expenseDetail.error ? <p role="alert" className="mt-3 text-sm text-brand-600">{expenseDetail.error}</p> : null}
           <div className="mt-5 grid grid-cols-2 gap-2">
             <button
               type="button"
@@ -419,7 +433,7 @@ export function ExpenseDetailPage({ expenseId }: { expenseId: string }) {
             <button
               type="button"
               onClick={expenseDetail.remove}
-              disabled={expenseDetail.isRemoving}
+              disabled={expenseDetail.isRemoving || isArchived}
               className="rounded-xl bg-brand-600 py-2.5 font-semibold text-white hover:bg-brand-700 disabled:opacity-50"
             >
               {expenseDetail.isRemoving ? "Deleting…" : "Delete"}

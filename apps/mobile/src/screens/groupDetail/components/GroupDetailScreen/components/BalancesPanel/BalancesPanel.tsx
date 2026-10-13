@@ -19,6 +19,8 @@ import { colors, radii, spacing } from "@/lib/theme/theme";
  */
 export function BalancesPanel({
   balances,
+  error = "",
+  onRetry,
   currency,
   meId,
   userById,
@@ -30,6 +32,10 @@ export function BalancesPanel({
 }: {
   /** Balances response for the group; the panel renders nothing until it loads. */
   balances: BalancesResponse | undefined;
+  /** A failed balance read, displayed beside its retry control. */
+  error?: string;
+  /** Reloads the group balances after a failed read. */
+  onRetry: () => void;
   /** Currency code all amounts are shown in (the group's currency). */
   currency: string;
   /** The signed-in user's id, used to label rows as "You" and show settle buttons. */
@@ -50,6 +56,12 @@ export function BalancesPanel({
    */
   onSettle: (user: User, cents: number, received: boolean) => void;
 }) {
+  if (error) return (
+    <View style={styles.section}>
+      <Text accessibilityRole="alert" style={styles.allSettledText}>{error}</Text>
+      <Button label="Try again" onPress={onRetry} variant="outline" />
+    </View>
+  );
   if (!balances) return null;
   const debts = simplified ? balances.simplified : balances.debts;
   // Pairwise debts that survive while every net is zero can only be a loop —

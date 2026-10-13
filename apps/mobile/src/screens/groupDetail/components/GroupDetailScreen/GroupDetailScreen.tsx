@@ -22,9 +22,15 @@ import { errorMessage } from "@/lib/api/connect";
 import { colors, radii, spacing } from "@/lib/theme/theme";
 import { memberActionPrompt, memberRemovalBlock } from "@haalkhata/shared/group/memberActions";
 import { OWNER_ROLE } from "@haalkhata/shared/group/roles";
+import {
+  ARCHIVED_GROUP_HINT,
+  GROUP_ARCHIVE_ACTIONS,
+} from "@haalkhata/shared/group/archiving";
+import { GroupStatus } from "@haalkhata/shared/group/status";
 import { groupEmoji } from "../../../groups/constants/groupTypes";
 import { TABS } from "../../constants/tabs";
 import { BalancesPanel } from "./components/BalancesPanel/BalancesPanel";
+import { ArchiveGroupSheet } from "./components/ArchiveGroupSheet/ArchiveGroupSheet";
 import { ExpenseList } from "@/components/expenses/ExpenseList";
 import { useGroupDetail } from "./hooks/useGroupDetail";
 
@@ -79,17 +85,16 @@ export function GroupDetailScreen({
       header={
         <DetailHeader
           right={
-            // One button, not two: scanning a receipt is how you fill the
-            // expense form in, so "Scan receipt" was a second door to the
-            // same room.
-            <Pressable
-              accessibilityLabel="Add expense"
-              hitSlop={8}
-              onPress={() => router.push(`/expenses/new?group=${groupId}`)}
-              style={[styles.headerIconButton, styles.headerIconButtonPrimary]}
-            >
-              <Plus color={colors.white} size={20} />
-            </Pressable>
+            groupDetail.group.status === GroupStatus.ACTIVE ? (
+              <Pressable
+                accessibilityLabel="Add expense"
+                hitSlop={8}
+                onPress={() => router.push(`/expenses/new?group=${groupId}`)}
+                style={[styles.headerIconButton, styles.headerIconButtonPrimary]}
+              >
+                <Plus color={colors.white} size={20} />
+              </Pressable>
+            ) : null
           }
           title={groupDetail.group.name}
         />
@@ -166,6 +171,28 @@ export function GroupDetailScreen({
         ) : null}
       </View>
 
+      <Button
+        busy={groupDetail.archivePending}
+        label={groupDetail.group.status === GroupStatus.ARCHIVED ? GROUP_ARCHIVE_ACTIONS.unarchive : GROUP_ARCHIVE_ACTIONS.archive}
+        onPress={groupDetail.openArchiveDialog}
+        variant="outline"
+      />
+      {groupDetail.group.status === GroupStatus.ARCHIVED ? (
+        <Text style={styles.notFoundText}>
+          {ARCHIVED_GROUP_HINT}
+        </Text>
+      ) : null}
+      {groupDetail.archivePrompt ? (
+        <ArchiveGroupSheet
+          prompt={groupDetail.archivePrompt}
+          pending={groupDetail.archivePending}
+          error={groupDetail.archiveError}
+          onConfirm={groupDetail.confirmArchiveChange}
+          onClose={groupDetail.closeArchiveDialog}
+          onViewBalances={groupDetail.viewArchiveBalances}
+        />
+      ) : null}
+
       {/* Tabs */}
       <Segmented onChange={groupDetail.setTab} options={TABS} value={groupDetail.tab} />
 
@@ -180,6 +207,8 @@ export function GroupDetailScreen({
       ) : groupDetail.tab === "balances" ? (
         <BalancesPanel
           balances={groupDetail.balances}
+          error={groupDetail.balancesError ? errorMessage(groupDetail.balancesError) : ""}
+          onRetry={groupDetail.reloadBalances}
           currency={groupDetail.group.currency}
           meId={groupDetail.me?.id}
           onSettle={(user, cents, received) =>

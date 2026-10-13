@@ -21,6 +21,7 @@ vi.mock("@/server/common/db", async (importOriginal) => ({
 vi.mock("@/server/expense/repo/expenses.repo", () => ({
   listExpensesBetween: vi.fn(),
   listExpensesByGroup: vi.fn(),
+  listExpensesByGroups: vi.fn(),
   listExpensesInvolvingUser: vi.fn(),
   listOneOffExpensesBetween: vi.fn(),
   loadExpenseChildren: vi.fn(),
@@ -29,10 +30,12 @@ vi.mock("@/server/expense/repo/settlements.repo", () => ({
   listOneOffSettlementsBetween: vi.fn(),
   listSettlementsBetween: vi.fn(),
   listSettlementsByGroup: vi.fn(),
+  listSettlementsByGroups: vi.fn(),
   listSettlementsInvolvingUser: vi.fn(),
 }));
 vi.mock("@/server/group/repo/groups.repo", () => ({
   findGroupById: vi.fn(),
+  findGroupsByIds: vi.fn(),
   isMember: vi.fn(),
   listGroupsByUser: vi.fn(),
   listMembers: vi.fn(),

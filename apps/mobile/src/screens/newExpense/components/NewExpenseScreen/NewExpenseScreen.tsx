@@ -3,6 +3,11 @@
 import { DetailHeader } from "@/components/shell/DetailHeader";
 import { Screen } from "@/components/shell/Screen";
 import { Spinner } from "@/components/ui/Spinner";
+import { useRouter } from "expo-router";
+import { Text } from "react-native";
+import { Button } from "@/components/ui/Button";
+import { colors } from "@/lib/theme/theme";
+import { ARCHIVED_GROUP_HINT, GROUP_ARCHIVE_ACTIONS } from "@haalkhata/shared/group/archiving";
 import { buildInitialValues } from "../../utils/initialValues";
 import { ExpenseForm } from "./components/ExpenseForm/ExpenseForm";
 import { useNewExpenseAPI } from "./hooks/useNewExpenseAPI";
@@ -29,12 +34,28 @@ export function NewExpenseScreen({
   editExpenseId: string;
 }) {
   const expenseAPI = useNewExpenseAPI(editExpenseId);
+  const router = useRouter();
   const isEdit = editExpenseId !== "";
 
   if (expenseAPI.isLoading || !expenseAPI.me) {
     return (
       <Screen header={<DetailHeader title={isEdit ? "Edit expense" : "Add expense"} />}>
         <Spinner />
+      </Screen>
+    );
+  }
+
+  const requestedGroupId = isEdit
+    ? expenseAPI.editing?.expense?.groupId ?? ""
+    : initialGroupId;
+  if (expenseAPI.archivedGroups.some((summary) => summary.group?.id === requestedGroupId)) {
+    return (
+      <Screen header={<DetailHeader title={isEdit ? "Edit expense" : "Add expense"} />}>
+        <Text style={{ color: colors.inkSoft }}>{ARCHIVED_GROUP_HINT}</Text>
+        <Button
+          label={GROUP_ARCHIVE_ACTIONS.open}
+          onPress={() => router.push(`/groups/${requestedGroupId}`)}
+        />
       </Screen>
     );
   }

@@ -18,6 +18,7 @@ vi.mock("@/server/expense/repo/expenses.repo", () => ({
 }));
 vi.mock("@/server/group/repo/groups.repo", () => ({
   findGroupById: vi.fn(),
+  findGroupsByIds: vi.fn(),
   isMember: vi.fn(),
   listGroupsByUser: vi.fn(),
   listMembers: vi.fn(),
@@ -62,6 +63,7 @@ import { recordSettlement } from "./expense.usecase";
 import { findUserById } from "@/server/auth/repo/users.repo";
 import {
   findGroupById,
+  findGroupsByIds,
   listGroupsByUser,
   listMembers,
 } from "@/server/group/repo/groups.repo";
@@ -83,9 +85,13 @@ function armRepos(): void {
     >;
   });
   vi.mocked(findGroupById).mockImplementation(async (groupId: string) => {
-    return { id: groupId, name: `Group ${groupId}`, currency: "USD" } as Awaited<
+    return { id: groupId, name: `Group ${groupId}`, currency: "USD", status: "active" } as Awaited<
       ReturnType<typeof findGroupById>
     >;
+  });
+  vi.mocked(findGroupsByIds).mockImplementation(async (groupIds, client) => {
+    const groups = await Promise.all(groupIds.map((groupId) => findGroupById(groupId, client)));
+    return groups.filter((group) => group !== undefined);
   });
   vi.mocked(listGroupsByUser).mockResolvedValue([
     { id: "goa", name: "Goa", currency: "USD" },

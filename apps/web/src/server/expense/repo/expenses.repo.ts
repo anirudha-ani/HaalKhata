@@ -329,6 +329,20 @@ export async function listExpensesByGroup(
 }
 
 /**
+ * Loads live expense parents for all requested ledger scopes at once.
+ * @param groupIds - Group scopes whose balances are being assembled.
+ * @param client - Snapshot or ledger transaction client.
+ * @returns Live group expenses; no query is sent for an empty scope list.
+ */
+export async function listExpensesByGroups(groupIds: readonly string[], client?: PoolClient): Promise<ExpenseRow[]> {
+  if (groupIds.length === 0) return [];
+  return query<ExpenseRow>(
+    "SELECT * FROM expenses WHERE group_id = ANY($1::text[]) AND deleted_at IS NULL",
+    [[...new Set(groupIds)]], client,
+  );
+}
+
+/**
  * One-off (non-group) expenses where both users participate (payer or ower).
  *
  * @param firstUserId - One of the two participants.
@@ -427,11 +441,14 @@ export interface ExpenseChildren {
  * Batch-loads payers, splits and items (+assignments) for a set of expenses.
  *
  * @param expenseIds - Ids of the expenses whose child rows are needed.
+ * @param client - Snapshot or transaction client.
+ * @param includeItems - Whether receipt items and assignments are needed; false for balance math.
  * @returns Maps of expense id → child rows (empty maps for an empty input).
  */
 export async function loadExpenseChildren(
   expenseIds: string[],
   client?: PoolClient,
+  includeItems = true,
 ): Promise<ExpenseChildren> {
   const result: ExpenseChildren = {
     payers: new Map(),
@@ -453,11 +470,11 @@ export async function loadExpenseChildren(
       client,
     );
   const loadItems = () =>
-    query<ItemRow>(
+    includeItems ? query<ItemRow>(
       `SELECT * FROM expense_items WHERE expense_id = ANY($1::text[])`,
       [expenseIds],
       client,
-    );
+    ) : Promise.resolve([] as ItemRow[]);
   // One connection runs one statement at a time, so on a transaction's
   // client these go in turn; only the pool can run them side by side.
   const [payers, splits, items] = client
