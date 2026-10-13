@@ -61,7 +61,10 @@ export const groupHandler: ServiceImpl<typeof GroupService> = {
   /** Archives a settled group or unarchives it; any member may. */
   async setStatus(request, context) {
     return runUsecase(
-      async () => groups.setStatus(await requireUser(context), request),
+      async () => groups.setStatus(
+        await requireRateLimitedUser(context, "set-group-status", RPC_RATE_LIMITS.setGroupStatus),
+        request,
+      ),
       context,
     );
   },

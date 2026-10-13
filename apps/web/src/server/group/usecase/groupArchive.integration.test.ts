@@ -5,6 +5,7 @@ import { Client } from "pg";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { GroupStatus } from "@haalkhata/protogen/group/v1/group_pb";
 import type { CreateExpenseRequest } from "@haalkhata/protogen/expense/v1/expense_pb";
+import { GROUP_LEDGER_LOCK_PREFIX } from "@/server/common/ledgerLocks.constants";
 
 const ADMIN_URL = process.env.MERGE_TEST_ADMIN_URL ?? "postgres://haalkhata:change-me@127.0.0.1:5432/postgres";
 const TEST_DATABASE = "haalkhata_group_archive_test";
@@ -47,6 +48,33 @@ describe.skipIf(!reachable)("group archive against Postgres", () => {
       splitSpecs: [{ userId: OWNER, amountCents: 1000, percentBp: 0, shares: 0 }],
       items: [], taxCents: 0, tipCents: 0, operationId: randomUUID(),
     } as unknown as CreateExpenseRequest;
+  }
+
+  /**
+   * Waits for real server transactions to queue behind the test's ledger lock.
+   *
+   * @param count - Number of blocked transactions required before releasing it.
+   * @returns A promise resolving once the queue is established; throws on timeout.
+   */
+  async function waitForBlocked(count: number): Promise<void> {
+    const deadline = Date.now() + 3000;
+    while (Date.now() < deadline) {
+      const waiting = await database.query<{ total: number }>(
+        `SELECT count(*)::int AS total FROM pg_locks locking
+         JOIN pg_stat_activity activity ON activity.pid = locking.pid
+         WHERE locking.locktype = 'advisory' AND NOT locking.granted AND activity.datname = $1`,
+        [TEST_DATABASE],
+      );
+      if (waiting.rows[0].total >= count) return;
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    throw new Error(`expected ${count} transactions waiting on the group lock`);
+  }
+
+  /** Holds the same group lock as production on a separate connection. */
+  async function holdGroupLedger(): Promise<void> {
+    await database.query("BEGIN");
+    await database.query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", [`${GROUP_LEDGER_LOCK_PREFIX}${groupId}`]);
   }
 
   beforeAll(async () => {
@@ -103,5 +131,55 @@ describe.skipIf(!reachable)("group archive against Postgres", () => {
     await expect(createExpense(OWNER, { ...request, operationId: randomUUID() })).rejects.toMatchObject({
       code: "failed_precondition",
     });
+  });
+
+  it("refuses an archive after the member leaves while its transaction waits", async () => {
+    await holdGroupLedger();
+    const outcome = setStatus(MEMBER, { groupId, status: GroupStatus.ARCHIVED })
+      .then((result) => ({ result }), (error) => ({ error }));
+    try {
+      await waitForBlocked(1);
+      await database.query("DELETE FROM group_members WHERE group_id = $1 AND user_id = $2", [groupId, MEMBER]);
+    } finally {
+      await database.query("COMMIT");
+    }
+    expect(await outcome).toMatchObject({ error: { code: "permission_denied" } });
+    expect((await database.query("SELECT status FROM groups WHERE id = $1", [groupId])).rows[0].status).toBe("active");
+  });
+
+  it("blocks a queued expense when the archive wins the lock", async () => {
+    await holdGroupLedger();
+    const archive = setStatus(MEMBER, { groupId, status: GroupStatus.ARCHIVED })
+      .then((result) => ({ result }), (error) => ({ error }));
+    let expense: Promise<unknown> | undefined;
+    try {
+      await waitForBlocked(1);
+      expense = createExpense(OWNER, expenseRequest()).then((result) => ({ result }), (error) => ({ error }));
+      await waitForBlocked(2);
+    } finally {
+      await database.query("COMMIT");
+    }
+    expect(await archive).toMatchObject({ result: { status: GroupStatus.ARCHIVED } });
+    expect(await expense).toMatchObject({ error: { code: "failed_precondition" } });
+    expect((await database.query("SELECT id FROM expenses WHERE group_id = $1", [groupId])).rows).toEqual([]);
+  });
+
+  it("refuses archiving when a queued expense creates debt first", async () => {
+    const request = expenseRequest();
+    request.splitSpecs[0].userId = MEMBER;
+    await holdGroupLedger();
+    const expense = createExpense(OWNER, request).then((result) => ({ result }), (error) => ({ error }));
+    let archive: Promise<unknown> | undefined;
+    try {
+      await waitForBlocked(1);
+      archive = setStatus(MEMBER, { groupId, status: GroupStatus.ARCHIVED })
+        .then((result) => ({ result }), (error) => ({ error }));
+      await waitForBlocked(2);
+    } finally {
+      await database.query("COMMIT");
+    }
+    expect(await expense).toMatchObject({ result: { groupId } });
+    expect(await archive).toMatchObject({ error: { code: "failed_precondition" } });
+    expect((await database.query("SELECT status FROM groups WHERE id = $1", [groupId])).rows[0].status).toBe("active");
   });
 });

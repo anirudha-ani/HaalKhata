@@ -778,6 +778,7 @@ export async function deleteExpense(userId: string, expenseId: string): Promise<
     const participantIds = storedParticipantIds(existing, children);
     if (existing.group_id) {
       await lockGroupLedgers(client, [existing.group_id]);
+      await assertCanDelete(userId, existing, client);
       await assertGroupActive(existing.group_id, client);
     } else {
       await lockParticipantLedgers(client, participantIds);

@@ -353,6 +353,18 @@ describe("setStatus", () => {
     });
     expect(groupIsSettled).not.toHaveBeenCalled();
     expect(updateGroupStatus).not.toHaveBeenCalled();
+    expect(lockGroupLedgers).not.toHaveBeenCalled();
+  });
+
+  it("rechecks membership when it changed while waiting for the group lock", async () => {
+    vi.mocked(lockGroupLedgers).mockImplementationOnce(async () => {
+      vi.mocked(isMember).mockResolvedValue(false);
+    });
+    await expect(setStatus(MEMBER, { groupId: TRIP, status: GroupStatus.ARCHIVED })).rejects.toMatchObject({
+      code: "permission_denied",
+    });
+    expect(groupIsSettled).not.toHaveBeenCalled();
+    expect(updateGroupStatus).not.toHaveBeenCalled();
   });
 
   it("rejects a missing group", async () => {

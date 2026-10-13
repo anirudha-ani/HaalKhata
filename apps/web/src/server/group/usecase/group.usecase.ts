@@ -383,6 +383,9 @@ export async function setStatus(userId: string, input: { groupId: string; status
     invalid("group status must be active or archived");
   }
   const status = GROUP_STATUS_STORAGE[input.status];
+  // Outsiders must not queue on another group's ledger. Membership is
+  // checked again after waiting, because a member can leave meanwhile.
+  await assertGroupMember(input.groupId, userId);
   return withLedgerTransaction(async (client) => {
     await lockGroupLedgers(client, [input.groupId]);
     const group = await assertGroupMember(input.groupId, userId, client);

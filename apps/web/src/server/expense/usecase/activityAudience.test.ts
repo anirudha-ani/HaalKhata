@@ -870,6 +870,16 @@ describe("archived groups keep their settled ledger", () => {
     expect(softDeleteExpense).not.toHaveBeenCalled();
   });
 
+  it("refuses deletion when the creator left while waiting for the ledger lock", async () => {
+    vi.mocked(lockGroupLedgers).mockImplementationOnce(async () => {
+      vi.mocked(isMember).mockResolvedValue(false);
+    });
+    await expect(deleteExpense(PAYER, "expense-1")).rejects.toMatchObject({
+      code: "permission_denied",
+    });
+    expect(softDeleteExpense).not.toHaveBeenCalled();
+  });
+
   it("refuses new group payments until the group is restored", async () => {
     vi.mocked(findGroupById).mockImplementation(async () => archivedGroup());
     await expect(recordSettlement(PAYER, {
