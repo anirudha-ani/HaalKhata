@@ -201,7 +201,6 @@ async function resolveExpenseScope(
     if (!group) notFound("group not found");
     groupMemberIds = new Set((await listMembers(groupId)).map((member) => member.id));
     if (!groupMemberIds.has(userId)) denied("you are not a member of this group");
-    await assertGroupActive(groupId);
     currency = group.currency;
   }
   if (!currency) currency = (await findUserById(userId))?.default_currency ?? "USD";
@@ -568,6 +567,8 @@ export async function createExpense(userId: string, request: CreateExpenseReques
     // will not touch.
     const claim = await beginOperation(operation, request, client);
     if (claim.replayOf !== null) return claim.replayOf;
+    // A saved operation still replays after archiving. Only a new write
+    // needs the active-state check, under the ledger lock below.
     if (write.groupId) {
       await lockGroupLedgers(client, [write.groupId]);
       await assertLockedGroupParticipants(write.groupId, userId, participantIds, client);
