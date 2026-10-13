@@ -9,7 +9,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ExpenseRow, PayerRow, SplitRow } from "@/server/expense/repo/expenses.repo";
 import type { SettlementRow } from "@/server/expense/repo/settlements.repo";
-import type { PoolClient } from "pg";
 import type { UserRow } from "@/server/auth/repo/users.repo";
 
 // The reads run inside a database snapshot. Every statement is mocked here,
@@ -50,7 +49,6 @@ vi.mock("@/server/payment/repo/paymentMethods.repo", () => ({
 
 import {
   getFriendLedger,
-  groupIsSettled,
   getOverallBalances,
   netWithUser,
   oneOffNetsBetween,
@@ -58,7 +56,6 @@ import {
 } from "./balance.usecase";
 import {
   listExpensesBetween,
-  listExpensesByGroup,
   listExpensesInvolvingUser,
   listOneOffExpensesBetween,
   loadExpenseChildren,
@@ -66,7 +63,6 @@ import {
 import {
   listOneOffSettlementsBetween,
   listSettlementsBetween,
-  listSettlementsByGroup,
   listSettlementsInvolvingUser,
 } from "@/server/expense/repo/settlements.repo";
 import { listGroupsByUser } from "@/server/group/repo/groups.repo";
@@ -366,54 +362,5 @@ describe("balances are kept per currency", () => {
     const ledger = await getFriendLedger(ALICE, BOBBY);
     expect(ledger.nets).toEqual([{ currency: "EUR", cents: 500 }]);
     expect(ledger.entries[0]).toMatchObject({ currency: "USD", balanceAfterCents: 0 });
-  });
-});
-
-
-describe("group archive balance eligibility", () => {
-  const transactionClient = {} as PoolClient;
-  const groupId = "group-trip";
-
-  it("accepts an empty group", async () => {
-    vi.mocked(listExpensesByGroup).mockResolvedValue([]);
-    vi.mocked(listSettlementsByGroup).mockResolvedValue([]);
-    await expect(groupIsSettled(groupId, transactionClient)).resolves.toBe(true);
-    expect(listExpensesByGroup).toHaveBeenCalledWith(groupId, transactionClient);
-    expect(loadExpenseChildren).toHaveBeenCalledWith([], transactionClient);
-    expect(listSettlementsByGroup).toHaveBeenCalledWith(groupId, transactionClient);
-  });
-
-  it("refuses equal opposing balances in different currencies", async () => {
-    vi.mocked(listExpensesByGroup).mockResolvedValue([dollars]);
-    vi.mocked(listSettlementsByGroup).mockResolvedValue([
-      { from_user: ALICE, to_user: BOBBY, amount_cents: 1000, currency: "EUR" } as SettlementRow,
-    ]);
-    await expect(groupIsSettled(groupId, transactionClient)).resolves.toBe(false);
-  });
-
-  it("accepts fully paid expenses", async () => {
-    vi.mocked(listExpensesByGroup).mockResolvedValue([dollars]);
-    vi.mocked(listSettlementsByGroup).mockResolvedValue([
-      { from_user: ALICE, to_user: BOBBY, amount_cents: 1000, currency: "USD" } as SettlementRow,
-    ]);
-    await expect(groupIsSettled(groupId, transactionClient)).resolves.toBe(true);
-  });
-
-  it("refuses partially settled balances", async () => {
-    vi.mocked(listExpensesByGroup).mockResolvedValue([dollars]);
-    vi.mocked(listSettlementsByGroup).mockResolvedValue([
-      { from_user: ALICE, to_user: BOBBY, amount_cents: 999, currency: "USD" } as SettlementRow,
-    ]);
-    await expect(groupIsSettled(groupId, transactionClient)).resolves.toBe(false);
-  });
-
-  it("accepts cancelling debt cycles where every participant's net is zero", async () => {
-    vi.mocked(listExpensesByGroup).mockResolvedValue([]);
-    vi.mocked(listSettlementsByGroup).mockResolvedValue([
-      { from_user: ALICE, to_user: BOBBY, amount_cents: 1000, currency: "USD" },
-      { from_user: BOBBY, to_user: "user-third", amount_cents: 1000, currency: "USD" },
-      { from_user: "user-third", to_user: ALICE, amount_cents: 1000, currency: "USD" },
-    ] as SettlementRow[]);
-    await expect(groupIsSettled(groupId, transactionClient)).resolves.toBe(true);
   });
 });

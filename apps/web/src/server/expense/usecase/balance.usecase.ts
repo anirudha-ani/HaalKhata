@@ -39,7 +39,7 @@ import {
   type ScopeDebt,
 } from "../domain/settlementAllocation";
 import { listFriendIds } from "@/server/social/repo/friendships.repo";
-import { sumUserNetByGroup } from "@/server/expense/repo/ledger.repo";
+import { hasUnsettledGroupBalances, sumUserNetByGroup } from "@/server/expense/repo/ledger.repo";
 import { snapshot } from "@/server/common/db";
 import { denied, notFound } from "@/server/common/errors";
 import { toInt32Cents } from "@/server/common/money";
@@ -291,18 +291,15 @@ export async function userNetInGroups(
  * Checks every participant's net in every currency before archiving. Empty
  * ledgers and cancelling debt cycles are settled; currencies never offset
  * each other, including historical rows predating currency constraints.
+ * Postgres aggregates the stored nets without loading expense histories,
+ * receipt items or pairwise graphs into application memory.
  *
  * @param groupId - Group whose full ledger is checked.
  * @param client - Transaction client holding the group-ledger lock.
  * @returns True when no participant has an outstanding balance in any currency.
  */
 export async function groupIsSettled(groupId: string, client: PoolClient): Promise<boolean> {
-  const expenses = await listExpensesByGroup(groupId, client);
-  const children = await loadExpenseChildren(expenses.map((expense) => expense.id), client);
-  const settlements = await listSettlementsByGroup(groupId, client);
-  return [...ledgersByCurrency(expenses, children, settlements).values()].every(
-    (ledger) => [...netBalances(ledger).values()].every((netCents) => netCents === 0),
-  );
+  return !(await hasUnsettledGroupBalances(groupId, client));
 }
 
 /**

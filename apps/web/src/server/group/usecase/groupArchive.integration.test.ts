@@ -13,7 +13,10 @@ const TEST_URL = ADMIN_URL.replace(/\/[^/]*$/, `/${TEST_DATABASE}`);
 const OWNER = "archive-owner";
 const MEMBER = "archive-member";
 
-/** Checks database availability while always closing the probe connection. */
+/**
+ * Checks database availability while always closing the probe connection.
+ * @returns Whether the isolated PostgreSQL suites can run.
+ */
 async function databaseReachable(): Promise<boolean> {
   const probe = new Client({ connectionString: ADMIN_URL, connectionTimeoutMillis: 2000 });
   try {
@@ -51,6 +54,22 @@ describe.skipIf(!reachable)("group archive against Postgres", () => {
   }
 
   /**
+   * Seeds a historical payment without the current group-currency API guard.
+   * @param currency - Currency originally stored on the payment.
+   * @param amountCents - Payment amount.
+   * @returns The inserted payment's identifier.
+   */
+  async function historicalPayment(currency: string, amountCents = 1000): Promise<string> {
+    const settlementId = randomUUID();
+    await database.query(
+      `INSERT INTO settlements (id, group_id, from_user, to_user, amount_cents, currency, method, recorded_by)
+       VALUES ($1, $2, $3, $4, $5, $6, 'cash', $3)`,
+      [settlementId, groupId, MEMBER, OWNER, amountCents, currency],
+    );
+    return settlementId;
+  }
+
+  /**
    * Waits for real server transactions to queue behind the test's ledger lock.
    *
    * @param count - Number of blocked transactions required before releasing it.
@@ -71,7 +90,10 @@ describe.skipIf(!reachable)("group archive against Postgres", () => {
     throw new Error(`expected ${count} transactions waiting on the group lock`);
   }
 
-  /** Holds the same group lock as production on a separate connection. */
+  /**
+   * Holds the same group lock as production on a separate connection.
+   * @returns A promise resolving with the test transaction holding its lock.
+   */
   async function holdGroupLedger(): Promise<void> {
     await database.query("BEGIN");
     await database.query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", [`${GROUP_LEDGER_LOCK_PREFIX}${groupId}`]);
@@ -181,5 +203,56 @@ describe.skipIf(!reachable)("group archive against Postgres", () => {
     expect(await expense).toMatchObject({ result: { groupId } });
     expect(await archive).toMatchObject({ error: { code: "failed_precondition" } });
     expect((await database.query("SELECT status FROM groups WHERE id = $1", [groupId])).rows[0].status).toBe("active");
+  });
+
+  it("does not offset equal expense and payment amounts across currencies", async () => {
+    const request = expenseRequest();
+    request.splitSpecs[0].userId = MEMBER;
+    await createExpense(OWNER, request);
+    await historicalPayment("EUR");
+    await expect(setStatus(OWNER, { groupId, status: GroupStatus.ARCHIVED })).rejects.toMatchObject({
+      code: "failed_precondition",
+    });
+  });
+
+  it("accepts a fully paid expense, but refuses a one-cent balance", async () => {
+    const request = expenseRequest();
+    request.splitSpecs[0].userId = MEMBER;
+    await createExpense(OWNER, request);
+    const paymentId = await historicalPayment("USD", 999);
+    await expect(setStatus(OWNER, { groupId, status: GroupStatus.ARCHIVED })).rejects.toMatchObject({
+      code: "failed_precondition",
+    });
+    await database.query("UPDATE settlements SET amount_cents = 1000 WHERE id = $1", [paymentId]);
+    expect((await setStatus(MEMBER, { groupId, status: GroupStatus.ARCHIVED })).status).toBe(GroupStatus.ARCHIVED);
+  });
+
+  it("ignores deleted expenses in the archive check", async () => {
+    const request = expenseRequest();
+    request.splitSpecs[0].userId = MEMBER;
+    const expense = await createExpense(OWNER, request);
+    await database.query("UPDATE expenses SET deleted_at = now(), deleted_by = $2 WHERE id = $1", [expense.id, OWNER]);
+    expect((await setStatus(MEMBER, { groupId, status: GroupStatus.ARCHIVED })).status).toBe(GroupStatus.ARCHIVED);
+  });
+
+  it("does not count a deleted payment as settling an expense", async () => {
+    const request = expenseRequest();
+    request.splitSpecs[0].userId = MEMBER;
+    await createExpense(OWNER, request);
+    const paymentId = await historicalPayment("USD");
+    await database.query("UPDATE settlements SET deleted_at = now(), deleted_by = $2 WHERE id = $1", [paymentId, MEMBER]);
+    await expect(setStatus(OWNER, { groupId, status: GroupStatus.ARCHIVED })).rejects.toMatchObject({
+      code: "failed_precondition",
+    });
+  });
+
+  it("still checks outstanding balances involving a former member", async () => {
+    const request = expenseRequest();
+    request.splitSpecs[0].userId = MEMBER;
+    await createExpense(OWNER, request);
+    await database.query("DELETE FROM group_members WHERE group_id = $1 AND user_id = $2", [groupId, MEMBER]);
+    await expect(setStatus(OWNER, { groupId, status: GroupStatus.ARCHIVED })).rejects.toMatchObject({
+      code: "failed_precondition",
+    });
   });
 });
