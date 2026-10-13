@@ -207,6 +207,8 @@ export function GroupDetailScreen({
       ) : groupDetail.tab === "balances" ? (
         <BalancesPanel
           balances={groupDetail.balances}
+          error={groupDetail.balancesError ? errorMessage(groupDetail.balancesError) : ""}
+          onRetry={groupDetail.reloadBalances}
           currency={groupDetail.group.currency}
           meId={groupDetail.me?.id}
           onSettle={(user, cents, received) =>

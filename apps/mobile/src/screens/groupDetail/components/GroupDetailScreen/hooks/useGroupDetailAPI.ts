@@ -104,9 +104,14 @@ export function useGroupDetailAPI(groupId: string) {
   const setStatus = useMutation({
     mutationFn: (status: GroupStatus) => groupClient.setStatus({ groupId, status }),
     onSuccess: (updatedGroup) => {
-      queryClient.setQueryData(queryKeys.group(groupId), updatedGroup);
+      // The response names its own group even if navigation changed while saving.
+      queryClient.setQueryData(queryKeys.group(updatedGroup.id), updatedGroup);
+      for (const moneyKey of MONEY_KEYS) queryClient.invalidateQueries({ queryKey: moneyKey });
+    },
+    onError: () => {
+      // A refused archive can mean the cached ledger moved. Refresh both the
+      // group and balances before offering the action again.
       queryClient.invalidateQueries({ queryKey: queryKeys.groups });
-      queryClient.invalidateQueries({ queryKey: queryKeys.group(groupId) });
     },
   });
 
@@ -137,7 +142,9 @@ export function useGroupDetailAPI(groupId: string) {
     groupError: group.error,
     friends: (friends.data?.friends ?? []).flatMap((friend) => (friend.user ? [friend.user] : [])),
     expenses: expenses.data,
-    balances: balances.data,
+    balances: balances.isError ? undefined : balances.data,
+    balancesError: balances.error,
+    reloadBalances: () => void balances.refetch(),
     isLoading: group.isLoading || expenses.isLoading,
     refresh,
     isRefreshing: group.isRefetching || expenses.isRefetching || balances.isRefetching,

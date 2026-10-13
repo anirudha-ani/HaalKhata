@@ -24,6 +24,8 @@ import {
   listMembers,
 } from "@/server/group/repo/groups.repo";
 import { assertGroupActive, assertGroupsActive } from "@/server/group/usecase/groupArchive";
+import { GROUP_STATUS_PROTO } from "@/server/group/group.constants";
+import { GroupStatus } from "@haalkhata/protogen/group/v1/group_pb";
 import { findUserById, findUsersByIds, type UserRow } from "@/server/auth/repo/users.repo";
 import { insertFriendship, listFriendIds } from "@/server/social/repo/friendships.repo";
 import { insertComment, listCommentsByExpense } from "@/server/expense/repo/comments.repo";
@@ -941,7 +943,7 @@ export async function getExpense(userId: string, expenseId: string) {
   // and whether a payment came after it — are read at one instant, so an
   // edit or a payment committing mid-read cannot pair one version's amount
   // with another's shares.
-  const { expenseRow, children, settledForViewer, hasLaterSettlement } = await snapshot(
+  const { expenseRow, children, settledForViewer, hasLaterSettlement, groupStatus } = await snapshot(
     async (client) => {
       // Expenses are never hard-deleted, so the row checked above is still there.
       const current = (await findExpenseById(expenseId, client)) ?? found;
@@ -1004,6 +1006,7 @@ export async function getExpense(userId: string, expenseId: string) {
         children: currentChildren,
         settledForViewer: settled,
         hasLaterSettlement: laterSettlement,
+        groupStatus: scopeGroup ? GROUP_STATUS_PROTO[scopeGroup.status] : GroupStatus.UNSPECIFIED,
       };
     },
   );
@@ -1033,6 +1036,7 @@ export async function getExpense(userId: string, expenseId: string) {
   return {
     settledForViewer,
     hasLaterSettlement,
+    groupStatus,
     expense: toExpense(expenseRow, children),
     comments: comments.map((comment) => ({
       id: comment.id,

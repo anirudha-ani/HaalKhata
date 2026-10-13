@@ -55,7 +55,8 @@ export function useGroupDetail(groupId: string) {
   // message is kept with the row it is about, so it shows where the tap was.
   const [memberFeedback, setMemberFeedback] = useState<MemberFeedback | null>(null);
   const [archiveError, setArchiveError] = useState("");
-  const [pendingGroupStatus, setPendingGroupStatus] = useState<GroupArchiveStatus | null>(null);
+  const [archiveAction, setArchiveAction] = useState<{ groupId: string; status: GroupArchiveStatus } | null>(null);
+  const pendingGroupStatus = archiveAction?.groupId === groupId ? archiveAction.status : null;
   const [linkNotice, setLinkNotice] = useState("");
   const [linkError, setLinkError] = useState("");
   // §33c: set when a typed contact has no claimed account, so the modal
@@ -260,9 +261,10 @@ export function useGroupDetail(groupId: string) {
    */
   const openArchiveDialog = () => {
     setArchiveError("");
-    setPendingGroupStatus(
-      groupDetailAPI.group?.status === GroupStatus.ARCHIVED ? GroupStatus.ACTIVE : GroupStatus.ARCHIVED,
-    );
+    setArchiveAction({
+      groupId,
+      status: groupDetailAPI.group?.status === GroupStatus.ARCHIVED ? GroupStatus.ACTIVE : GroupStatus.ARCHIVED,
+    });
   };
 
   /**
@@ -272,7 +274,7 @@ export function useGroupDetail(groupId: string) {
    */
   const closeArchiveDialog = () => {
     if (groupDetailAPI.setStatus.isPending) return;
-    setPendingGroupStatus(null);
+    setArchiveAction(null);
     setArchiveError("");
   };
 
@@ -285,7 +287,7 @@ export function useGroupDetail(groupId: string) {
     if (pendingGroupStatus === null || !archivePrompt?.confirmLabel || groupDetailAPI.setStatus.isPending) return;
     setArchiveError("");
     groupDetailAPI.setStatus.mutate(pendingGroupStatus, {
-      onSuccess: () => setPendingGroupStatus(null),
+      onSuccess: () => setArchiveAction(null),
       onError: (mutationError) => setArchiveError(errorMessage(mutationError)),
     });
   };

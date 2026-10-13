@@ -36,6 +36,7 @@ describe.skipIf(!reachable)("group archive against Postgres", () => {
   let database: Client;
   let groupId: string;
   let createExpense: typeof import("@/server/expense/usecase/expense.usecase").createExpense;
+  let getExpense: typeof import("@/server/expense/usecase/expense.usecase").getExpense;
   let setStatus: typeof import("./group.usecase").setStatus;
   let getOverallBalances: typeof import("@/server/expense/usecase/balance.usecase").getOverallBalances;
   let getFriendLedger: typeof import("@/server/expense/usecase/balance.usecase").getFriendLedger;
@@ -115,7 +116,7 @@ describe.skipIf(!reachable)("group archive against Postgres", () => {
       const cache = globalThis as unknown as { __haalkhataPool?: { end(): Promise<void> } };
       await cache.__haalkhataPool?.end();
     };
-    ({ createExpense } = await import("@/server/expense/usecase/expense.usecase"));
+    ({ createExpense, getExpense } = await import("@/server/expense/usecase/expense.usecase"));
     ({ setStatus } = await import("./group.usecase"));
     ({ getOverallBalances, getFriendLedger } = await import("@/server/expense/usecase/balance.usecase"));
     database = new Client({ connectionString: TEST_URL });
@@ -160,6 +161,15 @@ describe.skipIf(!reachable)("group archive against Postgres", () => {
     await expect(createExpense(OWNER, { ...request, operationId: randomUUID() })).rejects.toMatchObject({
       code: "failed_precondition",
     });
+  });
+
+  it("returns the current lifecycle with expense detail so clients can gate edit and delete", async () => {
+    const expense = await createExpense(OWNER, expenseRequest());
+    expect((await getExpense(OWNER, expense.id)).groupStatus).toBe(GroupStatus.ACTIVE);
+    await setStatus(MEMBER, { groupId, status: GroupStatus.ARCHIVED });
+    expect((await getExpense(OWNER, expense.id)).groupStatus).toBe(GroupStatus.ARCHIVED);
+    await setStatus(MEMBER, { groupId, status: GroupStatus.ACTIVE });
+    expect((await getExpense(OWNER, expense.id)).groupStatus).toBe(GroupStatus.ACTIVE);
   });
 
   it("refuses an archive after the member leaves while its transaction waits", async () => {
