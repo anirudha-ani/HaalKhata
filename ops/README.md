@@ -1,25 +1,36 @@
 # ops/ — production server files
 
-Everything here runs **on the server**, except `docker-entrypoint.sh`, which is
-baked into the image. They live in git so they are versioned and reviewable
-rather than typed into a terminal and forgotten.
+Everything here runs **on the server**, except `docker-entrypoint.sh` and
+`deploy-release.sh`, which are baked into the image. They live in git so they
+are versioned and reviewable rather than typed into a terminal and forgotten.
 
 Only `deploy.sh` (and the systemd/backup files below) need copying by hand,
-and only once — the compose file and Caddyfile are **not** maintained on the
-server: every image carries the pair it was built with under `/opt/release/`,
-and `deploy.sh` adopts them on each deploy after a dry-run validates them.
-Bootstrap (also after changing `deploy.sh` itself, which cannot update itself
-through the forced command):
+and only once. `deploy.sh` is a small launcher: it pulls the image for the
+commit it is handed and runs the deploy steps that image carries under
+`/opt/release/` (`deploy-release.sh`), next to the compose file and Caddyfile
+the image was built with. None of those three is maintained on the server, so
+a change to how deploys work, including a new pipeline-managed secret, ships
+in an ordinary release (see [Adding a pipeline-managed key](#adding-a-pipeline-managed-key)).
+
+Bootstrap:
 
 ```sh
 scp -r ops docker-compose.prod.yml Caddyfile deploy@haalkhata.app:/srv/haalkhata/
 scp ops/deploy.sh deploy@haalkhata.app:/srv/haalkhata/deploy.sh
 ```
 
+The second line is also the one manual step if `deploy.sh` itself ever
+changes, which it is designed never to need: the forced command cannot update
+the file it runs. Keep its contract with `deploy-release.sh` (the commit SHA,
+the directory holding the image's `/opt/release`, the client's stdin)
+unchanged: a release whose deploy steps expect a different launcher cannot
+be deployed, or rolled back to, through the key.
+
 | File | Goes to | Purpose |
 |---|---|---|
 | `docker-entrypoint.sh` | *in the image* | Exec-only; the app reads `/run/secrets/` itself through `*_FILE` variables |
-| `deploy.sh` | `/srv/haalkhata/deploy.sh` | SSH forced command: apply pipeline config, adopt the image's compose/Caddyfile, pull, restart, prune |
+| `deploy.sh` | `/srv/haalkhata/deploy.sh` | SSH forced command, a fixed launcher: check the SHA, pull the image, run that image's `deploy-release.sh` |
+| `deploy-release.sh` | *in the image*, `/opt/release/` | The deploy steps: apply pipeline config, adopt the image's compose/Caddyfile, restart, prune |
 | `backup.sh` | `/srv/haalkhata/backup.sh` | Nightly encrypted database **and secrets** backup |
 | `backup-failure.sh` | `/srv/haalkhata/backup-failure.sh` | Sends a critical backup-failure alert |
 | `daemon.json` | `/etc/docker/daemon.json` | Caps log size; enables live-restore |
@@ -71,8 +82,8 @@ planned rotations) can be **GitHub-managed**: set the matching GitHub secret
 (`SESSION_SECRET`, `POSTGRES_PASSWORD`, `COMPATIBLE_AI_API_KEY`,
 `TWILIO_API_KEY_SECRET`) and every deploy writes the file over the same
 forced-command channel as the `.env` config. Left unset in GitHub, the
-value pipes as empty and `deploy.sh` leaves the server's file untouched, so
-any secret can stay server-only instead. `deploy.sh` runs as the `deploy`
+value pipes as empty and the deploy steps leave the server's file untouched,
+so any secret can stay server-only instead. Deploys run as the `deploy`
 user, so GitHub-managed secrets need the directory handed over once:
 
 ```sh
@@ -88,10 +99,11 @@ Choose per secret; the mechanism supports both answers.
 
 ## Pipeline-managed `.env`
 
-`/srv/haalkhata/.env` is written by `deploy.sh`, never by hand. On every
-deploy the workflow pipes these keys over the forced-command channel, sourced
-from GitHub repository variables/secrets, and `deploy.sh` validates each one
-against its allowlist before touching the file:
+`/srv/haalkhata/.env` is written by the deploy steps (`deploy-release.sh`),
+never by hand. On every deploy the workflow pipes these keys over the
+forced-command channel, sourced from GitHub repository variables/secrets, and
+the deploy steps validate each one against their allowlist before touching
+the file:
 
 | `.env` key | GitHub source | Notes |
 |---|---|---|
@@ -103,7 +115,7 @@ against its allowlist before touching the file:
 | `TWILIO_VERIFY_SERVICE_SID` | Secret `TWILIO_VERIFY_SERVICE_SID` | Optional |
 
 Authenticating material never lands in `.env`. The same channel also
-carries these keys, which `deploy.sh` writes as secret *files* instead
+carries these keys, which the deploy steps write as secret *files* instead
 (empty value = file untouched):
 
 | Secret file | GitHub source | Notes |
@@ -120,6 +132,28 @@ non-root (`node` is 1000, `postgres` is 999) and Compose bind-mounts these
 with their host permissions — `0400 root:root` would be unreadable and the
 stack would refuse to boot. The directory mode is what actually protects
 them.
+
+### Adding a pipeline-managed key
+
+Everything that decides which keys a deploy accepts ships in the image, so a
+new key is one pull request and one release, with nothing done on the server:
+
+1. **Workflow** (`.github/workflows/deploy.yml`): an `env:` entry from the
+   GitHub secret or variable, and a `printf` line that pipes it.
+2. **Deploy steps** (`ops/deploy-release.sh`): add the key to the matching
+   allowlist (`.env` values or secret files). A secret also gets a line naming
+   its file under `secrets/`.
+3. **Compose file** (`docker-compose.prod.yml`): for a secret, a top-level
+   `secrets:` entry, the service's `secrets:` list and a `*_FILE` variable;
+   for an `.env` key, the `${KEY}` it is read through.
+4. **App**: read a secret through `readSecret()`.
+
+The release's own deploy steps accept the key its own workflow sends. A
+deploy refuses a key it does not know, and an older release (a rollback) is
+deployed with nothing on stdin, so it never sees the new key. Set the GitHub
+secret before publishing: until it is set the value pipes as empty, and if the
+compose file needs a secret file the server does not have yet, the dry-run
+refuses the release with the old stack still running.
 
 ### Rotating `postgres_password` — order matters
 
@@ -213,8 +247,9 @@ ssh -i ~/.ssh/haalkhata_deploy deploy@haalkhata.app <previous-sha> </dev/null
 ```
 
 (`</dev/null` skips the stdin config read — a manual rollback changes code,
-not config. An image from before `/opt/release/` existed keeps the server's
-current compose/Caddyfile.)
+not config. The older release brings its own deploy steps, compose file and
+Caddyfile with it. Images built before the launcher carry no deploy steps, so
+the launcher refuses them; rollback reaches the releases built since.)
 
 This rolls back **code, not schema**. Migrations apply on boot and are never
 reverted, so an older image can find itself talking to a newer schema —
