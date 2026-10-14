@@ -11,6 +11,7 @@ import { ExpenseService } from "@haalkhata/protogen/expense/v1/expense_pb";
 import { GroupService } from "@haalkhata/protogen/group/v1/group_pb";
 import { PaymentMethodService } from "@haalkhata/protogen/payment/v1/payment_pb";
 import { ReceiptService } from "@haalkhata/protogen/receipt/v1/receipt_pb";
+import { PersonalAnalyticsService } from "@haalkhata/protogen/personalanalytics/v1/personalanalytics_pb";
 import { SocialService } from "@haalkhata/protogen/social/v1/social_pb";
 import {
   BEARER_TRANSPORT,
@@ -92,6 +93,8 @@ export const receiptClient = createClient(ReceiptService, transport);
 export const socialClient = createClient(SocialService, transport);
 /** Typed client for the caller's own payment methods (list, add, edit, remove, star). */
 export const paymentClient = createClient(PaymentMethodService, transport);
+/** Typed client for the signed-in person's own insights. */
+export const personalAnalyticsClient = createClient(PersonalAnalyticsService, transport);
 
 /**
  * Extracts a human-readable message from a ConnectError (or any thrown value).

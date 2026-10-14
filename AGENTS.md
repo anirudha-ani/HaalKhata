@@ -27,6 +27,9 @@ packages/shared/             @haalkhata/shared — hand-written TS used by BOTH 
   src/payment/                 payment methods: detail kinds, starting points,
                                the validator (server + both forms), the form's
                                reducer, payer ordering and formatting
+  src/analytics/               chart.ts (axis ceilings, bar lengths, tick text)
+                               and insights.ts (wording, ranges, tail folding)
+                               for the Insights dashboard on both apps
   src/greeting.ts              time-of-day greeting
 apps/web/                    Next.js app
   src/server/<domain>/       per-domain fan-out mirroring /proto:
@@ -36,6 +39,8 @@ apps/web/                    Next.js app
     <domain>.constants.ts      constants for this domain
   src/server/common/         db, errors, logger, rateLimit (shared infra)
   src/server/api/connect/    context.ts (auth/cookies/error map), routes.ts, csrf.ts
+  src/config/                securityHeaders.ts (CSP) and adminSurface.ts (which
+                             hostname reaches the admin page and its API)
   src/pages/api/connect/     [[...connect]].ts — mount point only
   src/app/<route>/           UI (thin page.tsx → components/<Page>/<Page>.tsx,
                              with its own components/, hooks/, constants/, utils/)
@@ -245,7 +250,7 @@ All four must pass before committing.
 | `pnpm lint`     | eslint (layering + id-length + next rules)      |
 | `pnpm test`     | vitest unit tests (domain math + auth tokens)   |
 | `pnpm proto:lint`| buf lint + breaking                            |
-| `pnpm doctor`   | react-doctor scan                               |
+| `pnpm run doctor` | react-doctor scan (`pnpm doctor` without `run` is pnpm's own self-check, not this) |
 | `pnpm typecheck:mobile` / `lint:mobile` / `test:mobile` | same gates for apps/mobile |
 | `pnpm typecheck:shared` / `lint:shared` / `test:shared` | same gates for packages/shared |
 
@@ -265,7 +270,9 @@ with colocated tests. Mobile-specific rules:
   exists on mobile — a feature that lands on one app and is "tracked" for
   the other is a gap, not a plan (docs/plan.txt §27). Pure logic both apps
   need (filters, wording, formatting, phone helpers) goes in
-  `packages/shared` with its tests, never written twice.
+  `packages/shared` with its tests, never written twice. The one page with
+  no mobile twin is the operator's usage page (`/admin`): it is not a user
+  feature, and it is deliberately reachable from one hostname only.
 - **Auth is bearer-token**, not cookies: LogInWithGoogle (production) or
   LogIn/SignUp (development only) return `token`, stored
   in SecureStore (`src/lib/api/session.ts`) and attached by a transport
@@ -373,6 +380,42 @@ with colocated tests. Mobile-specific rules:
   line shown with the link. Never build such a link by hand.
 - **Limiters are process-local** (`rateLimit.ts`, `phoneRateLimit.ts`): fine
   for one container, wrong for two replicas — see `docs/plan.txt` §28.
+- **The admin surface is a hostname, and it is checked three times.**
+  `requestSurface()` in `config/adminSurface.ts` decides whether a request
+  is on the app or the admin page, and the page proxy, the Connect mount and
+  the admin handlers each ask it. On `ADMIN_HOST` only the admin page and
+  `AdminAnalyticsService` exist; everywhere else neither does. A new page or
+  service lands on the app surface by default and needs nothing. Do not add
+  a second mount of `routes`, an exception to the gate, or a redirect where
+  it answers 404. Do not rewrite to the admin page from the proxy either:
+  Next resolves a rewrite against the address the server is bound to and
+  can send it back in under the wrong hostname.
+- **An admin is not a user.** The admin session is an allowlisted Google
+  identity (`ADMIN_EMAILS`) with its own cookie and its own table. Never
+  accept an app session, a bearer token, or a `users` row as proof of it,
+  and never let the admin sign-in create or link an account.
+- **The app and the admin page are the same site.** `SameSite` does not
+  separate `haalkhata.app` from `admin.haalkhata.app`: a request to the
+  admin host started on the app's hostname carries the admin cookie. Every
+  admin RPC therefore checks that `Origin` equals `Host` itself, with no
+  bearer exemption, and the admin host sends no CORS header. Keep both.
+- **The usage overview is counts and display names, enforced in SQL.** No
+  statement in `adminanalytics/repo/usage.repo.ts` selects an email, phone,
+  avatar, id, amount, description, group name or anything about a payment
+  method beyond how many exist, and an integration test searches the whole
+  response for them. A display name that is itself an
+  email address, a phone number or the start of the person's email is
+  withheld in the same SQL. A new figure there is a new count; if it needs
+  a column a person would call private, it does not belong on that page.
+- **Analytics are counted, not collected.** Personal insights and the usage
+  overview are aggregates over rows the product already keeps. The single
+  purpose-built tally is `receipt_scans` (who, when, parsed or failed),
+  because a scan otherwise leaves no trace. Do not add event tracking,
+  last-seen timestamps or per-person timelines to answer a usage question.
+- **Charts are plain elements.** The column chart and bar list in
+  `components/charts` (both apps) draw with divs/Views sized by
+  `@haalkhata/shared/analytics/chart`; there is no chart library. One colour
+  per series, every value also available as text, no second axis.
 
 ## Deploy
 

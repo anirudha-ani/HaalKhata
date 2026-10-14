@@ -9,6 +9,8 @@ import { ExpenseService } from "@haalkhata/protogen/expense/v1/expense_pb";
 import { ReceiptService } from "@haalkhata/protogen/receipt/v1/receipt_pb";
 import { SocialService } from "@haalkhata/protogen/social/v1/social_pb";
 import { PaymentMethodService } from "@haalkhata/protogen/payment/v1/payment_pb";
+import { PersonalAnalyticsService } from "@haalkhata/protogen/personalanalytics/v1/personalanalytics_pb";
+import { AdminAnalyticsService } from "@haalkhata/protogen/adminanalytics/v1/adminanalytics_pb";
 
 /** Connect-Web transport that routes every RPC through the app's `/api/connect` proxy. */
 export const transport = createConnectTransport({ baseUrl: "/api/connect" });
@@ -25,6 +27,13 @@ export const receiptClient = createClient(ReceiptService, transport);
 export const socialClient = createClient(SocialService, transport);
 /** Typed client for the caller's own payment methods (list, add, edit, remove, star). */
 export const paymentClient = createClient(PaymentMethodService, transport);
+/** Typed client for the signed-in person's own insights. */
+export const personalAnalyticsClient = createClient(PersonalAnalyticsService, transport);
+/**
+ * Typed client for the operator's usage overview. The service answers only
+ * on the admin hostname; from the app's own origin every call is a 404.
+ */
+export const adminAnalyticsClient = createClient(AdminAnalyticsService, transport);
 
 /**
  * Extracts a human-readable message from a ConnectError (or any thrown value).

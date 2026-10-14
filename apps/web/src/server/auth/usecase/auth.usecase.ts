@@ -534,13 +534,17 @@ export async function beginGoogleSignIn(): Promise<{ nonce: string }> {
  * minted for a different app sign in here.
  *
  * @param idToken - Raw JWT credential produced by Google Identity Services.
+ * @param audiences - Client ids the token may have been minted for.
  * @returns The stable account id, the verified email, the display name Google
  *   holds, the profile picture URL, and the server-issued authentication nonce.
  *   The name and picture are empty when absent, which Google documents as possible.
  * @throws UsecaseError "unauthenticated" when verification fails, the token
  *   carries no email, or that email is unverified.
  */
-async function verifyGoogleIdToken(idToken: string): Promise<{
+async function verifyGoogleIdToken(
+  idToken: string,
+  audiences: readonly string[],
+): Promise<{
   googleSub: string;
   email: string;
   name: string;
@@ -557,7 +561,7 @@ async function verifyGoogleIdToken(idToken: string): Promise<{
     // themselves as audience; any of them is this app.
     const ticket = await client.verifyIdToken({
       idToken,
-      audience: GOOGLE_AUDIENCES,
+      audience: [...audiences],
     });
     claims = ticket.getPayload();
   } catch {
@@ -589,6 +593,52 @@ async function verifyGoogleIdToken(idToken: string): Promise<{
   };
 }
 
+/** The identity a verified Google sign-in establishes. */
+export interface GoogleIdentity {
+  /** Google's stable account id (the token's `sub`). */
+  googleSub: string;
+  /** The verified email, trimmed and lowercased. */
+  email: string;
+  /** Display name Google holds; empty when absent. */
+  name: string;
+  /** Profile picture URL; empty when absent. */
+  picture: string;
+}
+
+/**
+ * Establishes who is signing in: verifies a Google ID token and spends the
+ * server-issued nonce it carries, so the same token cannot be replayed.
+ *
+ * This is the whole of "prove a Google identity" and nothing of "what to do
+ * with it". The app's sign-in turns the identity into an account and a
+ * session; the admin surface checks it against an allowlist and never
+ * touches an account. Both must verify and spend the nonce the same way,
+ * which is why they share this rather than each keeping a copy.
+ *
+ * @param idToken - Raw JWT credential produced by Google Identity Services.
+ * @param audiences - Client ids the token may have been minted for; every
+ *   client of this app by default.
+ * @returns The verified identity.
+ * @throws UsecaseError "unauthenticated" when the token fails verification
+ *   or its nonce is unknown, expired or already used.
+ */
+export async function verifyGoogleSignIn(
+  idToken: string,
+  audiences: readonly string[] = GOOGLE_AUDIENCES,
+): Promise<GoogleIdentity> {
+  const claims = await verifyGoogleIdToken(idToken, audiences);
+  const nonceAccepted = await consumeGoogleSignInNonce(googleSignInNonceHash(claims.nonce));
+  if (!nonceAccepted) {
+    throw new UsecaseError("unauthenticated", "could not verify that Google account");
+  }
+  return {
+    googleSub: claims.googleSub,
+    email: claims.email,
+    name: claims.name,
+    picture: claims.picture,
+  };
+}
+
 /**
  * Signs a user in with a Google ID token, linking or creating the account as
  * needed, and issues a session token.
@@ -603,11 +653,7 @@ async function verifyGoogleIdToken(idToken: string): Promise<{
  * @throws UsecaseError "unauthenticated" when the token fails verification.
  */
 export async function logInWithGoogle(idToken: string) {
-  const claims = await verifyGoogleIdToken(idToken);
-  const nonceAccepted = await consumeGoogleSignInNonce(googleSignInNonceHash(claims.nonce));
-  if (!nonceAccepted) {
-    throw new UsecaseError("unauthenticated", "could not verify that Google account");
-  }
+  const claims = await verifyGoogleSignIn(idToken);
 
   let user = await findUserByGoogleSub(claims.googleSub);
   if (!user) {

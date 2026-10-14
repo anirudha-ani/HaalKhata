@@ -1,7 +1,8 @@
-/** Per-request browser security policy for rendered application routes. */
+/** Per-request routing by hostname and browser security policy for rendered application routes. */
 
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
+import { pageVerdict } from "@/config/adminSurface";
 import { contentSecurityPolicy } from "@/config/securityHeaders";
 
 /** Number of random bytes used for each one-time CSP nonce. */
@@ -18,14 +19,42 @@ export function createCspNonce(): string {
 }
 
 /**
- * Adds a unique nonce policy to both the request Next.js renders and the
- * response the browser enforces. Next.js reads the request policy and applies
- * its nonce to framework and hydration scripts automatically.
+ * Whether the router is fetching a page ahead of a navigation rather than
+ * rendering a document. A prefetch carries no document for a CSP to govern.
  *
  * @param request - Incoming application request.
- * @returns A continuation response carrying the request-specific CSP.
+ * @returns True for a router or browser prefetch.
+ */
+function isPrefetch(request: NextRequest): boolean {
+  return (
+    request.headers.has("next-router-prefetch") || request.headers.get("purpose") === "prefetch"
+  );
+}
+
+/**
+ * Routes a page request by the hostname it arrived on, then adds a unique
+ * nonce policy to both the request Next.js renders and the response the
+ * browser enforces. Next.js reads the request policy and applies its nonce
+ * to framework and hydration scripts automatically.
+ *
+ * The hostname decision comes first and covers every page request,
+ * prefetches included: the admin hostname serves the admin page and nothing
+ * else, and the app's hostname has no admin page (see config/adminSurface).
+ * The admin page checks its own surface again when it renders, so this is
+ * the first gate and not the only one.
+ *
+ * @param request - Incoming application request.
+ * @returns A 404, or a continuation response carrying the request-specific CSP.
  */
 export function proxy(request: NextRequest): NextResponse {
+  if (pageVerdict(request.nextUrl.pathname, request.headers.get("host")) === "not-found") {
+    return new NextResponse("Not found", {
+      status: 404,
+      headers: { "Cache-Control": "no-store", "Content-Type": "text/plain; charset=utf-8" },
+    });
+  }
+  if (isPrefetch(request)) return NextResponse.next();
+
   const nonce = createCspNonce();
   const policy = contentSecurityPolicy(process.env.NODE_ENV, nonce);
   const requestHeaders = new Headers(request.headers);
@@ -37,15 +66,13 @@ export function proxy(request: NextRequest): NextResponse {
   return response;
 }
 
-/** Applies the nonce proxy only to rendered pages, excluding APIs, assets, and prefetches. */
+/**
+ * Runs the proxy for rendered pages, excluding APIs and static assets.
+ * Prefetches are included so the hostname routing above applies to them
+ * too; they skip the nonce work inside the function instead.
+ */
 export const config = {
   matcher: [
-    {
-      source: "/((?!api|_next/static|_next/image|favicon.ico|favicon-32.png|apple-touch-icon.png|icon.svg|icon-192.png|icon-512.png|manifest.webmanifest|sw.js).*)",
-      missing: [
-        { type: "header", key: "next-router-prefetch" },
-        { type: "header", key: "purpose", value: "prefetch" },
-      ],
-    },
+    "/((?!api|_next/static|_next/image|favicon.ico|favicon-32.png|apple-touch-icon.png|icon.svg|icon-192.png|icon-512.png|manifest.webmanifest|sw.js).*)",
   ],
 };

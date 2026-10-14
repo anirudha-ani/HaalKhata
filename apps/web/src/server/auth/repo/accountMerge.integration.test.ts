@@ -185,6 +185,11 @@ describe.skipIf(!reachable)("mergeAccounts against Postgres", () => {
     ]);
   });
 
+  it("moves usage counts to the surviving account", async () => {
+    const { rows } = await database.query(`SELECT user_id FROM receipt_scans ORDER BY id`);
+    expect(rows).toEqual([{ user_id: KEEPER }]);
+  });
+
   it("rewrites the JSONB audience and the unconstrained credit_user_id", async () => {
     const { rows } = await database.query(
       `SELECT actor_id, audience, credit_user_id FROM activity WHERE id = 'act-1'`,
@@ -240,6 +245,7 @@ describe.skipIf(!reachable)("mergeAccounts against Postgres", () => {
        + (SELECT COUNT(*) FROM notifications WHERE user_id = $1)
        + (SELECT COUNT(*) FROM payment_methods WHERE user_id = $1)
        + (SELECT COUNT(*) FROM operations WHERE user_id = $1)
+       + (SELECT COUNT(*) FROM receipt_scans WHERE user_id = $1)
        + (SELECT COUNT(*) FROM expenses WHERE created_by = $1 OR deleted_by = $1)
        + (SELECT COUNT(*) FROM groups WHERE created_by = $1) AS dangling`,
       [LOSER],
@@ -335,6 +341,11 @@ async function seed(database: Client): Promise<void> {
   await database.query(
     `INSERT INTO operations (user_id, rpc, operation_id, request_fingerprint, result_id)
      VALUES ($1, 'CreateExpense', 'operation-1', 'fingerprint', 'exp-2')`,
+    [LOSER],
+  );
+
+  await database.query(
+    `INSERT INTO receipt_scans (id, user_id, outcome) VALUES ('scan-1', $1, 'parsed')`,
     [LOSER],
   );
 

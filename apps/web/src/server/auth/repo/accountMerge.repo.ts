@@ -93,7 +93,8 @@ type DirectMergeTarget =
   | readonly ["operations", "user_id"]
   | readonly ["settlements", "recorded_by"]
   | readonly ["settlements", "deleted_by"]
-  | readonly ["expenses", "deleted_by"];
+  | readonly ["expenses", "deleted_by"]
+  | readonly ["receipt_scans", "user_id"];
 
 /** Allowlisted direct repoints; these identifiers are interpolated into SQL. */
 const DIRECT_MERGE_TARGETS = [
@@ -112,6 +113,10 @@ const DIRECT_MERGE_TARGETS = [
   ["settlements", "recorded_by"],
   ["settlements", "deleted_by"],
   ["expenses", "deleted_by"],
+  // Usage counts follow the person. Only someone signed in can scan, so an
+  // absorbed invite row has none today; repointing keeps the count whole if
+  // that ever stops being true.
+  ["receipt_scans", "user_id"],
 ] as const satisfies readonly DirectMergeTarget[];
 
 /**

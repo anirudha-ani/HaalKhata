@@ -1,0 +1,118 @@
+syntax = "proto3";
+
+package personalanalytics.v1;
+
+// A person's own activity, aggregated: what they spent, with whom, how they
+// split it, and how long they have been at it. Everything is derived from
+// rows the caller is already on, so it shows nobody anything they could not
+// already read one expense at a time. Nothing here is stored: it is counted
+// from the ledger on each call.
+service PersonalAnalyticsService {
+  // The caller's insights for a trailing window of calendar months, plus
+  // their lifetime "journey" figures. One call paints the whole dashboard.
+  rpc GetInsights(GetInsightsRequest) returns (GetInsightsResponse);
+}
+
+message GetInsightsRequest {
+  // How many calendar months the window covers, counting the current one.
+  // 0 asks for the default (6); anything else is clamped to 1..24.
+  int32 months = 1;
+  // The caller's current calendar month, "YYYY-MM". The server only knows
+  // UTC, where the month turns over hours before or after it does for the
+  // person looking; without this the newest bar would be an empty month they
+  // have not reached yet. Believed only when it is a month some timezone is
+  // actually in right now; anything else falls back to the UTC month.
+  string local_month = 2;
+}
+
+message GetInsightsResponse {
+  // Lifetime figures. The only part of the response the window does not
+  // bound; everything below covers the window alone.
+  Journey journey = 1;
+  // The window's calendar months, "YYYY-MM", oldest first with no gaps.
+  // Every per-month list in this response has one entry per month here, in
+  // this order, zeros included.
+  repeated string months = 2;
+  // One entry per currency the caller spent or settled in during the
+  // window: their default currency first, then by how much they spent.
+  // Kept apart because a dollar and a euro are not the same cent.
+  repeated CurrencyInsights currencies = 3;
+  // How the window's expenses were split, most used first.
+  repeated SplitTypeCount split_types = 4;
+  // The people the caller shared the most expenses with, most first.
+  repeated Companion companions = 5;
+  // Where the window's expenses happened, busiest first.
+  repeated GroupActivity groups = 6;
+}
+
+// How long the caller has been here and what they have done in total.
+message Journey {
+  // RFC 3339 instant the caller joined: when they finished signing up, not
+  // when a friend first typed their name into an expense.
+  string member_since = 1;
+  // The earliest day ("YYYY-MM-DD") of any live expense the caller is on;
+  // empty when they have none.
+  string first_expense_date = 2;
+  // Live expenses the caller paid for or owes a share of.
+  int32 expense_count = 3;
+  // Payments the caller made or received. Cancelling entries of a net
+  // settlement are not payments and are not counted.
+  int32 payment_count = 4;
+  int32 group_count = 5;
+  int32 friend_count = 6;
+  // Receipts the caller scanned that a provider could read. Counted from
+  // the day scan counting shipped; earlier scans left no trace to count.
+  int32 receipt_scan_count = 7;
+}
+
+// The window's money in one currency.
+message CurrencyInsights {
+  string currency = 1;
+  // The caller's share of the window's expenses: what they actually spent,
+  // whoever paid at the counter.
+  int32 share_cents = 2;
+  // What the caller paid up front, their own share included.
+  int32 paid_cents = 3;
+  // share_cents per month of GetInsightsResponse.months.
+  repeated int32 monthly_share_cents = 4;
+  // share_cents by expense category, largest first.
+  repeated CategorySpending categories = 5;
+  // Payments the caller made to settle up during the window.
+  int32 settled_out_cents = 6;
+  // Payments the caller received during the window.
+  int32 settled_in_cents = 7;
+}
+
+message CategorySpending {
+  // An expense category key, e.g. "food"; see the shared CATEGORIES list.
+  string category = 1;
+  int32 share_cents = 2;
+}
+
+message SplitTypeCount {
+  string split_type = 1; // equal | exact | percent | shares | itemized
+  int32 expense_count = 2;
+}
+
+// Someone the caller shared expenses with. Only what an avatar and a link
+// need: a name and a face they already see on every one of those expenses.
+message Companion {
+  string user_id = 1;
+  string name = 2;
+  string avatar_color = 3;
+  string avatar_url = 4;
+  // Expenses in the window both people are on.
+  int32 shared_expense_count = 5;
+}
+
+message GroupActivity {
+  // Empty for expenses outside any group; that row has no name or type.
+  string group_id = 1;
+  string name = 2;
+  string type = 3;
+  int32 expense_count = 4;
+  // Whether the caller still belongs to the group. Their expenses in a
+  // group they have since left are still theirs and still counted, but the
+  // group's page is closed to them, so a client must not link to it.
+  bool is_member = 5;
+}

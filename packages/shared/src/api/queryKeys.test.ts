@@ -49,7 +49,20 @@ describe("queryKeys", () => {
       queryKeys.activityFeed(),
       queryKeys.notifications,
       queryKeys.paymentMethods,
+      queryKeys.insights(6),
+      queryKeys.adminUsage,
     ].map(hash);
     expect(new Set(keys).size).toBe(keys.length);
+  });
+
+  test("each insights window is its own entry, and a money mutation clears them all", () => {
+    expect(hash(queryKeys.insights(6))).not.toBe(hash(queryKeys.insights(12)));
+    // A new expense changes the charts, so insights must sit under a prefix
+    // the money invalidation sweeps.
+    expect(MONEY_KEYS.some((moneyKey) => moneyKey[0] === queryKeys.insights(6)[0])).toBe(true);
+  });
+
+  test("the operator's overview is not swept by a user's money mutation", () => {
+    expect(MONEY_KEYS.some((moneyKey) => moneyKey[0] === queryKeys.adminUsage[0])).toBe(false);
   });
 });
