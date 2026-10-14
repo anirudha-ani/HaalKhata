@@ -6,8 +6,9 @@
 # mistake worth designing out. Here only Caddy publishes anything.
 #
 # Non-secret settings come from /srv/haalkhata/.env (compose reads a file named
-# .env from the directory holding this file — which is why deploy.sh cds there
-# first). Secrets are files under /srv/haalkhata/secrets/, never values here.
+# .env from the directory holding this file — which is why the deploy steps
+# cd there first). Secrets are files under /srv/haalkhata/secrets/, never
+# values here.
 name: haalkhata
 
 services:
@@ -50,8 +51,8 @@ services:
     # No `ports`. The database is reachable only over the compose network.
 
   web:
-    # deploy.sh writes an exact 40-character commit tag; never fall back to the
-    # mutable `latest` tag in production.
+    # The deploy steps write an exact 40-character commit tag; never fall back
+    # to the mutable `latest` tag in production.
     image: ghcr.io/anirudha-ani/haalkhata:${IMAGE_TAG:?set IMAGE_TAG to a deployed commit SHA}
     restart: unless-stopped
     depends_on:

@@ -392,9 +392,19 @@ exports them into the environment and none belong in `.env`. Only Caddy
 publishes ports.
 Built by `.github/workflows/deploy.yml` and pushed to GHCR; the server pulls a
 commit SHA over an SSH key restricted to `ops/deploy.sh` by a forced
-`command=`. See `ops/README.md` and `docs/plan.txt` §7c.
+`command=`. That file is a fixed launcher that runs the deploy steps baked
+into the image (`ops/deploy-release.sh`, at `/opt/release/`). See
+`ops/README.md` and `docs/plan.txt` §7c.
 
 Things not to break when touching deploy config:
+
+- **Deploy logic goes in `ops/deploy-release.sh`, not `ops/deploy.sh`.** The
+  launcher cannot be updated through the deploy key, so changing it means a
+  manual copy to the server. Which piped keys are accepted, which secret files
+  they become and how the compose file is adopted all live in the release's
+  own deploy steps; a new pipeline-managed key is a release (see "Adding a
+  pipeline-managed key" in `ops/README.md`). Keep the launcher's contract
+  (SHA, release directory, untouched stdin) stable.
 
 - **`header_up X-Forwarded-For {remote_host}` in the Caddyfile.** `clientIp()`
   reads the first value of that header and Caddy appends by default, so
