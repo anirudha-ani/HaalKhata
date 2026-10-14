@@ -2,6 +2,7 @@
 /** Auth panel: configured identity providers and local credentials in a card or sheet. */
 
 import { LegalLinks } from "@/components/legal/LegalLinks/LegalLinks";
+import { APPLE_SIGN_IN_UNAVAILABLE } from "@haalkhata/shared/auth/providerMessages";
 import { useAppleSignIn } from "../../hooks/useAppleSignIn";
 import { ArrowRight, X } from "lucide-react";
 import { GoogleSignIn } from "./components/GoogleSignIn/GoogleSignIn";
@@ -70,7 +71,11 @@ export function AuthPanel({
       {apple.available ? <button type="button" disabled={apple.isPending} onClick={apple.signIn}
         className="w-full rounded-lg bg-black px-4 py-3 text-sm font-semibold text-white disabled:opacity-50">
         {apple.isPending ? "Signing in…" : "Continue with Apple"}
-      </button> : null}
+      </button> : !apple.isLoading ? (
+        <p role="status" className="rounded-lg border border-line bg-paper px-3 py-2.5 text-xs leading-5 text-ink-soft">
+          {APPLE_SIGN_IN_UNAVAILABLE}
+        </p>
+      ) : null}
       {apple.error ? <p role="alert" className="mb-3 text-sm text-brand-600">{apple.error}</p> : null}
 
       {googleIsConfigured ? <GoogleSignIn /> : null}

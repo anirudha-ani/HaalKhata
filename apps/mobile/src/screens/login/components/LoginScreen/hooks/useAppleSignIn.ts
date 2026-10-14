@@ -20,8 +20,8 @@ import { useSignInOptionsAPI } from "./useSignInOptionsAPI";
 export function useAppleSignIn() {
   const router = useRouter();
   const options = useSignInOptionsAPI();
-  const [deviceSupported, setDeviceSupported] = useState(Platform.OS === "android");
-  const available = deviceSupported && options.isSuccess &&
+  const [deviceSupported, setDeviceSupported] = useState<boolean | null>(Platform.OS === "ios" ? null : Platform.OS === "android");
+  const available = deviceSupported === true && options.isSuccess &&
     (Platform.OS === "ios" ? options.data.appleNativeEnabled : options.data.appleBrowserEnabled);
   const [error, setError] = useState("");
   useEffect(() => {
@@ -62,7 +62,7 @@ export function useAppleSignIn() {
       if ((failure as { code?: string }).code !== "ERR_REQUEST_CANCELED") setError(errorMessage(failure));
     },
   });
-  return { available, error, isPending: mutation.isPending,
+  return { available, error, isLoading: options.isPending || deviceSupported === null, isPending: mutation.isPending,
     /** Clears a previous error and starts a fresh Apple authorization. */
     signIn: () => { if (available && !mutation.isPending) { setError(""); mutation.mutate(); } } };
 }

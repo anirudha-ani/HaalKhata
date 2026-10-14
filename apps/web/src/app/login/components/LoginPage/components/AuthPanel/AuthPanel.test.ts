@@ -3,6 +3,7 @@
 
 import { create } from "@bufbuild/protobuf";
 import { SignInOptionsSchema } from "@haalkhata/protogen/auth/v1/auth_pb";
+import { APPLE_SIGN_IN_UNAVAILABLE } from "@haalkhata/shared/auth/providerMessages";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -33,10 +34,11 @@ async function render() {
   await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
 }
 
-it("hides Apple with incomplete configuration while Google stays visible", async () => {
+it("explains unavailable Apple configuration while Google stays visible", async () => {
   vi.mocked(authClient.getSignInOptions).mockResolvedValue(create(SignInOptionsSchema));
   await render();
   expect(container.textContent).not.toContain("Continue with Apple");
+  expect(container.querySelector('[role="status"]')?.textContent).toBe(APPLE_SIGN_IN_UNAVAILABLE);
   expect(container.textContent).toContain("Continue with Google");
   expect(authClient.beginAppleSignIn).not.toHaveBeenCalled();
 });
@@ -44,16 +46,19 @@ it("shows Apple only when the backend enables the browser flow", async () => {
   vi.mocked(authClient.getSignInOptions).mockResolvedValue(create(SignInOptionsSchema, { appleBrowserEnabled: true, appleNativeEnabled: true }));
   await render();
   expect(container.textContent).toContain("Continue with Apple");
+  expect(container.textContent).not.toContain(APPLE_SIGN_IN_UNAVAILABLE);
 });
 it("does not show a broken Apple button or configuration error when lookup fails", async () => {
   vi.mocked(authClient.getSignInOptions).mockRejectedValue(new Error("backend offline"));
   await render();
   expect(container.textContent).not.toContain("Continue with Apple");
   expect(container.textContent).not.toContain("backend offline");
+  expect(container.textContent).toContain(APPLE_SIGN_IN_UNAVAILABLE);
   expect(container.textContent).toContain("Continue with Google");
 });
 it("keeps Apple hidden while configuration is still loading", async () => {
   vi.mocked(authClient.getSignInOptions).mockReturnValue(new Promise(() => {}));
   await render();
   expect(container.textContent).not.toContain("Continue with Apple");
+  expect(container.textContent).not.toContain(APPLE_SIGN_IN_UNAVAILABLE);
 });

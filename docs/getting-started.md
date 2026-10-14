@@ -19,7 +19,7 @@ blank and preserves any existing non-empty password. The local connection
 uses it with the prefilled host, port, username and database name.
 `dev.sh` starts Postgres and the Next.js dev
 server. It quietly prepares missing settings and checks the required database
-password before Compose runs. Missing Apple credentials hide Apple sign-in
+password before Compose runs. Missing Apple credentials show an Apple sign-in availability message
 on web and mobile; they produce no startup warnings. Use
 `./dev.sh --clean` for a fresh database and `./dev.sh --down` to
 stop everything.
@@ -97,7 +97,8 @@ full console walkthrough.
 
 ### Apple sign-in (optional in development)
 
-Apple sign-in stays hidden until the backend has a usable `.p8` signing key,
+The Apple button is replaced by a “try again later” availability message
+until the backend has a usable `.p8` signing key,
 Team/Key IDs and encryption key. Browser/Android also need a Services ID and
 registered HTTPS development domain; native iOS uses its signed App ID and
 must be supported by the device. A placeholder file does not enable Apple.

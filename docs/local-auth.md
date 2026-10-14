@@ -8,7 +8,9 @@ Apple is optional for local startup. Leave its key placeholder and encryption
 key blank to work with Google or development password login. `./dev.sh`
 prepares files quietly; it does not print Apple setup failures. The login
 screen checks public availability from the backend and shows Apple only when
-that flow is configured. Setup automatically fills a missing or blank
+that flow is configured. Otherwise, after the availability check finishes,
+both apps show “Sign in with Apple is not available at this moment. Please
+try again later.” Setup automatically fills a missing or blank
 `POSTGRES_PASSWORD` with `change-me` for the local Compose database. Existing
 non-empty passwords are preserved; production requires its own real secret.
 
@@ -99,7 +101,7 @@ sharing consent stays with the receipt upload flow.
 3. Set `APP_PUBLIC_URL` to that HTTPS origin and restart with `./dev.sh`.
    The login screen's availability check validates the callback URL, signs
    a client-secret JWT and checks refresh-token encryption. A missing or
-   unusable setting keeps Apple hidden. Run `pnpm auth:check` if you want a
+   unusable setting replaces the Apple button with the availability message. Run `pnpm auth:check` if you want a
    detailed configuration diagnostic.
 4. Open **`https://YOUR_DEVELOPMENT_HOST/login`**, then Continue with Apple.
    Start and finish on that same origin: the private verifier is held in
@@ -111,7 +113,10 @@ sharing consent stays with the receipt upload flow.
    requires a domain and HTTPS for its return URL.
 
 The Services ID alone does not enable the button. Missing, unreadable,
-placeholder or malformed keys keep Apple hidden, including on mobile. The
+placeholder or malformed keys show the availability message instead of a
+button, including on mobile. To verify this locally, leave `AppleAuthKey.p8`
+as the placeholder, run `./dev.sh`, and open `/login`; the message should
+appear after the availability check, while Google/password remain usable. The
 availability response contains only booleans. Release readiness and actual
 sign-in still enforce all credential checks. No additional public Apple
 client ID or CI deployment is needed for local testing.

@@ -55,7 +55,7 @@ export function useAppleSignIn() {
     onSuccess: (challenge) => window.location.assign(challenge.authorizationUrl),
     onError: (failure) => { sessionStorage.removeItem(APPLE_VERIFIER_STORAGE_KEY); setError(errorMessage(failure)); },
   });
-  return { available, error, isPending: begin.isPending || complete.isPending,
+  return { available, error, isLoading: options.isPending, isPending: begin.isPending || complete.isPending,
     /** Clears a prior error and starts browser authorization. */
     signIn: () => { if (available && !begin.isPending && !complete.isPending) { setError(""); begin.mutate(); } } };
 }
