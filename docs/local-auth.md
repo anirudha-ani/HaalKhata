@@ -6,7 +6,12 @@ deployment; they are not automatically available on your laptop.
 
 ## One environment file
 
-Keep your existing database settings in the repository-root `.env` and add:
+Run `pnpm setup:env` or `./install-deps.sh --env-only` first. Full dependency
+installation runs the same preparation automatically. HaalKhata's known
+public IDs are already filled in; existing values and secrets are preserved.
+The command prints the secrets and machine-specific settings you still need
+to provide. Keep your existing database settings in the repository-root
+`.env`; the following shows the configuration for a different account too:
 
 ```dotenv
 # Existing Google web OAuth client, identical on both sides.

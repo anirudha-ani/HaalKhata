@@ -1,0 +1,115 @@
+/** Regressions for safe, repeatable public env setup and secret-free instructions. */
+
+import assert from "node:assert/strict";
+import { chmodSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { parseEnv } from "node:util";
+import { test } from "node:test";
+import { manualEnvironmentActions, prefillEnvironment, setupEnvironment } from "./environment.mjs";
+import { SECRET_ENVIRONMENT_NAMES } from "./environment.constants.mjs";
+
+/** Real template ensures new clones get the configuration documented by the installer. */
+const EXAMPLE = readFileSync(new URL("../../.env.example", import.meta.url), "utf8");
+
+test("a fresh clone gets known public IDs, blank secrets, and private file permissions", () => {
+  const directory = mkdtempSync(join(tmpdir(), "haalkhata-setup-"));
+  const messages = [];
+  try {
+    writeFileSync(join(directory, ".env.example"), EXAMPLE);
+    setupEnvironment({ directory, report: (message) => messages.push(message) });
+    const filename = join(directory, ".env");
+    const configured = parseEnv(readFileSync(filename, "utf8"));
+    assert.equal(configured.APPLE_TEAM_ID, "QL3M3QZSHQ");
+    assert.equal(configured.APPLE_KEY_ID, "6XVYVH8478");
+    assert.equal(configured.APPLE_SERVICE_ID, "com.haalkhata.web");
+    assert.equal(configured.GOOGLE_CLIENT_ID, configured.NEXT_PUBLIC_GOOGLE_CLIENT_ID);
+    assert.ok(configured.GOOGLE_CLIENT_ID.endsWith(".apps.googleusercontent.com"));
+    assert.equal(configured.GOOGLE_MOBILE_CLIENT_IDS, configured.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID);
+    assert.equal(configured.POSTGRES_HOST, "localhost");
+    for (const name of SECRET_ENVIRONMENT_NAMES) {
+      assert.ok(!configured[name], `${name} must be supplied by the developer`);
+      assert.ok(!configured[`${name}_FILE`]);
+    }
+    assert.equal(statSync(filename).mode & 0o777, 0o600);
+    const output = messages.join("\n");
+    for (const name of ["POSTGRES_PASSWORD", "APPLE_PRIVATE_KEY_FILE", "APPLE_TOKEN_ENCRYPTION_KEY", "APP_PUBLIC_URL"]) {
+      assert.ok(output.includes(name), `Setup must explain ${name}`);
+    }
+    const firstRun = readFileSync(filename, "utf8");
+    setupEnvironment({ directory, report: () => {} });
+    assert.equal(readFileSync(filename, "utf8"), firstRun);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("existing multiline secrets and comments survive verbatim while blank public values are filled once", () => {
+  const source = '# Keep this comment\nAPPLE_PRIVATE_KEY="first line\nAPPLE_TEAM_ID=not-an-assignment\nlast line"\nSESSION_SECRET=private-value\nAPPLE_TOKEN_ENCRYPTION_KEY=keep-this-key\nAPPLE_TEAM_ID=\nGOOGLE_CLIENT_ID=""\n';
+  const result = prefillEnvironment(source, EXAMPLE);
+  assert.ok(result.text.startsWith(source));
+  const configured = parseEnv(result.text);
+  assert.equal(configured.APPLE_TEAM_ID, "QL3M3QZSHQ");
+  assert.equal(configured.APPLE_PRIVATE_KEY, "first line\nAPPLE_TEAM_ID=not-an-assignment\nlast line");
+  assert.equal(configured.APPLE_TOKEN_ENCRYPTION_KEY, "keep-this-key");
+  assert.equal(configured.SESSION_SECRET, "private-value");
+  assert.equal(configured.APPLE_PRIVATE_KEY_FILE, "");
+  assert.equal(configured.POSTGRES_PASSWORD, "");
+  assert.deepEqual(prefillEnvironment(result.text, EXAMPLE), { text: result.text, filled: [] });
+});
+
+test("custom Google web IDs are propagated to the missing counterpart, never replaced by repository IDs", () => {
+  for (const name of ["GOOGLE_CLIENT_ID", "NEXT_PUBLIC_GOOGLE_CLIENT_ID"]) {
+    const configured = parseEnv(prefillEnvironment(`${name}=custom-web-client\n`, EXAMPLE).text);
+    assert.equal(configured.GOOGLE_CLIENT_ID, "custom-web-client");
+    assert.equal(configured.NEXT_PUBLIC_GOOGLE_CLIENT_ID, "custom-web-client");
+  }
+});
+
+test("a different Apple team and native Google audience do not acquire unrelated provider IDs", () => {
+  const configured = parseEnv(prefillEnvironment("APPLE_TEAM_ID=OTHERTEAM\nGOOGLE_MOBILE_CLIENT_IDS=custom-mobile\nSUPPORT_EMAIL=custom@example.com\n", EXAMPLE).text);
+  assert.equal(configured.APPLE_TEAM_ID, "OTHERTEAM");
+  assert.equal(configured.APPLE_KEY_ID, undefined);
+  assert.equal(configured.APPLE_SERVICE_ID, undefined);
+  assert.equal(configured.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID, undefined);
+  assert.equal(configured.GOOGLE_MOBILE_CLIENT_IDS, "custom-mobile");
+  assert.equal(configured.SUPPORT_EMAIL, "custom@example.com");
+});
+
+test("existing secret-file settings are retained and their contents never appear in setup output", () => {
+  const directory = mkdtempSync(join(tmpdir(), "haalkhata-setup-"));
+  const messages = [];
+  try {
+    writeFileSync(join(directory, ".env.example"), EXAMPLE);
+    const filename = join(directory, ".env");
+    const source = 'POSTGRES_PASSWORD=private-database-password\nDATABASE_URL=postgres://custom:private-database-password@localhost/custom\nAPPLE_PRIVATE_KEY_FILE=/private/key.p8\nAPPLE_TOKEN_ENCRYPTION_KEY_FILE=/private/encryption-key\nSESSION_SECRET=private-session-secret\n';
+    writeFileSync(filename, source);
+    chmodSync(filename, 0o644);
+    setupEnvironment({ directory, report: (message) => messages.push(message) });
+    assert.ok(readFileSync(filename, "utf8").startsWith(source));
+    const output = messages.join("\n");
+    for (const secret of ["private-database-password", "private-session-secret", "/private/key.p8", "/private/encryption-key"]) {
+      assert.ok(!output.includes(secret));
+    }
+    assert.ok(!output.includes("set APPLE_PRIVATE_KEY_FILE"));
+    assert.ok(!output.includes("paste the output into APPLE_TOKEN_ENCRYPTION_KEY"));
+    assert.equal(statSync(filename).mode & 0o777, 0o600);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("setup refuses a template containing secrets before creating an environment", () => {
+  const directory = mkdtempSync(join(tmpdir(), "haalkhata-setup-"));
+  try {
+    writeFileSync(join(directory, ".env.example"), `${EXAMPLE}\nAPPLE_TOKEN_ENCRYPTION_KEY=accidental-secret\n`);
+    assert.throws(() => setupEnvironment({ directory, report: () => {} }), /Remove APPLE_TOKEN_ENCRYPTION_KEY credentials/);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("configured production callbacks still prompt for a local development URL", () => {
+  const output = manualEnvironmentActions({ APP_PUBLIC_URL: "https://haalkhata.app" }).join("\n");
+  assert.ok(output.includes("registered HTTPS development origin"));
+});

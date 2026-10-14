@@ -12,11 +12,12 @@
 #   6. Workspace npm dependencies (pnpm install, including the locked buf CLI)
 #   7. Generated protobuf TypeScript (pnpm gen → packages/protogen/src)
 #   8. apps/mobile native modules verified against Expo SDK (expo install --check)
-#   9. .env copied from .env.example (repo root) if absent
+#   9. .env public settings prefilled; missing secrets listed for you to supply
 #  10. CocoaPods installed when macOS has a full Xcode installation
 #
 # Usage:
 #   ./install-deps.sh           install everything that's missing
+#   ./install-deps.sh --env-only prepare .env without reinstalling dependencies
 #   ./install-deps.sh --help    show this help
 #
 # System installs (Node, Docker) need sudo on Linux. The script will prompt for
@@ -385,34 +386,35 @@ check_mobile_deps() {
 
 # --- 9. .env file --------------------------------------------------------------
 
-# One .env at the repo root serves both runtimes: docker compose reads it
-# directly, and `pnpm dev` loads it through the Next.js launcher's loadEnvFile API.
+# Both apps share the root .env. Fill known public configuration, preserve
+# existing values, and report secrets/machine-specific inputs for the developer.
 setup_env_files() {
   cd "$PROJECT_ROOT"
-  if [[ ! -f .env ]] && [[ -f .env.example ]]; then
-    cp .env.example .env
-    ok "created .env from .env.example (edit it to set POSTGRES_PASSWORD + SESSION_SECRET for prod)"
-  elif [[ -f .env ]]; then
-    ok ".env already exists"
-  fi
+  node scripts/setup-env.mjs
 }
 
 # --- main ----------------------------------------------------------------------
 
 usage() {
-  sed -n '2,24p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,25p' "$0" | sed 's/^# \{0,1\}//'
   exit 0
 }
 
 main() {
   case "${1:-}" in
     --help|-h) usage ;;
+    --env-only)
+      have node || die "Node.js is required. Run ./install-deps.sh to install dependencies first."
+      setup_env_files
+      return
+      ;;
     "")        ;;
     *) die "unknown argument '$1'. Try --help." ;;
   esac
 
   log "Installing HaalKhata dependencies on $(os_name)…"
   install_node
+  setup_env_files
   install_pnpm
   install_docker
   install_java
@@ -420,10 +422,9 @@ main() {
   check_android_sdk
   install_workspace
   check_mobile_deps
-  setup_env_files
 
   echo
-  ok "all set. Run './dev.sh' to start the database and web server."
+  ok "dependencies ready. Complete the .env inputs listed above, then run './dev.sh'."
   printf "       (add --mobile-android or --mobile-ios to also boot the emulator/simulator,\n"
   printf "        build+install the dev client, and start Metro alongside the web server)\n"
 }

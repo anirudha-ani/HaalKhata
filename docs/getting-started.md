@@ -6,12 +6,16 @@ development setup. For a production deployment see [Self-hosting](self-hosting.m
 ## One-command setup (fresh box)
 
 ```sh
-./install-deps.sh   # installs Node, pnpm, Docker, buf, deps + generates protogen
+./install-deps.sh   # installs dependencies, generates protogen, prepares .env
+# Fill the secrets listed by setup before starting the app.
 ./dev.sh            # starts db + web server at http://127.0.0.1:3000
 ```
 
 `install-deps.sh` installs everything that is missing and skips what is
-already there. `dev.sh` starts the Postgres database and the Next.js dev
+already there. It prefills known public settings in `.env` and lists the
+secrets to supply yourself. Fill `POSTGRES_PASSWORD` before first database
+startup; the local connection uses that password with the prefilled host,
+port, username and database name. `dev.sh` starts Postgres and the Next.js dev
 server. Use `./dev.sh --clean` for a fresh database and `./dev.sh --down` to
 stop everything.
 
@@ -20,6 +24,7 @@ stop everything.
 ```sh
 pnpm install
 pnpm gen                 # buf generate → packages/protogen
+pnpm setup:env           # then fill the listed secrets in .env
 docker compose up -d db  # Postgres 17 on localhost:5432 (or use your own)
 pnpm dev                 # http://localhost:3000
 ```
@@ -34,7 +39,19 @@ key; see [Receipt AI providers](#receipt-ai-providers-optional) below.
 All configuration lives in a single `.env` at the repo root: `docker compose`
 reads it directly, and the Next.js and Expo launchers load it before startup.
 Expo loads only `EXPO_PUBLIC_*` values; server secrets stay on the backend.
-Copy `.env.example` to `.env` to begin; every variable is documented there.
+Run `pnpm setup:env` (or `./install-deps.sh --env-only`) to prepare `.env`
+without reinstalling dependencies. Known Google web/iOS client IDs, Apple
+Team/Key/Services IDs, the support email and local database connection parts
+are prefilled from `.env.example`. Existing non-empty values, comments and
+multiline secrets are preserved; missing or blank public entries are filled
+once. You supply database/provider secrets yourself. Reruns never generate
+or rotate a secret. New `.env` files contain no passwords or keys, and setup
+sets file permissions to owner-only read/write.
+
+For Apple, fill `APPLE_PRIVATE_KEY_FILE` and `APPLE_TOKEN_ENCRYPTION_KEY` (or
+its `_FILE` variant). Your HTTPS development domain and Android Google client
+ID depend on your machine/provider setup and cannot be inferred. The setup
+output lists these separately from optional receipt AI and phone credentials.
 
 Using your own Postgres instead of the compose service? Set `DATABASE_URL`
 and append `?sslmode=verify-full` (or `&sslmode=verify-full` when the URL

@@ -1,8 +1,8 @@
 /** Database constants. */
 
-/** Dev-default connection string, matching the compose `db` service's default
- * POSTGRES_PASSWORD (change-me in .env.example). DATABASE_URL overrides it.
- * Keep this in sync with the root .env.example POSTGRES_PASSWORD. */
+/** Legacy development fallback for older local databases. New setup leaves
+ * secrets blank and uses the prefilled POSTGRES_* parts plus a user-supplied
+ * password. DATABASE_URL overrides both; production rejects this fallback. */
 export const DEFAULT_DATABASE_URL = "postgres://haalkhata:change-me@localhost:5432/haalkhata";
 
 /** Minimum production database-password length in decoded UTF-8 bytes. */
