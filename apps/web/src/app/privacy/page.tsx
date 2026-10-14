@@ -17,10 +17,10 @@ export default function PrivacyPage() {
   return <main className="mx-auto max-w-3xl space-y-7 px-6 py-12 text-ink">
     <Link href="/login" className="font-semibold text-brand-600">HaalKhata</Link>
     <h1 className="text-4xl font-bold">Privacy policy</h1>
-    <p className="text-sm text-ink-soft">Effective October 5, 2026. Applies to the HaalKhata mobile app and website.</p>
+    <p className="text-sm text-ink-soft">Effective October 13, 2026. Applies to the HaalKhata mobile app and website.</p>
     <section className="space-y-3"><h2 className="text-2xl font-semibold">Information we use</h2>
-      <p>HaalKhata stores your account identifier, display name, sign-in provider identifier, email (including an Apple private relay address), optional profile image, default currency, and any phone number or payment handles you choose to add. We use these to authenticate you, find invitations, display your profile and help your expense partners settle outside the app.</p>
-      <p>We store groups, membership, expenses, dates, amounts, currencies, splits, items, settlements, comments, invitations, activity and in-app notifications to provide the shared ledger. Account email and phone fields are private to your own profile. People sharing expenses can see your display identity and payment handles.</p>
+      <p>HaalKhata stores your account identifier, display name, sign-in provider identifier, email (including an Apple private relay address), optional profile image, default currency, and any phone number or payment methods you choose to add. Payment methods can include names, currencies, instructions, contact information, bank account details and payment links that you provide. We use these to authenticate you, find invitations, display your profile and help your expense partners settle outside the app.</p>
+      <p>We store groups, membership, expenses, dates, amounts, currencies, splits, items, settlements, comments, invitations, activity and in-app notifications to provide the shared ledger. Account email and phone fields are private to your own profile. People sharing expenses can see your display identity. Your payment methods are shown only to people who owe you, including within a particular shared group or expense scope.</p>
       <p>Security processing uses request IP addresses, short-lived sign-in challenges, hashed phone destinations, verification attempts and limited diagnostic logs to prevent fraud and abuse. We do not include advertising, cross-app tracking or an analytics SDK in the app.</p>
     </section>
     <section className="space-y-3"><h2 className="text-2xl font-semibold">Optional photos and AI</h2>
@@ -30,7 +30,7 @@ export default function PrivacyPage() {
     </section>
     <section className="space-y-3"><h2 className="text-2xl font-semibold">Other service providers</h2>
       <p>Google and Apple process sign-in. Apple offers Hide My Email. Twilio processes phone numbers and SMS verification when you choose to verify a phone number. Our hosting and database services process app data to operate HaalKhata. We do not sell personal information.</p>
-      <p>Payment handles open third-party payment apps or websites at your request. HaalKhata records settlements; it does not process payments or receive your bank login credentials.</p>
+      <p>Payment links open third-party payment apps or websites at your request. HaalKhata records settlements; it does not process payments or receive your bank login credentials.</p>
     </section>
     <section className="space-y-3"><h2 className="text-2xl font-semibold">Storage and deletion</h2>
       <p>The mobile app stores your session credential in the operating system&apos;s secure store. Financial query data is held in memory. Temporary photo files may remain in device caches until the operating system clears them.</p>
@@ -38,7 +38,7 @@ export default function PrivacyPage() {
       <p>Private safety reports include the reported content, reason and account identifiers so moderators can investigate. The reported person is not notified of the reporter’s identity. Reports are removed when the reporting or reported account is deleted. Short-lived security records expire according to their operational windows. Encrypted local backups rotate after about 31 days; offsite backup expiry must follow the same schedule. Deleted data is not used to recreate your account. Limited information may be retained when required by law or to resolve an abuse report. Contact us for privacy requests or questions about retention.</p>
     </section>
     <section className="space-y-3"><h2 className="text-2xl font-semibold">Your choices and contact</h2>
-      <p>You can edit your profile, remove a phone number or payment handles, deny camera access, enter expenses manually, and delete your account. You can report inappropriate content and block unwanted contact from the app.</p>
+      <p>You can edit your profile, remove a phone number or payment methods, deny camera access, enter expenses manually, and delete your account. You can report inappropriate content and block unwanted contact from the app.</p>
       <p>HaalKhata is operated by the publisher listed on its App Store listing. {supportEmail ? <>Contact: <a className="underline" href={`mailto:${supportEmail}`}>{supportEmail}</a>.</> : <>The publisher must configure its support contact before launch.</>}</p>
       <p>HaalKhata is not directed to children under 13. If you believe a child&apos;s personal information has been submitted, contact us for removal. We publish policy changes here and update the effective date.</p>
     </section>

@@ -72,12 +72,13 @@ export async function eraseAccountData(input: { userId: string; anonymousId: str
   await execute("DELETE FROM operations WHERE user_id = $1", [input.userId], client);
   await execute("DELETE FROM apple_sign_in_challenges WHERE user_id = $1", [input.userId], client);
   await execute("DELETE FROM apple_credentials WHERE user_id = $1", [input.userId], client);
-  await execute("DELETE FROM payment_handles WHERE user_id = $1", [input.userId], client);
+  await execute(`DELETE FROM payment_handles WHERE user_id = $1 OR user_id IN
+    (SELECT id FROM users WHERE merged_into = $1)`, [input.userId], client);
   await execute(`UPDATE expense_items SET name = $2 WHERE expense_id IN
     (SELECT id FROM expenses WHERE created_by = $1)`, [input.userId, input.itemName], client);
   await execute("UPDATE expenses SET description = $2, notes = '' WHERE created_by = $1", [input.userId, input.expenseDescription], client);
   await execute("UPDATE groups SET name = $2 WHERE created_by = $1", [input.userId, input.groupName], client);
-  await execute("UPDATE settlements SET note = '' WHERE from_user = $1 OR to_user = $1 OR recorded_by = $1", [input.userId], client);
+  await execute("UPDATE settlements SET note = '', method_label = '' WHERE from_user = $1 OR to_user = $1 OR recorded_by = $1", [input.userId], client);
   await execute("UPDATE expense_payers SET user_id = $2 WHERE user_id = $1", identity, client);
   await execute("UPDATE expense_splits SET user_id = $2 WHERE user_id = $1", identity, client);
   await execute("UPDATE expense_item_assignments SET user_id = $2 WHERE user_id = $1", identity, client);
