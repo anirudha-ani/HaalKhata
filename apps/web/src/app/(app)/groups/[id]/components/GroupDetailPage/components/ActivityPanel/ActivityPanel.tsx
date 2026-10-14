@@ -3,9 +3,9 @@
 
 import { Bell, ChevronDown } from "lucide-react";
 import type { ActivityEvent } from "@haalkhata/protogen/social/v1/social_pb";
-import { ActivityList } from "@/components/activity/ActivityList";
-import { EmptyState } from "@/components/ui/EmptyState";
-import { Spinner } from "@/components/ui/Spinner";
+import { ActivityList } from "@/components/activity/ActivityList/ActivityList";
+import { EmptyState } from "@/components/ui/EmptyState/EmptyState";
+import { Spinner } from "@/components/ui/Spinner/Spinner";
 
 /**
  * Renders the activity tab of a group: what happened here *that concerns the

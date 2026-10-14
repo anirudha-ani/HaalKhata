@@ -1,0 +1,26 @@
+#!/bin/sh
+# commit-msg: commits in this repo carry no Claude co-author or attribution.
+#
+# Removes two kinds of line from the message being committed: a
+# "Co-Authored-By:" trailer naming Claude or Anthropic, and the attribution
+# line Claude Code appends ("Generated with [Claude Code](…)"). It strips
+# instead of refusing, so a tool that adds the line by default still ends up
+# with a clean commit, whichever session or program wrote it.
+#
+# Only a line that IS one of those is removed. A sentence that merely mentions
+# them stays, so the patterns are anchored to the start of the line and, for
+# the attribution, to its link form or to standing alone.
+#
+# Active once per clone:  git config core.hooksPath .githooks
+# (install-deps.sh does this.)
+
+message_file="$1"
+cleaned="$(mktemp)" || exit 1
+# grep exits 1 when it removed every line; an empty message is git's to refuse.
+grep -viE \
+  -e '^[[:space:]]*co-authored-by:.*(claude|anthropic)' \
+  -e '^[^[:alnum:]]*generated with \[claude code\]\(' \
+  -e '^[^[:alnum:]]*generated with claude code[[:space:]]*$' \
+  "$message_file" > "$cleaned" || true
+cat "$cleaned" > "$message_file"
+rm -f "$cleaned"

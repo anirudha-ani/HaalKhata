@@ -4,6 +4,8 @@ package expense.v1;
 
 import "google/protobuf/empty.proto";
 import "common/v1/common.proto";
+import "group/v1/group.proto";
+import "payment/v1/payment.proto";
 
 // Expenses, settlements and balances. All money is integer cents in the
 // expense's currency; splits always reconcile to the exact total.
@@ -179,6 +181,9 @@ message GetExpenseResponse {
   // not viewer-relative: the same answer for everyone, so it could live on
   // Expense — it sits here because only the detail view acts on it.
   bool has_later_settlement = 6;
+  // Group lifecycle read with the expense snapshot. Clients must hide edit
+  // and delete actions while the group is archived. UNSPECIFIED for one-offs.
+  group.v1.GroupStatus group_status = 7;
 }
 
 // One recorded change to an expense, for the detail view's history line.
@@ -242,6 +247,30 @@ message RecordSettlementRequest {
   // retry of a lost response gets the recording the first attempt made,
   // never a second one.
   string operation_id = 9;
+  // Settle the pair on their net in this currency, across every scope. Only
+  // with an empty group_id and no scope_group_ids. Two people can owe each
+  // other in different scopes at once (you owe them outside groups, they owe
+  // you inside two), and every list shows the pair as the net of both. With
+  // this set, amount_cents is the cash that moves — at most that net — and
+  // the server also records the offsetting entries that cancel the balances
+  // pointing the other way against what the payer owes, so every scope the
+  // pair shares in this currency moves together and a full payment leaves
+  // all of them at zero. Refused when the payer is not behind overall.
+  bool net_across_scopes = 10;
+  // Required with net_across_scopes: the digest of the SettlePosition the
+  // person was shown (FriendLedgerResponse.settle_positions). The server
+  // recomputes the position under its locks and refuses the settlement when
+  // the digests differ, so what gets cancelled is exactly what was on screen
+  // and never a ledger that moved underneath it.
+  string position_digest = 11;
+  // The payment method the money moved through: one of the methods of
+  // whoever received it (the other person's when paying them, the caller's
+  // own when recording money received). Optional. When it names such a
+  // method, the server records the payment under that method's key and
+  // copies its name onto the settlement, and `method` is ignored. An id that
+  // does not resolve, because the method was removed or was never theirs,
+  // never fails the payment: it is recorded from `method` with no name.
+  string payment_method_id = 12;
 }
 
 message Settlement {
@@ -257,6 +286,10 @@ message Settlement {
   // The authenticated user who typed the payment in: one of the two people
   // on it, not necessarily the payer. A payment is a claim; this says whose.
   string recorded_by_user_id = 10;
+  // Name of the payment method used, e.g. "bKash", as it was called when the
+  // payment was recorded. A copy: renaming or removing the method later does
+  // not change it. Empty for cash and for payments recorded without one.
+  string method_label = 11;
 }
 
 message GetGroupBalancesRequest {
@@ -327,6 +360,36 @@ message FriendLedgerEntry {
   // running balance runs per currency: a euro line continues the euro
   // column, not the dollar one.
   string currency = 13;
+  // For a settlement line that is part of a net settlement: the id its lines
+  // share. They are removed together, never one at a time. Empty for an
+  // ordinary payment and for expense lines.
+  string net_settlement_id = 14;
+  // True for a net settlement's cancelling line: no money moved, a balance
+  // here was cancelled against one pointing the other way. It has no remove
+  // of its own; removing the payment it belongs to removes it too.
+  bool offset = 15;
+}
+
+// One balance two people share, inside a settle position.
+message SettleScope {
+  string group_id = 1; // empty = the pair's one-off slate
+  string group_name = 2;
+  int32 net_cents = 3; // > 0 = they owe you here
+  bool simplified = 4;
+}
+
+// Everything two people can settle between them in one currency, computed
+// by the same code that records a settlement: every scope they share, each
+// routed the way that scope routes debt, and the net of them. This, not the
+// statement history, is what a settle dialog for a person shows.
+message SettlePosition {
+  string currency = 1;
+  // The net across the scopes: > 0 = they owe you.
+  int32 net_cents = 2;
+  repeated SettleScope scopes = 3;
+  // Fingerprint of this position, to send back as
+  // RecordSettlementRequest.position_digest.
+  string digest = 4;
 }
 
 message FriendGroupBalance {
@@ -377,4 +440,23 @@ message FriendLedgerResponse {
   // True when older lines were left off `entries` to bound the response.
   // The nets and group balances are computed over everything regardless.
   bool truncated = 10;
+  // One entry per currency in which the pair has anything to settle.
+  repeated SettlePosition settle_positions = 11;
+  // How this person wants to be paid: every payment method of theirs, oldest
+  // first. Filled only while the caller owes them something, in any currency
+  // and in any one scope, since a single balance can be settled on its own
+  // even when the pair's net points the other way. Empty otherwise: an
+  // account number is for the person about to use it, and nobody else. This
+  // response is the only way one person's methods reach another.
+  repeated payment.v1.PaymentMethod payee_methods = 12;
+  // The server's clock when this was read (ISO 8601). A client works out
+  // "changed 2 days ago" against this, not against its own clock, which can
+  // be wrong by minutes or by years, and wrong in the direction that hides
+  // the freshest change.
+  string read_at = 13;
+  // When this person last removed one of their payment methods; empty when
+  // they never have, and whenever payee_methods is empty. With it, a method
+  // added in place of a removed one is not mistaken for one that is merely
+  // new.
+  string payee_method_removed_at = 14;
 }

@@ -1,6 +1,6 @@
 /** Loading UI for the /account route. */
 
-import { Spinner } from "@/components/ui/Spinner";
+import { Spinner } from "@/components/ui/Spinner/Spinner";
 
 /**
  * Renders a spinner while the /account route segment loads.

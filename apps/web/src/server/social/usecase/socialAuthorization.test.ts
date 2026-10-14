@@ -105,7 +105,6 @@ const targetRow = {
   merged_into: null,
   token_version: 0,
   created_at: "2026-08-01T00:00:00Z",
-  payment_handles: [],
 } satisfies UserRow;
 
 beforeEach(() => {

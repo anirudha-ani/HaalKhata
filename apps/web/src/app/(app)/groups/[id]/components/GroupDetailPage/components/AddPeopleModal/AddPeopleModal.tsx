@@ -4,9 +4,9 @@
 import Link from "next/link";
 import type { User } from "@haalkhata/protogen/common/v1/common_pb";
 import type { ContactDraft } from "@haalkhata/shared/phone/contact";
-import { EmailOrPhoneField } from "@/components/ui/EmailOrPhoneField";
-import { FriendChecklist } from "@/components/people/FriendChecklist";
-import { Modal } from "@/components/ui/Modal";
+import { EmailOrPhoneField } from "@/components/ui/EmailOrPhoneField/EmailOrPhoneField";
+import { FriendChecklist } from "@/components/people/FriendChecklist/FriendChecklist";
+import { Modal } from "@/components/ui/Modal/Modal";
 
 /**
  * Renders the group's add-people form.

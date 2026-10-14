@@ -2,6 +2,7 @@
 
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { authClient, expenseClient, groupClient, socialClient } from "@/lib/api/connect";
+import type { GroupStatus } from "@haalkhata/shared/group/status";
 import { MONEY_KEYS, queryKeys } from "@haalkhata/shared/api/queryKeys";
 
 /**
@@ -99,6 +100,21 @@ export function useGroupDetailAPI(groupId: string) {
       socialClient.addFriend({ email: "", phone: "", name: "", userId }),
   });
 
+  /** Archives or restores the group and refreshes lists and open group views. */
+  const setStatus = useMutation({
+    mutationFn: (status: GroupStatus) => groupClient.setStatus({ groupId, status }),
+    onSuccess: (updatedGroup) => {
+      // The response names its own group even if navigation changed while saving.
+      queryClient.setQueryData(queryKeys.group(updatedGroup.id), updatedGroup);
+      for (const moneyKey of MONEY_KEYS) queryClient.invalidateQueries({ queryKey: moneyKey });
+    },
+    onError: () => {
+      // A refused archive can mean the cached ledger moved. Refresh both the
+      // group and balances before offering the action again.
+      queryClient.invalidateQueries({ queryKey: queryKeys.groups });
+    },
+  });
+
   /**
    * Flips the group's simplify-debts mode. It changes which debts every
    * money surface shows — this group's balances, friend ledgers, the
@@ -129,7 +145,8 @@ export function useGroupDetailAPI(groupId: string) {
     activityError: activity.error,
     friends: (friends.data?.friends ?? []).flatMap((friend) => (friend.user ? [friend.user] : [])),
     expenses: expenses.data,
-    balances: balances.data,
+    balances: balances.isError ? undefined : balances.data,
+    reloadBalances: () => void balances.refetch(),
     isLoading: group.isLoading || expenses.isLoading,
     refresh,
     isRefreshing: group.isRefetching || expenses.isRefetching || balances.isRefetching,
@@ -138,6 +155,7 @@ export function useGroupDetailAPI(groupId: string) {
     transferOwnership,
     addFriend,
     setSimplify,
+    setStatus,
     activityEvents: (activity.data?.pages ?? []).flatMap((page) => page.events),
     activityLoading: activity.isLoading,
     activityHasMore: activity.hasNextPage,

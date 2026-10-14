@@ -1,6 +1,6 @@
 /** Loading UI for the /expenses/new route. */
 
-import { Spinner } from "@/components/ui/Spinner";
+import { Spinner } from "@/components/ui/Spinner/Spinner";
 
 /**
  * Renders a spinner while the /expenses/new route segment loads.

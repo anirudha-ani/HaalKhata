@@ -8,7 +8,7 @@ const { tmpdir } = require('node:os');
 const { join } = require('node:path');
 const { test } = require('node:test');
 
-const DEPLOY_SOURCE = readFileSync(join(__dirname, 'deploy.sh'), 'utf8');
+const DEPLOY_SOURCE = readFileSync(join(__dirname, 'deploy-release.sh'), 'utf8');
 // Stop at the deployment boundary; all parser/functions are the actual source.
 const CONFIG_SCRIPT = DEPLOY_SOURCE.split('# IMAGE_TAG is read')[0].replace('cd /srv/haalkhata\n', '');
 const TEST_TAG = 'a'.repeat(40);
@@ -38,7 +38,7 @@ function fixture(context) {
      * @returns Captured parser exit status and output.
      */
     applyConfig(input = '') {
-      return spawnSync('sh', ['config.sh'], {
+      return spawnSync('sh', ['config.sh', TEST_TAG, directory], {
         cwd: directory, encoding: 'utf8', input, timeout: 10_000,
         env: { ...process.env, PATH: `${binaries}:${process.env.PATH}`, SSH_ORIGINAL_COMMAND: TEST_TAG },
       });

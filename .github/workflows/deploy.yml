@@ -1,8 +1,9 @@
 # Build the image on amd64, push it to GHCR, then hand the server one commit
 # SHA over SSH — plus the non-secret .env config on stdin. The server pulls;
-# it never builds, and nobody edits files on it by hand: deploy.sh validates
-# and applies the piped config, and adopts the compose file and Caddyfile
-# baked into the image itself.
+# it never builds, and nobody edits files on it by hand: a fixed launcher
+# (ops/deploy.sh) runs the deploy steps baked into the image
+# (ops/deploy-release.sh), which validate and apply the piped config and adopt
+# the compose file and Caddyfile baked in beside them.
 #
 # Required repo settings:
 #   Variable  NEXT_PUBLIC_GOOGLE_CLIENT_ID   the OAuth client id (NOT secret —
@@ -35,7 +36,7 @@
 #   Secret    APPLE_TOKEN_ENCRYPTION_KEY     stable output of openssl rand -hex 32;
 #             lands as secrets/apple_token_encryption_key. Existing nonempty
 #             keys cannot be replaced by CI without a separate data migration
-#   Any of these file secrets left unset pipes an empty value, and deploy.sh then
+#   Any of these file secrets left unset pipes an empty value, and the deploy steps then
 #   leaves the server's existing secret file untouched — so each secret can
 #   be GitHub-managed or server-only, per secret.
 #   Secret    DEPLOY_SSH_KEY                 private half of the deploy key
@@ -172,8 +173,10 @@ jobs:
           fi
           # The sha is only an argument and the config is only data on stdin.
           # authorized_keys pins the command, so this key cannot open a shell
-          # or run anything else; deploy.sh validates every line against its
-          # allowlist before .env changes.
+          # or run anything else; the release's deploy steps validate every
+          # line against their allowlist before .env changes. A new key needs
+          # a line here and an allowlist entry in ops/deploy-release.sh, and
+          # ships with the release that adds them (see ops/README.md).
           {
             printf 'ACME_EMAIL=%s\n'                "$ACME_EMAIL"
             printf 'GOOGLE_CLIENT_ID=%s\n'          "$GOOGLE_CLIENT_ID"

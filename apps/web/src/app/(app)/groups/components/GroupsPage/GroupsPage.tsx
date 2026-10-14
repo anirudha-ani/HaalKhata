@@ -3,15 +3,17 @@
 
 import Link from "next/link";
 import { Plus, Users } from "lucide-react";
-import { EmptyState } from "@/components/ui/EmptyState";
-import { FriendChecklist } from "@/components/people/FriendChecklist";
-import { Modal } from "@/components/ui/Modal";
-import { Money } from "@/components/ui/Money";
-import { SearchField } from "@/components/ui/SearchField";
-import { Spinner } from "@/components/ui/Spinner";
+import { EmptyState } from "@/components/ui/EmptyState/EmptyState";
+import { FriendChecklist } from "@/components/people/FriendChecklist/FriendChecklist";
+import { Modal } from "@/components/ui/Modal/Modal";
+import { Money } from "@/components/ui/Money/Money";
+import { SearchField } from "@/components/ui/SearchField/SearchField";
+import { Spinner } from "@/components/ui/Spinner/Spinner";
 import { useHydrated } from "@/lib/hooks/useHydrated";
-import { CurrencySelect } from "@/components/ui/CurrencySelect";
+import { CurrencySelect } from "@/components/ui/CurrencySelect/CurrencySelect";
 import { GROUP_BALANCE_FILTERS, noGroupsMessage } from "@haalkhata/shared/group/balanceFilter";
+import { GroupStatus } from "@haalkhata/shared/group/status";
+import { GROUP_ARCHIVE_EMPTY, GROUP_ARCHIVE_VIEWS } from "@haalkhata/shared/group/archiving";
 import { GROUP_TYPES, groupEmoji } from "../../constants/groupTypes";
 import { useGroups } from "./hooks/useGroups";
 import { MAX_GROUP_NAME_LENGTH } from "@haalkhata/shared/text/limits";
@@ -40,7 +42,25 @@ export function GroupsPage() {
         </button>
       </header>
 
-      {groupsState.groups.length === 0 ? (
+      <div className="flex gap-2" aria-label="Group archive views">
+        {GROUP_ARCHIVE_VIEWS.map((view) => (
+          <button
+            key={view.label}
+            type="button"
+            aria-pressed={groupsState.status === view.status}
+            onClick={() => groupsState.setStatus(view.status)}
+            className={`rounded-xl border px-4 py-2 text-sm font-semibold ${
+              groupsState.status === view.status
+                ? "border-brand-600 bg-brand-50 text-brand-700"
+                : "border-line text-ink-soft hover:border-brand-200"
+            }`}
+          >
+            {view.label}
+          </button>
+        ))}
+      </div>
+
+      {groupsState.groups.length === 0 && groupsState.status === GroupStatus.ACTIVE ? (
         <EmptyState
           icon={<Users />}
           title="No groups yet"
@@ -68,33 +88,37 @@ export function GroupsPage() {
                 would read as unfiltered while rows are being hidden. */}
             {groupsState.query || groupsState.balance !== "all" ? (
               <span className="shrink-0 text-sm text-ink-soft tabular-nums">
-                {groupsState.visibleGroups.length} of {groupsState.groups.length}
+                {groupsState.visibleGroups.length} of {groupsState.pathwayGroups.length}
               </span>
             ) : null}
           </div>
 
           {/* Filter state stays visible while it hides rows, matching the
               activity feed: the active button is styled, not just remembered. */}
-          <div className="flex flex-wrap items-center gap-1.5">
-            {GROUP_BALANCE_FILTERS.map((entry) => (
-              <button
-                key={entry.value}
-                type="button"
-                aria-pressed={groupsState.balance === entry.value}
-                onClick={() => groupsState.setBalance(entry.value)}
-                className={`rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
-                  groupsState.balance === entry.value
-                    ? "border-brand-600 bg-brand-50 text-brand-700"
-                    : "border-line text-ink-soft hover:border-brand-200"
-                }`}
-              >
-                {entry.label}
-              </button>
-            ))}
-          </div>
+          {groupsState.status === GroupStatus.ACTIVE ? (
+            <div className="flex flex-wrap items-center gap-1.5">
+              {GROUP_BALANCE_FILTERS.map((entry) => (
+                <button
+                  key={entry.value}
+                  type="button"
+                  aria-pressed={groupsState.balance === entry.value}
+                  onClick={() => groupsState.setBalance(entry.value)}
+                  className={`rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
+                    groupsState.balance === entry.value
+                      ? "border-brand-600 bg-brand-50 text-brand-700"
+                      : "border-line text-ink-soft hover:border-brand-200"
+                  }`}
+                >
+                  {entry.label}
+                </button>
+              ))}
+            </div>
+          ) : null}
           {groupsState.visibleGroups.length === 0 ? (
             <p className="rounded-2xl border border-line bg-card px-4 py-6 text-center text-sm text-ink-soft">
-              {noGroupsMessage(groupsState.query, groupsState.balance)}
+              {groupsState.pathwayGroups.length === 0
+                ? GROUP_ARCHIVE_EMPTY[groupsState.status === GroupStatus.ARCHIVED ? "archived" : "active"]
+                : noGroupsMessage(groupsState.query, groupsState.balance)}
             </p>
           ) : (
         <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">

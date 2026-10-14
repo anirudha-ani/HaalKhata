@@ -1,7 +1,7 @@
 "use client";
 /** "Paid by" section: single-payer select or per-person multi-payer amounts. */
 
-import { Avatar } from "@/components/ui/Avatar";
+import { Avatar } from "@/components/ui/Avatar/Avatar";
 import type { NewExpenseController } from "../../hooks/useNewExpense";
 
 /**

@@ -2,7 +2,7 @@
 
 import { redirect } from "next/navigation";
 import type { ReactNode } from "react";
-import { AppShell } from "@/components/shell/AppShell";
+import { AppShell } from "@/components/shell/AppShell/AppShell";
 import { sessionUser } from "@/lib/auth/session.server";
 
 /**

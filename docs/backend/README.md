@@ -40,13 +40,14 @@ HTTP; JSON or binary protobuf). The mount lives at
 | `social.v1.SocialService` | [social.proto](../../proto/social/v1/social.proto) | [social/social-service.md](social/social-service.md) | Friend requests (incoming, sent, cancel), friends list, activity feed, notifications, reminders |
 | `safety.v1.SafetyService` | [safety.proto](../../proto/safety/v1/safety.proto) | [safety/safety-service.md](safety/safety-service.md) | Private reports, caller-owned blocks, moderation authorization |
 | `receipt.v1.ReceiptService` | [receipt.proto](../../proto/receipt/v1/receipt.proto) | [receipt/receipt-service.md](receipt/receipt-service.md) | Processor disclosures, explicit consent, AI receipt itemization (image → draft expense) |
+| `payment.v1.PaymentMethodService` | [payment.proto](../../proto/payment/v1/payment.proto) | [payment/payment-service.md](payment/payment-service.md) | The payment methods a person defines (name, currency, labelled details), the preferred one per currency, and who is sent them |
 
 ## Cross-Cutting Documentation
 
 | Doc | Covers |
 | --- | --- |
 | [common/conventions.md](common/conventions.md) | Transport, authentication & session renewal, CSRF, error model, rate limiting, idempotent operations, advisory ledger locks, money rules, database boundary, privacy projections, secrets |
-| [common/common-types.md](common/common-types.md) | The shared `common.v1` messages (`User`, `PaymentHandle`, `Debt`, `NetBalance`, `CurrencyAmount`, `CounterpartyBalance`) and their privacy semantics |
+| [common/common-types.md](common/common-types.md) | The shared `common.v1` messages (`User`, the retired `PaymentHandle`, `Debt`, `NetBalance`, `CurrencyAmount`, `CounterpartyBalance`) and their privacy semantics |
 
 ## The Two Sentences That Explain Most Design Decisions
 

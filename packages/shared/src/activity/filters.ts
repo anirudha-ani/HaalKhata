@@ -25,7 +25,11 @@ export const ACTIVITY_FILTERS: readonly ActivityFilterOption[] = [
     label: "Expenses",
     types: ["expense_added", "expense_updated", "expense_deleted"],
   },
-  { value: "payments", label: "Payments", types: ["settlement", "settlement_deleted"] },
+  {
+    value: "payments",
+    label: "Payments",
+    types: ["settlement", "settlement_offset", "settlement_deleted"],
+  },
   { value: "comments", label: "Comments", types: ["comment"] },
   {
     value: "groups",

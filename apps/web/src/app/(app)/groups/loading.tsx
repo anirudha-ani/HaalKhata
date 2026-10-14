@@ -1,6 +1,6 @@
 /** Route loading UI for /groups. */
 
-import { Spinner } from "@/components/ui/Spinner";
+import { Spinner } from "@/components/ui/Spinner/Spinner";
 
 /**
  * Renders the spinner shown while the /groups route segment is loading.

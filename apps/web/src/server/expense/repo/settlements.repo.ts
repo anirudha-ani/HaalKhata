@@ -15,8 +15,13 @@ export interface SettlementRow {
   to_user: string;
   amount_cents: number;
   currency: string;
-  /** Free-form payment method label, e.g. "cash" or "bank transfer". */
+  /** Settlement method key: venmo, zelle, cashapp, paypal, cash, bank, other, or offset. */
   method: string;
+  /**
+   * Name of the payment method used ("bKash"), copied when the payment was
+   * recorded; empty for cash, for an offset, and for older rows.
+   */
+  method_label: string;
   note: string;
   created_at: string;
   /** Monotonic order shared with expenses for mutation-safety checks. */
@@ -31,6 +36,12 @@ export interface SettlementRow {
   recorded_by: string;
   /** The authenticated user who removed it; null while it counts. */
   deleted_by: string | null;
+  /**
+   * The net settlement this row is part of, or null for an ordinary payment.
+   * Rows sharing one are written together and removed together; the database
+   * refuses to commit them any other way.
+   */
+  net_settlement_id: string | null;
 }
 
 /**
@@ -120,7 +131,7 @@ export async function scopeHasSettlements(
  * Inserts a recorded settlement (a real-world payment between two users).
  *
  * @param input - Settlement details: payer, recipient, amount, currency,
- *   method, note, and who typed it in.
+ *   method and the name it went by, note, and who typed it in.
  * @param client - Transaction client when the insert must commit with a
  *   surrounding {@link withSettlementPairLock} window; omitted, it autocommits.
  * @returns The inserted row, including its generated id and timestamp.
@@ -133,14 +144,19 @@ export async function insertSettlement(
     amountCents: number;
     currency: string;
     method: string;
+    /** Name of the payment method used; omitted when there is none to keep. */
+    methodLabel?: string;
     note: string;
     recordedBy: string;
+    /** The net settlement this row belongs to; omitted for an ordinary payment. */
+    netSettlementId?: string | null;
   },
   client?: PoolClient,
 ): Promise<SettlementRow> {
   const text = `INSERT INTO settlements
-       (id, group_id, from_user, to_user, amount_cents, currency, method, note, recorded_by)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+       (id, group_id, from_user, to_user, amount_cents, currency, method, note, recorded_by,
+        net_settlement_id, method_label)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
      RETURNING *`;
   const params = [
     newId(),
@@ -152,12 +168,82 @@ export async function insertSettlement(
     input.method,
     input.note,
     input.recordedBy,
+    input.netSettlementId ?? null,
+    input.methodLabel ?? "",
   ];
   if (client) {
     const { rows } = await client.query<SettlementRow>(text, params as never[]);
     return rows[0];
   }
   return (await query<SettlementRow>(text, params))[0];
+}
+
+/**
+ * Inserts the parent row of a net settlement: what its rows must add up to.
+ * The rows are inserted next, on the same transaction, each naming this id;
+ * the database checks the set against these figures when it commits.
+ *
+ * @param input - The currency, the cash that moved, and what was cancelled
+ *   each way.
+ * @param client - The settlement's transaction client.
+ * @returns The new parent's id.
+ */
+export async function insertNetSettlement(
+  input: { currency: string; cashCents: number; offsetCents: number },
+  client: PoolClient,
+): Promise<string> {
+  const netSettlementId = newId();
+  await execute(
+    `INSERT INTO net_settlements (id, currency, cash_cents, offset_cents)
+     VALUES ($1, $2, $3, $4)`,
+    [netSettlementId, input.currency, input.cashCents, input.offsetCents],
+    client,
+  );
+  return netSettlementId;
+}
+
+/**
+ * Lists every row of one net settlement, removed ones included.
+ *
+ * @param netSettlementId - The parent's id.
+ * @param client - Transaction client holding the pair's ledger lock.
+ * @returns The rows, cash first, then by scope.
+ */
+export async function listSettlementsByNetSettlement(
+  netSettlementId: string,
+  client: PoolClient,
+): Promise<SettlementRow[]> {
+  return query<SettlementRow>(
+    `SELECT * FROM settlements
+      WHERE net_settlement_id = $1
+      ORDER BY (method = 'offset'), group_id NULLS FIRST, id`,
+    [netSettlementId],
+    client,
+  );
+}
+
+/**
+ * Marks every live row of a net settlement removed, in one statement. There
+ * is no way to remove one of them alone: a single leg gone would leave the
+ * others cancelling a balance that is no longer cancelled back.
+ *
+ * @param netSettlementId - The parent's id.
+ * @param deletedBy - The authenticated user removing it.
+ * @param client - Transaction client holding the pair's ledger lock.
+ * @returns The rows that were removed.
+ */
+export async function softDeleteNetSettlement(
+  netSettlementId: string,
+  deletedBy: string,
+  client: PoolClient,
+): Promise<SettlementRow[]> {
+  return query<SettlementRow>(
+    `UPDATE settlements SET deleted_at = now(), deleted_by = $2
+      WHERE net_settlement_id = $1 AND deleted_at IS NULL
+      RETURNING *`,
+    [netSettlementId, deletedBy],
+    client,
+  );
 }
 
 /**
@@ -213,6 +299,20 @@ export async function listSettlementsByGroup(
 }
 
 /**
+ * Loads live payments for many group ledger scopes with one statement.
+ * @param groupIds - Group scopes whose balances are being assembled.
+ * @param client - Snapshot or ledger transaction client.
+ * @returns Live group payments; no query is sent for an empty scope list.
+ */
+export async function listSettlementsByGroups(groupIds: readonly string[], client?: PoolClient): Promise<SettlementRow[]> {
+  if (groupIds.length === 0) return [];
+  return query<SettlementRow>(
+    "SELECT * FROM settlements WHERE group_id = ANY($1::text[]) AND deleted_at IS NULL",
+    [[...new Set(groupIds)]], client,
+  );
+}
+
+/**
  * Lists every settlement between two users, in either direction and in any
  * scope (group or one-off), oldest first.
  *
@@ -220,12 +320,14 @@ export async function listSettlementsByGroup(
  * @param secondUserId - The other person.
  * @param includeDeleted - Whether removed payments are returned too; only the
  *   friend ledger wants them, struck through — every balance reads without.
+ * @param client - Snapshot or transaction client; omitted, the pool.
  * @returns Settlement rows between the pair, in chronological order.
  */
 export async function listSettlementsBetween(
   firstUserId: string,
   secondUserId: string,
   includeDeleted = false,
+  client?: PoolClient,
 ): Promise<SettlementRow[]> {
   return query<SettlementRow>(
     `SELECT * FROM settlements
@@ -233,6 +335,7 @@ export async function listSettlementsBetween(
        AND ($3::boolean OR deleted_at IS NULL)
      ORDER BY created_at ASC`,
     [firstUserId, secondUserId, includeDeleted],
+    client,
   );
 }
 
@@ -265,14 +368,17 @@ export async function listOneOffSettlementsBetween(
  * Lists every live settlement the user paid or received, oldest first.
  *
  * @param userId - Id of the user involved as payer or recipient.
+ * @param client - Snapshot or transaction client; omitted, the pool.
  * @returns Settlement rows in chronological order.
  */
 export async function listSettlementsInvolvingUser(
   userId: string,
+  client?: PoolClient,
 ): Promise<SettlementRow[]> {
   return query<SettlementRow>(
     `SELECT * FROM settlements WHERE (from_user = $1 OR to_user = $1) AND deleted_at IS NULL
      ORDER BY created_at ASC`,
     [userId],
+    client,
   );
 }

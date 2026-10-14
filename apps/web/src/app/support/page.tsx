@@ -1,7 +1,7 @@
 /** Public product help and monitored-contact details for users and App Review. */
 
 import Link from "next/link";
-import { LegalLinks } from "@/components/legal/LegalLinks";
+import { LegalLinks } from "@/components/legal/LegalLinks/LegalLinks";
 
 /** Public support page metadata. */
 export const metadata = { title: "Help and support" };

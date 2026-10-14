@@ -15,6 +15,9 @@ import {
   INVALID_PHONE_MESSAGE,
   type ContactDraft,
 } from "@haalkhata/shared/phone/contact";
+import type { MemberFeedback } from "@haalkhata/shared/group/memberActions";
+import { GroupStatus, type GroupArchiveStatus } from "@haalkhata/shared/group/status";
+import { groupArchivePrompt } from "@haalkhata/shared/group/archivePrompt";
 import { useGroupDetailAPI } from "./useGroupDetailAPI";
 
 /** The tabs available on the group detail page. */
@@ -32,9 +35,11 @@ export type GroupTab = "expenses" | "balances" | "activity";
  *   `peopleError`, `canAddPeople`), `candidates` (friends not already in the
  *   group), the members modal (`viewingMembers`/`setViewingMembers`,
  *   `removeMember`, `removingUserId`, `transferOwnership`,
- *   `transferringUserId`, `memberError`),
- *   `simplified`/`setSimplified`/`simplifyPending` for the group's
- *   persisted simplify-debts mode, `settleWith`/`setSettleWith` for the
+ *   `transferringUserId`, and `memberFeedback`, the last failure or
+ *   confirmation from an action in that modal and the row it belongs to),
+ *   `linkError` for a failed invite-link share,
+ *   `simplified`/`setSimplified`/`simplifyPending`/`simplifyError` for the
+ *   group's persisted simplify-debts mode, `settleWith`/`setSettleWith` for the
  *   settle-up modal, and `userById` mapping member ids to users.
  */
 export function useGroupDetail(groupId: string) {
@@ -46,8 +51,14 @@ export function useGroupDetail(groupId: string) {
   const [pickedIds, setPickedIds] = useState<string[]>([]);
   const [contact, setContact] = useState<ContactDraft>(EMPTY_CONTACT);
   const [peopleError, setPeopleError] = useState("");
-  const [memberError, setMemberError] = useState("");
+  // Nothing an action in the members modal does may fail silently: the
+  // message is kept with the row it is about, so it shows where the tap was.
+  const [memberFeedback, setMemberFeedback] = useState<MemberFeedback | null>(null);
+  const [archiveError, setArchiveError] = useState("");
+  const [archiveAction, setArchiveAction] = useState<{ groupId: string; status: GroupArchiveStatus } | null>(null);
+  const pendingGroupStatus = archiveAction?.groupId === groupId ? archiveAction.status : null;
   const [linkNotice, setLinkNotice] = useState("");
+  const [linkError, setLinkError] = useState("");
   // §33c: set when a typed contact has no claimed account, so the modal
   // can offer "send them a sign-up invite?" instead of a dead error.
   const [inviteOffer, setInviteOffer] = useState<{ email: string; phone: string } | null>(null);
@@ -153,17 +164,27 @@ export function useGroupDetail(groupId: string) {
       return token;
     },
     onSuccess: (token) => setGroupShareToken(token),
+    // Shown under the strip the button sits in. It used to go to the
+    // add-people form's error, which is only on screen inside a modal that
+    // is closed when this runs.
     onError: (mutationError) => {
       setLinkNotice("");
-      setPeopleError(errorMessage(mutationError));
+      setLinkError(errorMessage(mutationError));
     },
   });
 
   /** Owner-only: turns the shared link off; the next share mints a fresh one. */
   const resetInviteLink = useMutation({
     mutationFn: () => socialClient.revokeGroupInviteLink({ groupId }),
-    onSuccess: () => setLinkNotice("Invite link turned off — sharing again makes a new one"),
-    onError: (mutationError) => setMemberError(errorMessage(mutationError)),
+    // Said in the modal, where the button is, and left on the page for when
+    // the modal closes.
+    onSuccess: () => {
+      const message = "Invite link turned off — sharing again makes a new one";
+      setLinkNotice(message);
+      setMemberFeedback({ userId: null, tone: "success", message });
+    },
+    onError: (mutationError) =>
+      setMemberFeedback({ userId: null, tone: "error", message: errorMessage(mutationError) }),
   });
 
   /** Shares an Invited member's personal sign-up link. */
@@ -176,24 +197,30 @@ export function useGroupDetail(groupId: string) {
         groupDetailAPI.group?.name ?? "",
       );
     },
-    onSuccess: (outcome) =>
-      setLinkNotice(outcome === "copied" ? "Invite link copied ✓" : "Invite link shared ✓"),
-    onError: (mutationError) => {
+    onSuccess: (outcome, person) => {
+      const message = outcome === "copied" ? "Invite link copied ✓" : "Invite link shared ✓";
+      setLinkNotice(message);
+      setMemberFeedback({ userId: person.id, tone: "success", message });
+    },
+    onError: (mutationError, person) => {
+      // Dismissing the share sheet is a choice, not a failure.
       if (mutationError instanceof Error && mutationError.name === "AbortError") return;
-      setMemberError(errorMessage(mutationError));
+      setMemberFeedback({ userId: person.id, tone: "error", message: errorMessage(mutationError) });
     },
   });
 
   /**
    * Removes one member — the caller's own id means leaving. The zero-balance
-   * gate lives on the server, whose message is the honest one to show; a
+   * gate lives on the server; the modal explains it up front from the
+   * balances it already has, and a refusal that still comes back (a stale
+   * page, a new expense in between) is shown on that person's row. A
    * successful leave navigates away, since this page is no longer the
    * caller's to see.
    *
    * @param userId - The member to remove.
    */
   const removeMember = (userId: string) => {
-    setMemberError("");
+    setMemberFeedback(null);
     groupDetailAPI.removeMember.mutate(userId, {
       onSuccess: () => {
         if (userId === groupDetailAPI.me?.id) {
@@ -201,31 +228,93 @@ export function useGroupDetail(groupId: string) {
           router.push("/groups");
         }
       },
-      onError: (mutationError) => setMemberError(errorMessage(mutationError)),
+      onError: (mutationError) =>
+        setMemberFeedback({ userId, tone: "error", message: errorMessage(mutationError) }),
     });
   };
 
   /**
    * Makes another member the owner. The server's refusals (not the owner,
-   * not a member) are shown in the members modal.
+   * not a member) are shown on that member's row in the members modal.
    *
    * @param userId - The member who becomes the owner.
    */
   const transferOwnership = (userId: string) => {
-    setMemberError("");
+    setMemberFeedback(null);
     groupDetailAPI.transferOwnership.mutate(userId, {
-      onError: (mutationError) => setMemberError(errorMessage(mutationError)),
+      onError: (mutationError) =>
+        setMemberFeedback({ userId, tone: "error", message: errorMessage(mutationError) }),
+    });
+  };
+
+  const archivePrompt = pendingGroupStatus === null ? null : groupArchivePrompt({
+    groupName: groupDetailAPI.group?.name ?? "this group",
+    currency: groupDetailAPI.group?.currency ?? "USD",
+    status: pendingGroupStatus,
+    balances: groupDetailAPI.balances?.nets,
+  });
+
+  /**
+   * Opens the explanation or confirmation without changing the group.
+   *
+   * @returns No value; the pending action opens its popup.
+   */
+  const openArchiveDialog = () => {
+    setArchiveError("");
+    setArchiveAction({
+      groupId,
+      status: groupDetailAPI.group?.status === GroupStatus.ARCHIVED ? GroupStatus.ACTIVE : GroupStatus.ARCHIVED,
+    });
+  };
+
+  /**
+   * Dismisses the popup; a pending mutation keeps its feedback visible.
+   *
+   * @returns No value; the pending action is cleared when idle.
+   */
+  const closeArchiveDialog = () => {
+    if (groupDetailAPI.setStatus.isPending) return;
+    setArchiveAction(null);
+    setArchiveError("");
+  };
+
+  /**
+   * Saves the state the user confirmed, retaining any server refusal in the popup.
+   *
+   * @returns No value; the mutation closes the popup only after success.
+   */
+  const confirmArchiveChange = () => {
+    if (pendingGroupStatus === null || !archivePrompt?.confirmLabel || groupDetailAPI.setStatus.isPending) return;
+    setArchiveError("");
+    groupDetailAPI.setStatus.mutate(pendingGroupStatus, {
+      onSuccess: () => setArchiveAction(null),
+      onError: (mutationError) => setArchiveError(errorMessage(mutationError)),
     });
   };
 
   return {
     ...groupDetailAPI,
+    archivePrompt,
+    archiveError,
+    archivePending: groupDetailAPI.setStatus.isPending,
+    openArchiveDialog,
+    closeArchiveDialog,
+    confirmArchiveChange,
+    /** Opens the balances tab from a blocked archive explanation. */
+    viewArchiveBalances: () => {
+      closeArchiveDialog();
+      setActiveTab("balances");
+    },
     tab: activeTab,
     setTab: setActiveTab,
     addingPeople,
     setAddingPeople,
     viewingMembers,
-    setViewingMembers,
+    /** Opens or closes the members modal; what it last said goes with it. */
+    setViewingMembers: (open: boolean) => {
+      setMemberFeedback(null);
+      setViewingMembers(open);
+    },
     removeMember,
     removingUserId: groupDetailAPI.removeMember.isPending
       ? groupDetailAPI.removeMember.variables
@@ -234,10 +323,12 @@ export function useGroupDetail(groupId: string) {
     transferringUserId: groupDetailAPI.transferOwnership.isPending
       ? groupDetailAPI.transferOwnership.variables
       : undefined,
-    memberError,
+    memberFeedback,
     linkNotice,
+    linkError,
     shareInviteLink: () => {
       setLinkNotice("");
+      setLinkError("");
       shareGroupLink.mutate();
     },
     sharingInviteLink: shareGroupLink.isPending,
@@ -252,12 +343,12 @@ export function useGroupDetail(groupId: string) {
         groupDetailAPI.group?.name ?? "a group",
       ),
     resetInviteLink: () => {
-      setMemberError("");
+      setMemberFeedback(null);
       resetInviteLink.mutate();
     },
     resettingInviteLink: resetInviteLink.isPending,
     remindMember: (person: User) => {
-      setMemberError("");
+      setMemberFeedback(null);
       remindMember.mutate(person);
     },
     remindingUserId: remindMember.isPending ? remindMember.variables?.id : undefined,
@@ -288,6 +379,10 @@ export function useGroupDetail(groupId: string) {
     simplified: groupDetailAPI.group?.simplifyDebts ?? false,
     setSimplified: (value: boolean) => groupDetailAPI.setSimplify.mutate(value),
     simplifyPending: groupDetailAPI.setSimplify.isPending,
+    /** Why the last flip of the mode did not take; "" when it did. Cleared by the next attempt. */
+    simplifyError: groupDetailAPI.setSimplify.isError
+      ? errorMessage(groupDetailAPI.setSimplify.error)
+      : "",
     settleWith,
     setSettleWith,
     userById,

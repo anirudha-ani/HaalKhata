@@ -69,6 +69,17 @@ export const EXPENSE_CATEGORIES = new Set([...CATEGORIES, "lodging", "other"]);
 export const SETTLEMENT_METHODS = new Set(PAYMENT_METHOD_KEYS);
 
 /**
+ * Method stored on a settlement row that cancels one balance against another
+ * instead of recording money that moved. Only the server writes it, when a
+ * pair is settled on their net across scopes; it is deliberately not in
+ * {@link SETTLEMENT_METHODS}, so no client can claim it for a payment.
+ */
+export const OFFSET_SETTLEMENT_METHOD = "offset";
+
+/** Activity type for an offset entry, so a feed never shows one as a payment. */
+export const OFFSET_ACTIVITY_TYPE = "settlement_offset";
+
+/**
  * How much of a comment is quoted in the activity feed line and the
  * notification body. A feed row is one truncated line, so this only has to be
  * short enough to stay a preview and long enough to carry a whole short remark.

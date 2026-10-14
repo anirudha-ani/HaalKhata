@@ -8,6 +8,11 @@ import { errorMessage } from "@/lib/api/connect";
 import { newOperationId } from "@/lib/operations/operationId";
 import { prepareReceiptImage } from "@/lib/image/receiptImage";
 import { centsToInput, parseMoneyInput } from "@haalkhata/shared/money/money";
+import {
+  initialExpensePeopleIds,
+  resolveExpensePeople,
+  toggleExpensePerson,
+} from "@haalkhata/shared/expense/participants";
 import { nextDraftKey } from "@haalkhata/shared/expense/draftKey";
 import {
   buildItemsPayload,
@@ -25,18 +30,7 @@ import {
 } from "@/lib/expense/splitForm";
 import type { ExpenseFormInitial } from "../../../utils/initialValues";
 import type { useNewExpenseAPI } from "./useNewExpenseAPI";
-
-/**
- * Returns a copy of `source` without `keyToDrop`.
- *
- * @param source - The record to copy.
- * @param keyToDrop - Key to leave out of the copy.
- * @returns A new record with every other entry of `source`.
- */
-function omitKey<Value>(source: Record<string, Value>, keyToDrop: string): Record<string, Value> {
-  const { [keyToDrop]: _dropped, ...rest } = source;
-  return rest;
-}
+import { omitKey } from "../utils/omitKey";
 
 /**
  * Expense form state. All fields initialize from `initial` (built once from
@@ -57,7 +51,14 @@ export function useNewExpense(
   const router = useRouter();
 
   const [groupId, setGroupId] = useState(initial.groupId);
-  const [friendIds, setFriendIds] = useState(initial.friendIds);
+  const [personIds, setPersonIds] = useState<string[] | null>(() =>
+    initial.groupId
+      ? initialExpensePeopleIds(initial.checked, initial.singlePayerId, initial.payerAmounts)
+      : initial.friendIds,
+  );
+  const friendIds = groupId
+    ? []
+    : (personIds ?? []).filter((userId) => userId !== expenseAPI.me?.id);
   const [description, setDescription] = useState(initial.description);
   const [amount, setAmount] = useState(initial.amount);
   const [date, setDate] = useState(initial.date);
@@ -95,6 +96,11 @@ export function useNewExpense(
     (groupSummary) => groupSummary.group?.id === groupId,
   )?.group;
 
+  // The one currency every money input on this form is typed in: the
+  // group's frozen currency, or the payer's default for one-off expenses.
+  // Parsing needs it because decimals follow the currency (§36).
+  const currency = selectedGroup?.currency ?? expenseAPI.me?.defaultCurrency ?? "USD";
+
   /**
    * Every user this form can name, so an ad-hoc participant still resolves
    * when they are not in the friends list — group rosters and the edited
@@ -114,63 +120,53 @@ export function useNewExpense(
     return directory;
   }, [expenseAPI.groups, expenseAPI.friends, expenseAPI.editing]);
 
-  /**
-   * Everyone on this expense, you first: a group's whole roster when a group
-   * is selected, otherwise you plus the ad-hoc people picked by hand.
-   */
+  /** Selected people, you first; a new group expense starts with its whole roster. */
   const people: User[] = useMemo(() => {
     const currentUser = expenseAPI.me;
     if (!currentUser) return [];
-    const others = selectedGroup
+    const candidates = selectedGroup
       ? selectedGroup.members.flatMap((member) => (member.user && !member.user.deleted ? [member.user] : []))
-      : friendIds.flatMap((userId) => {
+      : (personIds ?? []).flatMap((userId) => {
           const person = usersById.get(userId);
           return person ? [person] : [];
         });
-    return [currentUser, ...others.filter((person) => person.id !== currentUser.id)];
-  }, [selectedGroup, friendIds, usersById, expenseAPI.me]);
+    return resolveExpensePeople(currentUser, candidates, selectedGroup ? personIds : null);
+  }, [selectedGroup, personIds, usersById, expenseAPI.me]);
+
+  // A receipt may finish after the people or group changed. Its callback must
+  // use the current selection and currency rather than those at scan start.
+  const receiptContextRef = useRef({ people, currency });
+  useEffect(() => {
+    receiptContextRef.current = { people, currency };
+  }, [people, currency]);
 
   /**
-   * Drops one person from every per-user map. Without this a removed
-   * participant would still be posted: `submit` sends `payerAmounts` as-is and
-   * `buildItemsPayload` reads each item's `assignees` as-is.
-   *
-   * @param userId - Id of the person leaving the expense.
-   */
-  const forgetPerson = (userId: string) => {
-    setCheckedOverride((current) => (current ? omitKey(current, userId) : current));
-    setSplitInputs((current) => omitKey(current, userId));
-    setPayerAmounts((current) => omitKey(current, userId));
-    setItems((current) =>
-      current.map((item) => ({ ...item, assignees: omitKey(item.assignees, userId) })),
-    );
-    setSinglePayerId((current) => (current === userId ? (expenseAPI.me?.id ?? "") : current));
-  };
-
-  /**
-   * Adds or removes an ad-hoc participant.
-   *
-   * Somebody joining goes onto every existing line item, which is the same
-   * "shared by everyone" default a new item gets, applied from the other
-   * direction — you untick their exceptions. This matters most when a receipt
-   * was scanned before the cast was picked, which is the natural order when
-   * the paper is in your hand: without it every parsed line would stay
-   * assigned to you alone and the newcomer would owe nothing.
-   *
+   * Adds or removes a person from this expense, including group members.
+   * Removing clears their payer, split, and item values; adding shares every
+   * existing item by default, including receipts scanned before selecting people.
    * @param userId - Id of the person to toggle on this expense.
    */
-  const toggleFriend = (userId: string) => {
-    if (friendIds.includes(userId)) {
-      setFriendIds(friendIds.filter((existingId) => existingId !== userId));
-      forgetPerson(userId);
-      return;
-    }
-    setFriendIds([...friendIds, userId]);
-    // Someone added to the expense shares it by default. Only needed once the
-    // user has touched a participation checkbox — until then `checked` is
-    // derived from `people` and already has them in.
-    setCheckedOverride((current) => (current ? { ...current, [userId]: true } : current));
-    setItems((current) => includeInEveryItem(current, userId));
+  const togglePerson = (userId: string) => {
+    const currentUserId = expenseAPI.me?.id ?? "";
+    if (userId === currentUserId) return;
+    const peopleIds = people.map((person) => person.id);
+    const wasIncluded = peopleIds.includes(userId);
+    const next = toggleExpensePerson(
+      { personIds, checked: checkedOverride, splitInputs, payerAmounts, singlePayerId },
+      peopleIds,
+      userId,
+      currentUserId,
+    );
+    setPersonIds(next.personIds);
+    setCheckedOverride(next.checked);
+    setSplitInputs(next.splitInputs);
+    setPayerAmounts(next.payerAmounts);
+    setSinglePayerId(next.singlePayerId);
+    setItems((current) =>
+      wasIncluded
+        ? current.map((item) => ({ ...item, assignees: omitKey(item.assignees, userId) }))
+        : includeInEveryItem(current, userId),
+    );
   };
 
   /**
@@ -193,7 +189,7 @@ export function useNewExpense(
           ?.group?.members.flatMap((member) => (member.user && !member.user.deleted ? [member.user.id] : [])) ?? [])
       : [currentUserId];
     setGroupId(nextGroupId);
-    setFriendIds([]);
+    setPersonIds(nextGroupId ? null : []);
     setCheckedOverride(null);
     setSplitInputs({});
     setPayerAmounts({});
@@ -340,23 +336,24 @@ export function useNewExpense(
       onSuccess: (result) => {
         const receipt = result.receipt;
         if (!receipt) return;
+        const { people: receiptPeople, currency: receiptCurrency } = receiptContextRef.current;
         setProvider(result.provider);
         // Only fill fields the user has not already written in — a scan
         // should not overwrite what somebody deliberately typed first.
         if (receipt.merchant) setDescription((current) => current || receipt.merchant);
         if (receipt.date) setDate(receipt.date);
-        setTaxInput(centsToInput(receipt.taxCents, currency));
-        setTipInput(centsToInput(receipt.tipCents, currency));
+        setTaxInput(centsToInput(receipt.taxCents, receiptCurrency));
+        setTipInput(centsToInput(receipt.tipCents, receiptCurrency));
         // Parsed rows start shared by everyone: splitting the whole bill
         // evenly is the common case, so it costs zero taps and the user only
         // touches the exceptions.
-        const everyone = Object.fromEntries(people.map((person) => [person.id, 1]));
+        const everyone = Object.fromEntries(receiptPeople.map((person) => [person.id, 1]));
         setItems(
           receipt.items.map((item) => ({
             key: nextDraftKey(),
             name: item.name,
             quantity: item.quantity,
-            total: centsToInput(item.totalCents, currency),
+            total: centsToInput(item.totalCents, receiptCurrency),
             assignees: { ...everyone },
           })),
         );
@@ -377,10 +374,7 @@ export function useNewExpense(
     });
   };
 
-  // The one currency every money input on this form is typed in: the
-  // group's frozen currency, or the payer's default for one-off expenses.
-  // Parsing needs it because decimals follow the currency (§36).
-  const currency = selectedGroup?.currency ?? expenseAPI.me?.defaultCurrency ?? "USD";
+
   const taxCents = parseMoneyInput(taxInput, currency) ?? 0;
   const tipCents = parseMoneyInput(tipInput, currency) ?? 0;
   const itemized = itemizedTotals(items, taxCents, tipCents, currency);
@@ -483,7 +477,7 @@ export function useNewExpense(
     groupId,
     setGroupId: changeGroup,
     friendIds,
-    toggleFriend,
+    togglePerson,
     hasParticipants,
     description,
     setDescription,

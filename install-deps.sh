@@ -359,6 +359,13 @@ install_workspace() {
   else
     ok "packages/protogen/src already generated"
   fi
+
+  # The repo's git hooks live in .githooks (commit-msg strips Claude
+  # co-author and attribution lines); git only runs them once told where.
+  if [[ -d .git ]] && [[ "$(git config --get core.hooksPath || true)" != ".githooks" ]]; then
+    git config core.hooksPath .githooks
+    ok "git hooks enabled from .githooks"
+  fi
 }
 
 # --- 8. mobile native module check ---------------------------------------------

@@ -9,6 +9,8 @@ import {
   matchesBalanceFilter,
   type GroupBalanceFilterOption,
 } from "@haalkhata/shared/group/balanceFilter";
+import { GroupStatus, type GroupArchiveStatus } from "@haalkhata/shared/group/status";
+import { groupsByStatus } from "@haalkhata/shared/group/archiving";
 import { useGroupsAPI } from "./useGroupsAPI";
 
 /**
@@ -25,6 +27,11 @@ import { useGroupsAPI } from "./useGroupsAPI";
 export function useGroups() {
   const groupsAPI = useGroupsAPI();
   const router = useRouter();
+  const [status, setStatus] = useState<GroupArchiveStatus>(GroupStatus.ACTIVE);
+  const pathwayGroups = useMemo(
+    () => groupsByStatus(groupsAPI.groups, status),
+    [groupsAPI.groups, status],
+  );
   const [query, setQuery] = useState("");
   const [balance, setBalance] = useState<GroupBalanceFilterOption["value"]>("all");
   const [creating, setCreating] = useState(false);
@@ -69,17 +76,23 @@ export function useGroups() {
   // rows a person is trying to hide.
   const visibleGroups = useMemo(() => {
     const terms = searchTerms(query);
-    return groupsAPI.groups.filter((summary) => {
+    return pathwayGroups.filter((summary) => {
       if (terms.length > 0 && !matchesTerms(terms, summary.group?.name, summary.group?.type)) {
         return false;
       }
       return matchesBalanceFilter(summary.yourNetCents, balance);
     });
-  }, [groupsAPI.groups, query, balance]);
+  }, [pathwayGroups, query, balance]);
 
   return {
     ...groupsAPI,
     visibleGroups,
+    pathwayGroups,
+    status,
+    setStatus: (value: GroupArchiveStatus) => {
+      setStatus(value);
+      setBalance("all");
+    },
     query,
     setQuery,
     balance,

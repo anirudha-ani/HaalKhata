@@ -131,6 +131,7 @@ tracked keys with LRU eviction so it cannot be a memory-exhaustion vector.
 | `AddMembers` | per account | 15/min |
 | `CreateExpense` | per account | 30/min |
 | `SendReminder` | per account | 10/min |
+| Payment method writes (create, update, delete, set-preferred) | per account, one shared bucket | 30/min |
 | `ParseReceipt` | per account | 5/min (+ max 2 concurrent per process) |
 | Ledger reads (`ListExpenses`, `ListGroups`, `GetFriendLedger`, `GetGroupBalances`, `GetOverallBalances`/`ListFriends`) | per account | 60/min each |
 
@@ -179,7 +180,7 @@ Balances are derived, so every mutation is a *read-then-write* over history —
 and two of those interleaving is how money gets double-counted. Serialization
 uses transaction-scoped Postgres advisory locks
 (`pg_advisory_xact_lock(hashtextextended(key, 0))`), released automatically at
-commit/rollback. Five lock classes (`common/ledgerLocks.ts`):
+commit/rollback. Six lock classes (`common/ledgerLocks.ts`):
 
 | Class | Key | Serializes |
 | --- | --- | --- |
@@ -188,6 +189,7 @@ commit/rollback. Five lock classes (`common/ledgerLocks.ts`):
 | Expense | `ledger:expense:<expenseId>` | Competing update/delete of one expense row |
 | Reminder | `reminder:<senderId>:<debtorId>` | The reminder cooldown check + insert |
 | Friend-request inbox | `friend-request-inbox:<userId>` | Pending-request + friendship changes for one recipient |
+| Payment methods | `payment-methods:<userId>` | One person's payment-method writes: the cap of 12 and the one star per currency |
 
 Deadlock avoidance rests on two rules:
 
@@ -198,7 +200,8 @@ Deadlock avoidance rests on two rules:
    group locks → friend-request-inbox locks. Every path takes them in that
    order; the constants file is the single spelling of each prefix, because
    two modules locking "the same" inbox under different keys would exclude
-   nothing.
+   nothing. The payment-methods lock is always taken alone, so it has no
+   place in the order.
 
 One-off mutations lock **per participant, not per pair**: a pair set is
 quadratic in the cast (a 100-participant expense would need 4,950 locks —
@@ -259,11 +262,17 @@ seam tests mock to intercept ledger transactions.
 `users` rows cross the wire through exactly three mappers
 (`auth/usecase/user.mapper.ts`):
 
-| Mapper | Used for | email/phone | payment handles | onboarded |
-| --- | --- | --- | --- | --- |
-| `toPrivateUser` | The caller's own profile | ✔ | ✔ | ✔ |
-| `toPublicUser` | Anyone else (groups, expenses, friends, activity) | cleared | ✔ (counterparties need them to settle) | always `false` |
-| `toFriendRequestUser` | A pending request's sender | cleared | cleared | always `false` |
+| Mapper | Used for | email/phone | onboarded |
+| --- | --- | --- | --- |
+| `toPrivateUser` | The caller's own profile | ✔ | ✔ |
+| `toPublicUser` | Anyone else (groups, expenses, friends, activity) | cleared | always `false` |
+| `toFriendRequestUser` | A pending request's sender | cleared | always `false` |
+
+**How a person is paid is on none of them.** Payment methods are not part of
+a user. They reach somebody else in exactly one place,
+`GetFriendLedger`'s `payee_methods`, and only while that somebody owes them
+(see [payment-service.md](../payment/payment-service.md)). The retired
+`payment_handles` field is always empty.
 
 `registered` means "has a password **or** a Google account" — either
 credential counts, or every Google account would read as an unclaimed invite.

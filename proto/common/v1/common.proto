@@ -21,10 +21,11 @@ message User {
   // An account may have an email, a phone, or both. Sign-in is Google only,
   // so a phone identifies and reaches someone rather than authenticating them.
   string phone = 7;
-  // Where this person wants to be paid. Visible to anyone who shares an
-  // expense with them, which is exactly who needs it — settling is done in
-  // Venmo/Zelle/Cash App and this app only records that it happened.
-  repeated PaymentHandle payment_handles = 8;
+  // Retired, always empty. Where a person wants to be paid is now a list of
+  // payment methods they define (payment.v1.PaymentMethod), and it no longer
+  // travels on every user: it is sent on the friend ledger, and only to
+  // someone who owes them (FriendLedgerResponse.payee_methods).
+  repeated PaymentHandle payment_handles = 8 [deprecated = true];
   // Whether this person has been through the first-run flow. Only ever true
   // about the caller themselves; it is meaningless on anyone else and the UI
   // must not read it off another user.
@@ -44,6 +45,7 @@ message User {
   bool deleted = 12;
 }
 
+// Retired with User.payment_handles; kept so the field stays declared.
 // One "pay me here" identifier: a Venmo username, a Zelle email or phone, a
 // $cashtag, a PayPal.Me name.
 message PaymentHandle {

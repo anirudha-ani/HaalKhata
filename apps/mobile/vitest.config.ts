@@ -1,4 +1,4 @@
-/** Vitest configuration: unit tests for pure (non-React-Native) helpers only. */
+/** Vitest configuration: pure helpers and isolated avatar lifecycle tests. */
 
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "vitest/config";

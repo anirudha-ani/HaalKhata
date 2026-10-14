@@ -4,9 +4,9 @@
 import { ArrowRight, Wand2 } from "lucide-react";
 import type { BalancesResponse } from "@haalkhata/protogen/expense/v1/expense_pb";
 import type { User } from "@haalkhata/protogen/common/v1/common_pb";
-import { Avatar } from "@/components/ui/Avatar";
-import { Money } from "@/components/ui/Money";
-import { PersonLink } from "@/components/people/PersonLink";
+import { Avatar } from "@/components/ui/Avatar/Avatar";
+import { Money } from "@/components/ui/Money/Money";
+import { PersonLink } from "@/components/people/PersonLink/PersonLink";
 
 /**
  * Renders the balances tab of a group: every member's net position, then the
@@ -17,16 +17,23 @@ import { PersonLink } from "@/components/people/PersonLink";
  */
 export function BalancesPanel({
   balances,
+  error = "",
+  onRetry,
   currency,
   meId,
   userById,
   simplified,
   simplifyPending = false,
+  simplifyError = "",
   onToggleSimplified,
   onSettle,
 }: {
   /** Balances response for the group; the panel renders nothing until it loads. */
   balances: BalancesResponse | undefined;
+  /** A failed balance read, displayed beside its retry control. */
+  error?: string;
+  /** Reloads the group balances after a failed read. */
+  onRetry: () => void;
   /** Currency code all amounts are shown in (the group's currency). */
   currency: string;
   /** The signed-in user's id, used to label rows as "You" and show settle buttons. */
@@ -37,6 +44,8 @@ export function BalancesPanel({
   simplified: boolean;
   /** True while a toggle of the mode is in flight; disables the switch. */
   simplifyPending?: boolean;
+  /** Why the last flip of the mode did not take; "" when it did. */
+  simplifyError?: string;
   /** Called with the desired state when the simplify-debts toggle is pressed. */
   onToggleSimplified: (value: boolean) => void;
   /**
@@ -45,6 +54,14 @@ export function BalancesPanel({
    */
   onSettle: (user: User, cents: number, received: boolean) => void;
 }) {
+  if (error) return (
+    <div className="space-y-3 rounded-2xl border border-line bg-card p-4">
+      <p role="alert" className="text-sm text-brand-600">{error}</p>
+      <button type="button" onClick={onRetry} className="rounded-xl border border-line px-4 py-2 text-sm font-semibold">
+        Try again
+      </button>
+    </div>
+  );
   if (!balances) return null;
   const debts = simplified ? balances.simplified : balances.debts;
   // Pairwise debts that survive while every net is zero can only be a loop —
@@ -125,6 +142,13 @@ export function BalancesPanel({
                   ? "Debts are combined into the fewest payments, so you may pay a different person than you shared an expense with. Applies to everyone in this group."
                   : "Debts run person to person, exactly as shared. Turning this on combines them into fewer payments — for everyone in this group."}
               </p>
+              {/* A switch that silently stays where it was looks broken, or
+                  worse, looks like it worked. */}
+              {simplifyError ? (
+                <p role="alert" className="mt-1.5 text-xs font-semibold text-brand-600">
+                  Couldn&apos;t change this: {simplifyError}
+                </p>
+              ) : null}
             </div>
             <button
               type="button"

@@ -72,11 +72,11 @@ platform. The server must accept the actual native IDs in the comma-separated
 
 ## 4. Provision server settings before deploying this branch
 
-Install the updated `ops/deploy.sh` on the host first. Its forced-command
-allowlist must understand the new public settings and Apple secrets. This
-one-time bootstrap needs administrator SSH access or the provider console;
-the restricted CI key cannot update the forced command. Install `ops/moderate.sh`
-with the ops scripts too. Follow [the server runbook](../ops/README.md).
+The fixed launcher deployed with `v0.4.3` already runs the deploy steps carried
+by each release image. Apple settings and secret installation live in
+`ops/deploy-release.sh`, so they ship through normal CI deployment; no further
+SSH update or manual key upload is needed on an existing launcher-based host.
+New hosts follow [the server bootstrap runbook](../ops/README.md).
 
 Set GitHub repository variables:
 

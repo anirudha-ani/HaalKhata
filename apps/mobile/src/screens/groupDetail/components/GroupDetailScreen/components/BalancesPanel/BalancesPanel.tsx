@@ -19,16 +19,23 @@ import { colors, radii, spacing } from "@/lib/theme/theme";
  */
 export function BalancesPanel({
   balances,
+  error = "",
+  onRetry,
   currency,
   meId,
   userById,
   simplified,
   simplifyPending = false,
+  simplifyError = "",
   onToggleSimplified,
   onSettle,
 }: {
   /** Balances response for the group; the panel renders nothing until it loads. */
   balances: BalancesResponse | undefined;
+  /** A failed balance read, displayed beside its retry control. */
+  error?: string;
+  /** Reloads the group balances after a failed read. */
+  onRetry: () => void;
   /** Currency code all amounts are shown in (the group's currency). */
   currency: string;
   /** The signed-in user's id, used to label rows as "You" and show settle buttons. */
@@ -39,6 +46,8 @@ export function BalancesPanel({
   simplified: boolean;
   /** True while a toggle of the mode is in flight; ignores taps meanwhile. */
   simplifyPending?: boolean;
+  /** Why the last flip of the mode did not take; "" when it did. */
+  simplifyError?: string;
   /** Called with the desired state when the simplify-debts toggle is pressed. */
   onToggleSimplified: (value: boolean) => void;
   /**
@@ -47,6 +56,12 @@ export function BalancesPanel({
    */
   onSettle: (user: User, cents: number, received: boolean) => void;
 }) {
+  if (error) return (
+    <View style={styles.section}>
+      <Text accessibilityRole="alert" style={styles.allSettledText}>{error}</Text>
+      <Button label="Try again" onPress={onRetry} variant="outline" />
+    </View>
+  );
   if (!balances) return null;
   const debts = simplified ? balances.simplified : balances.debts;
   // Pairwise debts that survive while every net is zero can only be a loop —
@@ -118,6 +133,13 @@ export function BalancesPanel({
                 ? "Debts are combined into the fewest payments. Applies to everyone in this group."
                 : "Debts run person to person, exactly as shared. Turning this on combines them — for everyone in this group."}
             </Text>
+            {/* A switch that silently stays where it was looks broken, or
+                worse, looks like it worked. */}
+            {simplifyError ? (
+              <Text accessibilityRole="alert" style={styles.modeError}>
+                Couldn&apos;t change this: {simplifyError}
+              </Text>
+            ) : null}
           </View>
           <Switch
             accessibilityLabel="Simplify debts"
@@ -260,6 +282,12 @@ const styles = StyleSheet.create({
   modeCardOn: {
     backgroundColor: colors.brand50,
     borderColor: colors.brand200,
+  },
+  modeError: {
+    color: colors.brand600,
+    fontSize: 12,
+    fontWeight: "600",
+    marginTop: 4,
   },
   modeHint: {
     color: colors.inkSoft,

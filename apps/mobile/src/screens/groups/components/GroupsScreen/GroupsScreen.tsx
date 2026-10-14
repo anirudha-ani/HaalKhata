@@ -16,6 +16,8 @@ import { Sheet } from "@/components/ui/Sheet";
 import { Spinner } from "@/components/ui/Spinner";
 import { TextField } from "@/components/ui/TextField";
 import { GROUP_BALANCE_FILTERS, noGroupsMessage } from "@haalkhata/shared/group/balanceFilter";
+import { GroupStatus } from "@haalkhata/shared/group/status";
+import { GROUP_ARCHIVE_EMPTY, GROUP_ARCHIVE_VIEWS } from "@haalkhata/shared/group/archiving";
 import { CurrencyPicker } from "@/components/ui/CurrencyPicker";
 import { colors, fonts, radii, spacing } from "@/lib/theme/theme";
 import { GROUP_TYPES, groupEmoji } from "../../constants/groupTypes";
@@ -49,11 +51,22 @@ export function GroupsScreen() {
         />
       </View>
 
+      <View style={styles.filterChips}>
+        {GROUP_ARCHIVE_VIEWS.map((view) => (
+          <Chip
+            key={view.label}
+            label={view.label}
+            onPress={() => groupsState.setStatus(view.status)}
+            selected={groupsState.status === view.status}
+          />
+        ))}
+      </View>
+
       {groupsState.isLoading ? (
         <Spinner label="Loading groups…" />
       ) : groupsState.listError ? (
         <ErrorState error={groupsState.listError} retry={groupsState.refresh} />
-      ) : groupsState.groups.length === 0 ? (
+      ) : groupsState.groups.length === 0 && groupsState.status === GroupStatus.ACTIVE ? (
         <EmptyState
           action={
             <Button
@@ -80,28 +93,32 @@ export function GroupsScreen() {
                 would read as unfiltered while rows are being hidden. */}
             {groupsState.query || groupsState.balance !== "all" ? (
               <Text style={styles.searchCount}>
-                {groupsState.visibleGroups.length} of {groupsState.groups.length}
+                {groupsState.visibleGroups.length} of {groupsState.pathwayGroups.length}
               </Text>
             ) : null}
           </View>
 
           {/* Filter state stays visible while it hides rows, matching the
               activity feed: the active chip is styled, not just remembered. */}
-          <View style={styles.filterChips}>
-            {GROUP_BALANCE_FILTERS.map((entry) => (
-              <Chip
-                key={entry.value}
-                label={entry.label}
-                onPress={() => groupsState.setBalance(entry.value)}
-                selected={groupsState.balance === entry.value}
-              />
-            ))}
-          </View>
+          {groupsState.status === GroupStatus.ACTIVE ? (
+            <View style={styles.filterChips}>
+              {GROUP_BALANCE_FILTERS.map((entry) => (
+                <Chip
+                  key={entry.value}
+                  label={entry.label}
+                  onPress={() => groupsState.setBalance(entry.value)}
+                  selected={groupsState.balance === entry.value}
+                />
+              ))}
+            </View>
+          ) : null}
 
           {groupsState.visibleGroups.length === 0 ? (
             <View style={styles.noMatchCard}>
               <Text style={styles.noMatchText}>
-                {noGroupsMessage(groupsState.query, groupsState.balance)}
+                {groupsState.pathwayGroups.length === 0
+                  ? GROUP_ARCHIVE_EMPTY[groupsState.status === GroupStatus.ARCHIVED ? "archived" : "active"]
+                  : noGroupsMessage(groupsState.query, groupsState.balance)}
               </Text>
             </View>
           ) : (

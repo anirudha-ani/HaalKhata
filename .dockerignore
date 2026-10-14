@@ -26,8 +26,9 @@ apps/mobile/ios
 apps/mobile/.expo
 
 # docker-compose.prod.yml and Caddyfile are deliberately NOT listed here: the
-# Dockerfile bakes them into /opt/release/ so deploy.sh can adopt the pair
-# each image was built with (see ops/README.md). Neither holds a secret
-# value; both only reference .env keys and files under /srv/haalkhata/secrets.
+# Dockerfile bakes them into /opt/release/, beside ops/deploy-release.sh, so
+# each release's deploy steps adopt the pair the image was built with (see
+# ops/README.md). Neither holds a secret value; both only reference .env keys
+# and files under /srv/haalkhata/secrets.
 .github
 AUDIT.md

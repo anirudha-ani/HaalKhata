@@ -20,7 +20,6 @@ const USER_ROW: UserRow = {
   merged_into: null,
   token_version: 3,
   created_at: "2026-08-01T00:00:00Z",
-  payment_handles: [{ method: "venmo", handle: "private-person" }],
 };
 
 describe("user response projections", () => {
@@ -36,7 +35,9 @@ describe("user response projections", () => {
     expect(publicUser.phone).toBe("");
     expect(publicUser.onboarded).toBe(false);
     expect("phoneVerified" in publicUser).toBe(false);
-    expect(publicUser.paymentHandles).toEqual(USER_ROW.payment_handles);
+    // How someone is paid no longer rides on a user: it reaches a person who
+    // owes them through the friend ledger. The field stays declared, empty.
+    expect(publicUser.paymentHandles).toEqual([]);
     expect(publicUser.name).toBe(USER_ROW.name);
   });
 

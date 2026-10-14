@@ -2,9 +2,27 @@
 
 import { MEMBER_ROLE, OWNER_ROLE } from "@haalkhata/shared/group/roles";
 import { MAX_GROUP_NAME_LENGTH } from "@haalkhata/shared/text/limits";
+import { GroupStatus } from "@haalkhata/protogen/group/v1/group_pb";
 
 /** Group categories the API accepts; anything else falls back to "other". */
 export const GROUP_TYPES = new Set(["trip", "home", "couple", "other"]);
+
+/** PostgreSQL enum spelling for each defined protobuf lifecycle state. */
+export const GROUP_STATUS_STORAGE = {
+  [GroupStatus.ACTIVE]: "active",
+  [GroupStatus.ARCHIVED]: "archived",
+  [GroupStatus.DELETED]: "deleted",
+} as const;
+
+/** Values accepted by the database's group_status enum. */
+export type GroupStatusValue = (typeof GROUP_STATUS_STORAGE)[keyof typeof GROUP_STATUS_STORAGE];
+
+/** Protobuf lifecycle state for each PostgreSQL enum value. */
+export const GROUP_STATUS_PROTO = {
+  active: GroupStatus.ACTIVE,
+  archived: GroupStatus.ARCHIVED,
+  deleted: GroupStatus.DELETED,
+} satisfies Record<GroupStatusValue, GroupStatus>;
 
 /**
  * Role value marking a group's owner (creator); may remove other members.

@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Money } from "@/components/ui/Money";
 import { SearchField } from "@/components/ui/SearchField";
-import { leadingBucket } from "@haalkhata/shared/money/balances";
+import { leadingBucket, positionCaption } from "@haalkhata/shared/money/balances";
 import { formatMoney } from "@haalkhata/shared/money/money";
 import { colors, radii, spacing } from "@/lib/theme/theme";
 import { bucketsOf, type FriendsController } from "../../hooks/useFriends";
@@ -105,13 +105,7 @@ export function RegisteredFriends({
                       {person.name}
                     </Text>
                     <Text style={styles.balanceHint}>
-                      {buckets.length === 0
-                        ? "settled up"
-                        : buckets.every((bucket) => bucket.cents > 0)
-                          ? "owes you"
-                          : buckets.every((bucket) => bucket.cents < 0)
-                            ? "you owe"
-                            : "owes you · you owe"}
+                      {positionCaption(buckets)}
                     </Text>
                   </View>
                   <View style={styles.amounts}>

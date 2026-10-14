@@ -1,4 +1,4 @@
-/** Deterministic transaction-scoped advisory locks: money ledgers, reminders, friend-request inboxes. */
+/** Deterministic transaction-scoped advisory locks: money ledgers, reminders, friend-request inboxes, payment methods. */
 
 import type { PoolClient } from "pg";
 import { transaction } from "@/server/common/db";
@@ -7,6 +7,7 @@ import {
   FRIEND_REQUEST_INBOX_LOCK_PREFIX,
   GROUP_LEDGER_LOCK_PREFIX,
   PARTICIPANT_LEDGER_LOCK_PREFIX,
+  PAYMENT_METHODS_LOCK_PREFIX,
   REMINDER_LOCK_PREFIX,
 } from "@/server/common/ledgerLocks.constants";
 
@@ -110,6 +111,19 @@ export async function lockFriendRequestInboxes(
     client,
     userIds.filter(Boolean).map((userId) => `${FRIEND_REQUEST_INBOX_LOCK_PREFIX}${userId}`),
   );
+}
+
+/**
+ * Serializes changes to one person's payment methods, so the count behind
+ * the cap and the star being moved cannot change between being read and
+ * being written.
+ *
+ * @param client - Existing transaction client.
+ * @param userId - Owner of the methods being changed.
+ * @returns A promise that resolves after the owner's lock is held.
+ */
+export async function lockPaymentMethods(client: PoolClient, userId: string): Promise<void> {
+  await acquireKeys(client, [`${PAYMENT_METHODS_LOCK_PREFIX}${userId}`]);
 }
 
 /**

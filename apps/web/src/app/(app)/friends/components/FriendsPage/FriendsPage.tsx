@@ -3,25 +3,26 @@
 
 import Link from "next/link";
 import { ChevronRight, HandCoins, Handshake, UserPlus, Wallet } from "lucide-react";
-import { Avatar } from "@/components/ui/Avatar";
-import { EmailOrPhoneField } from "@/components/ui/EmailOrPhoneField";
-import { EmptyState } from "@/components/ui/EmptyState";
-import { ErrorPopup } from "@/components/ui/ErrorPopup";
-import { Money } from "@/components/ui/Money";
-import { SearchField } from "@/components/ui/SearchField";
-import { InviteShareModal } from "@/components/modals/InviteShareModal";
-import { Modal } from "@/components/ui/Modal";
-import { SettleUpModal } from "@/components/modals/SettleUpModal";
-import { Spinner } from "@/components/ui/Spinner";
+import { Avatar } from "@/components/ui/Avatar/Avatar";
+import { EmailOrPhoneField } from "@/components/ui/EmailOrPhoneField/EmailOrPhoneField";
+import { EmptyState } from "@/components/ui/EmptyState/EmptyState";
+import { ErrorPopup } from "@/components/ui/ErrorPopup/ErrorPopup";
+import { Money } from "@/components/ui/Money/Money";
+import { SearchField } from "@/components/ui/SearchField/SearchField";
+import { InviteShareModal } from "@/components/modals/InviteShareModal/InviteShareModal";
+import { Modal } from "@/components/ui/Modal/Modal";
+import { SettleUpModal } from "@/components/modals/SettleUpModal/SettleUpModal";
+import { Spinner } from "@/components/ui/Spinner/Spinner";
 import { errorMessage } from "@/lib/api/connect";
 import { useHydrated } from "@/lib/hooks/useHydrated";
-import { leadingBucket } from "@haalkhata/shared/money/balances";
+import { leadingBucket, positionCaption } from "@haalkhata/shared/money/balances";
 import type { FriendsTab } from "../../constants/friendsTabs";
 import { FriendsTabs } from "./components/FriendsTabs/FriendsTabs";
 import { IncomingRequests } from "./components/IncomingRequests/IncomingRequests";
 import { InvitedFriends } from "./components/InvitedFriends/InvitedFriends";
 import { SentRequests } from "./components/SentRequests/SentRequests";
-import { bucketsOf, useFriends } from "./hooks/useFriends";
+import { useFriends } from "./hooks/useFriends";
+import { bucketsOf } from "./utils/bucketsOf";
 
 /**
  * Renders the friends page as four tabs. Friends: your overall position
@@ -141,13 +142,7 @@ export function FriendsPage() {
                       <div className="min-w-0 flex-1">
                         <p className="truncate font-medium">{person.name}</p>
                         <p className="text-xs text-ink-soft">
-                          {buckets.length === 0
-                            ? "settled up"
-                            : buckets.every((bucket) => bucket.cents > 0)
-                              ? "owes you"
-                              : buckets.every((bucket) => bucket.cents < 0)
-                                ? "you owe"
-                                : "owes you · you owe"}
+                          {positionCaption(buckets)}
                         </p>
                       </div>
                       <span className="flex flex-col items-end">

@@ -93,3 +93,26 @@ export function outstandingBuckets(
 ): CurrencyBucket[] {
   return balances.filter((bucket) => bucket.cents !== 0).sort(compareCurrencies(defaultCurrency));
 }
+
+/**
+ * Says which way a per-currency position points, for the line under a
+ * person's name.
+ *
+ * With every bucket pointing the same way it is one phrase. When they point
+ * both ways the phrases follow the buckets, one each in the same order, so
+ * the first phrase belongs to the first amount shown: a fixed "owes you · you
+ * owe" beside "$12.69 owed by you, €75.99 owed to you" reads exactly
+ * backwards.
+ *
+ * @param buckets - The position's non-zero buckets, in display order; > 0
+ *   means the other person owes you.
+ * @returns "settled up", "owes you", "you owe", or one phrase per bucket.
+ */
+export function positionCaption(buckets: readonly CurrencyBucket[]): string {
+  const outstanding = buckets.filter((bucket) => bucket.cents !== 0);
+  if (outstanding.length === 0) return "settled up";
+  const phrase = (bucket: CurrencyBucket) => (bucket.cents > 0 ? "owes you" : "you owe");
+  if (outstanding.every((bucket) => bucket.cents > 0)) return "owes you";
+  if (outstanding.every((bucket) => bucket.cents < 0)) return "you owe";
+  return outstanding.map(phrase).join(" · ");
+}

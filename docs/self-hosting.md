@@ -19,8 +19,8 @@ for a local look, not a deployment.
 ## Production
 
 ```sh
-# deploy.sh normally writes IMAGE_TAG; for a manual bootstrap, set it to the
-# exact 40-character commit image published in GHCR.
+# The deploy steps normally write IMAGE_TAG; for a manual bootstrap, set it
+# to the exact 40-character commit image published in GHCR.
 docker compose -f docker-compose.prod.yml up -d --wait
 ```
 
@@ -53,7 +53,9 @@ What it adds:
 CI builds the image and pushes it to GHCR; the server only pulls. Publishing
 a GitHub release is the deliberate act that ships: the deploy workflow builds
 the image, then hands the server one commit SHA over an SSH key restricted to
-`ops/deploy.sh` by a forced command. The workflow header in
+`ops/deploy.sh` by a forced command. That launcher never changes; it runs the
+deploy steps baked into the image (`ops/deploy-release.sh`), so how a release
+is deployed ships and rolls back with the release. The workflow header in
 [`.github/workflows/deploy.yml`](../.github/workflows/deploy.yml) lists the
 repository variables and secrets it needs.
 

@@ -42,6 +42,9 @@ vi.mock("@/server/expense/usecase/balance.usecase", () => ({
   getOverallBalances: vi.fn(),
   netWithUser: vi.fn(),
 }));
+vi.mock("@/server/payment/repo/paymentMethods.repo", () => ({
+  listPaymentMethodsByUser: vi.fn(),
+}));
 const { transactionClient } = vi.hoisted(() => ({ transactionClient: {} as PoolClient }));
 vi.mock("@/server/common/ledgerLocks", () => ({
   lockReminder: vi.fn(),
@@ -56,6 +59,10 @@ import {
   insertNotifications,
 } from "@/server/social/repo/notifications.repo";
 import { netWithUser } from "@/server/expense/usecase/balance.usecase";
+import {
+  listPaymentMethodsByUser,
+  type PaymentMethodRow,
+} from "@/server/payment/repo/paymentMethods.repo";
 import { lockReminder } from "@/server/common/ledgerLocks";
 import { sendReminder } from "./social.usecase";
 
@@ -84,7 +91,36 @@ function userRow(userId: string): UserRow {
     merged_into: null,
     token_version: 0,
     created_at: "2026-08-01T00:00:00Z",
-    payment_handles: [],
+  };
+}
+
+/**
+ * Builds one of the sender's stored payment methods.
+ *
+ * @param name - Method name.
+ * @param currency - ISO 4217 code.
+ * @param preferred - Whether it is starred.
+ * @param value - The identifier a payer would use, which must never reach a notification.
+ * @returns A payment method row owned by the sender.
+ */
+function methodRow(
+  name: string,
+  currency: string,
+  preferred: boolean,
+  value: string,
+): PaymentMethodRow {
+  return {
+    id: `method-${name}`,
+    user_id: SENDER_ID,
+    name,
+    currency,
+    preset: null,
+    note: "",
+    is_preferred: preferred,
+    preferred_at: null,
+    created_at: "2026-08-01T00:00:00Z",
+    updated_at: "2026-08-01T00:00:00Z",
+    details: [{ kind: "username", label: "", value }],
   };
 }
 
@@ -94,6 +130,7 @@ beforeEach(() => {
   vi.mocked(findLatestNotificationAt).mockResolvedValue(undefined);
   vi.mocked(netWithUser).mockResolvedValue(new Map([["USD", 500]]));
   vi.mocked(insertNotifications).mockResolvedValue(undefined);
+  vi.mocked(listPaymentMethodsByUser).mockResolvedValue([]);
 });
 
 describe("reminder cooldown ordering", () => {
@@ -157,6 +194,47 @@ describe("reminder cooldown ordering", () => {
     const [, notification] = vi.mocked(insertNotifications).mock.calls[0];
     expect(notification.body).toMatch(/5\.00/);
     expect(notification.body).not.toMatch(/7\.00/);
+  });
+
+  it("says only what is owed when the sender has no payment method", async () => {
+    await sendReminder(SENDER_ID, DEBTOR_ID);
+    const [, notification] = vi.mocked(insertNotifications).mock.calls[0];
+    expect(notification.body).toBe("You owe $5.00");
+  });
+
+  it("names the sender's preferred method and never the identifier behind it", async () => {
+    vi.mocked(listPaymentMethodsByUser).mockResolvedValue([
+      methodRow("Venmo", "USD", false, "sender-venmo"),
+      methodRow("Zelle", "USD", true, "sender@example.com"),
+    ]);
+
+    await sendReminder(SENDER_ID, DEBTOR_ID);
+
+    // Read on the reminder's own transaction, like every other step.
+    expect(listPaymentMethodsByUser).toHaveBeenCalledWith(SENDER_ID, transactionClient);
+    const [, notification] = vi.mocked(insertNotifications).mock.calls[0];
+    expect(notification.body).toBe("You owe $5.00. Sender prefers Zelle.");
+    // A notification is a stored row: the handle must not be copied into it.
+    expect(notification.body).not.toContain("sender@example.com");
+    expect(notification.body).not.toContain("sender-venmo");
+  });
+
+  it("names a method only for a currency that is actually owed", async () => {
+    vi.mocked(netWithUser).mockResolvedValue(
+      new Map([
+        ["USD", 500],
+        ["EUR", -700],
+      ]),
+    );
+    vi.mocked(listPaymentMethodsByUser).mockResolvedValue([
+      methodRow("Wise", "EUR", true, "sender-wise"),
+      methodRow("Zelle", "USD", false, "sender@example.com"),
+    ]);
+
+    await sendReminder(SENDER_ID, DEBTOR_ID);
+
+    const [, notification] = vi.mocked(insertNotifications).mock.calls[0];
+    expect(notification.body).toBe("You owe $5.00. Sender takes Zelle.");
   });
 
   it("refuses when the only positive position is in a currency they are owed in", async () => {

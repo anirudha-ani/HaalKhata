@@ -329,6 +329,20 @@ export async function listExpensesByGroup(
 }
 
 /**
+ * Loads live expense parents for all requested ledger scopes at once.
+ * @param groupIds - Group scopes whose balances are being assembled.
+ * @param client - Snapshot or ledger transaction client.
+ * @returns Live group expenses; no query is sent for an empty scope list.
+ */
+export async function listExpensesByGroups(groupIds: readonly string[], client?: PoolClient): Promise<ExpenseRow[]> {
+  if (groupIds.length === 0) return [];
+  return query<ExpenseRow>(
+    "SELECT * FROM expenses WHERE group_id = ANY($1::text[]) AND deleted_at IS NULL",
+    [[...new Set(groupIds)]], client,
+  );
+}
+
+/**
  * One-off (non-group) expenses where both users participate (payer or ower).
  *
  * @param firstUserId - One of the two participants.
@@ -366,12 +380,14 @@ export async function listOneOffExpensesBetween(
  * @param firstUserId - One of the two participants.
  * @param secondUserId - The other participant.
  * @param includeDeleted - Whether soft-deleted rows are returned too (display only).
+ * @param client - Snapshot or transaction client; omitted, the pool.
  * @returns Expense rows involving both users, newest first.
  */
 export async function listExpensesBetween(
   firstUserId: string,
   secondUserId: string,
   includeDeleted = false,
+  client?: PoolClient,
 ): Promise<ExpenseRow[]> {
   return query<ExpenseRow>(
     `SELECT DISTINCT expense.* FROM expenses expense
@@ -382,6 +398,7 @@ export async function listExpensesBetween(
                    UNION SELECT 1 FROM expense_payers payer WHERE payer.expense_id = expense.id AND payer.user_id = $2)
      ORDER BY expense.expense_date DESC, expense.created_at DESC`,
     [firstUserId, secondUserId, includeDeleted],
+    client,
   );
 }
 
@@ -392,12 +409,14 @@ export async function listExpensesBetween(
  * @param includeDeleted - Whether soft-deleted rows are returned too (display only).
  * @param limit - Most rows to return (display only); omitted, every row —
  *   which the balance math needs and a screen does not.
+ * @param client - Snapshot or transaction client; omitted, the pool.
  * @returns Expense rows involving the user, newest first.
  */
 export async function listExpensesInvolvingUser(
   userId: string,
   includeDeleted = false,
   limit?: number,
+  client?: PoolClient,
 ): Promise<ExpenseRow[]> {
   return query<ExpenseRow>(
     `SELECT DISTINCT expense.* FROM expenses expense
@@ -407,6 +426,7 @@ export async function listExpensesInvolvingUser(
      ORDER BY expense.expense_date DESC, expense.created_at DESC
      LIMIT $3`,
     [userId, includeDeleted, limit ?? null],
+    client,
   );
 }
 
@@ -421,11 +441,14 @@ export interface ExpenseChildren {
  * Batch-loads payers, splits and items (+assignments) for a set of expenses.
  *
  * @param expenseIds - Ids of the expenses whose child rows are needed.
+ * @param client - Snapshot or transaction client.
+ * @param includeItems - Whether receipt items and assignments are needed; false for balance math.
  * @returns Maps of expense id → child rows (empty maps for an empty input).
  */
 export async function loadExpenseChildren(
   expenseIds: string[],
   client?: PoolClient,
+  includeItems = true,
 ): Promise<ExpenseChildren> {
   const result: ExpenseChildren = {
     payers: new Map(),
@@ -434,23 +457,29 @@ export async function loadExpenseChildren(
   };
   if (expenseIds.length === 0) return result;
 
-  const [payers, splits, items] = await Promise.all([
+  const loadPayers = () =>
     query<PayerRow>(
       `SELECT * FROM expense_payers WHERE expense_id = ANY($1::text[])`,
       [expenseIds],
       client,
-    ),
+    );
+  const loadSplits = () =>
     query<SplitRow>(
       `SELECT * FROM expense_splits WHERE expense_id = ANY($1::text[])`,
       [expenseIds],
       client,
-    ),
-    query<ItemRow>(
+    );
+  const loadItems = () =>
+    includeItems ? query<ItemRow>(
       `SELECT * FROM expense_items WHERE expense_id = ANY($1::text[])`,
       [expenseIds],
       client,
-    ),
-  ]);
+    ) : Promise.resolve([] as ItemRow[]);
+  // One connection runs one statement at a time, so on a transaction's
+  // client these go in turn; only the pool can run them side by side.
+  const [payers, splits, items] = client
+    ? [await loadPayers(), await loadSplits(), await loadItems()]
+    : await Promise.all([loadPayers(), loadSplits(), loadItems()]);
 
   for (const payerRow of payers) {
     const list = result.payers.get(payerRow.expense_id) ?? [];

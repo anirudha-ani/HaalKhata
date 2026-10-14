@@ -254,6 +254,32 @@ export async function transaction<TransactionResult>(
   }
 }
 
+/**
+ * Runs read-only work against one fixed instant of the database.
+ *
+ * A balance is assembled from several statements. Under the default READ
+ * COMMITTED each statement sees whatever has committed by the time it runs,
+ * so a write committing between two of them yields an answer built from two
+ * different ledgers: a position that never existed, shown to someone as what
+ * they owe. REPEATABLE READ pins every statement to the instant the first
+ * one ran, and READ ONLY has Postgres refuse an accidental write.
+ *
+ * Every statement inside must use the supplied client. A statement sent to
+ * the pool instead reads outside the snapshot, and takes a second connection
+ * while this one is held — under load, the way a pool starves itself.
+ *
+ * @param operation - Callback that performs every read on the supplied client.
+ * @returns Whatever operation resolves to.
+ */
+export async function snapshot<SnapshotResult>(
+  operation: (client: PoolClient) => Promise<SnapshotResult>,
+): Promise<SnapshotResult> {
+  return transaction(async (client) => {
+    await client.query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY");
+    return operation(client);
+  });
+}
+
 /** Generates a random UUID for use as a new row's primary key. */
 export function newId(): string {
   return crypto.randomUUID();

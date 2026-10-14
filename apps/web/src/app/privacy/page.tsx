@@ -1,7 +1,7 @@
 /** Public privacy policy matching the app's account, receipt and shared-ledger behavior. */
 
 import Link from "next/link";
-import { LegalLinks } from "@/components/legal/LegalLinks";
+import { LegalLinks } from "@/components/legal/LegalLinks/LegalLinks";
 import { receiptProcessingInfo } from "@/server/receipt/usecase/receiptConsent.usecase";
 import { ACCOUNT_ERASURE_MESSAGE, SHARED_LEDGER_ERASURE_MESSAGE } from "@haalkhata/shared/account/deletion";
 

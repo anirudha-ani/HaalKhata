@@ -1,4 +1,4 @@
-/** First-run screen: name, currency, phone — plus the verification and merge steps. */
+/** First-run screen: name, currency, phone, plus the verification and merge steps, then an optional payment step. */
 
 import { ErrorState } from "@/components/ui/ErrorState";
 import {
@@ -19,6 +19,7 @@ import { TextField } from "@/components/ui/TextField";
 import { CurrencyPicker } from "@/components/ui/CurrencyPicker";
 import { MAX_USER_NAME_LENGTH } from "@haalkhata/shared/text/limits";
 import { colors, fonts, radii, spacing } from "@/lib/theme/theme";
+import { PaymentStep } from "../PaymentStep/PaymentStep";
 import { useOnboarding } from "./hooks/useOnboarding";
 import { FOCUSED_CONTENT_MAX_WIDTH } from "@/components/shell/shell.constants";
 
@@ -26,7 +27,8 @@ import { FOCUSED_CONTENT_MAX_WIDTH } from "@/components/shell/shell.constants";
  * Renders the first-run flow: a short profile form, an optional phone number,
  * the code step when the number needs verifying, and — when that number turns
  * out to belong to an invitation someone already created — a confirmation
- * naming exactly what would be absorbed.
+ * naming exactly what would be absorbed. It ends on an optional step for
+ * saying how you want to be paid.
  *
  * @returns The onboarding screen.
  */
@@ -34,6 +36,7 @@ export function OnboardingScreen() {
   const onboarding = useOnboarding();
   const merge = onboarding.pendingMerge;
   const verifying = onboarding.verificationPhone !== "";
+  const paying = onboarding.step === "payment";
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -53,17 +56,33 @@ export function OnboardingScreen() {
             <View style={styles.content}>
               <View style={styles.hero}>
                 <Text style={styles.title}>
-                  {merge ? "Is this you?" : verifying ? "Verify your phone" : "Welcome to HaalKhata"}
+                  {paying
+                    ? "How do you want to be paid?"
+                    : merge
+                      ? "Is this you?"
+                      : verifying
+                        ? "Verify your phone"
+                        : "Welcome to HaalKhata"}
                 </Text>
                 <Text style={styles.subtitle}>
-                  {merge
-                    ? "Someone already added this number to shared expenses."
-                    : verifying
-                      ? `Enter the code sent to ${onboarding.verificationPhone}.`
-                      : "A couple of details, so friends can find you. You can skip any of it."}
+                  {paying
+                    ? "Optional. Add it now so nobody has to ask where to send money, or do it later."
+                    : merge
+                      ? "Someone already added this number to shared expenses."
+                      : verifying
+                        ? `Enter the code sent to ${onboarding.verificationPhone}.`
+                        : "A couple of details, so friends can find you. You can skip any of it."}
                 </Text>
               </View>
 
+              {paying ? (
+                <PaymentStep
+                  defaultCurrency={onboarding.currency || "USD"}
+                  error={onboarding.error}
+                  onFinish={onboarding.complete}
+                  pending={onboarding.isPending}
+                />
+              ) : (
               <View style={styles.card}>
                 {merge ? (
                   <>
@@ -151,7 +170,7 @@ export function OnboardingScreen() {
                     <Button
                       busy={onboarding.isPending}
                       disabled={onboarding.name.trim() === ""}
-                      label="Open your ledger"
+                      label="Continue"
                       onPress={onboarding.save}
                     />
                     <Button
@@ -163,6 +182,7 @@ export function OnboardingScreen() {
                   </>
                 )}
               </View>
+              )}
             </View>
           )}
         </ScrollView>

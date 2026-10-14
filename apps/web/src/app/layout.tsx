@@ -2,8 +2,8 @@
 
 import type { Metadata, Viewport } from "next";
 import type { ReactNode } from "react";
-import { Providers } from "@/components/providers/Providers";
-import { RegisterServiceWorker } from "@/components/providers/RegisterServiceWorker";
+import { Providers } from "@/components/providers/Providers/Providers";
+import { RegisterServiceWorker } from "@/components/providers/RegisterServiceWorker/RegisterServiceWorker";
 import "./globals.css";
 
 /** Site-wide metadata: title template, description, PWA manifest and icons. */

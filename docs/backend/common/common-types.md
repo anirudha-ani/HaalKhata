@@ -23,7 +23,7 @@ same email, or by verifying the same phone number and merging.
 | default_currency | string | ISO 4217 code (e.g. `"USD"`, `"BDT"`). Governs which currency legacy single-number balance fields report. |
 | registered | bool | True when the account has been claimed — a password **or** a linked Google/Apple account. False = an unclaimed invite. |
 | phone | string | **Private.** E.164 (e.g. `"+14155552671"`); populated only for the caller's own profile. An account may have an email, a phone, or both. Sign-in uses Google or Apple in production, so a phone *identifies and reaches* someone; it never authenticates them. |
-| payment_handles | repeated PaymentHandle | Where this person wants to be paid. **Visible to anyone who shares an expense with them** — exactly who needs it, because settling happens in Venmo/Zelle/Cash App and this app only records that it happened. |
+| payment_handles | repeated PaymentHandle | **Retired, always empty.** Where a person wants to be paid is now a list of payment methods they define ([payment-service.md](../payment/payment-service.md)). It no longer travels on a user: it is sent on the friend ledger, and only to someone who owes them. |
 | onboarded | bool | Whether this person finished (or skipped) the first-run flow. Only ever meaningful about the caller themselves; always `false` on any other user, and clients must not read it off anyone else. |
 | deleted | bool | An anonymous member whose original account was erased. Historical money stays visible; clients exclude this member from new expense selections. |
 | avatar_url | string | Google profile picture URL; empty for invited users and never guaranteed even for Google users. Clients must keep the initials-on-`avatar_color` rendering as the fallback. |
@@ -34,14 +34,17 @@ same email, or by verifying the same phone number and merging.
 The server maps `users` rows through exactly three shapes — see
 [conventions.md § Privacy Projections](conventions.md#privacy-projections):
 the caller's own profile (`toPrivateUser`: everything), other people
-(`toPublicUser`: contact and onboarding cleared, handles kept), and pending
-friend-request senders (`toFriendRequestUser`: identity fields only — no
-handles, currency, or registration status until the request is accepted).
+(`toPublicUser`: contact and onboarding cleared), and pending friend-request
+senders (`toFriendRequestUser`: identity fields only — no currency or
+registration status until the request is accepted). None of them carries how
+the person is paid.
 
 ## PaymentHandle
 
-One "pay me here" identifier: a Venmo username, a Zelle email or phone, a
-`$cashtag`, a PayPal.Me name.
+**Retired with `User.payment_handles`.** The message stays declared so the
+field does; nothing writes or returns one. It was one "pay me here"
+identifier: a Venmo username, a Zelle email or phone, a `$cashtag`, a
+PayPal.Me name. Existing handles were copied into payment methods.
 
 | Field | Type | Description |
 | --- | --- | --- |

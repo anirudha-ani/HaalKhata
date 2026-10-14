@@ -1,11 +1,9 @@
-/** Bottom sheet for settling up: pick which balances the payment covers and the app the money moved through, then record it. */
+/** Bottom sheet for settling up: shows exactly which balances a payment settles, takes the amount and how the money moved, shows where to send it, then records it. */
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { User } from "@haalkhata/protogen/common/v1/common_pb";
-import * as Clipboard from "expo-clipboard";
-import { Check, Copy, ExternalLink } from "lucide-react-native";
-import { useEffect, useRef, useState } from "react";
-import { Linking, Pressable, StyleSheet, Text, View } from "react-native";
+import { useRef, useState } from "react";
+import { StyleSheet, Text, View } from "react-native";
 import { Avatar } from "@/components/ui/Avatar";
 import { Button } from "@/components/ui/Button";
 import { Chip } from "@/components/ui/Chip";
@@ -15,155 +13,154 @@ import { TextField } from "@/components/ui/TextField";
 import { errorMessage, expenseClient } from "@/lib/api/connect";
 import { newOperationId } from "@/lib/api/operationId";
 import { MONEY_KEYS, queryKeys } from "@haalkhata/shared/api/queryKeys";
-import { centsToInput, formatMoney, parseMoneyInput } from "@haalkhata/shared/money/money";
-import {
-  PAYMENT_METHODS,
-  displayHandle,
-  findPaymentMethod,
-  paymentLink,
-} from "@haalkhata/shared/payment/methods";
+import { centsToInput, parseMoneyInput } from "@haalkhata/shared/money/money";
+import { ownMethodsFailedLine } from "@haalkhata/shared/payment/copy";
+import { CASH_CHOICE } from "@haalkhata/shared/payment/payeeMethods";
 import { MAX_SETTLEMENT_NOTE_LENGTH } from "@haalkhata/shared/text/limits";
+import {
+  readSettlePositions,
+  settleOverLimitMessage,
+} from "@haalkhata/shared/expense/settlePosition";
 import { colors, radii, spacing } from "@/lib/theme/theme";
-import { COPIED_BADGE_MS } from "./modals.constants";
-
-/** One balance the payment can pay down: a group's, or the pair's direct slate, in one currency. */
-interface OwingScope {
-  /** Group id, or "" for the direct (non-group) balance. */
-  scopeId: string;
-  /** ISO 4217 code the balance is denominated in. */
-  currency: string;
-  /** Name shown on the checklist row. */
-  label: string;
-  /** Cents outstanding in this scope in the payment's direction; always > 0. */
-  owedCents: number;
-  /** True when the scope simplifies debts, i.e. this amount is a rerouted edge. */
-  simplified: boolean;
-}
+import { usePayMethods } from "./hooks/usePayMethods";
+import { PayeeMethodDetails } from "./PayeeMethodDetails";
+import { PayMethodChips } from "./PayMethodChips";
 
 /**
- * Renders the settle-up sheet: who is paying whom, which balances the payment
- * covers, the amount, which app the money moves through, and — the part that
- * actually saves time — the recipient's handle for that app, ready to copy or
- * open.
+ * Renders the settle-up sheet: who is paying whom, exactly which balances
+ * the payment settles, the amount, how the money moves, and — the part that
+ * actually saves time — the recipient's own payment methods for the
+ * currency being paid, their preferred one already selected, every detail
+ * ready to copy.
  *
- * A debt lives in exactly one scope (a group, or the pair's direct slate), so
- * the sheet lists every scope where money is owed in this direction and the
- * payer picks which ones this payment addresses. Opened from the friends
- * side, everything starts checked; opened from a group, that group starts
- * checked and the rest are listed unchecked — visible, so clearing everything
- * in one go is a tap, and "settled up" can never quietly mean only one of
- * three places. The amount follows the selection until the payer types their
- * own. The server re-derives what is owed in the chosen scopes and splits the
- * recorded amount across them; the checklist is the choice, not the record.
+ * What it settles follows from where it was opened, and there is nothing to
+ * pick inside it:
  *
- * Two things this deliberately does not pretend:
- * - It never moves money. It records that a payment happened, which is stated
- *   on the button's own line rather than left to be discovered.
- * - It only offers a link where one exists and only claims a prefilled amount
- *   where the app accepts one — Zelle has no universal link at all and Cash
- *   App cannot carry an amount.
+ * - Opened beside a total — a person on Home or Friends, the headline on
+ *   their screen — it settles everything with that person in the currency.
+ *   Every balance behind the total is listed, both ways, with the one amount
+ *   that changes hands: what is owed outside groups counted together with
+ *   what is owed inside them. The server cancels balances that point the
+ *   other way against the rest in the same transaction, so one payment
+ *   leaves all of them settled.
+ * - Opened beside one balance — a group's screen, or a single row of where a
+ *   balance sits — it settles that balance and nothing else, whatever else
+ *   the pair owes each other.
  *
- * The handle block appears only when *you* are the one paying. Recording a
- * payment received logs money that has already arrived: there is nobody to
- * send anything to, and surfacing your own handle there would offer a link
- * that opens Venmo to pay yourself.
+ * The balances are not worked out here. The server computes the pair's
+ * position with the code that records the settlement and sends it with a
+ * fingerprint; the sheet shows it, and when settling everything sends the
+ * fingerprint back, so the server refuses if the ledger has moved since.
+ * What gets settled is what was on screen. The direction is whichever way
+ * the listed balances point, so it follows the currency.
  *
- * A payment moves in one currency and pays down balances in that currency
- * only — nothing converts. When the pair owes in more than one, the sheet
- * offers a switch; the checklist, the amount and the request all follow it.
+ * It never moves money. It records that a payment happened, which is stated
+ * on the button's own line rather than left to be discovered.
+ *
+ * Whose methods "How" lists follows the direction. Paying someone, they are
+ * that person's, and the selected one's details are shown. They arrive on
+ * the friend ledger, which sends them only to someone who owes that person.
+ * Recording a payment received, they are your own, to note how the money
+ * arrived, and no details are shown: there is nobody to send anything to.
+ *
+ * A payment moves in one currency and settles balances in that currency
+ * only — nothing converts. When there is something to settle in more than
+ * one, the sheet offers a switch; the list, the amount and the request all
+ * follow it.
  */
 export function SettleUpModal({
   to: other,
   suggestedCents,
   currency: initialCurrency,
-  groupId = "",
-  received = false,
+  scopeId,
+  received: receivedHint = false,
   onClose,
 }: {
   /** The other person, whichever way the money moved. */
   to: User;
   /** Suggested amount in cents; pre-fills the input until the balances load. */
   suggestedCents: number;
-  /** ISO 4217 code to start on; the sheet can switch to another the pair owes in. */
+  /** ISO 4217 code to start on; the sheet can switch to another with something to settle. */
   currency: string;
-  /** Group whose balance starts checked; empty string starts with all checked. */
-  groupId?: string;
-  /** True when they paid you; false (default) when you paid them. */
+  /**
+   * The one balance to settle: a group's id, or "" for what is not in any
+   * group. Omitted, the sheet settles everything with the person.
+   */
+  scopeId?: string;
+  /**
+   * True when they paid you; false (default) when you paid them. It only
+   * says what to show while the balances load: the direction is then the way
+   * the balances being settled point.
+   */
   received?: boolean;
   /** Called when the sheet is dismissed or the settlement is recorded. */
   onClose: () => void;
 }) {
   const queryClient = useQueryClient();
   // Once the payer types an amount, it outranks our arithmetic; until then
-  // the shown amount is derived from the selection (see `amount` below).
+  // the shown amount is what is being settled (see `amount` below).
   const [typedAmount, setTypedAmount] = useState("");
   const [amountEdited, setAmountEdited] = useState(false);
-  const [checkedIds, setCheckedIds] = useState<string[] | null>(null);
-  const [currency, setCurrency] = useState(initialCurrency);
-  const [methodKey, setMethodKey] = useState("venmo");
+  const [chosenCurrency, setChosenCurrency] = useState(initialCurrency);
   const [note, setNote] = useState("");
   const [error, setError] = useState("");
-  const [copied, setCopied] = useState(false);
   // One id per attempt at recording: a retry after a lost response sends
   // the same one and gets the first recording back, never a second.
   const operationIdRef = useRef(newOperationId());
 
-  // The same per-scope balances the friend screen shows, so this checklist
-  // and that screen can never disagree about where money is owed.
+  // The pair's position, computed by the code that records settlements, so
+  // this sheet and the write it sends can never disagree about what is owed.
   const ledgerQuery = useQuery({
     queryKey: queryKeys.friendLedger(other.id),
     queryFn: () => expenseClient.getFriendLedger({ userId: other.id }),
   });
+  const loaded = ledgerQuery.data !== undefined;
+  const positions = ledgerQuery.data?.settlePositions ?? [];
 
-  // Balances in this payment's direction only: a scope where the money points
-  // the other way cannot absorb a payment, so it is not offered.
-  const owingAnywhere: OwingScope[] = (ledgerQuery.data?.groupBalances ?? [])
-    .filter((scope) => (received ? scope.netCents > 0 : scope.netCents < 0))
-    .map((scope) => ({
-      scopeId: scope.groupId,
-      currency: scope.currency || initialCurrency,
-      label: scope.groupId ? scope.groupName || "Unnamed group" : "Not in any group",
-      owedCents: Math.abs(scope.netCents),
-      simplified: scope.simplified,
-    }));
-  // The currencies this direction owes in, for the switch; and only the
-  // chosen currency's balances are listed — a dollar cannot pay down a euro.
-  const owedCurrencies = [...new Set(owingAnywhere.map((scope) => scope.currency))].sort();
-  const owingScopes = owingAnywhere.filter((scope) => scope.currency === currency);
+  // Stay on a currency that has something to settle: if the one this opened
+  // on has nothing (it was just settled elsewhere), move to one that does
+  // instead of presenting an empty form.
+  const { currencies } = readSettlePositions(positions, chosenCurrency, scopeId);
+  const currency = currencies.includes(chosenCurrency)
+    ? chosenCurrency
+    : (currencies[0] ?? chosenCurrency);
+  const reading = readSettlePositions(positions, currency, scopeId);
+  const payableCents = Math.abs(reading.netCents);
+  const received = reading.netCents !== 0 ? reading.netCents > 0 : receivedHint;
+  const firstName = other.name.split(" ")[0];
+  const payMethods = usePayMethods({
+    payeeMethods: ledgerQuery.data?.payeeMethods ?? [],
+    currency,
+    received,
+  });
 
-  // If the named group has nothing owed in this direction (someone else just
-  // settled it, or its debts got rerouted away by simplification), fall back
-  // to everything rather than presenting a dead checklist.
-  const defaultCheckedIds =
-    groupId && owingScopes.some((scope) => scope.scopeId === groupId)
-      ? [groupId]
-      : owingScopes.map((scope) => scope.scopeId);
-  const effectiveCheckedIds = checkedIds ?? defaultCheckedIds;
-  const checkedCents = owingScopes
-    .filter((scope) => effectiveCheckedIds.includes(scope.scopeId))
-    .reduce((running, scope) => running + scope.owedCents, 0);
-
-  // Derived, not synced: the amount follows the selection until the payer
+  // Derived, not synced: the amount is what is being settled until the payer
   // types one, and falls back to the caller's suggestion while the balances
   // are still loading.
   const amount = amountEdited
     ? typedAmount
-    : centsToInput(ledgerQuery.data ? checkedCents : Math.max(suggestedCents, 0), currency);
+    : centsToInput(loaded ? payableCents : Math.max(suggestedCents, 0), currency);
 
   const mutation = useMutation({
     mutationFn: (amountCents: number) =>
       expenseClient.recordSettlement({
-        // Scoping is the checklist's job: the server allocates the amount
-        // across the selected balances and records one row in each, so every
-        // ledger the pair can see moves together.
         groupId: "",
         toUserId: other.id,
         amountCents,
         currency,
-        method: methodKey,
+        method: payMethods.settlementKey,
+        // The server keeps the method's name with the payment, so the
+        // history can say how the money moved.
+        paymentMethodId: payMethods.method?.id ?? "",
         note,
         received,
-        scopeGroupIds: effectiveCheckedIds,
+        // One balance: the server records the payment in that scope alone.
+        // Everything: it names none, and the server settles the pair's net,
+        // cancelling whatever points the other way.
+        scopeGroupIds: reading.everything ? [] : [scopeId ?? ""],
+        netAcrossScopes: reading.everything,
+        // What was on screen; the server refuses if it no longer holds.
+        positionDigest: reading.digest,
         operationId: operationIdRef.current,
       }),
     onSuccess: () => {
@@ -171,84 +168,47 @@ export function SettleUpModal({
       for (const moneyKey of MONEY_KEYS) queryClient.invalidateQueries({ queryKey: moneyKey });
       onClose();
     },
-    onError: (mutationError) => setError(errorMessage(mutationError)),
+    onError: (mutationError) => {
+      setError(errorMessage(mutationError));
+      // A refusal usually means the balances are not what this sheet is
+      // showing any more; reload them so the next attempt is against the
+      // real ones, and so the person can see what changed.
+      queryClient.invalidateQueries({ queryKey: queryKeys.friendLedger(other.id) });
+    },
   });
 
-  const method = findPaymentMethod(methodKey);
-  // Only ever the person being paid, and only when that is not you — see the
-  // note on the component.
-  const handle = received
-    ? ""
-    : (other.paymentHandles.find((entry) => entry.method === methodKey)?.handle ?? "");
   const amountCents = parseMoneyInput(amount, currency) ?? 0;
-  const link = paymentLink(methodKey, handle, amountCents, note);
-  // Storage keeps the bare identifier; the payer wants the form printed on a
-  // profile. "@jordan-lee" is what they will search for and what pastes
-  // cleanly into the app, so it is both what is shown and what gets copied.
-  const shownHandle = displayHandle(methodKey, handle);
-  const firstName = other.name.split(" ")[0];
-
-  // The "Copied" confirmation clears itself.
-  useEffect(() => {
-    if (!copied) return;
-    const timer = setTimeout(() => setCopied(false), COPIED_BADGE_MS);
-    return () => clearTimeout(timer);
-  }, [copied]);
+  // Said only when there is a payment to make: with nothing owed the
+  // methods are not sent at all, and "has not added one" would be untrue.
+  const canPay = loaded && !received && reading.rows.length > 0;
 
   /**
-   * Switches the payment's currency: the checklist, the amount and the
-   * request all follow, and any typed amount is dropped since it was in
-   * the old currency.
+   * Switches the payment's currency: the list, the amount, the methods
+   * offered and the request all follow. A typed amount is dropped since it
+   * was in the old currency, and so is a picked method, so the selection
+   * goes back to that currency's preferred one.
    *
    * @param nextCurrency - ISO 4217 code to pay in.
    */
   const switchCurrency = (nextCurrency: string) => {
-    setCurrency(nextCurrency);
-    setCheckedIds(null);
+    setChosenCurrency(nextCurrency);
     setAmountEdited(false);
+    payMethods.resetPick();
   };
 
-  /** Adds or removes one balance from what this payment covers. */
-  const toggleScope = (scopeId: string) => {
-    setCheckedIds(
-      effectiveCheckedIds.includes(scopeId)
-        ? effectiveCheckedIds.filter((existing) => existing !== scopeId)
-        : [...effectiveCheckedIds, scopeId],
-    );
-  };
-
-  /** Copies the recipient's handle and flips the button to a confirmation. */
-  const copyHandle = async () => {
-    if (shownHandle === "") return;
-    try {
-      await Clipboard.setStringAsync(shownHandle);
-      setCopied(true);
-    } catch {
-      // Nothing was copied; saying "Copied" would be worse than saying nothing.
-    }
-  };
-
-  /** Validates the amount and selection, then records the settlement. */
+  /** Validates the amount against what is being settled, then records the settlement. */
   const submit = () => {
     const cents = parseMoneyInput(amount, currency);
     if (cents === null || cents <= 0) {
       setError("enter a valid amount");
       return;
     }
-    if (effectiveCheckedIds.length === 0) {
-      setError("pick at least one balance to settle");
-      return;
-    }
-    if (cents > checkedCents) {
-      setError(
-        `that's more than the ${formatMoney(checkedCents, currency)} outstanding in the selected balances`,
-      );
+    if (cents > payableCents) {
+      setError(settleOverLimitMessage(reading, currency, firstName));
       return;
     }
     mutation.mutate(cents);
   };
-
-  const settledUp = ledgerQuery.data !== undefined && owingAnywhere.length === 0;
 
   return (
     <Sheet onClose={onClose} title={received ? "Record a payment received" : "Settle up"}>
@@ -269,13 +229,13 @@ export function SettleUpModal({
         </View>
 
         {/* Currencies are separate ledgers: a payment is in one, and only
-            that one's balances are offered. The switch appears only when the
-            pair owes in more than one. */}
-        {owedCurrencies.length > 1 ? (
+            that one's balances are settled. The switch appears only when
+            there is something to settle in more than one. */}
+        {currencies.length > 1 ? (
           <View style={styles.block}>
             <Text style={styles.blockTitle}>Currency</Text>
             <View style={styles.methods}>
-              {owedCurrencies.map((code) => (
+              {currencies.map((code) => (
                 <Chip
                   key={code}
                   label={code}
@@ -287,45 +247,45 @@ export function SettleUpModal({
           </View>
         ) : null}
 
-        {/* Which balances the payment covers. Listed in full even when opened
-            from one group — the other places money is owed stay visible, so
-            bundling them is one tap and partial settling is a choice made
-            here, not an accident discovered later. */}
+        {/* Exactly what this payment settles: every balance with the person
+            when it was opened beside a total, the one balance when it was
+            opened beside that. Nothing to tick. */}
         <View style={styles.block}>
-          <Text style={styles.blockTitle}>
-            {received ? "What this payment clears" : "What this payment pays down"}
-          </Text>
-          {ledgerQuery.data === undefined ? (
+          <Text style={styles.blockTitle}>What this settles</Text>
+          {!loaded && ledgerQuery.isError ? (
+            // Said here, with a way to try again: "Loading balances…" under
+            // a read that has already failed would never change.
+            <View accessibilityRole="alert" style={styles.failed}>
+              <Text style={styles.error}>
+                Balances could not be loaded: {errorMessage(ledgerQuery.error)}
+              </Text>
+              <Button
+                compact
+                label="Try again"
+                onPress={() => void ledgerQuery.refetch()}
+                variant="outline"
+              />
+            </View>
+          ) : !loaded ? (
             <Text style={styles.placeholder}>Loading balances…</Text>
-          ) : settledUp ? (
+          ) : reading.rows.length === 0 ? (
             <Text style={styles.placeholder}>
-              {received
-                ? `${firstName} doesn't owe you anything right now.`
-                : `You don't owe ${firstName} anything right now.`}
-            </Text>
-          ) : owingScopes.length === 0 ? (
-            <Text style={styles.placeholder}>
-              Nothing outstanding in {currency} — pick another currency above.
+              {reading.everything
+                ? `Nothing to settle with ${firstName} right now.`
+                : `Nothing is owed between you and ${firstName} here right now.`}
             </Text>
           ) : (
-            <View style={styles.scopeList}>
-              {owingScopes.map((scope, index) => {
-                const isChecked = effectiveCheckedIds.includes(scope.scopeId);
-                return (
-                  <Pressable
-                    accessibilityRole="checkbox"
-                    accessibilityState={{ checked: isChecked }}
+            <>
+              <View style={styles.scopeList}>
+                {reading.rows.map((scope, index) => (
+                  <View
                     key={scope.scopeId || "one-off"}
-                    onPress={() => toggleScope(scope.scopeId)}
                     style={[styles.scopeRow, index > 0 ? styles.scopeRowDivider : null]}
                   >
-                    <View style={[styles.checkbox, isChecked ? styles.checkboxChecked : null]}>
-                      {isChecked ? <Check color={colors.white} size={12} /> : null}
-                    </View>
                     <Text numberOfLines={1} style={styles.scopeLabel}>
                       {scope.label}
                     </Text>
-                    {/* The amount here is the group's rerouted edge, not your
+                    {/* The amount is the group's rerouted edge, not your
                         direct history with this person — worth a word, since
                         it can differ from what you remember sharing. */}
                     {scope.simplified ? (
@@ -333,11 +293,38 @@ export function SettleUpModal({
                         <Text style={styles.pillText}>simplified</Text>
                       </View>
                     ) : null}
-                    <Money cents={scope.owedCents} currency={currency} style={styles.scopeAmount} />
-                  </Pressable>
-                );
-              })}
-            </View>
+                    <Text style={styles.scopeDirection}>
+                      {scope.netCents > 0 ? "owes you" : "you owe"}
+                    </Text>
+                    <Money
+                      cents={Math.abs(scope.netCents)}
+                      currency={currency}
+                      style={[
+                        styles.scopeAmount,
+                        scope.netCents > 0 ? styles.scopeOwedToYou : styles.scopeOwedByYou,
+                      ]}
+                    />
+                  </View>
+                ))}
+                {/* Several balances add up to one amount that changes hands;
+                    a single balance is already that amount. */}
+                {reading.rows.length > 1 ? (
+                  <View style={[styles.scopeRow, styles.scopeRowDivider]}>
+                    <Text numberOfLines={1} style={[styles.scopeLabel, styles.scopeNet]}>
+                      {received ? `${firstName} pays you` : `You pay ${firstName}`}
+                    </Text>
+                    <Money
+                      cents={payableCents}
+                      currency={currency}
+                      style={[styles.scopeAmount, styles.scopeNet]}
+                    />
+                  </View>
+                ) : null}
+              </View>
+              {reading.rows.length > 1 ? (
+                <Text style={styles.scopeHint}>One payment settles all of these.</Text>
+              ) : null}
+            </>
           )}
         </View>
 
@@ -353,7 +340,7 @@ export function SettleUpModal({
               value={amount}
             />
           </View>
-          {checkedCents > 0 && amountCents !== checkedCents ? (
+          {payableCents > 0 && amountCents !== payableCents ? (
             <View style={styles.amountAction}>
               <Button
                 compact
@@ -367,72 +354,47 @@ export function SettleUpModal({
 
         <View style={styles.block}>
           <Text style={styles.blockTitle}>How</Text>
-          <View style={styles.methods}>
-            {PAYMENT_METHODS.map((methodOption) => {
-              // Marks where this person can be paid. Meaningless when logging
-              // money already received, so it is not shown then.
-              const hasHandle =
-                !received &&
-                other.paymentHandles.some(
-                  (entry) => entry.method === methodOption.key && entry.handle,
-                );
-              return (
-                <Chip
-                  icon={hasHandle ? <View style={styles.handleDot} /> : undefined}
-                  key={methodOption.key}
-                  label={methodOption.label}
-                  onPress={() => setMethodKey(methodOption.key)}
-                  selected={methodKey === methodOption.key}
-                />
-              );
-            })}
-          </View>
+          <PayMethodChips
+            choice={payMethods.choice}
+            onPick={payMethods.pick}
+            others={payMethods.others}
+            usable={payMethods.usable}
+          />
+          {payMethods.ownMethodsError ? (
+            <View accessibilityRole="alert" style={styles.failed}>
+              <Text style={styles.error}>{ownMethodsFailedLine(payMethods.ownMethodsError)}</Text>
+              <Button
+                compact
+                label="Try again"
+                onPress={payMethods.retryOwnMethods}
+                variant="outline"
+              />
+            </View>
+          ) : null}
+          {/* Why the list is short, said by name and currency, so nobody
+              takes "no bKash here" for "the app does not do bKash". */}
+          {canPay && payMethods.usable.length === 0 ? (
+            <Text style={styles.placeholder}>
+              {payMethods.hasAnyMethod
+                ? `${firstName} has not added a way to be paid in ${currency}.`
+                : `${firstName} has not added a way to be paid yet.`}
+            </Text>
+          ) : null}
         </View>
 
-        {!received && method?.takesHandle ? (
-          handle ? (
-            <View style={styles.handleCard}>
-              <Text style={styles.handleTitle}>
-                {firstName.toUpperCase()}&apos;S {method.label.toUpperCase()}
-              </Text>
-              <View style={styles.handleRow}>
-                <Text numberOfLines={1} selectable style={styles.handleText}>
-                  {shownHandle}
-                </Text>
-                <Button
-                  compact
-                  icon={
-                    copied ? (
-                      <Check color={colors.pos600} size={14} />
-                    ) : (
-                      <Copy color={colors.inkSoft} size={14} />
-                    )
-                  }
-                  label={copied ? "Copied" : "Copy"}
-                  onPress={() => void copyHandle()}
-                  variant="outline"
-                />
-              </View>
-              {link ? (
-                <Button
-                  icon={<ExternalLink color={colors.white} size={16} />}
-                  label={`Open ${method.label}`}
-                  onPress={() => void Linking.openURL(link)}
-                />
-              ) : null}
-              <Text style={styles.handleHint}>
-                {!method.linkable
-                  ? `${method.label} has no shareable link — paste this into your banking app.`
-                  : method.linkCarriesAmount
-                    ? `Opens ${method.label} with the amount filled in. You still confirm it there.`
-                    : `${method.label} can't carry an amount in a link — type it in the app.`}
-              </Text>
-            </View>
-          ) : (
-            <Text style={styles.placeholder}>
-              {firstName} hasn&apos;t added a {method.label} handle yet.
-            </Text>
-          )
+        {!received && payMethods.method ? (
+          <PayeeMethodDetails
+            amountCents={amountCents}
+            currency={currency}
+            firstName={firstName}
+            // A different method is a different card: its "Copied" marks reset.
+            key={payMethods.method.id}
+            method={payMethods.method}
+            methods={ledgerQuery.data?.payeeMethods ?? []}
+            readAt={ledgerQuery.data?.readAt ?? ""}
+            removedAt={ledgerQuery.data?.payeeMethodRemovedAt ?? ""}
+            note={note}
+          />
         ) : null}
 
         <TextField
@@ -447,7 +409,7 @@ export function SettleUpModal({
         <View style={styles.submitBlock}>
           <Button
             busy={mutation.isPending}
-            disabled={ledgerQuery.data === undefined || settledUp || owingScopes.length === 0}
+            disabled={!loaded || reading.rows.length === 0}
             label="Record payment"
             onPress={submit}
             variant="positive"
@@ -457,10 +419,12 @@ export function SettleUpModal({
               telling the user to "move the money first" would be nonsense. */}
           <Text style={styles.submitHint}>
             {received
-              ? `Logs money ${firstName} has already sent you — it doesn't request anything.`
-              : `This only updates the balance here — move the money in ${
-                  method?.takesHandle ? method.label : "your app of choice"
-                } first.`}
+              ? `Logs money ${firstName} has already sent you. It doesn't request anything.`
+              : payMethods.choice === CASH_CHOICE
+                ? "This only updates the balance here. Hand over the cash first."
+                : `This only updates the balance here. Move the money in ${
+                    payMethods.method?.name ?? "your app of choice"
+                  } first.`}
           </Text>
         </View>
       </View>
@@ -491,62 +455,13 @@ const styles = StyleSheet.create({
   body: {
     gap: spacing.lg,
   },
-  checkbox: {
-    alignItems: "center",
-    borderColor: colors.line,
-    borderRadius: 5,
-    borderWidth: 1.5,
-    height: 20,
-    justifyContent: "center",
-    width: 20,
-  },
-  checkboxChecked: {
-    backgroundColor: colors.brand600,
-    borderColor: colors.brand600,
-  },
   error: {
     color: colors.brand600,
     fontSize: 14,
   },
-  handleCard: {
-    backgroundColor: colors.paper,
-    borderColor: colors.line,
-    borderRadius: radii.md,
-    borderWidth: 1,
+  failed: {
+    alignItems: "flex-start",
     gap: spacing.sm,
-    padding: spacing.md,
-  },
-  handleDot: {
-    backgroundColor: colors.pos600,
-    borderRadius: radii.full,
-    height: 6,
-    width: 6,
-  },
-  handleHint: {
-    color: colors.inkSoft,
-    fontSize: 12,
-    lineHeight: 17,
-  },
-  handleRow: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: spacing.sm,
-  },
-  handleText: {
-    backgroundColor: colors.card,
-    borderRadius: radii.sm,
-    color: colors.ink,
-    flex: 1,
-    fontFamily: "monospace",
-    fontSize: 14,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-  },
-  handleTitle: {
-    color: colors.inkSoft,
-    fontSize: 11,
-    fontWeight: "600",
-    letterSpacing: 1,
   },
   methods: {
     flexDirection: "row",
@@ -593,10 +508,27 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "500",
   },
+  scopeDirection: {
+    color: colors.inkSoft,
+    fontSize: 12,
+  },
+  scopeHint: {
+    color: colors.inkSoft,
+    fontSize: 12,
+  },
   scopeLabel: {
     color: colors.ink,
     flex: 1,
     fontSize: 14,
+  },
+  scopeNet: {
+    fontWeight: "600",
+  },
+  scopeOwedByYou: {
+    color: colors.neg600,
+  },
+  scopeOwedToYou: {
+    color: colors.pos700,
   },
   scopeList: {
     backgroundColor: colors.paper,

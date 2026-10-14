@@ -3,9 +3,9 @@
 
 import { CATEGORIES } from "@haalkhata/shared/money/money.constants";
 import { centsToInput } from "@haalkhata/shared/money/money";
-import { PeoplePicker } from "@/components/people/PeoplePicker";
-import { SplitSummary } from "@/components/expense/SplitSummary";
-import { ErrorPopup } from "@/components/ui/ErrorPopup";
+import { PeoplePicker } from "@/components/people/PeoplePicker/PeoplePicker";
+import { SplitSummary } from "@/components/expense/SplitSummary/SplitSummary";
+import { ErrorPopup } from "@/components/ui/ErrorPopup/ErrorPopup";
 import { itemizedWarnings } from "@/lib/expense/itemizedWarnings";
 import { parseMoneyInput } from "@haalkhata/shared/money/money";
 import type { ExpenseFormInitial } from "../../../../utils/initialValues";
@@ -15,10 +15,7 @@ import { SplitEditor } from "../SplitEditor/SplitEditor";
 import { useNewExpense } from "../../hooks/useNewExpense";
 import type { useNewExpenseAPI } from "../../hooks/useNewExpenseAPI";
 import { MAX_EXPENSE_DESCRIPTION_LENGTH, MAX_EXPENSE_NOTES_LENGTH } from "@haalkhata/shared/text/limits";
-
-/** Shared className for the text-style inputs and selects in this form. */
-const inputClass =
-  "w-full rounded-xl border border-line bg-card px-3.5 py-3 focus:border-brand-500 focus:outline-none";
+import { inputClass } from "./constants/expenseForm";
 
 /**
  * Renders the full expense form: the receipt scanner, the group/friend
@@ -85,9 +82,11 @@ export function ExpenseForm({
         friends={form.friends.flatMap((friendship) => (friendship.user ? [friendship.user] : []))}
         groups={form.groups.flatMap((summary) => (summary.group ? [summary.group] : []))}
         groupId={form.groupId}
-        friendIds={form.friendIds}
+        groupMembers={
+          form.selectedGroup?.members.flatMap((member) => (member.user ? [member.user] : [])) ?? []
+        }
         onGroupChange={form.setGroupId}
-        onToggleFriend={form.toggleFriend}
+        onTogglePerson={form.togglePerson}
         scopeLocked={form.isEdit}
       />
 

@@ -23,7 +23,6 @@ vi.mock("@/server/auth/repo/users.repo", () => ({
   setUserPhone: setUserPhoneMock,
   updateUserProfile: vi.fn(),
 }));
-vi.mock("@/server/auth/repo/paymentHandles.repo", () => ({ replacePaymentHandles: vi.fn() }));
 vi.mock("@/server/auth/repo/googleSignInNonces.repo", () => ({
   consumeGoogleSignInNonce: vi.fn(),
   insertGoogleSignInNonce: vi.fn(),
@@ -53,7 +52,6 @@ function userRow(overrides: Partial<UserRow> = {}): UserRow {
     merged_into: null,
     token_version: 0,
     created_at: "2026-07-27T00:00:00.000Z",
-    payment_handles: [],
     ...overrides,
   };
 }

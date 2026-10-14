@@ -2,47 +2,11 @@
 /** Loads Google Identity Services and trades its ID token for a session. */
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { authClient, errorMessage } from "@/lib/api/connect";
-import { nextPathFromLocation } from "@/lib/navigation/nextPath";
-import { clearAccountQueryCache } from "@/lib/api/queryCache";
-import {
-  GOOGLE_BUTTON_OPTIONS,
-  GOOGLE_CLIENT_ID,
-  GOOGLE_SCRIPT_ELEMENT_ID,
-  GOOGLE_SCRIPT_SOURCE,
-} from "@/app/login/constants/googleSignIn";
-
-/**
- * Injects the Google Identity Services script once per document and resolves
- * when it is ready. Re-mounts (React strict mode, route changes) reuse the
- * existing tag rather than loading a second copy, which would re-register the
- * SDK's globals underneath a button already rendered.
- *
- * @returns A promise resolving once `window.google` is available.
- */
-function loadGoogleScript(): Promise<void> {
-  return new Promise((resolve, reject) => {
-    if (window.google) {
-      resolve();
-      return;
-    }
-    const existing = document.getElementById(GOOGLE_SCRIPT_ELEMENT_ID);
-    if (existing) {
-      existing.addEventListener("load", () => resolve(), { once: true });
-      existing.addEventListener("error", () => reject(new Error("load failed")), { once: true });
-      return;
-    }
-    const script = document.createElement("script");
-    script.id = GOOGLE_SCRIPT_ELEMENT_ID;
-    script.src = GOOGLE_SCRIPT_SOURCE;
-    script.async = true;
-    script.onload = () => resolve();
-    script.onerror = () => reject(new Error("load failed"));
-    document.head.appendChild(script);
-  });
-}
+import { completeBrowserSignIn } from "@/lib/auth/completeSignIn";
+import { GOOGLE_BUTTON_OPTIONS, GOOGLE_CLIENT_ID } from "@/app/login/constants/googleSignIn";
+import { loadGoogleScript } from "../utils/loadGoogleScript";
 
 /**
  * Renders Google's sign-in button and exchanges the ID token it produces for a
@@ -58,7 +22,6 @@ function loadGoogleScript(): Promise<void> {
  *   `isConfigured` for whether the button will appear at all.
  */
 export function useGoogleSignIn() {
-  const router = useRouter();
   const queryClient = useQueryClient();
   // The host element is held in state rather than a ref so the effect below
   // runs exactly when the div mounts, with no ordering dance against the
@@ -69,10 +32,7 @@ export function useGoogleSignIn() {
 
   const { mutate, isPending } = useMutation({
     mutationFn: (idToken: string) => authClient.logInWithGoogle({ idToken }),
-    onSuccess: () => {
-      clearAccountQueryCache(queryClient);
-      router.push(nextPathFromLocation());
-    },
+    onSuccess: () => completeBrowserSignIn(queryClient),
     onError: (mutationError) => setError(errorMessage(mutationError)),
   });
 

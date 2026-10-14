@@ -1,9 +1,9 @@
 /** Avatar circle: the person's Google picture, falling back to tinted initials. */
 
-import { useState } from "react";
 import type { User } from "@haalkhata/protogen/common/v1/common_pb";
-import { Image, StyleSheet, Text, View } from "react-native";
+import { StyleSheet, View } from "react-native";
 import { colors } from "@/lib/theme/theme";
+import { AvatarPicture } from "./AvatarPicture/AvatarPicture";
 import { AVATAR_FALLBACK_COLOR, AVATAR_SIZES } from "./ui.constants";
 
 /**
@@ -21,21 +21,19 @@ export function Avatar({
   size = "md",
   ring = false,
 }: {
-  /** The user to represent; `name`, `avatarColor` and `avatarUrl` are used. */
-  user: Pick<User, "name" | "avatarColor" | "avatarUrl">;
+  /** The user's identity, display name, tint and profile picture. */
+  user: Pick<User, "id" | "name" | "avatarColor" | "avatarUrl">;
   /** Size variant; defaults to "md". */
   size?: keyof typeof AVATAR_SIZES;
   /** Whether to draw a card-colored ring around the circle (for overlapping stacks). */
   ring?: boolean;
 }) {
-  const [pictureFailed, setPictureFailed] = useState(false);
   const initials = user.name
     .split(/\s+/)
     .slice(0, 2)
     .map((part) => part[0]?.toUpperCase() ?? "")
     .join("");
   const dimensions = AVATAR_SIZES[size];
-  const showPicture = user.avatarUrl.length > 0 && !pictureFailed;
   return (
     <View
       style={[
@@ -49,19 +47,13 @@ export function Avatar({
         ring ? styles.ring : null,
       ]}
     >
-      {showPicture ? (
-        <Image
-          source={{ uri: user.avatarUrl }}
-          onError={() => setPictureFailed(true)}
-          style={{
-            borderRadius: dimensions.diameter / 2,
-            height: dimensions.diameter,
-            width: dimensions.diameter,
-          }}
-        />
-      ) : (
-        <Text style={[styles.initials, { fontSize: dimensions.fontSize }]}>{initials || "?"}</Text>
-      )}
+      {/* A fresh native image and failure state for each person/photo pair. */}
+      <AvatarPicture
+        key={JSON.stringify([user.id, user.avatarUrl])}
+        avatarUrl={user.avatarUrl}
+        initials={initials || "?"}
+        dimensions={dimensions}
+      />
     </View>
   );
 }
@@ -71,10 +63,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     flexShrink: 0,
     justifyContent: "center",
-  },
-  initials: {
-    color: colors.white,
-    fontWeight: "600",
   },
   ring: {
     borderColor: colors.card,

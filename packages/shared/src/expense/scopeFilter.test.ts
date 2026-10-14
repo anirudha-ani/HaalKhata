@@ -1,7 +1,13 @@
 /** Unit tests for the all-expenses page's scope filter and empty message. */
 
 import { describe, expect, it } from "vitest";
-import { matchesScopeFilter, noExpensesMessage } from "./scopeFilter";
+import {
+  FIXED_SCOPE_OPTIONS,
+  isGroupScope,
+  matchesScopeFilter,
+  noExpensesMessage,
+  scopePickerGroups,
+} from "./scopeFilter";
 
 describe("matchesScopeFilter", () => {
   it("shows everything under 'all'", () => {
@@ -52,5 +58,42 @@ describe("noExpensesMessage", () => {
 
   it("survives a group id with no resolvable name", () => {
     expect(noExpensesMessage("", "grp-gone", "")).toBe("No expenses in that group.");
+  });
+});
+
+describe("isGroupScope", () => {
+  it("is false for the two fixed scopes and true for a group id", () => {
+    expect(isGroupScope("all")).toBe(false);
+    expect(isGroupScope("oneoff")).toBe(false);
+    expect(isGroupScope("9b2f6d1e-0c3a-4f5b-8e7d-1a2b3c4d5e6f")).toBe(true);
+  });
+
+  it("agrees with the chips: every fixed option is a non-group scope", () => {
+    expect(FIXED_SCOPE_OPTIONS.every((option) => !isGroupScope(option.value))).toBe(true);
+  });
+});
+
+describe("scopePickerGroups", () => {
+  const groups = [
+    { id: "grp-1", name: "Goa trip 2026" },
+    { id: "grp-2", name: "Flat 4B" },
+    { id: "grp-3", name: "Goa dive club" },
+  ];
+
+  it("lists every group, in the order given, while nothing is typed", () => {
+    expect(scopePickerGroups(groups, "")).toEqual(groups);
+    expect(scopePickerGroups(groups, "   ")).toEqual(groups);
+  });
+
+  it("narrows by name, ignoring case", () => {
+    expect(scopePickerGroups(groups, "GOA").map((group) => group.id)).toEqual(["grp-1", "grp-3"]);
+  });
+
+  it("needs every typed word to match", () => {
+    expect(scopePickerGroups(groups, "goa dive").map((group) => group.id)).toEqual(["grp-3"]);
+  });
+
+  it("returns nothing when no name matches", () => {
+    expect(scopePickerGroups(groups, "lisbon")).toEqual([]);
   });
 });

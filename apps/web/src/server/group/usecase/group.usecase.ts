@@ -4,6 +4,7 @@ import { blockedPairExists } from "@/server/safety/repo/safety.repo";
 import { assertSafeText } from "@/server/safety/usecase/contentFilter";
 import { isRegisteredUser } from "@/server/auth/usecase/user.mapper";
 import type { PoolClient } from "pg";
+import { GroupStatus } from "@haalkhata/protogen/group/v1/group_pb";
 import {
   addMember,
   findGroupById,
@@ -17,6 +18,7 @@ import {
   removeMember,
   updateMemberRole,
   updateSimplifyDebts,
+  updateGroupStatus,
 } from "@/server/group/repo/groups.repo";
 import type { UserRow } from "@/server/auth/repo/users.repo";
 import {
@@ -29,12 +31,13 @@ import { EMAIL_PATTERN, normalizePhone, PHONE_FORMAT_HINT } from "@/server/auth/
 import { insertFriendship, listFriendIds } from "@/server/social/repo/friendships.repo";
 import { insertActivity } from "@/server/social/repo/activity.repo";
 import { insertNotifications } from "@/server/social/repo/notifications.repo";
-import { userNetInGroup, userNetInGroups } from "@/server/expense/usecase/balance.usecase";
+import { groupIsSettled, userNetInGroup, userNetInGroups } from "@/server/expense/usecase/balance.usecase";
 import { denied, invalid, notFound, UsecaseError } from "@/server/common/errors";
 import { toInt32Cents } from "@/server/common/money";
 import { normalizeCurrencyCode } from "@/server/common/validation";
 import {
   GROUP_TYPES,
+  GROUP_STATUS_STORAGE,
   MAX_GROUP_MEMBER_IDS_PER_REQUEST,
   MAX_GROUP_NAME_LENGTH,
   MEMBER_ROLE,
@@ -56,7 +59,7 @@ import { toGroup, toMember } from "./group.mapper";
  */
 async function assertGroupOwner(groupId: string, userId: string, client?: PoolClient) {
   const group = await findGroupById(groupId, client);
-  if (!group) notFound("group not found");
+  if (!group || group.status === GROUP_STATUS_STORAGE[GroupStatus.DELETED]) notFound("group not found");
   const role = await memberRole(groupId, userId, client);
   if (role !== OWNER_ROLE) denied("only the group owner can do this");
   return group;
@@ -83,7 +86,7 @@ async function assertGroupOwner(groupId: string, userId: string, client?: PoolCl
  */
 async function assertGroupMember(groupId: string, userId: string, client?: PoolClient) {
   const group = await findGroupById(groupId, client);
-  if (!group) notFound("group not found");
+  if (!group || group.status === GROUP_STATUS_STORAGE[GroupStatus.DELETED]) notFound("group not found");
   if (!(await isMember(groupId, userId, client))) denied("you are not a member of this group");
   return group;
 }
@@ -340,7 +343,9 @@ export async function createGroup(
  *   caller's net position in cents (positive = owed to the caller).
  */
 export async function listGroups(userId: string) {
-  const groups = await listGroupsByUser(userId);
+  const groups = (await listGroupsByUser(userId)).filter(
+    (group) => group.status !== GROUP_STATUS_STORAGE[GroupStatus.DELETED],
+  );
   const groupIds = groups.map((group) => group.id);
   const [membersByGroup, netByGroup] = await Promise.all([
     listMembersByGroupIds(groupIds),
@@ -365,6 +370,38 @@ export async function listGroups(userId: string) {
 export async function getGroup(userId: string, groupId: string) {
   const group = await assertGroupMember(groupId, userId);
   return toGroup(group, await listMembers(groupId));
+}
+
+/**
+ * Archives a settled group or restores it for future expenses. Any member
+ * may change the state. The ledger lock prevents concurrent money changes
+ * from invalidating the zero-balance check before the archive commits.
+ *
+ * @param userId - Authenticated member requesting the change.
+ * @param input - Group identifier and desired lifecycle status.
+ * @returns The group with its persisted lifecycle status and members.
+ * @throws UsecaseError when the status is unsupported, membership is missing,
+ *   or balances are unsettled. Deletion requires a future dedicated flow.
+ */
+export async function setStatus(userId: string, input: { groupId: string; status: GroupStatus }) {
+  if (input.status !== GroupStatus.ACTIVE && input.status !== GroupStatus.ARCHIVED) {
+    invalid("group status must be active or archived");
+  }
+  const status = GROUP_STATUS_STORAGE[input.status];
+  // Outsiders must not queue on another group's ledger. Membership is
+  // checked again after waiting, because a member can leave meanwhile.
+  await assertGroupMember(input.groupId, userId);
+  return withLedgerTransaction(async (client) => {
+    await lockGroupLedgers(client, [input.groupId]);
+    const group = await assertGroupMember(input.groupId, userId, client);
+    if (group.status !== status) {
+      if (input.status === GroupStatus.ARCHIVED && !(await groupIsSettled(input.groupId, client))) {
+        throw new UsecaseError("failed_precondition", "settle all group balances before archiving");
+      }
+      await updateGroupStatus(input.groupId, status, client);
+    }
+    return toGroup({ ...group, status }, await listMembers(input.groupId, client));
+  });
 }
 
 /**
@@ -611,7 +648,14 @@ export async function removeMemberFromGroup(
       await assertGroupOwner(input.groupId, userId, client);
     }
     if ((await userNetInGroup(input.userId, input.groupId, client)) !== 0) {
-      invalid("cannot remove a member with an outstanding balance — settle up first");
+      // Worded for whoever is reading it: someone leaving is not "a member"
+      // being removed. Clients explain this before asking, with the amount;
+      // this is what a stale client, or a race with a new expense, shows.
+      invalid(
+        input.userId === userId
+          ? "you can't leave while you have an outstanding balance in this group — settle up first"
+          : "cannot remove a member with an outstanding balance — settle up first",
+      );
     }
     await removeMember(input.groupId, input.userId, client);
   });
