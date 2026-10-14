@@ -18,7 +18,7 @@ import { Button } from "@/components/ui/Button";
 import { EmailOrPhoneField } from "@/components/ui/EmailOrPhoneField";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Segmented } from "@/components/ui/Segmented";
-import { Sheet } from "@/components/ui/Sheet";
+import { Sheet } from "@/components/ui/Sheet/Sheet";
 import { Spinner } from "@/components/ui/Spinner";
 import { errorMessage } from "@/lib/api/connect";
 import { colors, radii, spacing } from "@/lib/theme/theme";

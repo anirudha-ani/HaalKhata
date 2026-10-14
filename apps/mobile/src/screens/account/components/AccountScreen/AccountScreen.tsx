@@ -14,7 +14,7 @@ import { Avatar } from "@/components/ui/Avatar";
 import { LegalLinks } from "@/components/legal/LegalLinks";
 import { Button } from "@/components/ui/Button";
 import { PhoneField } from "@/components/ui/PhoneField";
-import { Sheet } from "@/components/ui/Sheet";
+import { Sheet } from "@/components/ui/Sheet/Sheet";
 import { InviteShareSheet } from "@/components/modals/InviteShareSheet";
 import { shareProfileInvite } from "@/lib/invite/share";
 import { Spinner } from "@/components/ui/Spinner";

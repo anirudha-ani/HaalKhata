@@ -16,7 +16,7 @@ import {
 import { colors, fonts, radii, spacing } from "@/lib/theme/theme";
 import { TABLET_SHEET_MAX_WIDTH } from "@/lib/layout/constants/layout";
 import { useResponsiveLayout } from "@/lib/layout/hooks/useResponsiveLayout";
-import { SHEET_MAX_HEIGHT_RATIO } from "./ui.constants";
+import { SHEET_MAX_HEIGHT_RATIO, SHEET_ORIENTATIONS } from "./constants/sheet";
 
 /**
  * Renders a bottom sheet with a titled header, a close button, and
@@ -51,7 +51,7 @@ export function Sheet({
   const { height: windowHeight } = useWindowDimensions();
   const { isTablet } = useResponsiveLayout();
   return (
-    <Modal animationType={isTablet ? "fade" : "slide"} onRequestClose={onClose} transparent visible>
+    <Modal animationType={isTablet ? "fade" : "slide"} onRequestClose={onClose} supportedOrientations={SHEET_ORIENTATIONS} transparent visible>
       <KeyboardAvoidingView
         behavior={Platform.OS === "ios" ? "padding" : undefined}
         style={[styles.backdropContainer, isTablet ? styles.backdropContainerTablet : null]}
@@ -61,7 +61,7 @@ export function Sheet({
           accessibilityLabel={title}
           style={[
             styles.sheet,
-            { maxHeight: windowHeight * SHEET_MAX_HEIGHT_RATIO },
+            { maxHeight: Math.max(0, Math.min(windowHeight * SHEET_MAX_HEIGHT_RATIO, windowHeight - (isTablet ? spacing.xxl * 2 : 0))) },
             isTablet ? styles.sheetTablet : null,
           ]}
         >

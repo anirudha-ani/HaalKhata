@@ -221,6 +221,9 @@ are separate App Store Connect actions. [Expo iOS submission](https://docs.expo.
 
 ## 10. Test the actual TestFlight build
 
+See [the browser/native/iPad parity audit](mobile-web-parity.md) for source
+coverage, ownership and the cross-platform device test matrix.
+
 Use a physical iPhone and an iPad because tablet support is advertised. Test
 with at least two dedicated accounts and representative expenses; local
 bundling and simulator compilation do not establish provider/account behavior.

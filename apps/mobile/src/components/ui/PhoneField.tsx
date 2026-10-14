@@ -7,7 +7,7 @@ import { PHONE_COUNTRIES, phoneCountry, splitE164 } from "@haalkhata/shared/phon
 import { matchesTerms, searchTerms } from "@haalkhata/shared/search/filter";
 import { colors, radii, spacing } from "@/lib/theme/theme";
 import { SearchField } from "./SearchField";
-import { Sheet } from "./Sheet";
+import { Sheet } from "./Sheet/Sheet";
 import { MAX_VISIBLE_COUNTRIES } from "./ui.constants";
 
 /**

@@ -30,7 +30,7 @@ vi.mock("react-native", () => ({
     createElement("input", { value, disabled: editable === false,
       onChange: (event: React.ChangeEvent<HTMLInputElement>) => onChangeText(event.target.value) }),
 }));
-vi.mock("@/components/ui/Sheet", () => ({
+vi.mock("@/components/ui/Sheet/Sheet", () => ({
   Sheet: ({ children, footer }: { children: ReactNode; footer: ReactNode }) =>
     createElement("div", { role: "dialog" }, children, footer),
 }));

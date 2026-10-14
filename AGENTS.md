@@ -21,6 +21,7 @@ packages/protogen/           @haalkhata/protogen — generated TS (do NOT edit, 
 packages/shared/             @haalkhata/shared — hand-written TS used by BOTH apps
   src/api/queryKeys.ts         query-key registry + MONEY_KEYS invalidation set
   src/money/                   money.ts, money.constants.ts (+ colocated tests)
+  src/expense/form/            shared form validation, payloads, previews and warnings
   src/expense/                 allocate.ts + splits.ts — cent-exact split math,
                                run by the SERVER usecase and by the client for
                                its live per-person preview (one implementation)
@@ -250,6 +251,7 @@ All four must pass before committing.
 | `pnpm lint`     | eslint (layering + id-length + next rules)      |
 | `pnpm test`     | vitest unit tests (domain math + auth tokens)   |
 | `pnpm proto:lint`| buf lint + breaking                            |
+| `pnpm test:parity` | browser/native Connect feature entry-point parity |
 | `pnpm doctor`   | react-doctor scan                               |
 | `pnpm typecheck:mobile` / `lint:mobile` / `test:mobile` | same gates for apps/mobile |
 | `pnpm typecheck:shared` / `lint:shared` / `test:shared` | same gates for packages/shared |

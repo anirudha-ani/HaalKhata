@@ -4,7 +4,7 @@ import { useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { REPORT_REASONS, BLOCK_EXPLANATION, type ReportTargetKind } from "@haalkhata/shared/safety/safety";
 import { Button } from "@/components/ui/Button";
-import { Sheet } from "@/components/ui/Sheet";
+import { Sheet } from "@/components/ui/Sheet/Sheet";
 import { errorMessage } from "@/lib/api/connect";
 import { colors, spacing } from "@/lib/theme/theme";
 import { useSafetyAPI } from "./hooks/useSafetyAPI";

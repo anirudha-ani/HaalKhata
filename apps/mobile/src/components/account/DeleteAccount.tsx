@@ -5,7 +5,7 @@ import { formatMoney } from "@haalkhata/shared/money/money";
 import { useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { Button } from "@/components/ui/Button";
-import { Sheet } from "@/components/ui/Sheet";
+import { Sheet } from "@/components/ui/Sheet/Sheet";
 import { TextField } from "@/components/ui/TextField";
 import { colors, radii, spacing } from "@/lib/theme/theme";
 import { useDeleteAccountAPI } from "./hooks/useDeleteAccountAPI";
