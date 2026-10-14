@@ -3,8 +3,9 @@
 
 import { LegalLinks } from "@/components/legal/LegalLinks/LegalLinks";
 import { APPLE_SIGN_IN_UNAVAILABLE } from "@haalkhata/shared/auth/providerMessages";
+import { RECEIPT_PRIVACY_MESSAGE } from "@haalkhata/shared/legal/privacyCopy";
 import { useAppleSignIn } from "../../hooks/useAppleSignIn";
-import { ArrowRight, X } from "lucide-react";
+import { ArrowRight, LockKeyhole, X } from "lucide-react";
 import { GoogleSignIn } from "./components/GoogleSignIn/GoogleSignIn";
 import { useLogin } from "../../hooks/useLogin";
 import { LOGIN_INPUT_CLASS } from "../../constants/loginPage";
@@ -56,15 +57,23 @@ export function AuthPanel({
       >
         <X className="h-4 w-4" />
       </button>
-      <div className="mb-6 pr-10 lg:pr-0">
-          <h2 className="text-[28px] leading-tight font-bold tracking-tight">
-            {isSigningIn ? "Welcome back" : "Create your account"}
-          </h2>
-          <p className="mt-2 text-sm leading-5 text-ink-soft">
-            {isSigningIn
-              ? "Sign in to your shared ledger."
-              : "A fresh start for your shared expenses."}
+      <div className="mb-6 flex items-start justify-between gap-3">
+        <div className="pr-10 lg:pr-0">
+          <p className="mb-2 text-[11px] font-bold tracking-[0.18em] text-brand-600 uppercase">
+            {isSigningIn ? "Welcome back" : "Start fresh"}
           </p>
+          <h2 className="text-3xl font-bold">
+            {isSigningIn ? "Your ledger is waiting." : "Open a clean ledger."}
+          </h2>
+          <p className="mt-2 text-sm leading-6 text-ink-soft">
+            {isSigningIn
+              ? "Pick up exactly where your group left off."
+              : "Create an account and invite people when you are ready."}
+          </p>
+        </div>
+        <span className="hidden h-10 w-10 shrink-0 items-center justify-center rounded-full border border-line bg-paper text-brand-600 lg:flex">
+          <LockKeyhole className="h-4 w-4" />
+        </span>
       </div>
 
       <div className="space-y-3">
@@ -172,8 +181,8 @@ export function AuthPanel({
               {login.isPending
                 ? "One moment…"
                 : login.mode === "login"
-                  ? "Sign in"
-                  : "Create account"}
+                  ? "Open my ledger"
+                  : "Create my ledger"}
               {!login.isPending ? (
                 <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
               ) : null}
@@ -188,7 +197,11 @@ export function AuthPanel({
         </>
       ) : null}
 
-      <footer className="mt-5 border-t border-line pt-2">
+      <footer className="mt-5 border-t border-line pt-4">
+        <p className="flex items-start gap-2 text-xs leading-5 text-ink-soft">
+          <LockKeyhole aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0" />
+          <span>{RECEIPT_PRIVACY_MESSAGE}</span>
+        </p>
         <LegalLinks />
       </footer>
       </aside>

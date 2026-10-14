@@ -11,6 +11,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LegalLinks } from "@/components/legal/LegalLinks";
+import { RECEIPT_PRIVACY_MESSAGE } from "@haalkhata/shared/legal/privacyCopy";
 import { Button } from "@/components/ui/Button";
 import { Segmented } from "@/components/ui/Segmented";
 import { TextField } from "@/components/ui/TextField";
@@ -117,7 +118,10 @@ export function LoginScreen() {
                 ) : null}
               </>
             ) : null}
-            <LegalLinks />
+            <View style={styles.privacyFooter}>
+              <Text style={styles.privacyMessage}>{RECEIPT_PRIVACY_MESSAGE}</Text>
+              <LegalLinks />
+            </View>
             </View>
           </View>
         </ScrollView>
@@ -168,6 +172,17 @@ const styles = StyleSheet.create({
     color: colors.inkSoft,
     fontSize: 12,
     lineHeight: 18,
+  },
+  privacyFooter: {
+    borderTopColor: colors.line,
+    borderTopWidth: 1,
+    gap: spacing.sm,
+    paddingTop: spacing.lg,
+  },
+  privacyMessage: {
+    color: colors.inkSoft,
+    fontSize: 12,
+    lineHeight: 20,
   },
   safeArea: {
     backgroundColor: colors.paper,
