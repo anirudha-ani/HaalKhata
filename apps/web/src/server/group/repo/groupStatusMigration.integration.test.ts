@@ -86,7 +86,7 @@ describe.skipIf(!reachable)("group lifecycle migration deployment order", () => 
   beforeAll(() => {
     baselineDirectory = mkdtempSync(join(tmpdir(), "haalkhata-main-migrations-"));
     for (const filename of readdirSync(MIGRATIONS_DIRECTORY)) {
-      if (!filename.endsWith(".sql")) continue;
+      if (!filename.endsWith(".sql") || filename > `${STATUS_MIGRATION}.sql`) continue;
       if (filename === `${ARCHIVE_MIGRATION}.sql` || filename === `${STATUS_MIGRATION}.sql`) continue;
       copyFileSync(join(MIGRATIONS_DIRECTORY, filename), join(baselineDirectory, filename));
     }
@@ -114,10 +114,10 @@ describe.skipIf(!reachable)("group lifecycle migration deployment order", () => 
     if (baselineDirectory) rmSync(baselineDirectory, { recursive: true, force: true });
   });
 
-  it("applies a fresh install once, with both group migrations last", async () => {
+  it("applies a fresh install once, with both group migrations in order", async () => {
     await migrate(MIGRATIONS_DIRECTORY);
     const before = await database.query<{ name: string }>("SELECT name FROM pgmigrations ORDER BY id");
-    expect(before.rows.slice(-2).map((record) => record.name)).toEqual([
+    expect(before.rows.filter((record) => [ARCHIVE_MIGRATION, STATUS_MIGRATION].includes(record.name)).map((record) => record.name)).toEqual([
       ARCHIVE_MIGRATION, STATUS_MIGRATION,
     ]);
     await migrate(MIGRATIONS_DIRECTORY);
@@ -137,7 +137,7 @@ describe.skipIf(!reachable)("group lifecycle migration deployment order", () => 
       { id: "group-archived", status: "active" },
     ]);
     const migrations = await database.query<{ name: string }>("SELECT name FROM pgmigrations ORDER BY id");
-    expect(migrations.rows.slice(-2).map((record) => record.name)).toEqual([
+    expect(migrations.rows.filter((record) => [ARCHIVE_MIGRATION, STATUS_MIGRATION].includes(record.name)).map((record) => record.name)).toEqual([
       ARCHIVE_MIGRATION, STATUS_MIGRATION,
     ]);
   });
@@ -168,7 +168,7 @@ describe.skipIf(!reachable)("group lifecycle migration deployment order", () => 
     ]);
     const migrations = await database.query<{ name: string }>("SELECT name FROM pgmigrations ORDER BY id");
     expect(migrations.rows.some((record) => record.name === LEGACY_ARCHIVE_MIGRATION)).toBe(false);
-    expect(migrations.rows.slice(-2).map((record) => record.name)).toEqual([
+    expect(migrations.rows.filter((record) => [ARCHIVE_MIGRATION, STATUS_MIGRATION].includes(record.name)).map((record) => record.name)).toEqual([
       ARCHIVE_MIGRATION, STATUS_MIGRATION,
     ]);
   });
