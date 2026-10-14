@@ -11,6 +11,12 @@ export const PUBLIC_ENVIRONMENT_NAMES = [
 /** Apple's key and Services ID cannot be guessed for a different developer account. */
 export const APPLE_IDENTITY_NAMES = ["APPLE_TEAM_ID", "APPLE_KEY_ID", "APPLE_SERVICE_ID"];
 
+/** Canonical local key file; .gitignore and .dockerignore exclude .p8 files. */
+export const APPLE_KEY_FILENAME = "AppleAuthKey.p8";
+
+/** Deliberately invalid placeholder: the developer supplies the actual Apple credential. */
+export const APPLE_KEY_PLACEHOLDER = "PLACEHOLDER: Replace this entire file with the contents of your original Apple .p8 key, including the BEGIN PRIVATE KEY and END PRIVATE KEY lines.\n";
+
 /** Explicit placeholder values that still need a user's local database password. */
 export const PASSWORD_PLACEHOLDERS = new Set(["", "change-me", "changeme", "password"]);
 

@@ -1,13 +1,14 @@
 /** Regressions for safe, repeatable public env setup and secret-free instructions. */
 
 import assert from "node:assert/strict";
-import { chmodSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parseEnv } from "node:util";
 import { test } from "node:test";
 import { manualEnvironmentActions, prefillEnvironment, setupEnvironment } from "./environment.mjs";
-import { SECRET_ENVIRONMENT_NAMES } from "./environment.constants.mjs";
+import { APPLE_KEY_FILENAME, APPLE_KEY_PLACEHOLDER, SECRET_ENVIRONMENT_NAMES } from "./environment.constants.mjs";
 
 /** Real template ensures new clones get the configuration documented by the installer. */
 const EXAMPLE = readFileSync(new URL("../../.env.example", import.meta.url), "utf8");
@@ -29,13 +30,18 @@ test("a fresh clone gets known public IDs, blank secrets, and private file permi
     assert.equal(configured.POSTGRES_HOST, "localhost");
     for (const name of SECRET_ENVIRONMENT_NAMES) {
       assert.ok(!configured[name], `${name} must be supplied by the developer`);
-      assert.ok(!configured[`${name}_FILE`]);
+      if (name !== "APPLE_PRIVATE_KEY") assert.ok(!configured[`${name}_FILE`]);
     }
+    const keyFilename = join(directory, APPLE_KEY_FILENAME);
+    assert.equal(configured.APPLE_PRIVATE_KEY_FILE, keyFilename);
+    assert.equal(readFileSync(keyFilename, "utf8"), APPLE_KEY_PLACEHOLDER);
+    assert.equal(statSync(keyFilename).mode & 0o777, 0o600);
     assert.equal(statSync(filename).mode & 0o777, 0o600);
     const output = messages.join("\n");
     for (const name of ["POSTGRES_PASSWORD", "APPLE_PRIVATE_KEY_FILE", "APPLE_TOKEN_ENCRYPTION_KEY", "APP_PUBLIC_URL"]) {
       assert.ok(output.includes(name), `Setup must explain ${name}`);
     }
+    assert.ok(output.includes("placeholder cannot authenticate"));
     const firstRun = readFileSync(filename, "utf8");
     setupEnvironment({ directory, report: () => {} });
     assert.equal(readFileSync(filename, "utf8"), firstRun);
@@ -76,7 +82,7 @@ test("a different Apple team and native Google audience do not acquire unrelated
   assert.equal(configured.SUPPORT_EMAIL, "custom@example.com");
 });
 
-test("existing secret-file settings are retained and their contents never appear in setup output", () => {
+test("only the Apple key pointer is managed; other secrets and the old source survive without being printed", () => {
   const directory = mkdtempSync(join(tmpdir(), "haalkhata-setup-"));
   const messages = [];
   try {
@@ -87,6 +93,11 @@ test("existing secret-file settings are retained and their contents never appear
     chmodSync(filename, 0o644);
     setupEnvironment({ directory, report: (message) => messages.push(message) });
     assert.ok(readFileSync(filename, "utf8").startsWith(source));
+    const configured = parseEnv(readFileSync(filename, "utf8"));
+    assert.equal(configured.APPLE_PRIVATE_KEY_FILE, join(directory, APPLE_KEY_FILENAME));
+    assert.equal(configured.APPLE_TOKEN_ENCRYPTION_KEY_FILE, "/private/encryption-key");
+    assert.equal(configured.POSTGRES_PASSWORD, "private-database-password");
+    assert.equal(configured.SESSION_SECRET, "private-session-secret");
     const output = messages.join("\n");
     for (const secret of ["private-database-password", "private-session-secret", "/private/key.p8", "/private/encryption-key"]) {
       assert.ok(!output.includes(secret));
@@ -99,11 +110,46 @@ test("existing secret-file settings are retained and their contents never appear
   }
 });
 
+test("pasted root keys survive reruns and stale paths are repaired for a server in apps/web", () => {
+  const directory = mkdtempSync(join(tmpdir(), "haalkhata setup "));
+  const messages = [];
+  try {
+    writeFileSync(join(directory, ".env.example"), EXAMPLE);
+    setupEnvironment({ directory, report: () => {} });
+    const keyFilename = join(directory, APPLE_KEY_FILENAME);
+    const pastedContents = "developer-supplied-key-fixture\nsecond line\n";
+    writeFileSync(keyFilename, pastedContents);
+    chmodSync(keyFilename, 0o644);
+    const filename = join(directory, ".env");
+    writeFileSync(filename, `${readFileSync(filename, "utf8")}\nAPPLE_PRIVATE_KEY_FILE=/previous/checkout/AppleAuthKey.p8\n`);
+    setupEnvironment({ directory, report: (message) => messages.push(message) });
+    assert.equal(readFileSync(keyFilename, "utf8"), pastedContents);
+    assert.equal(statSync(keyFilename).mode & 0o777, 0o600);
+    assert.ok(!messages.join("\n").includes(pastedContents));
+    assert.ok(!messages.join("\n").includes("replace ALL contents"));
+    const repaired = readFileSync(filename, "utf8");
+    const configured = parseEnv(repaired);
+    assert.equal(configured.APPLE_PRIVATE_KEY_FILE, keyFilename);
+    const serverDirectory = join(directory, "apps/web");
+    mkdirSync(serverDirectory, { recursive: true });
+    const server = spawnSync(process.execPath, ["--input-type=module", "-e",
+      'import { readFileSync } from "node:fs"; if (readFileSync(process.argv[1], "utf8") !== process.argv[2]) process.exit(1);',
+      configured.APPLE_PRIVATE_KEY_FILE, pastedContents], { cwd: serverDirectory, encoding: "utf8" });
+    assert.equal(server.status, 0, server.stderr);
+    setupEnvironment({ directory, report: () => {} });
+    assert.equal(readFileSync(filename, "utf8"), repaired);
+    assert.equal(readFileSync(keyFilename, "utf8"), pastedContents);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
 test("setup refuses a template containing secrets before creating an environment", () => {
   const directory = mkdtempSync(join(tmpdir(), "haalkhata-setup-"));
   try {
     writeFileSync(join(directory, ".env.example"), `${EXAMPLE}\nAPPLE_TOKEN_ENCRYPTION_KEY=accidental-secret\n`);
     assert.throws(() => setupEnvironment({ directory, report: () => {} }), /Remove APPLE_TOKEN_ENCRYPTION_KEY credentials/);
+    assert.ok(!existsSync(join(directory, APPLE_KEY_FILENAME)));
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }

@@ -12,12 +12,12 @@
 #   6. Workspace npm dependencies (pnpm install, including the locked buf CLI)
 #   7. Generated protobuf TypeScript (pnpm gen → packages/protogen/src)
 #   8. apps/mobile native modules verified against Expo SDK (expo install --check)
-#   9. .env public settings prefilled; missing secrets listed for you to supply
+#   9. .env public settings prefilled and root AppleAuthKey.p8 placeholder created
 #  10. CocoaPods installed when macOS has a full Xcode installation
 #
 # Usage:
 #   ./install-deps.sh           install everything that's missing
-#   ./install-deps.sh --env-only prepare .env without reinstalling dependencies
+#   ./install-deps.sh --env-only prepare .env and AppleAuthKey.p8 without reinstalling dependencies
 #   ./install-deps.sh --help    show this help
 #
 # System installs (Node, Docker) need sudo on Linux. The script will prompt for
@@ -384,10 +384,11 @@ check_mobile_deps() {
   fi
 }
 
-# --- 9. .env file --------------------------------------------------------------
+# --- 9. local environment and Apple key file -----------------------------------
 
-# Both apps share the root .env. Fill known public configuration, preserve
-# existing values, and report secrets/machine-specific inputs for the developer.
+# Both apps share the root .env. Prepare its AppleAuthKey.p8 placeholder and
+# absolute key path, preserving any pasted key. Fill known public configuration,
+# preserve other existing values, and report manual inputs for the developer.
 setup_env_files() {
   cd "$PROJECT_ROOT"
   node scripts/setup-env.mjs

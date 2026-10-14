@@ -3,7 +3,8 @@
 import { chmodSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { parseEnv } from "node:util";
-import { APPLE_IDENTITY_NAMES, PASSWORD_PLACEHOLDERS, PUBLIC_ENVIRONMENT_NAMES, SECRET_ENVIRONMENT_NAMES } from "./environment.constants.mjs";
+import { APPLE_IDENTITY_NAMES, APPLE_KEY_FILENAME, PASSWORD_PLACEHOLDERS, PUBLIC_ENVIRONMENT_NAMES, SECRET_ENVIRONMENT_NAMES } from "./environment.constants.mjs";
+import { prepareAppleKey } from "./appleKey.mjs";
 
 /** Repository root shared by install-deps.sh and the standalone setup command. */
 const REPOSITORY_ROOT = resolve(import.meta.dirname, "../..");
@@ -68,7 +69,7 @@ export function manualEnvironmentActions(configured) {
     actions.push("Local database: fill POSTGRES_PASSWORD yourself. Keep it consistent with an existing database and DATABASE_URL if set; setup does not reset or rotate database credentials.");
   }
   if (!configured.APPLE_PRIVATE_KEY && !configured.APPLE_PRIVATE_KEY_FILE) {
-    actions.push("Apple sign-in: set APPLE_PRIVATE_KEY_FILE to the absolute path of your downloaded .p8 key (or provide APPLE_PRIVATE_KEY yourself).");
+    actions.push(`Apple sign-in: run local setup to point APPLE_PRIVATE_KEY_FILE at root ${APPLE_KEY_FILENAME}, then replace that file's placeholder with your original .p8 key contents.`);
   }
   if (!configured.APPLE_TOKEN_ENCRYPTION_KEY && !configured.APPLE_TOKEN_ENCRYPTION_KEY_FILE) {
     actions.push("Apple sign-in: run openssl rand -hex 32 once and paste the output into APPLE_TOKEN_ENCRYPTION_KEY, or set APPLE_TOKEN_ENCRYPTION_KEY_FILE. Retain that key for this database.");
@@ -91,7 +92,7 @@ export function manualEnvironmentActions(configured) {
 }
 
 /**
- * Creates or augments .env without generating credentials, then prints remaining work.
+ * Prepares .env and its canonical Apple key placeholder without generating credentials.
  * @param {{directory?: string, report?: (message: string) => void}} options Repository directory and output sink.
  * @returns {void}
  */
@@ -105,11 +106,14 @@ export function setupEnvironment({ directory = REPOSITORY_ROOT, report = console
   const exists = existsSync(filename);
   const source = exists ? readFileSync(filename, "utf8") : example;
   const result = prefillEnvironment(source, example);
-  if (!exists || result.text !== source) writeFileSync(filename, result.text, { mode: 0o600, flag: exists ? "w" : "wx" });
+  const appleKey = prepareAppleKey(directory, result.text);
+  if (!exists || appleKey.text !== source) writeFileSync(filename, appleKey.text, { mode: 0o600, flag: exists ? "w" : "wx" });
   chmodSync(filename, 0o600);
-  report(exists ? "Updated .env; existing values and secrets preserved." : "Created .env with known public configuration; secrets are blank.");
+  report(exists ? "Updated .env; Apple key path managed, other existing values and secrets preserved." : "Created .env with known public configuration and a local Apple key path; secrets are blank.");
   report(result.filled.length ? `Prefilled: ${result.filled.join(", ")}.` : "Known public defaults are already present; no configured values were replaced.");
-  for (const action of manualEnvironmentActions(parseEnv(result.text))) report(`- ${action}`);
+  report(`APPLE_PRIVATE_KEY_FILE points to root ${APPLE_KEY_FILENAME}; existing file contents are never overwritten.`);
+  if (appleKey.needsKey) report(`- Apple sign-in: replace ALL contents of root ${APPLE_KEY_FILENAME} with your original downloaded .p8 key, including its BEGIN/END PRIVATE KEY lines. The placeholder cannot authenticate.`);
+  for (const action of manualEnvironmentActions(parseEnv(appleKey.text))) report(`- ${action}`);
   report("SESSION_SECRET is optional in development: the server keeps a local key automatically. Production requires your own configured secret.");
   report("Run ./dev.sh to prepare the environment, check Apple configuration and start the app. --mobile-ios selects the native check; pnpm auth:check remains an optional standalone diagnostic. See docs/local-auth.md.");
 }

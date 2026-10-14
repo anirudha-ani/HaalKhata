@@ -46,15 +46,19 @@ Expo loads only `EXPO_PUBLIC_*` values; server secrets stay on the backend.
 Run `pnpm setup:env` (or `./install-deps.sh --env-only`) to prepare `.env`
 without reinstalling dependencies. Known Google web/iOS client IDs, Apple
 Team/Key/Services IDs, the support email and local database connection parts
-are prefilled from `.env.example`. Existing non-empty values, comments and
-multiline secrets are preserved; missing or blank public entries are filled
+are prefilled from `.env.example`. Apart from the managed Apple key path
+below, existing non-empty values, comments and multiline secrets are
+preserved; missing or blank public entries are filled
 once. You supply database/provider secrets yourself. Reruns never generate
 or rotate a secret. New `.env` files contain no passwords or keys, and setup
 sets file permissions to owner-only read/write.
 
-For Apple, fill `APPLE_PRIVATE_KEY_FILE` and `APPLE_TOKEN_ENCRYPTION_KEY` (or
-its `_FILE` variant). Your HTTPS development domain and Android Google client
-ID depend on your machine/provider setup and cannot be inferred. The setup
+For Apple, setup creates an ignored root `AppleAuthKey.p8` placeholder and always
+sets `APPLE_PRIVATE_KEY_FILE` to its absolute path. Replace that file's entire
+contents with your original Apple `.p8` key, including the BEGIN/END lines;
+setup never overwrites existing key contents. Fill `APPLE_TOKEN_ENCRYPTION_KEY`
+(or its `_FILE` variant) yourself. Your HTTPS development domain and Android
+Google client ID depend on your machine/provider setup and cannot be inferred. The setup
 output lists these separately from optional receipt AI and phone credentials.
 
 Using your own Postgres instead of the compose service? Set `DATABASE_URL`

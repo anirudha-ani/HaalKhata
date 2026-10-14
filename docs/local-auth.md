@@ -8,7 +8,8 @@ deployment; they are not automatically available on your laptop.
 
 Run `pnpm setup:env` or `./install-deps.sh --env-only` first. Full dependency
 installation runs the same preparation automatically. HaalKhata's known
-public IDs are already filled in; existing values and secrets are preserved.
+public IDs are already filled in; existing values and secrets are preserved
+except for the managed `APPLE_PRIVATE_KEY_FILE` path described below.
 The command prints the secrets and machine-specific settings you still need
 to provide. Keep your existing database settings in the repository-root
 `.env`; the following shows the configuration for a different account too:
@@ -25,7 +26,8 @@ EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID=YOUR_IOS_CLIENT_ID.apps.googleusercontent.com
 
 APPLE_TEAM_ID=YOUR_APPLE_TEAM_ID
 APPLE_KEY_ID=YOUR_APPLE_KEY_ID
-APPLE_PRIVATE_KEY_FILE=/absolute/path/to/AuthKey_YOUR_APPLE_KEY_ID.p8
+# Filled automatically by local setup; no manual path calculation needed.
+APPLE_PRIVATE_KEY_FILE=/absolute/path/to/your-checkout/AppleAuthKey.p8
 APPLE_TOKEN_ENCRYPTION_KEY=YOUR_ONCE_GENERATED_64_CHARACTER_HEX_KEY
 
 # Browser and Android Apple sign-in only:
@@ -36,12 +38,26 @@ APP_PUBLIC_URL=https://YOUR_DEVELOPMENT_HOST
 EXPO_PUBLIC_API_URL=https://YOUR_DEVELOPMENT_HOST
 ```
 
+Setup creates **`AppleAuthKey.p8` in the repository root** with placeholder text.
+Replace its **entire contents** with your original downloaded Apple `.p8`
+key, including the `-----BEGIN PRIVATE KEY-----` and
+`-----END PRIVATE KEY-----` lines. The placeholder cannot sign in. GitHub
+cannot reveal a stored secret again, so use your original download.
+
+`./install-deps.sh`, `pnpm setup:env`, and `./dev.sh` always point `.env`'s
+`APPLE_PRIVATE_KEY_FILE` at this root file using its absolute path. This works
+when the server starts from `apps/web`; rerun setup after moving the checkout.
+Existing `AppleAuthKey.p8` contents are never overwritten, and both it and `.env`
+have owner-only read/write permissions. The key is ignored by Git and Docker.
+If you previously used another file or an inline key, paste that key into
+`AppleAuthKey.p8` once; setup leaves the old source intact. Production continues
+to use its CI-managed secret mount.
+
 Generate the **local** encryption key once with `openssl rand -hex 32` and
 paste the output as `APPLE_TOKEN_ENCRYPTION_KEY`. Keep it unchanged while
 using that database: it encrypts Apple refresh tokens needed for account
 deletion. `APPLE_TOKEN_ENCRYPTION_KEY_FILE=/absolute/path/to/key-file` also
-works. Use the original downloaded `.p8` file; GitHub cannot reveal a stored
-secret again. Neither secret gets an `EXPO_PUBLIC_` or `NEXT_PUBLIC_` prefix.
+works. Neither secret gets an `EXPO_PUBLIC_` or `NEXT_PUBLIC_` prefix.
 
 `pnpm dev`, `pnpm dev:mobile`, mobile `ios`/`android` commands, and `dev.sh`
 read this file. Expo receives only its `EXPO_PUBLIC_*` entries. Shell values
