@@ -2,11 +2,9 @@
 /** Verifier-bound Apple browser login; the callback URL never carries a session. */
 
 import { useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { authClient, errorMessage } from "@/lib/api/connect";
-import { clearAccountQueryCache } from "@/lib/api/queryCache";
-import { nextPathFromLocation } from "@/lib/navigation/nextPath";
+import { completeBrowserSignIn } from "@/lib/auth/completeSignIn";
 import { APPLE_VERIFIER_STORAGE_KEY } from "../../../constants/appleSignIn";
 
 /**
@@ -14,7 +12,6 @@ import { APPLE_VERIFIER_STORAGE_KEY } from "../../../constants/appleSignIn";
  * @returns Pending/error state and sign-in action.
  */
 export function useAppleSignIn() {
-  const router = useRouter();
   const queryClient = useQueryClient();
   const attempted = useRef(false);
   const [error, setError] = useState("");
@@ -23,7 +20,7 @@ export function useAppleSignIn() {
       if (input.callbackError || !input.verifier) throw new Error("Apple sign-in could not finish. Please try again.");
       return authClient.completeAppleSignIn(input);
     },
-    onSuccess: () => { clearAccountQueryCache(queryClient); router.replace(nextPathFromLocation()); },
+    onSuccess: () => completeBrowserSignIn(queryClient),
     onError: (failure) => setError(errorMessage(failure)),
   });
   const redeem = complete.mutate;
