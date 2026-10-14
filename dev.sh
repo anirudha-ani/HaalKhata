@@ -379,7 +379,7 @@ ensure_android_app() {
 
   if [[ ! -d apps/mobile/android ]]; then
     log "running expo prebuild (generating native android project)…"
-    (cd apps/mobile && pnpm exec expo prebuild --platform android) \
+    (cd apps/mobile && pnpm run expo prebuild --platform android) \
       || die "expo prebuild failed."
     # prebuild just created android/ — write local.properties now.
     write_local_properties "$ANDROID_HOME"
@@ -464,7 +464,7 @@ ensure_ios_app() {
   fi
 
   log "dev client not installed — building (first run takes several minutes)…"
-  (cd apps/mobile && pnpm exec expo run:ios --device generic \
+  (cd apps/mobile && pnpm run expo run:ios --device generic \
     --output .expo/ios-build --no-bundler) \
     || die "iOS build failed. See apps/mobile/ios for details."
   xcrun simctl install "$udid" "apps/mobile/.expo/ios-build/HaalKhata.app" \
@@ -667,7 +667,7 @@ main() {
   # provider), no SESSION_SECRET, and Postgres only by the built-in default.
   # Invoke the environment-loading launcher the same way the dev script does.
   #
-  # The launcher reads the root .env through Node's loadEnvFile API. Next.js 16
+  # The launcher reads the root .env through the shared environment loader. Next.js 16
   # forwards CLI flags to workers, where --env-file-if-exists is forbidden.
   #
   # --turbopack because the webpack dev server cannot hot-replace a server

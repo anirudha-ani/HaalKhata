@@ -4,9 +4,10 @@
   "private": true,
   "main": "index.ts",
   "scripts": {
-    "dev": "expo start --dev-client",
-    "android": "expo run:android",
-    "ios": "expo run:ios",
+    "dev": "node scripts/expo.mjs start --dev-client",
+    "expo": "node scripts/expo.mjs",
+    "android": "node scripts/expo.mjs run:android",
+    "ios": "node scripts/expo.mjs run:ios",
     "lint": "eslint app src index.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",

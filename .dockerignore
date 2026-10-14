@@ -9,6 +9,7 @@ data
 .env.*
 **/.env
 **/.env.*
+**/*.p8
 *.tsbuildinfo
 **/*.tsbuildinfo
 Dockerfile

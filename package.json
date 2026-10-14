@@ -8,6 +8,8 @@
     "proto:lint": "buf lint",
     "dev": "pnpm --filter @haalkhata/web dev",
     "dev:mobile": "pnpm --filter @haalkhata/mobile dev",
+    "auth:check": "pnpm --filter @haalkhata/web auth:check",
+    "test:environment": "node --test scripts/environment.test.mjs",
     "lint:mobile": "pnpm --filter @haalkhata/mobile lint",
     "typecheck:mobile": "pnpm --filter @haalkhata/mobile typecheck",
     "test:mobile": "pnpm --filter @haalkhata/mobile test",

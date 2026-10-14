@@ -32,8 +32,8 @@ key; see [Receipt AI providers](#receipt-ai-providers-optional) below.
 ## Configuration
 
 All configuration lives in a single `.env` at the repo root: `docker compose`
-reads it directly, and `pnpm dev` loads it through Node's `loadEnvFile` API in
-the Next.js launcher.
+reads it directly, and the Next.js and Expo launchers load it before startup.
+Expo loads only `EXPO_PUBLIC_*` values; server secrets stay on the backend.
 Copy `.env.example` to `.env` to begin; every variable is documented there.
 
 Using your own Postgres instead of the compose service? Set `DATABASE_URL`
@@ -61,6 +61,15 @@ both `GOOGLE_CLIENT_ID` and `NEXT_PUBLIC_GOOGLE_CLIENT_ID`. No client secret
 is involved: the ID-token flow verifies a signed assertion against Google's
 public keys and never calls Google's token endpoint. `.env.example` has the
 full console walkthrough.
+
+### Apple sign-in (optional in development)
+
+Use real Apple credentials with your local backend. The web button appears
+when `APPLE_SERVICE_ID` is configured. Browser/Android sign-in requires a
+registered HTTPS development domain; native iOS uses its signed App ID.
+Run `pnpm auth:check` (browser) or `pnpm auth:check --ios` (native) to check
+configuration. [Local authentication](local-auth.md) lists every environment
+variable, Apple console setting, startup command, and verification step.
 
 ### Receipt AI providers (optional)
 

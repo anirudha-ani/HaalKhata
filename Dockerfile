@@ -15,6 +15,7 @@ COPY buf.yaml buf.gen.yaml ./
 COPY proto/ proto/
 COPY packages/ packages/
 COPY apps/ apps/
+COPY scripts/environment.mjs scripts/environment.mjs
 
 # NEXT_PUBLIC_* is inlined into the client bundle by `next build`, so it has to
 # be present HERE rather than at runtime — supplying it only via env_file

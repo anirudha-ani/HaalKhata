@@ -244,6 +244,11 @@ All four must pass before committing.
 
 ## Quality gates
 
+Every new user-facing behavior must have a documented local execution and
+verification path, including provider environment variables when needed.
+Use real provider flows locally; test fixtures must not bypass production
+authentication. See `docs/local-auth.md` for Google and Apple sign-in.
+
 | Command         | What it checks                                  |
 |-----------------|-------------------------------------------------|
 | `pnpm gen`      | buf generate → packages/protogen                |

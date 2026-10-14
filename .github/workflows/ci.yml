@@ -74,6 +74,9 @@ jobs:
       - name: 'Deploy: secret provisioning and encryption-key preservation'
         run: pnpm test:deploy
 
+      - name: 'Development: shared environment and Expo secret isolation'
+        run: pnpm test:environment
+
       - name: 'Dependencies: verify exact security patches and audit production'
         run: pnpm audit:production
 
