@@ -25,7 +25,13 @@ node() {
   fi
 }
 docker() { echo STEP:docker:$*; }
-pnpm() { echo STEP:pnpm:$*; }
+pnpm() {
+  echo STEP:pnpm:$*
+  if [[ "$*" == *"scripts/prepare-database.mts"* && "$FAIL_MIGRATIONS" == "1" ]]; then
+    echo 'Not run migration release_change is preceding already run migration main_change' >&2
+    return 1
+  fi
+}
 main "$@"
 `;
 
@@ -33,15 +39,17 @@ main "$@"
  * Executes the actual startup control flow with deterministic service substitutes.
  * @param {string[]} argumentsList Startup options.
  * @param {boolean} failSetup Whether required database setup fails.
+ * @param {boolean} failMigrations Whether the database migration command fails.
  * @returns {string} Recorded workflow output.
  */
-function startDevelopment(argumentsList = [], failSetup = false) {
+function startDevelopment(argumentsList = [], failSetup = false, failMigrations = false) {
   const result = spawnSync("bash", ["-c", STARTUP_HARNESS, "dev-startup-test", DEV_SCRIPT, ...argumentsList], {
-    env: { ...process.env, FAIL_ENV_SETUP: failSetup ? "1" : "0" }, encoding: "utf8",
+    env: { ...process.env, FAIL_ENV_SETUP: failSetup ? "1" : "0", FAIL_MIGRATIONS: failMigrations ? "1" : "0" }, encoding: "utf8",
   });
-  assert.equal(result.status, failSetup && !argumentsList.includes("--down") ? 1 : 0, result.stderr);
-  assert.equal(result.stderr, "");
-  return result.stdout;
+  const fails = (failSetup || failMigrations) && !argumentsList.includes("--down");
+  assert.equal(result.status, fails ? 1 : 0, result.stderr);
+  if (!failMigrations || argumentsList.includes("--down")) assert.equal(result.stderr, "");
+  return result.stdout + result.stderr;
 }
 
 test("web startup quietly prepares .env without running optional Apple diagnostics", () => {
@@ -50,6 +58,8 @@ test("web startup quietly prepares .env without running optional Apple diagnosti
   assert.ok(output.includes("scripts/next.mjs dev --turbopack -H 127.0.0.1"));
   assert.ok(!output.includes("check-apple-auth.mts"));
   assert.ok(!output.includes("Apple"));
+  assert.ok(output.indexOf("STEP:database") < output.indexOf("scripts/prepare-database.mts"));
+  assert.ok(output.indexOf("database migrations passed") < output.indexOf("scripts/next.mjs dev"));
 });
 
 for (const platform of ["ios", "android"]) {
@@ -58,6 +68,7 @@ for (const platform of ["ios", "android"]) {
     assert.ok(output.indexOf("STEP:node:scripts/setup-env.mjs --dev") < output.indexOf(`STEP:mobile:${platform}`));
     assert.ok(!output.includes("check-apple-auth.mts"));
     assert.ok(output.includes("scripts/next.mjs dev --turbopack -H 0.0.0.0"));
+    assert.ok(output.indexOf("database migrations passed") < output.indexOf(`STEP:mobile:${platform}`));
   });
 }
 
@@ -68,10 +79,22 @@ test("missing database credentials stop before Compose and name the exact field 
   assert.ok(!output.includes("scripts/next.mjs dev"));
 });
 
+for (const argumentsList of [[], ["--mobile-ios"], ["--mobile-android"]]) {
+  test(`migration failures stop startup before web/mobile: ${argumentsList.join(" ") || "web"}`, () => {
+    const output = startDevelopment(argumentsList, false, true);
+    assert.ok(output.includes("preceding already run migration"));
+    assert.ok(output.includes("database migrations failed; web and mobile startup stopped"));
+    assert.ok(!output.includes("database migrations passed"));
+    assert.ok(!output.includes("scripts/next.mjs dev"));
+    assert.ok(!output.includes("STEP:mobile:"));
+  });
+}
+
 test("shutdown works without running setup or requiring authentication credentials", () => {
-  const output = startDevelopment(["--down"], true);
+  const output = startDevelopment(["--down"], true, true);
   assert.ok(output.includes("STEP:docker:compose down --remove-orphans"));
   assert.ok(!output.includes("check-apple-auth.mts"));
   assert.ok(!output.includes("setup-env.mjs"));
   assert.ok(!output.includes("STEP:database"));
+  assert.ok(!output.includes("scripts/prepare-database.mts"));
 });

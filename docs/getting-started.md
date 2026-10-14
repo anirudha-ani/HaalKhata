@@ -17,9 +17,11 @@ provider secrets to supply yourself. `POSTGRES_PASSWORD` defaults to
 `change-me` for the local Compose database; setup fills it when missing or
 blank and preserves any existing non-empty password. The local connection
 uses it with the prefilled host, port, username and database name.
-`dev.sh` starts Postgres and the Next.js dev
-server. It quietly prepares missing settings and checks the required database
-password before Compose runs. Missing Apple credentials show an Apple sign-in availability message
+`dev.sh` prepares configuration, starts Postgres, applies pending migrations,
+and then starts the Next.js dev server. It prints **database migrations passed**
+before starting web or mobile services. If a migration fails, it prints the
+underlying error and stops; fix the error and rerun `./dev.sh`. It checks the
+required database password before Compose runs. Missing Apple credentials show an Apple sign-in availability message
 on web and mobile; they produce no startup warnings. Use
 `./dev.sh --clean` for a fresh database and `./dev.sh --down` to
 stop everything.
@@ -34,8 +36,9 @@ docker compose up -d db  # Postgres 17 on localhost:5432 (or use your own)
 pnpm dev                 # http://localhost:3000
 ```
 
-Pending migrations apply automatically on the first API request (and during
-the production readiness check), so there is no manual migrate step. A
+With this manual startup path, pending migrations apply on the first API
+request (and during the production readiness check). `./dev.sh` runs the same
+checks explicitly before launching the app, so no manual migrate step is needed. A
 built-in mock receipt provider keeps the scan flow demoable without any AI
 key; see [Receipt AI providers](#receipt-ai-providers-optional) below.
 

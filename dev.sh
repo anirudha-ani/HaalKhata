@@ -8,7 +8,8 @@
 #   2. self-heal cheap project state (node_modules, protogen) if missing
 #      quietly prepare .env and require the local database password
 #   3. start the Postgres db (docker compose up -d db) and wait for it to be healthy
-#   4. start the Next.js dev server in the foreground (pnpm dev, http://127.0.0.1:3000)
+#   4. apply pending migrations; report success or stop with the failure
+#   5. start the Next.js dev server in the foreground (pnpm dev, http://127.0.0.1:3000)
 #      (with --mobile-android / --mobile-ios, also: boot emulator/simulator,
 #       build+install the dev client if missing, start Metro, launch the app)
 #
@@ -160,6 +161,16 @@ clean_db() {
   warn "tearing down db and deleting its volume — all local data will be lost"
   docker compose down -v --remove-orphans
   ok "removed db container + db-data volume"
+}
+
+# Apply migrations through the same environment and database path as the API.
+# Stops startup before web/Metro/device work if the schema cannot be prepared.
+prepare_db() {
+  log "checking and applying database migrations…"
+  if ! pnpm --filter @haalkhata/web exec node --import tsx scripts/prepare-database.mts; then
+    die "database migrations failed; web and mobile startup stopped. Fix the error above, then rerun ./dev.sh."
+  fi
+  ok "database migrations passed"
 }
 
 # --- mobile lifecycle ----------------------------------------------------------
@@ -614,6 +625,7 @@ main() {
     clean_db
   fi
   start_db
+  prepare_db
 
   if [[ -n "$mobile_platform" ]]; then
     start_mobile "$mobile_platform"
@@ -659,8 +671,8 @@ main() {
   else
     log "starting web dev server — http://127.0.0.1:3000  (Ctrl-C to stop)"
   fi
-  # Migrations apply automatically on the first /api/connect request via
-  # ensureMigrated(). The db keeps running after the server exits; use
+  # Migrations have passed before reaching this point; ensureMigrated() also
+  # protects API requests. The db keeps running after the server exits; use
   # ./dev.sh --down to stop it too. With --mobile-* the Metro bundler is
   # stopped by the EXIT trap; the db and emulator/simulator keep running.
   # `pnpm exec next dev` would run the Next binary directly and SKIP the
