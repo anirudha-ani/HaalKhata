@@ -6,6 +6,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { authClient, errorMessage } from "@/lib/api/connect";
 import { completeBrowserSignIn } from "@/lib/auth/completeSignIn";
 import { APPLE_VERIFIER_STORAGE_KEY } from "../../../constants/appleSignIn";
+import { assertAppleBrowserOrigin } from "../utils/appleBrowserOrigin";
 
 /**
  * Starts Apple authorization and redeems the callback with this tab's private proof.
@@ -44,12 +45,14 @@ export function useAppleSignIn() {
       const hashed = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier)));
       const verifierHash = Array.from(hashed, (value) => value.toString(16).padStart(2, "0")).join("");
       sessionStorage.setItem(APPLE_VERIFIER_STORAGE_KEY, verifier);
-      return authClient.beginAppleSignIn({ browserFlow: true, verifierHash });
+      const challenge = await authClient.beginAppleSignIn({ browserFlow: true, verifierHash });
+      assertAppleBrowserOrigin(challenge.authorizationUrl, window.location.origin);
+      return challenge;
     },
     onSuccess: (challenge) => window.location.assign(challenge.authorizationUrl),
     onError: (failure) => { sessionStorage.removeItem(APPLE_VERIFIER_STORAGE_KEY); setError(errorMessage(failure)); },
   });
   return { error, isPending: begin.isPending || complete.isPending,
     /** Clears a prior error and starts browser authorization. */
-    signIn: () => { setError(""); begin.mutate(); } };
+    signIn: () => { if (!begin.isPending && !complete.isPending) { setError(""); begin.mutate(); } } };
 }

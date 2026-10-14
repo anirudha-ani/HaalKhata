@@ -20,5 +20,5 @@ export const metadata: Metadata = {
  */
 export default async function Login() {
   if (await sessionUserId()) redirect("/dashboard");
-  return <LoginPage />;
+  return <LoginPage appleConfigured={Boolean(process.env.APPLE_SERVICE_ID)} />;
 }

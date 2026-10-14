@@ -4,7 +4,7 @@ import crypto from "node:crypto";
 import type { PoolClient } from "pg";
 import { transaction } from "@/server/common/db/db";
 import { invalid, UsecaseError } from "@/server/common/errors";
-import { APPLE_AUTHORIZE_URL, APPLE_CALLBACK_PATH, APPLE_CHALLENGE_SECONDS, APPLE_HASH_PATTERN,
+import { APPLE_AUTHORIZE_URL, APPLE_CHALLENGE_SECONDS, APPLE_HASH_PATTERN,
   APPLE_MOBILE_RETURN, APPLE_NATIVE_CLIENT_ID, APPLE_NONCE_PATTERN, APPLE_RANDOM_BYTES } from "../../apple.constants";
 import * as appleRepository from "../../repo/apple/appleSignIn.repo";
 import { findUserById, insertUser } from "../../repo/users.repo";
@@ -13,6 +13,7 @@ import { createToken } from "@/server/auth/usecase/session/session";
 import { assertAppleSignInConfigured, encryptAppleToken, exchangeAppleCode, verifyAppleIdentity, type AppleIdentity } from "./apple.provider";
 import { toPrivateUser } from "../identity/user.mapper";
 import { providerDisplayName } from "../identity/providerDisplayName";
+import { appleBrowserCallbackUrl } from "./apple.config";
 
 /**
  * Hashes proof material so database reads cannot redeem it.
@@ -24,27 +25,16 @@ export function appleProofHash(value: string): string {
 }
 
 /**
- * Resolves the fixed deployment origin rather than trusting a request Host header.
- * @returns Configured HTTPS callback URL.
- */
-function browserCallbackUrl(): string {
-  const origin = new URL(process.env.APP_PUBLIC_URL ?? "https://haalkhata.app");
-  if (origin.protocol !== "https:" || origin.username || origin.password || origin.pathname !== "/" || origin.search || origin.hash) {
-    throw new UsecaseError("unavailable", "Apple callback must use a configured HTTPS origin");
-  }
-  return new URL(APPLE_CALLBACK_PATH, origin).href;
-}
-
-/**
  * Issues a one-use native challenge or a browser authorization URL bound to client proof.
  * @param input Browser/native flow, mobile return target, and optional verifier hash.
  * @returns Nonce and browser authorization URL when applicable.
  */
 export async function beginAppleSignIn(input: { browserFlow: boolean; mobile: boolean; verifierHash: string }) {
   if (input.browserFlow && !APPLE_HASH_PATTERN.test(input.verifierHash)) invalid("a client verifier is required");
-  await assertAppleSignInConfigured();
   const clientId = input.browserFlow ? process.env.APPLE_SERVICE_ID : APPLE_NATIVE_CLIENT_ID;
   if (!clientId) throw new UsecaseError("unavailable", "Apple browser sign-in is not configured");
+  const redirectUri = input.browserFlow ? appleBrowserCallbackUrl() : "";
+  await assertAppleSignInConfigured(clientId);
   const nonce = crypto.randomBytes(APPLE_RANDOM_BYTES).toString("base64url");
   const state = crypto.randomBytes(APPLE_RANDOM_BYTES).toString("base64url");
   await appleRepository.insertAppleChallenge({ state_hash: appleProofHash(state), nonce_hash: appleProofHash(nonce),
@@ -52,7 +42,7 @@ export async function beginAppleSignIn(input: { browserFlow: boolean; mobile: bo
     mobile: input.mobile, user_id: null }, APPLE_CHALLENGE_SECONDS);
   const authorization = new URL(APPLE_AUTHORIZE_URL);
   if (input.browserFlow) authorization.search = new URLSearchParams({ client_id: clientId,
-    redirect_uri: browserCallbackUrl(), response_type: "code", response_mode: "form_post",
+    redirect_uri: redirectUri, response_type: "code", response_mode: "form_post",
     scope: "name email", state, nonce }).toString();
   return { nonce, authorizationUrl: input.browserFlow ? authorization.href : "" };
 }
@@ -113,14 +103,14 @@ export async function handleAppleCallback(input: { state: string; code: string; 
   const stateHash = appleProofHash(input.state);
   const challenge = await appleRepository.findAppleBrowserChallenge(stateHash);
   if (!challenge) throw new UsecaseError("unauthenticated", "Apple sign-in expired");
-  const destination = challenge.mobile ? new URL(APPLE_MOBILE_RETURN) : new URL("/login", browserCallbackUrl());
+  const destination = challenge.mobile ? new URL(APPLE_MOBILE_RETURN) : new URL("/login", appleBrowserCallbackUrl());
   destination.searchParams.set("apple_sign_in", input.state);
   if (input.cancelled) {
     destination.searchParams.set("apple_error", "cancelled");
     return destination.href;
   }
   try {
-    const exchanged = await exchangeAppleCode(input.code, challenge.client_id, browserCallbackUrl());
+    const exchanged = await exchangeAppleCode(input.code, challenge.client_id, appleBrowserCallbackUrl());
     const identity = await verifyAppleIdentity(exchanged.identityToken, challenge.client_id);
     if (appleProofHash(identity.nonce) !== challenge.nonce_hash) throw new Error("nonce mismatch");
     await transaction(async (client) => {

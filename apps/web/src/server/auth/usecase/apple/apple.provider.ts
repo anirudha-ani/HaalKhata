@@ -56,12 +56,12 @@ async function clientSecret(clientId: string): Promise<string> {
 
 /**
  * Verifies native/browser signing and encrypted credential storage before deployment is ready.
+ * @param clientId The flow's audience; readiness defaults to the browser Services ID.
  * @returns Resolves when all Apple release configuration is usable.
  */
-export async function assertAppleSignInConfigured(): Promise<void> {
-  const serviceId = process.env.APPLE_SERVICE_ID;
-  if (!serviceId) throw new Error("APPLE_SERVICE_ID is required for Apple browser sign-in");
-  await clientSecret(serviceId);
+export async function assertAppleSignInConfigured(clientId = process.env.APPLE_SERVICE_ID): Promise<void> {
+  if (!clientId) throw new UsecaseError("unavailable", "APPLE_SERVICE_ID is required for Apple browser sign-in");
+  await clientSecret(clientId);
   encryptAppleToken("readiness-probe");
 }
 

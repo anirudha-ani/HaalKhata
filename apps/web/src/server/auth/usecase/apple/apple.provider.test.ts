@@ -1,8 +1,8 @@
 /** Signature and encryption regression tests for Apple identity credentials. */
 
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
-import { createLocalJWKSet, exportJWK, generateKeyPair, SignJWT } from "jose";
-import { encryptAppleToken, revokeAppleToken, verifyAppleIdentity } from "./apple.provider";
+import { createLocalJWKSet, exportJWK, exportPKCS8, generateKeyPair, SignJWT } from "jose";
+import { assertAppleSignInConfigured, encryptAppleToken, revokeAppleToken, verifyAppleIdentity } from "./apple.provider";
 import { APPLE_ISSUER, APPLE_NATIVE_CLIENT_ID } from "../../apple.constants";
 
 let signingKey: CryptoKey;
@@ -47,6 +47,18 @@ describe("Apple identity verification", () => {
 });
 
 describe("Apple refresh token encryption", () => {
+  it("checks real local signing without requiring browser settings for native iOS", async () => {
+    const generated = await generateKeyPair("ES256", { extractable: true });
+    vi.stubEnv("APPLE_PRIVATE_KEY_FILE", "");
+    vi.stubEnv("APPLE_PRIVATE_KEY", await exportPKCS8(generated.privateKey));
+    vi.stubEnv("APPLE_TEAM_ID", "test-team");
+    vi.stubEnv("APPLE_KEY_ID", "test-key");
+    vi.stubEnv("APPLE_SERVICE_ID", "");
+    vi.stubEnv("APPLE_TOKEN_ENCRYPTION_KEY_FILE", "");
+    vi.stubEnv("APPLE_TOKEN_ENCRYPTION_KEY", "a".repeat(64));
+    await expect(assertAppleSignInConfigured(APPLE_NATIVE_CLIENT_ID)).resolves.toBeUndefined();
+    await expect(assertAppleSignInConfigured()).rejects.toThrow("APPLE_SERVICE_ID");
+  });
   it("requires a dedicated 256-bit key", () => {
     vi.stubEnv("APPLE_TOKEN_ENCRYPTION_KEY", "short");
     expect(() => encryptAppleToken("private-token")).toThrow("encryption is not configured");

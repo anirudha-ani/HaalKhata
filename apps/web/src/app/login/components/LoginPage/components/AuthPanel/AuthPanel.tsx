@@ -1,5 +1,5 @@
 "use client";
-/** Auth panel: the credential form and Google sign-in, as a desktop card or a mobile sheet. */
+/** Auth panel: configured identity providers and local credentials in a card or sheet. */
 
 import { LegalLinks } from "@/components/legal/LegalLinks/LegalLinks";
 import { useAppleSignIn } from "../../hooks/useAppleSignIn";
@@ -11,16 +11,17 @@ import styles from "../../LoginPage.module.css";
 import { PASSWORD_AUTH_ENABLED } from "@/app/login/constants/googleSignIn";
 
 /**
- * Renders the credential and Google sign-in controls without changing the
- * existing authentication behavior.
+ * Renders configured Google/Apple sign-in and local development credentials.
  *
- * @param props - Mobile visibility state and close action.
+ * @param props - Provider availability, mobile visibility state and close action.
  * @returns The desktop auth card or mobile sign-in sheet.
  */
 export function AuthPanel({
+  appleConfigured,
   mobileOpen,
   onMobileClose,
 }: {
+  appleConfigured: boolean;
   mobileOpen: boolean;
   onMobileClose: () => void;
 }) {
@@ -80,10 +81,10 @@ export function AuthPanel({
         </span>
       </div>
 
-      <button type="button" disabled={apple.isPending} onClick={apple.signIn}
+      {appleConfigured ? <button type="button" disabled={apple.isPending} onClick={apple.signIn}
         className="mb-3 w-full rounded-full bg-black px-4 py-3 text-sm font-semibold text-white disabled:opacity-50">
         {apple.isPending ? "Signing in…" : "Continue with Apple"}
-      </button>
+      </button> : null}
       {apple.error ? <p role="alert" className="mb-3 text-sm text-brand-600">{apple.error}</p> : null}
 
       <LegalLinks />
@@ -100,7 +101,7 @@ export function AuthPanel({
       ) : null}
 
 
-      {googleIsConfigured && PASSWORD_AUTH_ENABLED ? (
+      {(googleIsConfigured || appleConfigured) && PASSWORD_AUTH_ENABLED ? (
         <div className="my-5 flex items-center gap-3 text-[11px] font-semibold tracking-wide text-ink-soft uppercase">
           <span className="h-px flex-1 bg-line" /> or use a password <span className="h-px flex-1 bg-line" />
         </div>
