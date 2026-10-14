@@ -1,16 +1,9 @@
 /** Unit tests for the itemized-draft helpers shared by the scan flow and the expense form. */
 
 import { describe, expect, it } from "vitest";
-import {
-  draftCompleteness,
-  draftItemsFromLines,
-  draftTotals,
-  itemizedWarnings,
-  itemsPayload,
-  percentOfItems,
-  previewItemizedShares,
-  unassignedCount,
-} from "./itemDraft";
+import { draftCompleteness, draftItemsFromLines, draftTotals, unassignedCount } from "./itemDraft";
+import { itemizedWarnings } from "@haalkhata/shared/expense/form/itemizedWarnings";
+import { buildItemsPayload as itemsPayload, percentOfItems, previewItemizedShares } from "@haalkhata/shared/expense/form/splitForm";
 
 describe("itemized draft helpers", () => {
   it("sums items, tax and tip into the grand total", () => {
@@ -44,20 +37,30 @@ describe("itemized draft helpers", () => {
   });
 
   it("names the first thing to fix before a draft can be saved", () => {
-    const empty = draftTotals([], "0.00", "0.00", "USD");
-    expect(draftCompleteness([], empty)).toMatchObject({ ok: false, message: /at least one item/ });
+    expect(draftCompleteness([], "USD")).toMatchObject({ ok: false, message: /at least one item/ });
 
     const unpriced = draftItemsFromLines([{ name: "Naan", quantity: 1, totalCents: 0 }], "USD");
-    expect(draftCompleteness(unpriced, draftTotals(unpriced, "0", "0", "USD")).message).toMatch(/price/);
+    expect(draftCompleteness(unpriced, "USD").message).toMatch(/amount/);
 
     const unassigned = draftItemsFromLines([{ name: "Naan", quantity: 1, totalCents: 600 }], "USD");
     expect(unassignedCount(unassigned)).toBe(1);
-    expect(draftCompleteness(unassigned, draftTotals(unassigned, "0", "0", "USD")).message).toMatch(
-      /1 item still needs someone/,
+    expect(draftCompleteness(unassigned, "USD").message).toMatch(
+      /1 item is unassigned/,
     );
 
     unassigned[0].assignees = { "user-a": 1 };
-    expect(draftCompleteness(unassigned, draftTotals(unassigned, "0", "0", "USD")).ok).toBe(true);
+    expect(draftCompleteness(unassigned, "USD").ok).toBe(true);
+  });
+
+  it("rejects a missing line price even when another priced line makes the total positive", () => {
+    const items = draftItemsFromLines([
+      { name: "Meal", quantity: 1, totalCents: 1200, assignments: [{ userId: "you" }] },
+      { name: "Drink", quantity: 1, totalCents: 0, assignments: [{ userId: "you" }] },
+    ], "USD");
+    expect(draftTotals(items, "0", "0", "USD").grandTotalCents).toBe(1200);
+    expect(draftCompleteness(items, "USD")).toEqual({ ok: false, message: "1 item needs an amount" });
+    items[1].total = "3.00";
+    expect(draftCompleteness(items, "USD").ok).toBe(true);
   });
 
   it("previews per-person shares by portion, with tax and tip in proportion", () => {

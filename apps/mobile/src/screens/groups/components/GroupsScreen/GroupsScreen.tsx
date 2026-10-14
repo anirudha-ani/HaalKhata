@@ -20,7 +20,7 @@ import { GroupStatus } from "@haalkhata/shared/group/status";
 import { GROUP_ARCHIVE_EMPTY, GROUP_ARCHIVE_VIEWS } from "@haalkhata/shared/group/archiving";
 import { CurrencyPicker } from "@/components/ui/CurrencyPicker";
 import { colors, fonts, radii, spacing } from "@/lib/theme/theme";
-import { GROUP_TYPES, groupEmoji } from "../../constants/groupTypes";
+import { GROUP_TYPES, groupEmoji } from "@haalkhata/shared/group/groupTypes";
 import { useGroups } from "./hooks/useGroups";
 import { MAX_GROUP_NAME_LENGTH } from "@haalkhata/shared/text/limits";
 

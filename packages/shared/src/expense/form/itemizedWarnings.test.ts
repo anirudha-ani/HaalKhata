@@ -1,7 +1,7 @@
 /** Tests for the itemized summary's warning sentences. */
 
 import { describe, expect, it } from "vitest";
-import { itemizedWarnings } from "./itemizedWarnings";
+import { itemizedWarnings } from "@haalkhata/shared/expense/form/itemizedWarnings";
 
 describe("itemizedWarnings", () => {
   it("says nothing when every priced line has someone on it", () => {

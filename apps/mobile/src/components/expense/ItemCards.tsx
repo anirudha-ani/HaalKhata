@@ -7,7 +7,8 @@ import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { Avatar } from "@/components/ui/Avatar";
 import { formatMoney, parseMoneyInput } from "@haalkhata/shared/money/money";
 import { MAX_EXPENSE_ITEM_NAME_LENGTH } from "@haalkhata/shared/text/limits";
-import { isAssigned, percentOfItems } from "@/lib/expense/itemDraft";
+import { isAssigned } from "@/lib/expense/itemDraft";
+import { percentOfItems } from "@haalkhata/shared/expense/form/splitForm";
 import type { ItemDraft } from "@/lib/hooks/useItemDraft";
 import { colors, radii, spacing } from "@/lib/theme/theme";
 import {

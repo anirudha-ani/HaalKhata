@@ -26,7 +26,7 @@ import { safeActivityPath } from "@haalkhata/shared/navigation/activityPath";
 import { localDate } from "@haalkhata/shared/time/localTime";
 import { getGreeting } from "@haalkhata/shared/greeting";
 import { colors, fonts, radii, spacing } from "@/lib/theme/theme";
-import { groupEmoji } from "../../../groups/constants/groupTypes";
+import { groupEmoji } from "@haalkhata/shared/group/groupTypes";
 import { PayMethodPrompt } from "../PayMethodPrompt/PayMethodPrompt";
 import { useDashboard } from "./hooks/useDashboard";
 

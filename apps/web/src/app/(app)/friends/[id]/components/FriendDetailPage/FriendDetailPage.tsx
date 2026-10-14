@@ -4,7 +4,7 @@
 import { SafetyActions } from "@/components/safety/SafetyActions/SafetyActions";
 import Link from "next/link";
 import { ArrowLeft, Bell, Check, HandCoins, Plus, UserPlus, Wallet } from "lucide-react";
-import { groupEmoji } from "../../../../groups/constants/groupTypes";
+import { groupEmoji } from "@haalkhata/shared/group/groupTypes";
 import { Avatar } from "@/components/ui/Avatar/Avatar";
 import { Money } from "@/components/ui/Money/Money";
 import { SettleUpModal } from "@/components/modals/SettleUpModal/SettleUpModal";

@@ -1,7 +1,7 @@
 /** Tests for the per-person preview of the non-itemized split modes. */
 
 import { describe, expect, it } from "vitest";
-import { previewSplitShares, type SplitFormState } from "./splitForm";
+import { previewSplitShares, type SplitFormState } from "@haalkhata/shared/expense/form/splitForm";
 
 const base: Omit<SplitFormState, "splitType" | "totalCents"> = {
   participantIds: ["you", "adnan", "ani"],

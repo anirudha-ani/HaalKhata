@@ -13,7 +13,7 @@ import { centsToInput } from "@haalkhata/shared/money/money";
 import { CATEGORIES } from "@haalkhata/shared/money/money.constants";
 import { spacing } from "@/lib/theme/theme";
 import type { ExpenseFormInitial } from "../../../../utils/initialValues";
-import { previewSplitShares } from "../../../../utils/splitForm";
+import { previewSplitShares } from "@haalkhata/shared/expense/form/splitForm";
 import { useNewExpense } from "../../hooks/useNewExpense";
 import type { useNewExpenseAPI } from "../../hooks/useNewExpenseAPI";
 import { PayerEditor } from "../PayerEditor/PayerEditor";

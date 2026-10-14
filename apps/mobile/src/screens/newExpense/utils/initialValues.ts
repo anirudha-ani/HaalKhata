@@ -3,7 +3,8 @@
 import type { Expense } from "@haalkhata/protogen/expense/v1/expense_pb";
 import { centsToInput, todayISO } from "@haalkhata/shared/money/money";
 import { draftItemsFromLines, type DraftItem } from "@/lib/expense/itemDraft";
-import type { FormSplitType } from "./splitForm";
+
+import type { FormSplitType } from "@haalkhata/shared/expense/form/splitForm";
 
 /** Initial values for every field of the expense form. */
 export interface ExpenseFormInitial {

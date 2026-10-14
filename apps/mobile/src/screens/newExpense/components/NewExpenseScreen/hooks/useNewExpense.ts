@@ -12,7 +12,8 @@ import {
   resolveExpensePeople,
   toggleExpensePerson,
 } from "@haalkhata/shared/expense/participants";
-import { draftItemsFromLines, itemsPayload } from "@/lib/expense/itemDraft";
+import { draftItemsFromLines } from "@/lib/expense/itemDraft";
+import { buildItemsPayload as itemsPayload } from "@haalkhata/shared/expense/form/splitForm";
 import { useItemDraft } from "@/lib/hooks/useItemDraft";
 import { prepareReceiptPhoto } from "../../../utils/prepareReceiptPhoto";
 import { PICKER_OPTIONS } from "../../../constants/imagePicker";
@@ -22,7 +23,7 @@ import {
   checkPayers,
   checkSplit,
   type FormSplitType,
-} from "../../../utils/splitForm";
+} from "@haalkhata/shared/expense/form/splitForm";
 import type { ReceiptPhotoInput, useNewExpenseAPI } from "./useNewExpenseAPI";
 
 /** A photo picked for scanning, plus its local URI for the preview. */

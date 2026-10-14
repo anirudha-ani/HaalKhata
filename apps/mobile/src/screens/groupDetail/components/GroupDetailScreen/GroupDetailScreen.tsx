@@ -29,7 +29,7 @@ import {
   GROUP_ARCHIVE_ACTIONS,
 } from "@haalkhata/shared/group/archiving";
 import { GroupStatus } from "@haalkhata/shared/group/status";
-import { groupEmoji } from "../../../groups/constants/groupTypes";
+import { groupEmoji } from "@haalkhata/shared/group/groupTypes";
 import { TABS } from "../../constants/tabs";
 import { BalancesPanel } from "./components/BalancesPanel/BalancesPanel";
 import { ArchiveGroupSheet } from "./components/ArchiveGroupSheet/ArchiveGroupSheet";

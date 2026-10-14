@@ -11,7 +11,7 @@ import {
   percentOfItems,
   shareEveryItemWith,
   type DraftLineItem,
-} from "@/lib/expense/splitForm";
+} from "@haalkhata/shared/expense/form/splitForm";
 
 /**
  * Builds a draft line item with sensible defaults for the fields a test
@@ -59,6 +59,16 @@ describe("checkItemized", () => {
     const check = checkItemized([draftItem({ total: "" })], "USD");
     expect(check.ok).toBe(false);
     expect(check.message).toBe("1 item needs an amount");
+  });
+
+  it.each([
+    ["JPY", "1200", "0.50"],
+    ["KWD", "1.250", "0.0001"],
+  ])("uses the same currency precision for every line in %s", (currency, valid, invalid) => {
+    const items = [draftItem({ total: valid }), draftItem({ key: "second", total: invalid })];
+    expect(checkItemized(items, currency)).toEqual({ ok: false, message: "1 item needs an amount" });
+    items[1].total = valid;
+    expect(checkItemized(items, currency).ok).toBe(true);
   });
 
   it("rejects items nobody is assigned to", () => {

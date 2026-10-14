@@ -2,7 +2,7 @@
 
 import type { Expense } from "@haalkhata/protogen/expense/v1/expense_pb";
 import { centsToInput, todayISO } from "@haalkhata/shared/money/money";
-import type { DraftLineItem, FormSplitType } from "@/lib/expense/splitForm";
+import type { DraftLineItem, FormSplitType } from "@haalkhata/shared/expense/form/splitForm";
 import { nextDraftKey } from "@haalkhata/shared/expense/draftKey";
 
 /** Initial values for every field of the expense form. */

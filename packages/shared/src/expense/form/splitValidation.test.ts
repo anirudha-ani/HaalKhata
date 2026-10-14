@@ -1,7 +1,7 @@
 /** Unit tests for the expense-form split/payer validation and payload assembly. */
 
 import { describe, expect, it } from "vitest";
-import { buildSplitSpecs, checkPayers, checkSplit, previewSplitShares } from "./splitForm";
+import { buildSplitSpecs, checkPayers, checkSplit, previewSplitShares } from "@haalkhata/shared/expense/form/splitForm";
 
 const participants = ["user-a", "user-b", "user-c"];
 

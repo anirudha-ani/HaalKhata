@@ -19,7 +19,7 @@ import { scopeLabel } from "@haalkhata/shared/expense/settlePosition";
 import { formatMoney } from "@haalkhata/shared/money/money";
 import { localDate } from "@haalkhata/shared/time/localTime";
 import { colors, fonts, radii, spacing } from "@/lib/theme/theme";
-import { groupEmoji } from "../../../groups/constants/groupTypes";
+import { groupEmoji } from "@haalkhata/shared/group/groupTypes";
 import { useFriendLedger } from "./hooks/useFriendLedger";
 
 /**

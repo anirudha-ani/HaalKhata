@@ -27,7 +27,7 @@ import {
   shareEveryItemWith,
   type DraftLineItem,
   type FormSplitType,
-} from "@/lib/expense/splitForm";
+} from "@haalkhata/shared/expense/form/splitForm";
 import type { ExpenseFormInitial } from "../../../utils/initialValues";
 import type { useNewExpenseAPI } from "./useNewExpenseAPI";
 import { omitKey } from "../utils/omitKey";
