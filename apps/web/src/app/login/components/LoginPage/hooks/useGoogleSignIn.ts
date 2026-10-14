@@ -19,7 +19,7 @@ import { loadGoogleScript } from "../utils/loadGoogleScript";
  *
  * @returns `setButtonElement` to pass as a callback ref on an empty div, the
  *   last `error` message, `isPending` while the token is being exchanged, and
- *   `isConfigured` for whether the button will appear at all.
+ *   `isConfigured`, `isLoading`, and `retry` for recoverable startup failures.
  */
 export function useGoogleSignIn() {
   const queryClient = useQueryClient();
@@ -28,6 +28,8 @@ export function useGoogleSignIn() {
   // script load.
   const [buttonElement, setButtonElement] = useState<HTMLDivElement | null>(null);
   const [error, setError] = useState("");
+  const [isLoading, setIsLoading] = useState(true);
+  const [attempt, setAttempt] = useState(0);
   const isConfigured = GOOGLE_CLIENT_ID.length > 0;
 
   const { mutate, isPending } = useMutation({
@@ -39,10 +41,12 @@ export function useGoogleSignIn() {
   useEffect(() => {
     if (!isConfigured || !buttonElement) return;
     let cancelled = false;
+    let resizeObserver: ResizeObserver | undefined;
 
     Promise.all([loadGoogleScript(), authClient.beginGoogleSignIn({})])
       .then(([_scriptReady, challenge]) => {
-        if (cancelled || !window.google) return;
+        if (cancelled) return;
+        if (!window.google) throw new Error("Google sign-in did not load");
         window.google.accounts.id.initialize({
           client_id: GOOGLE_CLIENT_ID,
           nonce: challenge.nonce,
@@ -51,18 +55,41 @@ export function useGoogleSignIn() {
             mutate(response.credential);
           },
         });
-        window.google.accounts.id.renderButton(buttonElement, GOOGLE_BUTTON_OPTIONS);
+        /** Renders Google's button at the card width, including when a mobile sheet opens. */
+        const renderButton = () => {
+          const width = Math.min(400, Math.floor(buttonElement.clientWidth));
+          if (!width) return;
+          buttonElement.replaceChildren();
+          window.google?.accounts.id.renderButton(buttonElement, { ...GOOGLE_BUTTON_OPTIONS, width });
+        };
+        renderButton();
+        resizeObserver = new ResizeObserver(renderButton);
+        resizeObserver.observe(buttonElement);
+        setIsLoading(false);
       })
       .catch(() => {
-        if (!cancelled) setError("could not start Google sign-in, please try again");
+        if (!cancelled) {
+          setIsLoading(false);
+          setError("Google sign-in couldn’t load. Please try again.");
+        }
       });
 
     return () => {
       cancelled = true;
+      resizeObserver?.disconnect();
     };
     // `mutate` is referentially stable in React Query, so this runs once per
     // mounted host element rather than on every mutation state change.
-  }, [isConfigured, buttonElement, mutate]);
+  }, [isConfigured, buttonElement, mutate, attempt]);
 
-  return { setButtonElement, error, isPending, isConfigured };
+  return {
+    setButtonElement, error, isPending, isConfigured, isLoading,
+    /** Retries provider initialization with a fresh server-issued nonce. */
+    retry: () => {
+      buttonElement?.replaceChildren();
+      setError("");
+      setIsLoading(true);
+      setAttempt((previous) => previous + 1);
+    },
+  };
 }

@@ -27,7 +27,10 @@ export function loadGoogleScript(): Promise<void> {
     script.src = GOOGLE_SCRIPT_SOURCE;
     script.async = true;
     script.onload = () => resolve();
-    script.onerror = () => reject(new Error("load failed"));
+    script.onerror = () => {
+      script.remove();
+      reject(new Error("load failed"));
+    };
     document.head.appendChild(script);
   });
 }

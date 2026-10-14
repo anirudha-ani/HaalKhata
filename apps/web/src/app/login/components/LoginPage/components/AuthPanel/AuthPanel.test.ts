@@ -12,6 +12,7 @@ import { AuthPanel } from "./AuthPanel";
 
 vi.mock("@/lib/api/connect", () => ({ authClient: { getSignInOptions: vi.fn(), beginAppleSignIn: vi.fn(), completeAppleSignIn: vi.fn() }, errorMessage: (error: Error) => error.message }));
 vi.mock("@/lib/auth/completeSignIn", () => ({ completeBrowserSignIn: vi.fn() }));
+vi.mock("@/app/login/constants/googleSignIn", () => ({ GOOGLE_CLIENT_ID: "test-google-client", PASSWORD_AUTH_ENABLED: true }));
 vi.mock("../../hooks/useLogin", () => ({ useLogin: () => ({ mode: "login", identifier: "", password: "", error: "", isPending: false, setIdentifier: vi.fn(), setPassword: vi.fn(), switchMode: vi.fn(), submit: vi.fn() }) }));
 vi.mock("../../hooks/useGoogleSignIn", () => ({ useGoogleSignIn: () => ({ isConfigured: true, isPending: false, error: "", setButtonElement: (element: HTMLDivElement | null) => { if (element) element.textContent = "Continue with Google"; } }) }));
 

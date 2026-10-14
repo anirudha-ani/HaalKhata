@@ -78,6 +78,14 @@ continue to use the selected EAS environment.
 
 ## Browser sign-in (desktop, mobile Safari, and iPad Safari)
 
+The login card groups provider controls above the password form, with privacy
+and support links at the bottom. To check locally, run `./dev.sh`, open `/login`
+and compare a desktop window with a phone/iPad window (tap **Sign in** to open
+the sheet). If Google's script or the local challenge request fails, the card
+shows **Retry Google sign-in**. Restore connectivity and retry without reloading;
+the retry fetches a fresh nonce and reloads a failed provider script. Receipt
+sharing consent stays with the receipt upload flow.
+
 1. Start the local app with `./dev.sh`. Point a stable HTTPS development
    tunnel/domain at `http://127.0.0.1:3000`. Preserve the public `Host` header;
    rewriting it to localhost makes browser CSRF checks reject requests. Use

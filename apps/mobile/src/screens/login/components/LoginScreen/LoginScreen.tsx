@@ -53,7 +53,6 @@ export function LoginScreen() {
 
             <View style={styles.card}>
             <AppleSignInButton />
-            <LegalLinks />
             {GOOGLE_SIGN_IN_CONFIGURED ? (
               <GoogleSignInButton />
             ) : PASSWORD_AUTH_ENABLED ? null : (
@@ -118,6 +117,7 @@ export function LoginScreen() {
                 ) : null}
               </>
             ) : null}
+            <LegalLinks />
             </View>
           </View>
         </ScrollView>
