@@ -5,6 +5,7 @@ import { resolve } from "node:path";
 import { parseEnv } from "node:util";
 import { APPLE_IDENTITY_NAMES, APPLE_KEY_FILENAME, PASSWORD_PLACEHOLDERS, PUBLIC_ENVIRONMENT_NAMES, SECRET_ENVIRONMENT_NAMES } from "./environment.constants.mjs";
 import { prepareAppleKey } from "./appleKey.mjs";
+import { groupSecretSection } from "./secretSection.mjs";
 
 /** Repository root shared by install-deps.sh and the standalone setup command. */
 const REPOSITORY_ROOT = resolve(import.meta.dirname, "../..");
@@ -107,13 +108,15 @@ export function setupEnvironment({ directory = REPOSITORY_ROOT, report = console
   const source = exists ? readFileSync(filename, "utf8") : example;
   const result = prefillEnvironment(source, example);
   const appleKey = prepareAppleKey(directory, result.text);
-  if (!exists || appleKey.text !== source) writeFileSync(filename, appleKey.text, { mode: 0o600, flag: exists ? "w" : "wx" });
+  const prepared = groupSecretSection(appleKey.text);
+  if (!exists || prepared !== source) writeFileSync(filename, prepared, { mode: 0o600, flag: exists ? "w" : "wx" });
   chmodSync(filename, 0o600);
   report(exists ? "Updated .env; Apple key path managed, other existing values and secrets preserved." : "Created .env with known public configuration and a local Apple key path; secrets are blank.");
   report(result.filled.length ? `Prefilled: ${result.filled.join(", ")}.` : "Known public defaults are already present; no configured values were replaced.");
+  report("Secret fields are grouped at the bottom of .env under 'Secrets (fill these in)'.");
   report(`APPLE_PRIVATE_KEY_FILE points to root ${APPLE_KEY_FILENAME}; existing file contents are never overwritten.`);
   if (appleKey.needsKey) report(`- Apple sign-in: replace ALL contents of root ${APPLE_KEY_FILENAME} with your original downloaded .p8 key, including its BEGIN/END PRIVATE KEY lines. The placeholder cannot authenticate.`);
-  for (const action of manualEnvironmentActions(parseEnv(appleKey.text))) report(`- ${action}`);
+  for (const action of manualEnvironmentActions(parseEnv(prepared))) report(`- ${action}`);
   report("SESSION_SECRET is optional in development: the server keeps a local key automatically. Production requires your own configured secret.");
   report("Run ./dev.sh to prepare the environment, check Apple configuration and start the app. --mobile-ios selects the native check; pnpm auth:check remains an optional standalone diagnostic. See docs/local-auth.md.");
 }

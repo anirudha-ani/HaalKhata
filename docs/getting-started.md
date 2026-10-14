@@ -53,6 +53,12 @@ once. You supply database/provider secrets yourself. Reruns never generate
 or rotate a secret. New `.env` files contain no passwords or keys, and setup
 sets file permissions to owner-only read/write.
 
+All secret fields and their file settings are grouped at the bottom under
+**Secrets (fill these in)**, ready to copy and paste. Public IDs and ordinary
+configuration stay above. Installation and `./dev.sh` maintain this layout,
+preserve existing values (including multiline keys), and keep the last value
+when a secret has duplicate assignments.
+
 For Apple, setup creates an ignored root `AppleAuthKey.p8` placeholder and always
 sets `APPLE_PRIVATE_KEY_FILE` to its absolute path. Replace that file's entire
 contents with your original Apple `.p8` key, including the BEGIN/END lines;

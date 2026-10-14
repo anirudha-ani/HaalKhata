@@ -8,7 +8,7 @@ import { join } from "node:path";
 import { parseEnv } from "node:util";
 import { test } from "node:test";
 import { manualEnvironmentActions, prefillEnvironment, setupEnvironment } from "./environment.mjs";
-import { APPLE_KEY_FILENAME, APPLE_KEY_PLACEHOLDER, SECRET_ENVIRONMENT_NAMES } from "./environment.constants.mjs";
+import { APPLE_KEY_FILENAME, APPLE_KEY_PLACEHOLDER, SECRET_ENVIRONMENT_NAMES, SECRET_SECTION_HEADER } from "./environment.constants.mjs";
 
 /** Real template ensures new clones get the configuration documented by the installer. */
 const EXAMPLE = readFileSync(new URL("../../.env.example", import.meta.url), "utf8");
@@ -43,6 +43,14 @@ test("a fresh clone gets known public IDs, blank secrets, and private file permi
     }
     assert.ok(output.includes("placeholder cannot authenticate"));
     const firstRun = readFileSync(filename, "utf8");
+    const secretStart = firstRun.indexOf(SECRET_SECTION_HEADER);
+    const ordinary = parseEnv(firstRun.slice(0, secretStart));
+    const secrets = parseEnv(firstRun.slice(secretStart));
+    assert.ok(secretStart >= 0);
+    assert.ok(ordinary.GOOGLE_CLIENT_ID);
+    assert.ok(!Object.hasOwn(ordinary, "POSTGRES_PASSWORD"));
+    assert.ok(Object.hasOwn(secrets, "POSTGRES_PASSWORD"));
+    assert.ok(!Object.hasOwn(secrets, "GOOGLE_CLIENT_ID"));
     setupEnvironment({ directory, report: () => {} });
     assert.equal(readFileSync(filename, "utf8"), firstRun);
   } finally {
@@ -82,7 +90,7 @@ test("a different Apple team and native Google audience do not acquire unrelated
   assert.equal(configured.SUPPORT_EMAIL, "custom@example.com");
 });
 
-test("only the Apple key pointer is managed; other secrets and the old source survive without being printed", () => {
+test("secrets move to the bottom without changing their values or printing them", () => {
   const directory = mkdtempSync(join(tmpdir(), "haalkhata-setup-"));
   const messages = [];
   try {
@@ -92,7 +100,6 @@ test("only the Apple key pointer is managed; other secrets and the old source su
     writeFileSync(filename, source);
     chmodSync(filename, 0o644);
     setupEnvironment({ directory, report: (message) => messages.push(message) });
-    assert.ok(readFileSync(filename, "utf8").startsWith(source));
     const configured = parseEnv(readFileSync(filename, "utf8"));
     assert.equal(configured.APPLE_PRIVATE_KEY_FILE, join(directory, APPLE_KEY_FILENAME));
     assert.equal(configured.APPLE_TOKEN_ENCRYPTION_KEY_FILE, "/private/encryption-key");

@@ -25,3 +25,9 @@ export const SECRET_ENVIRONMENT_NAMES = [
   "POSTGRES_PASSWORD", "DATABASE_URL", "SESSION_SECRET", "SESSION_SECRET_PREVIOUS",
   "APPLE_PRIVATE_KEY", "APPLE_TOKEN_ENCRYPTION_KEY", "TWILIO_API_KEY_SECRET", "COMPATIBLE_AI_API_KEY",
 ];
+
+/** One stable marker separates editable credentials from ordinary configuration. */
+export const SECRET_SECTION_HEADER = "# --- Secrets (fill these in) ----------------------------------------------";
+
+/** Complete dotenv assignments, including quoted multiline values and inline comments. */
+export const ENVIRONMENT_ASSIGNMENT_PATTERN = /^[\t ]*(?:export[\t ]+)?([A-Za-z_][A-Za-z0-9_]*)[\t ]*=[\t ]*(?:"(?:\\[\s\S]|[^"\\])*"|'(?:\\[\s\S]|[^'\\])*'|`(?:\\[\s\S]|[^`\\])*`|[^\r\n]*)[^\r\n]*(?:\r?\n|$)/gm;

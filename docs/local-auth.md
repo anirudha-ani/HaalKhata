@@ -11,7 +11,9 @@ installation runs the same preparation automatically. HaalKhata's known
 public IDs are already filled in; existing values and secrets are preserved
 except for the managed `APPLE_PRIVATE_KEY_FILE` path described below.
 The command prints the secrets and machine-specific settings you still need
-to provide. Keep your existing database settings in the repository-root
+to provide. Secret fields live together at the bottom of `.env` under
+**Secrets (fill these in)**; setup preserves their values when rearranging
+the file. Keep your existing database settings in the repository-root
 `.env`; the following shows the configuration for a different account too:
 
 ```dotenv
