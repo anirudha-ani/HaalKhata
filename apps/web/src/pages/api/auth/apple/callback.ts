@@ -1,8 +1,8 @@
 /** Apple form-post callback: decode transport fields, verify through the usecase, redirect. */
 
 import type { NextApiRequest, NextApiResponse } from "next";
-import { handleAppleCallback } from "@/server/auth/usecase/appleSignIn.usecase";
-import { ensureMigrated } from "@/server/common/db";
+import { handleAppleCallback } from "@/server/auth/usecase/apple/appleSignIn.usecase";
+import { ensureMigrated } from "@/server/common/db/db";
 
 /** Restricts Apple's form post to a small body; it never accepts a local session token. */
 export const config = { api: { bodyParser: { sizeLimit: "32kb" } } };

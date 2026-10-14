@@ -1,7 +1,7 @@
 /** All SQL for the notifications table. */
 
 import type { PoolClient } from "pg";
-import { execute, newId, query, queryOne, transaction } from "@/server/common/db";
+import { execute, newId, query, queryOne, transaction } from "@/server/common/db/db";
 
 /** A row from the notifications table (column names mirror SQL). */
 export interface NotificationRow {

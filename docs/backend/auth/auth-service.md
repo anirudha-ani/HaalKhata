@@ -17,9 +17,9 @@ The Auth Service is essential for:
 - **Profile:** display name, default currency, onboarding state.
 
 Implementation: [handler.ts](../../../apps/web/src/server/auth/handler.ts) →
-[auth.usecase.ts](../../../apps/web/src/server/auth/usecase/auth.usecase.ts),
-[accountMerge.usecase.ts](../../../apps/web/src/server/auth/usecase/accountMerge.usecase.ts),
-[phoneVerification.ts](../../../apps/web/src/server/auth/usecase/phoneVerification.ts).
+[auth.usecase.ts](../../../apps/web/src/server/auth/usecase/account/auth.usecase.ts),
+[accountMerge.usecase.ts](../../../apps/web/src/server/auth/usecase/merge/accountMerge.usecase.ts),
+[phoneVerification.ts](../../../apps/web/src/server/auth/usecase/phone/phoneVerification.ts).
 Session mechanics (token format, sliding renewal, revocation, cookie rules)
 are documented once in
 [conventions.md § Authentication & Sessions](../common/conventions.md#authentication--sessions).
@@ -562,8 +562,8 @@ collision would require. One RPC, two calls:
 
 `BeginAppleSignIn`, `LogInWithApple`, and `CompleteAppleSignIn` are available in
 production. Implementation:
-[appleSignIn.usecase.ts](../../../apps/web/src/server/auth/usecase/appleSignIn.usecase.ts)
-and [apple.provider.ts](../../../apps/web/src/server/auth/usecase/apple.provider.ts).
+[appleSignIn.usecase.ts](../../../apps/web/src/server/auth/usecase/apple/appleSignIn.usecase.ts)
+and [apple.provider.ts](../../../apps/web/src/server/auth/usecase/apple/apple.provider.ts).
 
 | RPC | Request | Result |
 | --- | --- | --- |
@@ -598,7 +598,7 @@ capabilities, grouped IDs, key files and deploy variables.
 `{ "confirmation": "DELETE" }` and returns `google.protobuf.Empty`. The target
 is always the authenticated caller; a user ID cannot be supplied by the client.
 
-[accountDeletion.usecase.ts](../../../apps/web/src/server/auth/usecase/accountDeletion.usecase.ts)
+[accountDeletion.usecase.ts](../../../apps/web/src/server/auth/usecase/deletion/accountDeletion.usecase.ts)
 locks the account, revokes its encrypted Apple grants and erases personal data
 within one database transaction. A provider failure leaves the local account
 intact and retryable. Outstanding balances never prevent deletion.

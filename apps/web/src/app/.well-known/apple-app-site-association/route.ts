@@ -1,6 +1,6 @@
 /** Public, non-redirecting iOS universal-link association. */
 
-import { appleAppAssociation } from "@/server/common/mobileRelease";
+import { appleAppAssociation } from "@/server/common/readiness/mobileRelease";
 
 /** Association settings are resolved from runtime deployment configuration. */
 export const dynamic = "force-dynamic";

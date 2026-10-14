@@ -34,7 +34,8 @@ apps/web/                    Next.js app
     usecase/                   ALL business logic. No SQL, no transport types.
     handler.ts                 thin Connect handler. No SQL, no business logic.
     <domain>.constants.ts      constants for this domain
-  src/server/common/         db, errors, logger, rateLimit (shared infra)
+  src/server/common/         shared infra: db/, ledger/, money/, secrets/,
+                             rateLimit/, validation/, readiness/
   src/server/api/connect/    context.ts (auth/cookies/error map), routes.ts, csrf.ts
   src/pages/api/connect/     [[...connect]].ts — mount point only
   src/app/<route>/           UI (thin page.tsx → components/<Page>/<Page>.tsx,
@@ -62,7 +63,11 @@ apps/mobile/                 Expo (React Native) app — @haalkhata/mobile
   beyond generated proto messages. Balance math lives in `usecase/domain/`;
   split math is in `@haalkhata/shared/expense/` (the client previews with it).
 - `repo`: SQL only. No business decisions.
-- UI must NOT import `@/server/*/repo/*` or `@/server/common/db` — go
+- Within a crowded domain/layer, group by capability (for example
+  `auth/usecase/apple/`, `deletion/`, `merge/`, `phone/`, `session/`). Keep
+  tests beside the implementation. Shared infrastructure uses concern
+  folders under `common/`; do not flatten it back into one directory.
+- UI must NOT import `@/server/*/repo/**` or `@/server/common/db/**` — go
   through a usecase (server) or the Connect client (browser). The eslint
   `no-restricted-imports` rule enforces this; `src/pages/api/**` and
   `src/server/**` are exempt.
@@ -182,7 +187,7 @@ read paths you'll add. Never edit an applied migration.
 
 SQL only. Define a `<Entity>Row` interface (column names mirror SQL), then
 `insertBudget` / `findBudgetById` / `listBudgets` etc. Use `query`,
-`queryOne`, `execute`, `transaction`, `newId` from `@/server/common/db`.
+`queryOne`, `execute`, `transaction`, `newId` from `@/server/common/db/db`.
 No business logic, no validation beyond what the DB enforces.
 
 ### 4. Usecase layer: `src/server/budgets/usecase/budget.usecase.ts`
@@ -320,7 +325,7 @@ with colocated tests. Mobile-specific rules:
   shorter-than-16-byte credentials. Don't weaken these semantic checks into
   exact URL comparisons; Compose and direct deployments use different hosts.
 - **Don't read a secret from `process.env`** — go through `readSecret()` in
-  `common/secrets.ts`, which honours the Docker `<NAME>_FILE` convention
+  `common/secrets/secrets.ts`, which honours the Docker `<NAME>_FILE` convention
   production relies on. Without `DATABASE_URL` the pool assembles its URL
   from `POSTGRES_PASSWORD(_FILE)` and the `POSTGRES_*` parts.
 - **Money is per currency.** Balance maps are keyed by currency
@@ -341,7 +346,7 @@ with colocated tests. Mobile-specific rules:
   statements, and a settlement committing between two of them yields a
   position that never existed. Every read that returns a figure
   (`getFriendLedger`, `getOverallBalances`, `getGroupBalances`,
-  `listExpenses`, `getExpense`) runs inside `snapshot()` from `common/db.ts`
+  `listExpenses`, `getExpense`) runs inside `snapshot()` from `common/db/db.ts`
   and passes its `client` to every statement, one at a time — one sent to
   the pool reads outside the snapshot and holds a second connection.
 - **A net settlement is one unit.** Its cash and `offset` rows share a

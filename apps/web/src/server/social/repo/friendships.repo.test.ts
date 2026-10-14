@@ -10,7 +10,7 @@ const database = vi.hoisted(() => ({
   transaction: vi.fn(),
 }));
 
-vi.mock("@/server/common/db", () => database);
+vi.mock("@/server/common/db/db", () => database);
 
 import {
   countIncomingFriendRequests,

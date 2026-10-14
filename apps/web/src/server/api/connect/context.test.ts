@@ -14,7 +14,7 @@ vi.mock("@/server/auth/repo/users.repo", () => ({ findUserTokenVersion: vi.fn() 
 import { UsecaseError } from "@/server/common/errors";
 import { logError } from "@/server/common/logger";
 import { findUserTokenVersion } from "@/server/auth/repo/users.repo";
-import { createToken, verifyToken } from "@/server/auth/usecase/auth.usecase";
+import { createToken, verifyToken } from "@/server/auth/usecase/session/session";
 import { SESSION_COOKIE } from "./connect.constants";
 import { requireUser, runUsecase } from "./context";
 

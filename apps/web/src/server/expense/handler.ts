@@ -6,7 +6,7 @@ import * as expenses from "@/server/expense/usecase/expense.usecase";
 import * as balances from "@/server/expense/usecase/balance.usecase";
 import { requireUser, runUsecase } from "@/server/api/connect/context";
 import { requireRateLimitedUser, RPC_RATE_LIMITS } from "@/server/api/connect/rpcRateLimit";
-import { assertOperationId } from "@/server/common/operations";
+import { assertOperationId } from "@/server/common/ledger/operations";
 
 /**
  * ConnectRPC implementation of ExpenseService. Every method only resolves the

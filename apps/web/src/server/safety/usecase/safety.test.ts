@@ -2,7 +2,7 @@
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("../repo/safety.repo", () => ({ visibleUser: vi.fn(), insertBlock: vi.fn(), removeBlock: vi.fn(), listBlocks: vi.fn(), commentTarget: vi.fn(), insertReport: vi.fn() }));
-vi.mock("@/server/common/db", () => ({ transaction: async (work: (client: object) => unknown) => work({}) }));
+vi.mock("@/server/common/db/db", () => ({ transaction: async (work: (client: object) => unknown) => work({}) }));
 vi.mock("@/server/expense/usecase/expense.usecase", () => ({ getExpense: vi.fn() }));
 vi.mock("@/server/group/repo/groups.repo", () => ({ isMember: vi.fn(), findGroupById: vi.fn() }));
 vi.mock("@/server/auth/repo/users.repo", () => ({ findUserById: vi.fn() }));

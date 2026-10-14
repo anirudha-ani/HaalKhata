@@ -35,7 +35,7 @@ describe.skipIf(!await databaseReachable())("safety against Postgres", () => {
     await admin.query(`DROP DATABASE IF EXISTS ${TEST_DATABASE} WITH (FORCE)`);
     await admin.query(`CREATE DATABASE ${TEST_DATABASE}`); await admin.end();
     process.env.DATABASE_URL = TEST_URL;
-    await (await import("@/server/common/db")).ensureMigrated();
+    await (await import("@/server/common/db/db")).ensureMigrated();
     database = new Client({ connectionString: TEST_URL }); await database.connect();
     await database.query(`INSERT INTO users (id, name, email, avatar_color, google_sub) VALUES
       ('viewer', 'Viewer', 'viewer@example.com', '#c73e2e', 'viewer-sub'), ('author', 'Author', 'author@example.com', '#c73e2e', 'author-sub'),
@@ -94,8 +94,9 @@ describe.skipIf(!await databaseReachable())("safety against Postgres", () => {
     moderate("suspend", reportId);
     const users = await import("@/server/auth/repo/users.repo");
     expect(await users.findUserTokenVersion("author")).toBeUndefined();
-    const authentication = await import("@/server/auth/usecase/auth.usecase");
-    expect(await authentication.sessionUser(authentication.createToken("author", 1))).toBeNull();
+    const authentication = await import("@/server/auth/usecase/account/auth.usecase");
+    const session = await import("@/server/auth/usecase/session/session");
+    expect(await authentication.sessionUser(session.createToken("author", 1))).toBeNull();
     moderate("resume", reportId); expect(await users.findUserTokenVersion("author")).toBe(2);
     expect((await database.query("SELECT SUM(owed_cents)::int AS cents FROM expense_splits")).rows[0].cents).toBe(1000);
   });

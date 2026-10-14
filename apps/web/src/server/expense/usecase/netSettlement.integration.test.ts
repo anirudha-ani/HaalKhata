@@ -145,8 +145,8 @@ describe.skipIf(!reachable)("net settlement against Postgres", () => {
   let netWithUser: typeof import("./balance.usecase").netWithUser;
   let userNetInGroup: typeof import("./balance.usecase").userNetInGroup;
   let getFriendLedger: typeof import("./balance.usecase").getFriendLedger;
-  let mergeAccounts: typeof import("@/server/auth/repo/accountMerge.repo").mergeAccounts;
-  let snapshot: typeof import("@/server/common/db").snapshot;
+  let mergeAccounts: typeof import("@/server/auth/repo/merge/accountMerge.repo").mergeAccounts;
+  let snapshot: typeof import("@/server/common/db/db").snapshot;
   let closePool: () => Promise<void>;
 
   /**
@@ -217,7 +217,7 @@ describe.skipIf(!reachable)("net settlement against Postgres", () => {
     // Set before importing db.ts, which reads DATABASE_URL when it first
     // builds the pool.
     process.env.DATABASE_URL = TEST_URL;
-    const dbModule = await import("@/server/common/db");
+    const dbModule = await import("@/server/common/db/db");
     await dbModule.ensureMigrated();
     ({ snapshot } = dbModule);
     closePool = async () => {
@@ -230,7 +230,7 @@ describe.skipIf(!reachable)("net settlement against Postgres", () => {
     ({ getFriendLedger, netWithUser, owedByScope, userNetInGroup } = await import(
       "./balance.usecase"
     ));
-    ({ mergeAccounts } = await import("@/server/auth/repo/accountMerge.repo"));
+    ({ mergeAccounts } = await import("@/server/auth/repo/merge/accountMerge.repo"));
 
     database = new Client({ connectionString: TEST_URL });
     await database.connect();

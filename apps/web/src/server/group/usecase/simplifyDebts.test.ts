@@ -41,7 +41,7 @@ vi.mock("@/server/social/repo/friendships.repo", () => ({
 }));
 vi.mock("@/server/social/repo/activity.repo", () => ({ insertActivity: vi.fn() }));
 vi.mock("@/server/social/repo/notifications.repo", () => ({ insertNotifications: vi.fn() }));
-vi.mock("@/server/auth/usecase/auth.usecase", () => ({
+vi.mock("@/server/auth/usecase/account/auth.usecase", () => ({
   findOrCreateUserByEmail: vi.fn(),
   findOrCreateUserByPhone: vi.fn(),
 }));
@@ -50,7 +50,7 @@ vi.mock("@/server/expense/usecase/balance.usecase", () => ({
   userNetInGroups: vi.fn(),
   groupIsSettled: vi.fn(),
 }));
-vi.mock("@/server/common/ledgerLocks", () => ({
+vi.mock("@/server/common/ledger/ledgerLocks", () => ({
   lockGroupLedgers: vi.fn(),
   withLedgerTransaction: vi.fn(
     (operation: (client: PoolClient) => Promise<unknown>) => operation(transactionClient),
@@ -82,7 +82,7 @@ import { findUserByEmail, findUserById, findUsersByIds } from "@/server/auth/rep
 import { listFriendIds } from "@/server/social/repo/friendships.repo";
 import { insertActivity } from "@/server/social/repo/activity.repo";
 import { groupIsSettled, userNetInGroup } from "@/server/expense/usecase/balance.usecase";
-import { lockGroupLedgers } from "@/server/common/ledgerLocks";
+import { lockGroupLedgers } from "@/server/common/ledger/ledgerLocks";
 import {
   MAX_GROUP_MEMBER_IDS_PER_REQUEST,
   MAX_GROUP_NAME_LENGTH,

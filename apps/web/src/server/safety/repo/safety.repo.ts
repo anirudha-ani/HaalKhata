@@ -1,7 +1,7 @@
 /** Parameterized SQL for blocking, authorized report targets, and the moderation queue. */
 
 import type { PoolClient } from "pg";
-import { execute, newId, query, queryOne } from "@/server/common/db";
+import { execute, newId, query, queryOne } from "@/server/common/db/db";
 import type { UserRow } from "@/server/auth/repo/users.repo";
 
 /** Server-owned report context; caller cannot supply or alter the snapshot. */

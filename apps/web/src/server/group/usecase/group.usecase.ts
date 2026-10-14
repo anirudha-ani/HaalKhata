@@ -2,7 +2,7 @@
 
 import { blockedPairExists } from "@/server/safety/repo/safety.repo";
 import { assertSafeText } from "@/server/safety/usecase/contentFilter";
-import { isRegisteredUser } from "@/server/auth/usecase/user.mapper";
+import { isRegisteredUser } from "@/server/auth/usecase/identity/user.mapper";
 import type { PoolClient } from "pg";
 import { GroupStatus } from "@haalkhata/protogen/group/v1/group_pb";
 import {
@@ -33,8 +33,8 @@ import { insertActivity } from "@/server/social/repo/activity.repo";
 import { insertNotifications } from "@/server/social/repo/notifications.repo";
 import { groupIsSettled, userNetInGroup, userNetInGroups } from "@/server/expense/usecase/balance.usecase";
 import { denied, invalid, notFound, UsecaseError } from "@/server/common/errors";
-import { toInt32Cents } from "@/server/common/money";
-import { normalizeCurrencyCode } from "@/server/common/validation";
+import { toInt32Cents } from "@/server/common/money/money";
+import { normalizeCurrencyCode } from "@/server/common/validation/validation";
 import {
   GROUP_TYPES,
   GROUP_STATUS_STORAGE,
@@ -43,7 +43,7 @@ import {
   MEMBER_ROLE,
   OWNER_ROLE,
 } from "@/server/group/group.constants";
-import { lockGroupLedgers, withLedgerTransaction } from "@/server/common/ledgerLocks";
+import { lockGroupLedgers, withLedgerTransaction } from "@/server/common/ledger/ledgerLocks";
 import { toGroup, toMember } from "./group.mapper";
 
 /**

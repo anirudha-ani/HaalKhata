@@ -16,7 +16,7 @@
 import heicDecode from "heic-decode";
 import sharp from "sharp";
 import { invalid, unavailable, UsecaseError } from "@/server/common/errors";
-import { isRealCalendarDate } from "@/server/common/validation";
+import { isRealCalendarDate } from "@/server/common/validation/validation";
 import { logEvent } from "@/server/common/logger";
 import {
   COMPATIBLE_AI,

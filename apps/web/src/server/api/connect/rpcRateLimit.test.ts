@@ -3,11 +3,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/server/api/connect/context", () => ({ requireUser: vi.fn() }));
-vi.mock("@/server/common/rateLimit", () => ({ rateLimitCheck: vi.fn() }));
+vi.mock("@/server/common/rateLimit/rateLimit", () => ({ rateLimitCheck: vi.fn() }));
 
 import { Code, type HandlerContext } from "@connectrpc/connect";
 import { requireUser } from "@/server/api/connect/context";
-import { rateLimitCheck } from "@/server/common/rateLimit";
+import { rateLimitCheck } from "@/server/common/rateLimit/rateLimit";
 import { requireRateLimitedUser } from "./rpcRateLimit";
 
 beforeEach(() => {

@@ -1,7 +1,7 @@
 /** All SQL for the comments table. */
 
 import type { PoolClient } from "pg";
-import { newId, query } from "@/server/common/db";
+import { newId, query } from "@/server/common/db/db";
 
 /** One row of the comments table (column names mirror SQL). */
 export interface CommentRow {

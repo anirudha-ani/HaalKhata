@@ -21,8 +21,8 @@ vi.mock("@/server/payment/repo/paymentMethods.repo", () => ({
   setPreferred: vi.fn(),
   updatePaymentMethod: vi.fn(),
 }));
-vi.mock("@/server/common/ledgerLocks", () => ({ lockPaymentMethods: vi.fn() }));
-vi.mock("@/server/common/db", () => ({
+vi.mock("@/server/common/ledger/ledgerLocks", () => ({ lockPaymentMethods: vi.fn() }));
+vi.mock("@/server/common/db/db", () => ({
   newId: vi.fn(() => "method-new"),
   transaction: vi.fn((operation: (client: PoolClient) => Promise<unknown>) =>
     operation(transactionClient),
@@ -42,7 +42,7 @@ import {
   setPreferred,
   updatePaymentMethod as updatePaymentMethodRow,
 } from "@/server/payment/repo/paymentMethods.repo";
-import { lockPaymentMethods } from "@/server/common/ledgerLocks";
+import { lockPaymentMethods } from "@/server/common/ledger/ledgerLocks";
 import {
   createPaymentMethod,
   deletePaymentMethod,

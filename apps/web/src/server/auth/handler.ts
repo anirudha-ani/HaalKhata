@@ -3,13 +3,13 @@
 import type { ServiceImpl } from "@connectrpc/connect";
 import type { HandlerContext } from "@connectrpc/connect";
 import type { AuthService } from "@haalkhata/protogen/auth/v1/auth_pb";
-import * as auth from "@/server/auth/usecase/auth.usecase";
-import * as accountMerge from "@/server/auth/usecase/accountMerge.usecase";
-import * as appleSignIn from "@/server/auth/usecase/appleSignIn.usecase";
-import { deleteAccount } from "@/server/auth/usecase/accountDeletion.usecase";
+import * as auth from "@/server/auth/usecase/account/auth.usecase";
+import * as accountMerge from "@/server/auth/usecase/merge/accountMerge.usecase";
+import * as appleSignIn from "@/server/auth/usecase/apple/appleSignIn.usecase";
+import { deleteAccount } from "@/server/auth/usecase/deletion/accountDeletion.usecase";
 import { clearSessionCookie, requireUser, runUsecase, setSessionCookie } from "@/server/api/connect/context";
 import { wantsBearerToken } from "@/server/api/connect/credentials";
-import { rateLimitCheck } from "@/server/common/rateLimit";
+import { rateLimitCheck } from "@/server/common/rateLimit/rateLimit";
 import {
   AUTH_RATE_LIMIT,
   normalizePhone,
@@ -18,8 +18,8 @@ import {
   PHONE_SEND_RATE_LIMIT,
 } from "@/server/auth/auth.constants";
 import { ConnectError, Code } from "@connectrpc/connect";
-import { clientIp } from "@/server/auth/clientIp";
-import { enforcePhoneSendLimits } from "@/server/auth/phoneRateLimit";
+import { clientIp } from "@/server/auth/request/clientIp";
+import { enforcePhoneSendLimits } from "@/server/auth/request/phoneRateLimit";
 
 /**
  * Enforces the per-IP login/signup rate limit, throwing a ResourceExhausted

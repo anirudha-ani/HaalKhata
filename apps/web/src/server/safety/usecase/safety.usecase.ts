@@ -2,9 +2,9 @@
 
 import { REPORT_REASONS, REPORT_TARGET_KINDS } from "@haalkhata/shared/safety/safety";
 import { invalid, notFound } from "@/server/common/errors";
-import { transaction } from "@/server/common/db";
+import { transaction } from "@/server/common/db/db";
 import { findUserById } from "@/server/auth/repo/users.repo";
-import { toPublicUser } from "@/server/auth/usecase/user.mapper";
+import { toPublicUser } from "@/server/auth/usecase/identity/user.mapper";
 import { findGroupById, isMember } from "@/server/group/repo/groups.repo";
 import { getExpense } from "@/server/expense/usecase/expense.usecase";
 import * as safety from "../repo/safety.repo";

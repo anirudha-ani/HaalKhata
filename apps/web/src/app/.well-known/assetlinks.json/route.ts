@@ -1,6 +1,6 @@
 /** Public Android verified-link claims using configured signing fingerprints. */
 
-import { androidAssetLinks } from "@/server/common/mobileRelease";
+import { androidAssetLinks } from "@/server/common/readiness/mobileRelease";
 
 /** Resolve signing fingerprints at request time. */
 export const dynamic = "force-dynamic";

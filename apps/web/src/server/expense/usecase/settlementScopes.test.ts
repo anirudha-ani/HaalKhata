@@ -42,7 +42,7 @@ vi.mock("@/server/expense/repo/settlements.repo", () => ({
       operation(transactionClient),
   ),
 }));
-vi.mock("@/server/common/ledgerLocks", () => ({
+vi.mock("@/server/common/ledger/ledgerLocks", () => ({
   lockExpenseLedger: vi.fn(),
   lockGroupLedgers: vi.fn(),
   lockParticipantLedgers: vi.fn(),
@@ -73,7 +73,7 @@ import { insertSettlement } from "@/server/expense/repo/settlements.repo";
 import { insertActivity } from "@/server/social/repo/activity.repo";
 import { insertNotifications } from "@/server/social/repo/notifications.repo";
 import { owedByScope } from "./balance.usecase";
-import { lockGroupLedgers } from "@/server/common/ledgerLocks";
+import { lockGroupLedgers } from "@/server/common/ledger/ledgerLocks";
 
 const PAYER = "user-payer";
 const CREDITOR = "user-creditor";

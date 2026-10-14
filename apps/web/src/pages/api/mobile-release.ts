@@ -1,8 +1,8 @@
 /** Build preflight endpoint verifies the deployed backend supports this mobile release. */
 
 import type { NextApiRequest, NextApiResponse } from "next";
-import { ensureMigrated, query } from "@/server/common/db";
-import { mobileReleaseInfo } from "@/server/common/mobileRelease";
+import { ensureMigrated, query } from "@/server/common/db/db";
+import { mobileReleaseInfo } from "@/server/common/readiness/mobileRelease";
 import { logError } from "@/server/common/logger";
 
 /**

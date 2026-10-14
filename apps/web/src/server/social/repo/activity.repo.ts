@@ -1,7 +1,7 @@
 /** All SQL for the activity table (audience-scoped feed events). */
 
 import type { PoolClient } from "pg";
-import { execute, newId, query } from "@/server/common/db";
+import { execute, newId, query } from "@/server/common/db/db";
 import {
   ACTIVITY_CURSOR_ID_PATTERN,
   ACTIVITY_CURSOR_TIMESTAMP_PATTERN,

@@ -1,15 +1,15 @@
 /** Readiness endpoint that verifies production secrets, sign-in configuration, migrations, and database access. */
 
 import type { NextApiRequest, NextApiResponse } from "next";
-import { signPayload } from "@/server/auth/usecase/auth.usecase";
+import { signPayload } from "@/server/auth/usecase/session/session";
 import {
   GOOGLE_AUDIENCES,
   GOOGLE_CLIENT_ID,
   passwordAuthEnabled,
 } from "@/server/auth/auth.constants";
-import { ensureMigrated, query } from "@/server/common/db";
+import { ensureMigrated, query } from "@/server/common/db/db";
 import { logError } from "@/server/common/logger";
-import { assertAppleSignInConfigured } from "@/server/auth/usecase/apple.provider";
+import { assertAppleSignInConfigured } from "@/server/auth/usecase/apple/apple.provider";
 
 /** Response shape intentionally reveals no component-level failure details. */
 interface HealthResponse {

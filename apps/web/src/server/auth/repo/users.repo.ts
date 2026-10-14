@@ -1,7 +1,7 @@
 /** All SQL for the users table: insert, lookups, shadow-user claim, profile updates. */
 
 import type { PoolClient } from "pg";
-import { execute, newId, query, queryOne } from "@/server/common/db";
+import { execute, newId, query, queryOne } from "@/server/common/db/db";
 
 /** One row of the users table. Field names mirror the SQL column names. */
 export interface UserRow {

@@ -2,7 +2,7 @@
 
 import { Code, ConnectError, type HandlerContext } from "@connectrpc/connect";
 import { requireUser } from "@/server/api/connect/context";
-import { rateLimitCheck } from "@/server/common/rateLimit";
+import { rateLimitCheck } from "@/server/common/rateLimit/rateLimit";
 
 /**
  * Per-minute limits for resource-intensive authenticated operations.

@@ -1,7 +1,7 @@
 /** All SQL for the groups and group_members tables. */
 
 import type { PoolClient } from "pg";
-import { execute, newId, query, queryOne, transaction } from "@/server/common/db";
+import { execute, newId, query, queryOne, transaction } from "@/server/common/db/db";
 import type { UserRow } from "@/server/auth/repo/users.repo";
 import type { GroupStatusValue } from "@/server/group/group.constants";
 

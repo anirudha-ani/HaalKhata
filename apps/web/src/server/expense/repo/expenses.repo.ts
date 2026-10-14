@@ -1,6 +1,6 @@
 /** All SQL for expenses and their child tables (payers, splits, items, assignments). */
 
-import { execute, newId, query, queryOne, transaction } from "@/server/common/db";
+import { execute, newId, query, queryOne, transaction } from "@/server/common/db/db";
 import type { PoolClient } from "pg";
 
 /** One row of the expenses table (column names mirror SQL). */

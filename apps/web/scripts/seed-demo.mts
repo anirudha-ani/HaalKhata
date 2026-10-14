@@ -13,7 +13,7 @@ import { ExpenseService } from "@haalkhata/protogen/expense/v1/expense_pb";
 import { GroupService } from "@haalkhata/protogen/group/v1/group_pb";
 import { SocialService } from "@haalkhata/protogen/social/v1/social_pb";
 import { BEARER_TRANSPORT, SESSION_TRANSPORT_HEADER } from "@haalkhata/shared/auth/sessionRenewal";
-import { readSecret } from "../src/server/common/secrets";
+import { readSecret } from "../src/server/common/secrets/secrets";
 
 /** Host-only API endpoint; this command never targets a deployed application. */
 const API_URL = "http://127.0.0.1:3000/api/connect";
@@ -126,7 +126,7 @@ async function main(): Promise<void> {
 
   // Load environment-dependent server helpers only after the root .env and cwd are ready.
   const { findUserByEmail } = await import("../src/server/auth/repo/users.repo");
-  const { createToken } = await import("../src/server/auth/usecase/auth.usecase");
+  const { createToken } = await import("../src/server/auth/usecase/session/session");
   const { listSettlementsInvolvingUser } = await import("../src/server/expense/repo/settlements.repo");
   const ownerRow = await findUserByEmail(email);
   if (!ownerRow || (!ownerRow.password_hash && !ownerRow.google_sub)) throw new Error("Create a local account before seeding it.");

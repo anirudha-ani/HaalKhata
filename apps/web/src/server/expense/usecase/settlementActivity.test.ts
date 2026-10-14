@@ -41,7 +41,7 @@ vi.mock("@/server/expense/repo/settlements.repo", () => ({
       operation({} as PoolClient),
   ),
 }));
-vi.mock("@/server/common/ledgerLocks", () => ({
+vi.mock("@/server/common/ledger/ledgerLocks", () => ({
   lockExpenseLedger: vi.fn(),
   lockGroupLedgers: vi.fn(),
   lockParticipantLedgers: vi.fn(),

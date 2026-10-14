@@ -29,11 +29,11 @@ vi.mock("@/server/social/repo/friendships.repo", () => ({
 }));
 vi.mock("@/server/social/repo/activity.repo", () => ({ insertActivity: vi.fn() }));
 vi.mock("@/server/social/repo/notifications.repo", () => ({ insertNotifications: vi.fn() }));
-vi.mock("@/server/common/operations", () => ({
+vi.mock("@/server/common/ledger/operations", () => ({
   beginOperation: vi.fn().mockResolvedValue({ replayOf: null }),
   finishOperation: vi.fn(),
 }));
-vi.mock("@/server/common/ledgerLocks", () => ({
+vi.mock("@/server/common/ledger/ledgerLocks", () => ({
   lockGroupLedgers: vi.fn(),
   lockParticipantLedgers: vi.fn(),
   withLedgerTransaction: vi.fn(

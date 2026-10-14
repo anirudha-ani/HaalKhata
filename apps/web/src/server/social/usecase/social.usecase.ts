@@ -1,7 +1,7 @@
 /** Social business logic: friends (friendships ∪ expense counterparties), activity feed, notifications. */
 
 import { blockedBetween, blockedPairExists } from "@/server/safety/repo/safety.repo";
-import { isRegisteredUser } from "@/server/auth/usecase/user.mapper";
+import { isRegisteredUser } from "@/server/auth/usecase/identity/user.mapper";
 import {
   countIncomingFriendRequests,
   deleteFriendRequest,
@@ -16,11 +16,11 @@ import {
 } from "@/server/social/repo/friendships.repo";
 import { randomBytes } from "node:crypto";
 import { findUserById, findUsersByIds, type UserRow } from "@/server/auth/repo/users.repo";
-import { mergeAccounts } from "@/server/auth/repo/accountMerge.repo";
+import { mergeAccounts } from "@/server/auth/repo/merge/accountMerge.repo";
 import {
   findOrCreateUserByEmail,
   findOrCreateUserByPhone,
-} from "@/server/auth/usecase/auth.usecase";
+} from "@/server/auth/usecase/account/auth.usecase";
 import {
   findActiveFriendLink,
   findActiveGroupLink,
@@ -44,8 +44,8 @@ import { insertActivity as recordActivity } from "@/server/social/repo/activity.
 import { MAX_GROUP_MEMBERS, OWNER_ROLE } from "@/server/group/group.constants";
 import { listActivityMonths, listActivityPage } from "@/server/social/repo/activity.repo";
 import { isMember } from "@/server/group/repo/groups.repo";
-import { isUniqueViolation } from "@/server/common/db";
-import { lockReminder, withLedgerTransaction } from "@/server/common/ledgerLocks";
+import { isUniqueViolation } from "@/server/common/db/db";
+import { lockReminder, withLedgerTransaction } from "@/server/common/ledger/ledgerLocks";
 import {
   countUnread,
   findLatestNotificationAt,
@@ -64,7 +64,7 @@ import {
   lockFriendRequestInboxes,
   lockGroupLedgers,
   lockParticipantLedgers,
-} from "@/server/common/ledgerLocks";
+} from "@/server/common/ledger/ledgerLocks";
 import { formatMoney } from "@haalkhata/shared/money/money";
 import { safeActivityPath } from "@haalkhata/shared/navigation/activityPath";
 import { listPaymentMethodsByUser } from "@/server/payment/repo/paymentMethods.repo";
@@ -72,8 +72,8 @@ import { reminderPaymentHint } from "@/server/payment/usecase/paymentHint";
 import { cleanMethodRow } from "@/server/payment/usecase/paymentMethod.mapper";
 import { getOverallBalances, netWithUser } from "@/server/expense/usecase/balance.usecase";
 import { denied, invalid, notFound, UsecaseError } from "@/server/common/errors";
-import { transaction } from "@/server/common/db";
-import { toFriendRequestUser, toPublicUser } from "@/server/auth/usecase/user.mapper";
+import { transaction } from "@/server/common/db/db";
+import { toFriendRequestUser, toPublicUser } from "@/server/auth/usecase/identity/user.mapper";
 
 /**
  * Adds a friend by id, email, or phone.

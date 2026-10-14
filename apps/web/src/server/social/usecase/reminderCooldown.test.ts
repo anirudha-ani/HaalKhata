@@ -46,7 +46,7 @@ vi.mock("@/server/payment/repo/paymentMethods.repo", () => ({
   listPaymentMethodsByUser: vi.fn(),
 }));
 const { transactionClient } = vi.hoisted(() => ({ transactionClient: {} as PoolClient }));
-vi.mock("@/server/common/ledgerLocks", () => ({
+vi.mock("@/server/common/ledger/ledgerLocks", () => ({
   lockReminder: vi.fn(),
   withLedgerTransaction: vi.fn(
     (operation: (client: PoolClient) => Promise<unknown>) => operation(transactionClient),
@@ -63,7 +63,7 @@ import {
   listPaymentMethodsByUser,
   type PaymentMethodRow,
 } from "@/server/payment/repo/paymentMethods.repo";
-import { lockReminder } from "@/server/common/ledgerLocks";
+import { lockReminder } from "@/server/common/ledger/ledgerLocks";
 import { sendReminder } from "./social.usecase";
 
 const SENDER_ID = "user-sender";

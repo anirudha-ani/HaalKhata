@@ -2,7 +2,7 @@
 
 import { blockedPairExists } from "@/server/safety/repo/safety.repo";
 import { assertSafeText } from "@/server/safety/usecase/contentFilter";
-import { isRegisteredUser } from "@/server/auth/usecase/user.mapper";
+import { isRegisteredUser } from "@/server/auth/usecase/identity/user.mapper";
 import type { CreateExpenseRequest } from "@haalkhata/protogen/expense/v1/expense_pb";
 import type { PoolClient } from "pg";
 import {
@@ -65,17 +65,17 @@ import {
   positionDigest,
 } from "@/server/expense/domain/settlementAllocation";
 import { oneOffPairKey, settledExpenseIds } from "@/server/expense/domain/settledExpenses";
-import { snapshot } from "@/server/common/db";
+import { snapshot } from "@/server/common/db/db";
 import { denied, invalid, notFound } from "@/server/common/errors";
 import {
   lockExpenseLedger,
   lockGroupLedgers,
   lockParticipantLedgers,
   withLedgerTransaction,
-} from "@/server/common/ledgerLocks";
-import { isRealCalendarDate, normalizeCurrencyCode } from "@/server/common/validation";
-import { beginOperation, finishOperation } from "@/server/common/operations";
-import { toPublicUser } from "@/server/auth/usecase/user.mapper";
+} from "@/server/common/ledger/ledgerLocks";
+import { isRealCalendarDate, normalizeCurrencyCode } from "@/server/common/validation/validation";
+import { beginOperation, finishOperation } from "@/server/common/ledger/operations";
+import { toPublicUser } from "@/server/auth/usecase/identity/user.mapper";
 import {
   COMMENT_PREVIEW_LENGTH,
   EXPENSE_CATEGORIES,
