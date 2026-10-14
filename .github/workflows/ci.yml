@@ -71,6 +71,9 @@ jobs:
       - name: Install dependencies — exactly as locked
         run: pnpm install --frozen-lockfile
 
+      - name: 'Deploy: secret provisioning and encryption-key preservation'
+        run: pnpm test:deploy
+
       - name: 'Dependencies: verify exact security patches and audit production'
         run: pnpm audit:production
 

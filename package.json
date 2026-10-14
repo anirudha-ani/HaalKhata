@@ -24,6 +24,7 @@
     "db:seed": "pnpm --filter @haalkhata/web db:seed",
     "doctor": "pnpm exec react-doctor apps/web/src --no-telemetry --no-supply-chain",
     "test:security-patches": "node --test scripts/security-patches.test.cjs",
+    "test:deploy": "node --test ops/deploy.test.cjs",
     "audit:production": "node scripts/audit-production.cjs"
   },
   "devDependencies": {

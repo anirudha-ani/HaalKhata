@@ -73,7 +73,9 @@ platform. The server must accept the actual native IDs in the comma-separated
 ## 4. Provision server settings before deploying this branch
 
 Install the updated `ops/deploy.sh` on the host first. Its forced-command
-allowlist must understand the new public settings. Install `ops/moderate.sh`
+allowlist must understand the new public settings and Apple secrets. This
+one-time bootstrap needs administrator SSH access or the provider console;
+the restricted CI key cannot update the forced command. Install `ops/moderate.sh`
 with the ops scripts too. Follow [the server runbook](../ops/README.md).
 
 Set GitHub repository variables:
@@ -89,17 +91,27 @@ Set GitHub repository variables:
 | `NEXT_PUBLIC_GOOGLE_CLIENT_ID` | Keep the actual web client ID; it is a Docker build argument. |
 | `ANDROID_SHA256_CERTIFICATES` | Later: comma-separated colon-delimited SHA-256 app signing fingerprints. |
 
-Provision these **server-only** files using the permissions/ownership in the
-ops runbook:
+Add these **GitHub Actions secrets** (separate from repository variables):
+
+| Secret | Value |
+| --- | --- |
+| `APPLE_PRIVATE_KEY` | Entire original multiline `.p8`, including BEGIN/END lines. |
+| `APPLE_TOKEN_ENCRYPTION_KEY` | Generate once with `openssl rand -hex 32`; use the existing server value if already configured. |
+
+The Deploy workflow securely provisions these files with the
+permissions/ownership in the ops runbook:
 
 ```text
 /srv/haalkhata/secrets/apple_private_key
 /srv/haalkhata/secrets/apple_token_encryption_key
 ```
 
-The first contains the original multiline `.p8`. Generate the second with
-`openssl rand -hex 32`. Back up both securely. They do not belong in Git,
-client build variables, or the server `.env`. Existing database, session,
+Back up both securely. CI preserves installed files when their GitHub secrets
+are unset and refuses accidental encryption-key replacement. Do not generate
+a fresh encryption key for later deployments. Publishing a release or manually
+running Deploy applies the secrets; saving them alone does not deploy.
+They do not belong in Git, client build variables, or the server `.env`.
+Existing database, session,
 receipt-provider and Twilio secrets remain required for their features.
 
 Production Compose enables Apple readiness checks. Configure all required

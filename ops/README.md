@@ -54,7 +54,7 @@ sudo systemctl start haalkhata-backup-failure.service
 
 ## Secrets
 
-Five files, referenced by `docker-compose.prod.yml`. The app reads them
+Seven files, referenced by `docker-compose.prod.yml`. The app reads them
 itself through `*_FILE` variables (the Docker `_FILE` convention); nothing
 copies them into the environment.
 
@@ -64,12 +64,15 @@ copies them into the environment.
 /srv/haalkhata/secrets/postgres_password       openssl rand -hex 24
 /srv/haalkhata/secrets/openrouter_api_key      from openrouter.ai
 /srv/haalkhata/secrets/twilio_api_key_secret   from a restricted Twilio Verify API key
+/srv/haalkhata/secrets/apple_private_key     original Sign in with Apple .p8
+/srv/haalkhata/secrets/apple_token_encryption_key openssl rand -hex 32 (generate once)
 ```
 
 Each of these (except `session_secret_previous`, which only exists for
 planned rotations) can be **GitHub-managed**: set the matching GitHub secret
 (`SESSION_SECRET`, `POSTGRES_PASSWORD`, `COMPATIBLE_AI_API_KEY`,
-`TWILIO_API_KEY_SECRET`) and every deploy writes the file over the same
+`TWILIO_API_KEY_SECRET`, `APPLE_PRIVATE_KEY`, `APPLE_TOKEN_ENCRYPTION_KEY`)
+and every deploy writes the file over the same
 forced-command channel as the `.env` config. Left unset in GitHub, the
 value pipes as empty and `deploy.sh` leaves the server's file untouched, so
 any secret can stay server-only instead. `deploy.sh` runs as the `deploy`
@@ -99,6 +102,12 @@ against its allowlist before touching the file:
 | `ACME_EMAIL` | Secret `ACME_EMAIL` | Required — the deploy job refuses to run without it; Caddy registers it with the CA for expiry/problem notices. A secret only so the address stays out of public workflow logs; it is not authenticating material |
 | `GOOGLE_CLIENT_ID` | Variable `NEXT_PUBLIC_GOOGLE_CLIENT_ID` | Same id the browser bundle is built with, by contract |
 | `GOOGLE_MOBILE_CLIENT_IDS` | Variable `GOOGLE_MOBILE_CLIENT_IDS` | Optional |
+| `APPLE_TEAM_ID` | Variable `APPLE_TEAM_ID` | Apple developer team identifier |
+| `APPLE_KEY_ID` | Variable `APPLE_KEY_ID` | Sign in with Apple signing key identifier |
+| `APPLE_SERVICE_ID` | Variable `APPLE_SERVICE_ID` | Grouped web Services ID |
+| `APPLE_APP_ID_PREFIX` | Variable `APPLE_APP_ID_PREFIX` | Only when the App ID prefix differs from the Team ID |
+| `SUPPORT_EMAIL` | Variable `SUPPORT_EMAIL` | Required monitored public support mailbox |
+| `ANDROID_SHA256_CERTIFICATES` | Variable `ANDROID_SHA256_CERTIFICATES` | Android signing fingerprints, when releasing Android |
 | `TWILIO_API_KEY_SID` | Secret `TWILIO_API_KEY_SID` | Optional; identifies but does not authenticate |
 | `TWILIO_VERIFY_SERVICE_SID` | Secret `TWILIO_VERIFY_SERVICE_SID` | Optional |
 
@@ -112,6 +121,8 @@ carries these keys, which `deploy.sh` writes as secret *files* instead
 | `secrets/openrouter_api_key` | Secret `COMPATIBLE_AI_API_KEY` | Receipt parsing |
 | `secrets/session_secret` | Secret `SESSION_SECRET` | Changing it ends every session unless `session_secret_previous` covers the rotation |
 | `secrets/postgres_password` | Secret `POSTGRES_PASSWORD` | Rotates the FILE only — see the rotation order below before ever changing it |
+| `secrets/apple_private_key` | Secret `APPLE_PRIVATE_KEY` | Original multiline `.p8`; CI encodes it for transport, the server validates and decodes it |
+| `secrets/apple_token_encryption_key` | Secret `APPLE_TOKEN_ENCRYPTION_KEY` | Generate once with `openssl rand -hex 32`; CI refuses to replace a different installed key |
 
 The directory is `0700` (owned by `deploy` once GitHub-managed secrets are
 in use; `root` on a server provisioned entirely by hand); the files are
@@ -231,16 +242,33 @@ App ID `com.haalkhata.app`. Group a web Services ID with this App ID, authorize
 uses the App ID; web and Android use the grouped Services ID.
 
 Set repository variables `APPLE_TEAM_ID`, `APPLE_KEY_ID`, and `APPLE_SERVICE_ID`.
-Reinstall this version of `ops/deploy.sh` on the server before deploying: the
-forced command needs its updated allowlist. Provision these server-only files
-with the same ownership and permissions as the existing secrets:
+In GitHub **Settings → Secrets and variables → Actions → Secrets**, add:
 
-- `/srv/haalkhata/secrets/apple_private_key`: original multiline PKCS#8 `.p8`
-  signing key downloaded from Apple. Keep it off Git and out of build variables.
-- `/srv/haalkhata/secrets/apple_token_encryption_key`: `openssl rand -hex 32`.
-  Keep this stable and backed up; it decrypts provider grants for revocation.
-  Session-key rotations do not affect it. Do not rotate it without migrating
-  existing ciphertext.
+- `APPLE_PRIVATE_KEY`: the entire original multiline PKCS#8 `.p8` downloaded
+  from Apple, including its BEGIN/END lines. Do not base64-encode it yourself.
+- `APPLE_TOKEN_ENCRYPTION_KEY`: the output of `openssl rand -hex 32`, generated
+  **once** and backed up securely. If the server already has this key, use that
+  exact existing value. Do not generate a new one for each deploy.
+
+The deploy job sends both over the existing restricted SSH connection. It
+masks the base64 transport value as well as the original key; the server
+validates the P-256 signing key and writes the two mounted secret files. A
+different encryption key fails deployment before replacing that key, because
+stored provider grants must stay decryptable for revocation. Session-key
+rotations do not affect it. Intentional rotation needs a separate ciphertext
+migration. Leaving either GitHub secret unset preserves its installed file.
+
+**One-time prerequisite:** install this version of `ops/deploy.sh` on the server
+using an administrator's SSH access or provider console, and make sure the
+`deploy` user owns the secrets directory as described above. The older forced
+command rejects new keys and cannot update itself; the restricted CI key
+cannot perform this bootstrap. Afterwards, no manual Apple-key file uploads
+are needed. Publishing a release or manually running Deploy applies the
+GitHub secrets; simply saving them or pushing a commit does not deploy.
+
+Both secrets stay out of Git, Docker build arguments, EAS variables, and the
+server `.env`. A server-only installation is still supported using the same
+file ownership and permissions as the other secrets.
 
 The production stack requires these values and readiness checks signing and
 encryption. Browser redirects carry one-use state; the initiating client must
