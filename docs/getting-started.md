@@ -65,8 +65,8 @@ preserve existing values (including multiline keys), and keep the last value
 when a secret has duplicate assignments.
 
 For Apple, setup creates an ignored root `AppleAuthKey.p8` placeholder and always
-sets `APPLE_PRIVATE_KEY_FILE` to its absolute path. Replace that file's entire
-contents with your original Apple `.p8` key, including the BEGIN/END lines;
+sets `APPLE_PRIVATE_KEY_FILE=AppleAuthKey.p8`, relative to the root `.env`.
+Replace that file's entire contents with your original Apple `.p8` key, including the BEGIN/END lines;
 setup never overwrites existing key contents. Fill `APPLE_TOKEN_ENCRYPTION_KEY`
 (or its `_FILE` variant) yourself. Your HTTPS development domain and Android
 Google client ID depend on your machine/provider setup and cannot be inferred. The setup

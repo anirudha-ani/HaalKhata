@@ -17,8 +17,8 @@ export function prepareAppleKey(directory, source) {
   chmodSync(filename, 0o600);
   const contents = readFileSync(filename, "utf8").trim();
   const needsKey = !contents || contents === APPLE_KEY_PLACEHOLDER.trim();
-  if (parseEnv(source).APPLE_PRIVATE_KEY_FILE === filename) return { text: source, needsKey };
+  if (parseEnv(source).APPLE_PRIVATE_KEY_FILE === APPLE_KEY_FILENAME) return { text: source, needsKey };
   // Append the effective assignment instead of rewriting comments or multiline credentials.
-  const text = `${source}${source.endsWith("\n") ? "" : "\n"}\n# Managed by local setup: always use this checkout's root ${APPLE_KEY_FILENAME}.\nAPPLE_PRIVATE_KEY_FILE=${JSON.stringify(filename)}\n`;
+  const text = `${source}${source.endsWith("\n") ? "" : "\n"}\n# Managed by local setup: relative to the repository-root .env.\nAPPLE_PRIVATE_KEY_FILE=${APPLE_KEY_FILENAME}\n`;
   return { text, needsKey };
 }

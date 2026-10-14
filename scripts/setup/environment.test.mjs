@@ -34,7 +34,7 @@ test("a fresh clone gets public IDs, the local database password, blank provider
       if (name !== "APPLE_PRIVATE_KEY") assert.ok(!configured[`${name}_FILE`]);
     }
     const keyFilename = join(directory, APPLE_KEY_FILENAME);
-    assert.equal(configured.APPLE_PRIVATE_KEY_FILE, keyFilename);
+    assert.equal(configured.APPLE_PRIVATE_KEY_FILE, APPLE_KEY_FILENAME);
     assert.equal(readFileSync(keyFilename, "utf8"), APPLE_KEY_PLACEHOLDER);
     assert.equal(statSync(keyFilename).mode & 0o777, 0o600);
     assert.equal(statSync(filename).mode & 0o777, 0o600);
@@ -118,7 +118,7 @@ test("secrets move to the bottom without changing their values or printing them"
     chmodSync(filename, 0o644);
     setupEnvironment({ directory, report: (message) => messages.push(message) });
     const configured = parseEnv(readFileSync(filename, "utf8"));
-    assert.equal(configured.APPLE_PRIVATE_KEY_FILE, join(directory, APPLE_KEY_FILENAME));
+    assert.equal(configured.APPLE_PRIVATE_KEY_FILE, APPLE_KEY_FILENAME);
     assert.equal(configured.APPLE_TOKEN_ENCRYPTION_KEY_FILE, "/private/encryption-key");
     assert.equal(configured.POSTGRES_PASSWORD, "private-database-password");
     assert.equal(configured.SESSION_SECRET, "private-session-secret");
@@ -153,12 +153,12 @@ test("pasted root keys survive reruns and stale paths are repaired for a server 
     assert.ok(!messages.join("\n").includes("replace ALL contents"));
     const repaired = readFileSync(filename, "utf8");
     const configured = parseEnv(repaired);
-    assert.equal(configured.APPLE_PRIVATE_KEY_FILE, keyFilename);
+    assert.equal(configured.APPLE_PRIVATE_KEY_FILE, APPLE_KEY_FILENAME);
     const serverDirectory = join(directory, "apps/web");
     mkdirSync(serverDirectory, { recursive: true });
     const server = spawnSync(process.execPath, ["--input-type=module", "-e",
-      'import { readFileSync } from "node:fs"; if (readFileSync(process.argv[1], "utf8") !== process.argv[2]) process.exit(1);',
-      configured.APPLE_PRIVATE_KEY_FILE, pastedContents], { cwd: serverDirectory, encoding: "utf8" });
+      'import { readFileSync } from "node:fs"; const { loadEnvironmentFile } = await import(process.argv[1]); const environment = {}; loadEnvironmentFile(process.argv[2], { environment }); if (readFileSync(environment.APPLE_PRIVATE_KEY_FILE, "utf8") !== process.argv[3]) process.exit(1);',
+      new URL("../environment.mjs", import.meta.url).href, filename, pastedContents], { cwd: serverDirectory, encoding: "utf8" });
     assert.equal(server.status, 0, server.stderr);
     setupEnvironment({ directory, report: () => {} });
     assert.equal(readFileSync(filename, "utf8"), repaired);

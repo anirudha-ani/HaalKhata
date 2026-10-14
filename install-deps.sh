@@ -387,7 +387,7 @@ check_mobile_deps() {
 # --- 9. local environment and Apple key file -----------------------------------
 
 # Both apps share the root .env. Prepare its AppleAuthKey.p8 placeholder and
-# absolute key path, preserving any pasted key. Fill known public configuration,
+# portable key path, preserving any pasted key. Fill known public configuration,
 # preserve other existing values, and report manual inputs for the developer.
 setup_env_files() {
   cd "$PROJECT_ROOT"

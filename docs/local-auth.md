@@ -39,7 +39,7 @@ EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID=YOUR_IOS_CLIENT_ID.apps.googleusercontent.com
 APPLE_TEAM_ID=YOUR_APPLE_TEAM_ID
 APPLE_KEY_ID=YOUR_APPLE_KEY_ID
 # Filled automatically by local setup; no manual path calculation needed.
-APPLE_PRIVATE_KEY_FILE=/absolute/path/to/your-checkout/AppleAuthKey.p8
+APPLE_PRIVATE_KEY_FILE=AppleAuthKey.p8
 APPLE_TOKEN_ENCRYPTION_KEY=YOUR_ONCE_GENERATED_64_CHARACTER_HEX_KEY
 
 # Browser and Android Apple sign-in only:
@@ -56,9 +56,11 @@ key, including the `-----BEGIN PRIVATE KEY-----` and
 `-----END PRIVATE KEY-----` lines. The placeholder cannot sign in. GitHub
 cannot reveal a stored secret again, so use your original download.
 
-`./install-deps.sh`, `pnpm setup:env`, and `./dev.sh` always point `.env`'s
-`APPLE_PRIVATE_KEY_FILE` at this root file using its absolute path. This works
-when the server starts from `apps/web`; rerun setup after moving the checkout.
+`./install-deps.sh`, `pnpm setup:env`, and `./dev.sh` always set
+`APPLE_PRIVATE_KEY_FILE=AppleAuthKey.p8` in the root `.env`. The loader resolves this
+relative to the root `.env`, so it works from `apps/web` and after moving the
+checkout without editing the path. Existing absolute paths are also supported;
+setup replaces the old checkout-specific value with the portable root filename.
 Existing `AppleAuthKey.p8` contents are never overwritten, and both it and `.env`
 have owner-only read/write permissions. The key is ignored by Git and Docker.
 If you previously used another file or an inline key, paste that key into
