@@ -118,5 +118,5 @@ export function setupEnvironment({ directory = REPOSITORY_ROOT, report = console
   if (appleKey.needsKey) report(`- Apple sign-in: replace ALL contents of root ${APPLE_KEY_FILENAME} with your original downloaded .p8 key, including its BEGIN/END PRIVATE KEY lines. The placeholder cannot authenticate.`);
   for (const action of manualEnvironmentActions(parseEnv(prepared))) report(`- ${action}`);
   report("SESSION_SECRET is optional in development: the server keeps a local key automatically. Production requires your own configured secret.");
-  report("Run ./dev.sh to prepare the environment, check Apple configuration and start the app. --mobile-ios selects the native check; pnpm auth:check remains an optional standalone diagnostic. See docs/local-auth.md.");
+  report("Run ./dev.sh to start the app. Apple sign-in stays hidden until configured; pnpm auth:check is an optional diagnostic when setting it up. See docs/local-auth.md.");
 }

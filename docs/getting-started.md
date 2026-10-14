@@ -7,7 +7,7 @@ development setup. For a production deployment see [Self-hosting](self-hosting.m
 
 ```sh
 ./install-deps.sh   # installs dependencies, generates protogen, prepares .env
-# Fill the secrets listed by setup before starting the app.
+# Fill POSTGRES_PASSWORD; provider secrets are optional for local startup.
 ./dev.sh            # starts db + web server at http://127.0.0.1:3000
 ```
 
@@ -16,10 +16,9 @@ already there. It prefills known public settings in `.env` and lists the
 secrets to supply yourself. Fill `POSTGRES_PASSWORD` before first database
 startup; the local connection uses that password with the prefilled host,
 port, username and database name. `dev.sh` starts Postgres and the Next.js dev
-server. It also prepares missing public settings and checks Apple sign-in
-configuration automatically before starting services. `--mobile-ios` selects
-the native Apple check; web and Android use the browser check. Missing Apple
-credentials are reported without blocking other local features. Use
+server. It quietly prepares missing settings and checks the required database
+password before Compose runs. Missing Apple credentials hide Apple sign-in
+on web and mobile; they produce no startup warnings. Use
 `./dev.sh --clean` for a fresh database and `./dev.sh --down` to
 stop everything.
 
@@ -95,12 +94,13 @@ full console walkthrough.
 
 ### Apple sign-in (optional in development)
 
-Use real Apple credentials with your local backend. The web button appears
-when `APPLE_SERVICE_ID` is configured. Browser/Android sign-in requires a
-registered HTTPS development domain; native iOS uses its signed App ID.
-`./dev.sh` checks configuration automatically. `pnpm auth:check` (browser)
-or `pnpm auth:check --ios` (native) is available when you only want the
-diagnostic without starting services. [Local authentication](local-auth.md) lists every environment
+Apple sign-in stays hidden until the backend has a usable `.p8` signing key,
+Team/Key IDs and encryption key. Browser/Android also need a Services ID and
+registered HTTPS development domain; native iOS uses its signed App ID and
+must be supported by the device. A placeholder file does not enable Apple.
+`./dev.sh` starts without Apple diagnostics. Run `pnpm auth:check` (browser)
+or `pnpm auth:check --ios` (native) when you choose to set Apple up.
+[Local authentication](local-auth.md) lists every environment
 variable, Apple console setting, startup command, and verification step.
 
 ### Receipt AI providers (optional)

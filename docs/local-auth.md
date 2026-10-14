@@ -4,6 +4,14 @@ Use the same authentication code, provider verification, account linking, and
 sessions as production, against your local database. GitHub secrets configure
 deployment; they are not automatically available on your laptop.
 
+Apple is optional for local startup. Leave its key placeholder and encryption
+key blank to work with Google or development password login. `./dev.sh`
+prepares files quietly; it does not print Apple setup failures. The login
+screen checks public availability from the backend and shows Apple only when
+that flow is configured. `POSTGRES_PASSWORD` is still required to start the
+Compose database; fill it in the bottom Secrets section using the existing
+database password if you already have local data.
+
 ## One environment file
 
 Run `pnpm setup:env` or `./install-deps.sh --env-only` first. Full dependency
@@ -81,9 +89,10 @@ continue to use the selected EAS environment.
    production domain/return URL. The Services ID stays grouped with the
    primary `com.haalkhata.app` App ID. Save both configuration screens.
 3. Set `APP_PUBLIC_URL` to that HTTPS origin and restart with `./dev.sh`.
-   Startup automatically checks URL syntax, reads the private key, actually
-   signs a client-secret JWT, and checks refresh-token encryption. Missing
-   Apple configuration is reported while other local features remain usable.
+   The login screen's availability check validates the callback URL, signs
+   a client-secret JWT and checks refresh-token encryption. A missing or
+   unusable setting keeps Apple hidden. Run `pnpm auth:check` if you want a
+   detailed configuration diagnostic.
 4. Open **`https://YOUR_DEVELOPMENT_HOST/login`**, then Continue with Apple.
    Start and finish on that same origin: the private verifier is held in
    that tab's sessionStorage. Starting at localhost and returning elsewhere
@@ -93,9 +102,11 @@ continue to use the selected EAS environment.
    `http://localhost:3000` and `http://127.0.0.1:3000` when registered; Apple
    requires a domain and HTTPS for its return URL.
 
-The Apple web button appears when `APPLE_SERVICE_ID` is configured. Missing
-signing credentials produce an error; they never turn into a simulated login.
-No additional public Apple client ID or CI deployment is needed.
+The Services ID alone does not enable the button. Missing, unreadable,
+placeholder or malformed keys keep Apple hidden, including on mobile. The
+availability response contains only booleans. Release readiness and actual
+sign-in still enforce all credential checks. No additional public Apple
+client ID or CI deployment is needed for local testing.
 
 ## Native iPhone/iPad and Android
 
@@ -107,7 +118,7 @@ receives the native proof; the HTTPS development URL above works on devices
 without loosening the app's release transport protections.
 
 ```sh
-./dev.sh                       # automatic env/auth checks + local database/backend
+./dev.sh                       # quiet env preparation + local database/backend
 # In another terminal, connect an iPhone/iPad and build/install the dev client:
 pnpm --filter @haalkhata/mobile ios --device
 ```
@@ -116,8 +127,8 @@ Use your Apple team to sign the development build; its provisioning profile
 must include Sign in with Apple. If Xcode prompts for signing, choose the
 team owning `com.haalkhata.app`. For simulator UI testing,
 `./dev.sh --mobile-ios` starts the full stack, but verify Apple login on a
-real device too. This option automatically selects the native Apple check,
-which does not require browser callback settings. Expo Go uses different app identifiers, so it cannot prove
+real device too. Native availability does not require browser callback
+settings. Expo Go uses different app identifiers, so it cannot prove
 this app's credential configuration works. Android uses the browser/Services
 ID flow above and returns through the app's `haalkhata://login` scheme.
 

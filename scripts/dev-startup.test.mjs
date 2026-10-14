@@ -19,8 +19,8 @@ start_db() { echo STEP:database; }
 start_mobile() { echo STEP:mobile:$1; }
 node() {
   echo STEP:node:$*
-  if [[ "$1" == "--import" && "$FAIL_AUTH_CHECK" == "1" ]]; then
-    echo 'FAIL: test fixture has no Apple credentials'
+  if [[ "$1" == "scripts/setup-env.mjs" && "$FAIL_ENV_SETUP" == "1" ]]; then
+    echo 'Set POSTGRES_PASSWORD in the Secrets section at the bottom of .env'
     return 1
   fi
 }
@@ -32,47 +32,40 @@ main "$@"
 /**
  * Executes the actual startup control flow with deterministic service substitutes.
  * @param {string[]} argumentsList Startup options.
- * @param {boolean} failAuth Whether the auth diagnostic fails.
+ * @param {boolean} failSetup Whether required database setup fails.
  * @returns {string} Recorded workflow output.
  */
-function startDevelopment(argumentsList = [], failAuth = false) {
+function startDevelopment(argumentsList = [], failSetup = false) {
   const result = spawnSync("bash", ["-c", STARTUP_HARNESS, "dev-startup-test", DEV_SCRIPT, ...argumentsList], {
-    env: { ...process.env, FAIL_AUTH_CHECK: failAuth ? "1" : "0" }, encoding: "utf8",
+    env: { ...process.env, FAIL_ENV_SETUP: failSetup ? "1" : "0" }, encoding: "utf8",
   });
-  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.status, failSetup && !argumentsList.includes("--down") ? 1 : 0, result.stderr);
   assert.equal(result.stderr, "");
   return result.stdout;
 }
 
-test("web startup prepares .env and checks Apple before starting the database or server", () => {
+test("web startup quietly prepares .env without running optional Apple diagnostics", () => {
   const output = startDevelopment();
-  assert.ok(output.indexOf("STEP:node:scripts/setup-env.mjs") < output.indexOf("STEP:node:--import tsx scripts/check-apple-auth.mts"));
-  assert.ok(output.indexOf("STEP:node:--import tsx scripts/check-apple-auth.mts") < output.indexOf("STEP:database"));
-  assert.ok(output.includes("local Apple configuration passed"));
+  assert.ok(output.indexOf("STEP:node:scripts/setup-env.mjs --dev") < output.indexOf("STEP:database"));
   assert.ok(output.includes("scripts/next.mjs dev --turbopack -H 127.0.0.1"));
-  assert.ok(!output.includes("check-apple-auth.mts --ios"));
+  assert.ok(!output.includes("check-apple-auth.mts"));
+  assert.ok(!output.includes("Apple"));
 });
 
-test("iOS startup automatically selects the native Apple check", () => {
-  const output = startDevelopment(["--mobile-ios"]);
-  assert.ok(output.includes("STEP:node:--import tsx scripts/check-apple-auth.mts --ios"));
-  assert.ok(output.indexOf("STEP:node:--import tsx scripts/check-apple-auth.mts --ios") < output.indexOf("STEP:mobile:ios"));
-  assert.ok(output.includes("scripts/next.mjs dev --turbopack -H 0.0.0.0"));
-});
+for (const platform of ["ios", "android"]) {
+  test(`${platform} startup starts native services without requiring Apple credentials`, () => {
+    const output = startDevelopment([`--mobile-${platform}`]);
+    assert.ok(output.indexOf("STEP:node:scripts/setup-env.mjs --dev") < output.indexOf(`STEP:mobile:${platform}`));
+    assert.ok(!output.includes("check-apple-auth.mts"));
+    assert.ok(output.includes("scripts/next.mjs dev --turbopack -H 0.0.0.0"));
+  });
+}
 
-test("Android startup checks the browser Apple flow", () => {
-  const output = startDevelopment(["--mobile-android"]);
-  assert.ok(output.includes("STEP:node:--import tsx scripts/check-apple-auth.mts"));
-  assert.ok(!output.includes("check-apple-auth.mts --ios"));
-  assert.ok(output.indexOf("STEP:node:--import tsx scripts/check-apple-auth.mts") < output.indexOf("STEP:mobile:android"));
-});
-
-test("missing optional Apple credentials are visible and do not prevent local startup", () => {
+test("missing database credentials stop before Compose and name the exact field to fill", () => {
   const output = startDevelopment([], true);
-  assert.ok(output.includes("Apple sign-in needs the configuration fixes shown above"));
-  assert.ok(!output.includes("local Apple configuration passed"));
-  assert.ok(output.includes("STEP:database"));
-  assert.ok(output.includes("scripts/next.mjs dev"));
+  assert.ok(output.includes("Set POSTGRES_PASSWORD in the Secrets section"));
+  assert.ok(!output.includes("STEP:database"));
+  assert.ok(!output.includes("scripts/next.mjs dev"));
 });
 
 test("shutdown works without running setup or requiring authentication credentials", () => {
