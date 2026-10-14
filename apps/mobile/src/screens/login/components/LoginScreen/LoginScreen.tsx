@@ -21,7 +21,7 @@ import brandIconSource from "../../../../../assets/icon.png";
 import { GoogleSignInButton } from "./components/GoogleSignInButton/GoogleSignInButton";
 import { AppleSignInButton } from "./components/AppleSignInButton";
 import { useLogin } from "./hooks/useLogin";
-import { FOCUSED_CONTENT_MAX_WIDTH } from "@/components/shell/shell.constants";
+import { FOCUSED_CONTENT_MAX_WIDTH } from "@/lib/layout/constants/layout";
 
 /**
  * Renders the brand, production Apple/Google sign-in and legal links. Development

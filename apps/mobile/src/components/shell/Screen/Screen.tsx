@@ -3,8 +3,8 @@
 import type { ReactNode } from "react";
 import { RefreshControl, ScrollView, StyleSheet } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { SCREEN_CONTENT_MAX_WIDTH } from "@/components/shell/shell.constants";
-import { useResponsiveLayout } from "@/components/shell/hooks/useResponsiveLayout";
+import { SCREEN_CONTENT_MAX_WIDTH } from "@/lib/layout/constants/layout";
+import { useResponsiveLayout } from "@/lib/layout/hooks/useResponsiveLayout";
 import { ToastProvider } from "@/components/ui/ToastProvider";
 import { colors, spacing } from "@/lib/theme/theme";
 

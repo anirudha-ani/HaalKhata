@@ -6,8 +6,8 @@ import { useRouter } from "expo-router";
 import { Check, Lock, Pencil, Send, Trash2 } from "lucide-react-native";
 import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { PersonLink } from "@/components/people/PersonLink";
-import { DetailHeader } from "@/components/shell/DetailHeader";
-import { Screen } from "@/components/shell/Screen";
+import { DetailHeader } from "@/components/shell/DetailHeader/DetailHeader";
+import { Screen } from "@/components/shell/Screen/Screen";
 import { Avatar } from "@/components/ui/Avatar";
 import { Button } from "@/components/ui/Button";
 import { Money } from "@/components/ui/Money";
@@ -451,6 +451,8 @@ const styles = StyleSheet.create({
   breakdownColumn: {
     flexBasis: 360,
     flexGrow: 1,
+    flexShrink: 1,
+    minWidth: 0,
   },
   breakdownGrid: {
     flexDirection: "row",

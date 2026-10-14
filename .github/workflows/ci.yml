@@ -135,6 +135,9 @@ jobs:
       - name: 'Mobile app: unit tests'
         run: pnpm test:mobile
 
+      - name: 'Feature parity: browser and native API entry points'
+        run: pnpm test:parity
+
       - name: 'Mobile app: release input validation'
         run: pnpm --filter @haalkhata/mobile test:release-config
 

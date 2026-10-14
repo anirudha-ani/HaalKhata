@@ -4,7 +4,7 @@ import { useRouter } from "expo-router";
 import { ChevronLeft } from "lucide-react-native";
 import type { ReactNode } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
-import { SCREEN_CONTENT_MAX_WIDTH } from "@/components/shell/shell.constants";
+import { SCREEN_CONTENT_MAX_WIDTH } from "@/lib/layout/constants/layout";
 import { colors, fonts, radii, spacing } from "@/lib/theme/theme";
 
 /**

@@ -3,7 +3,7 @@
 import { StyleSheet, View } from "react-native";
 import { SplitSummary } from "@/components/expense/SplitSummary";
 import { PeoplePicker } from "@/components/people/PeoplePicker";
-import { useResponsiveLayout } from "@/components/shell/hooks/useResponsiveLayout";
+import { useResponsiveLayout } from "@/lib/layout/hooks/useResponsiveLayout";
 import { Button } from "@/components/ui/Button";
 import { Chip } from "@/components/ui/Chip";
 import { DateField } from "@/components/ui/DateField";

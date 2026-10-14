@@ -14,8 +14,8 @@ import {
   View,
 } from "react-native";
 import { colors, fonts, radii, spacing } from "@/lib/theme/theme";
-import { TABLET_SHEET_MAX_WIDTH } from "@/components/shell/shell.constants";
-import { useResponsiveLayout } from "@/components/shell/hooks/useResponsiveLayout";
+import { TABLET_SHEET_MAX_WIDTH } from "@/lib/layout/constants/layout";
+import { useResponsiveLayout } from "@/lib/layout/hooks/useResponsiveLayout";
 import { SHEET_MAX_HEIGHT_RATIO } from "./ui.constants";
 
 /**

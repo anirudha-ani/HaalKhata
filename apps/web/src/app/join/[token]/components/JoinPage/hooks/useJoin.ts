@@ -1,9 +1,10 @@
 "use client";
 /** Invite-link state: the public preview, who is looking at it, and the accept mutation. */
 
+import { MONEY_KEYS, queryKeys } from "@haalkhata/shared/api/queryKeys";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { authClient, socialClient } from "@/lib/api/connect";
 
 /**
@@ -19,15 +20,16 @@ import { authClient, socialClient } from "@/lib/api/connect";
  */
 export function useJoin(token: string) {
   const router = useRouter();
+  const queryClient = useQueryClient();
 
   const preview = useQuery({
-    queryKey: ["invite-preview", token],
+    queryKey: queryKeys.invitePreview(token),
     queryFn: () => socialClient.previewInviteLink({ token }),
     retry: false,
   });
   // getMe failing just means "not signed in" — that is a state, not an error.
   const viewer = useQuery({
-    queryKey: ["me"],
+    queryKey: queryKeys.me,
     queryFn: () => authClient.getMe({}),
     retry: false,
   });
@@ -36,6 +38,7 @@ export function useJoin(token: string) {
   const accept = useMutation({
     mutationFn: () => socialClient.acceptInviteLink({ token }),
     onSuccess: (result) => {
+      for (const queryKey of MONEY_KEYS) void queryClient.invalidateQueries({ queryKey });
       // A profile link produces a pending request, not a friendship yet —
       // redirecting to Friends would show nothing and read as a silent fail.
       if (preview.data?.kind === "profile") {

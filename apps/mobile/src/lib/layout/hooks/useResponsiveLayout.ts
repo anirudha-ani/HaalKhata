@@ -4,7 +4,7 @@ import { useWindowDimensions } from "react-native";
 import {
   EXPANDED_LAYOUT_BREAKPOINT,
   TABLET_BREAKPOINT,
-} from "@/components/shell/shell.constants";
+} from "@/lib/layout/constants/layout";
 
 /** Responsive capabilities derived from the current window, including rotation and split view. */
 export interface ResponsiveLayout {

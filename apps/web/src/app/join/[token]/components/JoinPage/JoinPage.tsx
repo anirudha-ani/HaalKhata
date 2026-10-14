@@ -1,6 +1,7 @@
 "use client";
 /** Invite landing page: who invited you, to what, and one button in. */
 
+import { inviteCopy, INVITE_SIGN_IN_HINT } from "@haalkhata/shared/invite/inviteCopy";
 import Link from "next/link";
 import { Handshake, UserPlus, Users } from "lucide-react";
 import { Spinner } from "@/components/ui/Spinner/Spinner";
@@ -13,8 +14,8 @@ import { useJoin } from "./hooks/useJoin";
  * Works signed out: the preview call is unauthenticated on purpose, so the
  * page can say "Anirudha invited you to Bali Trip" BEFORE asking anyone to
  * create an account. Accepting requires a session; a signed-out visitor is
- * sent through login with `next` pointing back here, so one Google tap later
- * the invite completes itself.
+ * sent through login with `next` pointing back here, so after sign-in
+ * they can accept the invite.
  *
  * @param props - Component props.
  * @returns The invite landing content.
@@ -26,6 +27,8 @@ export function JoinPage({
   token: string;
 }) {
   const { preview, viewer, accept, requestSent } = useJoin(token);
+
+  const copy = preview.data ? inviteCopy(preview.data) : null;
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-paper px-4">
@@ -52,27 +55,16 @@ export function JoinPage({
               )}
             </div>
             <h1 className="text-xl font-bold" style={{ textWrap: "balance" }}>
-              {preview.data.kind === "group"
-                ? `${preview.data.inviterName} invited you to “${preview.data.groupName}”`
-                : preview.data.kind === "profile"
-                  ? `${preview.data.inviterName} wants to connect on HaalKhata`
-                  : `${preview.data.inviterName} invited you to HaalKhata`}
+              {copy?.title}
             </h1>
             <p className="text-sm text-ink-soft">
-              {preview.data.kind === "group"
-                ? `A shared expense group with ${preview.data.memberCount} ${
-                    preview.data.memberCount === 1 ? "member" : "members"
-                  }. Accepting adds you to it.`
-                : preview.data.kind === "profile"
-                  ? "Accepting sends them a friend request; you'll be connected once they confirm."
-                  : `They added you as “${preview.data.invitedName}”. Accepting brings that
-                     invitation — friendships and any group seats — onto your account.`}
+              {copy?.description}
             </p>
 
             {viewer.data ? (
               requestSent ? (
                 <p className="rounded-xl bg-pos-50 px-4 py-3 text-sm font-medium text-pos-700">
-                  Request sent — {preview.data.inviterName} will confirm from their side.
+                  {copy?.requestSent}
                 </p>
               ) : (
               <>
@@ -82,13 +74,7 @@ export function JoinPage({
                   onClick={() => accept.mutate()}
                   className="w-full rounded-xl bg-brand-600 py-3 font-semibold text-white hover:bg-brand-700 disabled:opacity-50"
                 >
-                  {accept.isPending
-                    ? "One moment…"
-                    : preview.data.kind === "group"
-                      ? "Join the group"
-                      : preview.data.kind === "profile"
-                        ? "Send friend request"
-                        : "Accept the invite"}
+                  {accept.isPending ? "One moment…" : copy?.action}
                 </button>
                 {accept.isError ? (
                   <p className="text-sm font-medium text-brand-600">
@@ -114,8 +100,7 @@ export function JoinPage({
                   Sign in to accept
                 </Link>
                 <p className="text-xs text-ink-soft">
-                  New here? Signing in with Google creates your account, then this
-                  invite completes itself.
+                  {INVITE_SIGN_IN_HINT}
                 </p>
               </>
             )}

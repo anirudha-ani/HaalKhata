@@ -5,8 +5,8 @@ import { useRouter } from "expo-router";
 import { Plus, UsersRound } from "lucide-react-native";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { PersonChecklist } from "@/components/people/PersonChecklist";
-import { Screen } from "@/components/shell/Screen";
-import { ScreenHeader } from "@/components/shell/ScreenHeader";
+import { Screen } from "@/components/shell/Screen/Screen";
+import { ScreenHeader } from "@/components/shell/ScreenHeader/ScreenHeader";
 import { Button } from "@/components/ui/Button";
 import { Chip } from "@/components/ui/Chip";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -254,8 +254,10 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     flexBasis: 300,
     flexGrow: 1,
+    flexShrink: 1,
+    minWidth: 0,
     gap: spacing.md,
-    maxWidth: 570,
+    maxWidth: "100%",
     padding: spacing.lg,
   },
   cardBalance: {

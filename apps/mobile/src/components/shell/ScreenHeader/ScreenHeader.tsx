@@ -4,10 +4,10 @@ import { useRouter } from "expo-router";
 import { Bell, CircleUserRound } from "lucide-react-native";
 import { Image, Pressable, StyleSheet, Text, View } from "react-native";
 import { Avatar } from "@/components/ui/Avatar";
-import { SCREEN_CONTENT_MAX_WIDTH } from "@/components/shell/shell.constants";
+import { SCREEN_CONTENT_MAX_WIDTH } from "@/lib/layout/constants/layout";
 import { colors, fonts, radii, spacing } from "@/lib/theme/theme";
-import brandIconSource from "../../../assets/icon.png";
-import { useShellData } from "./hooks/useShellData";
+import brandIconSource from "../../../../assets/icon.png";
+import { useShellData } from "../../../lib/hooks/useShellData";
 
 /**
  * Renders the chrome above every tab screen — the mobile counterpart of the
