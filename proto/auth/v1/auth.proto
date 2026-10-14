@@ -13,6 +13,8 @@ import "common/v1/common.proto";
 // development and seeded accounts. Production rejects both RPCs, and no
 // current client calls them.
 service AuthService {
+  // Public availability only; never returns provider credentials.
+  rpc GetSignInOptions(google.protobuf.Empty) returns (SignInOptions);
   rpc SignUp(SignUpRequest) returns (AuthResponse);
   rpc LogIn(LogInRequest) returns (AuthResponse);
   rpc BeginGoogleSignIn(google.protobuf.Empty) returns (GoogleSignInChallenge);
@@ -40,6 +42,12 @@ service AuthService {
 
   // Marks the first-run flow finished, including when it was skipped.
   rpc CompleteOnboarding(google.protobuf.Empty) returns (common.v1.User);
+}
+
+// Apple is offered only when this backend can sign and store its credentials.
+message SignInOptions {
+  bool apple_native_enabled = 1;
+  bool apple_browser_enabled = 2;
 }
 
 message SignUpRequest {

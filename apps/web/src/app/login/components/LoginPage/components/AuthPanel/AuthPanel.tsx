@@ -13,15 +13,13 @@ import { PASSWORD_AUTH_ENABLED } from "@/app/login/constants/googleSignIn";
 /**
  * Renders configured Google/Apple sign-in and local development credentials.
  *
- * @param props - Provider availability, mobile visibility state and close action.
+ * @param props - Mobile visibility state and close action.
  * @returns The desktop auth card or mobile sign-in sheet.
  */
 export function AuthPanel({
-  appleConfigured,
   mobileOpen,
   onMobileClose,
 }: {
-  appleConfigured: boolean;
   mobileOpen: boolean;
   onMobileClose: () => void;
 }) {
@@ -81,7 +79,7 @@ export function AuthPanel({
         </span>
       </div>
 
-      {appleConfigured ? <button type="button" disabled={apple.isPending} onClick={apple.signIn}
+      {apple.available ? <button type="button" disabled={apple.isPending} onClick={apple.signIn}
         className="mb-3 w-full rounded-full bg-black px-4 py-3 text-sm font-semibold text-white disabled:opacity-50">
         {apple.isPending ? "Signing in…" : "Continue with Apple"}
       </button> : null}
@@ -101,7 +99,7 @@ export function AuthPanel({
       ) : null}
 
 
-      {(googleIsConfigured || appleConfigured) && PASSWORD_AUTH_ENABLED ? (
+      {(googleIsConfigured || apple.available) && PASSWORD_AUTH_ENABLED ? (
         <div className="my-5 flex items-center gap-3 text-[11px] font-semibold tracking-wide text-ink-soft uppercase">
           <span className="h-px flex-1 bg-line" /> or use a password <span className="h-px flex-1 bg-line" />
         </div>

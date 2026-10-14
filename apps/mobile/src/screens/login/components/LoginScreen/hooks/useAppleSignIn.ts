@@ -11,6 +11,7 @@ import { authClient, errorMessage } from "@/lib/api/connect";
 import { setSessionToken } from "@/lib/api/session";
 import { clearMobileQueryCache } from "@/lib/api/queryCache";
 import { consumePendingInvite } from "@/lib/invite/consumePendingInvite";
+import { useSignInOptionsAPI } from "./useSignInOptionsAPI";
 
 /**
  * Drives Apple login without placing identity or local bearer tokens in redirect URLs.
@@ -18,13 +19,16 @@ import { consumePendingInvite } from "@/lib/invite/consumePendingInvite";
  */
 export function useAppleSignIn() {
   const router = useRouter();
-  const [available, setAvailable] = useState(Platform.OS === "android");
+  const options = useSignInOptionsAPI();
+  const [deviceSupported, setDeviceSupported] = useState(Platform.OS === "android");
+  const available = deviceSupported && options.isSuccess &&
+    (Platform.OS === "ios" ? options.data.appleNativeEnabled : options.data.appleBrowserEnabled);
   const [error, setError] = useState("");
   useEffect(() => {
     if (Platform.OS !== "ios") return;
     let mounted = true;
-    void AppleAuthentication.isAvailableAsync().then((supported) => { if (mounted) setAvailable(supported); })
-      .catch(() => { if (mounted) setAvailable(false); });
+    void AppleAuthentication.isAvailableAsync().then((supported) => { if (mounted) setDeviceSupported(supported); })
+      .catch(() => { if (mounted) setDeviceSupported(false); });
     return () => { mounted = false; };
   }, []);
   const mutation = useMutation({
@@ -60,5 +64,5 @@ export function useAppleSignIn() {
   });
   return { available, error, isPending: mutation.isPending,
     /** Clears a previous error and starts a fresh Apple authorization. */
-    signIn: () => { if (!mutation.isPending) { setError(""); mutation.mutate(); } } };
+    signIn: () => { if (available && !mutation.isPending) { setError(""); mutation.mutate(); } } };
 }

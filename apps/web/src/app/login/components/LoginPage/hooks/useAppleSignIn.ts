@@ -7,13 +7,16 @@ import { authClient, errorMessage } from "@/lib/api/connect";
 import { completeBrowserSignIn } from "@/lib/auth/completeSignIn";
 import { APPLE_VERIFIER_STORAGE_KEY } from "../../../constants/appleSignIn";
 import { assertAppleBrowserOrigin } from "../utils/appleBrowserOrigin";
+import { useSignInOptionsAPI } from "./useSignInOptionsAPI";
 
 /**
  * Starts Apple authorization and redeems the callback with this tab's private proof.
- * @returns Pending/error state and sign-in action.
+ * @returns Configuration availability, pending/error state and sign-in action.
  */
 export function useAppleSignIn() {
   const queryClient = useQueryClient();
+  const options = useSignInOptionsAPI();
+  const available = options.isSuccess && options.data.appleBrowserEnabled;
   const attempted = useRef(false);
   const [error, setError] = useState("");
   const complete = useMutation({
@@ -52,7 +55,7 @@ export function useAppleSignIn() {
     onSuccess: (challenge) => window.location.assign(challenge.authorizationUrl),
     onError: (failure) => { sessionStorage.removeItem(APPLE_VERIFIER_STORAGE_KEY); setError(errorMessage(failure)); },
   });
-  return { error, isPending: begin.isPending || complete.isPending,
+  return { available, error, isPending: begin.isPending || complete.isPending,
     /** Clears a prior error and starts browser authorization. */
-    signIn: () => { if (!begin.isPending && !complete.isPending) { setError(""); begin.mutate(); } } };
+    signIn: () => { if (available && !begin.isPending && !complete.isPending) { setError(""); begin.mutate(); } } };
 }

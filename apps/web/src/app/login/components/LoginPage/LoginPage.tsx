@@ -12,10 +12,9 @@ import { ProductStep } from "./components/ProductStep/ProductStep";
 /**
  * Renders the combined landing page and authentication entry point.
  *
- * @param props Public Apple configuration availability from the server.
  * @returns The marketing story, live product preview, and auth controls.
  */
-export function LoginPage({ appleConfigured }: { appleConfigured: boolean }) {
+export function LoginPage() {
   const [mobileAuthOpen, setMobileAuthOpen] = useState(false);
 
   return (
@@ -69,7 +68,6 @@ export function LoginPage({ appleConfigured }: { appleConfigured: boolean }) {
         </section>
 
         <AuthPanel
-          appleConfigured={appleConfigured}
           mobileOpen={mobileAuthOpen}
           onMobileClose={() => setMobileAuthOpen(false)}
         />
