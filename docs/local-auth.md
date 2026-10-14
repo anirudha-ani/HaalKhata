@@ -8,9 +8,9 @@ Apple is optional for local startup. Leave its key placeholder and encryption
 key blank to work with Google or development password login. `./dev.sh`
 prepares files quietly; it does not print Apple setup failures. The login
 screen checks public availability from the backend and shows Apple only when
-that flow is configured. `POSTGRES_PASSWORD` is still required to start the
-Compose database; fill it in the bottom Secrets section using the existing
-database password if you already have local data.
+that flow is configured. Setup automatically fills a missing or blank
+`POSTGRES_PASSWORD` with `change-me` for the local Compose database. Existing
+non-empty passwords are preserved; production requires its own real secret.
 
 ## One environment file
 

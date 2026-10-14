@@ -3,7 +3,7 @@
 import { chmodSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { parseEnv } from "node:util";
-import { APPLE_IDENTITY_NAMES, APPLE_KEY_FILENAME, PASSWORD_PLACEHOLDERS, PUBLIC_ENVIRONMENT_NAMES, SECRET_ENVIRONMENT_NAMES } from "./environment.constants.mjs";
+import { APPLE_IDENTITY_NAMES, APPLE_KEY_FILENAME, LOCAL_DATABASE_PASSWORD, PUBLIC_ENVIRONMENT_NAMES, SECRET_ENVIRONMENT_NAMES } from "./environment.constants.mjs";
 import { prepareAppleKey } from "./appleKey.mjs";
 import { groupSecretSection } from "./secretSection.mjs";
 
@@ -35,7 +35,7 @@ function publicDefaults(existing, template) {
 }
 
 /**
- * Adds only missing/empty public values; existing text, multiline keys and comments stay intact.
+ * Fills public values and the local database default; existing credentials stay intact.
  * @param {string} source Existing .env text.
  * @param {string} example Repository template text.
  * @returns {{ text: string, filled: string[] }} Updated text and the names filled.
@@ -45,6 +45,10 @@ export function prefillEnvironment(source, example) {
   const template = parseEnv(example);
   const defaults = publicDefaults(existing, template);
   const filled = PUBLIC_ENVIRONMENT_NAMES.filter((name) => !existing[name]?.trim() && defaults[name]);
+  if (!existing.POSTGRES_PASSWORD?.trim()) {
+    defaults.POSTGRES_PASSWORD = LOCAL_DATABASE_PASSWORD;
+    filled.push("POSTGRES_PASSWORD");
+  }
   const blankSecrets = Object.keys(template).filter((name) =>
     !Object.hasOwn(existing, name) && template[name] === "" &&
     SECRET_ENVIRONMENT_NAMES.includes(name.replace(/_FILE$/, "")));
@@ -52,7 +56,7 @@ export function prefillEnvironment(source, example) {
   // Appending overrides an earlier blank assignment without rewriting any secret.
   // Both Node's dotenv parser and Compose use the last assignment for a name.
   const additions = [];
-  if (filled.length) additions.push("# Known public settings added by setup; earlier blank entries are overridden.",
+  if (filled.length) additions.push("# Known local defaults added by setup; earlier blank entries are overridden.",
     ...filled.map((name) => `${name}=${JSON.stringify(defaults[name])}`));
   if (blankSecrets.length) additions.push("# Fill these secrets yourself (or use the supported _FILE alternative).",
     ...blankSecrets.map((name) => `${name}=`));
@@ -66,9 +70,6 @@ export function prefillEnvironment(source, example) {
  */
 export function manualEnvironmentActions(configured) {
   const actions = [];
-  if (PASSWORD_PLACEHOLDERS.has((configured.POSTGRES_PASSWORD ?? "").trim())) {
-    actions.push("Local database: fill POSTGRES_PASSWORD yourself. Keep it consistent with an existing database and DATABASE_URL if set; setup does not reset or rotate database credentials.");
-  }
   if (!configured.APPLE_PRIVATE_KEY && !configured.APPLE_PRIVATE_KEY_FILE) {
     actions.push(`Apple sign-in: run local setup to point APPLE_PRIVATE_KEY_FILE at root ${APPLE_KEY_FILENAME}, then replace that file's placeholder with your original .p8 key contents.`);
   }
@@ -102,7 +103,8 @@ export function setupEnvironment({ directory = REPOSITORY_ROOT, report = console
   const example = readFileSync(resolve(directory, ".env.example"), "utf8");
   const template = parseEnv(example);
   for (const name of SECRET_ENVIRONMENT_NAMES) {
-    if (template[name] || template[`${name}_FILE`]) throw new Error(`Remove ${name} credentials from .env.example before setup.`);
+    const localPassword = name === "POSTGRES_PASSWORD" && template[name] === LOCAL_DATABASE_PASSWORD;
+    if ((template[name] && !localPassword) || template[`${name}_FILE`]) throw new Error(`Remove ${name} credentials from .env.example before setup.`);
   }
   const exists = existsSync(filename);
   const source = exists ? readFileSync(filename, "utf8") : example;
@@ -111,9 +113,10 @@ export function setupEnvironment({ directory = REPOSITORY_ROOT, report = console
   const prepared = groupSecretSection(appleKey.text);
   if (!exists || prepared !== source) writeFileSync(filename, prepared, { mode: 0o600, flag: exists ? "w" : "wx" });
   chmodSync(filename, 0o600);
-  report(exists ? "Updated .env; Apple key path managed, other existing values and secrets preserved." : "Created .env with known public configuration and a local Apple key path; secrets are blank.");
+  report(exists ? "Updated .env; Apple key path managed, other existing values and secrets preserved." : "Created .env with local defaults and an Apple key path; private provider secrets are blank.");
   report(result.filled.length ? `Prefilled: ${result.filled.join(", ")}.` : "Known public defaults are already present; no configured values were replaced.");
   report("Secret fields are grouped at the bottom of .env under 'Secrets (fill these in)'.");
+  report("POSTGRES_PASSWORD uses the local development default when blank; existing passwords are preserved.");
   report(`APPLE_PRIVATE_KEY_FILE points to root ${APPLE_KEY_FILENAME}; existing file contents are never overwritten.`);
   if (appleKey.needsKey) report(`- Apple sign-in: replace ALL contents of root ${APPLE_KEY_FILENAME} with your original downloaded .p8 key, including its BEGIN/END PRIVATE KEY lines. The placeholder cannot authenticate.`);
   for (const action of manualEnvironmentActions(parseEnv(prepared))) report(`- ${action}`);

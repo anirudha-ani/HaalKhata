@@ -7,15 +7,17 @@ development setup. For a production deployment see [Self-hosting](self-hosting.m
 
 ```sh
 ./install-deps.sh   # installs dependencies, generates protogen, prepares .env
-# Fill POSTGRES_PASSWORD; provider secrets are optional for local startup.
+# Local database defaults are automatic; provider secrets are optional.
 ./dev.sh            # starts db + web server at http://127.0.0.1:3000
 ```
 
 `install-deps.sh` installs everything that is missing and skips what is
 already there. It prefills known public settings in `.env` and lists the
-secrets to supply yourself. Fill `POSTGRES_PASSWORD` before first database
-startup; the local connection uses that password with the prefilled host,
-port, username and database name. `dev.sh` starts Postgres and the Next.js dev
+provider secrets to supply yourself. `POSTGRES_PASSWORD` defaults to
+`change-me` for the local Compose database; setup fills it when missing or
+blank and preserves any existing non-empty password. The local connection
+uses it with the prefilled host, port, username and database name.
+`dev.sh` starts Postgres and the Next.js dev
 server. It quietly prepares missing settings and checks the required database
 password before Compose runs. Missing Apple credentials hide Apple sign-in
 on web and mobile; they produce no startup warnings. Use
@@ -48,8 +50,9 @@ Team/Key/Services IDs, the support email and local database connection parts
 are prefilled from `.env.example`. Apart from the managed Apple key path
 below, existing non-empty values, comments and multiline secrets are
 preserved; missing or blank public entries are filled
-once. You supply database/provider secrets yourself. Reruns never generate
-or rotate a secret. New `.env` files contain no passwords or keys, and setup
+once. You supply private provider credentials yourself. Reruns never generate
+or rotate a secret. New `.env` files contain only the fixed local database
+default; private provider credentials stay blank. Setup
 sets file permissions to owner-only read/write.
 
 All secret fields and their file settings are grouped at the bottom under

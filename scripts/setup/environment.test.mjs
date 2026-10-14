@@ -8,12 +8,12 @@ import { join } from "node:path";
 import { parseEnv } from "node:util";
 import { test } from "node:test";
 import { manualEnvironmentActions, prefillEnvironment, setupEnvironment } from "./environment.mjs";
-import { APPLE_KEY_FILENAME, APPLE_KEY_PLACEHOLDER, SECRET_ENVIRONMENT_NAMES, SECRET_SECTION_HEADER } from "./environment.constants.mjs";
+import { APPLE_KEY_FILENAME, APPLE_KEY_PLACEHOLDER, LOCAL_DATABASE_PASSWORD, SECRET_ENVIRONMENT_NAMES, SECRET_SECTION_HEADER } from "./environment.constants.mjs";
 
 /** Real template ensures new clones get the configuration documented by the installer. */
 const EXAMPLE = readFileSync(new URL("../../.env.example", import.meta.url), "utf8");
 
-test("a fresh clone gets known public IDs, blank secrets, and private file permissions", () => {
+test("a fresh clone gets public IDs, the local database password, blank provider secrets and private files", () => {
   const directory = mkdtempSync(join(tmpdir(), "haalkhata-setup-"));
   const messages = [];
   try {
@@ -29,7 +29,8 @@ test("a fresh clone gets known public IDs, blank secrets, and private file permi
     assert.equal(configured.GOOGLE_MOBILE_CLIENT_IDS, configured.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID);
     assert.equal(configured.POSTGRES_HOST, "localhost");
     for (const name of SECRET_ENVIRONMENT_NAMES) {
-      assert.ok(!configured[name], `${name} must be supplied by the developer`);
+      if (name === "POSTGRES_PASSWORD") assert.equal(configured[name], LOCAL_DATABASE_PASSWORD);
+      else assert.ok(!configured[name], `${name} must be supplied by the developer`);
       if (name !== "APPLE_PRIVATE_KEY") assert.ok(!configured[`${name}_FILE`]);
     }
     const keyFilename = join(directory, APPLE_KEY_FILENAME);
@@ -68,7 +69,7 @@ test("existing multiline secrets and comments survive verbatim while blank publi
   assert.equal(configured.APPLE_TOKEN_ENCRYPTION_KEY, "keep-this-key");
   assert.equal(configured.SESSION_SECRET, "private-value");
   assert.equal(configured.APPLE_PRIVATE_KEY_FILE, "");
-  assert.equal(configured.POSTGRES_PASSWORD, "");
+  assert.equal(configured.POSTGRES_PASSWORD, LOCAL_DATABASE_PASSWORD);
   assert.deepEqual(prefillEnvironment(result.text, EXAMPLE), { text: result.text, filled: [] });
 });
 
@@ -78,6 +79,22 @@ test("custom Google web IDs are propagated to the missing counterpart, never rep
     assert.equal(configured.GOOGLE_CLIENT_ID, "custom-web-client");
     assert.equal(configured.NEXT_PUBLIC_GOOGLE_CLIENT_ID, "custom-web-client");
   }
+});
+
+test("blank local database passwords default to change-me while existing credentials remain untouched", () => {
+  for (const password of ["", "   ", "change-me", "custom-local-password"]) {
+    const configured = parseEnv(prefillEnvironment(`POSTGRES_PASSWORD="${password}"\n`, EXAMPLE).text);
+    assert.equal(configured.POSTGRES_PASSWORD, password.trim() ? password : LOCAL_DATABASE_PASSWORD);
+  }
+  assert.throws(() => {
+    const directory = mkdtempSync(join(tmpdir(), "haalkhata-setup-"));
+    try {
+      writeFileSync(join(directory, ".env.example"), `${EXAMPLE}\nPOSTGRES_PASSWORD=real-secret-not-a-default\n`);
+      setupEnvironment({ directory, report: () => {} });
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  }, /Remove POSTGRES_PASSWORD credentials/);
 });
 
 test("a different Apple team and native Google audience do not acquire unrelated provider IDs", () => {
