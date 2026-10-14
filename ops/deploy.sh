@@ -33,6 +33,9 @@
 # the launcher) and nothing on stdin:
 #   ssh -i ~/.ssh/haalkhata_deploy deploy@haalkhata.app <previous-sha> </dev/null
 set -eu
+# The session's locale comes from whoever connects; character ranges mean
+# byte ranges only in the C locale.
+export LC_ALL=C
 
 TAG="${SSH_ORIGINAL_COMMAND:-}"
 printf '%s' "$TAG" | grep -Eq '^[0-9a-f]{40}$' || {

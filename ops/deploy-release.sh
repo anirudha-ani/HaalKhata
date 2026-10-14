@@ -23,6 +23,10 @@
 # which leaves the server's file alone, so any secret may still live on the
 # server only). See ops/README.md.
 set -eu
+# The character ranges below mean byte ranges only in the C locale. The
+# session's locale comes from whoever connects, and under en_US.UTF-8 GNU
+# grep matches nothing at all against [!-~], refusing every secret.
+export LC_ALL=C
 
 TAG="${1:-}"
 RELEASE="${2:-}"
