@@ -62,9 +62,10 @@ continue to use the selected EAS environment.
    `https://YOUR_DEVELOPMENT_HOST/api/auth/apple/callback`. Keep the existing
    production domain/return URL. The Services ID stays grouped with the
    primary `com.haalkhata.app` App ID. Save both configuration screens.
-3. Set `APP_PUBLIC_URL` to that HTTPS origin and restart the local server.
-   Run `pnpm auth:check`: it verifies URL syntax, reads the private key,
-   actually signs a client-secret JWT, and checks refresh-token encryption.
+3. Set `APP_PUBLIC_URL` to that HTTPS origin and restart with `./dev.sh`.
+   Startup automatically checks URL syntax, reads the private key, actually
+   signs a client-secret JWT, and checks refresh-token encryption. Missing
+   Apple configuration is reported while other local features remain usable.
 4. Open **`https://YOUR_DEVELOPMENT_HOST/login`**, then Continue with Apple.
    Start and finish on that same origin: the private verifier is held in
    that tab's sessionStorage. Starting at localhost and returning elsewhere
@@ -88,8 +89,7 @@ receives the native proof; the HTTPS development URL above works on devices
 without loosening the app's release transport protections.
 
 ```sh
-pnpm auth:check --ios
-./dev.sh                       # local database + backend
+./dev.sh                       # automatic env/auth checks + local database/backend
 # In another terminal, connect an iPhone/iPad and build/install the dev client:
 pnpm --filter @haalkhata/mobile ios --device
 ```
@@ -98,16 +98,17 @@ Use your Apple team to sign the development build; its provisioning profile
 must include Sign in with Apple. If Xcode prompts for signing, choose the
 team owning `com.haalkhata.app`. For simulator UI testing,
 `./dev.sh --mobile-ios` starts the full stack, but verify Apple login on a
-real device too. Expo Go uses different app identifiers, so it cannot prove
+real device too. This option automatically selects the native Apple check,
+which does not require browser callback settings. Expo Go uses different app identifiers, so it cannot prove
 this app's credential configuration works. Android uses the browser/Services
 ID flow above and returns through the app's `haalkhata://login` scheme.
 
 ## Verify each change before release
 
 ```sh
-pnpm auth:check                 # browser/Android local configuration
-pnpm auth:check --ios           # native local configuration
-pnpm test:environment           # root env precedence + Expo secret isolation
+pnpm auth:check                 # optional browser diagnostic, without starting services
+pnpm auth:check --ios           # optional native diagnostic, without starting services
+pnpm test:environment           # env/setup checks, secret isolation and startup orchestration
 pnpm typecheck && pnpm lint && pnpm test
 pnpm typecheck:mobile && pnpm lint:mobile && pnpm test:mobile
 ```

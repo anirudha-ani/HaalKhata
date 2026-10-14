@@ -111,5 +111,5 @@ export function setupEnvironment({ directory = REPOSITORY_ROOT, report = console
   report(result.filled.length ? `Prefilled: ${result.filled.join(", ")}.` : "Known public defaults are already present; no configured values were replaced.");
   for (const action of manualEnvironmentActions(parseEnv(result.text))) report(`- ${action}`);
   report("SESSION_SECRET is optional in development: the server keeps a local key automatically. Production requires your own configured secret.");
-  report("After filling Apple credentials, run pnpm auth:check (browser) or pnpm auth:check --ios (native). See docs/local-auth.md.");
+  report("Run ./dev.sh to prepare the environment, check Apple configuration and start the app. --mobile-ios selects the native check; pnpm auth:check remains an optional standalone diagnostic. See docs/local-auth.md.");
 }

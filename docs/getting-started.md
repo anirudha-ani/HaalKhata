@@ -16,7 +16,11 @@ already there. It prefills known public settings in `.env` and lists the
 secrets to supply yourself. Fill `POSTGRES_PASSWORD` before first database
 startup; the local connection uses that password with the prefilled host,
 port, username and database name. `dev.sh` starts Postgres and the Next.js dev
-server. Use `./dev.sh --clean` for a fresh database and `./dev.sh --down` to
+server. It also prepares missing public settings and checks Apple sign-in
+configuration automatically before starting services. `--mobile-ios` selects
+the native Apple check; web and Android use the browser check. Missing Apple
+credentials are reported without blocking other local features. Use
+`./dev.sh --clean` for a fresh database and `./dev.sh --down` to
 stop everything.
 
 ## Manual setup
@@ -84,8 +88,9 @@ full console walkthrough.
 Use real Apple credentials with your local backend. The web button appears
 when `APPLE_SERVICE_ID` is configured. Browser/Android sign-in requires a
 registered HTTPS development domain; native iOS uses its signed App ID.
-Run `pnpm auth:check` (browser) or `pnpm auth:check --ios` (native) to check
-configuration. [Local authentication](local-auth.md) lists every environment
+`./dev.sh` checks configuration automatically. `pnpm auth:check` (browser)
+or `pnpm auth:check --ios` (native) is available when you only want the
+diagnostic without starting services. [Local authentication](local-auth.md) lists every environment
 variable, Apple console setting, startup command, and verification step.
 
 ### Receipt AI providers (optional)

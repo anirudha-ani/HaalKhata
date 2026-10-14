@@ -3,9 +3,10 @@
 #
 # Assumes ./install-deps.sh has been run at least once (it installs Node,
 # pnpm and Docker; buf comes from the workspace's devDependencies). This
-# script only STARTS things:
+# script prepares configuration, checks auth, and starts the local stack:
 #   1. start the Docker daemon if it's not running (systemctl / Docker Desktop)
 #   2. self-heal cheap project state (node_modules, protogen) if missing
+#      prepare .env public defaults and check Apple configuration for this platform
 #   3. start the Postgres db (docker compose up -d db) and wait for it to be healthy
 #   4. start the Next.js dev server in the foreground (pnpm dev, http://127.0.0.1:3000)
 #      (with --mobile-android / --mobile-ios, also: boot emulator/simulator,
@@ -570,8 +571,28 @@ start_mobile() {
 
 # --- main ----------------------------------------------------------------------
 
+# Check the real Apple signing/encryption setup automatically before services start.
+# Apple is optional in local development; report failures without blocking other features.
+# @param $1 native platform, or empty for browser development
+# @returns 0 after reporting the configured flow's result
+check_local_auth() {
+  local platform="$1"
+  local argument=""
+  if [[ "$platform" == "ios" ]]; then
+    argument="--ios"
+  fi
+  log "checking local Apple sign-in configuration…"
+  # Use the same diagnostic entry point directly, avoiding package-manager
+  # failure banners when an optional local provider is not configured yet.
+  if (cd apps/web && node --import tsx scripts/check-apple-auth.mts ${argument:+"$argument"}); then
+    ok "local Apple configuration passed (complete a real sign-in to verify Apple registration)"
+  else
+    warn "Apple sign-in needs the configuration fixes shown above; continuing local startup."
+  fi
+}
+
 usage() {
-  sed -n '2,21p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,22p' "$0" | sed 's/^# \{0,1\}//'
   exit 0
 }
 
@@ -607,6 +628,8 @@ main() {
 
   assert_system_ready
   ensure_project_state
+  node scripts/setup-env.mjs
+  check_local_auth "$mobile_platform"
 
   if [[ "$mode" == "clean" ]]; then
     clean_db
@@ -682,4 +705,7 @@ main() {
     --turbopack -H "$web_host"
 }
 
-main "$@"
+# Allow the startup workflow to be exercised with isolated service adapters in tests.
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  main "$@"
+fi

@@ -10,7 +10,7 @@
     "dev:mobile": "pnpm --filter @haalkhata/mobile dev",
     "auth:check": "pnpm --filter @haalkhata/web auth:check",
     "setup:env": "node scripts/setup-env.mjs",
-    "test:environment": "node --test scripts/environment.test.mjs scripts/setup/environment.test.mjs",
+    "test:environment": "node --test scripts/environment.test.mjs scripts/setup/environment.test.mjs scripts/dev-startup.test.mjs",
     "lint:mobile": "pnpm --filter @haalkhata/mobile lint",
     "typecheck:mobile": "pnpm --filter @haalkhata/mobile typecheck",
     "test:mobile": "pnpm --filter @haalkhata/mobile test",
