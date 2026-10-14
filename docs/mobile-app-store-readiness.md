@@ -15,7 +15,7 @@ evidence. Its unresolved code findings have been implemented here:
 | --- | --- |
 | Builds | EAS development/simulator/preview/production profiles, pinned Node/pnpm, remote build numbers, code generation after installation, HTTPS/native Google input validation, deployed-backend preflight. |
 | Apple sign-in | Native iOS Apple authentication; verifier-bound web/Android callback; verified issuer/audience/signature/expiry/nonce/email; encrypted provider grants and revocation. |
-| Deletion | Account → Delete account, typed confirmation, hard deletion of the original identity, Apple grant revocation, personal-data removal, fresh anonymous shared ledger identity, session invalidation. Outstanding balances do not block deletion. |
+| Deletion | Account → Delete account, typed confirmation, hard deletion of the original identity, Apple grant revocation, personal-data removal, fresh anonymous shared ledger identity, session invalidation. Fresh payable/receivable totals are shown per currency with Review balances and an explicit Delete anyway option. Failed balance checks offer retry and do not block deletion. |
 | Privacy | Public `/privacy` and `/support`; login/account legal links; monitored contact configuration; accurate receipt processor disclosures. |
 | Receipt sharing | Explicit consent for each selected image, bound to the current processor configuration; consent checked before provider processing; native JPEG normalization and upload bounds. Manual entry needs no photo sharing. |
 | User safety | Private authorized reports, blocks independent of balances, unblock settings, blocked-message/feed filtering, basic text filtering, internal moderator removal/suspension console. |
@@ -235,7 +235,7 @@ bundling and simulator compilation do not establish provider/account behavior.
 | Money | Every split type, unequal cents/rounding, multiple payers, USD/EUR separately, create/edit/delete, paid/received settlements, duplicate-tap/retry behavior. |
 | Receipt | Camera and library; denial/cancellation; HEIC; explicit processor consent; no upload until consent; provider failure and manual entry; draft reviewed before save. |
 | Safety | Report a comment/profile/group/expense; see it in the private queue; block despite debt; no direct requests/reminders or blocked comments; unblock; moderator redaction/suspension. |
-| Deletion | Cancel confirmation; delete Google and Apple accounts, including private relay; Apple revoke failures leave the account intact and retryable; another account sees anonymous cents/history. |
+| Deletion | Review owed and receivable totals in multiple currencies; Review balances opens the dashboard without deleting; reopening refreshes settled amounts and clears confirmation; failed/offline balance reads never show a false zero and still allow Delete anyway. Cancel confirmation; delete Google and Apple accounts, including private relay; Apple revoke failures leave the account intact and retryable; another account sees anonymous cents/history. |
 | Failures | Offline cold launch, flaky API, rate limiting, retry controls, long receipt parsing, no false empty balances. |
 | UI/accessibility | iPhone/iPad rotation, small screen, keyboard and large text, sheet scrolling, VoiceOver labels, actual permission strings, external payment-app/browser fallbacks. |
 
