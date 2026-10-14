@@ -25,7 +25,7 @@ export const PASSWORD_AUTH_ENABLED = process.env.NODE_ENV !== "production";
 export const GOOGLE_BUTTON_OPTIONS = {
   theme: "outline",
   size: "large",
-  shape: "rectangular",
+  shape: "pill",
   text: "continue_with",
   logo_alignment: "center",
   width: 320,
