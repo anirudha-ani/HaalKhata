@@ -12,7 +12,7 @@ const ADMIN_URL = process.env.MERGE_TEST_ADMIN_URL ?? "postgres://haalkhata:chan
 const TEST_URL = ADMIN_URL.replace(/\/[^/]*$/, "/haalkhata_release_migration_test");
 const MIGRATIONS_DIRECTORY = fileURLToPath(new URL("../../../../migrations/", import.meta.url));
 const MAIN_LAST_MIGRATION = "1791828578558_add-group-status.sql";
-const RELEASE_SUFFIXES = ["_apple_sign_in.sql", "_anonymous_ledger_members.sql", "_user_safety.sql"];
+const RELEASE_SUFFIXES = ["_apple_sign_in.sql", "_anonymous_ledger_members.sql", "_user_safety.sql", "_add-receipt-account-consent.sql"];
 
 /** @returns Whether the isolated integration database can be created. */
 async function databaseReachable(): Promise<boolean> {
@@ -74,9 +74,16 @@ describe.skipIf(!reachable)("mobile release database upgrade", () => {
     expect(owner.rows).toEqual([{ google_sub: "release-google-sub", apple_sub: null, deleted_at: null, suspended_at: null }]);
     const tables = await database.query("SELECT to_regclass('apple_credentials') AS apple, to_regclass('content_reports') AS safety");
     expect(tables.rows).toEqual([{ apple: "apple_credentials", safety: "content_reports" }]);
+    expect((await database.query("SELECT * FROM receipt_consents")).rows).toEqual([]);
+    await database.query("INSERT INTO users (id, email, name, avatar_color) VALUES ('receipt-consent-owner', 'receipt-consent@example.com', 'Scanner', '#336699')");
+    await database.query("INSERT INTO receipt_consents (user_id, consent_version) VALUES ($1, $2)", ["receipt-consent-owner", "a".repeat(64)]);
+    expect((await database.query("SELECT consent_version FROM receipt_consents WHERE user_id = $1", ["receipt-consent-owner"])).rows)
+      .toEqual([{ consent_version: "a".repeat(64) }]);
+    await database.query("DELETE FROM users WHERE id = $1", ["receipt-consent-owner"]);
+    expect((await database.query("SELECT * FROM receipt_consents")).rows).toEqual([]);
     expect(await migrate(MIGRATIONS_DIRECTORY)).toEqual([]);
     const finalHistory = await database.query<{ name: string }>("SELECT name FROM pgmigrations ORDER BY id");
     expect(finalHistory.rows.slice(0, history.rows.length)).toEqual(history.rows);
-    expect(finalHistory.rows).toHaveLength(history.rows.length + 3);
+    expect(finalHistory.rows).toHaveLength(history.rows.length + RELEASE_SUFFIXES.length);
   });
 });
