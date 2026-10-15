@@ -145,4 +145,9 @@ jobs:
         run: pnpm --filter @haalkhata/mobile test:release-config
 
       - name: 'Mobile app: native dependency compatibility'
+        # Validate against the locked Expo SDK's bundled native-module matrix.
+        # The live endpoint can require patches before their dependencies publish.
+        # Explicit `install --check` still validates (unlike offline `expo start`).
+        env:
+          EXPO_OFFLINE: '1'
         run: pnpm --filter @haalkhata/mobile exec expo install --check
