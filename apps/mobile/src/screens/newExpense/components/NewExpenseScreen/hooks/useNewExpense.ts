@@ -1,5 +1,7 @@
 /** Composite expense-form hook: field state, receipt scanning, payer/split validation, submit. */
 
+import { receiptCurrencyError } from "@haalkhata/shared/expense/form/receiptCurrency";
+import { expenseFormCurrency } from "@haalkhata/shared/expense/form/formCurrency";
 import { useReceiptScanConsent } from "@/lib/receipt/hooks/useReceiptScanConsent";
 import type { User } from "@haalkhata/protogen/common/v1/common_pb";
 import { useRouter } from "expo-router";
@@ -89,10 +91,9 @@ export function useNewExpense(
   const selectedGroup = expenseAPI.groups.find(
     (groupSummary) => groupSummary.group?.id === groupId,
   )?.group;
-  // The one currency every money input on this form is typed in: the
-  // group's frozen currency, or the payer's default for one-off expenses.
-  // Parsing needs it because decimals follow the currency (§36).
-  const currency = selectedGroup?.currency ?? expenseAPI.me?.defaultCurrency ?? "USD";
+  // Inputs, previews and the saved request must share the original currency
+  // when editing; changing a profile default is never a currency conversion.
+  const currency = expenseFormCurrency(selectedGroup?.currency, expenseAPI.editing?.expense?.currency, expenseAPI.me?.defaultCurrency);
   // The itemized split's lines — the same editor whether they were typed or
   // read off a receipt.
   const itemDraft = useItemDraft(
@@ -209,6 +210,8 @@ export function useNewExpense(
         const receipt = result.receipt;
         if (!receipt) return;
         const { people: receiptPeople, currency: receiptCurrency } = receiptContextRef.current;
+        const currencyError = receiptCurrencyError(receipt.currency, receiptCurrency);
+        if (currencyError) { setError(currencyError); return; }
         setProvider(result.provider);
         // Only fill fields the user has not already written in — a scan
         // should not overwrite what somebody deliberately typed first.
@@ -336,6 +339,8 @@ export function useNewExpense(
   };
 
   return {
+    splitNotice: splitType === "exact" ? initial.splitNotice : undefined,
+    currency,
     me: expenseAPI.me,
     groups: expenseAPI.groups,
     friends: expenseAPI.friends,

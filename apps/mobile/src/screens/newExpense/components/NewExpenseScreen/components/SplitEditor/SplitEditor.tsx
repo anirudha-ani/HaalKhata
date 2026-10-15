@@ -1,5 +1,6 @@
 /** Split section: split-type tabs plus per-person participation and value inputs. */
 
+import { equalSplitSummary } from "@haalkhata/shared/expense/form/equalSplitSummary";
 import { Check } from "lucide-react-native";
 import { Pressable, StyleSheet, TextInput, View } from "react-native";
 import { Text } from "@/components/ui/Text";
@@ -35,6 +36,7 @@ export function SplitEditor({
   return (
     <View style={styles.section}>
       <Text style={styles.sectionTitle}>SPLIT</Text>
+      {form.splitNotice ? <Text style={styles.summary}>{form.splitNotice}</Text> : null}
 
       <Segmented onChange={form.setSplitType} options={SPLIT_TABS} value={form.splitType} />
 
@@ -69,6 +71,7 @@ export function SplitEditor({
               {form.splitType !== "equal" && isChecked ? (
                 <View style={styles.valueCell}>
                   <TextInput
+                    accessibilityLabel={`${form.splitType} value for ${person.name}`}
                     keyboardType="decimal-pad"
                     onChangeText={(text) =>
                       form.setSplitInputs({ ...form.splitInputs, [person.id]: text })
@@ -93,8 +96,7 @@ export function SplitEditor({
         <Text style={styles.validation}>{form.splitCheck.message}</Text>
       ) : form.splitType === "equal" && form.participantIds.length > 0 && form.totalCents ? (
         <Text style={styles.summary}>
-          {(form.totalCents / 100 / form.participantIds.length).toFixed(2)} each ·{" "}
-          {form.participantIds.length} people
+          {equalSplitSummary(form.totalCents, form.participantIds.length, currency)}
         </Text>
       ) : null}
     </View>

@@ -45,7 +45,7 @@ export function ExpenseForm({
   editExpenseId: string;
 }) {
   const form = useNewExpense(expenseAPI, initial, editExpenseId);
-  const currency = form.selectedGroup?.currency ?? form.me?.defaultCurrency ?? "USD";
+  const currency = form.currency;
   const { isExpanded, isTablet, isLargeText } = useResponsiveLayout();
   useErrorToast(form.error);
 
