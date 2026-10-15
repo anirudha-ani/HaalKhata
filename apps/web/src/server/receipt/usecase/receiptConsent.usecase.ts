@@ -18,13 +18,14 @@ export function receiptProcessingInfo() {
     (gatewayHost === "openrouter.ai" && modelProvider === "google" ? "OpenRouter and Google (Gemini)" :
       gatewayHost === "openrouter.ai" ? `OpenRouter and ${modelProvider || "its configured AI provider"}` :
         gatewayHost || "the local demonstration parser");
-  const disclosure = `Receipt photos you choose to scan and their contents will be sent to ${processors} to extract items, tax and tip. ` +
+  // Preserve the established sharing-terms fingerprint when only presentation copy changes.
+  const consentTerms = `Receipt photos you choose to scan and their contents will be sent to ${processors} to extract items, tax and tip. ` +
     "Photos may contain personal or payment information; remove sensitive details first. " +
     "HaalKhata does not save receipt images on its server. Review the extracted items before saving.";
-  const consentVersion = crypto.createHash("sha256").update(JSON.stringify({ disclosure, gatewayHost, modelProvider,
+  const consentVersion = crypto.createHash("sha256").update(JSON.stringify({ disclosure: consentTerms, gatewayHost, modelProvider,
     zeroDataRetention: COMPATIBLE_AI.zeroDataRetention,
     providers: process.env.RECEIPT_AI_PROVIDERS ?? "compatible,mock" })).digest("hex");
-  return { disclosure, consentVersion };
+  return { disclosure: `Receipt photos are shared with ${processors} for AI scanning.`, consentVersion };
 }
 
 /** @param userId Signed-in account. @returns Current disclosure and its saved permission status. */

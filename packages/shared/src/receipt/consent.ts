@@ -6,7 +6,7 @@ export const RECEIPT_CONSENT_COPY = {
   title: "Allow AI receipt scanning?",
   allow: "Allow AI scanning",
   decline: "Enter manually",
-  remember: "Your choice applies to future scans on this account, on web and mobile. You can withdraw it in Account settings. Manual entry is always available.",
+  remember: "Applies to future scans on this account. Turn it off anytime in Account.",
   settingTitle: "AI receipt scanning",
   enabled: "Allowed for this account on web and mobile.",
   disabled: "Permission is off. We will ask before your next AI scan. Manual entry is always available.",
