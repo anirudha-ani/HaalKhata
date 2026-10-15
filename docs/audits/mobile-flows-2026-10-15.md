@@ -59,10 +59,14 @@ UI journeys. The temporary fixture ledger remains isolated from real users.
   11 native expense-controller workflow cases added in this pass.
 - Shared typecheck/lint and **505 tests**, including the currency and split-edit
   regressions used by both renderers.
+- iOS JavaScript export completed successfully with the updated shared helpers.
 - Proto lint, release configuration validation and the API parity gate
   (**64 common Connect methods**).
 - Repository production dependency audit: no unmitigated high/critical advisories;
   the seven existing security-patch regression fixtures passed.
+  GitHub still has an open high-severity `node-forge` alert,
+  `GHSA-86w9-cpqp-85rv`, with no upstream fixed version listed. The pinned local
+  patch and exploit-rejection tests passed; the alert was not dismissed.
 
 The first local database runs exceeded default timeouts during simulator boot.
 The affected suites passed independently, and the complete suite was rerun with
