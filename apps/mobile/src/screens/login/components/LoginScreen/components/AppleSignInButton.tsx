@@ -1,7 +1,8 @@
 /** Apple-branded native button on iOS, browser sign-in action on Android. */
 
 import * as AppleAuthentication from "expo-apple-authentication";
-import { ActivityIndicator, Platform, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Platform, StyleSheet, View } from "react-native";
+import { Text } from "@/components/ui/Text";
 import { Button } from "@/components/ui/Button";
 import { APPLE_SIGN_IN_UNAVAILABLE } from "@haalkhata/shared/auth/providerMessages";
 import { colors, radii, spacing } from "@/lib/theme/theme";

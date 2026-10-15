@@ -2,7 +2,8 @@
 
 import { Check, ChevronDown } from "lucide-react-native";
 import { useState } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, View } from "react-native";
+import { Text } from "@/components/ui/Text";
 import {
   CURRENCIES,
   currencyInfo,

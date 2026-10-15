@@ -1,6 +1,7 @@
 /** Caller-owned block list and explicit unblock actions. */
 
-import { Text, View, StyleSheet } from "react-native";
+import { View, StyleSheet } from "react-native";
+import { Text } from "@/components/ui/Text";
 import { Button } from "@/components/ui/Button";
 import { errorMessage } from "@/lib/api/connect";
 import { colors, spacing } from "@/lib/theme/theme";

@@ -2,7 +2,8 @@
 
 import { ErrorState } from "@/components/ui/ErrorState";
 import { Bell, ChevronDown } from "lucide-react-native";
-import { ScrollView, StyleSheet, Text, View } from "react-native";
+import { ScrollView, StyleSheet, View } from "react-native";
+import { Text } from "@/components/ui/Text";
 import { ActivityList } from "@/components/activity/ActivityList";
 import { DetailHeader } from "@/components/shell/DetailHeader/DetailHeader";
 import { useResponsiveLayout } from "@/lib/layout/hooks/useResponsiveLayout";

@@ -1,14 +1,7 @@
 /** Login screen UI: Apple/Google sign-in and the development-only password form. */
 
-import {
-  KeyboardAvoidingView,
-  Image,
-  Platform,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
-} from "react-native";
+import { KeyboardAvoidingView, Image, Platform, ScrollView, StyleSheet, View } from "react-native";
+import { Text } from "@/components/ui/Text";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LegalLinks } from "@/components/legal/LegalLinks";
 import { RECEIPT_PRIVACY_MESSAGE } from "@haalkhata/shared/legal/privacyCopy";

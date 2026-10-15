@@ -1,7 +1,8 @@
 /** Public privacy/support links available before and after authentication. */
 
 import { useState } from "react";
-import { Linking, StyleSheet, Text, View } from "react-native";
+import { Linking, StyleSheet, View } from "react-native";
+import { Text } from "@/components/ui/Text";
 import { PRIVACY_PATH, SUPPORT_PATH } from "@haalkhata/shared/legal/links";
 import { Button } from "@/components/ui/Button";
 import { resolveApiBaseUrl } from "@/lib/api/api.constants";

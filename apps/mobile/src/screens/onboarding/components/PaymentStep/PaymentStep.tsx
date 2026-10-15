@@ -1,6 +1,7 @@
 /** Last step of the first-run flow: an optional chance to say how you want to be paid. */
 
-import { StyleSheet, Text, View } from "react-native";
+import { StyleSheet, View } from "react-native";
+import { Text } from "@/components/ui/Text";
 import { usePaymentMethodsAPI } from "@/components/payment/hooks/usePaymentMethodsAPI";
 import { PaymentMethodsSection } from "@/components/payment/PaymentMethodsSection";
 import { Button } from "@/components/ui/Button";

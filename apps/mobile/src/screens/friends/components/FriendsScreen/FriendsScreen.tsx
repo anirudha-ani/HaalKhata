@@ -2,7 +2,8 @@
 
 import { ErrorState } from "@/components/ui/ErrorState";
 import { UserPlus } from "lucide-react-native";
-import { StyleSheet, Text, View } from "react-native";
+import { StyleSheet, View } from "react-native";
+import { Text } from "@/components/ui/Text";
 import { InviteShareSheet } from "@/components/modals/InviteShareSheet";
 import { SettleUpModal } from "@/components/modals/SettleUpModal";
 import { Screen } from "@/components/shell/Screen/Screen";

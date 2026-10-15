@@ -3,7 +3,8 @@
 import type { User } from "@haalkhata/protogen/common/v1/common_pb";
 import { Check, Plus, Trash2 } from "lucide-react-native";
 import { useState } from "react";
-import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { Pressable, StyleSheet, TextInput, View } from "react-native";
+import { Text } from "@/components/ui/Text";
 import { Avatar } from "@/components/ui/Avatar";
 import { formatMoney, parseMoneyInput } from "@haalkhata/shared/money/money";
 import { MAX_EXPENSE_ITEM_NAME_LENGTH } from "@haalkhata/shared/text/limits";

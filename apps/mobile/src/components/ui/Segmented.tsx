@@ -1,6 +1,7 @@
 /** Segmented control: equal-width options on a paper track, matching the web tab switchers. */
 
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, View } from "react-native";
+import { Text } from "@/components/ui/Text";
 import { colors, radii, spacing } from "@/lib/theme/theme";
 
 /** One option of the control. */

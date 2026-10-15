@@ -1,7 +1,8 @@
 /** Split section: split-type tabs plus per-person participation and value inputs. */
 
 import { Check } from "lucide-react-native";
-import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { Pressable, StyleSheet, TextInput, View } from "react-native";
+import { Text } from "@/components/ui/Text";
 import { ItemCards } from "@/components/expense/ItemCards";
 import { Avatar } from "@/components/ui/Avatar";
 import { Segmented } from "@/components/ui/Segmented";

@@ -2,7 +2,8 @@
 
 import { ChevronDown } from "lucide-react-native";
 import { useState } from "react";
-import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { Pressable, StyleSheet, TextInput, View } from "react-native";
+import { Text } from "@/components/ui/Text";
 import { PHONE_COUNTRIES, phoneCountry, splitE164 } from "@haalkhata/shared/phone/phone";
 import { matchesTerms, searchTerms } from "@haalkhata/shared/search/filter";
 import { colors, radii, spacing } from "@/lib/theme/theme";

@@ -13,6 +13,7 @@ import { AppleSignInButton } from "./AppleSignInButton";
 
 const device = vi.hoisted(() => ({ platform: "ios", supported: true }));
 vi.mock("react-native", () => ({
+  useWindowDimensions: () => ({ width: 390, height: 844, fontScale: 1 }),
   Platform: { get OS() { return device.platform; }, select: (options: { default: string }) => options.default },
   StyleSheet: { create: (styles: unknown) => styles },
   View: ({ children }: { children: ReactNode }) => createElement("div", null, children),

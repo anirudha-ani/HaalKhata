@@ -2,7 +2,8 @@
 
 import { useRouter } from "expo-router";
 import { Bell, CircleUserRound } from "lucide-react-native";
-import { Image, Pressable, StyleSheet, Text, View } from "react-native";
+import { Image, Pressable, StyleSheet, View } from "react-native";
+import { Text } from "@/components/ui/Text";
 import { Avatar } from "@/components/ui/Avatar";
 import { SCREEN_CONTENT_MAX_WIDTH } from "@/lib/layout/constants/layout";
 import { colors, fonts, radii, spacing } from "@/lib/theme/theme";

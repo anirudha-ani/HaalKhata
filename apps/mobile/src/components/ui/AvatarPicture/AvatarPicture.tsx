@@ -1,7 +1,8 @@
 /** Native image loading and fallback state for one person's one picture. */
 
 import { useState } from "react";
-import { Image, StyleSheet, Text } from "react-native";
+import { Image, StyleSheet } from "react-native";
+import { Text } from "@/components/ui/Text";
 import { colors } from "@/lib/theme/theme";
 
 /**

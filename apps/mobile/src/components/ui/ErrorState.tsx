@@ -1,6 +1,7 @@
 /** Retryable network/resource failure; never disguises missing data as an empty ledger. */
 
-import { StyleSheet, Text, View } from "react-native";
+import { StyleSheet, View } from "react-native";
+import { Text } from "@/components/ui/Text";
 import { errorMessage } from "@/lib/api/connect";
 import { colors, spacing } from "@/lib/theme/theme";
 import { Button } from "./Button";

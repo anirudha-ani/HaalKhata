@@ -3,7 +3,8 @@
 import type { User } from "@haalkhata/protogen/common/v1/common_pb";
 import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp } from "lucide-react-native";
 import { useState } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Pressable, ScrollView, StyleSheet, View } from "react-native";
+import { Text } from "@/components/ui/Text";
 import { Avatar } from "@/components/ui/Avatar";
 import { formatMoney } from "@haalkhata/shared/money/money";
 import { useScrollEdges } from "@/lib/hooks/useScrollEdges";

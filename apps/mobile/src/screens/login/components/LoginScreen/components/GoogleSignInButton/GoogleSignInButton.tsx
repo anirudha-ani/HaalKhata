@@ -1,6 +1,7 @@
 /** "Continue with Google": the button, its busy state, and the last sign-in error. */
 
-import { StyleSheet, Text, View } from "react-native";
+import { StyleSheet, View } from "react-native";
+import { Text } from "@/components/ui/Text";
 import { Button } from "@/components/ui/Button";
 import { colors, spacing } from "@/lib/theme/theme";
 import { useGoogleSignIn } from "../../hooks/useGoogleSignIn";

@@ -3,7 +3,8 @@
 import { ErrorState } from "@/components/ui/ErrorState";
 import { useRouter } from "expo-router";
 import { Plus, UsersRound } from "lucide-react-native";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, View } from "react-native";
+import { Text } from "@/components/ui/Text";
 import { PersonChecklist } from "@/components/people/PersonChecklist";
 import { Screen } from "@/components/shell/Screen/Screen";
 import { ScreenHeader } from "@/components/shell/ScreenHeader/ScreenHeader";

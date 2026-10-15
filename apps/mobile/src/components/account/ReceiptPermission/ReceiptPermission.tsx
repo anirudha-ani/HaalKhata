@@ -1,6 +1,7 @@
 /** Account-wide AI scanning permission and withdrawal on phone and tablet. */
 
-import { StyleSheet, Text, View } from "react-native";
+import { StyleSheet, View } from "react-native";
+import { Text } from "@/components/ui/Text";
 import { RECEIPT_CONSENT_COPY } from "@haalkhata/shared/receipt/consent";
 import { Button } from "@/components/ui/Button";
 import { colors, radii, spacing } from "@/lib/theme/theme";

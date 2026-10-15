@@ -1,15 +1,8 @@
 /** First-run screen: name, currency, phone, plus the verification and merge steps, then an optional payment step. */
 
 import { ErrorState } from "@/components/ui/ErrorState";
-import {
-  KeyboardAvoidingView,
-  Platform,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from "react-native";
+import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, TextInput, View } from "react-native";
+import { Text } from "@/components/ui/Text";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { MergePreview } from "@/components/account/MergePreview";
 import { Button } from "@/components/ui/Button";

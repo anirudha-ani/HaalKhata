@@ -1,7 +1,8 @@
 /** "Paid by" section: single-payer picker or per-person multi-payer amounts. */
 
 import { Check } from "lucide-react-native";
-import { Pressable, StyleSheet, Switch, Text, TextInput, View } from "react-native";
+import { Pressable, StyleSheet, Switch, TextInput, View } from "react-native";
+import { Text } from "@/components/ui/Text";
 import { Avatar } from "@/components/ui/Avatar";
 import { colors, radii, spacing } from "@/lib/theme/theme";
 import type { NewExpenseController } from "../../hooks/useNewExpense";

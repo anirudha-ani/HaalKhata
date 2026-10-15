@@ -26,6 +26,19 @@ const config = tseslint.config(
     },
   },
   {
+    files: ["app/**/*.tsx", "src/**/*.tsx"],
+    ignores: ["src/components/ui/Text.tsx"],
+    rules: {
+      "no-restricted-imports": ["error", {
+        paths: [{
+          name: "react-native",
+          importNames: ["Text"],
+          message: "Use @/components/ui/Text so iOS Dynamic Type changes remeasure existing text.",
+        }],
+      }],
+    },
+  },
+  {
     ignores: [".expo/**", "node_modules/**", "dist/**", "android/**", "ios/**"],
   },
 );
