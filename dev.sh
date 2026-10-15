@@ -11,7 +11,7 @@
 #   4. apply pending migrations; report success or stop with the failure
 #   5. start the Next.js dev server in the foreground (pnpm dev, http://127.0.0.1:3000)
 #      (with --mobile-android / --mobile-ios, also: boot emulator/simulator,
-#       build+install the dev client if missing, start Metro, launch the app)
+#       rebuild the dev client if missing or incompatible, start Metro, launch the app)
 #
 # Usage:
 #   ./dev.sh                   start db (if down) + web server in the foreground
@@ -23,8 +23,8 @@
 #   ./dev.sh --help            show this help
 #
 # Idempotent: re-running won't restart a healthy db. The db keeps running in
-# the background after you Ctrl-C the server, so a restart is instant. Use
-# --down to stop the db too.
+# the background after you Ctrl-C the server and is reused on the next run.
+# Use --down to stop the db too.
 
 set -euo pipefail
 
@@ -180,7 +180,7 @@ prepare_db() {
 # --- mobile lifecycle ----------------------------------------------------------
 # The --mobile-android / --mobile-ios flags do the full end-to-end flow:
 #   1. ensure an emulator/simulator is booted (start one if none)
-#   2. ensure the dev client app is installed (prebuild + build if missing)
+#   2. verify native compatibility and rebuild a missing or outdated dev client
 #   3. start Metro in the background
 #   4. launch the app on the device
 #   5. fall through to the web dev server in the foreground
@@ -188,6 +188,24 @@ prepare_db() {
 
 MOBILE_PID=""
 METRO_PORT=8081
+
+# @param $1 Native platform; $2 identity of the currently installed binary.
+# @returns 0 only for a successfully built, installed and compatible dev client.
+native_build_matches() {
+  [[ -n "$2" ]] || return 1
+  local state
+  state="$(node apps/mobile/scripts/native-build.mjs check "$1" "$2")" \
+    || die "could not check native build compatibility; startup stopped. See the error above."
+  [[ "$state" == "current" ]]
+}
+
+# Record compatibility only after compilation and installation both succeed.
+# @param $1 Native platform; $2 identity of the newly installed binary.
+# @returns 0 after recording the post-build fingerprint; exits on verification failure.
+record_native_build() {
+  node apps/mobile/scripts/native-build.mjs record "$1" "$2" \
+    || die "could not record the installed native build; startup stopped. See the error above."
+}
 
 # Kill any process listening on the Metro port. This handles stale Metro
 # instances from a previous run that was killed without the EXIT trap firing
@@ -378,32 +396,38 @@ ensure_android_emulator() {
   ok "emulator booted"
 }
 
-# Ensure the dev client app is installed on the running emulator. If it's
-# missing, runs expo prebuild (if the native folder doesn't exist) then
-# ./gradlew installDebug (builds + installs without starting Metro).
-ensure_android_app() {
-  local adb_bin
-  adb_bin="$(find_adb)"
+# @param $1 adb executable.
+# @returns A device/package installation identity, or empty if the app is missing.
+android_installation_identity() {
+  local serial updated
+  serial="$("$1" get-serialno 2>/dev/null)" || return 0
+  updated="$("$1" shell dumpsys package com.haalkhata.app 2>/dev/null \
+    | sed -n 's/^[[:space:]]*lastUpdateTime=//p' | head -1)" || return 0
+  [[ -n "$updated" ]] && printf '%s:%s' "$serial" "$updated"
+  return 0
+}
 
-  if "$adb_bin" shell pm list packages com.haalkhata.app 2>/dev/null \
-    | grep -q "com.haalkhata.app"; then
-    ok "dev client already installed on emulator"
+# Rebuild when the installed binary is missing, unverified or incompatible.
+# Prebuild refreshes existing generated projects after native dependency changes.
+ensure_android_app() {
+  local adb_bin installation
+  adb_bin="$(find_adb)"
+  installation="$(android_installation_identity "$adb_bin")"
+  if native_build_matches android "$installation"; then
+    ok "dev client matches current native dependencies on emulator"
     return 0
   fi
 
-  log "dev client not installed — building (first run takes several minutes)…"
-
-  if [[ ! -d apps/mobile/android ]]; then
-    log "running expo prebuild (generating native android project)…"
-    (cd apps/mobile && pnpm run expo prebuild --platform android) \
-      || die "expo prebuild failed."
-    # prebuild just created android/ — write local.properties now.
-    write_local_properties "$ANDROID_HOME"
-  fi
+  log "dev client missing or native build changed — rebuilding Android…"
+  (cd apps/mobile && pnpm run expo prebuild --platform android --no-install) \
+    || die "expo prebuild failed; startup stopped."
+  write_local_properties "$ANDROID_HOME"
 
   log "gradle build + install…"
   (cd apps/mobile/android && ./gradlew installDebug) \
     || die "gradle build failed. See apps/mobile/android for details."
+  installation="$(android_installation_identity "$adb_bin")"
+  record_native_build android "$installation"
   ok "dev client built + installed"
 }
 
@@ -466,25 +490,33 @@ ensure_ios_simulator() {
   ok "simulator booted"
 }
 
-# Ensure the dev client app is installed on the booted simulator. If it's
-# missing, builds a generic simulator binary and installs it with simctl.
+# Ensure the dev client on the booted simulator matches the native project.
+# Missing/unverified/changed installations rebuild and refresh CocoaPods first.
 # Generic builds do not require an Apple signing certificate for the app's
 # associated-domain entitlements; physical-device builds still use signing.
 ensure_ios_app() {
-  local udid
+  local udid installation
   udid="$(ios_simulator_udid booted)"
-
-  if xcrun simctl listapps "$udid" 2>/dev/null | grep -q "com.haalkhata.app"; then
-    ok "dev client already installed on simulator"
+  installation="$(xcrun simctl get_app_container "$udid" com.haalkhata.app app 2>/dev/null || true)"
+  if native_build_matches ios "$installation"; then
+    ok "dev client matches current native dependencies on simulator"
     return 0
   fi
 
-  log "dev client not installed — building (first run takes several minutes)…"
+  log "dev client missing or native build changed — rebuilding iOS (may take several minutes)…"
+  have pod || die "CocoaPods is required to rebuild the dev client. Run ./install-deps.sh first."
+  (cd apps/mobile && pnpm run expo prebuild --platform ios --no-install) \
+    || die "expo prebuild failed; startup stopped."
+  (cd apps/mobile/ios && pod install) \
+    || die "CocoaPods installation failed; startup stopped."
   (cd apps/mobile && pnpm run expo run:ios --device generic \
     --output .expo/ios-build --no-bundler) \
     || die "iOS build failed. See apps/mobile/ios for details."
   xcrun simctl install "$udid" "apps/mobile/.expo/ios-build/HaalKhata.app" \
     || die "could not install the iOS simulator build."
+  installation="$(xcrun simctl get_app_container "$udid" com.haalkhata.app app)" \
+    || die "could not verify the installed iOS simulator build."
+  record_native_build ios "$installation"
   ok "dev client built + installed"
 }
 
@@ -534,7 +566,7 @@ lan_address() {
 
 # Run the full mobile dev flow for the given platform:
 #   1. ensure device is booted
-#   2. ensure app is installed (build if missing)
+#   2. ensure app is installed and matches the current native project
 #   3. start Metro in the background
 #   4. launch the app
 # @param $1  "android" or "ios"

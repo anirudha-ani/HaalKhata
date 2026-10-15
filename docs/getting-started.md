@@ -144,9 +144,17 @@ worth using here, so there is no provider-specific SDK in the codebase.
 ./dev.sh --mobile-ios       # same for iOS simulator
 ```
 
-The first run builds and installs the dev client (several minutes). Later
-runs reuse the emulator and installed app after synchronizing dependencies
-and regenerating API types. The dev client (not Expo Go) connects to Metro
+The first run builds and installs the dev client (several minutes). Startup
+compares Expo's native fingerprint with the verified installed binary. Native
+dependency/configuration changes, a different installed binary, or an older
+installation without a build record trigger a rebuild automatically. Existing
+generated projects are refreshed with prebuild; iOS also updates CocoaPods.
+Build records are saved under ignored `apps/mobile/.expo/native-builds` only
+after a successful build and install. Matching clients are reused, including
+after ordinary screen/JavaScript edits. There is no need to uninstall the app
+or delete native folders after pulling a native dependency change.
+
+The dev client (not Expo Go) connects to Metro
 automatically. To verify startup after pulling changes, run the same command:
 **workspace dependencies ready** and **generated API types ready** must appear
 before **database migrations passed** and Metro startup. No extra environment
