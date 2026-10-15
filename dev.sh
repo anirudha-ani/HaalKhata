@@ -5,7 +5,7 @@
 # pnpm and Docker; buf comes from the workspace's devDependencies). This
 # script prepares configuration and starts the local stack:
 #   1. start the Docker daemon if it's not running (systemctl / Docker Desktop)
-#   2. self-heal cheap project state (node_modules, protogen) if missing
+#   2. synchronize all workspace dependencies with the lockfile and regenerate API types
 #      quietly prepare .env and require the local database password
 #   3. start the Postgres db (docker compose up -d db) and wait for it to be healthy
 #   4. apply pending migrations; report success or stop with the failure
@@ -118,17 +118,21 @@ assert_system_ready() {
 
 # --- self-heal project state ---------------------------------------------------
 
+# Existing folders may contain a partial install or an older API contract after
+# pulling code. Let pnpm reconcile every workspace and always regenerate types.
+# @returns 0 when dependencies and generated APIs are ready; exits on failure.
 ensure_project_state() {
-  if [[ ! -d node_modules ]] || [[ ! -d apps/web/node_modules ]]; then
-    log "node_modules missing — running 'pnpm install'…"
-    pnpm install
-    ok "installed dependencies"
+  log "synchronizing workspace dependencies with pnpm-lock.yaml…"
+  if ! pnpm install --frozen-lockfile; then
+    die "workspace dependency installation failed; startup stopped. Fix the pnpm error above, then rerun ./dev.sh."
   fi
-  if [[ ! -d packages/protogen/src ]] || [[ -z "$(ls -A packages/protogen/src 2>/dev/null)" ]]; then
-    log "packages/protogen/src is empty — running 'pnpm gen'…"
-    pnpm gen
-    ok "generated protogen TypeScript"
+  ok "workspace dependencies ready"
+
+  log "generating API types from the current protobuf contract…"
+  if ! pnpm gen; then
+    die "API type generation failed; startup stopped. Fix the generator error above, then rerun ./dev.sh."
   fi
+  ok "generated API types ready"
 }
 
 # --- db lifecycle --------------------------------------------------------------
