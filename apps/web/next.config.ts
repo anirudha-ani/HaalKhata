@@ -21,6 +21,8 @@ const BASE_SECURITY_HEADERS = [
  * packages external to the server bundle.
  */
 const nextConfig: NextConfig = {
+  // Allow HMR from the explicitly configured development tunnel, never a wildcard.
+  allowedDevOrigins: process.env.APP_PUBLIC_URL ? [new URL(process.env.APP_PUBLIC_URL).hostname] : [],
   output: "standalone",
   // Repository-wide agent guidance is maintained in the root AGENTS.md.
   agentRules: false,

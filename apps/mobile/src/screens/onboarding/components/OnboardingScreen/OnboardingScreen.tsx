@@ -1,5 +1,6 @@
 /** First-run screen: name, currency, phone, plus the verification and merge steps, then an optional payment step. */
 
+import { ErrorState } from "@/components/ui/ErrorState";
 import {
   KeyboardAvoidingView,
   Platform,
@@ -20,7 +21,7 @@ import { MAX_USER_NAME_LENGTH } from "@haalkhata/shared/text/limits";
 import { colors, fonts, radii, spacing } from "@/lib/theme/theme";
 import { PaymentStep } from "../PaymentStep/PaymentStep";
 import { useOnboarding } from "./hooks/useOnboarding";
-import { FOCUSED_CONTENT_MAX_WIDTH } from "@/components/shell/shell.constants";
+import { FOCUSED_CONTENT_MAX_WIDTH } from "@/lib/layout/constants/layout";
 
 /**
  * Renders the first-run flow: a short profile form, an optional phone number,
@@ -49,6 +50,8 @@ export function OnboardingScreen() {
         >
           {onboarding.isLoading ? (
             <Spinner />
+          ) : onboarding.loadError ? (
+            <ErrorState error={onboarding.loadError} retry={onboarding.retry} />
           ) : (
             <View style={styles.content}>
               <View style={styles.hero}>

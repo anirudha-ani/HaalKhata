@@ -14,7 +14,7 @@ const { ensureMigratedMock, logErrorMock, queryMock, signPayloadMock, authConfig
   }),
 );
 
-vi.mock("@/server/auth/usecase/auth.usecase", () => ({ signPayload: signPayloadMock }));
+vi.mock("@/server/auth/usecase/session/session", () => ({ signPayload: signPayloadMock }));
 vi.mock("@/server/auth/auth.constants", () => ({
   passwordAuthEnabled: () => authConfig.passwordAuth,
   get GOOGLE_CLIENT_ID() {
@@ -24,7 +24,7 @@ vi.mock("@/server/auth/auth.constants", () => ({
     return authConfig.audiences;
   },
 }));
-vi.mock("@/server/common/db", () => ({
+vi.mock("@/server/common/db/db", () => ({
   ensureMigrated: ensureMigratedMock,
   query: queryMock,
 }));

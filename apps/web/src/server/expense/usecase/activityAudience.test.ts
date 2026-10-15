@@ -16,11 +16,13 @@ import type { CommentRow } from "@/server/expense/repo/comments.repo";
 
 const { transactionClient } = vi.hoisted(() => ({ transactionClient: {} as PoolClient }));
 
+vi.mock("@/server/safety/repo/safety.repo", () => ({ blockedBetween: vi.fn(async () => false), blockedPairExists: vi.fn(async () => false) }));
+
 // The reads run inside a database snapshot. Every statement is mocked here,
 // so the snapshot is a pass-through handing out a stand-in client: these
 // tests must not need a database to be running.
-vi.mock("@/server/common/db", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@/server/common/db")>()),
+vi.mock("@/server/common/db/db", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/server/common/db/db")>()),
   snapshot: (operation: (client: unknown) => unknown) => operation({}),
 }));
 vi.mock("@/server/expense/repo/expenses.repo", () => ({
@@ -65,7 +67,7 @@ vi.mock("@/server/expense/repo/settlements.repo", () => ({
       operation(transactionClient),
   ),
 }));
-vi.mock("@/server/common/ledgerLocks", () => ({
+vi.mock("@/server/common/ledger/ledgerLocks", () => ({
   lockExpenseLedger: vi.fn(),
   lockGroupLedgers: vi.fn(),
   lockParticipantLedgers: vi.fn(),
@@ -124,7 +126,7 @@ import {
   lockExpenseLedger,
   lockGroupLedgers,
   lockParticipantLedgers,
-} from "@/server/common/ledgerLocks";
+} from "@/server/common/ledger/ledgerLocks";
 import { insertActivity, listActivityForExpense } from "@/server/social/repo/activity.repo";
 import { insertNotifications } from "@/server/social/repo/notifications.repo";
 import { insertFriendship, listFriendIds } from "@/server/social/repo/friendships.repo";

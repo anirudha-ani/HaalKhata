@@ -6,8 +6,8 @@ import { Code, ConnectError } from "@connectrpc/connect";
 import * as social from "@/server/social/usecase/social.usecase";
 import { requireUser, runUsecase } from "@/server/api/connect/context";
 import { requireRateLimitedUser, RPC_RATE_LIMITS } from "@/server/api/connect/rpcRateLimit";
-import { clientIp } from "@/server/auth/clientIp";
-import { rateLimitCheck } from "@/server/common/rateLimit";
+import { clientIp } from "@/server/auth/request/clientIp";
+import { rateLimitCheck } from "@/server/common/rateLimit/rateLimit";
 import { INVITE_PREVIEW_RATE_LIMIT } from "@/server/social/social.constants";
 
 /**

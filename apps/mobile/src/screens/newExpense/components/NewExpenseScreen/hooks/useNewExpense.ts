@@ -1,5 +1,6 @@
 /** Composite expense-form hook: field state, receipt scanning, payer/split validation, submit. */
 
+import { useReceiptScanConsent } from "@/lib/receipt/hooks/useReceiptScanConsent";
 import type { User } from "@haalkhata/protogen/common/v1/common_pb";
 import { useRouter } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
@@ -12,8 +13,10 @@ import {
   resolveExpensePeople,
   toggleExpensePerson,
 } from "@haalkhata/shared/expense/participants";
-import { draftItemsFromLines, itemsPayload } from "@/lib/expense/itemDraft";
+import { draftItemsFromLines } from "@/lib/expense/itemDraft";
+import { buildItemsPayload as itemsPayload } from "@haalkhata/shared/expense/form/splitForm";
 import { useItemDraft } from "@/lib/hooks/useItemDraft";
+import { prepareReceiptPhoto } from "../../../utils/prepareReceiptPhoto";
 import { PICKER_OPTIONS } from "../../../constants/imagePicker";
 import type { ExpenseFormInitial } from "../../../utils/initialValues";
 import {
@@ -21,7 +24,7 @@ import {
   checkPayers,
   checkSplit,
   type FormSplitType,
-} from "../../../utils/splitForm";
+} from "@haalkhata/shared/expense/form/splitForm";
 import type { ReceiptPhotoInput, useNewExpenseAPI } from "./useNewExpenseAPI";
 
 /** A photo picked for scanning, plus its local URI for the preview. */
@@ -75,6 +78,7 @@ export function useNewExpense(
   const [error, setError] = useState("");
   // Receipt state. A scan is a way of filling this form in, not a separate
   // flow: the photo is parsed into the same item draft the Items split edits.
+  const [isPickingPhoto, setIsPickingPhoto] = useState(false);
   const [photo, setPhoto] = useState<ReceiptPhoto | null>(null);
   const [provider, setProvider] = useState("");
   // One id per attempt at saving: a retry after a lost response sends the
@@ -120,7 +124,7 @@ export function useNewExpense(
     const currentUser = expenseAPI.me;
     if (!currentUser) return [];
     const candidates = selectedGroup
-      ? selectedGroup.members.flatMap((member) => (member.user ? [member.user] : []))
+      ? selectedGroup.members.flatMap((member) => (member.user && !member.user.deleted ? [member.user] : []))
       : (personIds ?? []).flatMap((userId) => {
           const person = usersById.get(userId);
           return person ? [person] : [];
@@ -178,7 +182,7 @@ export function useNewExpense(
     const nextRoster = nextGroupId
       ? (expenseAPI.groups
           .find((groupSummary) => groupSummary.group?.id === nextGroupId)
-          ?.group?.members.flatMap((member) => (member.user ? [member.user.id] : [])) ?? [])
+          ?.group?.members.flatMap((member) => (member.user && !member.user.deleted ? [member.user.id] : [])) ?? [])
       : [currentUserId];
     setGroupId(nextGroupId);
     setPersonIds(nextGroupId ? null : []);
@@ -190,52 +194,17 @@ export function useNewExpense(
   };
 
   /**
-   * Captures or picks a receipt photo and forgets any previous parse — the
-   * items stay as they are until "Itemize with AI" replaces them.
-   *
-   * @param useCamera - True to open the camera, false for the photo library.
-   */
-  const pickPhoto = async (useCamera: boolean) => {
-    setError("");
-    if (useCamera) {
-      const permission = await ImagePicker.requestCameraPermissionsAsync();
-      if (!permission.granted) {
-        setError("camera permission is required to scan receipts");
-        return;
-      }
-    }
-    const result = useCamera
-      ? await ImagePicker.launchCameraAsync(PICKER_OPTIONS)
-      : await ImagePicker.launchImageLibraryAsync(PICKER_OPTIONS);
-    if (result.canceled) return;
-    const asset = result.assets[0];
-    if (!asset?.base64) {
-      setError("could not read the photo — try again");
-      return;
-    }
-    setPhoto({
-      uri: asset.uri,
-      base64: asset.base64,
-      // Always JPEG: PICKER_OPTIONS sets `quality`, which makes the picker
-      // re-encode. Passing through asset.mimeType would label an iPhone photo
-      // "image/heic" while the bytes are already JPEG, and the server's
-      // magic-byte check would reject its own successfully converted image.
-      mediaType: "image/jpeg",
-    });
-    setProvider("");
-  };
-
-  /**
    * Sends the chosen photo to the AI parser and loads the result into the
    * form: description and date (only where nothing was typed yet), tax, tip,
    * and the line items — shared by everyone on the expense, since splitting
    * the whole bill evenly is the common case — with the split switched to
    * Items.
+   * @param consentVersion Current sharing terms authorized for this account.
    */
-  const parseNow = () => {
+  const parsePhoto = (consentVersion: string) => {
     if (!photo) return;
     setError("");
-    expenseAPI.parse.mutate(photo, {
+    expenseAPI.parse.mutate({ ...photo, consentVersion }, {
       onSuccess: (result) => {
         const receipt = result.receipt;
         if (!receipt) return;
@@ -258,6 +227,37 @@ export function useNewExpense(
       },
       onError: (mutationError) => setError(errorMessage(mutationError)),
     });
+  };
+
+  const receiptConsent = useReceiptScanConsent(parsePhoto);
+
+  /**
+   * Captures or picks a receipt photo and forgets any previous parse — the
+   * items stay as they are until "Itemize with AI" replaces them.
+   *
+   * @param useCamera - True to open the camera, false for the photo library.
+   */
+  const pickPhoto = async (useCamera: boolean) => {
+    if (isPickingPhoto || expenseAPI.parse.isPending || receiptConsent.busy || receiptConsent.prompt) return;
+    setError(""); setIsPickingPhoto(true);
+    try {
+      if (useCamera) {
+        const permission = await ImagePicker.requestCameraPermissionsAsync();
+        if (!permission.granted) {
+          setError("Camera access is disabled. Enable it in Settings or choose an existing photo.");
+          return;
+        }
+      }
+      const result = useCamera
+        ? await ImagePicker.launchCameraAsync(PICKER_OPTIONS)
+        : await ImagePicker.launchImageLibraryAsync(PICKER_OPTIONS);
+      if (result.canceled) return;
+      const asset = result.assets[0];
+      if (!asset) throw new Error("Could not read the photo. Try again.");
+      setPhoto(await prepareReceiptPhoto(asset));
+      setProvider("");
+    } catch (failure) { setError(errorMessage(failure)); }
+    finally { setIsPickingPhoto(false); }
   };
 
   // null override = default: everyone checked.
@@ -380,9 +380,12 @@ export function useNewExpense(
     submit,
     isSaving: expenseAPI.create.isPending || expenseAPI.update.isPending,
     // Receipt scanning.
+    receiptConsent,
+    isReceiptBusy: expenseAPI.parse.isPending || receiptConsent.busy,
+    isPickingPhoto,
     photo,
     pickPhoto,
-    parseNow,
+    parseNow: () => { void receiptConsent.request(); },
     isParsing: expenseAPI.parse.isPending,
     provider,
     /** True once a receipt has been read into the form. */

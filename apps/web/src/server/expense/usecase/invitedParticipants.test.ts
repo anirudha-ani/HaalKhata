@@ -6,6 +6,8 @@ import type { UserRow } from "@/server/auth/repo/users.repo";
 
 const { transactionClient } = vi.hoisted(() => ({ transactionClient: {} as PoolClient }));
 
+vi.mock("@/server/safety/repo/safety.repo", () => ({ blockedBetween: vi.fn(async () => false), blockedPairExists: vi.fn(async () => false) }));
+
 vi.mock("@/server/expense/repo/expenses.repo", () => ({
   findExpenseById: vi.fn(),
   insertExpense: vi.fn(),
@@ -27,11 +29,11 @@ vi.mock("@/server/social/repo/friendships.repo", () => ({
 }));
 vi.mock("@/server/social/repo/activity.repo", () => ({ insertActivity: vi.fn() }));
 vi.mock("@/server/social/repo/notifications.repo", () => ({ insertNotifications: vi.fn() }));
-vi.mock("@/server/common/operations", () => ({
+vi.mock("@/server/common/ledger/operations", () => ({
   beginOperation: vi.fn().mockResolvedValue({ replayOf: null }),
   finishOperation: vi.fn(),
 }));
-vi.mock("@/server/common/ledgerLocks", () => ({
+vi.mock("@/server/common/ledger/ledgerLocks", () => ({
   lockGroupLedgers: vi.fn(),
   lockParticipantLedgers: vi.fn(),
   withLedgerTransaction: vi.fn(
@@ -39,6 +41,7 @@ vi.mock("@/server/common/ledgerLocks", () => ({
   ),
 }));
 
+import { blockedPairExists } from "@/server/safety/repo/safety.repo";
 import { createExpense } from "./expense.usecase";
 import { findUserById, findUsersByIds } from "@/server/auth/repo/users.repo";
 import { listFriendIds } from "@/server/social/repo/friendships.repo";
@@ -148,4 +151,11 @@ describe("the Invited transaction gate (§33)", () => {
 
     expect(insertExpense).toHaveBeenCalled();
   });
+});
+
+it("refuses a new expense with a blocked registered counterparty before writing money", async () => {
+  vi.mocked(findUsersByIds).mockResolvedValue([userRow(), userRow({ id: "user-friend", google_sub: "registered" })]);
+  vi.mocked(blockedPairExists).mockResolvedValueOnce(true);
+  await expect(createExpense(CALLER, splitRequest("user-friend"))).rejects.toMatchObject({ code: "permission_denied" });
+  expect(insertExpense).not.toHaveBeenCalled();
 });

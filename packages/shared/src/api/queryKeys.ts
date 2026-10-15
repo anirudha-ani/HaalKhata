@@ -5,6 +5,14 @@
  * Static keys are plain tuples; parameterized keys are builder functions.
  */
 export const queryKeys = {
+  /** Public provider availability from the backend used by this client. */
+  signInOptions: ["auth", "sign-in-options"] as const,
+  /** @param token Public invite token. @returns Its preview cache key. */
+  invitePreview: (token: string) => ["invite-preview", token] as const,
+  /** Caller-owned blocked accounts. */
+  blockedUsers: ["safety", "blocks"] as const,
+  /** Receipt processor disclosure fetched before image sharing. */
+  receiptProcessingInfo: ["receipt", "processing-info"] as const,
   /** The signed-in user's profile. */
   me: ["me"] as const,
   /** The list of groups the user belongs to. */

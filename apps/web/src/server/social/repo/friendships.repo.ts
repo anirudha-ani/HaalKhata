@@ -1,8 +1,8 @@
 /** All SQL for accepted friendships and directed pending friend requests. */
 
 import type { PoolClient } from "pg";
-import { execute, query, queryOne, transaction } from "@/server/common/db";
-import { lockFriendRequestInboxes } from "@/server/common/ledgerLocks";
+import { execute, query, queryOne, transaction } from "@/server/common/db/db";
+import { lockFriendRequestInboxes } from "@/server/common/ledger/ledgerLocks";
 import { MAX_PENDING_FRIEND_REQUESTS } from "@/server/social/social.constants";
 
 /**

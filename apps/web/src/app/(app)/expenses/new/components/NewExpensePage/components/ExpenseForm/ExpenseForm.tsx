@@ -6,7 +6,7 @@ import { centsToInput } from "@haalkhata/shared/money/money";
 import { PeoplePicker } from "@/components/people/PeoplePicker/PeoplePicker";
 import { SplitSummary } from "@/components/expense/SplitSummary/SplitSummary";
 import { ErrorPopup } from "@/components/ui/ErrorPopup/ErrorPopup";
-import { itemizedWarnings } from "@/lib/expense/itemizedWarnings";
+import { itemizedWarnings } from "@haalkhata/shared/expense/form/itemizedWarnings";
 import { parseMoneyInput } from "@haalkhata/shared/money/money";
 import type { ExpenseFormInitial } from "../../../../utils/initialValues";
 import { PayerEditor } from "../PayerEditor/PayerEditor";

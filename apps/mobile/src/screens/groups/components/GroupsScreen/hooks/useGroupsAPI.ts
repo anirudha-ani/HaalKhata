@@ -37,6 +37,7 @@ export function useGroupsAPI() {
     groups: groups.data?.groups ?? [],
     friends: (friends.data?.friends ?? []).flatMap((friend) => (friend.user ? [friend.user] : [])),
     isLoading: groups.isLoading,
+    listError: groups.error,
     refresh: () => void groups.refetch(),
     isRefreshing: groups.isRefetching,
     createGroup,

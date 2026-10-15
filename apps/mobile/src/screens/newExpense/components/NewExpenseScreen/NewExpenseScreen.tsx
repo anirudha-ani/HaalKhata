@@ -1,7 +1,8 @@
 /** New/edit expense orchestrator: loads data, then mounts ExpenseForm with resolved initial values. */
 
-import { DetailHeader } from "@/components/shell/DetailHeader";
-import { Screen } from "@/components/shell/Screen";
+import { ErrorState } from "@/components/ui/ErrorState";
+import { DetailHeader } from "@/components/shell/DetailHeader/DetailHeader";
+import { Screen } from "@/components/shell/Screen/Screen";
 import { Spinner } from "@/components/ui/Spinner";
 import { useRouter } from "expo-router";
 import { Text } from "react-native";
@@ -36,6 +37,8 @@ export function NewExpenseScreen({
   const expenseAPI = useNewExpenseAPI(editExpenseId);
   const router = useRouter();
   const isEdit = editExpenseId !== "";
+
+  if (expenseAPI.loadError) return <Screen header={<DetailHeader title={isEdit ? "Edit expense" : "Add expense"} />}><ErrorState error={expenseAPI.loadError} retry={expenseAPI.retry} /></Screen>;
 
   if (expenseAPI.isLoading || !expenseAPI.me) {
     return (

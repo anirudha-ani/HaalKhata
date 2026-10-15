@@ -5,7 +5,7 @@ import { Client } from "pg";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { GroupStatus } from "@haalkhata/protogen/group/v1/group_pb";
 import type { CreateExpenseRequest } from "@haalkhata/protogen/expense/v1/expense_pb";
-import { GROUP_LEDGER_LOCK_PREFIX } from "@/server/common/ledgerLocks.constants";
+import { GROUP_LEDGER_LOCK_PREFIX } from "@/server/common/ledger/ledgerLocks.constants";
 
 const ADMIN_URL = process.env.MERGE_TEST_ADMIN_URL ?? "postgres://haalkhata:change-me@127.0.0.1:5432/postgres";
 const TEST_DATABASE = "haalkhata_group_archive_test";
@@ -110,7 +110,7 @@ describe.skipIf(!reachable)("group archive against Postgres", () => {
     await admin.query(`CREATE DATABASE ${TEST_DATABASE}`);
     await admin.end();
     process.env.DATABASE_URL = TEST_URL;
-    const infrastructure = await import("@/server/common/db");
+    const infrastructure = await import("@/server/common/db/db");
     await infrastructure.ensureMigrated();
     closePool = async () => {
       const cache = globalThis as unknown as { __haalkhataPool?: { end(): Promise<void> } };

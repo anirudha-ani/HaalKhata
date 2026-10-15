@@ -3,6 +3,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { UserRow } from "@/server/auth/repo/users.repo";
 
+vi.mock("@/server/safety/repo/safety.repo", () => ({ blockedBetween: vi.fn(async () => false), blockedPairExists: vi.fn(async () => false) }));
+
 vi.mock("@/server/social/repo/friendships.repo", () => ({
   countIncomingFriendRequests: vi.fn(),
   deleteFriendRequest: vi.fn(),
@@ -27,15 +29,15 @@ vi.mock("@/server/social/repo/activity.repo", () => ({
 vi.mock("@/server/group/repo/groups.repo", () => ({
   isMember: vi.fn(),
 }));
-vi.mock("@/server/common/db", () => ({
+vi.mock("@/server/common/db/db", () => ({
   transaction: vi.fn((operation) => operation({ query: vi.fn() })),
   isUniqueViolation: vi.fn(() => false),
 }));
-vi.mock("@/server/auth/usecase/auth.usecase", () => ({
+vi.mock("@/server/auth/usecase/account/auth.usecase", () => ({
   findOrCreateUserByEmail: vi.fn(),
   findOrCreateUserByPhone: vi.fn(),
 }));
-vi.mock("@/server/auth/repo/accountMerge.repo", () => ({ mergeAccounts: vi.fn() }));
+vi.mock("@/server/auth/repo/merge/accountMerge.repo", () => ({ mergeAccounts: vi.fn() }));
 vi.mock("@/server/social/repo/inviteLinks.repo", () => ({
   findActiveFriendLink: vi.fn(),
   findActiveGroupLink: vi.fn(),
@@ -57,7 +59,7 @@ vi.mock("@/server/expense/usecase/balance.usecase", () => ({
 }));
 
 import { findUserById, findUsersByIds } from "@/server/auth/repo/users.repo";
-import { findOrCreateUserByEmail } from "@/server/auth/usecase/auth.usecase";
+import { findOrCreateUserByEmail } from "@/server/auth/usecase/account/auth.usecase";
 import { getOverallBalances } from "@/server/expense/usecase/balance.usecase";
 import {
   countIncomingFriendRequests,

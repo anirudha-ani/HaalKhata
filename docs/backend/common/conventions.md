@@ -180,7 +180,7 @@ Balances are derived, so every mutation is a *read-then-write* over history —
 and two of those interleaving is how money gets double-counted. Serialization
 uses transaction-scoped Postgres advisory locks
 (`pg_advisory_xact_lock(hashtextextended(key, 0))`), released automatically at
-commit/rollback. Six lock classes (`common/ledgerLocks.ts`):
+commit/rollback. Six lock classes (`common/ledger/ledgerLocks.ts`):
 
 | Class | Key | Serializes |
 | --- | --- | --- |
@@ -260,7 +260,7 @@ seam tests mock to intercept ledger transactions.
 ## Privacy Projections
 
 `users` rows cross the wire through exactly three mappers
-(`auth/usecase/user.mapper.ts`):
+(`auth/usecase/identity/user.mapper.ts`):
 
 | Mapper | Used for | email/phone | onboarded |
 | --- | --- | --- | --- |

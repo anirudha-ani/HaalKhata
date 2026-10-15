@@ -10,8 +10,8 @@ export const GOOGLE_SCRIPT_ELEMENT_ID = "google-identity-services";
 export const GOOGLE_CLIENT_ID = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID ?? "";
 
 /**
- * Whether to offer the email/phone + password form. Google is the only way
- * into production; the password form stays in development so seeded accounts
+ * Whether to offer the email/phone + password form. Google and Apple handle
+ * production sign-in; the password form stays in development so seeded accounts
  * remain reachable.
  *
  * Mirrors `passwordAuthEnabled()` in the server's auth.constants — kept

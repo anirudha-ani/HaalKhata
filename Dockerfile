@@ -5,6 +5,7 @@ WORKDIR /app
 
 # Manifests first so the install layer caches across source-only changes.
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY patches/ patches/
 COPY apps/web/package.json apps/web/
 COPY packages/protogen/package.json packages/protogen/
 COPY packages/shared/package.json packages/shared/
@@ -14,6 +15,7 @@ COPY buf.yaml buf.gen.yaml ./
 COPY proto/ proto/
 COPY packages/ packages/
 COPY apps/ apps/
+COPY scripts/environment.mjs scripts/environment.mjs
 
 # NEXT_PUBLIC_* is inlined into the client bundle by `next build`, so it has to
 # be present HERE rather than at runtime — supplying it only via env_file
@@ -47,6 +49,7 @@ RUN chmod 755 /usr/local/bin/docker-entrypoint.sh
 # the infra files and the way they are applied version with the code they
 # serve — and roll back with it.
 COPY docker-compose.prod.yml Caddyfile ops/deploy-release.sh /opt/release/
+COPY apps/web/src/server/safety/repo/moderation.sql /opt/release/moderation.sql
 
 USER node
 EXPOSE 3000

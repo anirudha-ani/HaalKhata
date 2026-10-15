@@ -45,6 +45,7 @@ export function useExpensesAPI() {
     truncated: expensesQuery.data?.truncated ?? false,
     groups: groupsQuery.data?.groups ?? [],
     isLoading: expensesQuery.isLoading,
+    listError: expensesQuery.error || currentUserQuery.error || groupsQuery.error,
     refresh,
     isRefreshing: expensesQuery.isRefetching,
   };

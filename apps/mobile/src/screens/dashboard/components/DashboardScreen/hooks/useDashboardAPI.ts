@@ -49,6 +49,7 @@ export function useDashboardAPI() {
     // Surfaced rather than swallowed: the overall-balance RPC is rate-limited
     // per account, and a refused call must not render as "you owe nothing".
     balancesError: balancesQuery.error,
+    loadError: currentUserQuery.error || balancesQuery.error || groupsQuery.error || activityQuery.error,
     groups: groupsByStatus(groupsQuery.data?.groups ?? []),
     recentActivity: activityQuery.data?.events.slice(0, 6) ?? [],
     // Deliberately not gated on the groups or activity queries: those

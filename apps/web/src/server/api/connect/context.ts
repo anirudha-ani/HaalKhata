@@ -2,12 +2,7 @@
 
 import { Code, ConnectError, type HandlerContext } from "@connectrpc/connect";
 import { SESSION_RENEWAL_HEADER } from "@haalkhata/shared/auth/sessionRenewal";
-import {
-  createToken,
-  tokenExpiresAt,
-  tokenVersion,
-  verifyToken,
-} from "@/server/auth/usecase/auth.usecase";
+import { createToken, tokenExpiresAt, tokenVersion, verifyToken } from "@/server/auth/usecase/session/session";
 import { findUserTokenVersion } from "@/server/auth/repo/users.repo";
 import { TOKEN_RENEWAL_THRESHOLD_SECONDS } from "@/server/auth/auth.constants";
 import { UsecaseError } from "@/server/common/errors";

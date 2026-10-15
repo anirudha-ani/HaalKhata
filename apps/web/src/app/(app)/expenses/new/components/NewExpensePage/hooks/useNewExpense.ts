@@ -1,6 +1,7 @@
 "use client";
 /** Composite expense-form hook: field state, payer/split validation, submit. */
 
+import { useReceiptScanConsent } from "@/lib/receipt/hooks/useReceiptScanConsent";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { User } from "@haalkhata/protogen/common/v1/common_pb";
@@ -27,7 +28,7 @@ import {
   shareEveryItemWith,
   type DraftLineItem,
   type FormSplitType,
-} from "@/lib/expense/splitForm";
+} from "@haalkhata/shared/expense/form/splitForm";
 import type { ExpenseFormInitial } from "../../../utils/initialValues";
 import type { useNewExpenseAPI } from "./useNewExpenseAPI";
 import { omitKey } from "../utils/omitKey";
@@ -123,7 +124,7 @@ export function useNewExpense(
     const currentUser = expenseAPI.me;
     if (!currentUser) return [];
     const candidates = selectedGroup
-      ? selectedGroup.members.flatMap((member) => (member.user ? [member.user] : []))
+      ? selectedGroup.members.flatMap((member) => (member.user && !member.user.deleted ? [member.user] : []))
       : (personIds ?? []).flatMap((userId) => {
           const person = usersById.get(userId);
           return person ? [person] : [];
@@ -184,7 +185,7 @@ export function useNewExpense(
     const nextRoster = nextGroupId
       ? (expenseAPI.groups
           .find((groupSummary) => groupSummary.group?.id === nextGroupId)
-          ?.group?.members.flatMap((member) => (member.user ? [member.user.id] : [])) ?? [])
+          ?.group?.members.flatMap((member) => (member.user && !member.user.deleted ? [member.user.id] : [])) ?? [])
       : [currentUserId];
     setGroupId(nextGroupId);
     setPersonIds(nextGroupId ? null : []);
@@ -280,38 +281,6 @@ export function useNewExpense(
   useEffect(() => () => URL.revokeObjectURL(receiptUrl), [receiptUrl]);
 
   /**
-   * Stores a newly chosen receipt photo and clears anything a previous scan
-   * produced, so a second photo cannot leave the first one's items behind.
-   *
-   * The photo is shrunk to upload size first ({@link prepareReceiptImage}).
-   * A phone shot is 3–12 MB, all of which would otherwise cross a mobile
-   * connection for the server to discard — and over 8 MB is rejected outright
-   * after the wait. `isPreparing` covers the decode, which is a visible pause
-   * on a 12-megapixel image and would otherwise look like a dead tap.
-   *
-   * @param picked - The image file chosen or captured by the user.
-   */
-  const pickFile = async (picked: File) => {
-    setProvider("");
-    setError("");
-    setReceiptUrl((previousUrl) => {
-      URL.revokeObjectURL(previousUrl);
-      return "";
-    });
-    setIsPreparing(true);
-    try {
-      const prepared = await prepareReceiptImage(picked);
-      setFile(prepared);
-      setPreviewUrl((previousUrl) => {
-        URL.revokeObjectURL(previousUrl);
-        return URL.createObjectURL(prepared);
-      });
-    } finally {
-      setIsPreparing(false);
-    }
-  };
-
-  /**
    * Whether the browser can actually paint this file in an `<img>`. HEIC is
    * accepted and transcoded server-side, but Chrome and Firefox cannot decode
    * it, so rendering the object URL would show a broken-image icon for a file
@@ -325,11 +294,12 @@ export function useNewExpense(
    * Sends the chosen photo to the AI parser and pours the result into this
    * form: merchant becomes the description, and the extracted lines become
    * the itemized draft with the split switched to match.
+   * @param consentVersion Current sharing terms authorized for this account.
    */
-  const parseNow = () => {
+  const parsePhoto = (consentVersion: string) => {
     if (!file) return;
     setError("");
-    expenseAPI.parse.mutate(file, {
+    expenseAPI.parse.mutate({ file, consentVersion }, {
       onSuccess: (result) => {
         const receipt = result.receipt;
         if (!receipt) return;
@@ -371,6 +341,40 @@ export function useNewExpense(
     });
   };
 
+  const receiptConsent = useReceiptScanConsent(parsePhoto);
+
+  /**
+   * Stores a newly chosen receipt photo and clears anything a previous scan
+   * produced, so a second photo cannot leave the first one's items behind.
+   *
+   * The photo is shrunk to upload size first ({@link prepareReceiptImage}).
+   * A phone shot is 3–12 MB, all of which would otherwise cross a mobile
+   * connection for the server to discard — and over 8 MB is rejected outright
+   * after the wait. `isPreparing` covers the decode, which is a visible pause
+   * on a 12-megapixel image and would otherwise look like a dead tap.
+   *
+   * @param picked - The image file chosen or captured by the user.
+   */
+  const pickFile = async (picked: File) => {
+    if (expenseAPI.parse.isPending || receiptConsent.busy || receiptConsent.prompt) return;
+    setProvider("");
+    setError("");
+    setReceiptUrl((previousUrl) => {
+      URL.revokeObjectURL(previousUrl);
+      return "";
+    });
+    setIsPreparing(true);
+    try {
+      const prepared = await prepareReceiptImage(picked);
+      setFile(prepared);
+      setPreviewUrl((previousUrl) => {
+        URL.revokeObjectURL(previousUrl);
+        return URL.createObjectURL(prepared);
+      });
+    } finally {
+      setIsPreparing(false);
+    }
+  };
 
   const taxCents = parseMoneyInput(taxInput, currency) ?? 0;
   const tipCents = parseMoneyInput(tipInput, currency) ?? 0;
@@ -524,6 +528,8 @@ export function useNewExpense(
     submit,
     isSaving: expenseAPI.create.isPending || expenseAPI.update.isPending,
     // Receipt scanning.
+    receiptConsent,
+    isReceiptBusy: expenseAPI.parse.isPending || receiptConsent.busy,
     file,
     fileName: file?.name ?? "",
     previewUrl,
@@ -531,7 +537,7 @@ export function useNewExpense(
     isPreviewRenderable,
     pickFile,
     isPreparing,
-    parseNow,
+    parseNow: () => { void receiptConsent.request(); },
     isParsing: expenseAPI.parse.isPending,
     provider,
     // A quantity column is only worth its width when a bill was actually read

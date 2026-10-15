@@ -8,6 +8,9 @@
     "proto:lint": "buf lint",
     "dev": "pnpm --filter @haalkhata/web dev",
     "dev:mobile": "pnpm --filter @haalkhata/mobile dev",
+    "auth:check": "pnpm --filter @haalkhata/web auth:check",
+    "setup:env": "node scripts/setup-env.mjs",
+    "test:environment": "node --test scripts/environment.test.mjs scripts/setup/*.test.mjs scripts/dev-startup.test.mjs",
     "lint:mobile": "pnpm --filter @haalkhata/mobile lint",
     "typecheck:mobile": "pnpm --filter @haalkhata/mobile typecheck",
     "test:mobile": "pnpm --filter @haalkhata/mobile test",
@@ -22,11 +25,17 @@
     "db:migrate": "pnpm --filter @haalkhata/web db:migrate",
     "db:new": "pnpm --filter @haalkhata/web db:new",
     "db:seed": "pnpm --filter @haalkhata/web db:seed",
-    "doctor": "pnpm exec react-doctor apps/web/src --no-telemetry --no-supply-chain"
+    "doctor": "pnpm exec react-doctor apps/web/src --no-telemetry --no-supply-chain",
+    "test:security-patches": "node --test scripts/security-patches.test.cjs",
+    "test:deploy": "node --test ops/deploy.test.cjs",
+    "audit:production": "node scripts/audit-production.cjs",
+    "test:parity": "node --test scripts/client-parity.test.cjs"
   },
   "devDependencies": {
     "@bufbuild/buf": "1.73.0",
     "@bufbuild/protoc-gen-es": "^2.16.0",
+    "braces": "3.0.3",
+    "node-forge": "1.4.0",
     "react-doctor": "0.9.17"
   },
   "engines": {

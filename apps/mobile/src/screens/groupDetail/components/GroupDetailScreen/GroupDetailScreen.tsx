@@ -1,5 +1,7 @@
 /** Group detail orchestrator: header, members strip, expenses/balances/activity tabs, members, add-people and settle sheets. */
 
+import { ErrorState } from "@/components/ui/ErrorState";
+import { SafetyActions } from "@/components/safety/SafetyActions";
 import { useRouter } from "expo-router";
 import { Bell, ChevronDown, ChevronRight, Link2, Plus, Send, UserPlus } from "lucide-react-native";
 import { Pressable, StyleSheet, Text, View } from "react-native";
@@ -8,15 +10,15 @@ import { InviteShareSheet } from "@/components/modals/InviteShareSheet";
 import { SettleUpModal } from "@/components/modals/SettleUpModal";
 import { PersonChecklist } from "@/components/people/PersonChecklist";
 import { PersonLink } from "@/components/people/PersonLink";
-import { DetailHeader } from "@/components/shell/DetailHeader";
-import { useResponsiveLayout } from "@/components/shell/hooks/useResponsiveLayout";
-import { Screen } from "@/components/shell/Screen";
+import { DetailHeader } from "@/components/shell/DetailHeader/DetailHeader";
+import { useResponsiveLayout } from "@/lib/layout/hooks/useResponsiveLayout";
+import { Screen } from "@/components/shell/Screen/Screen";
 import { Avatar } from "@/components/ui/Avatar";
 import { Button } from "@/components/ui/Button";
 import { EmailOrPhoneField } from "@/components/ui/EmailOrPhoneField";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Segmented } from "@/components/ui/Segmented";
-import { Sheet } from "@/components/ui/Sheet";
+import { Sheet } from "@/components/ui/Sheet/Sheet";
 import { Spinner } from "@/components/ui/Spinner";
 import { errorMessage } from "@/lib/api/connect";
 import { colors, radii, spacing } from "@/lib/theme/theme";
@@ -27,7 +29,7 @@ import {
   GROUP_ARCHIVE_ACTIONS,
 } from "@haalkhata/shared/group/archiving";
 import { GroupStatus } from "@haalkhata/shared/group/status";
-import { groupEmoji } from "../../../groups/constants/groupTypes";
+import { groupEmoji } from "@haalkhata/shared/group/groupTypes";
 import { TABS } from "../../constants/tabs";
 import { BalancesPanel } from "./components/BalancesPanel/BalancesPanel";
 import { ArchiveGroupSheet } from "./components/ArchiveGroupSheet/ArchiveGroupSheet";
@@ -67,6 +69,7 @@ export function GroupDetailScreen({
     return (
       <Screen header={<DetailHeader title="Group" />}>
         <View style={styles.notFoundCard}>
+          {groupDetail.groupError ? <ErrorState error={groupDetail.groupError} retry={groupDetail.refresh} /> : null}
           <Text style={styles.notFoundText}>
             {groupDetail.groupError ? errorMessage(groupDetail.groupError) : "Group not found."}
           </Text>
@@ -102,6 +105,7 @@ export function GroupDetailScreen({
       onRefresh={groupDetail.refresh}
       refreshing={groupDetail.isRefreshing}
     >
+      <SafetyActions targetKind="group" targetId={groupId} />
       <View style={[styles.overview, isExpanded ? styles.overviewExpanded : null]}>
         <View style={[styles.groupHeader, isExpanded ? styles.groupHeaderExpanded : null]}>
           <View style={styles.groupEmojiTile}>
@@ -196,7 +200,9 @@ export function GroupDetailScreen({
       {/* Tabs */}
       <Segmented onChange={groupDetail.setTab} options={TABS} value={groupDetail.tab} />
 
-      {groupDetail.tab === "expenses" ? (
+      {(groupDetail.tab === "expenses" && groupDetail.expensesError) || (groupDetail.tab === "balances" && groupDetail.balancesError) || (groupDetail.tab === "activity" && groupDetail.activityError) ? (
+        <ErrorState error={groupDetail.tab === "expenses" ? groupDetail.expensesError : groupDetail.tab === "balances" ? groupDetail.balancesError : groupDetail.activityError} retry={groupDetail.refresh} />
+      ) : groupDetail.tab === "expenses" ? (
         <ExpenseList
           emptyHint="Add the first expense or scan a receipt to get this ledger going."
           expenses={groupDetail.expenses?.expenses ?? []}
@@ -324,6 +330,7 @@ export function GroupDetailScreen({
                         ) : null}
                       </Text>
                     </PersonLink>
+                    {!isMe && !person.deleted ? <SafetyActions targetKind="user" targetId={person.id} userId={person.id} /> : null}
                     {armed ? null : isMe ? (
                       isOwner ? null : (
                         <Button

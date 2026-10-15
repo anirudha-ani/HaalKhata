@@ -8,7 +8,7 @@ import {
   SCOPE_PICKER_SEARCH_THRESHOLD,
   scopePickerGroups,
 } from "@haalkhata/shared/expense/scopeFilter";
-import { Sheet } from "@/components/ui/Sheet";
+import { Sheet } from "@/components/ui/Sheet/Sheet";
 import { TextField } from "@/components/ui/TextField";
 import { colors, radii, spacing } from "@/lib/theme/theme";
 

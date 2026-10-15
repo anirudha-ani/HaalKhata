@@ -1,15 +1,17 @@
 /** Expense detail screen: payers, splits, receipt items, history, comments, and delete flow. */
 
+import { ErrorState } from "@/components/ui/ErrorState";
+import { SafetyActions } from "@/components/safety/SafetyActions";
 import { useRouter } from "expo-router";
 import { Check, Lock, Pencil, Send, Trash2 } from "lucide-react-native";
 import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { PersonLink } from "@/components/people/PersonLink";
-import { DetailHeader } from "@/components/shell/DetailHeader";
-import { Screen } from "@/components/shell/Screen";
+import { DetailHeader } from "@/components/shell/DetailHeader/DetailHeader";
+import { Screen } from "@/components/shell/Screen/Screen";
 import { Avatar } from "@/components/ui/Avatar";
 import { Button } from "@/components/ui/Button";
 import { Money } from "@/components/ui/Money";
-import { Sheet } from "@/components/ui/Sheet";
+import { Sheet } from "@/components/ui/Sheet/Sheet";
 import { Spinner } from "@/components/ui/Spinner";
 import { errorMessage } from "@/lib/api/connect";
 import { settledStatus } from "@haalkhata/shared/expense/settledStatus";
@@ -49,6 +51,7 @@ export function ExpenseDetailScreen({ expenseId }: { expenseId: string }) {
     return (
       <Screen header={<DetailHeader title="Expense" />}>
         <View style={styles.notFoundCard}>
+          {expenseDetail.detailError ? <ErrorState error={expenseDetail.detailError} retry={expenseDetail.retry} /> : null}
           <Text style={styles.notFoundText}>
             {expenseDetail.detailError
               ? errorMessage(expenseDetail.detailError)
@@ -133,6 +136,8 @@ export function ExpenseDetailScreen({ expenseId }: { expenseId: string }) {
         </View>
         <Text style={styles.amount}>{formatMoney(expense.amountCents, expense.currency)}</Text>
       </View>
+
+      <SafetyActions targetKind="expense" targetId={expense.id} userId={expense.createdBy !== meId ? expense.createdBy : undefined} />
 
       {settled ? (
         <View style={styles.settledCard}>
@@ -354,6 +359,7 @@ export function ExpenseDetailScreen({ expenseId }: { expenseId: string }) {
                 · {localDateTime(comment.createdAt)}
               </Text>
               <Text style={styles.commentText}>{comment.body}</Text>
+              <SafetyActions targetKind="comment" targetId={comment.id} userId={comment.author?.id !== meId ? comment.author?.id : undefined} />
             </View>
           </View>
         ))}
@@ -445,6 +451,8 @@ const styles = StyleSheet.create({
   breakdownColumn: {
     flexBasis: 360,
     flexGrow: 1,
+    flexShrink: 1,
+    minWidth: 0,
   },
   breakdownGrid: {
     flexDirection: "row",

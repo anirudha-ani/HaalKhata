@@ -66,6 +66,16 @@ services:
       # without this would start, pass readiness, and lock everyone out.
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:?GOOGLE_CLIENT_ID is required — production signs in with Google only}
       GOOGLE_MOBILE_CLIENT_IDS: ${GOOGLE_MOBILE_CLIENT_IDS:-}
+      APP_PUBLIC_URL: https://haalkhata.app
+      APPLE_SIGN_IN_REQUIRED: "true"
+      APPLE_TEAM_ID: ${APPLE_TEAM_ID:?set the Apple Developer Team ID}
+      APPLE_KEY_ID: ${APPLE_KEY_ID:?set the Sign in with Apple key ID}
+      APPLE_SERVICE_ID: ${APPLE_SERVICE_ID:?set the Apple web Services ID}
+      APPLE_APP_ID_PREFIX: ${APPLE_APP_ID_PREFIX:-}
+      ANDROID_SHA256_CERTIFICATES: ${ANDROID_SHA256_CERTIFICATES:-}
+      SUPPORT_EMAIL: ${SUPPORT_EMAIL:?set a monitored public support address}
+      APPLE_PRIVATE_KEY_FILE: /run/secrets/apple_private_key
+      APPLE_TOKEN_ENCRYPTION_KEY_FILE: /run/secrets/apple_token_encryption_key
       # Secrets are read from these files by the app itself (the Docker
       # `_FILE` convention); nothing exports them into the environment.
       SESSION_SECRET_FILE: /run/secrets/session_secret
@@ -85,12 +95,15 @@ services:
       COMPATIBLE_AI_BASE_URL: https://openrouter.ai/api/v1
       COMPATIBLE_AI_MODEL: google/gemini-3-flash-preview
       COMPATIBLE_AI_ZDR: "true"
+      RECEIPT_AI_PROCESSORS: OpenRouter and Google (Gemini)
     secrets:
       - session_secret
       - session_secret_previous
       - postgres_password
       - openrouter_api_key
       - twilio_api_key_secret
+      - apple_private_key
+      - apple_token_encryption_key
     # Verified: the app serves fine on a read-only rootfs. It imports
     # next/image nowhere, so nothing writes to .next/cache/images. If that ever
     # changes, add - /app/apps/web/.next/cache to tmpfs.
@@ -143,6 +156,10 @@ secrets:
     file: /srv/haalkhata/secrets/openrouter_api_key
   twilio_api_key_secret:
     file: /srv/haalkhata/secrets/twilio_api_key_secret
+  apple_private_key:
+    file: /srv/haalkhata/secrets/apple_private_key
+  apple_token_encryption_key:
+    file: /srv/haalkhata/secrets/apple_token_encryption_key
 
 volumes:
   db-data:

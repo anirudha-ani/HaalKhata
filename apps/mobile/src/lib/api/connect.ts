@@ -4,6 +4,8 @@
  * token from {@link ../api/session} instead of a cookie.
  */
 
+import { API_TIMEOUT_MS } from "@haalkhata/shared/api/timeouts";
+import { SafetyService } from "@haalkhata/protogen/safety/v1/safety_pb";
 import { Code, ConnectError, createClient, type Interceptor } from "@connectrpc/connect";
 import { createConnectTransport } from "@connectrpc/connect-web";
 import { AuthService } from "@haalkhata/protogen/auth/v1/auth_pb";
@@ -76,6 +78,7 @@ const nativeFetch: typeof fetch = (input, init) => {
 /** Connect transport for every RPC: JSON wire format, bearer auth, server URL from the environment. */
 export const transport = createConnectTransport({
   baseUrl: resolveApiBaseUrl(),
+  defaultTimeoutMs: API_TIMEOUT_MS,
   interceptors: [authorization],
   fetch: nativeFetch,
 });
@@ -109,3 +112,6 @@ export function errorMessage(error: unknown): string {
   if (error instanceof Error) return error.message || "something went wrong";
   return "something went wrong";
 }
+
+/** Typed client for private reports and caller-owned blocks. */
+export const safetyClient = createClient(SafetyService, transport);

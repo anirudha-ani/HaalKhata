@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Code, type HandlerContext } from "@connectrpc/connect";
 import type { ParseReceiptRequest } from "@haalkhata/protogen/receipt/v1/receipt_pb";
 
-vi.mock("@/server/receipt/usecase/receipt.usecase", () => ({ parseReceipt: vi.fn() }));
+vi.mock("@/server/receipt/usecase/receiptConsent.usecase", () => ({ parseReceiptWithConsent: vi.fn(), receiptProcessingInfo: vi.fn() }));
 vi.mock("@/server/api/connect/context", () => ({
   runUsecase: vi.fn((operation: () => Promise<unknown>) => operation()),
 }));
@@ -14,7 +14,7 @@ vi.mock("@/server/api/connect/rpcRateLimit", () => ({
   requireRateLimitedUser: vi.fn().mockResolvedValue("user-123"),
 }));
 
-import { parseReceipt } from "@/server/receipt/usecase/receipt.usecase";
+import { parseReceiptWithConsent as parseReceipt } from "@/server/receipt/usecase/receiptConsent.usecase";
 import { receiptHandler } from "./handler";
 
 beforeEach(() => vi.clearAllMocks());

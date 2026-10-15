@@ -3,9 +3,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { PoolClient } from "pg";
 
-vi.mock("@/server/common/db", () => ({ query: vi.fn(), queryOne: vi.fn() }));
+vi.mock("@/server/common/db/db", () => ({ query: vi.fn(), queryOne: vi.fn() }));
 
-import { query, queryOne } from "@/server/common/db";
+import { query, queryOne } from "@/server/common/db/db";
 import { hasUnsettledGroupBalances, sumUserNetByGroup } from "./ledger.repo";
 
 beforeEach(() => {

@@ -1,12 +1,13 @@
 /** All-expenses screen UI: every expense you're on, searchable, filtered by scope. */
 
+import { ErrorState } from "@/components/ui/ErrorState";
 import { useRouter } from "expo-router";
 import { Plus } from "lucide-react-native";
 import { StyleSheet, Text, View } from "react-native";
 import { ExpenseList } from "@/components/expenses/ExpenseList";
-import { useResponsiveLayout } from "@/components/shell/hooks/useResponsiveLayout";
-import { Screen } from "@/components/shell/Screen";
-import { ScreenHeader } from "@/components/shell/ScreenHeader";
+import { useResponsiveLayout } from "@/lib/layout/hooks/useResponsiveLayout";
+import { Screen } from "@/components/shell/Screen/Screen";
+import { ScreenHeader } from "@/components/shell/ScreenHeader/ScreenHeader";
 import { Button } from "@/components/ui/Button";
 import { Chip } from "@/components/ui/Chip";
 import { SearchField } from "@/components/ui/SearchField";
@@ -57,6 +58,8 @@ export function ExpensesScreen() {
 
       {listState.isLoading ? (
         <Spinner label="Loading expenses…" />
+      ) : listState.listError ? (
+        <ErrorState error={listState.listError} retry={listState.refresh} />
       ) : (
         <View style={[styles.workspace, isExpanded ? styles.workspaceExpanded : null]}>
           <View style={[styles.filters, isExpanded ? styles.filtersExpanded : null]}>

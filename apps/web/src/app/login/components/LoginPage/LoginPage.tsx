@@ -115,7 +115,7 @@ export function LoginPage() {
 
       <footer className="mx-auto flex max-w-[1480px] flex-wrap items-center justify-between gap-4 px-5 py-7 text-xs text-ink-soft sm:px-8 lg:px-12">
         <span>HaalKhata · A fresh ledger for shared lives.</span>
-        <span className="flex items-center gap-2"><LockKeyhole className="h-3.5 w-3.5" /> Receipt photos are not retained or used for AI training</span>
+        <span className="flex items-center gap-2"><LockKeyhole className="h-3.5 w-3.5" /> Receipt photos are processed only after you accept the sharing disclosure</span>
       </footer>
     </main>
   );

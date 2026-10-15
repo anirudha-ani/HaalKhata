@@ -1,6 +1,10 @@
 "use client";
 /** Profile form of the account page: the summary card, the editable profile fields, the payment methods, and sign-out. */
 
+import { ReceiptPermission } from "@/components/account/ReceiptPermission/ReceiptPermission";
+import { BlockedPeople } from "@/components/safety/BlockedPeople/BlockedPeople";
+import { LegalLinks } from "@/components/legal/LegalLinks/LegalLinks";
+import { DeleteAccount } from "@/components/account/DeleteAccount/DeleteAccount";
 import { Check, LogOut, Share2 } from "lucide-react";
 import type { User } from "@haalkhata/protogen/common/v1/common_pb";
 import { Avatar } from "@/components/ui/Avatar/Avatar";
@@ -169,6 +173,11 @@ export function ProfileForm({ me: currentUser }: { me: User }) {
       >
         <LogOut className="h-4 w-4" /> Sign out
       </button>
+
+      <ReceiptPermission />
+      <BlockedPeople />
+      <DeleteAccount />
+      <LegalLinks />
 
       {form.profileShareToken ? (
         <InviteShareModal

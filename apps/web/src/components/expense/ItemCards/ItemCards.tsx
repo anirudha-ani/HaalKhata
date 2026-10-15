@@ -7,7 +7,7 @@ import type { User } from "@haalkhata/protogen/common/v1/common_pb";
 import { formatMoney, parseMoneyInput } from "@haalkhata/shared/money/money";
 import { MAX_EXPENSE_ITEM_NAME_LENGTH } from "@haalkhata/shared/text/limits";
 import { countClaimedItems, resolveClaimer } from "@/lib/expense/claiming";
-import { percentOfItems } from "@/lib/expense/splitForm";
+import { percentOfItems } from "@haalkhata/shared/expense/form/splitForm";
 import { useMediaQuery } from "@/lib/hooks/useMediaQuery";
 import { Avatar } from "@/components/ui/Avatar/Avatar";
 import { ClaimBar } from "./components/ClaimBar/ClaimBar";

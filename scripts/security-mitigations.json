@@ -1,0 +1,14 @@
+{
+  "GHSA-86w9-cpqp-85rv": {
+    "module": "node-forge",
+    "version": "1.4.0",
+    "patch": "patches/node-forge@1.4.0.patch",
+    "sha256": "bdd899a91341b1ea09eeafb852ed49366b7319675a1d0b5c6d1f3c598b1c368a"
+  },
+  "GHSA-vfj7-8cjw-p6xm": {
+    "module": "braces",
+    "version": "3.0.3",
+    "patch": "patches/braces@3.0.3.patch",
+    "sha256": "15539ce2cee178ce40710f86251d764139a4c2071af2b9c67a08ef69a8de37d0"
+  }
+}

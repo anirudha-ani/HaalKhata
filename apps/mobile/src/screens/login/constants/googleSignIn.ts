@@ -24,8 +24,7 @@ export const GOOGLE_SIGN_IN_CONFIGURED =
 export const GOOGLE_SCOPES = ["openid", "email", "profile"];
 
 /**
- * Whether to offer the email/phone + password form. Google is the only way
- * into production; the password form stays in development so seeded accounts
+ * Whether to offer the email/phone + password form. Google and Apple are the production options; the password form stays in development so seeded accounts
  * remain reachable. Mirrors `passwordAuthEnabled()` on the server, which is
  * the enforcing side — this only decides whether a control that would be
  * rejected anyway is worth rendering.

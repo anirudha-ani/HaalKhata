@@ -3,14 +3,9 @@
 import { useState } from "react";
 import { nextDraftKey } from "@haalkhata/shared/expense/draftKey";
 import { centsToInput } from "@haalkhata/shared/money/money";
-import {
-  draftCompleteness,
-  draftTotals,
-  itemizedWarnings,
-  previewItemizedShares,
-  unassignedCount,
-  type DraftItem,
-} from "@/lib/expense/itemDraft";
+import { draftCompleteness, draftTotals, unassignedCount, type DraftItem } from "@/lib/expense/itemDraft";
+import { itemizedWarnings } from "@haalkhata/shared/expense/form/itemizedWarnings";
+import { previewItemizedShares } from "@haalkhata/shared/expense/form/splitForm";
 
 /**
  * Holds a draft's line items with their portion counts, plus the tax and tip
@@ -174,7 +169,7 @@ export function useItemDraft(
     },
     ...totals,
     unassignedCount: unassignedCount(items ?? []),
-    completeness: draftCompleteness(items ?? [], totals),
+    completeness: draftCompleteness(items ?? [], currency),
     /** What each person currently owes, keyed by user id, in cents. */
     previewShares: previewItemizedShares(items ?? [], totals.taxCents, totals.tipCents, currency),
     /** What still stops the bill adding up, as short sentences. */

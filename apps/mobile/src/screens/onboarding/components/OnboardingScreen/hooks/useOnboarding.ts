@@ -160,6 +160,8 @@ export function useOnboarding() {
 
   return {
     isLoading: meQuery.isPending,
+    loadError: !meQuery.data && meQuery.error,
+    retry: meQuery.refetch,
     /** Which of the two steps is showing. */
     step,
     name,

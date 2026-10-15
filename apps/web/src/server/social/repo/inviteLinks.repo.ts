@@ -1,7 +1,7 @@
 /** All SQL for the invite_links table (shareable friend-reminder and group-join links). */
 
 import type { PoolClient } from "pg";
-import { execute, queryOne } from "@/server/common/db";
+import { execute, queryOne } from "@/server/common/db/db";
 
 /** One stored link, exactly as the table holds it. */
 export interface InviteLinkRow {

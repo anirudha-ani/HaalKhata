@@ -11,6 +11,7 @@
     "lint": "eslint src scripts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "auth:check": "node --import tsx scripts/check-apple-auth.mts",
     "db:migrate": "node --env-file-if-exists=../../.env node_modules/node-pg-migrate/bin/node-pg-migrate.js up -m migrations",
     "db:new": "node-pg-migrate create -m migrations --migration-file-language sql",
     "db:seed": "tsx scripts/seed-demo.mts"
@@ -26,6 +27,7 @@
     "@tanstack/react-query": "^5.104.1",
     "google-auth-library": "^11.1.0",
     "heic-decode": "^2.1.0",
+    "jose": "^6.2.12",
     "libphonenumber-js": "^1.13.14",
     "lucide-react": "^1.52.0",
     "next": "^16.3.8",

@@ -1,4 +1,4 @@
-/** Login screen UI: Google sign-in, plus the development-only password form. */
+/** Login screen UI: Apple/Google sign-in and the development-only password form. */
 
 import {
   KeyboardAvoidingView,
@@ -10,6 +10,8 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { LegalLinks } from "@/components/legal/LegalLinks";
+import { RECEIPT_PRIVACY_MESSAGE } from "@haalkhata/shared/legal/privacyCopy";
 import { Button } from "@/components/ui/Button";
 import { Segmented } from "@/components/ui/Segmented";
 import { TextField } from "@/components/ui/TextField";
@@ -18,14 +20,13 @@ import { GOOGLE_SIGN_IN_CONFIGURED, PASSWORD_AUTH_ENABLED } from "../../constant
 import { LOGIN_MODES } from "../../constants/loginModes";
 import brandIconSource from "../../../../../assets/icon.png";
 import { GoogleSignInButton } from "./components/GoogleSignInButton/GoogleSignInButton";
+import { AppleSignInButton } from "./components/AppleSignInButton";
 import { useLogin } from "./hooks/useLogin";
-import { FOCUSED_CONTENT_MAX_WIDTH } from "@/components/shell/shell.constants";
+import { FOCUSED_CONTENT_MAX_WIDTH } from "@/lib/layout/constants/layout";
 
 /**
- * Renders the login screen: the HaalKhata icon and wordmark, "Continue with Google"
- * (the only way in on a production server), and — in development builds
- * only, mirroring the server's password gate — the sign-in/create-account
- * toggle and credentials form for seeded accounts.
+ * Renders the brand, production Apple/Google sign-in and legal links. Development
+ * builds also offer the password form for seeded accounts, matching the server gate.
  *
  * @returns The full-height login screen.
  */
@@ -52,12 +53,12 @@ export function LoginScreen() {
             </View>
 
             <View style={styles.card}>
+            <AppleSignInButton />
             {GOOGLE_SIGN_IN_CONFIGURED ? (
               <GoogleSignInButton />
             ) : PASSWORD_AUTH_ENABLED ? null : (
               <Text style={styles.hint}>
-                Sign-in is not configured for this build: it needs the Google client ids set at
-                build time.
+                Google sign-in is currently unavailable.
               </Text>
             )}
 
@@ -117,6 +118,10 @@ export function LoginScreen() {
                 ) : null}
               </>
             ) : null}
+            <View style={styles.privacyFooter}>
+              <Text style={styles.privacyMessage}>{RECEIPT_PRIVACY_MESSAGE}</Text>
+              <LegalLinks />
+            </View>
             </View>
           </View>
         </ScrollView>
@@ -167,6 +172,17 @@ const styles = StyleSheet.create({
     color: colors.inkSoft,
     fontSize: 12,
     lineHeight: 18,
+  },
+  privacyFooter: {
+    borderTopColor: colors.line,
+    borderTopWidth: 1,
+    gap: spacing.sm,
+    paddingTop: spacing.lg,
+  },
+  privacyMessage: {
+    color: colors.inkSoft,
+    fontSize: 12,
+    lineHeight: 20,
   },
   safeArea: {
     backgroundColor: colors.paper,

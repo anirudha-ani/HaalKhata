@@ -2,11 +2,16 @@ syntax = "proto3";
 
 package receipt.v1;
 
+import "google/protobuf/empty.proto";
+
 // AI receipt itemization. The server tries configured providers in order
 // (self-hosted vision box, cloud API, mock) and returns a normalized draft
 // that the user reviews before it becomes an itemized expense — AI output
 // is never auto-committed.
 service ReceiptService {
+  rpc GetProcessingInfo(google.protobuf.Empty) returns (ReceiptProcessingInfo);
+  rpc GrantConsent(GrantConsentRequest) returns (ReceiptProcessingInfo);
+  rpc RevokeConsent(google.protobuf.Empty) returns (ReceiptProcessingInfo);
   rpc ParseReceipt(ParseReceiptRequest) returns (ParseReceiptResponse);
 }
 
@@ -16,6 +21,20 @@ message ParseReceiptRequest {
   // because browsers report an empty string for HEIC and would otherwise make
   // a valid iPhone photo unusable.
   string media_type = 2;
+  // Current disclosure version. The account must also have saved permission.
+  string consent_version = 3;
+}
+
+message ReceiptProcessingInfo {
+  string disclosure = 1;
+  string consent_version = 2;
+  // True only when this account has accepted the current sharing terms.
+  bool consent_granted = 3;
+}
+
+message GrantConsentRequest {
+  // The disclosure actually shown when the user selected Allow AI scanning.
+  string consent_version = 1;
 }
 
 message ParsedReceiptItem {

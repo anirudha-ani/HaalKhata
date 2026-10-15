@@ -9,7 +9,7 @@ import {
   currencyOptionLabel,
   type CurrencyInfo,
 } from "@haalkhata/shared/money/money.constants";
-import { Sheet } from "@/components/ui/Sheet";
+import { Sheet } from "@/components/ui/Sheet/Sheet";
 import { TextField } from "@/components/ui/TextField";
 import { colors, radii, spacing } from "@/lib/theme/theme";
 

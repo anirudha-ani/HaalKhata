@@ -1,5 +1,7 @@
 /** Registers every service handler on the Connect router. */
 
+import { SafetyService } from "@haalkhata/protogen/safety/v1/safety_pb";
+import { safetyHandler } from "@/server/safety/handler";
 import type { ConnectRouter } from "@connectrpc/connect";
 import { AuthService } from "@haalkhata/protogen/auth/v1/auth_pb";
 import { GroupService } from "@haalkhata/protogen/group/v1/group_pb";
@@ -25,5 +27,6 @@ export default function routes(router: ConnectRouter): void {
   router.service(ExpenseService, expenseHandler);
   router.service(ReceiptService, receiptHandler);
   router.service(SocialService, socialHandler);
+  router.service(SafetyService, safetyHandler);
   router.service(PaymentMethodService, paymentMethodHandler);
 }

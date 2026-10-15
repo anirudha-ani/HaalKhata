@@ -3,7 +3,7 @@
 import { describe, expect, it } from "vitest";
 import type { Expense } from "@haalkhata/protogen/expense/v1/expense_pb";
 import { buildInitialValues } from "./initialValues";
-import { buildItemsPayload } from "@/lib/expense/splitForm";
+import { buildItemsPayload } from "@haalkhata/shared/expense/form/splitForm";
 
 const NO_PARAMS = { initialGroupId: "", initialFriendId: "" };
 const MINE = "me";

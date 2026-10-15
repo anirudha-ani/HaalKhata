@@ -16,7 +16,7 @@
 import heicDecode from "heic-decode";
 import sharp from "sharp";
 import { invalid, unavailable, UsecaseError } from "@/server/common/errors";
-import { isRealCalendarDate } from "@/server/common/validation";
+import { isRealCalendarDate } from "@/server/common/validation/validation";
 import { logEvent } from "@/server/common/logger";
 import {
   COMPATIBLE_AI,
@@ -381,7 +381,6 @@ const compatibleProvider: Provider = {
       // operator's to read, not the user's.
       logEvent("warn", "compatible receipt provider rejected the request", {
         providerStatus: response.status,
-        detail: responseText.slice(0, 300),
       });
       throw new Error(`compatible provider returned ${response.status}`);
     }

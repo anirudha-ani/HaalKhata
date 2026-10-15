@@ -1,13 +1,15 @@
 /** Dashboard screen: balance summary, per-person balances with settle-up, group highlights, recent activity. */
 
+import { SummaryCard } from "./components/SummaryCard/SummaryCard";
+import { ErrorState } from "@/components/ui/ErrorState";
 import { Link, useRouter } from "expo-router";
 import { Plus, UsersRound } from "lucide-react-native";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { SettleUpModal } from "@/components/modals/SettleUpModal";
 import { PersonLink } from "@/components/people/PersonLink";
-import { Screen } from "@/components/shell/Screen";
-import { ScreenHeader } from "@/components/shell/ScreenHeader";
-import { VerifyPhoneBanner } from "@/components/shell/VerifyPhoneBanner";
+import { Screen } from "@/components/shell/Screen/Screen";
+import { ScreenHeader } from "@/components/shell/ScreenHeader/ScreenHeader";
+import { VerifyPhoneBanner } from "@/components/shell/VerifyPhoneBanner/VerifyPhoneBanner";
 import { Avatar } from "@/components/ui/Avatar";
 import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -24,7 +26,7 @@ import { safeActivityPath } from "@haalkhata/shared/navigation/activityPath";
 import { localDate } from "@haalkhata/shared/time/localTime";
 import { getGreeting } from "@haalkhata/shared/greeting";
 import { colors, fonts, radii, spacing } from "@/lib/theme/theme";
-import { groupEmoji } from "../../../groups/constants/groupTypes";
+import { groupEmoji } from "@haalkhata/shared/group/groupTypes";
 import { PayMethodPrompt } from "../PayMethodPrompt/PayMethodPrompt";
 import { useDashboard } from "./hooks/useDashboard";
 
@@ -60,6 +62,7 @@ export function DashboardScreen() {
             <Text style={styles.greetingSub}>Here&apos;s where your ledger stands.</Text>
           </View>
 
+          {dashboard.loadError ? <ErrorState error={dashboard.loadError} retry={dashboard.refresh} /> : null}
           <VerifyPhoneBanner currentUser={dashboard.me} />
 
           {/* Shown only with real balances: a failed read must not prompt
@@ -319,46 +322,6 @@ export function DashboardScreen() {
   );
 }
 
-/**
- * Renders one balance-summary stat card with a label and a formatted amount.
- *
- * @param props - Component props.
- * @returns A single summary card.
- */
-function SummaryCard({
-  label,
-  value,
-  tone,
-  strong = false,
-}: {
-  /** Caption shown above the amount (e.g. "You are owed"). */
-  label: string;
-  /** Pre-formatted money string to display. */
-  value: string;
-  /** Color treatment: "pos" for money owed to you, "neg" for money you owe. */
-  tone: "pos" | "neg";
-  /** When true, tints the card background to emphasize it (used for net balance). */
-  strong?: boolean;
-}) {
-  return (
-    <View
-      style={[
-        styles.summaryCard,
-        strong ? (tone === "pos" ? styles.summaryCardPos : styles.summaryCardNeg) : null,
-      ]}
-    >
-      <Text style={styles.summaryLabel}>{label}</Text>
-      <Text
-        style={[
-          styles.summaryValue,
-          { color: tone === "pos" ? colors.pos600 : colors.neg600 },
-        ]}
-      >
-        {value}
-      </Text>
-    </View>
-  );
-}
 
 const styles = StyleSheet.create({
   activityDate: {
@@ -390,9 +353,10 @@ const styles = StyleSheet.create({
     gap: spacing.xl,
   },
   dashboardSection: {
-    flexBasis: 480,
+    flexBasis: 400,
     flexGrow: 1,
-    maxWidth: 566,
+    flexShrink: 1,
+    minWidth: 0,
   },
   errorCard: {
     backgroundColor: colors.neg50,
@@ -505,25 +469,10 @@ const styles = StyleSheet.create({
   summary: {
     gap: spacing.sm,
   },
-  summaryCard: {
-    backgroundColor: colors.card,
-    borderColor: colors.line,
-    borderRadius: radii.lg,
-    borderWidth: 1,
-    flexBasis: 160,
-    flexGrow: 1,
-    padding: spacing.lg,
-  },
-  summaryCardNeg: {
-    backgroundColor: colors.neg50,
-  },
-  summaryCardPos: {
-    backgroundColor: colors.pos50,
-  },
-  summaryLabel: {
-    color: colors.inkSoft,
-    fontSize: 13,
-  },
+
+
+
+
   summaryCurrency: {
     color: colors.inkSoft,
     fontSize: 12,
@@ -535,10 +484,5 @@ const styles = StyleSheet.create({
     flexWrap: "wrap",
     gap: spacing.sm,
   },
-  summaryValue: {
-    fontSize: 22,
-    fontVariant: ["tabular-nums"],
-    fontWeight: "700",
-    marginTop: spacing.xs,
-  },
+
 });

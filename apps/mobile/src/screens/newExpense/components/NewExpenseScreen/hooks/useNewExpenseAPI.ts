@@ -1,5 +1,6 @@
 /** Expense form queries (me, groups, friends, expense being edited) + create/update/parse mutations. */
 
+import { RECEIPT_TIMEOUT_MS } from "@haalkhata/shared/api/timeouts";
 import type { MessageInitShape } from "@bufbuild/protobuf";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { CreateExpenseRequestSchema } from "@haalkhata/protogen/expense/v1/expense_pb";
@@ -80,11 +81,12 @@ export function useNewExpenseAPI(editExpenseId: string) {
    * filling in this form, not a different kind of expense.
    */
   const parse = useMutation({
-    mutationFn: (photo: ReceiptPhotoInput) =>
+    mutationFn: (photo: ReceiptPhotoInput & { consentVersion: string }) =>
       receiptClient.parseReceipt({
         image: base64ToBytes(photo.base64),
         mediaType: photo.mediaType,
-      }),
+        consentVersion: photo.consentVersion,
+      }, { timeoutMs: RECEIPT_TIMEOUT_MS }),
   });
 
   return {
@@ -93,6 +95,9 @@ export function useNewExpenseAPI(editExpenseId: string) {
     archivedGroups: groupsByStatus(groupsQuery.data?.groups ?? [], GroupStatus.ARCHIVED),
     friends: friendsQuery.data?.friends ?? [],
     editing: editingQuery.data,
+    loadError: (!currentUserQuery.data && currentUserQuery.error) || (!groupsQuery.data && groupsQuery.error) ||
+      (!friendsQuery.data && friendsQuery.error) || (editExpenseId !== "" && !editingQuery.data && editingQuery.error),
+    retry: () => { void currentUserQuery.refetch(); void groupsQuery.refetch(); void friendsQuery.refetch(); if (editExpenseId) void editingQuery.refetch(); },
     isLoading:
       currentUserQuery.isLoading ||
       groupsQuery.isLoading ||

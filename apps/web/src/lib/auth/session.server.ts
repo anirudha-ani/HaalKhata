@@ -1,7 +1,7 @@
 /** Server-component session helpers (App Router guards). */
 
 import { headers } from "next/headers";
-import { sessionUser as resolveSessionUser } from "@/server/auth/usecase/auth.usecase";
+import { sessionUser as resolveSessionUser } from "@/server/auth/usecase/account/auth.usecase";
 import { sessionTokenFromCookieHeader } from "@/server/api/connect/credentials";
 
 /**

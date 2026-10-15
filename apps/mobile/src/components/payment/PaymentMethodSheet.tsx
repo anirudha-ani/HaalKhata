@@ -6,7 +6,7 @@ import { Pressable, StyleSheet, Switch, Text, View } from "react-native";
 import { Button } from "@/components/ui/Button";
 import { Chip } from "@/components/ui/Chip";
 import { CurrencyPicker } from "@/components/ui/CurrencyPicker";
-import { Sheet } from "@/components/ui/Sheet";
+import { Sheet } from "@/components/ui/Sheet/Sheet";
 import { TextField } from "@/components/ui/TextField";
 import {
   METHOD_NAME_PLACEHOLDER,

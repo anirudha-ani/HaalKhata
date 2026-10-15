@@ -3,12 +3,18 @@
 import type { ImagePickerOptions } from "expo-image-picker";
 
 /**
- * Options for both the camera and the photo library: JPEG-quality compression
- * keeps receipts well under the server's 8 MB limit, and base64 is requested
- * because the ParseReceipt RPC takes raw bytes.
+ * Select the original photo; prepareReceiptPhoto performs bounded JPEG encoding
+ * locally before the ParseReceipt RPC receives any bytes.
  */
 export const PICKER_OPTIONS: ImagePickerOptions = {
-  base64: true,
+  base64: false,
   mediaTypes: ["images"],
-  quality: 0.7,
+  quality: 1,
 };
+
+/** Maximum longest edge sent to the server; preserves text without uploading full camera resolution. */
+export const MAX_RECEIPT_EDGE = 2576;
+/** Server upload ceiling; enforced before allocating RPC bytes. */
+export const MAX_RECEIPT_UPLOAD_BYTES = 8 * 1024 * 1024;
+/** Explicit native JPEG compression; picker quality does not guarantee a MIME type. */
+export const RECEIPT_JPEG_QUALITY = 0.8;

@@ -99,7 +99,8 @@ export function useActivity() {
     loadMore: () => void activity.fetchNextPage(),
     notifications: notifications.data?.notifications ?? [],
     isLoading: activity.isLoading,
-    refresh: () => void activity.refetch(),
+    loadError: activity.error || notifications.error,
+    refresh: () => { void activity.refetch(); void notifications.refetch(); },
     isRefreshing: activity.isRefetching && !activity.isFetchingNextPage,
   };
 }

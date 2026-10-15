@@ -2,6 +2,7 @@
 
 import { Camera, Images, ScanLine } from "lucide-react-native";
 import { Image, StyleSheet, Text, View } from "react-native";
+import { ReceiptConsentPrompt } from "@/components/receipt/ReceiptConsentPrompt/ReceiptConsentPrompt";
 import { Button } from "@/components/ui/Button";
 import { Spinner } from "@/components/ui/Spinner";
 import { colors, radii, spacing } from "@/lib/theme/theme";
@@ -51,6 +52,7 @@ export function ReceiptPanel({
             <View style={styles.captureAction}>
               <Button
                 compact
+                disabled={form.isPickingPhoto || form.isReceiptBusy}
                 icon={<Camera color={colors.white} size={16} />}
                 label={form.photo ? "Retake" : "Take photo"}
                 onPress={() => void form.pickPhoto(true)}
@@ -59,6 +61,7 @@ export function ReceiptPanel({
             <View style={styles.captureAction}>
               <Button
                 compact
+                disabled={form.isPickingPhoto || form.isReceiptBusy}
                 icon={<Images color={colors.inkSoft} size={16} />}
                 label={form.photo ? "Different photo" : "Choose photo"}
                 onPress={() => void form.pickPhoto(false)}
@@ -69,10 +72,15 @@ export function ReceiptPanel({
         )}
       </View>
 
+      <ReceiptConsentPrompt consent={form.receiptConsent} />
+      {form.receiptConsent.error && !form.receiptConsent.prompt ? <Text accessibilityRole="alert" style={styles.error}>{form.receiptConsent.error}</Text> : null}
+      {form.isPickingPhoto ? <Spinner label="Preparing photo…" /> : null}
+
       {form.photo && !form.fromReceipt && !form.isParsing ? (
         <Button
           icon={<ScanLine color={colors.white} size={18} />}
-          label="Itemize with AI"
+          label={form.receiptConsent.busy ? "Checking permission…" : "Itemize with AI"}
+          disabled={form.isReceiptBusy || form.isPickingPhoto}
           onPress={form.parseNow}
         />
       ) : null}
@@ -99,6 +107,7 @@ export function ReceiptPanel({
 }
 
 const styles = StyleSheet.create({
+  error: { color: colors.neg700, fontSize: 14 },
   badges: {
     alignItems: "center",
     flexDirection: "row",

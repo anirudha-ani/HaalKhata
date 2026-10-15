@@ -1,6 +1,7 @@
 "use client";
 /** Expense form queries (me, groups, friends, expense being edited) + create/update/parse mutations. */
 
+import { RECEIPT_TIMEOUT_MS } from "@haalkhata/shared/api/timeouts";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { MessageInitShape } from "@bufbuild/protobuf";
 import type { CreateExpenseRequestSchema } from "@haalkhata/protogen/expense/v1/expense_pb";
@@ -71,9 +72,9 @@ export function useNewExpenseAPI(editExpenseId: string) {
    * filling in this form, not a different kind of expense.
    */
   const parse = useMutation({
-    mutationFn: async (file: File) => {
-      const bytes = new Uint8Array(await file.arrayBuffer());
-      return receiptClient.parseReceipt({ image: bytes, mediaType: file.type });
+    mutationFn: async (input: { file: File; consentVersion: string }) => {
+      const bytes = new Uint8Array(await input.file.arrayBuffer());
+      return receiptClient.parseReceipt({ image: bytes, mediaType: input.file.type, consentVersion: input.consentVersion }, { timeoutMs: RECEIPT_TIMEOUT_MS });
     },
   });
 

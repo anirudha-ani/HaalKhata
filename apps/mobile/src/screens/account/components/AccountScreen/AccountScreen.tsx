@@ -1,16 +1,21 @@
 /** Account screen: profile (name, phone, currency), payment methods, phone verification and merge, sign out. */
 
+import { ReceiptPermission } from "@/components/account/ReceiptPermission/ReceiptPermission";
+import { ErrorState } from "@/components/ui/ErrorState";
+import { BlockedPeople } from "@/components/safety/BlockedPeople";
 import type { User } from "@haalkhata/protogen/common/v1/common_pb";
 import { Check, LogOut, Share2 } from "lucide-react-native";
 import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { DeleteAccount } from "@/components/account/DeleteAccount";
 import { MergePreview } from "@/components/account/MergePreview";
-import { DetailHeader } from "@/components/shell/DetailHeader";
-import { useResponsiveLayout } from "@/components/shell/hooks/useResponsiveLayout";
-import { Screen } from "@/components/shell/Screen";
+import { DetailHeader } from "@/components/shell/DetailHeader/DetailHeader";
+import { useResponsiveLayout } from "@/lib/layout/hooks/useResponsiveLayout";
+import { Screen } from "@/components/shell/Screen/Screen";
 import { Avatar } from "@/components/ui/Avatar";
+import { LegalLinks } from "@/components/legal/LegalLinks";
 import { Button } from "@/components/ui/Button";
 import { PhoneField } from "@/components/ui/PhoneField";
-import { Sheet } from "@/components/ui/Sheet";
+import { Sheet } from "@/components/ui/Sheet/Sheet";
 import { InviteShareSheet } from "@/components/modals/InviteShareSheet";
 import { shareProfileInvite } from "@/lib/invite/share";
 import { Spinner } from "@/components/ui/Spinner";
@@ -28,10 +33,10 @@ import { useAccountAPI, useProfileForm } from "./hooks/useAccount";
  * @returns The account screen content.
  */
 export function AccountScreen() {
-  const { me: currentUser, isLoading } = useAccountAPI();
+  const { me: currentUser, isLoading, loadError, retry } = useAccountAPI();
   return (
     <Screen header={<DetailHeader title="Account" />}>
-      {isLoading || !currentUser ? <Spinner /> : <ProfileForm me={currentUser} />}
+      {isLoading ? <Spinner /> : !currentUser ? <ErrorState error={loadError} retry={retry} /> : <ProfileForm me={currentUser} />}
     </Screen>
   );
 }
@@ -71,6 +76,10 @@ function ProfileForm({ me: currentUser }: { me: User }) {
             onPress={() => void form.signOut()}
             variant="outline"
           />
+          <ReceiptPermission />
+          <BlockedPeople />
+          <DeleteAccount />
+          <LegalLinks />
         </View>
 
         <View style={[styles.formColumn, isExpanded ? styles.formColumnExpanded : null]}>

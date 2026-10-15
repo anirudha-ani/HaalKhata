@@ -1,11 +1,12 @@
 /** Activity screen: searchable, filterable, day-grouped feed with keyset pagination. */
 
+import { ErrorState } from "@/components/ui/ErrorState";
 import { Bell, ChevronDown } from "lucide-react-native";
 import { ScrollView, StyleSheet, Text, View } from "react-native";
 import { ActivityList } from "@/components/activity/ActivityList";
-import { DetailHeader } from "@/components/shell/DetailHeader";
-import { useResponsiveLayout } from "@/components/shell/hooks/useResponsiveLayout";
-import { Screen } from "@/components/shell/Screen";
+import { DetailHeader } from "@/components/shell/DetailHeader/DetailHeader";
+import { useResponsiveLayout } from "@/lib/layout/hooks/useResponsiveLayout";
+import { Screen } from "@/components/shell/Screen/Screen";
 import { Button } from "@/components/ui/Button";
 import { Chip } from "@/components/ui/Chip";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -40,6 +41,8 @@ export function ActivityScreen() {
     >
       {activity.isLoading ? (
         <Spinner label="Loading activity…" />
+      ) : activity.loadError ? (
+        <ErrorState error={activity.loadError} retry={activity.refresh} />
       ) : activity.events.length === 0 && !isFiltered ? (
         <EmptyState
           hint="Expenses, payments and group changes involving you will show up here."

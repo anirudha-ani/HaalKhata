@@ -223,7 +223,7 @@ and under READ COMMITTED each sees whatever has committed by the time it
 runs: a settlement committing between two of them would yield one direction
 from before the payment and the other from after — a position that never
 existed, shown to someone as what they owe. Every read that returns a
-figure therefore runs inside `snapshot()` (`common/db.ts`: a
+figure therefore runs inside `snapshot()` (`common/db/db.ts`: a
 `REPEATABLE READ READ ONLY` transaction): `GetFriendLedger`,
 `GetOverallBalances`, `GetGroupBalances`, and also `ListExpenses` and
 `GetExpense`, where an expense's amount, its payers and its shares are

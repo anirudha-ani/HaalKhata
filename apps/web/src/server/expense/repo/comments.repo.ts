@@ -1,7 +1,7 @@
 /** All SQL for the comments table. */
 
 import type { PoolClient } from "pg";
-import { newId, query } from "@/server/common/db";
+import { newId, query } from "@/server/common/db/db";
 
 /** One row of the comments table (column names mirror SQL). */
 export interface CommentRow {
@@ -43,9 +43,11 @@ export async function insertComment(
  * @param expenseId - Id of the expense whose comments to list.
  * @returns Comment rows in chronological order.
  */
-export async function listCommentsByExpense(expenseId: string): Promise<CommentRow[]> {
+export async function listCommentsByExpense(expenseId: string, viewerId?: string): Promise<CommentRow[]> {
   return query<CommentRow>(
-    `SELECT * FROM comments WHERE expense_id = $1 ORDER BY created_at ASC`,
-    [expenseId],
+    `SELECT * FROM comments WHERE expense_id = $1 AND ($2::text IS NULL OR NOT EXISTS (
+      SELECT 1 FROM user_blocks WHERE (blocker_id = $2 AND blocked_id = comments.user_id)
+        OR (blocker_id = comments.user_id AND blocked_id = $2))) ORDER BY created_at ASC`,
+    [expenseId, viewerId ?? null],
   );
 }

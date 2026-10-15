@@ -1,5 +1,8 @@
 /** Group business logic: create/list/get, connected-member enrollment, balance-guarded removal. */
 
+import { blockedPairExists } from "@/server/safety/repo/safety.repo";
+import { assertSafeText } from "@/server/safety/usecase/contentFilter";
+import { isRegisteredUser } from "@/server/auth/usecase/identity/user.mapper";
 import type { PoolClient } from "pg";
 import { GroupStatus } from "@haalkhata/protogen/group/v1/group_pb";
 import {
@@ -30,8 +33,8 @@ import { insertActivity } from "@/server/social/repo/activity.repo";
 import { insertNotifications } from "@/server/social/repo/notifications.repo";
 import { groupIsSettled, userNetInGroup, userNetInGroups } from "@/server/expense/usecase/balance.usecase";
 import { denied, invalid, notFound, UsecaseError } from "@/server/common/errors";
-import { toInt32Cents } from "@/server/common/money";
-import { normalizeCurrencyCode } from "@/server/common/validation";
+import { toInt32Cents } from "@/server/common/money/money";
+import { normalizeCurrencyCode } from "@/server/common/validation/validation";
 import {
   GROUP_TYPES,
   GROUP_STATUS_STORAGE,
@@ -40,7 +43,7 @@ import {
   MEMBER_ROLE,
   OWNER_ROLE,
 } from "@/server/group/group.constants";
-import { lockGroupLedgers, withLedgerTransaction } from "@/server/common/ledgerLocks";
+import { lockGroupLedgers, withLedgerTransaction } from "@/server/common/ledger/ledgerLocks";
 import { toGroup, toMember } from "./group.mapper";
 
 /**
@@ -195,7 +198,7 @@ async function enrollMembers(
     // §33c: a seat belongs only to somebody who can open the app. Invited
     // friends look pickable on stale clients, so the gate lives here, where
     // CreateGroup and AddMembers converge.
-    if (user.password_hash === null && user.google_sub === null) {
+    if (!isRegisteredUser(user)) {
       throw new UsecaseError(
         "failed_precondition",
         `${user.name} hasn't joined HaalKhata yet — invite them to sign up first`,
@@ -269,7 +272,7 @@ function assertPhoneShape(phone: string): string {
  * @returns True when neither credential is set.
  */
 function isUnregistered(user: UserRow): boolean {
-  return user.password_hash === null && user.google_sub === null;
+  return !isRegisteredUser(user);
 }
 
 /**
@@ -290,6 +293,7 @@ export async function createGroup(
   input: { name: string; type: string; currency: string; memberIds?: string[] },
 ) {
   assertMemberIdCount(input.memberIds ?? []);
+  assertSafeText(input.name);
   const name = input.name.trim();
   if (name.length === 0) invalid("group name is required");
   if (name.length > MAX_GROUP_NAME_LENGTH) {
@@ -302,6 +306,7 @@ export async function createGroup(
   // Authorize before the insert, so a rejected member list does not leave an
   // orphan group behind.
   await assertCanAdd(userId, input.memberIds ?? []);
+  if (await blockedPairExists([userId, ...(input.memberIds ?? [])])) denied("a blocked person cannot be added");
   const actor = (await findUserById(userId))!;
   // The group, its first members, the friendships they imply and the feed
   // event announcing it commit together: a group that exists with half its
@@ -423,6 +428,7 @@ async function notifyAdded(
   await insertNotifications(
     recipientIds,
     {
+      actorId: actor.id,
       type: "added_to_group",
       title: `${actor.name} added you to "${groupName}"`,
       body: "",
@@ -471,6 +477,7 @@ export async function addMembers(
   assertMemberIdCount(candidateIds);
   if (candidateIds.length === 0) invalid("pick somebody to add");
   await assertCanAdd(userId, candidateIds);
+  if (await blockedPairExists([...candidateIds, userId])) denied("a blocked person cannot be added");
   const actor = (await findUserById(userId))!;
 
   // Under the group's ledger lock: a settlement being validated in this
@@ -555,6 +562,7 @@ export async function transferOwnership(
     await insertNotifications(
       [input.userId],
       {
+        actorId: userId,
         type: "ownership_transferred",
         title: `${actor.name} made you the owner of "${group.name}"`,
         body: "",

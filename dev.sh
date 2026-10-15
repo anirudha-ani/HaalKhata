@@ -3,11 +3,13 @@
 #
 # Assumes ./install-deps.sh has been run at least once (it installs Node,
 # pnpm and Docker; buf comes from the workspace's devDependencies). This
-# script only STARTS things:
+# script prepares configuration and starts the local stack:
 #   1. start the Docker daemon if it's not running (systemctl / Docker Desktop)
 #   2. self-heal cheap project state (node_modules, protogen) if missing
+#      quietly prepare .env and require the local database password
 #   3. start the Postgres db (docker compose up -d db) and wait for it to be healthy
-#   4. start the Next.js dev server in the foreground (pnpm dev, http://127.0.0.1:3000)
+#   4. apply pending migrations; report success or stop with the failure
+#   5. start the Next.js dev server in the foreground (pnpm dev, http://127.0.0.1:3000)
 #      (with --mobile-android / --mobile-ios, also: boot emulator/simulator,
 #       build+install the dev client if missing, start Metro, launch the app)
 #
@@ -159,6 +161,16 @@ clean_db() {
   warn "tearing down db and deleting its volume — all local data will be lost"
   docker compose down -v --remove-orphans
   ok "removed db container + db-data volume"
+}
+
+# Apply migrations through the same environment and database path as the API.
+# Stops startup before web/Metro/device work if the schema cannot be prepared.
+prepare_db() {
+  log "checking and applying database migrations…"
+  if ! pnpm --filter @haalkhata/web exec node --import tsx scripts/prepare-database.mts; then
+    die "database migrations failed; web and mobile startup stopped. Fix the error above, then rerun ./dev.sh."
+  fi
+  ok "database migrations passed"
 }
 
 # --- mobile lifecycle ----------------------------------------------------------
@@ -379,7 +391,7 @@ ensure_android_app() {
 
   if [[ ! -d apps/mobile/android ]]; then
     log "running expo prebuild (generating native android project)…"
-    (cd apps/mobile && pnpm exec expo prebuild --platform android) \
+    (cd apps/mobile && pnpm run expo prebuild --platform android) \
       || die "expo prebuild failed."
     # prebuild just created android/ — write local.properties now.
     write_local_properties "$ANDROID_HOME"
@@ -464,7 +476,7 @@ ensure_ios_app() {
   fi
 
   log "dev client not installed — building (first run takes several minutes)…"
-  (cd apps/mobile && pnpm exec expo run:ios --device generic \
+  (cd apps/mobile && pnpm run expo run:ios --device generic \
     --output .expo/ios-build --no-bundler) \
     || die "iOS build failed. See apps/mobile/ios for details."
   xcrun simctl install "$udid" "apps/mobile/.expo/ios-build/HaalKhata.app" \
@@ -571,7 +583,7 @@ start_mobile() {
 # --- main ----------------------------------------------------------------------
 
 usage() {
-  sed -n '2,21p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,22p' "$0" | sed 's/^# \{0,1\}//'
   exit 0
 }
 
@@ -607,11 +619,13 @@ main() {
 
   assert_system_ready
   ensure_project_state
+  node scripts/setup-env.mjs --dev
 
   if [[ "$mode" == "clean" ]]; then
     clean_db
   fi
   start_db
+  prepare_db
 
   if [[ -n "$mobile_platform" ]]; then
     start_mobile "$mobile_platform"
@@ -657,8 +671,8 @@ main() {
   else
     log "starting web dev server — http://127.0.0.1:3000  (Ctrl-C to stop)"
   fi
-  # Migrations apply automatically on the first /api/connect request via
-  # ensureMigrated(). The db keeps running after the server exits; use
+  # Migrations have passed before reaching this point; ensureMigrated() also
+  # protects API requests. The db keeps running after the server exits; use
   # ./dev.sh --down to stop it too. With --mobile-* the Metro bundler is
   # stopped by the EXIT trap; the db and emulator/simulator keep running.
   # `pnpm exec next dev` would run the Next binary directly and SKIP the
@@ -667,7 +681,7 @@ main() {
   # provider), no SESSION_SECRET, and Postgres only by the built-in default.
   # Invoke the environment-loading launcher the same way the dev script does.
   #
-  # The launcher reads the root .env through Node's loadEnvFile API. Next.js 16
+  # The launcher reads the root .env through the shared environment loader. Next.js 16
   # forwards CLI flags to workers, where --env-file-if-exists is forbidden.
   #
   # --turbopack because the webpack dev server cannot hot-replace a server
@@ -682,4 +696,7 @@ main() {
     --turbopack -H "$web_host"
 }
 
-main "$@"
+# Allow the startup workflow to be exercised with isolated service adapters in tests.
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  main "$@"
+fi

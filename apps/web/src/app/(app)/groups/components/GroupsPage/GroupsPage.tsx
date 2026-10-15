@@ -14,7 +14,7 @@ import { CurrencySelect } from "@/components/ui/CurrencySelect/CurrencySelect";
 import { GROUP_BALANCE_FILTERS, noGroupsMessage } from "@haalkhata/shared/group/balanceFilter";
 import { GroupStatus } from "@haalkhata/shared/group/status";
 import { GROUP_ARCHIVE_EMPTY, GROUP_ARCHIVE_VIEWS } from "@haalkhata/shared/group/archiving";
-import { GROUP_TYPES, groupEmoji } from "../../constants/groupTypes";
+import { GROUP_TYPES, groupEmoji } from "@haalkhata/shared/group/groupTypes";
 import { useGroups } from "./hooks/useGroups";
 import { MAX_GROUP_NAME_LENGTH } from "@haalkhata/shared/text/limits";
 

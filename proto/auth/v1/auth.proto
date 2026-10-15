@@ -5,7 +5,7 @@ package auth.v1;
 import "google/protobuf/empty.proto";
 import "common/v1/common.proto";
 
-// Authentication. LogInWithGoogle is the only way in for new clients; every
+// Authentication. Google and Apple are the production sign-in providers; every
 // auth RPC returns a bearer token for mobile clients and additionally sets an
 // httpOnly session cookie for browsers.
 //
@@ -13,11 +13,18 @@ import "common/v1/common.proto";
 // development and seeded accounts. Production rejects both RPCs, and no
 // current client calls them.
 service AuthService {
+  // Public availability only; never returns provider credentials.
+  rpc GetSignInOptions(google.protobuf.Empty) returns (SignInOptions);
   rpc SignUp(SignUpRequest) returns (AuthResponse);
   rpc LogIn(LogInRequest) returns (AuthResponse);
   rpc BeginGoogleSignIn(google.protobuf.Empty) returns (GoogleSignInChallenge);
   rpc LogInWithGoogle(LogInWithGoogleRequest) returns (AuthResponse);
+  rpc BeginAppleSignIn(BeginAppleSignInRequest) returns (AppleSignInChallenge);
+  rpc LogInWithApple(LogInWithAppleRequest) returns (AuthResponse);
+  rpc CompleteAppleSignIn(CompleteAppleSignInRequest) returns (AuthResponse);
   rpc LogOut(google.protobuf.Empty) returns (google.protobuf.Empty);
+  // Permanently erases the authenticated account; shared cents are anonymized.
+  rpc DeleteAccount(DeleteAccountRequest) returns (google.protobuf.Empty);
   rpc GetMe(google.protobuf.Empty) returns (common.v1.User);
   rpc UpdateProfile(UpdateProfileRequest) returns (common.v1.User);
 
@@ -37,12 +44,23 @@ service AuthService {
   rpc CompleteOnboarding(google.protobuf.Empty) returns (common.v1.User);
 }
 
+// Apple is offered only when this backend can sign and store its credentials.
+message SignInOptions {
+  bool apple_native_enabled = 1;
+  bool apple_browser_enabled = 2;
+}
+
 message SignUpRequest {
   // Exactly one of email / phone must be set.
   string email = 1;
   string phone = 2; // E.164, e.g. "+14155552671"
   string name = 3;
   string password = 4;
+}
+
+message DeleteAccountRequest {
+  // Exact text "DELETE", after the client presents the irreversible effects.
+  string confirmation = 1;
 }
 
 message LogInRequest {
@@ -76,6 +94,30 @@ message AuthResponse {
   // JSON body would hand the session to any script running during sign-in,
   // which is what HttpOnly exists to prevent.
   string token = 2;
+}
+
+// Native iOS uses a nonce; other clients use a verifier-bound browser handoff.
+message BeginAppleSignInRequest {
+  bool browser_flow = 1;
+  bool mobile = 2;
+  string verifier_hash = 3;
+}
+
+message AppleSignInChallenge {
+  string nonce = 1;
+  string authorization_url = 2;
+}
+
+message LogInWithAppleRequest {
+  string id_token = 1;
+  string authorization_code = 2;
+  // Apple supplies the display name only on first authorization.
+  string name = 3;
+}
+
+message CompleteAppleSignInRequest {
+  string state = 1;
+  string verifier = 2;
 }
 
 message SetPhoneRequest {

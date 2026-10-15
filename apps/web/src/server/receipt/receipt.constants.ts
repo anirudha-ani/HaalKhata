@@ -1,5 +1,5 @@
 /** Receipt domain constants: accepted image types, size limit, extraction schema + prompt. */
-import { readSecret } from "@/server/common/secrets";
+import { readSecret } from "@/server/common/secrets/secrets";
 
 /**
  * Image formats accepted from clients. HEIC/HEIF are included because that is

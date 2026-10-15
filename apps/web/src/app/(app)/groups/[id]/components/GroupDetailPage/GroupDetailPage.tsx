@@ -1,6 +1,7 @@
 "use client";
 /** Group detail orchestrator: header, members strip, expenses/balances tabs, add-people and settle modals. */
 
+import { SafetyActions } from "@/components/safety/SafetyActions/SafetyActions";
 import Link from "next/link";
 import { Archive, ArchiveRestore, Plus } from "lucide-react";
 import { InviteShareModal } from "@/components/modals/InviteShareModal/InviteShareModal";
@@ -13,7 +14,7 @@ import {
 import { errorMessage } from "@/lib/api/connect";
 import { useHydrated } from "@/lib/hooks/useHydrated";
 import { GroupStatus } from "@haalkhata/shared/group/status";
-import { groupEmoji } from "../../../constants/groupTypes";
+import { groupEmoji } from "@haalkhata/shared/group/groupTypes";
 import { ActivityPanel } from "./components/ActivityPanel/ActivityPanel";
 import { ArchiveGroupModal } from "./components/ArchiveGroupModal/ArchiveGroupModal";
 import { AddPeopleModal } from "./components/AddPeopleModal/AddPeopleModal";
@@ -52,6 +53,7 @@ export function GroupDetailPage({
 
   return (
     <div className="space-y-6">
+      <SafetyActions targetKind="group" targetId={groupId} />
       <header className="flex flex-wrap items-start justify-between gap-4">
         <div className="flex items-center gap-4">
           <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-brand-50 text-3xl">

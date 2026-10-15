@@ -1,7 +1,7 @@
 /** All SQL for the users table: insert, lookups, shadow-user claim, profile updates. */
 
 import type { PoolClient } from "pg";
-import { execute, newId, query, queryOne } from "@/server/common/db";
+import { execute, newId, query, queryOne } from "@/server/common/db/db";
 
 /** One row of the users table. Field names mirror the SQL column names. */
 export interface UserRow {
@@ -28,6 +28,12 @@ export interface UserRow {
   phone_verified_at: string | null;
   /** Google account id (the ID token's `sub`); null when never signed in with Google. */
   google_sub: string | null;
+  /** Apple account identifier; absent only in legacy test fixtures. */
+  apple_sub?: string | null;
+  /** Only fresh anonymous ledger records carry this erasure marker. */
+  deleted_at?: string | null;
+  /** Moderator suspension prevents all authenticated requests, including fresh tokens. */
+  suspended_at?: string | null;
   /** When the first-run flow finished; null means the app still redirects there. */
   onboarded_at: string | null;
   /** Id this row was absorbed into by an account merge; null for a live account. */
@@ -53,7 +59,7 @@ export async function insertUser(input: {
   phone?: string | null;
   googleSub?: string | null;
   avatarUrl?: string | null;
-}): Promise<UserRow> {
+}, client?: PoolClient): Promise<UserRow> {
   const rows = await query<UserRow>(
     `INSERT INTO users (id, email, name, avatar_color, default_currency, password_hash, phone, google_sub, avatar_url)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
@@ -69,6 +75,7 @@ export async function insertUser(input: {
       input.googleSub ?? null,
       input.avatarUrl ?? null,
     ],
+    client,
   );
   return rows[0];
 }
@@ -94,7 +101,7 @@ export async function setAvatarUrl(userId: string, avatarUrl: string): Promise<v
  * @returns The matching row, or undefined when no such user exists.
  */
 export async function findUserById(userId: string): Promise<UserRow | undefined> {
-  return queryOne<UserRow>(`SELECT usr.* FROM users usr WHERE usr.id = $1`, [userId]);
+  return queryOne<UserRow>(`SELECT usr.* FROM users usr WHERE usr.id = $1 AND usr.deleted_at IS NULL`, [userId]);
 }
 
 /**
@@ -106,7 +113,7 @@ export async function findUserById(userId: string): Promise<UserRow | undefined>
 export async function findUserByEmail(email: string): Promise<UserRow | undefined> {
   return queryOne<UserRow>(
     `SELECT usr.* FROM users usr
-      WHERE lower(usr.email) = lower($1) AND usr.merged_into IS NULL`,
+      WHERE lower(usr.email) = lower($1) AND usr.merged_into IS NULL AND usr.deleted_at IS NULL`,
     [email],
   );
 }
@@ -119,7 +126,7 @@ export async function findUserByEmail(email: string): Promise<UserRow | undefine
  */
 export async function findUserByPhone(phone: string): Promise<UserRow | undefined> {
   return queryOne<UserRow>(
-    `SELECT usr.* FROM users usr WHERE usr.phone = $1 AND usr.merged_into IS NULL`,
+    `SELECT usr.* FROM users usr WHERE usr.phone = $1 AND usr.merged_into IS NULL AND usr.deleted_at IS NULL`,
     [phone],
   );
 }
@@ -132,7 +139,7 @@ export async function findUserByPhone(phone: string): Promise<UserRow | undefine
  */
 export async function findUserByGoogleSub(googleSub: string): Promise<UserRow | undefined> {
   return queryOne<UserRow>(
-    `SELECT usr.* FROM users usr WHERE usr.google_sub = $1 AND usr.merged_into IS NULL`,
+    `SELECT usr.* FROM users usr WHERE usr.google_sub = $1 AND usr.merged_into IS NULL AND usr.deleted_at IS NULL`,
     [googleSub],
   );
 }
@@ -244,7 +251,7 @@ export async function markOnboarded(userId: string): Promise<void> {
  */
 export async function findUserTokenVersion(userId: string): Promise<number | undefined> {
   const versionRow = await queryOne<{ token_version: number }>(
-    `SELECT token_version FROM users WHERE id = $1`,
+    `SELECT token_version FROM users WHERE id = $1 AND suspended_at IS NULL`,
     [userId],
   );
   return versionRow?.token_version;

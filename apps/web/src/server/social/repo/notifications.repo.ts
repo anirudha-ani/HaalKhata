@@ -1,7 +1,7 @@
 /** All SQL for the notifications table. */
 
 import type { PoolClient } from "pg";
-import { execute, newId, query, queryOne, transaction } from "@/server/common/db";
+import { execute, newId, query, queryOne, transaction } from "@/server/common/db/db";
 
 /** A row from the notifications table (column names mirror SQL). */
 export interface NotificationRow {
@@ -31,16 +31,17 @@ export interface NotificationRow {
  */
 export async function insertNotifications(
   userIds: string[],
-  input: { type: string; title: string; body: string; link: string },
+  input: { type: string; title: string; body: string; link: string; actorId?: string },
   client?: PoolClient,
 ): Promise<void> {
   if (userIds.length === 0) return;
   const persist = async (transactionClient: PoolClient): Promise<void> => {
     for (const userId of userIds) {
       await transactionClient.query(
-        `INSERT INTO notifications (id, user_id, type, title, body, link)
-         VALUES ($1, $2, $3, $4, $5, $6)`,
-        [newId(), userId, input.type, input.title, input.body, input.link],
+        `INSERT INTO notifications (id, user_id, type, title, body, link, actor_id)
+         SELECT $1, $2, $3, $4, $5, $6, $7::text WHERE NOT EXISTS (
+           SELECT 1 FROM user_blocks WHERE (blocker_id = $2 AND blocked_id = $7) OR (blocker_id = $7 AND blocked_id = $2))`,
+        [newId(), userId, input.type, input.title, input.body, input.link, input.actorId ?? null],
       );
     }
   };
@@ -60,7 +61,7 @@ export async function listNotificationsByUser(
   limit = 50,
 ): Promise<NotificationRow[]> {
   return query<NotificationRow>(
-    `SELECT * FROM notifications WHERE user_id = $1 ORDER BY created_at DESC LIMIT $2`,
+    `SELECT * FROM notifications WHERE user_id = $1 AND NOT EXISTS (SELECT 1 FROM user_blocks WHERE (blocker_id = $1 AND blocked_id = notifications.actor_id) OR (blocker_id = notifications.actor_id AND blocked_id = $1)) ORDER BY created_at DESC LIMIT $2`,
     [userId, limit],
   );
 }
@@ -101,7 +102,7 @@ export async function findLatestNotificationAt(
 export async function countUnread(userId: string): Promise<number> {
   const countRow = await queryOne<{ unread_count: number }>(
     `SELECT COUNT(*)::int AS unread_count
-     FROM notifications WHERE user_id = $1 AND read_at IS NULL`,
+     FROM notifications WHERE user_id = $1 AND read_at IS NULL AND NOT EXISTS (SELECT 1 FROM user_blocks WHERE (blocker_id = $1 AND blocked_id = notifications.actor_id) OR (blocker_id = notifications.actor_id AND blocked_id = $1))`,
     [userId],
   );
   return countRow?.unread_count ?? 0;

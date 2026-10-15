@@ -2,7 +2,7 @@
 
 import { StyleSheet, Text, View } from "react-native";
 import { Button } from "@/components/ui/Button";
-import { Sheet } from "@/components/ui/Sheet";
+import { Sheet } from "@/components/ui/Sheet/Sheet";
 import { colors, spacing } from "@/lib/theme/theme";
 import {
   GROUP_ARCHIVE_DIALOG_ACTIONS,

@@ -1,5 +1,7 @@
 /** Social business logic: friends (friendships ∪ expense counterparties), activity feed, notifications. */
 
+import { blockedBetween, blockedPairExists } from "@/server/safety/repo/safety.repo";
+import { isRegisteredUser } from "@/server/auth/usecase/identity/user.mapper";
 import {
   countIncomingFriendRequests,
   deleteFriendRequest,
@@ -14,11 +16,11 @@ import {
 } from "@/server/social/repo/friendships.repo";
 import { randomBytes } from "node:crypto";
 import { findUserById, findUsersByIds, type UserRow } from "@/server/auth/repo/users.repo";
-import { mergeAccounts } from "@/server/auth/repo/accountMerge.repo";
+import { mergeAccounts } from "@/server/auth/repo/merge/accountMerge.repo";
 import {
   findOrCreateUserByEmail,
   findOrCreateUserByPhone,
-} from "@/server/auth/usecase/auth.usecase";
+} from "@/server/auth/usecase/account/auth.usecase";
 import {
   findActiveFriendLink,
   findActiveGroupLink,
@@ -42,8 +44,8 @@ import { insertActivity as recordActivity } from "@/server/social/repo/activity.
 import { MAX_GROUP_MEMBERS, OWNER_ROLE } from "@/server/group/group.constants";
 import { listActivityMonths, listActivityPage } from "@/server/social/repo/activity.repo";
 import { isMember } from "@/server/group/repo/groups.repo";
-import { isUniqueViolation } from "@/server/common/db";
-import { lockReminder, withLedgerTransaction } from "@/server/common/ledgerLocks";
+import { isUniqueViolation } from "@/server/common/db/db";
+import { lockReminder, withLedgerTransaction } from "@/server/common/ledger/ledgerLocks";
 import {
   countUnread,
   findLatestNotificationAt,
@@ -62,7 +64,7 @@ import {
   lockFriendRequestInboxes,
   lockGroupLedgers,
   lockParticipantLedgers,
-} from "@/server/common/ledgerLocks";
+} from "@/server/common/ledger/ledgerLocks";
 import { formatMoney } from "@haalkhata/shared/money/money";
 import { safeActivityPath } from "@haalkhata/shared/navigation/activityPath";
 import { listPaymentMethodsByUser } from "@/server/payment/repo/paymentMethods.repo";
@@ -70,8 +72,8 @@ import { reminderPaymentHint } from "@/server/payment/usecase/paymentHint";
 import { cleanMethodRow } from "@/server/payment/usecase/paymentMethod.mapper";
 import { getOverallBalances, netWithUser } from "@/server/expense/usecase/balance.usecase";
 import { denied, invalid, notFound, UsecaseError } from "@/server/common/errors";
-import { transaction } from "@/server/common/db";
-import { toFriendRequestUser, toPublicUser } from "@/server/auth/usecase/user.mapper";
+import { transaction } from "@/server/common/db/db";
+import { toFriendRequestUser, toPublicUser } from "@/server/auth/usecase/identity/user.mapper";
 
 /**
  * Adds a friend by id, email, or phone.
@@ -123,9 +125,10 @@ export async function addFriend(
   if (!friend || friend.id === userId || friend.merged_into !== null) {
     return {};
   }
+  if (await blockedBetween(userId, friend.id)) return {};
   // An unclaimed row cannot accept anything, so the friendship is immediate
   // and the person appears as "Invited" (registered=false) on refetch.
-  if (friend.password_hash === null && friend.google_sub === null) {
+  if (!isRegisteredUser(friend)) {
     await insertFriendship(userId, friend.id);
     return {};
   }
@@ -146,6 +149,7 @@ export async function addFriend(
     await insertNotifications(
       [friend.id],
       {
+        actorId: userId,
         type: "friend_request",
         title: `${requester.name} sent you a friend request`,
         body: "Accept or decline it from Friends.",
@@ -254,6 +258,7 @@ export async function respondFriendRequest(
   accept: boolean,
 ): Promise<void> {
   if (!requesterId || requesterId === userId) notFound("friend request not found");
+  if (accept && await blockedBetween(userId, requesterId)) notFound("friend request not found");
   const recipient = accept ? await findUserById(userId) : undefined;
   await transaction(async (client) => {
     if (!(await deleteFriendRequest(requesterId, userId, client))) {
@@ -266,6 +271,7 @@ export async function respondFriendRequest(
       [requesterId],
       {
         type: "friend_request",
+        actorId: userId,
         title: `${recipient.name} accepted your friend request`,
         body: "You can now split one-off expenses together.",
         link: "/friends",
@@ -428,7 +434,7 @@ function newInviteToken(): string {
  * @returns True when neither credential is set.
  */
 function isUnclaimed(user: UserRow): boolean {
-  return user.password_hash === null && user.google_sub === null;
+  return !isRegisteredUser(user);
 }
 
 /**
@@ -692,6 +698,7 @@ export async function acceptInviteLink(
   token: string,
 ): Promise<{ groupId: string }> {
   const link = await loadActiveLink(token);
+  if (await blockedBetween(userId, link.inviter_id)) notFound(DEAD_LINK_MESSAGE);
   const acceptor = await findUserById(userId);
   if (!acceptor) denied("account no longer exists");
   if (link.inviter_id === userId && link.kind !== "group") {
@@ -709,6 +716,7 @@ export async function acceptInviteLink(
       await insertNotifications(
         [link.inviter_id],
         {
+          actorId: userId,
           type: "friend_request",
           title: `${acceptor.name} wants to connect`,
           body: "They used your profile link. Accept or decline from Friends.",
@@ -752,6 +760,7 @@ export async function acceptInviteLink(
   const group = await findGroupById(link.group_id!);
   if (!group) notFound(DEAD_LINK_MESSAGE);
   if (await isMember(group.id, userId)) return { groupId: group.id };
+  if (await blockedPairExists([userId, ...(await listMembers(group.id)).map((member) => member.id)])) notFound(DEAD_LINK_MESSAGE);
 
   const inviter = await findUserById(link.inviter_id);
   // Under the group's ledger lock like every roster change: a settlement
@@ -900,6 +909,7 @@ export async function removeFriend(userId: string, friendId: string): Promise<vo
  *   while the cooldown is still running.
  */
 export async function sendReminder(userId: string, debtorId: string): Promise<void> {
+  if (await blockedBetween(userId, debtorId)) denied("reminders are unavailable for a blocked connection");
   if (debtorId === userId) invalid("you cannot remind yourself");
   const debtor = await findUserById(debtorId);
   if (!debtor) denied("account no longer exists");
@@ -951,6 +961,7 @@ export async function sendReminder(userId: string, debtorId: string): Promise<vo
     await insertNotifications(
       [debtorId],
       {
+        actorId: userId,
         type: "reminder",
         title: `${sender.name} sent you a reminder`,
         body: payHint ? `You owe ${owed}. ${payHint}` : `You owe ${owed}`,

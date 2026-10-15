@@ -1,12 +1,13 @@
 /** Friend detail: net balance, settle either way, and the full shared ledger with a running balance. */
 
+import { SafetyActions } from "@/components/safety/SafetyActions";
 import { useRouter } from "expo-router";
 import { Bell, Check, HandCoins, Plus, UserPlus, Wallet } from "lucide-react-native";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { SettleUpModal } from "@/components/modals/SettleUpModal";
-import { DetailHeader } from "@/components/shell/DetailHeader";
-import { useResponsiveLayout } from "@/components/shell/hooks/useResponsiveLayout";
-import { Screen } from "@/components/shell/Screen";
+import { DetailHeader } from "@/components/shell/DetailHeader/DetailHeader";
+import { useResponsiveLayout } from "@/lib/layout/hooks/useResponsiveLayout";
+import { Screen } from "@/components/shell/Screen/Screen";
 import { Avatar } from "@/components/ui/Avatar";
 import { Button } from "@/components/ui/Button";
 import { Money } from "@/components/ui/Money";
@@ -18,7 +19,7 @@ import { scopeLabel } from "@haalkhata/shared/expense/settlePosition";
 import { formatMoney } from "@haalkhata/shared/money/money";
 import { localDate } from "@haalkhata/shared/time/localTime";
 import { colors, fonts, radii, spacing } from "@/lib/theme/theme";
-import { groupEmoji } from "../../../groups/constants/groupTypes";
+import { groupEmoji } from "@haalkhata/shared/group/groupTypes";
 import { useFriendLedger } from "./hooks/useFriendLedger";
 
 /**
@@ -113,6 +114,7 @@ export function FriendDetailScreen({
       onRefresh={view.refresh}
       refreshing={view.isRefreshing}
     >
+      {!friend.deleted ? <SafetyActions targetKind="user" targetId={friend.id} userId={friend.id} /> : null}
       <View style={styles.headerCard}>
         <View style={styles.identityRow}>
           <Avatar size="lg" user={friend} />

@@ -30,6 +30,21 @@ jobs:
   # and every PR is blocked — so rename it here and update the ruleset together.
   quality-gates:
     runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres:17-alpine@sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24
+        env:
+          POSTGRES_USER: haalkhata
+          POSTGRES_PASSWORD: release-tests-only-password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U haalkhata"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      MERGE_TEST_ADMIN_URL: postgres://haalkhata:release-tests-only-password@127.0.0.1:5432/postgres
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -56,8 +71,14 @@ jobs:
       - name: Install dependencies — exactly as locked
         run: pnpm install --frozen-lockfile
 
-      - name: 'Dependencies: no high-severity production advisories'
-        run: pnpm audit --prod --audit-level high
+      - name: 'Deploy: secret provisioning and encryption-key preservation'
+        run: pnpm test:deploy
+
+      - name: 'Development: shared environment and Expo secret isolation'
+        run: pnpm test:environment
+
+      - name: 'Dependencies: verify exact security patches and audit production'
+        run: pnpm audit:production
 
       # packages/protogen/src is gitignored; every run regenerates it.
       - name: Generate TypeScript from the .proto contract
@@ -89,7 +110,9 @@ jobs:
       - name: 'Web: lint rules (eslint)'
         run: pnpm lint
 
-      - name: 'Web: unit tests (vitest)'
+      - name: 'Web: unit and real Postgres integration tests'
+        env:
+          MODERATION_TEST_CONTAINER: ${{ job.services.postgres.id }}
         run: pnpm test
 
       - name: 'Shared package: TypeScript compiles'
@@ -101,15 +124,25 @@ jobs:
       - name: 'Shared package: unit tests'
         run: pnpm test:shared
 
-      # The Expo app is not deployed yet, but it is still in the workspace and
-      # imports @haalkhata/shared and @haalkhata/protogen. Unchecked code rots,
-      # and a shared-package change that breaks it should fail here rather than
-      # be discovered months later. Delete these three if you drop apps/mobile.
-      - name: 'Mobile app (not deployed): TypeScript compiles'
+      # The server ships the login callback, public policy and release preflight.
+      - name: 'Web: production artifact compiles'
+        run: pnpm --filter @haalkhata/web build
+
+      # Native source, build configuration and contract stay gated together.
+      - name: 'Mobile app: TypeScript compiles'
         run: pnpm typecheck:mobile
 
-      - name: 'Mobile app (not deployed): lint rules'
+      - name: 'Mobile app: lint rules'
         run: pnpm lint:mobile
 
-      - name: 'Mobile app (not deployed): unit tests'
+      - name: 'Mobile app: unit tests'
         run: pnpm test:mobile
+
+      - name: 'Feature parity: browser and native API entry points'
+        run: pnpm test:parity
+
+      - name: 'Mobile app: release input validation'
+        run: pnpm --filter @haalkhata/mobile test:release-config
+
+      - name: 'Mobile app: native dependency compatibility'
+        run: pnpm --filter @haalkhata/mobile exec expo install --check

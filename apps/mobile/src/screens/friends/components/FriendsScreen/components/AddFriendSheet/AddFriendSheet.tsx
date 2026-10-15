@@ -4,7 +4,7 @@ import { UserPlus } from "lucide-react-native";
 import { StyleSheet, Text, View } from "react-native";
 import { Button } from "@/components/ui/Button";
 import { EmailOrPhoneField } from "@/components/ui/EmailOrPhoneField";
-import { Sheet } from "@/components/ui/Sheet";
+import { Sheet } from "@/components/ui/Sheet/Sheet";
 import { colors, spacing } from "@/lib/theme/theme";
 import type { FriendsController } from "../../hooks/useFriends";
 

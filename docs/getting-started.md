@@ -6,13 +6,24 @@ development setup. For a production deployment see [Self-hosting](self-hosting.m
 ## One-command setup (fresh box)
 
 ```sh
-./install-deps.sh   # installs Node, pnpm, Docker, buf, deps + generates protogen
+./install-deps.sh   # installs dependencies, generates protogen, prepares .env
+# Local database defaults are automatic; provider secrets are optional.
 ./dev.sh            # starts db + web server at http://127.0.0.1:3000
 ```
 
 `install-deps.sh` installs everything that is missing and skips what is
-already there. `dev.sh` starts the Postgres database and the Next.js dev
-server. Use `./dev.sh --clean` for a fresh database and `./dev.sh --down` to
+already there. It prefills known public settings in `.env` and lists the
+provider secrets to supply yourself. `POSTGRES_PASSWORD` defaults to
+`change-me` for the local Compose database; setup fills it when missing or
+blank and preserves any existing non-empty password. The local connection
+uses it with the prefilled host, port, username and database name.
+`dev.sh` prepares configuration, starts Postgres, applies pending migrations,
+and then starts the Next.js dev server. It prints **database migrations passed**
+before starting web or mobile services. If a migration fails, it prints the
+underlying error and stops; fix the error and rerun `./dev.sh`. It checks the
+required database password before Compose runs. Missing Apple credentials show an Apple sign-in availability message
+on web and mobile; they produce no startup warnings. Use
+`./dev.sh --clean` for a fresh database and `./dev.sh --down` to
 stop everything.
 
 ## Manual setup
@@ -20,21 +31,46 @@ stop everything.
 ```sh
 pnpm install
 pnpm gen                 # buf generate → packages/protogen
+pnpm setup:env           # then fill the listed secrets in .env
 docker compose up -d db  # Postgres 17 on localhost:5432 (or use your own)
 pnpm dev                 # http://localhost:3000
 ```
 
-Pending migrations apply automatically on the first API request (and during
-the production readiness check), so there is no manual migrate step. A
+With this manual startup path, pending migrations apply on the first API
+request (and during the production readiness check). `./dev.sh` runs the same
+checks explicitly before launching the app, so no manual migrate step is needed. A
 built-in mock receipt provider keeps the scan flow demoable without any AI
 key; see [Receipt AI providers](#receipt-ai-providers-optional) below.
 
 ## Configuration
 
 All configuration lives in a single `.env` at the repo root: `docker compose`
-reads it directly, and `pnpm dev` loads it through Node's `loadEnvFile` API in
-the Next.js launcher.
-Copy `.env.example` to `.env` to begin; every variable is documented there.
+reads it directly, and the Next.js and Expo launchers load it before startup.
+Expo loads only `EXPO_PUBLIC_*` values; server secrets stay on the backend.
+Run `pnpm setup:env` (or `./install-deps.sh --env-only`) to prepare `.env`
+without reinstalling dependencies. Known Google web/iOS client IDs, Apple
+Team/Key/Services IDs, the support email and local database connection parts
+are prefilled from `.env.example`. Apart from the managed Apple key path
+below, existing non-empty values, comments and multiline secrets are
+preserved; missing or blank public entries are filled
+once. You supply private provider credentials yourself. Reruns never generate
+or rotate a secret. New `.env` files contain only the fixed local database
+default; private provider credentials stay blank. Setup
+sets file permissions to owner-only read/write.
+
+All secret fields and their file settings are grouped at the bottom under
+**Secrets (fill these in)**, ready to copy and paste. Public IDs and ordinary
+configuration stay above. Installation and `./dev.sh` maintain this layout,
+preserve existing values (including multiline keys), and keep the last value
+when a secret has duplicate assignments.
+
+For Apple, setup creates an ignored root `AppleAuthKey.p8` placeholder and always
+sets `APPLE_PRIVATE_KEY_FILE=AppleAuthKey.p8`, relative to the root `.env`.
+Replace that file's entire contents with your original Apple `.p8` key, including the BEGIN/END lines;
+setup never overwrites existing key contents. Fill `APPLE_TOKEN_ENCRYPTION_KEY`
+(or its `_FILE` variant) yourself. Your HTTPS development domain and Android
+Google client ID depend on your machine/provider setup and cannot be inferred. The setup
+output lists these separately from optional receipt AI and phone credentials.
 
 Using your own Postgres instead of the compose service? Set `DATABASE_URL`
 and append `?sslmode=verify-full` (or `&sslmode=verify-full` when the URL
@@ -61,6 +97,18 @@ both `GOOGLE_CLIENT_ID` and `NEXT_PUBLIC_GOOGLE_CLIENT_ID`. No client secret
 is involved: the ID-token flow verifies a signed assertion against Google's
 public keys and never calls Google's token endpoint. `.env.example` has the
 full console walkthrough.
+
+### Apple sign-in (optional in development)
+
+The Apple button is replaced by a “try again later” availability message
+until the backend has a usable `.p8` signing key,
+Team/Key IDs and encryption key. Browser/Android also need a Services ID and
+registered HTTPS development domain; native iOS uses its signed App ID and
+must be supported by the device. A placeholder file does not enable Apple.
+`./dev.sh` starts without Apple diagnostics. Run `pnpm auth:check` (browser)
+or `pnpm auth:check --ios` (native) when you choose to set Apple up.
+[Local authentication](local-auth.md) lists every environment
+variable, Apple console setting, startup command, and verification step.
 
 ### Receipt AI providers (optional)
 
@@ -102,7 +150,7 @@ start the web server with `next dev -H 0.0.0.0` (or set
 builds require an explicit HTTPS origin and reject plaintext bearer-token
 transport; Android release manifests also disable cleartext traffic.
 
-**Sign-in.** Production accepts Google only, so a release build needs its
+**Sign-in.** Production supports Google and Apple. Google uses its
 own native OAuth clients in the same Google Cloud project as the web one: an
 *Android* client for package `com.haalkhata.app` with the signing key's
 SHA-1, and an *iOS* client for bundle `com.haalkhata.app`. Put their ids in
@@ -112,6 +160,9 @@ when building the app, and list the same ids in the server's
 the web one's twin: the server issues a one-time nonce, the native OAuth
 request carries it, and the ID token Google mints is exchanged for a session.
 The bundle id doubles as the OAuth redirect scheme (`app.json` → `scheme`).
+Native iOS Apple sign-in requires the Apple capability and server credentials;
+web and Android use the grouped Services ID. Follow the
+[App Store release handoff](mobile-app-store-readiness.md) for that setup.
 The email/phone + password form only appears in development builds, matching
 the server's password gate.
 

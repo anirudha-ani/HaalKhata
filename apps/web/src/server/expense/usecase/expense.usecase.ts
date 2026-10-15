@@ -1,5 +1,8 @@
 /** Expense business logic: validation + authoritative splits, comments, settlements, activity/notification fan-out. */
 
+import { blockedPairExists } from "@/server/safety/repo/safety.repo";
+import { assertSafeText } from "@/server/safety/usecase/contentFilter";
+import { isRegisteredUser } from "@/server/auth/usecase/identity/user.mapper";
 import type { CreateExpenseRequest } from "@haalkhata/protogen/expense/v1/expense_pb";
 import type { PoolClient } from "pg";
 import {
@@ -62,17 +65,17 @@ import {
   positionDigest,
 } from "@/server/expense/domain/settlementAllocation";
 import { oneOffPairKey, settledExpenseIds } from "@/server/expense/domain/settledExpenses";
-import { snapshot } from "@/server/common/db";
+import { snapshot } from "@/server/common/db/db";
 import { denied, invalid, notFound } from "@/server/common/errors";
 import {
   lockExpenseLedger,
   lockGroupLedgers,
   lockParticipantLedgers,
   withLedgerTransaction,
-} from "@/server/common/ledgerLocks";
-import { isRealCalendarDate, normalizeCurrencyCode } from "@/server/common/validation";
-import { beginOperation, finishOperation } from "@/server/common/operations";
-import { toPublicUser } from "@/server/auth/usecase/user.mapper";
+} from "@/server/common/ledger/ledgerLocks";
+import { isRealCalendarDate, normalizeCurrencyCode } from "@/server/common/validation/validation";
+import { beginOperation, finishOperation } from "@/server/common/ledger/operations";
+import { toPublicUser } from "@/server/auth/usecase/identity/user.mapper";
 import {
   COMMENT_PREVIEW_LENGTH,
   EXPENSE_CATEGORIES,
@@ -156,6 +159,9 @@ interface ExpenseAmounts {
  * @returns The trimmed, non-empty description.
  */
 function validateExpenseRequest(request: CreateExpenseRequest): string {
+  assertSafeText(request.description);
+  assertSafeText(request.notes);
+  for (const item of request.items) assertSafeText(item.name);
   const description = request.description.trim();
   if (description.length === 0) invalid("description is required");
   if (description.length > MAX_EXPENSE_DESCRIPTION_LENGTH) {
@@ -317,6 +323,7 @@ async function validateExpenseParticipants(
   userId: string,
   involved: string[],
   scope: ExpenseScope,
+  existingIds: string[] = [],
 ): Promise<void> {
   const users = await findUsersByIds(involved);
   if (users.length !== involved.length) invalid("unknown participant");
@@ -325,13 +332,14 @@ async function validateExpenseParticipants(
   // that keeps a bearer invite link from ever moving money. Legacy rows
   // with pre-§33 history keep it; they just can't join NEW expenses.
   const unregistered = users.find(
-    (participant) => participant.password_hash === null && participant.google_sub === null,
+    (participant) => !isRegisteredUser(participant),
   );
   if (unregistered) {
     invalid(
       `${unregistered.name} hasn't joined HaalKhata yet — remind them to sign up before splitting with them`,
     );
   }
+  if (await blockedPairExists([...new Set([...involved, userId])], existingIds)) denied("a blocked person cannot be included in this expense");
   const { groupId, groupMemberIds } = scope;
   if (groupId) {
     for (const participantId of involved) {
@@ -367,6 +375,7 @@ async function validateExpenseParticipants(
 async function buildExpenseWrite(
   userId: string,
   request: CreateExpenseRequest,
+  existingIds: string[] = [],
 ): Promise<ExpenseWrite> {
   const description = validateExpenseRequest(request);
   const scope = await resolveExpenseScope(userId, request);
@@ -378,7 +387,7 @@ async function buildExpenseWrite(
       ...request.payers.map((payer) => payer.userId),
     ]),
   ];
-  await validateExpenseParticipants(userId, involved, scope);
+  await validateExpenseParticipants(userId, involved, scope, existingIds);
 
   return {
     groupId: scope.groupId,
@@ -540,6 +549,7 @@ async function recordExpenseActivity(
   await insertNotifications(
     involvedUserIds(write).filter((recipientId) => recipientId !== actorId),
     {
+      actorId,
       type: `expense_${verb}`,
       title: `${actor.name} ${verb} "${write.description}"`,
       body: group ? group.name : "One-off expense",
@@ -724,8 +734,8 @@ export async function updateExpense(
   expenseId: string,
   request: CreateExpenseRequest,
 ) {
-  await loadExpenseForEdit(userId, expenseId, request);
-  const write = await buildExpenseWrite(userId, request);
+  const existing = await loadExpenseForEdit(userId, expenseId, request);
+  const write = await buildExpenseWrite(userId, request, storedParticipantIds(existing.expense, existing.children));
   await withLedgerTransaction(async (client) => {
     await lockExpenseLedger(client, expenseId);
     const { expense: current, children } = await loadExpenseForEdit(
@@ -1012,7 +1022,7 @@ export async function getExpense(userId: string, expenseId: string) {
   );
 
   // Words, not figures: comments and the edit history are read afterwards.
-  const comments = await listCommentsByExpense(expenseId);
+  const comments = await listCommentsByExpense(expenseId, userId);
   // The people to resolve are the comment authors AND whoever touched the
   // expense, looked up together so the history does not cost a second round
   // trip for a set that mostly overlaps.
@@ -1071,6 +1081,7 @@ export async function addComment(userId: string, expenseId: string, body: string
   // exactly the conversation the kept row is there to host.
   if (!expenseRow) notFound("expense not found");
   await assertCanTouch(userId, expenseRow);
+  assertSafeText(body);
   const trimmed = body.trim();
   if (trimmed.length === 0) invalid("comment cannot be empty");
   if (trimmed.length > MAX_COMMENT_LENGTH) {
@@ -1112,6 +1123,7 @@ export async function addComment(userId: string, expenseId: string, body: string
     await insertNotifications(
       [...involved].filter((recipientId) => recipientId !== userId),
       {
+        actorId: userId,
         type: "comment",
         title: `${author.name} commented on "${expenseRow.description}"`,
         body: preview,
@@ -1663,6 +1675,7 @@ async function announceSettlement(
   await insertNotifications(
     [request.toUserId],
     {
+      actorId: userId,
       type: "settlement",
       title: request.received
         ? `${actor.name} recorded your payment of ${formatMoney(request.amountCents, currency)}`
@@ -1841,6 +1854,7 @@ export async function deleteSettlement(userId: string, settlementId: string): Pr
     await insertNotifications(
       [otherUserId],
       {
+        actorId: userId,
         type: "settlement_deleted",
         title: `${actor.name} removed the payment of ${cashAmount}`,
         body:

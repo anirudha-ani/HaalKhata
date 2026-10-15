@@ -28,7 +28,7 @@ export function useAccountAPI() {
   // background refetch after save would swap the whole form for a spinner and
   // remount it — losing every unsaved keystroke. isPending is true only when
   // there is no data at all, which is the one time a spinner is honest.
-  return { me: currentUserQuery.data, isLoading: currentUserQuery.isPending };
+  return { me: currentUserQuery.data, isLoading: currentUserQuery.isPending, loadError: currentUserQuery.error, retry: currentUserQuery.refetch };
 }
 
 /**
