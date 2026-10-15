@@ -4,6 +4,7 @@ import { Check } from "lucide-react-native";
 import { Pressable, StyleSheet, Switch, TextInput, View } from "react-native";
 import { Text } from "@/components/ui/Text";
 import { Avatar } from "@/components/ui/Avatar";
+import { useResponsiveLayout } from "@/lib/layout/hooks/useResponsiveLayout";
 import { colors, radii, spacing } from "@/lib/theme/theme";
 import type { NewExpenseController } from "../../hooks/useNewExpense";
 
@@ -21,6 +22,7 @@ export function PayerEditor({
   /** The expense-form controller from useNewExpense that owns all payer state. */
   form: NewExpenseController;
 }) {
+  const { fontScale } = useResponsiveLayout();
   return (
     <View style={styles.section}>
       <View style={styles.sectionHeader}>
@@ -52,7 +54,7 @@ export function PayerEditor({
                   }
                   placeholder="0.00"
                   placeholderTextColor={colors.inkSoft}
-                  style={styles.amountInput}
+                  style={[styles.amountInput, { width: 96 * fontScale }]}
                   value={form.payerAmounts[person.id] ?? ""}
                 />
               </>
@@ -89,11 +91,13 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     color: colors.ink,
     fontSize: 14,
+    minHeight: 44,
     fontVariant: ["tabular-nums"],
     paddingHorizontal: spacing.sm,
     paddingVertical: 6,
     textAlign: "right",
     width: 96,
+    maxWidth: "100%",
   },
   listCard: {
     backgroundColor: colors.card,
@@ -110,10 +114,12 @@ const styles = StyleSheet.create({
   multiToggleLabel: {
     color: colors.inkSoft,
     fontSize: 13,
+    flexShrink: 1,
   },
   row: {
     alignItems: "center",
     flexDirection: "row",
+    flexWrap: "wrap",
     gap: spacing.md,
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.sm + 2,
@@ -124,7 +130,10 @@ const styles = StyleSheet.create({
   },
   rowName: {
     color: colors.ink,
-    flex: 1,
+    width: 120,
+    maxWidth: "100%",
+    flexGrow: 1,
+    flexShrink: 1,
     fontSize: 14,
     fontWeight: "500",
   },
@@ -134,6 +143,7 @@ const styles = StyleSheet.create({
   sectionHeader: {
     alignItems: "center",
     flexDirection: "row",
+    flexWrap: "wrap",
     justifyContent: "space-between",
   },
   sectionTitle: {

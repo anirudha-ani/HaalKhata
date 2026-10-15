@@ -170,6 +170,7 @@ const styles = StyleSheet.create({
   },
   searchField: {
     flex: 1,
+    minWidth: 0,
   },
   searchRow: {
     alignItems: "center",
@@ -189,6 +190,8 @@ const styles = StyleSheet.create({
   titleRow: {
     alignItems: "center",
     flexDirection: "row",
+    flexWrap: "wrap",
+    gap: spacing.md,
     justifyContent: "space-between",
   },
   workspace: {

@@ -127,6 +127,7 @@ const styles = StyleSheet.create({
   captureHint: {
     color: colors.inkSoft,
     fontSize: 13,
+    textAlign: "center",
   },
   captureTitle: {
     color: colors.ink,

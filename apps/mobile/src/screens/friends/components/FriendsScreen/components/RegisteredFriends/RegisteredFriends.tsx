@@ -12,6 +12,7 @@ import { Money } from "@/components/ui/Money";
 import { SearchField } from "@/components/ui/SearchField";
 import { leadingBucket, positionCaption } from "@haalkhata/shared/money/balances";
 import { formatMoney } from "@haalkhata/shared/money/money";
+import { useResponsiveLayout } from "@/lib/layout/hooks/useResponsiveLayout";
 import { colors, radii, spacing } from "@/lib/theme/theme";
 import { bucketsOf, type FriendsController } from "../../hooks/useFriends";
 
@@ -34,6 +35,7 @@ export function RegisteredFriends({
   currency: string;
 }) {
   const router = useRouter();
+  const { fontScale, isLargeText } = useResponsiveLayout();
   if (friendsState.registeredFriends.length === 0) {
     return (
       <EmptyState
@@ -52,19 +54,19 @@ export function RegisteredFriends({
     <View style={styles.container}>
       {totals.map((total) => (
         <View key={total.currency} style={styles.totals}>
-          <View style={styles.totalCard}>
+          <View style={[styles.totalCard, { width: 160 * fontScale }]}>
             <Text style={styles.totalLabel}>
               You are owed{totals.length > 1 ? ` · ${total.currency}` : ""}
             </Text>
-            <Text style={[styles.totalAmount, styles.totalPos]}>
+            <Text adjustsFontSizeToFit minimumFontScale={0.8} numberOfLines={1} style={[styles.totalAmount, styles.totalPos]}>
               {formatMoney(total.owedToYouCents, total.currency)}
             </Text>
           </View>
-          <View style={styles.totalCard}>
+          <View style={[styles.totalCard, { width: 160 * fontScale }]}>
             <Text style={styles.totalLabel}>
               You owe{totals.length > 1 ? ` · ${total.currency}` : ""}
             </Text>
-            <Text style={[styles.totalAmount, styles.totalNeg]}>
+            <Text adjustsFontSizeToFit minimumFontScale={0.8} numberOfLines={1} style={[styles.totalAmount, styles.totalNeg]}>
               {formatMoney(total.youOweCents, total.currency)}
             </Text>
           </View>
@@ -99,7 +101,7 @@ export function RegisteredFriends({
             const lead = leadingBucket(buckets);
             return (
               <View key={person.id} style={[styles.row, index > 0 ? styles.rowDivider : null]}>
-                <PersonLink meId={friendsState.me?.id} style={styles.rowLink} userId={person.id}>
+                <PersonLink meId={friendsState.me?.id} style={[styles.rowLink, isLargeText ? styles.rowLinkWrapped : null]} userId={person.id}>
                   <Avatar user={person} />
                   <View style={styles.rowText}>
                     <Text numberOfLines={1} style={styles.name}>
@@ -109,7 +111,7 @@ export function RegisteredFriends({
                       {positionCaption(buckets)}
                     </Text>
                   </View>
-                  <View style={styles.amounts}>
+                  <View style={[styles.amounts, isLargeText ? styles.amountsStacked : null]}>
                     {buckets.map((bucket) => (
                       <Money
                         cents={bucket.cents}
@@ -166,6 +168,13 @@ const styles = StyleSheet.create({
   amounts: {
     alignItems: "flex-end",
   },
+  amountsStacked: {
+    alignItems: "flex-start",
+    width: "100%",
+  },
+  rowLinkWrapped: {
+    flexWrap: "wrap",
+  },
   balanceHint: {
     color: colors.inkSoft,
     fontSize: 12,
@@ -178,9 +187,9 @@ const styles = StyleSheet.create({
     borderColor: colors.line,
     borderRadius: radii.sm,
     borderWidth: 1,
-    height: 32,
+    height: 44,
     justifyContent: "center",
-    width: 32,
+    width: 44,
   },
   listCard: {
     backgroundColor: colors.card,
@@ -210,6 +219,7 @@ const styles = StyleSheet.create({
   row: {
     alignItems: "center",
     flexDirection: "row",
+    flexWrap: "wrap",
     gap: spacing.md,
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.md,
@@ -225,7 +235,10 @@ const styles = StyleSheet.create({
   },
   rowLink: {
     alignItems: "center",
-    flex: 1,
+    width: 280,
+    maxWidth: "100%",
+    flexGrow: 1,
+    flexShrink: 1,
     flexDirection: "row",
     gap: spacing.md,
     minWidth: 0,
@@ -241,6 +254,7 @@ const styles = StyleSheet.create({
   },
   searchField: {
     flex: 1,
+    minWidth: 0,
   },
   searchRow: {
     alignItems: "center",
@@ -257,7 +271,11 @@ const styles = StyleSheet.create({
     borderColor: colors.line,
     borderRadius: radii.lg,
     borderWidth: 1,
-    flex: 1,
+    width: 160,
+    maxWidth: "100%",
+    flexGrow: 1,
+    flexShrink: 1,
+    minWidth: 0,
     gap: 2,
     padding: spacing.lg,
   },
@@ -273,6 +291,7 @@ const styles = StyleSheet.create({
   },
   totals: {
     flexDirection: "row",
+    flexWrap: "wrap",
     gap: spacing.md,
   },
 });

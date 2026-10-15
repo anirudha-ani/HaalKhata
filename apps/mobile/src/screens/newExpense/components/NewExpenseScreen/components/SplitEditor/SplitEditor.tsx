@@ -6,6 +6,7 @@ import { Text } from "@/components/ui/Text";
 import { ItemCards } from "@/components/expense/ItemCards";
 import { Avatar } from "@/components/ui/Avatar";
 import { Segmented } from "@/components/ui/Segmented";
+import { useResponsiveLayout } from "@/lib/layout/hooks/useResponsiveLayout";
 import { colors, radii, spacing } from "@/lib/theme/theme";
 import { SPLIT_TABS, UNIT } from "../../../../constants/splitEditor";
 import type { NewExpenseController } from "../../hooks/useNewExpense";
@@ -30,6 +31,7 @@ export function SplitEditor({
   /** ISO 4217 code the itemized totals are shown in. */
   currency: string;
 }) {
+  const { fontScale } = useResponsiveLayout();
   return (
     <View style={styles.section}>
       <Text style={styles.sectionTitle}>SPLIT</Text>
@@ -73,7 +75,7 @@ export function SplitEditor({
                     }
                     placeholder="0"
                     placeholderTextColor={colors.inkSoft}
-                    style={styles.valueInput}
+                    style={[styles.valueInput, { width: 80 * fontScale }]}
                     value={form.splitInputs[person.id] ?? ""}
                   />
                   {UNIT[form.splitType] ? (
@@ -122,13 +124,17 @@ const styles = StyleSheet.create({
   },
   personToggle: {
     alignItems: "center",
-    flex: 1,
+    width: 160,
+    maxWidth: "100%",
+    flexGrow: 1,
+    flexShrink: 1,
     flexDirection: "row",
     gap: spacing.md,
   },
   row: {
     alignItems: "center",
     flexDirection: "row",
+    flexWrap: "wrap",
     gap: spacing.md,
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.sm + 2,
@@ -177,10 +183,12 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     color: colors.ink,
     fontSize: 14,
+    minHeight: 44,
     fontVariant: ["tabular-nums"],
     paddingHorizontal: spacing.sm,
     paddingVertical: 6,
     textAlign: "right",
     width: 80,
+    maxWidth: "100%",
   },
 });

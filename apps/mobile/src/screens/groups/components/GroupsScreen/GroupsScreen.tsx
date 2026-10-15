@@ -264,6 +264,7 @@ const styles = StyleSheet.create({
   cardBalance: {
     alignItems: "center",
     flexDirection: "row",
+    flexWrap: "wrap",
   },
   cardBalanceAmount: {
     fontSize: 14,
@@ -380,6 +381,8 @@ const styles = StyleSheet.create({
   titleRow: {
     alignItems: "center",
     flexDirection: "row",
+    flexWrap: "wrap",
+    gap: spacing.md,
     justifyContent: "space-between",
   },
   typeBadge: {

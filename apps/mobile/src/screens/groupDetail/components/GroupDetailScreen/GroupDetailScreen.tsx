@@ -765,7 +765,10 @@ const styles = StyleSheet.create({
   },
   memberPerson: {
     alignItems: "center",
-    flex: 1,
+    width: 160,
+    maxWidth: "100%",
+    flexGrow: 1,
+    flexShrink: 1,
     flexDirection: "row",
     gap: spacing.md,
     minWidth: 0,
@@ -773,6 +776,7 @@ const styles = StyleSheet.create({
   memberRow: {
     alignItems: "center",
     flexDirection: "row",
+    flexWrap: "wrap",
     gap: spacing.md,
     paddingVertical: spacing.sm + 2,
   },

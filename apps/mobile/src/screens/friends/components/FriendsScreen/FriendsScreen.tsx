@@ -148,6 +148,8 @@ const styles = StyleSheet.create({
   titleRow: {
     alignItems: "center",
     flexDirection: "row",
+    flexWrap: "wrap",
+    gap: spacing.md,
     justifyContent: "space-between",
   },
 });

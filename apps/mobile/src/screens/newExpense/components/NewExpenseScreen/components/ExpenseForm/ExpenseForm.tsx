@@ -1,6 +1,6 @@
 /** New/edit expense form: receipt panel, context picker, basics (amount/date/category), payer + split editors, summary, submit. */
 
-import { StyleSheet, View } from "react-native";
+import { ScrollView, StyleSheet, View } from "react-native";
 import { SplitSummary } from "@/components/expense/SplitSummary";
 import { PeoplePicker } from "@/components/people/PeoplePicker";
 import { useResponsiveLayout } from "@/lib/layout/hooks/useResponsiveLayout";
@@ -46,7 +46,7 @@ export function ExpenseForm({
 }) {
   const form = useNewExpense(expenseAPI, initial, editExpenseId);
   const currency = form.selectedGroup?.currency ?? form.me?.defaultCurrency ?? "USD";
-  const { isExpanded } = useResponsiveLayout();
+  const { isExpanded, isTablet, isLargeText } = useResponsiveLayout();
   useErrorToast(form.error);
 
   // The same numbers in two places: a panel beside the form on wide layouts,
@@ -113,7 +113,7 @@ export function ExpenseForm({
             placeholder="What was it for?"
             value={form.description}
           />
-          <View style={styles.basicsRow}>
+          <View style={[styles.basicsRow, isLargeText ? styles.basicsStacked : null]}>
             <View style={styles.basicsCell}>
               {/* Itemized totals are derived from the line items, so the field
                   becomes a read-only readout of items + tax + tip. */}
@@ -130,7 +130,8 @@ export function ExpenseForm({
               <DateField label="Date" onChange={form.setDate} value={form.date} />
             </View>
           </View>
-          <View style={styles.chips}>
+          <ScrollView horizontal={!isTablet} keyboardShouldPersistTaps="handled"
+            contentContainerStyle={[styles.chips, isTablet ? styles.chipsWrapped : null]}>
             {CATEGORIES.map((categoryOption) => (
               <Chip
                 key={categoryOption}
@@ -139,7 +140,7 @@ export function ExpenseForm({
                 selected={form.category === categoryOption}
               />
             ))}
-          </View>
+          </ScrollView>
         </View>
       </View>
 
@@ -170,15 +171,21 @@ export function ExpenseForm({
 const styles = StyleSheet.create({
   basicsCell: {
     flex: 1,
+    minWidth: 0,
   },
   basicsRow: {
     flexDirection: "row",
     gap: spacing.md,
   },
+  basicsStacked: {
+    flexDirection: "column",
+  },
   chips: {
     flexDirection: "row",
-    flexWrap: "wrap",
     gap: spacing.sm,
+  },
+  chipsWrapped: {
+    flexWrap: "wrap",
   },
   form: {
     gap: spacing.xl,

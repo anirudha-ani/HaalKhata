@@ -416,7 +416,10 @@ const styles = StyleSheet.create({
   },
   personLink: {
     alignItems: "center",
-    flex: 1,
+    width: 180,
+    maxWidth: "100%",
+    flexGrow: 1,
+    flexShrink: 1,
     flexDirection: "row",
     gap: spacing.md,
     minWidth: 0,
@@ -429,6 +432,7 @@ const styles = StyleSheet.create({
   personRow: {
     alignItems: "center",
     flexDirection: "row",
+    flexWrap: "wrap",
     gap: spacing.md,
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.md,
@@ -454,6 +458,8 @@ const styles = StyleSheet.create({
   sectionHeader: {
     alignItems: "center",
     flexDirection: "row",
+    flexWrap: "wrap",
+    gap: spacing.sm,
     justifyContent: "space-between",
   },
   sectionLink: {

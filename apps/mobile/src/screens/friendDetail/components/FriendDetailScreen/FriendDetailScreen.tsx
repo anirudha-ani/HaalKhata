@@ -619,6 +619,7 @@ const styles = StyleSheet.create({
   },
   entryFigures: {
     flexDirection: "row",
+    flexWrap: "wrap",
     gap: spacing.lg,
     marginTop: spacing.xs,
   },
@@ -809,6 +810,7 @@ const styles = StyleSheet.create({
   row: {
     alignItems: "center",
     flexDirection: "row",
+    flexWrap: "wrap",
     gap: spacing.sm,
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.md,
@@ -836,7 +838,10 @@ const styles = StyleSheet.create({
     fontWeight: "400",
   },
   rowText: {
-    flex: 1,
+    width: 160,
+    maxWidth: "100%",
+    flexGrow: 1,
+    flexShrink: 1,
     minWidth: 0,
   },
   section: {

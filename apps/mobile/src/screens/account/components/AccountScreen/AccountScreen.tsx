@@ -300,6 +300,7 @@ const styles = StyleSheet.create({
   fieldLabelRow: {
     alignItems: "center",
     flexDirection: "row",
+    flexWrap: "wrap",
     gap: spacing.sm,
   },
   formCard: {
