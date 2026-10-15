@@ -34,7 +34,7 @@ cards must also shrink to fit the space actually available inside the shell.
 | History, comments, activity and notifications | Present | Present | Same expense and social operations |
 | Reporting/blocking and account deletion | Present | Present | Same safety/deletion endpoints; shared balance-review states |
 
-`pnpm test:parity` currently finds **61 common Connect methods**. It scans actual
+`pnpm test:parity` currently finds **64 common Connect methods**. It scans actual
 client calls in both source trees, including Expo route files, and fails CI on a
 one-sided method. The one explicit transport exception is native
 `LogInWithApple`: browser Apple sign-in uses the HTTPS callback and
@@ -114,3 +114,8 @@ For every future feature: update both renderers, put genuinely common pure logic
 in the shared package, run the three workspace gates and `pnpm test:parity`, and
 exercise the changed flow in phone and tablet windows. The API gate supplements
 that review; it does not replace it.
+
+## Latest workflow audit
+
+See [the October 15 workflow audit](audits/mobile-flows-2026-10-15.md) for the
+local API/security checks, fixes and explicit remaining native-device coverage.
