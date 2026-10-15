@@ -7,9 +7,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useResponsiveLayout } from "@/lib/layout/hooks/useResponsiveLayout";
 import { PrimaryNavigation } from "./PrimaryNavigation";
 
-const state = vi.hoisted(() => ({ width: 390, pending: 0, push: vi.fn() }));
+const state = vi.hoisted(() => ({ width: 390, fontScale: 1, pending: 0, push: vi.fn() }));
 vi.mock("react-native", () => ({
-  useWindowDimensions: () => ({ width: state.width, height: 844 }),
+  useWindowDimensions: () => ({ width: state.width, height: 844, fontScale: state.fontScale }),
   Platform: { select: (options: { default: string }) => options.default },
   StyleSheet: { create: (styles: unknown) => styles },
 }));
@@ -45,7 +45,7 @@ function render() {
 }
 
 beforeEach(() => {
-  state.width = 390; state.pending = 0; state.push.mockClear();
+  state.width = 390; state.fontScale = 1; state.pending = 0; state.push.mockClear();
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   container = document.createElement("div"); document.body.append(container);
   root = createRoot(container);
@@ -61,6 +61,15 @@ describe("phone and tablet navigation", () => {
     expect(container.querySelector('[data-route="groups"]')?.hasAttribute("data-badge")).toBe(false);
     state.pending = 0; render();
     expect(container.querySelectorAll("[data-badge]")).toHaveLength(0);
+  });
+  it("keeps tablet navigation while stacking content for larger text", () => {
+    state.width = 1194; render();
+    expect(container.querySelector("[data-expanded]")?.getAttribute("data-expanded")).toBe("true");
+    state.fontScale = 1.6; render();
+    expect(container.querySelector("nav")?.getAttribute("data-position")).toBe("left");
+    expect(container.querySelector("[data-expanded]")?.getAttribute("data-expanded")).toBe("false");
+    state.fontScale = 1; render();
+    expect(container.querySelector("[data-expanded]")?.getAttribute("data-expanded")).toBe("true");
   });
   it("adapts through phone, iPad portrait, landscape and a narrow multitasking window without losing destinations", () => {
     for (const [width, position, expanded] of [

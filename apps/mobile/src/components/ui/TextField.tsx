@@ -21,6 +21,7 @@ export function TextField({
     <View style={styles.container}>
       {label ? <Text style={styles.label}>{label}</Text> : null}
       <TextInput
+        accessibilityLabel={label ?? inputProps.placeholder}
         placeholderTextColor={colors.inkSoft}
         {...inputProps}
         style={[styles.input, inputProps.multiline ? styles.multiline : null, style]}
@@ -32,6 +33,7 @@ export function TextField({
 const styles = StyleSheet.create({
   container: {
     gap: spacing.xs,
+    minWidth: 0,
   },
   input: {
     backgroundColor: colors.card,
@@ -40,6 +42,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     color: colors.ink,
     fontSize: 15,
+    minHeight: 48,
     paddingHorizontal: 14,
     paddingVertical: 12,
   },

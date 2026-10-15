@@ -77,6 +77,7 @@ export function Sheet({
             </Pressable>
           </View>
           <ScrollView
+            keyboardDismissMode="interactive"
             keyboardShouldPersistTaps="handled"
             ref={scrollRef}
             showsVerticalScrollIndicator={false}
@@ -110,9 +111,14 @@ const styles = StyleSheet.create({
   },
   closeButton: {
     borderRadius: radii.full,
-    padding: 6,
+    alignItems: "center",
+    justifyContent: "center",
+    minHeight: 44,
+    minWidth: 44,
+    flexShrink: 0,
   },
   footer: {
+    flexShrink: 0,
     borderTopColor: colors.line,
     borderTopWidth: 1,
     marginTop: spacing.md,
@@ -121,6 +127,8 @@ const styles = StyleSheet.create({
   header: {
     alignItems: "center",
     flexDirection: "row",
+    flexShrink: 0,
+    gap: spacing.sm,
     justifyContent: "space-between",
     marginBottom: spacing.lg,
   },
@@ -128,6 +136,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.card,
     borderTopLeftRadius: radii.lg,
     borderTopRightRadius: radii.lg,
+    flexShrink: 1,
     padding: spacing.xl - 4,
     paddingBottom: spacing.xxl,
   },
@@ -138,6 +147,7 @@ const styles = StyleSheet.create({
   },
   title: {
     color: colors.ink,
+    flex: 1,
     fontFamily: fonts.display,
     fontSize: 18,
     fontWeight: "600",

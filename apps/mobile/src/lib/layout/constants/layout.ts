@@ -14,3 +14,6 @@ export const FOCUSED_CONTENT_MAX_WIDTH = 520;
 
 /** Maximum width for a tablet dialog presented by the shared Sheet component. */
 export const TABLET_SHEET_MAX_WIDTH = 640;
+
+/** Text scaling at which dense controls need a stacked layout. */
+export const LARGE_TEXT_SCALE = 1.3;

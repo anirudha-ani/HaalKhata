@@ -80,6 +80,8 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: spacing.sm,
     justifyContent: "center",
+    maxWidth: "100%",
+    minHeight: 44,
     paddingHorizontal: spacing.lg,
     paddingVertical: 14,
   },
@@ -94,8 +96,10 @@ const styles = StyleSheet.create({
     backgroundColor: "transparent",
   },
   label: {
+    flexShrink: 1,
     fontSize: 15,
     fontWeight: "600",
+    textAlign: "center",
   },
   labelCompact: {
     fontSize: 13,

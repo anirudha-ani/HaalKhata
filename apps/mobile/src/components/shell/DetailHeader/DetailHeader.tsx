@@ -45,6 +45,11 @@ export function DetailHeader({
 const styles = StyleSheet.create({
   backButton: {
     borderRadius: radii.full,
+    alignItems: "center",
+    justifyContent: "center",
+    minWidth: 44,
+    minHeight: 44,
+    flexShrink: 0,
     padding: spacing.xs,
   },
   header: {
@@ -63,6 +68,7 @@ const styles = StyleSheet.create({
     width: "100%",
   },
   right: {
+    flexShrink: 0,
     marginLeft: "auto",
   },
   title: {

@@ -27,7 +27,7 @@ export function ScreenHeader() {
       <View style={styles.headerContent}>
         <View style={styles.wordmarkRow}>
           <Image source={brandIconSource} style={styles.brandIcon} />
-          <Text style={styles.wordmark}>HAALKHATA</Text>
+          <Text adjustsFontSizeToFit minimumFontScale={0.5} numberOfLines={1} style={styles.wordmark}>HAALKHATA</Text>
         </View>
         <View style={styles.actions}>
           <Pressable
@@ -61,6 +61,7 @@ const styles = StyleSheet.create({
   actions: {
     alignItems: "center",
     flexDirection: "row",
+    flexShrink: 0,
     gap: spacing.xs,
   },
   brandIcon: {
@@ -103,6 +104,7 @@ const styles = StyleSheet.create({
     fontFamily: fonts.display,
     fontSize: 24,
     fontWeight: "700",
+    flexShrink: 1,
   },
   wordmarkLatin: {
     color: colors.inkSoft,
@@ -113,6 +115,9 @@ const styles = StyleSheet.create({
   wordmarkRow: {
     alignItems: "center",
     flexDirection: "row",
+    flex: 1,
     gap: spacing.sm,
+    marginRight: spacing.sm,
+    minWidth: 0,
   },
 });

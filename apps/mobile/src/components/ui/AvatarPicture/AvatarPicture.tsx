@@ -23,7 +23,8 @@ export function AvatarPicture({
 }) {
   const [pictureFailed, setPictureFailed] = useState(false);
   if (!avatarUrl || pictureFailed) {
-    return <Text style={[styles.initials, { fontSize: dimensions.fontSize }]}>{initials}</Text>;
+    // Initials replace a fixed-size picture; the adjacent name remains scalable text.
+    return <Text allowFontScaling={false} style={[styles.initials, { fontSize: dimensions.fontSize }]}>{initials}</Text>;
   }
 
   return (

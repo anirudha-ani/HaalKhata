@@ -36,7 +36,9 @@ export function Screen({
       <ToastProvider>
       {header}
       <ScrollView
+        automaticallyAdjustKeyboardInsets
         contentContainerStyle={[styles.content, isTablet ? styles.contentTablet : null]}
+        keyboardDismissMode="interactive"
         keyboardShouldPersistTaps="handled"
         refreshControl={
           onRefresh ? (

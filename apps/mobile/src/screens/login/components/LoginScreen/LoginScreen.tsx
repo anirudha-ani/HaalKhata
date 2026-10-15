@@ -16,6 +16,7 @@ import { GoogleSignInButton } from "./components/GoogleSignInButton/GoogleSignIn
 import { AppleSignInButton } from "./components/AppleSignInButton";
 import { useLogin } from "./hooks/useLogin";
 import { FOCUSED_CONTENT_MAX_WIDTH } from "@/lib/layout/constants/layout";
+import { useResponsiveLayout } from "@/lib/layout/hooks/useResponsiveLayout";
 
 /**
  * Renders the brand, production Apple/Google sign-in and legal links. Development
@@ -25,6 +26,7 @@ import { FOCUSED_CONTENT_MAX_WIDTH } from "@/lib/layout/constants/layout";
  */
 export function LoginScreen() {
   const login = useLogin();
+  const { isTablet } = useResponsiveLayout();
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -34,18 +36,25 @@ export function LoginScreen() {
       >
         <ScrollView
           contentContainerStyle={styles.scrollContent}
+          keyboardDismissMode="interactive"
           keyboardShouldPersistTaps="handled"
         >
           <View style={styles.content}>
             <View style={styles.hero}>
-              <Image source={brandIconSource} style={styles.brandIcon} />
-              <Text style={styles.wordmark}>HAALKHATA</Text>
+              <Image source={brandIconSource} style={[styles.brandIcon, isTablet && styles.tabletIcon]} />
+              <Text
+                accessibilityRole="header"
+                adjustsFontSizeToFit
+                minimumFontScale={0.5}
+                numberOfLines={1}
+                style={[styles.wordmark, isTablet && styles.tabletWordmark]}
+              >HAALKHATA</Text>
               <Text style={styles.tagline}>
                 Camera eats first. The AI splits the rest.
               </Text>
             </View>
 
-            <View style={styles.card}>
+            <View style={[styles.card, isTablet && styles.tabletCard]}>
             <AppleSignInButton />
             {GOOGLE_SIGN_IN_CONFIGURED ? (
               <GoogleSignInButton />
@@ -126,9 +135,9 @@ export function LoginScreen() {
 const styles = StyleSheet.create({
   brandIcon: {
     borderRadius: radii.lg,
-    height: 96,
+    height: 64,
     marginBottom: spacing.lg,
-    width: 96,
+    width: 64,
   },
   card: {
     backgroundColor: colors.card,
@@ -136,7 +145,7 @@ const styles = StyleSheet.create({
     borderRadius: radii.lg,
     borderWidth: 1,
     gap: spacing.lg,
-    padding: spacing.xl,
+    padding: spacing.lg,
   },
   content: {
     maxWidth: FOCUSED_CONTENT_MAX_WIDTH,
@@ -159,7 +168,7 @@ const styles = StyleSheet.create({
   },
   hero: {
     alignItems: "center",
-    marginBottom: spacing.xxl,
+    marginBottom: spacing.xl,
   },
   hint: {
     color: colors.inkSoft,
@@ -190,13 +199,25 @@ const styles = StyleSheet.create({
   tagline: {
     color: colors.inkSoft,
     fontSize: 15,
-    marginTop: spacing.lg,
+    marginTop: spacing.sm,
     textAlign: "center",
   },
+  tabletCard: {
+    padding: spacing.xl,
+  },
+  tabletIcon: {
+    height: 80,
+    width: 80,
+  },
+  tabletWordmark: {
+    fontSize: 44,
+  },
   wordmark: {
+    alignSelf: "stretch",
     color: colors.brand600,
     fontFamily: fonts.display,
-    fontSize: 52,
+    fontSize: 36,
     fontWeight: "700",
+    textAlign: "center",
   },
 });

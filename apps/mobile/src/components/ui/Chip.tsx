@@ -51,6 +51,8 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     flexDirection: "row",
     gap: 6,
+    maxWidth: "100%",
+    minHeight: 44,
     paddingHorizontal: spacing.md,
     paddingVertical: 7,
   },
@@ -63,6 +65,7 @@ const styles = StyleSheet.create({
   },
   label: {
     color: colors.inkSoft,
+    flexShrink: 1,
     fontSize: 13,
     fontWeight: "500",
   },

@@ -193,6 +193,7 @@ const styles = StyleSheet.create({
     fontSize: 13,
   },
   input: {
+    minHeight: 48,
     color: colors.ink,
     flex: 1,
     fontSize: 15,
