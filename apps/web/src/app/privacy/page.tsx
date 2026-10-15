@@ -17,15 +17,16 @@ export default function PrivacyPage() {
   return <main className="mx-auto max-w-3xl space-y-7 px-6 py-12 text-ink">
     <Link href="/login" className="font-semibold text-brand-600">HaalKhata</Link>
     <h1 className="text-4xl font-bold">Privacy policy</h1>
-    <p className="text-sm text-ink-soft">Effective October 13, 2026. Applies to the HaalKhata mobile app and website.</p>
+    <p className="text-sm text-ink-soft">Effective October 15, 2026. Applies to the HaalKhata mobile app and website.</p>
     <section className="space-y-3"><h2 className="text-2xl font-semibold">Information we use</h2>
       <p>HaalKhata stores your account identifier, display name, sign-in provider identifier, email (including an Apple private relay address), optional profile image, default currency, and any phone number or payment methods you choose to add. Payment methods can include names, currencies, instructions, contact information, bank account details and payment links that you provide. We use these to authenticate you, find invitations, display your profile and help your expense partners settle outside the app.</p>
       <p>We store groups, membership, expenses, dates, amounts, currencies, splits, items, settlements, comments, invitations, activity and in-app notifications to provide the shared ledger. Account email and phone fields are private to your own profile. People sharing expenses can see your display identity. Your payment methods are shown only to people who owe you, including within a particular shared group or expense scope.</p>
       <p>Security processing uses request IP addresses, short-lived sign-in challenges, hashed phone destinations, verification attempts and limited diagnostic logs to prevent fraud and abuse. We do not include advertising, cross-app tracking or an analytics SDK in the app.</p>
     </section>
     <section className="space-y-3"><h2 className="text-2xl font-semibold">Optional photos and AI</h2>
-      <p>Camera access is requested when you take a receipt photo. Choosing an existing photo uses the system picker. A photo stays on your device until you accept the receipt-sharing disclosure and choose “Itemize with AI.” Manual expense entry works without photos or AI.</p>
-      <p>{receiptProcessingInfo().disclosure.replace(/^I agree to send/, "If you consent, we send")}</p>
+      <p>Camera access is requested when you take a receipt photo. Choosing an existing photo uses the system picker. A photo stays on your device until you choose “Itemize with AI” and have allowed AI receipt scanning. We ask before your first scan and remember permission on your account across web and mobile. You can withdraw permission in Account → AI receipt scanning; future scans will ask again. Changes to the recipients or sharing terms require renewed permission. Manual expense entry works without photos or AI.</p>
+      <p>{receiptProcessingInfo().disclosure}</p>
+      <p>We store the accepted sharing-terms version and the time you granted permission with your account. Withdrawing permission removes that record and stops future scans from proceeding without renewed permission; it cannot recall an image already sent for processing.</p>
       <p>Our production receipt service requests zero data retention from OpenRouter. Provider terms govern their processing; review <a className="underline" href="https://openrouter.ai/privacy">OpenRouter&apos;s privacy policy</a> and <a className="underline" href="https://policies.google.com/privacy">Google&apos;s privacy policy</a>. We do not promise that a provider&apos;s terms can never change. Receipt images are processed temporarily and returned for review; they are not saved in our database. Parsed expense text and amounts are saved only when you submit an expense.</p>
     </section>
     <section className="space-y-3"><h2 className="text-2xl font-semibold">Other service providers</h2>

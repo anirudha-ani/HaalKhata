@@ -28,7 +28,7 @@ cards must also shrink to fit the space actually available inside the shell.
 | Group create/edit, membership, ownership, debt simplification, archive/restore | Present | Present | Same GroupService operations and shared group rules |
 | Expenses: create/edit/delete, five split modes, multiple payers | Present | Present | Shared `expense/form/splitForm.ts` and server recomputation |
 | Itemized receipt editing, portions, tax/tip, preview | Present | Present | Shared validation, totals, payloads, warnings and allocation |
-| Receipt scan and processing consent | Browser file input | Native photo/camera input | Same processing disclosure and receipt API |
+| Receipt scan and processing consent | Browser file input | Native photo/camera input | Same first-use account permission, withdrawal setting, processing disclosure and receipt API |
 | Settlement scope/net settlement and reminders | Present | Present | Same ledger endpoints and shared position/payment helpers |
 | Payment-method management and payer details | Present | Present | Shared payment validation, state and formatting |
 | History, comments, activity and notifications | Present | Present | Same expense and social operations |

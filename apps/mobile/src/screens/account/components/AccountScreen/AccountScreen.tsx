@@ -1,5 +1,6 @@
 /** Account screen: profile (name, phone, currency), payment methods, phone verification and merge, sign out. */
 
+import { ReceiptPermission } from "@/components/account/ReceiptPermission/ReceiptPermission";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { BlockedPeople } from "@/components/safety/BlockedPeople";
 import type { User } from "@haalkhata/protogen/common/v1/common_pb";
@@ -75,6 +76,7 @@ function ProfileForm({ me: currentUser }: { me: User }) {
             onPress={() => void form.signOut()}
             variant="outline"
           />
+          <ReceiptPermission />
           <BlockedPeople />
           <DeleteAccount />
           <LegalLinks />

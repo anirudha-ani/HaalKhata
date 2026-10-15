@@ -31,7 +31,6 @@ export type CreateExpenseInput = MessageInitShape<typeof CreateExpenseRequestSch
 export function useNewExpenseAPI(editExpenseId: string) {
   const queryClient = useQueryClient();
 
-  const processingInfoQuery = useQuery({ queryKey: queryKeys.receiptProcessingInfo, queryFn: () => receiptClient.getProcessingInfo({}) });
   const currentUserQuery = useQuery({
     queryKey: queryKeys.me,
     queryFn: () => authClient.getMe({}),
@@ -80,9 +79,6 @@ export function useNewExpenseAPI(editExpenseId: string) {
   });
 
   return {
-    processingInfo: processingInfoQuery.data,
-    processingInfoError: processingInfoQuery.error,
-    retryProcessingInfo: processingInfoQuery.refetch,
     me: currentUserQuery.data,
     groups: groupsByStatus(groupsQuery.data?.groups ?? []),
     archivedGroups: groupsByStatus(groupsQuery.data?.groups ?? [], GroupStatus.ARCHIVED),

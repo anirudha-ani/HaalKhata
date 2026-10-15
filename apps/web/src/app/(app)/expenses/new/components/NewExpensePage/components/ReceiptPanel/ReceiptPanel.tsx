@@ -5,7 +5,7 @@
 
 import { Camera, FileImage, ImageUp, Loader2, ScanLine } from "lucide-react";
 import { useState } from "react";
-import { LegalLinks } from "@/components/legal/LegalLinks/LegalLinks";
+import { ReceiptConsentPrompt } from "@/components/receipt/ReceiptConsentPrompt/ReceiptConsentPrompt";
 import { Spinner } from "@/components/ui/Spinner/Spinner";
 import { ACCEPTED_IMAGE_INPUT } from "./constants/receiptPanel";
 import type { NewExpenseController } from "../../hooks/useNewExpense";
@@ -96,6 +96,7 @@ export function ReceiptPanel({
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-1">
           <label className="flex min-h-12 cursor-pointer items-center justify-center gap-2 rounded-xl border border-line bg-card px-4 text-sm font-semibold hover:border-brand-300 sm:hidden">
             <input
+              disabled={form.isReceiptBusy}
               type="file"
               accept={ACCEPTED_IMAGE_INPUT}
               capture="environment"
@@ -114,6 +115,7 @@ export function ReceiptPanel({
             }`}
           >
             <input
+              disabled={form.isReceiptBusy}
               type="file"
               accept={ACCEPTED_IMAGE_INPUT}
               className="hidden"
@@ -138,25 +140,18 @@ export function ReceiptPanel({
         </div>
       ) : null}
 
-      {form.file && !hasReceipt ? <div className="space-y-2 text-sm text-ink-soft">
-        <label className="flex items-start gap-2">
-          <input type="checkbox" checked={form.receiptConsentGranted} disabled={!form.receiptDisclosure || form.isParsing}
-            onChange={(event) => form.setReceiptConsent(event.target.checked)} />
-          <span>{form.receiptDisclosure || "Loading receipt-sharing details…"}</span>
-        </label>
-        {form.receiptConsentError ? <button type="button" className="underline" onClick={form.retryReceiptDisclosure}>Retry sharing details</button> : null}
-        <LegalLinks />
-      </div> : null}
+      <ReceiptConsentPrompt consent={form.receiptConsent} />
+      {form.receiptConsent.error && !form.receiptConsent.prompt ? <p role="alert" className="text-sm text-neg-700">{form.receiptConsent.error}</p> : null}
 
       {form.file && !hasReceipt && !form.isPreparing ? (
         <button
           type="button"
           onClick={form.parseNow}
-          disabled={form.isParsing || !form.receiptConsentGranted}
+          disabled={form.isReceiptBusy}
           className="flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-brand-600 font-semibold text-white hover:bg-brand-700 disabled:opacity-60"
         >
           <ScanLine className="h-5 w-5" />
-          {form.isParsing ? "Reading the receipt…" : "Itemize with AI"}
+          {form.isParsing ? "Reading the receipt…" : form.receiptConsent.busy ? "Checking permission…" : "Itemize with AI"}
         </button>
       ) : null}
 

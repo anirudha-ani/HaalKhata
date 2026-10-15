@@ -17,7 +17,7 @@ evidence. Its unresolved code findings have been implemented here:
 | Apple sign-in | Native iOS Apple authentication; verifier-bound web/Android callback; verified issuer/audience/signature/expiry/nonce/email; encrypted provider grants and revocation. |
 | Deletion | Account → Delete account, typed confirmation, hard deletion of the original identity, Apple grant revocation, personal-data removal, fresh anonymous shared ledger identity, session invalidation. Fresh payable/receivable totals are shown per currency with Review balances and an explicit Delete anyway option. Failed balance checks offer retry and do not block deletion. |
 | Privacy | Public `/privacy` and `/support`; login/account legal links; monitored contact configuration; accurate receipt processor disclosures. |
-| Receipt sharing | Explicit consent for each selected image, bound to the current processor configuration; consent checked before provider processing; native JPEG normalization and upload bounds. Manual entry needs no photo sharing. |
+| Receipt sharing | First-use permission saved per account across both apps, withdrawable in Account settings; current permission checked before provider processing; native JPEG normalization and upload bounds. Manual entry needs no photo sharing. |
 | User safety | Private authorized reports, blocks independent of balances, unblock settings, blocked-message/feed filtering, basic text filtering, internal moderator removal/suspension console. |
 | Reliability | Retryable load failures; bounded RPC deadlines; caught Google prompt errors; memory-only private query cache preserved. |
 | Invite links | Public Apple association and Android asset-link documents derived from actual operator signing identifiers. |
@@ -125,7 +125,7 @@ and operations. Configure the support mailbox. The current production receipt
 routing is OpenRouter with Google/Gemini and requests zero data retention;
 confirm the real account/provider terms and routing before launch. Update
 `RECEIPT_AI_PROCESSORS` whenever routing changes. The consent fingerprint changes
-with the processor disclosure, model, gateway and retention settings.
+with the recipient disclosure, model provider, gateway, routing and retention settings. Routine model upgrades with the same recipients do not reset it.
 
 Expire local/offsite archives and old remote object versions within **31 days**
 to match the policy. Local pruning is implemented; offsite lifecycle/retention

@@ -1,6 +1,7 @@
 "use client";
 /** Profile form of the account page: the summary card, the editable profile fields, the payment methods, and sign-out. */
 
+import { ReceiptPermission } from "@/components/account/ReceiptPermission/ReceiptPermission";
 import { BlockedPeople } from "@/components/safety/BlockedPeople/BlockedPeople";
 import { LegalLinks } from "@/components/legal/LegalLinks/LegalLinks";
 import { DeleteAccount } from "@/components/account/DeleteAccount/DeleteAccount";
@@ -173,6 +174,7 @@ export function ProfileForm({ me: currentUser }: { me: User }) {
         <LogOut className="h-4 w-4" /> Sign out
       </button>
 
+      <ReceiptPermission />
       <BlockedPeople />
       <DeleteAccount />
       <LegalLinks />
