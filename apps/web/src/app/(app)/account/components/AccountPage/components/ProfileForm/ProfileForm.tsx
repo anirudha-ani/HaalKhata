@@ -1,6 +1,7 @@
 "use client";
 /** Account settings: profile, payments, sharing, privacy, support and account access. */
 
+import { NotificationSettings } from "@/components/account/NotificationSettings/NotificationSettings";
 import { ReceiptPermission } from "@/components/account/ReceiptPermission/ReceiptPermission";
 import { BlockedPeople } from "@/components/safety/BlockedPeople/BlockedPeople";
 import { LegalLinks } from "@/components/legal/LegalLinks/LegalLinks";
@@ -174,6 +175,7 @@ export function ProfileForm({ me: currentUser }: { me: User }) {
             )}
           </section>
 
+          <NotificationSettings />
           <section className="space-y-4 rounded-2xl border border-line bg-card p-5">
             <h2 className="text-lg font-semibold">{ACCOUNT_SETTINGS_COPY.privacy}</h2>
             <ReceiptPermission embedded />

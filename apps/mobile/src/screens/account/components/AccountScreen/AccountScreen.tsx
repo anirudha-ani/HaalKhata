@@ -1,9 +1,11 @@
 /** Account settings: profile, payments, sharing, privacy, support and account access. */
 
+import { NotificationSettings } from "@/components/account/NotificationSettings/NotificationSettings";
 import { ReceiptPermission } from "@/components/account/ReceiptPermission/ReceiptPermission";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { BlockedPeople } from "@/components/safety/BlockedPeople";
 import type { User } from "@haalkhata/protogen/common/v1/common_pb";
+import { PUSH_COPY } from "@haalkhata/shared/notifications/copy";
 import { ACCOUNT_SETTINGS_COPY } from "@haalkhata/shared/account/settingsCopy";
 import { Check, LogOut, Share2 } from "lucide-react-native";
 import { Pressable, StyleSheet, TextInput, View } from "react-native";
@@ -179,6 +181,10 @@ function ProfileForm({ me: currentUser }: { me: User }) {
                 </Pressable>
               )}
             </View>
+          </View>
+          <View style={styles.formCard}>
+            <Text accessibilityRole="header" style={styles.sectionTitle}>{PUSH_COPY.settingTitle}</Text>
+            <NotificationSettings />
           </View>
           <View style={styles.formCard}>
             <Text accessibilityRole="header" style={styles.sectionTitle}>{ACCOUNT_SETTINGS_COPY.privacy}</Text>
