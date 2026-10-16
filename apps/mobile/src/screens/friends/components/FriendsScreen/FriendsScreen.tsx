@@ -1,8 +1,10 @@
 /** Friends screen: four tabs (friends, requests, sent, invited) with an add-friend sheet and settle-up. */
 
 import { ErrorState } from "@/components/ui/ErrorState";
-import { UserPlus } from "lucide-react-native";
+import { useRouter } from "expo-router";
+import { Contact, UserPlus } from "lucide-react-native";
 import { StyleSheet, View } from "react-native";
+import { FIND_FRIENDS_COPY } from "@haalkhata/shared/contacts/contactsCopy";
 import { Text } from "@/components/ui/Text";
 import { InviteShareSheet } from "@/components/modals/InviteShareSheet";
 import { ContactDiscoveryPrompt } from "@/components/account/ContactDiscoveryPrompt/ContactDiscoveryPrompt";
@@ -38,6 +40,7 @@ import { useFriends } from "./hooks/useFriends";
  */
 export function FriendsScreen() {
   const friendsState = useFriends();
+  const router = useRouter();
   useErrorToast(friendsState.error);
   const currency = friendsState.me?.defaultCurrency ?? "USD";
   const counts: Record<FriendsTab, number> = {
@@ -55,12 +58,21 @@ export function FriendsScreen() {
     >
       <View style={styles.titleRow}>
         <Text style={styles.title}>Friends</Text>
-        <Button
-          compact
-          icon={<UserPlus color={colors.white} size={16} />}
-          label="Add friend"
-          onPress={() => friendsState.setShowAdd(true)}
-        />
+        <View style={styles.titleActions}>
+          <Button
+            compact
+            icon={<Contact color={colors.inkSoft} size={16} />}
+            label={FIND_FRIENDS_COPY.title}
+            onPress={() => router.push("/friends/find")}
+            variant="outline"
+          />
+          <Button
+            compact
+            icon={<UserPlus color={colors.white} size={16} />}
+            label="Add friend"
+            onPress={() => friendsState.setShowAdd(true)}
+          />
+        </View>
       </View>
 
       {/* Asked once, where finding and being found matter. */}
@@ -148,6 +160,11 @@ const styles = StyleSheet.create({
     fontFamily: fonts.display,
     fontSize: 28,
     fontWeight: "700",
+  },
+  titleActions: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: spacing.sm,
   },
   titleRow: {
     alignItems: "center",

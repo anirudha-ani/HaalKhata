@@ -45,6 +45,25 @@ export const CONTACTS_NO_MATCHES = {
   body: "Invite someone with your link, or add them by email or phone from Friends.",
 } as const;
 
+/** Titles of the Find friends screen and its sections, in the order they appear. */
+export const FIND_FRIENDS_COPY = {
+  title: "Find friends",
+  entry: "Find friends from contacts",
+  reading: "Reading your contacts…",
+  incoming: "Wants to be your friend",
+  requestable: "On HaalKhata",
+  requested: "Requested",
+  friends: "Already friends",
+  shareLink: "Share my invite link",
+} as const;
+
+/** The sheet that confirms "send to all" by listing everyone it would ask. */
+export const SEND_ALL_SHEET = {
+  previewLabel: "Each person gets this notification:",
+  confirm: "Send requests",
+  cancel: "Cancel",
+} as const;
+
 /** The discoverability setting, in onboarding and under Account. */
 export const CONTACT_DISCOVERY_SETTING = {
   label: "Let people find me from their contacts",
@@ -66,6 +85,16 @@ export const CONTACT_DISCOVERY_PROMPT = {
   declinedNotice:
     "People won't find you from their contacts. You can change this under Account.",
 } as const;
+
+/**
+ * The line under a found person's saved name when their account name differs.
+ *
+ * @param accountName - The name on their HaalKhata account.
+ * @returns The line shown under the saved name.
+ */
+export function onHaalKhataAs(accountName: string): string {
+  return `On HaalKhata as ${accountName}`;
+}
 
 /**
  * The button on a found person's row.
@@ -114,6 +143,16 @@ export function sendAllLabel(count: number): string {
  */
 export function sendAllQuestion(count: number): string {
   return count === 1 ? "Send 1 friend request?" : `Send ${grouped(count)} friend requests?`;
+}
+
+/**
+ * Confirmation once "send to all" has gone through.
+ *
+ * @param count - Requests sent.
+ * @returns The line shown above the list.
+ */
+export function requestsSentNotice(count: number): string {
+  return count === 1 ? "Friend request sent." : `${grouped(count)} friend requests sent.`;
 }
 
 /**
