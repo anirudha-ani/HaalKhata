@@ -30,12 +30,14 @@ export function ContactsAccessCard({
   /** Opens this app's page in Settings. */
   onOpenSettings: () => void;
 }) {
-  const refused = access !== "undetermined";
-  const copy = refused ? CONTACTS_DENIED : CONTACTS_EXPLANATION;
+  // A refusal the OS will still ask about gets the explanation again and
+  // Continue; only a permanent one points at Settings.
+  const title = access === "undetermined" ? CONTACTS_EXPLANATION.title : CONTACTS_DENIED.title;
+  const body = access === "blocked" ? CONTACTS_DENIED.body : CONTACTS_EXPLANATION.body;
   return (
     <View style={styles.card}>
-      <Text accessibilityRole="header" style={styles.title}>{copy.title}</Text>
-      <Text style={styles.body}>{copy.body}</Text>
+      <Text accessibilityRole="header" style={styles.title}>{title}</Text>
+      <Text style={styles.body}>{body}</Text>
       {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
       {access === "blocked" ? (
         <Button label={CONTACTS_DENIED.action} onPress={onOpenSettings} />
