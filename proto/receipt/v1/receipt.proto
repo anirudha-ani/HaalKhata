@@ -23,6 +23,8 @@ message ParseReceiptRequest {
   string media_type = 2;
   // Current disclosure version. The account must also have saved permission.
   string consent_version = 3;
+  // Expense currency used only when the receipt does not identify one.
+  string currency = 4;
 }
 
 message ReceiptProcessingInfo {

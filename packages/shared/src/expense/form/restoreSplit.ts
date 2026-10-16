@@ -24,7 +24,7 @@ export function restoreExpenseSplit(
       ? Object.fromEntries(splits.map((split) => [split.userId, centsToInput(split.owedCents, currency)]))
       : {},
     splitNotice: needsExact
-      ? "Your saved per-person amounts are shown in Amounts to keep each share unchanged. Choose Percent or Shares to enter a new split."
+      ? "Saved amounts are shown because the original ratios were not stored. Keeping these amounts preserves the original split mode; changing them saves an Amounts split."
       : "",
   };
 }

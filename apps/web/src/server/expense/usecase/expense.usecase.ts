@@ -1,5 +1,6 @@
 /** Expense business logic: validation + authoritative splits, comments, settlements, activity/notification fan-out. */
 
+import { canPreserveSplitType } from "@haalkhata/shared/expense/form/preserveSplit";
 import { blockedPairExists } from "@/server/safety/repo/safety.repo";
 import { assertSafeText } from "@/server/safety/usecase/contentFilter";
 import { isRegisteredUser } from "@/server/auth/usecase/identity/user.mapper";
@@ -66,7 +67,7 @@ import {
 } from "@/server/expense/domain/settlementAllocation";
 import { oneOffPairKey, settledExpenseIds } from "@/server/expense/domain/settledExpenses";
 import { snapshot } from "@/server/common/db/db";
-import { denied, invalid, notFound } from "@/server/common/errors";
+import { UsecaseError, denied, invalid, notFound } from "@/server/common/errors";
 import {
   lockExpenseLedger,
   lockGroupLedgers,
@@ -725,6 +726,7 @@ async function loadExpenseForEdit(
  * @param userId - Authenticated caller performing the update.
  * @param expenseId - Id of the expense to update.
  * @param request - Full replacement request (same shape as create).
+ * @param preserveSplitType - Retain an existing ratio mode only for identical allocations.
  * @returns The updated expense as a proto message init shape.
  * @throws UsecaseError if the expense is missing/deleted, the caller lacks
  *   access, or validation fails.
@@ -733,6 +735,7 @@ export async function updateExpense(
   userId: string,
   expenseId: string,
   request: CreateExpenseRequest,
+  preserveSplitType = false,
 ) {
   const existing = await loadExpenseForEdit(userId, expenseId, request);
   const write = await buildExpenseWrite(userId, request, storedParticipantIds(existing.expense, existing.children));
@@ -757,6 +760,22 @@ export async function updateExpense(
       );
     } else {
       await lockParticipantLedgers(client, participantIds);
+    }
+    if (preserveSplitType) {
+      const saved = {
+        splitType: current.split_type,
+        amountCents: current.amount_cents,
+        currency: current.currency,
+        groupId: current.group_id ?? "",
+        splits: (children.splits.get(expenseId) ?? []).map((split) => ({
+          userId: split.user_id,
+          owedCents: split.owed_cents,
+        })),
+      };
+      if (!canPreserveSplitType(saved, { ...write, groupId: write.groupId ?? "" })) {
+        throw new UsecaseError("failed_precondition", "The saved split changed. Reload the expense before editing it.");
+      }
+      write.splitType = current.split_type;
     }
     write.createdBy = current.created_by;
     await replaceExpense(expenseId, write, client);

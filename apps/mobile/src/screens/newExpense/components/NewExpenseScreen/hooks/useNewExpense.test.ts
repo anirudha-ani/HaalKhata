@@ -77,6 +77,7 @@ it.each(["percent", "shares"])("edits a saved %s expense without changing curren
   expect(controller.splitNotice).toBeTruthy(); expect(controller.canSubmit).toBe(true);
   act(() => { controller.setNotes("Edited note only"); });
   act(() => controller.submit());
+  expect(stubs.update.mock.calls[0][0].preserveSplitType).toBe(true);
   const payload = stubs.update.mock.calls[0][0].expense;
   expect(payload.currency).toBe("JPY"); expect(payload.amountCents).toBe(1001);
   expect(payload.splitSpecs.map((split: { amountCents: number }) => split.amountCents)).toEqual([333, 668]);
@@ -113,6 +114,7 @@ it.each(["JPY", "USD"])("imports a %s receipt only when its currency matches the
   await act(async () => controller.parseNow());
   const [request, callbacks] = stubs.parse.mock.calls[0];
   expect(request.consentVersion).toBe("current-version");
+  expect(request.currency).toBe("USD");
   act(() => callbacks.onSuccess({ provider: "mock", receipt: { merchant: "Receipt", currency, date: "", taxCents: 0, tipCents: 0,
     items: [{ name: "Meal", quantity: 1, totalCents: 1000 }] } }));
   expect(controller.description).toBe("Existing draft");
@@ -123,4 +125,14 @@ it.each(["JPY", "USD"])("imports a %s receipt only when its currency matches the
     expect(controller.error).toBe(""); expect(controller.splitType).toBe("itemized");
     expect(controller.totalCents).toBe(1000); expect(controller.itemDraft.items?.[0].assignees).toEqual({ alice: 1, friend: 1 });
   }
+});
+
+
+it.each(["person", "group"])("clears the saved-split notice when changing the %s clears inputs", async (change) => {
+  const saved = create(ExpenseSchema, { id: "saved", description: "Dinner", amountCents: 1000, currency: "USD", splitType: "shares",
+    payers: [{ userId: "alice", amountCents: 1000 }], splits: [{ userId: "alice", owedCents: 500 }, { userId: "friend", owedCents: 500 }] });
+  await act(async () => root.render(createElement(Harness, { saved })));
+  expect(controller.splitNotice).toBeTruthy();
+  act(() => change === "person" ? controller.togglePerson("friend") : controller.setGroupId(""));
+  expect(controller.splitNotice).toBeUndefined();
 });

@@ -32,7 +32,8 @@ export function ReceiptPanel({
   // The server's normalized JPEG once parsed (the only renderable form of an
   // iPhone HEIC, and exactly what the model read); the local file before that.
   const shownImage = form.receiptUrl || (form.isPreviewRenderable ? form.previewUrl : "");
-  const hasReceipt = form.receiptUrl !== "";
+  // A normalized photo can exist even when its currency prevented import.
+  const hasReceipt = form.provider !== "";
   // On a phone the photo sits above the grid rather than beside it, so a
   // full-height image would push every item off screen. It starts compact and
   // opens on tap; on desktop, where it has its own column, it is always full.

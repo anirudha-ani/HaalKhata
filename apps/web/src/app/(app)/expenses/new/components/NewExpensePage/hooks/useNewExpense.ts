@@ -1,6 +1,7 @@
 "use client";
 /** Composite expense-form hook: field state, payer/split validation, submit. */
 
+import { canPreserveSplitType } from "@haalkhata/shared/expense/form/preserveSplit";
 import { receiptCurrencyError } from "@haalkhata/shared/expense/form/receiptCurrency";
 import { expenseFormCurrency } from "@haalkhata/shared/expense/form/formCurrency";
 import { useReceiptScanConsent } from "@/lib/receipt/hooks/useReceiptScanConsent";
@@ -52,6 +53,7 @@ export function useNewExpense(
   editExpenseId: string,
 ) {
   const router = useRouter();
+  const [savedSplit] = useState(expenseAPI.editing?.expense);
 
   const [groupId, setGroupId] = useState(initial.groupId);
   const [personIds, setPersonIds] = useState<string[] | null>(() =>
@@ -300,8 +302,19 @@ export function useNewExpense(
   const parsePhoto = (consentVersion: string) => {
     if (!file) return;
     setError("");
-    expenseAPI.parse.mutate({ file, consentVersion }, {
+    expenseAPI.parse.mutate({ file, consentVersion, currency }, {
       onSuccess: (result) => {
+        // The server hands back the JPEG it actually showed the model — the
+        // upload after rotation, downscaling and HEIC transcoding. Showing
+        // that rather than the raw file is what makes an iPhone receipt
+        // viewable at all, and it is the image the numbers came from.
+        if (result.normalizedImage.length > 0) {
+          const blob = new Blob([result.normalizedImage as BlobPart], { type: "image/jpeg" });
+          setReceiptUrl((previousUrl) => {
+            URL.revokeObjectURL(previousUrl);
+            return URL.createObjectURL(blob);
+          });
+        }
         const receipt = result.receipt;
         if (!receipt) return;
         const { people: receiptPeople, currency: receiptCurrency } = receiptContextRef.current;
@@ -328,17 +341,6 @@ export function useNewExpense(
           })),
         );
         setSplitType("itemized");
-        // The server hands back the JPEG it actually showed the model — the
-        // upload after rotation, downscaling and HEIC transcoding. Showing
-        // that rather than the raw file is what makes an iPhone receipt
-        // viewable at all, and it is the image the numbers came from.
-        if (result.normalizedImage.length > 0) {
-          const blob = new Blob([result.normalizedImage as BlobPart], { type: "image/jpeg" });
-          setReceiptUrl((previousUrl) => {
-            URL.revokeObjectURL(previousUrl);
-            return URL.createObjectURL(blob);
-          });
-        }
       },
       onError: (mutationError) => setError(errorMessage(mutationError)),
     });
@@ -419,6 +421,11 @@ export function useNewExpense(
     splitCheck.ok &&
     payerCheck.ok;
 
+  const preserveSplitType = canPreserveSplitType(savedSplit, {
+    groupId, currency, splitType, amountCents: totalCents ?? 0,
+    splits: participantIds.map((userId) => ({ userId, owedCents: parseMoneyInput(splitInputs[userId] ?? "", currency) ?? -1 })),
+  });
+
   /** Builds the request from the current fields and fires create or update. */
   const submit = () => {
     if (!canSubmit || totalCents === null) return;
@@ -465,7 +472,7 @@ export function useNewExpense(
     const onError = (mutationError: unknown) => setError(errorMessage(mutationError));
     if (editExpenseId) {
       expenseAPI.update.mutate(
-        { expenseId: editExpenseId, expense: request },
+        { expenseId: editExpenseId, expense: request, preserveSplitType },
         { onSuccess, onError },
       );
     } else {
@@ -474,7 +481,7 @@ export function useNewExpense(
   };
 
   return {
-    splitNotice: splitType === "exact" ? initial.splitNotice : undefined,
+    splitNotice: preserveSplitType ? initial.splitNotice : undefined,
     currency,
     me: expenseAPI.me,
     groups: expenseAPI.groups,

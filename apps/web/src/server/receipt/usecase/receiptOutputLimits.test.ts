@@ -99,3 +99,30 @@ describe("receipt provider output limits", () => {
     expect(rejected).toEqual([]);
   });
 });
+
+it.each([
+  ["USD", "12.99", 1299], ["INR", "120.50", 12050],
+  ["JPY", "1200", 1200], ["KWD", "1.234", 1234],
+])("normalizes printed %s amounts to that currency's minor units", (currency, printed, expected) => {
+  const receipt = normalizeProviderOutput({ currency, items: [{ name: "Meal", quantity: 2, unit_price: printed, total: printed }],
+    subtotal: printed, tax: printed, tip: printed, total: printed });
+  expect(receipt.items[0].unitPriceCents).toBe(expected);
+  expect(receipt.items[0].totalCents).toBe(expected);
+  expect([receipt.subtotalCents, receipt.taxCents, receipt.tipCents, receipt.totalCents]).toEqual(Array(4).fill(expected));
+});
+
+it.each(["", "$", "¥", "ZZZ"])("uses the form currency for ambiguous provider currency %s", (currency) => {
+  expect(normalizeProviderOutput({ currency, items: [{ name: "Meal", total: "1200" }] }, "JPY"))
+    .toMatchObject({ currency: "JPY", totalCents: 1200 });
+  expect(normalizeProviderOutput({ currency, total: "1.234" }, "KWD")).toMatchObject({ currency: "KWD", totalCents: 1234 });
+});
+
+it("keeps a confidently different receipt currency and bounds decimal-string amounts", () => {
+  expect(normalizeProviderOutput({ currency: "USD", total: "12.99" }, "INR"))
+    .toMatchObject({ currency: "USD", totalCents: 1299 });
+  expect(normalizeProviderOutput({ total: "999999999999999999999.00" }).totalCents).toBe(MAX_PARSED_MONEY_CENTS);
+  expect(normalizeProviderOutput({ total: "1e9" }).totalCents).toBe(0);
+  expect(normalizeProviderOutput({ total: "-123" }).totalCents).toBe(0);
+  expect(normalizeProviderOutput({ currency: "JPY", total_cents: 120000 }).totalCents).toBe(1200);
+  expect(normalizeProviderOutput({ currency: "KWD", total_cents: 123 }).totalCents).toBe(1230);
+});

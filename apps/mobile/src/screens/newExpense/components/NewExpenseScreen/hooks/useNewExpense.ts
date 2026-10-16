@@ -1,5 +1,6 @@
 /** Composite expense-form hook: field state, receipt scanning, payer/split validation, submit. */
 
+import { canPreserveSplitType } from "@haalkhata/shared/expense/form/preserveSplit";
 import { receiptCurrencyError } from "@haalkhata/shared/expense/form/receiptCurrency";
 import { expenseFormCurrency } from "@haalkhata/shared/expense/form/formCurrency";
 import { useReceiptScanConsent } from "@/lib/receipt/hooks/useReceiptScanConsent";
@@ -54,6 +55,7 @@ export function useNewExpense(
   editExpenseId: string,
 ) {
   const router = useRouter();
+  const [savedSplit] = useState(expenseAPI.editing?.expense);
 
   const [groupId, setGroupId] = useState(initial.groupId);
   const [personIds, setPersonIds] = useState<string[] | null>(() =>
@@ -205,7 +207,7 @@ export function useNewExpense(
   const parsePhoto = (consentVersion: string) => {
     if (!photo) return;
     setError("");
-    expenseAPI.parse.mutate({ ...photo, consentVersion }, {
+    expenseAPI.parse.mutate({ ...photo, consentVersion, currency }, {
       onSuccess: (result) => {
         const receipt = result.receipt;
         if (!receipt) return;
@@ -290,6 +292,11 @@ export function useNewExpense(
     splitCheck.ok &&
     payerCheck.ok;
 
+  const preserveSplitType = canPreserveSplitType(savedSplit, {
+    groupId, currency, splitType, amountCents: totalCents ?? 0,
+    splits: participantIds.map((userId) => ({ userId, owedCents: parseMoneyInput(splitInputs[userId] ?? "", currency) ?? -1 })),
+  });
+
   /** Builds the request from the current fields and fires create or update. */
   const submit = () => {
     if (!canSubmit || totalCents === null) return;
@@ -330,7 +337,7 @@ export function useNewExpense(
     const onError = (mutationError: unknown) => setError(errorMessage(mutationError));
     if (editExpenseId) {
       expenseAPI.update.mutate(
-        { expenseId: editExpenseId, expense: request },
+        { expenseId: editExpenseId, expense: request, preserveSplitType },
         { onSuccess, onError },
       );
     } else {
@@ -339,7 +346,7 @@ export function useNewExpense(
   };
 
   return {
-    splitNotice: splitType === "exact" ? initial.splitNotice : undefined,
+    splitNotice: preserveSplitType ? initial.splitNotice : undefined,
     currency,
     me: expenseAPI.me,
     groups: expenseAPI.groups,

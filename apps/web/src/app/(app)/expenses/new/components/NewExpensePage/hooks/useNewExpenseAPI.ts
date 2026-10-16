@@ -61,7 +61,7 @@ export function useNewExpenseAPI(editExpenseId: string) {
     onSuccess: invalidateMoney,
   });
   const update = useMutation({
-    mutationFn: (input: { expenseId: string; expense: CreateExpenseInput }) =>
+    mutationFn: (input: { expenseId: string; expense: CreateExpenseInput; preserveSplitType?: boolean }) =>
       expenseClient.updateExpense(input),
     onSuccess: invalidateMoney,
   });
@@ -72,9 +72,9 @@ export function useNewExpenseAPI(editExpenseId: string) {
    * filling in this form, not a different kind of expense.
    */
   const parse = useMutation({
-    mutationFn: async (input: { file: File; consentVersion: string }) => {
+    mutationFn: async (input: { file: File; consentVersion: string; currency: string }) => {
       const bytes = new Uint8Array(await input.file.arrayBuffer());
-      return receiptClient.parseReceipt({ image: bytes, mediaType: input.file.type, consentVersion: input.consentVersion }, { timeoutMs: RECEIPT_TIMEOUT_MS });
+      return receiptClient.parseReceipt({ image: bytes, mediaType: input.file.type, consentVersion: input.consentVersion, currency: input.currency }, { timeoutMs: RECEIPT_TIMEOUT_MS });
     },
   });
 

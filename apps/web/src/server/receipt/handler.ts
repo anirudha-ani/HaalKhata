@@ -44,7 +44,7 @@ export const receiptHandler: ServiceImpl<typeof ReceiptService> = {
     }
     activeReceiptParses += 1;
     try {
-      return await runUsecase(() => parseReceiptWithConsent(userId, request.image, request.consentVersion), handlerContext);
+      return await runUsecase(() => parseReceiptWithConsent(userId, request.image, request.consentVersion, request.currency), handlerContext);
     } finally {
       activeReceiptParses -= 1;
     }
