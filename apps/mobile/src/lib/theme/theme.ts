@@ -34,6 +34,7 @@ export const colors = {
   white: "#ffffff",
   providerInk: "#1f1f1f",
   providerLine: "#747775",
+  providerAppleBackground: "#000000",
 } as const;
 
 /** Spacing scale in density-independent pixels. */

@@ -22,7 +22,7 @@ vi.mock("react-native", () => ({
 }));
 vi.mock("expo-apple-authentication", () => ({
   isAvailableAsync: async () => device.supported,
-  AppleAuthenticationButtonType: { CONTINUE: "continue" }, AppleAuthenticationButtonStyle: { WHITE_OUTLINE: "white-outline" },
+  AppleAuthenticationButtonType: { CONTINUE: "continue" }, AppleAuthenticationButtonStyle: { BLACK: "black" },
   AppleAuthenticationButton: () => createElement("button", null, "Continue with Apple"),
 }));
 vi.mock("./ProviderButton/ProviderButton", () => ({ ProviderButton: ({ provider }: { provider: string }) => createElement("button", null, `Continue with ${provider}`) }));

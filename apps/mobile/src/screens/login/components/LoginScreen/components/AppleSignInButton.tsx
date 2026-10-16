@@ -25,7 +25,7 @@ export function AppleSignInButton() {
     {Platform.OS === "ios" ? <View pointerEvents={apple.isPending ? "none" : "auto"}>
       <AppleAuthentication.AppleAuthenticationButton
         buttonType={AppleAuthentication.AppleAuthenticationButtonType.CONTINUE}
-        buttonStyle={AppleAuthentication.AppleAuthenticationButtonStyle.WHITE_OUTLINE}
+        buttonStyle={AppleAuthentication.AppleAuthenticationButtonStyle.BLACK}
         cornerRadius={radii.full} style={[styles.button, { height: PROVIDER_BUTTON_HEIGHT * Math.max(1, fontScale) }]} onPress={apple.signIn} />
     </View> : <ProviderButton provider="Apple" onPress={apple.signIn} busy={apple.isPending} />}
     {Platform.OS === "ios" && apple.isPending ? <ActivityIndicator accessibilityLabel="Signing in with Apple" color={colors.brand600} /> : null}
