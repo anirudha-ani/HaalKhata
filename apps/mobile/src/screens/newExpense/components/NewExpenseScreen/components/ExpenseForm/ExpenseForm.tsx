@@ -83,7 +83,7 @@ export function ExpenseForm({
 
   return (
     <View style={[styles.form, isExpanded ? styles.formExpanded : null]}>
-      <View style={styles.formColumn}>
+      <View style={[styles.formColumn, isExpanded ? styles.formColumnExpanded : null]}>
         {/* Editing cannot re-scan: re-parsing a photo over a saved expense
             would silently replace its lines. */}
         {form.isEdit ? null : <ReceiptPanel form={form} />}
@@ -144,7 +144,7 @@ export function ExpenseForm({
         </View>
       </View>
 
-      <View style={styles.formColumn}>
+      <View style={[styles.formColumn, isExpanded ? styles.formColumnExpanded : null]}>
         <PayerEditor form={form} />
         <SplitEditor currency={currency} form={form} />
         {isExpanded ? null : <SplitSummary layout="strip" {...summaryProps} />}
@@ -189,11 +189,18 @@ const styles = StyleSheet.create({
   },
   form: {
     gap: spacing.xl,
+    width: "100%",
   },
   formColumn: {
-    flex: 1,
     gap: spacing.xl,
     minWidth: 0,
+  },
+  formColumnExpanded: {
+    // Constrain intrinsic receipt/chip widths before Yoga measures either column.
+    flexBasis: 0,
+    flexGrow: 1,
+    flexShrink: 1,
+    width: 0,
   },
   formExpanded: {
     alignItems: "flex-start",

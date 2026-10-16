@@ -117,5 +117,10 @@ that review; it does not replace it.
 
 ## Latest workflow audit
 
+The resumed native pass fixed expense-column overflow on iPad landscape and
+added accessible payer labels. Actual iPhone/iPad login, ledger, editing,
+settlement, reporting and selected large-text flows were checked with disposable
+local accounts; this does not complete physical-device integration coverage.
+
 See [the October 15 workflow audit](audits/mobile-flows-2026-10-15.md) for the
 local API/security checks, fixes and explicit remaining native-device coverage.

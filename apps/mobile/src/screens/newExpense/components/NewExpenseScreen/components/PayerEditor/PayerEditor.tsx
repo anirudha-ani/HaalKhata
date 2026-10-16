@@ -30,6 +30,7 @@ export function PayerEditor({
         <View style={styles.multiToggle}>
           <Text style={styles.multiToggleLabel}>multiple people paid</Text>
           <Switch
+            accessibilityLabel="Multiple people paid"
             onValueChange={form.setMultiPayer}
             thumbColor={colors.card}
             trackColor={{ false: colors.line, true: colors.brand500 }}
@@ -48,6 +49,7 @@ export function PayerEditor({
                   {person.id === form.me?.id ? "You" : person.name}
                 </Text>
                 <TextInput
+                  accessibilityLabel={`Amount paid by ${person.name}`}
                   keyboardType="decimal-pad"
                   onChangeText={(text) =>
                     form.setPayerAmounts({ ...form.payerAmounts, [person.id]: text })
@@ -60,6 +62,9 @@ export function PayerEditor({
               </>
             ) : (
               <Pressable
+                accessibilityLabel={`Paid by ${person.name}`}
+                accessibilityRole="radio"
+                accessibilityState={{ checked: form.singlePayerId === person.id }}
                 onPress={() => form.setSinglePayerId(person.id)}
                 style={styles.singleRow}
               >
