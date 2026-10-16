@@ -13,6 +13,10 @@ export const queryKeys = {
   blockedUsers: ["safety", "blocks"] as const,
   /** Receipt processor disclosure fetched before image sharing. */
   receiptProcessingInfo: ["receipt", "processing-info"] as const,
+  /** The signed-in user's phones that receive push notifications. */
+  pushDevices: ["push", "devices"] as const,
+  /** Which push categories the signed-in user wants. */
+  pushPreferences: ["push", "preferences"] as const,
   /** The signed-in user's profile. */
   me: ["me"] as const,
   /** The list of groups the user belongs to. */
