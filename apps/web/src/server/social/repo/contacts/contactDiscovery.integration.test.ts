@@ -1,7 +1,7 @@
 /**
- * Contact discovery against a real Postgres: who a lookup can match, the
- * daily quota under concurrent claims, the bulk friend-request insert and
- * the merge's handling of the new columns.
+ * Contact discovery against a real Postgres: who a lookup can match, who a
+ * bulk send can reach, the daily quota under concurrent claims, the bulk
+ * friend-request insert and the merge's handling of the new columns.
  *
  * Skips itself when no database is reachable, so it is safe in the suite.
  */
@@ -183,6 +183,25 @@ describe.skipIf(!reachable)("contact discovery against Postgres", () => {
       repo.findDiscoverableAccounts("caller", [], [], client),
     );
     expect(matches).toEqual([]);
+  });
+
+  it("lets a bulk send reach only findable accounts with no friendship, request or block", async () => {
+    const requestable = await repo.findRequestableAccounts("caller", [
+      "caller",
+      "open",
+      "open-email",
+      "friend",
+      "requested",
+      "asker",
+      "blocker",
+      "blocked",
+      "declined",
+      "never",
+      "suspended",
+      "merged",
+    ]);
+    expect(requestable.map((account) => account.id).sort()).toEqual(["open", "open-email"]);
+    expect(await repo.findRequestableAccounts("caller", [])).toEqual([]);
   });
 
   it("never lets concurrent claims pass the daily limit together", async () => {

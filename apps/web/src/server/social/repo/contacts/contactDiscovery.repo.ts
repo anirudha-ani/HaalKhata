@@ -134,3 +134,44 @@ export async function readLookupUsage(userId: string, client?: PoolClient): Prom
   );
   return usage?.identifiers_checked ?? 0;
 }
+
+/**
+ * Of the given ids, the accounts a contacts-screen request may go to: live,
+ * findable from contacts, not the requester, not in a block with the
+ * requester either way, not already friends, and with no request pending in
+ * either direction. Restricting the bulk path to findable accounts keeps it
+ * from becoming a faster AddFriend for ids learned elsewhere.
+ *
+ * @param requesterId - Account sending the requests.
+ * @param recipientIds - Candidate recipients, deduplicated.
+ * @returns The rows that may receive a new request.
+ */
+export async function findRequestableAccounts(
+  requesterId: string,
+  recipientIds: string[],
+): Promise<UserRow[]> {
+  if (recipientIds.length === 0) return [];
+  return query<UserRow>(
+    `SELECT usr.* FROM users usr
+      WHERE usr.id = ANY($2::text[])
+        AND usr.id <> $1
+        AND usr.contact_discovery IS TRUE
+        AND usr.merged_into IS NULL
+        AND usr.deleted_at IS NULL
+        AND usr.suspended_at IS NULL
+        AND NOT EXISTS (
+              SELECT 1 FROM user_blocks
+               WHERE (blocker_id = $1 AND blocked_id = usr.id)
+                  OR (blocker_id = usr.id AND blocked_id = $1)
+            )
+        AND NOT EXISTS (
+              SELECT 1 FROM friendships WHERE user_id = $1 AND friend_id = usr.id
+            )
+        AND NOT EXISTS (
+              SELECT 1 FROM friend_requests
+               WHERE (requester_id = $1 AND recipient_id = usr.id)
+                  OR (requester_id = usr.id AND recipient_id = $1)
+            )`,
+    [requesterId, recipientIds],
+  );
+}

@@ -1,6 +1,7 @@
 /** Privacy regressions for self-profile and public user projections. */
 
 import { describe, expect, it } from "vitest";
+import { ContactDiscovery } from "@haalkhata/protogen/common/v1/common_pb";
 import type { UserRow } from "@/server/auth/repo/users.repo";
 import { toFriendRequestUser, toPrivateUser, toPublicUser } from "./user.mapper";
 
@@ -18,6 +19,7 @@ const USER_ROW: UserRow = {
   onboarded_at: "2026-08-28T00:00:00Z",
   phone_verified_at: "2026-09-01T00:00:00Z",
   merged_into: null,
+  contact_discovery: true,
   token_version: 3,
   created_at: "2026-08-01T00:00:00Z",
 };
@@ -35,6 +37,7 @@ describe("user response projections", () => {
     expect(publicUser.phone).toBe("");
     expect(publicUser.onboarded).toBe(false);
     expect("phoneVerified" in publicUser).toBe(false);
+    expect("contactDiscovery" in publicUser).toBe(false);
     // How someone is paid no longer rides on a user: it reaches a person who
     // owes them through the friend ledger. The field stays declared, empty.
     expect(publicUser.paymentHandles).toEqual([]);
@@ -48,6 +51,16 @@ describe("user response projections", () => {
     expect(privateUser.phone).toBe(USER_ROW.phone);
     expect(privateUser.phoneVerified).toBe(true);
     expect(privateUser.onboarded).toBe(true);
+    expect(privateUser.contactDiscovery).toBe(ContactDiscovery.ON);
+  });
+
+  it("reports a never-answered discovery question as UNSPECIFIED, not as a refusal", () => {
+    expect(toPrivateUser({ ...USER_ROW, contact_discovery: null }).contactDiscovery).toBe(
+      ContactDiscovery.UNSPECIFIED,
+    );
+    expect(toPrivateUser({ ...USER_ROW, contact_discovery: false }).contactDiscovery).toBe(
+      ContactDiscovery.OFF,
+    );
   });
 
   it("shows only identity fields on an incoming friend request", () => {
