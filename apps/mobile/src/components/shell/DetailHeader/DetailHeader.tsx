@@ -1,4 +1,4 @@
-/** Header for pushed detail screens: back button, title, optional right action. */
+/** Header for pushed detail screens: back button, optional title, optional right action. */
 
 import { useRouter } from "expo-router";
 import { ChevronLeft } from "lucide-react-native";
@@ -11,13 +11,17 @@ import { colors, fonts, radii, spacing } from "@/lib/theme/theme";
 /**
  * Renders the chrome above pushed (non-tab) screens: a back chevron, the
  * screen title in the display serif, and an optional right-side action.
+ *
+ * Leave the title out when the screen opens on its own heading — a group's
+ * or a person's name with their picture. Said in both places, the bar
+ * repeats the heading right under it, cut short.
  */
 export function DetailHeader({
   title,
   right,
 }: {
-  /** Screen title; truncated to one line. */
-  title: string;
+  /** Screen title; truncated to one line. Omit when the screen's content names itself. */
+  title?: string;
   /** Optional element rendered at the trailing edge (e.g. an action button). */
   right?: ReactNode;
 }) {
@@ -33,9 +37,11 @@ export function DetailHeader({
         >
           <ChevronLeft color={colors.ink} size={24} />
         </Pressable>
-        <Text numberOfLines={1} style={styles.title}>
-          {title}
-        </Text>
+        {title ? (
+          <Text accessibilityRole="header" numberOfLines={1} style={styles.title}>
+            {title}
+          </Text>
+        ) : null}
         {right ? <View style={styles.right}>{right}</View> : null}
       </View>
     </View>

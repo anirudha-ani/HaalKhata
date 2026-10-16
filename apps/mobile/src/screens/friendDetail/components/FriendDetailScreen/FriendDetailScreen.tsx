@@ -111,7 +111,9 @@ export function FriendDetailScreen({
 
   return (
     <Screen
-      header={<DetailHeader title={friend.name} />}
+      // Their name heads the card below, beside their picture; the bar
+      // would only repeat it, cut short.
+      header={<DetailHeader />}
       onRefresh={view.refresh}
       refreshing={view.isRefreshing}
     >
@@ -120,7 +122,7 @@ export function FriendDetailScreen({
         <View style={styles.identityRow}>
           <Avatar size="lg" user={friend} />
           <View style={styles.identityText}>
-            <Text numberOfLines={1} style={styles.name}>
+            <Text accessibilityRole="header" numberOfLines={1} style={styles.name}>
               {friend.name}
             </Text>
             {/* Their email and phone are private — the server sends them

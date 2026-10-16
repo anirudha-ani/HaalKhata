@@ -58,7 +58,7 @@ export function GroupDetailPage({
 
   return (
     <div className="space-y-6">
-      <header className="flex items-start gap-3">
+      <header className="flex flex-wrap items-start gap-3">
         <div className="flex min-w-0 flex-1 items-center gap-4">
           <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-brand-50 text-3xl">
             {groupEmoji(groupDetail.group.type)}
@@ -70,24 +70,24 @@ export function GroupDetailPage({
             </p>
           </div>
         </div>
-        {/* The page's actions keep to the top right corner, as they do in the
-            app: adding an expense — only its "+" on a phone, where the name
-            needs the width — and the menu. Archiving and reporting are rare
-            and deliberate, so they wait behind it rather than sitting as
-            buttons between the name and the ledger. Pinned to the top, and
-            set down to the middle of the emoji tile, so a name that wraps
-            onto more lines leaves them in the corner. */}
-        <div className="flex shrink-0 items-center gap-2 pt-2">
-          {groupDetail.group.status === GroupStatus.ACTIVE ? (
-            <Link
-              href={`/expenses/new?group=${groupId}`}
-              aria-label="Add expense"
-              className="flex h-10 min-w-10 items-center justify-center gap-2 rounded-xl bg-brand-600 px-2.5 text-sm font-semibold text-white hover:bg-brand-700 sm:px-3.5"
-            >
-              <Plus className="h-5 w-5 sm:h-4 sm:w-4" aria-hidden="true" />
-              <span className="hidden sm:inline">Add expense</span>
-            </Link>
-          ) : null}
+        {/* "Add expense" is said in words at every width. On a phone it takes
+            the row under the name, full width, where the name keeps the
+            room it needs; from `sm:` up it sits beside the menu. The menu
+            keeps to the top right corner, as it does in the app: archiving
+            and reporting are rare and deliberate, so they wait behind it
+            rather than sitting as buttons between the name and the ledger.
+            Both are pinned to the top and set down to the middle of the
+            emoji tile, so a name that wraps leaves them in the corner. */}
+        {groupDetail.group.status === GroupStatus.ACTIVE ? (
+          <Link
+            href={`/expenses/new?group=${groupId}`}
+            className="order-last flex h-11 basis-full items-center justify-center gap-2 rounded-xl bg-brand-600 px-3.5 text-sm font-semibold text-white hover:bg-brand-700 sm:order-none sm:mt-2 sm:h-10 sm:basis-auto"
+          >
+            <Plus className="h-4 w-4" aria-hidden="true" />
+            Add expense
+          </Link>
+        ) : null}
+        <div className="shrink-0 pt-2">
           <OverflowMenu
             label={GROUP_MENU_COPY.trigger}
             items={[

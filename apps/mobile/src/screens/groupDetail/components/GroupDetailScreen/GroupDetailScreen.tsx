@@ -54,8 +54,9 @@ import { ExpenseList } from "@/components/expenses/ExpenseList";
 import { useGroupDetail } from "./hooks/useGroupDetail";
 
 /**
- * Renders a single group's screen: header with the add-expense action and
- * the options menu (archive, report), the member avatar strip (tap for the
+ * Renders a single group's screen: the options menu (archive, report) in the
+ * header, the group's name with the add-expense button under it, the member
+ * avatar strip (tap for the
  * full member list, where every row opens that person's ledger or offers a
  * friend request, you can leave the group, and the owner can hand it on or
  * remove somebody) with the add-people and invite-link buttons, the
@@ -108,62 +109,63 @@ export function GroupDetailScreen({
   return (
     <Screen
       header={
+        // No title: the group's name heads the screen right under the bar,
+        // and said twice it was only cut short the first time. Archiving
+        // and reporting are rare and deliberate, so they wait behind the
+        // menu rather than sitting as buttons between the name and the
+        // ledger.
         <DetailHeader
           right={
-            // Archiving and reporting are rare and deliberate, so they wait
-            // behind the menu rather than sitting as buttons between the
-            // name and the ledger.
-            <View style={styles.headerActions}>
-              {groupDetail.group.status === GroupStatus.ACTIVE ? (
-                <Pressable
-                  accessibilityLabel="Add expense"
-                  accessibilityRole="button"
-                  hitSlop={8}
-                  onPress={() => router.push(`/expenses/new?group=${groupId}`)}
-                  style={[styles.headerIconButton, styles.headerIconButtonPrimary]}
-                >
-                  <Plus color={colors.white} size={20} />
-                </Pressable>
-              ) : null}
-              <OverflowMenu
-                items={[
-                  {
-                    label: archived ? GROUP_ARCHIVE_ACTIONS.unarchive : GROUP_ARCHIVE_ACTIONS.archive,
-                    icon: archived ? (
-                      <ArchiveRestore color={colors.inkSoft} size={18} />
-                    ) : (
-                      <Archive color={colors.inkSoft} size={18} />
-                    ),
-                    onSelect: groupDetail.openArchiveDialog,
-                    disabled: groupDetail.archivePending,
-                  },
-                  {
-                    label: GROUP_MENU_COPY.report,
-                    icon: <Flag color={colors.inkSoft} size={18} />,
-                    onSelect: () => groupDetail.setReportingGroup(true),
-                  },
-                ]}
-                label={GROUP_MENU_COPY.trigger}
-              />
-            </View>
+            <OverflowMenu
+              items={[
+                {
+                  label: archived ? GROUP_ARCHIVE_ACTIONS.unarchive : GROUP_ARCHIVE_ACTIONS.archive,
+                  icon: archived ? (
+                    <ArchiveRestore color={colors.inkSoft} size={18} />
+                  ) : (
+                    <Archive color={colors.inkSoft} size={18} />
+                  ),
+                  onSelect: groupDetail.openArchiveDialog,
+                  disabled: groupDetail.archivePending,
+                },
+                {
+                  label: GROUP_MENU_COPY.report,
+                  icon: <Flag color={colors.inkSoft} size={18} />,
+                  onSelect: () => groupDetail.setReportingGroup(true),
+                },
+              ]}
+              label={GROUP_MENU_COPY.trigger}
+            />
           }
-          title={groupDetail.group.name}
         />
       }
       onRefresh={groupDetail.refresh}
       refreshing={groupDetail.isRefreshing}
     >
       <View style={[styles.overview, isExpanded ? styles.overviewExpanded : null]}>
-        <View style={[styles.groupHeader, isExpanded ? styles.groupHeaderExpanded : null]}>
-          <View style={styles.groupEmojiTile}>
-            <Text style={styles.groupEmoji}>{groupEmoji(groupDetail.group.type)}</Text>
+        <View style={[styles.groupIntro, isExpanded ? styles.groupIntroExpanded : null]}>
+          <View style={styles.groupHeader}>
+            <View style={styles.groupEmojiTile}>
+              <Text style={styles.groupEmoji}>{groupEmoji(groupDetail.group.type)}</Text>
+            </View>
+            <View style={styles.groupTitle}>
+              <Text accessibilityRole="header" style={styles.groupName}>
+                {groupDetail.group.name}
+              </Text>
+              <Text style={styles.groupMeta}>
+                {groupTypeLabel(groupDetail.group.type)} · {groupDetail.group.currency}
+              </Text>
+            </View>
           </View>
-          <View style={styles.groupTitle}>
-            <Text style={styles.groupName}>{groupDetail.group.name}</Text>
-            <Text style={styles.groupMeta}>
-              {groupTypeLabel(groupDetail.group.type)} · {groupDetail.group.currency}
-            </Text>
-          </View>
+          {/* Said in words, as in the browser: the screen's main action is
+              not left to a bare "+" in the corner. */}
+          {groupDetail.group.status === GroupStatus.ACTIVE ? (
+            <Button
+              icon={<Plus color={colors.white} size={18} />}
+              label="Add expense"
+              onPress={() => router.push(`/expenses/new?group=${groupId}`)}
+            />
+          ) : null}
         </View>
 
         {/* Members strip. The avatars-and-names run opens the full member
@@ -715,7 +717,10 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: spacing.lg,
   },
-  groupHeaderExpanded: {
+  groupIntro: {
+    gap: spacing.lg,
+  },
+  groupIntroExpanded: {
     flex: 2,
     minWidth: 0,
   },
@@ -732,25 +737,6 @@ const styles = StyleSheet.create({
   groupTitle: {
     flex: 1,
     minWidth: 0,
-  },
-  headerActions: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: spacing.sm,
-  },
-  headerIconButton: {
-    alignItems: "center",
-    backgroundColor: colors.card,
-    borderColor: colors.line,
-    borderRadius: radii.md,
-    borderWidth: 1,
-    height: 36,
-    justifyContent: "center",
-    width: 36,
-  },
-  headerIconButtonPrimary: {
-    backgroundColor: colors.brand600,
-    borderColor: colors.brand600,
   },
   inviteOffer: {
     gap: spacing.sm,
