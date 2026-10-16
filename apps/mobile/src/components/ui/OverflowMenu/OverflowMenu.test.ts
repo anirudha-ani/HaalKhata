@@ -10,10 +10,10 @@ const native = vi.hoisted(() => ({
   os: "ios",
   dismiss: undefined as (() => void) | undefined,
   // Where the button sits on screen: x, y, width, height.
-  button: [330, 60, 36, 36] as const,
+  button: [334, 60, 44, 44] as const,
   windowWidth: 390,
 }));
-vi.mock("lucide-react-native", () => ({ Ellipsis: () => null }));
+vi.mock("lucide-react-native", () => ({ EllipsisVertical: () => null }));
 vi.mock("@/components/ui/Text", () => ({
   Text: ({ children }: { children: ReactNode }) => createElement("span", null, children),
 }));
@@ -113,8 +113,8 @@ describe("overflow menu", () => {
     expect(container.querySelector('[role="menu"]')).toBeNull();
     open();
     const card = container.querySelector('[role="menu"]')!.parentElement!;
-    expect(Number(card.getAttribute("data-top"))).toBeGreaterThan(60 + 36);
-    expect(Number(card.getAttribute("data-right"))).toBe(390 - 330 - 36);
+    expect(Number(card.getAttribute("data-top"))).toBeGreaterThan(60 + 44);
+    expect(Number(card.getAttribute("data-right"))).toBe(390 - 334 - 44);
   });
 
   it("on iOS, waits for the menu to finish leaving before running the action", () => {

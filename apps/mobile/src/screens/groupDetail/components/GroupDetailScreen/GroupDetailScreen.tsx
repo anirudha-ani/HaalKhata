@@ -54,9 +54,9 @@ import { ExpenseList } from "@/components/expenses/ExpenseList";
 import { useGroupDetail } from "./hooks/useGroupDetail";
 
 /**
- * Renders a single group's screen: the options menu (archive, report) in the
- * header, the group's name with the add-expense button under it, the member
- * avatar strip (tap for the
+ * Renders a single group's screen: the header naming the group (emoji, name,
+ * type and currency) with the options menu (archive, report), the
+ * add-expense button, the member avatar strip (tap for the
  * full member list, where every row opens that person's ledger or offers a
  * friend request, you can leave the group, and the owner can hand it on or
  * remove somebody) with the add-people and invite-link buttons, the
@@ -109,12 +109,18 @@ export function GroupDetailScreen({
   return (
     <Screen
       header={
-        // No title: the group's name heads the screen right under the bar,
-        // and said twice it was only cut short the first time. Archiving
-        // and reporting are rare and deliberate, so they wait behind the
-        // menu rather than sitting as buttons between the name and the
-        // ledger.
+        // The bar names the group — emoji, name, type and currency — and
+        // the screen does not say it again under it. Archiving and reporting
+        // are rare and deliberate, so they wait behind the menu rather than
+        // sitting as buttons between the name and the ledger.
         <DetailHeader
+          leading={
+            <View style={styles.groupEmojiTile}>
+              <Text style={styles.groupEmoji}>{groupEmoji(groupDetail.group.type)}</Text>
+            </View>
+          }
+          subtitle={`${groupTypeLabel(groupDetail.group.type)} · ${groupDetail.group.currency}`}
+          title={groupDetail.group.name}
           right={
             <OverflowMenu
               items={[
@@ -142,31 +148,19 @@ export function GroupDetailScreen({
       onRefresh={groupDetail.refresh}
       refreshing={groupDetail.isRefreshing}
     >
-      <View style={[styles.overview, isExpanded ? styles.overviewExpanded : null]}>
-        <View style={[styles.groupIntro, isExpanded ? styles.groupIntroExpanded : null]}>
-          <View style={styles.groupHeader}>
-            <View style={styles.groupEmojiTile}>
-              <Text style={styles.groupEmoji}>{groupEmoji(groupDetail.group.type)}</Text>
-            </View>
-            <View style={styles.groupTitle}>
-              <Text accessibilityRole="header" style={styles.groupName}>
-                {groupDetail.group.name}
-              </Text>
-              <Text style={styles.groupMeta}>
-                {groupTypeLabel(groupDetail.group.type)} · {groupDetail.group.currency}
-              </Text>
-            </View>
-          </View>
-          {/* Said in words, as in the browser: the screen's main action is
-              not left to a bare "+" in the corner. */}
-          {groupDetail.group.status === GroupStatus.ACTIVE ? (
+      <View style={styles.overview}>
+        {/* Said in words, as in the browser: the screen's main action is
+            not left to a bare "+" in the corner. Full width on a phone; on a
+            wide screen it keeps to the width of its label. */}
+        {groupDetail.group.status === GroupStatus.ACTIVE ? (
+          <View style={isExpanded ? styles.addExpenseExpanded : null}>
             <Button
               icon={<Plus color={colors.white} size={18} />}
               label="Add expense"
               onPress={() => router.push(`/expenses/new?group=${groupId}`)}
             />
-          ) : null}
-        </View>
+          </View>
+        ) : null}
 
         {/* Members strip. The avatars-and-names run opens the full member
             list — a truncated line of first names is a summary, not a way to
@@ -669,6 +663,9 @@ export function GroupDetailScreen({
 }
 
 const styles = StyleSheet.create({
+  addExpenseExpanded: {
+    alignSelf: "flex-start",
+  },
   addError: {
     color: colors.brand600,
     fontSize: 14,
@@ -702,41 +699,15 @@ const styles = StyleSheet.create({
     marginBottom: -spacing.sm,
   },
   groupEmoji: {
-    fontSize: 28,
+    fontSize: 20,
   },
   groupEmojiTile: {
     alignItems: "center",
     backgroundColor: colors.brand50,
-    borderRadius: radii.lg,
-    height: 56,
+    borderRadius: radii.sm + 2,
+    height: 36,
     justifyContent: "center",
-    width: 56,
-  },
-  groupHeader: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: spacing.lg,
-  },
-  groupIntro: {
-    gap: spacing.lg,
-  },
-  groupIntroExpanded: {
-    flex: 2,
-    minWidth: 0,
-  },
-  groupMeta: {
-    color: colors.inkSoft,
-    fontSize: 13,
-    marginTop: 2,
-  },
-  groupName: {
-    color: colors.ink,
-    fontSize: 22,
-    fontWeight: "700",
-  },
-  groupTitle: {
-    flex: 1,
-    minWidth: 0,
+    width: 36,
   },
   inviteOffer: {
     gap: spacing.sm,
@@ -860,9 +831,7 @@ const styles = StyleSheet.create({
   },
   membersCardExpanded: {
     alignItems: "center",
-    flex: 3,
     flexDirection: "row",
-    minWidth: 0,
   },
   membersSummary: {
     alignItems: "center",
@@ -891,10 +860,5 @@ const styles = StyleSheet.create({
   },
   overview: {
     gap: spacing.lg,
-  },
-  overviewExpanded: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: spacing.xxl,
   },
 });

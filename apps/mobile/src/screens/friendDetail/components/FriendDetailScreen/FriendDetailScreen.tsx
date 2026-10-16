@@ -19,7 +19,7 @@ import { netSettlementTag } from "@haalkhata/shared/expense/netSettlementLines";
 import { scopeLabel } from "@haalkhata/shared/expense/settlePosition";
 import { formatMoney } from "@haalkhata/shared/money/money";
 import { localDate } from "@haalkhata/shared/time/localTime";
-import { colors, fonts, radii, spacing } from "@/lib/theme/theme";
+import { colors, radii, spacing } from "@/lib/theme/theme";
 import { groupEmoji } from "@haalkhata/shared/group/groupTypes";
 import { useFriendLedger } from "./hooks/useFriendLedger";
 
@@ -111,29 +111,22 @@ export function FriendDetailScreen({
 
   return (
     <Screen
-      // Their name heads the card below, beside their picture; the bar
-      // would only repeat it, cut short.
-      header={<DetailHeader />}
+      // The bar names them, with their picture, and the card below does not
+      // say it again. Their email and phone are private — the server sends
+      // them empty for anyone but yourself — so the only line worth adding
+      // is whether they have signed in yet.
+      header={
+        <DetailHeader
+          leading={<Avatar user={friend} />}
+          subtitle={friend.registered ? undefined : "Invited — hasn’t signed in yet"}
+          title={friend.name}
+        />
+      }
       onRefresh={view.refresh}
       refreshing={view.isRefreshing}
     >
       {!friend.deleted ? <SafetyActions targetKind="user" targetId={friend.id} userId={friend.id} /> : null}
       <View style={styles.headerCard}>
-        <View style={styles.identityRow}>
-          <Avatar size="lg" user={friend} />
-          <View style={styles.identityText}>
-            <Text accessibilityRole="header" numberOfLines={1} style={styles.name}>
-              {friend.name}
-            </Text>
-            {/* Their email and phone are private — the server sends them
-                empty for anyone but yourself — so the only thing worth a line
-                here is whether they have signed in yet. */}
-            {!friend.registered ? (
-              <Text style={styles.invited}>Invited — hasn&apos;t signed in yet</Text>
-            ) : null}
-          </View>
-        </View>
-
         {/* Where you know each other from — every shared group, settled ones
             included, each a link. And when this screen is showing a pair
             rather than a friendship (any name anywhere opens it), the way to
@@ -710,23 +703,9 @@ const styles = StyleSheet.create({
     gap: spacing.md,
     padding: spacing.lg,
   },
-  identityRow: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: spacing.md,
-  },
-  identityText: {
-    flex: 1,
-    minWidth: 0,
-  },
   historySectionExpanded: {
     flex: 3,
     minWidth: 0,
-  },
-  invited: {
-    color: colors.inkSoft,
-    fontSize: 13,
-    marginTop: 2,
   },
   listCard: {
     backgroundColor: colors.card,
@@ -742,12 +721,6 @@ const styles = StyleSheet.create({
     alignItems: "flex-start",
     flexDirection: "row",
     gap: spacing.xxl,
-  },
-  name: {
-    color: colors.ink,
-    fontFamily: fonts.display,
-    fontSize: 22,
-    fontWeight: "700",
   },
   removalError: {
     color: colors.neg600,

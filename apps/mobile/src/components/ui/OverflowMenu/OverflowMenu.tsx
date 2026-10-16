@@ -1,6 +1,6 @@
 /** Overflow menu: a "more" button for a screen header that drops a short list of screen-level actions. */
 
-import { Ellipsis } from "lucide-react-native";
+import { EllipsisVertical } from "lucide-react-native";
 import { useRef, useState, type ReactNode } from "react";
 import { Modal, Platform, Pressable, StyleSheet, useWindowDimensions, View } from "react-native";
 import { SHEET_ORIENTATIONS } from "@/components/ui/Sheet/constants/sheet";
@@ -25,7 +25,8 @@ export interface OverflowMenuItem {
 }
 
 /**
- * Renders a 36-point "more" button that drops a menu of actions under it,
+ * Renders a "more" button — three vertical dots, bare like the back chevron
+ * it shares the header with — that drops a menu of actions under it,
  * aligned to its right edge, over a backdrop that closes it when tapped.
  *
  * Most actions open a sheet, and iOS cannot present one modal while another
@@ -90,7 +91,7 @@ export function OverflowMenu({
         onPress={open}
         style={({ pressed }) => [styles.trigger, pressed || anchor ? styles.triggerActive : null]}
       >
-        <Ellipsis color={anchor ? colors.brand600 : colors.ink} size={20} />
+        <EllipsisVertical color={anchor ? colors.brand600 : colors.ink} size={22} />
       </Pressable>
       <Modal
         animationType="fade"
@@ -184,15 +185,12 @@ const styles = StyleSheet.create({
   },
   trigger: {
     alignItems: "center",
-    backgroundColor: colors.card,
-    borderColor: colors.line,
-    borderRadius: radii.md,
-    borderWidth: 1,
-    height: 36,
+    borderRadius: radii.full,
+    height: 44,
     justifyContent: "center",
-    width: 36,
+    width: 44,
   },
   triggerActive: {
-    borderColor: colors.brand200,
+    backgroundColor: colors.paper,
   },
 });

@@ -1,7 +1,7 @@
 "use client";
-/** Overflow menu: a "more" button that drops a short list of page-level actions. */
+/** Overflow menu: a "more" button (three vertical dots) that drops a short list of page-level actions. */
 
-import { Ellipsis } from "lucide-react";
+import { EllipsisVertical } from "lucide-react";
 import {
   useCallback,
   useEffect,
@@ -125,7 +125,7 @@ export function OverflowMenu({
           isOpen ? "border-brand-200 text-brand-600" : "border-line text-ink-soft"
         }`}
       >
-        <Ellipsis className="h-5 w-5" aria-hidden="true" />
+        <EllipsisVertical className="h-5 w-5" aria-hidden="true" />
       </button>
       {isOpen ? (
         <div
