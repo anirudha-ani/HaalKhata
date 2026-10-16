@@ -7,6 +7,7 @@ import { useRouter } from "expo-router";
 import { authClient, expenseClient, errorMessage } from "@/lib/api/connect";
 import { clearSession } from "@/lib/api/session";
 import { clearMobileQueryCache } from "@/lib/api/queryCache";
+import { clearPushTraces } from "@/lib/push/pushStore";
 
 /**
  * Deletes the current account and clears private local state only after commit.
@@ -24,7 +25,7 @@ export function useDeleteAccountAPI(open: boolean) {
   });
   const deletion = useMutation({
     mutationFn: (confirmation: string) => authClient.deleteAccount({ confirmation }),
-    onSuccess: async () => { await clearSession(); await clearMobileQueryCache(); router.replace("/login"); },
+    onSuccess: async () => { await clearPushTraces(); await clearSession(); await clearMobileQueryCache(); router.replace("/login"); },
   });
   return { remove: deletion.mutate, isPending: deletion.isPending,
     error: deletion.error ? errorMessage(deletion.error) : "", reset: deletion.reset,

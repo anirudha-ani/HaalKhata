@@ -2,6 +2,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { Redirect, Stack } from "expo-router";
+import { PushHost } from "@/components/push/PushHost/PushHost";
 import { Spinner } from "@/components/ui/Spinner";
 import { authClient } from "@/lib/api/connect";
 import { queryKeys } from "@haalkhata/shared/api/queryKeys";
@@ -45,11 +46,14 @@ function OnboardingGate() {
   if (currentUser.isPending) return <Spinner />;
   if (currentUser.data && !currentUser.data.onboarded) return <Redirect href="/onboarding" />;
   return (
-    <Stack
-      screenOptions={{
-        contentStyle: { backgroundColor: colors.paper },
-        headerShown: false,
-      }}
-    />
+    <>
+      <Stack
+        screenOptions={{
+          contentStyle: { backgroundColor: colors.paper },
+          headerShown: false,
+        }}
+      />
+      <PushHost signedInUserId={currentUser.data?.id} />
+    </>
   );
 }

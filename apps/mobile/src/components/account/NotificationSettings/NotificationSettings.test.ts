@@ -23,6 +23,7 @@ vi.mock("@/lib/api/connect", () => ({
 vi.mock("react-native", () => ({
   useWindowDimensions: () => ({ width: 390, height: 844, fontScale: 1 }),
   Platform: { select: (options: { default: string }) => options.default },
+  Linking: { openSettings: vi.fn() },
   StyleSheet: { create: (styles: unknown) => styles },
   View: ({ children }: { children: ReactNode }) => createElement("div", null, children),
   Text: ({ children, accessibilityRole }: { children: ReactNode; accessibilityRole?: string }) =>
@@ -39,6 +40,12 @@ vi.mock("react-native", () => ({
       disabled,
       onChange: (event: { target: { checked: boolean } }) => onValueChange(event.target.checked),
     }),
+}));
+vi.mock("@/lib/push/pushStore", () => ({
+  usePushState: () => ({ permission: "granted", deviceId: "dev-1", registering: false, error: "", explainerOpen: false }),
+  refreshPushPermission: vi.fn(async () => "granted"),
+  offerPushExplainer: vi.fn(),
+  syncThisPhone: vi.fn(),
 }));
 vi.mock("@/components/ui/Button", () => ({
   Button: ({ label, onPress, busy, disabled }: { label: string; onPress: () => void; busy?: boolean; disabled?: boolean }) =>
@@ -90,7 +97,7 @@ beforeEach(async () => {
   root = createRoot(container);
   await act(async () => {
     root.render(
-      createElement(QueryClientProvider, { client: queryClient }, createElement(NotificationSettings, { currentDeviceId: "dev-1" })),
+      createElement(QueryClientProvider, { client: queryClient }, createElement(NotificationSettings)),
     );
   });
   await settle();
@@ -125,8 +132,9 @@ it("keeps a switch where it was and says why under it when the save fails", asyn
   expect(switchFor("Expenses").checked).toBe(true);
 });
 
-it("marks this phone and confirms a test push on its row", async () => {
-  expect(container.textContent).toContain("This phone");
+it("says this phone is on, marks it in the list and confirms a test push on its row", async () => {
+  expect(container.textContent).toContain("Notifications are on for this phone.");
+  expect(container.textContent).toContain("·  This phone");
   vi.mocked(pushClient.sendTestPush).mockResolvedValue({} as never);
   await act(async () => button("Send a test").click());
   await settle();

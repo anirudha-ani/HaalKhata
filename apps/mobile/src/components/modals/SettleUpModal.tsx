@@ -26,6 +26,7 @@ import { colors, radii, spacing } from "@/lib/theme/theme";
 import { usePayMethods } from "./hooks/usePayMethods";
 import { PayeeMethodDetails } from "./PayeeMethodDetails";
 import { PayMethodChips } from "./PayMethodChips";
+import { offerPushExplainer } from "@/lib/push/pushStore";
 
 /**
  * Renders the settle-up sheet: who is paying whom, exactly which balances
@@ -168,6 +169,7 @@ export function SettleUpModal({
       operationIdRef.current = newOperationId();
       for (const moneyKey of MONEY_KEYS) queryClient.invalidateQueries({ queryKey: moneyKey });
       onClose();
+      void offerPushExplainer();
     },
     onError: (mutationError) => {
       setError(errorMessage(mutationError));

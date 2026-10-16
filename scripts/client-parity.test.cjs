@@ -10,6 +10,13 @@ const ROOT = path.resolve(__dirname, "..");
 // Browser Apple proof goes to Apple's HTTPS callback, then CompleteAppleSignIn.
 // Native Apple proof comes from AuthenticationServices and uses this RPC instead.
 const NATIVE_AUTH_METHOD = "authClient.logInWithApple";
+// A browser has no Expo push token: only the native app registers a phone.
+// Every other push RPC (switches, the list of phones, test, remove) is in both
+// apps. Web Push would register the browser through this same RPC and end
+// this exception.
+const NATIVE_PUSH_METHOD = "pushClient.registerDevice";
+/** Methods only the native app may call, each for a documented platform reason. */
+const NATIVE_ONLY_METHODS = new Set([NATIVE_AUTH_METHOD, NATIVE_PUSH_METHOD]);
 
 /** @param source TypeScript source. @returns Canonical client.method calls, including aliased imports. */
 function clientCalls(source) {
@@ -74,6 +81,7 @@ test("browser and native expose the same Connect feature entry points", (context
   const native = inventory(["apps/mobile/src", "apps/mobile/app"]);
   assert.ok(browser.size > 40 && native.size > 40, "Both scans must include the real feature hooks");
   assert.ok(native.has(NATIVE_AUTH_METHOD), "The documented native Apple path must still exist");
+  assert.ok(native.has(NATIVE_PUSH_METHOD), "The documented native push registration must still exist");
   for (const method of ["authClient.beginAppleSignIn", "authClient.completeAppleSignIn"]) {
     assert.ok(browser.has(method), `Browser Apple sign-in must retain ${method}`);
   }
@@ -82,10 +90,10 @@ test("browser and native expose the same Connect feature entry points", (context
     if (!native.has(method)) gaps.push(`Missing on native: ${method}\n  browser: ${filenames.join(", ")}`);
   }
   for (const [method, filenames] of native) {
-    if (!browser.has(method) && method !== NATIVE_AUTH_METHOD) gaps.push(`Missing in browser: ${method}\n  native: ${filenames.join(", ")}`);
+    if (!browser.has(method) && !NATIVE_ONLY_METHODS.has(method)) gaps.push(`Missing in browser: ${method}\n  native: ${filenames.join(", ")}`);
   }
   assert.deepEqual(gaps, [], "A feature reached only one app. Implement both surfaces; document only genuine platform transport differences.");
-  context.diagnostic(`${browser.size} common Connect methods; native Apple proof has a separate transport. This checks API reachability, not visual or end-to-end parity.`);
+  context.diagnostic(`${browser.size} common Connect methods; native Apple proof and push registration have separate transports. This checks API reachability, not visual or end-to-end parity.`);
 });
 
 test("the scan includes aliases and bracket calls but excludes comments and query-cache clients", () => {

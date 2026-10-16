@@ -15,6 +15,7 @@ import { GroupStatus } from "@haalkhata/shared/group/status";
 import { groupsByStatus } from "@haalkhata/shared/group/archiving";
 import { MONEY_KEYS, queryKeys } from "@haalkhata/shared/api/queryKeys";
 import { base64ToBytes } from "@/lib/encoding/encoding";
+import { offerPushExplainer } from "@/lib/push/pushStore";
 
 /** Plain-object init shape of a CreateExpenseRequest proto message. */
 export type CreateExpenseInput = MessageInitShape<typeof CreateExpenseRequestSchema>;
@@ -67,7 +68,12 @@ export function useNewExpenseAPI(editExpenseId: string) {
 
   const create = useMutation({
     mutationFn: (input: CreateExpenseInput) => expenseClient.createExpense(input),
-    onSuccess: invalidateMoney,
+    onSuccess: () => {
+      invalidateMoney();
+      // The first moment a notification would matter: someone else may now
+      // add, change or settle this with you.
+      void offerPushExplainer();
+    },
   });
   const update = useMutation({
     mutationFn: (input: { expenseId: string; expense: CreateExpenseInput; preserveSplitType?: boolean }) =>

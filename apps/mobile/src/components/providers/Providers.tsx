@@ -8,6 +8,7 @@ import { AppState } from "react-native";
 import { QUERY_CACHE_STORAGE_KEY } from "@/lib/api/api.constants";
 import { mobileQueryClient } from "@/lib/api/queryCache";
 import { hydrateSession } from "@/lib/api/session";
+import { installNotificationHandling } from "@/lib/push/notificationHandling";
 
 /**
  * Wraps the app in client-side providers: a single TanStack Query client
@@ -38,6 +39,7 @@ export function Providers({
   children: ReactNode;
 }) {
   useEffect(() => {
+    installNotificationHandling(mobileQueryClient);
     void hydrateSession();
     // Versions before this one persisted the whole query cache here.
     AsyncStorage.removeItem(QUERY_CACHE_STORAGE_KEY).catch(() => {

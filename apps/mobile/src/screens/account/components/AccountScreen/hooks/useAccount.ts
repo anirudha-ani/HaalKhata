@@ -13,6 +13,7 @@ import { clearSession } from "@/lib/api/session";
 import { composeE164, DEFAULT_PHONE_REGION, isValidPhone, splitE164 } from "@haalkhata/shared/phone/phone";
 import { INVALID_PHONE_MESSAGE } from "@haalkhata/shared/phone/contact";
 import { SAVED_BADGE_MS } from "../../../constants/account";
+import { forgetThisPhone } from "@/lib/push/pushStore";
 
 /**
  * Fetches the signed-in user via the getMe query.
@@ -203,8 +204,12 @@ export function useProfileForm(currentUser: User) {
     setError("");
   };
 
-  /** Revokes the token server-side, clears the local session and cache, and returns to login. */
+  /**
+   * Stops pushes to this phone while the session can still ask, revokes the
+   * token server-side, clears the local session and cache, and returns to login.
+   */
   const signOut = async () => {
+    await forgetThisPhone();
     try {
       await authClient.logOut({});
     } catch {

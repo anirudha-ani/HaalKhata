@@ -1,35 +1,31 @@
 /** Account's Notifications card on phone and tablet: which kinds of push to send, and the phones that receive them. */
 
-import type { ReactNode } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
 import { PUSH_CATEGORIES } from "@haalkhata/shared/notifications/categories";
 import { PUSH_COPY } from "@haalkhata/shared/notifications/copy";
 import { Text } from "@/components/ui/Text";
 import { colors, spacing } from "@/lib/theme/theme";
+import { usePushState } from "@/lib/push/pushStore";
 import { PushCategorySwitch } from "./components/PushCategorySwitch/PushCategorySwitch";
 import { PushDeviceRow } from "./components/PushDeviceRow/PushDeviceRow";
+import { ThisPhone } from "./components/ThisPhone/ThisPhone";
 import { useNotificationSettings } from "./hooks/useNotificationSettings";
 
-/** Props for {@link NotificationSettings}. */
-interface NotificationSettingsProps {
-  /** The registered id of the phone the app is running on, when it has one. */
-  currentDeviceId?: string;
-  /** Status and controls for this phone, rendered at the top of the card. */
-  thisPhone?: ReactNode;
-}
-
 /**
- * @param props - This phone's id and its section, when the app knows them.
+ * This phone first (its permission and connection), then the account's
+ * switches and every phone that receives its pushes.
+ *
  * @returns The card's content; the Account screen supplies the card itself.
  */
-export function NotificationSettings({ currentDeviceId, thisPhone }: NotificationSettingsProps) {
+export function NotificationSettings() {
   const settings = useNotificationSettings();
+  const currentDeviceId = usePushState().deviceId;
   return (
     <View style={styles.content}>
       <Text style={styles.hint}>{PUSH_COPY.settingHint}</Text>
-      {thisPhone}
+      <ThisPhone />
 
-      <View style={styles.section}>
+      <View style={[styles.section, styles.divided]}>
         <Text accessibilityRole="header" style={styles.subtitle}>{PUSH_COPY.categoriesTitle}</Text>
         {settings.preferencesLoading ? <Text style={styles.hint}>Loading…</Text> : null}
         {settings.preferencesError ? (
