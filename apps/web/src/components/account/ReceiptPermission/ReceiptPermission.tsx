@@ -4,11 +4,14 @@
 import { RECEIPT_CONSENT_COPY } from "@haalkhata/shared/receipt/consent";
 import { useReceiptPermission } from "./hooks/useReceiptPermission";
 
-/** @returns Account permission status and feedback, independent of the profile form. */
-export function ReceiptPermission() {
+/**
+ * @param props - Whether the containing settings section supplies the card.
+ * @returns Account permission status and feedback, independent of the profile form.
+ */
+export function ReceiptPermission({ embedded = false }: { embedded?: boolean }) {
   const permission = useReceiptPermission();
-  return <section className="space-y-3 rounded-2xl border border-line bg-card p-5" aria-label={RECEIPT_CONSENT_COPY.settingTitle}>
-    <h2 className="font-semibold">{RECEIPT_CONSENT_COPY.settingTitle}</h2>
+  return <section className={embedded ? "space-y-2" : "space-y-3 rounded-2xl border border-line bg-card p-5"} aria-label={RECEIPT_CONSENT_COPY.settingTitle}>
+    {embedded ? <h3 className="font-semibold">{RECEIPT_CONSENT_COPY.settingTitle}</h3> : <h2 className="font-semibold">{RECEIPT_CONSENT_COPY.settingTitle}</h2>}
     {permission.loading ? <p className="text-sm text-ink-soft">Loading permission…</p> : permission.information ? <>
       <p className="text-sm text-ink-soft">{permission.information.consentGranted ? RECEIPT_CONSENT_COPY.enabled : RECEIPT_CONSENT_COPY.disabled}</p>
       {permission.information.consentGranted ? <>

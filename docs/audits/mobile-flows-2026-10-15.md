@@ -84,6 +84,22 @@ was not observed through the tool; overpayment rejection is covered by the live
 API checks. The iPad resize control was unavailable, so a narrow multitasking
 window was not verified. These are remaining checks, not assumed passes.
 
+## Account layout follow-up
+
+The Account screen now groups identity and editable fields together, followed
+by payment methods, profile sharing, privacy/safety, support links and account
+access. Section copy is shared by native and browser; narrower layouts stack
+in the same order, and wider layouts use two constrained columns. Sign-out and
+delete-account controls sit at the bottom; their handlers and confirmations
+are unchanged.
+
+The revised page was visually checked on iPhone, iPad portrait/landscape and
+320px/390px/1280px browser viewports, including the lower privacy/support/access
+sections in the browser. This layout-only pass reran all three typecheck/lint
+sets, 94 mobile tests, 505 shared tests and 636 web unit tests. The 115
+PostgreSQL-dependent tests were skipped in this pass; their earlier full-run
+result is recorded below.
+
 ## Automated gates
 
 - Web typecheck/lint and **751 tests**, including real local PostgreSQL and

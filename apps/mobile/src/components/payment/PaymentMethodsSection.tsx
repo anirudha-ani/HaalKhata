@@ -6,7 +6,7 @@ import { Text } from "@/components/ui/Text";
 import { Button } from "@/components/ui/Button";
 import { EMPTY_METHODS_HINT } from "@haalkhata/shared/payment/copy";
 import { MAX_PAYMENT_METHODS_PER_USER } from "@haalkhata/shared/payment/payment.constants";
-import { colors, fonts, radii, spacing } from "@/lib/theme/theme";
+import { colors, radii, spacing } from "@/lib/theme/theme";
 import { PaymentMethodRow } from "./PaymentMethodRow";
 import { PaymentMethodSheet } from "./PaymentMethodSheet";
 import { usePaymentMethods } from "./hooks/usePaymentMethods";
@@ -118,8 +118,8 @@ const styles = StyleSheet.create({
   },
   hint: {
     color: colors.inkSoft,
-    fontSize: 12,
-    lineHeight: 17,
+    fontSize: 13,
+    lineHeight: 19,
   },
   list: {
     gap: spacing.sm,
@@ -138,14 +138,9 @@ const styles = StyleSheet.create({
     fontWeight: "500",
   },
   placeholder: {
-    borderColor: colors.line,
-    borderRadius: radii.md,
-    borderStyle: "dashed",
-    borderWidth: 1,
     color: colors.inkSoft,
-    fontSize: 14,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm + 2,
+    fontSize: 13,
+    lineHeight: 19,
   },
   retry: {
     color: colors.brand700,
@@ -155,7 +150,6 @@ const styles = StyleSheet.create({
   },
   title: {
     color: colors.ink,
-    fontFamily: fonts.display,
     fontSize: 18,
     fontWeight: "600",
   },
