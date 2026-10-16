@@ -1,5 +1,7 @@
 /** The in-app notification a friend request sends, shared by every way of sending one. */
 
+import { friendRequestTitle } from "@haalkhata/shared/contacts/contactsCopy";
+
 /** What the recipient of a friend request is told, before any row is written. */
 export interface FriendRequestNotice {
   /** Notification kind; matches the notifications table CHECK. */
@@ -14,8 +16,9 @@ export interface FriendRequestNotice {
 
 /**
  * Words the notification a new friend request produces. AddFriend and
- * SendFriendRequests both use it, and the mobile confirm sheet previews the
- * same title, so the recipient sees one message however the request was sent.
+ * SendFriendRequests both use it, and the title comes from the shared copy
+ * the mobile confirm sheet previews, so the recipient sees one message
+ * however the request was sent and the preview cannot drift from it.
  *
  * @param requesterName - Display name of the person sending the request.
  * @returns The notification content to insert for each recipient.
@@ -23,7 +26,7 @@ export interface FriendRequestNotice {
 export function friendRequestNotice(requesterName: string): FriendRequestNotice {
   return {
     type: "friend_request",
-    title: `${requesterName} sent you a friend request`,
+    title: friendRequestTitle(requesterName),
     body: "Accept or decline it from Friends.",
     link: "/friends",
   };
