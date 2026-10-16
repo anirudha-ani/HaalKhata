@@ -78,7 +78,7 @@ export function SplitEditor({
                     }
                     placeholder="0"
                     placeholderTextColor={colors.inkSoft}
-                    style={[styles.valueInput, { width: 80 * fontScale }]}
+                    style={[styles.valueInput, { width: styles.valueInput.width * fontScale }]}
                     value={form.splitInputs[person.id] ?? ""}
                   />
                   {UNIT[form.splitType] ? (

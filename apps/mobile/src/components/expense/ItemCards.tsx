@@ -202,7 +202,7 @@ export function ItemCards({
                   onChangeText={(text) => draft.updateItem(index, { total: text })}
                   placeholder="0.00"
                   placeholderTextColor={colors.inkSoft}
-                  style={[styles.field, styles.amountField, { width: 92 * fontScale }]}
+                  style={[styles.field, styles.amountField, { width: styles.amountField.width * fontScale }]}
                   value={item.total}
                 />
                 <Pressable
@@ -341,7 +341,7 @@ export function ItemCards({
             onChangeText={draft.setTax}
             placeholder="0.00"
             placeholderTextColor={colors.inkSoft}
-            style={[styles.field, styles.addonField, { width: 92 * fontScale }]}
+            style={[styles.field, styles.addonField, { width: styles.addonField.width * fontScale }]}
             value={draft.tax}
           />
           <Text style={styles.addonHint}>
@@ -357,7 +357,7 @@ export function ItemCards({
             onChangeText={draft.setTip}
             placeholder="0.00"
             placeholderTextColor={colors.inkSoft}
-            style={[styles.field, styles.addonField, { width: 92 * fontScale }]}
+            style={[styles.field, styles.addonField, { width: styles.addonField.width * fontScale }]}
             value={draft.tip}
           />
           <View style={styles.presets}>

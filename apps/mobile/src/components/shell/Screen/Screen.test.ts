@@ -5,6 +5,7 @@ import { act, createElement, useState, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { TextField } from "@/components/ui/TextField";
+import { FontScaleProvider } from "@/lib/layout/FontScaleProvider";
 import { Screen } from "./Screen";
 
 const viewport = vi.hoisted(() => ({ width: 390, height: 844, fontScale: 1 }));
@@ -48,7 +49,7 @@ beforeEach(() => {
 afterEach(() => { act(() => root.unmount()); container.remove(); vi.unstubAllGlobals(); });
 
 it("retains the input instance, draft and focus after each character, rotation and larger text", () => {
-  act(() => root.render(createElement(DraftForm)));
+  act(() => root.render(createElement(FontScaleProvider, null, createElement(DraftForm))));
   const input = container.querySelector("input")!;
   let label = container.querySelector("span")!;
   let previousScale = viewport.fontScale;
@@ -63,7 +64,7 @@ it("retains the input instance, draft and focus after each character, rotation a
   }
   for (const [width, fontScale] of [[1194, 1], [834, 1.8], [600, 1.8], [390, 1]]) {
     viewport.width = width; viewport.fontScale = fontScale;
-    act(() => root.render(createElement(DraftForm)));
+    act(() => root.render(createElement(FontScaleProvider, null, createElement(DraftForm))));
     expect(container.querySelector("input")).toBe(input);
     expect(input.value).toBe("layout@example.test");
     expect(document.activeElement).toBe(input);

@@ -56,7 +56,7 @@ export function PayerEditor({
                   }
                   placeholder="0.00"
                   placeholderTextColor={colors.inkSoft}
-                  style={[styles.amountInput, { width: 96 * fontScale }]}
+                  style={[styles.amountInput, { width: styles.amountInput.width * fontScale }]}
                   value={form.payerAmounts[person.id] ?? ""}
                 />
               </>

@@ -81,6 +81,15 @@ export function ExpenseForm({
     readyMessage: form.isItemized ? "Everything is assigned" : "Adds up to the total",
   };
 
+  const categoryChips = CATEGORIES.map((categoryOption) => (
+    <Chip
+      key={categoryOption}
+      label={categoryOption}
+      onPress={() => form.setCategory(categoryOption)}
+      selected={form.category === categoryOption}
+    />
+  ));
+
   return (
     <View style={[styles.form, isExpanded ? styles.formExpanded : null]}>
       <View style={[styles.formColumn, isExpanded ? styles.formColumnExpanded : null]}>
@@ -130,17 +139,12 @@ export function ExpenseForm({
               <DateField label="Date" onChange={form.setDate} value={form.date} />
             </View>
           </View>
-          <ScrollView horizontal={!isTablet} keyboardShouldPersistTaps="handled"
-            contentContainerStyle={[styles.chips, isTablet ? styles.chipsWrapped : null]}>
-            {CATEGORIES.map((categoryOption) => (
-              <Chip
-                key={categoryOption}
-                label={categoryOption}
-                onPress={() => form.setCategory(categoryOption)}
-                selected={form.category === categoryOption}
-              />
-            ))}
-          </ScrollView>
+          {isTablet ? <View style={[styles.chips, styles.chipsWrapped]}>
+            {categoryChips}
+          </View> : <ScrollView horizontal keyboardShouldPersistTaps="handled" contentContainerStyle={styles.chips}>
+            {categoryChips}
+          </ScrollView>}
+
         </View>
       </View>
 

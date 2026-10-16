@@ -1,7 +1,8 @@
 /** Native text that remeasures after iOS Dynamic Type changes without remounting forms. */
 
+import { useFontScale } from "@/lib/layout/FontScaleProvider";
 import type { ComponentPropsWithRef } from "react";
-import { Platform, Text as NativeText, useWindowDimensions } from "react-native";
+import { Platform, Text as NativeText } from "react-native";
 
 /**
  * Recreates only the text host when iOS changes its font scale. Fabric in
@@ -14,7 +15,7 @@ import { Platform, Text as NativeText, useWindowDimensions } from "react-native"
  * @returns A native text host with a fresh measurement at the current scale.
  */
 export function Text(props: ComponentPropsWithRef<typeof NativeText>) {
-  const { fontScale } = useWindowDimensions();
+  const fontScale = useFontScale();
   const measurementKey = Platform.OS === "ios" && props.allowFontScaling !== false
     ? fontScale
     : "stable";

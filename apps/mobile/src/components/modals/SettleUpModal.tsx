@@ -312,7 +312,7 @@ export function SettleUpModal({
                 {/* Several balances add up to one amount that changes hands;
                     a single balance is already that amount. */}
                 {reading.rows.length > 1 ? (
-                  <View style={[styles.scopeRow, styles.scopeRowDivider]}>
+                  <View style={[styles.scopeRow, styles.scopeTotal, styles.scopeRowDivider]}>
                     <Text style={[styles.scopeLabel, styles.scopeNet]}>
                       {received ? `${firstName} pays you` : `You pay ${firstName}`}
                     </Text>
@@ -553,6 +553,13 @@ const styles = StyleSheet.create({
     gap: spacing.xs,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm + 2,
+  },
+  scopeTotal: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    alignItems: "center",
+    justifyContent: "space-between",
+    columnGap: spacing.md,
   },
   scopeRowDivider: {
     borderTopColor: colors.line,

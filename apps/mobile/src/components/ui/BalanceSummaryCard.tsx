@@ -1,5 +1,6 @@
-/** One currency summary card, shared by the three dashboard totals. */
+/** Readable currency totals shared by dashboard and friends, expanding when an amount wraps. */
 
+import { useState } from "react";
 import { StyleSheet, View } from "react-native";
 import { Text } from "@/components/ui/Text";
 import { useResponsiveLayout } from "@/lib/layout/hooks/useResponsiveLayout";
@@ -11,7 +12,7 @@ import { colors, radii, spacing } from "@/lib/theme/theme";
  * @param props - Component props.
  * @returns A single summary card.
  */
-export function SummaryCard({
+export function BalanceSummaryCard({
   label,
   value,
   tone,
@@ -26,20 +27,23 @@ export function SummaryCard({
   /** When true, tints the card background to emphasize it (used for net balance). */
   strong?: boolean;
 }) {
-  const { fontScale } = useResponsiveLayout();
+  const { fontScale, width } = useResponsiveLayout();
+  const [expandedFor, setExpandedFor] = useState("");
+  const measurement = `${value}:${width}:${fontScale}`;
   return (
     <View
       style={[
         styles.summaryCard,
-        { width: 160 * fontScale },
+        { width: expandedFor === measurement ? "100%" : styles.summaryCard.width * fontScale },
         strong ? (tone === "pos" ? styles.summaryCardPos : styles.summaryCardNeg) : null,
       ]}
     >
       <Text style={styles.summaryLabel}>{label}</Text>
       <Text
-        adjustsFontSizeToFit
-        minimumFontScale={0.8}
-        numberOfLines={1}
+        onTextLayout={(event) => {
+          // Expand once per value/window/scale, retaining full digits even at accessibility sizes.
+          if (event.nativeEvent.lines.length > 1) setExpandedFor(measurement);
+        }}
         style={[
           styles.summaryValue,
           { color: tone === "pos" ? colors.pos600 : colors.neg600 },

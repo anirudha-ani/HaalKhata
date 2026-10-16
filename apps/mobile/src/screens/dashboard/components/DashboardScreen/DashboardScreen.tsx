@@ -1,6 +1,6 @@
 /** Dashboard screen: balance summary, per-person balances with settle-up, group highlights, recent activity. */
 
-import { SummaryCard } from "./components/SummaryCard/SummaryCard";
+import { BalanceSummaryCard } from "@/components/ui/BalanceSummaryCard";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { Link, useRouter } from "expo-router";
 import { Plus, UsersRound } from "lucide-react-native";
@@ -111,19 +111,19 @@ export function DashboardScreen() {
                   <Text style={styles.summaryCurrency}>{total.currency}</Text>
                 ) : null}
                 <View style={styles.summaryCards}>
-                  <SummaryCard
+                  <BalanceSummaryCard
                     label="You are owed"
                     tone="pos"
                     value={
                       balancesFailed ? "—" : formatMoney(total.owedToYouCents, total.currency)
                     }
                   />
-                  <SummaryCard
+                  <BalanceSummaryCard
                     label="You owe"
                     tone="neg"
                     value={balancesFailed ? "—" : formatMoney(total.youOweCents, total.currency)}
                   />
-                  <SummaryCard
+                  <BalanceSummaryCard
                     label="Net balance"
                     strong
                     tone={netCents >= 0 ? "pos" : "neg"}

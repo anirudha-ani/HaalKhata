@@ -1,5 +1,6 @@
 /** App-wide client providers: TanStack Query (memory only), session hydration, foreground refetch. */
 
+import { FontScaleProvider } from "@/lib/layout/FontScaleProvider";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { focusManager, QueryClientProvider } from "@tanstack/react-query";
 import { useEffect, type ReactNode } from "react";
@@ -52,5 +53,5 @@ export function Providers({
     return () => subscription.remove();
   }, []);
 
-  return <QueryClientProvider client={mobileQueryClient}>{children}</QueryClientProvider>;
+  return <FontScaleProvider><QueryClientProvider client={mobileQueryClient}>{children}</QueryClientProvider></FontScaleProvider>;
 }

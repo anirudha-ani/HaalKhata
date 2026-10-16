@@ -6,6 +6,7 @@ import { Pressable, StyleSheet, View } from "react-native";
 import { Text } from "@/components/ui/Text";
 import { PersonLink } from "@/components/people/PersonLink";
 import { Avatar } from "@/components/ui/Avatar";
+import { BalanceSummaryCard } from "@/components/ui/BalanceSummaryCard";
 import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Money } from "@/components/ui/Money";
@@ -35,7 +36,7 @@ export function RegisteredFriends({
   currency: string;
 }) {
   const router = useRouter();
-  const { fontScale, isLargeText } = useResponsiveLayout();
+  const { isLargeText, isTablet } = useResponsiveLayout();
   if (friendsState.registeredFriends.length === 0) {
     return (
       <EmptyState
@@ -54,22 +55,16 @@ export function RegisteredFriends({
     <View style={styles.container}>
       {totals.map((total) => (
         <View key={total.currency} style={styles.totals}>
-          <View style={[styles.totalCard, { width: 160 * fontScale }]}>
-            <Text style={styles.totalLabel}>
-              You are owed{totals.length > 1 ? ` · ${total.currency}` : ""}
-            </Text>
-            <Text adjustsFontSizeToFit minimumFontScale={0.8} numberOfLines={1} style={[styles.totalAmount, styles.totalPos]}>
-              {formatMoney(total.owedToYouCents, total.currency)}
-            </Text>
-          </View>
-          <View style={[styles.totalCard, { width: 160 * fontScale }]}>
-            <Text style={styles.totalLabel}>
-              You owe{totals.length > 1 ? ` · ${total.currency}` : ""}
-            </Text>
-            <Text adjustsFontSizeToFit minimumFontScale={0.8} numberOfLines={1} style={[styles.totalAmount, styles.totalNeg]}>
-              {formatMoney(total.youOweCents, total.currency)}
-            </Text>
-          </View>
+          <BalanceSummaryCard
+            label={`You are owed${totals.length > 1 ? ` · ${total.currency}` : ""}`}
+            tone="pos"
+            value={formatMoney(total.owedToYouCents, total.currency)}
+          />
+          <BalanceSummaryCard
+            label={`You owe${totals.length > 1 ? ` · ${total.currency}` : ""}`}
+            tone="neg"
+            value={formatMoney(total.youOweCents, total.currency)}
+          />
         </View>
       ))}
 
@@ -99,6 +94,19 @@ export function RegisteredFriends({
             const person = friend.user;
             const buckets = bucketsOf(friend, currency);
             const lead = leadingBucket(buckets);
+            const amounts = (
+              <View style={[styles.amounts, !isTablet || isLargeText ? styles.amountsStacked : null]}>
+                {buckets.map((bucket) => (
+                  <Money
+                    cents={bucket.cents}
+                    currency={bucket.currency}
+                    key={bucket.currency}
+                    signed
+                    style={styles.amount}
+                  />
+                ))}
+              </View>
+            );
             return (
               <View key={person.id} style={[styles.row, index > 0 ? styles.rowDivider : null]}>
                 <PersonLink meId={friendsState.me?.id} style={[styles.rowLink, isLargeText ? styles.rowLinkWrapped : null]} userId={person.id}>
@@ -110,18 +118,9 @@ export function RegisteredFriends({
                     <Text style={styles.balanceHint}>
                       {positionCaption(buckets)}
                     </Text>
+                    {!isTablet || isLargeText ? amounts : null}
                   </View>
-                  <View style={[styles.amounts, isLargeText ? styles.amountsStacked : null]}>
-                    {buckets.map((bucket) => (
-                      <Money
-                        cents={bucket.cents}
-                        currency={bucket.currency}
-                        key={bucket.currency}
-                        signed
-                        style={styles.amount}
-                      />
-                    ))}
-                  </View>
+                  {isTablet && !isLargeText ? amounts : null}
                   <ChevronRight color={colors.inkSoft} size={16} />
                 </PersonLink>
                 <View style={styles.rowActions}>
@@ -173,7 +172,9 @@ const styles = StyleSheet.create({
     width: "100%",
   },
   rowLinkWrapped: {
-    flexWrap: "wrap",
+    width: "100%",
+    flexBasis: "auto",
+    flexShrink: 0,
   },
   balanceHint: {
     color: colors.inkSoft,
@@ -235,7 +236,7 @@ const styles = StyleSheet.create({
   },
   rowLink: {
     alignItems: "center",
-    width: 280,
+    flexBasis: 0,
     maxWidth: "100%",
     flexGrow: 1,
     flexShrink: 1,
@@ -260,34 +261,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     flexDirection: "row",
     gap: spacing.md,
-  },
-  totalAmount: {
-    fontSize: 22,
-    fontVariant: ["tabular-nums"],
-    fontWeight: "700",
-  },
-  totalCard: {
-    backgroundColor: colors.card,
-    borderColor: colors.line,
-    borderRadius: radii.lg,
-    borderWidth: 1,
-    width: 160,
-    maxWidth: "100%",
-    flexGrow: 1,
-    flexShrink: 1,
-    minWidth: 0,
-    gap: 2,
-    padding: spacing.lg,
-  },
-  totalLabel: {
-    color: colors.inkSoft,
-    fontSize: 13,
-  },
-  totalNeg: {
-    color: colors.neg600,
-  },
-  totalPos: {
-    color: colors.pos700,
   },
   totals: {
     flexDirection: "row",
