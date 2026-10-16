@@ -11,7 +11,7 @@ export function GoogleSignIn() {
     <div className="space-y-2">
       <div ref={setButtonElement} className="flex w-full justify-center [color-scheme:light]" />
       {isLoading ? (
-        <div role="status" className="flex h-10 items-center justify-center gap-2 rounded-lg border border-line text-xs text-ink-soft">
+        <div role="status" className="flex h-10 items-center justify-center gap-2 rounded-full border border-line text-xs text-ink-soft">
           <RefreshCw aria-hidden="true" className="h-3.5 w-3.5 motion-safe:animate-spin" /> Loading Google sign-in…
         </div>
       ) : null}

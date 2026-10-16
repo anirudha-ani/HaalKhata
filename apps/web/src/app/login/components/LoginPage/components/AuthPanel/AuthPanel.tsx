@@ -6,6 +6,7 @@ import { APPLE_SIGN_IN_UNAVAILABLE } from "@haalkhata/shared/auth/providerMessag
 import { RECEIPT_PRIVACY_MESSAGE } from "@haalkhata/shared/legal/privacyCopy";
 import { useAppleSignIn } from "../../hooks/useAppleSignIn";
 import { ArrowRight, LockKeyhole, X } from "lucide-react";
+import { AppleSignInButton } from "./components/AppleSignInButton/AppleSignInButton";
 import { GoogleSignIn } from "./components/GoogleSignIn/GoogleSignIn";
 import { useLogin } from "../../hooks/useLogin";
 import { LOGIN_INPUT_CLASS } from "../../constants/loginPage";
@@ -76,11 +77,8 @@ export function AuthPanel({
         </span>
       </div>
 
-      <div className="space-y-3">
-      {apple.available ? <button type="button" disabled={apple.isPending} onClick={apple.signIn}
-        className="w-full rounded-lg bg-black px-4 py-3 text-sm font-semibold text-white disabled:opacity-50">
-        {apple.isPending ? "Signing in…" : "Continue with Apple"}
-      </button> : !apple.isLoading ? (
+      <div className="mx-auto w-full max-w-[400px] space-y-3">
+      {apple.available ? <AppleSignInButton busy={apple.isPending} onClick={apple.signIn} /> : !apple.isLoading ? (
         <p role="status" className="rounded-lg border border-line bg-paper px-3 py-2.5 text-xs leading-5 text-ink-soft">
           {APPLE_SIGN_IN_UNAVAILABLE}
         </p>

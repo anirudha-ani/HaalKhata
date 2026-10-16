@@ -22,10 +22,10 @@ vi.mock("react-native", () => ({
 }));
 vi.mock("expo-apple-authentication", () => ({
   isAvailableAsync: async () => device.supported,
-  AppleAuthenticationButtonType: { CONTINUE: "continue" }, AppleAuthenticationButtonStyle: { BLACK: "black" },
+  AppleAuthenticationButtonType: { CONTINUE: "continue" }, AppleAuthenticationButtonStyle: { WHITE_OUTLINE: "white-outline" },
   AppleAuthenticationButton: () => createElement("button", null, "Continue with Apple"),
 }));
-vi.mock("@/components/ui/Button", () => ({ Button: ({ label }: { label: string }) => createElement("button", null, label) }));
+vi.mock("./ProviderButton/ProviderButton", () => ({ ProviderButton: ({ provider }: { provider: string }) => createElement("button", null, `Continue with ${provider}`) }));
 vi.mock("expo-crypto", () => ({}));
 vi.mock("expo-web-browser", () => ({}));
 vi.mock("expo-router", () => ({ useRouter: () => ({ replace: vi.fn() }) }));

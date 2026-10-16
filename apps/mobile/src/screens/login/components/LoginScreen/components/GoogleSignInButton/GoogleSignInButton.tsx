@@ -2,7 +2,7 @@
 
 import { StyleSheet, View } from "react-native";
 import { Text } from "@/components/ui/Text";
-import { Button } from "@/components/ui/Button";
+import { ProviderButton } from "../ProviderButton/ProviderButton";
 import { colors, spacing } from "@/lib/theme/theme";
 import { useGoogleSignIn } from "../../hooks/useGoogleSignIn";
 
@@ -17,7 +17,7 @@ export function GoogleSignInButton() {
   const google = useGoogleSignIn();
   return (
     <View style={styles.container}>
-      <Button busy={google.isPending} label="Continue with Google" onPress={google.signIn} />
+      <ProviderButton provider="Google" busy={google.isPending} onPress={google.signIn} />
       {google.error ? <Text style={styles.error}>{google.error}</Text> : null}
     </View>
   );
