@@ -2,6 +2,8 @@
 
 import type { PoolClient } from "pg";
 import { execute, newId, query, queryOne, transaction } from "@/server/common/db/db";
+import { enqueuePushes } from "@/server/push/repo/pushOutbox.repo";
+import { PUSH_NOTIFY_CHANNEL } from "@/server/push/push.constants";
 
 /** A row from the notifications table (column names mirror SQL). */
 export interface NotificationRow {
@@ -20,8 +22,10 @@ export interface NotificationRow {
 }
 
 /**
- * Inserts the same notification for each recipient, atomically; a no-op when
- * the recipient list is empty.
+ * Inserts the same notification for each recipient, atomically, and queues a
+ * push for each row it inserts on the same transaction — so a push exists
+ * exactly when the change it announces committed. A no-op when the recipient
+ * list is empty; a recipient on either side of a block gets neither.
  *
  * @param userIds - Ids of the users to notify (one row per user).
  * @param input - Notification content: kind, title, body text, and the
@@ -36,14 +40,18 @@ export async function insertNotifications(
 ): Promise<void> {
   if (userIds.length === 0) return;
   const persist = async (transactionClient: PoolClient): Promise<void> => {
+    const inserted: { notificationId: string; userId: string }[] = [];
     for (const userId of userIds) {
-      await transactionClient.query(
+      const notificationId = newId();
+      const written = await transactionClient.query(
         `INSERT INTO notifications (id, user_id, type, title, body, link, actor_id)
          SELECT $1, $2, $3, $4, $5, $6, $7::text WHERE NOT EXISTS (
            SELECT 1 FROM user_blocks WHERE (blocker_id = $2 AND blocked_id = $7) OR (blocker_id = $7 AND blocked_id = $2))`,
-        [newId(), userId, input.type, input.title, input.body, input.link, input.actorId ?? null],
+        [notificationId, userId, input.type, input.title, input.body, input.link, input.actorId ?? null],
       );
+      if ((written.rowCount ?? 0) > 0) inserted.push({ notificationId, userId });
     }
+    await enqueuePushes(inserted, PUSH_NOTIFY_CHANNEL, transactionClient);
   };
   if (client) await persist(client);
   else await transaction(persist);
@@ -118,4 +126,27 @@ export async function markAllRead(userId: string): Promise<void> {
     `UPDATE notifications SET read_at = now() WHERE user_id = $1 AND read_at IS NULL`,
     [userId],
   );
+}
+
+/**
+ * Unread counts for several people at once — the badge each one's push
+ * carries. Same rule as {@link countUnread}: rows involving a blocked person
+ * do not count.
+ *
+ * @param userIds - The people to count for.
+ * @returns Unread count per user id; people with none are absent.
+ */
+export async function countUnreadByUsers(userIds: string[]): Promise<Map<string, number>> {
+  if (userIds.length === 0) return new Map();
+  const counted = await query<{ user_id: string; unread_count: number }>(
+    `SELECT user_id, COUNT(*)::int AS unread_count
+       FROM notifications
+      WHERE user_id = ANY($1::text[]) AND read_at IS NULL AND NOT EXISTS (
+        SELECT 1 FROM user_blocks
+         WHERE (blocker_id = notifications.user_id AND blocked_id = notifications.actor_id)
+            OR (blocker_id = notifications.actor_id AND blocked_id = notifications.user_id))
+      GROUP BY user_id`,
+    [userIds],
+  );
+  return new Map(counted.map((countRow) => [countRow.user_id, countRow.unread_count]));
 }

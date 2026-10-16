@@ -750,7 +750,7 @@ export async function acceptInviteLink(
         notFound(DEAD_LINK_MESSAGE);
       }
       await revokeFriendLinksFor(invitedId);
-      await announceClaimedSeats(acceptor.name, invited.name, inheritedGroups, userId);
+      await announceClaimedSeats(acceptor.name, invited.name, inheritedGroups, userId, link.inviter_id);
     }
     await insertFriendship(userId, link.inviter_id);
     await notifyInviteAccepted(link.inviter_id, acceptor.name, "/friends");
@@ -787,6 +787,19 @@ export async function acceptInviteLink(
       },
       client,
     );
+    // The rest of the roster hears who joined; the inviter is told by the
+    // "accepted your invite" notice below instead.
+    await insertNotifications(
+      audience.filter((memberId) => memberId !== userId && memberId !== link.inviter_id),
+      {
+        actorId: userId,
+        type: "member_added",
+        title: `${acceptor.name} joined "${group.name}"`,
+        body: "",
+        link: `/groups/${group.id}`,
+      },
+      client,
+    );
   });
   await notifyInviteAccepted(link.inviter_id, acceptor.name, `/groups/${group.id}`);
   return { groupId: group.id };
@@ -802,12 +815,14 @@ export async function acceptInviteLink(
  * @param invitedName - The name the invitation was known by.
  * @param groups - Groups the invited row belonged to before the claim.
  * @param acceptorId - The acceptor, as the events' actor.
+ * @param inviterId - Who shared the link; told separately that it was accepted.
  */
 async function announceClaimedSeats(
   acceptorName: string,
   invitedName: string,
   groups: { id: string; name: string }[],
   acceptorId: string,
+  inviterId: string,
 ): Promise<void> {
   for (const group of groups) {
     const audience = (await listMembers(group.id)).map((member) => member.id);
@@ -819,6 +834,16 @@ async function announceClaimedSeats(
       link: `/groups/${group.id}`,
       audience,
     });
+    await insertNotifications(
+      audience.filter((memberId) => memberId !== acceptorId && memberId !== inviterId),
+      {
+        actorId: acceptorId,
+        type: "member_added",
+        title: `${acceptorName} joined "${group.name}"`,
+        body: `Claimed ${invitedName}'s invitation.`,
+        link: `/groups/${group.id}`,
+      },
+    );
   }
 }
 

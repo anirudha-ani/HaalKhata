@@ -510,6 +510,20 @@ export async function addMembers(
       client,
     );
     await notifyAdded(actor, input.groupId, group.name, enrolled, client);
+    // Everyone else who sees the feed line hears it too: the people added
+    // already have their own "added you" notice, and the actor needs none.
+    const enrolledIds = new Set(enrolled.map((user) => user.id));
+    await insertNotifications(
+      audience.filter((memberId) => memberId !== userId && !enrolledIds.has(memberId)),
+      {
+        actorId: userId,
+        type: "member_added",
+        title: `${actor.name} added ${nameList(enrolled.map((user) => user.name))} to "${group.name}"`,
+        body: "",
+        link: `/groups/${input.groupId}`,
+      },
+      client,
+    );
     return enrolled;
   });
   return { added: added.map((user) => toMember({ ...user, role: MEMBER_ROLE })) };
@@ -570,6 +584,17 @@ export async function transferOwnership(
       },
       client,
     );
+    await insertNotifications(
+      audience.filter((memberId) => memberId !== userId && memberId !== input.userId),
+      {
+        actorId: userId,
+        type: "ownership_transferred",
+        title: `${actor.name} made ${newOwner.name} the owner of "${group.name}"`,
+        body: "",
+        link: `/groups/${input.groupId}`,
+      },
+      client,
+    );
   });
   return toGroup((await findGroupById(input.groupId))!, await listMembers(input.groupId));
 }
@@ -614,6 +639,21 @@ export async function setSimplifyDebts(
           : `${actor.name} turned off debt simplification in "${group.name}" — debts show person to person again`,
         link: `/groups/${input.groupId}`,
         audience,
+      },
+      client,
+    );
+    // It changes what every member is asked to pay, so every member but the
+    // one who flipped it is told.
+    await insertNotifications(
+      audience.filter((memberId) => memberId !== userId),
+      {
+        actorId: userId,
+        type: "simplify_debts",
+        title: input.simplify
+          ? `${actor.name} turned on debt simplification in "${group.name}"`
+          : `${actor.name} turned off debt simplification in "${group.name}"`,
+        body: input.simplify ? "Fewer payments, same balances." : "Debts show person to person again.",
+        link: `/groups/${input.groupId}`,
       },
       client,
     );

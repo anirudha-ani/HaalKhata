@@ -409,6 +409,15 @@ export async function mergeAccounts(
       [keeperId, loserId],
     );
 
+    // --- push: the losing account's phones and choices go -------------------
+    // Its token_version bump below already makes its phones unreachable;
+    // deleting them (and the pushes queued for them) leaves nothing behind
+    // that could reach a phone the keeper never registered. The keeper's own
+    // switches win.
+    await client.query(`DELETE FROM push_outbox WHERE user_id = $1`, [loserId]);
+    await client.query(`DELETE FROM push_devices WHERE user_id = $1`, [loserId]);
+    await client.query(`DELETE FROM push_preferences WHERE user_id = $1`, [loserId]);
+
     // --- straight repoints, no collision possible ---------------------------
     for (const [table, column] of DIRECT_MERGE_TARGETS) {
       await client.query(`UPDATE ${table} SET ${column} = $1 WHERE ${column} = $2`, [
