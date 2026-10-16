@@ -24,7 +24,11 @@
 #
 # Idempotent: re-running won't restart a healthy db. The db keeps running in
 # the background after you Ctrl-C the server and is reused on the next run.
-# Use --down to stop the db too.
+# Use --down to stop the db too. A web dev server this checkout already has
+# running (another ./dev.sh in another terminal) is reused, not started twice;
+# with --mobile-* Metro then holds the foreground. This is checked before
+# anything slow, and a server that cannot serve the run (loopback-only for
+# --mobile-android or --lan, or not on port 3000 for the app) stops it there.
 
 set -euo pipefail
 
@@ -646,6 +650,30 @@ start_mobile() {
   esac
 }
 
+# --- web server ----------------------------------------------------------------
+
+# Find a Next.js dev server already serving this checkout. Next records the
+# one it allows per app in apps/web/.next/dev/lock and refuses to start a
+# second, so this is the same test Next applies — made at the start instead
+# of after the simulator, a native rebuild and Metro.
+# The lock names the bind as Next prints it: "127.0.0.1" for a loopback-only
+# server, "localhost" for one listening on every interface (-H 0.0.0.0).
+# @returns 0 and echoes "<pid> <hostname> <port> <url>" for a live server, 1 otherwise.
+running_web_server() {
+  local lock="$PROJECT_ROOT/apps/web/.next/dev/lock" contents pid hostname port url
+  [[ -f "$lock" ]] || return 1
+  contents="$(cat "$lock" 2>/dev/null)" || return 1
+  pid="$(sed -n 's/.*"pid":\([0-9][0-9]*\).*/\1/p' <<<"$contents")"
+  hostname="$(sed -n 's/.*"hostname":"\([^"]*\)".*/\1/p' <<<"$contents")"
+  port="$(sed -n 's/.*"port":\([0-9][0-9]*\).*/\1/p' <<<"$contents")"
+  url="$(sed -n 's/.*"appUrl":"\([^"]*\)".*/\1/p' <<<"$contents")"
+  [[ -n "$pid" ]] || return 1
+  kill -0 "$pid" 2>/dev/null || return 1
+  # A lock left behind by a crash can name a PID since given to something else.
+  ps -o command= -p "$pid" 2>/dev/null | grep -q next || return 1
+  printf '%s %s %s %s' "$pid" "${hostname:-localhost}" "${port:-3000}" "${url:-http://localhost:${port:-3000}}"
+}
+
 # --- main ----------------------------------------------------------------------
 
 usage() {
@@ -683,6 +711,30 @@ main() {
     exit 0
   fi
 
+  # Another ./dev.sh (or `pnpm dev`) may already be serving this checkout.
+  # Next refuses a second server for it, and used to say so only at the very
+  # end, after the native build, taking Metro down with it. Decide now: reuse
+  # it when it can serve this run, otherwise stop before the slow steps.
+  local existing_web="" existing_pid existing_host existing_port existing_url
+  if existing_web="$(running_web_server)"; then
+    read -r existing_pid existing_host existing_port existing_url <<<"$existing_web"
+    # The Android emulator and a phone on the LAN reach the host from
+    # outside its loopback, so a server bound to 127.0.0.1 is no use to them.
+    if [[ "$mobile_platform" == "android" || "$lan" -eq 1 ]]; then
+      case "$existing_host" in
+        127.*|"[::1]"|::1)
+          die "a web dev server for this checkout is already running on $existing_url (PID $existing_pid), loopback only — $([[ "$lan" -eq 1 ]] && echo "--lan" || echo "the Android emulator") needs it on 0.0.0.0. Stop it (Ctrl-C in its terminal, or kill $existing_pid) and run this again."
+          ;;
+      esac
+    fi
+    # The app finds the API on Metro's host at port 3000, so a server Next
+    # moved to another port would leave it talking to nothing.
+    if [[ -n "$mobile_platform" && "$existing_port" != "3000" ]]; then
+      die "a web dev server for this checkout is already running on $existing_url (PID $existing_pid), but the app expects port 3000. Stop it (Ctrl-C in its terminal, or kill $existing_pid) and run this again."
+    fi
+    ok "web dev server for this checkout already running — $existing_url (PID $existing_pid); reusing it"
+  fi
+
   assert_system_ready
   ensure_project_state
   node scripts/setup-env.mjs --dev
@@ -695,6 +747,20 @@ main() {
 
   if [[ -n "$mobile_platform" ]]; then
     start_mobile "$mobile_platform"
+  fi
+
+  if [[ -n "$existing_web" ]]; then
+    echo
+    if [[ -n "$MOBILE_PID" ]]; then
+      # Metro takes the foreground the web server would have had: Ctrl-C
+      # stops it through the EXIT trap, and the web server keeps running in
+      # the terminal that started it.
+      ok "using the web dev server at $existing_url — Metro stays in the foreground (Ctrl-C to stop it)"
+      wait "$MOBILE_PID" || warn "Metro stopped (exit status $?)"
+    else
+      ok "using the web dev server at $existing_url — nothing else to start"
+    fi
+    return 0
   fi
 
   echo
