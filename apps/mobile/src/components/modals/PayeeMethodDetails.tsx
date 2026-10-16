@@ -4,7 +4,8 @@ import type { PaymentMethod } from "@haalkhata/protogen/payment/v1/payment_pb";
 import * as Clipboard from "expo-clipboard";
 import { Check, ClipboardList, Copy, ExternalLink, TriangleAlert } from "lucide-react-native";
 import { useEffect, useState } from "react";
-import { Linking, StyleSheet, Text, View } from "react-native";
+import { Linking, StyleSheet, View } from "react-native";
+import { Text } from "@/components/ui/Text";
 import { Button } from "@/components/ui/Button";
 import { detailLabel, detailValueText } from "@haalkhata/shared/payment/detailKinds";
 import {

@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import { useRouter } from "expo-router";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, View } from "react-native";
+import { Text } from "@/components/ui/Text";
 import type { User } from "@haalkhata/protogen/common/v1/common_pb";
 import { colors, radii, spacing } from "@/lib/theme/theme";
 

@@ -8,6 +8,7 @@ import { Avatar } from "./Avatar";
 
 // Keep React reconciliation real; only replace the native host renderer.
 vi.mock("react-native", () => ({
+  useWindowDimensions: () => ({ width: 390, height: 844, fontScale: 1 }),
   Platform: { select: (options: { default: string }) => options.default },
   StyleSheet: { create: (styles: unknown) => styles },
   View: ({ children }: { children: ReactNode }) => createElement("div", null, children),

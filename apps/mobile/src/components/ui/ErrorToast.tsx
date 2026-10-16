@@ -2,7 +2,8 @@
 
 import { CircleAlert, X } from "lucide-react-native";
 import { useEffect } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, View } from "react-native";
+import { Text } from "@/components/ui/Text";
 import { colors, radii, spacing } from "@/lib/theme/theme";
 import { ERROR_TOAST_AUTO_DISMISS_MS } from "./ui.constants";
 

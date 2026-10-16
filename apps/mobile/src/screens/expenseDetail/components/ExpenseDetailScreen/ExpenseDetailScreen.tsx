@@ -4,7 +4,8 @@ import { ErrorState } from "@/components/ui/ErrorState";
 import { SafetyActions } from "@/components/safety/SafetyActions";
 import { useRouter } from "expo-router";
 import { Check, Lock, Pencil, Send, Trash2 } from "lucide-react-native";
-import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { Pressable, StyleSheet, TextInput, View } from "react-native";
+import { Text } from "@/components/ui/Text";
 import { PersonLink } from "@/components/people/PersonLink";
 import { DetailHeader } from "@/components/shell/DetailHeader/DetailHeader";
 import { Screen } from "@/components/shell/Screen/Screen";
@@ -429,6 +430,7 @@ export function ExpenseDetailScreen({ expenseId }: { expenseId: string }) {
 const styles = StyleSheet.create({
   actions: {
     flexDirection: "row",
+    flexWrap: "wrap",
     gap: spacing.sm,
   },
   amount: {
@@ -598,12 +600,16 @@ const styles = StyleSheet.create({
   },
   itemName: {
     color: colors.ink,
-    flex: 1,
+    width: 160,
+    maxWidth: "100%",
+    flexGrow: 1,
+    flexShrink: 1,
     fontSize: 14,
   },
   itemRow: {
     alignItems: "center",
     flexDirection: "row",
+    flexWrap: "wrap",
     gap: spacing.md,
   },
   itemRowDivider: {
@@ -654,7 +660,10 @@ const styles = StyleSheet.create({
   },
   personLink: {
     alignItems: "center",
-    flex: 1,
+    width: 160,
+    maxWidth: "100%",
+    flexGrow: 1,
+    flexShrink: 1,
     flexDirection: "row",
     gap: spacing.sm,
     minWidth: 0,
@@ -667,6 +676,7 @@ const styles = StyleSheet.create({
   personRow: {
     alignItems: "center",
     flexDirection: "row",
+    flexWrap: "wrap",
     gap: spacing.sm,
   },
   rowAmount: {
@@ -724,6 +734,7 @@ const styles = StyleSheet.create({
   },
   titleBlock: {
     flexDirection: "row",
+    flexWrap: "wrap",
     gap: spacing.lg,
     justifyContent: "space-between",
   },
@@ -732,6 +743,9 @@ const styles = StyleSheet.create({
     textDecorationLine: "line-through",
   },
   titleText: {
-    flex: 1,
+    width: 160,
+    maxWidth: "100%",
+    flexGrow: 1,
+    flexShrink: 1,
   },
 });

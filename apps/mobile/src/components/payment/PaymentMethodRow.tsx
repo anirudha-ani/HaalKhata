@@ -2,7 +2,8 @@
 
 import type { PaymentMethod } from "@haalkhata/protogen/payment/v1/payment_pb";
 import { Pencil, Star } from "lucide-react-native";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, View } from "react-native";
+import { Text } from "@/components/ui/Text";
 import {
   methodCurrencyLabel,
   methodCurrencyPhrase,

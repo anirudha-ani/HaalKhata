@@ -17,8 +17,13 @@ provider secrets to supply yourself. `POSTGRES_PASSWORD` defaults to
 `change-me` for the local Compose database; setup fills it when missing or
 blank and preserves any existing non-empty password. The local connection
 uses it with the prefilled host, port, username and database name.
-`dev.sh` prepares configuration, starts Postgres, applies pending migrations,
-and then starts the Next.js dev server. It prints **database migrations passed**
+`dev.sh` first runs `pnpm install --frozen-lockfile` across all workspaces and
+`pnpm gen` against the current protobuf contract, even when dependency and
+generated-code folders already exist. After pulling changes, you do not need
+to install mobile dependencies or regenerate API files separately. Failed
+installation or generation prints the underlying error and stops startup.
+It then prepares configuration, starts Postgres, applies pending migrations,
+and starts the Next.js dev server. It prints **database migrations passed**
 before starting web or mobile services. If a migration fails, it prints the
 underlying error and stops; fix the error and rerun `./dev.sh`. It checks the
 required database password before Compose runs. Missing Apple credentials show an Apple sign-in availability message
@@ -139,9 +144,21 @@ worth using here, so there is no provider-specific SDK in the codebase.
 ./dev.sh --mobile-ios       # same for iOS simulator
 ```
 
-The first run builds and installs the dev client (several minutes). Later
-runs reuse the emulator and installed app, so Metro and the web server start
-instantly. The dev client (not Expo Go) connects to Metro automatically.
+The first run builds and installs the dev client (several minutes). Startup
+compares Expo's native fingerprint with the verified installed binary. Native
+dependency/configuration changes, a different installed binary, or an older
+installation without a build record trigger a rebuild automatically. Existing
+generated projects are refreshed with prebuild; iOS also updates CocoaPods.
+Build records are saved under ignored `apps/mobile/.expo/native-builds` only
+after a successful build and install. Matching clients are reused, including
+after ordinary screen/JavaScript edits. There is no need to uninstall the app
+or delete native folders after pulling a native dependency change.
+
+The dev client (not Expo Go) connects to Metro
+automatically. To verify startup after pulling changes, run the same command:
+**workspace dependencies ready** and **generated API types ready** must appear
+before **database migrations passed** and Metro startup. No extra environment
+variables are needed for these preparation steps.
 
 The app signs in with bearer tokens against the same `/api/connect`
 endpoints. In dev it targets port 3000 on the machine running Metro, so

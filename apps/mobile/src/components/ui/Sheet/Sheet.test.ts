@@ -6,7 +6,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Sheet } from "./Sheet";
 
-const viewport = vi.hoisted(() => ({ width: 1024, height: 600 }));
+const viewport = vi.hoisted(() => ({ width: 1024, height: 600, fontScale: 1 }));
 vi.mock("lucide-react-native", () => ({ X: () => null }));
 vi.mock("react-native", () => ({
   useWindowDimensions: () => viewport,

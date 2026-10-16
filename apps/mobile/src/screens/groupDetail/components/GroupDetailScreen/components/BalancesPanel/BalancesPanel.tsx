@@ -3,7 +3,8 @@
 import type { User } from "@haalkhata/protogen/common/v1/common_pb";
 import type { BalancesResponse } from "@haalkhata/protogen/expense/v1/expense_pb";
 import { ArrowRight, Wand2 } from "lucide-react-native";
-import { StyleSheet, Switch, Text, View } from "react-native";
+import { StyleSheet, Switch, View } from "react-native";
+import { Text } from "@/components/ui/Text";
 import { PersonLink } from "@/components/people/PersonLink";
 import { Avatar } from "@/components/ui/Avatar";
 import { Button } from "@/components/ui/Button";

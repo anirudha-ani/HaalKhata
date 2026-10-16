@@ -1,7 +1,8 @@
 /** Bottom sheet holding the add-friend form: email or phone, send, and the privacy note. */
 
 import { UserPlus } from "lucide-react-native";
-import { StyleSheet, Text, View } from "react-native";
+import { StyleSheet, View } from "react-native";
+import { Text } from "@/components/ui/Text";
 import { Button } from "@/components/ui/Button";
 import { EmailOrPhoneField } from "@/components/ui/EmailOrPhoneField";
 import { Sheet } from "@/components/ui/Sheet/Sheet";

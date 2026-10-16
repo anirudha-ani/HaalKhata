@@ -17,7 +17,7 @@ export function DeleteAccount() {
   const deletion = useDeleteAccountAPI(open);
   const review = deletion.balanceReview;
   return <>
-    <button type="button" className="w-full py-3 text-sm font-semibold text-neg-700 underline"
+    <button type="button" className="min-h-11 w-full rounded-xl py-3 text-sm font-semibold text-brand-600 hover:bg-brand-50"
       onClick={() => { setConfirmation(""); deletion.reset(); setOpen(true); }}>Delete account</button>
     {open ? <Modal title="Permanently delete your account" onClose={() => { if (!deletion.isPending) setOpen(false); }}
       footer={<div className="space-y-3">

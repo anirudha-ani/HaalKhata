@@ -1,5 +1,6 @@
 /** Pure assembly of the expense form's initial state (create + edit). */
 
+import { restoreExpenseSplit } from "@haalkhata/shared/expense/form/restoreSplit";
 import type { Expense } from "@haalkhata/protogen/expense/v1/expense_pb";
 import { centsToInput, todayISO } from "@haalkhata/shared/money/money";
 import { draftItemsFromLines, type DraftItem } from "@/lib/expense/itemDraft";
@@ -24,6 +25,8 @@ export interface ExpenseFormInitial {
   notes: string;
   /** Which split mode the form starts in. */
   splitType: FormSplitType;
+  /** Explanation when a saved ratio split must be restored as exact amounts. */
+  splitNotice?: string;
   /** Participation per user id; null = default (everyone checked). */
   checked: Record<string, boolean> | null;
   /** Raw per-user split value inputs, keyed by user id. */
@@ -100,14 +103,8 @@ export function buildInitialValues(
     date: expense.expenseDate,
     category: expense.category,
     notes: expense.notes,
-    splitType: expense.splitType as FormSplitType,
+    ...restoreExpenseSplit(expense.splitType, expense.splits, expense.currency),
     checked: Object.fromEntries(expense.splits.map((split) => [split.userId, true])),
-    splitInputs:
-      expense.splitType === "exact"
-        ? Object.fromEntries(
-            expense.splits.map((split) => [split.userId, centsToInput(split.owedCents, expense.currency)]),
-          )
-        : {},
     multiPayer,
     singlePayerId: expense.payers[0]?.userId ?? currentUserId,
     payerAmounts: multiPayer

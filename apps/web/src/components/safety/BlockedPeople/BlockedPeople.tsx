@@ -10,7 +10,7 @@ import { useSafetyAPI } from "@/lib/hooks/useSafetyAPI";
  */
 export function BlockedPeople() {
   const safety = useSafetyAPI();
-  return <section className="space-y-2 text-sm"><h2 className="font-semibold">Blocked people</h2>
+  return <section className="space-y-2 text-sm"><h3 className="text-base font-semibold">Blocked people</h3>
     {safety.blocks.isPending ? <p>Loading…</p> : safety.blocks.error ? <>
       <p role="alert">{errorMessage(safety.blocks.error)}</p><button type="button" className="underline" onClick={() => { void safety.blocks.refetch(); }}>Retry</button>
     </> : safety.blocks.data?.users.length ? safety.blocks.data.users.map((person) => <div key={person.id} className="flex flex-wrap items-center justify-between gap-2">

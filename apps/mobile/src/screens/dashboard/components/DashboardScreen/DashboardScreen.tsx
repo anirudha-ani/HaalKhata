@@ -1,10 +1,11 @@
 /** Dashboard screen: balance summary, per-person balances with settle-up, group highlights, recent activity. */
 
-import { SummaryCard } from "./components/SummaryCard/SummaryCard";
+import { BalanceSummaryCard } from "@/components/ui/BalanceSummaryCard";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { Link, useRouter } from "expo-router";
 import { Plus, UsersRound } from "lucide-react-native";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, View } from "react-native";
+import { Text } from "@/components/ui/Text";
 import { SettleUpModal } from "@/components/modals/SettleUpModal";
 import { PersonLink } from "@/components/people/PersonLink";
 import { Screen } from "@/components/shell/Screen/Screen";
@@ -110,19 +111,19 @@ export function DashboardScreen() {
                   <Text style={styles.summaryCurrency}>{total.currency}</Text>
                 ) : null}
                 <View style={styles.summaryCards}>
-                  <SummaryCard
+                  <BalanceSummaryCard
                     label="You are owed"
                     tone="pos"
                     value={
                       balancesFailed ? "—" : formatMoney(total.owedToYouCents, total.currency)
                     }
                   />
-                  <SummaryCard
+                  <BalanceSummaryCard
                     label="You owe"
                     tone="neg"
                     value={balancesFailed ? "—" : formatMoney(total.youOweCents, total.currency)}
                   />
-                  <SummaryCard
+                  <BalanceSummaryCard
                     label="Net balance"
                     strong
                     tone={netCents >= 0 ? "pos" : "neg"}
@@ -415,7 +416,10 @@ const styles = StyleSheet.create({
   },
   personLink: {
     alignItems: "center",
-    flex: 1,
+    width: 180,
+    maxWidth: "100%",
+    flexGrow: 1,
+    flexShrink: 1,
     flexDirection: "row",
     gap: spacing.md,
     minWidth: 0,
@@ -428,6 +432,7 @@ const styles = StyleSheet.create({
   personRow: {
     alignItems: "center",
     flexDirection: "row",
+    flexWrap: "wrap",
     gap: spacing.md,
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.md,
@@ -453,6 +458,8 @@ const styles = StyleSheet.create({
   sectionHeader: {
     alignItems: "center",
     flexDirection: "row",
+    flexWrap: "wrap",
+    gap: spacing.sm,
     justifyContent: "space-between",
   },
   sectionLink: {

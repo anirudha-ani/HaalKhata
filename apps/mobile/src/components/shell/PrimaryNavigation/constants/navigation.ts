@@ -35,4 +35,4 @@ export const RIGHT_TAB_ITEMS: TabItem[] = [
 export const ADD_TAB_ITEM: TabItem = { name: "add", label: "Add", icon: Plus };
 
 /** Width of the persistent navigation rail on tablet-sized viewports. */
-export const TABLET_NAVIGATION_WIDTH = 104;
+export const TABLET_NAVIGATION_WIDTH = 128;

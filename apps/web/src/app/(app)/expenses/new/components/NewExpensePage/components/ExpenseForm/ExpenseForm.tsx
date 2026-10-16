@@ -42,7 +42,7 @@ export function ExpenseForm({
   editExpenseId: string;
 }) {
   const form = useNewExpense(expenseAPI, initial, editExpenseId);
-  const currency = form.selectedGroup?.currency ?? form.me?.defaultCurrency ?? "USD";
+  const currency = form.currency;
   // On desktop the form always has a sticky sidebar: the receipt scanner (or
   // the photo, once there is one) and a who-owes-what panel for whichever
   // split is selected, so the numbers are beside the fields all the way

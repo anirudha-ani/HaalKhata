@@ -3,7 +3,8 @@
 import { ErrorState } from "@/components/ui/ErrorState";
 import { useRouter } from "expo-router";
 import { Plus } from "lucide-react-native";
-import { StyleSheet, Text, View } from "react-native";
+import { StyleSheet, View } from "react-native";
+import { Text } from "@/components/ui/Text";
 import { ExpenseList } from "@/components/expenses/ExpenseList";
 import { useResponsiveLayout } from "@/lib/layout/hooks/useResponsiveLayout";
 import { Screen } from "@/components/shell/Screen/Screen";
@@ -169,6 +170,7 @@ const styles = StyleSheet.create({
   },
   searchField: {
     flex: 1,
+    minWidth: 0,
   },
   searchRow: {
     alignItems: "center",
@@ -188,6 +190,8 @@ const styles = StyleSheet.create({
   titleRow: {
     alignItems: "center",
     flexDirection: "row",
+    flexWrap: "wrap",
+    gap: spacing.md,
     justifyContent: "space-between",
   },
   workspace: {

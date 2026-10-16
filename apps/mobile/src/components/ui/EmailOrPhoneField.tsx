@@ -82,6 +82,7 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   emailInput: {
+    minHeight: 48,
     backgroundColor: colors.card,
     borderColor: colors.line,
     borderRadius: radii.md,

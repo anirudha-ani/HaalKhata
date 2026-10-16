@@ -1,7 +1,8 @@
 /** Deep-link landing for invite links: who invited you, to what, one tap in. */
 
 import { useRouter } from "expo-router";
-import { ScrollView, StyleSheet, Text, View } from "react-native";
+import { ScrollView, StyleSheet, View } from "react-native";
+import { Text } from "@/components/ui/Text";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Button } from "@/components/ui/Button";
 import { Spinner } from "@/components/ui/Spinner";

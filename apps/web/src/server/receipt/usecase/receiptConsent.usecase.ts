@@ -61,12 +61,13 @@ export async function revokeReceiptConsent(userId: string) {
  * @param userId Signed-in account.
  * @param image Receipt image upload.
  * @param consentVersion Current sharing terms known to the client.
+ * @param currency Expense currency for ambiguous receipts.
  * @returns Structured draft after an authorized provider request.
  */
-export async function parseReceiptWithConsent(userId: string, image: Uint8Array, consentVersion: string) {
+export async function parseReceiptWithConsent(userId: string, image: Uint8Array, consentVersion: string, currency = "USD") {
   const information = await getReceiptProcessingInfo(userId);
   if (!information.consentGranted || consentVersion !== information.consentVersion) {
     throw new UsecaseError("failed_precondition", "Allow AI receipt scanning before sharing this photo. Review the current receipt-sharing details.");
   }
-  return parseReceipt(image);
+  return parseReceipt(image, currency);
 }

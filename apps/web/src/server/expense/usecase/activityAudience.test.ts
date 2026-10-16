@@ -929,3 +929,25 @@ describe("archived groups keep their settled ledger", () => {
     expect(softDeleteSettlement).not.toHaveBeenCalled();
   });
 });
+
+it.each(["percent", "shares"])("keeps a saved %s mode on a notes-only exact-amount edit", async (splitType) => {
+  const stored = (await findExpenseById("expense-1"))!;
+  vi.mocked(findExpenseById).mockResolvedValue({ ...stored, split_type: splitType });
+  await updateExpense(PAYER, "expense-1", validExpenseRequest({ notes: "Corrected note" }), true);
+  expect(replaceExpense).toHaveBeenCalledWith("expense-1", expect.objectContaining({ splitType, notes: "Corrected note", splits: [{ userId: OWER, owedCents: 1000 }] }), transactionClient);
+});
+
+it("rechecks preserved allocations under the ledger lock and refuses a concurrent edit", async () => {
+  const stored = (await findExpenseById("expense-1"))!;
+  vi.mocked(findExpenseById).mockResolvedValueOnce({ ...stored, split_type: "percent" })
+    .mockResolvedValue({ ...stored, split_type: "percent", amount_cents: 2000 });
+  await expect(updateExpense(PAYER, "expense-1", validExpenseRequest(), true)).rejects.toMatchObject({ code: "failed_precondition" });
+  expect(replaceExpense).not.toHaveBeenCalled();
+});
+
+it("does not preserve the old ratio type when explicitly saving changed allocations", async () => {
+  const stored = (await findExpenseById("expense-1"))!;
+  vi.mocked(findExpenseById).mockResolvedValue({ ...stored, split_type: "shares" });
+  await updateExpense(PAYER, "expense-1", validExpenseRequest(), false);
+  expect(replaceExpense).toHaveBeenCalledWith("expense-1", expect.objectContaining({ splitType: "exact" }), transactionClient);
+});

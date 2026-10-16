@@ -123,7 +123,7 @@ const styles = StyleSheet.create({
   },
   railItem: {
     borderRadius: radii.md,
-    marginHorizontal: spacing.md - 2,
+    marginHorizontal: 0,
     marginVertical: spacing.xs,
   },
   railLabel: {

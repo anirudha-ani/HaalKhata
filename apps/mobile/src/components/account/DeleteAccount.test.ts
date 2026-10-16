@@ -17,6 +17,7 @@ vi.mock("@/lib/api/session", () => ({ clearSession: vi.fn() }));
 vi.mock("@/lib/api/queryCache", () => ({ clearMobileQueryCache: vi.fn() }));
 // Keep the component and query hooks real; replace native host views and the sheet shell.
 vi.mock("react-native", () => ({
+  useWindowDimensions: () => ({ width: 390, height: 844, fontScale: 1 }),
   Platform: { select: (options: { default: string }) => options.default },
   StyleSheet: { create: (styles: unknown) => styles },
   View: ({ children, accessibilityLabel }: { children: ReactNode; accessibilityLabel?: string }) =>

@@ -1,6 +1,6 @@
 /** New/edit expense form: receipt panel, context picker, basics (amount/date/category), payer + split editors, summary, submit. */
 
-import { StyleSheet, View } from "react-native";
+import { ScrollView, StyleSheet, View } from "react-native";
 import { SplitSummary } from "@/components/expense/SplitSummary";
 import { PeoplePicker } from "@/components/people/PeoplePicker";
 import { useResponsiveLayout } from "@/lib/layout/hooks/useResponsiveLayout";
@@ -45,8 +45,8 @@ export function ExpenseForm({
   editExpenseId: string;
 }) {
   const form = useNewExpense(expenseAPI, initial, editExpenseId);
-  const currency = form.selectedGroup?.currency ?? form.me?.defaultCurrency ?? "USD";
-  const { isExpanded } = useResponsiveLayout();
+  const currency = form.currency;
+  const { isExpanded, isTablet, isLargeText } = useResponsiveLayout();
   useErrorToast(form.error);
 
   // The same numbers in two places: a panel beside the form on wide layouts,
@@ -81,9 +81,18 @@ export function ExpenseForm({
     readyMessage: form.isItemized ? "Everything is assigned" : "Adds up to the total",
   };
 
+  const categoryChips = CATEGORIES.map((categoryOption) => (
+    <Chip
+      key={categoryOption}
+      label={categoryOption}
+      onPress={() => form.setCategory(categoryOption)}
+      selected={form.category === categoryOption}
+    />
+  ));
+
   return (
     <View style={[styles.form, isExpanded ? styles.formExpanded : null]}>
-      <View style={styles.formColumn}>
+      <View style={[styles.formColumn, isExpanded ? styles.formColumnExpanded : null]}>
         {/* Editing cannot re-scan: re-parsing a photo over a saved expense
             would silently replace its lines. */}
         {form.isEdit ? null : <ReceiptPanel form={form} />}
@@ -113,7 +122,7 @@ export function ExpenseForm({
             placeholder="What was it for?"
             value={form.description}
           />
-          <View style={styles.basicsRow}>
+          <View style={[styles.basicsRow, isLargeText ? styles.basicsStacked : null]}>
             <View style={styles.basicsCell}>
               {/* Itemized totals are derived from the line items, so the field
                   becomes a read-only readout of items + tax + tip. */}
@@ -130,20 +139,16 @@ export function ExpenseForm({
               <DateField label="Date" onChange={form.setDate} value={form.date} />
             </View>
           </View>
-          <View style={styles.chips}>
-            {CATEGORIES.map((categoryOption) => (
-              <Chip
-                key={categoryOption}
-                label={categoryOption}
-                onPress={() => form.setCategory(categoryOption)}
-                selected={form.category === categoryOption}
-              />
-            ))}
-          </View>
+          {isTablet ? <View style={[styles.chips, styles.chipsWrapped]}>
+            {categoryChips}
+          </View> : <ScrollView horizontal keyboardShouldPersistTaps="handled" contentContainerStyle={styles.chips}>
+            {categoryChips}
+          </ScrollView>}
+
         </View>
       </View>
 
-      <View style={styles.formColumn}>
+      <View style={[styles.formColumn, isExpanded ? styles.formColumnExpanded : null]}>
         <PayerEditor form={form} />
         <SplitEditor currency={currency} form={form} />
         {isExpanded ? null : <SplitSummary layout="strip" {...summaryProps} />}
@@ -170,23 +175,36 @@ export function ExpenseForm({
 const styles = StyleSheet.create({
   basicsCell: {
     flex: 1,
+    minWidth: 0,
   },
   basicsRow: {
     flexDirection: "row",
     gap: spacing.md,
   },
+  basicsStacked: {
+    flexDirection: "column",
+  },
   chips: {
     flexDirection: "row",
-    flexWrap: "wrap",
     gap: spacing.sm,
+  },
+  chipsWrapped: {
+    flexWrap: "wrap",
   },
   form: {
     gap: spacing.xl,
+    width: "100%",
   },
   formColumn: {
-    flex: 1,
     gap: spacing.xl,
     minWidth: 0,
+  },
+  formColumnExpanded: {
+    // Constrain intrinsic receipt/chip widths before Yoga measures either column.
+    flexBasis: 0,
+    flexGrow: 1,
+    flexShrink: 1,
+    width: 0,
   },
   formExpanded: {
     alignItems: "flex-start",

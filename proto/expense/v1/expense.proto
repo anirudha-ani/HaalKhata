@@ -122,6 +122,9 @@ message CreateExpenseRequest {
 message UpdateExpenseRequest {
   string expense_id = 1;
   CreateExpenseRequest expense = 2;
+  // Keep a historical percent/shares mode when submitting its unchanged saved
+  // allocations as exact. The server rechecks under the ledger lock.
+  bool preserve_split_type = 3;
 }
 
 message ListExpensesRequest {

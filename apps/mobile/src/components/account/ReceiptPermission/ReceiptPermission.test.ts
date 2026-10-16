@@ -14,6 +14,7 @@ import { ReceiptPermission } from "./ReceiptPermission";
 vi.mock("@/lib/api/connect", () => ({ receiptClient: { getProcessingInfo: vi.fn(), revokeConsent: vi.fn() },
   errorMessage: (error: Error) => error.message }));
 vi.mock("react-native", () => ({
+  useWindowDimensions: () => ({ width: 390, height: 844, fontScale: 1 }),
   Platform: { select: (options: { default: string }) => options.default },
   StyleSheet: { create: (styles: unknown) => styles },
   View: ({ children }: { children: ReactNode }) => createElement("div", null, children),

@@ -1,7 +1,8 @@
 /** Private report and block controls beside visible content. */
 
 import { useState } from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { StyleSheet, View } from "react-native";
+import { Text } from "@/components/ui/Text";
 import { REPORT_REASONS, BLOCK_EXPLANATION, type ReportTargetKind } from "@haalkhata/shared/safety/safety";
 import { Button } from "@/components/ui/Button";
 import { Sheet } from "@/components/ui/Sheet/Sheet";

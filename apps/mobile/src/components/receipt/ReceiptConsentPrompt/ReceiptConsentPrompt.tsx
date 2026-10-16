@@ -1,6 +1,7 @@
 /** First-use receipt sharing permission, presented as a phone or tablet sheet. */
 
-import { StyleSheet, Text, View } from "react-native";
+import { StyleSheet, View } from "react-native";
+import { Text } from "@/components/ui/Text";
 import { RECEIPT_CONSENT_COPY } from "@haalkhata/shared/receipt/consent";
 import { LegalLinks } from "@/components/legal/LegalLinks";
 import { Button } from "@/components/ui/Button";

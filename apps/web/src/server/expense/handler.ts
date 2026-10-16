@@ -30,7 +30,7 @@ export const expenseHandler: ServiceImpl<typeof ExpenseService> = {
       throw new ConnectError("expense payload is required", Code.InvalidArgument);
     }
     return runUsecase(
-      async () => expenses.updateExpense(await requireUser(context), request.expenseId, request.expense!),
+      async () => expenses.updateExpense(await requireUser(context), request.expenseId, request.expense!, request.preserveSplitType),
       context,
     );
   },

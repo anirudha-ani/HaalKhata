@@ -1,7 +1,8 @@
 /** Shared activity feed list: day-grouped, pressable rows with type tiles, actors, times and amounts. */
 
 import { useRouter } from "expo-router";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, View } from "react-native";
+import { Text } from "@/components/ui/Text";
 import type { ActivityEvent } from "@haalkhata/protogen/social/v1/social_pb";
 import { groupByDay, timeOfDay, withoutAmount } from "@haalkhata/shared/activity/format";
 import { formatMoney } from "@haalkhata/shared/money/money";

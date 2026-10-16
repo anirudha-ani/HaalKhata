@@ -1,6 +1,7 @@
 /** The value control of one payment detail: a phone field, a choice, or a text input with the right keyboard. */
 
-import { StyleSheet, Text, TextInput, View } from "react-native";
+import { StyleSheet, TextInput, View } from "react-native";
+import { Text } from "@/components/ui/Text";
 import { Chip } from "@/components/ui/Chip";
 import { PhoneField } from "@/components/ui/PhoneField";
 import { TextField } from "@/components/ui/TextField";

@@ -4,7 +4,8 @@ import type { User } from "@haalkhata/protogen/common/v1/common_pb";
 import type { Expense } from "@haalkhata/protogen/expense/v1/expense_pb";
 import { useRouter } from "expo-router";
 import { Check, ReceiptText } from "lucide-react-native";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, View } from "react-native";
+import { Text } from "@/components/ui/Text";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Money } from "@/components/ui/Money";
 import { settledStatus } from "@haalkhata/shared/expense/settledStatus";
@@ -268,6 +269,7 @@ const styles = StyleSheet.create({
   row: {
     alignItems: "center",
     flexDirection: "row",
+    flexWrap: "wrap",
     gap: spacing.md,
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.md,
@@ -280,7 +282,10 @@ const styles = StyleSheet.create({
     backgroundColor: colors.paper,
   },
   rowText: {
-    flex: 1,
+    width: 160,
+    maxWidth: "100%",
+    flexGrow: 1,
+    flexShrink: 1,
     minWidth: 0,
   },
   settledLabel: {

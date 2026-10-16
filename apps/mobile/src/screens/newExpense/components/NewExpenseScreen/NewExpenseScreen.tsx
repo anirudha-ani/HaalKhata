@@ -5,7 +5,7 @@ import { DetailHeader } from "@/components/shell/DetailHeader/DetailHeader";
 import { Screen } from "@/components/shell/Screen/Screen";
 import { Spinner } from "@/components/ui/Spinner";
 import { useRouter } from "expo-router";
-import { Text } from "react-native";
+import { Text } from "@/components/ui/Text";
 import { Button } from "@/components/ui/Button";
 import { colors } from "@/lib/theme/theme";
 import { ARCHIVED_GROUP_HINT, GROUP_ARCHIVE_ACTIONS } from "@haalkhata/shared/group/archiving";

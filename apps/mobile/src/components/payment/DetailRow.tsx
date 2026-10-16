@@ -2,7 +2,8 @@
 
 import { ChevronDown, X } from "lucide-react-native";
 import { useState } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, View } from "react-native";
+import { Text } from "@/components/ui/Text";
 import { Chip } from "@/components/ui/Chip";
 import { detailKindName } from "@haalkhata/shared/payment/detailKinds";
 import type { DetailDraft } from "@haalkhata/shared/payment/methodDraft";

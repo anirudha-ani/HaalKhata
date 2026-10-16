@@ -1,8 +1,10 @@
 /** Apple-branded native button on iOS, browser sign-in action on Android. */
 
 import * as AppleAuthentication from "expo-apple-authentication";
-import { ActivityIndicator, Platform, StyleSheet, Text, View } from "react-native";
-import { Button } from "@/components/ui/Button";
+import { ActivityIndicator, Platform, StyleSheet, useWindowDimensions, View } from "react-native";
+import { Text } from "@/components/ui/Text";
+import { ProviderButton } from "./ProviderButton/ProviderButton";
+import { PROVIDER_BUTTON_HEIGHT } from "../../../constants/providerButtons";
 import { APPLE_SIGN_IN_UNAVAILABLE } from "@haalkhata/shared/auth/providerMessages";
 import { colors, radii, spacing } from "@/lib/theme/theme";
 import { useAppleSignIn } from "../hooks/useAppleSignIn";
@@ -13,6 +15,7 @@ import { useAppleSignIn } from "../hooks/useAppleSignIn";
  */
 export function AppleSignInButton() {
   const apple = useAppleSignIn();
+  const { fontScale } = useWindowDimensions();
   if (!apple.available) return apple.isLoading ? null : (
     <Text accessibilityRole="text" accessibilityLiveRegion="polite" style={styles.unavailable}>
       {APPLE_SIGN_IN_UNAVAILABLE}
@@ -23,16 +26,16 @@ export function AppleSignInButton() {
       <AppleAuthentication.AppleAuthenticationButton
         buttonType={AppleAuthentication.AppleAuthenticationButtonType.CONTINUE}
         buttonStyle={AppleAuthentication.AppleAuthenticationButtonStyle.BLACK}
-        cornerRadius={8} style={styles.button} onPress={apple.signIn} />
-    </View> : <Button label="Continue with Apple" onPress={apple.signIn} busy={apple.isPending} variant="outline" />}
-    {apple.isPending ? <ActivityIndicator accessibilityLabel="Signing in with Apple" color={colors.brand600} /> : null}
+        cornerRadius={radii.full} style={[styles.button, { height: PROVIDER_BUTTON_HEIGHT * Math.max(1, fontScale) }]} onPress={apple.signIn} />
+    </View> : <ProviderButton provider="Apple" onPress={apple.signIn} busy={apple.isPending} />}
+    {Platform.OS === "ios" && apple.isPending ? <ActivityIndicator accessibilityLabel="Signing in with Apple" color={colors.brand600} /> : null}
     {apple.error ? <Text accessibilityRole="alert" style={styles.error}>{apple.error}</Text> : null}
   </View>;
 }
 
 const styles = StyleSheet.create({
   container: { gap: spacing.sm },
-  button: { width: "100%", height: 48 },
+  button: { width: "100%" },
   error: { color: colors.brand600, fontSize: 14 },
   unavailable: {
     backgroundColor: colors.paper, borderColor: colors.line, borderRadius: radii.sm,

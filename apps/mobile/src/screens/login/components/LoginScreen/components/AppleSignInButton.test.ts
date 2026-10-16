@@ -13,6 +13,7 @@ import { AppleSignInButton } from "./AppleSignInButton";
 
 const device = vi.hoisted(() => ({ platform: "ios", supported: true }));
 vi.mock("react-native", () => ({
+  useWindowDimensions: () => ({ width: 390, height: 844, fontScale: 1 }),
   Platform: { get OS() { return device.platform; }, select: (options: { default: string }) => options.default },
   StyleSheet: { create: (styles: unknown) => styles },
   View: ({ children }: { children: ReactNode }) => createElement("div", null, children),
@@ -24,7 +25,7 @@ vi.mock("expo-apple-authentication", () => ({
   AppleAuthenticationButtonType: { CONTINUE: "continue" }, AppleAuthenticationButtonStyle: { BLACK: "black" },
   AppleAuthenticationButton: () => createElement("button", null, "Continue with Apple"),
 }));
-vi.mock("@/components/ui/Button", () => ({ Button: ({ label }: { label: string }) => createElement("button", null, label) }));
+vi.mock("./ProviderButton/ProviderButton", () => ({ ProviderButton: ({ provider }: { provider: string }) => createElement("button", null, `Continue with ${provider}`) }));
 vi.mock("expo-crypto", () => ({}));
 vi.mock("expo-web-browser", () => ({}));
 vi.mock("expo-router", () => ({ useRouter: () => ({ replace: vi.fn() }) }));

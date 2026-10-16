@@ -1,7 +1,8 @@
 /** Receipt input for the expense form: camera/library pickers, parse action, and the photo to check against. */
 
 import { Camera, Images, ScanLine } from "lucide-react-native";
-import { Image, StyleSheet, Text, View } from "react-native";
+import { Image, StyleSheet, View } from "react-native";
+import { Text } from "@/components/ui/Text";
 import { ReceiptConsentPrompt } from "@/components/receipt/ReceiptConsentPrompt/ReceiptConsentPrompt";
 import { Button } from "@/components/ui/Button";
 import { Spinner } from "@/components/ui/Spinner";
@@ -126,6 +127,7 @@ const styles = StyleSheet.create({
   captureHint: {
     color: colors.inkSoft,
     fontSize: 13,
+    textAlign: "center",
   },
   captureTitle: {
     color: colors.ink,

@@ -3,7 +3,8 @@
 import { useRouter } from "expo-router";
 import { ChevronLeft } from "lucide-react-native";
 import type { ReactNode } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, View } from "react-native";
+import { Text } from "@/components/ui/Text";
 import { SCREEN_CONTENT_MAX_WIDTH } from "@/lib/layout/constants/layout";
 import { colors, fonts, radii, spacing } from "@/lib/theme/theme";
 
@@ -44,6 +45,11 @@ export function DetailHeader({
 const styles = StyleSheet.create({
   backButton: {
     borderRadius: radii.full,
+    alignItems: "center",
+    justifyContent: "center",
+    minWidth: 44,
+    minHeight: 44,
+    flexShrink: 0,
     padding: spacing.xs,
   },
   header: {
@@ -62,6 +68,7 @@ const styles = StyleSheet.create({
     width: "100%",
   },
   right: {
+    flexShrink: 0,
     marginLeft: "auto",
   },
   title: {

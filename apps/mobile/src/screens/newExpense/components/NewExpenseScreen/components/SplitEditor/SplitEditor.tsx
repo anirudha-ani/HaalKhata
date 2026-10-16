@@ -1,10 +1,13 @@
 /** Split section: split-type tabs plus per-person participation and value inputs. */
 
+import { equalSplitSummary } from "@haalkhata/shared/expense/form/equalSplitSummary";
 import { Check } from "lucide-react-native";
-import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { Pressable, StyleSheet, TextInput, View } from "react-native";
+import { Text } from "@/components/ui/Text";
 import { ItemCards } from "@/components/expense/ItemCards";
 import { Avatar } from "@/components/ui/Avatar";
 import { Segmented } from "@/components/ui/Segmented";
+import { useResponsiveLayout } from "@/lib/layout/hooks/useResponsiveLayout";
 import { colors, radii, spacing } from "@/lib/theme/theme";
 import { SPLIT_TABS, UNIT } from "../../../../constants/splitEditor";
 import type { NewExpenseController } from "../../hooks/useNewExpense";
@@ -29,9 +32,11 @@ export function SplitEditor({
   /** ISO 4217 code the itemized totals are shown in. */
   currency: string;
 }) {
+  const { fontScale } = useResponsiveLayout();
   return (
     <View style={styles.section}>
       <Text style={styles.sectionTitle}>SPLIT</Text>
+      {form.splitNotice ? <Text style={styles.summary}>{form.splitNotice}</Text> : null}
 
       <Segmented onChange={form.setSplitType} options={SPLIT_TABS} value={form.splitType} />
 
@@ -66,13 +71,14 @@ export function SplitEditor({
               {form.splitType !== "equal" && isChecked ? (
                 <View style={styles.valueCell}>
                   <TextInput
+                    accessibilityLabel={`${form.splitType} value for ${person.name}`}
                     keyboardType="decimal-pad"
                     onChangeText={(text) =>
                       form.setSplitInputs({ ...form.splitInputs, [person.id]: text })
                     }
                     placeholder="0"
                     placeholderTextColor={colors.inkSoft}
-                    style={styles.valueInput}
+                    style={[styles.valueInput, { width: styles.valueInput.width * fontScale }]}
                     value={form.splitInputs[person.id] ?? ""}
                   />
                   {UNIT[form.splitType] ? (
@@ -90,8 +96,7 @@ export function SplitEditor({
         <Text style={styles.validation}>{form.splitCheck.message}</Text>
       ) : form.splitType === "equal" && form.participantIds.length > 0 && form.totalCents ? (
         <Text style={styles.summary}>
-          {(form.totalCents / 100 / form.participantIds.length).toFixed(2)} each ·{" "}
-          {form.participantIds.length} people
+          {equalSplitSummary(form.totalCents, form.participantIds.length, currency)}
         </Text>
       ) : null}
     </View>
@@ -121,13 +126,17 @@ const styles = StyleSheet.create({
   },
   personToggle: {
     alignItems: "center",
-    flex: 1,
+    width: 160,
+    maxWidth: "100%",
+    flexGrow: 1,
+    flexShrink: 1,
     flexDirection: "row",
     gap: spacing.md,
   },
   row: {
     alignItems: "center",
     flexDirection: "row",
+    flexWrap: "wrap",
     gap: spacing.md,
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.sm + 2,
@@ -176,10 +185,12 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     color: colors.ink,
     fontSize: 14,
+    minHeight: 44,
     fontVariant: ["tabular-nums"],
     paddingHorizontal: spacing.sm,
     paddingVertical: 6,
     textAlign: "right",
     width: 80,
+    maxWidth: "100%",
   },
 });

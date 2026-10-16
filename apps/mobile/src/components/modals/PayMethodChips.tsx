@@ -2,7 +2,8 @@
 
 import type { PaymentMethod } from "@haalkhata/protogen/payment/v1/payment_pb";
 import { Star } from "lucide-react-native";
-import { StyleSheet, Text, View } from "react-native";
+import { StyleSheet, View } from "react-native";
+import { Text } from "@/components/ui/Text";
 import { Chip } from "@/components/ui/Chip";
 import { methodDisplayName } from "@haalkhata/shared/payment/formatMethod";
 import { PLAIN_PAY_CHOICES } from "@haalkhata/shared/payment/payeeMethods";
