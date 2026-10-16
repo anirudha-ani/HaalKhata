@@ -51,6 +51,8 @@ export const CONTACT_DISCOVERY_SETTING = {
   detail:
     "People who have your verified phone number or email saved can see that you use HaalKhata " +
     "and send you a friend request. They see your name and photo, never your number or email.",
+  findableNotice: "People who have your number or email saved can now find you.",
+  hiddenNotice: "People can no longer find you from their contacts.",
 } as const;
 
 /** The one-time question for accounts that never answered. */
@@ -59,6 +61,10 @@ export const CONTACT_DISCOVERY_PROMPT = {
   body: CONTACT_DISCOVERY_SETTING.detail,
   allow: "Let friends find me",
   decline: "Not now",
+  allowedNotice:
+    "Friends who have your number or email saved can now find you. You can change this under Account.",
+  declinedNotice:
+    "People won't find you from their contacts. You can change this under Account.",
 } as const;
 
 /**

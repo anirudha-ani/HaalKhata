@@ -5,6 +5,7 @@ import { UserPlus } from "lucide-react-native";
 import { StyleSheet, View } from "react-native";
 import { Text } from "@/components/ui/Text";
 import { InviteShareSheet } from "@/components/modals/InviteShareSheet";
+import { ContactDiscoveryPrompt } from "@/components/account/ContactDiscoveryPrompt/ContactDiscoveryPrompt";
 import { SettleUpModal } from "@/components/modals/SettleUpModal";
 import { Screen } from "@/components/shell/Screen/Screen";
 import { ScreenHeader } from "@/components/shell/ScreenHeader/ScreenHeader";
@@ -61,6 +62,9 @@ export function FriendsScreen() {
           onPress={() => friendsState.setShowAdd(true)}
         />
       </View>
+
+      {/* Asked once, where finding and being found matter. */}
+      {friendsState.me ? <ContactDiscoveryPrompt answer={friendsState.me.contactDiscovery} /> : null}
 
       {/* Confirmation of the last request sent. The sheet that took it has
           closed by now, so this is the one place it can be read. */}
