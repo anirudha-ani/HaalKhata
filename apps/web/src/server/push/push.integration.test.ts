@@ -9,6 +9,7 @@
 
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { Client } from "pg";
+import { formatMoney } from "@haalkhata/shared/money/money";
 import type { PushMessage, PushProvider } from "@/server/push/usecase/provider/pushTypes";
 
 const ADMIN_URL =
@@ -213,6 +214,7 @@ describe.skipIf(!reachable)("push notifications against Postgres", () => {
       threadId: `group-${GROUP}`,
       data: { link: `/expenses/${expense.id}`, recipientId: BOBA_ID },
     });
+    expect(provider.sent[0].body).toBe(`Goa trip · you owe Ani ${formatMoney(1200, "USD")}`);
     expect((await database.query(`SELECT 1 FROM push_outbox`)).rowCount).toBe(0);
     expect((await database.query(`SELECT device_id FROM push_tickets`)).rows).toEqual([{ device_id: device.id }]);
     const stamped = await database.query(`SELECT last_sent_at FROM push_devices WHERE id = $1`, [device.id]);

@@ -66,6 +66,7 @@ import {
   positionDigest,
 } from "@/server/expense/domain/settlementAllocation";
 import { oneOffPairKey, settledExpenseIds } from "@/server/expense/domain/settledExpenses";
+import { readerShareLine } from "@/server/expense/domain/readerShareLine";
 import { snapshot } from "@/server/common/db/db";
 import { UsecaseError, denied, invalid, notFound } from "@/server/common/errors";
 import {
@@ -506,7 +507,8 @@ function storedExpenseWrite(expense: ExpenseRow, children: ExpenseChildren): Exp
 
 /**
  * Fans out an expense change: one activity entry for its participants plus a
- * notification for every participant except the actor.
+ * notification for every participant except the actor, each carrying that
+ * reader's own money line.
  *
  * @param actorId - User who performed the change.
  * @param expenseId - Id of the affected expense (used for links).
@@ -547,17 +549,28 @@ async function recordExpenseActivity(
     },
     client,
   );
-  await insertNotifications(
-    involvedUserIds(write).filter((recipientId) => recipientId !== actorId),
-    {
-      actorId,
-      type: `expense_${verb}`,
-      title: `${actor.name} ${verb} "${write.description}"`,
-      body: group ? group.name : "One-off expense",
-      link: `/expenses/${expenseId}`,
-    },
-    client,
+  // Each reader's bell row (and so their push) says what the expense means
+  // for them: "Goa trip · you owe Ani ৳600". One row per reader, because the
+  // money line is theirs alone.
+  const payerIds = [...new Set(write.payers.map((payer) => payer.userId))];
+  const payerNames = new Map(
+    (await findUsersByIds(payerIds)).map((payer) => [payer.id, payer.name] as const),
   );
+  const scopeName = group ? group.name : "One-off expense";
+  for (const recipientId of involvedUserIds(write).filter((participantId) => participantId !== actorId)) {
+    const moneyLine = readerShareLine(write, recipientId, verb, payerNames);
+    await insertNotifications(
+      [recipientId],
+      {
+        actorId,
+        type: `expense_${verb}`,
+        title: `${actor.name} ${verb} "${write.description}"`,
+        body: moneyLine ? `${scopeName} · ${moneyLine}` : scopeName,
+        link: `/expenses/${expenseId}`,
+      },
+      client,
+    );
+  }
 }
 
 /**
