@@ -36,7 +36,9 @@ service SocialService {
   // Sends a friend request to each listed account, with AddFriend's rules
   // applied per id: the caller, blocked, unregistered or merged accounts,
   // existing friends and pairs with a request pending in either direction
-  // are skipped without saying so. One call takes one rate-limit slot,
+  // are skipped without saying so. So are accounts that are not findable
+  // from contacts, which keeps this bulk path from being a faster AddFriend
+  // for ids learned elsewhere. One call takes one rate-limit slot,
   // which is what lets "send to all" be one call. The recipients appear in
   // ListFriends.outgoing_requests with their profile, since the caller saw
   // who they were asking.
