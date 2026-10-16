@@ -277,7 +277,9 @@ with colocated tests. Mobile-specific rules:
   exists on mobile — a feature that lands on one app and is "tracked" for
   the other is a gap, not a plan (docs/plan.txt §27). Pure logic both apps
   need (filters, wording, formatting, phone helpers) goes in
-  `packages/shared` with its tests, never written twice.
+  `packages/shared` with its tests, never written twice. The only
+  native-only RPCs are `LogInWithApple` and `RegisterDevice` (a browser
+  has no Apple credential or Expo push token); `pnpm test:parity` names both.
 - **Auth is bearer-token**, not cookies: LogInWithGoogle (production) or
   LogIn/SignUp (development only) return `token`, stored
   in SecureStore (`src/lib/api/session.ts`) and attached by a transport
@@ -383,6 +385,13 @@ with colocated tests. Mobile-specific rules:
   when the app would read it as the money owed: `appPaymentLink` checks the
   app's currencies, the method's currency and the decimals, and returns the
   line shown with the link. Never build such a link by hand.
+- **Every bell row is a push.** `insertNotifications` queues a `push_outbox`
+  row on the caller's transaction, and the push worker (started by
+  `src/instrumentation.ts`) sends it through Expo. Never call the push
+  provider from a usecase. A new notification kind needs a category in
+  `packages/shared/src/notifications/categories.ts` and the DB CHECK; until
+  it has one it is never pushed. A push carries only `notificationId`,
+  `link` and `recipientId` as data. See `docs/backend/push/push-service.md`.
 - **Limiters are process-local** (`rateLimit.ts`, `phoneRateLimit.ts`): fine
   for one container, wrong for two replicas — see `docs/plan.txt` §28.
 

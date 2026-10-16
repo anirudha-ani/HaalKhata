@@ -32,13 +32,16 @@ cards must also shrink to fit the space actually available inside the shell.
 | Settlement scope/net settlement and reminders | Present | Present | Same ledger endpoints and shared position/payment helpers |
 | Payment-method management and payer details | Present | Present | Shared payment validation, state and formatting |
 | History, comments, activity and notifications | Present | Present | Same expense and social operations |
+| Push notification settings: switches, phones, test, remove | Present | Present | Same PushService operations; shared categories, wording and phone descriptions |
+| Receiving pushes: permission, registration, taps, badge | Not applicable (no Web Push yet) | Present | `RegisterDevice` is native-only; taps use the shared `safeNotificationPath` |
 | Reporting/blocking and account deletion | Present | Present | Same safety/deletion endpoints; shared balance-review states |
 
-`pnpm test:parity` currently finds **64 common Connect methods**. It scans actual
+`pnpm test:parity` currently finds **69 common Connect methods**. It scans actual
 client calls in both source trees, including Expo route files, and fails CI on a
-one-sided method. The one explicit transport exception is native
-`LogInWithApple`: browser Apple sign-in uses the HTTPS callback and
-`CompleteAppleSignIn`. This gate checks API entry points; it does not prove that
+one-sided method. There are two explicit native-only
+exceptions. `LogInWithApple`: browser Apple sign-in uses the HTTPS callback and
+`CompleteAppleSignIn`. `RegisterDevice`: a browser has no Expo push token; Web
+Push would register through the same RPC and end the exception. This gate checks API entry points; it does not prove that
 all parameters, states, gestures or visual layouts are equivalent.
 
 ## Problems corrected in this audit
