@@ -12,7 +12,7 @@ const ADMIN_URL = process.env.MERGE_TEST_ADMIN_URL ?? "postgres://haalkhata:chan
 const TEST_URL = ADMIN_URL.replace(/\/[^/]*$/, "/haalkhata_release_migration_test");
 const MIGRATIONS_DIRECTORY = fileURLToPath(new URL("../../../../migrations/", import.meta.url));
 const MAIN_LAST_MIGRATION = "1791828578558_add-group-status.sql";
-const RELEASE_SUFFIXES = ["_apple_sign_in.sql", "_anonymous_ledger_members.sql", "_user_safety.sql", "_add-receipt-account-consent.sql"];
+const RELEASE_SUFFIXES = ["_apple_sign_in.sql", "_anonymous_ledger_members.sql", "_user_safety.sql", "_add-receipt-account-consent.sql", "_add-push-notifications.sql"];
 
 /** @returns Whether the isolated integration database can be created. */
 async function databaseReachable(): Promise<boolean> {
@@ -72,8 +72,8 @@ describe.skipIf(!reachable)("mobile release database upgrade", () => {
     expect(after.rows).toEqual(before.rows);
     const owner = await database.query("SELECT google_sub, apple_sub, deleted_at, suspended_at FROM users WHERE id = $1", ["release-owner"]);
     expect(owner.rows).toEqual([{ google_sub: "release-google-sub", apple_sub: null, deleted_at: null, suspended_at: null }]);
-    const tables = await database.query("SELECT to_regclass('apple_credentials') AS apple, to_regclass('content_reports') AS safety");
-    expect(tables.rows).toEqual([{ apple: "apple_credentials", safety: "content_reports" }]);
+    const tables = await database.query("SELECT to_regclass('apple_credentials') AS apple, to_regclass('content_reports') AS safety, to_regclass('push_outbox') AS push");
+    expect(tables.rows).toEqual([{ apple: "apple_credentials", safety: "content_reports", push: "push_outbox" }]);
     expect((await database.query("SELECT * FROM receipt_consents")).rows).toEqual([]);
     await database.query("INSERT INTO users (id, email, name, avatar_color) VALUES ('receipt-consent-owner', 'receipt-consent@example.com', 'Scanner', '#336699')");
     await database.query("INSERT INTO receipt_consents (user_id, consent_version) VALUES ($1, $2)", ["receipt-consent-owner", "a".repeat(64)]);
