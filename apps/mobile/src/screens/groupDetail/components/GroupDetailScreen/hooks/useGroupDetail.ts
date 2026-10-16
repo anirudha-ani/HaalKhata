@@ -32,7 +32,8 @@ export type GroupTab = "expenses" | "balances" | "activity";
  *   `addingPeople`/`setAddingPeople` and the add-people form (`pickedIds`,
  *   `togglePicked`, `contact`/`setContact`, `submitPeople`,
  *   `peopleError`, `canAddPeople`), `candidates` (friends not already in the
- *   group), the members sheet (`viewingMembers`/`setViewingMembers`,
+ *   group), `reportingGroup`/`setReportingGroup` for the report sheet the
+ *   group menu opens, the members sheet (`viewingMembers`/`setViewingMembers`,
  *   `pendingMemberAction` with `askMemberAction`/`cancelMemberAction`/
  *   `confirmMemberAction` for the remove, leave and make-owner
  *   confirmation, `removingUserId`, `transferringUserId`, `memberFeedback`
@@ -49,6 +50,7 @@ export function useGroupDetail(groupId: string) {
   const [activeTab, setActiveTab] = useState<GroupTab>("expenses");
   const [addingPeople, setAddingPeople] = useState(false);
   const [viewingMembers, setViewingMembers] = useState(false);
+  const [reportingGroup, setReportingGroup] = useState(false);
   const [pickedIds, setPickedIds] = useState<string[]>([]);
   const [contact, setContact] = useState<ContactDraft>(EMPTY_CONTACT);
   const [peopleError, setPeopleError] = useState("");
@@ -340,6 +342,8 @@ export function useGroupDetail(groupId: string) {
     setTab: setActiveTab,
     addingPeople,
     setAddingPeople,
+    reportingGroup,
+    setReportingGroup,
     viewingMembers,
     /** Opens or closes the members sheet; an open question and the last message go with it. */
     setViewingMembers: (open: boolean) => {

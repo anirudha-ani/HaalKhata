@@ -1,20 +1,22 @@
 "use client";
-/** Group detail orchestrator: header, members strip, expenses/balances tabs, add-people and settle modals. */
+/** Group detail orchestrator: header with its options menu, members strip, expenses/balances tabs, add-people, report and settle modals. */
 
-import { SafetyActions } from "@/components/safety/SafetyActions/SafetyActions";
+import { SafetyDialog } from "@/components/safety/SafetyDialog/SafetyDialog";
 import Link from "next/link";
-import { Archive, ArchiveRestore, Plus } from "lucide-react";
+import { Archive, ArchiveRestore, Flag, Plus } from "lucide-react";
 import { InviteShareModal } from "@/components/modals/InviteShareModal/InviteShareModal";
 import { SettleUpModal } from "@/components/modals/SettleUpModal/SettleUpModal";
+import { OverflowMenu } from "@/components/ui/OverflowMenu/OverflowMenu";
 import { Spinner } from "@/components/ui/Spinner/Spinner";
 import {
   ARCHIVED_GROUP_HINT,
   GROUP_ARCHIVE_ACTIONS,
 } from "@haalkhata/shared/group/archiving";
+import { GROUP_MENU_COPY } from "@haalkhata/shared/group/groupMenu";
 import { errorMessage } from "@/lib/api/connect";
 import { useHydrated } from "@/lib/hooks/useHydrated";
 import { GroupStatus } from "@haalkhata/shared/group/status";
-import { groupEmoji } from "@haalkhata/shared/group/groupTypes";
+import { groupEmoji, groupTypeLabel } from "@haalkhata/shared/group/groupTypes";
 import { ActivityPanel } from "./components/ActivityPanel/ActivityPanel";
 import { ArchiveGroupModal } from "./components/ArchiveGroupModal/ArchiveGroupModal";
 import { AddPeopleModal } from "./components/AddPeopleModal/AddPeopleModal";
@@ -26,9 +28,10 @@ import { TABS } from "../../constants/tabs";
 import { useGroupDetail } from "./hooks/useGroupDetail";
 
 /**
- * Renders a single group's page: header with the add-expense action, the
- * members strip, the expenses/balances/activity tab switcher, and the
- * members, add-people and settle-up modals.
+ * Renders a single group's page: header with the add-expense action and the
+ * options menu (archive, report), the members strip, the
+ * expenses/balances/activity tab switcher, and the members, add-people,
+ * report and settle-up modals.
  *
  * @returns The group detail content, a spinner while loading, or a not-found
  *   message when the group cannot be fetched.
@@ -51,50 +54,60 @@ export function GroupDetailPage({
     );
   }
 
+  const archived = groupDetail.group.status === GroupStatus.ARCHIVED;
+
   return (
     <div className="space-y-6">
-      <SafetyActions targetKind="group" targetId={groupId} />
-      <header className="flex flex-wrap items-start justify-between gap-4">
-        <div className="flex items-center gap-4">
-          <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-brand-50 text-3xl">
+      <header className="flex items-start gap-3">
+        <div className="flex min-w-0 flex-1 items-center gap-4">
+          <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-brand-50 text-3xl">
             {groupEmoji(groupDetail.group.type)}
           </span>
-          <div>
-            <h1 className="text-2xl font-bold sm:text-3xl">{groupDetail.group.name}</h1>
-            <p className="text-sm text-ink-soft capitalize">
-              {groupDetail.group.type} · {groupDetail.group.currency}
+          <div className="min-w-0">
+            <h1 className="text-2xl font-bold break-words sm:text-3xl">{groupDetail.group.name}</h1>
+            <p className="text-sm text-ink-soft">
+              {groupTypeLabel(groupDetail.group.type)} · {groupDetail.group.currency}
             </p>
           </div>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            disabled={groupDetail.archivePending}
-            onClick={groupDetail.openArchiveDialog}
-            className="flex items-center gap-2 rounded-xl border border-line px-3.5 py-2.5 text-sm font-semibold text-ink-soft hover:border-brand-200 disabled:opacity-50"
-          >
-            {groupDetail.group.status === GroupStatus.ARCHIVED ? (
-              <ArchiveRestore className="h-4 w-4" />
-            ) : (
-              <Archive className="h-4 w-4" />
-            )}
-            {groupDetail.archivePending
-              ? GROUP_ARCHIVE_ACTIONS.saving
-              : groupDetail.group.status === GroupStatus.ARCHIVED ? GROUP_ARCHIVE_ACTIONS.unarchive : GROUP_ARCHIVE_ACTIONS.archive}
-          </button>
+        {/* The page's actions keep to the top right corner, as they do in the
+            app: adding an expense — only its "+" on a phone, where the name
+            needs the width — and the menu. Archiving and reporting are rare
+            and deliberate, so they wait behind it rather than sitting as
+            buttons between the name and the ledger. Pinned to the top, and
+            set down to the middle of the emoji tile, so a name that wraps
+            onto more lines leaves them in the corner. */}
+        <div className="flex shrink-0 items-center gap-2 pt-2">
           {groupDetail.group.status === GroupStatus.ACTIVE ? (
             <Link
               href={`/expenses/new?group=${groupId}`}
-              className="flex items-center gap-2 rounded-xl bg-brand-600 px-3.5 py-2.5 text-sm font-semibold text-white hover:bg-brand-700"
+              aria-label="Add expense"
+              className="flex h-10 min-w-10 items-center justify-center gap-2 rounded-xl bg-brand-600 px-2.5 text-sm font-semibold text-white hover:bg-brand-700 sm:px-3.5"
             >
-              <Plus className="h-4 w-4" />
-              Add expense
+              <Plus className="h-5 w-5 sm:h-4 sm:w-4" aria-hidden="true" />
+              <span className="hidden sm:inline">Add expense</span>
             </Link>
           ) : null}
+          <OverflowMenu
+            label={GROUP_MENU_COPY.trigger}
+            items={[
+              {
+                label: archived ? GROUP_ARCHIVE_ACTIONS.unarchive : GROUP_ARCHIVE_ACTIONS.archive,
+                icon: archived ? <ArchiveRestore className="h-4 w-4" /> : <Archive className="h-4 w-4" />,
+                onSelect: groupDetail.openArchiveDialog,
+                disabled: groupDetail.archivePending,
+              },
+              {
+                label: GROUP_MENU_COPY.report,
+                icon: <Flag className="h-4 w-4" />,
+                onSelect: () => groupDetail.setReportingGroup(true),
+              },
+            ]}
+          />
         </div>
       </header>
 
-      {groupDetail.group.status === GroupStatus.ARCHIVED ? (
+      {archived ? (
         <p className="rounded-xl border border-line bg-card px-4 py-3 text-sm text-ink-soft">
           {ARCHIVED_GROUP_HINT}
         </p>
@@ -108,6 +121,15 @@ export function GroupDetailPage({
           onConfirm={groupDetail.confirmArchiveChange}
           onClose={groupDetail.closeArchiveDialog}
           onViewBalances={groupDetail.viewArchiveBalances}
+        />
+      ) : null}
+
+      {groupDetail.reportingGroup ? (
+        <SafetyDialog
+          mode="report"
+          targetKind="group"
+          targetId={groupId}
+          onClose={() => groupDetail.setReportingGroup(false)}
         />
       ) : null}
 
