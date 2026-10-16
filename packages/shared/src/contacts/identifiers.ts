@@ -54,14 +54,33 @@ export interface ContactLookupChunk {
 const EMAIL_SHAPE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 /**
+ * The region named by a BCP 47 locale tag, such as "BD" in "bn-BD".
+ *
+ * @param localeTag - A locale tag; "" when unknown.
+ * @returns The region when the tag names one libphonenumber knows, else null.
+ */
+function localeRegion(localeTag: string): CountryCode | null {
+  const region = localeTag
+    .split(/[-_]/)
+    .slice(1)
+    .find((subtag) => /^[A-Za-z]{2}$/.test(subtag))
+    ?.toUpperCase();
+  return region !== undefined && isSupportedCountry(region) ? region : null;
+}
+
+/**
  * The region a number saved without its country code most likely belongs
- * to: the country of the person's own verified number, else the app default.
+ * to: the country of the person's own number, else the region of the
+ * device's locale, else the app default. Address books mostly hold numbers
+ * from the owner's own country, and the device rarely says which country a
+ * saved number belongs to.
  *
  * @param ownPhone - The caller's own E.164 number, or "" when they have none.
+ * @param localeTag - The device's locale tag (e.g. "en-BD"), or "" when unknown.
  * @returns A region code for parsing national numbers.
  */
-export function lookupRegion(ownPhone: string): CountryCode {
-  return splitE164(ownPhone)?.region ?? DEFAULT_PHONE_REGION;
+export function lookupRegion(ownPhone: string, localeTag = ""): CountryCode {
+  return splitE164(ownPhone)?.region ?? localeRegion(localeTag) ?? DEFAULT_PHONE_REGION;
 }
 
 /**

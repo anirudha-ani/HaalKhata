@@ -50,8 +50,19 @@ describe("lookupRegion", () => {
     expect(lookupRegion("+8801712345678")).toBe("BD");
   });
 
-  it("uses the app default when the caller has no number", () => {
+  it("prefers the caller's own number over the device locale", () => {
+    expect(lookupRegion("+8801712345678", "en-GB")).toBe("BD");
+  });
+
+  it("uses the device locale's region when the caller has no number", () => {
+    expect(lookupRegion("", "bn-BD")).toBe("BD");
+    expect(lookupRegion("", "zh_Hant_TW")).toBe("TW");
+  });
+
+  it("uses the app default when neither names a country", () => {
     expect(lookupRegion("")).toBe("US");
+    expect(lookupRegion("", "en")).toBe("US");
+    expect(lookupRegion("", "en-ZZ")).toBe("US");
   });
 });
 
