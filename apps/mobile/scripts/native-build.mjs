@@ -1,9 +1,9 @@
 /** Tracks verified simulator/emulator installations against Expo's native fingerprint. */
 
 import { createHash } from "node:crypto";
-import { mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadEnvironmentFile } from "../../../scripts/environment.mjs";
 
@@ -62,11 +62,26 @@ export function verifyBuildRecord(filename, fingerprint, record = false) {
   }
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  const [action, platform, installation] = process.argv.slice(2);
-  if (!["check", "record"].includes(action)) throw new Error("Expected check or record");
+/**
+ * Records only a binary built from a stable native input snapshot.
+ * @param {string} filename Installation-specific record.
+ * @param {string} before Fingerprint captured immediately before compilation.
+ * @param {string} after Fingerprint checked after compilation and installation.
+ * @returns {void} Throws instead of certifying edits made during a build.
+ */
+export function recordCompletedBuild(filename, before, after) {
+  if (!before || before !== after) throw new Error("Native inputs changed during the build. Rerun ./dev.sh to rebuild them.");
+  verifyBuildRecord(filename, before, true);
+}
+
+if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url))) {
+  const [action, platform, installation, before] = process.argv.slice(2);
+  if (!["check", "record", "fingerprint"].includes(action)) throw new Error("Expected check, record or fingerprint");
   const fingerprint = await nativeFingerprint(platform);
-  const filename = buildRecordPath(join(MOBILE_ROOT, ".expo/native-builds"), platform, installation);
-  const current = verifyBuildRecord(filename, fingerprint, action === "record");
-  if (action === "check") console.log(current ? "current" : "rebuild");
+  if (action === "fingerprint") console.log(fingerprint);
+  else {
+    const filename = buildRecordPath(join(MOBILE_ROOT, ".expo/native-builds"), platform, installation);
+    if (action === "record") recordCompletedBuild(filename, before, fingerprint);
+    else console.log(verifyBuildRecord(filename, fingerprint) ? "current" : "rebuild");
+  }
 }

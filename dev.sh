@@ -200,11 +200,18 @@ native_build_matches() {
 }
 
 # Record compatibility only after compilation and installation both succeed.
-# @param $1 Native platform; $2 identity of the newly installed binary.
-# @returns 0 after recording the post-build fingerprint; exits on verification failure.
+# @param $1 Native platform; $2 installation identity; $3 pre-compilation fingerprint.
+# @returns 0 after recording unchanged native inputs; exits if inputs changed during compilation.
 record_native_build() {
-  node apps/mobile/scripts/native-build.mjs record "$1" "$2" \
+  node apps/mobile/scripts/native-build.mjs record "$1" "$2" "$3" \
     || die "could not record the installed native build; startup stopped. See the error above."
+}
+
+# Capture native inputs after prebuild/package installation but before compilation.
+# @param $1 Native platform. @returns The native compatibility hash.
+native_build_snapshot() {
+  node apps/mobile/scripts/native-build.mjs fingerprint "$1" \
+    || die "could not snapshot native build inputs; startup stopped."
 }
 
 # Kill any process listening on the Metro port. This handles stale Metro
@@ -358,6 +365,23 @@ write_local_properties() {
   fi
 }
 
+# Select one connected target, honoring adb's standard ANDROID_SERIAL override.
+# @param $1 adb executable. @returns Sets ANDROID_SERIAL or exits before building.
+select_android_device() {
+  local devices
+  devices="$("$1" devices | awk 'NR > 1 && $2 == "device" { print $1 }')"
+  if [[ -n "${ANDROID_SERIAL:-}" ]]; then
+    printf '%s\n' "$devices" | grep -Fxq "$ANDROID_SERIAL" \
+      || die "Android target '$ANDROID_SERIAL' is not connected/authorized. Check adb devices."
+  elif [[ -z "$devices" ]]; then
+    die "no connected Android target. Boot an emulator or connect and authorize a device."
+  elif [[ "$devices" == *$'\n'* ]]; then
+    die "multiple Android targets connected: ${devices//$'\n'/, }. Select one with ANDROID_SERIAL=<serial> ./dev.sh --mobile-android."
+  else
+    export ANDROID_SERIAL="$devices"
+  fi
+}
+
 # Ensure an Android emulator is running. If no device is connected, boots the
 # first AVD found and waits for it to finish booting.
 ensure_android_emulator() {
@@ -366,7 +390,8 @@ ensure_android_emulator() {
   adb_bin="$(find_adb)" \
     || die "adb not found. Install Android Studio, ensure platform-tools is on PATH, or set ANDROID_HOME."
 
-  if "$adb_bin" devices 2>/dev/null | grep -qw "device"; then
+  if [[ -n "${ANDROID_SERIAL:-}" ]] || "$adb_bin" devices 2>/dev/null | grep -qw "device"; then
+    select_android_device "$adb_bin"
     ok "android device/emulator already running"
     return 0
   fi
@@ -382,12 +407,13 @@ ensure_android_emulator() {
   log "booting emulator '$avd' (takes ~30-60s)…"
   "$emu_bin" -avd "$avd" -no-snapshot-load >/dev/null 2>&1 &
 
-  "$adb_bin" wait-for-device 2>/dev/null \
+  "$adb_bin" -e wait-for-device 2>/dev/null \
     || die "adb wait-for-device timed out."
 
+  select_android_device "$adb_bin"
   log "waiting for emulator to finish booting…"
   local attempts=0
-  until "$adb_bin" shell getprop sys.boot_completed 2>/dev/null | grep -q 1; do
+  until "$adb_bin" -s "$ANDROID_SERIAL" shell getprop sys.boot_completed 2>/dev/null | grep -q 1; do
     attempts=$((attempts + 1))
     (( attempts > 90 )) \
       && die "emulator didn't finish booting in 180s. Check Android Studio AVD Manager."
@@ -399,19 +425,19 @@ ensure_android_emulator() {
 # @param $1 adb executable.
 # @returns A device/package installation identity, or empty if the app is missing.
 android_installation_identity() {
-  local serial updated
-  serial="$("$1" get-serialno 2>/dev/null)" || return 0
-  updated="$("$1" shell dumpsys package com.haalkhata.app 2>/dev/null \
+  local updated
+  updated="$("$1" -s "$ANDROID_SERIAL" shell dumpsys package com.haalkhata.app 2>/dev/null \
     | sed -n 's/^[[:space:]]*lastUpdateTime=//p' | head -1)" || return 0
-  [[ -n "$updated" ]] && printf '%s:%s' "$serial" "$updated"
+  [[ -n "$updated" ]] && printf '%s:%s' "$ANDROID_SERIAL" "$updated"
   return 0
 }
 
 # Rebuild when the installed binary is missing, unverified or incompatible.
 # Prebuild refreshes existing generated projects after native dependency changes.
 ensure_android_app() {
-  local adb_bin installation
+  local adb_bin installation fingerprint
   adb_bin="$(find_adb)"
+  select_android_device "$adb_bin"
   installation="$(android_installation_identity "$adb_bin")"
   if native_build_matches android "$installation"; then
     ok "dev client matches current native dependencies on emulator"
@@ -423,11 +449,14 @@ ensure_android_app() {
     || die "expo prebuild failed; startup stopped."
   write_local_properties "$ANDROID_HOME"
 
-  log "gradle build + install…"
-  (cd apps/mobile/android && ./gradlew installDebug) \
+  fingerprint="$(native_build_snapshot android)" || exit 1
+  log "gradle build + install on ${ANDROID_SERIAL}…"
+  (cd apps/mobile/android && ./gradlew assembleDebug) \
     || die "gradle build failed. See apps/mobile/android for details."
+  "$adb_bin" -s "$ANDROID_SERIAL" install -r apps/mobile/android/app/build/outputs/apk/debug/app-debug.apk \
+    || die "could not install the Android build on $ANDROID_SERIAL."
   installation="$(android_installation_identity "$adb_bin")"
-  record_native_build android "$installation"
+  record_native_build android "$installation" "$fingerprint"
   ok "dev client built + installed"
 }
 
@@ -437,8 +466,8 @@ launch_android_app() {
   local adb_bin
   adb_bin="$(find_adb)" \
     || die "adb not found. Run './install-deps.sh' or set ANDROID_HOME."
-  "$adb_bin" shell am start -n com.haalkhata.app/.MainActivity 2>/dev/null \
-    || "$adb_bin" shell monkey -p com.haalkhata.app \
+  "$adb_bin" -s "$ANDROID_SERIAL" shell am start -n com.haalkhata.app/.MainActivity 2>/dev/null \
+    || "$adb_bin" -s "$ANDROID_SERIAL" shell monkey -p com.haalkhata.app \
        -c android.intent.category.LAUNCHER 1 >/dev/null 2>&1
   ok "dev client launched on emulator"
 }
@@ -495,7 +524,7 @@ ensure_ios_simulator() {
 # Generic builds do not require an Apple signing certificate for the app's
 # associated-domain entitlements; physical-device builds still use signing.
 ensure_ios_app() {
-  local udid installation
+  local udid installation fingerprint
   udid="$(ios_simulator_udid booted)"
   installation="$(xcrun simctl get_app_container "$udid" com.haalkhata.app app 2>/dev/null || true)"
   if native_build_matches ios "$installation"; then
@@ -509,6 +538,7 @@ ensure_ios_app() {
     || die "expo prebuild failed; startup stopped."
   (cd apps/mobile/ios && pod install) \
     || die "CocoaPods installation failed; startup stopped."
+  fingerprint="$(native_build_snapshot ios)" || exit 1
   (cd apps/mobile && pnpm run expo run:ios --device generic \
     --output .expo/ios-build --no-bundler) \
     || die "iOS build failed. See apps/mobile/ios for details."
@@ -516,7 +546,7 @@ ensure_ios_app() {
     || die "could not install the iOS simulator build."
   installation="$(xcrun simctl get_app_container "$udid" com.haalkhata.app app)" \
     || die "could not verify the installed iOS simulator build."
-  record_native_build ios "$installation"
+  record_native_build ios "$installation" "$fingerprint"
   ok "dev client built + installed"
 }
 
