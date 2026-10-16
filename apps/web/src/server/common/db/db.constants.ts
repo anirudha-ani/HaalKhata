@@ -22,3 +22,9 @@ export const DATABASE_URL_PROTOCOLS = new Set(["postgres:", "postgresql:"]);
 
 /** Hosts reached only through loopback or the bundled private Compose network. */
 export const PLAINTEXT_DATABASE_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]", "db"]);
+
+/** How long a dropped LISTEN subscription waits before reconnecting. */
+export const LISTEN_RECONNECT_DELAY_MS = 5_000;
+
+/** Channel names a LISTEN may use: plain lowercase identifiers that need no quoting. */
+export const LISTEN_CHANNEL_PATTERN = /^[a-z_][a-z0-9_]{0,62}$/;

@@ -1,6 +1,6 @@
 /** Shared Postgres access: lazy pool, one-shot startup migration, query/transaction helpers. */
 
-import { Pool, types, type PoolClient } from "pg";
+import { Client, Pool, types, type PoolClient } from "pg";
 import type { QueryResultRow } from "pg";
 import path from "node:path";
 import { runner } from "node-pg-migrate";
@@ -135,6 +135,19 @@ function pool(): Pool {
     globalCache.__haalkhataPool = createdPool;
   }
   return globalCache.__haalkhataPool;
+}
+
+/**
+ * Opens a connection of its own, outside the pool, for work that holds a
+ * session open indefinitely — a LISTEN subscription would otherwise pin one
+ * of the pool's twenty connections forever. The caller connects, owns and
+ * ends it.
+ *
+ * @returns An unconnected client using the same validated connection string.
+ */
+export function dedicatedClient(): Client {
+  assertSafeDatabaseUrl();
+  return new Client({ connectionString: databaseUrl(), connectionTimeoutMillis: 5_000 });
 }
 
 /**
