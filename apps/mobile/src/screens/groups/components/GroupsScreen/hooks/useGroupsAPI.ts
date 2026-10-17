@@ -3,6 +3,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { groupClient, socialClient } from "@/lib/api/connect";
 import { queryKeys } from "@haalkhata/shared/api/queryKeys";
+import { usePullToRefresh } from "@/lib/hooks/usePullToRefresh";
 import { offerPushExplainer } from "@/lib/push/pushStore";
 
 /**
@@ -35,13 +36,15 @@ export function useGroupsAPI() {
       void offerPushExplainer();
     },
   });
+  const pull = usePullToRefresh(() => groups.refetch());
+
   return {
     groups: groups.data?.groups ?? [],
     friends: (friends.data?.friends ?? []).flatMap((friend) => (friend.user ? [friend.user] : [])),
     isLoading: groups.isLoading,
     listError: groups.error,
-    refresh: () => void groups.refetch(),
-    isRefreshing: groups.isRefetching,
+    refresh: pull.refresh,
+    isRefreshing: pull.isRefreshing,
     createGroup,
   };
 }

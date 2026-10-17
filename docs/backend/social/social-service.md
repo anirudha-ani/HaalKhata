@@ -62,6 +62,17 @@ SQL in [friendships.repo.ts](../../../apps/web/src/server/social/repo/friendship
   group members for structural events). Reads filter by audience; a group
   feed still only shows a member what their audiences allow.
 
+## Contact Discovery
+
+`FindContacts` deliberately reveals what AddFriend hides: which identifiers
+from the caller's own address book belong to accounts. Only accounts that
+said yes to `AuthService.SetContactDiscovery` take part; a phone matches only
+once verified; merged, deleted, suspended, unregistered rows, the caller and
+either block direction never match. Nothing sent is stored or logged, and an
+unknown number never becomes an Invited row. The one write is a per-account,
+per-UTC-day count in `contact_lookup_usage`, claimed in the same transaction
+as the match. See [Find friends from contacts](../../contact-discovery.md).
+
 ## Invite Links (§33)
 
 A person without an account appears as **Invited** (`registered: false`) and
@@ -97,6 +108,8 @@ consent.
 | AddFriend, InviteContactToSignUp | 10/min per account (shared bucket) |
 | ListFriends | 60/min — **shares the `GetOverallBalances` bucket**, because it computes the same full-ledger aggregate; separate buckets would let one endpoint bypass the other's limit |
 | SendReminder | 10/min per account, plus the 24 h per-pair cooldown |
+| FindContacts | 5/min per account, at most 1,000 identifiers per call and 5,000 per account per UTC day (the daily count is durable, in Postgres) |
+| SendFriendRequests | 3/min per account, at most 50 ids per call |
 | Others | authentication only |
 
 ---
@@ -120,6 +133,8 @@ consent.
 15. [InviteContactToSignUp](#15-invitecontacttosignup)
 16. [RemoveFriend](#16-removefriend)
 17. [CancelFriendRequest](#17-cancelfriendrequest)
+18. [FindContacts](#18-findcontacts)
+19. [SendFriendRequests](#19-sendfriendrequests)
 
 ---
 
@@ -671,6 +686,70 @@ account?").
 | --- | --- | --- |
 | user_id | string | The recipient, when the request was shown as a person. |
 | identifier | string | The typed email or phone, when it was shown as one. |
+
+#### Response
+
+`google.protobuf.Empty`.
+
+### 18. FindContacts
+
+**Method:** `FindContacts`
+**Route:** `POST /api/connect/social.v1.SocialService/FindContacts`
+
+#### Notes
+
+- Matches phones and emails from the caller's address book against accounts
+  that opted in (`users.contact_discovery = TRUE`). A phone needs
+  `phone_verified_at`; an email matches the account's own sign-in email.
+- Each entry is measured before it is parsed (over 254 characters is
+  dropped), then normalised: phones must carry their country code (no region
+  is guessed), emails are trimmed and lower-cased. Invalid entries are
+  dropped, not refused, and duplicates count once.
+- More than 1,000 entries is `InvalidArgument`. A lookup that would take the
+  day past 5,000 is `ResourceExhausted` with how many are left; nothing is
+  counted and no match runs. Quota claim and match share one transaction.
+- One `FoundContact` per matched identifier, echoed exactly as sent, with the
+  `toFriendRequestUser` projection and a `ContactRelation` (`INCOMING` wins
+  when requests are pending both ways).
+
+#### Request
+
+| Field | Type | Description |
+| --- | --- | --- |
+| phones | repeated string | E.164 numbers, normalised on the device. |
+| emails | repeated string | Addresses, trimmed and lower-cased on the device. |
+
+#### Response
+
+| Field | Type | Description |
+| --- | --- | --- |
+| contacts | repeated FoundContact | `identifier`, `user` (id, name, avatar), `relation`. |
+| remaining_today | int32 | Identifiers the caller can still check today (UTC). |
+
+### 19. SendFriendRequests
+
+**Method:** `SendFriendRequests`
+**Route:** `POST /api/connect/social.v1.SocialService/SendFriendRequests`
+
+#### Notes
+
+- One request to each listed account that is live, registered, findable from
+  contacts, not blocked either way, not already a friend, and has no request
+  pending in either direction. Everyone else is skipped without saying so.
+- Restricting it to findable accounts keeps the bulk path from being a
+  faster AddFriend for ids learned elsewhere.
+- Requests and their `friend_request` notifications commit in one
+  transaction under the recipients' inbox locks; only inserted rows are
+  notified, and the 100-pending cap per recipient holds.
+- No `recipient_identifier` is stored: the sender saw who they were asking,
+  so `outgoing_requests` shows the recipient's profile.
+- An empty list or more than 50 ids is `InvalidArgument`.
+
+#### Request
+
+| Field | Type | Description |
+| --- | --- | --- |
+| user_ids | repeated string | 1 to 50 account ids, normally from FindContacts. |
 
 #### Response
 

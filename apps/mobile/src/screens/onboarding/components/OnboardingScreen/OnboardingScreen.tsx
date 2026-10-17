@@ -7,6 +7,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { MergePreview } from "@/components/account/MergePreview";
 import { Button } from "@/components/ui/Button";
 import { PhoneField } from "@/components/ui/PhoneField";
+import { ContactDiscoveryToggle } from "@/components/account/ContactDiscoveryToggle/ContactDiscoveryToggle";
 import { Spinner } from "@/components/ui/Spinner";
 import { TextField } from "@/components/ui/TextField";
 import { CurrencyPicker } from "@/components/ui/CurrencyPicker";
@@ -150,6 +151,14 @@ export function OnboardingScreen() {
                       </Text>
                     </View>
 
+                    <View style={styles.discoveryBlock}>
+                      <ContactDiscoveryToggle
+                        checked={onboarding.findable}
+                        disabled={onboarding.isPending}
+                        onChange={onboarding.setFindable}
+                      />
+                    </View>
+
                     <View style={styles.fieldBlock}>
                       <Text style={styles.fieldLabel}>Default currency</Text>
                       <CurrencyPicker
@@ -217,6 +226,12 @@ const styles = StyleSheet.create({
   error: {
     color: colors.brand600,
     fontSize: 14,
+  },
+  discoveryBlock: {
+    borderColor: colors.line,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    padding: spacing.md,
   },
   fieldBlock: {
     gap: spacing.sm,

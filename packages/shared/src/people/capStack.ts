@@ -1,4 +1,4 @@
-/** Decides how many entries of a list fit a stack with a fixed number of slots. */
+/** Decides how many entries of a list fit a stack with a fixed number of slots; both apps cap their avatar stacks with it. */
 
 /**
  * Splits a list for a stack with `slots` places. Everything is shown when it

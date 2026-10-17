@@ -1,7 +1,7 @@
 /** Exercises real dev.sh orchestration without starting Docker, Metro, or a web server. */
 
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -49,9 +49,11 @@ main "$@"
  * Executes the actual startup control flow with deterministic service substitutes.
  * @param {string[]} argumentsList Startup options.
  * @param {{setup?: boolean, migrations?: boolean, install?: boolean, generation?: boolean}} failures Failing external adapters.
+ * @param {{webLock?: object, expectedStatus?: number}} options Next's dev-server lock to leave in
+ *   the checkout, and the exit status the run must end with when it is not decided by `failures`.
  * @returns {string} Recorded workflow output.
  */
-function startDevelopment(argumentsList = [], failures = {}) {
+function startDevelopment(argumentsList = [], failures = {}, options = {}) {
   const directory = mkdtempSync(join(tmpdir(), "haalkhata startup "));
   try {
     // Reproduce a partially installed checkout after pulling a new API domain:
@@ -62,13 +64,18 @@ function startDevelopment(argumentsList = [], failures = {}) {
     copyFileSync(DEV_SCRIPT, join(directory, "dev.sh"));
     copyFileSync(new URL("./macos-env.sh", import.meta.url), join(directory, "scripts/macos-env.sh"));
     writeFileSync(join(directory, "packages/protogen/src/auth/v1/auth_pb.ts"), "// Old generated contract; safety API is missing.\n");
+    if (options.webLock) {
+      mkdirSync(join(directory, "apps/web/.next/dev"), { recursive: true });
+      writeFileSync(join(directory, "apps/web/.next/dev/lock"), JSON.stringify(options.webLock));
+    }
     const result = spawnSync("bash", ["-c", STARTUP_HARNESS, "dev-startup-test", join(directory, "dev.sh"), ...argumentsList], {
       env: { ...process.env, FAIL_ENV_SETUP: failures.setup ? "1" : "0", FAIL_MIGRATIONS: failures.migrations ? "1" : "0",
         FAIL_INSTALL: failures.install ? "1" : "0", FAIL_GENERATION: failures.generation ? "1" : "0" }, encoding: "utf8",
     });
     const fails = Object.values(failures).some(Boolean) && !argumentsList.includes("--down");
-    assert.equal(result.status, fails ? 1 : 0, result.stderr);
-    if (!fails || failures.setup) assert.equal(result.stderr, "");
+    const expectedStatus = options.expectedStatus ?? (fails ? 1 : 0);
+    assert.equal(result.status, expectedStatus, result.stdout + result.stderr);
+    if (expectedStatus === 0 && (!fails || failures.setup)) assert.equal(result.stderr, "");
     return result.stdout + result.stderr;
   } finally {
     rmSync(directory, { recursive: true, force: true });
@@ -146,4 +153,87 @@ test("shutdown works without running setup or requiring authentication credentia
   assert.ok(!output.includes("scripts/prepare-database.mts"));
   assert.ok(!output.includes("STEP:pnpm:install"));
   assert.ok(!output.includes("STEP:pnpm:gen"));
+});
+
+/**
+ * Runs a stand-in for a Next dev server already serving the checkout: a live
+ * process whose command line names Next, as `next-server` does.
+ * @param {(pid: number) => void} body Receives the stand-in's PID.
+ */
+function withRunningWebServer(body) {
+  const server = spawn(process.execPath, ["-e", "setTimeout(() => {}, 60_000)", "next-server"], { stdio: "ignore" });
+  try {
+    body(server.pid);
+  } finally {
+    server.kill();
+  }
+}
+
+/**
+ * Next's lock for a dev server, as Next 16 writes it.
+ * @param {number} pid Server process.
+ * @param {string} hostname "127.0.0.1" for a loopback bind, "localhost" for every interface.
+ * @param {number} port Listening port.
+ * @returns {object} Lock contents.
+ */
+function webLock(pid, hostname = "127.0.0.1", port = 3000) {
+  return { pid, port, hostname, appUrl: `http://${hostname}:${port}`, startedAt: Date.now() };
+}
+
+test("ios startup reuses this checkout's running web server instead of failing after the native build", () => {
+  withRunningWebServer((pid) => {
+    const output = startDevelopment(["--mobile-ios"], {}, { webLock: webLock(pid) });
+    assert.ok(output.includes(`already running — http://127.0.0.1:3000 (PID ${pid}); reusing it`));
+    assert.ok(output.indexOf("reusing it") < output.indexOf("STEP:database"), "Decided before anything slow");
+    assert.ok(output.includes("STEP:mobile:ios"));
+    assert.ok(!output.includes("scripts/next.mjs dev"), "A second server for the checkout is never started");
+  });
+});
+
+test("web startup with this checkout's server already running starts nothing twice", () => {
+  withRunningWebServer((pid) => {
+    const output = startDevelopment([], {}, { webLock: webLock(pid) });
+    assert.ok(output.includes("nothing else to start"));
+    assert.ok(!output.includes("scripts/next.mjs dev"));
+  });
+});
+
+for (const argumentsList of [["--mobile-android"], ["--lan"]]) {
+  test(`${argumentsList[0]} stops before any slow step when the running server is loopback-only`, () => {
+    withRunningWebServer((pid) => {
+      const output = startDevelopment(argumentsList, {}, { webLock: webLock(pid), expectedStatus: 1 });
+      assert.ok(output.includes("loopback only"));
+      assert.ok(output.includes(`kill ${pid}`), "Says how to stop the server in the way");
+      assert.ok(!output.includes("STEP:database"));
+      assert.ok(!output.includes("STEP:pnpm:install"));
+      assert.ok(!output.includes("STEP:mobile:"));
+      assert.ok(!output.includes("scripts/next.mjs dev"));
+    });
+  });
+}
+
+test("android startup reuses a running server that listens on every interface", () => {
+  withRunningWebServer((pid) => {
+    const output = startDevelopment(["--mobile-android"], {}, { webLock: webLock(pid, "localhost") });
+    assert.ok(output.includes("reusing it"));
+    assert.ok(output.includes("STEP:mobile:android"));
+    assert.ok(!output.includes("scripts/next.mjs dev"));
+  });
+});
+
+test("mobile startup stops early when the running server is not on the app's port", () => {
+  withRunningWebServer((pid) => {
+    const output = startDevelopment(["--mobile-ios"], {}, { webLock: webLock(pid, "127.0.0.1", 3001), expectedStatus: 1 });
+    assert.ok(output.includes("the app expects port 3000"));
+    assert.ok(!output.includes("STEP:mobile:"));
+  });
+});
+
+test("a lock left by a server that is gone, or whose PID now belongs to something else, is ignored", () => {
+  const finished = spawnSync(process.execPath, ["-e", ""]);
+  for (const pid of [finished.pid, process.pid]) {
+    const output = startDevelopment(["--mobile-ios"], {}, { webLock: webLock(pid) });
+    assert.ok(!output.includes("reusing it"));
+    assert.ok(output.includes("scripts/next.mjs dev --turbopack -H 0.0.0.0"));
+  }
 });

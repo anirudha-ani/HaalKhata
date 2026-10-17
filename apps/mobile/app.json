@@ -28,6 +28,9 @@
     "android": {
       "package": "com.haalkhata.app",
       "allowBackup": false,
+      "blockedPermissions": [
+        "android.permission.WRITE_CONTACTS"
+      ],
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#b03a25"
@@ -88,6 +91,12 @@
         }
       ],
       "expo-apple-authentication",
+      [
+        "expo-contacts",
+        {
+          "contactsPermission": "HaalKhata checks the phone numbers and emails in your contacts to show friends who already use HaalKhata. Names stay on your phone, and your contacts are not stored."
+        }
+      ],
       [
         "expo-notifications",
         {

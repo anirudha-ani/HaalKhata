@@ -42,6 +42,11 @@ service AuthService {
 
   // Marks the first-run flow finished, including when it was skipped.
   rpc CompleteOnboarding(google.protobuf.Empty) returns (common.v1.User);
+
+  // Records whether people who hold the caller's verified phone number or
+  // email can find them through social.v1 FindContacts. An account that
+  // never answered is not findable (User.contact_discovery UNSPECIFIED).
+  rpc SetContactDiscovery(SetContactDiscoveryRequest) returns (common.v1.User);
 }
 
 // Apple is offered only when this backend can sign and store its credentials.
@@ -177,4 +182,10 @@ message UpdateProfileRequest {
   // before the change fails where its user can see it instead of saving into
   // nothing; blank or absent handles are ignored.
   repeated common.v1.PaymentHandle payment_handles = 3 [deprecated = true];
+}
+
+message SetContactDiscoveryRequest {
+  // True lets people who have the caller's number or email in their
+  // contacts find them; false keeps them hidden.
+  bool discoverable = 1;
 }

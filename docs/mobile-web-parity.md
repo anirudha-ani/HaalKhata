@@ -25,6 +25,8 @@ cards must also shrink to fit the space actually available inside the shell.
 | Onboarding, profile, phone verification/merge | Present | Present | Same AuthService operations |
 | Home, multi-currency balances, people | Present | Present; wrapping columns | Shared money, balance and settlement-position helpers |
 | Friends, requests, invitation links | Present | Present | Same SocialService operations; shared invite wording |
+| Find friends from contacts | Not in this release; browsers cannot read the address book | Present | `FindContacts`/`SendFriendRequests` are native-only in `test:parity`; matching and wording in `shared/src/contacts/` ([details](contact-discovery.md)) |
+| "Let people find me from their contacts" | Present: onboarding, Account, one-time prompt on Friends | Present: same, plus the Find friends screen | Same `SetContactDiscovery`; shared `contacts/discovery.ts` rules |
 | Group create/edit, membership, ownership, debt simplification, archive/restore | Present | Present | Same GroupService operations and shared group rules |
 | Expenses: create/edit/delete, five split modes, multiple payers | Present | Present | Shared `expense/form/splitForm.ts` and server recomputation |
 | Itemized receipt editing, portions, tax/tip, preview | Present | Present | Shared validation, totals, payloads, warnings and allocation |
@@ -36,12 +38,15 @@ cards must also shrink to fit the space actually available inside the shell.
 | Receiving pushes: permission, registration, taps, badge | Not applicable (no Web Push yet) | Present | `RegisterDevice` is native-only; taps use the shared `safeNotificationPath` |
 | Reporting/blocking and account deletion | Present | Present | Same safety/deletion endpoints; shared balance-review states |
 
-`pnpm test:parity` currently finds **69 common Connect methods**. It scans actual
+`pnpm test:parity` currently finds **70 common Connect methods**. It scans actual
 client calls in both source trees, including Expo route files, and fails CI on a
-one-sided method. There are two explicit native-only
-exceptions. `LogInWithApple`: browser Apple sign-in uses the HTTPS callback and
-`CompleteAppleSignIn`. `RegisterDevice`: a browser has no Expo push token; Web
-Push would register through the same RPC and end the exception. This gate checks API entry points; it does not prove that
+one-sided method. There are three explicit native-only exceptions. Native
+`LogInWithApple` is a transport difference: browser Apple sign-in uses the
+HTTPS callback and `CompleteAppleSignIn`. `RegisterDevice`: a browser has no
+Expo push token; Web Push would register through the same RPC and end the
+exception. `FindContacts` and `SendFriendRequests` are native-only because Find
+friends reads the device address book; the gate still requires both apps to
+call `SetContactDiscovery`. This gate checks API entry points; it does not prove that
 all parameters, states, gestures or visual layouts are equivalent.
 
 ## Problems corrected in this audit
