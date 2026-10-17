@@ -8,10 +8,8 @@ import { Platform } from "react-native";
 import { useEffect, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { authClient, errorMessage } from "@/lib/api/connect";
-import { setSessionToken } from "@/lib/api/session";
-import { clearMobileQueryCache } from "@/lib/api/queryCache";
-import { consumePendingInvite } from "@/lib/invite/consumePendingInvite";
 import { useSignInOptionsAPI } from "./useSignInOptionsAPI";
+import { startSession } from "../../../utils/startSession";
 
 /**
  * Drives Apple login without placing identity or local bearer tokens in redirect URLs.
@@ -54,9 +52,7 @@ export function useAppleSignIn() {
     },
     onSuccess: async (result) => {
       if (!result) return;
-      await clearMobileQueryCache();
-      await setSessionToken(result.token);
-      router.replace(await consumePendingInvite());
+      router.replace(await startSession(result.token));
     },
     onError: (failure) => {
       if ((failure as { code?: string }).code !== "ERR_REQUEST_CANCELED") setError(errorMessage(failure));

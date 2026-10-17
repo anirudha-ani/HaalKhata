@@ -6,15 +6,13 @@ import { useRouter } from "expo-router";
 import * as WebBrowser from "expo-web-browser";
 import { useEffect, useMemo, useState } from "react";
 import { authClient, errorMessage } from "@/lib/api/connect";
-import { consumePendingInvite } from "@/lib/invite/consumePendingInvite";
-import { clearMobileQueryCache } from "@/lib/api/queryCache";
-import { setSessionToken } from "@/lib/api/session";
 import {
   GOOGLE_ANDROID_CLIENT_ID,
   GOOGLE_IOS_CLIENT_ID,
   GOOGLE_SCOPES,
   GOOGLE_SIGN_IN_CONFIGURED,
 } from "../../../constants/googleSignIn";
+import { startSession } from "../../../utils/startSession";
 
 // Lets the auth browser window close itself once Google redirects back.
 WebBrowser.maybeCompleteAuthSession();
@@ -65,9 +63,7 @@ export function useGoogleSignIn() {
   const exchange = useMutation({
     mutationFn: (idToken: string) => authClient.logInWithGoogle({ idToken }),
     onSuccess: async (result) => {
-      await clearMobileQueryCache();
-      await setSessionToken(result.token);
-      router.replace(await consumePendingInvite());
+      router.replace(await startSession(result.token));
     },
     onError: (mutationError) => setError(errorMessage(mutationError)),
   });

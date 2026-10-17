@@ -29,9 +29,7 @@ vi.mock("../ProviderButton/ProviderButton", () => ({ ProviderButton: ({ provider
 vi.mock("expo-crypto", () => ({}));
 vi.mock("expo-web-browser", () => ({}));
 vi.mock("expo-router", () => ({ useRouter: () => ({ replace: vi.fn() }) }));
-vi.mock("@/lib/api/session", () => ({ setSessionToken: vi.fn() }));
-vi.mock("@/lib/api/queryCache", () => ({ clearMobileQueryCache: vi.fn() }));
-vi.mock("@/lib/invite/consumePendingInvite", () => ({ consumePendingInvite: vi.fn() }));
+vi.mock("../../../../utils/startSession", () => ({ startSession: vi.fn() }));
 vi.mock("@/lib/api/connect", () => ({ authClient: { getSignInOptions: vi.fn(), beginAppleSignIn: vi.fn() }, errorMessage: (error: Error) => error.message }));
 
 let root: Root;
