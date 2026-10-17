@@ -15,6 +15,7 @@ uname() { echo Linux; }
 source "$1/dev.sh"
 cd "$1"
 ios_simulator_udid() { echo simulator-fixture; }
+IOS_SIMULATOR_UDID=simulator-fixture
 find_adb() { echo adb; }
 write_local_properties() { echo STEP:android-sdk; }
 have() { return 0; }
@@ -187,4 +188,48 @@ test("multiple Android targets fail before building unless ANDROID_SERIAL select
     if (serial === "phone-two") assert.match(result.stdout, /SELECTED:phone-two/);
     if (serial === "missing") assert.match(result.stderr, /not connected\/authorized/);
   }
+});
+
+test("multiple booted iOS simulators fail before building unless IOS_SIMULATOR_UDID selects one", () => {
+  const script = `
+    source "$1/dev.sh"
+    booted_ios_simulators() { printf 'SIM-ONE iPhone 18 Pro\\nSIM-TWO Layout QA'; }
+    select_ios_simulator
+    echo "SELECTED:$IOS_SIMULATOR_UDID"
+  `;
+  const directory = new URL("../", import.meta.url).pathname;
+  for (const udid of ["", "SIM-TWO", "missing"]) {
+    const result = spawnSync("bash", ["-c", script, "select-test", directory], { env: { ...process.env, IOS_SIMULATOR_UDID: udid }, encoding: "utf8" });
+    assert.equal(result.status, udid === "SIM-TWO" ? 0 : 1, result.stdout + result.stderr);
+    if (udid === "") assert.match(result.stderr, /multiple iOS simulators booted: iPhone 18 Pro \(SIM-ONE\); Layout QA \(SIM-TWO\).*IOS_SIMULATOR_UDID=/);
+    if (udid === "SIM-TWO") assert.match(result.stdout, /SELECTED:SIM-TWO/);
+    if (udid === "missing") assert.match(result.stderr, /is not booted/);
+  }
+});
+
+test("a single booted iOS simulator is selected without asking", () => {
+  const script = `
+    source "$1/dev.sh"
+    booted_ios_simulators() { printf 'SIM-ONLY iPhone 18 Pro'; }
+    select_ios_simulator
+    echo "SELECTED:$IOS_SIMULATOR_UDID"
+  `;
+  const directory = new URL("../", import.meta.url).pathname;
+  const result = spawnSync("bash", ["-c", script, "select-test", directory], { env: { ...process.env, IOS_SIMULATOR_UDID: "" }, encoding: "utf8" });
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  assert.match(result.stdout, /SELECTED:SIM-ONLY/);
+});
+
+test("the iOS dev client opens on the simulator it was installed to, never whichever is 'booted'", () => {
+  const script = `
+    source "$1/dev.sh"
+    xcrun() { echo "XCRUN:$*"; }
+    IOS_SIMULATOR_UDID=SIM-TWO
+    launch_ios_app
+  `;
+  const directory = new URL("../", import.meta.url).pathname;
+  const result = spawnSync("bash", ["-c", script, "launch-test", directory], { encoding: "utf8" });
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  assert.match(result.stdout, /XCRUN:simctl openurl SIM-TWO haalkhata:\/\/expo-development-client/);
+  assert.doesNotMatch(result.stdout, /openurl booted/);
 });
