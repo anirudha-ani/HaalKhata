@@ -2,7 +2,7 @@
 
 import { EllipsisVertical } from "lucide-react-native";
 import { useRef, useState, type ReactNode } from "react";
-import { Modal, Platform, Pressable, StyleSheet, useWindowDimensions, View } from "react-native";
+import { Modal, Platform, Pressable, StyleSheet, useWindowDimensions, View, type HostInstance } from "react-native";
 import { SHEET_ORIENTATIONS } from "@/components/ui/Sheet/constants/sheet";
 import { Text } from "@/components/ui/Text";
 import { colors, radii, spacing } from "@/lib/theme/theme";
@@ -46,7 +46,7 @@ export function OverflowMenu({
   /** The actions, in display order. */
   items: OverflowMenuItem[];
 }) {
-  const triggerRef = useRef<View>(null);
+  const triggerRef = useRef<HostInstance>(null);
   const chosenRef = useRef<(() => void) | null>(null);
   const [anchor, setAnchor] = useState<{ top: number; right: number } | null>(null);
   const { width: windowWidth } = useWindowDimensions();

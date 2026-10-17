@@ -2,6 +2,7 @@
 
 import { X } from "lucide-react-native";
 import type { ReactNode, RefObject } from "react";
+import type { ScrollViewInstance } from "react-native";
 import {
   KeyboardAvoidingView,
   Modal,
@@ -46,7 +47,7 @@ export function Sheet({
    * Ref to the scrolling body, for a caller that needs to bring part of its
    * content into view, such as a form showing where its first problem is.
    */
-  scrollRef?: RefObject<ScrollView | null>;
+  scrollRef?: RefObject<ScrollViewInstance | null>;
 }) {
   const { height: windowHeight } = useWindowDimensions();
   const { isTablet } = useResponsiveLayout();

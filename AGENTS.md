@@ -267,7 +267,7 @@ means running all three sets — it is compiled into both apps.
 
 ## Mobile app (apps/mobile)
 
-Expo SDK 57 + expo-router. The same conventions apply — thin route files in
+Expo SDK 58 + expo-router. The same conventions apply — thin route files in
 `app/` mount screen orchestrators from `src/screens/<route>/components/
 <XScreen>/`, all server calls live in `useXAPI` hooks composed by `useX`,
 constants sit in route-scoped `constants/` folders, pure helpers in `utils/`

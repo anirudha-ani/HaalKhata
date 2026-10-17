@@ -11,8 +11,9 @@ let installed = false;
 /**
  * Installs the handlers once per process.
  *
- * - SDK 57 shows nothing in the foreground without a handler, so one is set
- *   that shows the banner and list entry with sound and badge.
+ * - A handler states the foreground behaviour outright — banner and list
+ *   entry with sound and badge — rather than leaning on the SDK default,
+ *   which changed between SDK 57 (show nothing) and SDK 58 (show).
  * - One category per switch (plus "always") carries a placeholder iOS shows
  *   when the person hides previews, so a hidden push still says what it is.
  * - Each arriving push marks the money and feed queries stale, so the open
