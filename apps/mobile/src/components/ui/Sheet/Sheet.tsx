@@ -13,11 +13,13 @@ import {
   useWindowDimensions,
   View,
 } from "react-native";
+import Animated from "react-native-reanimated";
 import { Text } from "@/components/ui/Text";
 import { colors, fonts, radii, spacing } from "@/lib/theme/theme";
 import { TABLET_SHEET_MAX_WIDTH } from "@/lib/layout/constants/layout";
 import { useResponsiveLayout } from "@/lib/layout/hooks/useResponsiveLayout";
 import { SHEET_MAX_HEIGHT_RATIO, SHEET_ORIENTATIONS } from "./constants/sheet";
+import { useSheetEntrance } from "./hooks/useSheetEntrance";
 
 /**
  * Renders a bottom sheet with a titled header, a close button, and
@@ -27,6 +29,9 @@ import { SHEET_MAX_HEIGHT_RATIO, SHEET_ORIENTATIONS } from "./constants/sheet";
  * A `footer` stays pinned under the scrolling content. It is for a form
  * taller than the screen: an action that has scrolled out of reach looks
  * like a form with no way to finish it.
+ *
+ * The backdrop fades in while the card rises (or, on iPad, grows), rather
+ * than the whole modal sliding up together with its dimming.
  */
 export function Sheet({
   title,
@@ -51,19 +56,22 @@ export function Sheet({
 }) {
   const { height: windowHeight } = useWindowDimensions();
   const { isTablet } = useResponsiveLayout();
+  const entrance = useSheetEntrance(isTablet);
   return (
-    <Modal animationType={isTablet ? "fade" : "slide"} onRequestClose={onClose} supportedOrientations={SHEET_ORIENTATIONS} transparent visible>
+    <Modal animationType="fade" onRequestClose={onClose} supportedOrientations={SHEET_ORIENTATIONS} transparent visible>
       <KeyboardAvoidingView
         behavior={Platform.OS === "ios" ? "padding" : undefined}
         style={[styles.backdropContainer, isTablet ? styles.backdropContainerTablet : null]}
       >
         <Pressable accessibilityLabel="Close" onPress={onClose} style={styles.backdrop} />
-        <View
+        <Animated.View
           accessibilityLabel={title}
+          accessibilityViewIsModal
           style={[
             styles.sheet,
             { maxHeight: Math.max(0, Math.min(windowHeight * SHEET_MAX_HEIGHT_RATIO, windowHeight - (isTablet ? spacing.xxl * 2 : 0))) },
             isTablet ? styles.sheetTablet : null,
+            entrance,
           ]}
         >
           <View style={styles.header}>
@@ -86,7 +94,7 @@ export function Sheet({
             {children}
           </ScrollView>
           {footer ? <View style={styles.footer}>{footer}</View> : null}
-        </View>
+        </Animated.View>
       </KeyboardAvoidingView>
     </Modal>
   );

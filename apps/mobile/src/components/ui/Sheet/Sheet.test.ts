@@ -9,6 +9,7 @@ import { Sheet } from "./Sheet";
 const viewport = vi.hoisted(() => ({ width: 1024, height: 600, fontScale: 1 }));
 vi.mock("lucide-react-native", () => ({ X: () => null }));
 vi.mock("react-native", () => ({
+  AccessibilityInfo: { isReduceMotionEnabled: async () => false, addEventListener: () => ({ remove: () => undefined }) },
   useWindowDimensions: () => viewport,
   Platform: { OS: "ios", select: (options: { default: string }) => options.default },
   StyleSheet: { create: (styles: unknown) => styles },

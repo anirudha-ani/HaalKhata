@@ -2,8 +2,13 @@
 
 import type { ReactNode } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, View } from "react-native";
+import Animated from "react-native-reanimated";
 import { Text } from "@/components/ui/Text";
+import { usePressFeedback } from "@/lib/motion/hooks/usePressFeedback";
 import { colors, radii, spacing } from "@/lib/theme/theme";
+
+/** Pressable whose style can carry the UI-thread press animation. */
+const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 /** Visual treatments a button can take. */
 export type ButtonVariant = "primary" | "positive" | "outline" | "ghost";
@@ -11,7 +16,9 @@ export type ButtonVariant = "primary" | "positive" | "outline" | "ghost";
 /**
  * Renders a full-width pressable button: brand-filled by default, with
  * positive (settlement green), outline, and ghost variants, a busy spinner
- * state, and an optional leading icon.
+ * state, and an optional leading icon. Pressing it gives under the finger
+ * (a small spring scale and dim, run on the UI thread), so a tap feels
+ * received even before whatever it started has answered.
  */
 export function Button({
   label,
@@ -38,17 +45,20 @@ export function Button({
   compact?: boolean;
 }) {
   const blocked = disabled || busy;
+  const press = usePressFeedback();
   return (
-    <Pressable
+    <AnimatedPressable
       accessibilityRole="button"
+      accessibilityState={{ disabled: blocked, busy }}
       disabled={blocked}
       onPress={onPress}
-      style={({ pressed }) => [
+      onPressIn={press.onPressIn}
+      onPressOut={press.onPressOut}
+      style={[
         styles.base,
         styles[variant],
         compact ? styles.compact : null,
-        blocked ? styles.blocked : null,
-        pressed && !blocked ? styles.pressed : null,
+        blocked ? styles.blocked : press.animatedStyle,
       ]}
     >
       {busy ? (
@@ -61,7 +71,7 @@ export function Button({
           </Text>
         </>
       )}
-    </Pressable>
+    </AnimatedPressable>
   );
 }
 
@@ -111,9 +121,6 @@ const styles = StyleSheet.create({
   },
   positive: {
     backgroundColor: colors.pos600,
-  },
-  pressed: {
-    opacity: 0.85,
   },
   primary: {
     backgroundColor: colors.brand600,

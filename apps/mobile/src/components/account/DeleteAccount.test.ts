@@ -18,6 +18,7 @@ vi.mock("@/lib/api/queryCache", () => ({ clearMobileQueryCache: vi.fn() }));
 vi.mock("@/lib/push/pushStore", () => ({ clearPushTraces: vi.fn() }));
 // Keep the component and query hooks real; replace native host views and the sheet shell.
 vi.mock("react-native", () => ({
+  AccessibilityInfo: { isReduceMotionEnabled: async () => false, addEventListener: () => ({ remove: () => undefined }) },
   useWindowDimensions: () => ({ width: 390, height: 844, fontScale: 1 }),
   Platform: { select: (options: { default: string }) => options.default },
   StyleSheet: { create: (styles: unknown) => styles },
