@@ -7,6 +7,7 @@ import { errorMessage, expenseClient, socialClient } from "@/lib/api/connect";
 import { MONEY_KEYS, queryKeys } from "@haalkhata/shared/api/queryKeys";
 import type { SafetyDialogMode } from "@haalkhata/shared/safety/safety";
 import { useSafetyAPI } from "@/components/safety/hooks/useSafetyAPI";
+import { usePullToRefresh } from "@/lib/hooks/usePullToRefresh";
 
 /** Which way a settlement being recorded moved the money. */
 export type SettleDirection = "paid" | "received";
@@ -121,6 +122,8 @@ export function useFriendLedger(friendId: string) {
     onError: (mutationError) => setReminderNote(errorMessage(mutationError)),
   });
 
+  const pull = usePullToRefresh(() => ledger.refetch());
+
   return {
     ledger: ledger.data,
     safetyMode,
@@ -128,8 +131,8 @@ export function useFriendLedger(friendId: string) {
     isBlocked: safety.blocks.data?.users.some((person) => person.id === friendId) ?? false,
     isLoading: ledger.isLoading,
     error: ledger.error,
-    refresh: () => void ledger.refetch(),
-    isRefreshing: ledger.isRefetching,
+    refresh: pull.refresh,
+    isRefreshing: pull.isRefreshing,
     addFriend: () => {
       setReminderNote("");
       addFriend.mutate();

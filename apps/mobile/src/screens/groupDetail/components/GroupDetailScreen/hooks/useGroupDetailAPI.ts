@@ -4,6 +4,7 @@ import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tansta
 import { authClient, expenseClient, groupClient, socialClient } from "@/lib/api/connect";
 import type { GroupStatus } from "@haalkhata/shared/group/status";
 import { MONEY_KEYS, queryKeys } from "@haalkhata/shared/api/queryKeys";
+import { usePullToRefresh } from "@/lib/hooks/usePullToRefresh";
 
 /**
  * Wraps every server call the group detail screen makes: the signed-in user,
@@ -129,12 +130,9 @@ export function useGroupDetailAPI(groupId: string) {
   });
 
   /** Refetches the group, its expenses, balances and feed (pull-to-refresh). */
-  const refresh = () => {
-    void group.refetch();
-    void expenses.refetch();
-    void balances.refetch();
-    void activity.refetch();
-  };
+  const pull = usePullToRefresh(() =>
+    Promise.all([group.refetch(), expenses.refetch(), balances.refetch(), activity.refetch()]),
+  );
 
   return {
     me: currentUser.data,
@@ -148,8 +146,8 @@ export function useGroupDetailAPI(groupId: string) {
     balances: balances.isError ? undefined : balances.data,
     reloadBalances: () => void balances.refetch(),
     isLoading: group.isLoading || expenses.isLoading,
-    refresh,
-    isRefreshing: group.isRefetching || expenses.isRefetching || balances.isRefetching,
+    refresh: pull.refresh,
+    isRefreshing: pull.isRefreshing,
     addMembers,
     removeMember,
     transferOwnership,
