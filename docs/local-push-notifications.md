@@ -44,10 +44,13 @@ physical iPhone, or TestFlight.
    `ops/README.md`). Then run `./dev.sh --mobile-ios`. Adding
    `expo-notifications` changed the native fingerprint, so this rebuilds and
    reinstalls the dev client.
-3. Sign in as B on the phone and save an expense. The explainer appears once
-   ("Know when friends add expenses or pay you", one **Continue** button), then
-   the iOS alert. Allow it. Account → Notifications shows "Notifications are
-   on for this phone", and the phone appears under Your phones as This phone.
+3. Sign in as B on the phone. Onboarding's notifications step appears ("Know
+   when friends add expenses or pay you", one **Continue** button), then the
+   iOS alert; see [onboarding](mobile-onboarding.md). Allow it. Account →
+   Notifications shows "Notifications are on for this phone", and the phone
+   appears under Your phones as This phone. Someone who was already signed in
+   before this release, or who skipped past the iOS alert, gets the same
+   explainer once after saving their first expense, payment or group.
 4. Tap **Send a test**. A banner arrives within seconds, and its row says
    "Sent". Tapping the banner opens Account.
 5. As A on the web, add an expense with B. B's phone shows the banner in the

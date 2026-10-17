@@ -22,7 +22,8 @@ cards must also shrink to fit the space actually available inside the shell.
 | Capability | Browser (phone and tablet/desktop) | Native (phone and iPad) | Shared rule or evidence |
 | --- | --- | --- | --- |
 | Google/Apple sign-in, session renewal | Cookie session; Apple HTTPS callback | Bearer session; native Apple on iOS | Auth usecases, session and provider regression tests |
-| Onboarding, profile, phone verification/merge | Present | Present | Same AuthService operations |
+| Signed-out introduction | Landing page beside sign-in | Welcome screen: the same story in a pager, sign-in docked in reach | Shared `welcome/welcomeCopy.ts` ([details](mobile-onboarding.md)) |
+| Onboarding, profile, phone verification/merge | Present | Present as guided steps, plus find friends and notifications on first sign-in on each phone | Same AuthService operations ([details](mobile-onboarding.md)) |
 | Home, multi-currency balances, people | Present | Present; wrapping columns | Shared money, balance and settlement-position helpers |
 | Friends, requests, invitation links | Present | Present | Same SocialService operations; shared invite wording |
 | Find friends from contacts | Not in this release; browsers cannot read the address book | Present | `FindContacts`/`SendFriendRequests` are native-only in `test:parity`; matching and wording in `shared/src/contacts/` ([details](contact-discovery.md)) |

@@ -293,6 +293,17 @@ with colocated tests. Mobile-specific rules:
   gate redirects to /login. The server's CSRF guard exempts bearer clients.
 - **Design tokens** come from `src/lib/theme/theme.ts` (the web's globals.css
   palette). No inline hex colors in screens.
+- **Motion and haptics go through `src/lib/motion/`.** Springs and durations
+  are tokens in `motion.constants.ts`; entrances and step transitions are the
+  prebuilt builders in `entrances.ts`; follow Reduce Motion with
+  `useReduceMotion` (a fade, never a jump) and animate on the UI thread.
+  Haptics mark outcomes only (`haptics.ts`). Vitest aliases Reanimated and
+  expo-haptics to stand-ins in `src/lib/testing/`.
+- **Onboarding asks once, after saying why.** The screen before an iOS
+  permission alert has one button, Continue; the alert is where people say
+  no (App Review 5.1.1(iv)). Device steps (contacts, notifications) run after
+  a sign-in on each phone, never on an app update. See
+  `docs/mobile-onboarding.md`.
 - **Query keys and money helpers are imported, not copied.** They live in
   `@haalkhata/shared` and are consumed identically by both apps. These were
   duplicated files kept in sync by hand until 2026-07-26 — do not reintroduce
