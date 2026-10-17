@@ -1,5 +1,6 @@
 /** Privacy-aware UserRow → common.v1.User init shapes. */
 
+import { ContactDiscovery } from "@haalkhata/protogen/common/v1/common_pb";
 import type { UserRow } from "@/server/auth/repo/users.repo";
 
 /**
@@ -75,5 +76,18 @@ export function toPrivateUser(userRow: UserRow) {
     phone: userRow.phone ?? "",
     phoneVerified: userRow.phone_verified_at !== null,
     onboarded: userRow.onboarded_at !== null,
+    contactDiscovery: toContactDiscovery(userRow.contact_discovery),
   };
+}
+
+/**
+ * Maps the stored three-state answer onto the wire enum.
+ *
+ * @param stored - users.contact_discovery: null (never asked), true or false.
+ * @returns ON, OFF, or UNSPECIFIED for never asked.
+ */
+export function toContactDiscovery(stored: boolean | null | undefined): ContactDiscovery {
+  if (stored === true) return ContactDiscovery.ON;
+  if (stored === false) return ContactDiscovery.OFF;
+  return ContactDiscovery.UNSPECIFIED;
 }

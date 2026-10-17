@@ -17,6 +17,9 @@ export const RPC_RATE_LIMITS = {
   addFriend: 10,
   addMembers: 15,
   createExpense: 30,
+  // A lookup checks up to 1,000 identifiers; the daily total is capped in
+  // the database as well.
+  findContacts: 5,
   getFriendLedger: 60,
   getGroupBalances: 60,
   getOverallBalances: 60,
@@ -24,6 +27,8 @@ export const RPC_RATE_LIMITS = {
   listGroups: 60,
   parseReceipt: 5,
   removeFriend: 10,
+  // Each call may ask up to 50 people, so far fewer calls than AddFriend.
+  sendFriendRequests: 3,
   sendReminder: 10,
   setGroupStatus: 30,
   writePaymentMethod: 30,

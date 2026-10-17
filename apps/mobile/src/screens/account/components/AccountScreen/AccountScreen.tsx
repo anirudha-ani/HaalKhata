@@ -1,6 +1,7 @@
 /** Account settings: profile, payments, sharing, privacy, support and account access. */
 
 import { ReceiptPermission } from "@/components/account/ReceiptPermission/ReceiptPermission";
+import { ContactDiscoverySetting } from "@/components/account/ContactDiscoverySetting/ContactDiscoverySetting";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { BlockedPeople } from "@/components/safety/BlockedPeople";
 import type { User } from "@haalkhata/protogen/common/v1/common_pb";
@@ -182,7 +183,8 @@ function ProfileForm({ me: currentUser }: { me: User }) {
           </View>
           <View style={styles.formCard}>
             <Text accessibilityRole="header" style={styles.sectionTitle}>{ACCOUNT_SETTINGS_COPY.privacy}</Text>
-            <ReceiptPermission embedded />
+            <ContactDiscoverySetting answer={currentUser.contactDiscovery} />
+            <View style={styles.dividedSection}><ReceiptPermission embedded /></View>
             <View style={styles.dividedSection}><BlockedPeople /></View>
           </View>
           <View style={styles.formCard}>

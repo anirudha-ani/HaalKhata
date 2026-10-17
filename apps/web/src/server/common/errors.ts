@@ -8,6 +8,7 @@ export type UsecaseErrorCode =
   | "not_found"
   | "already_exists"
   | "failed_precondition"
+  | "resource_exhausted"
   | "unavailable";
 
 /** Error thrown by usecases so handlers can report failures without transport knowledge. */
@@ -63,4 +64,15 @@ export function denied(message: string): never {
  */
 export function unavailable(message: string): never {
   throw new UsecaseError("unavailable", message);
+}
+
+/**
+ * Fails the current usecase because the caller used up an allowance that
+ * resets later, such as the daily contact-lookup quota.
+ *
+ * @param message - Human-readable explanation, safe to show to the caller.
+ * @throws UsecaseError always, with code "resource_exhausted".
+ */
+export function exhausted(message: string): never {
+  throw new UsecaseError("resource_exhausted", message);
 }

@@ -106,6 +106,7 @@ cannot lock the user out of the merge confirmation.
 11. [CompleteOnboarding](#11-completeonboarding)
 12. [Apple sign-in](#12-apple-sign-in)
 13. [DeleteAccount](#13-deleteaccount)
+14. [SetContactDiscovery](#14-setcontactdiscovery)
 
 ---
 
@@ -615,3 +616,13 @@ clients clear their sessions and private query caches after success.
 Backup expiry and reapplying deletion after a restore are operator duties in
 [the server runbook](../../../ops/README.md). Both apps present the same
 shared deletion explanation before requesting the exact confirmation.
+
+### 14. SetContactDiscovery
+
+`POST /api/connect/auth.v1.AuthService/SetContactDiscovery` takes
+`{ "discoverable": true | false }` and returns the caller's own
+`common.v1.User`, whose private `contact_discovery` field is `ON`, `OFF` or,
+for an account that never answered, `UNSPECIFIED` (not findable). Every
+account that predates the field starts `UNSPECIFIED`. The answer decides
+whether `SocialService.FindContacts` can match the account by its verified
+phone or sign-in email; see [Find friends from contacts](../../contact-discovery.md).
