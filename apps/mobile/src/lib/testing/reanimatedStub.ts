@@ -148,12 +148,24 @@ export const ReduceMotion = { System: "system", Always: "always", Never: "never"
 /** Extrapolation modes, as Reanimated names them. */
 export const Extrapolation = { CLAMP: "clamp", EXTEND: "extend", IDENTITY: "identity" } as const;
 
+/** Keyframe animations, as a builder that accepts any chain. */
+export class Keyframe {
+  /** @returns The chainable builder. */
+  duration(): AnimationBuilder {
+    return builder;
+  }
+}
+
 export const FadeIn = builder;
 export const FadeInDown = builder;
 export const FadeInUp = builder;
 export const FadeOut = builder;
 export const FadeOutDown = builder;
 export const FadeOutUp = builder;
+export const FadeOutLeft = builder;
+export const FadeOutRight = builder;
+export const FadeInLeft = builder;
+export const FadeInRight = builder;
 export const LinearTransition = builder;
 export const SlideInDown = builder;
 export const SlideInLeft = builder;

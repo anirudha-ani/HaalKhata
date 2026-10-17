@@ -3,7 +3,11 @@
 import { CircleAlert, X } from "lucide-react-native";
 import { useEffect } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
+import Animated from "react-native-reanimated";
 import { Text } from "@/components/ui/Text";
+import { dropIn, FADE_OUT_UP } from "@/lib/motion/entrances";
+import { errorFeedback } from "@/lib/motion/haptics";
+import { useReduceMotion } from "@/lib/motion/hooks/useReduceMotion";
 import { colors, radii, spacing } from "@/lib/theme/theme";
 import { ERROR_TOAST_AUTO_DISMISS_MS } from "./ui.constants";
 
@@ -14,7 +18,9 @@ import { ERROR_TOAST_AUTO_DISMISS_MS } from "./ui.constants";
  * whoever just tapped a button at the top of it. Closes on the dismiss
  * button or on its own after {@link ERROR_TOAST_AUTO_DISMISS_MS}.
  *
- * Renders nothing when `message` is empty.
+ * It drops in from the top edge with an error tap (Apple's haptic for a
+ * failed action), and slides back up when it closes; under Reduce Motion it
+ * fades. Renders nothing when `message` is empty.
  */
 export function ErrorToast({
   message,
@@ -25,8 +31,10 @@ export function ErrorToast({
   /** Called when the toast closes, by tap or by timeout. */
   onDismiss: () => void;
 }) {
+  const reduceMotion = useReduceMotion();
   useEffect(() => {
     if (!message) return;
+    errorFeedback();
     const timer = setTimeout(onDismiss, ERROR_TOAST_AUTO_DISMISS_MS);
     return () => clearTimeout(timer);
   }, [message, onDismiss]);
@@ -34,7 +42,13 @@ export function ErrorToast({
   if (!message) return null;
   return (
     <View pointerEvents="box-none" style={styles.host}>
-      <View accessibilityRole="alert" style={styles.toast}>
+      <Animated.View
+        accessibilityRole="alert"
+        entering={dropIn(0, reduceMotion)}
+        exiting={FADE_OUT_UP}
+        key={message}
+        style={styles.toast}
+      >
         <CircleAlert color={colors.brand600} size={18} />
         <Text style={styles.message}>{message}</Text>
         <Pressable
@@ -45,7 +59,7 @@ export function ErrorToast({
         >
           <X color={colors.brand600} size={16} />
         </Pressable>
-      </View>
+      </Animated.View>
     </View>
   );
 }

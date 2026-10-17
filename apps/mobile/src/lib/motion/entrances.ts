@@ -17,6 +17,8 @@ import {
   FadeOut,
   FadeOutLeft,
   FadeOutRight,
+  FadeOutUp,
+  Keyframe,
   ReduceMotion,
 } from "react-native-reanimated";
 import {
@@ -77,6 +79,22 @@ export function dropIn(order: number, reduceMotion: boolean) {
 
 /** A quick fade out, the same with or without Reduce Motion. */
 export const FADE_OUT = FadeOut.duration(FADE_DURATION_MS).reduceMotion(ReduceMotion.Never);
+
+/** Something pinned to the top edge leaving the way it came; a fade under Reduce Motion. */
+export const FADE_OUT_UP = FadeOutUp.duration(FADE_DURATION_MS);
+
+/**
+ * A menu growing out of the button that opened it: a short scale from just
+ * under full size with a fade, like iOS's own menus. Give the view a
+ * `transformOrigin` at that button.
+ */
+export const MENU_POP = new Keyframe({
+  0: { opacity: 0, transform: [{ scale: 0.88 }] },
+  100: { opacity: 1, transform: [{ scale: 1 }] },
+}).duration(FADE_DURATION_MS);
+
+/** The menu's entrance under Reduce Motion. */
+export const MENU_FADE = FadeIn.duration(FADE_DURATION_MS).reduceMotion(ReduceMotion.Never);
 
 /** Which way a flow is moving: on to the next step, or back to the one before. */
 export type FlowDirection = "forward" | "back";

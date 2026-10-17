@@ -1,12 +1,19 @@
 /** One-time card telling an account that never answered that contacts can find it, with the way to turn that off. */
 
-import { StyleSheet, View } from "react-native";
+import { StyleSheet } from "react-native";
+import Animated, { FadeIn, LinearTransition, ReduceMotion } from "react-native-reanimated";
 import { CONTACT_DISCOVERY_PROMPT } from "@haalkhata/shared/contacts/contactsCopy";
 import type { ContactDiscovery } from "@haalkhata/shared/contacts/discovery";
 import { Button } from "@/components/ui/Button";
 import { Text } from "@/components/ui/Text";
 import { colors, radii, spacing } from "@/lib/theme/theme";
 import { useContactDiscoveryPrompt } from "./hooks/useContactDiscoveryPrompt";
+
+/** The confirmation fades in where the buttons were, with or without Reduce Motion. */
+const NOTICE_ENTERING = FadeIn.reduceMotion(ReduceMotion.Never);
+
+/** The card eases to its new, shorter height instead of jumping. */
+const CARD_LAYOUT = LinearTransition.springify(320).dampingRatio(1);
 
 /**
  * Renders the notice with its two answers (keep it on, turn it off), or,
@@ -24,7 +31,7 @@ export function ContactDiscoveryPrompt({
   const prompt = useContactDiscoveryPrompt(answer);
   if (!prompt.visible) return null;
   return (
-    <View style={styles.card}>
+    <Animated.View layout={CARD_LAYOUT} style={styles.card}>
       {prompt.asking ? (
         <>
           <Text accessibilityRole="header" style={styles.title}>{CONTACT_DISCOVERY_PROMPT.title}</Text>
@@ -45,9 +52,11 @@ export function ContactDiscoveryPrompt({
           />
         </>
       ) : (
-        <Text accessibilityLiveRegion="polite" style={styles.notice}>{prompt.notice}</Text>
+        <Animated.View entering={NOTICE_ENTERING}>
+          <Text accessibilityLiveRegion="polite" style={styles.notice}>{prompt.notice}</Text>
+        </Animated.View>
       )}
-    </View>
+    </Animated.View>
   );
 }
 

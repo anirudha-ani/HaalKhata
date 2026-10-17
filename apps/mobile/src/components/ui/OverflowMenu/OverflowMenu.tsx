@@ -3,8 +3,11 @@
 import { EllipsisVertical } from "lucide-react-native";
 import { useRef, useState, type ReactNode } from "react";
 import { Modal, Platform, Pressable, StyleSheet, useWindowDimensions, View, type HostInstance } from "react-native";
+import Animated from "react-native-reanimated";
 import { SHEET_ORIENTATIONS } from "@/components/ui/Sheet/constants/sheet";
 import { Text } from "@/components/ui/Text";
+import { MENU_FADE, MENU_POP } from "@/lib/motion/entrances";
+import { useReduceMotion } from "@/lib/motion/hooks/useReduceMotion";
 import { colors, radii, spacing } from "@/lib/theme/theme";
 import {
   OVERFLOW_MENU_EDGE_INSET,
@@ -50,6 +53,7 @@ export function OverflowMenu({
   const chosenRef = useRef<(() => void) | null>(null);
   const [anchor, setAnchor] = useState<{ top: number; right: number } | null>(null);
   const { width: windowWidth } = useWindowDimensions();
+  const reduceMotion = useReduceMotion();
 
   /** Measures the button where it sits on screen and opens the menu under it. */
   const open = () => {
@@ -106,7 +110,10 @@ export function OverflowMenu({
         {anchor ? (
           // The shadow and the clipping are two views: iOS draws no shadow
           // outside a view that clips its children to its rounded corners.
-          <View style={[styles.menuShadow, { right: anchor.right, top: anchor.top }]}>
+          <Animated.View
+            entering={reduceMotion ? MENU_FADE : MENU_POP}
+            style={[styles.menuShadow, { right: anchor.right, top: anchor.top }]}
+          >
             <View accessibilityLabel={label} accessibilityRole="menu" style={styles.menu}>
               {items.map((item, index) => (
                 <Pressable
@@ -127,7 +134,7 @@ export function OverflowMenu({
                 </Pressable>
               ))}
             </View>
-          </View>
+          </Animated.View>
         ) : null}
       </Modal>
     </>
@@ -177,6 +184,8 @@ const styles = StyleSheet.create({
     borderRadius: radii.md,
     elevation: 8,
     position: "absolute",
+    // The menu grows out of the button above its right edge.
+    transformOrigin: "right top",
     shadowColor: colors.ink,
     shadowOffset: { height: 8, width: 0 },
     shadowOpacity: 0.14,
