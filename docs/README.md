@@ -8,6 +8,7 @@
 | [Original mobile audit](audits/mobile-ios-2026-10-05.md) | Historical findings before the release implementation |
 | [Build security patches](build-security-patches.md) | Exact-version Expo/Metro mitigations and the fail-closed dependency gate |
 | [Development](development.md) | Architecture and layering, schema migrations, the quality gates CI runs |
+| [Find friends from contacts](contact-discovery.md) | Who can be found, what is stored, limits, and how to run and verify contact matching locally |
 | [Backend services](backend/README.md) | Service-by-service reference for the six ConnectRPC services |
 | [`ops/README.md`](../ops/README.md) | Server runbook: bootstrap, secret rotation, encrypted backups, restore drill |
 | [`AGENTS.md`](../AGENTS.md) | Conventions every contributor and AI agent follows |

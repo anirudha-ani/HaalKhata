@@ -2,6 +2,7 @@
 /** Account settings: profile, payments, sharing, privacy, support and account access. */
 
 import { ReceiptPermission } from "@/components/account/ReceiptPermission/ReceiptPermission";
+import { ContactDiscoverySetting } from "@/components/account/ContactDiscoverySetting/ContactDiscoverySetting";
 import { BlockedPeople } from "@/components/safety/BlockedPeople/BlockedPeople";
 import { LegalLinks } from "@/components/legal/LegalLinks/LegalLinks";
 import { DeleteAccount } from "@/components/account/DeleteAccount/DeleteAccount";
@@ -176,7 +177,8 @@ export function ProfileForm({ me: currentUser }: { me: User }) {
 
           <section className="space-y-4 rounded-2xl border border-line bg-card p-5">
             <h2 className="text-lg font-semibold">{ACCOUNT_SETTINGS_COPY.privacy}</h2>
-            <ReceiptPermission embedded />
+            <ContactDiscoverySetting answer={currentUser.contactDiscovery} />
+            <div className="border-t border-line pt-4"><ReceiptPermission embedded /></div>
             <div className="border-t border-line pt-4"><BlockedPeople /></div>
           </section>
           <section className="space-y-3 rounded-2xl border border-line bg-card p-5">

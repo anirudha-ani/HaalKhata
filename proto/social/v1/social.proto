@@ -24,6 +24,26 @@ service SocialService {
   // debt. Quiet like group removal (no notification); shared history and
   // group co-memberships are untouched, and they can be re-added later.
   rpc RemoveFriend(RemoveFriendRequest) returns (google.protobuf.Empty);
+
+  // Find friends from contacts. Says which identifiers from the caller's own
+  // address book belong to accounts that chose to be findable
+  // (auth.v1.AuthService.SetContactDiscovery). Unlike AddFriend this does
+  // reveal a match, which is why only accounts that opted in take part, and
+  // a phone matches only once its holder verified it. The server stores
+  // none of what it is sent. Limited per minute and per day; past either it
+  // fails with ResourceExhausted and a message the client can show.
+  rpc FindContacts(FindContactsRequest) returns (FindContactsResponse);
+  // Sends a friend request to each listed account, with AddFriend's rules
+  // applied per id: the caller, blocked, unregistered or merged accounts,
+  // existing friends and pairs with a request pending in either direction
+  // are skipped without saying so. So are accounts that are not findable
+  // from contacts, which keeps this bulk path from being a faster AddFriend
+  // for ids learned elsewhere. One call takes one rate-limit slot,
+  // which is what lets "send to all" be one call. The recipients appear in
+  // ListFriends.outgoing_requests with their profile, since the caller saw
+  // who they were asking.
+  rpc SendFriendRequests(SendFriendRequestsRequest) returns (google.protobuf.Empty);
+
   rpc ListActivity(ListActivityRequest) returns (ListActivityResponse);
   rpc ListNotifications(google.protobuf.Empty) returns (ListNotificationsResponse);
   rpc MarkNotificationsRead(google.protobuf.Empty) returns (google.protobuf.Empty);
@@ -234,4 +254,50 @@ message InviteContactRequest {
   // Exactly one of email/phone; phone in any format the user typed.
   string email = 1;
   string phone = 2;
+}
+
+message FindContactsRequest {
+  // E.164 numbers, normalised on the device. Phones and emails together
+  // may hold at most 1,000 entries; the client sends a larger address book
+  // in several calls. Entries that are not valid numbers are ignored.
+  repeated string phones = 1;
+  // Email addresses, trimmed and lower-cased on the device. Entries that are
+  // not addresses are ignored.
+  repeated string emails = 2;
+}
+
+message FindContactsResponse {
+  // One entry per submitted identifier that matched; an account that holds
+  // two submitted identifiers appears twice, once for each.
+  repeated FoundContact contacts = 1;
+  // Identifiers the caller can still check today (UTC).
+  int32 remaining_today = 2;
+}
+
+// One identifier from the request that belongs to a findable account.
+message FoundContact {
+  // The phone or email from the request that matched, exactly as sent, so
+  // the client can show the contact's own name beside the account. Never an
+  // identifier the caller did not send.
+  string identifier = 1;
+  // Minimal projection, as for incoming requests: id, name and avatar.
+  common.v1.User user = 2;
+  ContactRelation relation = 3;
+}
+
+// Where the caller stands with a found account.
+enum ContactRelation {
+  CONTACT_RELATION_UNSPECIFIED = 0;
+  // No friendship and no request either way: a request can be sent.
+  CONTACT_RELATION_NONE = 1;
+  // The caller sent a request that is still pending.
+  CONTACT_RELATION_REQUESTED = 2;
+  // They sent the caller a request: RespondFriendRequest accepts it.
+  CONTACT_RELATION_INCOMING = 3;
+  CONTACT_RELATION_FRIEND = 4;
+}
+
+message SendFriendRequestsRequest {
+  // 1 to 50 account ids, normally taken from FindContactsResponse.
+  repeated string user_ids = 1;
 }

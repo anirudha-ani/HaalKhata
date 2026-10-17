@@ -237,6 +237,7 @@ bundling and simulator compilation do not establish provider/account behavior.
 | Invitations | Tap a real HTTPS group/profile link from Messages/Mail in cold and warm launches; signed-out flow resumes its pending invite. |
 | Money | Every split type, unequal cents/rounding, multiple payers, USD/EUR separately, create/edit/delete, paid/received settlements, duplicate-tap/retry behavior. |
 | Receipt | Camera and library; denial/cancellation; HEIC; explicit processor consent; no upload until consent; provider failure and manual entry; draft reviewed before save. |
+| Find friends | Explanation before the prompt; allow all, allow selected then Choose more contacts, deny then Open Settings; only accounts that turned on "Let people find me" appear; Send to all lists every name and the notification text before sending; a 1,000+ contact book completes ([checklist](contact-discovery.md#verify)). |
 | Safety | Report a comment/profile/group/expense; see it in the private queue; block despite debt; no direct requests/reminders or blocked comments; unblock; moderator redaction/suspension. |
 | Deletion | Review owed and receivable totals in multiple currencies; Review balances opens the dashboard without deleting; reopening refreshes settled amounts and clears confirmation; failed/offline balance reads never show a false zero and still allow Delete anyway. Cancel confirmation; delete Google and Apple accounts, including private relay; Apple revoke failures leave the account intact and retryable; another account sees anonymous cents/history. |
 | Failures | Offline cold launch, flaky API, rate limiting, retry controls, long receipt parsing, no false empty balances. |
@@ -261,6 +262,9 @@ Support:        https://haalkhata.app/support
 Prepare App Privacy answers from actual data use: name, email/private relay,
 optional phone/payment identifiers, account ID, shared financial/expense data,
 comments, support/safety submissions, and optional receipt image processing.
+Find friends sends contacts' phone numbers and emails for matching and discards
+them after the request, so Apple does not count them as collected; describe the
+matching in review notes and keep the privacy policy section current.
 Account data is linked to a user. Check Apple categories for the actual fields
 and every configured third party; do not claim “no data collected.” No ad or
 tracking SDK was found, but verify the final archive and your real providers.

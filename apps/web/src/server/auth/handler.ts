@@ -8,6 +8,7 @@ import * as accountMerge from "@/server/auth/usecase/merge/accountMerge.usecase"
 import * as appleSignIn from "@/server/auth/usecase/apple/appleSignIn.usecase";
 import { getSignInOptions } from "@/server/auth/usecase/apple/signInOptions.usecase";
 import { deleteAccount } from "@/server/auth/usecase/deletion/accountDeletion.usecase";
+import { setContactDiscovery } from "@/server/auth/usecase/account/contactDiscovery.usecase";
 import { clearSessionCookie, requireUser, runUsecase, setSessionCookie } from "@/server/api/connect/context";
 import { wantsBearerToken } from "@/server/api/connect/credentials";
 import { rateLimitCheck } from "@/server/common/rateLimit/rateLimit";
@@ -195,6 +196,14 @@ export const authHandler: ServiceImpl<typeof AuthService> = {
   async completeOnboarding(_request, handlerContext) {
     return runUsecase(
       async () => auth.completeOnboarding(await requireUser(handlerContext)),
+      handlerContext,
+    );
+  },
+
+  /** Records whether people can find the caller from their contacts. */
+  async setContactDiscovery(request, handlerContext) {
+    return runUsecase(
+      async () => setContactDiscovery(await requireUser(handlerContext), request.discoverable),
       handlerContext,
     );
   },

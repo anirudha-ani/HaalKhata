@@ -74,6 +74,7 @@ import { getOverallBalances, netWithUser } from "@/server/expense/usecase/balanc
 import { denied, invalid, notFound, UsecaseError } from "@/server/common/errors";
 import { transaction } from "@/server/common/db/db";
 import { toFriendRequestUser, toPublicUser } from "@/server/auth/usecase/identity/user.mapper";
+import { friendRequestNotice } from "@/server/social/usecase/friendRequestNotice";
 
 /**
  * Adds a friend by id, email, or phone.
@@ -148,13 +149,7 @@ export async function addFriend(
     if (!inserted) return;
     await insertNotifications(
       [friend.id],
-      {
-        actorId: userId,
-        type: "friend_request",
-        title: `${requester.name} sent you a friend request`,
-        body: "Accept or decline it from Friends.",
-        link: "/friends",
-      },
+      { actorId: userId, ...friendRequestNotice(requester.name) },
       client,
     );
   });

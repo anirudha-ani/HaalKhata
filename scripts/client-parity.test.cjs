@@ -10,6 +10,11 @@ const ROOT = path.resolve(__dirname, "..");
 // Browser Apple proof goes to Apple's HTTPS callback, then CompleteAppleSignIn.
 // Native Apple proof comes from AuthenticationServices and uses this RPC instead.
 const NATIVE_AUTH_METHOD = "authClient.logInWithApple";
+// Find friends from contacts reads the device address book, which browsers
+// cannot do, and is mobile-only for this release (docs/mobile-web-parity.md).
+// The browser keeps the other half of the feature: the SetContactDiscovery
+// switch, so a web-only person can still choose to be found.
+const NATIVE_CONTACT_METHODS = ["socialClient.findContacts", "socialClient.sendFriendRequests"];
 
 /** @param source TypeScript source. @returns Canonical client.method calls, including aliased imports. */
 function clientCalls(source) {
@@ -81,11 +86,18 @@ test("browser and native expose the same Connect feature entry points", (context
   for (const [method, filenames] of browser) {
     if (!native.has(method)) gaps.push(`Missing on native: ${method}\n  browser: ${filenames.join(", ")}`);
   }
+  for (const method of NATIVE_CONTACT_METHODS) {
+    assert.ok(native.has(method), `Native Find friends must still call ${method}`);
+  }
+  assert.ok(browser.has("authClient.setContactDiscovery") && native.has("authClient.setContactDiscovery"),
+    "Both apps must let people choose whether contacts can find them");
   for (const [method, filenames] of native) {
-    if (!browser.has(method) && method !== NATIVE_AUTH_METHOD) gaps.push(`Missing in browser: ${method}\n  native: ${filenames.join(", ")}`);
+    if (!browser.has(method) && method !== NATIVE_AUTH_METHOD && !NATIVE_CONTACT_METHODS.includes(method)) {
+      gaps.push(`Missing in browser: ${method}\n  native: ${filenames.join(", ")}`);
+    }
   }
   assert.deepEqual(gaps, [], "A feature reached only one app. Implement both surfaces; document only genuine platform transport differences.");
-  context.diagnostic(`${browser.size} common Connect methods; native Apple proof has a separate transport. This checks API reachability, not visual or end-to-end parity.`);
+  context.diagnostic(`${browser.size} common Connect methods; native Apple proof has a separate transport and contact lookup is native-only. This checks API reachability, not visual or end-to-end parity.`);
 });
 
 test("the scan includes aliases and bracket calls but excludes comments and query-cache clients", () => {

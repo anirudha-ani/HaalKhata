@@ -131,6 +131,8 @@ tracked keys with LRU eviction so it cannot be a memory-exhaustion vector.
 | `AddMembers` | per account | 15/min |
 | `CreateExpense` | per account | 30/min |
 | `SendReminder` | per account | 10/min |
+| `FindContacts` | per account | 5/min, plus 5,000 identifiers per UTC day, **durable** (`contact_lookup_usage`) |
+| `SendFriendRequests` | per account | 3/min |
 | Payment method writes (create, update, delete, set-preferred) | per account, one shared bucket | 30/min |
 | `ParseReceipt` | per account | 5/min (+ max 2 concurrent per process) |
 | Ledger reads (`ListExpenses`, `ListGroups`, `GetFriendLedger`, `GetGroupBalances`, `GetOverallBalances`/`ListFriends`) | per account | 60/min each |
