@@ -1,6 +1,6 @@
 /** Welcome screen: what HaalKhata is, with Apple and Google sign-in always within reach. */
 
-import { Image, ScrollView, StyleSheet, View } from "react-native";
+import { Image, ScrollView, StyleSheet, useWindowDimensions, View } from "react-native";
 import Animated from "react-native-reanimated";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Text } from "@/components/ui/Text";
@@ -10,7 +10,9 @@ import { useResponsiveLayout } from "@/lib/layout/hooks/useResponsiveLayout";
 import { colors, fonts, radii, spacing } from "@/lib/theme/theme";
 import brandIconSource from "../../../../../assets/icon.png";
 import {
-  ILLUSTRATION_HEIGHT,
+  ILLUSTRATION_MAX_HEIGHT,
+  ILLUSTRATION_MIN_HEIGHT,
+  PHONE_RESERVED_HEIGHT,
   TABLET_ILLUSTRATION_HEIGHT,
   WELCOME_TABLET_MAX_WIDTH,
 } from "../../constants/welcome";
@@ -30,8 +32,16 @@ import { WelcomeStory } from "./components/WelcomeStory/WelcomeStory";
  * @returns The welcome screen.
  */
 export function LoginScreen() {
-  const { isTablet } = useResponsiveLayout();
+  const { isTablet, fontScale } = useResponsiveLayout();
+  const { height } = useWindowDimensions();
   const reduceMotion = useReduceMotion();
+  // What the headline, words and panel leave over goes to the illustration,
+  // so a 6.1-inch phone shows the whole page without scrolling; larger text
+  // or a smaller phone scrolls the story while the panel stays put.
+  const phoneIllustrationHeight = Math.min(
+    ILLUSTRATION_MAX_HEIGHT,
+    Math.max(ILLUSTRATION_MIN_HEIGHT, height - PHONE_RESERVED_HEIGHT * Math.max(1, fontScale)),
+  );
 
   const brand = (
     <Animated.View entering={dropIn(0, reduceMotion)} style={styles.brand}>
@@ -69,7 +79,7 @@ export function LoginScreen() {
         showsVerticalScrollIndicator={false}
         style={styles.flexOne}
       >
-        <WelcomeStory illustrationHeight={ILLUSTRATION_HEIGHT} showBody={false} />
+        <WelcomeStory illustrationHeight={phoneIllustrationHeight} showBody={false} />
       </ScrollView>
       <SignInPanel variant="dock" />
     </SafeAreaView>
@@ -81,8 +91,8 @@ const styles = StyleSheet.create({
   brandIcon: { borderRadius: radii.md, height: 40, width: 40 },
   brandTagline: { color: colors.inkSoft, fontSize: 9, fontWeight: "700", letterSpacing: 1.6, marginTop: 2 },
   flexOne: { flex: 1 },
-  phoneHeader: { paddingHorizontal: spacing.xl, paddingVertical: spacing.md },
-  phoneScroll: { flexGrow: 1, justifyContent: "center", paddingBottom: spacing.xl, paddingTop: spacing.sm },
+  phoneHeader: { paddingHorizontal: spacing.xl, paddingVertical: spacing.sm },
+  phoneScroll: { flexGrow: 1, justifyContent: "center", paddingBottom: spacing.lg },
   safeArea: { backgroundColor: colors.paper, flex: 1 },
   tabletColumns: {
     alignItems: "center",

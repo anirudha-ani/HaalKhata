@@ -62,8 +62,21 @@ export const RECEIPT_SCAN_HEIGHT = 150;
 /** Width of the line in "Clear it" that the amount travels along, between the two people. */
 export const SETTLE_TRACK_WIDTH = 132;
 
-/** Height of the illustration area on a phone. */
-export const ILLUSTRATION_HEIGHT = 228;
+/** Height each illustration is drawn at before it is scaled to fit. */
+export const ILLUSTRATION_NATURAL_HEIGHT = 250;
+
+/** Tallest the illustration area gets on a phone. */
+export const ILLUSTRATION_MAX_HEIGHT = 230;
+
+/** Smallest the illustration area gets on a phone; below this the story scrolls. */
+export const ILLUSTRATION_MIN_HEIGHT = 150;
+
+/**
+ * Height a phone's welcome screen needs for everything but the illustration:
+ * status bar, brand, headline, the step's words, dots and the docked sign-in
+ * panel, at the default text size. What is left goes to the illustration.
+ */
+export const PHONE_RESERVED_HEIGHT = 660;
 
 /** Height of the illustration area on an iPad. */
 export const TABLET_ILLUSTRATION_HEIGHT = 320;

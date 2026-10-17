@@ -33,7 +33,11 @@ export function WelcomeStory({
 }: {
   /** Height of each step's illustration. */
   illustrationHeight: number;
-  /** Whether there is room for the hero's supporting paragraph (iPad). */
+  /**
+   * Whether there is room for the hero's eyebrow, supporting paragraph and
+   * the receipt privacy line (iPad). A phone keeps the headline, the steps
+   * and the sign-in panel on one screen instead.
+   */
   showBody: boolean;
 }) {
   const reduceMotion = useReduceMotion();
@@ -42,9 +46,9 @@ export function WelcomeStory({
   return (
     <View style={styles.story}>
       <Animated.View entering={riseIn(1, reduceMotion)} style={styles.hero}>
-        <Text style={styles.eyebrow}>{WELCOME_HERO.eyebrow.toUpperCase()}</Text>
-        <Text accessibilityRole="header" style={styles.heroTitle}>
-          {`${WELCOME_HERO.titleLead} `}
+        {showBody ? <Text style={styles.eyebrow}>{WELCOME_HERO.eyebrow.toUpperCase()}</Text> : null}
+        <Text accessibilityRole="header" style={[styles.heroTitle, showBody ? styles.heroTitleLarge : null]}>
+          {`${WELCOME_HERO.titleLead}\n`}
           <Text style={styles.heroAccent}>{WELCOME_HERO.titleAccent}</Text>
         </Text>
         {showBody ? <Text style={styles.heroBody}>{WELCOME_HERO.body}</Text> : null}
@@ -87,10 +91,12 @@ export function WelcomeStory({
           pageWidth={pager.pageWidth}
           scrollX={pager.scrollX}
         />
-        <View style={styles.privacy}>
-          <LockKeyhole color={colors.inkSoft} size={13} />
-          <Text style={styles.privacyText}>{RECEIPT_PRIVACY_MESSAGE}</Text>
-        </View>
+        {showBody ? (
+          <View style={styles.privacy}>
+            <LockKeyhole color={colors.inkSoft} size={13} />
+            <Text style={styles.privacyText}>{RECEIPT_PRIVACY_MESSAGE}</Text>
+          </View>
+        ) : null}
       </Animated.View>
     </View>
   );
@@ -105,14 +111,15 @@ const styles = StyleSheet.create({
   heroTitle: {
     color: colors.ink,
     fontFamily: fonts.display,
-    fontSize: 34,
+    fontSize: 30,
     fontWeight: "700",
-    letterSpacing: -0.6,
-    lineHeight: 38,
+    letterSpacing: -0.5,
+    lineHeight: 34,
     textAlign: "center",
   },
+  heroTitleLarge: { fontSize: 44, letterSpacing: -0.8, lineHeight: 48 },
   pager: { alignSelf: "stretch" },
   privacy: { alignItems: "flex-start", flexDirection: "row", gap: spacing.xs, maxWidth: 340 },
   privacyText: { color: colors.inkSoft, flexShrink: 1, fontSize: 12, lineHeight: 17 },
-  story: { gap: spacing.xl },
+  story: { gap: spacing.md },
 });
