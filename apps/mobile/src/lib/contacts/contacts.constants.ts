@@ -1,4 +1,4 @@
-/** Constants for reading the address book on the Find friends screen. */
+/** Constants for reading the address book, shared by Find friends and the onboarding friends step. */
 
 import { ContactField } from "expo-contacts";
 

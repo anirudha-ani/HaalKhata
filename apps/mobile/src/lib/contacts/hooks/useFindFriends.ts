@@ -1,4 +1,4 @@
-/** Composite hook for the Find friends screen: access, the lookup, the found list and its actions. */
+/** Composite hook for finding friends from contacts (Find friends and onboarding): access, the lookup, the found list and its actions. */
 
 import { useQuery } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -18,7 +18,7 @@ import {
 } from "@haalkhata/shared/contacts/matches";
 import { authClient, errorMessage } from "@/lib/api/connect";
 import { shareProfileInvite } from "@/lib/invite/share";
-import { deviceLocaleTag } from "../../../utils/deviceLocale";
+import { deviceLocaleTag } from "@/lib/contacts/deviceLocale";
 import { useContactsAccess } from "./useContactsAccess";
 import { useFindFriendsAPI } from "./useFindFriendsAPI";
 

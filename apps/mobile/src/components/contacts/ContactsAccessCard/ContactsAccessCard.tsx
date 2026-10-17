@@ -5,7 +5,7 @@ import { CONTACTS_DENIED, CONTACTS_EXPLANATION } from "@haalkhata/shared/contact
 import { Button } from "@/components/ui/Button";
 import { Text } from "@/components/ui/Text";
 import { colors, radii, spacing } from "@/lib/theme/theme";
-import type { ContactsAccess } from "../../../../utils/contactsAccess";
+import type { ContactsAccess } from "@/lib/contacts/contactsAccess";
 
 /**
  * Explains what is checked before the operating system's prompt appears, so

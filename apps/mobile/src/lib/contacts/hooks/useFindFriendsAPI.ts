@@ -4,8 +4,8 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { queryKeys } from "@haalkhata/shared/api/queryKeys";
 import type { ContactLookupChunk } from "@haalkhata/shared/contacts/identifiers";
 import { errorMessage, socialClient } from "@/lib/api/connect";
-import { sendInBatches } from "../../../utils/batchedSend";
-import { lookUpInChunks } from "../../../utils/chunkedLookup";
+import { sendInBatches } from "@/lib/contacts/batchedSend";
+import { lookUpInChunks } from "@/lib/contacts/chunkedLookup";
 
 /**
  * The screen's server calls, as mutations: none of them is a read worth

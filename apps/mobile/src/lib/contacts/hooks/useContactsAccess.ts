@@ -1,4 +1,4 @@
-/** The device's contacts permission and the reads it allows, for the Find friends screen. */
+/** The device's contacts permission and the reads it allows, for every screen that finds friends from contacts. */
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Contact, getPermissionsAsync, requestPermissionsAsync } from "expo-contacts";
@@ -10,9 +10,9 @@ import {
   CONTACT_FIELDS,
   CONTACTS_PAGE_SIZE,
   CONTACTS_PERMISSION_QUERY_KEY,
-} from "../../../constants/findFriends";
-import { toAddressBookContact } from "../../../utils/addressBook";
-import { contactsAccessOf, type ContactsAccess } from "../../../utils/contactsAccess";
+} from "@/lib/contacts/contacts.constants";
+import { toAddressBookContact } from "@/lib/contacts/addressBook";
+import { contactsAccessOf, type ContactsAccess } from "@/lib/contacts/contactsAccess";
 
 /**
  * Reads and asks for contacts access, and reads the address book once it is

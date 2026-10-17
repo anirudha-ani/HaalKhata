@@ -18,11 +18,11 @@ import { Spinner } from "@/components/ui/Spinner";
 import { Text } from "@/components/ui/Text";
 import { useErrorToast } from "@/components/ui/ToastProvider";
 import { colors, radii, spacing } from "@/lib/theme/theme";
-import { ContactsAccessCard } from "./components/ContactsAccessCard/ContactsAccessCard";
-import { FoundSection } from "./components/FoundSection/FoundSection";
-import { SendAllBar } from "./components/SendAllBar/SendAllBar";
-import { SendAllConfirmSheet } from "./components/SendAllConfirmSheet/SendAllConfirmSheet";
-import { useFindFriends } from "./hooks/useFindFriends";
+import { ContactsAccessCard } from "@/components/contacts/ContactsAccessCard/ContactsAccessCard";
+import { FoundSection } from "@/components/contacts/FoundSection/FoundSection";
+import { SendAllBar } from "@/components/contacts/SendAllBar/SendAllBar";
+import { SendAllConfirmSheet } from "@/components/contacts/SendAllConfirmSheet/SendAllConfirmSheet";
+import { useFindFriends } from "@/lib/contacts/hooks/useFindFriends";
 
 /**
  * Renders the screen through its states: checking access, the explanation
