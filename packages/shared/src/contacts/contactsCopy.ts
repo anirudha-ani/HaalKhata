@@ -22,7 +22,7 @@ export const CONTACTS_EXPLANATION = {
   title: "Find friends from your contacts",
   body:
     "HaalKhata checks the phone numbers and emails in your contacts to show who already uses it. " +
-    "Only people who chose to be findable appear. Names stay on this phone, and nothing is stored.",
+    "People who turned off being found never appear. Names stay on this phone, and nothing is stored.",
   action: "Continue",
 } as const;
 
