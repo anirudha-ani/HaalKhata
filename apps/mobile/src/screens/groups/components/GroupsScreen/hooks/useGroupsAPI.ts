@@ -3,6 +3,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { groupClient, socialClient } from "@/lib/api/connect";
 import { queryKeys } from "@haalkhata/shared/api/queryKeys";
+import { usePullToRefresh } from "@/lib/hooks/usePullToRefresh";
 
 /**
  * Wraps every server call the groups screen makes: the group-list query, the
@@ -33,13 +34,15 @@ export function useGroupsAPI() {
       queryClient.invalidateQueries({ queryKey: queryKeys.friends });
     },
   });
+  const pull = usePullToRefresh(() => groups.refetch());
+
   return {
     groups: groups.data?.groups ?? [],
     friends: (friends.data?.friends ?? []).flatMap((friend) => (friend.user ? [friend.user] : [])),
     isLoading: groups.isLoading,
     listError: groups.error,
-    refresh: () => void groups.refetch(),
-    isRefreshing: groups.isRefetching,
+    refresh: pull.refresh,
+    isRefreshing: pull.isRefreshing,
     createGroup,
   };
 }

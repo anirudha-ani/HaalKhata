@@ -6,6 +6,7 @@ import { socialClient } from "@/lib/api/connect";
 import { ACTIVITY_FILTERS, type ActivityFilter } from "@haalkhata/shared/activity/filters";
 import { queryKeys } from "@haalkhata/shared/api/queryKeys";
 import { matchesTerms, searchTerms } from "@haalkhata/shared/search/filter";
+import { usePullToRefresh } from "@/lib/hooks/usePullToRefresh";
 
 /**
  * Loads the activity feed a page at a time, plus the user's notifications,
@@ -79,6 +80,8 @@ export function useActivity() {
     );
   }, [events, query, filter]);
 
+  const pull = usePullToRefresh(() => Promise.all([activity.refetch(), notifications.refetch()]));
+
   return {
     events,
     visibleEvents,
@@ -100,7 +103,7 @@ export function useActivity() {
     notifications: notifications.data?.notifications ?? [],
     isLoading: activity.isLoading,
     loadError: activity.error || notifications.error,
-    refresh: () => { void activity.refetch(); void notifications.refetch(); },
-    isRefreshing: activity.isRefetching && !activity.isFetchingNextPage,
+    refresh: pull.refresh,
+    isRefreshing: pull.isRefreshing,
   };
 }

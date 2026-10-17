@@ -1,8 +1,8 @@
 /** Friend detail: net balance, settle either way, and the full shared ledger with a running balance. */
 
-import { SafetyActions } from "@/components/safety/SafetyActions";
+import { SafetyDialog } from "@/components/safety/SafetyDialog/SafetyDialog";
 import { useRouter } from "expo-router";
-import { Bell, Check, HandCoins, Plus, UserPlus, Wallet } from "lucide-react-native";
+import { Ban, Bell, Check, Flag, HandCoins, Plus, UserPlus, Wallet } from "lucide-react-native";
 import { Pressable, StyleSheet, View } from "react-native";
 import { Text } from "@/components/ui/Text";
 import { SettleUpModal } from "@/components/modals/SettleUpModal";
@@ -12,6 +12,7 @@ import { Screen } from "@/components/shell/Screen/Screen";
 import { Avatar } from "@/components/ui/Avatar";
 import { Button } from "@/components/ui/Button";
 import { Money } from "@/components/ui/Money";
+import { OverflowMenu } from "@/components/ui/OverflowMenu/OverflowMenu";
 import { Spinner } from "@/components/ui/Spinner";
 import { errorMessage } from "@/lib/api/connect";
 import { outstandingBuckets } from "@haalkhata/shared/money/balances";
@@ -19,8 +20,9 @@ import { netSettlementTag } from "@haalkhata/shared/expense/netSettlementLines";
 import { scopeLabel } from "@haalkhata/shared/expense/settlePosition";
 import { formatMoney } from "@haalkhata/shared/money/money";
 import { localDate } from "@haalkhata/shared/time/localTime";
-import { colors, fonts, radii, spacing } from "@/lib/theme/theme";
+import { colors, radii, spacing } from "@/lib/theme/theme";
 import { groupEmoji } from "@haalkhata/shared/group/groupTypes";
+import { PERSON_MENU_COPY } from "@haalkhata/shared/people/personMenu";
 import { useFriendLedger } from "./hooks/useFriendLedger";
 
 /**
@@ -111,27 +113,52 @@ export function FriendDetailScreen({
 
   return (
     <Screen
-      header={<DetailHeader title={friend.name} />}
+      // The bar names them, with their picture, and the card below does not
+      // say it again. Their email and phone are private — the server sends
+      // them empty for anyone but yourself — so the only lines worth adding
+      // are whether they have signed in yet and whether you blocked them.
+      // Reporting and blocking wait behind the menu, as on a group.
+      header={
+        <DetailHeader
+          leading={<Avatar user={friend} />}
+          right={
+            friend.deleted ? undefined : (
+              <OverflowMenu
+                items={[
+                  {
+                    label: PERSON_MENU_COPY.report,
+                    icon: <Flag color={colors.inkSoft} size={18} />,
+                    onSelect: () => view.setSafetyMode("report"),
+                  },
+                  ...(view.isBlocked
+                    ? []
+                    : [
+                        {
+                          label: PERSON_MENU_COPY.block,
+                          icon: <Ban color={colors.inkSoft} size={18} />,
+                          onSelect: () => view.setSafetyMode("block"),
+                        },
+                      ]),
+                ]}
+                label={PERSON_MENU_COPY.trigger}
+              />
+            )
+          }
+          subtitle={
+            [
+              friend.registered ? "" : PERSON_MENU_COPY.invited,
+              view.isBlocked ? PERSON_MENU_COPY.blocked : "",
+            ]
+              .filter(Boolean)
+              .join(" · ") || undefined
+          }
+          title={friend.name}
+        />
+      }
       onRefresh={view.refresh}
       refreshing={view.isRefreshing}
     >
-      {!friend.deleted ? <SafetyActions targetKind="user" targetId={friend.id} userId={friend.id} /> : null}
       <View style={styles.headerCard}>
-        <View style={styles.identityRow}>
-          <Avatar size="lg" user={friend} />
-          <View style={styles.identityText}>
-            <Text numberOfLines={1} style={styles.name}>
-              {friend.name}
-            </Text>
-            {/* Their email and phone are private — the server sends them
-                empty for anyone but yourself — so the only thing worth a line
-                here is whether they have signed in yet. */}
-            {!friend.registered ? (
-              <Text style={styles.invited}>Invited — hasn&apos;t signed in yet</Text>
-            ) : null}
-          </View>
-        </View>
-
         {/* Where you know each other from — every shared group, settled ones
             included, each a link. And when this screen is showing a pair
             rather than a friendship (any name anywhere opens it), the way to
@@ -530,6 +557,15 @@ export function FriendDetailScreen({
       </View>
       </View>
 
+      {view.safetyMode ? (
+        <SafetyDialog
+          mode={view.safetyMode}
+          onClose={() => view.setSafetyMode(null)}
+          targetId={friend.id}
+          targetKind="user"
+          userId={friend.id}
+        />
+      ) : null}
       {view.settling ? (
         <SettleUpModal
           currency={view.settling.currency}
@@ -708,23 +744,9 @@ const styles = StyleSheet.create({
     gap: spacing.md,
     padding: spacing.lg,
   },
-  identityRow: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: spacing.md,
-  },
-  identityText: {
-    flex: 1,
-    minWidth: 0,
-  },
   historySectionExpanded: {
     flex: 3,
     minWidth: 0,
-  },
-  invited: {
-    color: colors.inkSoft,
-    fontSize: 13,
-    marginTop: 2,
   },
   listCard: {
     backgroundColor: colors.card,
@@ -740,12 +762,6 @@ const styles = StyleSheet.create({
     alignItems: "flex-start",
     flexDirection: "row",
     gap: spacing.xxl,
-  },
-  name: {
-    color: colors.ink,
-    fontFamily: fonts.display,
-    fontSize: 22,
-    fontWeight: "700",
   },
   removalError: {
     color: colors.neg600,

@@ -1,23 +1,37 @@
-/** Group detail orchestrator: header, members strip, expenses/balances/activity tabs, members, add-people and settle sheets. */
+/** Group detail orchestrator: header with its options menu, members strip, expenses/balances/activity tabs, members, add-people, report and settle sheets. */
 
 import { ErrorState } from "@/components/ui/ErrorState";
 import { SafetyActions } from "@/components/safety/SafetyActions";
 import { useRouter } from "expo-router";
-import { Bell, ChevronDown, ChevronRight, Link2, Plus, Send, UserPlus } from "lucide-react-native";
+import {
+  Archive,
+  ArchiveRestore,
+  Bell,
+  ChevronDown,
+  ChevronRight,
+  Flag,
+  Link2,
+  Plus,
+  Send,
+  UserPlus,
+} from "lucide-react-native";
 import { Pressable, StyleSheet, View } from "react-native";
 import { Text } from "@/components/ui/Text";
 import { ActivityList } from "@/components/activity/ActivityList";
 import { InviteShareSheet } from "@/components/modals/InviteShareSheet";
 import { SettleUpModal } from "@/components/modals/SettleUpModal";
+import { SafetyDialog } from "@/components/safety/SafetyDialog/SafetyDialog";
 import { PersonChecklist } from "@/components/people/PersonChecklist";
 import { PersonLink } from "@/components/people/PersonLink";
 import { DetailHeader } from "@/components/shell/DetailHeader/DetailHeader";
 import { useResponsiveLayout } from "@/lib/layout/hooks/useResponsiveLayout";
 import { Screen } from "@/components/shell/Screen/Screen";
 import { Avatar } from "@/components/ui/Avatar";
+import { AvatarStack } from "@/components/ui/AvatarStack/AvatarStack";
 import { Button } from "@/components/ui/Button";
 import { EmailOrPhoneField } from "@/components/ui/EmailOrPhoneField";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { OverflowMenu } from "@/components/ui/OverflowMenu/OverflowMenu";
 import { Segmented } from "@/components/ui/Segmented";
 import { Sheet } from "@/components/ui/Sheet/Sheet";
 import { Spinner } from "@/components/ui/Spinner";
@@ -29,8 +43,10 @@ import {
   ARCHIVED_GROUP_HINT,
   GROUP_ARCHIVE_ACTIONS,
 } from "@haalkhata/shared/group/archiving";
+import { GROUP_MENU_COPY } from "@haalkhata/shared/group/groupMenu";
 import { GroupStatus } from "@haalkhata/shared/group/status";
-import { groupEmoji } from "@haalkhata/shared/group/groupTypes";
+import { groupEmoji, groupTypeLabel } from "@haalkhata/shared/group/groupTypes";
+import { MEMBERS_STRIP_AVATAR_SLOTS } from "../../constants/membersStrip";
 import { TABS } from "../../constants/tabs";
 import { BalancesPanel } from "./components/BalancesPanel/BalancesPanel";
 import { ArchiveGroupSheet } from "./components/ArchiveGroupSheet/ArchiveGroupSheet";
@@ -38,13 +54,14 @@ import { ExpenseList } from "@/components/expenses/ExpenseList";
 import { useGroupDetail } from "./hooks/useGroupDetail";
 
 /**
- * Renders a single group's screen: header with the add-expense action, the
- * member avatar strip (tap for the full member list, where every row opens
- * that person's ledger or offers a friend request, you can leave the group,
- * and the owner can hand it on or remove somebody) with an add-people
- * button, the
- * expenses/balances tab switcher, and the members, add-people and settle-up
- * sheets.
+ * Renders a single group's screen: the header naming the group (emoji, name,
+ * type and currency) with the options menu (archive, report), the
+ * add-expense button, the member avatar strip (tap for the
+ * full member list, where every row opens that person's ledger or offers a
+ * friend request, you can leave the group, and the owner can hand it on or
+ * remove somebody) with the add-people and invite-link buttons, the
+ * expenses/balances/activity tab switcher, and the members, add-people,
+ * report and settle-up sheets.
  *
  * @returns The group detail content, a spinner while loading, or a not-found
  *   message when the group cannot be fetched.
@@ -57,7 +74,7 @@ export function GroupDetailScreen({
 }) {
   const groupDetail = useGroupDetail(groupId);
   const router = useRouter();
-  const { isExpanded } = useResponsiveLayout();
+  const { isExpanded, isLargeText } = useResponsiveLayout();
 
   if (groupDetail.isLoading) {
     return (
@@ -80,6 +97,11 @@ export function GroupDetailScreen({
   }
 
   const members = groupDetail.group.members ?? [];
+  const people = members.flatMap((member) => (member.user ? [member.user] : []));
+  const archived = groupDetail.group.status === GroupStatus.ARCHIVED;
+  // The strip's two actions split their row evenly on a phone; beside the
+  // summary on a wide screen, or stacked at large text, they keep their size.
+  const memberActionStyle = isExpanded || isLargeText ? null : styles.membersAction;
   const viewerIsOwner = members.some(
     (member) => member.user?.id === groupDetail.me?.id && member.role === OWNER_ROLE,
   );
@@ -87,83 +109,106 @@ export function GroupDetailScreen({
   return (
     <Screen
       header={
+        // The bar names the group — emoji, name, type and currency — and
+        // the screen does not say it again under it. Archiving and reporting
+        // are rare and deliberate, so they wait behind the menu rather than
+        // sitting as buttons between the name and the ledger.
         <DetailHeader
-          right={
-            groupDetail.group.status === GroupStatus.ACTIVE ? (
-              <Pressable
-                accessibilityLabel="Add expense"
-                hitSlop={8}
-                onPress={() => router.push(`/expenses/new?group=${groupId}`)}
-                style={[styles.headerIconButton, styles.headerIconButtonPrimary]}
-              >
-                <Plus color={colors.white} size={20} />
-              </Pressable>
-            ) : null
+          leading={
+            <View style={styles.groupEmojiTile}>
+              <Text style={styles.groupEmoji}>{groupEmoji(groupDetail.group.type)}</Text>
+            </View>
           }
+          subtitle={`${groupTypeLabel(groupDetail.group.type)} · ${groupDetail.group.currency}`}
           title={groupDetail.group.name}
+          right={
+            <OverflowMenu
+              items={[
+                {
+                  label: archived ? GROUP_ARCHIVE_ACTIONS.unarchive : GROUP_ARCHIVE_ACTIONS.archive,
+                  icon: archived ? (
+                    <ArchiveRestore color={colors.inkSoft} size={18} />
+                  ) : (
+                    <Archive color={colors.inkSoft} size={18} />
+                  ),
+                  onSelect: groupDetail.openArchiveDialog,
+                  disabled: groupDetail.archivePending,
+                },
+                {
+                  label: GROUP_MENU_COPY.report,
+                  icon: <Flag color={colors.inkSoft} size={18} />,
+                  onSelect: () => groupDetail.setReportingGroup(true),
+                },
+              ]}
+              label={GROUP_MENU_COPY.trigger}
+            />
+          }
         />
       }
       onRefresh={groupDetail.refresh}
       refreshing={groupDetail.isRefreshing}
     >
-      <SafetyActions targetKind="group" targetId={groupId} />
-      <View style={[styles.overview, isExpanded ? styles.overviewExpanded : null]}>
-        <View style={[styles.groupHeader, isExpanded ? styles.groupHeaderExpanded : null]}>
-          <View style={styles.groupEmojiTile}>
-            <Text style={styles.groupEmoji}>{groupEmoji(groupDetail.group.type)}</Text>
+      <View style={styles.overview}>
+        {/* Said in words, as in the browser: the screen's main action is
+            not left to a bare "+" in the corner. Full width on a phone; on a
+            wide screen it keeps to the width of its label. */}
+        {groupDetail.group.status === GroupStatus.ACTIVE ? (
+          <View style={isExpanded ? styles.addExpenseExpanded : null}>
+            <Button
+              icon={<Plus color={colors.white} size={18} />}
+              label="Add expense"
+              onPress={() => router.push(`/expenses/new?group=${groupId}`)}
+            />
           </View>
-          <View>
-            <Text style={styles.groupName}>{groupDetail.group.name}</Text>
-            <Text style={styles.groupMeta}>
-              {groupDetail.group.type} · {groupDetail.group.currency}
-            </Text>
-          </View>
-        </View>
+        ) : null}
 
         {/* Members strip. The avatars-and-names run opens the full member
             list — a truncated line of first names is a summary, not a way to
-            reach anyone, and it is where leaving the group lives. */}
+            reach anyone, and it is where leaving the group lives.
+
+            On a phone the summary takes a row of its own and the two actions
+            share the next one, as in the browser. Side by side there was no
+            width left for the summary, and a dozen avatars that cannot
+            shrink were painted straight over "Add people". The stack is
+            capped for the same reason: it has to stay a known width however
+            large the group gets. */}
         <View style={[styles.membersCard, isExpanded ? styles.membersCardExpanded : null]}>
           <Pressable
-            accessibilityLabel="View members"
+            accessibilityLabel={`View all ${people.length} members`}
             accessibilityRole="button"
             onPress={() => groupDetail.setViewingMembers(true)}
-            style={styles.membersSummary}
+            style={[styles.membersSummary, isExpanded ? styles.membersSummaryExpanded : null]}
           >
-            <View style={styles.memberAvatars}>
-              {members.map((member, index) =>
-                member.user ? (
-                  <View key={member.user.id} style={index > 0 ? styles.memberOverlap : null}>
-                    <Avatar ring size="sm" user={member.user} />
-                  </View>
-                ) : null,
-              )}
-            </View>
+            <AvatarStack slots={MEMBERS_STRIP_AVATAR_SLOTS} users={people} />
             <Text numberOfLines={1} style={styles.memberNames}>
-              {members
-                .flatMap((member) =>
-                  member.user
-                    ? [member.user.id === groupDetail.me?.id ? "You" : member.user.name.split(" ")[0]]
-                    : [],
-                )
+              {people
+                .map((person) => (person.id === groupDetail.me?.id ? "You" : person.name.split(" ")[0]))
                 .join(", ")}
             </Text>
           </Pressable>
-          <Button
-            compact
-            icon={<UserPlus color={colors.inkSoft} size={14} />}
-            label="Add people"
-            onPress={() => groupDetail.setAddingPeople(true)}
-            variant="outline"
-          />
-          <Button
-            busy={groupDetail.sharingInviteLink}
-            compact
-            icon={<Link2 color={colors.inkSoft} size={14} />}
-            label="Invite link"
-            onPress={groupDetail.shareInviteLink}
-            variant="outline"
-          />
+          {/* At large text sizes the two would each wrap onto two lines side
+              by side, so they stack instead. */}
+          <View style={[styles.membersActions, isLargeText ? styles.membersActionsStacked : null]}>
+            <View style={memberActionStyle}>
+              <Button
+                compact
+                icon={<UserPlus color={colors.inkSoft} size={14} />}
+                label="Add people"
+                onPress={() => groupDetail.setAddingPeople(true)}
+                variant="outline"
+              />
+            </View>
+            <View style={memberActionStyle}>
+              <Button
+                busy={groupDetail.sharingInviteLink}
+                compact
+                icon={<Link2 color={colors.inkSoft} size={14} />}
+                label="Invite link"
+                onPress={groupDetail.shareInviteLink}
+                variant="outline"
+              />
+            </View>
+          </View>
         </View>
         {groupDetail.linkNotice ? (
           <Text style={styles.linkNotice}>{groupDetail.linkNotice}</Text>
@@ -176,16 +221,10 @@ export function GroupDetailScreen({
         ) : null}
       </View>
 
-      <Button
-        busy={groupDetail.archivePending}
-        label={groupDetail.group.status === GroupStatus.ARCHIVED ? GROUP_ARCHIVE_ACTIONS.unarchive : GROUP_ARCHIVE_ACTIONS.archive}
-        onPress={groupDetail.openArchiveDialog}
-        variant="outline"
-      />
-      {groupDetail.group.status === GroupStatus.ARCHIVED ? (
-        <Text style={styles.notFoundText}>
-          {ARCHIVED_GROUP_HINT}
-        </Text>
+      {archived ? (
+        <View style={styles.archivedHint}>
+          <Text style={styles.archivedHintText}>{ARCHIVED_GROUP_HINT}</Text>
+        </View>
       ) : null}
       {groupDetail.archivePrompt ? (
         <ArchiveGroupSheet
@@ -195,6 +234,14 @@ export function GroupDetailScreen({
           onConfirm={groupDetail.confirmArchiveChange}
           onClose={groupDetail.closeArchiveDialog}
           onViewBalances={groupDetail.viewArchiveBalances}
+        />
+      ) : null}
+      {groupDetail.reportingGroup ? (
+        <SafetyDialog
+          mode="report"
+          onClose={() => groupDetail.setReportingGroup(false)}
+          targetId={groupId}
+          targetKind="group"
         />
       ) : null}
 
@@ -616,6 +663,9 @@ export function GroupDetailScreen({
 }
 
 const styles = StyleSheet.create({
+  addExpenseExpanded: {
+    alignSelf: "flex-start",
+  },
   addError: {
     color: colors.brand600,
     fontSize: 14,
@@ -629,6 +679,19 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     marginTop: -spacing.sm,
   },
+  archivedHint: {
+    backgroundColor: colors.card,
+    borderColor: colors.line,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+  },
+  archivedHintText: {
+    color: colors.inkSoft,
+    fontSize: 14,
+    lineHeight: 20,
+  },
   addLabel: {
     color: colors.ink,
     fontSize: 14,
@@ -636,49 +699,15 @@ const styles = StyleSheet.create({
     marginBottom: -spacing.sm,
   },
   groupEmoji: {
-    fontSize: 28,
+    fontSize: 20,
   },
   groupEmojiTile: {
     alignItems: "center",
     backgroundColor: colors.brand50,
-    borderRadius: radii.lg,
-    height: 56,
-    justifyContent: "center",
-    width: 56,
-  },
-  groupHeader: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: spacing.lg,
-  },
-  groupHeaderExpanded: {
-    flex: 2,
-    minWidth: 0,
-  },
-  groupMeta: {
-    color: colors.inkSoft,
-    fontSize: 13,
-    marginTop: 2,
-    textTransform: "capitalize",
-  },
-  groupName: {
-    color: colors.ink,
-    fontSize: 22,
-    fontWeight: "700",
-  },
-  headerIconButton: {
-    alignItems: "center",
-    backgroundColor: colors.card,
-    borderColor: colors.line,
-    borderRadius: radii.md,
-    borderWidth: 1,
+    borderRadius: radii.sm + 2,
     height: 36,
     justifyContent: "center",
     width: 36,
-  },
-  headerIconButtonPrimary: {
-    backgroundColor: colors.brand600,
-    borderColor: colors.brand600,
   },
   inviteOffer: {
     gap: spacing.sm,
@@ -698,9 +727,6 @@ const styles = StyleSheet.create({
     flexWrap: "wrap",
     gap: spacing.sm,
     justifyContent: "flex-end",
-  },
-  memberAvatars: {
-    flexDirection: "row",
   },
   memberBlocked: {
     backgroundColor: colors.neg50,
@@ -760,9 +786,6 @@ const styles = StyleSheet.create({
     backgroundColor: colors.pos50,
     color: colors.pos700,
   },
-  memberOverlap: {
-    marginLeft: -8,
-  },
   memberPerson: {
     alignItems: "center",
     width: 160,
@@ -784,13 +807,21 @@ const styles = StyleSheet.create({
     borderTopColor: colors.line,
     borderTopWidth: 1,
   },
+  membersAction: {
+    flex: 1,
+  },
+  membersActions: {
+    flexDirection: "row",
+    gap: spacing.sm,
+  },
+  membersActionsStacked: {
+    flexDirection: "column",
+  },
   membersCard: {
-    alignItems: "center",
     backgroundColor: colors.card,
     borderColor: colors.line,
     borderRadius: radii.lg,
     borderWidth: 1,
-    flexDirection: "row",
     gap: spacing.md,
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.md,
@@ -799,15 +830,18 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   membersCardExpanded: {
-    flex: 3,
-    minWidth: 0,
+    alignItems: "center",
+    flexDirection: "row",
   },
   membersSummary: {
     alignItems: "center",
-    flex: 1,
     flexDirection: "row",
     gap: spacing.md,
+    minHeight: 32,
     minWidth: 0,
+  },
+  membersSummaryExpanded: {
+    flex: 1,
   },
   memberTag: {
     color: colors.inkSoft,
@@ -826,10 +860,5 @@ const styles = StyleSheet.create({
   },
   overview: {
     gap: spacing.lg,
-  },
-  overviewExpanded: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: spacing.xxl,
   },
 });

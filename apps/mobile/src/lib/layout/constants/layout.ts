@@ -17,3 +17,6 @@ export const TABLET_SHEET_MAX_WIDTH = 640;
 
 /** Text scaling at which dense controls need a stacked layout. */
 export const LARGE_TEXT_SCALE = 1.3;
+
+/** Smallest fraction of its size a detail header's title may shrink to before it is cut short. */
+export const HEADER_TITLE_MIN_SCALE = 0.8;

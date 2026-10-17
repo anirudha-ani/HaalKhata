@@ -3,7 +3,7 @@
 import type { User } from "@haalkhata/protogen/common/v1/common_pb";
 import { Avatar } from "../Avatar/Avatar";
 import { AVATAR_SIZES } from "../Avatar/constants/avatarSizes";
-import { capStack } from "./utils/capStack";
+import { capStack } from "@haalkhata/shared/people/capStack";
 
 /**
  * Renders people as a row of overlapping avatars that never grows past

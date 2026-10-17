@@ -6,6 +6,8 @@ import { useRouter } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { errorMessage, expenseClient, socialClient } from "@/lib/api/connect";
 import { MONEY_KEYS, queryKeys } from "@haalkhata/shared/api/queryKeys";
+import type { SafetyDialogMode } from "@haalkhata/shared/safety/safety";
+import { useSafetyAPI } from "@/lib/hooks/useSafetyAPI";
 
 /** Which way a settlement being recorded moved the money. */
 export type SettleDirection = "paid" | "received";
@@ -38,12 +40,16 @@ export interface SettlementRemovalError {
  * @returns The `ledger` response (or undefined while loading), `isLoading`,
  *   the load `error`, `sendReminder` with its `isReminding` flag and the
  *   resulting `reminderNote`, `removeSettlement` with its arming and in-flight
- *   ids and the `settlementRemovalError` of a refused one, and `settling`/`openSettle`/`closeSettle` driving the settle-up modal.
+ *   ids and the `settlementRemovalError` of a refused one, `settling`/`openSettle`/`closeSettle` driving the settle-up modal,
+ *   and `safetyMode`/`setSafetyMode` for the report or block dialog the
+ *   options menu opens, with `isBlocked` once this person is blocked.
  */
 export function useFriendLedger(friendId: string) {
   const queryClient = useQueryClient();
   const router = useRouter();
   const [settling, setSettling] = useState<Settling | null>(null);
+  const [safetyMode, setSafetyMode] = useState<SafetyDialogMode | null>(null);
+  const safety = useSafetyAPI();
   const [reminderNote, setReminderNote] = useState("");
   const [friendRequestSent, setFriendRequestSent] = useState(false);
   const [confirmingSettlementId, setConfirmingSettlementId] = useState("");
@@ -115,6 +121,9 @@ export function useFriendLedger(friendId: string) {
 
   return {
     ledger: ledger.data,
+    safetyMode,
+    setSafetyMode,
+    isBlocked: safety.blocks.data?.users.some((person) => person.id === friendId) ?? false,
     confirmingRemoval,
     /** First call arms the confirmation; the second actually removes. */
     removeFriend: () => {
