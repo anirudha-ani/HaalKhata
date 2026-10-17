@@ -1,13 +1,17 @@
 /**
  * This phone's side of the first-run flow: whether the person who just
  * signed in here still has the device steps ahead of them, and what the
- * phone already allows. Kept in SecureStore beside the session, so signing
- * out and back in as someone else asks them too, and reinstalling (which
- * clears permissions as well) starts over.
+ * phone already allows.
+ *
+ * The marks live in AsyncStorage, not the Keychain. They are not secrets,
+ * and iOS keeps Keychain items after an app is deleted while it resets the
+ * app's permissions; a "done" mark that outlived a reinstall would skip
+ * steps whose questions iOS is about to ask afresh. Signing in as someone
+ * else on the same phone gets its own mark, so they are asked too.
  */
 
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { getPermissionsAsync } from "expo-contacts";
-import * as SecureStore from "expo-secure-store";
 import type { User } from "@haalkhata/protogen/common/v1/common_pb";
 import { contactsAccessOf } from "@/lib/contacts/contactsAccess";
 import { readPushPermission } from "@/lib/push/push";
@@ -15,15 +19,13 @@ import { SETUP_DONE_STORAGE_PREFIX, SETUP_DUE_STORAGE_KEY } from "./onboarding.c
 import { planOnboardingSteps, type OnboardingSituation } from "./onboardingPlan";
 
 /**
- * The SecureStore key for one account's "done" mark. SecureStore keys allow
- * letters, digits, ".", "-" and "_", which every account id already is; the
- * filter only guarantees it.
+ * The storage key for one account's "done" mark.
  *
  * @param userId - The account.
  * @returns The key.
  */
 function doneKey(userId: string): string {
-  return `${SETUP_DONE_STORAGE_PREFIX}${userId.replace(/[^A-Za-z0-9._-]/g, "")}`;
+  return `${SETUP_DONE_STORAGE_PREFIX}${userId}`;
 }
 
 /**
@@ -32,7 +34,7 @@ function doneKey(userId: string): string {
  * device steps are not offered, which must never stop the sign-in.
  */
 export async function markDeviceSetupDue(): Promise<void> {
-  await SecureStore.setItemAsync(SETUP_DUE_STORAGE_KEY, "1").catch(() => undefined);
+  await AsyncStorage.setItem(SETUP_DUE_STORAGE_KEY, "1").catch(() => undefined);
 }
 
 /**
@@ -44,8 +46,8 @@ export async function markDeviceSetupDue(): Promise<void> {
  */
 export async function isDeviceSetupOwed(userId: string): Promise<boolean> {
   const [dueMark, doneMark] = await Promise.all([
-    SecureStore.getItemAsync(SETUP_DUE_STORAGE_KEY),
-    SecureStore.getItemAsync(doneKey(userId)),
+    AsyncStorage.getItem(SETUP_DUE_STORAGE_KEY),
+    AsyncStorage.getItem(doneKey(userId)),
   ]);
   return dueMark !== null && doneMark === null;
 }
@@ -56,8 +58,8 @@ export async function isDeviceSetupOwed(userId: string): Promise<boolean> {
  * @param userId - The signed-in account.
  */
 export async function finishDeviceSetup(userId: string): Promise<void> {
-  await SecureStore.setItemAsync(doneKey(userId), "1");
-  await SecureStore.deleteItemAsync(SETUP_DUE_STORAGE_KEY);
+  await AsyncStorage.setItem(doneKey(userId), "1");
+  await AsyncStorage.removeItem(SETUP_DUE_STORAGE_KEY);
 }
 
 /**
