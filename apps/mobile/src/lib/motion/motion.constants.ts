@@ -29,9 +29,6 @@ export const STEP_SPRING_DURATION_MS = 420;
 /** Damping for a step change: settles with the smallest visible landing. */
 export const STEP_SPRING_DAMPING_RATIO = 0.9;
 
-/** How far a step slides in from the side it comes from. */
-export const STEP_SLIDE_DISTANCE = 36;
-
 /** A fade that accompanies a slide, or replaces it under Reduce Motion. */
 export const FADE_DURATION_MS = 220;
 

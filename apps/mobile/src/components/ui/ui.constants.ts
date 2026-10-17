@@ -5,6 +5,7 @@ export const AVATAR_SIZES = {
   sm: { diameter: 28, fontSize: 11 },
   md: { diameter: 36, fontSize: 14 },
   lg: { diameter: 48, fontSize: 16 },
+  xl: { diameter: 88, fontSize: 30 },
 } as const;
 
 /** Fallback avatar background when a user has no accent color. */

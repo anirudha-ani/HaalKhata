@@ -33,8 +33,9 @@ export type LookupStatus = "idle" | "reading" | "matching" | "done";
  * when it closes; the contact names never leave the device.
  *
  * @returns The caller, contacts access and its actions, the lookup status
- *   and outcome, the found people grouped by action, and the actions on
- *   them (add, accept, send to all with its confirm sheet, share a link).
+ *   and outcome, the found people grouped by action, the actions on them
+ *   (add, accept, send to all with its confirm sheet, share a link), and
+ *   how many requests this visit sent and accepted.
  */
 export function useFindFriends() {
   const currentUser = useQuery({ queryKey: queryKeys.me, queryFn: () => authClient.getMe({}) });
@@ -51,6 +52,9 @@ export function useFindFriends() {
   const [actionError, setActionError] = useState("");
   const [confirmingAll, setConfirmingAll] = useState(false);
   const [sendAllError, setSendAllError] = useState("");
+  // What this visit did, for a summary (the onboarding flow's last screen).
+  const [sentCount, setSentCount] = useState(0);
+  const [acceptedCount, setAcceptedCount] = useState(0);
 
   const profile = currentUser.data;
   const readable = contacts.access === "all" || contacts.access === "limited";
@@ -118,6 +122,7 @@ export function useFindFriends() {
     forRow(userId, async () => {
       const outcome = await findFriendsAPI.send.mutateAsync([userId]);
       setPeople((current) => withRelation(current, outcome.sent, ContactRelation.REQUESTED));
+      setSentCount((count) => count + outcome.sent.length);
     });
 
   /**
@@ -129,6 +134,7 @@ export function useFindFriends() {
     forRow(userId, async () => {
       await findFriendsAPI.accept.mutateAsync(userId);
       setPeople((current) => withRelation(current, [userId], ContactRelation.FRIEND));
+      setAcceptedCount((count) => count + 1);
     });
 
   const groups = groupFoundPeople(people);
@@ -139,6 +145,7 @@ export function useFindFriends() {
     try {
       const outcome = await findFriendsAPI.send.mutateAsync(groups.requestable.map((person) => person.user.id));
       setPeople((current) => withRelation(current, outcome.sent, ContactRelation.REQUESTED));
+      setSentCount((count) => count + outcome.sent.length);
       if (outcome.failure) {
         setSendAllError(outcome.failure);
         return;
@@ -199,6 +206,10 @@ export function useFindFriends() {
     sendAllError,
     shareInviteLink,
     sharingLink: findFriendsAPI.profileLink.isPending,
+    /** Friend requests sent during this visit. */
+    sentCount,
+    /** Requests accepted during this visit. */
+    acceptedCount,
   };
 }
 

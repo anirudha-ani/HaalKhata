@@ -8,7 +8,17 @@
  * play a short fade instead: content still arrives, it just does not move.
  */
 
-import { FadeIn, FadeInDown, FadeInUp, FadeOut, ReduceMotion } from "react-native-reanimated";
+import {
+  FadeIn,
+  FadeInDown,
+  FadeInLeft,
+  FadeInRight,
+  FadeInUp,
+  FadeOut,
+  FadeOutLeft,
+  FadeOutRight,
+  ReduceMotion,
+} from "react-native-reanimated";
 import {
   FADE_DURATION_MS,
   STAGGER_MS,
@@ -67,3 +77,42 @@ export function dropIn(order: number, reduceMotion: boolean) {
 
 /** A quick fade out, the same with or without Reduce Motion. */
 export const FADE_OUT = FadeOut.duration(FADE_DURATION_MS).reduceMotion(ReduceMotion.Never);
+
+/** Which way a flow is moving: on to the next step, or back to the one before. */
+export type FlowDirection = "forward" | "back";
+
+const STEP_ENTER = {
+  forward: FadeInRight.springify(STEP_SPRING_DURATION_MS).dampingRatio(STEP_SPRING_DAMPING_RATIO),
+  back: FadeInLeft.springify(STEP_SPRING_DURATION_MS).dampingRatio(STEP_SPRING_DAMPING_RATIO),
+};
+
+const STEP_EXIT = {
+  forward: FadeOutLeft.duration(FADE_DURATION_MS),
+  back: FadeOutRight.duration(FADE_DURATION_MS),
+};
+
+const STEP_FADE_IN = FadeIn.duration(FADE_DURATION_MS).reduceMotion(ReduceMotion.Never);
+
+/**
+ * How a flow's next step arrives: from the side it is coming from, settling
+ * on a spring, while the old one fades the other way. A short fade under
+ * Reduce Motion.
+ *
+ * @param direction - Forward or back.
+ * @param reduceMotion - Whether Reduce Motion is on.
+ * @returns The entering animation.
+ */
+export function stepEnter(direction: FlowDirection, reduceMotion: boolean) {
+  return reduceMotion ? STEP_FADE_IN : STEP_ENTER[direction];
+}
+
+/**
+ * How a flow's current step leaves.
+ *
+ * @param direction - Forward or back.
+ * @param reduceMotion - Whether Reduce Motion is on.
+ * @returns The exiting animation.
+ */
+export function stepExit(direction: FlowDirection, reduceMotion: boolean) {
+  return reduceMotion ? FADE_OUT : STEP_EXIT[direction];
+}
