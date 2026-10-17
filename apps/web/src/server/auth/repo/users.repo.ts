@@ -38,8 +38,8 @@ export interface UserRow {
   onboarded_at: string | null;
   /**
    * Whether people holding this account's verified number or email can find
-   * it from their contacts: null = never asked (not findable), true/false =
-   * the person's answer. Absent only in legacy test fixtures.
+   * it from their contacts: null = never answered (findable, the default),
+   * true/false = the person's answer. Absent only in legacy test fixtures.
    */
   contact_discovery?: boolean | null;
   /** Id this row was absorbed into by an account merge; null for a live account. */

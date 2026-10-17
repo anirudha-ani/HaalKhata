@@ -130,7 +130,7 @@ describe.skipIf(!reachable)("contact discovery against Postgres", () => {
     await admin.end();
   });
 
-  it("matches only opted-in, live, unblocked accounts with a verified phone or their own email", async () => {
+  it("matches live, unblocked, registered accounts that did not say no, by verified phone or own email", async () => {
     const matches = await dbModule.transaction((client) =>
       repo.findDiscoverableAccounts(
         "caller",
@@ -146,12 +146,14 @@ describe.skipIf(!reachable)("contact discovery against Postgres", () => {
         client,
       ),
     );
-    // Unverified, never asked, declined, suspended, both block directions,
-    // the merged tombstone, the caller, the invited row (it never answered)
-    // and the unknown number never match.
+    // Never answered is findable by default. Unverified, declined,
+    // suspended, both block directions, the merged tombstone, the caller,
+    // the invited row (nobody signed up for it, so its NULL is not an
+    // answer) and the unknown number never match.
     expect(matches.map((match) => match.id)).toEqual([
       "asker",
       "friend",
+      "never",
       "open-email",
       "open",
       "requested",
@@ -185,7 +187,7 @@ describe.skipIf(!reachable)("contact discovery against Postgres", () => {
     expect(matches).toEqual([]);
   });
 
-  it("lets a bulk send reach only findable accounts with no friendship, request or block", async () => {
+  it("lets a bulk send reach only findable, registered accounts with no friendship, request or block", async () => {
     const requestable = await repo.findRequestableAccounts("caller", [
       "caller",
       "open",
@@ -199,8 +201,9 @@ describe.skipIf(!reachable)("contact discovery against Postgres", () => {
       "never",
       "suspended",
       "merged",
+      "invited",
     ]);
-    expect(requestable.map((account) => account.id).sort()).toEqual(["open", "open-email"]);
+    expect(requestable.map((account) => account.id).sort()).toEqual(["never", "open", "open-email"]);
     expect(await repo.findRequestableAccounts("caller", [])).toEqual([]);
   });
 

@@ -201,7 +201,7 @@ export function FriendsPage() {
         {addFriendButton}
       </header>
 
-      {/* Asked once, where finding and being found matter. */}
+      {/* Said once, where finding and being found matter. */}
       {friendsState.me ? <ContactDiscoveryPrompt answer={friendsState.me.contactDiscovery} /> : null}
 
       {/* Confirmation of the last request sent. The dialog that took it has

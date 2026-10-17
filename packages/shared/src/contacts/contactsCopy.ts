@@ -74,14 +74,18 @@ export const CONTACT_DISCOVERY_SETTING = {
   hiddenNotice: "People can no longer find you from their contacts.",
 } as const;
 
-/** The one-time question for accounts that never answered. */
+/**
+ * The one-time notice for accounts that never answered. Being findable is
+ * the default, so this says what is already true and offers the way out at
+ * the same size as the way to keep it.
+ */
 export const CONTACT_DISCOVERY_PROMPT = {
-  title: "Can friends find you?",
+  title: "Friends can find you",
   body: CONTACT_DISCOVERY_SETTING.detail,
-  allow: "Let friends find me",
-  decline: "Not now",
+  allow: "Keep it on",
+  decline: "Turn off",
   allowedNotice:
-    "Friends who have your number or email saved can now find you. You can change this under Account.",
+    "Friends who have your number or email saved can find you. You can change this under Account.",
   declinedNotice:
     "People won't find you from their contacts. You can change this under Account.",
 } as const;

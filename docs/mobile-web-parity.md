@@ -26,7 +26,7 @@ cards must also shrink to fit the space actually available inside the shell.
 | Home, multi-currency balances, people | Present | Present; wrapping columns | Shared money, balance and settlement-position helpers |
 | Friends, requests, invitation links | Present | Present | Same SocialService operations; shared invite wording |
 | Find friends from contacts | Not in this release; browsers cannot read the address book | Present | `FindContacts`/`SendFriendRequests` are native-only in `test:parity`; matching and wording in `shared/src/contacts/` ([details](contact-discovery.md)) |
-| "Let people find me from their contacts" | Present: onboarding, Account, one-time prompt on Friends | Present: same, plus the Find friends screen | Same `SetContactDiscovery`; shared `contacts/discovery.ts` rules |
+| "Let people find me from their contacts" | Present, on by default: onboarding, Account, one-time notice on Friends | Present: same, plus the Find friends screen | Same `SetContactDiscovery`; shared `contacts/discovery.ts` rules |
 | Group create/edit, membership, ownership, debt simplification, archive/restore | Present | Present | Same GroupService operations and shared group rules |
 | Expenses: create/edit/delete, five split modes, multiple payers | Present | Present | Shared `expense/form/splitForm.ts` and server recomputation |
 | Itemized receipt editing, portions, tax/tip, preview | Present | Present | Shared validation, totals, payloads, warnings and allocation |

@@ -26,19 +26,23 @@ discoverability switch, so a web-only person can still choose to be found.
 
 ## Who can be found
 
-An account matches only when it has said yes to **Let people find me from
-their contacts** (`users.contact_discovery = TRUE`, set by
-`AuthService.SetContactDiscovery`), and:
+Being findable is the default. An account matches unless it has turned off
+**Let people find me from their contacts** (`users.contact_discovery =
+FALSE`, set by `AuthService.SetContactDiscovery`), and only when:
 
 - the match is its verified phone (`phone_verified_at` set) or its sign-in
   email (Google and Apple both verify it);
-- it is registered, not merged, deleted or suspended, and not the caller;
+- it is registered (a password, Google or Apple), not merged, deleted or
+  suspended, and not the caller. Unclaimed invitation rows are NULL too, so
+  this check is what keeps a number an inviter typed from being "found";
 - there is no block in either direction.
 
-Accounts that predate the feature start unanswered (NULL), which is not
-findable. New accounts see the switch, off, during onboarding. Anyone still
-unanswered is asked once on Friends and on Find friends; **Not now** records
-a no. The answer can be changed any time under **Account → Privacy**.
+Accounts that predate the feature start unanswered (NULL), which is findable.
+New accounts see the switch, on, during onboarding (the iPhone app shows it on
+the Find friends step), and wherever they leave it is saved. Anyone still
+unanswered is told once on Friends and on Find friends: **Keep it on** records
+a yes and **Turn off** a no. The answer can be changed any time under
+**Account → Privacy**.
 
 ## What is stored
 
@@ -76,8 +80,9 @@ automatically, because the native fingerprint changed.
    accounts; fixtures must not bypass sign-in.
 2. Create at least three accounts: **A** (the finder), **B** (findable) and
    **C** (not findable). Use the web app at http://127.0.0.1:3000 for B and C.
-3. On B, open **Account → Privacy** and turn on **Let people find me from
-   their contacts**. Phone matching also needs B to verify a number, which
+3. B is findable by default. On C, open **Account → Privacy** and turn off
+   **Let people find me from their contacts**. Phone matching also needs B
+   to verify a number, which
    needs the Twilio settings in [self-hosting](self-hosting.md#phone-verification-optional).
    Without Twilio, match B by its sign-in email.
 4. Put B and C in the simulator's contacts. Write a `.vcf` holding their

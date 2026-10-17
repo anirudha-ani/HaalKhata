@@ -123,9 +123,10 @@ describe("onboarding completion", () => {
 });
 
 describe("onboarding discoverability switch", () => {
-  it("starts off and sends nothing when left off, so the later prompt still asks", async () => {
+  it("starts on, the default, and records the yes with the profile", async () => {
     vi.mocked(authClient.updateProfile).mockResolvedValue(INITIAL_USER);
-    expect(onboarding.findable).toBe(false);
+    vi.mocked(authClient.setContactDiscovery).mockResolvedValue(INITIAL_USER);
+    expect(onboarding.findable).toBe(true);
 
     await act(async () => {
       onboarding.save();
@@ -133,28 +134,27 @@ describe("onboarding discoverability switch", () => {
     });
 
     expect(authClient.updateProfile).toHaveBeenCalledOnce();
-    expect(authClient.setContactDiscovery).not.toHaveBeenCalled();
+    expect(authClient.setContactDiscovery).toHaveBeenCalledExactlyOnceWith({ discoverable: true });
     expect(onboarding.step).toBe("payment");
   });
 
-  it("saves a yes with the profile when the person turns it on", async () => {
+  it("saves a no when the person turns it off", async () => {
     vi.mocked(authClient.updateProfile).mockResolvedValue(INITIAL_USER);
     vi.mocked(authClient.setContactDiscovery).mockResolvedValue(INITIAL_USER);
-    act(() => onboarding.setFindable(true));
+    act(() => onboarding.setFindable(false));
 
     await act(async () => {
       onboarding.save();
       await new Promise((resolve) => setTimeout(resolve, 0));
     });
 
-    expect(authClient.setContactDiscovery).toHaveBeenCalledExactlyOnceWith({ discoverable: true });
+    expect(authClient.setContactDiscovery).toHaveBeenCalledExactlyOnceWith({ discoverable: false });
     expect(onboarding.step).toBe("payment");
   });
 
   it("shows a failed save beside Continue and stays on the profile step", async () => {
     vi.mocked(authClient.updateProfile).mockResolvedValue(INITIAL_USER);
     vi.mocked(authClient.setContactDiscovery).mockRejectedValue(new Error("Couldn't save — try again"));
-    act(() => onboarding.setFindable(true));
 
     await act(async () => {
       onboarding.save();

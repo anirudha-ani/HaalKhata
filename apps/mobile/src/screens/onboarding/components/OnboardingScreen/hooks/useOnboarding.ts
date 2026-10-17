@@ -56,9 +56,9 @@ export function useOnboarding() {
   const [mergeToken, setMergeToken] = useState("");
   const [verificationPhone, setVerificationPhone] = useState("");
   const [verificationCode, setVerificationCode] = useState("");
-  // Starts off: being findable is something the person turns on, never a
-  // pre-ticked box they have to notice and untick.
-  const [findable, setFindable] = useState(false);
+  // Starts on: being findable is the default, and the switch's own words say
+  // what it means, so turning it off is one tap on the same screen.
+  const [findable, setFindable] = useState(true);
 
   // Seeded from the server exactly once, when the query first resolves. Using
   // state initializers would capture `undefined` on the loading render.
@@ -102,9 +102,9 @@ export function useOnboarding() {
     mutationFn: async () => {
       setError("");
       await authClient.updateProfile({ name, defaultCurrency: currency });
-      // Saved only when the switch records a real choice: left off on an
-      // account that never answered, it sends nothing and the one-time
-      // prompt asks later, in context.
+      // Wherever the switch was left is the person's answer, saved unless
+      // the server already holds it. A yes left on is saved too, so the
+      // one-time notice on Friends does not repeat what this screen said.
       const discoveryChange = onboardingDiscoveryChange(
         meQuery.data?.contactDiscovery ?? ContactDiscovery.UNSPECIFIED,
         findable,

@@ -30,8 +30,8 @@ import { useFindFriends } from "./hooks/useFindFriends";
  * matching with a count, then the found people grouped by what can be done
  * with each. Row failures surface through the screen's toast layer; a failed
  * lookup offers a retry; "send to all" confirms in a sheet that lists
- * everyone first. Someone who never answered whether they may be found is
- * asked here too, since they are about to find others.
+ * everyone first. Someone who never answered is told here too that they can be found,
+ * since they are about to find others.
  *
  * @returns The Find friends screen.
  */

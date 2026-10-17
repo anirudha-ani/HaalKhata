@@ -72,7 +72,7 @@ describe.skipIf(!reachable)("mobile release database upgrade", () => {
     expect(after.rows).toEqual(before.rows);
     const owner = await database.query("SELECT google_sub, apple_sub, deleted_at, suspended_at FROM users WHERE id = $1", ["release-owner"]);
     expect(owner.rows).toEqual([{ google_sub: "release-google-sub", apple_sub: null, deleted_at: null, suspended_at: null }]);
-    // Existing accounts were never asked whether contacts may find them, so they start hidden.
+    // Existing accounts start never answered (NULL), which is findable by default.
     expect((await database.query("SELECT contact_discovery FROM users WHERE id = $1", ["release-owner"])).rows)
       .toEqual([{ contact_discovery: null }]);
     const tables = await database.query("SELECT to_regclass('apple_credentials') AS apple, to_regclass('content_reports') AS safety, to_regclass('push_outbox') AS push");

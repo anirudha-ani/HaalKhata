@@ -622,7 +622,10 @@ shared deletion explanation before requesting the exact confirmation.
 `POST /api/connect/auth.v1.AuthService/SetContactDiscovery` takes
 `{ "discoverable": true | false }` and returns the caller's own
 `common.v1.User`, whose private `contact_discovery` field is `ON`, `OFF` or,
-for an account that never answered, `UNSPECIFIED` (not findable). Every
-account that predates the field starts `UNSPECIFIED`. The answer decides
+for an account that never answered, `UNSPECIFIED`. Being findable is the
+default: `UNSPECIFIED` matches like `ON`, and only `OFF` hides the account.
+Every account that predates the field starts `UNSPECIFIED`, and both apps
+tell such a person once that they can be found, with **Turn off** beside
+**Keep it on**. The answer decides
 whether `SocialService.FindContacts` can match the account by its verified
 phone or sign-in email; see [Find friends from contacts](../../contact-discovery.md).

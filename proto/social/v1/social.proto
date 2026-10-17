@@ -26,10 +26,11 @@ service SocialService {
   rpc RemoveFriend(RemoveFriendRequest) returns (google.protobuf.Empty);
 
   // Find friends from contacts. Says which identifiers from the caller's own
-  // address book belong to accounts that chose to be findable
+  // address book belong to registered accounts that are findable: the
+  // default, until the person turns it off
   // (auth.v1.AuthService.SetContactDiscovery). Unlike AddFriend this does
-  // reveal a match, which is why only accounts that opted in take part, and
-  // a phone matches only once its holder verified it. The server stores
+  // reveal a match, which is why an account that said no never takes part,
+  // and a phone matches only once its holder verified it. The server stores
   // none of what it is sent. Limited per minute and per day; past either it
   // fails with ResourceExhausted and a message the client can show.
   rpc FindContacts(FindContactsRequest) returns (FindContactsResponse);

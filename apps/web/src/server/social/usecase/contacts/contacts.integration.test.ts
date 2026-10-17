@@ -62,7 +62,9 @@ describe.skipIf(!reachable)("contacts usecases against Postgres", () => {
         ('alice',  'Alice',    NULL,                 $1,   now(), '#c73e2e', 'sub-alice',  TRUE),
         ('bob',    'Bob',      'bob@example.com',    NULL, NULL,  '#c73e2e', 'sub-bob',    TRUE),
         ('carol',  'Carol',    'carol@example.com',  NULL, NULL,  '#c73e2e', 'sub-carol',  FALSE),
-        ('dora',   'Dora',     'dora@example.com',   NULL, NULL,  '#c73e2e', NULL,         TRUE)`,
+        ('dora',   'Dora',     'dora@example.com',   NULL, NULL,  '#c73e2e', NULL,         TRUE),
+        ('erin',   'Erin',     'erin@example.com',   NULL, NULL,  '#c73e2e', 'sub-erin',   NULL),
+        ('fred',   'Fred',     'fred@example.com',   NULL, NULL,  '#c73e2e', NULL,         NULL)`,
       [ALICE_PHONE],
     );
   }, 60_000);
@@ -77,30 +79,40 @@ describe.skipIf(!reachable)("contacts usecases against Postgres", () => {
     await admin.end();
   });
 
-  it("finds only opted-in, registered accounts and leaves no trace of the rest", async () => {
+  it("finds registered accounts that did not say no, and leaves no trace of the rest", async () => {
     const usersBefore = (await database.query(`SELECT COUNT(*)::int AS total FROM users`)).rows[0].total;
     const result = await findContacts("caller", {
       phones: [ALICE_PHONE, STRANGER_PHONE],
-      emails: ["bob@example.com", "carol@example.com", "dora@example.com", "nobody@example.com"],
+      emails: [
+        "bob@example.com",
+        "carol@example.com",
+        "dora@example.com",
+        "erin@example.com",
+        "fred@example.com",
+        "nobody@example.com",
+      ],
     });
 
+    // Erin never answered, which is findable by default. Carol said no. Dora
+    // and Fred are invitations nobody signed up for, whatever their column says.
     expect(result.contacts.map((contact) => [contact.identifier, contact.user.id, contact.relation])).toEqual([
       [ALICE_PHONE, "alice", ContactRelation.NONE],
       ["bob@example.com", "bob", ContactRelation.NONE],
+      ["erin@example.com", "erin", ContactRelation.NONE],
     ]);
-    expect(result.remainingToday).toBe(5000 - 6);
+    expect(result.remainingToday).toBe(5000 - 8);
     // Unlike AddFriend, a lookup never creates an Invited row for an unknown number.
     expect((await database.query(`SELECT COUNT(*)::int AS total FROM users`)).rows[0].total).toBe(usersBefore);
     expect(
       (await database.query(`SELECT COUNT(*)::int AS total FROM users WHERE phone = $1`, [STRANGER_PHONE])).rows[0].total,
     ).toBe(0);
     expect((await database.query(`SELECT user_id, identifiers_checked FROM contact_lookup_usage`)).rows).toEqual([
-      { user_id: "caller", identifiers_checked: 6 },
+      { user_id: "caller", identifiers_checked: 8 },
     ]);
   });
 
   it("sends requests with notifications to findable accounts only", async () => {
-    await sendFriendRequests("caller", ["alice", "bob", "carol", "dora"]);
+    await sendFriendRequests("caller", ["alice", "bob", "carol", "dora", "fred"]);
 
     const requests = await database.query(
       `SELECT recipient_id, recipient_identifier FROM friend_requests WHERE requester_id = 'caller' ORDER BY recipient_id`,

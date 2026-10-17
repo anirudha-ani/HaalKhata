@@ -83,7 +83,7 @@ export function toPrivateUser(userRow: UserRow) {
 /**
  * Maps the stored three-state answer onto the wire enum.
  *
- * @param stored - users.contact_discovery: null (never asked), true or false.
+ * @param stored - users.contact_discovery: null (never answered, findable by default), true or false.
  * @returns ON, OFF, or UNSPECIFIED for never asked.
  */
 export function toContactDiscovery(stored: boolean | null | undefined): ContactDiscovery {

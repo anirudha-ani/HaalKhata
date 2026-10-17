@@ -1,13 +1,13 @@
 "use client";
-/** One-time card asking an account that never answered whether contacts may find it. */
+/** One-time card telling an account that never answered that contacts can find it, with the way to turn that off. */
 
 import { CONTACT_DISCOVERY_PROMPT } from "@haalkhata/shared/contacts/contactsCopy";
 import type { ContactDiscovery } from "@haalkhata/shared/contacts/discovery";
 import { useContactDiscoveryPrompt } from "./hooks/useContactDiscoveryPrompt";
 
 /**
- * Renders the question with its two answers, or, once answered, what was
- * saved. Renders nothing for someone who answered on an earlier visit.
+ * Renders the notice with its two answers (keep it on, turn it off), or,
+ * once answered, what was saved. Renders nothing for someone who answered on an earlier visit.
  *
  * @param props - Component props.
  * @returns The card, or null.
