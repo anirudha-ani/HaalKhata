@@ -25,7 +25,7 @@ vi.mock("expo-apple-authentication", () => ({
   AppleAuthenticationButtonType: { CONTINUE: "continue" }, AppleAuthenticationButtonStyle: { BLACK: "black" },
   AppleAuthenticationButton: () => createElement("button", null, "Continue with Apple"),
 }));
-vi.mock("./ProviderButton/ProviderButton", () => ({ ProviderButton: ({ provider }: { provider: string }) => createElement("button", null, `Continue with ${provider}`) }));
+vi.mock("../ProviderButton/ProviderButton", () => ({ ProviderButton: ({ provider }: { provider: string }) => createElement("button", null, `Continue with ${provider}`) }));
 vi.mock("expo-crypto", () => ({}));
 vi.mock("expo-web-browser", () => ({}));
 vi.mock("expo-router", () => ({ useRouter: () => ({ replace: vi.fn() }) }));

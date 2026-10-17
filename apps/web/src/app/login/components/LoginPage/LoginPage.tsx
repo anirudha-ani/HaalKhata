@@ -4,6 +4,7 @@
 import { useState } from "react";
 import Image from "next/image";
 import { Camera, Check, LockKeyhole, ScanLine, Sparkles, Split, UsersRound } from "lucide-react";
+import { WELCOME_HERO, WELCOME_STEPS } from "@haalkhata/shared/welcome/welcomeCopy";
 import styles from "./LoginPage.module.css";
 import { LedgerPreview } from "./components/LedgerPreview/LedgerPreview";
 import { AuthPanel } from "./components/AuthPanel/AuthPanel";
@@ -16,6 +17,12 @@ import { ProductStep } from "./components/ProductStep/ProductStep";
  */
 export function LoginPage() {
   const [mobileAuthOpen, setMobileAuthOpen] = useState(false);
+  // Icons for the three "what to expect" steps, in the shared steps' order.
+  const stepIcons = [
+    <Camera key="snap" className="h-5 w-5" />,
+    <Split key="split" className="h-5 w-5" />,
+    <Check key="clear" className="h-5 w-5" />,
+  ];
 
   return (
     <main className={`${styles.page} relative min-h-dvh`}>
@@ -51,14 +58,14 @@ export function LoginPage() {
       <div className={`${styles.heroGrid} mx-auto grid max-w-[1480px] gap-8 px-5 pb-16 sm:px-8 lg:gap-x-14 lg:px-12 lg:pb-20 xl:gap-x-20`}>
         <section className={`${styles.story} max-w-3xl pt-6 lg:pt-12`}>
           <p className="mb-5 inline-flex items-center gap-2 rounded-full border border-brand-200 bg-brand-50/80 px-3 py-1.5 text-xs font-bold tracking-wide text-brand-700 uppercase">
-            <Sparkles className="h-3.5 w-3.5" /> Shared expenses, minus the spreadsheet
+            <Sparkles className="h-3.5 w-3.5" /> {WELCOME_HERO.eyebrow}
           </p>
           <h1 className={`${styles.heroTitle} max-w-3xl leading-[0.88] font-bold tracking-[-0.045em] text-ink`}>
-            Stop being the<br />
-            <span className="text-brand-600">group accountant.</span>
+            {WELCOME_HERO.titleLead}<br />
+            <span className="text-brand-600">{WELCOME_HERO.titleAccent}</span>
           </h1>
           <p className="mt-6 max-w-2xl text-lg leading-8 text-ink-soft sm:text-xl">
-            HaalKhata turns receipts, group expenses, and those “wait, who paid?” moments into one calm ledger, itemized, exact, and easy to settle.
+            {WELCOME_HERO.body}
           </p>
           <div className="mt-7 flex flex-wrap gap-x-5 gap-y-3 text-sm font-semibold text-ink">
             <span className="flex items-center gap-2"><ScanLine className="h-4 w-4 text-brand-600" /> Scan receipts</span>
@@ -90,24 +97,15 @@ export function LoginPage() {
               </p>
             </div>
             <div className="grid gap-x-8 md:grid-cols-3">
-              <ProductStep
-                number="01"
-                icon={<Camera className="h-5 w-5" />}
-                title="Snap it"
-                detail="Photograph a receipt and let AI pull out items, tax, tip, and total."
-              />
-              <ProductStep
-                number="02"
-                icon={<Split className="h-5 w-5" />}
-                title="Split it"
-                detail="Divide equally, by shares, by percentage, or assign every item to the right people."
-              />
-              <ProductStep
-                number="03"
-                icon={<Check className="h-5 w-5" />}
-                title="Clear it"
-                detail="See who owes what, open their preferred payment app or copy their saved handle, then record the settlement."
-              />
+              {WELCOME_STEPS.map((step, index) => (
+                <ProductStep
+                  key={step.number}
+                  number={step.number}
+                  icon={stepIcons[index]}
+                  title={step.title}
+                  detail={step.detail}
+                />
+              ))}
             </div>
           </div>
         </div>

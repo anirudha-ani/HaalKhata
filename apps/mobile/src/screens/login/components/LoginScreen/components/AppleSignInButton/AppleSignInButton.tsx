@@ -3,11 +3,11 @@
 import * as AppleAuthentication from "expo-apple-authentication";
 import { ActivityIndicator, Platform, StyleSheet, useWindowDimensions, View } from "react-native";
 import { Text } from "@/components/ui/Text";
-import { ProviderButton } from "./ProviderButton/ProviderButton";
-import { PROVIDER_BUTTON_HEIGHT } from "../../../constants/providerButtons";
+import { ProviderButton } from "../ProviderButton/ProviderButton";
+import { PROVIDER_BUTTON_HEIGHT } from "../../../../constants/providerButtons";
 import { APPLE_SIGN_IN_UNAVAILABLE } from "@haalkhata/shared/auth/providerMessages";
 import { colors, radii, spacing } from "@/lib/theme/theme";
-import { useAppleSignIn } from "../hooks/useAppleSignIn";
+import { useAppleSignIn } from "../../hooks/useAppleSignIn";
 
 /**
  * Renders an accessible Apple sign-in option with cancellation and error handling.
