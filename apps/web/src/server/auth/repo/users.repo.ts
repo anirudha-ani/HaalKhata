@@ -36,6 +36,12 @@ export interface UserRow {
   suspended_at?: string | null;
   /** When the first-run flow finished; null means the app still redirects there. */
   onboarded_at: string | null;
+  /**
+   * Whether people holding this account's verified number or email can find
+   * it from their contacts: null = never asked (not findable), true/false =
+   * the person's answer. Absent only in legacy test fixtures.
+   */
+  contact_discovery?: boolean | null;
   /** Id this row was absorbed into by an account merge; null for a live account. */
   merged_into: string | null;
   /** Monotonic counter baked into issued tokens; bumping it invalidates outstanding tokens. */
@@ -287,4 +293,14 @@ export async function updateUserProfile(
     [userId, fields.name ?? null, fields.defaultCurrency ?? null],
     client,
   );
+}
+
+/**
+ * Records the person's answer to "let people find me from their contacts".
+ *
+ * @param userId - Account the answer belongs to.
+ * @param discoverable - True to be findable, false to stay hidden.
+ */
+export async function setContactDiscovery(userId: string, discoverable: boolean): Promise<void> {
+  await execute(`UPDATE users SET contact_discovery = $2 WHERE id = $1`, [userId, discoverable]);
 }

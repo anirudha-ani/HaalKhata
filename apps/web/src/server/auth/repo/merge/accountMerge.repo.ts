@@ -397,6 +397,32 @@ export async function mergeAccounts(
       [keeperId, loserId],
     );
 
+    // --- contact discovery: a refusal on either row wins --------------------
+    // The absorbed row is always an unclaimed invite, which can neither
+    // answer the question nor look anything up, so today this keeps the
+    // keeper's answer. Written out anyway so the merge stays complete if a
+    // future flow absorbs a row that did answer: no wins over yes, and yes
+    // over never asked.
+    await client.query(
+      `UPDATE users keeper
+          SET contact_discovery = CASE
+                WHEN keeper.contact_discovery IS FALSE OR loser.contact_discovery IS FALSE THEN FALSE
+                WHEN keeper.contact_discovery OR loser.contact_discovery THEN TRUE
+              END
+         FROM users loser
+        WHERE keeper.id = $1 AND loser.id = $2`,
+      [keeperId, loserId],
+    );
+    // Lookups already counted against the absorbed row still count today.
+    await client.query(
+      `INSERT INTO contact_lookup_usage (user_id, usage_day, identifiers_checked)
+       SELECT $1, usage_day, identifiers_checked FROM contact_lookup_usage WHERE user_id = $2
+       ON CONFLICT (user_id, usage_day) DO UPDATE
+          SET identifiers_checked = contact_lookup_usage.identifiers_checked + EXCLUDED.identifiers_checked`,
+      [keeperId, loserId],
+    );
+    await client.query(`DELETE FROM contact_lookup_usage WHERE user_id = $1`, [loserId]);
+
     // --- payment methods: the keeper's own choices win ----------------------
     // Moved across without their stars: a star says "pay me here first", and
     // the keeper is the one who chose theirs. Unstarring also keeps the
@@ -464,7 +490,7 @@ export async function mergeAccounts(
     await client.query(
       `UPDATE users
           SET phone = NULL, phone_verified_at = NULL, email = NULL,
-              merged_into = $1, google_sub = NULL,
+              merged_into = $1, google_sub = NULL, contact_discovery = NULL,
               token_version = token_version + 1
         WHERE id = $2`,
       [keeperId, loserId],

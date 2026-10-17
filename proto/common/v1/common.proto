@@ -43,6 +43,18 @@ message User {
   bool phone_verified = 11;
   // Anonymous historical ledger participant; cannot be invited or added to new expenses.
   bool deleted = 12;
+  // Whether people who hold this person's verified phone or email can find
+  // them from their contacts. Private like phone_verified: set only on the
+  // caller's own profile and UNSPECIFIED in every public projection.
+  ContactDiscovery contact_discovery = 13;
+}
+
+// The person's answer to "let people find me from their contacts".
+enum ContactDiscovery {
+  // Never asked. Treated as not findable; clients ask once.
+  CONTACT_DISCOVERY_UNSPECIFIED = 0;
+  CONTACT_DISCOVERY_ON = 1;
+  CONTACT_DISCOVERY_OFF = 2;
 }
 
 // Retired with User.payment_handles; kept so the field stays declared.

@@ -12,7 +12,12 @@ import { authClient } from "@/lib/api/connect";
 import { useOnboarding } from "./useOnboarding";
 
 vi.mock("@/lib/api/connect", () => ({
-  authClient: { getMe: vi.fn(), completeOnboarding: vi.fn() },
+  authClient: {
+    getMe: vi.fn(),
+    completeOnboarding: vi.fn(),
+    updateProfile: vi.fn(),
+    setContactDiscovery: vi.fn(),
+  },
   errorMessage: (error: Error) => error.message,
 }));
 
@@ -114,5 +119,49 @@ describe("onboarding completion", () => {
     expect(onboarding.step).toBe("payment");
     expect(replaceDocument).not.toHaveBeenCalled();
     expect(queryClient.getQueryData(queryKeys.me)).toEqual(INITIAL_USER);
+  });
+});
+
+describe("onboarding discoverability switch", () => {
+  it("starts off and sends nothing when left off, so the later prompt still asks", async () => {
+    vi.mocked(authClient.updateProfile).mockResolvedValue(INITIAL_USER);
+    expect(onboarding.findable).toBe(false);
+
+    await act(async () => {
+      onboarding.save();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    expect(authClient.updateProfile).toHaveBeenCalledOnce();
+    expect(authClient.setContactDiscovery).not.toHaveBeenCalled();
+    expect(onboarding.step).toBe("payment");
+  });
+
+  it("saves a yes with the profile when the person turns it on", async () => {
+    vi.mocked(authClient.updateProfile).mockResolvedValue(INITIAL_USER);
+    vi.mocked(authClient.setContactDiscovery).mockResolvedValue(INITIAL_USER);
+    act(() => onboarding.setFindable(true));
+
+    await act(async () => {
+      onboarding.save();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    expect(authClient.setContactDiscovery).toHaveBeenCalledExactlyOnceWith({ discoverable: true });
+    expect(onboarding.step).toBe("payment");
+  });
+
+  it("shows a failed save beside Continue and stays on the profile step", async () => {
+    vi.mocked(authClient.updateProfile).mockResolvedValue(INITIAL_USER);
+    vi.mocked(authClient.setContactDiscovery).mockRejectedValue(new Error("Couldn't save — try again"));
+    act(() => onboarding.setFindable(true));
+
+    await act(async () => {
+      onboarding.save();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    expect(container.textContent).toBe("Couldn't save — try again");
+    expect(onboarding.step).toBe("profile");
   });
 });

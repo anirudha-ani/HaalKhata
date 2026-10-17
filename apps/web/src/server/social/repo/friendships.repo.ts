@@ -156,6 +156,57 @@ export async function insertFriendRequest(
 }
 
 /**
+ * Inserts one pending request from the requester to each recipient, as one
+ * statement, with exactly the checks {@link insertFriendRequest} applies to
+ * a single pair: both rows live, not already friends, not already pending,
+ * and the recipient's inbox under its cap. Nothing records an identifier:
+ * the requester saw who they were asking, so the sent list shows the
+ * recipient's profile.
+ *
+ * Every inbox involved is locked first, in the shared sorted order, so the
+ * per-recipient count each row is checked against cannot move underneath it.
+ *
+ * @param requesterId - Account asking to connect.
+ * @param recipientIds - Accounts to ask; duplicates and the requester are ignored.
+ * @param client - Transaction client shared with the notifications.
+ * @returns The recipient ids that received a new request.
+ */
+export async function insertFriendRequests(
+  requesterId: string,
+  recipientIds: string[],
+  client: PoolClient,
+): Promise<string[]> {
+  const distinctRecipients = [...new Set(recipientIds)].filter(
+    (recipientId) => recipientId !== requesterId,
+  );
+  if (distinctRecipients.length === 0) return [];
+  await lockFriendRequestInboxes(client, [requesterId, ...distinctRecipients]);
+  const inserted = await query<{ recipient_id: string }>(
+    `INSERT INTO friend_requests (requester_id, recipient_id)
+     SELECT $1, target.recipient_id
+       FROM unnest($2::text[]) AS target(recipient_id)
+      WHERE EXISTS (
+              SELECT 1 FROM users usr WHERE usr.id = $1 AND usr.merged_into IS NULL
+            )
+        AND EXISTS (
+              SELECT 1 FROM users usr
+               WHERE usr.id = target.recipient_id AND usr.merged_into IS NULL
+            )
+        AND NOT EXISTS (
+              SELECT 1 FROM friendships
+               WHERE user_id = $1 AND friend_id = target.recipient_id
+            )
+        AND (SELECT COUNT(*) FROM friend_requests
+              WHERE recipient_id = target.recipient_id) < $3
+     ON CONFLICT DO NOTHING
+     RETURNING recipient_id`,
+    [requesterId, distinctRecipients, MAX_PENDING_FRIEND_REQUESTS],
+    client,
+  );
+  return inserted.map((insertedRow) => insertedRow.recipient_id);
+}
+
+/**
  * Lists pending request senders for one recipient, oldest first.
  *
  * @param recipientId - Account viewing its incoming requests.
