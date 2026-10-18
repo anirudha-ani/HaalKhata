@@ -17,4 +17,4 @@ export const MAX_ADDRESS_BOOK_FIELD_LENGTH = 254;
  * limit; a longer list is split into calls of this size. The apps send one
  * person per call (each Add), so this only bounds what the server accepts.
  */
-export const FRIEND_REQUESTS_PER_SEND = 50;
+export const FRIEND_REQUESTS_PER_SEND = 10;

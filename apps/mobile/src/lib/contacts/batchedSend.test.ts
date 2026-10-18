@@ -10,7 +10,7 @@ describe("sendInBatches", () => {
   it("asks everyone in batches of the server's limit", async () => {
     const sendBatch = vi.fn().mockResolvedValue(undefined);
     const outcome = await sendInBatches(people, sendBatch, describeFailure);
-    expect(sendBatch.mock.calls.map(([batch]) => batch.length)).toEqual([50, 50, 20]);
+    expect(sendBatch.mock.calls.map(([batch]) => batch.length)).toEqual(Array.from({ length: 12 }, () => 10));
     expect(outcome).toEqual({ sent: people, failure: "" });
   });
 
@@ -20,7 +20,7 @@ describe("sendInBatches", () => {
       .mockResolvedValueOnce(undefined)
       .mockRejectedValueOnce(new Error("too many requests, please try again later"));
     const outcome = await sendInBatches(people, sendBatch, describeFailure);
-    expect(outcome.sent).toEqual(people.slice(0, 50));
+    expect(outcome.sent).toEqual(people.slice(0, 10));
     expect(outcome.failure).toBe("too many requests, please try again later");
   });
 

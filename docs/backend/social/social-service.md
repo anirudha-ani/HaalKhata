@@ -109,7 +109,7 @@ consent.
 | ListFriends | 60/min — **shares the `GetOverallBalances` bucket**, because it computes the same full-ledger aggregate; separate buckets would let one endpoint bypass the other's limit |
 | SendReminder | 10/min per account, plus the 24 h per-pair cooldown |
 | FindContacts | 5/min per account, at most 1,000 identifiers per call and 5,000 per account per UTC day (the daily count is durable, in Postgres) |
-| SendFriendRequests | 3/min per account, at most 50 ids per call |
+| SendFriendRequests | 20/min per account, at most 10 ids per call (the apps send one per Add) |
 | Others | authentication only |
 
 ---
@@ -745,7 +745,7 @@ account?").
   notified, and the 100-pending cap per recipient holds.
 - No `recipient_identifier` is stored: the sender saw who they were asking,
   so `outgoing_requests` shows the recipient's profile.
-- An empty list or more than 50 ids is `InvalidArgument`.
+- An empty list or more than 10 ids is `InvalidArgument`.
 
 #### Request
 

@@ -61,8 +61,8 @@ a yes and **Turn off** a no. The answer can be changed any time under
 | Identifiers per FindContacts call | 1,000 | `MAX_CONTACT_IDENTIFIERS_PER_LOOKUP` |
 | Identifiers per account per UTC day | 5,000 | `MAX_CONTACT_IDENTIFIERS_PER_DAY`, in Postgres |
 | FindContacts calls per minute | 5 | `RPC_RATE_LIMITS.findContacts` |
-| Ids per SendFriendRequests call | 50 | `MAX_FRIEND_REQUESTS_PER_SEND` |
-| SendFriendRequests calls per minute | 3 | `RPC_RATE_LIMITS.sendFriendRequests` |
+| Ids per SendFriendRequests call | 10 (the apps send 1) | `MAX_FRIEND_REQUESTS_PER_SEND` |
+| SendFriendRequests calls per minute | 20 | `RPC_RATE_LIMITS.sendFriendRequests` |
 | Pending requests per recipient | 100 | `MAX_PENDING_FRIEND_REQUESTS` |
 
 Past the daily limit FindContacts fails with `resource_exhausted` and says how
