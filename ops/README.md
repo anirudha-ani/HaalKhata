@@ -320,8 +320,9 @@ fails in production without it, and the compose dry-run refuses a release
 whose secret file is missing — so set it up **before** publishing the
 release that introduces it:
 
-1. On expo.dev, in the HaalKhata project's settings, turn on **Enhanced
-   Security for Push Notifications**. From then on Expo refuses a send
+1. On expo.dev, on the access tokens page (Account settings → Access tokens,
+   expo.dev/settings/access-tokens), turn on **Enhanced Security for Push
+   Notifications**. From then on Expo refuses a send
    without an access token, so a leaked phone token is useless to anyone
    else.
 2. Create an access token (Account settings → Access tokens; a robot user
