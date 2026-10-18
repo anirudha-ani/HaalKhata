@@ -60,6 +60,14 @@ physical iPhone, or TestFlight.
    it.
 7. Sign out on the phone. The phone leaves Your phones on the web, its banners
    and badge are cleared, and new expenses no longer reach it.
+8. Sign back in: the phone registers at once (it appears under Your phones
+   again) even if the server had signed it out meanwhile.
+9. Turn on Airplane Mode and sign out. An alert says the session ends on the
+   server the next time the app is opened online. Turn Airplane Mode off and
+   open the app: the next expense from A no longer reaches the phone.
+10. Remove This phone from the list on the phone, or remove it from the web.
+    The card says notifications are off for this phone, with Turn on, and it
+    stays off after the app is killed and reopened. Turn on reconnects it.
 
 Expo's push tool at <https://expo.dev/notifications> sends to a token by hand,
 which separates a phone problem from a server problem.

@@ -6,12 +6,12 @@
  */
 
 import { Code, ConnectError } from "@connectrpc/connect";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useSyncExternalStore } from "react";
 import { Platform } from "react-native";
 import Constants from "expo-constants";
 import * as Device from "expo-device";
 import * as Notifications from "expo-notifications";
-import * as SecureStore from "expo-secure-store";
 import { PUSH_COPY } from "@haalkhata/shared/notifications/copy";
 import { errorMessage, pushClient } from "@/lib/api/connect";
 import {
@@ -194,8 +194,8 @@ export async function markThisPhoneRemoved(): Promise<void> {
 export async function offerPushExplainer(fromAccount = false): Promise<void> {
   try {
     if ((await refreshPushPermission()) !== "undetermined") return;
-    if (!fromAccount && (await SecureStore.getItemAsync(EXPLAINER_SHOWN_STORAGE_KEY))) return;
-    await SecureStore.setItemAsync(EXPLAINER_SHOWN_STORAGE_KEY, "1");
+    if (!fromAccount && (await AsyncStorage.getItem(EXPLAINER_SHOWN_STORAGE_KEY))) return;
+    await AsyncStorage.setItem(EXPLAINER_SHOWN_STORAGE_KEY, "1");
     update({ explainerOpen: true });
   } catch (failure) {
     update({ error: errorMessage(failure) });

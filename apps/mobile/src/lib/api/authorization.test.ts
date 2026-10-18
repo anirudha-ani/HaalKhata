@@ -92,3 +92,19 @@ it("preserves a valid session on permission denial or connectivity failure", asy
   expect(session.sessionToken()).toBe("current");
   expect(cache.clearMobileQueryCache).not.toHaveBeenCalled();
 });
+
+it("leaves a call that brings its own token alone, even when the server rejects it", async () => {
+  const session = await import("./session");
+  const { authorization } = await import("./authorization");
+  await session.setSessionToken("current-account");
+  const ownCredentials = request();
+  ownCredentials.header.set("Authorization", "Bearer signed-out-account");
+  const failure = new ConnectError("expired", Code.Unauthenticated);
+  const sent = authorization(async (forwarded) => {
+    expect(forwarded.header.get("Authorization")).toBe("Bearer signed-out-account");
+    throw failure;
+  })(ownCredentials);
+  await expect(sent).rejects.toBe(failure);
+  expect(session.sessionToken()).toBe("current-account");
+  expect(cache.clearMobileQueryCache).not.toHaveBeenCalled();
+});

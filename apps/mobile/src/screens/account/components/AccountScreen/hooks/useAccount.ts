@@ -5,14 +5,16 @@ import type { MergePreview } from "@haalkhata/protogen/auth/v1/auth_pb";
 import type { User } from "@haalkhata/protogen/common/v1/common_pb";
 import { useRouter } from "expo-router";
 import { useEffect, useState } from "react";
+import { Alert } from "react-native";
 import { authClient, errorMessage } from "@/lib/api/connect";
 import { socialClient } from "@/lib/api/connect";
 import { MONEY_KEYS, queryKeys } from "@haalkhata/shared/api/queryKeys";
 import { clearMobileQueryCache } from "@/lib/api/queryCache";
-import { clearSession } from "@/lib/api/session";
+import { clearSession, sessionToken } from "@/lib/api/session";
+import { rememberUnfinishedSignOut, sessionAlreadyEnded } from "@/lib/api/unfinishedSignOut";
 import { composeE164, DEFAULT_PHONE_REGION, isValidPhone, splitE164 } from "@haalkhata/shared/phone/phone";
 import { INVALID_PHONE_MESSAGE } from "@haalkhata/shared/phone/contact";
-import { SAVED_BADGE_MS } from "../../../constants/account";
+import { SAVED_BADGE_MS, SIGN_OUT_OFFLINE } from "../../../constants/account";
 import { forgetThisPhone } from "@/lib/push/pushStore";
 
 /**
@@ -206,18 +208,26 @@ export function useProfileForm(currentUser: User) {
 
   /**
    * Stops pushes to this phone while the session can still ask, revokes the
-   * token server-side, clears the local session and cache, and returns to login.
+   * token server-side, clears the local session and cache, and returns to
+   * login. Offline, the phone still signs out, but the server has not heard:
+   * the token is kept to end the session the next time the app is online,
+   * and the person is told that the account's notifications may arrive
+   * until then.
    */
   const signOut = async () => {
+    const token = sessionToken();
     await forgetThisPhone();
+    let reachedServer = true;
     try {
       await authClient.logOut({});
-    } catch {
-      // Offline or already revoked — the local session is cleared regardless.
+    } catch (failure) {
+      reachedServer = sessionAlreadyEnded(failure);
     }
+    if (!reachedServer && token) await rememberUnfinishedSignOut(token).catch(() => undefined);
     await clearSession();
     await clearMobileQueryCache();
     router.replace("/login");
+    if (!reachedServer) Alert.alert(SIGN_OUT_OFFLINE.title, SIGN_OUT_OFFLINE.message);
   };
 
   return {

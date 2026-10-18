@@ -26,6 +26,12 @@ vi.mock("expo-secure-store", () => ({
   setItemAsync: vi.fn(async (storageKey: string, value: string) => void native.storage.set(storageKey, value)),
   deleteItemAsync: vi.fn(async (storageKey: string) => void native.storage.delete(storageKey)),
 }));
+vi.mock("@react-native-async-storage/async-storage", () => ({
+  default: {
+    getItem: vi.fn(async (storageKey: string) => native.storage.get(storageKey) ?? null),
+    setItem: vi.fn(async (storageKey: string, value: string) => void native.storage.set(storageKey, value)),
+  },
+}));
 vi.mock("expo-notifications", () => ({
   IosAuthorizationStatus: { NOT_DETERMINED: 0, DENIED: 1, AUTHORIZED: 2, PROVISIONAL: 3, EPHEMERAL: 4 },
   getPermissionsAsync: native.getPermissionsAsync,
