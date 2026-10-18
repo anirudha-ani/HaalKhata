@@ -104,10 +104,11 @@ export async function setAvatarUrl(userId: string, avatarUrl: string): Promise<v
  * Looks a user up by primary key.
  *
  * @param userId - Primary key of the user to fetch.
+ * @param client - Transaction client, so a read inside a write stays on its connection.
  * @returns The matching row, or undefined when no such user exists.
  */
-export async function findUserById(userId: string): Promise<UserRow | undefined> {
-  return queryOne<UserRow>(`SELECT usr.* FROM users usr WHERE usr.id = $1 AND usr.deleted_at IS NULL`, [userId]);
+export async function findUserById(userId: string, client?: PoolClient): Promise<UserRow | undefined> {
+  return queryOne<UserRow>(`SELECT usr.* FROM users usr WHERE usr.id = $1 AND usr.deleted_at IS NULL`, [userId], client);
 }
 
 /**
@@ -177,13 +178,12 @@ export async function linkGoogleAccount(
  * Fetches every user whose id appears in the given list.
  *
  * @param userIds - Primary keys of the users to fetch.
+ * @param client - Transaction client, so a read inside a write stays on its connection.
  * @returns The matching rows in no guaranteed order; unknown ids are silently skipped.
  */
-export async function findUsersByIds(userIds: string[]): Promise<UserRow[]> {
+export async function findUsersByIds(userIds: string[], client?: PoolClient): Promise<UserRow[]> {
   if (userIds.length === 0) return [];
-  return query<UserRow>(`SELECT usr.* FROM users usr WHERE usr.id = ANY($1::text[])`, [
-    userIds,
-  ]);
+  return query<UserRow>(`SELECT usr.* FROM users usr WHERE usr.id = ANY($1::text[])`, [userIds], client);
 }
 
 /**

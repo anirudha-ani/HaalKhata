@@ -45,7 +45,7 @@ import {
   type SettlementRow,
 } from "@/server/expense/repo/settlements.repo";
 import { insertActivity, listActivityForExpense } from "@/server/social/repo/activity.repo";
-import { insertNotifications } from "@/server/social/repo/notifications.repo";
+import { insertNotificationRows, insertNotifications } from "@/server/social/repo/notifications.repo";
 import {
   computeItemizedSplits,
   computeSplits,
@@ -526,7 +526,7 @@ async function recordExpenseActivity(
   verb: "added" | "updated" | "deleted",
   client: PoolClient,
 ): Promise<void> {
-  const actor = (await findUserById(actorId))!;
+  const actor = (await findUserById(actorId, client))!;
   const group = write.groupId ? await findGroupById(write.groupId, client) : undefined;
   const locationSuffix = group ? ` in "${group.name}"` : "";
   // The participants plus whoever recorded it — never the whole group. A
@@ -551,26 +551,29 @@ async function recordExpenseActivity(
   );
   // Each reader's bell row (and so their push) says what the expense means
   // for them: "Goa trip · you owe Ani ৳600". One row per reader, because the
-  // money line is theirs alone.
+  // money line is theirs alone, written in one statement while the ledger
+  // lock is held.
   const payerIds = [...new Set(write.payers.map((payer) => payer.userId))];
   const payerNames = new Map(
-    (await findUsersByIds(payerIds)).map((payer) => [payer.id, payer.name] as const),
+    (await findUsersByIds(payerIds, client)).map((payer) => [payer.id, payer.name] as const),
   );
   const scopeName = group ? group.name : "One-off expense";
-  for (const recipientId of involvedUserIds(write).filter((participantId) => participantId !== actorId)) {
-    const moneyLine = readerShareLine(write, recipientId, verb, payerNames);
-    await insertNotifications(
-      [recipientId],
-      {
-        actorId,
-        type: `expense_${verb}`,
-        title: `${actor.name} ${verb} "${write.description}"`,
-        body: moneyLine ? `${scopeName} · ${moneyLine}` : scopeName,
-        link: `/expenses/${expenseId}`,
-      },
-      client,
-    );
-  }
+  await insertNotificationRows(
+    involvedUserIds(write)
+      .filter((participantId) => participantId !== actorId)
+      .map((recipientId) => {
+        const moneyLine = readerShareLine(write, recipientId, verb, payerNames);
+        return {
+          userId: recipientId,
+          actorId,
+          type: `expense_${verb}`,
+          title: `${actor.name} ${verb} "${write.description}"`,
+          body: moneyLine ? `${scopeName} · ${moneyLine}` : scopeName,
+          link: `/expenses/${expenseId}`,
+        };
+      }),
+    client,
+  );
 }
 
 /**

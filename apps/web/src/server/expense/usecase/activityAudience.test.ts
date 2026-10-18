@@ -79,7 +79,7 @@ vi.mock("@/server/social/repo/activity.repo", () => ({
   insertActivity: vi.fn(),
   listActivityForExpense: vi.fn(),
 }));
-vi.mock("@/server/social/repo/notifications.repo", () => ({ insertNotifications: vi.fn() }));
+vi.mock("@/server/social/repo/notifications.repo", () => ({ insertNotifications: vi.fn(), insertNotificationRows: vi.fn() }));
 vi.mock("./balance.usecase", () => ({
   groupCancelsOut: vi.fn(),
   amountOwed: vi.fn(),
@@ -128,7 +128,7 @@ import {
   lockParticipantLedgers,
 } from "@/server/common/ledger/ledgerLocks";
 import { insertActivity, listActivityForExpense } from "@/server/social/repo/activity.repo";
-import { insertNotifications } from "@/server/social/repo/notifications.repo";
+import { insertNotificationRows, insertNotifications } from "@/server/social/repo/notifications.repo";
 import { insertFriendship, listFriendIds } from "@/server/social/repo/friendships.repo";
 import { amountOwed, userNetInGroup, groupCancelsOut } from "./balance.usecase";
 import {
@@ -658,11 +658,14 @@ describe("who hears about a transaction", () => {
       expect.objectContaining({ type: "expense_added" }),
       transactionClient,
     );
-    expect(insertNotifications).toHaveBeenCalledWith(
-      [OWER],
-      expect.objectContaining({ type: "expense_added" }),
+    // Every reader's row in one write, on the ledger's own transaction, and
+    // the payer names it quotes read on that transaction too.
+    expect(insertNotificationRows).toHaveBeenCalledOnce();
+    expect(insertNotificationRows).toHaveBeenCalledWith(
+      [expect.objectContaining({ userId: OWER, type: "expense_added" })],
       transactionClient,
     );
+    expect(findUsersByIds).toHaveBeenCalledWith([PAYER], transactionClient);
   });
 
   it("commits a comment with the feed line and notifications that announce it", async () => {
