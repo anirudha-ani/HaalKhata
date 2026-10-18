@@ -10,7 +10,7 @@ const repo = vi.hoisted(() => ({
   listLivePushDevices: vi.fn(),
   findLivePushDevice: vi.fn(),
   deletePushDevice: vi.fn(),
-  deletePushDevicesById: vi.fn(),
+  deletePushDevicesHoldingTokens: vi.fn(),
   markPushDevicesSent: vi.fn(),
   insertPushTickets: vi.fn(),
   countUnreadByUsers: vi.fn(),
@@ -23,7 +23,7 @@ vi.mock("@/server/push/repo/pushDevices.repo", () => ({
   listLivePushDevices: repo.listLivePushDevices,
   findLivePushDevice: repo.findLivePushDevice,
   deletePushDevice: repo.deletePushDevice,
-  deletePushDevicesById: repo.deletePushDevicesById,
+  deletePushDevicesHoldingTokens: repo.deletePushDevicesHoldingTokens,
   markPushDevicesSent: repo.markPushDevicesSent,
 }));
 vi.mock("@/server/push/repo/pushTickets.repo", () => ({ insertPushTickets: repo.insertPushTickets }));
@@ -132,7 +132,9 @@ describe("sendTestPush", () => {
     expect(service.send).toHaveBeenCalledWith([
       expect.objectContaining({ to: VALID.expoPushToken, badge: 5, data: expect.objectContaining({ link: "/account" }) }),
     ]);
-    expect(repo.insertPushTickets).toHaveBeenCalledWith([{ ticketId: "ticket-1", deviceId: "dev-1" }]);
+    expect(repo.insertPushTickets).toHaveBeenCalledWith([
+      { ticketId: "ticket-1", deviceId: "dev-1", expoToken: VALID.expoPushToken },
+    ]);
     expect(repo.markPushDevicesSent).toHaveBeenCalledWith(["dev-1"]);
   });
 
@@ -147,7 +149,9 @@ describe("sendTestPush", () => {
       code: "failed_precondition",
       message: expect.stringContaining("isn't reachable"),
     });
-    expect(repo.deletePushDevicesById).toHaveBeenCalledWith(["dev-1"]);
+    expect(repo.deletePushDevicesHoldingTokens).toHaveBeenCalledWith([
+      { deviceId: "dev-1", expoToken: VALID.expoPushToken },
+    ]);
   });
 
   it("reports an unreachable service as unavailable", async () => {

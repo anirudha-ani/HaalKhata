@@ -8,7 +8,7 @@ import {
   PUSH_RECEIPT_DELAY_MINUTES,
   PUSH_TICKET_MAX_AGE_HOURS,
 } from "@/server/push/push.constants";
-import { deletePushDevicesById, deleteStalePushDevices } from "@/server/push/repo/pushDevices.repo";
+import { deletePushDevicesHoldingTokens, deleteStalePushDevices } from "@/server/push/repo/pushDevices.repo";
 import { deleteExpiredPushTickets, deletePushTickets, listPushTicketsDue } from "@/server/push/repo/pushTickets.repo";
 import { pushProvider } from "@/server/push/usecase/provider/pushProvider";
 import type { PushProvider } from "@/server/push/usecase/provider/pushTypes";
@@ -44,14 +44,18 @@ export async function checkPushReceipts(provider: PushProvider = pushProvider())
 
   const receipts = await provider.receipts(tickets.map((ticket) => ticket.ticket_id));
   const read: string[] = [];
-  const deadDevices = new Set<string>();
+  const deadDevices: { deviceId: string; expoToken: string }[] = [];
   for (const ticket of tickets) {
     const receipt = receipts[ticket.ticket_id];
     if (!receipt) continue;
     read.push(ticket.ticket_id);
     if (receipt.status === "ok") continue;
     if (receipt.details?.error === DEVICE_NOT_REGISTERED) {
-      deadDevices.add(ticket.device_id);
+      // Removed only while the phone still holds the token this send went
+      // to; a reinstall since registered a new one. Tickets from before the
+      // token was kept say nothing about which token died, so they remove
+      // nothing.
+      if (ticket.expo_token) deadDevices.push({ deviceId: ticket.device_id, expoToken: ticket.expo_token });
     } else {
       report.failed += 1;
       logEvent("warn", "push receipt error", {
@@ -61,10 +65,10 @@ export async function checkPushReceipts(provider: PushProvider = pushProvider())
       });
     }
   }
-  await deletePushDevicesById([...deadDevices]);
+  await deletePushDevicesHoldingTokens(deadDevices);
   await deletePushTickets(read);
   report.checked = read.length;
-  report.removedDevices = deadDevices.size;
+  report.removedDevices = deadDevices.length;
   logEvent("info", "push receipts", { provider: provider.name, ...report });
   return report;
 }

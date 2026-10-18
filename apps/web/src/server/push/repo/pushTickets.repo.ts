@@ -6,21 +6,31 @@ import { execute, query } from "@/server/common/db/db";
 export interface PushTicketRow {
   ticket_id: string;
   device_id: string;
+  /** The token the send went to; null for tickets written before it was kept. */
+  expo_token: string | null;
   created_at: string;
 }
 
 /**
  * Records accepted sends so their receipts can be read later.
  *
- * @param tickets - Ticket ids from the delivery service with the device each was for.
+ * @param tickets - Ticket ids from the delivery service with the device and
+ *   token each was for; the token decides whether a dead receipt still
+ *   applies to the phone.
  */
-export async function insertPushTickets(tickets: { ticketId: string; deviceId: string }[]): Promise<void> {
+export async function insertPushTickets(
+  tickets: { ticketId: string; deviceId: string; expoToken: string }[],
+): Promise<void> {
   if (tickets.length === 0) return;
   await execute(
-    `INSERT INTO push_tickets (ticket_id, device_id)
-     SELECT * FROM unnest($1::text[], $2::text[])
+    `INSERT INTO push_tickets (ticket_id, device_id, expo_token)
+     SELECT * FROM unnest($1::text[], $2::text[], $3::text[])
      ON CONFLICT (ticket_id) DO NOTHING`,
-    [tickets.map((ticket) => ticket.ticketId), tickets.map((ticket) => ticket.deviceId)],
+    [
+      tickets.map((ticket) => ticket.ticketId),
+      tickets.map((ticket) => ticket.deviceId),
+      tickets.map((ticket) => ticket.expoToken),
+    ],
   );
 }
 

@@ -12,7 +12,7 @@ import {
 } from "@/server/push/push.constants";
 import {
   deleteDeadPushDevicesForUsers,
-  deletePushDevicesById,
+  deletePushDevicesHoldingTokens,
   listLivePushDevicesForUsers,
   markPushDevicesSent,
   type PushDeviceRow,
@@ -47,9 +47,12 @@ interface SendOutcome {
   refused: Set<string>;
   /** Rows accepted for at least one phone. */
   accepted: Set<string>;
-  tickets: { ticketId: string; deviceId: string }[];
+  /** Phones each row was accepted for in this pass. */
+  deliveredByRow: Map<string, string[]>;
+  tickets: { ticketId: string; deviceId: string; expoToken: string }[];
   sentDeviceIds: string[];
-  deadDeviceIds: string[];
+  /** Phones reported gone, with the token the report was about. */
+  deadDevices: { deviceId: string; expoToken: string }[];
 }
 
 /**
@@ -92,13 +95,17 @@ function devicesByOwner(devices: PushDeviceRow[]): Map<string, PushDeviceRow[]> 
 function recordTicket(outcome: SendOutcome, planned: PlannedPush, ticket: PushTicket): void {
   if (ticket.status === "ok") {
     outcome.accepted.add(planned.notificationId);
-    outcome.tickets.push({ ticketId: ticket.id, deviceId: planned.deviceId });
+    outcome.deliveredByRow.set(planned.notificationId, [
+      ...(outcome.deliveredByRow.get(planned.notificationId) ?? []),
+      planned.deviceId,
+    ]);
+    outcome.tickets.push({ ticketId: ticket.id, deviceId: planned.deviceId, expoToken: planned.expoToken });
     outcome.sentDeviceIds.push(planned.deviceId);
     return;
   }
   const errorCode = ticket.details?.error ?? "";
   if (errorCode === DEVICE_NOT_REGISTERED) {
-    outcome.deadDeviceIds.push(planned.deviceId);
+    outcome.deadDevices.push({ deviceId: planned.deviceId, expoToken: planned.expoToken });
   } else if ((RETRYABLE_PUSH_ERRORS as readonly string[]).includes(errorCode)) {
     outcome.retry.set(planned.notificationId, `${errorCode}: ${ticket.message}`);
     if (errorCode === "InvalidCredentials") {
@@ -111,9 +118,39 @@ function recordTicket(outcome: SendOutcome, planned: PlannedPush, ticket: PushTi
 }
 
 /**
- * Sends a pass's messages in service-sized batches. A batch that fails as a
- * whole marks each of its rows for retry when the failure is transient, and
- * refused when it is not.
+ * Sends one batch and records each answer. A failure of the request as a
+ * whole marks every row in it for retry when it is transient, and refused
+ * when it is not.
+ *
+ * @param batch - Planned messages, at most one service batch.
+ * @param provider - Delivery service.
+ * @param outcome - The pass's running outcome.
+ * @returns True when the service refused the request as a whole, for good.
+ */
+async function sendBatch(batch: PlannedPush[], provider: PushProvider, outcome: SendOutcome): Promise<boolean> {
+  try {
+    const tickets = await provider.send(batch.map((planned) => planned.message));
+    batch.forEach((planned, index) => recordTicket(outcome, planned, tickets[index]));
+    return false;
+  } catch (error) {
+    const transient = !(error instanceof PushTransportError) || error.retryable;
+    const reason = error instanceof Error ? error.message : String(error);
+    logEvent(transient ? "warn" : "error", "push batch failed", { provider: provider.name, size: batch.length, reason });
+    for (const planned of batch) {
+      if (transient) outcome.retry.set(planned.notificationId, reason);
+      else outcome.refused.add(planned.notificationId);
+    }
+    return !transient;
+  }
+}
+
+/**
+ * Sends a pass's messages in service-sized batches.
+ *
+ * A batch the service refuses as a whole, for good, is sent again one
+ * message at a time. One bad message (a token from another Expo project,
+ * which the service will not mix into one request) must not keep the other
+ * people in its batch from their pushes; alone, only it is refused.
  *
  * @param outgoing - Planned messages.
  * @param provider - Delivery service.
@@ -124,24 +161,17 @@ async function sendAll(outgoing: PlannedPush[], provider: PushProvider): Promise
     retry: new Map(),
     refused: new Set(),
     accepted: new Set(),
+    deliveredByRow: new Map(),
     tickets: [],
     sentDeviceIds: [],
-    deadDeviceIds: [],
+    deadDevices: [],
   };
   for (let start = 0; start < outgoing.length; start += PUSH_BATCH_SIZE) {
     const batch = outgoing.slice(start, start + PUSH_BATCH_SIZE);
-    try {
-      const tickets = await provider.send(batch.map((planned) => planned.message));
-      batch.forEach((planned, index) => recordTicket(outcome, planned, tickets[index]));
-    } catch (error) {
-      const transient = !(error instanceof PushTransportError) || error.retryable;
-      const reason = error instanceof Error ? error.message : String(error);
-      logEvent(transient ? "warn" : "error", "push batch failed", { provider: provider.name, size: batch.length, reason });
-      for (const planned of batch) {
-        if (transient) outcome.retry.set(planned.notificationId, reason);
-        else outcome.refused.add(planned.notificationId);
-      }
-    }
+    const refusedWhole = await sendBatch(batch, provider, outcome);
+    if (!refusedWhole || batch.length === 1) continue;
+    for (const planned of batch) outcome.refused.delete(planned.notificationId);
+    for (const planned of batch) await sendBatch([planned], provider, outcome);
   }
   return outcome;
 }
@@ -153,8 +183,9 @@ async function sendAll(outgoing: PlannedPush[], provider: PushProvider): Promise
  * held open across the service and a crash leaves them to be claimed again.
  * A row is finished once the service accepted it for every phone (or for some
  * and refused the rest for good); otherwise it is rescheduled with backoff
- * until it runs out of attempts or time. A repeat send is harmless: its
- * collapse id replaces the first banner.
+ * until it runs out of attempts or time. A retry goes only to the phones
+ * that did not take it yet (the row keeps the list), since a collapse id
+ * does not replace a banner already shown.
  *
  * @param provider - Delivery service; the configured one by default.
  * @param nowMs - The pass's clock, for tests.
@@ -185,7 +216,7 @@ export async function drainPushOutbox(
   const outcome = await sendAll(plan.outgoing, provider);
   await insertPushTickets(outcome.tickets);
   await markPushDevicesSent([...new Set(outcome.sentDeviceIds)]);
-  await deletePushDevicesById([...new Set(outcome.deadDeviceIds)]);
+  await deletePushDevicesHoldingTokens(outcome.deadDevices);
 
   const finished = [...plan.skipped, ...plan.expired];
   const retries: PushRetry[] = [];
@@ -210,6 +241,7 @@ export async function drainPushOutbox(
         notificationId: claimedRow.notification_id,
         delaySeconds: delay,
         error: retryError.slice(0, PUSH_LAST_ERROR_MAX_LENGTH),
+        deliveredDeviceIds: outcome.deliveredByRow.get(claimedRow.notification_id) ?? [],
       });
       report.retried += 1;
     }

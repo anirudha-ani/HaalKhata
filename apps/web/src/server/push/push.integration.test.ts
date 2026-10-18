@@ -222,6 +222,50 @@ describe.skipIf(!reachable)("push notifications against Postgres", () => {
     expect(stamped.rows[0].last_sent_at).not.toBeNull();
   });
 
+  it("retries only the phone that failed, and a stale dead report keeps a re-registered phone", async () => {
+    const phone = await bobaRegistersPhone();
+    const { rows } = await database.query(`SELECT token_version FROM users WHERE id = $1`, [BOBA_ID]);
+    await registerDevice(BOBA_ID, rows[0].token_version, {
+      expoPushToken: "ExponentPushToken[bobaipadbobaipadbobaip]",
+      installationId: "install-boba-ipad",
+      platform: "ios",
+      label: "iPad",
+      appVersion: "1.1.0",
+    });
+    await aniAddsDinner();
+    const flaky: PushProvider = {
+      name: "flaky",
+      async send(messages) {
+        return messages.map((message) =>
+          message.to === BOBA_TOKEN
+            ? { status: "ok" as const, id: "ticket-phone" }
+            : { status: "error" as const, message: "slow down", details: { error: "MessageRateExceeded" } },
+        );
+      },
+      async receipts() {
+        return {};
+      },
+    };
+    expect(await drainPushOutbox(flaky)).toMatchObject({ retried: 1 });
+    expect((await database.query(`SELECT delivered_device_ids FROM push_outbox`)).rows).toEqual([
+      { delivered_device_ids: [phone.id] },
+    ]);
+    expect((await database.query(`SELECT expo_token FROM push_tickets`)).rows).toEqual([{ expo_token: BOBA_TOKEN }]);
+
+    // The phone reinstalls and registers a new token under the same row; the
+    // old token's late "not registered" must not remove it.
+    await registerDevice(BOBA_ID, rows[0].token_version, {
+      expoPushToken: "ExponentPushToken[bobanewtokenbobanewtok]",
+      installationId: "install-boba-phone",
+      platform: "ios",
+      label: "iPhone 17",
+      appVersion: "1.1.0",
+    });
+    const { deletePushDevicesHoldingTokens } = await import("@/server/push/repo/pushDevices.repo");
+    await deletePushDevicesHoldingTokens([{ deviceId: phone.id, expoToken: BOBA_TOKEN }]);
+    expect((await database.query(`SELECT 1 FROM push_devices WHERE id = $1`, [phone.id])).rowCount).toBe(1);
+  });
+
   it("never lets two workers claim the same row, and reclaims a lapsed lease", async () => {
     await aniAddsDinner();
     await setSimplifyDebts(ANI_ID, { groupId: GROUP, simplify: true });

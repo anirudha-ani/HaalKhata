@@ -182,13 +182,21 @@ export async function deletePushDevice(userId: string, deviceId: string): Promis
 }
 
 /**
- * Removes phones the delivery service says no longer have the app.
+ * Removes phones whose token the delivery service reported dead, but only
+ * while each still holds that token. A phone that registered a new token
+ * since (a reinstall, a rotation) keeps its row: the report was about the
+ * old token.
  *
- * @param deviceIds - Devices to remove.
+ * @param entries - Each phone with the token the report was about.
  */
-export async function deletePushDevicesById(deviceIds: string[]): Promise<void> {
-  if (deviceIds.length === 0) return;
-  await execute(`DELETE FROM push_devices WHERE id = ANY($1::text[])`, [deviceIds]);
+export async function deletePushDevicesHoldingTokens(entries: { deviceId: string; expoToken: string }[]): Promise<void> {
+  if (entries.length === 0) return;
+  await execute(
+    `DELETE FROM push_devices device
+      USING unnest($1::text[], $2::text[]) AS dead(device_id, expo_token)
+      WHERE device.id = dead.device_id AND device.expo_token = dead.expo_token`,
+    [entries.map((entry) => entry.deviceId), entries.map((entry) => entry.expoToken)],
+  );
 }
 
 /**

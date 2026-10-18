@@ -9,7 +9,7 @@ const repo = vi.hoisted(() => ({
   completePushes: vi.fn(),
   reschedulePushes: vi.fn(),
   deleteDeadPushDevicesForUsers: vi.fn(),
-  deletePushDevicesById: vi.fn(),
+  deletePushDevicesHoldingTokens: vi.fn(),
   listLivePushDevicesForUsers: vi.fn(),
   markPushDevicesSent: vi.fn(),
   listPushPreferences: vi.fn(),
@@ -25,7 +25,7 @@ vi.mock("@/server/push/repo/pushOutbox.repo", () => ({
 }));
 vi.mock("@/server/push/repo/pushDevices.repo", () => ({
   deleteDeadPushDevicesForUsers: repo.deleteDeadPushDevicesForUsers,
-  deletePushDevicesById: repo.deletePushDevicesById,
+  deletePushDevicesHoldingTokens: repo.deletePushDevicesHoldingTokens,
   listLivePushDevicesForUsers: repo.listLivePushDevicesForUsers,
   markPushDevicesSent: repo.markPushDevicesSent,
 }));
@@ -44,9 +44,10 @@ const CLOCK_MS = Date.parse("2026-10-16T12:00:00.000Z");
  *
  * @param identifier - Notification id.
  * @param attempts - Claims so far.
+ * @param delivered - Phones an earlier attempt reached.
  * @returns The row.
  */
-function claimed(identifier: string, attempts = 1): ClaimedPushRow {
+function claimed(identifier: string, attempts = 1, delivered: string[] = []): ClaimedPushRow {
   return {
     notification_id: identifier,
     user_id: "user-b",
@@ -59,6 +60,7 @@ function claimed(identifier: string, attempts = 1): ClaimedPushRow {
     actor_id: "user-a",
     expense_group_id: "grp-1",
     recent_from_actor: 1,
+    delivered_device_ids: delivered,
   };
 }
 
@@ -122,7 +124,9 @@ describe("drainPushOutbox", () => {
     const report = await drainPushOutbox(service, CLOCK_MS);
     expect(service.send).toHaveBeenCalledOnce();
     expect(repo.deleteDeadPushDevicesForUsers).toHaveBeenCalledWith(["user-b"]);
-    expect(repo.insertPushTickets).toHaveBeenCalledWith([{ ticketId: "ticket-1", deviceId: "dev-1" }]);
+    expect(repo.insertPushTickets).toHaveBeenCalledWith([
+      { ticketId: "ticket-1", deviceId: "dev-1", expoToken: "ExponentPushToken[dev-1]" },
+    ]);
     expect(repo.markPushDevicesSent).toHaveBeenCalledWith(["dev-1"]);
     expect(repo.completePushes).toHaveBeenCalledWith(["note-1"]);
     expect(repo.reschedulePushes).toHaveBeenCalledWith([]);
@@ -134,7 +138,9 @@ describe("drainPushOutbox", () => {
       { status: "error", message: "gone", details: { error: "DeviceNotRegistered" } },
     ]);
     await drainPushOutbox(service, CLOCK_MS);
-    expect(repo.deletePushDevicesById).toHaveBeenCalledWith(["dev-1"]);
+    expect(repo.deletePushDevicesHoldingTokens).toHaveBeenCalledWith([
+      { deviceId: "dev-1", expoToken: "ExponentPushToken[dev-1]" },
+    ]);
     expect(repo.completePushes).toHaveBeenCalledWith(["note-1"]);
     expect(repo.reschedulePushes).toHaveBeenCalledWith([]);
   });
@@ -145,7 +151,7 @@ describe("drainPushOutbox", () => {
     ]);
     const report = await drainPushOutbox(service, CLOCK_MS);
     expect(repo.reschedulePushes).toHaveBeenCalledWith([
-      { notificationId: "note-1", delaySeconds: 30, error: "MessageRateExceeded: slow down" },
+      { notificationId: "note-1", delaySeconds: 30, error: "MessageRateExceeded: slow down", deliveredDeviceIds: [] },
     ]);
     expect(repo.completePushes).toHaveBeenCalledWith([]);
     expect(report.retried).toBe(1);
@@ -172,6 +178,42 @@ describe("drainPushOutbox", () => {
     const report = await drainPushOutbox(provider(new PushTransportError("expo answered 400", false)), CLOCK_MS);
     expect(repo.completePushes).toHaveBeenCalledWith(["note-1"]);
     expect(report.dropped).toBe(1);
+  });
+
+  it("sends a refused batch again one message at a time, so one bad message costs only itself", async () => {
+    repo.claimDuePushes.mockResolvedValue([claimed("note-1"), claimed("note-2")]);
+    const service = provider([]);
+    service.send
+      .mockRejectedValueOnce(new PushTransportError("expo answered 400 PUSH_TOO_MANY_EXPERIENCE_IDS", false))
+      .mockResolvedValueOnce([{ status: "ok", id: "ticket-1" }])
+      .mockRejectedValueOnce(new PushTransportError("expo answered 400", false));
+    const report = await drainPushOutbox(service, CLOCK_MS);
+    expect(service.send).toHaveBeenCalledTimes(3);
+    expect(repo.insertPushTickets).toHaveBeenCalledWith([
+      { ticketId: "ticket-1", deviceId: "dev-1", expoToken: "ExponentPushToken[dev-1]" },
+    ]);
+    expect(report).toMatchObject({ sent: 1, dropped: 1 });
+  });
+
+  it("retries only the phone that failed, remembering the one already reached", async () => {
+    repo.listLivePushDevicesForUsers.mockResolvedValue([phone("dev-1"), phone("dev-2")]);
+    const service = provider([
+      { status: "ok", id: "ticket-1" },
+      { status: "error", message: "slow down", details: { error: "MessageRateExceeded" } },
+    ]);
+    await drainPushOutbox(service, CLOCK_MS);
+    expect(repo.reschedulePushes).toHaveBeenCalledWith([
+      expect.objectContaining({ notificationId: "note-1", deliveredDeviceIds: ["dev-1"] }),
+    ]);
+  });
+
+  it("skips phones an earlier attempt reached when the row comes back", async () => {
+    repo.claimDuePushes.mockResolvedValue([claimed("note-1", 2, ["dev-1"])]);
+    repo.listLivePushDevicesForUsers.mockResolvedValue([phone("dev-1"), phone("dev-2")]);
+    const service = provider([{ status: "ok", id: "ticket-2" }]);
+    await drainPushOutbox(service, CLOCK_MS);
+    expect(service.send).toHaveBeenCalledWith([expect.objectContaining({ to: "ExponentPushToken[dev-2]" })]);
+    expect(repo.completePushes).toHaveBeenCalledWith(["note-1"]);
   });
 
   it("gives up once the attempts run out", async () => {

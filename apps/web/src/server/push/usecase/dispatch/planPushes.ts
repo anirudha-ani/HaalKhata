@@ -29,6 +29,8 @@ export interface PushPlanInput {
 export interface PlannedPush {
   notificationId: string;
   deviceId: string;
+  /** The token the message goes to, recorded with its ticket. */
+  expoToken: string;
   message: PushMessage;
 }
 
@@ -54,7 +56,10 @@ export function isExpired(queuedAt: string, nowMs: number): boolean {
 }
 
 /**
- * Decides, for each claimed row, whether and where it is sent.
+ * Decides, for each claimed row, whether and where it is sent. A retried
+ * row goes only to the phones an earlier attempt did not reach: a second
+ * copy on a phone that already showed the first is a duplicate banner, since
+ * a collapse id replaces only a notification still waiting to be shown.
  *
  * @param input - The claimed rows and what is known about their recipients.
  * @returns Messages to send and rows to finish without sending.
@@ -67,7 +72,8 @@ export function planPushes(input: PushPlanInput): PushPlan {
       continue;
     }
     const preferences = input.preferencesByUser.get(claimedRow.user_id) ?? DEFAULT_PUSH_PREFERENCES;
-    const devices = input.devicesByUser.get(claimedRow.user_id) ?? [];
+    const delivered = new Set(claimedRow.delivered_device_ids);
+    const devices = (input.devicesByUser.get(claimedRow.user_id) ?? []).filter((device) => !delivered.has(device.id));
     if (
       !shouldPushKind(claimedRow.type, preferences) ||
       claimedRow.recent_from_actor > PUSH_PAIR_CAP ||
@@ -90,6 +96,7 @@ export function planPushes(input: PushPlanInput): PushPlan {
       plan.outgoing.push({
         notificationId: claimedRow.notification_id,
         deviceId: device.id,
+        expoToken: device.expo_token,
         message: buildPushMessage(content, claimedRow.user_id, device.expo_token, unread),
       });
     }

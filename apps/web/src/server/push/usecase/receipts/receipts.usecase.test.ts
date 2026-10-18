@@ -3,7 +3,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const repo = vi.hoisted(() => ({
-  deletePushDevicesById: vi.fn(),
+  deletePushDevicesHoldingTokens: vi.fn(),
   deleteStalePushDevices: vi.fn(),
   deleteExpiredPushTickets: vi.fn(),
   deletePushTickets: vi.fn(),
@@ -12,7 +12,7 @@ const repo = vi.hoisted(() => ({
 }));
 
 vi.mock("@/server/push/repo/pushDevices.repo", () => ({
-  deletePushDevicesById: repo.deletePushDevicesById,
+  deletePushDevicesHoldingTokens: repo.deletePushDevicesHoldingTokens,
   deleteStalePushDevices: repo.deleteStalePushDevices,
 }));
 vi.mock("@/server/push/repo/pushTickets.repo", () => ({
@@ -39,10 +39,10 @@ function provider(receipts: Record<string, PushReceipt>): PushProvider {
 beforeEach(() => {
   vi.clearAllMocks();
   repo.listPushTicketsDue.mockResolvedValue([
-    { ticket_id: "t-ok", device_id: "dev-1", created_at: "" },
-    { ticket_id: "t-gone", device_id: "dev-2", created_at: "" },
-    { ticket_id: "t-error", device_id: "dev-3", created_at: "" },
-    { ticket_id: "t-pending", device_id: "dev-4", created_at: "" },
+    { ticket_id: "t-ok", device_id: "dev-1", expo_token: "ExponentPushToken[one]", created_at: "" },
+    { ticket_id: "t-gone", device_id: "dev-2", expo_token: "ExponentPushToken[two]", created_at: "" },
+    { ticket_id: "t-error", device_id: "dev-3", expo_token: "ExponentPushToken[three]", created_at: "" },
+    { ticket_id: "t-pending", device_id: "dev-4", expo_token: "ExponentPushToken[four]", created_at: "" },
   ]);
 });
 
@@ -54,7 +54,7 @@ describe("checkPushReceipts", () => {
     expect(repo.deleteStalePushDevices).toHaveBeenCalledWith(PUSH_DEVICE_STALE_DAYS);
   });
 
-  it("deletes a phone whose receipt says the app is gone, and keeps unready tickets", async () => {
+  it("deletes a phone whose receipt says the app is gone, if it still holds that token, and keeps unready tickets", async () => {
     const report = await checkPushReceipts(
       provider({
         "t-ok": { status: "ok" },
@@ -62,9 +62,20 @@ describe("checkPushReceipts", () => {
         "t-error": { status: "error", message: "apns hiccup", details: { error: "ProviderError" } },
       }),
     );
-    expect(repo.deletePushDevicesById).toHaveBeenCalledWith(["dev-2"]);
+    expect(repo.deletePushDevicesHoldingTokens).toHaveBeenCalledWith([
+      { deviceId: "dev-2", expoToken: "ExponentPushToken[two]" },
+    ]);
     expect(repo.deletePushTickets).toHaveBeenCalledWith(["t-ok", "t-gone", "t-error"]);
     expect(report).toEqual({ checked: 3, removedDevices: 1, failed: 1 });
     expect(repo.logEvent).toHaveBeenCalledWith("warn", "push receipt error", expect.objectContaining({ ticketId: "t-error" }));
+  });
+
+  it("removes nothing for a dead receipt whose token was never recorded", async () => {
+    repo.listPushTicketsDue.mockResolvedValue([{ ticket_id: "t-old", device_id: "dev-5", expo_token: null, created_at: "" }]);
+    const report = await checkPushReceipts(
+      provider({ "t-old": { status: "error", message: "gone", details: { error: "DeviceNotRegistered" } } }),
+    );
+    expect(repo.deletePushDevicesHoldingTokens).toHaveBeenCalledWith([]);
+    expect(report.removedDevices).toBe(0);
   });
 });

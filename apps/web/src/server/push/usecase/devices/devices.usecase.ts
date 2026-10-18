@@ -18,7 +18,7 @@ import {
 } from "@/server/push/push.constants";
 import {
   deletePushDevice,
-  deletePushDevicesById,
+  deletePushDevicesHoldingTokens,
   evictOldestPushDevices,
   findLivePushDevice,
   listLivePushDevices,
@@ -188,12 +188,12 @@ export async function sendTestPush(
   }
   const [ticket] = tickets;
   if (ticket.status === "ok") {
-    await insertPushTickets([{ ticketId: ticket.id, deviceId: device.id }]);
+    await insertPushTickets([{ ticketId: ticket.id, deviceId: device.id, expoToken: device.expo_token }]);
     await markPushDevicesSent([device.id]);
     return;
   }
   if (ticket.details?.error === DEVICE_NOT_REGISTERED) {
-    await deletePushDevicesById([device.id]);
+    await deletePushDevicesHoldingTokens([{ deviceId: device.id, expoToken: device.expo_token }]);
     throw new UsecaseError(
       "failed_precondition",
       "That phone isn't reachable any more. Open HaalKhata on it to turn notifications back on.",

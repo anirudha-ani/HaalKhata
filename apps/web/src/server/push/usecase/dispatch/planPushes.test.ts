@@ -28,6 +28,7 @@ function claimed(overrides: Partial<ClaimedPushRow> = {}): ClaimedPushRow {
     actor_id: "user-a",
     expense_group_id: "grp-1",
     recent_from_actor: 1,
+    delivered_device_ids: [],
     ...overrides,
   };
 }
@@ -78,6 +79,15 @@ describe("planPushes", () => {
     expect(plan.outgoing.map((planned) => planned.deviceId)).toEqual(["dev-1", "dev-2"]);
     expect(plan.outgoing.every((planned) => planned.message.badge === 3)).toBe(true);
     expect(plan.skipped).toEqual([]);
+  });
+
+  it("sends a retried row only to the phones it has not reached", () => {
+    const devices = new Map([["user-b", [phone("dev-1"), phone("dev-2")]]]);
+    const retried = planPushes(input({ rows: [claimed({ delivered_device_ids: ["dev-1"] })], devicesByUser: devices }));
+    expect(retried.outgoing.map((planned) => planned.deviceId)).toEqual(["dev-2"]);
+    const reachedAll = planPushes(input({ rows: [claimed({ delivered_device_ids: ["dev-1", "dev-2"] })], devicesByUser: devices }));
+    expect(reachedAll.outgoing).toEqual([]);
+    expect(reachedAll.skipped).toEqual(["note-1"]);
   });
 
   it("skips a row whose category the recipient switched off", () => {

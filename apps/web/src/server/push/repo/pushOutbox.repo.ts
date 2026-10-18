@@ -21,6 +21,8 @@ export interface ClaimedPushRow {
   expense_group_id: string | null;
   /** Notifications from the same actor to the same recipient in the cap window, this one included. */
   recent_from_actor: number;
+  /** Phones an earlier attempt already delivered this push to; a retry skips them. */
+  delivered_device_ids: string[];
 }
 
 /** A row the dispatcher will try again later. */
@@ -28,6 +30,8 @@ export interface PushRetry {
   notificationId: string;
   delaySeconds: number;
   error: string;
+  /** Phones this attempt delivered to, added to the row's list so the retry skips them. */
+  deliveredDeviceIds: string[];
 }
 
 /**
@@ -84,10 +88,11 @@ export async function claimDuePushes(
               next_attempt_at = now() + make_interval(secs => $2)
          FROM due
         WHERE outbox.notification_id = due.notification_id
-       RETURNING outbox.notification_id, outbox.user_id, outbox.attempts, outbox.created_at
+       RETURNING outbox.notification_id, outbox.user_id, outbox.attempts, outbox.created_at,
+                 outbox.delivered_device_ids
      )
      SELECT claimed.notification_id, claimed.user_id, claimed.attempts,
-            claimed.created_at AS queued_at,
+            claimed.created_at AS queued_at, claimed.delivered_device_ids,
             note.type, note.title, note.body, note.link, note.actor_id,
             expense.group_id AS expense_group_id,
             (SELECT count(*)::int FROM notifications earlier
@@ -97,7 +102,11 @@ export async function claimDuePushes(
                 AND earlier.created_at <= note.created_at) AS recent_from_actor
        FROM claimed
        JOIN notifications note ON note.id = claimed.notification_id
-       LEFT JOIN expenses expense ON note.link = '/expenses/' || expense.id`,
+       -- Matched on expense.id itself, so the lookup uses the primary key
+       -- ('/expenses/' is 10 characters); concatenating onto expense.id
+       -- would scan every expense on each claim.
+       LEFT JOIN expenses expense
+              ON note.link LIKE '/expenses/%' AND expense.id = substr(note.link, 11)`,
     [limit, leaseSeconds, pairWindowMinutes],
   );
 }
@@ -113,22 +122,32 @@ export async function completePushes(notificationIds: string[]): Promise<void> {
 }
 
 /**
- * Schedules rows for another attempt, each after its own delay.
+ * Schedules rows for another attempt, each after its own delay, adding the
+ * phones this attempt reached to the row's delivered list so the retry
+ * skips them.
  *
- * @param retries - Rows with their delay and the error that caused the retry.
+ * @param retries - Rows with their delay, the error that caused the retry
+ *   and the phones already delivered to.
  */
 export async function reschedulePushes(retries: PushRetry[]): Promise<void> {
   if (retries.length === 0) return;
   await execute(
     `UPDATE push_outbox outbox
         SET next_attempt_at = now() + make_interval(secs => entry.delay_seconds),
-            last_error = entry.error
-       FROM unnest($1::text[], $2::int[], $3::text[]) AS entry(notification_id, delay_seconds, error)
+            last_error = entry.error,
+            delivered_device_ids = ARRAY(
+              SELECT DISTINCT unnest(outbox.delivered_device_ids || string_to_array(entry.delivered, ','))
+            )
+       FROM unnest($1::text[], $2::int[], $3::text[], $4::text[])
+              AS entry(notification_id, delay_seconds, error, delivered)
       WHERE outbox.notification_id = entry.notification_id`,
     [
       retries.map((retry) => retry.notificationId),
       retries.map((retry) => retry.delaySeconds),
       retries.map((retry) => retry.error),
+      // One text per row: a 2-D array would need every row's list the same
+      // length. Device ids never hold a comma.
+      retries.map((retry) => retry.deliveredDeviceIds.join(",")),
     ],
   );
 }

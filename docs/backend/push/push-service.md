@@ -78,7 +78,7 @@ Phones registered under an older `token_version` are deleted at this point.
 - title and body from the bell row (a phone number is masked);
 - `badge` = the unread count;
 - `threadId` = the group or the other person;
-- `collapseId` = the notification id, so a repeat replaces the first banner;
+- `collapseId` = the notification id (it replaces a banner still waiting to be shown, not one already shown, so retries skip phones that took the push);
 - `categoryId` = the switch;
 - `data` = `{notificationId, link, recipientId}` and nothing else.
 
@@ -87,15 +87,19 @@ Phones registered under an older `token_version` are deleted at this point.
 | Answer | Action |
 | --- | --- |
 | HTTP 429, 5xx, timeout, network error, `UNAUTHORIZED` | Retry the batch |
-| Other HTTP 4xx | Drop the batch |
-| `DeviceNotRegistered` | Delete the phone |
-| `MessageRateExceeded`, `ProviderError`, `ExpoError`, `InvalidCredentials` | Retry the row |
+| Other HTTP 4xx | Send the batch again one message at a time; drop only the messages refused alone |
+| `DeviceNotRegistered` | Delete the phone, if it still holds that token |
+| `MessageRateExceeded`, `ProviderError`, `ExpoError`, `InvalidCredentials` | Retry the row, to the phones that did not take it |
 | `MessageTooBig`, `DeveloperError`, other ticket errors | Drop the message and log it |
 
 Retries wait 30 s, 2 min, 10 min, then 30 min. A row is given up after an hour.
+Each row keeps the phones it already reached (`delivered_device_ids`), and a
+retry skips them.
 
 **Receipts.** Every 5 minutes the worker reads receipts for tickets 15 minutes
-to 24 hours old. A `DeviceNotRegistered` receipt deletes the phone. The same
+to 24 hours old. A `DeviceNotRegistered` receipt deletes the phone only while
+it still holds the token the ticket was sent to (`push_tickets.expo_token`), so
+a reinstall's new registration survives the old token's report. The same
 pass deletes tickets older than a day and phones unseen for 90 days.
 
 **Waking.** The worker wakes on NOTIFY (a dedicated LISTEN connection) and on a
@@ -119,8 +123,8 @@ never calls Expo, so an Expo outage does not take the app down.
 | --- | --- |
 | `push_devices` | One row per installation: token, platform, label, `token_version`, last seen and last sent |
 | `push_preferences` | One row per person who changed a switch |
-| `push_outbox` | Committed bell rows not yet handed to Expo |
-| `push_tickets` | Accepted sends whose receipt is unread |
+| `push_outbox` | Committed bell rows not yet handed to Expo, with the phones already reached |
+| `push_tickets` | Accepted sends whose receipt is unread, with the token each went to |
 
 All four cascade from `users`. Erasure and merge clear them explicitly.
 
