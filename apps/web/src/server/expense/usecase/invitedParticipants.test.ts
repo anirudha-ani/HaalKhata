@@ -28,7 +28,7 @@ vi.mock("@/server/social/repo/friendships.repo", () => ({
   listFriendIds: vi.fn(),
 }));
 vi.mock("@/server/social/repo/activity.repo", () => ({ insertActivity: vi.fn() }));
-vi.mock("@/server/social/repo/notifications.repo", () => ({ insertNotifications: vi.fn() }));
+vi.mock("@/server/social/repo/notifications.repo", () => ({ insertNotifications: vi.fn(), insertNotificationRows: vi.fn() }));
 vi.mock("@/server/common/ledger/operations", () => ({
   beginOperation: vi.fn().mockResolvedValue({ replayOf: null }),
   finishOperation: vi.fn(),

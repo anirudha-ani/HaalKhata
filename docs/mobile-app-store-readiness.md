@@ -199,8 +199,12 @@ its numeric Apple ID and optionally set `submit.production.ios.ascAppId` in
 
 Run `eas credentials --platform ios` and select production. Let EAS create or
 use the intended distribution certificate and App Store provisioning profile.
-The profile must include Apple sign-in and Associated Domains. Regenerate an
-older profile after enabling capabilities. Configure an App Store Connect
+The profile must include Apple sign-in, Associated Domains and Push
+Notifications. Under Push Notifications, let EAS set up a push key (it creates
+the APNs `.p8` key and uploads it to Expo; the server never holds it).
+Regenerate an older profile after enabling capabilities. The server's
+`EXPO_ACCESS_TOKEN` must be in place first (see `ops/README.md`, "Push
+notifications"). Configure an App Store Connect
 submission API key through EAS; it is separate from the login `.p8` on the
 server.
 
@@ -233,11 +237,13 @@ bundling and simulator compilation do not establish provider/account behavior.
 | Apple sign-in | First login, returning login, cancellation, Hide My Email, chosen name preserved. |
 | Google sign-in | Correct iOS audience, fresh nonce, returning login, cancellation and browser errors. |
 | Sessions | Kill/reopen, normal renewal, sign out everywhere, expired/revoked session, another user after sign-out sees no old data. |
-| Onboarding | Skip optional phone; SMS success/failure; existing-number merge confirmation; currency/name editing. |
+| Welcome | Story pages swipe by hand only; Apple and Google equal size and docked in reach; iPad two columns; Reduce Motion stills the scenes ([checklist](mobile-onboarding.md#verify)). |
+| Onboarding | Every step for a new account, only the device steps on a first sign-in, nothing after an update; skip optional profile, phone and payment; SMS success/failure and AutoFill; existing-number merge confirmation; one Continue before each iOS prompt and either answer moves on ([checklist](mobile-onboarding.md#verify)). |
 | Invitations | Tap a real HTTPS group/profile link from Messages/Mail in cold and warm launches; signed-out flow resumes its pending invite. |
 | Money | Every split type, unequal cents/rounding, multiple payers, USD/EUR separately, create/edit/delete, paid/received settlements, duplicate-tap/retry behavior. |
+| Notifications | No prompt at launch; onboarding's notifications step (or, for an account signed in before it, the explainer after the first saved expense, payment or group) has one Continue button; Don't Allow leads to "Off in iOS Settings" and Open Settings. Another account's expense, comment, payment, reminder, friend request and group change each arrive and open the right screen cold and warm; the actor gets none. Badge equals the bell and clears in Activity. A switch turned off stops that kind. Sign out, Sign out everywhere and a second account on the same phone stop and clear the first account's pushes. Send a test works and reports a removed phone. See [local push notifications](local-push-notifications.md). |
 | Receipt | Camera and library; denial/cancellation; HEIC; explicit processor consent; no upload until consent; provider failure and manual entry; draft reviewed before save. |
-| Find friends | Explanation before the prompt; allow all, allow selected then Choose more contacts, deny then Open Settings; only accounts that turned on "Let people find me" appear; Send to all lists every name and the notification text before sending; a 1,000+ contact book completes ([checklist](contact-discovery.md#verify)). |
+| Find friends | Explanation before the prompt; allow all, allow selected then Choose more contacts, deny then Open Settings; accounts that turned off "Let people find me" never appear; requests go one person at a time under a line quoting the notification, with no select-all (5.1.2(v)); a 1,000+ contact book completes ([checklist](contact-discovery.md#verify)). |
 | Safety | Report a comment/profile/group/expense; see it in the private queue; block despite debt; no direct requests/reminders or blocked comments; unblock; moderator redaction/suspension. |
 | Deletion | Review owed and receivable totals in multiple currencies; Review balances opens the dashboard without deleting; reopening refreshes settled amounts and clears confirmation; failed/offline balance reads never show a false zero and still allow Delete anyway. Cancel confirmation; delete Google and Apple accounts, including private relay; Apple revoke failures leave the account intact and retryable; another account sees anonymous cents/history. |
 | Failures | Offline cold launch, flaky API, rate limiting, retry controls, long receipt parsing, no false empty balances. |
@@ -261,7 +267,9 @@ Support:        https://haalkhata.app/support
 
 Prepare App Privacy answers from actual data use: name, email/private relay,
 optional phone/payment identifiers, account ID, shared financial/expense data,
-comments, support/safety submissions, and optional receipt image processing.
+comments, support/safety submissions, optional receipt image processing, and
+push notification delivery (a device push token; notification text passes
+through Expo and Apple).
 Find friends sends contacts' phone numbers and emails for matching and discards
 them after the request, so Apple does not count them as collected; describe the
 matching in review notes and keep the privacy policy section current.

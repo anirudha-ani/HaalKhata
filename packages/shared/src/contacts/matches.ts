@@ -20,7 +20,7 @@ export interface FoundPerson {
 
 /** Found people split by the action each row offers. */
 export interface FoundPeopleGroups {
-  /** No relation yet: Add, and part of "send to all". */
+  /** No relation yet: Add. */
   requestable: FoundPerson[];
   /** They asked the caller first: Accept. */
   incoming: FoundPerson[];

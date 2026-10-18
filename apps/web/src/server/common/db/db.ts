@@ -1,6 +1,6 @@
 /** Shared Postgres access: lazy pool, one-shot startup migration, query/transaction helpers. */
 
-import { Pool, types, type PoolClient } from "pg";
+import { Client, Pool, types, type PoolClient } from "pg";
 import type { QueryResultRow } from "pg";
 import path from "node:path";
 import { runner } from "node-pg-migrate";
@@ -113,6 +113,8 @@ export function assertSafeDatabaseUrl(
 const globalCache = globalThis as unknown as {
   __haalkhataPool?: Pool;
   __haalkhataReady?: Promise<void>;
+  /** Set once this process has applied (or found applied) every migration. */
+  __haalkhataMigrated?: boolean;
 };
 
 /** Returns the process-wide connection pool, creating it on first use. */
@@ -138,6 +140,19 @@ function pool(): Pool {
 }
 
 /**
+ * Opens a connection of its own, outside the pool, for work that holds a
+ * session open indefinitely — a LISTEN subscription would otherwise pin one
+ * of the pool's twenty connections forever. The caller connects, owns and
+ * ends it.
+ *
+ * @returns An unconnected client using the same validated connection string.
+ */
+export function dedicatedClient(): Client {
+  assertSafeDatabaseUrl();
+  return new Client({ connectionString: databaseUrl(), connectionTimeoutMillis: 5_000 });
+}
+
+/**
  * Applies pending SQL migrations from ./migrations once per process
  * (node-pg-migrate, history in "pgmigrations"). The result is cached on the
  * global so subsequent calls are no-ops; a failure clears the cache so the
@@ -152,13 +167,27 @@ export function ensureMigrated(): Promise<void> {
       direction: "up",
       migrationsTable: "pgmigrations",
     })
-      .then(() => undefined)
+      .then(() => {
+        globalCache.__haalkhataMigrated = true;
+      })
       .catch((error) => {
         globalCache.__haalkhataReady = undefined;
         throw error;
       });
   }
   return globalCache.__haalkhataReady;
+}
+
+/**
+ * Whether this process has finished applying migrations, without starting
+ * them. For background work that must wait for the schema but must not be
+ * the one to migrate: migrations run on the first API request or readiness
+ * probe, never at boot.
+ *
+ * @returns True once {@link ensureMigrated} has succeeded in this process.
+ */
+export function isMigrated(): boolean {
+  return globalCache.__haalkhataMigrated === true;
 }
 
 /**

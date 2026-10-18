@@ -72,9 +72,6 @@
       [
         "expo-build-properties",
         {
-          "ios": {
-            "enableSceneSupport": true
-          },
           "android": {
             "usesCleartextTraffic": false
           }
@@ -91,10 +88,18 @@
         }
       ],
       "expo-apple-authentication",
+      "@react-native-community/datetimepicker",
       [
         "expo-contacts",
         {
           "contactsPermission": "HaalKhata checks the phone numbers and emails in your contacts to show friends who already use HaalKhata. Names stay on your phone, and your contacts are not stored."
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "color": "#b03a25",
+          "enableBackgroundRemoteNotifications": false
         }
       ]
     ],

@@ -75,7 +75,7 @@ export function FriendsScreen() {
         </View>
       </View>
 
-      {/* Asked once, where finding and being found matter. */}
+      {/* Said once, where finding and being found matter. */}
       {friendsState.me ? <ContactDiscoveryPrompt answer={friendsState.me.contactDiscovery} /> : null}
 
       {/* Confirmation of the last request sent. The sheet that took it has

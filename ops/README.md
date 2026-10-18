@@ -65,7 +65,7 @@ sudo systemctl start haalkhata-backup-failure.service
 
 ## Secrets
 
-Seven files, referenced by `docker-compose.prod.yml`. The app reads them
+Eight files, referenced by `docker-compose.prod.yml`. The app reads them
 itself through `*_FILE` variables (the Docker `_FILE` convention); nothing
 copies them into the environment.
 
@@ -77,12 +77,14 @@ copies them into the environment.
 /srv/haalkhata/secrets/twilio_api_key_secret   from a restricted Twilio Verify API key
 /srv/haalkhata/secrets/apple_private_key     original Sign in with Apple .p8
 /srv/haalkhata/secrets/apple_token_encryption_key openssl rand -hex 32 (generate once)
+/srv/haalkhata/secrets/expo_access_token       Expo access token for sending pushes
 ```
 
 Each of these (except `session_secret_previous`, which only exists for
 planned rotations) can be **GitHub-managed**: set the matching GitHub secret
 (`SESSION_SECRET`, `POSTGRES_PASSWORD`, `COMPATIBLE_AI_API_KEY`,
-`TWILIO_API_KEY_SECRET`, `APPLE_PRIVATE_KEY`, `APPLE_TOKEN_ENCRYPTION_KEY`)
+`TWILIO_API_KEY_SECRET`, `APPLE_PRIVATE_KEY`, `APPLE_TOKEN_ENCRYPTION_KEY`,
+`EXPO_ACCESS_TOKEN`)
 and every deploy writes the file over the same
 forced-command channel as the `.env` config. Left unset in GitHub, the
 value pipes as empty and the deploy steps leave the server's file untouched,
@@ -309,6 +311,33 @@ encryption. Browser redirects carry one-use state; the initiating client must
 prove possession of its private verifier to receive a session. Local native
 API calls continue to carry bearer sessions, and the web receives HttpOnly
 cookies. No Apple private key or refresh token reaches a client bundle.
+
+## Push notifications
+
+The server sends pushes through the Expo Push Service; Expo holds the Apple
+push key, so this server holds one secret, `expo_access_token`. Readiness
+fails in production without it, and the compose dry-run refuses a release
+whose secret file is missing — so set it up **before** publishing the
+release that introduces it:
+
+1. On expo.dev, on the access tokens page (Account settings → Access tokens,
+   expo.dev/settings/access-tokens), turn on **Enhanced Security for Push
+   Notifications**. From then on Expo refuses a send
+   without an access token, so a leaked phone token is useless to anyone
+   else.
+2. Create an access token (Account settings → Access tokens; a robot user
+   keeps it independent of a person) and store it as the GitHub secret
+   `EXPO_ACCESS_TOKEN`, or write it to
+   `/srv/haalkhata/secrets/expo_access_token` by hand.
+3. From `apps/mobile`, run `eas credentials -p ios`, choose production, and
+   set up a push key (EAS creates the APNs `.p8` key in the Apple account and
+   uploads it to Expo). Regenerate the App Store profile so it carries the
+   Push Notifications capability, then build and submit a new binary.
+
+To rotate the token: create a new one, update the GitHub secret, deploy, then
+revoke the old token on expo.dev. A failed send logs `push credentials refused`
+or `push batch failed` and is retried for up to an hour; the in-app bell is
+unaffected. See `docs/local-push-notifications.md` for the local flow.
 
 ## Mobile public endpoints
 

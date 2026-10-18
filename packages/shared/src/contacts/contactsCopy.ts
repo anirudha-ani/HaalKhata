@@ -17,12 +17,25 @@ export function friendRequestTitle(senderName: string): string {
   return `${senderName} sent you a friend request`;
 }
 
+/**
+ * The line above the people found, saying what Add sends and quoting the
+ * notification the person receives. App Review asks that the sender see how
+ * a message to someone found through contacts will appear before it goes
+ * (5.1.2(v)); each Add sends one request, so the line covers every row.
+ *
+ * @param senderName - The caller's display name.
+ * @returns The line.
+ */
+export function addRequestPreview(senderName: string): string {
+  return `Add sends one friend request. They see “${friendRequestTitle(senderName)}”.`;
+}
+
 /** Shown before the operating system's contacts prompt. */
 export const CONTACTS_EXPLANATION = {
   title: "Find friends from your contacts",
   body:
     "HaalKhata checks the phone numbers and emails in your contacts to show who already uses it. " +
-    "Only people who chose to be findable appear. Names stay on this phone, and nothing is stored.",
+    "People who turned off being found never appear. Names stay on this phone, and nothing is stored.",
   action: "Continue",
 } as const;
 
@@ -57,13 +70,6 @@ export const FIND_FRIENDS_COPY = {
   shareLink: "Share my invite link",
 } as const;
 
-/** The sheet that confirms "send to all" by listing everyone it would ask. */
-export const SEND_ALL_SHEET = {
-  previewLabel: "Each person gets this notification:",
-  confirm: "Send requests",
-  cancel: "Cancel",
-} as const;
-
 /** The discoverability setting, in onboarding and under Account. */
 export const CONTACT_DISCOVERY_SETTING = {
   label: "Let people find me from their contacts",
@@ -74,14 +80,18 @@ export const CONTACT_DISCOVERY_SETTING = {
   hiddenNotice: "People can no longer find you from their contacts.",
 } as const;
 
-/** The one-time question for accounts that never answered. */
+/**
+ * The one-time notice for accounts that never answered. Being findable is
+ * the default, so this says what is already true and offers the way out at
+ * the same size as the way to keep it.
+ */
 export const CONTACT_DISCOVERY_PROMPT = {
-  title: "Can friends find you?",
+  title: "Friends can find you",
   body: CONTACT_DISCOVERY_SETTING.detail,
-  allow: "Let friends find me",
-  decline: "Not now",
+  allow: "Keep it on",
+  decline: "Turn off",
   allowedNotice:
-    "Friends who have your number or email saved can now find you. You can change this under Account.",
+    "Friends who have your number or email saved can find you. You can change this under Account.",
   declinedNotice:
     "People won't find you from their contacts. You can change this under Account.",
 } as const;
@@ -123,36 +133,6 @@ export function relationAction(relation: ContactRelation): string {
  */
 function grouped(count: number): string {
   return count.toLocaleString("en-US");
-}
-
-/**
- * Label of the button that sends a request to everyone not yet asked.
- *
- * @param count - People it would ask.
- * @returns The button label.
- */
-export function sendAllLabel(count: number): string {
-  return `Send to all ${grouped(count)}`;
-}
-
-/**
- * Heading of the confirm sheet, which lists every name before anything is sent.
- *
- * @param count - People the send would ask.
- * @returns The sheet's question.
- */
-export function sendAllQuestion(count: number): string {
-  return count === 1 ? "Send 1 friend request?" : `Send ${grouped(count)} friend requests?`;
-}
-
-/**
- * Confirmation once "send to all" has gone through.
- *
- * @param count - Requests sent.
- * @returns The line shown above the list.
- */
-export function requestsSentNotice(count: number): string {
-  return count === 1 ? "Friend request sent." : `${grouped(count)} friend requests sent.`;
 }
 
 /**

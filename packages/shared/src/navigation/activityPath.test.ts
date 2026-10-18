@@ -1,7 +1,7 @@
 /** Tests for fail-closed activity-feed navigation paths. */
 
 import { describe, expect, it } from "vitest";
-import { safeActivityPath } from "./activityPath";
+import { safeActivityPath, safeNotificationPath } from "./activityPath";
 
 describe("safeActivityPath", () => {
   it.each([
@@ -32,4 +32,20 @@ describe("safeActivityPath", () => {
   it("supports a known-safe caller fallback", () => {
     expect(safeActivityPath("https://attacker.example", "/friends")).toBe("/friends");
   });
+});
+
+describe("safeNotificationPath", () => {
+  it.each(["/account", "/activity", "/friends", "/expenses/exp-1", "/groups/group_123", "/friends/user-123"])(
+    "accepts the allowlisted push destination %s",
+    (path) => {
+      expect(safeNotificationPath(path)).toBe(path);
+    },
+  );
+
+  it.each([undefined, null, 42, {}, "/account/../admin", "/account?next=x", "https://attacker.example/account"])(
+    "sends the untrusted value %s to the feed",
+    (value) => {
+      expect(safeNotificationPath(value)).toBe("/activity");
+    },
+  );
 });

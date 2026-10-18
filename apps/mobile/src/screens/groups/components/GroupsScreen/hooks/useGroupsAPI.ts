@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { groupClient, socialClient } from "@/lib/api/connect";
 import { queryKeys } from "@haalkhata/shared/api/queryKeys";
 import { usePullToRefresh } from "@/lib/hooks/usePullToRefresh";
+import { offerPushExplainer } from "@/lib/push/pushStore";
 
 /**
  * Wraps every server call the groups screen makes: the group-list query, the
@@ -32,6 +33,7 @@ export function useGroupsAPI() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.groups });
       queryClient.invalidateQueries({ queryKey: queryKeys.friends });
+      void offerPushExplainer();
     },
   });
   const pull = usePullToRefresh(() => groups.refetch());

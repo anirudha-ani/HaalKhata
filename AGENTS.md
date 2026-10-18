@@ -267,7 +267,7 @@ means running all three sets — it is compiled into both apps.
 
 ## Mobile app (apps/mobile)
 
-Expo SDK 57 + expo-router. The same conventions apply — thin route files in
+Expo SDK 58 + expo-router. The same conventions apply — thin route files in
 `app/` mount screen orchestrators from `src/screens/<route>/components/
 <XScreen>/`, all server calls live in `useXAPI` hooks composed by `useX`,
 constants sit in route-scoped `constants/` folders, pure helpers in `utils/`
@@ -277,7 +277,9 @@ with colocated tests. Mobile-specific rules:
   exists on mobile — a feature that lands on one app and is "tracked" for
   the other is a gap, not a plan (docs/plan.txt §27). Pure logic both apps
   need (filters, wording, formatting, phone helpers) goes in
-  `packages/shared` with its tests, never written twice.
+  `packages/shared` with its tests, never written twice. The only
+  native-only RPCs are `LogInWithApple` and `RegisterDevice` (a browser
+  has no Apple credential or Expo push token); `pnpm test:parity` names both.
 - **Auth is bearer-token**, not cookies: LogInWithGoogle (production) or
   LogIn/SignUp (development only) return `token`, stored
   in SecureStore (`src/lib/api/session.ts`) and attached by a transport
@@ -291,6 +293,17 @@ with colocated tests. Mobile-specific rules:
   gate redirects to /login. The server's CSRF guard exempts bearer clients.
 - **Design tokens** come from `src/lib/theme/theme.ts` (the web's globals.css
   palette). No inline hex colors in screens.
+- **Motion and haptics go through `src/lib/motion/`.** Springs and durations
+  are tokens in `motion.constants.ts`; entrances and step transitions are the
+  prebuilt builders in `entrances.ts`; follow Reduce Motion with
+  `useReduceMotion` (a fade, never a jump) and animate on the UI thread.
+  Haptics mark outcomes only (`haptics.ts`). Vitest aliases Reanimated and
+  expo-haptics to stand-ins in `src/lib/testing/`.
+- **Onboarding asks once, after saying why.** The screen before an iOS
+  permission alert has one button, Continue; the alert is where people say
+  no (App Review 5.1.1(iv)). Device steps (contacts, notifications) run after
+  a sign-in on each phone, never on an app update. See
+  `docs/mobile-onboarding.md`.
 - **Query keys and money helpers are imported, not copied.** They live in
   `@haalkhata/shared` and are consumed identically by both apps. These were
   duplicated files kept in sync by hand until 2026-07-26 — do not reintroduce
@@ -383,6 +396,13 @@ with colocated tests. Mobile-specific rules:
   when the app would read it as the money owed: `appPaymentLink` checks the
   app's currencies, the method's currency and the decimals, and returns the
   line shown with the link. Never build such a link by hand.
+- **Every bell row is a push.** `insertNotifications` queues a `push_outbox`
+  row on the caller's transaction, and the push worker (started by
+  `src/instrumentation.ts`) sends it through Expo. Never call the push
+  provider from a usecase. A new notification kind needs a category in
+  `packages/shared/src/notifications/categories.ts` and the DB CHECK; until
+  it has one it is never pushed. A push carries only `notificationId`,
+  `link` and `recipientId` as data. See `docs/backend/push/push-service.md`.
 - **Limiters are process-local** (`rateLimit.ts`, `phoneRateLimit.ts`): fine
   for one container, wrong for two replicas — see `docs/plan.txt` §28.
 

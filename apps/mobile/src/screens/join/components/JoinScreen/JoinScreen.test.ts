@@ -16,6 +16,7 @@ import { JoinScreen } from "./JoinScreen";
 const navigation = vi.hoisted(() => ({ replace: vi.fn() }));
 vi.mock("expo-router", () => ({ useRouter: () => navigation }));
 vi.mock("react-native", () => ({
+  AccessibilityInfo: { isReduceMotionEnabled: async () => false, addEventListener: () => ({ remove: () => undefined }) },
   useWindowDimensions: () => ({ width: 390, height: 844, fontScale: 1 }),
   Platform: { select: (options: { default: string }) => options.default },
   StyleSheet: { create: (styles: unknown) => styles },

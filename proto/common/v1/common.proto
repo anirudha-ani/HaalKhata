@@ -50,8 +50,9 @@ message User {
 }
 
 // The person's answer to "let people find me from their contacts".
+// Findable is the default: only OFF hides an account.
 enum ContactDiscovery {
-  // Never asked. Treated as not findable; clients ask once.
+  // Never answered. Findable, like ON; clients say so once and offer OFF.
   CONTACT_DISCOVERY_UNSPECIFIED = 0;
   CONTACT_DISCOVERY_ON = 1;
   CONTACT_DISCOVERY_OFF = 2;

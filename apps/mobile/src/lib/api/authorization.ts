@@ -17,6 +17,13 @@ import { clearSession, sessionRevision, sessionToken, setSessionToken } from "./
  * returns the user to the login screen.
  */
 export const authorization: Interceptor = (next) => async (request) => {
+  // A call that brings its own credentials (finishing an earlier sign-out
+  // with that session's token) is not about the current session: nothing is
+  // attached, renewed or cleared for it.
+  if (request.header.has("Authorization")) {
+    request.header.set(SESSION_TRANSPORT_HEADER, BEARER_TRANSPORT);
+    return next(request);
+  }
   const token = sessionToken();
   const revision = sessionRevision();
   if (token) request.header.set("Authorization", `Bearer ${token}`);

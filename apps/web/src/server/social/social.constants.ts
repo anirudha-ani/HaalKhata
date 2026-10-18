@@ -44,8 +44,11 @@ export const MAX_CONTACT_IDENTIFIERS_PER_DAY = 5000;
  */
 export const MAX_CONTACT_IDENTIFIER_LENGTH = 254;
 
-/** Most accounts one SendFriendRequests call may ask; the found list is shown whole. */
-export const MAX_FRIEND_REQUESTS_PER_SEND = 50;
+/**
+ * Most accounts one SendFriendRequests call may ask. The apps send one per
+ * call (each Add); this bounds what the API accepts from anything else.
+ */
+export const MAX_FRIEND_REQUESTS_PER_SEND = 10;
 
 /** Events per activity page when the client does not ask for a size. */
 export const ACTIVITY_PAGE_SIZE = 25;

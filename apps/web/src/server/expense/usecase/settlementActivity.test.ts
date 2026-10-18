@@ -53,7 +53,7 @@ vi.mock("@/server/social/repo/activity.repo", () => ({
   insertActivity: vi.fn(),
   listActivityForExpense: vi.fn(),
 }));
-vi.mock("@/server/social/repo/notifications.repo", () => ({ insertNotifications: vi.fn() }));
+vi.mock("@/server/social/repo/notifications.repo", () => ({ insertNotifications: vi.fn(), insertNotificationRows: vi.fn() }));
 vi.mock("./balance.usecase", () => ({
   amountOwed: vi.fn(),
   groupCancelsOut: vi.fn(),

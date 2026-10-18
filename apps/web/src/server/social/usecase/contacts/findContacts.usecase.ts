@@ -1,6 +1,6 @@
 /**
  * FindContacts: which phone numbers and emails from the caller's own address
- * book belong to accounts that chose to be findable.
+ * book belong to accounts that are findable (the default, until turned off).
  *
  * Nothing the caller sends is stored or logged. The identifiers live in this
  * call's memory and in the match query's parameters; the only write is the
@@ -155,10 +155,11 @@ function foundContacts(
 }
 
 /**
- * Matches identifiers from the caller's address book against accounts that
- * opted in to being found. The day's allowance is claimed first, in the same
- * transaction as the match, so a lookup that fails counts nothing and one
- * that would pass the allowance runs no match at all.
+ * Matches identifiers from the caller's address book against registered
+ * accounts that have not turned off being found. The day's allowance is
+ * claimed first, in the same transaction as the match, so a lookup that
+ * fails counts nothing and one that would pass the allowance runs no match
+ * at all.
  *
  * @param userId - Authenticated caller.
  * @param input - Phones and emails from the caller's contacts.

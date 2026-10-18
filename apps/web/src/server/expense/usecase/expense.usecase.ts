@@ -45,7 +45,7 @@ import {
   type SettlementRow,
 } from "@/server/expense/repo/settlements.repo";
 import { insertActivity, listActivityForExpense } from "@/server/social/repo/activity.repo";
-import { insertNotifications } from "@/server/social/repo/notifications.repo";
+import { insertNotificationRows, insertNotifications } from "@/server/social/repo/notifications.repo";
 import {
   computeItemizedSplits,
   computeSplits,
@@ -66,6 +66,7 @@ import {
   positionDigest,
 } from "@/server/expense/domain/settlementAllocation";
 import { oneOffPairKey, settledExpenseIds } from "@/server/expense/domain/settledExpenses";
+import { readerShareLine } from "@/server/expense/domain/readerShareLine";
 import { snapshot } from "@/server/common/db/db";
 import { UsecaseError, denied, invalid, notFound } from "@/server/common/errors";
 import {
@@ -506,7 +507,8 @@ function storedExpenseWrite(expense: ExpenseRow, children: ExpenseChildren): Exp
 
 /**
  * Fans out an expense change: one activity entry for its participants plus a
- * notification for every participant except the actor.
+ * notification for every participant except the actor, each carrying that
+ * reader's own money line.
  *
  * @param actorId - User who performed the change.
  * @param expenseId - Id of the affected expense (used for links).
@@ -524,7 +526,7 @@ async function recordExpenseActivity(
   verb: "added" | "updated" | "deleted",
   client: PoolClient,
 ): Promise<void> {
-  const actor = (await findUserById(actorId))!;
+  const actor = (await findUserById(actorId, client))!;
   const group = write.groupId ? await findGroupById(write.groupId, client) : undefined;
   const locationSuffix = group ? ` in "${group.name}"` : "";
   // The participants plus whoever recorded it — never the whole group. A
@@ -547,15 +549,29 @@ async function recordExpenseActivity(
     },
     client,
   );
-  await insertNotifications(
-    involvedUserIds(write).filter((recipientId) => recipientId !== actorId),
-    {
-      actorId,
-      type: `expense_${verb}`,
-      title: `${actor.name} ${verb} "${write.description}"`,
-      body: group ? group.name : "One-off expense",
-      link: `/expenses/${expenseId}`,
-    },
+  // Each reader's bell row (and so their push) says what the expense means
+  // for them: "Goa trip · you owe Ani ৳600". One row per reader, because the
+  // money line is theirs alone, written in one statement while the ledger
+  // lock is held.
+  const payerIds = [...new Set(write.payers.map((payer) => payer.userId))];
+  const payerNames = new Map(
+    (await findUsersByIds(payerIds, client)).map((payer) => [payer.id, payer.name] as const),
+  );
+  const scopeName = group ? group.name : "One-off expense";
+  await insertNotificationRows(
+    involvedUserIds(write)
+      .filter((participantId) => participantId !== actorId)
+      .map((recipientId) => {
+        const moneyLine = readerShareLine(write, recipientId, verb, payerNames);
+        return {
+          userId: recipientId,
+          actorId,
+          type: `expense_${verb}`,
+          title: `${actor.name} ${verb} "${write.description}"`,
+          body: moneyLine ? `${scopeName} · ${moneyLine}` : scopeName,
+          link: `/expenses/${expenseId}`,
+        };
+      }),
     client,
   );
 }

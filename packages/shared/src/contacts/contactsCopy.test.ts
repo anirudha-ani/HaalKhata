@@ -3,19 +3,23 @@
 import { describe, expect, it } from "vitest";
 import { ContactRelation } from "@haalkhata/protogen/social/v1/social_pb";
 import {
+  addRequestPreview,
   checkingLabel,
   friendRequestTitle,
   onHaalKhataAs,
   partialCheckMessage,
   relationAction,
-  requestsSentNotice,
-  sendAllLabel,
-  sendAllQuestion,
 } from "./contactsCopy";
 
 describe("contacts copy", () => {
   it("previews the exact notification title the server sends", () => {
     expect(friendRequestTitle("Anirudha")).toBe("Anirudha sent you a friend request");
+  });
+
+  it("quotes that same notification above the people found, before any Add", () => {
+    expect(addRequestPreview("Anirudha")).toBe(
+      "Add sends one friend request. They see “Anirudha sent you a friend request”.",
+    );
   });
 
   it("names the account under a differently saved contact", () => {
@@ -30,12 +34,7 @@ describe("contacts copy", () => {
     expect(relationAction(ContactRelation.UNSPECIFIED)).toBe("Add");
   });
 
-  it("counts people and contacts with grouped numbers and the right plural", () => {
-    expect(sendAllLabel(12)).toBe("Send to all 12");
-    expect(sendAllQuestion(1)).toBe("Send 1 friend request?");
-    expect(sendAllQuestion(1240)).toBe("Send 1,240 friend requests?");
-    expect(requestsSentNotice(1)).toBe("Friend request sent.");
-    expect(requestsSentNotice(12)).toBe("12 friend requests sent.");
+  it("counts contacts with grouped numbers and the right plural", () => {
     expect(checkingLabel(1)).toBe("Checking 1 contact…");
     expect(checkingLabel(1240)).toBe("Checking 1,240 contacts…");
     expect(partialCheckMessage(5000, 6200)).toBe(

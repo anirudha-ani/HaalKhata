@@ -1,7 +1,13 @@
 /**
  * All SQL for contact discovery: matching identifiers from a caller's address
- * book against accounts that chose to be findable, and the daily count of
+ * book against accounts that are findable, and the daily count of
  * identifiers each account has checked.
+ *
+ * Findable is the default: `contact_discovery` NULL (never answered) and TRUE
+ * both match, and only an explicit FALSE hides an account. Because an
+ * unclaimed invitation row is NULL too, every match also requires an account
+ * someone signed up for (a password, Google or Apple), so a number or email
+ * an inviter typed never shows up as "on HaalKhata".
  *
  * Nothing here writes an identifier. The phones and emails a lookup carries
  * exist only as query parameters; the quota table stores a number.
@@ -29,8 +35,8 @@ export interface DiscoverableAccountRow extends UserRow {
 }
 
 /**
- * Finds the accounts that hold any of the given identifiers and agreed to be
- * found by them. A phone matches only once its holder proved possession of
+ * Finds the registered accounts that hold any of the given identifiers and
+ * have not turned discovery off. A phone matches only once its holder proved possession of
  * it, because an unverified number may belong to someone else and the
  * caller's contact name would end up beside a stranger. Merged, deleted and
  * suspended rows, the caller, and anyone in a block with the caller in
@@ -65,7 +71,8 @@ export async function findDiscoverableAccounts(
        FROM users usr
       WHERE ((usr.phone = ANY($2::text[]) AND usr.phone_verified_at IS NOT NULL)
              OR lower(usr.email) = ANY($3::text[]))
-        AND usr.contact_discovery IS TRUE
+        AND usr.contact_discovery IS NOT FALSE
+        AND (usr.password_hash IS NOT NULL OR usr.google_sub IS NOT NULL OR usr.apple_sub IS NOT NULL)
         AND usr.id <> $1
         AND usr.merged_into IS NULL
         AND usr.deleted_at IS NULL
@@ -137,9 +144,9 @@ export async function readLookupUsage(userId: string, client?: PoolClient): Prom
 
 /**
  * Of the given ids, the accounts a contacts-screen request may go to: live,
- * findable from contacts, not the requester, not in a block with the
- * requester either way, not already friends, and with no request pending in
- * either direction. Restricting the bulk path to findable accounts keeps it
+ * registered, findable from contacts (never answered or yes), not the
+ * requester, not in a block with the requester either way, not already
+ * friends, and with no request pending in either direction. Restricting the bulk path to findable accounts keeps it
  * from becoming a faster AddFriend for ids learned elsewhere.
  *
  * @param requesterId - Account sending the requests.
@@ -155,7 +162,8 @@ export async function findRequestableAccounts(
     `SELECT usr.* FROM users usr
       WHERE usr.id = ANY($2::text[])
         AND usr.id <> $1
-        AND usr.contact_discovery IS TRUE
+        AND usr.contact_discovery IS NOT FALSE
+        AND (usr.password_hash IS NOT NULL OR usr.google_sub IS NOT NULL OR usr.apple_sub IS NOT NULL)
         AND usr.merged_into IS NULL
         AND usr.deleted_at IS NULL
         AND usr.suspended_at IS NULL

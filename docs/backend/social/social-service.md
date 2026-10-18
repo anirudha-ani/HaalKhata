@@ -109,7 +109,7 @@ consent.
 | ListFriends | 60/min — **shares the `GetOverallBalances` bucket**, because it computes the same full-ledger aggregate; separate buckets would let one endpoint bypass the other's limit |
 | SendReminder | 10/min per account, plus the 24 h per-pair cooldown |
 | FindContacts | 5/min per account, at most 1,000 identifiers per call and 5,000 per account per UTC day (the daily count is durable, in Postgres) |
-| SendFriendRequests | 3/min per account, at most 50 ids per call |
+| SendFriendRequests | 20/min per account, at most 10 ids per call (the apps send one per Add) |
 | Others | authentication only |
 
 ---
@@ -698,8 +698,10 @@ account?").
 
 #### Notes
 
-- Matches phones and emails from the caller's address book against accounts
-  that opted in (`users.contact_discovery = TRUE`). A phone needs
+- Matches phones and emails from the caller's address book against
+  registered accounts that have not turned discovery off
+  (`users.contact_discovery IS NOT FALSE`: findable is the default, and NULL
+  means never answered). Unclaimed invitation rows never match. A phone needs
   `phone_verified_at`; an email matches the account's own sign-in email.
 - Each entry is measured before it is parsed (over 254 characters is
   dropped), then normalised: phones must carry their country code (no region
@@ -734,7 +736,7 @@ account?").
 #### Notes
 
 - One request to each listed account that is live, registered, findable from
-  contacts, not blocked either way, not already a friend, and has no request
+  contacts (not turned off), not blocked either way, not already a friend, and has no request
   pending in either direction. Everyone else is skipped without saying so.
 - Restricting it to findable accounts keeps the bulk path from being a
   faster AddFriend for ids learned elsewhere.
@@ -743,7 +745,7 @@ account?").
   notified, and the 100-pending cap per recipient holds.
 - No `recipient_identifier` is stored: the sender saw who they were asking,
   so `outgoing_requests` shows the recipient's profile.
-- An empty list or more than 50 ids is `InvalidArgument`.
+- An empty list or more than 10 ids is `InvalidArgument`.
 
 #### Request
 

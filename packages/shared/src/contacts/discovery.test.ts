@@ -9,25 +9,26 @@ import {
 } from "./discovery";
 
 describe("contact discovery answer", () => {
-  it("treats only an explicit yes as findable", () => {
+  it("is findable by default and hidden only by an explicit no", () => {
     expect(isDiscoverable(ContactDiscovery.ON)).toBe(true);
+    expect(isDiscoverable(ContactDiscovery.UNSPECIFIED)).toBe(true);
     expect(isDiscoverable(ContactDiscovery.OFF)).toBe(false);
-    expect(isDiscoverable(ContactDiscovery.UNSPECIFIED)).toBe(false);
   });
 
-  it("asks only people who never answered", () => {
+  it("tells only people who never answered", () => {
     expect(needsDiscoveryAnswer(ContactDiscovery.UNSPECIFIED)).toBe(true);
     expect(needsDiscoveryAnswer(ContactDiscovery.OFF)).toBe(false);
     expect(needsDiscoveryAnswer(ContactDiscovery.ON)).toBe(false);
   });
 
-  it("saves the onboarding switch only when it records a real choice", () => {
+  it("saves wherever the onboarding switch was left, unless the server already holds it", () => {
+    // Left on by someone who never answered: the yes is recorded, so the
+    // one-time notice does not repeat what onboarding just showed.
     expect(onboardingDiscoveryChange(ContactDiscovery.UNSPECIFIED, true)).toBe(true);
     expect(onboardingDiscoveryChange(ContactDiscovery.OFF, true)).toBe(true);
     expect(onboardingDiscoveryChange(ContactDiscovery.ON, true)).toBeNull();
-    // A switch left off is silence, not a refusal: the prompt asks later.
-    expect(onboardingDiscoveryChange(ContactDiscovery.UNSPECIFIED, false)).toBeNull();
-    expect(onboardingDiscoveryChange(ContactDiscovery.OFF, false)).toBeNull();
+    expect(onboardingDiscoveryChange(ContactDiscovery.UNSPECIFIED, false)).toBe(false);
     expect(onboardingDiscoveryChange(ContactDiscovery.ON, false)).toBe(false);
+    expect(onboardingDiscoveryChange(ContactDiscovery.OFF, false)).toBeNull();
   });
 });

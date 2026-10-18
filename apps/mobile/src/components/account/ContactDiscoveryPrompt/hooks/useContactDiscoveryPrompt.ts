@@ -1,4 +1,4 @@
-/** State behind the one-time "can friends find you?" card. */
+/** State behind the one-time "friends can find you" card. */
 
 import { useState } from "react";
 import { CONTACT_DISCOVERY_PROMPT } from "@haalkhata/shared/contacts/contactsCopy";

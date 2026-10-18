@@ -26,10 +26,11 @@ service SocialService {
   rpc RemoveFriend(RemoveFriendRequest) returns (google.protobuf.Empty);
 
   // Find friends from contacts. Says which identifiers from the caller's own
-  // address book belong to accounts that chose to be findable
+  // address book belong to registered accounts that are findable: the
+  // default, until the person turns it off
   // (auth.v1.AuthService.SetContactDiscovery). Unlike AddFriend this does
-  // reveal a match, which is why only accounts that opted in take part, and
-  // a phone matches only once its holder verified it. The server stores
+  // reveal a match, which is why an account that said no never takes part,
+  // and a phone matches only once its holder verified it. The server stores
   // none of what it is sent. Limited per minute and per day; past either it
   // fails with ResourceExhausted and a message the client can show.
   rpc FindContacts(FindContactsRequest) returns (FindContactsResponse);
@@ -38,8 +39,9 @@ service SocialService {
   // existing friends and pairs with a request pending in either direction
   // are skipped without saying so. So are accounts that are not findable
   // from contacts, which keeps this bulk path from being a faster AddFriend
-  // for ids learned elsewhere. One call takes one rate-limit slot,
-  // which is what lets "send to all" be one call. The recipients appear in
+  // for ids learned elsewhere. One call takes one rate-limit slot. The apps
+  // send one id per call, from that person's Add (App Review 5.1.2(v) rules
+  // out a select-all over contacts). The recipients appear in
   // ListFriends.outgoing_requests with their profile, since the caller saw
   // who they were asking.
   rpc SendFriendRequests(SendFriendRequestsRequest) returns (google.protobuf.Empty);

@@ -1,11 +1,13 @@
 /** Authenticated area layout: redirects signed-out and not-yet-onboarded users, hosts the authed stack. */
 
 import { useQuery } from "@tanstack/react-query";
-import { Redirect, Stack } from "expo-router";
+import { Redirect, Stack, usePathname } from "expo-router";
+import { PushHost } from "@/components/push/PushHost/PushHost";
 import { Spinner } from "@/components/ui/Spinner";
 import { authClient } from "@/lib/api/connect";
 import { queryKeys } from "@haalkhata/shared/api/queryKeys";
 import { useSession } from "@/lib/api/session";
+import { useDeviceSetupGate } from "@/lib/onboarding/hooks/useDeviceSetupGate";
 import { colors } from "@/lib/theme/theme";
 
 /**
@@ -31,25 +33,36 @@ export default function AppLayout() {
 }
 
 /**
- * Holds the stack back until the profile has loaded once, and sends anyone
- * who has not completed onboarding to it. /onboarding lives outside this
- * group precisely so the redirect cannot loop; `onboarded` is stamped even
- * when every field is skipped, so nobody is sent there twice. A profile
- * that cannot be fetched (offline) does not block the app — the cached
- * screens are still worth more than a spinner.
+ * Holds the stack back until the profile has loaded once, and sends to the
+ * first-run flow anyone who has not completed onboarding, or who has just
+ * signed in on this phone and has not been through its device steps (find
+ * friends, notifications) here yet. /onboarding lives outside this group
+ * precisely so the redirect cannot loop; `onboarded` is stamped even when
+ * every field is skipped, and the device steps are marked done on this
+ * phone, so nobody is sent there twice. The screen the person was headed
+ * for rides along as `next` and opens when the flow ends. A profile that
+ * cannot be fetched (offline) does not block the app — the cached screens
+ * are still worth more than a spinner.
  *
  * @returns The authed stack, a redirect to onboarding, or a spinner.
  */
 function OnboardingGate() {
+  const pathname = usePathname();
   const currentUser = useQuery({ queryKey: queryKeys.me, queryFn: () => authClient.getMe({}) });
-  if (currentUser.isPending) return <Spinner />;
-  if (currentUser.data && !currentUser.data.onboarded) return <Redirect href="/onboarding" />;
+  const deviceSetup = useDeviceSetupGate(currentUser.data);
+  if (currentUser.isPending || deviceSetup.checking) return <Spinner />;
+  if (currentUser.data && (!currentUser.data.onboarded || deviceSetup.due)) {
+    return <Redirect href={{ pathname: "/onboarding", params: { next: pathname } }} />;
+  }
   return (
-    <Stack
-      screenOptions={{
-        contentStyle: { backgroundColor: colors.paper },
-        headerShown: false,
-      }}
-    />
+    <>
+      <Stack
+        screenOptions={{
+          contentStyle: { backgroundColor: colors.paper },
+          headerShown: false,
+        }}
+      />
+      <PushHost signedInUserId={currentUser.data?.id} />
+    </>
   );
 }

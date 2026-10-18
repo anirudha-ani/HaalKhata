@@ -1,4 +1,4 @@
-/** Readiness endpoint that verifies production secrets, sign-in configuration, migrations, and database access. */
+/** Readiness endpoint that verifies production secrets, sign-in and push configuration, migrations, and database access. */
 
 import type { NextApiRequest, NextApiResponse } from "next";
 import { signPayload } from "@/server/auth/usecase/session/session";
@@ -10,6 +10,7 @@ import {
 import { ensureMigrated, query } from "@/server/common/db/db";
 import { logError } from "@/server/common/logger";
 import { assertAppleSignInConfigured } from "@/server/auth/usecase/apple/apple.provider";
+import { assertPushConfigured } from "@/server/push/usecase/provider/pushProvider";
 
 /** Response shape intentionally reveals no component-level failure details. */
 interface HealthResponse {
@@ -47,8 +48,10 @@ function assertSignInConfigured(): void {
 }
 
 /**
- * Reports ready only after token signing, sign-in configuration,
- * migrations, and a live database round-trip all succeed. Failed checks are
+ * Reports ready only after token signing, sign-in configuration, push
+ * configuration, migrations, and a live database round-trip all succeed. Push
+ * readiness is configuration only: an outage at the delivery service must not
+ * take the app down with it. Failed checks are
  * logged server-side and collapsed into one generic response so the public
  * endpoint is not a diagnostics oracle.
  *
@@ -70,6 +73,7 @@ export default async function healthHandler(
     signPayload("session", "healthcheck");
     assertSignInConfigured();
     if (process.env.APPLE_SIGN_IN_REQUIRED === "true") await assertAppleSignInConfigured();
+    assertPushConfigured();
     await ensureMigrated();
     await query("SELECT 1");
     response.status(200).json({ status: "ok" });

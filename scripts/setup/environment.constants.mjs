@@ -24,6 +24,7 @@ export const LOCAL_DATABASE_PASSWORD = "change-me";
 export const SECRET_ENVIRONMENT_NAMES = [
   "POSTGRES_PASSWORD", "DATABASE_URL", "SESSION_SECRET", "SESSION_SECRET_PREVIOUS",
   "APPLE_PRIVATE_KEY", "APPLE_TOKEN_ENCRYPTION_KEY", "TWILIO_API_KEY_SECRET", "COMPATIBLE_AI_API_KEY",
+  "EXPO_ACCESS_TOKEN",
 ];
 
 /** One stable marker separates editable credentials from ordinary configuration. */

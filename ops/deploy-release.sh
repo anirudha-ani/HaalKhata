@@ -136,7 +136,7 @@ printf '%s\n' "$CONFIG" | while IFS= read -r line; do
       }
       set_env "$key" "$value"
       ;;
-    TWILIO_API_KEY_SECRET | COMPATIBLE_AI_API_KEY | SESSION_SECRET | POSTGRES_PASSWORD)
+    TWILIO_API_KEY_SECRET | COMPATIBLE_AI_API_KEY | SESSION_SECRET | POSTGRES_PASSWORD | EXPO_ACCESS_TOKEN)
       # Any printable ASCII: secret material (base64, hex, vendor formats)
       # is wider than what .env may hold, and a file has no syntax to break.
       printf '%s\n' "$value" | grep -Eq '^[!-~]*$' || {
@@ -148,6 +148,7 @@ printf '%s\n' "$CONFIG" | while IFS= read -r line; do
         COMPATIBLE_AI_API_KEY) set_secret openrouter_api_key "$value" ;;
         SESSION_SECRET) set_secret session_secret "$value" ;;
         POSTGRES_PASSWORD) set_secret postgres_password "$value" ;;
+        EXPO_ACCESS_TOKEN) set_secret expo_access_token "$value" ;;
       esac
       ;;
     APPLE_PRIVATE_KEY_BASE64)

@@ -1,6 +1,7 @@
 /**
  * SendFriendRequests: one friend request to each account the caller picked
- * from their found contacts, as one call ("send to all" or a single row).
+ * from their found contacts. The apps send one person per call (each row's
+ * Add); a list is still accepted, within the same rules, by the API.
  */
 
 import { transaction } from "@/server/common/db/db";

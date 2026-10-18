@@ -9,6 +9,7 @@ import { Sheet } from "./Sheet";
 const viewport = vi.hoisted(() => ({ width: 1024, height: 600, fontScale: 1 }));
 vi.mock("lucide-react-native", () => ({ X: () => null }));
 vi.mock("react-native", () => ({
+  AccessibilityInfo: { isReduceMotionEnabled: async () => false, addEventListener: () => ({ remove: () => undefined }) },
   useWindowDimensions: () => viewport,
   Platform: { OS: "ios", select: (options: { default: string }) => options.default },
   StyleSheet: { create: (styles: unknown) => styles },
@@ -51,6 +52,12 @@ describe("resizable sheet", () => {
     expect(container.querySelector("[data-scroll]")?.textContent).toBe("Form content");
     expect(container.querySelector("[data-submit]")?.closest("[data-scroll]")).toBeNull();
     expect(Number(container.querySelector("[data-max-height]")?.getAttribute("data-max-height"))).toBeCloseTo(844 * 0.92);
+  });
+  it("offers no way out without onClose, for a screen that must lead to the permission alert", () => {
+    act(() => root.render(createElement(Sheet, { title: "Notifications", children: "Why",
+      footer: createElement("span", { "data-continue": true }, "Continue") })));
+    expect(container.querySelectorAll("button")).toHaveLength(0);
+    expect(container.querySelector("[data-continue]")?.textContent).toBe("Continue");
   });
   it("preserves backdrop dismissal after resizing", () => {
     render(); viewport.width = 600; render();

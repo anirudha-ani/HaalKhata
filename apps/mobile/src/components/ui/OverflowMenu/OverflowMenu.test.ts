@@ -18,6 +18,7 @@ vi.mock("@/components/ui/Text", () => ({
   Text: ({ children }: { children: ReactNode }) => createElement("span", null, children),
 }));
 vi.mock("react-native", () => ({
+  AccessibilityInfo: { isReduceMotionEnabled: async () => false, addEventListener: () => ({ remove: () => undefined }) },
   Platform: {
     get OS() {
       return native.os;

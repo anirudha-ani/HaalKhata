@@ -491,14 +491,48 @@ ios_simulator_udid() {
   '
 }
 
-# Ensure an iOS simulator is booted. If none is booted, finds the first
-# available simulator, boots it, and opens the Simulator app.
+# List the booted iOS simulators, one "<udid> <name>" per line.
+# @returns nothing when none is booted.
+booted_ios_simulators() {
+  xcrun simctl list devices booted -j | node -e '
+    const payload = JSON.parse(require("node:fs").readFileSync(0, "utf8"));
+    const lines = Object.entries(payload.devices)
+      .filter(([runtime]) => runtime.includes(".iOS-"))
+      .flatMap(([, devices]) => devices)
+      .map((device) => `${device.udid} ${device.name}`);
+    process.stdout.write(lines.join("\n"));
+  '
+}
+
+# Pick the one booted simulator this run installs to and opens. With several
+# booted, installing to one and opening the app on another runs new
+# JavaScript inside a stale native client ("Cannot find native module"), so
+# the choice is explicit, the way ANDROID_SERIAL is for Android.
+# @returns 0 with IOS_SIMULATOR_UDID exported; exits when the choice is unclear.
+select_ios_simulator() {
+  local booted
+  booted="$(booted_ios_simulators)"
+  if [[ -n "${IOS_SIMULATOR_UDID:-}" ]]; then
+    printf '%s\n' "$booted" | cut -d' ' -f1 | grep -Fxq "$IOS_SIMULATOR_UDID" \
+      || die "iOS simulator '$IOS_SIMULATOR_UDID' is not booted. Check xcrun simctl list devices booted."
+  elif [[ -z "$booted" ]]; then
+    die "no booted iOS simulator."
+  elif [[ "$booted" == *$'\n'* ]]; then
+    die "multiple iOS simulators booted: $(printf '%s\n' "$booted" | sed -E 's/^([^ ]+) (.*)$/\2 (\1)/' | paste -sd ';' - | sed 's/;/; /g'). Select one with IOS_SIMULATOR_UDID=<udid> ./dev.sh --mobile-ios, or shut the others down."
+  else
+    export IOS_SIMULATOR_UDID="${booted%% *}"
+  fi
+}
+
+# Ensure an iOS simulator is booted and selected. If none is booted, finds
+# the first available simulator, boots it, and opens the Simulator app.
 ensure_ios_simulator() {
   have xcrun \
     || die "xcrun not found. Install Xcode and its command-line tools."
 
-  if [[ -n "$(ios_simulator_udid booted)" ]]; then
-    ok "iOS simulator already booted"
+  if [[ -n "${IOS_SIMULATOR_UDID:-}" || -n "$(ios_simulator_udid booted)" ]]; then
+    select_ios_simulator
+    ok "iOS simulator already booted (${IOS_SIMULATOR_UDID:0:8}…)"
     return 0
   fi
 
@@ -520,16 +554,17 @@ ensure_ios_simulator() {
       && die "simulator didn't boot in 120s."
     sleep 2
   done
+  export IOS_SIMULATOR_UDID="$udid"
   ok "simulator booted"
 }
 
-# Ensure the dev client on the booted simulator matches the native project.
+# Ensure the dev client on the selected simulator matches the native project.
 # Missing/unverified/changed installations rebuild and refresh CocoaPods first.
 # Generic builds do not require an Apple signing certificate for the app's
 # associated-domain entitlements; physical-device builds still use signing.
 ensure_ios_app() {
   local udid installation fingerprint
-  udid="$(ios_simulator_udid booted)"
+  udid="$IOS_SIMULATOR_UDID"
   installation="$(xcrun simctl get_app_container "$udid" com.haalkhata.app app 2>/dev/null || true)"
   if native_build_matches ios "$installation"; then
     ok "dev client matches current native dependencies on simulator"
@@ -554,11 +589,12 @@ ensure_ios_app() {
   ok "dev client built + installed"
 }
 
-# Open the running Metro project in the dev client on the booted simulator.
+# Open the running Metro project in the dev client on the selected simulator
+# — the same one ensure_ios_app installed to, never whichever "booted" means.
 launch_ios_app() {
   local manifest_url
   manifest_url="$(node -p 'encodeURIComponent(process.argv[1])' "http://127.0.0.1:$METRO_PORT")"
-  xcrun simctl openurl booted "haalkhata://expo-development-client/?url=$manifest_url" \
+  xcrun simctl openurl "$IOS_SIMULATOR_UDID" "haalkhata://expo-development-client/?url=$manifest_url" \
     || die "could not open the Metro project on the iOS simulator."
   ok "dev client connected to Metro on simulator"
 }

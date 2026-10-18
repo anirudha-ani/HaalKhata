@@ -1,7 +1,7 @@
 /** Bringing the part of the payment method form with the first problem into view when a save is refused. */
 
 import { useEffect, useRef } from "react";
-import type { LayoutChangeEvent, ScrollView } from "react-native";
+import type { LayoutChangeEvent, ScrollViewInstance } from "react-native";
 import type { MethodFormField } from "@haalkhata/shared/payment/methodForm";
 import { spacing } from "@/lib/theme/theme";
 
@@ -20,7 +20,7 @@ import { spacing } from "@/lib/theme/theme";
  *   block's `onLayout`, which records where the block sits.
  */
 export function useScrollToFormField(failedSaves: number, field: MethodFormField | "") {
-  const scrollRef = useRef<ScrollView>(null);
+  const scrollRef = useRef<ScrollViewInstance>(null);
   const offsets = useRef<Partial<Record<MethodFormField, number>>>({});
   // The refused save that was last scrolled for. Only a new refusal moves
   // the sheet: the field changing as problems are fixed must not scroll

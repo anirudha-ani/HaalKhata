@@ -36,6 +36,9 @@
 #   Secret    APPLE_TOKEN_ENCRYPTION_KEY     stable output of openssl rand -hex 32;
 #             lands as secrets/apple_token_encryption_key. Existing nonempty
 #             keys cannot be replaced by CI without a separate data migration
+#   Secret    EXPO_ACCESS_TOKEN              Expo access token for sending
+#             pushes (enhanced push security); lands as
+#             secrets/expo_access_token. Readiness fails without it
 #   Any of these file secrets left unset pipes an empty value, and the deploy steps then
 #   leaves the server's existing secret file untouched — so each secret can
 #   be GitHub-managed or server-only, per secret.
@@ -159,6 +162,7 @@ jobs:
           POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
           APPLE_PRIVATE_KEY: ${{ secrets.APPLE_PRIVATE_KEY }}
           APPLE_TOKEN_ENCRYPTION_KEY: ${{ secrets.APPLE_TOKEN_ENCRYPTION_KEY }}
+          EXPO_ACCESS_TOKEN: ${{ secrets.EXPO_ACCESS_TOKEN }}
         run: |
           install -m 700 -d ~/.ssh
           install -m 600 /dev/null ~/.ssh/id_ed25519
@@ -194,5 +198,6 @@ jobs:
             printf 'SESSION_SECRET=%s\n'            "$SESSION_SECRET"
             printf 'POSTGRES_PASSWORD=%s\n'         "$POSTGRES_PASSWORD"
             printf 'APPLE_TOKEN_ENCRYPTION_KEY=%s\n' "$APPLE_TOKEN_ENCRYPTION_KEY"
+            printf 'EXPO_ACCESS_TOKEN=%s\n'         "$EXPO_ACCESS_TOKEN"
             printf 'APPLE_PRIVATE_KEY_BASE64=%s\n'  "$APPLE_PRIVATE_KEY_BASE64"
           } | ssh -i ~/.ssh/id_ed25519 deploy@haalkhata.app "${{ github.sha }}"

@@ -36,3 +36,20 @@ export function safeActivityPath(
   }
   return candidate as ActivityPath;
 }
+
+/** In-app routes a push notification is allowed to open: the feed's, plus Account. */
+export type NotificationPath = ActivityPath | "/account";
+
+/**
+ * Returns an allowlisted destination for a tapped push notification. The
+ * same rules as {@link safeActivityPath}, plus Account, which a security
+ * alert (a verified number moving to another account) links to.
+ *
+ * @param candidate - Link carried in the push payload; untrusted.
+ * @returns Candidate when it names an allowed route, otherwise "/activity".
+ */
+export function safeNotificationPath(candidate: unknown): NotificationPath {
+  if (typeof candidate !== "string") return "/activity";
+  if (candidate === "/account") return candidate;
+  return safeActivityPath(candidate);
+}

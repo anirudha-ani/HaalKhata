@@ -1,16 +1,18 @@
-/** One-time card asking an account that never answered whether contacts may find it. */
+/** One-time card telling an account that never answered that contacts can find it, with the way to turn that off. */
 
-import { StyleSheet, View } from "react-native";
+import { StyleSheet } from "react-native";
+import Animated from "react-native-reanimated";
 import { CONTACT_DISCOVERY_PROMPT } from "@haalkhata/shared/contacts/contactsCopy";
 import type { ContactDiscovery } from "@haalkhata/shared/contacts/discovery";
 import { Button } from "@/components/ui/Button";
 import { Text } from "@/components/ui/Text";
+import { CARD_RESIZE, NOTICE_FADE_IN } from "@/lib/motion/entrances";
 import { colors, radii, spacing } from "@/lib/theme/theme";
 import { useContactDiscoveryPrompt } from "./hooks/useContactDiscoveryPrompt";
 
 /**
- * Renders the question with its two answers, or, once answered, what was
- * saved. Renders nothing for someone who answered on an earlier visit.
+ * Renders the notice with its two answers (keep it on, turn it off), or,
+ * once answered, what was saved. Renders nothing for someone who answered on an earlier visit.
  *
  * @param props - Component props.
  * @returns The card, or null.
@@ -24,7 +26,7 @@ export function ContactDiscoveryPrompt({
   const prompt = useContactDiscoveryPrompt(answer);
   if (!prompt.visible) return null;
   return (
-    <View style={styles.card}>
+    <Animated.View layout={CARD_RESIZE} style={styles.card}>
       {prompt.asking ? (
         <>
           <Text accessibilityRole="header" style={styles.title}>{CONTACT_DISCOVERY_PROMPT.title}</Text>
@@ -45,9 +47,11 @@ export function ContactDiscoveryPrompt({
           />
         </>
       ) : (
-        <Text accessibilityLiveRegion="polite" style={styles.notice}>{prompt.notice}</Text>
+        <Animated.View entering={NOTICE_FADE_IN}>
+          <Text accessibilityLiveRegion="polite" style={styles.notice}>{prompt.notice}</Text>
+        </Animated.View>
       )}
-    </View>
+    </Animated.View>
   );
 }
 

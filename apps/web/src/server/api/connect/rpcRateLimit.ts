@@ -26,11 +26,16 @@ export const RPC_RATE_LIMITS = {
   listExpenses: 60,
   listGroups: 60,
   parseReceipt: 5,
+  registerDevice: 10,
   removeFriend: 10,
-  // Each call may ask up to 50 people, so far fewer calls than AddFriend.
-  sendFriendRequests: 3,
+  // The apps send one request per call, from each person's Add on Find
+  // friends, so this sits beside AddFriend rather than far below it. With at
+  // most 10 ids a call, one account still sends no more than 200 a minute.
+  sendFriendRequests: 20,
   sendReminder: 10,
+  sendTestPush: 3,
   setGroupStatus: 30,
+  updatePushPreferences: 30,
   writePaymentMethod: 30,
 } as const;
 

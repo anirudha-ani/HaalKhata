@@ -124,3 +124,16 @@ test('the new secret handling still rejects non-allowlisted destinations', (cont
   assert.notEqual(server.applyConfig('ARBITRARY_FILE=/tmp/anything\n').status, 0);
   assert.equal(readFileSync(join(server.directory, '.env'), 'utf8'), '');
 });
+
+test('the Expo push token lands as a protected secret file, never in .env, and an empty value keeps it', (context) => {
+  const server = fixture(context);
+  const token = 'expo-access-token-for-tests_0123';
+  const result = server.applyConfig(`EXPO_ACCESS_TOKEN=${token}\n`);
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(readFileSync(join(server.directory, 'secrets/expo_access_token'), 'utf8'), token);
+  assert.equal(statSync(join(server.directory, 'secrets/expo_access_token')).mode & 0o777, 0o444);
+  assert.equal(readFileSync(join(server.directory, '.env'), 'utf8'), '');
+  assert.equal(result.stdout + result.stderr, '');
+  assert.equal(server.applyConfig('EXPO_ACCESS_TOKEN=\n').status, 0);
+  assert.equal(readFileSync(join(server.directory, 'secrets/expo_access_token'), 'utf8'), token);
+});

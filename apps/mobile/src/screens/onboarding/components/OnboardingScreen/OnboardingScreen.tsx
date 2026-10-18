@@ -1,280 +1,106 @@
-/** First-run screen: name, currency, phone, plus the verification and merge steps, then an optional payment step. */
+/** First-run flow: profile, phone, payment, friends and notifications, one step at a time. */
 
-import { ErrorState } from "@/components/ui/ErrorState";
-import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, TextInput, View } from "react-native";
-import { Text } from "@/components/ui/Text";
+import { KeyboardAvoidingView, Platform, StyleSheet, View } from "react-native";
+import Animated from "react-native-reanimated";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { MergePreview } from "@/components/account/MergePreview";
-import { Button } from "@/components/ui/Button";
-import { PhoneField } from "@/components/ui/PhoneField";
-import { ContactDiscoveryToggle } from "@/components/account/ContactDiscoveryToggle/ContactDiscoveryToggle";
+import { ErrorState } from "@/components/ui/ErrorState";
 import { Spinner } from "@/components/ui/Spinner";
-import { TextField } from "@/components/ui/TextField";
-import { CurrencyPicker } from "@/components/ui/CurrencyPicker";
-import { MAX_USER_NAME_LENGTH } from "@haalkhata/shared/text/limits";
-import { colors, fonts, radii, spacing } from "@/lib/theme/theme";
-import { PaymentStep } from "../PaymentStep/PaymentStep";
+import { stepEnter, stepExit } from "@/lib/motion/entrances";
+import { useReduceMotion } from "@/lib/motion/hooks/useReduceMotion";
+import { colors } from "@/lib/theme/theme";
+import { DoneStep } from "./components/DoneStep/DoneStep";
+import { FriendsStep } from "./components/FriendsStep/FriendsStep";
+import { NotificationsStep } from "./components/NotificationsStep/NotificationsStep";
+import { OnboardingHeader } from "./components/OnboardingHeader/OnboardingHeader";
+import { PaymentStep } from "./components/PaymentStep/PaymentStep";
+import { PhoneStep } from "./components/PhoneStep/PhoneStep";
+import { ProfileStep } from "./components/ProfileStep/ProfileStep";
 import { useOnboarding } from "./hooks/useOnboarding";
-import { FOCUSED_CONTENT_MAX_WIDTH } from "@/lib/layout/constants/layout";
 
 /**
- * Renders the first-run flow: a short profile form, an optional phone number,
- * the code step when the number needs verifying, and — when that number turns
- * out to belong to an invitation someone already created — a confirmation
- * naming exactly what would be absorbed. It ends on an optional step for
- * saying how you want to be paid.
+ * Shows the planned steps one at a time under a step indicator. Each step
+ * says what it is for before it asks for anything, and each one slides in
+ * from the side it comes from (a fade under Reduce Motion) while the last
+ * one leaves the other way. Account steps can be revisited with Back;
+ * contacts and notifications are each asked once, by iOS, after the step
+ * has explained them.
+ *
+ * Someone creating an account sees every step. Someone whose account was
+ * set up elsewhere sees only what this phone has not been asked yet, the
+ * first time they sign in on it.
  *
  * @returns The onboarding screen.
  */
 export function OnboardingScreen() {
-  const onboarding = useOnboarding();
-  const merge = onboarding.pendingMerge;
-  const verifying = onboarding.verificationPhone !== "";
-  const paying = onboarding.step === "payment";
+  const flow = useOnboarding();
+  const reduceMotion = useReduceMotion();
+  const { user, current } = flow;
+
+  if (!user) {
+    return (
+      <SafeAreaView style={styles.safeArea}>
+        {flow.loadError ? <ErrorState error={flow.loadError} retry={flow.retry} /> : <Spinner />}
+      </SafeAreaView>
+    );
+  }
+
+  /** @returns The current step's screen. */
+  const step = () => {
+    switch (current) {
+      case "profile":
+        return <ProfileStep onContinue={flow.onProfileDone} user={user} />;
+      case "phone":
+        return <PhoneStep onContinue={flow.onPhoneDone} user={user} />;
+      case "payment":
+        return (
+          <PaymentStep
+            defaultCurrency={user.defaultCurrency || "USD"}
+            error={flow.error}
+            onFinish={flow.onPaymentDone}
+            pending={flow.completing}
+          />
+        );
+      case "friends":
+        return <FriendsStep onContinue={flow.onFriendsDone} />;
+      case "notifications":
+        return <NotificationsStep onContinue={flow.onNotificationsDone} />;
+      case "done":
+        return (
+          <DoneStep
+            achievements={flow.achievements}
+            error={flow.error}
+            firstName={user.name.trim().split(/\s+/)[0] ?? ""}
+            onFinish={flow.finish}
+            pending={flow.leaving}
+          />
+        );
+      default:
+        return <Spinner />;
+    }
+  };
 
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
-        style={styles.flexOne}
-      >
-        <ScrollView
-          contentContainerStyle={styles.scrollContent}
-          keyboardShouldPersistTaps="handled"
-        >
-          {onboarding.isLoading ? (
-            <Spinner />
-          ) : onboarding.loadError ? (
-            <ErrorState error={onboarding.loadError} retry={onboarding.retry} />
-          ) : (
-            <View style={styles.content}>
-              <View style={styles.hero}>
-                <Text style={styles.title}>
-                  {paying
-                    ? "How do you want to be paid?"
-                    : merge
-                      ? "Is this you?"
-                      : verifying
-                        ? "Verify your phone"
-                        : "Welcome to HaalKhata"}
-                </Text>
-                <Text style={styles.subtitle}>
-                  {paying
-                    ? "Optional. Add it now so nobody has to ask where to send money, or do it later."
-                    : merge
-                      ? "Someone already added this number to shared expenses."
-                      : verifying
-                        ? `Enter the code sent to ${onboarding.verificationPhone}.`
-                        : "A couple of details, so friends can find you. You can skip any of it."}
-                </Text>
-              </View>
-
-              {paying ? (
-                <PaymentStep
-                  defaultCurrency={onboarding.currency || "USD"}
-                  error={onboarding.error}
-                  onFinish={onboarding.complete}
-                  pending={onboarding.isPending}
-                />
-              ) : (
-              <View style={styles.card}>
-                {merge ? (
-                  <>
-                    <MergePreview currency={onboarding.currency || "USD"} preview={merge} />
-                    <Text style={styles.hint}>
-                      If you recognize these people, this history is yours and will move onto
-                      your account. If you don&apos;t, the number was probably reassigned — go back
-                      and leave it off.
-                    </Text>
-                    {onboarding.error ? <Text style={styles.error}>{onboarding.error}</Text> : null}
-                    <Button
-                      busy={onboarding.isPending}
-                      label="Yes, that's me"
-                      onPress={onboarding.confirmMerge}
-                    />
-                    <Button
-                      disabled={onboarding.isPending}
-                      label="That's not me"
-                      onPress={onboarding.declineMerge}
-                      variant="outline"
-                    />
-                  </>
-                ) : verifying ? (
-                  <>
-                    <TextInput
-                      accessibilityLabel="Verification code"
-                      autoComplete="one-time-code"
-                      keyboardType="number-pad"
-                      maxLength={10}
-                      onChangeText={(text) =>
-                        onboarding.setVerificationCode(text.replace(/\D/g, ""))
-                      }
-                      style={styles.codeInput}
-                      textContentType="oneTimeCode"
-                      value={onboarding.verificationCode}
-                    />
-                    {onboarding.error ? <Text style={styles.error}>{onboarding.error}</Text> : null}
-                    <Button
-                      busy={onboarding.isPending}
-                      disabled={onboarding.verificationCode.length < 4}
-                      label="Verify phone"
-                      onPress={onboarding.verifyPhone}
-                    />
-                    <Button
-                      disabled={onboarding.isPending}
-                      label="Use a different number"
-                      onPress={onboarding.cancelVerification}
-                      variant="outline"
-                    />
-                  </>
-                ) : (
-                  <>
-                    <TextField
-                      autoComplete="name"
-                      label="Your name"
-                      maxLength={MAX_USER_NAME_LENGTH}
-                      onChangeText={onboarding.setName}
-                      value={onboarding.name}
-                    />
-
-                    <View style={styles.fieldBlock}>
-                      <Text style={styles.fieldLabel}>Phone number</Text>
-                      <PhoneField
-                        nationalNumber={onboarding.nationalNumber}
-                        onNationalNumberChange={onboarding.setNationalNumber}
-                        onRegionChange={onboarding.setRegion}
-                        region={onboarding.region}
-                      />
-                      <Text style={styles.hint}>
-                        Only so friends can find you when they split something. Never used to
-                        sign in.
-                      </Text>
-                    </View>
-
-                    <View style={styles.discoveryBlock}>
-                      <ContactDiscoveryToggle
-                        checked={onboarding.findable}
-                        disabled={onboarding.isPending}
-                        onChange={onboarding.setFindable}
-                      />
-                    </View>
-
-                    <View style={styles.fieldBlock}>
-                      <Text style={styles.fieldLabel}>Default currency</Text>
-                      <CurrencyPicker
-                        onChange={onboarding.setCurrency}
-                        value={onboarding.currency}
-                      />
-                    </View>
-
-                    {onboarding.error ? <Text style={styles.error}>{onboarding.error}</Text> : null}
-
-                    <Button
-                      busy={onboarding.isPending}
-                      disabled={onboarding.name.trim() === ""}
-                      label="Continue"
-                      onPress={onboarding.save}
-                    />
-                    <Button
-                      disabled={onboarding.isPending}
-                      label="Skip for now"
-                      onPress={onboarding.skip}
-                      variant="ghost"
-                    />
-                  </>
-                )}
-              </View>
-              )}
-            </View>
-          )}
-        </ScrollView>
+    <SafeAreaView edges={["top", "left", "right"]} style={styles.safeArea}>
+      {flow.progress.total > 0 ? (
+        <OnboardingHeader onBack={flow.back} position={flow.progress.position} total={flow.progress.total} />
+      ) : null}
+      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={styles.flexOne}>
+        <View style={styles.flexOne}>
+          <Animated.View
+            entering={stepEnter(flow.direction, reduceMotion)}
+            exiting={stepExit(flow.direction, reduceMotion)}
+            key={current ?? "loading"}
+            style={StyleSheet.absoluteFill}
+          >
+            {step()}
+          </Animated.View>
+        </View>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  card: {
-    backgroundColor: colors.card,
-    borderColor: colors.line,
-    borderRadius: radii.lg,
-    borderWidth: 1,
-    gap: spacing.lg,
-    padding: spacing.xl,
-  },
-  chips: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: spacing.sm,
-  },
-  codeInput: {
-    backgroundColor: colors.card,
-    borderColor: colors.line,
-    borderRadius: radii.md,
-    borderWidth: 1,
-    color: colors.ink,
-    fontSize: 20,
-    letterSpacing: 8,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    textAlign: "center",
-  },
-  content: {
-    maxWidth: FOCUSED_CONTENT_MAX_WIDTH,
-    width: "100%",
-  },
-  error: {
-    color: colors.brand600,
-    fontSize: 14,
-  },
-  discoveryBlock: {
-    borderColor: colors.line,
-    borderRadius: radii.md,
-    borderWidth: 1,
-    padding: spacing.md,
-  },
-  fieldBlock: {
-    gap: spacing.sm,
-  },
-  fieldLabel: {
-    color: colors.ink,
-    fontSize: 14,
-    fontWeight: "500",
-  },
-  flexOne: {
-    flex: 1,
-  },
-  hero: {
-    alignItems: "center",
-    gap: spacing.md,
-    marginBottom: spacing.xl,
-  },
-  hint: {
-    color: colors.inkSoft,
-    fontSize: 12,
-    lineHeight: 18,
-  },
-  safeArea: {
-    backgroundColor: colors.paper,
-    flex: 1,
-  },
-  scrollContent: {
-    alignItems: "center",
-    flexGrow: 1,
-    justifyContent: "center",
-    padding: spacing.xl,
-  },
-  subtitle: {
-    color: colors.inkSoft,
-    fontSize: 14,
-    lineHeight: 20,
-    textAlign: "center",
-  },
-  title: {
-    color: colors.ink,
-    fontFamily: fonts.display,
-    fontSize: 28,
-    fontWeight: "700",
-    textAlign: "center",
-  },
+  flexOne: { flex: 1 },
+  safeArea: { backgroundColor: colors.paper, flex: 1 },
 });
