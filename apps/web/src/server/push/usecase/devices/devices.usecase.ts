@@ -6,25 +6,29 @@ import { invalid, notFound, UsecaseError } from "@/server/common/errors";
 import { assertSafeText } from "@/server/safety/usecase/contentFilter";
 import {
   DEVICE_NOT_REGISTERED,
+  DISPLAY_FIELD_RAW_LENGTH_FACTOR,
   EXPO_PUSH_TOKEN_PATTERN,
   INSTALLATION_ID_PATTERN,
   INVISIBLE_CHARACTER_PATTERN,
-  DISPLAY_FIELD_RAW_LENGTH_FACTOR,
   MAX_APP_VERSION_LENGTH,
   MAX_DEVICE_LABEL_LENGTH,
   MAX_PUSH_DEVICES_PER_USER,
+  PUSH_KEPT_OFF_MESSAGE,
   PUSH_PLATFORMS,
   PUSH_TIME_TO_LIVE_SECONDS,
 } from "@/server/push/push.constants";
 import {
+  clearPushInstallationKeptOff,
   deletePushDevice,
   deletePushDevicesHoldingTokens,
   evictOldestPushDevices,
   findLivePushDevice,
+  isPushInstallationKeptOff,
+  keepPushInstallationOff,
   listLivePushDevices,
   markPushDevicesSent,
-  upsertPushDevice,
   type PushDeviceRow,
+  upsertPushDevice,
 } from "@/server/push/repo/pushDevices.repo";
 import { insertPushTickets } from "@/server/push/repo/pushTickets.repo";
 import { countUnreadByUsers } from "@/server/social/repo/notifications.repo";
@@ -38,6 +42,8 @@ export interface RegisterDeviceInput {
   platform: string;
   label: string;
   appVersion: string;
+  /** The person turned notifications on from this phone just now; clears an earlier Remove. */
+  turnOn?: boolean;
 }
 
 /**
@@ -87,12 +93,17 @@ function cleanDisplayField(value: string, maxLength: number, field: string): str
  * the phone to the version that sign-out created, and it would keep
  * receiving the account's pushes.
  *
+ * A phone the person removed stays off: a background registration from it
+ * is refused until one carries `turnOn`, which the app sends only when the
+ * person turns notifications on from the phone.
+ *
  * @param userId - Authenticated caller.
  * @param sessionVersion - The token version of the session registering.
  * @param input - The phone's token, installation id, platform, label and app version.
  * @returns The stored phone.
  * @throws UsecaseError (invalid_argument) on a malformed field;
- *   (unauthenticated) when the session was signed out meanwhile.
+ *   (unauthenticated) when the session was signed out meanwhile;
+ *   (failed_precondition) for a removed phone's background registration.
  */
 export async function registerDevice(userId: string, sessionVersion: number, input: RegisterDeviceInput) {
   if (!EXPO_PUSH_TOKEN_PATTERN.test(input.expoPushToken)) invalid("that is not a push token this app issues");
@@ -102,6 +113,11 @@ export async function registerDevice(userId: string, sessionVersion: number, inp
   const appVersion = cleanDisplayField(input.appVersion, MAX_APP_VERSION_LENGTH, "app version");
   if (!Number.isSafeInteger(sessionVersion)) throw new UsecaseError("unauthenticated", "session expired");
   const stored = await transaction(async (client) => {
+    if (input.turnOn) {
+      await clearPushInstallationKeptOff(userId, input.installationId, client);
+    } else if (await isPushInstallationKeptOff(userId, input.installationId, client)) {
+      throw new UsecaseError("failed_precondition", PUSH_KEPT_OFF_MESSAGE);
+    }
     const device = await upsertPushDevice(
       {
         userId,
@@ -134,14 +150,20 @@ export async function listDevices(userId: string) {
 }
 
 /**
- * Stops pushes to one of the caller's phones.
+ * Stops pushes to one of the caller's phones. A phone the person removed
+ * stays off until they turn notifications on from it again, as the Remove
+ * confirmation says; a phone removing itself at sign-out keeps nothing off,
+ * so the next sign-in reconnects it.
  *
  * @param userId - Authenticated caller.
  * @param deviceId - The phone.
+ * @param signingOut - The phone is removing itself because its user is signing out.
  * @throws UsecaseError (not_found) when it is not one of the caller's.
  */
-export async function removeDevice(userId: string, deviceId: string): Promise<void> {
-  if (!(await deletePushDevice(userId, deviceId))) notFound("that phone is not connected to your account");
+export async function removeDevice(userId: string, deviceId: string, signingOut = false): Promise<void> {
+  const installationId = await deletePushDevice(userId, deviceId);
+  if (installationId === undefined) notFound("that phone is not connected to your account");
+  if (!signingOut) await keepPushInstallationOff(userId, installationId);
 }
 
 /**

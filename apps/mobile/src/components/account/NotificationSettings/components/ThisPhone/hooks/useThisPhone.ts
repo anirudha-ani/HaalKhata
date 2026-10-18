@@ -5,7 +5,7 @@ import { Linking } from "react-native";
 import { useQueryClient } from "@tanstack/react-query";
 import { queryKeys } from "@haalkhata/shared/api/queryKeys";
 import { PUSH_COPY } from "@haalkhata/shared/notifications/copy";
-import { offerPushExplainer, refreshPushPermission, syncThisPhone, usePushState } from "@/lib/push/pushStore";
+import { offerPushExplainer, refreshPushPermission, turnThisPhoneOn, usePushState } from "@/lib/push/pushStore";
 
 /** The line and the action the card shows for this phone. */
 export interface ThisPhoneView {
@@ -21,8 +21,8 @@ export interface ThisPhoneView {
 /**
  * Reads the permission when the card opens, keeps the list of phones in step
  * with this phone's registration, and offers exactly one next step: turn
- * on (explainer, then iOS's alert), open iOS Settings after a refusal, or
- * retry a registration that failed.
+ * on (explainer, then iOS's alert), open iOS Settings after a refusal, turn
+ * a removed phone back on, or retry a registration that failed.
  *
  * @returns The status line and its action.
  */
@@ -49,9 +49,13 @@ export function useThisPhone(): ThisPhoneView {
   }
   if (push.permission === "unknown") return { status: "Checking…", failed: false, busy: true, ...none };
   if (push.registering) return { status: PUSH_COPY.registering, failed: false, busy: true, ...none };
+  if (push.keptOff) {
+    return { status: PUSH_COPY.statusKeptOff, failed: false, busy: false,
+      actionLabel: PUSH_COPY.turnOn, action: () => void turnThisPhoneOn() };
+  }
   if (push.error) {
     return { status: push.error, failed: true, busy: false,
-      actionLabel: PUSH_COPY.retry, action: () => void syncThisPhone(true) };
+      actionLabel: PUSH_COPY.retry, action: () => void turnThisPhoneOn() };
   }
   return { status: PUSH_COPY.statusOn, failed: false, busy: false, ...none };
 }

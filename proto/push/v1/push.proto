@@ -16,8 +16,10 @@ service PushService {
   rpc RegisterDevice(RegisterDeviceRequest) returns (Device);
   // The caller's phones that can still receive pushes, most recently seen first.
   rpc ListDevices(google.protobuf.Empty) returns (ListDevicesResponse);
-  // Stops pushes to one of the caller's phones. The app calls it for its own
-  // row before LogOut, because LogOut ends the session that could call it.
+  // Stops pushes to one of the caller's phones. A phone the person removed
+  // stays off: its installation's next background RegisterDevice is refused
+  // (FailedPrecondition) until one carries turn_on. The app also calls this
+  // for its own row before LogOut, with signing_out, which keeps nothing off.
   rpc RemoveDevice(RemoveDeviceRequest) returns (google.protobuf.Empty);
   // Sends one push to one of the caller's phones now, bypassing the queue,
   // and fails with the delivery service's reason when it is refused.
@@ -42,6 +44,11 @@ message RegisterDeviceRequest {
   string label = 4;
   // The app's marketing version, for support.
   string app_version = 5;
+  // True when the person turned notifications on from this phone just now
+  // (the explainer's Continue, Account's Turn on, a retry). It clears an
+  // earlier Remove of this phone; a background refresh sends false and is
+  // refused for a removed phone.
+  bool turn_on = 6;
 }
 
 // One phone that receives the caller's pushes. Deliberately carries no token:
@@ -65,6 +72,9 @@ message ListDevicesResponse {
 
 message RemoveDeviceRequest {
   string device_id = 1;
+  // The phone is removing itself because its user is signing out. It may
+  // register again at the next sign-in; without this the phone stays off.
+  bool signing_out = 2;
 }
 
 message SendTestPushRequest {

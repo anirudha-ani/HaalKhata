@@ -12,6 +12,9 @@ const repo = vi.hoisted(() => ({
   deletePushDevice: vi.fn(),
   deletePushDevicesHoldingTokens: vi.fn(),
   markPushDevicesSent: vi.fn(),
+  keepPushInstallationOff: vi.fn(),
+  isPushInstallationKeptOff: vi.fn(),
+  clearPushInstallationKeptOff: vi.fn(),
   insertPushTickets: vi.fn(),
   countUnreadByUsers: vi.fn(),
 }));
@@ -25,6 +28,9 @@ vi.mock("@/server/push/repo/pushDevices.repo", () => ({
   deletePushDevice: repo.deletePushDevice,
   deletePushDevicesHoldingTokens: repo.deletePushDevicesHoldingTokens,
   markPushDevicesSent: repo.markPushDevicesSent,
+  keepPushInstallationOff: repo.keepPushInstallationOff,
+  isPushInstallationKeptOff: repo.isPushInstallationKeptOff,
+  clearPushInstallationKeptOff: repo.clearPushInstallationKeptOff,
 }));
 vi.mock("@/server/push/repo/pushTickets.repo", () => ({ insertPushTickets: repo.insertPushTickets }));
 vi.mock("@/server/social/repo/notifications.repo", () => ({ countUnreadByUsers: repo.countUnreadByUsers }));
@@ -75,6 +81,7 @@ function provider(answer: PushTicket | Error): PushProvider {
 beforeEach(() => {
   vi.clearAllMocks();
   repo.upsertPushDevice.mockResolvedValue(STORED);
+  repo.isPushInstallationKeptOff.mockResolvedValue(false);
   repo.findLivePushDevice.mockResolvedValue(STORED);
   repo.countUnreadByUsers.mockResolvedValue(new Map([["user-a", 5]]));
 });
@@ -112,6 +119,19 @@ describe("registerDevice", () => {
     expect(repo.evictOldestPushDevices).not.toHaveBeenCalled();
   });
 
+  it("keeps a removed phone off: a background registration is refused and writes nothing", async () => {
+    repo.isPushInstallationKeptOff.mockResolvedValue(true);
+    await expect(registerDevice("user-a", 3, VALID)).rejects.toMatchObject({ code: "failed_precondition" });
+    expect(repo.upsertPushDevice).not.toHaveBeenCalled();
+  });
+
+  it("lets the person turn a removed phone back on from the phone", async () => {
+    repo.isPushInstallationKeptOff.mockResolvedValue(true);
+    await registerDevice("user-a", 3, { ...VALID, turnOn: true });
+    expect(repo.clearPushInstallationKeptOff).toHaveBeenCalledWith("user-a", VALID.installationId, expect.anything());
+    expect(repo.upsertPushDevice).toHaveBeenCalled();
+  });
+
   it("refuses a request without a session version", async () => {
     await expect(registerDevice("user-a", Number.NaN, VALID)).rejects.toMatchObject({ code: "unauthenticated" });
     expect(repo.upsertPushDevice).not.toHaveBeenCalled();
@@ -120,8 +140,21 @@ describe("registerDevice", () => {
 
 describe("removeDevice", () => {
   it("reports a phone that is not the caller's", async () => {
-    repo.deletePushDevice.mockResolvedValue(false);
+    repo.deletePushDevice.mockResolvedValue(undefined);
     await expect(removeDevice("user-a", "dev-9")).rejects.toMatchObject({ code: "not_found" });
+    expect(repo.keepPushInstallationOff).not.toHaveBeenCalled();
+  });
+
+  it("keeps a phone the person removed off until it is turned on there", async () => {
+    repo.deletePushDevice.mockResolvedValue("install-1");
+    await removeDevice("user-a", "dev-1");
+    expect(repo.keepPushInstallationOff).toHaveBeenCalledWith("user-a", "install-1");
+  });
+
+  it("keeps nothing off when the phone removes itself at sign-out", async () => {
+    repo.deletePushDevice.mockResolvedValue("install-1");
+    await removeDevice("user-a", "dev-1", true);
+    expect(repo.keepPushInstallationOff).not.toHaveBeenCalled();
   });
 });
 

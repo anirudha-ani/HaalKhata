@@ -41,11 +41,17 @@ vi.mock("react-native", () => ({
       onChange: (event: { target: { checked: boolean } }) => onValueChange(event.target.checked),
     }),
 }));
+const thisPhone = vi.hoisted(() => ({
+  state: { permission: "granted", deviceId: "dev-1", registering: false, error: "", keptOff: false, explainerOpen: false },
+  markThisPhoneRemoved: vi.fn(),
+}));
 vi.mock("@/lib/push/pushStore", () => ({
-  usePushState: () => ({ permission: "granted", deviceId: "dev-1", registering: false, error: "", explainerOpen: false }),
+  usePushState: () => thisPhone.state,
+  pushState: () => thisPhone.state,
   refreshPushPermission: vi.fn(async () => "granted"),
   offerPushExplainer: vi.fn(),
-  syncThisPhone: vi.fn(),
+  turnThisPhoneOn: vi.fn(),
+  markThisPhoneRemoved: thisPhone.markThisPhoneRemoved,
 }));
 vi.mock("@/components/ui/Button", () => ({
   Button: ({ label, onPress, busy, disabled }: { label: string; onPress: () => void; busy?: boolean; disabled?: boolean }) =>
@@ -149,4 +155,6 @@ it("confirms a removed phone above the list after it disappears", async () => {
   await settle();
   expect(container.textContent).toContain("Removed.");
   expect(container.textContent).not.toContain("iPhone 17");
+  // It was this phone, so its card turns to "off" at once.
+  expect(thisPhone.markThisPhoneRemoved).toHaveBeenCalledOnce();
 });

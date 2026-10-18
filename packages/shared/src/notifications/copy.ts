@@ -14,6 +14,7 @@ export const PUSH_COPY = {
   statusOn: "Notifications are on for this phone.",
   statusNotAsked: "Notifications aren't on for this phone yet.",
   statusDenied: "Notifications are off for HaalKhata in iOS Settings.",
+  statusKeptOff: "Notifications are off for this phone. Turn them on to get them here again.",
   statusUnsupported: "This device can't receive notifications.",
   turnOn: "Turn on",
   openSettings: "Open Settings",

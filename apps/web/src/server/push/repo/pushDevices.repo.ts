@@ -1,4 +1,4 @@
-/** All SQL for push_devices: the phones that may receive a person's pushes. */
+/** All SQL for push_devices (the phones that may receive a person's pushes) and push_kept_off (phones a person removed). */
 
 import type { PoolClient } from "pg";
 import { execute, newId, query, queryOne } from "@/server/common/db/db";
@@ -169,16 +169,68 @@ export async function findLivePushDevice(userId: string, deviceId: string): Prom
 /**
  * Removes one of a user's phones.
  *
- * @param userId - The caller, who must own it.
+ * @param userId - Owner; a phone of anyone else is left alone.
  * @param deviceId - The phone.
- * @returns True when a row was removed.
+ * @returns The removed phone's installation id, or undefined when it was not the user's.
  */
-export async function deletePushDevice(userId: string, deviceId: string): Promise<boolean> {
-  const removed = await query<{ id: string }>(
-    `DELETE FROM push_devices WHERE id = $1 AND user_id = $2 RETURNING id`,
+export async function deletePushDevice(userId: string, deviceId: string): Promise<string | undefined> {
+  const removed = await queryOne<{ installation_id: string }>(
+    `DELETE FROM push_devices WHERE id = $1 AND user_id = $2 RETURNING installation_id`,
     [deviceId, userId],
   );
-  return removed.length > 0;
+  return removed?.installation_id;
+}
+
+/**
+ * Keeps an installation off for a user after they removed it: background
+ * registrations from it are refused until one asks to turn it on.
+ *
+ * @param userId - The person who removed the phone.
+ * @param installationId - The phone's installation.
+ */
+export async function keepPushInstallationOff(userId: string, installationId: string): Promise<void> {
+  await execute(
+    `INSERT INTO push_kept_off (user_id, installation_id) VALUES ($1, $2)
+     ON CONFLICT (user_id, installation_id) DO UPDATE SET removed_at = now()`,
+    [userId, installationId],
+  );
+}
+
+/**
+ * Whether a user removed this installation and has not turned it on again.
+ *
+ * @param userId - The registering account.
+ * @param installationId - The phone's installation.
+ * @param client - The registration's transaction.
+ * @returns True while it is kept off.
+ */
+export async function isPushInstallationKeptOff(
+  userId: string,
+  installationId: string,
+  client: PoolClient,
+): Promise<boolean> {
+  const kept = await queryOne<{ user_id: string }>(
+    `SELECT user_id FROM push_kept_off WHERE user_id = $1 AND installation_id = $2`,
+    [userId, installationId],
+    client,
+  );
+  return kept !== undefined;
+}
+
+/**
+ * Lets an installation register again for a user, because they turned
+ * notifications on from it.
+ *
+ * @param userId - The registering account.
+ * @param installationId - The phone's installation.
+ * @param client - The registration's transaction.
+ */
+export async function clearPushInstallationKeptOff(
+  userId: string,
+  installationId: string,
+  client: PoolClient,
+): Promise<void> {
+  await execute(`DELETE FROM push_kept_off WHERE user_id = $1 AND installation_id = $2`, [userId, installationId], client);
 }
 
 /**

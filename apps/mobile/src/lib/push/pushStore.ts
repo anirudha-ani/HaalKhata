@@ -5,6 +5,7 @@
  * session) so sign-out, outside React, can use it too.
  */
 
+import { Code, ConnectError } from "@connectrpc/connect";
 import { useSyncExternalStore } from "react";
 import { Platform } from "react-native";
 import Constants from "expo-constants";
@@ -34,11 +35,23 @@ export interface PushState {
   registering: boolean;
   /** Why connecting this phone failed, shown on the Account card. */
   error: string;
+  /**
+   * The person removed this phone (here or on the web); it stays off, and
+   * the background refresh leaves it alone, until they turn it on here.
+   */
+  keptOff: boolean;
   /** The first-use explainer is open. */
   explainerOpen: boolean;
 }
 
-let state: PushState = { permission: "unknown", deviceId: null, registering: false, error: "", explainerOpen: false };
+let state: PushState = {
+  permission: "unknown",
+  deviceId: null,
+  registering: false,
+  error: "",
+  keptOff: false,
+  explainerOpen: false,
+};
 const listeners = new Set<() => void>();
 let lastRegisteredAt = 0;
 let registration: Promise<void> | null = null;
@@ -87,11 +100,18 @@ export async function refreshPushPermission(): Promise<PushPermission> {
  * rotates (force). Concurrent calls share one request. Failures are kept for
  * the Account card rather than thrown, since nobody pressed anything.
  *
+ * A phone the person removed stays off: the server refuses a background
+ * registration from it (FailedPrecondition), the phone shows as off, and
+ * nothing retries until the person turns it on here (`turnOn`).
+ *
  * @param force - Register even if it was done recently.
+ * @param turnOn - The person turned notifications on from this phone just
+ *   now, which also clears an earlier Remove.
  */
-export async function syncThisPhone(force = false): Promise<void> {
+export async function syncThisPhone(force = false, turnOn = false): Promise<void> {
   if (registration) return registration;
   if (state.permission !== "granted") return;
+  if (state.keptOff && !turnOn) return;
   if (!force && state.deviceId && Date.now() - lastRegisteredAt < REGISTRATION_REFRESH_MS) return;
   registration = (async () => {
     update({ registering: true, error: "" });
@@ -102,12 +122,18 @@ export async function syncThisPhone(force = false): Promise<void> {
         platform: Platform.OS === "android" ? "android" : "ios",
         label: Device.modelName ?? "",
         appVersion: Constants.expoConfig?.version ?? "",
+        turnOn,
       });
       await saveDeviceId(device.id);
       lastRegisteredAt = Date.now();
-      update({ deviceId: device.id, registering: false });
+      update({ deviceId: device.id, registering: false, keptOff: false });
     } catch (failure) {
-      update({ registering: false, error: `${PUSH_COPY.registerFailed} ${errorMessage(failure)}` });
+      if (failure instanceof ConnectError && failure.code === Code.FailedPrecondition) {
+        await clearDeviceId().catch(() => undefined);
+        update({ deviceId: null, registering: false, keptOff: true });
+      } else {
+        update({ registering: false, error: `${PUSH_COPY.registerFailed} ${errorMessage(failure)}` });
+      }
     } finally {
       registration = null;
     }
@@ -115,17 +141,48 @@ export async function syncThisPhone(force = false): Promise<void> {
   return registration;
 }
 
+/** What asking for notifications came to. */
+export interface TurnOnResult {
+  /** The person's answer in the iOS alert. */
+  permission: PushPermission;
+  /** Why the phone could not be connected after a yes; empty when it was. */
+  error: string;
+}
+
 /**
- * Asks iOS for permission (from the explainer's Continue) and connects the
- * phone when it is given.
+ * Asks iOS for permission (from the explainer's or the onboarding step's
+ * Continue) and connects the phone when it is given. A yes that could not be
+ * connected comes back with its reason, so the screen that asked can say so
+ * beside its button instead of reporting notifications on.
  *
- * @returns The answer.
+ * @returns The answer, and why connecting failed after a yes.
  */
-export async function turnOnPush(): Promise<PushPermission> {
+export async function turnOnPush(): Promise<TurnOnResult> {
   const permission = await requestPushPermission();
   update({ permission });
-  if (permission === "granted") await syncThisPhone(true);
-  return permission;
+  if (permission !== "granted") return { permission, error: "" };
+  await syncThisPhone(true, true);
+  return { permission, error: state.error };
+}
+
+/**
+ * Connects this phone again after the person removed it, or retries a
+ * failed connection: the Account card's Turn on and Retry.
+ *
+ * @returns Resolves once the attempt has finished; the outcome is in the state.
+ */
+export async function turnThisPhoneOn(): Promise<void> {
+  await syncThisPhone(true, true);
+}
+
+/**
+ * Records that the person removed this phone from the list on this phone:
+ * it shows as off and the background refresh leaves it alone. The server
+ * already keeps it off; this keeps the card from saying "on" meanwhile.
+ */
+export async function markThisPhoneRemoved(): Promise<void> {
+  await clearDeviceId().catch(() => undefined);
+  update({ deviceId: null, keptOff: true, error: "" });
 }
 
 /**
@@ -160,7 +217,8 @@ export async function forgetThisPhone(): Promise<void> {
   const deviceId = state.deviceId ?? (await storedDeviceId().catch(() => null));
   if (deviceId) {
     await Promise.race([
-      pushClient.removeDevice({ deviceId }).catch(() => undefined),
+      // Signing out keeps nothing off: the next sign-in reconnects the phone.
+      pushClient.removeDevice({ deviceId, signingOut: true }).catch(() => undefined),
       new Promise((resolve) => setTimeout(resolve, REMOVE_DEVICE_TIMEOUT_MS)),
     ]);
   }
@@ -177,5 +235,5 @@ export async function clearPushTraces(): Promise<void> {
   await Notifications.setBadgeCountAsync(0).catch(() => false);
   await Notifications.dismissAllNotificationsAsync().catch(() => undefined);
   lastRegisteredAt = 0;
-  update({ deviceId: null, error: "", explainerOpen: false });
+  update({ deviceId: null, error: "", keptOff: false, explainerOpen: false });
 }

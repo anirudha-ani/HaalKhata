@@ -443,6 +443,7 @@ export async function mergeAccounts(
     await client.query(`DELETE FROM push_outbox WHERE user_id = $1`, [loserId]);
     await client.query(`DELETE FROM push_devices WHERE user_id = $1`, [loserId]);
     await client.query(`DELETE FROM push_preferences WHERE user_id = $1`, [loserId]);
+    await client.query(`DELETE FROM push_kept_off WHERE user_id = $1`, [loserId]);
 
     // --- straight repoints, no collision possible ---------------------------
     for (const [table, column] of DIRECT_MERGE_TARGETS) {

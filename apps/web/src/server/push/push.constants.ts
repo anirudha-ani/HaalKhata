@@ -82,6 +82,13 @@ export const EXPO_PUSH_TOKEN_PATTERN = /^Expo(nent)?PushToken\[[A-Za-z0-9_-]{1,2
 /** Shape of an installation id minted by the app, mirrored by the push_devices CHECK. */
 export const INSTALLATION_ID_PATTERN = /^[A-Za-z0-9-]{1,64}$/;
 
+/**
+ * Why a background registration from a removed phone is refused. The app
+ * reads the FailedPrecondition code, shows the phone as off, and offers Turn on.
+ */
+export const PUSH_KEPT_OFF_MESSAGE =
+  "Notifications were turned off for this phone. Turn them on from the phone to get them there again.";
+
 /** Platforms a phone may register as. */
 export const PUSH_PLATFORMS = ["ios", "android"] as const;
 

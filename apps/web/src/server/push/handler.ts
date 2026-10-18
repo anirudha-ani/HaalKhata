@@ -29,7 +29,10 @@ export const pushHandler: ServiceImpl<typeof PushService> = {
 
   /** Stops pushes to one of the caller's phones. */
   async removeDevice(request, context) {
-    await runUsecase(async () => devices.removeDevice(await requireUser(context), request.deviceId), context);
+    await runUsecase(
+      async () => devices.removeDevice(await requireUser(context), request.deviceId, request.signingOut),
+      context,
+    );
     return {};
   },
 

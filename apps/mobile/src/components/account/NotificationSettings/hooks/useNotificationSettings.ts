@@ -6,6 +6,7 @@ import { PUSH_COPY } from "@haalkhata/shared/notifications/copy";
 import { toPushPreferenceValues, withPushSwitch } from "@haalkhata/shared/notifications/settings";
 import { errorMessage } from "@/lib/api/connect";
 import { usePushAPI } from "@/lib/push/hooks/usePushAPI";
+import { markThisPhoneRemoved, pushState } from "@/lib/push/pushStore";
 
 /** What one phone row shows under its buttons. */
 interface DeviceFeedback {
@@ -80,13 +81,16 @@ export function useNotificationSettings() {
 
   /**
    * Stops pushes to a phone. Its row disappears on success, so the
-   * confirmation is shown above the list instead of on the row.
+   * confirmation is shown above the list instead of on the row. Removing
+   * this phone also turns its card to "off", with Turn on, since the server
+   * now keeps it off until it is turned on here.
    *
    * @param deviceId - The phone to stop pushing to.
    */
   const remove = async (deviceId: string): Promise<void> => {
     setListNotice("");
     if (await runDeviceAction(deviceId, () => pushAPI.removeDevice.mutateAsync(deviceId), "")) {
+      if (deviceId === pushState().deviceId) await markThisPhoneRemoved();
       setListNotice(PUSH_COPY.removed);
     }
   };

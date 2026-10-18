@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/Button";
 import { Sheet } from "@/components/ui/Sheet/Sheet";
 import { Text } from "@/components/ui/Text";
 import { errorMessage } from "@/lib/api/connect";
-import { closePushExplainer, turnOnPush, usePushState } from "@/lib/push/pushStore";
+import { closePushExplainer, pushState, turnOnPush, turnThisPhoneOn, usePushState } from "@/lib/push/pushStore";
 import { colors, spacing } from "@/lib/theme/theme";
 
 /**
@@ -16,8 +16,9 @@ import { colors, spacing } from "@/lib/theme/theme";
  * Continue, and no way to close it: Apple asks that a screen shown before
  * its permission alert lead only to the alert, where the person says yes
  * or no (App Review has rejected a "Not now" on such screens). Should the
- * alert itself fail to appear, the reason shows with a retry and "Not now",
- * since there is then no alert in which to decline.
+ * alert itself fail to appear, or the phone fail to connect after a yes, the
+ * reason shows with a retry and "Not now", since there is then no alert in
+ * which to decline.
  *
  * @returns The sheet while the explainer is open, otherwise nothing.
  */
@@ -27,12 +28,20 @@ export function PushPrompt() {
   const [error, setError] = useState("");
   if (!explainerOpen) return null;
 
-  /** Asks iOS, connects the phone when allowed, then closes. */
+  /** Asks iOS, connects the phone when allowed, then closes; a phone that did not connect says why. */
   const proceed = async (): Promise<void> => {
     setBusy(true);
     setError("");
     try {
-      await turnOnPush();
+      // After a yes whose connection failed, retry the connection, not the alert.
+      const failure =
+        pushState().permission === "granted"
+          ? await turnThisPhoneOn().then(() => pushState().error)
+          : (await turnOnPush()).error;
+      if (failure) {
+        setError(failure);
+        return;
+      }
       closePushExplainer();
     } catch (failure) {
       setError(errorMessage(failure));

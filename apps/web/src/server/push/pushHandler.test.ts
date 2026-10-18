@@ -66,9 +66,9 @@ describe("pushHandler", () => {
   it("authenticates the reads and removal", async () => {
     await pushHandler.listDevices({} as never, context);
     await pushHandler.getPreferences({} as never, context);
-    await pushHandler.removeDevice({ deviceId: "dev-1" } as never, context);
+    await pushHandler.removeDevice({ deviceId: "dev-1", signingOut: true } as never, context);
     expect(mocks.requireUser).toHaveBeenCalledTimes(3);
-    expect(mocks.removeDevice).toHaveBeenCalledWith("user-a", "dev-1");
+    expect(mocks.removeDevice).toHaveBeenCalledWith("user-a", "dev-1", true);
   });
 
   it("refuses an unauthenticated caller before any usecase runs", async () => {

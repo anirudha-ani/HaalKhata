@@ -129,6 +129,7 @@ describe.skipIf(!reachable)("push notifications against Postgres", () => {
     await database.query(`DELETE FROM push_outbox`);
     await database.query(`DELETE FROM push_tickets`);
     await database.query(`DELETE FROM push_devices`);
+    await database.query(`DELETE FROM push_kept_off`);
     await database.query(`DELETE FROM push_preferences`);
     await database.query(`DELETE FROM notifications`);
     await database.query(`DELETE FROM user_blocks`);
@@ -308,6 +309,26 @@ describe.skipIf(!reachable)("push notifications against Postgres", () => {
     ).rejects.toMatchObject({ code: "unauthenticated" });
     const stored = await database.query(`SELECT id FROM push_devices WHERE installation_id = 'install-chad-phone'`);
     expect(stored.rows).toEqual([]);
+  });
+
+  it("keeps a phone the person removed off until they turn it on there, but not after a sign-out", async () => {
+    const { removeDevice } = await import("@/server/push/usecase/devices/devices.usecase");
+    const phone = await bobaRegistersPhone();
+    await removeDevice(BOBA_ID, phone.id);
+    await expect(bobaRegistersPhone()).rejects.toMatchObject({ code: "failed_precondition" });
+    expect((await database.query(`SELECT 1 FROM push_devices`)).rowCount).toBe(0);
+
+    const { rows } = await database.query(`SELECT token_version FROM users WHERE id = $1`, [BOBA_ID]);
+    const again = await registerDevice(BOBA_ID, rows[0].token_version, {
+      expoPushToken: BOBA_TOKEN,
+      installationId: "install-boba-phone",
+      platform: "ios",
+      label: "iPhone 17",
+      appVersion: "1.1.0",
+      turnOn: true,
+    });
+    await removeDevice(BOBA_ID, again.id, true);
+    await expect(bobaRegistersPhone()).resolves.toMatchObject({ label: "iPhone 17" });
   });
 
   it("holds a switch that is off, and still keeps the bell row", async () => {

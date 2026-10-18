@@ -1,5 +1,6 @@
 /** Tests for this phone's push state: when it registers, when it asks, and what sign-out leaves behind. */
 
+import { Code, ConnectError } from "@connectrpc/connect";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const native = vi.hoisted(() => ({
@@ -89,6 +90,7 @@ describe("syncThisPhone", () => {
       platform: "ios",
       label: "iPhone 17",
       appVersion: "1.1.0",
+      turnOn: false,
     });
     expect(store.pushState().deviceId).toBe("dev-1");
     await store.syncThisPhone();
@@ -105,6 +107,38 @@ describe("syncThisPhone", () => {
     await expect(store.syncThisPhone()).resolves.toBeUndefined();
     expect(store.pushState()).toMatchObject({ registering: false, deviceId: null });
     expect(store.pushState().error).toContain("server down");
+  });
+
+  it("shows a phone the person removed as off, and stops refreshing it", async () => {
+    permissionIs(IOS_STATUS.authorized);
+    native.registerDevice.mockRejectedValue(new ConnectError("turned off", Code.FailedPrecondition));
+    const store = await freshStore();
+    await store.refreshPushPermission();
+    await store.syncThisPhone();
+    expect(store.pushState()).toMatchObject({ keptOff: true, deviceId: null, error: "" });
+    await store.syncThisPhone(true);
+    expect(native.registerDevice).toHaveBeenCalledOnce();
+  });
+
+  it("turns a removed phone back on when the person asks, from this phone", async () => {
+    permissionIs(IOS_STATUS.authorized);
+    native.registerDevice.mockRejectedValueOnce(new ConnectError("turned off", Code.FailedPrecondition));
+    const store = await freshStore();
+    await store.refreshPushPermission();
+    await store.syncThisPhone();
+    await store.turnThisPhoneOn();
+    expect(native.registerDevice).toHaveBeenLastCalledWith(expect.objectContaining({ turnOn: true }));
+    expect(store.pushState()).toMatchObject({ keptOff: false, deviceId: "dev-1" });
+  });
+
+  it("marks this phone off at once when it is removed from the list here", async () => {
+    permissionIs(IOS_STATUS.authorized);
+    const store = await freshStore();
+    await store.refreshPushPermission();
+    await store.syncThisPhone();
+    await store.markThisPhoneRemoved();
+    expect(store.pushState()).toMatchObject({ keptOff: true, deviceId: null });
+    expect(native.storage.has("haalkhata-push-device")).toBe(false);
   });
 });
 
@@ -141,8 +175,20 @@ describe("turnOnPush", () => {
       return native.permissions;
     });
     const store = await freshStore();
-    expect(await store.turnOnPush()).toBe("granted");
-    expect(native.registerDevice).toHaveBeenCalledOnce();
+    expect(await store.turnOnPush()).toEqual({ permission: "granted", error: "" });
+    expect(native.registerDevice).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ turnOn: true }));
+  });
+
+  it("says when the phone could not be connected after a yes, instead of reporting success", async () => {
+    native.requestPermissionsAsync.mockImplementation(async () => {
+      permissionIs(IOS_STATUS.authorized);
+      return native.permissions;
+    });
+    native.registerDevice.mockRejectedValue(new Error("server down"));
+    const store = await freshStore();
+    const result = await store.turnOnPush();
+    expect(result.permission).toBe("granted");
+    expect(result.error).toContain("server down");
   });
 
   it("connects nothing when the person refuses", async () => {
@@ -151,7 +197,7 @@ describe("turnOnPush", () => {
       return native.permissions;
     });
     const store = await freshStore();
-    expect(await store.turnOnPush()).toBe("denied");
+    expect(await store.turnOnPush()).toEqual({ permission: "denied", error: "" });
     expect(native.registerDevice).not.toHaveBeenCalled();
   });
 });
@@ -163,7 +209,7 @@ describe("forgetThisPhone", () => {
     await store.refreshPushPermission();
     await store.syncThisPhone();
     await store.forgetThisPhone();
-    expect(native.removeDevice).toHaveBeenCalledWith({ deviceId: "dev-1" });
+    expect(native.removeDevice).toHaveBeenCalledWith({ deviceId: "dev-1", signingOut: true });
     expect(native.setBadgeCountAsync).toHaveBeenCalledWith(0);
     expect(native.dismissAllNotificationsAsync).toHaveBeenCalledOnce();
     expect(store.pushState().deviceId).toBeNull();

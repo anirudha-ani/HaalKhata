@@ -74,6 +74,7 @@ export async function eraseAccountData(input: { userId: string; anonymousId: str
   await execute("DELETE FROM apple_credentials WHERE user_id = $1", [input.userId], client);
   await execute("DELETE FROM push_devices WHERE user_id = $1", [input.userId], client);
   await execute("DELETE FROM push_preferences WHERE user_id = $1", [input.userId], client);
+  await execute("DELETE FROM push_kept_off WHERE user_id = $1", [input.userId], client);
   await execute(`DELETE FROM payment_handles WHERE user_id = $1 OR user_id IN
     (SELECT id FROM users WHERE merged_into = $1)`, [input.userId], client);
   await execute(`UPDATE expense_items SET name = $2 WHERE expense_id IN

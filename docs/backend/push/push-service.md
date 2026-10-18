@@ -25,7 +25,7 @@ Implementation:
 | --- | --- | --- |
 | `RegisterDevice` | native only | See [Registering a phone](#registering-a-phone). 10 a minute. |
 | `ListDevices` | both | Returns the caller's live phones, most recently seen first. No token is ever returned. |
-| `RemoveDevice` | both | Removes the caller's own phone, otherwise `not_found`. The app calls it for itself before `LogOut`. |
+| `RemoveDevice` | both | Removes the caller's own phone, otherwise `not_found`. The phone then stays off (`push_kept_off`) until it is turned on from that phone. The app calls it for itself before `LogOut` with `signing_out`, which keeps nothing off. |
 | `SendTestPush` | both | Sends to the caller's own phone, bypassing the queue. A dead phone gives `failed_precondition` and is forgotten; an unreachable Expo gives `unavailable`. 3 a minute. |
 | `GetPreferences` / `UpdatePreferences` | both | Five switches, read and replaced as a whole record. No row means all on. 30 writes a minute. |
 
@@ -33,8 +33,9 @@ Implementation:
 
 1. Validate the Expo token shape, the installation id and the platform.
 2. Strip invisible characters from the label and app version, and refuse abusive ones.
-3. Upsert on `installation_id` under the caller's current `token_version`. A token held by another account moves to the caller.
-4. Keep the 10 most recently seen phones per user.
+3. Refuse a phone the caller removed (`FailedPrecondition`) unless the request carries `turn_on`, which clears it. The app sends `turn_on` only when the person turns notifications on from the phone.
+4. Upsert on `installation_id` under the version of the session that asked, and only while that is still the account's `token_version`; a sign-out in between leaves nothing written. A token held by another account moves to the caller.
+5. Keep the 10 most recently seen phones per user.
 
 ## Which notifications become pushes
 
@@ -127,8 +128,9 @@ never calls Expo, so an Expo outage does not take the app down.
 | `push_preferences` | One row per person who changed a switch |
 | `push_outbox` | Committed bell rows not yet handed to Expo, with the phones already reached |
 | `push_tickets` | Accepted sends whose receipt is unread, with the token each went to |
+| `push_kept_off` | Phones a person removed, kept off until turned on from the phone |
 
-All four cascade from `users`. Erasure and merge clear them explicitly.
+All five cascade from `users`. Erasure and merge clear them explicitly.
 
 The local run and test flow is in
 [docs/local-push-notifications.md](../../local-push-notifications.md).
