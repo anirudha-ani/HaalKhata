@@ -1,6 +1,7 @@
 /** Welcome screen: what HaalKhata is, with Apple and Google sign-in always within reach. */
 
-import { Image, ScrollView, StyleSheet, useWindowDimensions, View } from "react-native";
+import { useState } from "react";
+import { Image, ScrollView, StyleSheet, View } from "react-native";
 import Animated from "react-native-reanimated";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Text } from "@/components/ui/Text";
@@ -12,10 +13,11 @@ import brandIconSource from "../../../../../assets/icon.png";
 import {
   ILLUSTRATION_MAX_HEIGHT,
   ILLUSTRATION_MIN_HEIGHT,
-  PHONE_RESERVED_HEIGHT,
+  STORY_WORDS_HEIGHT,
   TABLET_ILLUSTRATION_HEIGHT,
   WELCOME_TABLET_MAX_WIDTH,
 } from "../../constants/welcome";
+import { DevPasswordButton } from "./components/DevPasswordButton/DevPasswordButton";
 import { SignInPanel } from "./components/SignInPanel/SignInPanel";
 import { WelcomeStory } from "./components/WelcomeStory/WelcomeStory";
 
@@ -33,23 +35,27 @@ import { WelcomeStory } from "./components/WelcomeStory/WelcomeStory";
  */
 export function LoginScreen() {
   const { isTablet, fontScale } = useResponsiveLayout();
-  const { height } = useWindowDimensions();
   const reduceMotion = useReduceMotion();
-  // What the headline, words and panel leave over goes to the illustration,
-  // so a 6.1-inch phone shows the whole page without scrolling; larger text
-  // or a smaller phone scrolls the story while the panel stays put.
+  // The space between the brand and the docked panel, measured, so the
+  // panel's real height (which differs between builds and text sizes)
+  // decides it. The story waits for the measurement rather than jumping.
+  const [storyViewport, setStoryViewport] = useState(0);
+  // What the headline, the step's words and the dots leave over goes to the
+  // illustration, so the whole page fits; past the smallest illustration the
+  // story scrolls while the panel stays put.
   const phoneIllustrationHeight = Math.min(
     ILLUSTRATION_MAX_HEIGHT,
-    Math.max(ILLUSTRATION_MIN_HEIGHT, height - PHONE_RESERVED_HEIGHT * Math.max(1, fontScale)),
+    Math.max(ILLUSTRATION_MIN_HEIGHT, storyViewport - STORY_WORDS_HEIGHT * Math.max(1, fontScale)),
   );
 
   const brand = (
     <Animated.View entering={dropIn(0, reduceMotion)} style={styles.brand}>
       <Image accessibilityIgnoresInvertColors source={brandIconSource} style={styles.brandIcon} />
-      <View>
+      <View style={styles.flexOne}>
         <Text accessibilityRole="header" style={styles.wordmark}>HaalKhata</Text>
         <Text style={styles.brandTagline}>THE SHARED-EXPENSE LEDGER</Text>
       </View>
+      <DevPasswordButton />
     </Animated.View>
   );
 
@@ -76,10 +82,11 @@ export function LoginScreen() {
       <View style={styles.phoneHeader}>{brand}</View>
       <ScrollView
         contentContainerStyle={styles.phoneScroll}
+        onLayout={(event) => setStoryViewport(Math.round(event.nativeEvent.layout.height))}
         showsVerticalScrollIndicator={false}
         style={styles.flexOne}
       >
-        <WelcomeStory illustrationHeight={phoneIllustrationHeight} showBody={false} />
+        {storyViewport > 0 ? <WelcomeStory illustrationHeight={phoneIllustrationHeight} showBody={false} /> : null}
       </ScrollView>
       <SignInPanel variant="dock" />
     </SafeAreaView>

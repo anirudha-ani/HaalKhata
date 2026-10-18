@@ -1,12 +1,10 @@
-/** The sign-in actions: Apple and Google at equal size, the development password link, and the legal links. */
+/** The sign-in actions: Apple and Google at equal size, what continuing does, and the legal links. */
 
-import { useState } from "react";
 import { StyleSheet, View } from "react-native";
 import Animated from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { WELCOME_SIGN_IN } from "@haalkhata/shared/welcome/welcomeCopy";
 import { LegalLinks } from "@/components/legal/LegalLinks";
-import { Button } from "@/components/ui/Button";
 import { Text } from "@/components/ui/Text";
 import { riseIn } from "@/lib/motion/entrances";
 import { useReduceMotion } from "@/lib/motion/hooks/useReduceMotion";
@@ -14,7 +12,6 @@ import { colors, radii, spacing } from "@/lib/theme/theme";
 import { GOOGLE_SIGN_IN_CONFIGURED, PASSWORD_AUTH_ENABLED } from "../../../../constants/googleSignIn";
 import { AppleSignInButton } from "../AppleSignInButton/AppleSignInButton";
 import { GoogleSignInButton } from "../GoogleSignInButton/GoogleSignInButton";
-import { PasswordSheet } from "../PasswordSheet/PasswordSheet";
 
 /**
  * Renders the only actions on the welcome screen. On a phone it is pinned to
@@ -31,7 +28,6 @@ import { PasswordSheet } from "../PasswordSheet/PasswordSheet";
 export function SignInPanel({ variant }: { variant: "dock" | "card" }) {
   const reduceMotion = useReduceMotion();
   const insets = useSafeAreaInsets();
-  const [passwordOpen, setPasswordOpen] = useState(false);
   return (
     <Animated.View
       entering={riseIn(variant === "dock" ? 3 : 2, reduceMotion)}
@@ -48,13 +44,9 @@ export function SignInPanel({ variant }: { variant: "dock" | "card" }) {
         ) : PASSWORD_AUTH_ENABLED ? null : (
           <Text style={styles.hint}>Google sign-in is currently unavailable.</Text>
         )}
-        {PASSWORD_AUTH_ENABLED ? (
-          <Button compact label="Use a password (development)" onPress={() => setPasswordOpen(true)} variant="ghost" />
-        ) : null}
       </View>
       <Text style={styles.hint}>{WELCOME_SIGN_IN.newcomer}</Text>
       <LegalLinks />
-      {passwordOpen ? <PasswordSheet onClose={() => setPasswordOpen(false)} /> : null}
     </Animated.View>
   );
 }

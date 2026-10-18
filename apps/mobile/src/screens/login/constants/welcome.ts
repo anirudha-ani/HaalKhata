@@ -72,11 +72,12 @@ export const ILLUSTRATION_MAX_HEIGHT = 230;
 export const ILLUSTRATION_MIN_HEIGHT = 150;
 
 /**
- * Height a phone's welcome screen needs for everything but the illustration:
- * status bar, brand, headline, the step's words, dots and the docked sign-in
- * panel, at the default text size. What is left goes to the illustration.
+ * Height the phone's story needs besides the illustration, at the default
+ * text size: the two-line headline, the step's title and up to three lines
+ * of detail, the dots, and the gaps between them. What is left of the space
+ * above the docked panel goes to the illustration.
  */
-export const PHONE_RESERVED_HEIGHT = 660;
+export const STORY_WORDS_HEIGHT = 236;
 
 /** Height of the illustration area on an iPad. */
 export const TABLET_ILLUSTRATION_HEIGHT = 320;
