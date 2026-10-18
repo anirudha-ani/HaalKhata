@@ -40,3 +40,15 @@ export const POP_SPRING = { duration: 420, dampingRatio: 0.55 } as const;
 
 /** How long one loop of an idle illustration takes. */
 export const IDLE_LOOP_MS = 2_400;
+
+/** A card easing to a new height: settles without overshoot. */
+export const CARD_RESIZE_SPRING = { duration: 320, dampingRatio: 1 } as const;
+
+/** Something dropping in from the top edge, the way a notification banner arrives. */
+export const BANNER_SPRING = { duration: 460, dampingRatio: 0.82 } as const;
+
+/** A small mark (a typed digit, a badge) landing with a quick pop. */
+export const SMALL_POP_SPRING = { duration: POP_SPRING.duration, dampingRatio: 0.7 } as const;
+
+/** One half of a text caret's blink. */
+export const CARET_BLINK_MS = 500;

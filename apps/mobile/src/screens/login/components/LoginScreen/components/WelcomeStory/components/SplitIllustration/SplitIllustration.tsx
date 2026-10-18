@@ -8,15 +8,13 @@ import { Text } from "@/components/ui/Text";
 import { useIdleLoop } from "@/lib/motion/hooks/useIdleLoop";
 import { colors, radii, spacing } from "@/lib/theme/theme";
 import {
+  ILLUSTRATION_REST_FRAME,
   SAMPLE_PEOPLE,
   SAMPLE_SPLIT_BILL,
   SAMPLE_SPLIT_ITEMS,
   SAMPLE_SPLIT_TOTALS,
 } from "@/screens/login/constants/welcome";
 import { SplitItemRow } from "./components/SplitItemRow/SplitItemRow";
-
-/** The clock value showing every item assigned and the shares totalled. */
-const REST_FRAME = 0.8;
 
 /**
  * Draws an itemized bill. Item by item, the people who shared it pop onto
@@ -33,7 +31,7 @@ export function SplitIllustration({
   /** Whether this page is the one on screen. */
   active: boolean;
 }) {
-  const cycle = useIdleLoop(active, REST_FRAME);
+  const cycle = useIdleLoop(active, ILLUSTRATION_REST_FRAME);
 
   const totalsStyle = useAnimatedStyle(() => ({
     opacity: interpolate(cycle.value, [0.56, 0.64, 0.92, 1], [0, 1, 1, 0], Extrapolation.CLAMP),

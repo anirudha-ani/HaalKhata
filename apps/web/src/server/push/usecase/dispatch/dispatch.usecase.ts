@@ -1,6 +1,6 @@
 /** One pass of the push dispatcher: claim due outbox rows, drop what must not go out, send the rest, record the outcome. */
 
-import type { PushPreferenceValues } from "@haalkhata/shared/notifications/categories";
+import { toPushPreferenceValues } from "@haalkhata/shared/notifications/settings";
 import { logEvent } from "@/server/common/logger";
 import {
   DEVICE_NOT_REGISTERED,
@@ -53,22 +53,6 @@ interface SendOutcome {
   sentDeviceIds: string[];
   /** Phones reported gone, with the token the report was about. */
   deadDevices: { deviceId: string; expoToken: string }[];
-}
-
-/**
- * Turns a person's stored switches into the shared shape.
- *
- * @param preferenceRow - A push_preferences row.
- * @returns The five switches.
- */
-function toPreferenceValues(preferenceRow: PushPreferenceValues): PushPreferenceValues {
-  return {
-    expenses: preferenceRow.expenses,
-    comments: preferenceRow.comments,
-    payments: preferenceRow.payments,
-    groups: preferenceRow.groups,
-    friends: preferenceRow.friends,
-  };
 }
 
 /**
@@ -209,7 +193,7 @@ export async function drainPushOutbox(
   const plan = planPushes({
     rows,
     devicesByUser: devicesByOwner(devices),
-    preferencesByUser: new Map(preferenceRows.map((preferenceRow) => [preferenceRow.user_id, toPreferenceValues(preferenceRow)])),
+    preferencesByUser: new Map(preferenceRows.map((preferenceRow) => [preferenceRow.user_id, toPushPreferenceValues(preferenceRow)])),
     unreadByUser,
     nowMs,
   });

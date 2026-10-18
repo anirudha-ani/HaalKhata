@@ -62,6 +62,13 @@ export const RECEIPT_SCAN_HEIGHT = 150;
 /** Width of the line in "Clear it" that the amount travels along, between the two people. */
 export const SETTLE_TRACK_WIDTH = 132;
 
+/**
+ * The point in an illustration's loop that shows its finished picture (the
+ * receipt read and stamped, the bill split, the balance settled), held while
+ * it is off screen or under Reduce Motion.
+ */
+export const ILLUSTRATION_REST_FRAME = 0.8;
+
 /** Height each illustration is drawn at before it is scaled to fit. */
 export const ILLUSTRATION_NATURAL_HEIGHT = 250;
 

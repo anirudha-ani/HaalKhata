@@ -6,7 +6,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { queryKeys } from "@haalkhata/shared/api/queryKeys";
 import { authClient, errorMessage } from "@/lib/api/connect";
 import type { FlowDirection } from "@/lib/motion/entrances";
-import { DEVICE_SETUP_QUERY_KEY } from "@/lib/onboarding/onboarding.constants";
+import { DEVICE_SETUP_QUERY_KEY, ONBOARDING_PLAN_QUERY_KEY } from "@/lib/onboarding/onboarding.constants";
 import { finishDeviceSetup, markDeviceSetupDue, readOnboardingSituation } from "@/lib/onboarding/deviceSetup";
 import {
   ACCOUNT_STEPS,
@@ -16,9 +16,6 @@ import {
 } from "@/lib/onboarding/onboardingPlan";
 import type { SetupAchievements } from "../components/DoneStep/DoneStep";
 import type { FriendsSummary } from "../components/FriendsStep/FriendsStep";
-
-/** Query key for the plan of this visit to the flow; local, never sent. */
-const PLAN_QUERY_KEY = ["device", "onboardingPlan"] as const;
 
 /**
  * Drives the flow.
@@ -43,7 +40,7 @@ export function useOnboarding() {
   const user = meQuery.data;
 
   const planQuery = useQuery({
-    queryKey: [...PLAN_QUERY_KEY, user?.id ?? ""],
+    queryKey: [...ONBOARDING_PLAN_QUERY_KEY, user?.id ?? ""],
     enabled: Boolean(user),
     gcTime: 0,
     retry: false,

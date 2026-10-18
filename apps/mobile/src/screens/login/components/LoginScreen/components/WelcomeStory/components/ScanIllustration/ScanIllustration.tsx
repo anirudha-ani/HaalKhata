@@ -7,15 +7,13 @@ import { Text } from "@/components/ui/Text";
 import { useIdleLoop } from "@/lib/motion/hooks/useIdleLoop";
 import { colors, radii, spacing } from "@/lib/theme/theme";
 import {
+  ILLUSTRATION_REST_FRAME,
   RECEIPT_SCAN_HEIGHT,
   RECEIPT_WIDTH,
   SAMPLE_RECEIPT,
   SAMPLE_RECEIPT_LINES,
 } from "@/screens/login/constants/welcome";
 import { ReceiptLine } from "./components/ReceiptLine/ReceiptLine";
-
-/** The clock value showing the read receipt with its stamp, for a still picture. */
-const REST_FRAME = 0.8;
 
 /**
  * Draws a slightly tilted receipt with a scan line sweeping down it. Each
@@ -32,7 +30,7 @@ export function ScanIllustration({
   /** Whether this page is the one on screen. */
   active: boolean;
 }) {
-  const cycle = useIdleLoop(active, REST_FRAME);
+  const cycle = useIdleLoop(active, ILLUSTRATION_REST_FRAME);
 
   const scanStyle = useAnimatedStyle(() => ({
     opacity: interpolate(cycle.value, [0, 0.04, 0.52, 0.58], [0, 1, 1, 0], Extrapolation.CLAMP),

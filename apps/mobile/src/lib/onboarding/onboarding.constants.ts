@@ -14,5 +14,8 @@ export const SETUP_DONE_STORAGE_PREFIX = "haalkhata.setupDone.";
 /** Query key for whether this phone owes the signed-in person the device steps; local, never sent. */
 export const DEVICE_SETUP_QUERY_KEY = ["device", "setupOwed"] as const;
 
+/** Query key for the plan of one visit to the first-run flow; local, never sent. */
+export const ONBOARDING_PLAN_QUERY_KEY = ["device", "onboardingPlan"] as const;
+
 /** Where the flow ends when nothing more specific was waiting. */
 export const DEFAULT_DESTINATION = "/dashboard";

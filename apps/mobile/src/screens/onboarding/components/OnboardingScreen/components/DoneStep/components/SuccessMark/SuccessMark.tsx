@@ -7,9 +7,13 @@ import Animated, { useAnimatedStyle, useSharedValue, withDelay, withSpring, with
 import { useReduceMotion } from "@/lib/motion/hooks/useReduceMotion";
 import { POP_SPRING } from "@/lib/motion/motion.constants";
 import { colors, radii } from "@/lib/theme/theme";
+import {
+  SUCCESS_MARK_SIZE,
+  SUCCESS_RIPPLE_DELAY_MS,
+  SUCCESS_RIPPLE_MS,
+  SUCCESS_TICK_DELAY_MS,
+} from "../../../../../../constants/onboarding";
 
-/** Diameter of the check's disc. */
-const MARK_SIZE = 92;
 
 /**
  * Celebrates the end of setup without lingering: the disc springs up from
@@ -33,8 +37,8 @@ export function SuccessMark() {
       return;
     }
     disc.value = withSpring(1, POP_SPRING);
-    tick.value = withDelay(160, withSpring(1, POP_SPRING));
-    ripple.value = withDelay(120, withTiming(1, { duration: 900 }));
+    tick.value = withDelay(SUCCESS_TICK_DELAY_MS, withSpring(1, POP_SPRING));
+    ripple.value = withDelay(SUCCESS_RIPPLE_DELAY_MS, withTiming(1, { duration: SUCCESS_RIPPLE_MS }));
   }, [disc, reduceMotion, ripple, tick]);
 
   const discStyle = useAnimatedStyle(() => ({ transform: [{ scale: disc.value }] }));
@@ -61,18 +65,18 @@ const styles = StyleSheet.create({
     alignItems: "center",
     backgroundColor: colors.pos600,
     borderRadius: radii.full,
-    height: MARK_SIZE,
+    height: SUCCESS_MARK_SIZE,
     justifyContent: "center",
-    width: MARK_SIZE,
+    width: SUCCESS_MARK_SIZE,
   },
   ripple: {
     backgroundColor: colors.pos50,
     borderColor: colors.pos600,
     borderRadius: radii.full,
     borderWidth: 2,
-    height: MARK_SIZE,
+    height: SUCCESS_MARK_SIZE,
     position: "absolute",
-    width: MARK_SIZE,
+    width: SUCCESS_MARK_SIZE,
   },
-  stage: { alignItems: "center", height: MARK_SIZE * 1.6, justifyContent: "center", width: MARK_SIZE * 1.6 },
+  stage: { alignItems: "center", height: SUCCESS_MARK_SIZE * 1.6, justifyContent: "center", width: SUCCESS_MARK_SIZE * 1.6 },
 });

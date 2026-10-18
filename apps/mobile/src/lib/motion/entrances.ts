@@ -19,10 +19,15 @@ import {
   FadeOutRight,
   FadeOutUp,
   Keyframe,
+  LinearTransition,
   ReduceMotion,
+  ZoomIn,
 } from "react-native-reanimated";
 import {
+  BANNER_SPRING,
+  CARD_RESIZE_SPRING,
   FADE_DURATION_MS,
+  SMALL_POP_SPRING,
   STAGGER_MS,
   STEP_SPRING_DAMPING_RATIO,
   STEP_SPRING_DURATION_MS,
@@ -133,4 +138,67 @@ export function stepEnter(direction: FlowDirection, reduceMotion: boolean) {
  */
 export function stepExit(direction: FlowDirection, reduceMotion: boolean) {
   return reduceMotion ? FADE_OUT : STEP_EXIT[direction];
+}
+
+/** Words that replace others in place fade in, with or without Reduce Motion. */
+export const NOTICE_FADE_IN = FadeIn.reduceMotion(ReduceMotion.Never);
+
+/** A card easing to its new height when what it holds changes size. */
+export const CARD_RESIZE = LinearTransition.springify(CARD_RESIZE_SPRING.duration).dampingRatio(
+  CARD_RESIZE_SPRING.dampingRatio,
+);
+
+/** A typed character landing with a small pop. */
+export const DIGIT_POP = ZoomIn.springify(SMALL_POP_SPRING.duration).dampingRatio(SMALL_POP_SPRING.dampingRatio);
+
+const DROPS = new Map<number, ReturnType<typeof FadeInUp.springify>>();
+const POPS = new Map<number, ReturnType<typeof ZoomIn.springify>>();
+const DELAYED_FADES = new Map<number, ReturnType<typeof FadeIn.delay>>();
+
+/**
+ * A fade after a delay, for Reduce Motion; built once per delay.
+ *
+ * @param delayMs - Wait before it starts.
+ * @returns The entering animation.
+ */
+function fadeAfter(delayMs: number) {
+  const known = DELAYED_FADES.get(delayMs);
+  if (known) return known;
+  const built = FadeIn.delay(delayMs).reduceMotion(ReduceMotion.Never);
+  DELAYED_FADES.set(delayMs, built);
+  return built;
+}
+
+/**
+ * Drops in from the top edge after a delay, like a notification banner; a
+ * fade under Reduce Motion. Built once per delay.
+ *
+ * @param delayMs - Wait before it starts, to choreograph several in turn.
+ * @param reduceMotion - Whether Reduce Motion is on.
+ * @returns The entering animation.
+ */
+export function dropInAfter(delayMs: number, reduceMotion: boolean) {
+  if (reduceMotion) return fadeAfter(delayMs);
+  const known = DROPS.get(delayMs);
+  if (known) return known;
+  const built = FadeInUp.springify(BANNER_SPRING.duration).dampingRatio(BANNER_SPRING.dampingRatio).delay(delayMs);
+  DROPS.set(delayMs, built);
+  return built;
+}
+
+/**
+ * Pops in after a delay, for a small mark such as a badge; a fade under
+ * Reduce Motion. Built once per delay.
+ *
+ * @param delayMs - Wait before it starts.
+ * @param reduceMotion - Whether Reduce Motion is on.
+ * @returns The entering animation.
+ */
+export function popInAfter(delayMs: number, reduceMotion: boolean) {
+  if (reduceMotion) return fadeAfter(delayMs);
+  const known = POPS.get(delayMs);
+  if (known) return known;
+  const built = ZoomIn.springify(SMALL_POP_SPRING.duration).dampingRatio(SMALL_POP_SPRING.dampingRatio).delay(delayMs);
+  POPS.set(delayMs, built);
+  return built;
 }

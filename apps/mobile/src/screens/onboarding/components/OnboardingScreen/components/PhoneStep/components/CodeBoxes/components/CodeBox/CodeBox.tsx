@@ -10,15 +10,11 @@ import Animated, {
   withSequence,
   withSpring,
   withTiming,
-  ZoomIn,
 } from "react-native-reanimated";
 import { Text } from "@/components/ui/Text";
-import { FADE_OUT } from "@/lib/motion/entrances";
-import { POP_SPRING } from "@/lib/motion/motion.constants";
+import { DIGIT_POP, FADE_OUT } from "@/lib/motion/entrances";
+import { CARET_BLINK_MS, POP_SPRING } from "@/lib/motion/motion.constants";
 import { colors, radii } from "@/lib/theme/theme";
-
-/** A digit lands with a quick, small pop. */
-const DIGIT_ENTERING = ZoomIn.springify(POP_SPRING.duration).dampingRatio(0.7);
 
 /**
  * Draws one box. A typed digit pops in; the box that takes the next digit
@@ -53,7 +49,10 @@ export function CodeBox({
       caret.value = 1;
       return undefined;
     }
-    caret.value = withRepeat(withSequence(withTiming(0, { duration: 500 }), withTiming(1, { duration: 500 })), -1);
+    caret.value = withRepeat(
+      withSequence(withTiming(0, { duration: CARET_BLINK_MS }), withTiming(1, { duration: CARET_BLINK_MS })),
+      -1,
+    );
     return () => cancelAnimation(caret);
   }, [caret, reduceMotion, showCaret]);
 
@@ -67,7 +66,7 @@ export function CodeBox({
   return (
     <Animated.View style={[styles.box, showCaret ? styles.current : null, digit ? styles.filled : null, boxStyle]}>
       {digit ? (
-        <Animated.View entering={reduceMotion ? undefined : DIGIT_ENTERING} exiting={FADE_OUT} key={digit}>
+        <Animated.View entering={reduceMotion ? undefined : DIGIT_POP} exiting={FADE_OUT} key={digit}>
           <Text allowFontScaling={false} style={styles.digit}>{digit}</Text>
         </Animated.View>
       ) : showCaret ? (

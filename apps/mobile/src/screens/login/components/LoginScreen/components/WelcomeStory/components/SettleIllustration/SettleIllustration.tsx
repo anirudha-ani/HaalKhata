@@ -7,10 +7,12 @@ import { Avatar } from "@/components/ui/Avatar";
 import { Text } from "@/components/ui/Text";
 import { useIdleLoop } from "@/lib/motion/hooks/useIdleLoop";
 import { colors, radii, spacing } from "@/lib/theme/theme";
-import { SAMPLE_PEOPLE, SAMPLE_SETTLEMENT, SETTLE_TRACK_WIDTH } from "@/screens/login/constants/welcome";
-
-/** The clock value showing the settled balance, for a still picture. */
-const REST_FRAME = 0.8;
+import {
+  ILLUSTRATION_REST_FRAME,
+  SAMPLE_PEOPLE,
+  SAMPLE_SETTLEMENT,
+  SETTLE_TRACK_WIDTH,
+} from "@/screens/login/constants/welcome";
 
 /**
  * Draws Dot paying Oni: the amount slides along the line between them, the
@@ -27,7 +29,7 @@ export function SettleIllustration({
   /** Whether this page is the one on screen. */
   active: boolean;
 }) {
-  const cycle = useIdleLoop(active, REST_FRAME);
+  const cycle = useIdleLoop(active, ILLUSTRATION_REST_FRAME);
   const [owed, payer] = [SAMPLE_PEOPLE[0]!, SAMPLE_PEOPLE[1]!];
   // The amount starts beside the payer and ends beside the person owed.
   const travel = SETTLE_TRACK_WIDTH / 2 - spacing.lg;
