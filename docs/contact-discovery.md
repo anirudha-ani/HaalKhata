@@ -17,9 +17,9 @@ how it works, what it stores, and how to run and verify it locally.
    minimal profile and the relation (none, requested, incoming, friends).
 4. The app joins the replies back to the names saved on the phone. Rows
    offer **Add**, **Accept**, or show **Requested** / **Already friends**.
-   **Send to all N** opens a sheet that lists every name and previews the
-   exact notification before anything is sent (`SendFriendRequests`, 50 per
-   call).
+   Above them, one line quotes the exact notification an Add sends. Each
+   **Add** sends one request (`SendFriendRequests` with one id). There is no
+   "send to all"; see App Store below.
 
 The web app does not read contacts in this release. Both apps have the
 discoverability switch, so a web-only person can still choose to be found.
@@ -52,7 +52,7 @@ a yes and **Turn off** a no. The answer can be changed any time under
 | Phones and emails sent to FindContacts | Not stored or logged; held only for the request |
 | Numbers that match nobody | Never become Invited rows (unlike AddFriend) |
 | `contact_lookup_usage` | Per account and UTC day: a count of identifiers checked |
-| Friend requests and notifications | Written only when the person taps Add or confirms Send to all |
+| Friend requests and notifications | Written only when the person taps Add beside someone |
 
 ## Limits
 
@@ -105,8 +105,8 @@ To see the permission prompt again on iOS:
       "On HaalKhata as …" when the account name differs. C does not appear.
 - [ ] **Add** on B: the row shows **Requested**; B sees the request on Friends
       (web), titled "A's name sent you a friend request".
-- [ ] With two or more findable contacts, **Send to all N** lists every name
-      and the notification text; confirming sends to exactly those people.
+- [ ] The line above the found people quotes "A's name sent you a friend
+      request", and there is no way to ask everyone at once.
 - [ ] B turns the switch off: A no longer finds B on the next visit.
 - [ ] B blocks A: A no longer finds B.
 - [ ] iOS permission: allow all, allow selected (then **Choose more
@@ -127,9 +127,11 @@ and `pnpm test:parity`.
 
 ## App Store and Play Store
 
-- **App Review 5.1.2(v):** nobody is pre-selected; **Send to all** goes
-  through a sheet listing every name with the exact notification text, and
-  only for people already on HaalKhata. Non-users are never messaged.
+- **App Review 5.1.2(v):** requests go one person at a time, at the
+  person's own tap. There is no "Select All" and nobody is pre-selected (the
+  guideline forbids both), and the exact notification text shows before any
+  Add. Only people already on HaalKhata can be asked; non-users are never
+  messaged.
 - **App Review 5.1.2(iv):** nothing from the address book is stored.
 - **App privacy label:** phones and emails are sent and discarded after the
   request, which Apple does not count as collected. The privacy policy still

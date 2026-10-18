@@ -1,4 +1,4 @@
-/** Find friends: people in the caller's contacts who are on HaalKhata, with add, accept and send to all. */
+/** Find friends: people in the caller's contacts who are on HaalKhata, each with its own Add or Accept. */
 
 import { Share2, Users } from "lucide-react-native";
 import { StyleSheet, View } from "react-native";
@@ -20,18 +20,19 @@ import { useErrorToast } from "@/components/ui/ToastProvider";
 import { colors, radii, spacing } from "@/lib/theme/theme";
 import { ContactsAccessCard } from "@/components/contacts/ContactsAccessCard/ContactsAccessCard";
 import { FoundSection } from "@/components/contacts/FoundSection/FoundSection";
-import { SendAllBar } from "@/components/contacts/SendAllBar/SendAllBar";
-import { SendAllConfirmSheet } from "@/components/contacts/SendAllConfirmSheet/SendAllConfirmSheet";
+import { RequestPreviewNote } from "@/components/contacts/RequestPreviewNote/RequestPreviewNote";
 import { useFindFriends } from "@/lib/contacts/hooks/useFindFriends";
 
 /**
  * Renders the screen through its states: checking access, the explanation
  * before the OS prompt (or how to allow access after a refusal), reading and
  * matching with a count, then the found people grouped by what can be done
- * with each. Row failures surface through the screen's toast layer; a failed
- * lookup offers a retry; "send to all" confirms in a sheet that lists
- * everyone first. Someone who never answered is told here too that they can be found,
- * since they are about to find others.
+ * with each. Requests go one person at a time from each row's Add, under a
+ * line quoting the notification they send; there is no "send to all", since
+ * App Review forbids select-all over people found through contacts
+ * (5.1.2(v)). Row failures surface through the screen's toast layer; a
+ * failed lookup offers a retry. Someone who never answered is told here too
+ * that they can be found, since they are about to find others.
  *
  * @returns The Find friends screen.
  */
@@ -74,9 +75,6 @@ export function FindFriendsScreen() {
           </View>
         ) : null}
         {finder.partialNote ? <Text style={styles.partial}>{finder.partialNote}</Text> : null}
-        {finder.notice ? (
-          <Text accessibilityLiveRegion="polite" style={styles.notice}>{finder.notice}</Text>
-        ) : null}
         {finder.found === 0 ? (
           <EmptyState
             action={
@@ -94,6 +92,7 @@ export function FindFriendsScreen() {
           />
         ) : (
           <>
+            {groups.requestable.length > 0 ? <RequestPreviewNote senderName={finder.me.name} /> : null}
             <FoundSection
               busyIds={finder.busyIds}
               onAccept={(userId) => void finder.accept(userId)}
@@ -101,9 +100,6 @@ export function FindFriendsScreen() {
               people={groups.incoming}
               title={FIND_FRIENDS_COPY.incoming}
             />
-            {groups.requestable.length > 1 ? (
-              <SendAllBar count={groups.requestable.length} onPress={finder.openSendAll} />
-            ) : null}
             <FoundSection
               busyIds={finder.busyIds}
               onAccept={(userId) => void finder.accept(userId)}
@@ -137,16 +133,6 @@ export function FindFriendsScreen() {
         {finder.me ? <ContactDiscoveryPrompt answer={finder.me.contactDiscovery} /> : null}
         {body()}
       </View>
-      {finder.confirmingAll ? (
-        <SendAllConfirmSheet
-          busy={finder.sendingAll}
-          error={finder.sendAllError}
-          onClose={finder.closeSendAll}
-          onConfirm={() => void finder.sendAll()}
-          people={groups.requestable}
-          senderName={finder.me?.name ?? ""}
-        />
-      ) : null}
     </Screen>
   );
 }
@@ -162,15 +148,6 @@ const styles = StyleSheet.create({
   },
   bannerText: { color: colors.inkSoft, fontSize: 13, lineHeight: 19 },
   content: { gap: spacing.lg },
-  notice: {
-    backgroundColor: colors.pos50,
-    borderRadius: radii.lg,
-    color: colors.pos700,
-    fontSize: 14,
-    fontWeight: "500",
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
-  },
   partial: {
     backgroundColor: colors.neg50,
     borderRadius: radii.lg,

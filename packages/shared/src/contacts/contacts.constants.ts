@@ -14,6 +14,7 @@ export const MAX_ADDRESS_BOOK_FIELD_LENGTH = 254;
 
 /**
  * Most people one SendFriendRequests call may ask, matching the server's
- * limit; "send to all" splits a longer list into calls of this size.
+ * limit; a longer list is split into calls of this size. The apps send one
+ * person per call (each Add), so this only bounds what the server accepts.
  */
 export const FRIEND_REQUESTS_PER_SEND = 50;

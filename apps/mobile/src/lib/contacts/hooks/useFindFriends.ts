@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ContactRelation } from "@haalkhata/protogen/social/v1/social_pb";
 import { queryKeys } from "@haalkhata/shared/api/queryKeys";
-import { partialCheckMessage, requestsSentNotice } from "@haalkhata/shared/contacts/contactsCopy";
+import { partialCheckMessage } from "@haalkhata/shared/contacts/contactsCopy";
 import {
   buildContactLookup,
   chunkContactLookup,
@@ -34,7 +34,7 @@ export type LookupStatus = "idle" | "reading" | "matching" | "done";
  *
  * @returns The caller, contacts access and its actions, the lookup status
  *   and outcome, the found people grouped by action, the actions on them
- *   (add, accept, send to all with its confirm sheet, share a link), and
+ *   (add and accept, one person at a time, and share a link), and
  *   how many requests this visit sent and accepted.
  */
 export function useFindFriends() {
@@ -47,11 +47,8 @@ export function useFindFriends() {
   const [people, setPeople] = useState<FoundPerson[]>([]);
   const [lookupFailure, setLookupFailure] = useState<unknown>(null);
   const [partialNote, setPartialNote] = useState("");
-  const [notice, setNotice] = useState("");
   const [busyIds, setBusyIds] = useState<string[]>([]);
   const [actionError, setActionError] = useState("");
-  const [confirmingAll, setConfirmingAll] = useState(false);
-  const [sendAllError, setSendAllError] = useState("");
   // What this visit did, for a summary (the onboarding flow's last screen).
   const [sentCount, setSentCount] = useState(0);
   const [acceptedCount, setAcceptedCount] = useState(0);
@@ -64,7 +61,6 @@ export function useFindFriends() {
     if (!profile) return;
     setLookupFailure(null);
     setPartialNote("");
-    setNotice("");
     setStatus("reading");
     try {
       const addressBook = await contacts.readAll();
@@ -139,24 +135,6 @@ export function useFindFriends() {
 
   const groups = groupFoundPeople(people);
 
-  /** Sends to everyone not yet asked, from the confirm sheet that lists them. */
-  const sendAll = async () => {
-    setSendAllError("");
-    try {
-      const outcome = await findFriendsAPI.send.mutateAsync(groups.requestable.map((person) => person.user.id));
-      setPeople((current) => withRelation(current, outcome.sent, ContactRelation.REQUESTED));
-      setSentCount((count) => count + outcome.sent.length);
-      if (outcome.failure) {
-        setSendAllError(outcome.failure);
-        return;
-      }
-      setConfirmingAll(false);
-      setNotice(requestsSentNotice(outcome.sent.length));
-    } catch (failure) {
-      setSendAllError(errorMessage(failure));
-    }
-  };
-
   /** Shares the caller's own "add me" link, for contacts not on HaalKhata yet. */
   const shareInviteLink = async () => {
     setActionError("");
@@ -188,22 +166,12 @@ export function useFindFriends() {
     lookupFailure,
     retry: lookUpContacts,
     partialNote,
-    notice,
     groups,
     found: people.length,
     busyIds,
     add: addPerson,
     accept,
     actionError,
-    confirmingAll,
-    openSendAll: () => {
-      setSendAllError("");
-      setConfirmingAll(true);
-    },
-    closeSendAll: () => setConfirmingAll(false),
-    sendAll,
-    sendingAll: findFriendsAPI.send.isPending && confirmingAll,
-    sendAllError,
     shareInviteLink,
     sharingLink: findFriendsAPI.profileLink.isPending,
     /** Friend requests sent during this visit. */

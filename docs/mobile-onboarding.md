@@ -62,8 +62,9 @@ opens when the flow ends, if it is one the activity feed may open
   shown, the step says why and offers a retry and a way past.
 - **Optional means optional.** Profile, phone and payment can all be
   skipped (5.1.1(x)).
-- **No select-all over contacts.** Requests from Find friends go one person
-  at a time (5.1.2(v)). The onboarding step has no "send to all".
+- **No select-all over contacts.** Requests go one person at a time from
+  each row's Add, under a line quoting the notification they send (5.1.2(v)
+  forbids a select-all and a pre-selected list alike).
 - **Haptics for outcomes only.** Success when a code verifies, requests
   send, notifications turn on and setup finishes; error on a wrong code; a
   light tap on Add.

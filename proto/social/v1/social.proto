@@ -39,8 +39,9 @@ service SocialService {
   // existing friends and pairs with a request pending in either direction
   // are skipped without saying so. So are accounts that are not findable
   // from contacts, which keeps this bulk path from being a faster AddFriend
-  // for ids learned elsewhere. One call takes one rate-limit slot,
-  // which is what lets "send to all" be one call. The recipients appear in
+  // for ids learned elsewhere. One call takes one rate-limit slot. The apps
+  // send one id per call, from that person's Add (App Review 5.1.2(v) rules
+  // out a select-all over contacts). The recipients appear in
   // ListFriends.outgoing_requests with their profile, since the caller saw
   // who they were asking.
   rpc SendFriendRequests(SendFriendRequestsRequest) returns (google.protobuf.Empty);

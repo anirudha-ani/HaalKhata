@@ -9,6 +9,7 @@ import {
   checkingLabel,
 } from "@haalkhata/shared/contacts/contactsCopy";
 import { FoundSection } from "@/components/contacts/FoundSection/FoundSection";
+import { RequestPreviewNote } from "@/components/contacts/RequestPreviewNote/RequestPreviewNote";
 import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ErrorState } from "@/components/ui/ErrorState";
@@ -21,8 +22,8 @@ import { colors, radii, spacing } from "@/lib/theme/theme";
 /**
  * Renders the lookup's progress, then the found people grouped by what can
  * be done with each, the way Find friends does. Requests go one person at a
- * time from each row's Add; onboarding offers no "send to all", since App
- * Review forbids select-all over people found through contacts (5.1.2).
+ * time from each row's Add, under a line quoting the notification they send
+ * (App Review 5.1.2(v): no select-all, and show the message first).
  * A row's failure shows above the list, never only in a toast.
  *
  * @param props - Component props.
@@ -84,6 +85,9 @@ export function FriendResults({ finder }: { finder: FindFriendsController }) {
         />
       ) : (
         <>
+          {finder.groups.requestable.length > 0 && finder.me ? (
+            <RequestPreviewNote senderName={finder.me.name} />
+          ) : null}
           <FoundSection
             busyIds={finder.busyIds}
             onAccept={accept}
