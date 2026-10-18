@@ -39,6 +39,22 @@ export async function requireUser(handlerContext: HandlerContext): Promise<strin
 }
 
 /**
+ * The token version baked into the request's verified session token. Only
+ * meaningful after {@link requireUser} has accepted the request, which proved
+ * it equals the account's version at that moment. A write that must bind to
+ * the session (a phone registered under it) uses this rather than reading the
+ * account's version again: a sign-out landing in between would otherwise
+ * hand the write the new version and outlive the session that made it.
+ *
+ * @param handlerContext - Connect handler context for the current request.
+ * @returns The session's token version, or NaN without a session token.
+ */
+export function sessionTokenVersion(handlerContext: HandlerContext): number {
+  const token = tokenFromHeaders(handlerContext.requestHeader);
+  return token ? tokenVersion(token) : Number.NaN;
+}
+
+/**
  * Re-issues a session that has used up more than half its lifetime, so a
  * person who keeps using the app is never signed out by the absolute token
  * limit — only by inactivity or by signing out. The fresh token travels the

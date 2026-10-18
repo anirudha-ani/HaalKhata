@@ -5,7 +5,6 @@ import type { PushDeviceRow } from "@/server/push/repo/pushDevices.repo";
 
 const repo = vi.hoisted(() => ({
   transaction: vi.fn(async (operation: (client: unknown) => Promise<unknown>) => operation({})),
-  findUserTokenVersion: vi.fn(),
   upsertPushDevice: vi.fn(),
   evictOldestPushDevices: vi.fn(),
   listLivePushDevices: vi.fn(),
@@ -18,7 +17,6 @@ const repo = vi.hoisted(() => ({
 }));
 
 vi.mock("@/server/common/db/db", () => ({ transaction: repo.transaction }));
-vi.mock("@/server/auth/repo/users.repo", () => ({ findUserTokenVersion: repo.findUserTokenVersion }));
 vi.mock("@/server/push/repo/pushDevices.repo", () => ({
   upsertPushDevice: repo.upsertPushDevice,
   evictOldestPushDevices: repo.evictOldestPushDevices,
@@ -76,7 +74,6 @@ function provider(answer: PushTicket | Error): PushProvider {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  repo.findUserTokenVersion.mockResolvedValue(3);
   repo.upsertPushDevice.mockResolvedValue(STORED);
   repo.findLivePushDevice.mockResolvedValue(STORED);
   repo.countUnreadByUsers.mockResolvedValue(new Map([["user-a", 5]]));
@@ -84,7 +81,7 @@ beforeEach(() => {
 
 describe("registerDevice", () => {
   it("stores the phone under the caller's current session version and trims the list", async () => {
-    const device = await registerDevice("user-a", VALID);
+    const device = await registerDevice("user-a", 3, VALID);
     expect(repo.upsertPushDevice).toHaveBeenCalledWith(
       expect.objectContaining({ userId: "user-a", tokenVersion: 3, expoToken: VALID.expoPushToken }),
       expect.anything(),
@@ -100,18 +97,24 @@ describe("registerDevice", () => {
     ["an unknown platform", { platform: "web" }],
     ["a label that is far too long", { label: "x".repeat(10_000) }],
   ])("refuses %s", async (_case, override) => {
-    await expect(registerDevice("user-a", { ...VALID, ...override })).rejects.toMatchObject({ code: "invalid_argument" });
+    await expect(registerDevice("user-a", 3, { ...VALID, ...override })).rejects.toMatchObject({ code: "invalid_argument" });
     expect(repo.upsertPushDevice).not.toHaveBeenCalled();
   });
 
   it("removes invisible characters from the label", async () => {
-    await registerDevice("user-a", { ...VALID, label: "i​Phone\u0007 17" });
+    await registerDevice("user-a", 3, { ...VALID, label: "i​Phone\u0007 17" });
     expect(repo.upsertPushDevice).toHaveBeenCalledWith(expect.objectContaining({ label: "iPhone 17" }), expect.anything());
   });
 
-  it("refuses a caller whose session is gone", async () => {
-    repo.findUserTokenVersion.mockResolvedValue(undefined);
-    await expect(registerDevice("user-a", VALID)).rejects.toMatchObject({ code: "unauthenticated" });
+  it("refuses a session that was signed out between authentication and the write", async () => {
+    repo.upsertPushDevice.mockResolvedValue(undefined);
+    await expect(registerDevice("user-a", 3, VALID)).rejects.toMatchObject({ code: "unauthenticated" });
+    expect(repo.evictOldestPushDevices).not.toHaveBeenCalled();
+  });
+
+  it("refuses a request without a session version", async () => {
+    await expect(registerDevice("user-a", Number.NaN, VALID)).rejects.toMatchObject({ code: "unauthenticated" });
+    expect(repo.upsertPushDevice).not.toHaveBeenCalled();
   });
 });
 

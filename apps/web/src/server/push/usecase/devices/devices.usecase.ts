@@ -3,7 +3,6 @@
 import { PUSH_COPY } from "@haalkhata/shared/notifications/copy";
 import { transaction } from "@/server/common/db/db";
 import { invalid, notFound, UsecaseError } from "@/server/common/errors";
-import { findUserTokenVersion } from "@/server/auth/repo/users.repo";
 import { assertSafeText } from "@/server/safety/usecase/contentFilter";
 import {
   DEVICE_NOT_REGISTERED,
@@ -78,29 +77,35 @@ function cleanDisplayField(value: string, maxLength: number, field: string): str
 }
 
 /**
- * Records this phone for the caller under the caller's current session
- * version. Safe to repeat. A token held by another account moves to the
- * caller (the phone changed hands), and above the per-account limit the phone
- * seen least recently is dropped.
+ * Records this phone for the caller under the version of the session that
+ * asked. Safe to repeat. A token held by another account moves to the caller
+ * (the phone changed hands), and above the per-account limit the phone seen
+ * least recently is dropped.
+ *
+ * The session's own version is used, never one read again here: a sign-out
+ * between the request's authentication and this write would otherwise bind
+ * the phone to the version that sign-out created, and it would keep
+ * receiving the account's pushes.
  *
  * @param userId - Authenticated caller.
+ * @param sessionVersion - The token version of the session registering.
  * @param input - The phone's token, installation id, platform, label and app version.
  * @returns The stored phone.
- * @throws UsecaseError (invalid_argument) on a malformed field.
+ * @throws UsecaseError (invalid_argument) on a malformed field;
+ *   (unauthenticated) when the session was signed out meanwhile.
  */
-export async function registerDevice(userId: string, input: RegisterDeviceInput) {
+export async function registerDevice(userId: string, sessionVersion: number, input: RegisterDeviceInput) {
   if (!EXPO_PUSH_TOKEN_PATTERN.test(input.expoPushToken)) invalid("that is not a push token this app issues");
   if (!INSTALLATION_ID_PATTERN.test(input.installationId)) invalid("installation id is malformed");
   if (!(PUSH_PLATFORMS as readonly string[]).includes(input.platform)) invalid("platform must be ios or android");
   const label = cleanDisplayField(input.label, MAX_DEVICE_LABEL_LENGTH, "device name");
   const appVersion = cleanDisplayField(input.appVersion, MAX_APP_VERSION_LENGTH, "app version");
-  const tokenVersion = await findUserTokenVersion(userId);
-  if (tokenVersion === undefined) throw new UsecaseError("unauthenticated", "session expired");
+  if (!Number.isSafeInteger(sessionVersion)) throw new UsecaseError("unauthenticated", "session expired");
   const stored = await transaction(async (client) => {
     const device = await upsertPushDevice(
       {
         userId,
-        tokenVersion,
+        tokenVersion: sessionVersion,
         installationId: input.installationId,
         expoToken: input.expoPushToken,
         platform: input.platform,
@@ -109,6 +114,9 @@ export async function registerDevice(userId: string, input: RegisterDeviceInput)
       },
       client,
     );
+    // Thrown inside the transaction, so the token cleanup before the write
+    // rolls back with it.
+    if (!device) throw new UsecaseError("unauthenticated", "session expired");
     await evictOldestPushDevices(userId, MAX_PUSH_DEVICES_PER_USER, client);
     return device;
   });

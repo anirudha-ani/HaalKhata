@@ -160,9 +160,10 @@ describe.skipIf(!reachable)("push notifications against Postgres", () => {
     } as never);
   }
 
-  /** Registers Boba's phone. */
+  /** Registers Boba's phone under Boba's current session version. */
   async function bobaRegistersPhone() {
-    return registerDevice(BOBA_ID, {
+    const { rows } = await database.query(`SELECT token_version FROM users WHERE id = $1`, [BOBA_ID]);
+    return registerDevice(BOBA_ID, rows[0].token_version, {
       expoPushToken: BOBA_TOKEN,
       installationId: "install-boba-phone",
       platform: "ios",
@@ -246,6 +247,23 @@ describe.skipIf(!reachable)("push notifications against Postgres", () => {
     expect(provider.sent).toEqual([]);
     expect(report.skipped).toBe(1);
     expect((await database.query(`SELECT 1 FROM push_devices WHERE id = $1`, [device.id])).rowCount).toBe(0);
+  });
+
+  it("registers nothing for a session signed out between its authentication and the write", async () => {
+    const { rows } = await database.query(`SELECT token_version FROM users WHERE id = $1`, [CHAD_ID]);
+    const sessionVersion = rows[0].token_version;
+    await database.query(`UPDATE users SET token_version = token_version + 1 WHERE id = $1`, [CHAD_ID]);
+    await expect(
+      registerDevice(CHAD_ID, sessionVersion, {
+        expoPushToken: "ExponentPushToken[chadchadchadchadchadch]",
+        installationId: "install-chad-phone",
+        platform: "ios",
+        label: "iPhone 16",
+        appVersion: "1.1.0",
+      }),
+    ).rejects.toMatchObject({ code: "unauthenticated" });
+    const stored = await database.query(`SELECT id FROM push_devices WHERE installation_id = 'install-chad-phone'`);
+    expect(stored.rows).toEqual([]);
   });
 
   it("holds a switch that is off, and still keeps the bell row", async () => {

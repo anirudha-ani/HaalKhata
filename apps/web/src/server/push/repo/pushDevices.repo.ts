@@ -33,10 +33,15 @@ const LIVE_DEVICE_CONDITION = `device.token_version = owner.token_version
  * Any other row still holding the same token is removed first, so the unique
  * token can move from a reinstalled app's old installation.
  *
- * @param input - Owner, the owner's current token version, and the phone's
- *   installation id, token, platform, label and app version.
+ * The row is written only while the owner's token version still equals the
+ * session's: a sign-out that committed first leaves nothing written, and one
+ * that commits after leaves a row bound to the version it just retired.
+ *
+ * @param input - Owner, the version of the session registering, and the
+ *   phone's installation id, token, platform, label and app version.
  * @param client - The registration's transaction.
- * @returns The stored row.
+ * @returns The stored row, or undefined when the session's version is no
+ *   longer the owner's.
  */
 export async function upsertPushDevice(
   input: {
@@ -49,16 +54,17 @@ export async function upsertPushDevice(
     appVersion: string;
   },
   client: PoolClient,
-): Promise<PushDeviceRow> {
+): Promise<PushDeviceRow | undefined> {
   await execute(
     `DELETE FROM push_devices WHERE expo_token = $1 AND installation_id <> $2`,
     [input.expoToken, input.installationId],
     client,
   );
-  const stored = await queryOne<PushDeviceRow>(
+  return queryOne<PushDeviceRow>(
     `INSERT INTO push_devices
        (id, user_id, installation_id, expo_token, platform, label, app_version, token_version)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+     SELECT $1, $2, $3, $4, $5, $6, $7, $8
+      WHERE EXISTS (SELECT 1 FROM users WHERE id = $2 AND token_version = $8)
      ON CONFLICT (installation_id) DO UPDATE
        SET user_id = EXCLUDED.user_id,
            expo_token = EXCLUDED.expo_token,
@@ -80,7 +86,6 @@ export async function upsertPushDevice(
     ],
     client,
   );
-  return stored!;
 }
 
 /**
