@@ -1,6 +1,6 @@
 /** The push worker inside the web process: wakes on commit, sweeps on a timer, reads receipts, stops on shutdown. */
 
-import { ensureMigrated } from "@/server/common/db/db";
+import { isMigrated } from "@/server/common/db/db";
 import { listen, type Subscription } from "@/server/common/db/listen";
 import { logError, logEvent } from "@/server/common/logger";
 import {
@@ -28,13 +28,18 @@ const workerCache = globalThis as unknown as { __haalkhataPushWorker?: PushWorke
  * Every pass and timer catches its own errors — a failed pass leaves its rows
  * leased and they come back on a later one; nothing here may take the web
  * process down.
+ *
+ * The worker never migrates. Migrations run on the first API request or
+ * readiness probe, and passes wait until they have; a push is only queued by
+ * a request, which migrates first, so nothing waits on this in practice.
+ * LISTEN starts at once and reconnects by itself, so a database that is down
+ * at boot delays wake-ups only until it is back, not until the next restart.
  */
 export function startPushWorker(): void {
   if (workerCache.__haalkhataPushWorker) return;
   let draining = false;
   let wakeAgain = false;
   let stopped = false;
-  let subscription: Subscription | undefined;
 
   /** Runs passes until a pass claims less than a full batch and nothing woke it meanwhile. */
   const drain = async (): Promise<void> => {
@@ -43,9 +48,9 @@ export function startPushWorker(): void {
       wakeAgain = true;
       return;
     }
+    if (!isMigrated()) return;
     draining = true;
     try {
-      await ensureMigrated();
       let report;
       do {
         wakeAgain = false;
@@ -60,9 +65,8 @@ export function startPushWorker(): void {
 
   /** Reads receipts that are ready. */
   const readReceipts = async (): Promise<void> => {
-    if (stopped) return;
+    if (stopped || !isMigrated()) return;
     try {
-      await ensureMigrated();
       await checkPushReceipts();
     } catch (error) {
       logError(error, { scope: "push-receipts" });
@@ -74,18 +78,14 @@ export function startPushWorker(): void {
   sweepTimer.unref();
   receiptTimer.unref();
 
-  void ensureMigrated()
-    .then(() => {
-      if (!stopped) subscription = listen(PUSH_NOTIFY_CHANNEL, () => void drain());
-    })
-    .catch((error) => logError(error, { scope: "push-worker-start" }));
+  const subscription: Subscription = listen(PUSH_NOTIFY_CHANNEL, () => void drain());
 
   const worker: PushWorker = {
     async stop() {
       stopped = true;
       clearInterval(sweepTimer);
       clearInterval(receiptTimer);
-      await subscription?.close();
+      await subscription.close();
     },
   };
   workerCache.__haalkhataPushWorker = worker;

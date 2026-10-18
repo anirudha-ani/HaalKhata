@@ -113,6 +113,8 @@ export function assertSafeDatabaseUrl(
 const globalCache = globalThis as unknown as {
   __haalkhataPool?: Pool;
   __haalkhataReady?: Promise<void>;
+  /** Set once this process has applied (or found applied) every migration. */
+  __haalkhataMigrated?: boolean;
 };
 
 /** Returns the process-wide connection pool, creating it on first use. */
@@ -165,13 +167,27 @@ export function ensureMigrated(): Promise<void> {
       direction: "up",
       migrationsTable: "pgmigrations",
     })
-      .then(() => undefined)
+      .then(() => {
+        globalCache.__haalkhataMigrated = true;
+      })
       .catch((error) => {
         globalCache.__haalkhataReady = undefined;
         throw error;
       });
   }
   return globalCache.__haalkhataReady;
+}
+
+/**
+ * Whether this process has finished applying migrations, without starting
+ * them. For background work that must wait for the schema but must not be
+ * the one to migrate: migrations run on the first API request or readiness
+ * probe, never at boot.
+ *
+ * @returns True once {@link ensureMigrated} has succeeded in this process.
+ */
+export function isMigrated(): boolean {
+  return globalCache.__haalkhataMigrated === true;
 }
 
 /**

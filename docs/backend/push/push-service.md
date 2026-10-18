@@ -104,7 +104,9 @@ pass deletes tickets older than a day and phones unseen for 90 days.
 
 **Waking.** The worker wakes on NOTIFY (a dedicated LISTEN connection) and on a
 30 s sweep. One drain runs at a time per process. Two replicas are safe:
-`SKIP LOCKED` plus the lease keep them apart.
+`SKIP LOCKED` plus the lease keep them apart. LISTEN starts at boot and
+reconnects by itself. The worker never runs migrations: its passes wait until
+the first API request or readiness probe has applied them.
 
 ## Configuration
 
