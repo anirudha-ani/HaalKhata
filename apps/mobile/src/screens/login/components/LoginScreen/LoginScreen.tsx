@@ -53,7 +53,9 @@ export function LoginScreen() {
       <Image accessibilityIgnoresInvertColors source={brandIconSource} style={styles.brandIcon} />
       <View style={styles.flexOne}>
         <Text accessibilityRole="header" style={styles.wordmark}>HaalKhata</Text>
-        <Text style={styles.brandTagline}>THE SHARED-EXPENSE LEDGER</Text>
+        <Text adjustsFontSizeToFit minimumFontScale={0.7} numberOfLines={1} style={styles.brandTagline}>
+          THE SHARED-EXPENSE LEDGER
+        </Text>
       </View>
       <DevPasswordButton />
     </Animated.View>
