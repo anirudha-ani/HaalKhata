@@ -20,6 +20,7 @@ export const PUSH_COPY = {
   registering: "Connecting this phone…",
   registerFailed: "This phone couldn't be connected for notifications.",
   retry: "Retry",
+  notNow: "Not now",
   categoriesTitle: "What to send",
   phonesTitle: "Your phones",
   noPhones: "No phone gets notifications yet. Turn them on in the HaalKhata app on your phone.",

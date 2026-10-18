@@ -12,9 +12,12 @@ import { colors, spacing } from "@/lib/theme/theme";
 
 /**
  * iOS shows its alert only once per install, so this says what the
- * notifications are for first, at a moment they matter. One button, as
- * Apple's guidelines ask: the system alert that follows is where the person
- * says yes or no.
+ * notifications are for first, at a moment they matter. It has one button,
+ * Continue, and no way to close it: Apple asks that a screen shown before
+ * its permission alert lead only to the alert, where the person says yes
+ * or no (App Review has rejected a "Not now" on such screens). Should the
+ * alert itself fail to appear, the reason shows with a retry and "Not now",
+ * since there is then no alert in which to decline.
  *
  * @returns The sheet while the explainer is open, otherwise nothing.
  */
@@ -38,11 +41,25 @@ export function PushPrompt() {
     }
   };
 
+  /** Leaves after the alert could not be shown. */
+  const leave = () => {
+    setError("");
+    closePushExplainer();
+  };
+
   return (
     <Sheet
       title={PUSH_COPY.explainerTitle}
-      onClose={closePushExplainer}
-      footer={<Button busy={busy} label={PUSH_COPY.explainerContinue} onPress={() => void proceed()} />}
+      footer={
+        error ? (
+          <View style={styles.actions}>
+            <Button busy={busy} label={PUSH_COPY.retry} onPress={() => void proceed()} />
+            <Button disabled={busy} label={PUSH_COPY.notNow} onPress={leave} variant="ghost" />
+          </View>
+        ) : (
+          <Button busy={busy} label={PUSH_COPY.explainerContinue} onPress={() => void proceed()} />
+        )
+      }
     >
       <View style={styles.body}>
         <Text style={styles.text}>{PUSH_COPY.explainerBody}</Text>
@@ -53,6 +70,7 @@ export function PushPrompt() {
 }
 
 const styles = StyleSheet.create({
+  actions: { gap: spacing.sm },
   body: { gap: spacing.lg, padding: spacing.lg },
   text: { color: colors.inkSoft, fontSize: 15, lineHeight: 22 },
   error: { color: colors.neg700, fontSize: 14 },

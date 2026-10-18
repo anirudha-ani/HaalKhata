@@ -32,6 +32,11 @@ import { useSheetEntrance } from "./hooks/useSheetEntrance";
  *
  * The backdrop fades in while the card rises (or, on iPad, grows), rather
  * than the whole modal sliding up together with its dimming.
+ *
+ * Without `onClose` the sheet cannot be dismissed: no close button, the
+ * backdrop ignores taps and the back gesture does nothing. That is for a
+ * screen shown just before an iOS permission alert, which Apple asks to
+ * lead only to the alert.
  */
 export function Sheet({
   title,
@@ -42,8 +47,12 @@ export function Sheet({
 }: {
   /** Heading text, also used as the sheet's accessible label. */
   title: string;
-  /** Called when the user dismisses the sheet (close button, backdrop tap, or back gesture). */
-  onClose: () => void;
+  /**
+   * Called when the user dismisses the sheet (close button, backdrop tap, or
+   * back gesture). Leave it out for a sheet that may only end through its
+   * own footer action.
+   */
+  onClose?: () => void;
   /** Sheet body content. */
   children: ReactNode;
   /** Content pinned to the bottom of the sheet while the body scrolls above it. */
@@ -58,12 +67,22 @@ export function Sheet({
   const { isTablet } = useResponsiveLayout();
   const entrance = useSheetEntrance(isTablet);
   return (
-    <Modal animationType="fade" onRequestClose={onClose} supportedOrientations={SHEET_ORIENTATIONS} transparent visible>
+    <Modal
+      animationType="fade"
+      onRequestClose={onClose ?? (() => undefined)}
+      supportedOrientations={SHEET_ORIENTATIONS}
+      transparent
+      visible
+    >
       <KeyboardAvoidingView
         behavior={Platform.OS === "ios" ? "padding" : undefined}
         style={[styles.backdropContainer, isTablet ? styles.backdropContainerTablet : null]}
       >
-        <Pressable accessibilityLabel="Close" onPress={onClose} style={styles.backdrop} />
+        {onClose ? (
+          <Pressable accessibilityLabel="Close" onPress={onClose} style={styles.backdrop} />
+        ) : (
+          <View style={styles.backdrop} />
+        )}
         <Animated.View
           accessibilityLabel={title}
           accessibilityViewIsModal
@@ -76,14 +95,16 @@ export function Sheet({
         >
           <View style={styles.header}>
             <Text style={styles.title}>{title}</Text>
-            <Pressable
-              accessibilityLabel="Close"
-              hitSlop={8}
-              onPress={onClose}
-              style={styles.closeButton}
-            >
-              <X color={colors.inkSoft} size={20} />
-            </Pressable>
+            {onClose ? (
+              <Pressable
+                accessibilityLabel="Close"
+                hitSlop={8}
+                onPress={onClose}
+                style={styles.closeButton}
+              >
+                <X color={colors.inkSoft} size={20} />
+              </Pressable>
+            ) : null}
           </View>
           <ScrollView
             keyboardDismissMode="interactive"

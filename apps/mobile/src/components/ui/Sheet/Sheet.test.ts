@@ -53,6 +53,12 @@ describe("resizable sheet", () => {
     expect(container.querySelector("[data-submit]")?.closest("[data-scroll]")).toBeNull();
     expect(Number(container.querySelector("[data-max-height]")?.getAttribute("data-max-height"))).toBeCloseTo(844 * 0.92);
   });
+  it("offers no way out without onClose, for a screen that must lead to the permission alert", () => {
+    act(() => root.render(createElement(Sheet, { title: "Notifications", children: "Why",
+      footer: createElement("span", { "data-continue": true }, "Continue") })));
+    expect(container.querySelectorAll("button")).toHaveLength(0);
+    expect(container.querySelector("[data-continue]")?.textContent).toBe("Continue");
+  });
   it("preserves backdrop dismissal after resizing", () => {
     render(); viewport.width = 600; render();
     act(() => container.querySelector("button")!.click());
