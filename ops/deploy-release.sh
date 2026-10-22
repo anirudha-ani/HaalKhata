@@ -72,6 +72,48 @@ set_secret() {
   mv -f "secrets/.$1.tmp" "secrets/$1"
 }
 
+# Decodes the workflow's single-line transport into the original PKCS#8 key.
+# Validates the ES256 curve before replacing a working key; no key bytes are
+# printed, even on failure. The subshell owns and always removes its temp file.
+# @param $1 Base64-encoded Apple .p8, or empty to keep the existing file.
+set_apple_private_key() (
+  [ -z "$1" ] && exit 0
+  printf '%s\n' "$1" | grep -Eq '^([A-Za-z0-9+/]{4})*([A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$' || {
+    echo "refusing: APPLE_PRIVATE_KEY_BASE64 must be single-line base64" >&2
+    exit 1
+  }
+  install -d -m 700 secrets
+  privateKeyFile="$(mktemp secrets/.apple_private_key.XXXXXX)"
+  trap 'rm -f "$privateKeyFile"' EXIT
+  printf '%s' "$1" | openssl base64 -d -A > "$privateKeyFile"
+  if ! grep -q '^-----BEGIN PRIVATE KEY-----$' "$privateKeyFile" ||
+    ! openssl pkey -in "$privateKeyFile" -pubout 2>/dev/null |
+      openssl pkey -pubin -text -noout 2>/dev/null | grep -q 'ASN1 OID: prime256v1'; then
+    echo "refusing: APPLE_PRIVATE_KEY must contain an unencrypted PKCS#8 P-256 private key" >&2
+    exit 1
+  fi
+  chmod 444 "$privateKeyFile"
+  mv -f "$privateKeyFile" secrets/apple_private_key
+)
+
+# Preserves the key needed to decrypt already-stored Apple refresh tokens.
+# A changed GitHub secret must fail instead of silently stranding those grants.
+# @param $1 Stable 32-byte hex key, or empty to keep the existing file.
+set_apple_encryption_key() {
+  [ -z "$1" ] && return 0
+  printf '%s\n' "$1" | grep -Eq '^[A-Fa-f0-9]{64}$' || {
+    echo "refusing: APPLE_TOKEN_ENCRYPTION_KEY must contain 64 hexadecimal characters" >&2
+    exit 1
+  }
+  encryptionKey="$(printf '%s' "$1" | tr 'A-F' 'a-f')"
+  if [ -s secrets/apple_token_encryption_key ] &&
+    [ "$(tr -d '\r\n' < secrets/apple_token_encryption_key | tr 'A-F' 'a-f')" != "$encryptionKey" ]; then
+    echo "refusing: APPLE_TOKEN_ENCRYPTION_KEY differs from the installed key; migrate stored Apple grants before rotating it" >&2
+    exit 1
+  fi
+  set_secret apple_token_encryption_key "$encryptionKey"
+}
+
 # --- config from stdin -------------------------------------------------------
 # The workflow pipes KEY=VALUE lines from repository variables/secrets. A key
 # outside the allowlist or a value with characters .env must not hold fails
@@ -84,7 +126,7 @@ printf '%s\n' "$CONFIG" | while IFS= read -r line; do
   key="${line%%=*}"
   value="${line#*=}"
   case "$key" in
-    ACME_EMAIL | GOOGLE_CLIENT_ID | GOOGLE_MOBILE_CLIENT_IDS | TWILIO_API_KEY_SID | TWILIO_VERIFY_SERVICE_SID)
+    ACME_EMAIL | GOOGLE_CLIENT_ID | GOOGLE_MOBILE_CLIENT_IDS | APPLE_TEAM_ID | APPLE_KEY_ID | APPLE_SERVICE_ID | APPLE_APP_ID_PREFIX | ANDROID_SHA256_CERTIFICATES | SUPPORT_EMAIL | TWILIO_API_KEY_SID | TWILIO_VERIFY_SERVICE_SID)
       # %s\n, not %s: an empty value is zero bytes, and grep cannot match a
       # line that was never emitted. read -r means a value can never hold a
       # newline, so this is always exactly one line.
@@ -94,7 +136,7 @@ printf '%s\n' "$CONFIG" | while IFS= read -r line; do
       }
       set_env "$key" "$value"
       ;;
-    TWILIO_API_KEY_SECRET | COMPATIBLE_AI_API_KEY | SESSION_SECRET | POSTGRES_PASSWORD)
+    TWILIO_API_KEY_SECRET | COMPATIBLE_AI_API_KEY | SESSION_SECRET | POSTGRES_PASSWORD | EXPO_ACCESS_TOKEN)
       # Any printable ASCII: secret material (base64, hex, vendor formats)
       # is wider than what .env may hold, and a file has no syntax to break.
       printf '%s\n' "$value" | grep -Eq '^[!-~]*$' || {
@@ -106,7 +148,14 @@ printf '%s\n' "$CONFIG" | while IFS= read -r line; do
         COMPATIBLE_AI_API_KEY) set_secret openrouter_api_key "$value" ;;
         SESSION_SECRET) set_secret session_secret "$value" ;;
         POSTGRES_PASSWORD) set_secret postgres_password "$value" ;;
+        EXPO_ACCESS_TOKEN) set_secret expo_access_token "$value" ;;
       esac
+      ;;
+    APPLE_PRIVATE_KEY_BASE64)
+      set_apple_private_key "$value"
+      ;;
+    APPLE_TOKEN_ENCRYPTION_KEY)
+      set_apple_encryption_key "$value"
       ;;
     *)
       echo "refusing: '$key' is not a pipeline-managed key" >&2

@@ -1,8 +1,9 @@
 /** Archive popup: a blocked explanation or a confirmation with the consequences. */
 
-import { StyleSheet, Text, View } from "react-native";
+import { StyleSheet, View } from "react-native";
+import { Text } from "@/components/ui/Text";
 import { Button } from "@/components/ui/Button";
-import { Sheet } from "@/components/ui/Sheet";
+import { Sheet } from "@/components/ui/Sheet/Sheet";
 import { colors, spacing } from "@/lib/theme/theme";
 import {
   GROUP_ARCHIVE_DIALOG_ACTIONS,

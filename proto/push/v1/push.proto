@@ -1,0 +1,98 @@
+syntax = "proto3";
+
+package push.v1;
+
+import "google/protobuf/empty.proto";
+
+// The phones that receive a person's push notifications, and what they
+// receive. Every push is a copy of one in-app notification (the bell row), so
+// the bell stays the record and a push is only a courtesy on top of it.
+service PushService {
+  // Native only. Records this installation's Expo push token for the caller,
+  // bound to the caller's current session version: signing out everywhere
+  // (or merge, deletion, suspension) stops pushes without another call.
+  // Safe to repeat — one row per installation — and a token already held by
+  // another account moves to the caller, because the phone changed hands.
+  rpc RegisterDevice(RegisterDeviceRequest) returns (Device);
+  // The caller's phones that can still receive pushes, most recently seen first.
+  rpc ListDevices(google.protobuf.Empty) returns (ListDevicesResponse);
+  // Stops pushes to one of the caller's phones. A phone the person removed
+  // stays off: its installation's next background RegisterDevice is refused
+  // (FailedPrecondition) until one carries turn_on. The app also calls this
+  // for its own row before LogOut, with signing_out, which keeps nothing off.
+  rpc RemoveDevice(RemoveDeviceRequest) returns (google.protobuf.Empty);
+  // Sends one push to one of the caller's phones now, bypassing the queue,
+  // and fails with the delivery service's reason when it is refused.
+  // Rate-limited.
+  rpc SendTestPush(SendTestPushRequest) returns (google.protobuf.Empty);
+  // Which kinds of push the caller wants; an account that never chose has
+  // every category on.
+  rpc GetPreferences(google.protobuf.Empty) returns (PushPreferences);
+  // Replaces the whole record and returns what was stored.
+  rpc UpdatePreferences(PushPreferences) returns (PushPreferences);
+}
+
+message RegisterDeviceRequest {
+  // Expo push token, "ExponentPushToken[...]".
+  string expo_push_token = 1;
+  // UUID the app mints once per installation and keeps in secure storage, so
+  // a rotated token updates the same row instead of adding a phone.
+  string installation_id = 2;
+  // "ios" | "android".
+  string platform = 3;
+  // Model name shown in the list of phones, e.g. "iPhone 17".
+  string label = 4;
+  // The app's marketing version, for support.
+  string app_version = 5;
+  // True when the person turned notifications on from this phone just now
+  // (the explainer's Continue, Account's Turn on, a retry). It clears an
+  // earlier Remove of this phone; a background refresh sends false and is
+  // refused for a removed phone.
+  bool turn_on = 6;
+}
+
+// One phone that receives the caller's pushes. Deliberately carries no token:
+// a token never leaves the server once registered.
+message Device {
+  string id = 1;
+  string platform = 2;
+  string label = 3;
+  string app_version = 4;
+  // RFC 3339 timestamps.
+  string created_at = 5;
+  // The last RegisterDevice from that phone.
+  string last_seen_at = 6;
+  // The last push the delivery service accepted for it; empty when none yet.
+  string last_sent_at = 7;
+}
+
+message ListDevicesResponse {
+  repeated Device devices = 1;
+}
+
+message RemoveDeviceRequest {
+  string device_id = 1;
+  // The phone is removing itself because its user is signing out. It may
+  // register again at the next sign-in; without this the phone stays off.
+  bool signing_out = 2;
+}
+
+message SendTestPushRequest {
+  string device_id = 1;
+}
+
+// One switch per category; each applies to every phone. Security alerts (a
+// verified phone number moving to another account) have no switch and are
+// always sent.
+message PushPreferences {
+  // Expenses added, edited or deleted.
+  bool expenses = 1;
+  // Comments on an expense.
+  bool comments = 2;
+  // Payments recorded or removed, and reminders.
+  bool payments = 3;
+  // Added to a group, members joining, a new owner, debt simplification.
+  bool groups = 4;
+  // Friend requests and accepted invites.
+  bool friends = 5;
+}

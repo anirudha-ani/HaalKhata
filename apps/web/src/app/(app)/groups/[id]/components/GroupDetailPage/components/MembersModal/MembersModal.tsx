@@ -1,6 +1,7 @@
 "use client";
 /** Modal listing a group's members with their friendship state and per-person actions. */
 
+import { SafetyActions } from "@/components/safety/SafetyActions/SafetyActions";
 import Link from "next/link";
 import { useState } from "react";
 import { useMutation } from "@tanstack/react-query";
@@ -199,6 +200,7 @@ export function MembersModal({
                   </span>
                 </span>
               </PersonLink>
+              {!isMe && !person.deleted ? <SafetyActions targetKind="user" targetId={person.id} userId={person.id} /> : null}
               {armed && block ? (
                 <MemberActionBlocked
                   block={block}

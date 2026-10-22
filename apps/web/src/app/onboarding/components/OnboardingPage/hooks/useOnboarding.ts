@@ -9,6 +9,11 @@ import { authClient, errorMessage, isRefusal } from "@/lib/api/connect";
 import { useVerificationCode } from "@/lib/hooks/useVerificationCode";
 import { composeE164, DEFAULT_PHONE_REGION, isValidPhone, splitE164 } from "@haalkhata/shared/phone/phone";
 import { INVALID_PHONE_MESSAGE } from "@haalkhata/shared/phone/contact";
+import {
+  ContactDiscovery,
+  isDiscoverable,
+  onboardingDiscoveryChange,
+} from "@haalkhata/shared/contacts/discovery";
 
 /**
  * Drives the onboarding screen.
@@ -21,6 +26,9 @@ import { INVALID_PHONE_MESSAGE } from "@haalkhata/shared/phone/contact";
  * The phone is held as a region plus a national number rather than one string,
  * matching the two controls that edit it; `save` joins them into the E.164 the
  * server stores.
+ *
+ * The profile step also carries the "let people find me from their
+ * contacts" switch, saved with the rest on Continue.
  *
  * The flow has two steps. The profile step (name, phone, currency) ends,
  * however it ends, on the payment step: saved, verified, merged or skipped.
@@ -49,6 +57,9 @@ export function useOnboarding() {
   const [mergeToken, setMergeToken] = useState("");
   const [verificationPhone, setVerificationPhone] = useState("");
   const codeField = useVerificationCode();
+  // Starts on: being findable is the default, and the switch's own words say
+  // what it means, so turning it off is one tap on the same screen.
+  const [findable, setFindable] = useState(true);
   const [step, setStep] = useState<"profile" | "payment">("profile");
 
   /** Moves on from the profile step, however it ended, with a clean slate. */
@@ -64,6 +75,7 @@ export function useOnboarding() {
     setSeeded(true);
     setName(meQuery.data.name);
     setCurrency(meQuery.data.defaultCurrency || "USD");
+    setFindable(isDiscoverable(meQuery.data.contactDiscovery));
     // A number already on the account is stored as E.164; split it so the
     // field opens on the country it was entered with.
     const stored = splitE164(meQuery.data.phone);
@@ -88,6 +100,16 @@ export function useOnboarding() {
     mutationFn: async () => {
       setError("");
       await authClient.updateProfile({ name, defaultCurrency: currency });
+      // Wherever the switch was left is the person's answer, saved unless
+      // the server already holds it. A yes left on is saved too, so the
+      // one-time notice on Friends does not repeat what this screen said.
+      const discoveryChange = onboardingDiscoveryChange(
+        meQuery.data?.contactDiscovery ?? ContactDiscovery.UNSPECIFIED,
+        findable,
+      );
+      if (discoveryChange !== null) {
+        await authClient.setContactDiscovery({ discoverable: discoveryChange });
+      }
       // Only touch the phone when it actually changed — resending the same
       // number the account already has is a no-op the server would still
       // process, and an empty field must not clear a number that is set.
@@ -187,6 +209,9 @@ export function useOnboarding() {
     setRegion,
     nationalNumber,
     setNationalNumber,
+    /** Where the "let people find me" switch sits; saved on Continue. */
+    findable,
+    setFindable,
     error,
     pendingMerge,
     verificationPhone,
@@ -196,7 +221,7 @@ export function useOnboarding() {
     /** The line under the code field. */
     codeHint: codeField.hint,
     /** Reads a change to the code field; a code that cannot be ours says why. */
-    enterVerificationCode: (entered: string) => setError(codeField.enter(entered)),
+    enterVerificationCode: (entered: string) => setError(codeField.enter(entered).notice),
     verifyPhone: () => {
       setError("");
       verifyPhone.mutate();

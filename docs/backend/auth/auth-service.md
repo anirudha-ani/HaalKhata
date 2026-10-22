@@ -1,11 +1,11 @@
 # Auth Service (`auth.v1.AuthService`)
 
 Authentication, sessions, the caller's profile, phone verification, and the
-account merge a phone collision triggers.
+account merge a phone collision triggers, and permanent account erasure.
 
 The Auth Service is essential for:
 
-- **Sign-in:** Google is the only way in for new production clients; retired
+- **Sign-in:** Google and Apple authenticate production clients; retired
   email/phone + password flows survive for local development and seeded
   accounts.
 - **Sessions:** every auth RPC returns a bearer token for mobile clients and
@@ -17,9 +17,9 @@ The Auth Service is essential for:
 - **Profile:** display name, default currency, onboarding state.
 
 Implementation: [handler.ts](../../../apps/web/src/server/auth/handler.ts) →
-[auth.usecase.ts](../../../apps/web/src/server/auth/usecase/auth.usecase.ts),
-[accountMerge.usecase.ts](../../../apps/web/src/server/auth/usecase/accountMerge.usecase.ts),
-[phoneVerification.ts](../../../apps/web/src/server/auth/usecase/phoneVerification.ts).
+[auth.usecase.ts](../../../apps/web/src/server/auth/usecase/account/auth.usecase.ts),
+[accountMerge.usecase.ts](../../../apps/web/src/server/auth/usecase/merge/accountMerge.usecase.ts),
+[phoneVerification.ts](../../../apps/web/src/server/auth/usecase/phone/phoneVerification.ts).
 Session mechanics (token format, sliding renewal, revocation, cookie rules)
 are documented once in
 [conventions.md § Authentication & Sessions](../common/conventions.md#authentication--sessions).
@@ -28,15 +28,15 @@ are documented once in
 
 ## The Identity Model
 
-An account (`users` row) can hold up to three identifiers — email, phone
-(E.164), Google `sub` — and is **claimed** when it has a password hash or a
-Google link. Everything else is an *unclaimed invite* (shadow user):
+An account (`users` row) can hold email, phone (E.164), Google `sub`, and Apple `sub` — and is **claimed** when it has a password hash or a
+Google or Apple link. Everything else is an *unclaimed invite* (shadow user):
 
-| State | password_hash | google_sub | Meaning |
-| --- | --- | --- | --- |
-| Shadow | null | null | Created by an invite; claimable by whoever proves the identifier |
-| Password account | set | null | Dev/seeded account |
-| Google account | null (usually) | set | The production case |
+| State | password_hash | google_sub | apple_sub | Meaning |
+| --- | --- | --- | --- | --- |
+| Shadow | null | null | null | Created by an invite; claimable by whoever proves the identifier |
+| Password account | set | optional | optional | Dev/seeded account |
+| Provider account | optional | set or null | set or null | Claimed by at least one verified provider |
+| Deleted member | null | null | null | Fresh anonymous identity with `deleted_at`; preserves shared cents, cannot authenticate or be claimed |
 
 **Claiming paths:**
 
@@ -77,7 +77,8 @@ preview.
 
 | RPC | Limit |
 | --- | --- |
-| SignUp, LogIn, BeginGoogleSignIn, LogInWithGoogle | 10/min per client IP |
+| SignUp, LogIn, BeginGoogleSignIn, LogInWithGoogle, BeginAppleSignIn, LogInWithApple, CompleteAppleSignIn | 10/min per client IP |
+| DeleteAccount | Same 10/min per client IP authentication bucket, plus an authenticated session and explicit confirmation |
 | SetPhone with empty code (the SMS send) | 3/min per account, plus 3/hour + 8/day per destination number (across all accounts) and 20/hour per client IP — the ceilings are **durable** (Postgres `phone_send_events`), surviving restarts and replicas |
 | SetPhone with a code (the check) | 5/min per account, and at most **5 checks per verification** (server-side attempt budget, the same as Twilio's; a resend does not renew it) |
 | ConfirmPhoneMerge, RemovePhone | 5/min per account |
@@ -103,6 +104,9 @@ cannot lock the user out of the merge confirmation.
 9. [ConfirmPhoneMerge](#9-confirmphonemerge)
 10. [RemovePhone](#10-removephone)
 11. [CompleteOnboarding](#11-completeonboarding)
+12. [Apple sign-in](#12-apple-sign-in)
+13. [DeleteAccount](#13-deleteaccount)
+14. [SetContactDiscovery](#14-setcontactdiscovery)
 
 ---
 
@@ -113,7 +117,7 @@ cannot lock the user out of the merge confirmation.
 
 #### Notes
 
-- **Production-disabled.** `PermissionDenied` ("sign in with Google to
+- **Production-disabled.** `PermissionDenied` ("sign in with Google or Apple to
   continue") outside development — enforced in the usecase, not by hiding the
   form, because the RPC stays mounted and reachable by anyone willing to POST
   at it.
@@ -126,7 +130,7 @@ cannot lock the user out of the merge confirmation.
   key) on the libuv thread pool; verification is constant-time.
 - **Shadow claiming:** an existing row with that identifier and no credential
   is *claimed* — name and password written, history kept. A row with a
-  password **or a Google link** refuses with `AlreadyExists`; treating a
+  password **or a Google/Apple link** refuses with `AlreadyExists`; treating a
   passwordless Google account as claimable would let anyone who knows the
   address take it over through this form.
 - **Session delivery:** cookie for browsers (`token` comes back empty),
@@ -394,7 +398,7 @@ collision would require. One RPC, two calls:
      transaction — the loser's notification is the theft alarm and tells
      them how to take the number back (verify it again) or object. Safe
      because a phone is a directory pointer and **never an authenticator**
-     (sign-in stays Google-only). Refused (`FailedPrecondition`) only when
+     (sign-in uses Google or Apple). Refused (`FailedPrecondition`) only when
      the number is the holder's sole identifier, which would strand that
      account.
   3. **Held by an unclaimed invited row:** nothing changes yet. The response
@@ -563,3 +567,76 @@ collision would require. One RPC, two calls:
 #### Response
 
 `common.v1.User` — refreshed private projection with `onboarded: true`.
+
+---
+
+### 12. Apple sign-in
+
+`BeginAppleSignIn`, `LogInWithApple`, and `CompleteAppleSignIn` are available in
+production. Implementation:
+[appleSignIn.usecase.ts](../../../apps/web/src/server/auth/usecase/apple/appleSignIn.usecase.ts)
+and [apple.provider.ts](../../../apps/web/src/server/auth/usecase/apple/apple.provider.ts).
+
+| RPC | Request | Result |
+| --- | --- | --- |
+| `BeginAppleSignIn` | `browser_flow`, `mobile`, `verifier_hash` | `nonce`, optional `authorization_url` |
+| `LogInWithApple` | Native `id_token`, `authorization_code`, first-use `name` | `AuthResponse` |
+| `CompleteAppleSignIn` | Browser callback `state` plus the initiating client's `verifier` | `AuthResponse` |
+
+Native iOS uses the bundle ID audience and a server-issued one-use nonce.
+The server verifies both the supplied ID token and the code-exchange token,
+including Apple issuer, RS256 signature, audience, expiry, issuance time,
+subject, nonce and verified email. It refuses mismatched identities before
+binding an account. Apple first-use names are untrusted: provider names pass
+bounded text filtering and fall back to `Member`; an existing chosen profile
+name is retained.
+
+Web/Android use the Services ID and the fixed HTTPS form-post callback
+`/api/auth/apple/callback`. The database holds hashes of nonce/state/verifier.
+A redirect contains only state and a sanitized status; session issuance requires
+the original client verifier and consumes the completed challenge once. No
+bearer token is put in a redirect URL.
+
+Verified email links an existing account or claims an invite. Apple private
+relay addresses are supported. Refresh grants are encrypted with AES-256-GCM
+using the server-only stable `APPLE_TOKEN_ENCRYPTION_KEY`. The original `.p8`
+uses `APPLE_PRIVATE_KEY(_FILE)`. See the
+[release handoff](../../../docs/mobile-app-store-readiness.md) for Apple
+capabilities, grouped IDs, key files and deploy variables.
+
+### 13. DeleteAccount
+
+`POST /api/connect/auth.v1.AuthService/DeleteAccount` takes
+`{ "confirmation": "DELETE" }` and returns `google.protobuf.Empty`. The target
+is always the authenticated caller; a user ID cannot be supplied by the client.
+
+[accountDeletion.usecase.ts](../../../apps/web/src/server/auth/usecase/deletion/accountDeletion.usecase.ts)
+locks the account, revokes its encrypted Apple grants and erases personal data
+within one database transaction. A provider failure leaves the local account
+intact and retryable. Outstanding balances never prevent deletion.
+
+The original user row, credentials, personal notification/activity history,
+comments, payment handles, pending requests and invite links are removed.
+Safety reports/blocks referencing the account cascade away. Shared financial
+references move to a fresh anonymous member with `deleted_at`; descriptions,
+notes and item labels owned by the account are redacted. Cents and currencies
+are preserved. Group ownership transfers deterministically to a remaining
+claimed member where one exists. The original ID cannot authenticate, and
+clients clear their sessions and private query caches after success.
+
+Backup expiry and reapplying deletion after a restore are operator duties in
+[the server runbook](../../../ops/README.md). Both apps present the same
+shared deletion explanation before requesting the exact confirmation.
+
+### 14. SetContactDiscovery
+
+`POST /api/connect/auth.v1.AuthService/SetContactDiscovery` takes
+`{ "discoverable": true | false }` and returns the caller's own
+`common.v1.User`, whose private `contact_discovery` field is `ON`, `OFF` or,
+for an account that never answered, `UNSPECIFIED`. Being findable is the
+default: `UNSPECIFIED` matches like `ON`, and only `OFF` hides the account.
+Every account that predates the field starts `UNSPECIFIED`, and both apps
+tell such a person once that they can be found, with **Turn off** beside
+**Keep it on**. The answer decides
+whether `SocialService.FindContacts` can match the account by its verified
+phone or sign-in email; see [Find friends from contacts](../../contact-discovery.md).

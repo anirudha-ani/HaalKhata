@@ -1,5 +1,6 @@
 /** App-wide client providers: TanStack Query (memory only), session hydration, foreground refetch. */
 
+import { FontScaleProvider } from "@/lib/layout/FontScaleProvider";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { focusManager, QueryClientProvider } from "@tanstack/react-query";
 import { useEffect, type ReactNode } from "react";
@@ -7,6 +8,8 @@ import { AppState } from "react-native";
 import { QUERY_CACHE_STORAGE_KEY } from "@/lib/api/api.constants";
 import { mobileQueryClient } from "@/lib/api/queryCache";
 import { hydrateSession } from "@/lib/api/session";
+import { finishUnfinishedSignOut } from "@/lib/api/unfinishedSignOut";
+import { installNotificationHandling } from "@/lib/push/notificationHandling";
 
 /**
  * Wraps the app in client-side providers: a single TanStack Query client
@@ -25,6 +28,8 @@ import { hydrateSession } from "@/lib/api/session";
  * Also hydrates the bearer session from SecureStore once at startup, and
  * wires the AppState so returning to the foreground counts as "window focus"
  * (stale queries refetch, matching the web's refetch-on-focus behavior).
+ * On launch and on each return to the foreground it finishes a sign-out
+ * that could not reach the server earlier.
  *
  * @param props - Provider props.
  * @param props.children - The app subtree that should have access to the providers.
@@ -37,7 +42,9 @@ export function Providers({
   children: ReactNode;
 }) {
   useEffect(() => {
+    installNotificationHandling(mobileQueryClient);
     void hydrateSession();
+    void finishUnfinishedSignOut().catch(() => undefined);
     // Versions before this one persisted the whole query cache here.
     AsyncStorage.removeItem(QUERY_CACHE_STORAGE_KEY).catch(() => {
       // Nothing to remove, or storage unavailable — either way nothing persists now.
@@ -46,11 +53,12 @@ export function Providers({
 
   useEffect(() => {
     // TanStack Query's "window focus" on native = the app returning to the foreground.
-    const subscription = AppState.addEventListener("change", (status) =>
-      focusManager.setFocused(status === "active"),
-    );
+    const subscription = AppState.addEventListener("change", (status) => {
+      focusManager.setFocused(status === "active");
+      if (status === "active") void finishUnfinishedSignOut().catch(() => undefined);
+    });
     return () => subscription.remove();
   }, []);
 
-  return <QueryClientProvider client={mobileQueryClient}>{children}</QueryClientProvider>;
+  return <FontScaleProvider><QueryClientProvider client={mobileQueryClient}>{children}</QueryClientProvider></FontScaleProvider>;
 }

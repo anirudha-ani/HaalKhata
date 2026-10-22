@@ -1,17 +1,19 @@
 /** Groups screen UI: group summary cards and the new-group sheet. */
 
+import { ErrorState } from "@/components/ui/ErrorState";
 import { useRouter } from "expo-router";
 import { Plus, UsersRound } from "lucide-react-native";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, View } from "react-native";
+import { Text } from "@/components/ui/Text";
 import { PersonChecklist } from "@/components/people/PersonChecklist";
-import { Screen } from "@/components/shell/Screen";
-import { ScreenHeader } from "@/components/shell/ScreenHeader";
+import { Screen } from "@/components/shell/Screen/Screen";
+import { ScreenHeader } from "@/components/shell/ScreenHeader/ScreenHeader";
 import { Button } from "@/components/ui/Button";
 import { Chip } from "@/components/ui/Chip";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Money } from "@/components/ui/Money";
 import { SearchField } from "@/components/ui/SearchField";
-import { Sheet } from "@/components/ui/Sheet";
+import { Sheet } from "@/components/ui/Sheet/Sheet";
 import { Spinner } from "@/components/ui/Spinner";
 import { TextField } from "@/components/ui/TextField";
 import { GROUP_BALANCE_FILTERS, noGroupsMessage } from "@haalkhata/shared/group/balanceFilter";
@@ -19,7 +21,7 @@ import { GroupStatus } from "@haalkhata/shared/group/status";
 import { GROUP_ARCHIVE_EMPTY, GROUP_ARCHIVE_VIEWS } from "@haalkhata/shared/group/archiving";
 import { CurrencyPicker } from "@/components/ui/CurrencyPicker";
 import { colors, fonts, radii, spacing } from "@/lib/theme/theme";
-import { GROUP_TYPES, groupEmoji } from "../../constants/groupTypes";
+import { GROUP_TYPES, groupEmoji } from "@haalkhata/shared/group/groupTypes";
 import { useGroups } from "./hooks/useGroups";
 import { MAX_GROUP_NAME_LENGTH } from "@haalkhata/shared/text/limits";
 
@@ -63,6 +65,8 @@ export function GroupsScreen() {
 
       {groupsState.isLoading ? (
         <Spinner label="Loading groups…" />
+      ) : groupsState.listError ? (
+        <ErrorState error={groupsState.listError} retry={groupsState.refresh} />
       ) : groupsState.groups.length === 0 && groupsState.status === GroupStatus.ACTIVE ? (
         <EmptyState
           action={
@@ -251,13 +255,16 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     flexBasis: 300,
     flexGrow: 1,
+    flexShrink: 1,
+    minWidth: 0,
     gap: spacing.md,
-    maxWidth: 570,
+    maxWidth: "100%",
     padding: spacing.lg,
   },
   cardBalance: {
     alignItems: "center",
     flexDirection: "row",
+    flexWrap: "wrap",
   },
   cardBalanceAmount: {
     fontSize: 14,
@@ -374,6 +381,8 @@ const styles = StyleSheet.create({
   titleRow: {
     alignItems: "center",
     flexDirection: "row",
+    flexWrap: "wrap",
+    gap: spacing.md,
     justifyContent: "space-between",
   },
   typeBadge: {

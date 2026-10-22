@@ -2,40 +2,39 @@
   "expo": {
     "name": "HaalKhata",
     "slug": "haalkhata",
-    "version": "0.1.0",
+    "owner": "anirudha_ani",
+    "version": "1.0.0",
     "scheme": [
       "haalkhata",
       "com.haalkhata.app"
     ],
     "orientation": "default",
     "userInterfaceStyle": "light",
-    "newArchEnabled": true,
     "icon": "./assets/icon.png",
-    "splash": {
-      "image": "./assets/splash-icon.png",
-      "backgroundColor": "#faf6ef",
-      "resizeMode": "contain"
-    },
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.haalkhata.app",
       "infoPlist": {
         "NSAppTransportSecurity": {
           "NSAllowsArbitraryLoads": false
-        }
+        },
+        "ITSAppUsesNonExemptEncryption": false
       },
       "associatedDomains": [
         "applinks:haalkhata.app"
-      ]
+      ],
+      "usesAppleSignIn": true
     },
     "android": {
       "package": "com.haalkhata.app",
       "allowBackup": false,
+      "blockedPermissions": [
+        "android.permission.WRITE_CONTACTS"
+      ],
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#b03a25"
       },
-      "edgeToEdgeEnabled": true,
       "intentFilters": [
         {
           "action": "VIEW",
@@ -56,27 +55,58 @@
     },
     "plugins": [
       "expo-router",
-      "expo-secure-store",
+      [
+        "expo-secure-store",
+        {
+          "faceIDPermission": false
+        }
+      ],
       [
         "expo-image-picker",
         {
           "cameraPermission": "HaalKhata uses the camera to scan receipts into itemized expenses.",
-          "photosPermission": "HaalKhata uses your photos to pick a receipt to itemize."
+          "photosPermission": "HaalKhata uses your photos to pick a receipt to itemize.",
+          "microphonePermission": false
         }
       ],
       [
         "expo-build-properties",
         {
-          "ios": {
-            "enableSceneSupport": true
-          },
           "android": {
             "usesCleartextTraffic": false
           }
         }
       ],
       "expo-status-bar",
-      "expo-web-browser"
-    ]
+      "expo-web-browser",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash-icon.png",
+          "backgroundColor": "#faf6ef",
+          "imageWidth": 200
+        }
+      ],
+      "expo-apple-authentication",
+      "@react-native-community/datetimepicker",
+      [
+        "expo-contacts",
+        {
+          "contactsPermission": "HaalKhata checks the phone numbers and emails in your contacts to show friends who already use HaalKhata. Names stay on your phone, and your contacts are not stored."
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "color": "#b03a25",
+          "enableBackgroundRemoteNotifications": false
+        }
+      ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "b3d23443-3d98-4a14-88db-797a8de551f1"
+      }
+    }
   }
 }

@@ -2,7 +2,8 @@
 
 import type { CounterpartyBalance } from "@haalkhata/protogen/common/v1/common_pb";
 import { useRouter } from "expo-router";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, View } from "react-native";
+import { Text } from "@/components/ui/Text";
 import { PaymentMethodSheet } from "@/components/payment/PaymentMethodSheet";
 import { formatMoney } from "@haalkhata/shared/money/money";
 import { methodCapLine } from "@haalkhata/shared/payment/copy";

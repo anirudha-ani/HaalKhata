@@ -5,13 +5,11 @@ export const AVATAR_SIZES = {
   sm: { diameter: 28, fontSize: 11 },
   md: { diameter: 36, fontSize: 14 },
   lg: { diameter: 48, fontSize: 16 },
+  xl: { diameter: 88, fontSize: 30 },
 } as const;
 
 /** Fallback avatar background when a user has no accent color. */
 export const AVATAR_FALLBACK_COLOR = "#857a68";
-
-/** Fraction of the screen height a bottom sheet may occupy at most. */
-export const SHEET_MAX_HEIGHT_RATIO = 0.92;
 
 /**
  * Most country rows the phone field's picker renders at once. Search narrows

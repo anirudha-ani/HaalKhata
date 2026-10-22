@@ -5,6 +5,7 @@ import { useId } from "react";
 import { CurrencySelect } from "@/components/ui/CurrencySelect/CurrencySelect";
 import { MergePreview } from "@/components/account/MergePreview/MergePreview";
 import { PhoneField } from "@/components/ui/PhoneField/PhoneField";
+import { ContactDiscoveryToggle } from "@/components/account/ContactDiscoveryToggle/ContactDiscoveryToggle";
 import { useOnboarding } from "./hooks/useOnboarding";
 import { PaymentStep } from "./components/PaymentStep/PaymentStep";
 import { MAX_USER_NAME_LENGTH } from "@haalkhata/shared/text/limits";
@@ -172,6 +173,14 @@ export function OnboardingPage() {
               <p className="text-xs text-ink-soft">
                 Only so friends can find you when they split something. Never used to sign in.
               </p>
+
+              <div className="mt-2 rounded-xl border border-line px-3 py-2">
+                <ContactDiscoveryToggle
+                  checked={onboarding.findable}
+                  disabled={onboarding.isPending}
+                  onChange={onboarding.setFindable}
+                />
+              </div>
 
               <label className="mt-2 text-xs font-semibold uppercase tracking-wide text-ink-soft">
                 Default currency

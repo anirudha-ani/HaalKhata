@@ -1,17 +1,21 @@
 /** Bottom sheet holding the add-friend form: email or phone, send, and the privacy note. */
 
-import { UserPlus } from "lucide-react-native";
-import { StyleSheet, Text, View } from "react-native";
+import { useRouter } from "expo-router";
+import { Contact, UserPlus } from "lucide-react-native";
+import { StyleSheet, View } from "react-native";
+import { FIND_FRIENDS_COPY } from "@haalkhata/shared/contacts/contactsCopy";
+import { Text } from "@/components/ui/Text";
 import { Button } from "@/components/ui/Button";
 import { EmailOrPhoneField } from "@/components/ui/EmailOrPhoneField";
-import { Sheet } from "@/components/ui/Sheet";
+import { Sheet } from "@/components/ui/Sheet/Sheet";
 import { colors, spacing } from "@/lib/theme/theme";
 import type { FriendsController } from "../../hooks/useFriends";
 
 /**
  * The add form as a dialog, not a panel spliced into the screen: it is a
  * one-field task, and opening it must not shove the list down. It closes
- * itself once the request is sent.
+ * itself once the request is sent. Finding people from contacts starts here
+ * too, on its own screen.
  *
  * @param props - Component props.
  * @returns The sheet.
@@ -22,9 +26,19 @@ export function AddFriendSheet({
   /** The friends-screen controller from useFriends. */
   friendsState: FriendsController;
 }) {
+  const router = useRouter();
   return (
     <Sheet onClose={() => friendsState.setShowAdd(false)} title="Add a friend">
       <View style={styles.body}>
+        <Button
+          icon={<Contact color={colors.inkSoft} size={16} />}
+          label={FIND_FRIENDS_COPY.entry}
+          onPress={() => {
+            friendsState.setShowAdd(false);
+            router.push("/friends/find");
+          }}
+          variant="outline"
+        />
         <EmailOrPhoneField
           contact={friendsState.contact}
           emailLabel="Friend's email address"

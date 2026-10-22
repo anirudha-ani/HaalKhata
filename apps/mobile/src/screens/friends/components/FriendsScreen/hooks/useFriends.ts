@@ -17,6 +17,7 @@ import { authClient, errorMessage, socialClient } from "@/lib/api/connect";
 import { shareInvite } from "@/lib/invite/share";
 import { queryKeys } from "@haalkhata/shared/api/queryKeys";
 import type { FriendsTab } from "../../../constants/friendsTabs";
+import { usePullToRefresh } from "@/lib/hooks/usePullToRefresh";
 
 /**
  * A friend's position per currency. A server predating `balances` sends only
@@ -166,6 +167,8 @@ export function useFriends() {
     [allFriends, currency],
   );
 
+  const pull = usePullToRefresh(() => friends.refetch());
+
   return {
     me: currentUser.data,
     friends: allFriends,
@@ -184,8 +187,8 @@ export function useFriends() {
     query,
     setQuery,
     isLoading: friends.isLoading,
-    refresh: () => void friends.refetch(),
-    isRefreshing: friends.isRefetching,
+    refresh: pull.refresh,
+    isRefreshing: pull.isRefreshing,
     showAdd,
     setShowAdd,
     contact,

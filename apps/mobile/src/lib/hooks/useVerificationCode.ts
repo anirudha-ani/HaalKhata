@@ -4,6 +4,7 @@ import { useCallback, useRef, useState } from "react";
 import {
   isCompleteVerificationCode,
   readVerificationCode,
+  type CodeEntry,
 } from "@haalkhata/shared/phone/verificationCode";
 import {
   VERIFICATION_CODE_HINT,
@@ -19,19 +20,20 @@ import {
  * against the first rather than against the render before both.
  *
  * @returns The code, whether it is whole, the hint line, and actions to read
- *   a change (returning any notice for the error line), to clear the field,
- *   and to note that the code was sent again.
+ *   a change (returning the reading: any notice for the error line, and
+ *   whether a whole code arrived at once), to clear the field, and to note
+ *   that the code was sent again.
  */
 export function useVerificationCode() {
   const [code, setCode] = useState("");
   const [resent, setResent] = useState(false);
   const latestCode = useRef("");
 
-  const enter = useCallback((entered: string): string => {
+  const enter = useCallback((entered: string): CodeEntry => {
     const entry = readVerificationCode(latestCode.current, entered);
     latestCode.current = entry.code;
     setCode(entry.code);
-    return entry.notice;
+    return entry;
   }, []);
 
   const clear = useCallback(() => {

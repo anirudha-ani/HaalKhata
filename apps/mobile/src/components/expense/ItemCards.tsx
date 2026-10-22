@@ -3,12 +3,15 @@
 import type { User } from "@haalkhata/protogen/common/v1/common_pb";
 import { Check, Plus, Trash2 } from "lucide-react-native";
 import { useState } from "react";
-import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { Pressable, StyleSheet, TextInput, View } from "react-native";
+import { Text } from "@/components/ui/Text";
 import { Avatar } from "@/components/ui/Avatar";
 import { formatMoney, parseMoneyInput } from "@haalkhata/shared/money/money";
 import { MAX_EXPENSE_ITEM_NAME_LENGTH } from "@haalkhata/shared/text/limits";
-import { isAssigned, percentOfItems } from "@/lib/expense/itemDraft";
+import { isAssigned } from "@/lib/expense/itemDraft";
+import { percentOfItems } from "@haalkhata/shared/expense/form/splitForm";
 import type { ItemDraft } from "@/lib/hooks/useItemDraft";
+import { useResponsiveLayout } from "@/lib/layout/hooks/useResponsiveLayout";
 import { colors, radii, spacing } from "@/lib/theme/theme";
 import {
   CHIP_TINT_ALPHA,
@@ -78,6 +81,7 @@ export function ItemCards({
   /** Whether the draft came off a receipt photo, which changes how the quantity row is worded. */
   scanned?: boolean;
 }) {
+  const { fontScale, isLargeText } = useResponsiveLayout();
   const [claimingId, setClaimingId] = useState<string | null>(null);
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
   if (draft.items === null) return null;
@@ -151,6 +155,7 @@ export function ItemCards({
         const note = !hasAmount ? "Needs an amount" : unassigned ? "Nobody's on this yet" : "";
         return (
           <Pressable
+            accessible={Boolean(claimer)}
             accessibilityRole={claimer ? "button" : undefined}
             accessibilityState={claimer ? { selected: claimerOn } : undefined}
             disabled={!claimer}
@@ -169,8 +174,8 @@ export function ItemCards({
               </View>
             ) : null}
 
-            <View style={styles.cardTop}>
-              <View style={styles.nameWrap}>
+            <View style={[styles.cardTop, isLargeText ? styles.cardTopStacked : null]}>
+              <View style={[styles.nameWrap, isLargeText ? styles.nameWrapStacked : null]}>
                 <TextInput
                   accessibilityLabel={`Name for item ${index + 1}${
                     item.quantity > 1 ? `, quantity ${item.quantity}` : ""
@@ -179,7 +184,7 @@ export function ItemCards({
                   onChangeText={(text) => draft.updateItem(index, { name: text })}
                   placeholder="Item name"
                   placeholderTextColor={colors.inkSoft}
-                  style={[styles.field, item.quantity > 1 ? styles.fieldWithQuantity : null]}
+                  style={[styles.field, styles.nameField]}
                   value={item.name}
                 />
                 {/* The count reads as part of the line, the way a receipt
@@ -190,23 +195,25 @@ export function ItemCards({
                   </Text>
                 ) : null}
               </View>
-              <TextInput
-                accessibilityLabel={`Amount for item ${index + 1}`}
-                keyboardType="decimal-pad"
-                onChangeText={(text) => draft.updateItem(index, { total: text })}
-                placeholder="0.00"
-                placeholderTextColor={colors.inkSoft}
-                style={[styles.field, styles.amountField]}
-                value={item.total}
-              />
-              <Pressable
-                accessibilityLabel={`Remove item ${index + 1}`}
-                hitSlop={6}
-                onPress={() => draft.removeItem(index)}
-                style={styles.removeButton}
-              >
-                <Trash2 color={colors.inkSoft} size={16} />
-              </Pressable>
+              <View style={styles.cardFigures}>
+                <TextInput
+                  accessibilityLabel={`Amount for item ${index + 1}`}
+                  keyboardType="decimal-pad"
+                  onChangeText={(text) => draft.updateItem(index, { total: text })}
+                  placeholder="0.00"
+                  placeholderTextColor={colors.inkSoft}
+                  style={[styles.field, styles.amountField, { width: styles.amountField.width * fontScale }]}
+                  value={item.total}
+                />
+                <Pressable
+                  accessibilityLabel={`Remove item ${index + 1}`}
+                  hitSlop={6}
+                  onPress={() => draft.removeItem(index)}
+                  style={styles.removeButton}
+                >
+                  <Trash2 color={colors.inkSoft} size={16} />
+                </Pressable>
+              </View>
             </View>
 
             <View style={styles.chips}>
@@ -334,7 +341,7 @@ export function ItemCards({
             onChangeText={draft.setTax}
             placeholder="0.00"
             placeholderTextColor={colors.inkSoft}
-            style={[styles.field, styles.addonField]}
+            style={[styles.field, styles.addonField, { width: styles.addonField.width * fontScale }]}
             value={draft.tax}
           />
           <Text style={styles.addonHint}>
@@ -350,7 +357,7 @@ export function ItemCards({
             onChangeText={draft.setTip}
             placeholder="0.00"
             placeholderTextColor={colors.inkSoft}
-            style={[styles.field, styles.addonField]}
+            style={[styles.field, styles.addonField, { width: styles.addonField.width * fontScale }]}
             value={draft.tip}
           />
           <View style={styles.presets}>
@@ -430,7 +437,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     flexDirection: "row",
     gap: spacing.xs + 2,
-    height: 44,
+    minHeight: 44,
     justifyContent: "center",
   },
   addItemText: {
@@ -440,17 +447,21 @@ const styles = StyleSheet.create({
   },
   addonField: {
     width: 92,
+    maxWidth: "100%",
   },
   addonHint: {
     color: colors.inkSoft,
-    flex: 1,
+    width: 100,
+    maxWidth: "100%",
+    flexGrow: 1,
+    flexShrink: 1,
     fontSize: 12,
     lineHeight: 16,
   },
   addonLabel: {
     color: colors.inkSoft,
     fontSize: 14,
-    width: 36,
+    minWidth: 36,
   },
   addonRate: {
     color: colors.ink,
@@ -461,6 +472,7 @@ const styles = StyleSheet.create({
   addonRow: {
     alignItems: "center",
     flexDirection: "row",
+    flexWrap: "wrap",
     gap: spacing.sm + 2,
   },
   addons: {
@@ -475,6 +487,7 @@ const styles = StyleSheet.create({
     fontVariant: ["tabular-nums"],
     textAlign: "right",
     width: 92,
+    maxWidth: "100%",
   },
   card: {
     backgroundColor: colors.card,
@@ -497,6 +510,17 @@ const styles = StyleSheet.create({
   cardTop: {
     alignItems: "center",
     flexDirection: "row",
+    flexWrap: "wrap",
+    gap: spacing.sm,
+  },
+  cardTopStacked: {
+    alignItems: "stretch",
+    flexDirection: "column",
+  },
+  cardFigures: {
+    alignItems: "center",
+    flexDirection: "row",
+    flexWrap: "wrap",
     gap: spacing.sm,
   },
   cardUnassigned: {
@@ -511,7 +535,9 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     flexDirection: "row",
     gap: 6,
-    height: 34,
+    maxWidth: "100%",
+    paddingVertical: spacing.xs,
+    minHeight: 44,
     paddingLeft: 3,
     paddingRight: spacing.sm + 2,
   },
@@ -526,6 +552,7 @@ const styles = StyleSheet.create({
   chipText: {
     color: colors.inkSoft,
     fontSize: 13,
+    flexShrink: 1,
     fontWeight: "500",
   },
   chipTextOn: {
@@ -572,6 +599,7 @@ const styles = StyleSheet.create({
   claimLabelRow: {
     alignItems: "flex-start",
     flexDirection: "row",
+    flexWrap: "wrap",
     gap: spacing.md,
     justifyContent: "space-between",
   },
@@ -593,7 +621,7 @@ const styles = StyleSheet.create({
     borderColor: colors.brand200,
     borderRadius: radii.md,
     borderWidth: 1,
-    height: 36,
+    minHeight: 44,
     justifyContent: "center",
     marginLeft: "auto",
     paddingHorizontal: spacing.md,
@@ -621,16 +649,28 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     color: colors.ink,
     fontSize: 16,
-    height: 40,
+    minHeight: 44,
     paddingHorizontal: spacing.md,
-    paddingVertical: 0,
+    paddingVertical: spacing.sm,
   },
-  fieldWithQuantity: {
-    paddingRight: 46,
-  },
-  nameWrap: {
+  nameField: {
     flex: 1,
     minWidth: 0,
+  },
+  nameWrap: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: spacing.xs,
+    width: 160,
+    maxWidth: "100%",
+    flexGrow: 1,
+    flexShrink: 1,
+    minWidth: 0,
+  },
+  nameWrapStacked: {
+    flexGrow: 0,
+    flexShrink: 0,
+    width: "100%",
   },
   note: {
     color: colors.neg700,
@@ -645,7 +685,9 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     flexDirection: "row",
     gap: 7,
-    height: 36,
+    maxWidth: "100%",
+    paddingVertical: spacing.xs,
+    minHeight: 44,
     paddingLeft: 3,
     paddingRight: spacing.md,
   },
@@ -656,6 +698,7 @@ const styles = StyleSheet.create({
   personPillText: {
     color: colors.ink,
     fontSize: 13,
+    flexShrink: 1,
     fontWeight: "600",
   },
   personPillTextActive: {
@@ -666,17 +709,21 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontVariant: ["tabular-nums"],
     textAlign: "right",
-    width: 64,
+    minWidth: 64,
   },
   portionName: {
     color: colors.ink,
-    flex: 1,
+    width: 100,
+    maxWidth: "100%",
+    flexGrow: 1,
+    flexShrink: 1,
     fontSize: 13,
     fontWeight: "500",
   },
   portionRow: {
     alignItems: "center",
     flexDirection: "row",
+    flexWrap: "wrap",
     gap: spacing.sm,
   },
   portionsHint: {
@@ -704,6 +751,10 @@ const styles = StyleSheet.create({
     color: colors.brand700,
   },
   preset: {
+    alignItems: "center",
+    justifyContent: "center",
+    minHeight: 44,
+    minWidth: 44,
     borderColor: colors.line,
     borderRadius: radii.full,
     borderWidth: 1,
@@ -731,18 +782,20 @@ const styles = StyleSheet.create({
     color: colors.inkSoft,
     fontSize: 12,
     fontVariant: ["tabular-nums"],
-    position: "absolute",
-    right: spacing.md,
-    top: 12,
+
   },
   removeButton: {
+    alignItems: "center",
+    justifyContent: "center",
+    minHeight: 44,
+    minWidth: 44,
     padding: spacing.sm,
   },
   stepButton: {
     alignItems: "center",
-    height: 30,
+    minHeight: 44,
     justifyContent: "center",
-    width: 32,
+    minWidth: 44,
   },
   stepButtonDisabled: {
     opacity: 0.4,

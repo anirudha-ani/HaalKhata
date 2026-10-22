@@ -1,7 +1,7 @@
 /** Cross-table ledger aggregates the database can compute in one pass. */
 
 import type { PoolClient } from "pg";
-import { query, queryOne } from "@/server/common/db";
+import { query, queryOne } from "@/server/common/db/db";
 
 /**
  * Checks live movements for a nonzero participant net in any group currency.

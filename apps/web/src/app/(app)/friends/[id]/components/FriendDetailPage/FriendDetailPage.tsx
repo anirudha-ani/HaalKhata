@@ -1,11 +1,14 @@
 "use client";
 /** Friend detail: net balance per currency, settle either way, and the full shared ledger with a running balance. */
 
+import { SafetyDialog } from "@/components/safety/SafetyDialog/SafetyDialog";
 import Link from "next/link";
-import { ArrowLeft, Bell, Check, HandCoins, Plus, UserPlus, Wallet } from "lucide-react";
-import { groupEmoji } from "../../../../groups/constants/groupTypes";
+import { ArrowLeft, Ban, Bell, Check, Flag, HandCoins, Plus, UserPlus, Wallet } from "lucide-react";
+import { groupEmoji } from "@haalkhata/shared/group/groupTypes";
+import { PERSON_MENU_COPY } from "@haalkhata/shared/people/personMenu";
 import { Avatar } from "@/components/ui/Avatar/Avatar";
 import { Money } from "@/components/ui/Money/Money";
+import { OverflowMenu } from "@/components/ui/OverflowMenu/OverflowMenu";
 import { SettleUpModal } from "@/components/modals/SettleUpModal/SettleUpModal";
 import { Spinner } from "@/components/ui/Spinner/Spinner";
 import { errorMessage } from "@/lib/api/connect";
@@ -87,6 +90,15 @@ export function FriendDetailPage({
       ?.scopes.find((scope) => scope.groupId === scopeGroupId && scope.netCents !== 0);
   const owedToYou = nets.filter((bucket) => bucket.cents > 0);
   const owedByYou = nets.filter((bucket) => bucket.cents < 0);
+  // Their email and phone are private — the server sends them empty for
+  // anyone but yourself — so the only things worth a line under the name are
+  // whether they have signed in yet and whether you have blocked them.
+  const nameNote = [
+    friend.registered ? "" : PERSON_MENU_COPY.invited,
+    view.isBlocked ? PERSON_MENU_COPY.blocked : "",
+  ]
+    .filter(Boolean)
+    .join(" · ");
 
   return (
     <div className="mx-auto max-w-3xl space-y-6">
@@ -97,50 +109,48 @@ export function FriendDetailPage({
         <ArrowLeft className="h-4 w-4" /> Friends
       </Link>
 
-      <header className="flex flex-wrap items-center gap-4 rounded-2xl border border-line bg-card p-5">
-        <Avatar user={friend} size="lg" />
-        <div className="min-w-0 flex-1">
-          <h1 className="truncate text-2xl font-bold">{friend.name}</h1>
-          {/* Their email and phone are private — the server sends them empty
-              for anyone but yourself — so the only thing worth a line here is
-              whether they have signed in yet. */}
-          {!friend.registered ? (
-            <p className="truncate text-sm text-ink-soft">Invited — hasn&apos;t signed in yet</p>
-          ) : null}
-          {/* Where you know each other from — every shared group, settled
-              ones included, each a link. And when this page is showing a
-              pair rather than a friendship (any name anywhere links here),
-              the way to make it one is a tap, not a form. */}
-          {mutualGroups.length > 0 || !isFriend ? (
-            <p className="mt-1.5 flex flex-wrap items-center gap-1.5">
-              {mutualGroups.map((mutual) => (
-                <Link
-                  key={mutual.groupId}
-                  href={`/groups/${mutual.groupId}`}
-                  className="rounded-full bg-brand-50 px-2 py-0.5 text-xs font-medium text-brand-700 hover:bg-brand-100"
-                >
-                  {groupEmoji(mutual.groupType)} {mutual.groupName}
-                </Link>
-              ))}
-              {!isFriend ? (
-                <button
-                  type="button"
-                  disabled={view.isAddingFriend || view.friendRequestSent}
-                  onClick={view.addFriend}
-                  className="flex items-center gap-1 rounded-full bg-brand-600 px-2.5 py-0.5 text-xs font-semibold text-white hover:bg-brand-700 disabled:opacity-50"
-                >
-                  <UserPlus className="h-3 w-3" />
-                  {view.isAddingFriend
-                    ? "Sending…"
-                    : view.friendRequestSent
-                      ? "Requested"
-                      : "Request friendship"}
-                </button>
-              ) : null}
-            </p>
-          ) : null}
+      {/* Laid out like a group's page: the name on a row of its own, where
+          it wraps instead of being cut to a first name, and reporting and
+          blocking behind the menu in the top right corner instead of as
+          links above the page. */}
+      <header className="flex items-start gap-3">
+        <div className="flex min-w-0 flex-1 items-center gap-4">
+          <Avatar user={friend} size="lg" />
+          <div className="min-w-0">
+            <h1 className="text-2xl font-bold break-words sm:text-3xl">{friend.name}</h1>
+            {nameNote ? <p className="text-sm text-ink-soft">{nameNote}</p> : null}
+          </div>
         </div>
-        <div className="text-right">
+        {!friend.deleted ? (
+          <div className="shrink-0 pt-1">
+            <OverflowMenu
+              label={PERSON_MENU_COPY.trigger}
+              items={[
+                {
+                  label: PERSON_MENU_COPY.report,
+                  icon: <Flag className="h-4 w-4" />,
+                  onSelect: () => view.setSafetyMode("report"),
+                },
+                ...(view.isBlocked
+                  ? []
+                  : [
+                      {
+                        label: PERSON_MENU_COPY.block,
+                        icon: <Ban className="h-4 w-4" />,
+                        onSelect: () => view.setSafetyMode("block"),
+                      },
+                    ]),
+              ]}
+            />
+          </div>
+        ) : null}
+      </header>
+
+      {/* The balance first and full width on a phone, with where you know
+          each other from under it; side by side, the balance on the right,
+          once there is room for both. */}
+      <section className="flex flex-col gap-4 rounded-2xl border border-line bg-card p-5 sm:flex-row-reverse sm:items-start sm:justify-between">
+        <div className="shrink-0 sm:text-right">
           {isEvenOnly ? (
             <p className="text-lg font-semibold text-ink-soft">Even overall</p>
           ) : isSettled ? (
@@ -164,7 +174,39 @@ export function FriendDetailPage({
             ))
           )}
         </div>
-      </header>
+        {/* Where you know each other from — every shared group, settled
+            ones included, each a link. And when this page is showing a pair
+            rather than a friendship (any name anywhere links here), the way
+            to make it one is a tap, not a form. */}
+        {mutualGroups.length > 0 || !isFriend ? (
+          <p className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
+            {mutualGroups.map((mutual) => (
+              <Link
+                key={mutual.groupId}
+                href={`/groups/${mutual.groupId}`}
+                className="rounded-full bg-brand-50 px-2.5 py-1 text-xs font-medium text-brand-700 hover:bg-brand-100"
+              >
+                {groupEmoji(mutual.groupType)} {mutual.groupName}
+              </Link>
+            ))}
+            {!isFriend ? (
+              <button
+                type="button"
+                disabled={view.isAddingFriend || view.friendRequestSent}
+                onClick={view.addFriend}
+                className="flex items-center gap-1 rounded-full bg-brand-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-brand-700 disabled:opacity-50"
+              >
+                <UserPlus className="h-3 w-3" />
+                {view.isAddingFriend
+                  ? "Sending…"
+                  : view.friendRequestSent
+                    ? "Requested"
+                    : "Request friendship"}
+              </button>
+            ) : null}
+          </p>
+        ) : null}
+      </section>
 
       <div className="flex flex-wrap gap-2">
         <Link
@@ -350,6 +392,16 @@ export function FriendDetailPage({
           </p>
         ) : null}
       </section>
+
+      {view.safetyMode ? (
+        <SafetyDialog
+          mode={view.safetyMode}
+          targetKind="user"
+          targetId={friend.id}
+          userId={friend.id}
+          onClose={() => view.setSafetyMode(null)}
+        />
+      ) : null}
 
       {view.settling ? (
         <SettleUpModal

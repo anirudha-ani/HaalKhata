@@ -2,7 +2,8 @@
 
 import { Check, ChevronDown, ChevronUp } from "lucide-react-native";
 import { useMemo, useState } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Pressable, ScrollView, StyleSheet, View } from "react-native";
+import { Text } from "@/components/ui/Text";
 import type { User } from "@haalkhata/protogen/common/v1/common_pb";
 import { Avatar } from "@/components/ui/Avatar";
 import { TextField } from "@/components/ui/TextField";

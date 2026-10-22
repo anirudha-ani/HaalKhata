@@ -1,7 +1,8 @@
 /** The "Sent" tab: what the current user asked for and is still waiting on. */
 
 import { Clock, Send, X } from "lucide-react-native";
-import { StyleSheet, Text, View } from "react-native";
+import { StyleSheet, View } from "react-native";
+import { Text } from "@/components/ui/Text";
 import { Avatar } from "@/components/ui/Avatar";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { IconButton } from "@/components/ui/IconButton";

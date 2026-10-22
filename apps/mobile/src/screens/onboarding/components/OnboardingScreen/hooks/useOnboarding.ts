@@ -1,238 +1,172 @@
-/** First-run flow state: profile fields, the phone claim and its merge confirmation, then the payment step. */
+/** The first-run flow's controller: the planned steps, moving between them, and leaving. */
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { MergePreview } from "@haalkhata/protogen/auth/v1/auth_pb";
-import { useRouter } from "expo-router";
-import { useState } from "react";
-import { authClient, errorMessage, isRefusal } from "@/lib/api/connect";
-import { useVerificationCode } from "@/lib/hooks/useVerificationCode";
+import { useLocalSearchParams, useRouter } from "expo-router";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { queryKeys } from "@haalkhata/shared/api/queryKeys";
-import { composeE164, DEFAULT_PHONE_REGION, isValidPhone, splitE164 } from "@haalkhata/shared/phone/phone";
-import { INVALID_PHONE_MESSAGE } from "@haalkhata/shared/phone/contact";
+import { authClient, errorMessage } from "@/lib/api/connect";
+import type { FlowDirection } from "@/lib/motion/entrances";
+import { DEVICE_SETUP_QUERY_KEY, ONBOARDING_PLAN_QUERY_KEY } from "@/lib/onboarding/onboarding.constants";
+import { finishDeviceSetup, markDeviceSetupDue, readOnboardingSituation } from "@/lib/onboarding/deviceSetup";
+import {
+  ACCOUNT_STEPS,
+  onboardingDestination,
+  onboardingProgress,
+  planOnboardingSteps,
+} from "@/lib/onboarding/onboardingPlan";
+import type { SetupAchievements } from "../components/DoneStep/DoneStep";
+import type { FriendsSummary } from "../components/FriendsStep/FriendsStep";
 
 /**
- * Drives the onboarding screen.
+ * Drives the flow.
  *
- * Phone is deliberately a separate step from the rest of the profile: claiming
- * a number can turn up an unclaimed invitation holding it, in which case
- * nothing is written until the user confirms what they would absorb. The other
- * fields go through the existing UpdateProfile and cannot fail that way.
+ * The steps are planned once, when the flow opens, from the account and
+ * this phone (see planOnboardingSteps), and then held: a step must not
+ * vanish because the permission it asked for changed while it was showing.
+ * The account steps end on the payment step, which marks onboarding
+ * complete on the server, so an interruption after it resumes with only
+ * the device steps. The last screen marks the device steps done on this
+ * phone and opens the app where the person was headed.
  *
- * The phone is held as a region plus a national number rather than one string,
- * matching the two controls that edit it; `save` joins them into the E.164 the
- * server stores.
- *
- * The flow has two steps. The profile step (name, phone, currency) ends,
- * however it ends, on the payment step: saved, verified, merged or skipped.
- * Only the payment step leaves onboarding, so everyone is asked once how
- * they want to be paid, and nobody is asked before their currency is known.
- *
- * @returns The step, field values with setters, the code field, the pending
- *   merge preview when one is waiting, actions for saving / verifying /
- *   sending the code again / confirming / skipping / finishing, and the busy
- *   flag.
+ * @returns The signed-in account, the plan and current step, progress, the
+ *   direction of the last move, what setup achieved, and the handlers each
+ *   step calls when it ends.
  */
 export function useOnboarding() {
   const router = useRouter();
   const queryClient = useQueryClient();
-
+  const { next } = useLocalSearchParams<{ next?: string }>();
   const meQuery = useQuery({ queryKey: queryKeys.me, queryFn: () => authClient.getMe({}) });
+  const user = meQuery.data;
 
-  const [name, setName] = useState("");
-  const [currency, setCurrency] = useState("");
-  // Phone is held as the two halves the field edits, not as one string: the
-  // country is a choice the user makes, and inferring it back out of the text
-  // on every keystroke would fight them while they type.
-  const [region, setRegion] = useState<string>(DEFAULT_PHONE_REGION);
-  const [nationalNumber, setNationalNumber] = useState("");
+  const planQuery = useQuery({
+    queryKey: [...ONBOARDING_PLAN_QUERY_KEY, user?.id ?? ""],
+    enabled: Boolean(user),
+    gcTime: 0,
+    retry: false,
+    staleTime: Infinity,
+    queryFn: async () => {
+      if (!user) return [];
+      // Someone still setting up their account owes the device steps too;
+      // noting it means an interruption after the account steps resumes them.
+      if (!user.onboarded) await markDeviceSetupDue();
+      return planOnboardingSteps(await readOnboardingSituation(user));
+    },
+  });
+  const steps = planQuery.data;
+
+  const [stepIndex, setStepIndex] = useState(0);
+  const [direction, setDirection] = useState<FlowDirection>("forward");
+  const [accountDone, setAccountDone] = useState(false);
   const [error, setError] = useState("");
-  const [pendingMerge, setPendingMerge] = useState<MergePreview | undefined>();
-  const [mergeToken, setMergeToken] = useState("");
-  const [verificationPhone, setVerificationPhone] = useState("");
-  const codeField = useVerificationCode();
+  const [achievements, setAchievements] = useState<SetupAchievements>({
+    phoneVerified: false,
+    requestsSent: 0,
+    friendsAdded: 0,
+    notificationsOn: false,
+    paymentAdded: false,
+  });
 
-  // Seeded from the server exactly once, when the query first resolves. Using
-  // state initializers would capture `undefined` on the loading render.
-  const [seeded, setSeeded] = useState(false);
-  if (meQuery.data && !seeded) {
-    setSeeded(true);
-    setName(meQuery.data.name);
-    setCurrency(meQuery.data.defaultCurrency || "USD");
-    // A number already on the account is stored as E.164; split it so the
-    // field opens on the country it was entered with.
-    const stored = splitE164(meQuery.data.phone);
-    if (stored) {
-      setRegion(stored.region);
-      setNationalNumber(stored.nationalNumber);
-    }
-  }
+  const current = steps?.[stepIndex];
 
-  const [step, setStep] = useState<"profile" | "payment">("profile");
-
-  /** Moves on from the profile step, however it ended, with a clean slate. */
-  const toPaymentStep = () => {
+  /** Moves to the following step. */
+  const advance = useCallback(() => {
     setError("");
-    setStep("payment");
-  };
+    setDirection("forward");
+    setStepIndex((index) => index + 1);
+  }, []);
 
-  /**
-   * Leaves onboarding, marking it done so it never asks again. The profile
-   * is re-read into the cache *before* navigating: the authed layout
-   * decides from the cached `onboarded` flag, and a stale false would send
-   * the user straight back here.
-   */
-  const finish = async () => {
-    await authClient.completeOnboarding({});
-    const refreshed = await authClient.getMe({});
-    queryClient.setQueryData(queryKeys.me, refreshed);
-    router.replace("/dashboard");
-  };
+  const completeAccount = useMutation({
+    mutationFn: () => authClient.completeOnboarding({}),
+    onSuccess: (profile, hasMethods: boolean) => {
+      // The signed-in layout decides from this cached flag; a stale false
+      // would send the person straight back here.
+      queryClient.setQueryData(queryKeys.me, profile);
+      setAccountDone(true);
+      setAchievements((done) => ({ ...done, paymentAdded: hasMethods }));
+      advance();
+    },
+    onError: (failure) => setError(errorMessage(failure)),
+  });
 
-  const save = useMutation({
+  const leave = useMutation({
     mutationFn: async () => {
-      setError("");
-      await authClient.updateProfile({ name, defaultCurrency: currency });
-      // Only touch the phone when it actually changed — resending the same
-      // number the account already has is a no-op the server would still
-      // process, and an empty field must not clear a number that is set.
-      // Comparing in E.164 is what makes that check honest: the same number
-      // re-typed with different spacing has to count as unchanged.
-      const claimedPhone = composeE164(region, nationalNumber);
-      if (claimedPhone.length > 0 && claimedPhone !== meQuery.data?.phone) {
-        // Checked with the same libphonenumber metadata the server uses, so
-        // an impossible number fails beside the field instead of costing an
-        // SMS round-trip to hear the same thing.
-        if (!isValidPhone(region, nationalNumber)) throw new Error(INVALID_PHONE_MESSAGE);
-        const result = await authClient.setPhone({ phone: claimedPhone, verificationCode: "" });
-        if (result.verificationSent) {
-          codeField.clear();
-          setVerificationPhone(claimedPhone);
-        }
-        return;
-      }
-      toPaymentStep();
+      // Bookkeeping only: if it cannot be written, the worst outcome is the
+      // device steps being offered again, which must not keep anyone out.
+      if (user) await finishDeviceSetup(user.id).catch(() => undefined);
     },
-    onError: (mutationError) => setError(errorMessage(mutationError)),
-    // Settled, not success: the profile write lands before the phone claim,
-    // so a refused number still leaves a changed name or currency on the
-    // server. Leaving onboarding used to refresh this; the payment step now
-    // sits in between, and it must not run on a profile from before the save.
-    onSettled: () => queryClient.invalidateQueries({ queryKey: queryKeys.me }),
-  });
-
-  const verifyPhone = useMutation({
-    mutationFn: () =>
-      authClient.setPhone({ phone: verificationPhone, verificationCode: codeField.code }),
-    onSuccess: async (result) => {
-      setVerificationPhone("");
-      codeField.clear();
-      if (result.pendingMerge) {
-        setPendingMerge(result.pendingMerge);
-        setMergeToken(result.mergeToken);
-        return;
-      }
-      await queryClient.invalidateQueries({ queryKey: queryKeys.me });
-      toPaymentStep();
+    onSuccess: () => {
+      if (user) queryClient.setQueryData([...DEVICE_SETUP_QUERY_KEY, user.id], false);
+      router.replace(onboardingDestination(next));
     },
-    onError: (mutationError) => {
-      // A refused code is cleared, so the same code cannot be sent again by
-      // pressing Verify twice, and the next suggestion the keyboard offers
-      // replaces it rather than landing beside it.
-      if (isRefusal(mutationError)) codeField.clear();
-      setError(errorMessage(mutationError));
+    onError: (failure) => setError(errorMessage(failure)),
+  });
+
+  // Nothing to show (every question already answered here), or the plan
+  // could not be made: go straight on, once.
+  const leftRef = useRef(false);
+  const nothingToShow = (steps !== undefined && steps.length === 0) || planQuery.isError;
+  useEffect(() => {
+    if (!nothingToShow || leftRef.current) return;
+    leftRef.current = true;
+    leave.mutate();
+  }, [leave, nothingToShow]);
+
+  const onFriendsDone = useCallback(
+    (summary: FriendsSummary) => {
+      setAchievements((done) => ({ ...done, requestsSent: summary.sent, friendsAdded: summary.accepted }));
+      advance();
     },
-  });
+    [advance],
+  );
 
-  // Texts the code again. Inside its ten minutes it is the same code, under
-  // the same verification and its same five tries; the field is cleared so
-  // the keyboard can offer the latest text's code.
-  const resendCode = useMutation({
-    mutationFn: () => authClient.setPhone({ phone: verificationPhone, verificationCode: "" }),
-    onSuccess: () => codeField.markResent(),
-    onError: (mutationError) => setError(errorMessage(mutationError)),
-  });
-
-  const confirmMerge = useMutation({
-    mutationFn: async () => {
-      setError("");
-      await authClient.confirmPhoneMerge({ mergeToken });
-      setPendingMerge(undefined);
-      toPaymentStep();
-    },
-    onError: (mutationError) => setError(errorMessage(mutationError)),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.me }),
-  });
-
-  /** Backs out of a merge, leaving both accounts untouched and the number unset. */
-  const declineMerge = () => {
-    setPendingMerge(undefined);
-    setMergeToken("");
-    // Only the number is cleared. The country stays selected, because it was
-    // almost certainly right — it is the digits after it that belonged to
-    // somebody else.
-    setNationalNumber("");
-    setError("");
-  };
-
-  const complete = useMutation({
-    mutationFn: finish,
-    onError: (mutationError) => setError(errorMessage(mutationError)),
-  });
+  const canGoBack =
+    current !== undefined && ACCOUNT_STEPS.includes(current) && stepIndex > 0 && !accountDone && !completeAccount.isPending;
 
   return {
-    isLoading: meQuery.isPending,
-    /** Which of the two steps is showing. */
-    step,
-    name,
-    setName,
-    currency,
-    setCurrency,
-    region,
-    setRegion,
-    nationalNumber,
-    setNationalNumber,
+    user,
+    loadError: user ? null : meQuery.error,
+    retry: meQuery.refetch,
+    current,
+    progress: steps && current ? onboardingProgress(steps, current) : { total: 0, position: 0 },
+    direction,
+    achievements,
     error,
-    pendingMerge,
-    verificationPhone,
-    verificationCode: codeField.code,
-    /** True once the field holds a whole code. */
-    codeComplete: codeField.complete,
-    /** The line under the code field. */
-    codeHint: codeField.hint,
-    /** Reads a change to the code field; a code that cannot be ours says why. */
-    enterVerificationCode: (entered: string) => setError(codeField.enter(entered)),
-    verifyPhone: () => {
+    completing: completeAccount.isPending,
+    leaving: leave.isPending,
+    /** Goes back one account step, when that is still possible. */
+    back: canGoBack
+      ? () => {
+          setError("");
+          setDirection("back");
+          setStepIndex((index) => Math.max(0, index - 1));
+        }
+      : undefined,
+    onProfileDone: advance,
+    onPhoneDone: useCallback(
+      (verified: boolean) => {
+        if (verified) setAchievements((done) => ({ ...done, phoneVerified: true }));
+        advance();
+      },
+      [advance],
+    ),
+    /** Finishes the account steps; the payment step's one button. */
+    onPaymentDone: (hasMethods: boolean) => {
       setError("");
-      verifyPhone.mutate();
+      completeAccount.mutate(hasMethods);
     },
-    /** True while a code is being checked. */
-    isVerifying: verifyPhone.isPending,
-    resendCode: () => {
+    onFriendsDone,
+    onNotificationsDone: useCallback(
+      (granted: boolean) => {
+        setAchievements((done) => ({ ...done, notificationsOn: granted }));
+        advance();
+      },
+      [advance],
+    ),
+    /** Opens the app; the closing screen's button. */
+    finish: () => {
       setError("");
-      resendCode.mutate();
+      leave.mutate();
     },
-    /** True while the code is being sent again. */
-    isResending: resendCode.isPending,
-    cancelVerification: () => {
-      setVerificationPhone("");
-      codeField.clear();
-      setError("");
-    },
-    confirmMerge: () => confirmMerge.mutate(),
-    declineMerge,
-    save: () => save.mutate(),
-    /** Leaves the profile step without saving it; the payment step still follows. */
-    skip: toPaymentStep,
-    /** Marks onboarding done and opens the app; the payment step's one button. */
-    complete: () => {
-      setError("");
-      complete.mutate();
-    },
-    isPending:
-      save.isPending ||
-      verifyPhone.isPending ||
-      resendCode.isPending ||
-      confirmMerge.isPending ||
-      complete.isPending,
   };
 }

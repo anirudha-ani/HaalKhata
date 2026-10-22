@@ -2,8 +2,8 @@
 
 import { Code, ConnectError, type ServiceImpl } from "@connectrpc/connect";
 import type { ReceiptService } from "@haalkhata/protogen/receipt/v1/receipt_pb";
-import { parseReceipt } from "@/server/receipt/usecase/receipt.usecase";
-import { runUsecase } from "@/server/api/connect/context";
+import { parseReceiptWithConsent, getReceiptProcessingInfo, grantReceiptConsent, revokeReceiptConsent } from "@/server/receipt/usecase/receiptConsent.usecase";
+import { requireUser, runUsecase } from "@/server/api/connect/context";
 import {
   MAX_CONCURRENT_RECEIPT_PARSES,
   requireRateLimitedUser,
@@ -15,6 +15,18 @@ let activeReceiptParses = 0;
 
 /** ReceiptService implementation; authentication happens here, parsing in receipt.usecase. */
 export const receiptHandler: ServiceImpl<typeof ReceiptService> = {
+  /** Returns processor disclosure before any photo leaves the device. */
+  async getProcessingInfo(_request, handlerContext) {
+    return runUsecase(async () => getReceiptProcessingInfo(await requireUser(handlerContext)), handlerContext);
+  },
+  /** Saves permission for future receipt scans on the signed-in account. */
+  async grantConsent(request, handlerContext) {
+    return runUsecase(async () => grantReceiptConsent(await requireUser(handlerContext), request.consentVersion), handlerContext);
+  },
+  /** Withdraws permission across all devices signed in to this account. */
+  async revokeConsent(_request, handlerContext) {
+    return runUsecase(async () => revokeReceiptConsent(await requireUser(handlerContext)), handlerContext);
+  },
   /**
    * Parses an uploaded receipt image into structured line items for the
    * signed-in user, and hands back the JPEG the provider was shown so the
@@ -22,7 +34,7 @@ export const receiptHandler: ServiceImpl<typeof ReceiptService> = {
    * stored anywhere — it only round-trips through this response.
    */
   async parseReceipt(request, handlerContext) {
-    await requireRateLimitedUser(
+    const userId = await requireRateLimitedUser(
       handlerContext,
       "parse-receipt",
       RPC_RATE_LIMITS.parseReceipt,
@@ -32,7 +44,7 @@ export const receiptHandler: ServiceImpl<typeof ReceiptService> = {
     }
     activeReceiptParses += 1;
     try {
-      return await runUsecase(() => parseReceipt(request.image), handlerContext);
+      return await runUsecase(() => parseReceiptWithConsent(userId, request.image, request.consentVersion, request.currency), handlerContext);
     } finally {
       activeReceiptParses -= 1;
     }

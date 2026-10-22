@@ -13,6 +13,12 @@ export interface CodeEntry {
   code: string;
   /** Why a pasted or suggested code cannot be ours; empty otherwise. */
   notice: string;
+  /**
+   * True when a whole code arrived in one change (the keyboard's code
+   * suggestion, or a paste), so it can be checked at once. Typed digits
+   * wait for Verify.
+   */
+  arrivedWhole: boolean;
 }
 
 /**
@@ -37,17 +43,21 @@ export function readVerificationCode(previous: string, entered: string): CodeEnt
   const digits = entered.replace(NON_DIGIT_PATTERN, "");
   const added = digits.length - previous.length;
   if (added < PASTED_CODE_MIN_DIGITS) {
-    return { code: digits.slice(0, VERIFICATION_CODE_LENGTH), notice: "" };
+    return { code: digits.slice(0, VERIFICATION_CODE_LENGTH), notice: "", arrivedWhole: false };
   }
-  if (digits.length === VERIFICATION_CODE_LENGTH) return { code: digits, notice: "" };
+  if (digits.length === VERIFICATION_CODE_LENGTH) {
+    return { code: digits, notice: "", arrivedWhole: true };
+  }
   const inserted = digits.startsWith(previous)
     ? digits.slice(previous.length)
     : digits.endsWith(previous)
       ? digits.slice(0, added)
       : digits;
+  const whole = inserted.length === VERIFICATION_CODE_LENGTH;
   return {
     code: inserted.slice(0, VERIFICATION_CODE_LENGTH),
-    notice: inserted.length === VERIFICATION_CODE_LENGTH ? "" : codeLengthMessage(inserted.length),
+    notice: whole ? "" : codeLengthMessage(inserted.length),
+    arrivedWhole: whole,
   };
 }
 

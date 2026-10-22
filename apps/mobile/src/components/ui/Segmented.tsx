@@ -1,6 +1,8 @@
 /** Segmented control: equal-width options on a paper track, matching the web tab switchers. */
 
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Pressable, ScrollView, StyleSheet, View } from "react-native";
+import { Text } from "@/components/ui/Text";
+import { useResponsiveLayout } from "@/lib/layout/hooks/useResponsiveLayout";
 import { colors, radii, spacing } from "@/lib/theme/theme";
 
 /** One option of the control. */
@@ -33,8 +35,11 @@ export function Segmented<OptionValue extends string>({
   /** Called with the tapped option's value. */
   onChange: (next: OptionValue) => void;
 }) {
+  const { isLargeText } = useResponsiveLayout();
   return (
-    <View accessibilityRole="tablist" style={styles.track}>
+    <ScrollView horizontal keyboardShouldPersistTaps="handled" style={styles.scroller}
+      contentContainerStyle={styles.track}>
+    <View accessibilityRole="tablist" style={styles.options}>
       {options.map((option) => {
         const active = option.value === value;
         const count = option.count ?? 0;
@@ -44,7 +49,7 @@ export function Segmented<OptionValue extends string>({
             accessibilityState={{ selected: active }}
             key={option.value}
             onPress={() => onChange(option.value)}
-            style={[styles.segment, active ? styles.segmentActive : null]}
+            style={[styles.segment, isLargeText ? styles.segmentLargeText : null, active ? styles.segmentActive : null]}
           >
             <Text style={[styles.label, active ? styles.labelActive : null]}>{option.label}</Text>
             {count > 0 ? (
@@ -58,6 +63,7 @@ export function Segmented<OptionValue extends string>({
         );
       })}
     </View>
+    </ScrollView>
   );
 }
 
@@ -84,8 +90,10 @@ const styles = StyleSheet.create({
   },
   label: {
     color: colors.inkSoft,
+    flexShrink: 1,
     fontSize: 14,
     fontWeight: "600",
+    textAlign: "center",
   },
   labelActive: {
     color: colors.brand700,
@@ -95,12 +103,29 @@ const styles = StyleSheet.create({
     borderRadius: radii.sm,
     flex: 1,
     flexDirection: "row",
+    flexWrap: "wrap",
     gap: spacing.xs + 1,
     justifyContent: "center",
+    minHeight: 44,
+    minWidth: 0,
+    paddingHorizontal: spacing.xs,
     paddingVertical: spacing.sm + 2,
   },
   segmentActive: {
     backgroundColor: colors.card,
+  },
+  segmentLargeText: {
+    flexGrow: 1,
+    flexBasis: "auto",
+    flexShrink: 0,
+    paddingHorizontal: spacing.md,
+  },
+  options: {
+    flexDirection: "row",
+    flexGrow: 1,
+  },
+  scroller: {
+    flexGrow: 0,
   },
   track: {
     backgroundColor: colors.paper,
@@ -108,6 +133,7 @@ const styles = StyleSheet.create({
     borderRadius: radii.md,
     borderWidth: 1,
     flexDirection: "row",
+    flexGrow: 1,
     padding: 4,
   },
 });

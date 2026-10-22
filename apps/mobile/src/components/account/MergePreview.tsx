@@ -1,7 +1,8 @@
 /** The facts about an unclaimed account a phone number would absorb. */
 
 import type { MergePreview as MergePreviewMessage } from "@haalkhata/protogen/auth/v1/auth_pb";
-import { StyleSheet, Text, View } from "react-native";
+import { StyleSheet, View } from "react-native";
+import { Text } from "@/components/ui/Text";
 import { outstandingBuckets } from "@haalkhata/shared/money/balances";
 import { formatMoney } from "@haalkhata/shared/money/money";
 import { colors, fonts, radii, spacing } from "@/lib/theme/theme";

@@ -21,9 +21,9 @@ import {
   type PaymentMethodRow,
   type PaymentMethodWrite,
 } from "@/server/payment/repo/paymentMethods.repo";
-import { newId, transaction } from "@/server/common/db";
+import { newId, transaction } from "@/server/common/db/db";
 import { invalid, notFound, UsecaseError } from "@/server/common/errors";
-import { lockPaymentMethods } from "@/server/common/ledgerLocks";
+import { lockPaymentMethods } from "@/server/common/ledger/ledgerLocks";
 import {
   MAX_PAYMENT_METHODS_PER_USER,
   METHOD_NOT_FOUND_MESSAGE,

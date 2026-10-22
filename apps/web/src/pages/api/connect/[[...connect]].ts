@@ -4,10 +4,10 @@ import type { NextApiRequest, NextApiResponse } from "next";
 import { nextJsApiRouter } from "@connectrpc/connect-next";
 import routes from "@/server/api/connect/routes";
 import { csrfGuard } from "@/server/api/connect/csrf";
-import { ensureMigrated } from "@/server/common/db";
+import { ensureMigrated } from "@/server/common/db/db";
 import { CONNECT_READ_MAX_BYTES } from "@/server/api/connect/connect.constants";
 import { logError } from "@/server/common/logger";
-import { DIRECT_CLIENT_IP_HEADER } from "@/server/auth/clientIp";
+import { DIRECT_CLIENT_IP_HEADER } from "@/server/auth/request/clientIp";
 
 /** Next.js API handler that serves every registered Connect RPC under /api/connect. */
 const { handler } = nextJsApiRouter({

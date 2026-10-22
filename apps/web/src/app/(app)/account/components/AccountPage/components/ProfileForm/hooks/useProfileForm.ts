@@ -239,7 +239,7 @@ export function useProfileForm(currentUser: User) {
     /** The line under the code field. */
     codeHint: codeField.hint,
     /** Reads a change to the code field; a code that cannot be ours says why. */
-    enterVerificationCode: (entered: string) => setError(codeField.enter(entered)),
+    enterVerificationCode: (entered: string) => setError(codeField.enter(entered).notice),
     verifyPhone: () => {
       setError("");
       verifyPhone.mutate();

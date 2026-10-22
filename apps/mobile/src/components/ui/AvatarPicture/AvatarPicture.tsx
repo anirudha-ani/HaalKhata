@@ -1,7 +1,8 @@
 /** Native image loading and fallback state for one person's one picture. */
 
 import { useState } from "react";
-import { Image, StyleSheet, Text } from "react-native";
+import { Image, StyleSheet } from "react-native";
+import { Text } from "@/components/ui/Text";
 import { colors } from "@/lib/theme/theme";
 
 /**
@@ -22,7 +23,8 @@ export function AvatarPicture({
 }) {
   const [pictureFailed, setPictureFailed] = useState(false);
   if (!avatarUrl || pictureFailed) {
-    return <Text style={[styles.initials, { fontSize: dimensions.fontSize }]}>{initials}</Text>;
+    // Initials replace a fixed-size picture; the adjacent name remains scalable text.
+    return <Text allowFontScaling={false} style={[styles.initials, { fontSize: dimensions.fontSize }]}>{initials}</Text>;
   }
 
   return (

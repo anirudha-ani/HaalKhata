@@ -16,11 +16,13 @@ import type { CommentRow } from "@/server/expense/repo/comments.repo";
 
 const { transactionClient } = vi.hoisted(() => ({ transactionClient: {} as PoolClient }));
 
+vi.mock("@/server/safety/repo/safety.repo", () => ({ blockedBetween: vi.fn(async () => false), blockedPairExists: vi.fn(async () => false) }));
+
 // The reads run inside a database snapshot. Every statement is mocked here,
 // so the snapshot is a pass-through handing out a stand-in client: these
 // tests must not need a database to be running.
-vi.mock("@/server/common/db", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@/server/common/db")>()),
+vi.mock("@/server/common/db/db", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/server/common/db/db")>()),
   snapshot: (operation: (client: unknown) => unknown) => operation({}),
 }));
 vi.mock("@/server/expense/repo/expenses.repo", () => ({
@@ -65,7 +67,7 @@ vi.mock("@/server/expense/repo/settlements.repo", () => ({
       operation(transactionClient),
   ),
 }));
-vi.mock("@/server/common/ledgerLocks", () => ({
+vi.mock("@/server/common/ledger/ledgerLocks", () => ({
   lockExpenseLedger: vi.fn(),
   lockGroupLedgers: vi.fn(),
   lockParticipantLedgers: vi.fn(),
@@ -77,7 +79,7 @@ vi.mock("@/server/social/repo/activity.repo", () => ({
   insertActivity: vi.fn(),
   listActivityForExpense: vi.fn(),
 }));
-vi.mock("@/server/social/repo/notifications.repo", () => ({ insertNotifications: vi.fn() }));
+vi.mock("@/server/social/repo/notifications.repo", () => ({ insertNotifications: vi.fn(), insertNotificationRows: vi.fn() }));
 vi.mock("./balance.usecase", () => ({
   groupCancelsOut: vi.fn(),
   amountOwed: vi.fn(),
@@ -124,9 +126,9 @@ import {
   lockExpenseLedger,
   lockGroupLedgers,
   lockParticipantLedgers,
-} from "@/server/common/ledgerLocks";
+} from "@/server/common/ledger/ledgerLocks";
 import { insertActivity, listActivityForExpense } from "@/server/social/repo/activity.repo";
-import { insertNotifications } from "@/server/social/repo/notifications.repo";
+import { insertNotificationRows, insertNotifications } from "@/server/social/repo/notifications.repo";
 import { insertFriendship, listFriendIds } from "@/server/social/repo/friendships.repo";
 import { amountOwed, userNetInGroup, groupCancelsOut } from "./balance.usecase";
 import {
@@ -656,11 +658,14 @@ describe("who hears about a transaction", () => {
       expect.objectContaining({ type: "expense_added" }),
       transactionClient,
     );
-    expect(insertNotifications).toHaveBeenCalledWith(
-      [OWER],
-      expect.objectContaining({ type: "expense_added" }),
+    // Every reader's row in one write, on the ledger's own transaction, and
+    // the payer names it quotes read on that transaction too.
+    expect(insertNotificationRows).toHaveBeenCalledOnce();
+    expect(insertNotificationRows).toHaveBeenCalledWith(
+      [expect.objectContaining({ userId: OWER, type: "expense_added" })],
       transactionClient,
     );
+    expect(findUsersByIds).toHaveBeenCalledWith([PAYER], transactionClient);
   });
 
   it("commits a comment with the feed line and notifications that announce it", async () => {
@@ -926,4 +931,26 @@ describe("archived groups keep their settled ledger", () => {
     expect(softDeleteNetSettlement).not.toHaveBeenCalled();
     expect(softDeleteSettlement).not.toHaveBeenCalled();
   });
+});
+
+it.each(["percent", "shares"])("keeps a saved %s mode on a notes-only exact-amount edit", async (splitType) => {
+  const stored = (await findExpenseById("expense-1"))!;
+  vi.mocked(findExpenseById).mockResolvedValue({ ...stored, split_type: splitType });
+  await updateExpense(PAYER, "expense-1", validExpenseRequest({ notes: "Corrected note" }), true);
+  expect(replaceExpense).toHaveBeenCalledWith("expense-1", expect.objectContaining({ splitType, notes: "Corrected note", splits: [{ userId: OWER, owedCents: 1000 }] }), transactionClient);
+});
+
+it("rechecks preserved allocations under the ledger lock and refuses a concurrent edit", async () => {
+  const stored = (await findExpenseById("expense-1"))!;
+  vi.mocked(findExpenseById).mockResolvedValueOnce({ ...stored, split_type: "percent" })
+    .mockResolvedValue({ ...stored, split_type: "percent", amount_cents: 2000 });
+  await expect(updateExpense(PAYER, "expense-1", validExpenseRequest(), true)).rejects.toMatchObject({ code: "failed_precondition" });
+  expect(replaceExpense).not.toHaveBeenCalled();
+});
+
+it("does not preserve the old ratio type when explicitly saving changed allocations", async () => {
+  const stored = (await findExpenseById("expense-1"))!;
+  vi.mocked(findExpenseById).mockResolvedValue({ ...stored, split_type: "shares" });
+  await updateExpense(PAYER, "expense-1", validExpenseRequest(), false);
+  expect(replaceExpense).toHaveBeenCalledWith("expense-1", expect.objectContaining({ splitType: "exact" }), transactionClient);
 });

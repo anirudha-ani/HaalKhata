@@ -1,193 +1,118 @@
-/** Login screen UI: Google sign-in, plus the development-only password form. */
+/** Welcome screen: what HaalKhata is, with Apple and Google sign-in always within reach. */
 
-import {
-  KeyboardAvoidingView,
-  Image,
-  Platform,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
-} from "react-native";
+import { useState } from "react";
+import { Image, ScrollView, StyleSheet, View } from "react-native";
+import Animated from "react-native-reanimated";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { Button } from "@/components/ui/Button";
-import { Segmented } from "@/components/ui/Segmented";
-import { TextField } from "@/components/ui/TextField";
+import { Text } from "@/components/ui/Text";
+import { dropIn } from "@/lib/motion/entrances";
+import { useReduceMotion } from "@/lib/motion/hooks/useReduceMotion";
+import { useResponsiveLayout } from "@/lib/layout/hooks/useResponsiveLayout";
 import { colors, fonts, radii, spacing } from "@/lib/theme/theme";
-import { GOOGLE_SIGN_IN_CONFIGURED, PASSWORD_AUTH_ENABLED } from "../../constants/googleSignIn";
-import { LOGIN_MODES } from "../../constants/loginModes";
 import brandIconSource from "../../../../../assets/icon.png";
-import { GoogleSignInButton } from "./components/GoogleSignInButton/GoogleSignInButton";
-import { useLogin } from "./hooks/useLogin";
-import { FOCUSED_CONTENT_MAX_WIDTH } from "@/components/shell/shell.constants";
+import {
+  ILLUSTRATION_MAX_HEIGHT,
+  ILLUSTRATION_MIN_HEIGHT,
+  STORY_WORDS_HEIGHT,
+  TABLET_ILLUSTRATION_HEIGHT,
+  WELCOME_TABLET_MAX_WIDTH,
+} from "../../constants/welcome";
+import { DevPasswordButton } from "./components/DevPasswordButton/DevPasswordButton";
+import { SignInPanel } from "./components/SignInPanel/SignInPanel";
+import { WelcomeStory } from "./components/WelcomeStory/WelcomeStory";
 
 /**
- * Renders the login screen: the HaalKhata icon and wordmark, "Continue with Google"
- * (the only way in on a production server), and — in development builds
- * only, mirroring the server's password gate — the sign-in/create-account
- * toggle and credentials form for seeded accounts.
+ * The first screen a signed-out person sees, playing the part the web's
+ * landing page plays: the promise, the three steps, and the way in.
  *
- * @returns The full-height login screen.
+ * On a phone the story scrolls if it has to (small phones, large text) while
+ * the sign-in panel stays docked at the bottom, so a returning person's
+ * thumb lands on "Continue with Apple" without reading a word. On an iPad
+ * window wide enough for it, the story and a sign-in card sit side by side;
+ * a narrow Split View window gets the phone layout.
+ *
+ * @returns The welcome screen.
  */
 export function LoginScreen() {
-  const login = useLogin();
+  const { isTablet, fontScale } = useResponsiveLayout();
+  const reduceMotion = useReduceMotion();
+  // The space between the brand and the docked panel, measured, so the
+  // panel's real height (which differs between builds and text sizes)
+  // decides it. The story waits for the measurement rather than jumping.
+  const [storyViewport, setStoryViewport] = useState(0);
+  // What the headline, the step's words and the dots leave over goes to the
+  // illustration, so the whole page fits; past the smallest illustration the
+  // story scrolls while the panel stays put.
+  const phoneIllustrationHeight = Math.min(
+    ILLUSTRATION_MAX_HEIGHT,
+    Math.max(ILLUSTRATION_MIN_HEIGHT, storyViewport - STORY_WORDS_HEIGHT * Math.max(1, fontScale)),
+  );
 
-  return (
-    <SafeAreaView style={styles.safeArea}>
-      <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
-        style={styles.flexOne}
-      >
-        <ScrollView
-          contentContainerStyle={styles.scrollContent}
-          keyboardShouldPersistTaps="handled"
-        >
-          <View style={styles.content}>
-            <View style={styles.hero}>
-              <Image source={brandIconSource} style={styles.brandIcon} />
-              <Text style={styles.wordmark}>HAALKHATA</Text>
-              <Text style={styles.tagline}>
-                Camera eats first. The AI splits the rest.
-              </Text>
+  const brand = (
+    <Animated.View entering={dropIn(0, reduceMotion)} style={styles.brand}>
+      <Image accessibilityIgnoresInvertColors source={brandIconSource} style={styles.brandIcon} />
+      <View style={styles.flexOne}>
+        <Text accessibilityRole="header" style={styles.wordmark}>HaalKhata</Text>
+        <Text adjustsFontSizeToFit minimumFontScale={0.7} numberOfLines={1} style={styles.brandTagline}>
+          THE SHARED-EXPENSE LEDGER
+        </Text>
+      </View>
+      <DevPasswordButton />
+    </Animated.View>
+  );
+
+  if (isTablet) {
+    return (
+      <SafeAreaView style={styles.safeArea}>
+        <ScrollView contentContainerStyle={styles.tabletScroll}>
+          <View style={styles.tabletColumns}>
+            <View style={styles.tabletStory}>
+              {brand}
+              <WelcomeStory illustrationHeight={TABLET_ILLUSTRATION_HEIGHT} showBody />
             </View>
-
-            <View style={styles.card}>
-            {GOOGLE_SIGN_IN_CONFIGURED ? (
-              <GoogleSignInButton />
-            ) : PASSWORD_AUTH_ENABLED ? null : (
-              <Text style={styles.hint}>
-                Sign-in is not configured for this build: it needs the Google client ids set at
-                build time.
-              </Text>
-            )}
-
-            {PASSWORD_AUTH_ENABLED ? (
-              <>
-                {GOOGLE_SIGN_IN_CONFIGURED ? (
-                  <Text style={styles.divider}>or, in development, with a password</Text>
-                ) : null}
-                <Segmented
-                  onChange={login.switchMode}
-                  options={LOGIN_MODES}
-                  value={login.mode}
-                />
-
-                <View style={styles.form}>
-                  {login.mode === "signup" ? (
-                    <TextField
-                      autoComplete="name"
-                      onChangeText={login.setName}
-                      placeholder="Your name"
-                      value={login.name}
-                    />
-                  ) : null}
-                  <TextField
-                    autoCapitalize="none"
-                    autoComplete="username"
-                    keyboardType="email-address"
-                    onChangeText={login.setIdentifier}
-                    placeholder="Email or phone"
-                    value={login.identifier}
-                  />
-                  <TextField
-                    autoCapitalize="none"
-                    autoComplete={login.mode === "login" ? "current-password" : "new-password"}
-                    onChangeText={login.setPassword}
-                    onSubmitEditing={login.submit}
-                    placeholder="Password"
-                    secureTextEntry
-                    value={login.password}
-                  />
-
-                  {login.error ? <Text style={styles.error}>{login.error}</Text> : null}
-
-                  <Button
-                    busy={login.isPending}
-                    label={login.mode === "login" ? "Sign in" : "Open your ledger"}
-                    onPress={login.submit}
-                    variant={GOOGLE_SIGN_IN_CONFIGURED ? "outline" : "primary"}
-                  />
-                </View>
-
-                {login.mode === "signup" ? (
-                  <Text style={styles.hint}>
-                    Invited by a friend? Sign up with the same email or phone and
-                    your shared expenses will already be here.
-                  </Text>
-                ) : null}
-              </>
-            ) : null}
+            <View style={styles.tabletPanel}>
+              <SignInPanel variant="card" />
             </View>
           </View>
         </ScrollView>
-      </KeyboardAvoidingView>
+      </SafeAreaView>
+    );
+  }
+
+  return (
+    <SafeAreaView edges={["top", "left", "right"]} style={styles.safeArea}>
+      <View style={styles.phoneHeader}>{brand}</View>
+      <ScrollView
+        contentContainerStyle={styles.phoneScroll}
+        onLayout={(event) => setStoryViewport(Math.round(event.nativeEvent.layout.height))}
+        showsVerticalScrollIndicator={false}
+        style={styles.flexOne}
+      >
+        {storyViewport > 0 ? <WelcomeStory illustrationHeight={phoneIllustrationHeight} showBody={false} /> : null}
+      </ScrollView>
+      <SignInPanel variant="dock" />
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  brandIcon: {
-    borderRadius: radii.lg,
-    height: 96,
-    marginBottom: spacing.lg,
-    width: 96,
-  },
-  card: {
-    backgroundColor: colors.card,
-    borderColor: colors.line,
-    borderRadius: radii.lg,
-    borderWidth: 1,
-    gap: spacing.lg,
-    padding: spacing.xl,
-  },
-  content: {
-    maxWidth: FOCUSED_CONTENT_MAX_WIDTH,
+  brand: { alignItems: "center", flexDirection: "row", gap: spacing.md },
+  brandIcon: { borderRadius: radii.md, height: 40, width: 40 },
+  brandTagline: { color: colors.inkSoft, fontSize: 9, fontWeight: "700", letterSpacing: 1.6, marginTop: 2 },
+  flexOne: { flex: 1 },
+  phoneHeader: { paddingHorizontal: spacing.xl, paddingVertical: spacing.sm },
+  phoneScroll: { flexGrow: 1, justifyContent: "center", paddingBottom: spacing.lg },
+  safeArea: { backgroundColor: colors.paper, flex: 1 },
+  tabletColumns: {
+    alignItems: "center",
+    alignSelf: "center",
+    flexDirection: "row",
+    gap: spacing.xxl,
+    maxWidth: WELCOME_TABLET_MAX_WIDTH,
     width: "100%",
   },
-  divider: {
-    color: colors.inkSoft,
-    fontSize: 12,
-    textAlign: "center",
-  },
-  error: {
-    color: colors.brand600,
-    fontSize: 14,
-  },
-  flexOne: {
-    flex: 1,
-  },
-  form: {
-    gap: spacing.md,
-  },
-  hero: {
-    alignItems: "center",
-    marginBottom: spacing.xxl,
-  },
-  hint: {
-    color: colors.inkSoft,
-    fontSize: 12,
-    lineHeight: 18,
-  },
-  safeArea: {
-    backgroundColor: colors.paper,
-    flex: 1,
-  },
-  scrollContent: {
-    alignItems: "center",
-    flexGrow: 1,
-    justifyContent: "center",
-    padding: spacing.xl,
-  },
-  tagline: {
-    color: colors.inkSoft,
-    fontSize: 15,
-    marginTop: spacing.lg,
-    textAlign: "center",
-  },
-  wordmark: {
-    color: colors.brand600,
-    fontFamily: fonts.display,
-    fontSize: 52,
-    fontWeight: "700",
-  },
+  tabletPanel: { flex: 1, maxWidth: 420 },
+  tabletScroll: { flexGrow: 1, justifyContent: "center", padding: spacing.xxl },
+  tabletStory: { flex: 1.3, gap: spacing.xxl },
+  wordmark: { color: colors.ink, fontFamily: fonts.display, fontSize: 22, fontWeight: "700" },
 });

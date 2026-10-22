@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { authClient, expenseClient, groupClient, socialClient } from "@/lib/api/connect";
 import { groupsByStatus } from "@haalkhata/shared/group/archiving";
 import { queryKeys } from "@haalkhata/shared/api/queryKeys";
+import { usePullToRefresh } from "@/lib/hooks/usePullToRefresh";
 
 /**
  * Fetches everything the dashboard needs: the signed-in user, overall
@@ -36,12 +37,14 @@ export function useDashboardAPI() {
   });
 
   /** Refetches every dashboard query (pull-to-refresh). */
-  const refresh = () => {
-    void currentUserQuery.refetch();
-    void balancesQuery.refetch();
-    void groupsQuery.refetch();
-    void activityQuery.refetch();
-  };
+  const pull = usePullToRefresh(() =>
+    Promise.all([
+      currentUserQuery.refetch(),
+      balancesQuery.refetch(),
+      groupsQuery.refetch(),
+      activityQuery.refetch(),
+    ]),
+  );
 
   return {
     me: currentUserQuery.data,
@@ -49,14 +52,14 @@ export function useDashboardAPI() {
     // Surfaced rather than swallowed: the overall-balance RPC is rate-limited
     // per account, and a refused call must not render as "you owe nothing".
     balancesError: balancesQuery.error,
+    loadError: currentUserQuery.error || balancesQuery.error || groupsQuery.error || activityQuery.error,
     groups: groupsByStatus(groupsQuery.data?.groups ?? []),
     recentActivity: activityQuery.data?.events.slice(0, 6) ?? [],
     // Deliberately not gated on the groups or activity queries: those
     // sections render only once they have rows, so waiting on them would
     // hold back the balances that are the point of the screen.
     isLoading: currentUserQuery.isLoading || balancesQuery.isLoading,
-    refresh,
-    isRefreshing:
-      currentUserQuery.isRefetching || balancesQuery.isRefetching || activityQuery.isRefetching,
+    refresh: pull.refresh,
+    isRefreshing: pull.isRefreshing,
   };
 }

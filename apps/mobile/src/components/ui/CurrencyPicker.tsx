@@ -2,14 +2,15 @@
 
 import { Check, ChevronDown } from "lucide-react-native";
 import { useState } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, View } from "react-native";
+import { Text } from "@/components/ui/Text";
 import {
   CURRENCIES,
   currencyInfo,
   currencyOptionLabel,
   type CurrencyInfo,
 } from "@haalkhata/shared/money/money.constants";
-import { Sheet } from "@/components/ui/Sheet";
+import { Sheet } from "@/components/ui/Sheet/Sheet";
 import { TextField } from "@/components/ui/TextField";
 import { colors, radii, spacing } from "@/lib/theme/theme";
 

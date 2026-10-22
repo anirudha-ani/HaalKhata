@@ -33,7 +33,8 @@ export type GroupTab = "expenses" | "balances" | "activity";
  *   `addingPeople`/`setAddingPeople` and the add-people form (`pickedIds`,
  *   `togglePicked`, `contact`/`setContact`, `submitPeople`,
  *   `peopleError`, `canAddPeople`), `candidates` (friends not already in the
- *   group), the members modal (`viewingMembers`/`setViewingMembers`,
+ *   group), `reportingGroup`/`setReportingGroup` for the report modal the
+ *   group menu opens, the members modal (`viewingMembers`/`setViewingMembers`,
  *   `removeMember`, `removingUserId`, `transferOwnership`,
  *   `transferringUserId`, and `memberFeedback`, the last failure or
  *   confirmation from an action in that modal and the row it belongs to),
@@ -48,6 +49,7 @@ export function useGroupDetail(groupId: string) {
   const [activeTab, setActiveTab] = useState<GroupTab>("expenses");
   const [addingPeople, setAddingPeople] = useState(false);
   const [viewingMembers, setViewingMembers] = useState(false);
+  const [reportingGroup, setReportingGroup] = useState(false);
   const [pickedIds, setPickedIds] = useState<string[]>([]);
   const [contact, setContact] = useState<ContactDraft>(EMPTY_CONTACT);
   const [peopleError, setPeopleError] = useState("");
@@ -309,6 +311,8 @@ export function useGroupDetail(groupId: string) {
     setTab: setActiveTab,
     addingPeople,
     setAddingPeople,
+    reportingGroup,
+    setReportingGroup,
     viewingMembers,
     /** Opens or closes the members modal; what it last said goes with it. */
     setViewingMembers: (open: boolean) => {

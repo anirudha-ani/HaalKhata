@@ -1,0 +1,18 @@
+// User safety: private reports and blocking without changing shared money.
+syntax = "proto3";
+package safety.v1;
+import "google/protobuf/empty.proto";
+import "common/v1/common.proto";
+service SafetyService {
+  rpc ReportContent(ReportContentRequest) returns (google.protobuf.Empty);
+  rpc BlockUser(UserRequest) returns (google.protobuf.Empty);
+  rpc UnblockUser(UserRequest) returns (google.protobuf.Empty);
+  rpc ListBlockedUsers(google.protobuf.Empty) returns (ListBlockedUsersResponse);
+}
+message ReportContentRequest {
+  string target_kind = 1; // comment | expense | group | user
+  string target_id = 2;
+  string reason = 3; // harassment | hate | sexual | spam | other
+}
+message UserRequest { string user_id = 1; }
+message ListBlockedUsersResponse { repeated common.v1.User users = 1; }

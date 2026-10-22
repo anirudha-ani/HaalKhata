@@ -2,12 +2,7 @@
 
 import { Code, ConnectError, type HandlerContext } from "@connectrpc/connect";
 import { SESSION_RENEWAL_HEADER } from "@haalkhata/shared/auth/sessionRenewal";
-import {
-  createToken,
-  tokenExpiresAt,
-  tokenVersion,
-  verifyToken,
-} from "@/server/auth/usecase/auth.usecase";
+import { createToken, tokenExpiresAt, tokenVersion, verifyToken } from "@/server/auth/usecase/session/session";
 import { findUserTokenVersion } from "@/server/auth/repo/users.repo";
 import { TOKEN_RENEWAL_THRESHOLD_SECONDS } from "@/server/auth/auth.constants";
 import { UsecaseError } from "@/server/common/errors";
@@ -41,6 +36,22 @@ export async function requireUser(handlerContext: HandlerContext): Promise<strin
   }
   renewAgingSession(handlerContext, token, userId, currentVersion);
   return userId;
+}
+
+/**
+ * The token version baked into the request's verified session token. Only
+ * meaningful after {@link requireUser} has accepted the request, which proved
+ * it equals the account's version at that moment. A write that must bind to
+ * the session (a phone registered under it) uses this rather than reading the
+ * account's version again: a sign-out landing in between would otherwise
+ * hand the write the new version and outlive the session that made it.
+ *
+ * @param handlerContext - Connect handler context for the current request.
+ * @returns The session's token version, or NaN without a session token.
+ */
+export function sessionTokenVersion(handlerContext: HandlerContext): number {
+  const token = tokenFromHeaders(handlerContext.requestHeader);
+  return token ? tokenVersion(token) : Number.NaN;
 }
 
 /**

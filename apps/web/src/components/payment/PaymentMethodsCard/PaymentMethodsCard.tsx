@@ -35,13 +35,13 @@ export function PaymentMethodsCard({
         <h2 id="payment-methods-heading" className="text-lg font-semibold">
           Get paid
         </h2>
-        <p className="mt-0.5 text-xs text-ink-soft">
+        <p className="mt-1 text-sm leading-relaxed text-ink-soft">
           Add how you want to be paid. Only people who owe you can see it, when they settle up.
         </p>
       </div>
 
       {view.isLoading ? (
-        <p className="rounded-xl border border-dashed border-line px-3 py-2.5 text-sm text-ink-soft">
+        <p className="text-sm leading-relaxed text-ink-soft">
           Loading your payment methods…
         </p>
       ) : view.loadError ? (
@@ -58,7 +58,7 @@ export function PaymentMethodsCard({
           </button>
         </div>
       ) : view.methods.length === 0 ? (
-        <p className="rounded-xl border border-dashed border-line px-3 py-2.5 text-sm text-ink-soft">
+        <p className="text-sm leading-relaxed text-ink-soft">
           {EMPTY_METHODS_HINT}
         </p>
       ) : (

@@ -20,7 +20,7 @@ Findings are sorted by severity within each section. File:line references use
   `buf.yaml` runs `STANDARD` lint + `FILE` breaking checks. This is genuinely
   well thought out.
 - **Strict, enforced layering.** `eslint.config.mjs:17` forbids the UI from
-  importing `@/server/*/repo/*` or `@/server/common/db`; handlers have no SQL
+  importing `@/server/*/repo/*` or `@/server/common/db/db`; handlers have no SQL
   and no business logic; usecases have no SQL and no transport types; repos
   have SQL only. The `id-length >= 4` rule and JSDoc-everywhere convention
   show real discipline.
@@ -83,7 +83,7 @@ Findings are sorted by severity within each section. File:line references use
   `Origin`/`Referer` doesn't match the request host; Bearer-token clients
   (mobile) are exempt.
 - **B3.~~No rate limiting / brute-force protection.~~** ✅ *Fixed.* Added
-  `server/common/rateLimit.ts` (in-memory sliding 60s window) and
+  `server/common/rateLimit/rateLimit.ts` (in-memory sliding 60s window) and
   `enforceAuthRateLimit` in `auth/handler.ts` that caps login/signup at
   `AUTH_RATE_LIMIT` (10) attempts/min per client IP, throwing
   `Code.ResourceExhausted`. Note: in-process only — multi-replica deploys
@@ -290,7 +290,7 @@ Findings are sorted by severity within each section. File:line references use
   a per-request id before rethrowing. All five handlers pass `context`
   through.
 - **U15.~~No tests outside domain math.~~** ✅ *Partly fixed.* Added
-  `auth/usecase/auth.test.ts` — 6 tests covering the token sign/verify
+  `auth/usecase/session/auth.test.ts` — 6 tests covering the token sign/verify
   round trip, version embedding, signature tamper rejection, user-id
   tamper rejection, bogus-signature rejection, and malformed-token
   rejection. Usecase/repo/handler tests are still a gap (deferred — they

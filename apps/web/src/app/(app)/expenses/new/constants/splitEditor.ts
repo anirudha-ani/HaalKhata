@@ -1,6 +1,6 @@
 /** New-expense-route constants: split editor tabs and units. */
 
-import type { FormSplitType } from "@/lib/expense/splitForm";
+import type { FormSplitType } from "@haalkhata/shared/expense/form/splitForm";
 
 /** The selectable split-type tabs, in display order. */
 export const SPLIT_TABS: { value: FormSplitType; label: string }[] = [

@@ -3,6 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { authClient, expenseClient, groupClient } from "@/lib/api/connect";
 import { queryKeys } from "@haalkhata/shared/api/queryKeys";
+import { usePullToRefresh } from "@/lib/hooks/usePullToRefresh";
 
 /**
  * Fetches everything the expenses screen needs: the signed-in user, every
@@ -32,10 +33,7 @@ export function useExpensesAPI() {
   });
 
   /** Refetches the list and the group names (pull-to-refresh). */
-  const refresh = () => {
-    void expensesQuery.refetch();
-    void groupsQuery.refetch();
-  };
+  const pull = usePullToRefresh(() => Promise.all([expensesQuery.refetch(), groupsQuery.refetch()]));
 
   return {
     me: currentUserQuery.data,
@@ -45,7 +43,8 @@ export function useExpensesAPI() {
     truncated: expensesQuery.data?.truncated ?? false,
     groups: groupsQuery.data?.groups ?? [],
     isLoading: expensesQuery.isLoading,
-    refresh,
-    isRefreshing: expensesQuery.isRefetching,
+    listError: expensesQuery.error || currentUserQuery.error || groupsQuery.error,
+    refresh: pull.refresh,
+    isRefreshing: pull.isRefreshing,
   };
 }

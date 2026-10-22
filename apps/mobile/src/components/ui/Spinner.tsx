@@ -1,6 +1,7 @@
 /** Centered loading spinner with optional label. */
 
-import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, StyleSheet, View } from "react-native";
+import { Text } from "@/components/ui/Text";
 import { colors, spacing } from "@/lib/theme/theme";
 
 /** Renders a centered loading indicator with an optional text label beneath it. */

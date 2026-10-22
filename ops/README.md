@@ -65,7 +65,7 @@ sudo systemctl start haalkhata-backup-failure.service
 
 ## Secrets
 
-Five files, referenced by `docker-compose.prod.yml`. The app reads them
+Eight files, referenced by `docker-compose.prod.yml`. The app reads them
 itself through `*_FILE` variables (the Docker `_FILE` convention); nothing
 copies them into the environment.
 
@@ -75,12 +75,17 @@ copies them into the environment.
 /srv/haalkhata/secrets/postgres_password       openssl rand -hex 24
 /srv/haalkhata/secrets/openrouter_api_key      from openrouter.ai
 /srv/haalkhata/secrets/twilio_api_key_secret   from a restricted Twilio Verify API key
+/srv/haalkhata/secrets/apple_private_key     original Sign in with Apple .p8
+/srv/haalkhata/secrets/apple_token_encryption_key openssl rand -hex 32 (generate once)
+/srv/haalkhata/secrets/expo_access_token       Expo access token for sending pushes
 ```
 
 Each of these (except `session_secret_previous`, which only exists for
 planned rotations) can be **GitHub-managed**: set the matching GitHub secret
 (`SESSION_SECRET`, `POSTGRES_PASSWORD`, `COMPATIBLE_AI_API_KEY`,
-`TWILIO_API_KEY_SECRET`) and every deploy writes the file over the same
+`TWILIO_API_KEY_SECRET`, `APPLE_PRIVATE_KEY`, `APPLE_TOKEN_ENCRYPTION_KEY`,
+`EXPO_ACCESS_TOKEN`)
+and every deploy writes the file over the same
 forced-command channel as the `.env` config. Left unset in GitHub, the
 value pipes as empty and the deploy steps leave the server's file untouched,
 so any secret can stay server-only instead. Deploys run as the `deploy`
@@ -111,6 +116,12 @@ the file:
 | `ACME_EMAIL` | Secret `ACME_EMAIL` | Required — the deploy job refuses to run without it; Caddy registers it with the CA for expiry/problem notices. A secret only so the address stays out of public workflow logs; it is not authenticating material |
 | `GOOGLE_CLIENT_ID` | Variable `NEXT_PUBLIC_GOOGLE_CLIENT_ID` | Same id the browser bundle is built with, by contract |
 | `GOOGLE_MOBILE_CLIENT_IDS` | Variable `GOOGLE_MOBILE_CLIENT_IDS` | Optional |
+| `APPLE_TEAM_ID` | Variable `APPLE_TEAM_ID` | Apple developer team identifier |
+| `APPLE_KEY_ID` | Variable `APPLE_KEY_ID` | Sign in with Apple signing key identifier |
+| `APPLE_SERVICE_ID` | Variable `APPLE_SERVICE_ID` | Grouped web Services ID |
+| `APPLE_APP_ID_PREFIX` | Variable `APPLE_APP_ID_PREFIX` | Only when the App ID prefix differs from the Team ID |
+| `SUPPORT_EMAIL` | Variable `SUPPORT_EMAIL` | Required monitored public support mailbox |
+| `ANDROID_SHA256_CERTIFICATES` | Variable `ANDROID_SHA256_CERTIFICATES` | Android signing fingerprints, when releasing Android |
 | `TWILIO_API_KEY_SID` | Secret `TWILIO_API_KEY_SID` | Optional; identifies but does not authenticate |
 | `TWILIO_VERIFY_SERVICE_SID` | Secret `TWILIO_VERIFY_SERVICE_SID` | Optional |
 
@@ -124,6 +135,8 @@ carries these keys, which the deploy steps write as secret *files* instead
 | `secrets/openrouter_api_key` | Secret `COMPATIBLE_AI_API_KEY` | Receipt parsing |
 | `secrets/session_secret` | Secret `SESSION_SECRET` | Changing it ends every session unless `session_secret_previous` covers the rotation |
 | `secrets/postgres_password` | Secret `POSTGRES_PASSWORD` | Rotates the FILE only — see the rotation order below before ever changing it |
+| `secrets/apple_private_key` | Secret `APPLE_PRIVATE_KEY` | Original multiline `.p8`; CI encodes it for transport, the server validates and decodes it |
+| `secrets/apple_token_encryption_key` | Secret `APPLE_TOKEN_ENCRYPTION_KEY` | Generate once with `openssl rand -hex 32`; CI refuses to replace a different installed key |
 
 The directory is `0700` (owned by `deploy` once GitHub-managed secrets are
 in use; `root` on a server provisioned entirely by hand); the files are
@@ -199,9 +212,10 @@ once, including the attacker's.
 but mirroring those deletions would make the offsite copy unable to recover an
 older good backup after local corruption or delayed discovery. Configure the
 bucket itself with versioning/object lock when available and a lifecycle rule
-appropriate to your retention policy (for example, archive after 90 days and
-expire after one year). Filesystem/rsync targets need their own snapshot or
-retention policy for the same reason.
+matching the public privacy policy: expire every archive and old object version
+within 31 days. Filesystem/rsync targets need an equivalent scheduled expiry.
+Verify expiry before publishing the mobile app; a restored archive must also
+reapply account deletions and moderation actions recorded since its creation.
 
 ### Backup failure alerts
 
@@ -255,3 +269,108 @@ This rolls back **code, not schema**. Migrations apply on boot and are never
 reverted, so an older image can find itself talking to a newer schema —
 additive migrations are safe, destructive ones are not. One more reason never
 to edit an applied migration.
+
+## Apple sign-in release configuration
+
+Before deploying the mobile release, enable Sign in with Apple on the primary
+App ID `com.haalkhata.app`. Group a web Services ID with this App ID, authorize
+`haalkhata.app`, and register
+`https://haalkhata.app/api/auth/apple/callback` as its return URL. Native iOS
+uses the App ID; web and Android use the grouped Services ID.
+
+Set repository variables `APPLE_TEAM_ID`, `APPLE_KEY_ID`, and `APPLE_SERVICE_ID`.
+In GitHub **Settings → Secrets and variables → Actions → Secrets**, add:
+
+- `APPLE_PRIVATE_KEY`: the entire original multiline PKCS#8 `.p8` downloaded
+  from Apple, including its BEGIN/END lines. Do not base64-encode it yourself.
+- `APPLE_TOKEN_ENCRYPTION_KEY`: the output of `openssl rand -hex 32`, generated
+  **once** and backed up securely. If the server already has this key, use that
+  exact existing value. Do not generate a new one for each deploy.
+
+The deploy job sends both over the existing restricted SSH connection. It
+masks the base64 transport value as well as the original key; the server
+validates the P-256 signing key and writes the two mounted secret files. A
+different encryption key fails deployment before replacing that key, because
+stored provider grants must stay decryptable for revocation. Session-key
+rotations do not affect it. Intentional rotation needs a separate ciphertext
+migration. Leaving either GitHub secret unset preserves its installed file.
+
+On a server with the fixed launcher installed, no additional SSH step or
+manual Apple-key upload is needed: the handlers live in the image's
+`ops/deploy-release.sh`. Publishing a release or manually running Deploy
+applies the GitHub secrets; simply saving them or pushing a commit does not
+deploy. New hosts still need the initial launcher and secrets-directory
+ownership described in the bootstrap instructions above.
+
+Both secrets stay out of Git, Docker build arguments, EAS variables, and the
+server `.env`. A server-only installation is still supported using the same
+file ownership and permissions as the other secrets.
+
+The production stack requires these values and readiness checks signing and
+encryption. Browser redirects carry one-use state; the initiating client must
+prove possession of its private verifier to receive a session. Local native
+API calls continue to carry bearer sessions, and the web receives HttpOnly
+cookies. No Apple private key or refresh token reaches a client bundle.
+
+## Push notifications
+
+The server sends pushes through the Expo Push Service; Expo holds the Apple
+push key, so this server holds one secret, `expo_access_token`. Readiness
+fails in production without it, and the compose dry-run refuses a release
+whose secret file is missing — so set it up **before** publishing the
+release that introduces it:
+
+1. On expo.dev, on the access tokens page (Account settings → Access tokens,
+   expo.dev/settings/access-tokens), turn on **Enhanced Security for Push
+   Notifications**. From then on Expo refuses a send
+   without an access token, so a leaked phone token is useless to anyone
+   else.
+2. Create an access token (Account settings → Access tokens; a robot user
+   keeps it independent of a person) and store it as the GitHub secret
+   `EXPO_ACCESS_TOKEN`, or write it to
+   `/srv/haalkhata/secrets/expo_access_token` by hand.
+3. From `apps/mobile`, run `eas credentials -p ios`, choose production, and
+   set up a push key (EAS creates the APNs `.p8` key in the Apple account and
+   uploads it to Expo). Regenerate the App Store profile so it carries the
+   Push Notifications capability, then build and submit a new binary.
+
+To rotate the token: create a new one, update the GitHub secret, deploy, then
+revoke the old token on expo.dev. A failed send logs `push credentials refused`
+or `push batch failed` and is retried for up to an hour; the in-app bell is
+unaffected. See `docs/local-push-notifications.md` for the local flow.
+
+## Mobile public endpoints
+
+Set repository variable `SUPPORT_EMAIL` to a monitored mailbox. Set
+`APPLE_APP_ID_PREFIX` only when the registered App ID prefix differs from the
+Team ID. For Android verified links, set `ANDROID_SHA256_CERTIFICATES` to the
+comma-separated, colon-delimited SHA-256 fingerprints of the actual app signing
+certificates (including Play App Signing when used).
+
+After deployment verify `/privacy`, `/support`, `/api/mobile-release`, and
+`/.well-known/apple-app-site-association` over HTTPS. Android additionally needs
+`/.well-known/assetlinks.json`. These URLs are public and must not redirect to
+login. Store EAS builds query `/api/mobile-release` before compilation and fail
+when Apple configuration or the native Google audience is missing.
+
+## Content moderation
+
+Install `ops/moderate.sh` alongside the server ops scripts. Review the private
+queue at least daily and respond to safety reports promptly (target: within 24
+hours). The console reads the matching SQL from the deployed image; it uses the
+internal Postgres connection and exposes no public moderator endpoint.
+
+```sh
+./ops/moderate.sh list
+./ops/moderate.sh remove REPORT_UUID   # redact content; shared cents stay intact
+./ops/moderate.sh dismiss REPORT_UUID  # close a reviewed, non-actionable report
+./ops/moderate.sh suspend REPORT_UUID  # revoke sessions and refuse new authenticated requests
+./ops/moderate.sh resume REPORT_UUID   # restore access after review; old sessions stay invalid
+```
+
+Keep queue output private. Block controls work despite outstanding balances and
+do not remove financial history. A basic automatic text filter rejects known
+slurs/threats before sharing; human moderation handles evasion, images, context,
+and other reported content. Maintain the monitored support mailbox, review the
+queue, and keep a private record of decisions so they can be reapplied after a
+backup restore.

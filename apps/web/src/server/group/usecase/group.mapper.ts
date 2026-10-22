@@ -1,7 +1,7 @@
 /** Group rows → group.v1 message init shapes. */
 
 import type { GroupRow, MemberRow } from "@/server/group/repo/groups.repo";
-import { toPublicUser } from "@/server/auth/usecase/user.mapper";
+import { toPublicUser } from "@/server/auth/usecase/identity/user.mapper";
 import { GROUP_STATUS_PROTO } from "@/server/group/group.constants";
 
 /**

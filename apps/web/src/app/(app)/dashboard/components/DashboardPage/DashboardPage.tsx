@@ -20,7 +20,7 @@ import { formatMoney } from "@haalkhata/shared/money/money";
 import { safeActivityPath } from "@haalkhata/shared/navigation/activityPath";
 import { localDate } from "@haalkhata/shared/time/localTime";
 import { getGreeting } from "@haalkhata/shared/greeting";
-import { groupEmoji } from "../../../groups/constants/groupTypes";
+import { groupEmoji } from "@haalkhata/shared/group/groupTypes";
 import { useDashboard } from "./hooks/useDashboard";
 import { PayMethodPrompt } from "./components/PayMethodPrompt/PayMethodPrompt";
 import { SummaryCard } from "./components/SummaryCard/SummaryCard";

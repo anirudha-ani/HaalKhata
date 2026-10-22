@@ -1,16 +1,20 @@
 /** Friends screen: four tabs (friends, requests, sent, invited) with an add-friend sheet and settle-up. */
 
-import { UserPlus } from "lucide-react-native";
-import { StyleSheet, Text, View } from "react-native";
+import { ErrorState } from "@/components/ui/ErrorState";
+import { useRouter } from "expo-router";
+import { Contact, UserPlus } from "lucide-react-native";
+import { StyleSheet, View } from "react-native";
+import { FIND_FRIENDS_COPY } from "@haalkhata/shared/contacts/contactsCopy";
+import { Text } from "@/components/ui/Text";
 import { InviteShareSheet } from "@/components/modals/InviteShareSheet";
+import { ContactDiscoveryPrompt } from "@/components/account/ContactDiscoveryPrompt/ContactDiscoveryPrompt";
 import { SettleUpModal } from "@/components/modals/SettleUpModal";
-import { Screen } from "@/components/shell/Screen";
-import { ScreenHeader } from "@/components/shell/ScreenHeader";
+import { Screen } from "@/components/shell/Screen/Screen";
+import { ScreenHeader } from "@/components/shell/ScreenHeader/ScreenHeader";
 import { Button } from "@/components/ui/Button";
 import { Segmented } from "@/components/ui/Segmented";
 import { Spinner } from "@/components/ui/Spinner";
 import { useErrorToast } from "@/components/ui/ToastProvider";
-import { errorMessage } from "@/lib/api/connect";
 import { colors, fonts, radii, spacing } from "@/lib/theme/theme";
 import { FRIENDS_TABS, type FriendsTab } from "../../constants/friendsTabs";
 import { AddFriendSheet } from "./components/AddFriendSheet/AddFriendSheet";
@@ -36,6 +40,7 @@ import { useFriends } from "./hooks/useFriends";
  */
 export function FriendsScreen() {
   const friendsState = useFriends();
+  const router = useRouter();
   useErrorToast(friendsState.error);
   const currency = friendsState.me?.defaultCurrency ?? "USD";
   const counts: Record<FriendsTab, number> = {
@@ -53,13 +58,25 @@ export function FriendsScreen() {
     >
       <View style={styles.titleRow}>
         <Text style={styles.title}>Friends</Text>
-        <Button
-          compact
-          icon={<UserPlus color={colors.white} size={16} />}
-          label="Add friend"
-          onPress={() => friendsState.setShowAdd(true)}
-        />
+        <View style={styles.titleActions}>
+          <Button
+            compact
+            icon={<Contact color={colors.inkSoft} size={16} />}
+            label={FIND_FRIENDS_COPY.title}
+            onPress={() => router.push("/friends/find")}
+            variant="outline"
+          />
+          <Button
+            compact
+            icon={<UserPlus color={colors.white} size={16} />}
+            label="Add friend"
+            onPress={() => friendsState.setShowAdd(true)}
+          />
+        </View>
       </View>
+
+      {/* Said once, where finding and being found matter. */}
+      {friendsState.me ? <ContactDiscoveryPrompt answer={friendsState.me.contactDiscovery} /> : null}
 
       {/* Confirmation of the last request sent. The sheet that took it has
           closed by now, so this is the one place it can be read. */}
@@ -72,9 +89,7 @@ export function FriendsScreen() {
       {friendsState.isLoading ? (
         <Spinner label="Loading friends…" />
       ) : friendsState.friendsError ? (
-        <Text accessibilityRole="alert" style={styles.loadError}>
-          Couldn&apos;t load your friends: {errorMessage(friendsState.friendsError)}
-        </Text>
+        <ErrorState error={friendsState.friendsError} retry={friendsState.refresh} />
       ) : (
         <>
           <Segmented
@@ -146,9 +161,16 @@ const styles = StyleSheet.create({
     fontSize: 28,
     fontWeight: "700",
   },
+  titleActions: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: spacing.sm,
+  },
   titleRow: {
     alignItems: "center",
     flexDirection: "row",
+    flexWrap: "wrap",
+    gap: spacing.md,
     justifyContent: "space-between",
   },
 });

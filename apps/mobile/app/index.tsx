@@ -1,7 +1,8 @@
 /** Landing route: waits for session hydration, then routes into the app or to login. */
 
 import { Redirect } from "expo-router";
-import { StyleSheet, Text, View } from "react-native";
+import { StyleSheet, View } from "react-native";
+import { Text } from "@/components/ui/Text";
 import { useSession } from "@/lib/api/session";
 import { colors, fonts, spacing } from "@/lib/theme/theme";
 

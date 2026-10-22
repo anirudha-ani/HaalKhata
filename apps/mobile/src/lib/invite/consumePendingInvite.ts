@@ -1,23 +1,15 @@
-/** Completes a stashed invite right after sign-in, returning where to land. */
+/** Return to the pending invitation after sign-in so acceptance and failures stay visible. */
 
-import { socialClient } from "@/lib/api/connect";
 import { takePendingInvite } from "./pendingInvite";
 
 /**
- * Accepts the invite a signed-out person arrived with, if one is waiting.
+ * Matches the browser login redirect: sign-in resumes the public preview,
+ * where the person explicitly accepts and sees the result. Automatically
+ * accepting here used to hide failures and skip profile-request confirmation.
  *
- * @returns The route to land on: the joined group, the friends tab after a
- *   personal invite, or the dashboard when nothing was pending (or the
- *   accept failed — the person is signed in either way, and the link can be
- *   tapped again for the real error).
+ * @returns The pending invite screen, or Home when there is no invitation.
  */
 export async function consumePendingInvite(): Promise<string> {
   const token = await takePendingInvite();
-  if (!token) return "/dashboard";
-  try {
-    const result = await socialClient.acceptInviteLink({ token });
-    return result.groupId ? `/groups/${result.groupId}` : "/friends";
-  } catch {
-    return "/dashboard";
-  }
+  return token ? `/join/${encodeURIComponent(token)}` : "/dashboard";
 }

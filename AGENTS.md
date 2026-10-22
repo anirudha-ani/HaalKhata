@@ -21,6 +21,7 @@ packages/protogen/           @haalkhata/protogen — generated TS (do NOT edit, 
 packages/shared/             @haalkhata/shared — hand-written TS used by BOTH apps
   src/api/queryKeys.ts         query-key registry + MONEY_KEYS invalidation set
   src/money/                   money.ts, money.constants.ts (+ colocated tests)
+  src/expense/form/            shared form validation, payloads, previews and warnings
   src/expense/                 allocate.ts + splits.ts — cent-exact split math,
                                run by the SERVER usecase and by the client for
                                its live per-person preview (one implementation)
@@ -34,7 +35,8 @@ apps/web/                    Next.js app
     usecase/                   ALL business logic. No SQL, no transport types.
     handler.ts                 thin Connect handler. No SQL, no business logic.
     <domain>.constants.ts      constants for this domain
-  src/server/common/         db, errors, logger, rateLimit (shared infra)
+  src/server/common/         shared infra: db/, ledger/, money/, secrets/,
+                             rateLimit/, validation/, readiness/
   src/server/api/connect/    context.ts (auth/cookies/error map), routes.ts, csrf.ts
   src/pages/api/connect/     [[...connect]].ts — mount point only
   src/app/<route>/           UI (thin page.tsx → components/<Page>/<Page>.tsx,
@@ -62,7 +64,11 @@ apps/mobile/                 Expo (React Native) app — @haalkhata/mobile
   beyond generated proto messages. Balance math lives in `usecase/domain/`;
   split math is in `@haalkhata/shared/expense/` (the client previews with it).
 - `repo`: SQL only. No business decisions.
-- UI must NOT import `@/server/*/repo/*` or `@/server/common/db` — go
+- Within a crowded domain/layer, group by capability (for example
+  `auth/usecase/apple/`, `deletion/`, `merge/`, `phone/`, `session/`). Keep
+  tests beside the implementation. Shared infrastructure uses concern
+  folders under `common/`; do not flatten it back into one directory.
+- UI must NOT import `@/server/*/repo/**` or `@/server/common/db/**` — go
   through a usecase (server) or the Connect client (browser). The eslint
   `no-restricted-imports` rule enforces this; `src/pages/api/**` and
   `src/server/**` are exempt.
@@ -182,7 +188,7 @@ read paths you'll add. Never edit an applied migration.
 
 SQL only. Define a `<Entity>Row` interface (column names mirror SQL), then
 `insertBudget` / `findBudgetById` / `listBudgets` etc. Use `query`,
-`queryOne`, `execute`, `transaction`, `newId` from `@/server/common/db`.
+`queryOne`, `execute`, `transaction`, `newId` from `@/server/common/db/db`.
 No business logic, no validation beyond what the DB enforces.
 
 ### 4. Usecase layer: `src/server/budgets/usecase/budget.usecase.ts`
@@ -238,6 +244,11 @@ All four must pass before committing.
 
 ## Quality gates
 
+Every new user-facing behavior must have a documented local execution and
+verification path, including provider environment variables when needed.
+Use real provider flows locally; test fixtures must not bypass production
+authentication. See `docs/local-auth.md` for Google and Apple sign-in.
+
 | Command         | What it checks                                  |
 |-----------------|-------------------------------------------------|
 | `pnpm gen`      | buf generate → packages/protogen                |
@@ -245,6 +256,7 @@ All four must pass before committing.
 | `pnpm lint`     | eslint (layering + id-length + next rules)      |
 | `pnpm test`     | vitest unit tests (domain math + auth tokens)   |
 | `pnpm proto:lint`| buf lint + breaking                            |
+| `pnpm test:parity` | browser/native Connect feature entry-point parity |
 | `pnpm doctor`   | react-doctor scan                               |
 | `pnpm typecheck:mobile` / `lint:mobile` / `test:mobile` | same gates for apps/mobile |
 | `pnpm typecheck:shared` / `lint:shared` / `test:shared` | same gates for packages/shared |
@@ -255,7 +267,7 @@ means running all three sets — it is compiled into both apps.
 
 ## Mobile app (apps/mobile)
 
-Expo SDK 57 + expo-router. The same conventions apply — thin route files in
+Expo SDK 58 + expo-router. The same conventions apply — thin route files in
 `app/` mount screen orchestrators from `src/screens/<route>/components/
 <XScreen>/`, all server calls live in `useXAPI` hooks composed by `useX`,
 constants sit in route-scoped `constants/` folders, pure helpers in `utils/`
@@ -265,7 +277,9 @@ with colocated tests. Mobile-specific rules:
   exists on mobile — a feature that lands on one app and is "tracked" for
   the other is a gap, not a plan (docs/plan.txt §27). Pure logic both apps
   need (filters, wording, formatting, phone helpers) goes in
-  `packages/shared` with its tests, never written twice.
+  `packages/shared` with its tests, never written twice. The only
+  native-only RPCs are `LogInWithApple` and `RegisterDevice` (a browser
+  has no Apple credential or Expo push token); `pnpm test:parity` names both.
 - **Auth is bearer-token**, not cookies: LogInWithGoogle (production) or
   LogIn/SignUp (development only) return `token`, stored
   in SecureStore (`src/lib/api/session.ts`) and attached by a transport
@@ -279,6 +293,17 @@ with colocated tests. Mobile-specific rules:
   gate redirects to /login. The server's CSRF guard exempts bearer clients.
 - **Design tokens** come from `src/lib/theme/theme.ts` (the web's globals.css
   palette). No inline hex colors in screens.
+- **Motion and haptics go through `src/lib/motion/`.** Springs and durations
+  are tokens in `motion.constants.ts`; entrances and step transitions are the
+  prebuilt builders in `entrances.ts`; follow Reduce Motion with
+  `useReduceMotion` (a fade, never a jump) and animate on the UI thread.
+  Haptics mark outcomes only (`haptics.ts`). Vitest aliases Reanimated and
+  expo-haptics to stand-ins in `src/lib/testing/`.
+- **Onboarding asks once, after saying why.** The screen before an iOS
+  permission alert has one button, Continue; the alert is where people say
+  no (App Review 5.1.1(iv)). Device steps (contacts, notifications) run after
+  a sign-in on each phone, never on an app update. See
+  `docs/mobile-onboarding.md`.
 - **Query keys and money helpers are imported, not copied.** They live in
   `@haalkhata/shared` and are consumed identically by both apps. These were
   duplicated files kept in sync by hand until 2026-07-26 — do not reintroduce
@@ -320,7 +345,7 @@ with colocated tests. Mobile-specific rules:
   shorter-than-16-byte credentials. Don't weaken these semantic checks into
   exact URL comparisons; Compose and direct deployments use different hosts.
 - **Don't read a secret from `process.env`** — go through `readSecret()` in
-  `common/secrets.ts`, which honours the Docker `<NAME>_FILE` convention
+  `common/secrets/secrets.ts`, which honours the Docker `<NAME>_FILE` convention
   production relies on. Without `DATABASE_URL` the pool assembles its URL
   from `POSTGRES_PASSWORD(_FILE)` and the `POSTGRES_*` parts.
 - **Money is per currency.** Balance maps are keyed by currency
@@ -341,7 +366,7 @@ with colocated tests. Mobile-specific rules:
   statements, and a settlement committing between two of them yields a
   position that never existed. Every read that returns a figure
   (`getFriendLedger`, `getOverallBalances`, `getGroupBalances`,
-  `listExpenses`, `getExpense`) runs inside `snapshot()` from `common/db.ts`
+  `listExpenses`, `getExpense`) runs inside `snapshot()` from `common/db/db.ts`
   and passes its `client` to every statement, one at a time — one sent to
   the pool reads outside the snapshot and holds a second connection.
 - **A net settlement is one unit.** Its cash and `offset` rows share a
@@ -371,6 +396,13 @@ with colocated tests. Mobile-specific rules:
   when the app would read it as the money owed: `appPaymentLink` checks the
   app's currencies, the method's currency and the decimals, and returns the
   line shown with the link. Never build such a link by hand.
+- **Every bell row is a push.** `insertNotifications` queues a `push_outbox`
+  row on the caller's transaction, and the push worker (started by
+  `src/instrumentation.ts`) sends it through Expo. Never call the push
+  provider from a usecase. A new notification kind needs a category in
+  `packages/shared/src/notifications/categories.ts` and the DB CHECK; until
+  it has one it is never pushed. A push carries only `notificationId`,
+  `link` and `recipientId` as data. See `docs/backend/push/push-service.md`.
 - **Limiters are process-local** (`rateLimit.ts`, `phoneRateLimit.ts`): fine
   for one container, wrong for two replicas — see `docs/plan.txt` §28.
 

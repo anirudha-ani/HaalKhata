@@ -78,6 +78,7 @@ export function useExpenseDetail(expenseId: string) {
       (event) => event.type === "expense_deleted",
     ),
     detailError: detailQuery.error,
+    retry: detailQuery.refetch,
     isLoading: detailQuery.isLoading,
     userById,
     comment,

@@ -1,8 +1,8 @@
 /** All SQL for the settlements table. */
 
 import type { PoolClient } from "pg";
-import { execute, newId, query, queryOne } from "@/server/common/db";
-import { lockParticipantLedgers, withLedgerTransaction } from "@/server/common/ledgerLocks";
+import { execute, newId, query, queryOne } from "@/server/common/db/db";
+import { lockParticipantLedgers, withLedgerTransaction } from "@/server/common/ledger/ledgerLocks";
 
 /** One row of the settlements table (column names mirror SQL). */
 export interface SettlementRow {

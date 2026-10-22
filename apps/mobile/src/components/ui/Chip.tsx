@@ -1,7 +1,8 @@
 /** Selectable pill chip used for categories, payment methods, and toggles. */
 
 import type { ReactNode } from "react";
-import { Pressable, StyleSheet, Text } from "react-native";
+import { Pressable, StyleSheet } from "react-native";
+import { Text } from "@/components/ui/Text";
 import { colors, radii, spacing } from "@/lib/theme/theme";
 
 /**
@@ -50,6 +51,8 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     flexDirection: "row",
     gap: 6,
+    maxWidth: "100%",
+    minHeight: 44,
     paddingHorizontal: spacing.md,
     paddingVertical: 7,
   },
@@ -62,6 +65,7 @@ const styles = StyleSheet.create({
   },
   label: {
     color: colors.inkSoft,
+    flexShrink: 1,
     fontSize: 13,
     fontWeight: "500",
   },

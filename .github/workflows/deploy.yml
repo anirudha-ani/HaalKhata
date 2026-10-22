@@ -31,9 +31,17 @@
 #   Secret    POSTGRES_PASSWORD              optional; lands as
 #             secrets/postgres_password. Must match what the db volume was
 #             initialized with — this rotates the FILE, not the database
-#   Any of these four left unset pipes an empty value, and the deploy steps
-#   then leave the server's existing secret file untouched — so each secret
-#   can be GitHub-managed or server-only, per secret.
+#   Secret    APPLE_PRIVATE_KEY              original multiline Apple .p8;
+#             lands as secrets/apple_private_key, never in the image or .env
+#   Secret    APPLE_TOKEN_ENCRYPTION_KEY     stable output of openssl rand -hex 32;
+#             lands as secrets/apple_token_encryption_key. Existing nonempty
+#             keys cannot be replaced by CI without a separate data migration
+#   Secret    EXPO_ACCESS_TOKEN              Expo access token for sending
+#             pushes (enhanced push security); lands as
+#             secrets/expo_access_token. Readiness fails without it
+#   Any of these file secrets left unset pipes an empty value, and the deploy steps then
+#   leaves the server's existing secret file untouched — so each secret can
+#   be GitHub-managed or server-only, per secret.
 #   Secret    DEPLOY_SSH_KEY                 private half of the deploy key
 #   Secret    DEPLOY_KNOWN_HOSTS             `ssh-keyscan haalkhata.app`
 #   Environment `production`                 optional required-reviewer gate
@@ -140,17 +148,33 @@ jobs:
           # zero chance of them drifting apart.
           GOOGLE_CLIENT_ID: ${{ vars.NEXT_PUBLIC_GOOGLE_CLIENT_ID }}
           GOOGLE_MOBILE_CLIENT_IDS: ${{ vars.GOOGLE_MOBILE_CLIENT_IDS }}
+          APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
+          APPLE_KEY_ID: ${{ vars.APPLE_KEY_ID }}
+          APPLE_SERVICE_ID: ${{ vars.APPLE_SERVICE_ID }}
+          APPLE_APP_ID_PREFIX: ${{ vars.APPLE_APP_ID_PREFIX }}
+          ANDROID_SHA256_CERTIFICATES: ${{ vars.ANDROID_SHA256_CERTIFICATES }}
+          SUPPORT_EMAIL: ${{ vars.SUPPORT_EMAIL }}
           TWILIO_API_KEY_SID: ${{ secrets.TWILIO_API_KEY_SID }}
           TWILIO_VERIFY_SERVICE_SID: ${{ secrets.TWILIO_VERIFY_SERVICE_SID }}
           TWILIO_API_KEY_SECRET: ${{ secrets.TWILIO_API_KEY_SECRET }}
           COMPATIBLE_AI_API_KEY: ${{ secrets.COMPATIBLE_AI_API_KEY }}
           SESSION_SECRET: ${{ secrets.SESSION_SECRET }}
           POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+          APPLE_PRIVATE_KEY: ${{ secrets.APPLE_PRIVATE_KEY }}
+          APPLE_TOKEN_ENCRYPTION_KEY: ${{ secrets.APPLE_TOKEN_ENCRYPTION_KEY }}
+          EXPO_ACCESS_TOKEN: ${{ secrets.EXPO_ACCESS_TOKEN }}
         run: |
           install -m 700 -d ~/.ssh
           install -m 600 /dev/null ~/.ssh/id_ed25519
           printf '%s\n' "$KEY"   > ~/.ssh/id_ed25519
           printf '%s\n' "$HOSTS" > ~/.ssh/known_hosts
+          # Keep the original multiline .p8 in GitHub. Only the wire format is
+          # base64 so each secret occupies one validated KEY=VALUE line. Mask
+          # the transformed value too; GitHub masks the original secret only.
+          APPLE_PRIVATE_KEY_BASE64="$(printf '%s' "$APPLE_PRIVATE_KEY" | tr -d '\r' | base64 -w 0)"
+          if [ -n "$APPLE_PRIVATE_KEY_BASE64" ]; then
+            printf '::add-mask::%s\n' "$APPLE_PRIVATE_KEY_BASE64"
+          fi
           # The sha is only an argument and the config is only data on stdin.
           # authorized_keys pins the command, so this key cannot open a shell
           # or run anything else; the release's deploy steps validate every
@@ -161,10 +185,19 @@ jobs:
             printf 'ACME_EMAIL=%s\n'                "$ACME_EMAIL"
             printf 'GOOGLE_CLIENT_ID=%s\n'          "$GOOGLE_CLIENT_ID"
             printf 'GOOGLE_MOBILE_CLIENT_IDS=%s\n'  "$GOOGLE_MOBILE_CLIENT_IDS"
+            printf 'APPLE_TEAM_ID=%s\n'             "$APPLE_TEAM_ID"
+            printf 'APPLE_KEY_ID=%s\n'              "$APPLE_KEY_ID"
+            printf 'APPLE_SERVICE_ID=%s\n'          "$APPLE_SERVICE_ID"
+            printf 'APPLE_APP_ID_PREFIX=%s\n'       "$APPLE_APP_ID_PREFIX"
+            printf 'ANDROID_SHA256_CERTIFICATES=%s\n' "$ANDROID_SHA256_CERTIFICATES"
+            printf 'SUPPORT_EMAIL=%s\n'             "$SUPPORT_EMAIL"
             printf 'TWILIO_API_KEY_SID=%s\n'        "$TWILIO_API_KEY_SID"
             printf 'TWILIO_VERIFY_SERVICE_SID=%s\n' "$TWILIO_VERIFY_SERVICE_SID"
             printf 'TWILIO_API_KEY_SECRET=%s\n'     "$TWILIO_API_KEY_SECRET"
             printf 'COMPATIBLE_AI_API_KEY=%s\n'     "$COMPATIBLE_AI_API_KEY"
             printf 'SESSION_SECRET=%s\n'            "$SESSION_SECRET"
             printf 'POSTGRES_PASSWORD=%s\n'         "$POSTGRES_PASSWORD"
+            printf 'APPLE_TOKEN_ENCRYPTION_KEY=%s\n' "$APPLE_TOKEN_ENCRYPTION_KEY"
+            printf 'EXPO_ACCESS_TOKEN=%s\n'         "$EXPO_ACCESS_TOKEN"
+            printf 'APPLE_PRIVATE_KEY_BASE64=%s\n'  "$APPLE_PRIVATE_KEY_BASE64"
           } | ssh -i ~/.ssh/id_ed25519 deploy@haalkhata.app "${{ github.sha }}"

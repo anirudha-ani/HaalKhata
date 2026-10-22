@@ -24,6 +24,32 @@ export const INVITE_PREVIEW_RATE_LIMIT = 30;
 /** Maximum unanswered friend requests retained for one recipient. */
 export const MAX_PENDING_FRIEND_REQUESTS = 100;
 
+/**
+ * Phone numbers and emails one FindContacts call may carry. Address books
+ * are often larger; the client sends them in chunks of this size.
+ */
+export const MAX_CONTACT_IDENTIFIERS_PER_LOOKUP = 1000;
+
+/**
+ * Distinct identifiers one account may check per UTC day. A real address
+ * book fits several times over; a script walking the phone-number space to
+ * learn who uses HaalKhata does not (the Facebook contact-importer scrape).
+ */
+export const MAX_CONTACT_IDENTIFIERS_PER_DAY = 5000;
+
+/**
+ * Longest phone or email accepted from an address book, measured before it
+ * is trimmed or parsed so an oversized entry costs nothing. 254 is the
+ * longest email address SMTP allows; no phone number comes close.
+ */
+export const MAX_CONTACT_IDENTIFIER_LENGTH = 254;
+
+/**
+ * Most accounts one SendFriendRequests call may ask. The apps send one per
+ * call (each Add); this bounds what the API accepts from anything else.
+ */
+export const MAX_FRIEND_REQUESTS_PER_SEND = 10;
+
 /** Events per activity page when the client does not ask for a size. */
 export const ACTIVITY_PAGE_SIZE = 25;
 

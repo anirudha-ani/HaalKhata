@@ -1,7 +1,8 @@
 /** The "Invited" tab: people added by email or phone who have not joined yet. */
 
 import { ChevronRight, Mail } from "lucide-react-native";
-import { StyleSheet, Text, View } from "react-native";
+import { StyleSheet, View } from "react-native";
+import { Text } from "@/components/ui/Text";
 import { PersonLink } from "@/components/people/PersonLink";
 import { Avatar } from "@/components/ui/Avatar";
 import { Button } from "@/components/ui/Button";

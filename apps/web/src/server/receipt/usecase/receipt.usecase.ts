@@ -1,6 +1,6 @@
 /**
  * Receipt-parsing business logic: provider selection, image normalization,
- * and untrusted provider output normalized to integer cents.
+ * and untrusted provider output normalized to integer currency minor units.
  *
  * There is deliberately no provider-specific SDK here. OpenRouter fronts every
  * model worth using for this — Claude and Gemini included — behind one
@@ -13,10 +13,11 @@
  * docs/plan.txt §6b).
  */
 
+import { currencyInfo, minorUnitDigits } from "@haalkhata/shared/money/money.constants";
 import heicDecode from "heic-decode";
 import sharp from "sharp";
 import { invalid, unavailable, UsecaseError } from "@/server/common/errors";
-import { isRealCalendarDate } from "@/server/common/validation";
+import { isRealCalendarDate } from "@/server/common/validation/validation";
 import { logEvent } from "@/server/common/logger";
 import {
   COMPATIBLE_AI,
@@ -45,7 +46,7 @@ let activeHeicDecodes = 0;
 /** FIFO waiters for the bounded HEIC decode slot. */
 const heicDecodeWaiters: Array<() => void> = [];
 
-/** A receipt extracted from an image, with all money amounts as integer cents. */
+/** A receipt extracted from an image, with all money amounts in the currency's integer minor units. */
 export interface ParsedReceiptData {
   merchant: string;
   /** Purchase date as "YYYY-MM-DD"; empty string when unreadable. */
@@ -69,7 +70,7 @@ interface Provider {
   /** Whether the provider's configuration (API keys, URLs) is present. */
   available(): boolean;
   /** Extracts a receipt from a base64-encoded image of the given media type. */
-  parse(imageBase64: string, mediaType: ImageMediaType): Promise<ParsedReceiptData>;
+  parse(imageBase64: string, mediaType: ImageMediaType, currency: string): Promise<ParsedReceiptData>;
 }
 
 /** One normalized line item in a parsed receipt. */
@@ -140,12 +141,39 @@ function toBoundedString(value: unknown, maximum: number): string {
 }
 
 /**
+ * Converts provider decimal major units to the selected currency's integer minor units.
+ * Legacy *_cents outputs use fixed hundredths, never currency-specific minor units.
+ * @param record Untrusted provider object.
+ * @param field Decimal major-unit field in the extraction schema.
+ * @param legacy Legacy fixed-hundredth value, for older compatible providers.
+ * @param currency Currency governing the decimal scale.
+ * @returns Bounded non-negative minor units; malformed values are zero.
+ */
+function providerMoney(record: Record<string, unknown>, field: string, legacy: unknown, currency: string): number {
+  const digits = minorUnitDigits(currency);
+  if (record[field] === undefined) {
+    const hundredths = Number(legacy);
+    return Number.isFinite(hundredths)
+      ? toBoundedInteger(hundredths * (10 ** digits / 100), MAX_PARSED_MONEY_CENTS)
+      : 0;
+  }
+  const value = String(record[field]).trim();
+  if (!/^\d+(?:\.\d+)?$/.test(value) || value.length > 32) return 0;
+  const [whole, fraction = ""] = value.split(".");
+  // Integer arithmetic avoids losing a dinar's third decimal or multiplying yen by 100.
+  const minor = BigInt(whole) * 10n ** BigInt(digits) + BigInt((fraction + "0".repeat(digits)).slice(0, digits) || "0");
+  const rounded = minor + (Number(fraction[digits] ?? "0") >= 5 ? 1n : 0n);
+  return Number(rounded > BigInt(MAX_PARSED_MONEY_CENTS) ? BigInt(MAX_PARSED_MONEY_CENTS) : rounded);
+}
+
+/**
  * Normalizes one model-produced line item.
  *
  * @param rawItem - Untrusted item value.
+ * @param currency - Currency governing minor-unit conversion.
  * @returns A bounded line item with missing price fields derived when possible.
  */
-function normalizeProviderItem(rawItem: unknown): ParsedReceiptItem {
+function normalizeProviderItem(rawItem: unknown, currency: string): ParsedReceiptItem {
   const itemRecord = (typeof rawItem === "object" && rawItem !== null ? rawItem : {}) as Record<
     string,
     unknown
@@ -154,14 +182,8 @@ function normalizeProviderItem(rawItem: unknown): ParsedReceiptItem {
     1,
     toBoundedInteger(itemRecord.quantity ?? itemRecord.qty ?? 1, MAX_PARSED_QUANTITY),
   );
-  const unitPrice = toBoundedInteger(
-    itemRecord.unit_price_cents ?? itemRecord.unitPriceCents,
-    MAX_PARSED_MONEY_CENTS,
-  );
-  let lineTotal = toBoundedInteger(
-    itemRecord.total_cents ?? itemRecord.totalCents,
-    MAX_PARSED_MONEY_CENTS,
-  );
+  const unitPrice = providerMoney(itemRecord, "unit_price", itemRecord.unit_price_cents ?? itemRecord.unitPriceCents, currency);
+  let lineTotal = providerMoney(itemRecord, "total", itemRecord.total_cents ?? itemRecord.totalCents, currency);
   if (lineTotal === 0 && unitPrice > 0) {
     lineTotal = Math.min(MAX_PARSED_MONEY_CENTS, unitPrice * quantity);
   }
@@ -179,16 +201,19 @@ function normalizeProviderItem(rawItem: unknown): ParsedReceiptItem {
  * missing unit prices, subtotals and totals from what is present.
  *
  * @param rawOutput - Whatever JSON the provider produced (snake_case or camelCase keys).
+ * @param fallbackCurrency - Form currency used when no supported receipt currency was detected.
  * @returns Fully populated, size-bounded receipt data.
  */
-export function normalizeProviderOutput(rawOutput: unknown): ParsedReceiptData {
+export function normalizeProviderOutput(rawOutput: unknown, fallbackCurrency = "USD"): ParsedReceiptData {
   const rawRecord = (typeof rawOutput === "object" && rawOutput !== null
     ? rawOutput
     : {}) as Record<string, unknown>;
 
+  const reportedCurrency = toBoundedString(rawRecord.currency, 16).toUpperCase();
+  const currency = currencyInfo(reportedCurrency)?.code ?? currencyInfo(fallbackCurrency)?.code ?? "USD";
   const items = (Array.isArray(rawRecord.items) ? rawRecord.items : [])
     .slice(0, MAX_PARSED_ITEMS)
-    .map(normalizeProviderItem)
+    .map((item) => normalizeProviderItem(item, currency))
     // Keep zero-priced rows as long as they are named. A model that splits
     // "Toasted Bagel / with cream cheese $7.00" across two lines puts the price
     // on the modifier, so dropping the zero row would delete the actual item
@@ -197,23 +222,11 @@ export function normalizeProviderOutput(rawOutput: unknown): ParsedReceiptData {
     .filter((parsedItem) => parsedItem.totalCents > 0 || parsedItem.name !== "Item");
 
   const itemsTotal = items.reduce((runningTotal, parsedItem) => runningTotal + parsedItem.totalCents, 0);
-  const taxCents = toBoundedInteger(
-    rawRecord.tax_cents ?? rawRecord.taxCents,
-    MAX_PARSED_MONEY_CENTS,
-  );
-  const tipCents = toBoundedInteger(
-    rawRecord.tip_cents ?? rawRecord.tipCents,
-    MAX_PARSED_MONEY_CENTS,
-  );
-  let subtotal = toBoundedInteger(
-    rawRecord.subtotal_cents ?? rawRecord.subtotalCents,
-    MAX_PARSED_MONEY_CENTS,
-  );
+  const taxCents = providerMoney(rawRecord, "tax", rawRecord.tax_cents ?? rawRecord.taxCents, currency);
+  const tipCents = providerMoney(rawRecord, "tip", rawRecord.tip_cents ?? rawRecord.tipCents, currency);
+  let subtotal = providerMoney(rawRecord, "subtotal", rawRecord.subtotal_cents ?? rawRecord.subtotalCents, currency);
   if (subtotal === 0) subtotal = Math.min(MAX_PARSED_MONEY_CENTS, itemsTotal);
-  let total = toBoundedInteger(
-    rawRecord.total_cents ?? rawRecord.totalCents,
-    MAX_PARSED_MONEY_CENTS,
-  );
+  let total = providerMoney(rawRecord, "total", rawRecord.total_cents ?? rawRecord.totalCents, currency);
   if (total === 0) {
     total = Math.min(MAX_PARSED_MONEY_CENTS, subtotal + taxCents + tipCents);
   }
@@ -221,7 +234,7 @@ export function normalizeProviderOutput(rawOutput: unknown): ParsedReceiptData {
   return {
     merchant: toBoundedString(rawRecord.merchant, MAX_PARSED_NAME_LENGTH),
     date: toIsoDate(toBoundedString(rawRecord.date, MAX_PARSED_NAME_LENGTH)),
-    currency: (toBoundedString(rawRecord.currency, 3) || "USD").toUpperCase(),
+    currency,
     items,
     subtotalCents: subtotal,
     taxCents,
@@ -338,7 +351,7 @@ function extractJsonObject(text: string): string {
 const compatibleProvider: Provider = {
   name: "compatible",
   available: () => Boolean(COMPATIBLE_AI.baseUrl && COMPATIBLE_AI.model),
-  async parse(imageBase64, mediaType) {
+  async parse(imageBase64, mediaType, currency) {
     const response = await fetch(`${COMPATIBLE_AI.baseUrl}/chat/completions`, {
       method: "POST",
       signal: AbortSignal.timeout(PROVIDER_TIMEOUT_MS),
@@ -381,7 +394,6 @@ const compatibleProvider: Provider = {
       // operator's to read, not the user's.
       logEvent("warn", "compatible receipt provider rejected the request", {
         providerStatus: response.status,
-        detail: responseText.slice(0, 300),
       });
       throw new Error(`compatible provider returned ${response.status}`);
     }
@@ -390,7 +402,7 @@ const compatibleProvider: Provider = {
     };
     const text = data.choices?.[0]?.message?.content ?? "";
     const jsonText = extractJsonObject(text);
-    return normalizeProviderOutput(safeJsonParse(jsonText, "compatible"));
+    return normalizeProviderOutput(safeJsonParse(jsonText, "compatible"), currency);
   },
 };
 
@@ -398,22 +410,20 @@ const compatibleProvider: Provider = {
 const mockProvider: Provider = {
   name: "mock",
   available: () => true,
-  async parse() {
+  async parse(_imageBase64, _mediaType, currency) {
     return normalizeProviderOutput({
       merchant: "Demo Diner",
       date: new Date().toISOString().slice(0, 10),
-      currency: "USD",
+      currency: "",
       items: [
         { name: "Margherita pizza", quantity: 1, unit_price_cents: 1450, total_cents: 1450 },
         { name: "Chicken burger", quantity: 2, unit_price_cents: 995, total_cents: 1990 },
         { name: "Fries (large)", quantity: 1, unit_price_cents: 450, total_cents: 450 },
         { name: "Lemonade", quantity: 3, unit_price_cents: 300, total_cents: 900 },
       ],
-      subtotal_cents: 4790,
       tax_cents: 419,
       tip_cents: 800,
-      total_cents: 6009,
-    });
+    }, currency);
   },
 };
 
@@ -468,6 +478,7 @@ function providerChain(): { chain: Provider[]; unconfigured: string[] } {
  * the browser could not name) and stricter (a `.png` full of script is
  * recognised for what it is), so it replaces the declared-type check entirely.
  *
+ * @param currency - Expense currency when the receipt is ambiguous.
  * @param image - Raw uploaded bytes.
  * @returns The detected media type, or null when the bytes are not a supported image.
  */
@@ -594,6 +605,7 @@ async function decodeHeic(image: Uint8Array): Promise<DecodedHeicImage> {
  * Every format goes through the sharp stage, not just HEIC — the orientation
  * fix and size cap are worth just as much on a JPEG straight off a phone.
  *
+ * @param currency - Expense currency when the receipt is ambiguous.
  * @param image - Raw uploaded bytes, already validated.
  * @param format - Format detected from the bytes by {@link detectImageFormat}.
  * @returns The JPEG bytes, which are both sent to the provider (base64) and
@@ -652,6 +664,7 @@ async function normalizeToJpeg(image: Uint8Array, format: ImageMediaType): Promi
  * ignored because browsers report an empty string for HEIC.
  *
  * @param image - Raw image bytes uploaded by the client.
+ * @param currency - Selected expense currency, used when the image is ambiguous.
  * @returns The normalized receipt, the name of the provider that produced it,
  *   and the JPEG that provider was shown, for the client to display alongside
  *   the extracted values.
@@ -662,7 +675,10 @@ async function normalizeToJpeg(image: Uint8Array, format: ImageMediaType): Promi
  */
 export async function parseReceipt(
   image: Uint8Array,
+  currency = "USD",
 ): Promise<{ receipt: ParsedReceiptData; provider: string; normalizedImage: Uint8Array }> {
+  currency = currency.trim().toUpperCase() || "USD";
+  if (!currencyInfo(currency)) invalid("unsupported receipt currency");
   if (image.length === 0) invalid("no image provided");
   if (image.length > MAX_IMAGE_BYTES) invalid("image is too large (max 8 MB)");
   // The client's declared media type is advisory only — see detectImageFormat.
@@ -697,7 +713,7 @@ export async function parseReceipt(
   let readButEmpty = false;
   for (const provider of chain) {
     try {
-      const receipt = await provider.parse(imageBase64, "image/jpeg");
+      const receipt = await provider.parse(imageBase64, "image/jpeg", currency);
       if (receipt.items.length === 0) {
         readButEmpty = true;
         errors.push(`${provider.name}: no line items detected`);

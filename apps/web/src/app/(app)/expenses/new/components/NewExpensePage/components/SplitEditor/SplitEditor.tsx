@@ -1,6 +1,7 @@
 "use client";
 /** Split section: split-type tabs plus per-person participation and value inputs. */
 
+import { equalSplitSummary } from "@haalkhata/shared/expense/form/equalSplitSummary";
 import { Avatar } from "@/components/ui/Avatar/Avatar";
 import { SPLIT_TABS, UNIT } from "../../../../constants/splitEditor";
 import { ItemizedEditor } from "../ItemizedEditor/ItemizedEditor";
@@ -27,6 +28,7 @@ export function SplitEditor({
   return (
     <section className="space-y-3">
       <h2 className="text-sm font-semibold tracking-wide text-ink-soft uppercase">Split</h2>
+      {form.splitNotice ? <p className="text-sm text-ink-soft">{form.splitNotice}</p> : null}
 
       {/* text-xs on phones: five labels at text-sm overflow a 375px screen and
           the tab strip starts scrolling sideways under your thumb. */}
@@ -102,8 +104,7 @@ export function SplitEditor({
         <p className="text-sm font-medium text-neg-600">{form.splitCheck.message}</p>
       ) : form.splitType === "equal" && form.participantIds.length > 0 && form.totalCents ? (
         <p className="text-sm text-ink-soft">
-          {(form.totalCents / 100 / form.participantIds.length).toFixed(2)} each ·{" "}
-          {form.participantIds.length} people
+          {equalSplitSummary(form.totalCents, form.participantIds.length, currency)}
         </p>
       ) : null}
     </section>
