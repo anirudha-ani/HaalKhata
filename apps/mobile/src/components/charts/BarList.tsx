@@ -1,7 +1,8 @@
 /** Bar list: ranked rows, each a label, a value and a bar sized against the largest. */
 
 import type { ReactNode } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, View } from "react-native";
+import { Text } from "@/components/ui/Text";
 import { barFraction } from "@haalkhata/shared/analytics/chart";
 import { colors, radii, spacing } from "@/lib/theme/theme";
 import { BAR_LIST_BAR_HEIGHT } from "./charts.constants";

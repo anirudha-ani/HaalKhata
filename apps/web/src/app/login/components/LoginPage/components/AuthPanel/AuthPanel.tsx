@@ -1,16 +1,20 @@
 "use client";
-/** Auth panel: the credential form and Google sign-in, as a desktop card or a mobile sheet. */
+/** Auth panel: configured identity providers and local credentials in a card or sheet. */
 
+import { LegalLinks } from "@/components/legal/LegalLinks/LegalLinks";
+import { APPLE_SIGN_IN_UNAVAILABLE } from "@haalkhata/shared/auth/providerMessages";
+import { RECEIPT_PRIVACY_MESSAGE } from "@haalkhata/shared/legal/privacyCopy";
+import { useAppleSignIn } from "../../hooks/useAppleSignIn";
 import { ArrowRight, LockKeyhole, X } from "lucide-react";
+import { AppleSignInButton } from "./components/AppleSignInButton/AppleSignInButton";
+import { GoogleSignIn } from "./components/GoogleSignIn/GoogleSignIn";
 import { useLogin } from "../../hooks/useLogin";
-import { useGoogleSignIn } from "../../hooks/useGoogleSignIn";
 import { LOGIN_INPUT_CLASS } from "../../constants/loginPage";
 import styles from "../../LoginPage.module.css";
-import { PASSWORD_AUTH_ENABLED } from "@/app/login/constants/googleSignIn";
+import { GOOGLE_CLIENT_ID, PASSWORD_AUTH_ENABLED } from "@/app/login/constants/googleSignIn";
 
 /**
- * Renders the credential and Google sign-in controls without changing the
- * existing authentication behavior.
+ * Renders configured Google/Apple sign-in and local development credentials.
  *
  * @param props - Mobile visibility state and close action.
  * @returns The desktop auth card or mobile sign-in sheet.
@@ -23,12 +27,8 @@ export function AuthPanel({
   onMobileClose: () => void;
 }) {
   const login = useLogin();
-  const {
-    setButtonElement,
-    error: googleError,
-    isPending: googleIsPending,
-    isConfigured: googleIsConfigured,
-  } = useGoogleSignIn();
+  const apple = useAppleSignIn();
+  const googleIsConfigured = GOOGLE_CLIENT_ID.length > 0;
   const isSigningIn = login.mode === "login";
 
   return (
@@ -44,9 +44,9 @@ export function AuthPanel({
         role={mobileOpen ? "dialog" : undefined}
         aria-modal={mobileOpen ? true : undefined}
         aria-label={mobileOpen ? "Sign in to HaalKhata" : undefined}
-        className={`${styles.authPanel} scroll-mt-6 self-start rounded-[1.75rem] border border-white/80 bg-card/95 p-5 shadow-[0_28px_80px_rgba(83,55,29,0.16)] backdrop-blur-md sm:p-7 lg:sticky lg:inset-auto lg:top-6 lg:z-auto lg:row-span-2 lg:block lg:max-h-none lg:overflow-visible ${
+        className={`${styles.authPanel} mx-auto w-auto max-w-[440px] scroll-mt-6 self-start rounded-3xl border border-line bg-card p-6 shadow-xl shadow-ink/5 sm:p-7 lg:sticky lg:inset-auto lg:top-6 lg:z-auto lg:row-span-2 lg:block lg:max-h-none lg:w-full lg:overflow-visible ${
           mobileOpen
-            ? "fixed inset-x-3 bottom-3 z-50 block max-h-[calc(100dvh-1.5rem)] overflow-y-auto"
+            ? "fixed inset-x-3 bottom-3 z-50 block max-h-[calc(100dvh-1.5rem)] overflow-y-auto sm:top-1/2 sm:bottom-auto sm:-translate-y-1/2 lg:translate-y-0"
             : "hidden"
         }`}
       >
@@ -77,26 +77,19 @@ export function AuthPanel({
         </span>
       </div>
 
-      {googleIsConfigured ? (
-        <div className="flex flex-col gap-3">
-          <div ref={setButtonElement} className="flex max-w-full justify-center overflow-hidden [color-scheme:light]" />
-          {googleIsPending ? (
-            <p className="text-center text-sm text-ink-soft">Opening your ledger…</p>
-          ) : null}
-          {googleError ? (
-            <p role="alert" className="text-center text-sm text-brand-600">{googleError}</p>
-          ) : null}
-        </div>
-      ) : null}
-
-      {!googleIsConfigured && !PASSWORD_AUTH_ENABLED ? (
-        <p className="rounded-xl bg-paper p-3 text-center text-sm text-ink-soft">
-          Sign-in is not configured on this server yet.
+      <div className="mx-auto w-full max-w-[400px] space-y-3">
+      {apple.available ? <AppleSignInButton busy={apple.isPending} onClick={apple.signIn} /> : !apple.isLoading ? (
+        <p role="status" className="rounded-lg border border-line bg-paper px-3 py-2.5 text-xs leading-5 text-ink-soft">
+          {APPLE_SIGN_IN_UNAVAILABLE}
         </p>
       ) : null}
+      {apple.error ? <p role="alert" className="mb-3 text-sm text-brand-600">{apple.error}</p> : null}
 
-      {googleIsConfigured && PASSWORD_AUTH_ENABLED ? (
-        <div className="my-5 flex items-center gap-3 text-[11px] font-semibold tracking-wide text-ink-soft uppercase">
+      {googleIsConfigured ? <GoogleSignIn /> : null}
+      </div>
+
+      {(googleIsConfigured || apple.available) && PASSWORD_AUTH_ENABLED ? (
+        <div className="my-5 flex items-center gap-3 text-xs text-ink-soft">
           <span className="h-px flex-1 bg-line" /> or use a password <span className="h-px flex-1 bg-line" />
         </div>
       ) : null}
@@ -163,7 +156,7 @@ export function AuthPanel({
                 id="login-password"
                 className={`${LOGIN_INPUT_CLASS} mt-2 font-normal`}
                 type="password"
-                placeholder="At least 6 characters"
+                placeholder={isSigningIn ? "Enter your password" : "At least 6 characters"}
                 value={login.password}
                 onChange={(event) => login.setPassword(event.target.value)}
                 autoComplete={login.mode === "login" ? "current-password" : "new-password"}
@@ -181,7 +174,7 @@ export function AuthPanel({
             <button
               type="submit"
               disabled={login.isPending}
-              className="group flex w-full items-center justify-center gap-2 rounded-xl bg-brand-600 py-3.5 font-semibold text-white shadow-[0_8px_24px_rgba(176,58,37,0.22)] transition-[background-color,transform,box-shadow] hover:-translate-y-0.5 hover:bg-brand-700 hover:shadow-[0_12px_28px_rgba(176,58,37,0.28)] disabled:translate-y-0 disabled:opacity-50"
+              className="group flex w-full items-center justify-center gap-2 rounded-xl bg-brand-600 py-3 text-sm font-semibold text-white transition-colors hover:bg-brand-700 disabled:opacity-50"
             >
               {login.isPending
                 ? "One moment…"
@@ -202,9 +195,13 @@ export function AuthPanel({
         </>
       ) : null}
 
-      <p className="mt-5 flex items-center justify-center gap-2 border-t border-line pt-4 text-[11px] text-ink-soft">
-        <LockKeyhole className="h-3.5 w-3.5 shrink-0" /> We read the receipt, make the split, then forget the photo. No storage, no AI training.
-      </p>
+      <footer className="mt-5 border-t border-line pt-4">
+        <p className="flex items-start gap-2 text-xs leading-5 text-ink-soft">
+          <LockKeyhole aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0" />
+          <span>{RECEIPT_PRIVACY_MESSAGE}</span>
+        </p>
+        <LegalLinks />
+      </footer>
       </aside>
     </>
   );

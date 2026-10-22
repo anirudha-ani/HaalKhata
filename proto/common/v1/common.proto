@@ -41,6 +41,21 @@ message User {
   // before verification existed — the clients prompt to verify it, and until
   // then anyone proving possession can claim it away (§34).
   bool phone_verified = 11;
+  // Anonymous historical ledger participant; cannot be invited or added to new expenses.
+  bool deleted = 12;
+  // Whether people who hold this person's verified phone or email can find
+  // them from their contacts. Private like phone_verified: set only on the
+  // caller's own profile and UNSPECIFIED in every public projection.
+  ContactDiscovery contact_discovery = 13;
+}
+
+// The person's answer to "let people find me from their contacts".
+// Findable is the default: only OFF hides an account.
+enum ContactDiscovery {
+  // Never answered. Findable, like ON; clients say so once and offer OFF.
+  CONTACT_DISCOVERY_UNSPECIFIED = 0;
+  CONTACT_DISCOVERY_ON = 1;
+  CONTACT_DISCOVERY_OFF = 2;
 }
 
 // Retired with User.payment_handles; kept so the field stays declared.

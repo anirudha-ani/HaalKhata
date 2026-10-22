@@ -8,7 +8,7 @@
  */
 
 import crypto from "node:crypto";
-import { beginGoogleSignIn, verifyGoogleSignIn } from "@/server/auth/usecase/auth.usecase";
+import { beginGoogleSignIn, verifyGoogleSignIn } from "@/server/auth/usecase/account/auth.usecase";
 import { UsecaseError, denied } from "@/server/common/errors";
 import { logEvent } from "@/server/common/logger";
 import {

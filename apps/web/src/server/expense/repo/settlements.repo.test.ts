@@ -3,17 +3,17 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { PoolClient } from "pg";
 
-vi.mock("@/server/common/db", () => ({
+vi.mock("@/server/common/db/db", () => ({
   newId: vi.fn(),
   query: vi.fn(),
   queryOne: vi.fn(),
 }));
-vi.mock("@/server/common/ledgerLocks", () => ({
+vi.mock("@/server/common/ledger/ledgerLocks", () => ({
   lockParticipantLedgers: vi.fn(),
   withLedgerTransaction: vi.fn(),
 }));
 
-import { queryOne } from "@/server/common/db";
+import { queryOne } from "@/server/common/db/db";
 import { scopeHasSettlements } from "./settlements.repo";
 
 const EVENT_ORDER = "42";

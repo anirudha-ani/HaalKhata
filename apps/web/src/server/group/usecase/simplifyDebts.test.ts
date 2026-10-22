@@ -1,14 +1,18 @@
 /**
- * Unit tests for setSimplifyDebts: membership gate, persistence, the feed
- * announcement, and idempotence when the mode is already what was asked for.
+ * Unit tests for group membership, debt routing and archiving: authorization,
+ * locked balance checks, persistence, announcements and idempotence.
  */
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { PoolClient } from "pg";
+import { GroupStatus } from "@haalkhata/protogen/group/v1/group_pb";
+import { GROUP_STATUS_STORAGE, type GroupStatusValue } from "@/server/group/group.constants";
 import type { GroupRow, MemberRow } from "@/server/group/repo/groups.repo";
 import type { UserRow } from "@/server/auth/repo/users.repo";
 
 const { transactionClient } = vi.hoisted(() => ({ transactionClient: {} as PoolClient }));
+
+vi.mock("@/server/safety/repo/safety.repo", () => ({ blockedBetween: vi.fn(async () => false), blockedPairExists: vi.fn(async () => false) }));
 
 vi.mock("@/server/group/repo/groups.repo", () => ({
   addMember: vi.fn(),
@@ -23,6 +27,7 @@ vi.mock("@/server/group/repo/groups.repo", () => ({
   removeMember: vi.fn(),
   updateMemberRole: vi.fn(),
   updateSimplifyDebts: vi.fn(),
+  updateGroupStatus: vi.fn(),
 }));
 vi.mock("@/server/auth/repo/users.repo", () => ({
   findUserByEmail: vi.fn(),
@@ -36,15 +41,16 @@ vi.mock("@/server/social/repo/friendships.repo", () => ({
 }));
 vi.mock("@/server/social/repo/activity.repo", () => ({ insertActivity: vi.fn() }));
 vi.mock("@/server/social/repo/notifications.repo", () => ({ insertNotifications: vi.fn() }));
-vi.mock("@/server/auth/usecase/auth.usecase", () => ({
+vi.mock("@/server/auth/usecase/account/auth.usecase", () => ({
   findOrCreateUserByEmail: vi.fn(),
   findOrCreateUserByPhone: vi.fn(),
 }));
 vi.mock("@/server/expense/usecase/balance.usecase", () => ({
   userNetInGroup: vi.fn(),
   userNetInGroups: vi.fn(),
+  groupIsSettled: vi.fn(),
 }));
-vi.mock("@/server/common/ledgerLocks", () => ({
+vi.mock("@/server/common/ledger/ledgerLocks", () => ({
   lockGroupLedgers: vi.fn(),
   withLedgerTransaction: vi.fn(
     (operation: (client: PoolClient) => Promise<unknown>) => operation(transactionClient),
@@ -56,6 +62,7 @@ import {
   createGroup,
   removeMemberFromGroup,
   setSimplifyDebts,
+  setStatus,
   transferOwnership,
 } from "./group.usecase";
 import {
@@ -69,12 +76,13 @@ import {
   removeMember,
   updateMemberRole,
   updateSimplifyDebts,
+  updateGroupStatus,
 } from "@/server/group/repo/groups.repo";
 import { findUserByEmail, findUserById, findUsersByIds } from "@/server/auth/repo/users.repo";
 import { listFriendIds } from "@/server/social/repo/friendships.repo";
 import { insertActivity } from "@/server/social/repo/activity.repo";
-import { userNetInGroup } from "@/server/expense/usecase/balance.usecase";
-import { lockGroupLedgers } from "@/server/common/ledgerLocks";
+import { groupIsSettled, userNetInGroup } from "@/server/expense/usecase/balance.usecase";
+import { lockGroupLedgers } from "@/server/common/ledger/ledgerLocks";
 import {
   MAX_GROUP_MEMBER_IDS_PER_REQUEST,
   MAX_GROUP_NAME_LENGTH,
@@ -87,10 +95,17 @@ const TRIP = "group-trip";
 
 /** The persisted mode the mocked repo reads and writes. */
 let storedSimplify = false;
+/** Archive state persisted by the mocked repository. */
+let storedStatus: GroupStatusValue = "active";
 
 beforeEach(() => {
   vi.clearAllMocks();
   storedSimplify = false;
+  storedStatus = "active";
+  vi.mocked(groupIsSettled).mockResolvedValue(true);
+  vi.mocked(updateGroupStatus).mockImplementation(async (_groupId, status) => {
+    storedStatus = status;
+  });
 
   vi.mocked(findGroupById).mockImplementation(
     async () =>
@@ -102,6 +117,7 @@ beforeEach(() => {
         created_by: MEMBER,
         created_at: "2026-08-01T00:00:00Z",
         simplify_debts: storedSimplify,
+        status: storedStatus,
       }) as GroupRow,
   );
   vi.mocked(isMember).mockImplementation(async (_groupId, userId) => userId === MEMBER);
@@ -305,5 +321,94 @@ describe("setSimplifyDebts", () => {
     expect(group.simplifyDebts).toBe(false);
     expect(updateSimplifyDebts).not.toHaveBeenCalled();
     expect(insertActivity).not.toHaveBeenCalled();
+  });
+});
+
+
+describe("setStatus", () => {
+  it("allows an ordinary member to archive a settled group under the ledger lock", async () => {
+    vi.mocked(memberRole).mockResolvedValue("member");
+    const group = await setStatus(MEMBER, { groupId: TRIP, status: GroupStatus.ARCHIVED });
+    expect(group.status).toBe(GroupStatus.ARCHIVED);
+    expect(lockGroupLedgers).toHaveBeenCalledWith(transactionClient, [TRIP]);
+    expect(findGroupById).toHaveBeenCalledWith(TRIP, transactionClient);
+    expect(isMember).toHaveBeenCalledWith(TRIP, MEMBER, transactionClient);
+    expect(groupIsSettled).toHaveBeenCalledWith(TRIP, transactionClient);
+    expect(updateGroupStatus).toHaveBeenCalledWith(TRIP, "archived", transactionClient);
+    expect(vi.mocked(lockGroupLedgers).mock.invocationCallOrder[0]).toBeLessThan(
+      vi.mocked(groupIsSettled).mock.invocationCallOrder[0],
+    );
+  });
+
+  it("rejects archiving when anyone in the group still has an outstanding balance", async () => {
+    vi.mocked(userNetInGroup).mockResolvedValue(0);
+    vi.mocked(groupIsSettled).mockResolvedValue(false);
+    await expect(setStatus(MEMBER, { groupId: TRIP, status: GroupStatus.ARCHIVED })).rejects.toMatchObject({
+      code: "failed_precondition",
+    });
+    expect(updateGroupStatus).not.toHaveBeenCalled();
+  });
+
+  it.each([GroupStatus.ARCHIVED, GroupStatus.ACTIVE])("denies non-members requesting status=%s", async (status) => {
+    await expect(setStatus(OUTSIDER, { groupId: TRIP, status })).rejects.toMatchObject({
+      code: "permission_denied",
+    });
+    expect(groupIsSettled).not.toHaveBeenCalled();
+    expect(updateGroupStatus).not.toHaveBeenCalled();
+    expect(lockGroupLedgers).not.toHaveBeenCalled();
+  });
+
+  it("rechecks membership when it changed while waiting for the group lock", async () => {
+    vi.mocked(lockGroupLedgers).mockImplementationOnce(async () => {
+      vi.mocked(isMember).mockResolvedValue(false);
+    });
+    await expect(setStatus(MEMBER, { groupId: TRIP, status: GroupStatus.ARCHIVED })).rejects.toMatchObject({
+      code: "permission_denied",
+    });
+    expect(groupIsSettled).not.toHaveBeenCalled();
+    expect(updateGroupStatus).not.toHaveBeenCalled();
+  });
+
+  it("rejects a missing group", async () => {
+    vi.mocked(findGroupById).mockResolvedValue(undefined);
+    await expect(setStatus(MEMBER, { groupId: TRIP, status: GroupStatus.ARCHIVED })).rejects.toMatchObject({
+      code: "not_found",
+    });
+    expect(updateGroupStatus).not.toHaveBeenCalled();
+  });
+
+  it.each([GroupStatus.UNSPECIFIED, GroupStatus.DELETED, 999 as GroupStatus])(
+    "rejects unsupported lifecycle status %s before touching the ledger",
+    async (status) => {
+      await expect(setStatus(MEMBER, { groupId: TRIP, status })).rejects.toMatchObject({
+        code: "invalid_argument",
+      });
+      expect(lockGroupLedgers).not.toHaveBeenCalled();
+      expect(updateGroupStatus).not.toHaveBeenCalled();
+    },
+  );
+
+  it("cannot restore a group marked deleted through the archive control", async () => {
+    storedStatus = "deleted";
+    await expect(setStatus(MEMBER, { groupId: TRIP, status: GroupStatus.ACTIVE })).rejects.toMatchObject({
+      code: "not_found",
+    });
+    expect(updateGroupStatus).not.toHaveBeenCalled();
+  });
+
+  it("restores the group for any member without needing a balance check", async () => {
+    storedStatus = "archived";
+    const group = await setStatus(MEMBER, { groupId: TRIP, status: GroupStatus.ACTIVE });
+    expect(group.status).toBe(GroupStatus.ACTIVE);
+    expect(updateGroupStatus).toHaveBeenCalledWith(TRIP, "active", transactionClient);
+    expect(groupIsSettled).not.toHaveBeenCalled();
+  });
+
+  it.each([GroupStatus.ARCHIVED, GroupStatus.ACTIVE] as const)("repeating status=%s is a no-op", async (status) => {
+    storedStatus = GROUP_STATUS_STORAGE[status];
+    const group = await setStatus(MEMBER, { groupId: TRIP, status });
+    expect(group.status).toBe(status);
+    expect(updateGroupStatus).not.toHaveBeenCalled();
+    expect(groupIsSettled).not.toHaveBeenCalled();
   });
 });

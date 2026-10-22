@@ -92,7 +92,7 @@ describe.skipIf(!reachable)("payment methods against Postgres", () => {
     // Set before importing db.ts, which reads DATABASE_URL when it first
     // builds the pool.
     process.env.DATABASE_URL = TEST_URL;
-    const dbModule = await import("@/server/common/db");
+    const dbModule = await import("@/server/common/db/db");
     await dbModule.ensureMigrated();
     closePool = async () => {
       const cache = globalThis as unknown as { __haalkhataPool?: { end(): Promise<void> } };

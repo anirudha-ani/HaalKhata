@@ -35,7 +35,7 @@ export function CompanionsCard({
       <BarList
         rows={companions.map((companion) => ({
           key: companion.userId,
-          leading: <Avatar size="sm" user={companion} />,
+          leading: <Avatar size="sm" user={{ ...companion, id: companion.userId }} />,
           label: companion.name,
           value: companion.sharedExpenseCount,
           valueLabel: countLabel(companion.sharedExpenseCount, "expense"),

@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("@/server/auth/auth.constants", () => ({
   GOOGLE_CLIENT_ID: "web-client.apps.googleusercontent.com",
 }));
-vi.mock("@/server/auth/usecase/auth.usecase", () => ({
+vi.mock("@/server/auth/usecase/account/auth.usecase", () => ({
   beginGoogleSignIn: vi.fn(),
   verifyGoogleSignIn: vi.fn(),
 }));
@@ -17,7 +17,7 @@ vi.mock("@/server/adminanalytics/repo/adminSessions.repo", () => ({
 }));
 vi.mock("@/server/common/logger", () => ({ logEvent: vi.fn() }));
 
-import { beginGoogleSignIn, verifyGoogleSignIn } from "@/server/auth/usecase/auth.usecase";
+import { beginGoogleSignIn, verifyGoogleSignIn } from "@/server/auth/usecase/account/auth.usecase";
 import {
   deleteAdminSession,
   findAdminSession,

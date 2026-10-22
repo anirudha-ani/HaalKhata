@@ -1,6 +1,7 @@
 /** Categories card: where the person's spending went, by expense category. */
 
-import { StyleSheet, Text, type StyleProp, type ViewStyle } from "react-native";
+import { StyleSheet, type StyleProp, type ViewStyle } from "react-native";
+import { Text } from "@/components/ui/Text";
 import type { CurrencyInsights } from "@haalkhata/protogen/personalanalytics/v1/personalanalytics_pb";
 import { BarList } from "@/components/charts/BarList";
 import { CATEGORY_EMOJI } from "@/components/expenses/categoryEmoji";

@@ -1,6 +1,6 @@
 /** Usage overview business logic: product-wide counts for the operator, read at one instant. */
 
-import { snapshot } from "@/server/common/db";
+import { snapshot } from "@/server/common/db/db";
 import {
   MONTHLY_ACTIVE_DAYS,
   USAGE_TREND_WEEKS,

@@ -18,6 +18,24 @@ export interface SessionState {
 
 let snapshot: SessionState = { token: null, hydrated: false };
 const listeners = new Set<() => void>();
+let revision = 0;
+let hydration: Promise<void> | undefined;
+let persistence = Promise.resolve();
+
+/**
+ * Serializes keychain writes so a slow renewal cannot outlive a sign-out.
+ * @param operation - The next storage update in session order.
+ * @returns Completion, retaining the in-memory session if storage is unavailable.
+ */
+function persist(operation: () => Promise<void>): Promise<void> {
+  persistence = persistence.then(operation).catch(() => undefined);
+  return persistence;
+}
+
+/** @returns The generation used to reject responses from an earlier session. */
+export function sessionRevision(): number {
+  return revision;
+}
 
 /**
  * Replaces the session snapshot and notifies every subscriber.
@@ -25,6 +43,7 @@ const listeners = new Set<() => void>();
  * @param next - The new session state.
  */
 function publish(next: SessionState): void {
+  revision += 1;
   snapshot = next;
   for (const listener of listeners) listener();
 }
@@ -44,13 +63,20 @@ export function sessionToken(): string | null {
  */
 export async function hydrateSession(): Promise<void> {
   if (snapshot.hydrated) return;
-  let stored: string | null = null;
-  try {
-    stored = await SecureStore.getItemAsync(TOKEN_STORAGE_KEY);
-  } catch {
-    // Unreadable keychain entry — treat as signed out.
+  if (!hydration) {
+    const startedAt = revision;
+    hydration = (async () => {
+      let stored: string | null = null;
+      try {
+        stored = await SecureStore.getItemAsync(TOKEN_STORAGE_KEY);
+      } catch {
+        // Unreadable keychain entry — treat as signed out.
+      }
+      // Login or logout may have completed while the keychain read was pending.
+      if (revision === startedAt) publish({ token: stored, hydrated: true });
+    })();
   }
-  publish({ token: stored, hydrated: true });
+  await hydration;
 }
 
 /**
@@ -60,21 +86,13 @@ export async function hydrateSession(): Promise<void> {
  */
 export async function setSessionToken(token: string): Promise<void> {
   publish({ token, hydrated: true });
-  try {
-    await SecureStore.setItemAsync(TOKEN_STORAGE_KEY, token);
-  } catch {
-    // Persistence failed — the in-memory session still works for this launch.
-  }
+  await persist(() => SecureStore.setItemAsync(TOKEN_STORAGE_KEY, token));
 }
 
 /** Clears the session (sign-out, or the server rejected the token). */
 export async function clearSession(): Promise<void> {
   publish({ token: null, hydrated: true });
-  try {
-    await SecureStore.deleteItemAsync(TOKEN_STORAGE_KEY);
-  } catch {
-    // Nothing stored — already signed out.
-  }
+  await persist(() => SecureStore.deleteItemAsync(TOKEN_STORAGE_KEY));
 }
 
 /**

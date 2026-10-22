@@ -3,13 +3,15 @@
 #
 # Assumes ./install-deps.sh has been run at least once (it installs Node,
 # pnpm and Docker; buf comes from the workspace's devDependencies). This
-# script only STARTS things:
+# script prepares configuration and starts the local stack:
 #   1. start the Docker daemon if it's not running (systemctl / Docker Desktop)
-#   2. self-heal cheap project state (node_modules, protogen) if missing
+#   2. synchronize all workspace dependencies with the lockfile and regenerate API types
+#      quietly prepare .env and require the local database password
 #   3. start the Postgres db (docker compose up -d db) and wait for it to be healthy
-#   4. start the Next.js dev server in the foreground (pnpm dev, http://127.0.0.1:3000)
+#   4. apply pending migrations; report success or stop with the failure
+#   5. start the Next.js dev server in the foreground (pnpm dev, http://127.0.0.1:3000)
 #      (with --mobile-android / --mobile-ios, also: boot emulator/simulator,
-#       build+install the dev client if missing, start Metro, launch the app)
+#       rebuild the dev client if missing or incompatible, start Metro, launch the app)
 #
 # Usage:
 #   ./dev.sh                   start db (if down) + web server in the foreground
@@ -21,8 +23,12 @@
 #   ./dev.sh --help            show this help
 #
 # Idempotent: re-running won't restart a healthy db. The db keeps running in
-# the background after you Ctrl-C the server, so a restart is instant. Use
-# --down to stop the db too.
+# the background after you Ctrl-C the server and is reused on the next run.
+# Use --down to stop the db too. A web dev server this checkout already has
+# running (another ./dev.sh in another terminal) is reused, not started twice;
+# with --mobile-* Metro then holds the foreground. This is checked before
+# anything slow, and a server that cannot serve the run (loopback-only for
+# --mobile-android or --lan, or not on port 3000 for the app) stops it there.
 
 set -euo pipefail
 
@@ -116,17 +122,21 @@ assert_system_ready() {
 
 # --- self-heal project state ---------------------------------------------------
 
+# Existing folders may contain a partial install or an older API contract after
+# pulling code. Let pnpm reconcile every workspace and always regenerate types.
+# @returns 0 when dependencies and generated APIs are ready; exits on failure.
 ensure_project_state() {
-  if [[ ! -d node_modules ]] || [[ ! -d apps/web/node_modules ]]; then
-    log "node_modules missing — running 'pnpm install'…"
-    pnpm install
-    ok "installed dependencies"
+  log "synchronizing workspace dependencies with pnpm-lock.yaml…"
+  if ! pnpm install --frozen-lockfile; then
+    die "workspace dependency installation failed; startup stopped. Fix the pnpm error above, then rerun ./dev.sh."
   fi
-  if [[ ! -d packages/protogen/src ]] || [[ -z "$(ls -A packages/protogen/src 2>/dev/null)" ]]; then
-    log "packages/protogen/src is empty — running 'pnpm gen'…"
-    pnpm gen
-    ok "generated protogen TypeScript"
+  ok "workspace dependencies ready"
+
+  log "generating API types from the current protobuf contract…"
+  if ! pnpm gen; then
+    die "API type generation failed; startup stopped. Fix the generator error above, then rerun ./dev.sh."
   fi
+  ok "generated API types ready"
 }
 
 # --- db lifecycle --------------------------------------------------------------
@@ -161,10 +171,20 @@ clean_db() {
   ok "removed db container + db-data volume"
 }
 
+# Apply migrations through the same environment and database path as the API.
+# Stops startup before web/Metro/device work if the schema cannot be prepared.
+prepare_db() {
+  log "checking and applying database migrations…"
+  if ! pnpm --filter @haalkhata/web exec node --import tsx scripts/prepare-database.mts; then
+    die "database migrations failed; web and mobile startup stopped. Fix the error above, then rerun ./dev.sh."
+  fi
+  ok "database migrations passed"
+}
+
 # --- mobile lifecycle ----------------------------------------------------------
 # The --mobile-android / --mobile-ios flags do the full end-to-end flow:
 #   1. ensure an emulator/simulator is booted (start one if none)
-#   2. ensure the dev client app is installed (prebuild + build if missing)
+#   2. verify native compatibility and rebuild a missing or outdated dev client
 #   3. start Metro in the background
 #   4. launch the app on the device
 #   5. fall through to the web dev server in the foreground
@@ -172,6 +192,31 @@ clean_db() {
 
 MOBILE_PID=""
 METRO_PORT=8081
+
+# @param $1 Native platform; $2 identity of the currently installed binary.
+# @returns 0 only for a successfully built, installed and compatible dev client.
+native_build_matches() {
+  [[ -n "$2" ]] || return 1
+  local state
+  state="$(node apps/mobile/scripts/native-build.mjs check "$1" "$2")" \
+    || die "could not check native build compatibility; startup stopped. See the error above."
+  [[ "$state" == "current" ]]
+}
+
+# Record compatibility only after compilation and installation both succeed.
+# @param $1 Native platform; $2 installation identity; $3 pre-compilation fingerprint.
+# @returns 0 after recording unchanged native inputs; exits if inputs changed during compilation.
+record_native_build() {
+  node apps/mobile/scripts/native-build.mjs record "$1" "$2" "$3" \
+    || die "could not record the installed native build; startup stopped. See the error above."
+}
+
+# Capture native inputs after prebuild/package installation but before compilation.
+# @param $1 Native platform. @returns The native compatibility hash.
+native_build_snapshot() {
+  node apps/mobile/scripts/native-build.mjs fingerprint "$1" \
+    || die "could not snapshot native build inputs; startup stopped."
+}
 
 # Kill any process listening on the Metro port. This handles stale Metro
 # instances from a previous run that was killed without the EXIT trap firing
@@ -324,6 +369,23 @@ write_local_properties() {
   fi
 }
 
+# Select one connected target, honoring adb's standard ANDROID_SERIAL override.
+# @param $1 adb executable. @returns Sets ANDROID_SERIAL or exits before building.
+select_android_device() {
+  local devices
+  devices="$("$1" devices | awk 'NR > 1 && $2 == "device" { print $1 }')"
+  if [[ -n "${ANDROID_SERIAL:-}" ]]; then
+    printf '%s\n' "$devices" | grep -Fxq "$ANDROID_SERIAL" \
+      || die "Android target '$ANDROID_SERIAL' is not connected/authorized. Check adb devices."
+  elif [[ -z "$devices" ]]; then
+    die "no connected Android target. Boot an emulator or connect and authorize a device."
+  elif [[ "$devices" == *$'\n'* ]]; then
+    die "multiple Android targets connected: ${devices//$'\n'/, }. Select one with ANDROID_SERIAL=<serial> ./dev.sh --mobile-android."
+  else
+    export ANDROID_SERIAL="$devices"
+  fi
+}
+
 # Ensure an Android emulator is running. If no device is connected, boots the
 # first AVD found and waits for it to finish booting.
 ensure_android_emulator() {
@@ -332,7 +394,8 @@ ensure_android_emulator() {
   adb_bin="$(find_adb)" \
     || die "adb not found. Install Android Studio, ensure platform-tools is on PATH, or set ANDROID_HOME."
 
-  if "$adb_bin" devices 2>/dev/null | grep -qw "device"; then
+  if [[ -n "${ANDROID_SERIAL:-}" ]] || "$adb_bin" devices 2>/dev/null | grep -qw "device"; then
+    select_android_device "$adb_bin"
     ok "android device/emulator already running"
     return 0
   fi
@@ -348,12 +411,13 @@ ensure_android_emulator() {
   log "booting emulator '$avd' (takes ~30-60s)…"
   "$emu_bin" -avd "$avd" -no-snapshot-load >/dev/null 2>&1 &
 
-  "$adb_bin" wait-for-device 2>/dev/null \
+  "$adb_bin" -e wait-for-device 2>/dev/null \
     || die "adb wait-for-device timed out."
 
+  select_android_device "$adb_bin"
   log "waiting for emulator to finish booting…"
   local attempts=0
-  until "$adb_bin" shell getprop sys.boot_completed 2>/dev/null | grep -q 1; do
+  until "$adb_bin" -s "$ANDROID_SERIAL" shell getprop sys.boot_completed 2>/dev/null | grep -q 1; do
     attempts=$((attempts + 1))
     (( attempts > 90 )) \
       && die "emulator didn't finish booting in 180s. Check Android Studio AVD Manager."
@@ -362,32 +426,41 @@ ensure_android_emulator() {
   ok "emulator booted"
 }
 
-# Ensure the dev client app is installed on the running emulator. If it's
-# missing, runs expo prebuild (if the native folder doesn't exist) then
-# ./gradlew installDebug (builds + installs without starting Metro).
-ensure_android_app() {
-  local adb_bin
-  adb_bin="$(find_adb)"
+# @param $1 adb executable.
+# @returns A device/package installation identity, or empty if the app is missing.
+android_installation_identity() {
+  local updated
+  updated="$("$1" -s "$ANDROID_SERIAL" shell dumpsys package com.haalkhata.app 2>/dev/null \
+    | sed -n 's/^[[:space:]]*lastUpdateTime=//p' | head -1)" || return 0
+  [[ -n "$updated" ]] && printf '%s:%s' "$ANDROID_SERIAL" "$updated"
+  return 0
+}
 
-  if "$adb_bin" shell pm list packages com.haalkhata.app 2>/dev/null \
-    | grep -q "com.haalkhata.app"; then
-    ok "dev client already installed on emulator"
+# Rebuild when the installed binary is missing, unverified or incompatible.
+# Prebuild refreshes existing generated projects after native dependency changes.
+ensure_android_app() {
+  local adb_bin installation fingerprint
+  adb_bin="$(find_adb)"
+  select_android_device "$adb_bin"
+  installation="$(android_installation_identity "$adb_bin")"
+  if native_build_matches android "$installation"; then
+    ok "dev client matches current native dependencies on emulator"
     return 0
   fi
 
-  log "dev client not installed — building (first run takes several minutes)…"
+  log "dev client missing or native build changed — rebuilding Android…"
+  (cd apps/mobile && pnpm run expo prebuild --platform android --no-install) \
+    || die "expo prebuild failed; startup stopped."
+  write_local_properties "$ANDROID_HOME"
 
-  if [[ ! -d apps/mobile/android ]]; then
-    log "running expo prebuild (generating native android project)…"
-    (cd apps/mobile && pnpm exec expo prebuild --platform android) \
-      || die "expo prebuild failed."
-    # prebuild just created android/ — write local.properties now.
-    write_local_properties "$ANDROID_HOME"
-  fi
-
-  log "gradle build + install…"
-  (cd apps/mobile/android && ./gradlew installDebug) \
+  fingerprint="$(native_build_snapshot android)" || exit 1
+  log "gradle build + install on ${ANDROID_SERIAL}…"
+  (cd apps/mobile/android && ./gradlew assembleDebug) \
     || die "gradle build failed. See apps/mobile/android for details."
+  "$adb_bin" -s "$ANDROID_SERIAL" install -r apps/mobile/android/app/build/outputs/apk/debug/app-debug.apk \
+    || die "could not install the Android build on $ANDROID_SERIAL."
+  installation="$(android_installation_identity "$adb_bin")"
+  record_native_build android "$installation" "$fingerprint"
   ok "dev client built + installed"
 }
 
@@ -397,8 +470,8 @@ launch_android_app() {
   local adb_bin
   adb_bin="$(find_adb)" \
     || die "adb not found. Run './install-deps.sh' or set ANDROID_HOME."
-  "$adb_bin" shell am start -n com.haalkhata.app/.MainActivity 2>/dev/null \
-    || "$adb_bin" shell monkey -p com.haalkhata.app \
+  "$adb_bin" -s "$ANDROID_SERIAL" shell am start -n com.haalkhata.app/.MainActivity 2>/dev/null \
+    || "$adb_bin" -s "$ANDROID_SERIAL" shell monkey -p com.haalkhata.app \
        -c android.intent.category.LAUNCHER 1 >/dev/null 2>&1
   ok "dev client launched on emulator"
 }
@@ -418,14 +491,48 @@ ios_simulator_udid() {
   '
 }
 
-# Ensure an iOS simulator is booted. If none is booted, finds the first
-# available simulator, boots it, and opens the Simulator app.
+# List the booted iOS simulators, one "<udid> <name>" per line.
+# @returns nothing when none is booted.
+booted_ios_simulators() {
+  xcrun simctl list devices booted -j | node -e '
+    const payload = JSON.parse(require("node:fs").readFileSync(0, "utf8"));
+    const lines = Object.entries(payload.devices)
+      .filter(([runtime]) => runtime.includes(".iOS-"))
+      .flatMap(([, devices]) => devices)
+      .map((device) => `${device.udid} ${device.name}`);
+    process.stdout.write(lines.join("\n"));
+  '
+}
+
+# Pick the one booted simulator this run installs to and opens. With several
+# booted, installing to one and opening the app on another runs new
+# JavaScript inside a stale native client ("Cannot find native module"), so
+# the choice is explicit, the way ANDROID_SERIAL is for Android.
+# @returns 0 with IOS_SIMULATOR_UDID exported; exits when the choice is unclear.
+select_ios_simulator() {
+  local booted
+  booted="$(booted_ios_simulators)"
+  if [[ -n "${IOS_SIMULATOR_UDID:-}" ]]; then
+    printf '%s\n' "$booted" | cut -d' ' -f1 | grep -Fxq "$IOS_SIMULATOR_UDID" \
+      || die "iOS simulator '$IOS_SIMULATOR_UDID' is not booted. Check xcrun simctl list devices booted."
+  elif [[ -z "$booted" ]]; then
+    die "no booted iOS simulator."
+  elif [[ "$booted" == *$'\n'* ]]; then
+    die "multiple iOS simulators booted: $(printf '%s\n' "$booted" | sed -E 's/^([^ ]+) (.*)$/\2 (\1)/' | paste -sd ';' - | sed 's/;/; /g'). Select one with IOS_SIMULATOR_UDID=<udid> ./dev.sh --mobile-ios, or shut the others down."
+  else
+    export IOS_SIMULATOR_UDID="${booted%% *}"
+  fi
+}
+
+# Ensure an iOS simulator is booted and selected. If none is booted, finds
+# the first available simulator, boots it, and opens the Simulator app.
 ensure_ios_simulator() {
   have xcrun \
     || die "xcrun not found. Install Xcode and its command-line tools."
 
-  if [[ -n "$(ios_simulator_udid booted)" ]]; then
-    ok "iOS simulator already booted"
+  if [[ -n "${IOS_SIMULATOR_UDID:-}" || -n "$(ios_simulator_udid booted)" ]]; then
+    select_ios_simulator
+    ok "iOS simulator already booted (${IOS_SIMULATOR_UDID:0:8}…)"
     return 0
   fi
 
@@ -447,36 +554,47 @@ ensure_ios_simulator() {
       && die "simulator didn't boot in 120s."
     sleep 2
   done
+  export IOS_SIMULATOR_UDID="$udid"
   ok "simulator booted"
 }
 
-# Ensure the dev client app is installed on the booted simulator. If it's
-# missing, builds a generic simulator binary and installs it with simctl.
+# Ensure the dev client on the selected simulator matches the native project.
+# Missing/unverified/changed installations rebuild and refresh CocoaPods first.
 # Generic builds do not require an Apple signing certificate for the app's
 # associated-domain entitlements; physical-device builds still use signing.
 ensure_ios_app() {
-  local udid
-  udid="$(ios_simulator_udid booted)"
-
-  if xcrun simctl listapps "$udid" 2>/dev/null | grep -q "com.haalkhata.app"; then
-    ok "dev client already installed on simulator"
+  local udid installation fingerprint
+  udid="$IOS_SIMULATOR_UDID"
+  installation="$(xcrun simctl get_app_container "$udid" com.haalkhata.app app 2>/dev/null || true)"
+  if native_build_matches ios "$installation"; then
+    ok "dev client matches current native dependencies on simulator"
     return 0
   fi
 
-  log "dev client not installed — building (first run takes several minutes)…"
-  (cd apps/mobile && pnpm exec expo run:ios --device generic \
+  log "dev client missing or native build changed — rebuilding iOS (may take several minutes)…"
+  have pod || die "CocoaPods is required to rebuild the dev client. Run ./install-deps.sh first."
+  (cd apps/mobile && pnpm run expo prebuild --platform ios --no-install) \
+    || die "expo prebuild failed; startup stopped."
+  (cd apps/mobile/ios && pod install) \
+    || die "CocoaPods installation failed; startup stopped."
+  fingerprint="$(native_build_snapshot ios)" || exit 1
+  (cd apps/mobile && pnpm run expo run:ios --device generic \
     --output .expo/ios-build --no-bundler) \
     || die "iOS build failed. See apps/mobile/ios for details."
   xcrun simctl install "$udid" "apps/mobile/.expo/ios-build/HaalKhata.app" \
     || die "could not install the iOS simulator build."
+  installation="$(xcrun simctl get_app_container "$udid" com.haalkhata.app app)" \
+    || die "could not verify the installed iOS simulator build."
+  record_native_build ios "$installation" "$fingerprint"
   ok "dev client built + installed"
 }
 
-# Open the running Metro project in the dev client on the booted simulator.
+# Open the running Metro project in the dev client on the selected simulator
+# — the same one ensure_ios_app installed to, never whichever "booted" means.
 launch_ios_app() {
   local manifest_url
   manifest_url="$(node -p 'encodeURIComponent(process.argv[1])' "http://127.0.0.1:$METRO_PORT")"
-  xcrun simctl openurl booted "haalkhata://expo-development-client/?url=$manifest_url" \
+  xcrun simctl openurl "$IOS_SIMULATOR_UDID" "haalkhata://expo-development-client/?url=$manifest_url" \
     || die "could not open the Metro project on the iOS simulator."
   ok "dev client connected to Metro on simulator"
 }
@@ -518,7 +636,7 @@ lan_address() {
 
 # Run the full mobile dev flow for the given platform:
 #   1. ensure device is booted
-#   2. ensure app is installed (build if missing)
+#   2. ensure app is installed and matches the current native project
 #   3. start Metro in the background
 #   4. launch the app
 # @param $1  "android" or "ios"
@@ -568,10 +686,34 @@ start_mobile() {
   esac
 }
 
+# --- web server ----------------------------------------------------------------
+
+# Find a Next.js dev server already serving this checkout. Next records the
+# one it allows per app in apps/web/.next/dev/lock and refuses to start a
+# second, so this is the same test Next applies — made at the start instead
+# of after the simulator, a native rebuild and Metro.
+# The lock names the bind as Next prints it: "127.0.0.1" for a loopback-only
+# server, "localhost" for one listening on every interface (-H 0.0.0.0).
+# @returns 0 and echoes "<pid> <hostname> <port> <url>" for a live server, 1 otherwise.
+running_web_server() {
+  local lock="$PROJECT_ROOT/apps/web/.next/dev/lock" contents pid hostname port url
+  [[ -f "$lock" ]] || return 1
+  contents="$(cat "$lock" 2>/dev/null)" || return 1
+  pid="$(sed -n 's/.*"pid":\([0-9][0-9]*\).*/\1/p' <<<"$contents")"
+  hostname="$(sed -n 's/.*"hostname":"\([^"]*\)".*/\1/p' <<<"$contents")"
+  port="$(sed -n 's/.*"port":\([0-9][0-9]*\).*/\1/p' <<<"$contents")"
+  url="$(sed -n 's/.*"appUrl":"\([^"]*\)".*/\1/p' <<<"$contents")"
+  [[ -n "$pid" ]] || return 1
+  kill -0 "$pid" 2>/dev/null || return 1
+  # A lock left behind by a crash can name a PID since given to something else.
+  ps -o command= -p "$pid" 2>/dev/null | grep -q next || return 1
+  printf '%s %s %s %s' "$pid" "${hostname:-localhost}" "${port:-3000}" "${url:-http://localhost:${port:-3000}}"
+}
+
 # --- main ----------------------------------------------------------------------
 
 usage() {
-  sed -n '2,21p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,22p' "$0" | sed 's/^# \{0,1\}//'
   exit 0
 }
 
@@ -605,16 +747,56 @@ main() {
     exit 0
   fi
 
+  # Another ./dev.sh (or `pnpm dev`) may already be serving this checkout.
+  # Next refuses a second server for it, and used to say so only at the very
+  # end, after the native build, taking Metro down with it. Decide now: reuse
+  # it when it can serve this run, otherwise stop before the slow steps.
+  local existing_web="" existing_pid existing_host existing_port existing_url
+  if existing_web="$(running_web_server)"; then
+    read -r existing_pid existing_host existing_port existing_url <<<"$existing_web"
+    # The Android emulator and a phone on the LAN reach the host from
+    # outside its loopback, so a server bound to 127.0.0.1 is no use to them.
+    if [[ "$mobile_platform" == "android" || "$lan" -eq 1 ]]; then
+      case "$existing_host" in
+        127.*|"[::1]"|::1)
+          die "a web dev server for this checkout is already running on $existing_url (PID $existing_pid), loopback only — $([[ "$lan" -eq 1 ]] && echo "--lan" || echo "the Android emulator") needs it on 0.0.0.0. Stop it (Ctrl-C in its terminal, or kill $existing_pid) and run this again."
+          ;;
+      esac
+    fi
+    # The app finds the API on Metro's host at port 3000, so a server Next
+    # moved to another port would leave it talking to nothing.
+    if [[ -n "$mobile_platform" && "$existing_port" != "3000" ]]; then
+      die "a web dev server for this checkout is already running on $existing_url (PID $existing_pid), but the app expects port 3000. Stop it (Ctrl-C in its terminal, or kill $existing_pid) and run this again."
+    fi
+    ok "web dev server for this checkout already running — $existing_url (PID $existing_pid); reusing it"
+  fi
+
   assert_system_ready
   ensure_project_state
+  node scripts/setup-env.mjs --dev
 
   if [[ "$mode" == "clean" ]]; then
     clean_db
   fi
   start_db
+  prepare_db
 
   if [[ -n "$mobile_platform" ]]; then
     start_mobile "$mobile_platform"
+  fi
+
+  if [[ -n "$existing_web" ]]; then
+    echo
+    if [[ -n "$MOBILE_PID" ]]; then
+      # Metro takes the foreground the web server would have had: Ctrl-C
+      # stops it through the EXIT trap, and the web server keeps running in
+      # the terminal that started it.
+      ok "using the web dev server at $existing_url — Metro stays in the foreground (Ctrl-C to stop it)"
+      wait "$MOBILE_PID" || warn "Metro stopped (exit status $?)"
+    else
+      ok "using the web dev server at $existing_url — nothing else to start"
+    fi
+    return 0
   fi
 
   echo
@@ -657,8 +839,8 @@ main() {
   else
     log "starting web dev server — http://127.0.0.1:3000  (Ctrl-C to stop)"
   fi
-  # Migrations apply automatically on the first /api/connect request via
-  # ensureMigrated(). The db keeps running after the server exits; use
+  # Migrations have passed before reaching this point; ensureMigrated() also
+  # protects API requests. The db keeps running after the server exits; use
   # ./dev.sh --down to stop it too. With --mobile-* the Metro bundler is
   # stopped by the EXIT trap; the db and emulator/simulator keep running.
   # `pnpm exec next dev` would run the Next binary directly and SKIP the
@@ -667,7 +849,7 @@ main() {
   # provider), no SESSION_SECRET, and Postgres only by the built-in default.
   # Invoke the environment-loading launcher the same way the dev script does.
   #
-  # The launcher reads the root .env through Node's loadEnvFile API. Next.js 16
+  # The launcher reads the root .env through the shared environment loader. Next.js 16
   # forwards CLI flags to workers, where --env-file-if-exists is forbidden.
   #
   # --turbopack because the webpack dev server cannot hot-replace a server
@@ -682,4 +864,7 @@ main() {
     --turbopack -H "$web_host"
 }
 
-main "$@"
+# Allow the startup workflow to be exercised with isolated service adapters in tests.
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  main "$@"
+fi

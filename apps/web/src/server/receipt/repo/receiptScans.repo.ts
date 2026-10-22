@@ -1,6 +1,6 @@
 /** All SQL for the receipt_scans table: one row per scan attempt, counts only. */
 
-import { execute, newId } from "@/server/common/db";
+import { execute, newId } from "@/server/common/db/db";
 
 /** How a scan attempt ended; mirrors chk_receipt_scans_outcome. */
 export type ReceiptScanOutcome = "parsed" | "failed";

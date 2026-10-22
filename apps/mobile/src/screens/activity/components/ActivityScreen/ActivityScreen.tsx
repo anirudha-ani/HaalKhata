@@ -1,8 +1,9 @@
 /** Activity screen: the feed of what happened, and the person's own insights drawn from it. */
 
 import { useState } from "react";
-import { DetailHeader } from "@/components/shell/DetailHeader";
-import { Screen } from "@/components/shell/Screen";
+import { DetailHeader } from "@/components/shell/DetailHeader/DetailHeader";
+import { Screen } from "@/components/shell/Screen/Screen";
+import { ErrorState } from "@/components/ui/ErrorState";
 import { Segmented } from "@/components/ui/Segmented";
 import { Spinner } from "@/components/ui/Spinner";
 import {
@@ -43,6 +44,8 @@ export function ActivityScreen() {
       {showingFeed ? (
         activity.isLoading ? (
           <Spinner label="Loading activity…" />
+        ) : activity.loadError ? (
+          <ErrorState error={activity.loadError} retry={activity.refresh} />
         ) : (
           <ActivityFeed activity={activity} />
         )

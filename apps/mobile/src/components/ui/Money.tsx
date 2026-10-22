@@ -1,6 +1,7 @@
 /** Formatted money amount, optionally colored by owed/owing sign. */
 
-import { StyleSheet, Text, type StyleProp, type TextStyle } from "react-native";
+import { StyleSheet, type StyleProp, type TextStyle } from "react-native";
+import { Text } from "@/components/ui/Text";
 import { formatMoney } from "@haalkhata/shared/money/money";
 import { colors } from "@/lib/theme/theme";
 

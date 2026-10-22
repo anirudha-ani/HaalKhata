@@ -1,7 +1,7 @@
 /** All SQL for payment_methods and payment_method_details. */
 
 import type { PoolClient } from "pg";
-import { execute, query, queryOne } from "@/server/common/db";
+import { execute, query, queryOne } from "@/server/common/db/db";
 
 /** One labelled identifier of a payment method, as stored. */
 export interface PaymentDetailRow {

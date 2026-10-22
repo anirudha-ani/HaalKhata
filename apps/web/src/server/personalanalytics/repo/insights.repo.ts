@@ -6,7 +6,7 @@
  */
 
 import type { PoolClient } from "pg";
-import { query, queryOne } from "@/server/common/db";
+import { query, queryOne } from "@/server/common/db/db";
 
 /** The bounds every windowed statement shares. */
 export interface InsightBounds {

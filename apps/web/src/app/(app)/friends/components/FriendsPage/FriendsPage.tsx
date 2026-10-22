@@ -10,6 +10,7 @@ import { ErrorPopup } from "@/components/ui/ErrorPopup/ErrorPopup";
 import { Money } from "@/components/ui/Money/Money";
 import { SearchField } from "@/components/ui/SearchField/SearchField";
 import { InviteShareModal } from "@/components/modals/InviteShareModal/InviteShareModal";
+import { ContactDiscoveryPrompt } from "@/components/account/ContactDiscoveryPrompt/ContactDiscoveryPrompt";
 import { Modal } from "@/components/ui/Modal/Modal";
 import { SettleUpModal } from "@/components/modals/SettleUpModal/SettleUpModal";
 import { Spinner } from "@/components/ui/Spinner/Spinner";
@@ -199,6 +200,9 @@ export function FriendsPage() {
         <h1 className="text-3xl font-bold">Friends</h1>
         {addFriendButton}
       </header>
+
+      {/* Said once, where finding and being found matter. */}
+      {friendsState.me ? <ContactDiscoveryPrompt answer={friendsState.me.contactDiscovery} /> : null}
 
       {/* Confirmation of the last request sent. The dialog that took it has
           closed by now, so this is the one place it can be read. */}

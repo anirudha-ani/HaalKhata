@@ -2,13 +2,13 @@
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("@/server/common/db", () => ({
+vi.mock("@/server/common/db/db", () => ({
   execute: vi.fn(),
   newId: vi.fn(),
   query: vi.fn(),
 }));
 
-import { query } from "@/server/common/db";
+import { query } from "@/server/common/db/db";
 import { listActivityPage } from "./activity.repo";
 
 const VIEWER_ID = "user-viewer";

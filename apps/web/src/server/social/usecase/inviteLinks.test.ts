@@ -9,6 +9,8 @@ const { transactionClient } = vi.hoisted(() => ({
   transactionClient: { query: vi.fn() } as unknown as PoolClient,
 }));
 
+vi.mock("@/server/safety/repo/safety.repo", () => ({ blockedBetween: vi.fn(async () => false), blockedPairExists: vi.fn(async () => false) }));
+
 vi.mock("@/server/social/repo/friendships.repo", () => ({
   countIncomingFriendRequests: vi.fn(),
   deleteFriendRequest: vi.fn(),
@@ -24,11 +26,11 @@ vi.mock("@/server/auth/repo/users.repo", () => ({
   findUserById: vi.fn(),
   findUsersByIds: vi.fn(),
 }));
-vi.mock("@/server/auth/usecase/auth.usecase", () => ({
+vi.mock("@/server/auth/usecase/account/auth.usecase", () => ({
   findOrCreateUserByEmail: vi.fn(),
   findOrCreateUserByPhone: vi.fn(),
 }));
-vi.mock("@/server/auth/repo/accountMerge.repo", () => ({ mergeAccounts: vi.fn() }));
+vi.mock("@/server/auth/repo/merge/accountMerge.repo", () => ({ mergeAccounts: vi.fn() }));
 vi.mock("@/server/social/repo/inviteLinks.repo", () => ({
   findActiveFriendLink: vi.fn(),
   findActiveGroupLink: vi.fn(),
@@ -63,7 +65,7 @@ vi.mock("@/server/expense/usecase/balance.usecase", () => ({
   getOverallBalances: vi.fn(),
   netWithUser: vi.fn(),
 }));
-vi.mock("@/server/common/db", () => ({
+vi.mock("@/server/common/db/db", () => ({
   transaction: vi.fn((operation: (client: PoolClient) => Promise<unknown>) =>
     operation(transactionClient),
   ),
@@ -73,8 +75,8 @@ vi.mock("@/server/common/db", () => ({
 }));
 
 import { findUserById, findUsersByIds } from "@/server/auth/repo/users.repo";
-import { mergeAccounts } from "@/server/auth/repo/accountMerge.repo";
-import { findOrCreateUserByEmail } from "@/server/auth/usecase/auth.usecase";
+import { mergeAccounts } from "@/server/auth/repo/merge/accountMerge.repo";
+import { findOrCreateUserByEmail } from "@/server/auth/usecase/account/auth.usecase";
 import {
   findActiveFriendLink,
   findActiveGroupLink,

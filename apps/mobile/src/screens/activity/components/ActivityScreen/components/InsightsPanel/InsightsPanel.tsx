@@ -1,8 +1,9 @@
 /** Insights panel: the person's own dashboard, drawn from the same history as the feed. */
 
 import { RotateCw } from "lucide-react-native";
-import { StyleSheet, Text, View } from "react-native";
-import { useResponsiveLayout } from "@/components/shell/hooks/useResponsiveLayout";
+import { StyleSheet, View } from "react-native";
+import { Text } from "@/components/ui/Text";
+import { useResponsiveLayout } from "@/lib/layout/hooks/useResponsiveLayout";
 import { Button } from "@/components/ui/Button";
 import { Chip } from "@/components/ui/Chip";
 import { Segmented } from "@/components/ui/Segmented";

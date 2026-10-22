@@ -14,7 +14,7 @@ const { ensureMigratedMock, logErrorMock, queryMock, signPayloadMock, authConfig
   }),
 );
 
-vi.mock("@/server/auth/usecase/auth.usecase", () => ({ signPayload: signPayloadMock }));
+vi.mock("@/server/auth/usecase/session/session", () => ({ signPayload: signPayloadMock }));
 vi.mock("@/server/auth/auth.constants", () => ({
   passwordAuthEnabled: () => authConfig.passwordAuth,
   get GOOGLE_CLIENT_ID() {
@@ -24,7 +24,7 @@ vi.mock("@/server/auth/auth.constants", () => ({
     return authConfig.audiences;
   },
 }));
-vi.mock("@/server/common/db", () => ({
+vi.mock("@/server/common/db/db", () => ({
   ensureMigrated: ensureMigratedMock,
   query: queryMock,
 }));
@@ -131,6 +131,38 @@ describe("readiness endpoint", () => {
     expect(response.json).toHaveBeenCalledWith({ status: "unavailable" });
     expect(logErrorMock).toHaveBeenCalledOnce();
     expect(queryMock).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["the log provider, which would drop every push", { PUSH_PROVIDER: "log", EXPO_ACCESS_TOKEN: "token" }],
+    ["Expo without an access token", { PUSH_PROVIDER: "expo", EXPO_ACCESS_TOKEN: "" }],
+  ])("refuses production readiness with %s", async (_label, environment) => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("EXPO_ACCESS_TOKEN_FILE", "");
+    for (const [name, value] of Object.entries(environment)) vi.stubEnv(name, value);
+    const response = responseStub();
+    try {
+      await healthHandler({ method: "GET" } as NextApiRequest, response);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+    expect(response.status).toHaveBeenCalledWith(503);
+    expect(logErrorMock).toHaveBeenCalledOnce();
+    expect(queryMock).not.toHaveBeenCalled();
+  });
+
+  it("is ready in production with Expo and its access token", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("PUSH_PROVIDER", "expo");
+    vi.stubEnv("EXPO_ACCESS_TOKEN_FILE", "");
+    vi.stubEnv("EXPO_ACCESS_TOKEN", "token");
+    const response = responseStub();
+    try {
+      await healthHandler({ method: "GET" } as NextApiRequest, response);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+    expect(response.status).toHaveBeenCalledWith(200);
   });
 
   it("rejects methods that are not readiness probes", async () => {

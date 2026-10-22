@@ -16,11 +16,13 @@ import type { CommentRow } from "@/server/expense/repo/comments.repo";
 
 const { transactionClient } = vi.hoisted(() => ({ transactionClient: {} as PoolClient }));
 
+vi.mock("@/server/safety/repo/safety.repo", () => ({ blockedBetween: vi.fn(async () => false), blockedPairExists: vi.fn(async () => false) }));
+
 // The reads run inside a database snapshot. Every statement is mocked here,
 // so the snapshot is a pass-through handing out a stand-in client: these
 // tests must not need a database to be running.
-vi.mock("@/server/common/db", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@/server/common/db")>()),
+vi.mock("@/server/common/db/db", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/server/common/db/db")>()),
   snapshot: (operation: (client: unknown) => unknown) => operation({}),
 }));
 vi.mock("@/server/expense/repo/expenses.repo", () => ({
@@ -35,6 +37,7 @@ vi.mock("@/server/expense/repo/expenses.repo", () => ({
 }));
 vi.mock("@/server/group/repo/groups.repo", () => ({
   findGroupById: vi.fn(),
+  findGroupsByIds: vi.fn(),
   isMember: vi.fn(),
   listCoMemberIds: vi.fn(),
   listGroupsByUser: vi.fn(),
@@ -55,6 +58,8 @@ vi.mock("@/server/expense/repo/comments.repo", () => ({
 vi.mock("@/server/expense/repo/settlements.repo", () => ({
   findSettlementById: vi.fn(),
   insertSettlement: vi.fn(),
+  listSettlementsByNetSettlement: vi.fn(),
+  softDeleteNetSettlement: vi.fn(),
   scopeHasSettlements: vi.fn(),
   softDeleteSettlement: vi.fn(),
   withSettlementPairLock: vi.fn(
@@ -62,7 +67,7 @@ vi.mock("@/server/expense/repo/settlements.repo", () => ({
       operation(transactionClient),
   ),
 }));
-vi.mock("@/server/common/ledgerLocks", () => ({
+vi.mock("@/server/common/ledger/ledgerLocks", () => ({
   lockExpenseLedger: vi.fn(),
   lockGroupLedgers: vi.fn(),
   lockParticipantLedgers: vi.fn(),
@@ -74,7 +79,7 @@ vi.mock("@/server/social/repo/activity.repo", () => ({
   insertActivity: vi.fn(),
   listActivityForExpense: vi.fn(),
 }));
-vi.mock("@/server/social/repo/notifications.repo", () => ({ insertNotifications: vi.fn() }));
+vi.mock("@/server/social/repo/notifications.repo", () => ({ insertNotifications: vi.fn(), insertNotificationRows: vi.fn() }));
 vi.mock("./balance.usecase", () => ({
   groupCancelsOut: vi.fn(),
   amountOwed: vi.fn(),
@@ -95,6 +100,7 @@ import {
 import { findUserById, findUsersByIds } from "@/server/auth/repo/users.repo";
 import {
   findGroupById,
+  findGroupsByIds,
   isMember,
   listCoMemberIds,
   listGroupsByUser,
@@ -111,6 +117,8 @@ import { insertComment, listCommentsByExpense } from "@/server/expense/repo/comm
 import {
   findSettlementById,
   insertSettlement,
+  listSettlementsByNetSettlement,
+  softDeleteNetSettlement,
   scopeHasSettlements,
   softDeleteSettlement,
 } from "@/server/expense/repo/settlements.repo";
@@ -118,9 +126,9 @@ import {
   lockExpenseLedger,
   lockGroupLedgers,
   lockParticipantLedgers,
-} from "@/server/common/ledgerLocks";
+} from "@/server/common/ledger/ledgerLocks";
 import { insertActivity, listActivityForExpense } from "@/server/social/repo/activity.repo";
-import { insertNotifications } from "@/server/social/repo/notifications.repo";
+import { insertNotificationRows, insertNotifications } from "@/server/social/repo/notifications.repo";
 import { insertFriendship, listFriendIds } from "@/server/social/repo/friendships.repo";
 import { amountOwed, userNetInGroup, groupCancelsOut } from "./balance.usecase";
 import {
@@ -172,7 +180,7 @@ beforeEach(() => {
       userIds.map((userId) => ({ id: userId, name: `Name ${userId}` }) as UserRow),
   );
   vi.mocked(findGroupById).mockImplementation(
-    async (groupId: string) => ({ id: groupId, name: "Goa", currency: "USD" }) as GroupRow,
+    async (groupId: string) => ({ id: groupId, name: "Goa", currency: "USD", status: "active" }) as GroupRow,
   );
   // Everyone in these tests is a member — the point under test is that
   // membership alone no longer puts anyone in a transaction's audience.
@@ -184,6 +192,10 @@ beforeEach(() => {
   ] as never);
   vi.mocked(listFriendIds).mockResolvedValue([]);
   vi.mocked(listCoMemberIds).mockResolvedValue([]);
+  vi.mocked(findGroupsByIds).mockImplementation(async (groupIds, client) => {
+    const groups = await Promise.all(groupIds.map((groupId) => findGroupById(groupId, client)));
+    return groups.filter((group) => group !== undefined);
+  });
   vi.mocked(listGroupsByUser).mockResolvedValue([]);
   vi.mocked(scopeHasSettlements).mockResolvedValue(false);
   vi.mocked(insertExpense).mockResolvedValue("expense-1");
@@ -533,6 +545,7 @@ describe("who hears about a transaction", () => {
       name: "Goa",
       currency: "USD",
       simplify_debts: true,
+      status: "active",
     } as never);
     vi.mocked(listCommentsByExpense).mockResolvedValue([]);
     vi.mocked(listActivityForExpense).mockResolvedValue([]);
@@ -645,11 +658,14 @@ describe("who hears about a transaction", () => {
       expect.objectContaining({ type: "expense_added" }),
       transactionClient,
     );
-    expect(insertNotifications).toHaveBeenCalledWith(
-      [OWER],
-      expect.objectContaining({ type: "expense_added" }),
+    // Every reader's row in one write, on the ledger's own transaction, and
+    // the payer names it quotes read on that transaction too.
+    expect(insertNotificationRows).toHaveBeenCalledOnce();
+    expect(insertNotificationRows).toHaveBeenCalledWith(
+      [expect.objectContaining({ userId: OWER, type: "expense_added" })],
       transactionClient,
     );
+    expect(findUsersByIds).toHaveBeenCalledWith([PAYER], transactionClient);
   });
 
   it("commits a comment with the feed line and notifications that announce it", async () => {
@@ -811,4 +827,130 @@ describe("who hears about a transaction", () => {
     expect(lockGroupLedgers).toHaveBeenCalledWith(transactionClient, [GOA_TRIP]);
     expect(amountOwed).toHaveBeenCalledWith(PAYER, OWER, GOA_TRIP, transactionClient);
   });
+});
+
+
+describe("archived groups keep their settled ledger", () => {
+  /** Returns the archived row used to refuse subsequent money writes. */
+  const archivedGroup = () => ({
+    id: GOA_TRIP, name: "Goa", currency: "USD", status: "archived",
+  }) as GroupRow;
+
+  it("refuses an expense submitted directly to an archived group", async () => {
+    vi.mocked(findGroupById).mockImplementation(async () => archivedGroup());
+    await expect(createExpense(PAYER, validExpenseRequest())).rejects.toMatchObject({
+      code: "failed_precondition",
+    });
+    expect(insertExpense).not.toHaveBeenCalled();
+  });
+
+  it("refuses ledger writes to a deleted group", async () => {
+    vi.mocked(findGroupById).mockResolvedValue({ ...archivedGroup(), status: "deleted" });
+    await expect(createExpense(PAYER, validExpenseRequest())).rejects.toMatchObject({
+      code: "not_found",
+    });
+    expect(insertExpense).not.toHaveBeenCalled();
+  });
+
+  it("refuses a stale expense form when archiving wins the group lock", async () => {
+    vi.mocked(lockGroupLedgers).mockImplementationOnce(async () => {
+      vi.mocked(findGroupById).mockImplementation(async () => archivedGroup());
+    });
+    await expect(createExpense(PAYER, validExpenseRequest())).rejects.toMatchObject({
+      code: "failed_precondition",
+    });
+    expect(insertExpense).not.toHaveBeenCalled();
+    expect(insertActivity).not.toHaveBeenCalled();
+  });
+
+  it("refuses an expense edit when archiving wins the group lock", async () => {
+    vi.mocked(lockGroupLedgers).mockImplementationOnce(async () => {
+      vi.mocked(findGroupById).mockImplementation(async () => archivedGroup());
+    });
+    await expect(updateExpense(PAYER, "expense-1", validExpenseRequest())).rejects.toMatchObject({
+      code: "failed_precondition",
+    });
+    expect(replaceExpense).not.toHaveBeenCalled();
+  });
+
+  it("refuses expense deletion that could reopen an archived balance", async () => {
+    vi.mocked(findGroupById).mockImplementation(async () => archivedGroup());
+    await expect(deleteExpense(PAYER, "expense-1")).rejects.toMatchObject({
+      code: "failed_precondition",
+    });
+    expect(softDeleteExpense).not.toHaveBeenCalled();
+  });
+
+  it("refuses deletion when the creator left while waiting for the ledger lock", async () => {
+    vi.mocked(lockGroupLedgers).mockImplementationOnce(async () => {
+      vi.mocked(isMember).mockResolvedValue(false);
+    });
+    await expect(deleteExpense(PAYER, "expense-1")).rejects.toMatchObject({
+      code: "permission_denied",
+    });
+    expect(softDeleteExpense).not.toHaveBeenCalled();
+  });
+
+  it("refuses new group payments until the group is restored", async () => {
+    vi.mocked(findGroupById).mockImplementation(async () => archivedGroup());
+    await expect(recordSettlement(PAYER, {
+      groupId: GOA_TRIP, toUserId: OWER, amountCents: 1000,
+      currency: "USD", method: "cash", note: "",
+    })).rejects.toMatchObject({ code: "failed_precondition" });
+    expect(insertSettlement).not.toHaveBeenCalled();
+  });
+
+  it("refuses payment removal that would reopen archived debt", async () => {
+    vi.mocked(findGroupById).mockImplementation(async () => archivedGroup());
+    vi.mocked(findSettlementById).mockResolvedValue({
+      id: "settlement-1", group_id: GOA_TRIP, from_user: PAYER,
+      to_user: OWER, amount_cents: 1000, currency: "USD", deleted_at: null,
+    } as SettlementRow);
+    await expect(deleteSettlement(PAYER, "settlement-1")).rejects.toMatchObject({
+      code: "failed_precondition",
+    });
+    expect(softDeleteSettlement).not.toHaveBeenCalled();
+  });
+
+  it("protects archived scopes when removing another row of a net settlement", async () => {
+    vi.mocked(findGroupById).mockImplementation(async () => archivedGroup());
+    const cashPayment = {
+      id: "cash-payment", group_id: null, from_user: PAYER,
+      to_user: OWER, amount_cents: 500, currency: "USD",
+      deleted_at: null, net_settlement_id: "net-payment",
+    } as SettlementRow;
+    vi.mocked(findSettlementById).mockResolvedValue(cashPayment);
+    vi.mocked(listSettlementsByNetSettlement).mockResolvedValue([
+      cashPayment,
+      { ...cashPayment, id: "offset-payment", group_id: GOA_TRIP, method: "offset" },
+    ]);
+    await expect(deleteSettlement(PAYER, cashPayment.id)).rejects.toMatchObject({
+      code: "failed_precondition",
+    });
+    expect(lockGroupLedgers).toHaveBeenCalledWith(transactionClient, [GOA_TRIP]);
+    expect(softDeleteNetSettlement).not.toHaveBeenCalled();
+    expect(softDeleteSettlement).not.toHaveBeenCalled();
+  });
+});
+
+it.each(["percent", "shares"])("keeps a saved %s mode on a notes-only exact-amount edit", async (splitType) => {
+  const stored = (await findExpenseById("expense-1"))!;
+  vi.mocked(findExpenseById).mockResolvedValue({ ...stored, split_type: splitType });
+  await updateExpense(PAYER, "expense-1", validExpenseRequest({ notes: "Corrected note" }), true);
+  expect(replaceExpense).toHaveBeenCalledWith("expense-1", expect.objectContaining({ splitType, notes: "Corrected note", splits: [{ userId: OWER, owedCents: 1000 }] }), transactionClient);
+});
+
+it("rechecks preserved allocations under the ledger lock and refuses a concurrent edit", async () => {
+  const stored = (await findExpenseById("expense-1"))!;
+  vi.mocked(findExpenseById).mockResolvedValueOnce({ ...stored, split_type: "percent" })
+    .mockResolvedValue({ ...stored, split_type: "percent", amount_cents: 2000 });
+  await expect(updateExpense(PAYER, "expense-1", validExpenseRequest(), true)).rejects.toMatchObject({ code: "failed_precondition" });
+  expect(replaceExpense).not.toHaveBeenCalled();
+});
+
+it("does not preserve the old ratio type when explicitly saving changed allocations", async () => {
+  const stored = (await findExpenseById("expense-1"))!;
+  vi.mocked(findExpenseById).mockResolvedValue({ ...stored, split_type: "shares" });
+  await updateExpense(PAYER, "expense-1", validExpenseRequest(), false);
+  expect(replaceExpense).toHaveBeenCalledWith("expense-1", expect.objectContaining({ splitType: "exact" }), transactionClient);
 });

@@ -10,7 +10,8 @@ The Receipt Service is essential for:
   and totals extracted from a photo.
 - **Privacy containment:** the image is never persisted — it lives in memory
   for one request; only the structured draft the user approves is ever
-  saved (as an ordinary `CreateExpense`).
+  saved (as an ordinary `CreateExpense`). Third-party processing requires
+  saved account permission for the current sharing terms before provider calls.
 
 Implementation: [handler.ts](../../../apps/web/src/server/receipt/handler.ts)
 → [receipt.usecase.ts](../../../apps/web/src/server/receipt/usecase/receipt.usecase.ts),
@@ -113,6 +114,8 @@ promised:
 ## Overview of Endpoints
 
 1. [ParseReceipt](#1-parsereceipt)
+2. [GetProcessingInfo](#2-getprocessinginfo)
+3. [GrantConsent / RevokeConsent](#3-grantconsent--revokeconsent)
 
 ---
 
@@ -123,6 +126,11 @@ promised:
 
 #### Notes
 
+- Missing, withdrawn or outdated account permission (or a stale `consent_version`)
+  returns `FailedPrecondition` before image processing or a provider call. A client
+  cannot authorize scanning just by copying the public version. Both apps check
+  permission immediately before an upload; if needed, they ask once and save the
+  choice with `GrantConsent`. New photos and new expenses reuse that permission.
 - Providers are tried in configured order until one returns **at least one
   line item**; an itemless "success" counts as a failure and falls through.
   When every provider fails, the per-provider errors go to the operator log
@@ -155,6 +163,7 @@ promised:
 | --- | --- | --- |
 | image | bytes | The photo; ≤ 8 MB. |
 | media_type | string | **Advisory only** — the real format is detected from the bytes (browsers report `""` for HEIC). |
+| consent_version | string | Current sharing-terms version; the account must also have saved permission. |
 
 #### Response
 
@@ -206,3 +215,36 @@ The client feeds the reviewed draft into
 `split_type: "itemized"` — where the server recomputes the splits and
 requires items+tax+tip to equal the stated total, so even an approved-but-
 wrong draft cannot create inconsistent money.
+
+### 2. GetProcessingInfo
+
+`POST /api/connect/receipt.v1.ReceiptService/GetProcessingInfo` takes
+`google.protobuf.Empty` and returns `{ disclosure, consent_version, consent_granted }`
+for the signed-in account. Reading this information never uploads an image.
+
+On the first explicit “Itemize with AI” action, clients show the named recipients,
+purpose and account-wide scope, with **Allow AI scanning** / **Enter manually**.
+Allow saves permission and continues the requested scan; decline/dismissal sends
+no photo. Later scans check the server and proceed without another prompt. A failed
+permission read or save never falls back to cached permission. Manual entry remains
+available. Public legal links accompany the first-use prompt.
+
+### 3. GrantConsent / RevokeConsent
+
+`GrantConsent({ consent_version })` verifies the terms actually shown and upserts
+`receipt_consents(user_id, consent_version, granted_at)` for the authenticated
+account. It rejects stale terms with `FailedPrecondition`. `RevokeConsent({})`
+deletes that account's permission. Both return updated `ReceiptProcessingInfo`.
+Account → AI receipt scanning exposes withdrawal on web, phone and tablet.
+
+The version covers recipient wording, gateway host, OpenRouter model provider,
+provider chain and retention settings. Routine model-version upgrades with the
+same recipients do not reset permission. The server reads saved permission for
+every parse, so another device's cached allowance cannot bypass withdrawal.
+Withdrawal stops subsequent processing; it cannot recall an already-sent request.
+Account deletion cascades to the permission row. Existing accounts are not opted in
+by migration, and old per-photo checkbox choices are not converted into permission.
+
+Native uploads first normalize camera/library images, including HEIC, to JPEG
+with a 2,576-pixel long edge and an 8 MB byte bound. The server still independently
+sniffs bytes, enforces its own bounds and normalizes the exact image sent to AI.

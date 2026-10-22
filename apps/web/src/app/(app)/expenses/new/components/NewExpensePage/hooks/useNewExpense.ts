@@ -1,6 +1,10 @@
 "use client";
 /** Composite expense-form hook: field state, payer/split validation, submit. */
 
+import { canPreserveSplitType } from "@haalkhata/shared/expense/form/preserveSplit";
+import { receiptCurrencyError } from "@haalkhata/shared/expense/form/receiptCurrency";
+import { expenseFormCurrency } from "@haalkhata/shared/expense/form/formCurrency";
+import { useReceiptScanConsent } from "@/lib/receipt/hooks/useReceiptScanConsent";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { User } from "@haalkhata/protogen/common/v1/common_pb";
@@ -27,7 +31,7 @@ import {
   shareEveryItemWith,
   type DraftLineItem,
   type FormSplitType,
-} from "@/lib/expense/splitForm";
+} from "@haalkhata/shared/expense/form/splitForm";
 import type { ExpenseFormInitial } from "../../../utils/initialValues";
 import type { useNewExpenseAPI } from "./useNewExpenseAPI";
 import { omitKey } from "../utils/omitKey";
@@ -49,6 +53,7 @@ export function useNewExpense(
   editExpenseId: string,
 ) {
   const router = useRouter();
+  const [savedSplit] = useState(expenseAPI.editing?.expense);
 
   const [groupId, setGroupId] = useState(initial.groupId);
   const [personIds, setPersonIds] = useState<string[] | null>(() =>
@@ -94,10 +99,9 @@ export function useNewExpense(
     (groupSummary) => groupSummary.group?.id === groupId,
   )?.group;
 
-  // The one currency every money input on this form is typed in: the
-  // group's frozen currency, or the payer's default for one-off expenses.
-  // Parsing needs it because decimals follow the currency (§36).
-  const currency = selectedGroup?.currency ?? expenseAPI.me?.defaultCurrency ?? "USD";
+  // Inputs, previews and the saved request must share the original currency
+  // when editing; changing a profile default is never a currency conversion.
+  const currency = expenseFormCurrency(selectedGroup?.currency, expenseAPI.editing?.expense?.currency, expenseAPI.me?.defaultCurrency);
 
   /**
    * Every user this form can name, so an ad-hoc participant still resolves
@@ -123,7 +127,7 @@ export function useNewExpense(
     const currentUser = expenseAPI.me;
     if (!currentUser) return [];
     const candidates = selectedGroup
-      ? selectedGroup.members.flatMap((member) => (member.user ? [member.user] : []))
+      ? selectedGroup.members.flatMap((member) => (member.user && !member.user.deleted ? [member.user] : []))
       : (personIds ?? []).flatMap((userId) => {
           const person = usersById.get(userId);
           return person ? [person] : [];
@@ -184,7 +188,7 @@ export function useNewExpense(
     const nextRoster = nextGroupId
       ? (expenseAPI.groups
           .find((groupSummary) => groupSummary.group?.id === nextGroupId)
-          ?.group?.members.flatMap((member) => (member.user ? [member.user.id] : [])) ?? [])
+          ?.group?.members.flatMap((member) => (member.user && !member.user.deleted ? [member.user.id] : [])) ?? [])
       : [currentUserId];
     setGroupId(nextGroupId);
     setPersonIds(nextGroupId ? null : []);
@@ -280,38 +284,6 @@ export function useNewExpense(
   useEffect(() => () => URL.revokeObjectURL(receiptUrl), [receiptUrl]);
 
   /**
-   * Stores a newly chosen receipt photo and clears anything a previous scan
-   * produced, so a second photo cannot leave the first one's items behind.
-   *
-   * The photo is shrunk to upload size first ({@link prepareReceiptImage}).
-   * A phone shot is 3–12 MB, all of which would otherwise cross a mobile
-   * connection for the server to discard — and over 8 MB is rejected outright
-   * after the wait. `isPreparing` covers the decode, which is a visible pause
-   * on a 12-megapixel image and would otherwise look like a dead tap.
-   *
-   * @param picked - The image file chosen or captured by the user.
-   */
-  const pickFile = async (picked: File) => {
-    setProvider("");
-    setError("");
-    setReceiptUrl((previousUrl) => {
-      URL.revokeObjectURL(previousUrl);
-      return "";
-    });
-    setIsPreparing(true);
-    try {
-      const prepared = await prepareReceiptImage(picked);
-      setFile(prepared);
-      setPreviewUrl((previousUrl) => {
-        URL.revokeObjectURL(previousUrl);
-        return URL.createObjectURL(prepared);
-      });
-    } finally {
-      setIsPreparing(false);
-    }
-  };
-
-  /**
    * Whether the browser can actually paint this file in an `<img>`. HEIC is
    * accepted and transcoded server-side, but Chrome and Firefox cannot decode
    * it, so rendering the object URL would show a broken-image icon for a file
@@ -325,15 +297,29 @@ export function useNewExpense(
    * Sends the chosen photo to the AI parser and pours the result into this
    * form: merchant becomes the description, and the extracted lines become
    * the itemized draft with the split switched to match.
+   * @param consentVersion Current sharing terms authorized for this account.
    */
-  const parseNow = () => {
+  const parsePhoto = (consentVersion: string) => {
     if (!file) return;
     setError("");
-    expenseAPI.parse.mutate(file, {
+    expenseAPI.parse.mutate({ file, consentVersion, currency }, {
       onSuccess: (result) => {
+        // The server hands back the JPEG it actually showed the model — the
+        // upload after rotation, downscaling and HEIC transcoding. Showing
+        // that rather than the raw file is what makes an iPhone receipt
+        // viewable at all, and it is the image the numbers came from.
+        if (result.normalizedImage.length > 0) {
+          const blob = new Blob([result.normalizedImage as BlobPart], { type: "image/jpeg" });
+          setReceiptUrl((previousUrl) => {
+            URL.revokeObjectURL(previousUrl);
+            return URL.createObjectURL(blob);
+          });
+        }
         const receipt = result.receipt;
         if (!receipt) return;
         const { people: receiptPeople, currency: receiptCurrency } = receiptContextRef.current;
+        const currencyError = receiptCurrencyError(receipt.currency, receiptCurrency);
+        if (currencyError) { setError(currencyError); return; }
         setProvider(result.provider);
         // Only fill fields the user has not already written in — a scan
         // should not overwrite what somebody deliberately typed first.
@@ -355,22 +341,45 @@ export function useNewExpense(
           })),
         );
         setSplitType("itemized");
-        // The server hands back the JPEG it actually showed the model — the
-        // upload after rotation, downscaling and HEIC transcoding. Showing
-        // that rather than the raw file is what makes an iPhone receipt
-        // viewable at all, and it is the image the numbers came from.
-        if (result.normalizedImage.length > 0) {
-          const blob = new Blob([result.normalizedImage as BlobPart], { type: "image/jpeg" });
-          setReceiptUrl((previousUrl) => {
-            URL.revokeObjectURL(previousUrl);
-            return URL.createObjectURL(blob);
-          });
-        }
       },
       onError: (mutationError) => setError(errorMessage(mutationError)),
     });
   };
 
+  const receiptConsent = useReceiptScanConsent(parsePhoto);
+
+  /**
+   * Stores a newly chosen receipt photo and clears anything a previous scan
+   * produced, so a second photo cannot leave the first one's items behind.
+   *
+   * The photo is shrunk to upload size first ({@link prepareReceiptImage}).
+   * A phone shot is 3–12 MB, all of which would otherwise cross a mobile
+   * connection for the server to discard — and over 8 MB is rejected outright
+   * after the wait. `isPreparing` covers the decode, which is a visible pause
+   * on a 12-megapixel image and would otherwise look like a dead tap.
+   *
+   * @param picked - The image file chosen or captured by the user.
+   */
+  const pickFile = async (picked: File) => {
+    if (expenseAPI.parse.isPending || receiptConsent.busy || receiptConsent.prompt) return;
+    setProvider("");
+    setError("");
+    setReceiptUrl((previousUrl) => {
+      URL.revokeObjectURL(previousUrl);
+      return "";
+    });
+    setIsPreparing(true);
+    try {
+      const prepared = await prepareReceiptImage(picked);
+      setFile(prepared);
+      setPreviewUrl((previousUrl) => {
+        URL.revokeObjectURL(previousUrl);
+        return URL.createObjectURL(prepared);
+      });
+    } finally {
+      setIsPreparing(false);
+    }
+  };
 
   const taxCents = parseMoneyInput(taxInput, currency) ?? 0;
   const tipCents = parseMoneyInput(tipInput, currency) ?? 0;
@@ -411,6 +420,11 @@ export function useNewExpense(
     totalCents > 0 &&
     splitCheck.ok &&
     payerCheck.ok;
+
+  const preserveSplitType = canPreserveSplitType(savedSplit, {
+    groupId, currency, splitType, amountCents: totalCents ?? 0,
+    splits: participantIds.map((userId) => ({ userId, owedCents: parseMoneyInput(splitInputs[userId] ?? "", currency) ?? -1 })),
+  });
 
   /** Builds the request from the current fields and fires create or update. */
   const submit = () => {
@@ -458,7 +472,7 @@ export function useNewExpense(
     const onError = (mutationError: unknown) => setError(errorMessage(mutationError));
     if (editExpenseId) {
       expenseAPI.update.mutate(
-        { expenseId: editExpenseId, expense: request },
+        { expenseId: editExpenseId, expense: request, preserveSplitType },
         { onSuccess, onError },
       );
     } else {
@@ -467,6 +481,8 @@ export function useNewExpense(
   };
 
   return {
+    splitNotice: preserveSplitType ? initial.splitNotice : undefined,
+    currency,
     me: expenseAPI.me,
     groups: expenseAPI.groups,
     friends: expenseAPI.friends,
@@ -524,6 +540,8 @@ export function useNewExpense(
     submit,
     isSaving: expenseAPI.create.isPending || expenseAPI.update.isPending,
     // Receipt scanning.
+    receiptConsent,
+    isReceiptBusy: expenseAPI.parse.isPending || receiptConsent.busy,
     file,
     fileName: file?.name ?? "",
     previewUrl,
@@ -531,7 +549,7 @@ export function useNewExpense(
     isPreviewRenderable,
     pickFile,
     isPreparing,
-    parseNow,
+    parseNow: () => { void receiptConsent.request(); },
     isParsing: expenseAPI.parse.isPending,
     provider,
     // A quantity column is only worth its width when a bill was actually read

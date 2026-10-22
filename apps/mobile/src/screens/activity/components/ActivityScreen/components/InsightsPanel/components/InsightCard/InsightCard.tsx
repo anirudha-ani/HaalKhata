@@ -1,7 +1,8 @@
 /** Insight card: the titled frame every block of the insights dashboard sits in. */
 
 import type { ReactNode } from "react";
-import { StyleSheet, Text, View, type StyleProp, type ViewStyle } from "react-native";
+import { StyleSheet, View, type StyleProp, type ViewStyle } from "react-native";
+import { Text } from "@/components/ui/Text";
 import { colors, fonts, radii, spacing } from "@/lib/theme/theme";
 
 /**

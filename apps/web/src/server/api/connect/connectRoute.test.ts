@@ -15,7 +15,7 @@ vi.mock("@connectrpc/connect-next", () => ({
 }));
 vi.mock("@/server/api/connect/routes", () => ({ default: vi.fn() }));
 vi.mock("@/server/api/connect/csrf", () => ({ csrfGuard: csrfGuardMock }));
-vi.mock("@/server/common/db", () => ({ ensureMigrated: ensureMigratedMock }));
+vi.mock("@/server/common/db/db", () => ({ ensureMigrated: ensureMigratedMock }));
 vi.mock("@/server/common/logger", () => ({ logError: logErrorMock }));
 
 import connectHandler from "@/pages/api/connect/[[...connect]]";

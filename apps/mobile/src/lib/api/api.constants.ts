@@ -10,6 +10,9 @@ export const TOKEN_STORAGE_KEY = "haalkhata-session-token";
 /** AsyncStorage key for the persisted TanStack Query cache. */
 export const QUERY_CACHE_STORAGE_KEY = "haalkhata-query-cache";
 
+/** SecureStore key for a session token whose sign-out has not reached the server yet. */
+export const UNFINISHED_SIGN_OUT_STORAGE_KEY = "haalkhata-unfinished-sign-out";
+
 /** Port the Next.js dev server listens on. */
 const DEV_SERVER_PORT = 3000;
 

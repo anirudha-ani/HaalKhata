@@ -4,59 +4,20 @@
  * token from {@link ../api/session} instead of a cookie.
  */
 
-import { Code, ConnectError, createClient, type Interceptor } from "@connectrpc/connect";
+import { API_TIMEOUT_MS } from "@haalkhata/shared/api/timeouts";
+import { SafetyService } from "@haalkhata/protogen/safety/v1/safety_pb";
+import { ConnectError, createClient } from "@connectrpc/connect";
 import { createConnectTransport } from "@connectrpc/connect-web";
 import { AuthService } from "@haalkhata/protogen/auth/v1/auth_pb";
 import { ExpenseService } from "@haalkhata/protogen/expense/v1/expense_pb";
 import { GroupService } from "@haalkhata/protogen/group/v1/group_pb";
 import { PaymentMethodService } from "@haalkhata/protogen/payment/v1/payment_pb";
+import { PushService } from "@haalkhata/protogen/push/v1/push_pb";
 import { ReceiptService } from "@haalkhata/protogen/receipt/v1/receipt_pb";
 import { PersonalAnalyticsService } from "@haalkhata/protogen/personalanalytics/v1/personalanalytics_pb";
 import { SocialService } from "@haalkhata/protogen/social/v1/social_pb";
-import {
-  BEARER_TRANSPORT,
-  SESSION_RENEWAL_HEADER,
-  SESSION_TRANSPORT_HEADER,
-} from "@haalkhata/shared/auth/sessionRenewal";
 import { resolveApiBaseUrl } from "./api.constants";
-import { clearMobileQueryCache } from "./queryCache";
-import { clearSession, sessionToken, setSessionToken } from "./session";
-
-/**
- * Attaches the bearer token to every RPC, stores the renewed token the server
- * hands back once a session is past half its lifetime (so regular use never
- * hits the absolute expiry), and signs the app out locally when the server
- * reports the token is no longer valid (revoked or expired), so the auth gate
- * returns the user to the login screen.
- */
-const authorization: Interceptor = (next) => async (request) => {
-  const token = sessionToken();
-  if (token) request.header.set("Authorization", `Bearer ${token}`);
-  // Says how this client carries its session: the sign-in RPCs return the
-  // bearer token only to a client that asks, and set a cookie for the rest.
-  request.header.set(SESSION_TRANSPORT_HEADER, BEARER_TRANSPORT);
-  try {
-    const response = await next(request);
-    const renewed = response.header.get(SESSION_RENEWAL_HEADER);
-    // Only while this token is still the live one: a sign-out that raced the
-    // response must not be undone by persisting a renewal for it.
-    if (renewed && token && renewed !== token && sessionToken() === token) {
-      await setSessionToken(renewed);
-    }
-    return response;
-  } catch (error) {
-    if (token && error instanceof ConnectError && error.code === Code.Unauthenticated) {
-      await clearSession();
-      try {
-        await clearMobileQueryCache();
-      } catch {
-        // Memory was already cleared synchronously. Preserve the server's 401
-        // rather than replacing it with an AsyncStorage cleanup failure.
-      }
-    }
-    throw error;
-  }
-};
+import { authorization } from "./authorization";
 
 /**
  * React Native's fetch cannot reliably send typed-array bodies. The transport
@@ -77,6 +38,7 @@ const nativeFetch: typeof fetch = (input, init) => {
 /** Connect transport for every RPC: JSON wire format, bearer auth, server URL from the environment. */
 export const transport = createConnectTransport({
   baseUrl: resolveApiBaseUrl(),
+  defaultTimeoutMs: API_TIMEOUT_MS,
   interceptors: [authorization],
   fetch: nativeFetch,
 });
@@ -93,6 +55,8 @@ export const receiptClient = createClient(ReceiptService, transport);
 export const socialClient = createClient(SocialService, transport);
 /** Typed client for the caller's own payment methods (list, add, edit, remove, star). */
 export const paymentClient = createClient(PaymentMethodService, transport);
+/** Typed client for the phones that receive push notifications and which kinds they receive. */
+export const pushClient = createClient(PushService, transport);
 /** Typed client for the signed-in person's own insights. */
 export const personalAnalyticsClient = createClient(PersonalAnalyticsService, transport);
 
@@ -112,3 +76,6 @@ export function errorMessage(error: unknown): string {
   if (error instanceof Error) return error.message || "something went wrong";
   return "something went wrong";
 }
+
+/** Typed client for private reports and caller-owned blocks. */
+export const safetyClient = createClient(SafetyService, transport);

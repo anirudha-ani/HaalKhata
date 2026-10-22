@@ -55,6 +55,9 @@ export const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 /** Max login/signup attempts per key (IP or email) per 60s window. */
 export const AUTH_RATE_LIMIT = 10;
 
+/** Neutral fallback when an external provider supplies no publishable name. */
+export const PROVIDER_NAME_FALLBACK = "Member";
+
 /**
  * Per-account, per-minute pacing for the three phone operations, each in its
  * own bucket so a fumbled code cannot lock the user out of the confirm.
@@ -159,9 +162,9 @@ export const GOOGLE_SIGN_IN_NONCE_PATTERN = /^[A-Za-z0-9_-]{43}$/;
 export const GOOGLE_SIGN_IN_NONCE_LIFETIME_SECONDS = 60 * 5;
 
 /**
- * Whether email/phone + password sign-in is accepted. Google is the only way
- * into a production deploy; the password flows survive in development so
- * seeded accounts stay reachable without a Google round trip.
+ * Whether email/phone + password sign-in is accepted. Production uses Google
+ * and Apple; the password flows survive in development so seeded accounts
+ * stay reachable without an external provider round trip.
  *
  * Read at call time rather than captured in a module-level constant so tests
  * can exercise both sides of the switch.
@@ -174,7 +177,7 @@ export function passwordAuthEnabled(): boolean {
 
 /**
  * Minimum password length accepted at signup. Development-only, since
- * production accepts Google alone — but a floor that would be weak on a
+ * production accepts Google and Apple — but a floor that would be weak on a
  * public deployment is a floor waiting to be enabled by mistake.
  */
 export const PASSWORD_MIN_LENGTH = 8;

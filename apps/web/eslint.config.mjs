@@ -22,7 +22,7 @@ const config = [
         {
           patterns: [
             {
-              group: ["@/server/*/repo/*", "@/server/common/db"],
+              group: ["@/server/*/repo/**", "@/server/common/db/**"],
               message:
                 "UI must not import the repo layer — go through a usecase (server) or the Connect client (browser).",
             },

@@ -1,16 +1,26 @@
-/** Account screen: profile (name, phone, currency), payment methods, phone verification and merge, sign out. */
+/** Account settings: profile, payments, sharing, privacy, support and account access. */
 
+import { NotificationSettings } from "@/components/account/NotificationSettings/NotificationSettings";
+import { ReceiptPermission } from "@/components/account/ReceiptPermission/ReceiptPermission";
+import { ContactDiscoverySetting } from "@/components/account/ContactDiscoverySetting/ContactDiscoverySetting";
+import { ErrorState } from "@/components/ui/ErrorState";
+import { BlockedPeople } from "@/components/safety/BlockedPeople";
 import type { User } from "@haalkhata/protogen/common/v1/common_pb";
+import { PUSH_COPY } from "@haalkhata/shared/notifications/copy";
+import { ACCOUNT_SETTINGS_COPY } from "@haalkhata/shared/account/settingsCopy";
 import { Check, LogOut, Share2 } from "lucide-react-native";
-import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { Pressable, StyleSheet, TextInput, View } from "react-native";
+import { Text } from "@/components/ui/Text";
+import { DeleteAccount } from "@/components/account/DeleteAccount";
 import { MergePreview } from "@/components/account/MergePreview";
-import { DetailHeader } from "@/components/shell/DetailHeader";
-import { useResponsiveLayout } from "@/components/shell/hooks/useResponsiveLayout";
-import { Screen } from "@/components/shell/Screen";
+import { DetailHeader } from "@/components/shell/DetailHeader/DetailHeader";
+import { useResponsiveLayout } from "@/lib/layout/hooks/useResponsiveLayout";
+import { Screen } from "@/components/shell/Screen/Screen";
 import { Avatar } from "@/components/ui/Avatar";
+import { LegalLinks } from "@/components/legal/LegalLinks";
 import { Button } from "@/components/ui/Button";
 import { PhoneField } from "@/components/ui/PhoneField";
-import { Sheet } from "@/components/ui/Sheet";
+import { Sheet } from "@/components/ui/Sheet/Sheet";
 import { InviteShareSheet } from "@/components/modals/InviteShareSheet";
 import { shareProfileInvite } from "@/lib/invite/share";
 import { Spinner } from "@/components/ui/Spinner";
@@ -28,10 +38,10 @@ import { useAccountAPI, useProfileForm } from "./hooks/useAccount";
  * @returns The account screen content.
  */
 export function AccountScreen() {
-  const { me: currentUser, isLoading } = useAccountAPI();
+  const { me: currentUser, isLoading, loadError, retry } = useAccountAPI();
   return (
     <Screen header={<DetailHeader title="Account" />}>
-      {isLoading || !currentUser ? <Spinner /> : <ProfileForm me={currentUser} />}
+      {isLoading ? <Spinner /> : !currentUser ? <ErrorState error={loadError} retry={retry} /> : <ProfileForm me={currentUser} />}
     </Screen>
   );
 }
@@ -52,134 +62,152 @@ function ProfileForm({ me: currentUser }: { me: User }) {
   return (
     <View style={styles.container}>
       <View style={[styles.profileLayout, isExpanded ? styles.profileLayoutExpanded : null]}>
-        <View style={[styles.profileAside, isExpanded ? styles.profileAsideExpanded : null]}>
-          <View style={styles.summaryCard}>
-            <Avatar size="lg" user={currentUser} />
-            <View style={styles.summaryText}>
-              <Text numberOfLines={1} style={styles.summaryName}>
-                {currentUser.name}
-              </Text>
-              <Text numberOfLines={1} style={styles.summaryContact}>
-                {currentUser.email || currentUser.phone}
-              </Text>
-            </View>
-          </View>
-
-          <Button
-            icon={<LogOut color={colors.inkSoft} size={16} />}
-            label="Sign out"
-            onPress={() => void form.signOut()}
-            variant="outline"
-          />
-        </View>
-
         <View style={[styles.formColumn, isExpanded ? styles.formColumnExpanded : null]}>
-        <View style={styles.formCard}>
-        <TextField
-          label="Display name"
-          maxLength={MAX_USER_NAME_LENGTH}
-          onChangeText={form.setName}
-          value={form.name}
-        />
+          <View style={styles.formCard}>
+            <Text accessibilityRole="header" style={styles.sectionTitle}>{ACCOUNT_SETTINGS_COPY.profile}</Text>
+            <View style={styles.summaryCard}>
+              <Avatar size="lg" user={currentUser} />
+              <View style={styles.summaryText}>
+                <Text numberOfLines={1} style={styles.summaryName}>
+                  {currentUser.name}
+                </Text>
+                <Text numberOfLines={1} style={styles.summaryContact}>
+                  {currentUser.email || currentUser.phone}
+                </Text>
+              </View>
+            </View>
+            <TextField
+              label="Display name"
+              maxLength={MAX_USER_NAME_LENGTH}
+              onChangeText={form.setName}
+              value={form.name}
+            />
 
-        <View style={styles.fieldBlock}>
-          <View style={styles.fieldLabelRow}>
-            <Text style={styles.fieldLabel}>Phone number</Text>
-            {currentUser.phone && form.phoneVerified ? (
-              /* The stamp is stored, not inferred (§35): numbers written
-                 before verification existed must not wear it unearned. */
-              <Text style={styles.verifiedTag}>✓ verified</Text>
-            ) : null}
-            {currentUser.phone && !form.phoneVerified ? (
-              <>
-                <Text style={styles.unverifiedTag}>not verified</Text>
-                <Pressable
-                  disabled={form.isRequestingVerification}
-                  onPress={form.verifyCurrentPhone}
-                >
-                  <Text style={styles.verifyNowText}>
-                    {form.isRequestingVerification ? "Sending code…" : "Verify now"}
-                  </Text>
-                </Pressable>
-              </>
-            ) : null}
-          </View>
-          <PhoneField
-            nationalNumber={form.nationalNumber}
-            onNationalNumberChange={form.setNationalNumber}
-            onRegionChange={form.setRegion}
-            region={form.region}
-          />
-          {/* Beside the field it is about, not with the save button at the
+            <View style={styles.fieldBlock}>
+              <View style={styles.fieldLabelRow}>
+                <Text style={styles.fieldLabel}>Phone number</Text>
+                {currentUser.phone && form.phoneVerified ? (
+                  /* The stamp is stored, not inferred (§35): numbers written
+                     before verification existed must not wear it unearned. */
+                  <Text style={styles.verifiedTag}>✓ verified</Text>
+                ) : null}
+                {currentUser.phone && !form.phoneVerified ? (
+                  <>
+                    <Text style={styles.unverifiedTag}>not verified</Text>
+                    <Pressable
+                      disabled={form.isRequestingVerification}
+                      onPress={form.verifyCurrentPhone}
+                    >
+                      <Text style={styles.verifyNowText}>
+                        {form.isRequestingVerification ? "Sending code…" : "Verify now"}
+                      </Text>
+                    </Pressable>
+                  </>
+                ) : null}
+              </View>
+              <PhoneField
+                nationalNumber={form.nationalNumber}
+                onNationalNumberChange={form.setNationalNumber}
+                onRegionChange={form.setRegion}
+                region={form.region}
+              />
+              {/* Beside the field it is about, not with the save button at the
               bottom of the form: a rejected number is something to correct
               here, and "already on another account" makes no sense read
               under the currency. */}
-          {form.error ? (
-            <Text style={styles.error}>{form.error}</Text>
-          ) : (
-            <Text style={styles.fieldHint}>
-              Only so friends can find you when they split something. Never used to sign in.
-            </Text>
-          )}
-          {form.hasPhone ? (
-            <Pressable
-              accessibilityRole="button"
-              disabled={form.isRemovingPhone}
-              onPress={form.removePhone}
-            >
-              <Text style={styles.removeLink}>
-                {form.isRemovingPhone ? "Removing…" : "Remove this number"}
-              </Text>
-            </Pressable>
-          ) : null}
-        </View>
+              {form.error ? (
+                <Text style={styles.error}>{form.error}</Text>
+              ) : (
+                <Text style={styles.fieldHint}>
+                  Only so friends can find you when they split something. Never used to sign in.
+                </Text>
+              )}
+              {form.hasPhone ? (
+                <Pressable
+                  accessibilityRole="button"
+                  disabled={form.isRemovingPhone}
+                  onPress={form.removePhone}
+                >
+                  <Text style={styles.removeLink}>
+                    {form.isRemovingPhone ? "Removing…" : "Remove this number"}
+                  </Text>
+                </Pressable>
+              ) : null}
+            </View>
 
-        <View style={styles.fieldBlock}>
-          <Text style={styles.fieldLabel}>Default currency</Text>
-          <CurrencyPicker onChange={form.setCurrency} value={form.currency} />
-        </View>
+            <View style={styles.fieldBlock}>
+              <Text style={styles.fieldLabel}>Default currency</Text>
+              <CurrencyPicker onChange={form.setCurrency} value={form.currency} />
+            </View>
 
-        {/* The status lives on the button that caused it: nothing moves, only
+            {/* The status lives on the button that caused it: nothing moves, only
             its colour and label change. */}
-        <Button
-          busy={form.isSaving}
-          disabled={form.name.trim() === ""}
-          icon={form.saved ? <Check color={colors.white} size={16} /> : undefined}
-          label={form.saved ? "Saved" : "Save changes"}
-          onPress={form.save}
-          variant={form.saved ? "positive" : "primary"}
-        />
-
-        {/* The add-me link: the frictionless way for others to find you.
-            Accepting it sends you a normal friend request to confirm. */}
-        <View style={styles.shareBlock}>
-          <Button
-            busy={form.isSharingProfile}
-            icon={<Share2 color={colors.inkSoft} size={16} />}
-            label="Share my profile"
-            onPress={form.shareProfile}
-            variant="outline"
-          />
-          {form.profileNotice ? (
-            <Text style={styles.shareNotice}>{form.profileNotice}</Text>
-          ) : (
-            <Pressable
-              accessibilityRole="button"
-              disabled={form.isResettingProfileLink}
-              onPress={form.resetProfileLink}
-            >
-              <Text style={styles.removeLink}>
-                {form.isResettingProfileLink
-                  ? "Resetting…"
-                  : "Reset the link if it got away from you"}
-              </Text>
-            </Pressable>
-          )}
-        </View>
+            <Button
+              busy={form.isSaving}
+              disabled={form.name.trim() === ""}
+              icon={form.saved ? <Check color={colors.white} size={16} /> : undefined}
+              label={form.saved ? "Saved" : "Save changes"}
+              onPress={form.save}
+              variant={form.saved ? "positive" : "primary"}
+            />
+          </View>
+          <PaymentMethodsSection defaultCurrency={currentUser.defaultCurrency || "USD"} />
         </View>
 
-        {/* A card of its own, outside the form above: each method saves on its own. */}
-        <PaymentMethodsSection defaultCurrency={currentUser.defaultCurrency || "USD"} />
+        <View style={[styles.preferencesColumn, isExpanded ? styles.preferencesColumnExpanded : null]}>
+          <View style={styles.formCard}>
+            <Text accessibilityRole="header" style={styles.sectionTitle}>{ACCOUNT_SETTINGS_COPY.sharing}</Text>
+            <Text style={styles.sectionHint}>{ACCOUNT_SETTINGS_COPY.sharingHint}</Text>
+            <View style={styles.shareBlock}>
+              <Button
+                busy={form.isSharingProfile}
+                icon={<Share2 color={colors.inkSoft} size={16} />}
+                label="Share my profile"
+                onPress={form.shareProfile}
+                variant="outline"
+              />
+              {form.profileNotice ? (
+                <Text style={styles.shareNotice}>{form.profileNotice}</Text>
+              ) : (
+                <Pressable
+                  accessibilityRole="button"
+                  disabled={form.isResettingProfileLink}
+                  onPress={form.resetProfileLink}
+                >
+                  <Text style={styles.resetLink}>
+                    {form.isResettingProfileLink
+                      ? "Resetting…"
+                      : ACCOUNT_SETTINGS_COPY.resetLink}
+                  </Text>
+                </Pressable>
+              )}
+            </View>
+          </View>
+          <View style={styles.formCard}>
+            <Text accessibilityRole="header" style={styles.sectionTitle}>{PUSH_COPY.settingTitle}</Text>
+            <NotificationSettings />
+          </View>
+          <View style={styles.formCard}>
+            <Text accessibilityRole="header" style={styles.sectionTitle}>{ACCOUNT_SETTINGS_COPY.privacy}</Text>
+            <ContactDiscoverySetting answer={currentUser.contactDiscovery} />
+            <View style={styles.dividedSection}><ReceiptPermission embedded /></View>
+            <View style={styles.dividedSection}><BlockedPeople /></View>
+          </View>
+          <View style={styles.formCard}>
+            <Text accessibilityRole="header" style={styles.sectionTitle}>{ACCOUNT_SETTINGS_COPY.support}</Text>
+            <LegalLinks layout="rows" />
+          </View>
+        </View>
+      </View>
+
+      <View style={styles.formCard}>
+        <Text accessibilityRole="header" style={styles.sectionTitle}>{ACCOUNT_SETTINGS_COPY.access}</Text>
+        <View style={[styles.accountActions, isExpanded ? styles.accountActionsExpanded : null]}>
+          <View style={isExpanded ? styles.accountAction : undefined}>
+            <Button icon={<LogOut color={colors.inkSoft} size={16} />} label="Sign out"
+              onPress={() => void form.signOut()} variant="outline" />
+          </View>
+          <View style={isExpanded ? styles.accountAction : undefined}><DeleteAccount /></View>
         </View>
       </View>
 
@@ -249,6 +277,12 @@ function ProfileForm({ me: currentUser }: { me: User }) {
 }
 
 const styles = StyleSheet.create({
+  accountActions: { gap: spacing.sm },
+  accountActionsExpanded: { flexDirection: "row" },
+  accountAction: { flexGrow: 1, flexBasis: 0, minWidth: 0 },
+  dividedSection: { borderTopColor: colors.line, borderTopWidth: StyleSheet.hairlineWidth, paddingTop: spacing.lg },
+  sectionTitle: { color: colors.ink, fontSize: 18, fontWeight: "600" },
+  sectionHint: { color: colors.inkSoft, fontSize: 13, lineHeight: 19 },
   codeInput: {
     backgroundColor: colors.card,
     borderColor: colors.line,
@@ -263,11 +297,6 @@ const styles = StyleSheet.create({
   },
   container: {
     gap: spacing.xl,
-  },
-  currencyChips: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: spacing.sm,
   },
   error: {
     color: colors.brand600,
@@ -290,6 +319,7 @@ const styles = StyleSheet.create({
   fieldLabelRow: {
     alignItems: "center",
     flexDirection: "row",
+    flexWrap: "wrap",
     gap: spacing.sm,
   },
   formCard: {
@@ -304,17 +334,22 @@ const styles = StyleSheet.create({
     gap: spacing.xl,
   },
   formColumnExpanded: {
-    flex: 3,
-    minWidth: 0,
+    flexBasis: 0,
+    flexGrow: 3,
+    flexShrink: 1,
+    width: 0,
   },
-  profileAside: {
-    gap: spacing.lg,
+  preferencesColumn: {
+    gap: spacing.xl,
   },
-  profileAsideExpanded: {
-    flex: 2,
-    minWidth: 0,
+  preferencesColumnExpanded: {
+    flexBasis: 0,
+    flexGrow: 2,
+    flexShrink: 1,
+    width: 0,
   },
   profileLayout: {
+    width: "100%",
     gap: spacing.xl,
   },
   profileLayoutExpanded: {
@@ -327,9 +362,19 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: "600",
     textDecorationLine: "underline",
+    minHeight: 44,
+    paddingVertical: spacing.sm,
+  },
+  resetLink: {
+    color: colors.inkSoft,
+    fontSize: 13,
+    fontWeight: "600",
+    paddingVertical: spacing.sm,
+    minHeight: 44,
+    textAlign: "center",
   },
   shareBlock: {
-    alignItems: "center",
+    alignItems: "stretch",
     gap: spacing.sm,
   },
   shareNotice: {
@@ -347,13 +392,11 @@ const styles = StyleSheet.create({
   },
   summaryCard: {
     alignItems: "center",
-    backgroundColor: colors.card,
-    borderColor: colors.line,
-    borderRadius: radii.lg,
-    borderWidth: 1,
+    borderBottomColor: colors.line,
+    borderBottomWidth: StyleSheet.hairlineWidth,
     flexDirection: "row",
-    gap: spacing.lg,
-    padding: spacing.lg,
+    gap: spacing.md,
+    paddingBottom: spacing.lg,
   },
   summaryContact: {
     color: colors.inkSoft,

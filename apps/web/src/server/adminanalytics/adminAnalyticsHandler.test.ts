@@ -16,7 +16,7 @@ vi.mock("@/server/adminanalytics/usecase/usage.usecase", () => ({ getUsageOvervi
 vi.mock("@/server/api/connect/context", () => ({
   runUsecase: vi.fn((operation: () => Promise<unknown>) => operation()),
 }));
-vi.mock("@/server/common/rateLimit", () => ({ rateLimitCheck: vi.fn() }));
+vi.mock("@/server/common/rateLimit/rateLimit", () => ({ rateLimitCheck: vi.fn() }));
 
 import {
   beginAdminSignIn,
@@ -25,7 +25,7 @@ import {
   signOutAdmin,
 } from "@/server/adminanalytics/usecase/adminSession.usecase";
 import { getUsageOverview } from "@/server/adminanalytics/usecase/usage.usecase";
-import { rateLimitCheck } from "@/server/common/rateLimit";
+import { rateLimitCheck } from "@/server/common/rateLimit/rateLimit";
 import { adminAnalyticsHandler } from "./handler";
 
 const ADMIN_HOST = "admin.haalkhata.app";

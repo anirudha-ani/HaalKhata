@@ -1,8 +1,8 @@
 /** All SQL for the settlements table. */
 
 import type { PoolClient } from "pg";
-import { execute, newId, query, queryOne } from "@/server/common/db";
-import { lockParticipantLedgers, withLedgerTransaction } from "@/server/common/ledgerLocks";
+import { execute, newId, query, queryOne } from "@/server/common/db/db";
+import { lockParticipantLedgers, withLedgerTransaction } from "@/server/common/ledger/ledgerLocks";
 
 /** One row of the settlements table (column names mirror SQL). */
 export interface SettlementRow {
@@ -295,6 +295,20 @@ export async function listSettlementsByGroup(
     `SELECT * FROM settlements WHERE group_id = $1 AND deleted_at IS NULL ORDER BY created_at ASC`,
     [groupId],
     client,
+  );
+}
+
+/**
+ * Loads live payments for many group ledger scopes with one statement.
+ * @param groupIds - Group scopes whose balances are being assembled.
+ * @param client - Snapshot or ledger transaction client.
+ * @returns Live group payments; no query is sent for an empty scope list.
+ */
+export async function listSettlementsByGroups(groupIds: readonly string[], client?: PoolClient): Promise<SettlementRow[]> {
+  if (groupIds.length === 0) return [];
+  return query<SettlementRow>(
+    "SELECT * FROM settlements WHERE group_id = ANY($1::text[]) AND deleted_at IS NULL",
+    [[...new Set(groupIds)]], client,
   );
 }
 

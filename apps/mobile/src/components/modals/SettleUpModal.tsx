@@ -3,12 +3,13 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { User } from "@haalkhata/protogen/common/v1/common_pb";
 import { useRef, useState } from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { StyleSheet, View } from "react-native";
+import { Text } from "@/components/ui/Text";
 import { Avatar } from "@/components/ui/Avatar";
 import { Button } from "@/components/ui/Button";
 import { Chip } from "@/components/ui/Chip";
 import { Money } from "@/components/ui/Money";
-import { Sheet } from "@/components/ui/Sheet";
+import { Sheet } from "@/components/ui/Sheet/Sheet";
 import { TextField } from "@/components/ui/TextField";
 import { errorMessage, expenseClient } from "@/lib/api/connect";
 import { newOperationId } from "@/lib/api/operationId";
@@ -25,6 +26,7 @@ import { colors, radii, spacing } from "@/lib/theme/theme";
 import { usePayMethods } from "./hooks/usePayMethods";
 import { PayeeMethodDetails } from "./PayeeMethodDetails";
 import { PayMethodChips } from "./PayMethodChips";
+import { offerPushExplainer } from "@/lib/push/pushStore";
 
 /**
  * Renders the settle-up sheet: who is paying whom, exactly which balances
@@ -167,6 +169,7 @@ export function SettleUpModal({
       operationIdRef.current = newOperationId();
       for (const moneyKey of MONEY_KEYS) queryClient.invalidateQueries({ queryKey: moneyKey });
       onClose();
+      void offerPushExplainer();
     },
     onError: (mutationError) => {
       setError(errorMessage(mutationError));
@@ -215,7 +218,7 @@ export function SettleUpModal({
       <View style={styles.body}>
         <View style={styles.recipientCard}>
           <Avatar user={other} />
-          <Text numberOfLines={1} style={styles.recipientLine}>
+          <Text style={styles.recipientLine}>
             {received ? (
               <>
                 <Text style={styles.recipientName}>{other.name}</Text> pays you
@@ -282,35 +285,37 @@ export function SettleUpModal({
                     key={scope.scopeId || "one-off"}
                     style={[styles.scopeRow, index > 0 ? styles.scopeRowDivider : null]}
                   >
-                    <Text numberOfLines={1} style={styles.scopeLabel}>
+                    <Text style={styles.scopeLabel}>
                       {scope.label}
                     </Text>
-                    {/* The amount is the group's rerouted edge, not your
-                        direct history with this person — worth a word, since
-                        it can differ from what you remember sharing. */}
-                    {scope.simplified ? (
-                      <View style={styles.pill}>
-                        <Text style={styles.pillText}>simplified</Text>
-                      </View>
-                    ) : null}
-                    <Text style={styles.scopeDirection}>
-                      {scope.netCents > 0 ? "owes you" : "you owe"}
-                    </Text>
-                    <Money
-                      cents={Math.abs(scope.netCents)}
-                      currency={currency}
-                      style={[
-                        styles.scopeAmount,
-                        scope.netCents > 0 ? styles.scopeOwedToYou : styles.scopeOwedByYou,
-                      ]}
-                    />
+                    <View style={styles.scopeFigures}>
+                      {/* The amount is the group's rerouted edge, not your
+                          direct history with this person — worth a word, since
+                          it can differ from what you remember sharing. */}
+                      {scope.simplified ? (
+                        <View style={styles.pill}>
+                          <Text style={styles.pillText}>simplified</Text>
+                        </View>
+                      ) : null}
+                      <Text style={styles.scopeDirection}>
+                        {scope.netCents > 0 ? "owes you" : "you owe"}
+                      </Text>
+                      <Money
+                        cents={Math.abs(scope.netCents)}
+                        currency={currency}
+                        style={[
+                          styles.scopeAmount,
+                          scope.netCents > 0 ? styles.scopeOwedToYou : styles.scopeOwedByYou,
+                        ]}
+                      />
+                    </View>
                   </View>
                 ))}
                 {/* Several balances add up to one amount that changes hands;
                     a single balance is already that amount. */}
                 {reading.rows.length > 1 ? (
-                  <View style={[styles.scopeRow, styles.scopeRowDivider]}>
-                    <Text numberOfLines={1} style={[styles.scopeLabel, styles.scopeNet]}>
+                  <View style={[styles.scopeRow, styles.scopeTotal, styles.scopeRowDivider]}>
+                    <Text style={[styles.scopeLabel, styles.scopeNet]}>
                       {received ? `${firstName} pays you` : `You pay ${firstName}`}
                     </Text>
                     <Money
@@ -438,10 +443,14 @@ const styles = StyleSheet.create({
     paddingBottom: 6,
   },
   amountField: {
-    flex: 1,
+    width: 180,
+    maxWidth: "100%",
+    flexGrow: 1,
+    flexShrink: 1,
   },
   amountRow: {
     flexDirection: "row",
+    flexWrap: "wrap",
     gap: spacing.sm,
   },
   block: {
@@ -518,8 +527,14 @@ const styles = StyleSheet.create({
   },
   scopeLabel: {
     color: colors.ink,
-    flex: 1,
+    flexShrink: 1,
     fontSize: 14,
+  },
+  scopeFigures: {
+    alignItems: "center",
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: spacing.sm,
   },
   scopeNet: {
     fontWeight: "600",
@@ -537,11 +552,16 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   scopeRow: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: spacing.md,
+    gap: spacing.xs,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm + 2,
+  },
+  scopeTotal: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    alignItems: "center",
+    justifyContent: "space-between",
+    columnGap: spacing.md,
   },
   scopeRowDivider: {
     borderTopColor: colors.line,

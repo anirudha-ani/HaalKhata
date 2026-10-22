@@ -8,8 +8,8 @@ import type { AdminAnalyticsService } from "@haalkhata/protogen/adminanalytics/v
 import { requestSurface } from "@/config/adminSurface";
 import { runUsecase } from "@/server/api/connect/context";
 import { uniqueCookieValue } from "@/server/api/connect/credentials";
-import { clientIp } from "@/server/auth/clientIp";
-import { rateLimitCheck } from "@/server/common/rateLimit";
+import { clientIp } from "@/server/auth/request/clientIp";
+import { rateLimitCheck } from "@/server/common/rateLimit/rateLimit";
 import {
   ADMIN_AUTH_RATE_LIMIT,
   ADMIN_READ_RATE_LIMIT,

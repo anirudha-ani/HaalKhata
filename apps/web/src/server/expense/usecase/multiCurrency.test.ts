@@ -14,13 +14,14 @@ import type { UserRow } from "@/server/auth/repo/users.repo";
 // The reads run inside a database snapshot. Every statement is mocked here,
 // so the snapshot is a pass-through handing out a stand-in client: these
 // tests must not need a database to be running.
-vi.mock("@/server/common/db", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@/server/common/db")>()),
+vi.mock("@/server/common/db/db", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/server/common/db/db")>()),
   snapshot: (operation: (client: unknown) => unknown) => operation({}),
 }));
 vi.mock("@/server/expense/repo/expenses.repo", () => ({
   listExpensesBetween: vi.fn(),
   listExpensesByGroup: vi.fn(),
+  listExpensesByGroups: vi.fn(),
   listExpensesInvolvingUser: vi.fn(),
   listOneOffExpensesBetween: vi.fn(),
   loadExpenseChildren: vi.fn(),
@@ -29,10 +30,12 @@ vi.mock("@/server/expense/repo/settlements.repo", () => ({
   listOneOffSettlementsBetween: vi.fn(),
   listSettlementsBetween: vi.fn(),
   listSettlementsByGroup: vi.fn(),
+  listSettlementsByGroups: vi.fn(),
   listSettlementsInvolvingUser: vi.fn(),
 }));
 vi.mock("@/server/group/repo/groups.repo", () => ({
   findGroupById: vi.fn(),
+  findGroupsByIds: vi.fn(),
   isMember: vi.fn(),
   listGroupsByUser: vi.fn(),
   listMembers: vi.fn(),

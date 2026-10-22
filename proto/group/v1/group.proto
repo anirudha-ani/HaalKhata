@@ -27,6 +27,18 @@ service GroupService {
   // which is why it must be a shared group fact and not a per-viewer view:
   // two debt routings live at once would let one debt be paid down both.
   rpc SetSimplifyDebts(SetSimplifyDebtsRequest) returns (Group);
+  // Any member may archive a group once every balance is settled, or
+  // unarchive it to resume adding expenses. History remains accessible.
+  rpc SetStatus(SetStatusRequest) returns (Group);
+}
+
+// Group lifecycle. DELETED is reserved for a future soft-delete flow;
+// SetStatus currently accepts only ACTIVE and ARCHIVED.
+enum GroupStatus {
+  GROUP_STATUS_UNSPECIFIED = 0;
+  GROUP_STATUS_ACTIVE = 1;
+  GROUP_STATUS_ARCHIVED = 2;
+  GROUP_STATUS_DELETED = 3;
 }
 
 message Member {
@@ -47,6 +59,9 @@ message Group {
   // everywhere: the balances tab, friend ledgers, the dashboard, and what
   // the settlement guards will accept.
   bool simplify_debts = 8;
+  // Lifecycle state; new groups are ACTIVE. ARCHIVED groups preserve history
+  // and cannot receive ledger changes.
+  GroupStatus status = 9;
 }
 
 message CreateGroupRequest {
@@ -119,4 +134,10 @@ message SetSimplifyDebtsRequest {
   // Desired state; setting the state it is already in is a no-op, not an
   // error, so two members flipping it together cannot fail each other.
   bool simplify = 2;
+}
+
+message SetStatusRequest {
+  string group_id = 1;
+  // Desired state; repeating the current state is a no-op.
+  GroupStatus status = 2;
 }

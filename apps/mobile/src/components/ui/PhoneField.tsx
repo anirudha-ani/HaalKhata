@@ -2,12 +2,13 @@
 
 import { ChevronDown } from "lucide-react-native";
 import { useState } from "react";
-import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { Pressable, StyleSheet, TextInput, View } from "react-native";
+import { Text } from "@/components/ui/Text";
 import { PHONE_COUNTRIES, phoneCountry, splitE164 } from "@haalkhata/shared/phone/phone";
 import { matchesTerms, searchTerms } from "@haalkhata/shared/search/filter";
 import { colors, radii, spacing } from "@/lib/theme/theme";
 import { SearchField } from "./SearchField";
-import { Sheet } from "./Sheet";
+import { Sheet } from "./Sheet/Sheet";
 import { MAX_VISIBLE_COUNTRIES } from "./ui.constants";
 
 /**
@@ -192,6 +193,7 @@ const styles = StyleSheet.create({
     fontSize: 13,
   },
   input: {
+    minHeight: 48,
     color: colors.ink,
     flex: 1,
     fontSize: 15,

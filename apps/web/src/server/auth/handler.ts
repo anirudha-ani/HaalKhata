@@ -3,11 +3,15 @@
 import type { ServiceImpl } from "@connectrpc/connect";
 import type { HandlerContext } from "@connectrpc/connect";
 import type { AuthService } from "@haalkhata/protogen/auth/v1/auth_pb";
-import * as auth from "@/server/auth/usecase/auth.usecase";
-import * as accountMerge from "@/server/auth/usecase/accountMerge.usecase";
+import * as auth from "@/server/auth/usecase/account/auth.usecase";
+import * as accountMerge from "@/server/auth/usecase/merge/accountMerge.usecase";
+import * as appleSignIn from "@/server/auth/usecase/apple/appleSignIn.usecase";
+import { getSignInOptions } from "@/server/auth/usecase/apple/signInOptions.usecase";
+import { deleteAccount } from "@/server/auth/usecase/deletion/accountDeletion.usecase";
+import { setContactDiscovery } from "@/server/auth/usecase/account/contactDiscovery.usecase";
 import { clearSessionCookie, requireUser, runUsecase, setSessionCookie } from "@/server/api/connect/context";
 import { wantsBearerToken } from "@/server/api/connect/credentials";
-import { rateLimitCheck } from "@/server/common/rateLimit";
+import { rateLimitCheck } from "@/server/common/rateLimit/rateLimit";
 import {
   AUTH_RATE_LIMIT,
   normalizePhone,
@@ -16,8 +20,8 @@ import {
   PHONE_SEND_RATE_LIMIT,
 } from "@/server/auth/auth.constants";
 import { ConnectError, Code } from "@connectrpc/connect";
-import { clientIp } from "@/server/auth/clientIp";
-import { enforcePhoneSendLimits } from "@/server/auth/phoneRateLimit";
+import { clientIp } from "@/server/auth/request/clientIp";
+import { enforcePhoneSendLimits } from "@/server/auth/request/phoneRateLimit";
 
 /**
  * Enforces the per-IP login/signup rate limit, throwing a ResourceExhausted
@@ -75,6 +79,33 @@ function deliverSession<Result extends { token: string }>(
 
 /** AuthService implementation; every method delegates to auth.usecase and only manages cookies here. */
 export const authHandler: ServiceImpl<typeof AuthService> = {
+  /** Returns public provider availability without requiring a signed-in account. */
+  async getSignInOptions(_request, handlerContext) {
+    enforceAuthRateLimit(handlerContext);
+    return runUsecase(getSignInOptions, handlerContext);
+  },
+  /** Permanently erases the authenticated account, then expires the browser session. */
+  async deleteAccount(request, handlerContext) {
+    enforceAuthRateLimit(handlerContext);
+    await runUsecase(async () => deleteAccount(await requireUser(handlerContext), request.confirmation), handlerContext);
+    clearSessionCookie(handlerContext);
+    return {};
+  },
+  /** Issues a native Apple nonce or a verifier-bound browser challenge. */
+  async beginAppleSignIn(request, handlerContext) {
+    enforceAuthRateLimit(handlerContext);
+    return runUsecase(() => appleSignIn.beginAppleSignIn(request), handlerContext);
+  },
+  /** Verifies native Apple proof and delivers the appropriate session credential. */
+  async logInWithApple(request, handlerContext) {
+    enforceAuthRateLimit(handlerContext);
+    return deliverSession(handlerContext, await runUsecase(() => appleSignIn.logInWithApple(request), handlerContext));
+  },
+  /** Redeems a browser callback using the initiating client's private verifier. */
+  async completeAppleSignIn(request, handlerContext) {
+    enforceAuthRateLimit(handlerContext);
+    return deliverSession(handlerContext, await runUsecase(() => appleSignIn.completeAppleSignIn(request), handlerContext));
+  },
   /** Creates (or claims) an account, then starts a session the way the client carries it. */
   async signUp(request, handlerContext) {
     enforceAuthRateLimit(handlerContext);
@@ -165,6 +196,14 @@ export const authHandler: ServiceImpl<typeof AuthService> = {
   async completeOnboarding(_request, handlerContext) {
     return runUsecase(
       async () => auth.completeOnboarding(await requireUser(handlerContext)),
+      handlerContext,
+    );
+  },
+
+  /** Records whether people can find the caller from their contacts. */
+  async setContactDiscovery(request, handlerContext) {
+    return runUsecase(
+      async () => setContactDiscovery(await requireUser(handlerContext), request.discoverable),
       handlerContext,
     );
   },

@@ -1,5 +1,9 @@
 /** Expense business logic: validation + authoritative splits, comments, settlements, activity/notification fan-out. */
 
+import { canPreserveSplitType } from "@haalkhata/shared/expense/form/preserveSplit";
+import { blockedPairExists } from "@/server/safety/repo/safety.repo";
+import { assertSafeText } from "@/server/safety/usecase/contentFilter";
+import { isRegisteredUser } from "@/server/auth/usecase/identity/user.mapper";
 import type { CreateExpenseRequest } from "@haalkhata/protogen/expense/v1/expense_pb";
 import type { PoolClient } from "pg";
 import {
@@ -17,11 +21,15 @@ import {
 } from "@/server/expense/repo/expenses.repo";
 import {
   findGroupById,
+  findGroupsByIds,
   isMember,
   listCoMemberIds,
   listGroupsByUser,
   listMembers,
 } from "@/server/group/repo/groups.repo";
+import { assertGroupActive, assertGroupsActive } from "@/server/group/usecase/groupArchive";
+import { GROUP_STATUS_PROTO } from "@/server/group/group.constants";
+import { GroupStatus } from "@haalkhata/protogen/group/v1/group_pb";
 import { findUserById, findUsersByIds, type UserRow } from "@/server/auth/repo/users.repo";
 import { insertFriendship, listFriendIds } from "@/server/social/repo/friendships.repo";
 import { insertComment, listCommentsByExpense } from "@/server/expense/repo/comments.repo";
@@ -37,7 +45,7 @@ import {
   type SettlementRow,
 } from "@/server/expense/repo/settlements.repo";
 import { insertActivity, listActivityForExpense } from "@/server/social/repo/activity.repo";
-import { insertNotifications } from "@/server/social/repo/notifications.repo";
+import { insertNotificationRows, insertNotifications } from "@/server/social/repo/notifications.repo";
 import {
   computeItemizedSplits,
   computeSplits,
@@ -58,17 +66,18 @@ import {
   positionDigest,
 } from "@/server/expense/domain/settlementAllocation";
 import { oneOffPairKey, settledExpenseIds } from "@/server/expense/domain/settledExpenses";
-import { snapshot } from "@/server/common/db";
-import { denied, invalid, notFound } from "@/server/common/errors";
+import { readerShareLine } from "@/server/expense/domain/readerShareLine";
+import { snapshot } from "@/server/common/db/db";
+import { UsecaseError, denied, invalid, notFound } from "@/server/common/errors";
 import {
   lockExpenseLedger,
   lockGroupLedgers,
   lockParticipantLedgers,
   withLedgerTransaction,
-} from "@/server/common/ledgerLocks";
-import { isRealCalendarDate, normalizeCurrencyCode } from "@/server/common/validation";
-import { beginOperation, finishOperation } from "@/server/common/operations";
-import { toPublicUser } from "@/server/auth/usecase/user.mapper";
+} from "@/server/common/ledger/ledgerLocks";
+import { isRealCalendarDate, normalizeCurrencyCode } from "@/server/common/validation/validation";
+import { beginOperation, finishOperation } from "@/server/common/ledger/operations";
+import { toPublicUser } from "@/server/auth/usecase/identity/user.mapper";
 import {
   COMMENT_PREVIEW_LENGTH,
   EXPENSE_CATEGORIES,
@@ -152,6 +161,9 @@ interface ExpenseAmounts {
  * @returns The trimmed, non-empty description.
  */
 function validateExpenseRequest(request: CreateExpenseRequest): string {
+  assertSafeText(request.description);
+  assertSafeText(request.notes);
+  for (const item of request.items) assertSafeText(item.name);
   const description = request.description.trim();
   if (description.length === 0) invalid("description is required");
   if (description.length > MAX_EXPENSE_DESCRIPTION_LENGTH) {
@@ -313,6 +325,7 @@ async function validateExpenseParticipants(
   userId: string,
   involved: string[],
   scope: ExpenseScope,
+  existingIds: string[] = [],
 ): Promise<void> {
   const users = await findUsersByIds(involved);
   if (users.length !== involved.length) invalid("unknown participant");
@@ -321,13 +334,14 @@ async function validateExpenseParticipants(
   // that keeps a bearer invite link from ever moving money. Legacy rows
   // with pre-§33 history keep it; they just can't join NEW expenses.
   const unregistered = users.find(
-    (participant) => participant.password_hash === null && participant.google_sub === null,
+    (participant) => !isRegisteredUser(participant),
   );
   if (unregistered) {
     invalid(
       `${unregistered.name} hasn't joined HaalKhata yet — remind them to sign up before splitting with them`,
     );
   }
+  if (await blockedPairExists([...new Set([...involved, userId])], existingIds)) denied("a blocked person cannot be included in this expense");
   const { groupId, groupMemberIds } = scope;
   if (groupId) {
     for (const participantId of involved) {
@@ -363,6 +377,7 @@ async function validateExpenseParticipants(
 async function buildExpenseWrite(
   userId: string,
   request: CreateExpenseRequest,
+  existingIds: string[] = [],
 ): Promise<ExpenseWrite> {
   const description = validateExpenseRequest(request);
   const scope = await resolveExpenseScope(userId, request);
@@ -374,7 +389,7 @@ async function buildExpenseWrite(
       ...request.payers.map((payer) => payer.userId),
     ]),
   ];
-  await validateExpenseParticipants(userId, involved, scope);
+  await validateExpenseParticipants(userId, involved, scope, existingIds);
 
   return {
     groupId: scope.groupId,
@@ -451,6 +466,7 @@ async function assertLockedGroupParticipants(
 ): Promise<void> {
   const memberIds = new Set((await listMembers(groupId, client)).map((member) => member.id));
   if (!memberIds.has(actorId)) denied("you are not a member of this group");
+  await assertGroupActive(groupId, client);
   if (participantIds.some((participantId) => !memberIds.has(participantId))) {
     invalid("all participants must be group members");
   }
@@ -491,7 +507,8 @@ function storedExpenseWrite(expense: ExpenseRow, children: ExpenseChildren): Exp
 
 /**
  * Fans out an expense change: one activity entry for its participants plus a
- * notification for every participant except the actor.
+ * notification for every participant except the actor, each carrying that
+ * reader's own money line.
  *
  * @param actorId - User who performed the change.
  * @param expenseId - Id of the affected expense (used for links).
@@ -509,7 +526,7 @@ async function recordExpenseActivity(
   verb: "added" | "updated" | "deleted",
   client: PoolClient,
 ): Promise<void> {
-  const actor = (await findUserById(actorId))!;
+  const actor = (await findUserById(actorId, client))!;
   const group = write.groupId ? await findGroupById(write.groupId, client) : undefined;
   const locationSuffix = group ? ` in "${group.name}"` : "";
   // The participants plus whoever recorded it — never the whole group. A
@@ -532,14 +549,29 @@ async function recordExpenseActivity(
     },
     client,
   );
-  await insertNotifications(
-    involvedUserIds(write).filter((recipientId) => recipientId !== actorId),
-    {
-      type: `expense_${verb}`,
-      title: `${actor.name} ${verb} "${write.description}"`,
-      body: group ? group.name : "One-off expense",
-      link: `/expenses/${expenseId}`,
-    },
+  // Each reader's bell row (and so their push) says what the expense means
+  // for them: "Goa trip · you owe Ani ৳600". One row per reader, because the
+  // money line is theirs alone, written in one statement while the ledger
+  // lock is held.
+  const payerIds = [...new Set(write.payers.map((payer) => payer.userId))];
+  const payerNames = new Map(
+    (await findUsersByIds(payerIds, client)).map((payer) => [payer.id, payer.name] as const),
+  );
+  const scopeName = group ? group.name : "One-off expense";
+  await insertNotificationRows(
+    involvedUserIds(write)
+      .filter((participantId) => participantId !== actorId)
+      .map((recipientId) => {
+        const moneyLine = readerShareLine(write, recipientId, verb, payerNames);
+        return {
+          userId: recipientId,
+          actorId,
+          type: `expense_${verb}`,
+          title: `${actor.name} ${verb} "${write.description}"`,
+          body: moneyLine ? `${scopeName} · ${moneyLine}` : scopeName,
+          link: `/expenses/${expenseId}`,
+        };
+      }),
     client,
   );
 }
@@ -565,6 +597,8 @@ export async function createExpense(userId: string, request: CreateExpenseReques
     // will not touch.
     const claim = await beginOperation(operation, request, client);
     if (claim.replayOf !== null) return claim.replayOf;
+    // A saved operation still replays after archiving. Only a new write
+    // needs the active-state check, under the ledger lock below.
     if (write.groupId) {
       await lockGroupLedgers(client, [write.groupId]);
       await assertLockedGroupParticipants(write.groupId, userId, participantIds, client);
@@ -708,6 +742,7 @@ async function loadExpenseForEdit(
  * @param userId - Authenticated caller performing the update.
  * @param expenseId - Id of the expense to update.
  * @param request - Full replacement request (same shape as create).
+ * @param preserveSplitType - Retain an existing ratio mode only for identical allocations.
  * @returns The updated expense as a proto message init shape.
  * @throws UsecaseError if the expense is missing/deleted, the caller lacks
  *   access, or validation fails.
@@ -716,9 +751,10 @@ export async function updateExpense(
   userId: string,
   expenseId: string,
   request: CreateExpenseRequest,
+  preserveSplitType = false,
 ) {
-  await loadExpenseForEdit(userId, expenseId, request);
-  const write = await buildExpenseWrite(userId, request);
+  const existing = await loadExpenseForEdit(userId, expenseId, request);
+  const write = await buildExpenseWrite(userId, request, storedParticipantIds(existing.expense, existing.children));
   await withLedgerTransaction(async (client) => {
     await lockExpenseLedger(client, expenseId);
     const { expense: current, children } = await loadExpenseForEdit(
@@ -740,6 +776,22 @@ export async function updateExpense(
       );
     } else {
       await lockParticipantLedgers(client, participantIds);
+    }
+    if (preserveSplitType) {
+      const saved = {
+        splitType: current.split_type,
+        amountCents: current.amount_cents,
+        currency: current.currency,
+        groupId: current.group_id ?? "",
+        splits: (children.splits.get(expenseId) ?? []).map((split) => ({
+          userId: split.user_id,
+          owedCents: split.owed_cents,
+        })),
+      };
+      if (!canPreserveSplitType(saved, { ...write, groupId: write.groupId ?? "" })) {
+        throw new UsecaseError("failed_precondition", "The saved split changed. Reload the expense before editing it.");
+      }
+      write.splitType = current.split_type;
     }
     write.createdBy = current.created_by;
     await replaceExpense(expenseId, write, client);
@@ -774,6 +826,8 @@ export async function deleteExpense(userId: string, expenseId: string): Promise<
     const participantIds = storedParticipantIds(existing, children);
     if (existing.group_id) {
       await lockGroupLedgers(client, [existing.group_id]);
+      await assertCanDelete(userId, existing, client);
+      await assertGroupActive(existing.group_id, client);
     } else {
       await lockParticipantLedgers(client, participantIds);
     }
@@ -934,7 +988,7 @@ export async function getExpense(userId: string, expenseId: string) {
   // and whether a payment came after it — are read at one instant, so an
   // edit or a payment committing mid-read cannot pair one version's amount
   // with another's shares.
-  const { expenseRow, children, settledForViewer, hasLaterSettlement } = await snapshot(
+  const { expenseRow, children, settledForViewer, hasLaterSettlement, groupStatus } = await snapshot(
     async (client) => {
       // Expenses are never hard-deleted, so the row checked above is still there.
       const current = (await findExpenseById(expenseId, client)) ?? found;
@@ -997,12 +1051,13 @@ export async function getExpense(userId: string, expenseId: string) {
         children: currentChildren,
         settledForViewer: settled,
         hasLaterSettlement: laterSettlement,
+        groupStatus: scopeGroup ? GROUP_STATUS_PROTO[scopeGroup.status] : GroupStatus.UNSPECIFIED,
       };
     },
   );
 
   // Words, not figures: comments and the edit history are read afterwards.
-  const comments = await listCommentsByExpense(expenseId);
+  const comments = await listCommentsByExpense(expenseId, userId);
   // The people to resolve are the comment authors AND whoever touched the
   // expense, looked up together so the history does not cost a second round
   // trip for a set that mostly overlaps.
@@ -1026,6 +1081,7 @@ export async function getExpense(userId: string, expenseId: string) {
   return {
     settledForViewer,
     hasLaterSettlement,
+    groupStatus,
     expense: toExpense(expenseRow, children),
     comments: comments.map((comment) => ({
       id: comment.id,
@@ -1060,6 +1116,7 @@ export async function addComment(userId: string, expenseId: string, body: string
   // exactly the conversation the kept row is there to host.
   if (!expenseRow) notFound("expense not found");
   await assertCanTouch(userId, expenseRow);
+  assertSafeText(body);
   const trimmed = body.trim();
   if (trimmed.length === 0) invalid("comment cannot be empty");
   if (trimmed.length > MAX_COMMENT_LENGTH) {
@@ -1101,6 +1158,7 @@ export async function addComment(userId: string, expenseId: string, body: string
     await insertNotifications(
       [...involved].filter((recipientId) => recipientId !== userId),
       {
+        actorId: userId,
         type: "comment",
         title: `${author.name} commented on "${expenseRow.description}"`,
         body: preview,
@@ -1299,6 +1357,7 @@ async function storeGroupSettlement(
   const { userId, request, payerId, creditorId, groupId, currency } = context;
   if (!groupId) throw new Error("storeGroupSettlement requires a group id");
   await lockGroupLedgers(client, [groupId]);
+  await assertGroupActive(groupId, client);
   const callerIsMember = await isMember(groupId, userId, client);
   const recipientIsMember = await isMember(groupId, request.toUserId, client);
   if (!callerIsMember || !recipientIsMember) {
@@ -1408,7 +1467,9 @@ async function storeSettlementPortions(
 
   const { method, methodLabel } = await resolveSettlementMethod(request, creditorId, client);
   const rows: SettlementRow[] = [];
-  for (const portion of allocateSettlement(scopes, request.amountCents)) {
+  const portions = allocateSettlement(scopes, request.amountCents);
+  await assertGroupsActive(portions.flatMap((portion) => portion.groupId ? [portion.groupId] : []), client);
+  for (const portion of portions) {
     rows.push(
       await insertSettlement(
         {
@@ -1489,6 +1550,9 @@ async function storeNetSettlement(
 
   const { method, methodLabel } = await resolveSettlementMethod(request, creditorId, client);
   const plan = planNetSettlement(owing, opposing, request.amountCents);
+  await assertGroupsActive([...plan.cash, ...plan.offsetOwing, ...plan.offsetOpposing].flatMap(
+    (portion) => portion.groupId ? [portion.groupId] : [],
+  ), client);
   // Nothing pointing the other way means nothing to cancel: the rows are an
   // ordinary payment and need no parent.
   const netSettlementId =
@@ -1587,12 +1651,13 @@ async function announceSettlement(
   const friendLink = `/friends/${request.toUserId}`;
   const outcome = stored.netOutcome;
   const netted = outcome !== null && outcome.offsetCents > 0;
+  const groupIds = [...new Set(stored.rows.flatMap((entry) => entry.group_id ? [entry.group_id] : []))];
+  const groups = groupIds.length > 0 ? await findGroupsByIds(groupIds, client) : [];
+  const groupsById = new Map(groups.map((group) => [group.id, group]));
   // Each portion belongs in its own scope's feed, but remains visible only to
   // the payer and recipient rather than every member of a group.
   for (const settlement of stored.rows) {
-    const group = settlement.group_id
-      ? await findGroupById(settlement.group_id, client)
-      : undefined;
+    const group = settlement.group_id ? groupsById.get(settlement.group_id) : undefined;
     const amount = formatMoney(settlement.amount_cents, currency);
     const link = settlement.group_id ? `/groups/${settlement.group_id}` : friendLink;
     if (settlement.method === OFFSET_SETTLEMENT_METHOD) {
@@ -1635,7 +1700,7 @@ async function announceSettlement(
       client,
     );
   }
-  const notifyGroup = groupId ? await findGroupById(groupId, client) : undefined;
+  const notifyGroup = groupId ? groupsById.get(groupId) : undefined;
   const cancelled = netted ? formatMoney(outcome.offsetCents, currency) : "";
   const nettedBody = !netted
     ? ""
@@ -1645,6 +1710,7 @@ async function announceSettlement(
   await insertNotifications(
     [request.toUserId],
     {
+      actorId: userId,
       type: "settlement",
       title: request.received
         ? `${actor.name} recorded your payment of ${formatMoney(request.amountCents, currency)}`
@@ -1770,12 +1836,13 @@ export async function deleteSettlement(userId: string, settlementId: string): Pr
     const unit = existing.net_settlement_id
       ? await listSettlementsByNetSettlement(existing.net_settlement_id, client)
       : [existing];
-    await lockGroupLedgers(
-      client,
-      unit.flatMap((portion) => (portion.group_id ? [portion.group_id] : [])),
-    );
+    const groupIds = [...new Set(unit.flatMap((portion) => (portion.group_id ? [portion.group_id] : [])))];
+    await lockGroupLedgers(client, groupIds);
     const current = await findSettlementById(settlementId, client);
     if (!current || current.deleted_at) notFound("payment not found");
+    // Removing a net settlement reopens every scope in its unit, even when
+    // the selected row itself lives outside an archived group.
+    const groupsById = await assertGroupsActive(groupIds, client);
     let removed: SettlementRow[];
     if (current.net_settlement_id) {
       removed = await softDeleteNetSettlement(current.net_settlement_id, userId, client);
@@ -1796,7 +1863,7 @@ export async function deleteSettlement(userId: string, settlementId: string): Pr
     // to go missing while the removal stands. One line per scope touched, so
     // each group's feed says what came back there.
     for (const portion of removed) {
-      const group = portion.group_id ? await findGroupById(portion.group_id, client) : undefined;
+      const group = portion.group_id ? groupsById.get(portion.group_id) : undefined;
       const amount = formatMoney(portion.amount_cents, portion.currency);
       const wasOffset = portion.method === OFFSET_SETTLEMENT_METHOD;
       await insertActivity(
@@ -1822,6 +1889,7 @@ export async function deleteSettlement(userId: string, settlementId: string): Pr
     await insertNotifications(
       [otherUserId],
       {
+        actorId: userId,
         type: "settlement_deleted",
         title: `${actor.name} removed the payment of ${cashAmount}`,
         body:

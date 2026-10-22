@@ -2,11 +2,12 @@
 
 import type { PaymentMethod } from "@haalkhata/protogen/payment/v1/payment_pb";
 import { Plus } from "lucide-react-native";
-import { Pressable, StyleSheet, Switch, Text, View } from "react-native";
+import { Pressable, StyleSheet, Switch, View } from "react-native";
+import { Text } from "@/components/ui/Text";
 import { Button } from "@/components/ui/Button";
 import { Chip } from "@/components/ui/Chip";
 import { CurrencyPicker } from "@/components/ui/CurrencyPicker";
-import { Sheet } from "@/components/ui/Sheet";
+import { Sheet } from "@/components/ui/Sheet/Sheet";
 import { TextField } from "@/components/ui/TextField";
 import {
   METHOD_NAME_PLACEHOLDER,

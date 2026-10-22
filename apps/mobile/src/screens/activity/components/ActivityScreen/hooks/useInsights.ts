@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { errorMessage } from "@/lib/api/connect";
+import { usePullToRefresh } from "@/lib/hooks/usePullToRefresh";
 import {
   DEFAULT_INSIGHT_RANGE,
   pickActiveMonth,
@@ -35,6 +36,8 @@ export function useInsights(enabled: boolean) {
   const [chosenMonth, setChosenMonth] = useState("");
   const query = useInsightsAPI(range, enabled);
 
+  const pull = usePullToRefresh(() => query.refetch());
+
   const insights = query.data;
   const currencies = insights?.currencies ?? [];
 
@@ -50,9 +53,9 @@ export function useInsights(enabled: boolean) {
     isLoading: query.isLoading,
     /** True while a different window is loading over the one still shown. */
     isSwitching: query.isPlaceholderData,
-    /** True while a pull-to-refresh of the window already shown is in flight. */
-    isRefreshing: query.isRefetching && !query.isPlaceholderData,
+    /** True from the person's pull until the refetch settles, and at no other time. */
+    isRefreshing: pull.isRefreshing,
     error: query.error ? errorMessage(query.error) : "",
-    refresh: () => void query.refetch(),
+    refresh: pull.refresh,
   };
 }

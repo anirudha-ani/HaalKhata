@@ -1,6 +1,10 @@
 /** Group business logic: create/list/get, connected-member enrollment, balance-guarded removal. */
 
+import { blockedPairExists } from "@/server/safety/repo/safety.repo";
+import { assertSafeText } from "@/server/safety/usecase/contentFilter";
+import { isRegisteredUser } from "@/server/auth/usecase/identity/user.mapper";
 import type { PoolClient } from "pg";
+import { GroupStatus } from "@haalkhata/protogen/group/v1/group_pb";
 import {
   addMember,
   findGroupById,
@@ -14,6 +18,7 @@ import {
   removeMember,
   updateMemberRole,
   updateSimplifyDebts,
+  updateGroupStatus,
 } from "@/server/group/repo/groups.repo";
 import type { UserRow } from "@/server/auth/repo/users.repo";
 import {
@@ -26,18 +31,19 @@ import { EMAIL_PATTERN, normalizePhone, PHONE_FORMAT_HINT } from "@/server/auth/
 import { insertFriendship, listFriendIds } from "@/server/social/repo/friendships.repo";
 import { insertActivity } from "@/server/social/repo/activity.repo";
 import { insertNotifications } from "@/server/social/repo/notifications.repo";
-import { userNetInGroup, userNetInGroups } from "@/server/expense/usecase/balance.usecase";
+import { groupIsSettled, userNetInGroup, userNetInGroups } from "@/server/expense/usecase/balance.usecase";
 import { denied, invalid, notFound, UsecaseError } from "@/server/common/errors";
-import { toInt32Cents } from "@/server/common/money";
-import { normalizeCurrencyCode } from "@/server/common/validation";
+import { toInt32Cents } from "@/server/common/money/money";
+import { normalizeCurrencyCode } from "@/server/common/validation/validation";
 import {
   GROUP_TYPES,
+  GROUP_STATUS_STORAGE,
   MAX_GROUP_MEMBER_IDS_PER_REQUEST,
   MAX_GROUP_NAME_LENGTH,
   MEMBER_ROLE,
   OWNER_ROLE,
 } from "@/server/group/group.constants";
-import { lockGroupLedgers, withLedgerTransaction } from "@/server/common/ledgerLocks";
+import { lockGroupLedgers, withLedgerTransaction } from "@/server/common/ledger/ledgerLocks";
 import { toGroup, toMember } from "./group.mapper";
 
 /**
@@ -53,7 +59,7 @@ import { toGroup, toMember } from "./group.mapper";
  */
 async function assertGroupOwner(groupId: string, userId: string, client?: PoolClient) {
   const group = await findGroupById(groupId, client);
-  if (!group) notFound("group not found");
+  if (!group || group.status === GROUP_STATUS_STORAGE[GroupStatus.DELETED]) notFound("group not found");
   const role = await memberRole(groupId, userId, client);
   if (role !== OWNER_ROLE) denied("only the group owner can do this");
   return group;
@@ -80,7 +86,7 @@ async function assertGroupOwner(groupId: string, userId: string, client?: PoolCl
  */
 async function assertGroupMember(groupId: string, userId: string, client?: PoolClient) {
   const group = await findGroupById(groupId, client);
-  if (!group) notFound("group not found");
+  if (!group || group.status === GROUP_STATUS_STORAGE[GroupStatus.DELETED]) notFound("group not found");
   if (!(await isMember(groupId, userId, client))) denied("you are not a member of this group");
   return group;
 }
@@ -192,7 +198,7 @@ async function enrollMembers(
     // §33c: a seat belongs only to somebody who can open the app. Invited
     // friends look pickable on stale clients, so the gate lives here, where
     // CreateGroup and AddMembers converge.
-    if (user.password_hash === null && user.google_sub === null) {
+    if (!isRegisteredUser(user)) {
       throw new UsecaseError(
         "failed_precondition",
         `${user.name} hasn't joined HaalKhata yet — invite them to sign up first`,
@@ -266,7 +272,7 @@ function assertPhoneShape(phone: string): string {
  * @returns True when neither credential is set.
  */
 function isUnregistered(user: UserRow): boolean {
-  return user.password_hash === null && user.google_sub === null;
+  return !isRegisteredUser(user);
 }
 
 /**
@@ -287,6 +293,7 @@ export async function createGroup(
   input: { name: string; type: string; currency: string; memberIds?: string[] },
 ) {
   assertMemberIdCount(input.memberIds ?? []);
+  assertSafeText(input.name);
   const name = input.name.trim();
   if (name.length === 0) invalid("group name is required");
   if (name.length > MAX_GROUP_NAME_LENGTH) {
@@ -299,6 +306,7 @@ export async function createGroup(
   // Authorize before the insert, so a rejected member list does not leave an
   // orphan group behind.
   await assertCanAdd(userId, input.memberIds ?? []);
+  if (await blockedPairExists([userId, ...(input.memberIds ?? [])])) denied("a blocked person cannot be added");
   const actor = (await findUserById(userId))!;
   // The group, its first members, the friendships they imply and the feed
   // event announcing it commit together: a group that exists with half its
@@ -335,7 +343,9 @@ export async function createGroup(
  *   caller's net position in cents (positive = owed to the caller).
  */
 export async function listGroups(userId: string) {
-  const groups = await listGroupsByUser(userId);
+  const groups = (await listGroupsByUser(userId)).filter(
+    (group) => group.status !== GROUP_STATUS_STORAGE[GroupStatus.DELETED],
+  );
   const groupIds = groups.map((group) => group.id);
   const [membersByGroup, netByGroup] = await Promise.all([
     listMembersByGroupIds(groupIds),
@@ -363,6 +373,38 @@ export async function getGroup(userId: string, groupId: string) {
 }
 
 /**
+ * Archives a settled group or restores it for future expenses. Any member
+ * may change the state. The ledger lock prevents concurrent money changes
+ * from invalidating the zero-balance check before the archive commits.
+ *
+ * @param userId - Authenticated member requesting the change.
+ * @param input - Group identifier and desired lifecycle status.
+ * @returns The group with its persisted lifecycle status and members.
+ * @throws UsecaseError when the status is unsupported, membership is missing,
+ *   or balances are unsettled. Deletion requires a future dedicated flow.
+ */
+export async function setStatus(userId: string, input: { groupId: string; status: GroupStatus }) {
+  if (input.status !== GroupStatus.ACTIVE && input.status !== GroupStatus.ARCHIVED) {
+    invalid("group status must be active or archived");
+  }
+  const status = GROUP_STATUS_STORAGE[input.status];
+  // Outsiders must not queue on another group's ledger. Membership is
+  // checked again after waiting, because a member can leave meanwhile.
+  await assertGroupMember(input.groupId, userId);
+  return withLedgerTransaction(async (client) => {
+    await lockGroupLedgers(client, [input.groupId]);
+    const group = await assertGroupMember(input.groupId, userId, client);
+    if (group.status !== status) {
+      if (input.status === GroupStatus.ARCHIVED && !(await groupIsSettled(input.groupId, client))) {
+        throw new UsecaseError("failed_precondition", "settle all group balances before archiving");
+      }
+      await updateGroupStatus(input.groupId, status, client);
+    }
+    return toGroup({ ...group, status }, await listMembers(input.groupId, client));
+  });
+}
+
+/**
  * Tells newly added people they are in a group. Skips the actor, who does not
  * need to be told about their own action.
  *
@@ -386,6 +428,7 @@ async function notifyAdded(
   await insertNotifications(
     recipientIds,
     {
+      actorId: actor.id,
       type: "added_to_group",
       title: `${actor.name} added you to "${groupName}"`,
       body: "",
@@ -434,6 +477,7 @@ export async function addMembers(
   assertMemberIdCount(candidateIds);
   if (candidateIds.length === 0) invalid("pick somebody to add");
   await assertCanAdd(userId, candidateIds);
+  if (await blockedPairExists([...candidateIds, userId])) denied("a blocked person cannot be added");
   const actor = (await findUserById(userId))!;
 
   // Under the group's ledger lock: a settlement being validated in this
@@ -466,6 +510,20 @@ export async function addMembers(
       client,
     );
     await notifyAdded(actor, input.groupId, group.name, enrolled, client);
+    // Everyone else who sees the feed line hears it too: the people added
+    // already have their own "added you" notice, and the actor needs none.
+    const enrolledIds = new Set(enrolled.map((user) => user.id));
+    await insertNotifications(
+      audience.filter((memberId) => memberId !== userId && !enrolledIds.has(memberId)),
+      {
+        actorId: userId,
+        type: "member_added",
+        title: `${actor.name} added ${nameList(enrolled.map((user) => user.name))} to "${group.name}"`,
+        body: "",
+        link: `/groups/${input.groupId}`,
+      },
+      client,
+    );
     return enrolled;
   });
   return { added: added.map((user) => toMember({ ...user, role: MEMBER_ROLE })) };
@@ -518,8 +576,20 @@ export async function transferOwnership(
     await insertNotifications(
       [input.userId],
       {
+        actorId: userId,
         type: "ownership_transferred",
         title: `${actor.name} made you the owner of "${group.name}"`,
+        body: "",
+        link: `/groups/${input.groupId}`,
+      },
+      client,
+    );
+    await insertNotifications(
+      audience.filter((memberId) => memberId !== userId && memberId !== input.userId),
+      {
+        actorId: userId,
+        type: "ownership_transferred",
+        title: `${actor.name} made ${newOwner.name} the owner of "${group.name}"`,
         body: "",
         link: `/groups/${input.groupId}`,
       },
@@ -569,6 +639,21 @@ export async function setSimplifyDebts(
           : `${actor.name} turned off debt simplification in "${group.name}" — debts show person to person again`,
         link: `/groups/${input.groupId}`,
         audience,
+      },
+      client,
+    );
+    // It changes what every member is asked to pay, so every member but the
+    // one who flipped it is told.
+    await insertNotifications(
+      audience.filter((memberId) => memberId !== userId),
+      {
+        actorId: userId,
+        type: "simplify_debts",
+        title: input.simplify
+          ? `${actor.name} turned on debt simplification in "${group.name}"`
+          : `${actor.name} turned off debt simplification in "${group.name}"`,
+        body: input.simplify ? "Fewer payments, same balances." : "Debts show person to person again.",
+        link: `/groups/${input.groupId}`,
       },
       client,
     );

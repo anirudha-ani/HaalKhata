@@ -1,6 +1,6 @@
 /** All SQL for the admin_sessions table: start, look up and end an operator's session. */
 
-import { execute, queryOne } from "@/server/common/db";
+import { execute, queryOne } from "@/server/common/db/db";
 
 /** The part of a live admin session a request needs. */
 export interface AdminSessionRow {

@@ -3,6 +3,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { authClient, expenseClient, groupClient, socialClient } from "@/lib/api/connect";
+import { groupsByStatus } from "@haalkhata/shared/group/archiving";
 import { queryKeys } from "@haalkhata/shared/api/queryKeys";
 
 /**
@@ -39,7 +40,7 @@ export function useDashboardAPI() {
     // Surfaced rather than swallowed: the overall-balance RPC is rate-limited
     // per account, and a refused call must not render as "you owe nothing".
     balancesError: balancesQuery.error,
-    groups: groupsQuery.data?.groups ?? [],
+    groups: groupsByStatus(groupsQuery.data?.groups ?? []),
     recentActivity: activityQuery.data?.events.slice(0, 6) ?? [],
     // Deliberately not gated on the groups or activity queries: those sections
     // render only once they have rows, so waiting on them would hold back the

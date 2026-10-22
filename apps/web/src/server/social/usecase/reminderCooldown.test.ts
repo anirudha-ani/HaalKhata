@@ -4,6 +4,8 @@ import type { PoolClient } from "pg";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { UserRow } from "@/server/auth/repo/users.repo";
 
+vi.mock("@/server/safety/repo/safety.repo", () => ({ blockedBetween: vi.fn(async () => false), blockedPairExists: vi.fn(async () => false) }));
+
 vi.mock("@/server/social/repo/friendships.repo", () => ({
   countIncomingFriendRequests: vi.fn(),
   deleteFriendRequest: vi.fn(),
@@ -44,7 +46,7 @@ vi.mock("@/server/payment/repo/paymentMethods.repo", () => ({
   listPaymentMethodsByUser: vi.fn(),
 }));
 const { transactionClient } = vi.hoisted(() => ({ transactionClient: {} as PoolClient }));
-vi.mock("@/server/common/ledgerLocks", () => ({
+vi.mock("@/server/common/ledger/ledgerLocks", () => ({
   lockReminder: vi.fn(),
   withLedgerTransaction: vi.fn(
     (operation: (client: PoolClient) => Promise<unknown>) => operation(transactionClient),
@@ -61,7 +63,7 @@ import {
   listPaymentMethodsByUser,
   type PaymentMethodRow,
 } from "@/server/payment/repo/paymentMethods.repo";
-import { lockReminder } from "@/server/common/ledgerLocks";
+import { lockReminder } from "@/server/common/ledger/ledgerLocks";
 import { sendReminder } from "./social.usecase";
 
 const SENDER_ID = "user-sender";

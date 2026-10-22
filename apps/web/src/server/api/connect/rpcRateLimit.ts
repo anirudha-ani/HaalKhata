@@ -2,7 +2,7 @@
 
 import { Code, ConnectError, type HandlerContext } from "@connectrpc/connect";
 import { requireUser } from "@/server/api/connect/context";
-import { rateLimitCheck } from "@/server/common/rateLimit";
+import { rateLimitCheck } from "@/server/common/rateLimit/rateLimit";
 
 /**
  * Per-minute limits for resource-intensive authenticated operations.
@@ -17,6 +17,9 @@ export const RPC_RATE_LIMITS = {
   addFriend: 10,
   addMembers: 15,
   createExpense: 30,
+  // A lookup checks up to 1,000 identifiers; the daily total is capped in
+  // the database as well.
+  findContacts: 5,
   getFriendLedger: 60,
   getGroupBalances: 60,
   getInsights: 30,
@@ -24,8 +27,16 @@ export const RPC_RATE_LIMITS = {
   listExpenses: 60,
   listGroups: 60,
   parseReceipt: 5,
+  registerDevice: 10,
   removeFriend: 10,
+  // The apps send one request per call, from each person's Add on Find
+  // friends, so this sits beside AddFriend rather than far below it. With at
+  // most 10 ids a call, one account still sends no more than 200 a minute.
+  sendFriendRequests: 20,
   sendReminder: 10,
+  sendTestPush: 3,
+  setGroupStatus: 30,
+  updatePushPreferences: 30,
   writePaymentMethod: 30,
 } as const;
 

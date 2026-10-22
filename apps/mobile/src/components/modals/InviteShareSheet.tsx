@@ -3,10 +3,11 @@
 import * as Clipboard from "expo-clipboard";
 import { Copy, Share2 } from "lucide-react-native";
 import { useEffect, useState } from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { StyleSheet, View } from "react-native";
+import { Text } from "@/components/ui/Text";
 import QRCode from "react-native-qrcode-svg";
 import { Button } from "@/components/ui/Button";
-import { Sheet } from "@/components/ui/Sheet";
+import { Sheet } from "@/components/ui/Sheet/Sheet";
 import { inviteUrl } from "@haalkhata/shared/invite/invite";
 import { colors, radii, spacing } from "@/lib/theme/theme";
 import { COPIED_BADGE_MS } from "./modals.constants";

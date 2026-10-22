@@ -1,9 +1,10 @@
 /** Activity feed: searchable, filterable, day-grouped events with keyset pagination. */
 
 import { Bell, ChevronDown } from "lucide-react-native";
-import { ScrollView, StyleSheet, Text, View } from "react-native";
+import { ScrollView, StyleSheet, View } from "react-native";
+import { Text } from "@/components/ui/Text";
 import { ActivityList } from "@/components/activity/ActivityList";
-import { useResponsiveLayout } from "@/components/shell/hooks/useResponsiveLayout";
+import { useResponsiveLayout } from "@/lib/layout/hooks/useResponsiveLayout";
 import { Button } from "@/components/ui/Button";
 import { Chip } from "@/components/ui/Chip";
 import { EmptyState } from "@/components/ui/EmptyState";

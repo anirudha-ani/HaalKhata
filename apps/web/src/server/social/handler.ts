@@ -4,10 +4,12 @@ import type { ServiceImpl } from "@connectrpc/connect";
 import type { SocialService } from "@haalkhata/protogen/social/v1/social_pb";
 import { Code, ConnectError } from "@connectrpc/connect";
 import * as social from "@/server/social/usecase/social.usecase";
+import { findContacts } from "@/server/social/usecase/contacts/findContacts.usecase";
+import { sendFriendRequests } from "@/server/social/usecase/contacts/sendFriendRequests.usecase";
 import { requireUser, runUsecase } from "@/server/api/connect/context";
 import { requireRateLimitedUser, RPC_RATE_LIMITS } from "@/server/api/connect/rpcRateLimit";
-import { clientIp } from "@/server/auth/clientIp";
-import { rateLimitCheck } from "@/server/common/rateLimit";
+import { clientIp } from "@/server/auth/request/clientIp";
+import { rateLimitCheck } from "@/server/common/rateLimit/rateLimit";
 import { INVITE_PREVIEW_RATE_LIMIT } from "@/server/social/social.constants";
 
 /**
@@ -183,6 +185,39 @@ export const socialHandler: ServiceImpl<typeof SocialService> = {
         social.removeFriend(
           await requireRateLimitedUser(context, "remove-friend", RPC_RATE_LIMITS.removeFriend),
           request.userId,
+        ),
+      context,
+    );
+    return {};
+  },
+
+  /**
+   * Matches identifiers from the caller's contacts against findable
+   * accounts. The request body is never logged: runUsecase reports only the
+   * RPC name and a request id for unexpected errors.
+   */
+  async findContacts(request, context) {
+    return runUsecase(
+      async () =>
+        findContacts(
+          await requireRateLimitedUser(context, "find-contacts", RPC_RATE_LIMITS.findContacts),
+          { phones: request.phones, emails: request.emails },
+        ),
+      context,
+    );
+  },
+
+  /** Sends one friend request to each picked account, as a single call. */
+  async sendFriendRequests(request, context) {
+    await runUsecase(
+      async () =>
+        sendFriendRequests(
+          await requireRateLimitedUser(
+            context,
+            "send-friend-requests",
+            RPC_RATE_LIMITS.sendFriendRequests,
+          ),
+          request.userIds,
         ),
       context,
     );

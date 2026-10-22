@@ -8,7 +8,7 @@ import {
   OUTSIDE_GROUPS_EMOJI,
   OUTSIDE_GROUPS_LABEL,
 } from "@haalkhata/shared/analytics/insights";
-import { groupEmoji } from "@/app/(app)/groups/constants/groupTypes";
+import { groupEmoji } from "@haalkhata/shared/group/groupTypes";
 import { InsightCard } from "../InsightCard/InsightCard";
 
 /**

@@ -15,14 +15,26 @@
  */
 
 import type { PoolClient } from "pg";
-import { query, queryOne } from "@/server/common/db";
+import { query, queryOne } from "@/server/common/db/db";
+
+/**
+ * A row that stands for a person: not a tombstone left by an account merge,
+ * and not the identity-free stand-in that keeps a deleted account's share of
+ * a shared ledger. Written for a `users usr` alias.
+ */
+const PERSON = `usr.merged_into IS NULL AND usr.deleted_at IS NULL`;
+
+/** How someone proves who they are; a placeholder row has none of these. */
+const SIGN_IN = `(usr.google_sub IS NOT NULL OR usr.apple_sub IS NOT NULL OR usr.password_hash IS NOT NULL)`;
 
 /**
  * Someone who has signed in, as opposed to a placeholder row created when a
- * member invited them. Tombstones left by account merges are neither.
- * Written for a `users usr` alias.
+ * member invited them. Written for a `users usr` alias.
  */
-const REGISTERED = `usr.merged_into IS NULL AND (usr.google_sub IS NOT NULL OR usr.password_hash IS NOT NULL)`;
+const REGISTERED = `${PERSON} AND ${SIGN_IN}`;
+
+/** A placeholder for someone a member invited who has never signed in. */
+const INVITED = `${PERSON} AND NOT ${SIGN_IN}`;
 
 /**
  * When someone joined: the moment they finished signing up. An invited
@@ -95,9 +107,7 @@ export async function findUsageTotals(
   const totals = await queryOne<UsageTotalsRow>(
     `SELECT
        (SELECT COUNT(*)::int FROM users usr WHERE ${REGISTERED}) AS registered_user_count,
-       (SELECT COUNT(*)::int FROM users usr
-         WHERE usr.merged_into IS NULL AND usr.google_sub IS NULL AND usr.password_hash IS NULL
-       ) AS invited_user_count,
+       (SELECT COUNT(*)::int FROM users usr WHERE ${INVITED}) AS invited_user_count,
        (SELECT COUNT(DISTINCT act.actor_id)::int FROM activity act
          WHERE act.created_at >= now() - make_interval(days => $1)) AS weekly_active_user_count,
        (SELECT COUNT(DISTINCT act.actor_id)::int FROM activity act

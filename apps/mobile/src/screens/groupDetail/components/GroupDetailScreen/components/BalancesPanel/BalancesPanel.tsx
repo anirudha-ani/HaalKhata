@@ -3,7 +3,8 @@
 import type { User } from "@haalkhata/protogen/common/v1/common_pb";
 import type { BalancesResponse } from "@haalkhata/protogen/expense/v1/expense_pb";
 import { ArrowRight, Wand2 } from "lucide-react-native";
-import { StyleSheet, Switch, Text, View } from "react-native";
+import { StyleSheet, Switch, View } from "react-native";
+import { Text } from "@/components/ui/Text";
 import { PersonLink } from "@/components/people/PersonLink";
 import { Avatar } from "@/components/ui/Avatar";
 import { Button } from "@/components/ui/Button";
@@ -19,6 +20,8 @@ import { colors, radii, spacing } from "@/lib/theme/theme";
  */
 export function BalancesPanel({
   balances,
+  error = "",
+  onRetry,
   currency,
   meId,
   userById,
@@ -30,6 +33,10 @@ export function BalancesPanel({
 }: {
   /** Balances response for the group; the panel renders nothing until it loads. */
   balances: BalancesResponse | undefined;
+  /** A failed balance read, displayed beside its retry control. */
+  error?: string;
+  /** Reloads the group balances after a failed read. */
+  onRetry: () => void;
   /** Currency code all amounts are shown in (the group's currency). */
   currency: string;
   /** The signed-in user's id, used to label rows as "You" and show settle buttons. */
@@ -50,6 +57,12 @@ export function BalancesPanel({
    */
   onSettle: (user: User, cents: number, received: boolean) => void;
 }) {
+  if (error) return (
+    <View style={styles.section}>
+      <Text accessibilityRole="alert" style={styles.allSettledText}>{error}</Text>
+      <Button label="Try again" onPress={onRetry} variant="outline" />
+    </View>
+  );
   if (!balances) return null;
   const debts = simplified ? balances.simplified : balances.debts;
   // Pairwise debts that survive while every net is zero can only be a loop —

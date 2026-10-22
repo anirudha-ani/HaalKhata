@@ -74,6 +74,8 @@ const styles = StyleSheet.create({
     color: colors.ink,
     flex: 1,
     fontSize: 15,
+    minHeight: 44,
+    minWidth: 0,
     paddingVertical: 10,
   },
 });

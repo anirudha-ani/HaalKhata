@@ -16,6 +16,8 @@ import {
   type ContactDraft,
 } from "@haalkhata/shared/phone/contact";
 import type { MemberFeedback } from "@haalkhata/shared/group/memberActions";
+import { GroupStatus, type GroupArchiveStatus } from "@haalkhata/shared/group/status";
+import { groupArchivePrompt } from "@haalkhata/shared/group/archivePrompt";
 import { useGroupDetailAPI } from "./useGroupDetailAPI";
 
 /** The tabs available on the group detail page. */
@@ -31,7 +33,8 @@ export type GroupTab = "expenses" | "balances" | "activity";
  *   `addingPeople`/`setAddingPeople` and the add-people form (`pickedIds`,
  *   `togglePicked`, `contact`/`setContact`, `submitPeople`,
  *   `peopleError`, `canAddPeople`), `candidates` (friends not already in the
- *   group), the members modal (`viewingMembers`/`setViewingMembers`,
+ *   group), `reportingGroup`/`setReportingGroup` for the report modal the
+ *   group menu opens, the members modal (`viewingMembers`/`setViewingMembers`,
  *   `removeMember`, `removingUserId`, `transferOwnership`,
  *   `transferringUserId`, and `memberFeedback`, the last failure or
  *   confirmation from an action in that modal and the row it belongs to),
@@ -46,12 +49,16 @@ export function useGroupDetail(groupId: string) {
   const [activeTab, setActiveTab] = useState<GroupTab>("expenses");
   const [addingPeople, setAddingPeople] = useState(false);
   const [viewingMembers, setViewingMembers] = useState(false);
+  const [reportingGroup, setReportingGroup] = useState(false);
   const [pickedIds, setPickedIds] = useState<string[]>([]);
   const [contact, setContact] = useState<ContactDraft>(EMPTY_CONTACT);
   const [peopleError, setPeopleError] = useState("");
   // Nothing an action in the members modal does may fail silently: the
   // message is kept with the row it is about, so it shows where the tap was.
   const [memberFeedback, setMemberFeedback] = useState<MemberFeedback | null>(null);
+  const [archiveError, setArchiveError] = useState("");
+  const [archiveAction, setArchiveAction] = useState<{ groupId: string; status: GroupArchiveStatus } | null>(null);
+  const pendingGroupStatus = archiveAction?.groupId === groupId ? archiveAction.status : null;
   const [linkNotice, setLinkNotice] = useState("");
   const [linkError, setLinkError] = useState("");
   // §33c: set when a typed contact has no claimed account, so the modal
@@ -242,12 +249,70 @@ export function useGroupDetail(groupId: string) {
     });
   };
 
+  const archivePrompt = pendingGroupStatus === null ? null : groupArchivePrompt({
+    groupName: groupDetailAPI.group?.name ?? "this group",
+    currency: groupDetailAPI.group?.currency ?? "USD",
+    status: pendingGroupStatus,
+    balances: groupDetailAPI.balances?.nets,
+  });
+
+  /**
+   * Opens the explanation or confirmation without changing the group.
+   *
+   * @returns No value; the pending action opens its popup.
+   */
+  const openArchiveDialog = () => {
+    setArchiveError("");
+    setArchiveAction({
+      groupId,
+      status: groupDetailAPI.group?.status === GroupStatus.ARCHIVED ? GroupStatus.ACTIVE : GroupStatus.ARCHIVED,
+    });
+  };
+
+  /**
+   * Dismisses the popup; a pending mutation keeps its feedback visible.
+   *
+   * @returns No value; the pending action is cleared when idle.
+   */
+  const closeArchiveDialog = () => {
+    if (groupDetailAPI.setStatus.isPending) return;
+    setArchiveAction(null);
+    setArchiveError("");
+  };
+
+  /**
+   * Saves the state the user confirmed, retaining any server refusal in the popup.
+   *
+   * @returns No value; the mutation closes the popup only after success.
+   */
+  const confirmArchiveChange = () => {
+    if (pendingGroupStatus === null || !archivePrompt?.confirmLabel || groupDetailAPI.setStatus.isPending) return;
+    setArchiveError("");
+    groupDetailAPI.setStatus.mutate(pendingGroupStatus, {
+      onSuccess: () => setArchiveAction(null),
+      onError: (mutationError) => setArchiveError(errorMessage(mutationError)),
+    });
+  };
+
   return {
     ...groupDetailAPI,
+    archivePrompt,
+    archiveError,
+    archivePending: groupDetailAPI.setStatus.isPending,
+    openArchiveDialog,
+    closeArchiveDialog,
+    confirmArchiveChange,
+    /** Opens the balances tab from a blocked archive explanation. */
+    viewArchiveBalances: () => {
+      closeArchiveDialog();
+      setActiveTab("balances");
+    },
     tab: activeTab,
     setTab: setActiveTab,
     addingPeople,
     setAddingPeople,
+    reportingGroup,
+    setReportingGroup,
     viewingMembers,
     /** Opens or closes the members modal; what it last said goes with it. */
     setViewingMembers: (open: boolean) => {

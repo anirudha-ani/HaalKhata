@@ -3,7 +3,7 @@
 import { StyleSheet, View } from "react-native";
 import type { Journey } from "@haalkhata/protogen/personalanalytics/v1/personalanalytics_pb";
 import { StatTile } from "@/components/charts/StatTile";
-import { useResponsiveLayout } from "@/components/shell/hooks/useResponsiveLayout";
+import { useResponsiveLayout } from "@/lib/layout/hooks/useResponsiveLayout";
 import {
   calendarDayLabel,
   memberDuration,

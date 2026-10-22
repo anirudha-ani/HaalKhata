@@ -1,6 +1,7 @@
 /** Column chart: one series of values over an ordered axis, with a selectable column. */
 
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, View } from "react-native";
+import { Text } from "@/components/ui/Text";
 import { barFraction, showsAxisLabel } from "@haalkhata/shared/analytics/chart";
 import { colors } from "@/lib/theme/theme";
 import {

@@ -4,6 +4,7 @@ package expense.v1;
 
 import "google/protobuf/empty.proto";
 import "common/v1/common.proto";
+import "group/v1/group.proto";
 import "payment/v1/payment.proto";
 
 // Expenses, settlements and balances. All money is integer cents in the
@@ -121,6 +122,9 @@ message CreateExpenseRequest {
 message UpdateExpenseRequest {
   string expense_id = 1;
   CreateExpenseRequest expense = 2;
+  // Keep a historical percent/shares mode when submitting its unchanged saved
+  // allocations as exact. The server rechecks under the ledger lock.
+  bool preserve_split_type = 3;
 }
 
 message ListExpensesRequest {
@@ -180,6 +184,9 @@ message GetExpenseResponse {
   // not viewer-relative: the same answer for everyone, so it could live on
   // Expense — it sits here because only the detail view acts on it.
   bool has_later_settlement = 6;
+  // Group lifecycle read with the expense snapshot. Clients must hide edit
+  // and delete actions while the group is archived. UNSPECIFIED for one-offs.
+  group.v1.GroupStatus group_status = 7;
 }
 
 // One recorded change to an expense, for the detail view's history line.

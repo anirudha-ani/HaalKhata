@@ -1,7 +1,8 @@
 /** Placeholder panel for empty lists: icon, title, hint, and optional action. */
 
 import type { ReactNode } from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { StyleSheet, View } from "react-native";
+import { Text } from "@/components/ui/Text";
 import { colors, radii, spacing } from "@/lib/theme/theme";
 
 /**

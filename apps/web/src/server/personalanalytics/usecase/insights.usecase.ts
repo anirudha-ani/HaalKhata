@@ -1,8 +1,8 @@
 /** Personal insights business logic: one person's own ledger, counted over a window of months. */
 
-import { snapshot } from "@/server/common/db";
+import { snapshot } from "@/server/common/db/db";
 import { UsecaseError } from "@/server/common/errors";
-import { toInt32Cents } from "@/server/common/money";
+import { toInt32Cents } from "@/server/common/money/money";
 import { assembleCurrencyInsights } from "@/server/personalanalytics/domain/currencyInsights";
 import { insightWindow } from "@/server/personalanalytics/domain/insightWindow";
 import {

@@ -3,7 +3,8 @@
 import DateTimePicker, { type DateTimePickerEvent } from "@react-native-community/datetimepicker";
 import { CalendarDays } from "lucide-react-native";
 import { useState } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, View } from "react-native";
+import { Text } from "@/components/ui/Text";
 import { colors, radii, spacing } from "@/lib/theme/theme";
 
 /**
@@ -41,7 +42,7 @@ export function DateField({
   return (
     <View style={styles.container}>
       {label ? <Text style={styles.label}>{label}</Text> : null}
-      <Pressable onPress={() => setShowPicker(true)} style={styles.field}>
+      <Pressable accessibilityRole="button" accessibilityLabel={`${label ?? "Date"}: ${value}`} onPress={() => setShowPicker(true)} style={styles.field}>
         <Text style={styles.value}>{value}</Text>
         <CalendarDays color={colors.inkSoft} size={18} />
       </Pressable>
@@ -71,6 +72,8 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     flexDirection: "row",
     justifyContent: "space-between",
+    gap: spacing.sm,
+    minHeight: 48,
     paddingHorizontal: 14,
     paddingVertical: 12,
   },
@@ -81,6 +84,7 @@ const styles = StyleSheet.create({
   },
   value: {
     color: colors.ink,
+    flexShrink: 1,
     fontSize: 15,
     fontVariant: ["tabular-nums"],
   },

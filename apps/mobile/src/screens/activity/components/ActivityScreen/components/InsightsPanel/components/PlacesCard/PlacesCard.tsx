@@ -1,7 +1,8 @@
 /** Places card: which groups the person's expenses happened in. */
 
 import { useRouter } from "expo-router";
-import { StyleSheet, Text, type StyleProp, type ViewStyle } from "react-native";
+import { StyleSheet, type StyleProp, type ViewStyle } from "react-native";
+import { Text } from "@/components/ui/Text";
 import type { GroupActivity } from "@haalkhata/protogen/personalanalytics/v1/personalanalytics_pb";
 import { BarList } from "@/components/charts/BarList";
 import {
@@ -9,7 +10,7 @@ import {
   OUTSIDE_GROUPS_EMOJI,
   OUTSIDE_GROUPS_LABEL,
 } from "@haalkhata/shared/analytics/insights";
-import { groupEmoji } from "@/screens/groups/constants/groupTypes";
+import { groupEmoji } from "@haalkhata/shared/group/groupTypes";
 import { InsightCard } from "../InsightCard/InsightCard";
 
 /**

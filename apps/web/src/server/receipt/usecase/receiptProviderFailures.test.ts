@@ -71,3 +71,11 @@ describe("receipt provider failure reporting", () => {
     });
   });
 });
+
+it.each(["INR", "JPY", "KWD"])("keeps mock scanning usable in %s forms", async (currency) => {
+  process.env.RECEIPT_AI_PROVIDERS = "mock";
+  const result = await parseReceipt(jpegBytes(), currency);
+  expect(result.receipt.currency).toBe(currency);
+  expect(result.receipt.items.length).toBeGreaterThan(0);
+  expect(result.receipt.items[0].totalCents).toBe(currency === "JPY" ? 15 : currency === "KWD" ? 14500 : 1450);
+});

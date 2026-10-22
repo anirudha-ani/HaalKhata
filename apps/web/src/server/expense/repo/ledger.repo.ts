@@ -1,7 +1,38 @@
 /** Cross-table ledger aggregates the database can compute in one pass. */
 
 import type { PoolClient } from "pg";
-import { query } from "@/server/common/db";
+import { query, queryOne } from "@/server/common/db/db";
+
+/**
+ * Checks live movements for a nonzero participant net in any group currency.
+ * Aggregation stays in Postgres; at most one row reaches the application.
+ *
+ * @param groupId - Group whose full ledger is checked, including past members.
+ * @param client - Transaction client holding the group's ledger lock.
+ * @returns True when any participant has money outstanding in any currency.
+ */
+export async function hasUnsettledGroupBalances(groupId: string, client: PoolClient): Promise<boolean> {
+  return (await queryOne(
+    `SELECT 1 AS unsettled FROM (
+       SELECT pay.user_id, exp.currency, pay.amount_cents AS delta
+         FROM expense_payers pay JOIN expenses exp ON exp.id = pay.expense_id
+        WHERE exp.group_id = $1 AND exp.deleted_at IS NULL
+       UNION ALL
+       SELECT spl.user_id, exp.currency, -spl.owed_cents
+         FROM expense_splits spl JOIN expenses exp ON exp.id = spl.expense_id
+        WHERE exp.group_id = $1 AND exp.deleted_at IS NULL
+       UNION ALL
+       SELECT from_user, currency, amount_cents FROM settlements
+        WHERE group_id = $1 AND deleted_at IS NULL
+       UNION ALL
+       SELECT to_user, currency, -amount_cents FROM settlements
+        WHERE group_id = $1 AND deleted_at IS NULL
+     ) movement
+     GROUP BY movement.user_id, movement.currency
+     HAVING SUM(movement.delta) <> 0 LIMIT 1`,
+    [groupId], client,
+  )) !== undefined;
+}
 
 /**
  * A user's net position in each of several groups, in one query.

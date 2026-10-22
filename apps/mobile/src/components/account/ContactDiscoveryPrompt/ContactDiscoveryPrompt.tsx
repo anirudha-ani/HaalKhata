@@ -1,0 +1,71 @@
+/** One-time card telling an account that never answered that contacts can find it, with the way to turn that off. */
+
+import { StyleSheet } from "react-native";
+import Animated from "react-native-reanimated";
+import { CONTACT_DISCOVERY_PROMPT } from "@haalkhata/shared/contacts/contactsCopy";
+import type { ContactDiscovery } from "@haalkhata/shared/contacts/discovery";
+import { Button } from "@/components/ui/Button";
+import { Text } from "@/components/ui/Text";
+import { CARD_RESIZE, NOTICE_FADE_IN } from "@/lib/motion/entrances";
+import { colors, radii, spacing } from "@/lib/theme/theme";
+import { useContactDiscoveryPrompt } from "./hooks/useContactDiscoveryPrompt";
+
+/**
+ * Renders the notice with its two answers (keep it on, turn it off), or,
+ * once answered, what was saved. Renders nothing for someone who answered on an earlier visit.
+ *
+ * @param props - Component props.
+ * @returns The card, or null.
+ */
+export function ContactDiscoveryPrompt({
+  answer,
+}: {
+  /** The caller's stored answer. */
+  answer: ContactDiscovery;
+}) {
+  const prompt = useContactDiscoveryPrompt(answer);
+  if (!prompt.visible) return null;
+  return (
+    <Animated.View layout={CARD_RESIZE} style={styles.card}>
+      {prompt.asking ? (
+        <>
+          <Text accessibilityRole="header" style={styles.title}>{CONTACT_DISCOVERY_PROMPT.title}</Text>
+          <Text style={styles.body}>{CONTACT_DISCOVERY_PROMPT.body}</Text>
+          {prompt.error ? (
+            <Text accessibilityRole="alert" style={styles.error}>{prompt.error}</Text>
+          ) : null}
+          <Button
+            busy={prompt.busy}
+            label={CONTACT_DISCOVERY_PROMPT.allow}
+            onPress={() => void prompt.respond(true)}
+          />
+          <Button
+            disabled={prompt.busy}
+            label={CONTACT_DISCOVERY_PROMPT.decline}
+            onPress={() => void prompt.respond(false)}
+            variant="outline"
+          />
+        </>
+      ) : (
+        <Animated.View entering={NOTICE_FADE_IN}>
+          <Text accessibilityLiveRegion="polite" style={styles.notice}>{prompt.notice}</Text>
+        </Animated.View>
+      )}
+    </Animated.View>
+  );
+}
+
+const styles = StyleSheet.create({
+  body: { color: colors.inkSoft, fontSize: 13, lineHeight: 19 },
+  card: {
+    backgroundColor: colors.card,
+    borderColor: colors.line,
+    borderRadius: radii.lg,
+    borderWidth: 1,
+    gap: spacing.md,
+    padding: spacing.lg,
+  },
+  error: { color: colors.neg700, fontSize: 13 },
+  notice: { color: colors.pos700, fontSize: 13, lineHeight: 19 },
+  title: { color: colors.ink, fontSize: 16, fontWeight: "600" },
+});

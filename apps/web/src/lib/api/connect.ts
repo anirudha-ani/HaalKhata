@@ -1,5 +1,7 @@
 /** Typed Connect clients for the browser. Import from client components only. */
 
+import { API_TIMEOUT_MS } from "@haalkhata/shared/api/timeouts";
+import { SafetyService } from "@haalkhata/protogen/safety/v1/safety_pb";
 import { createClient } from "@connectrpc/connect";
 import { createConnectTransport } from "@connectrpc/connect-web";
 import { ConnectError } from "@connectrpc/connect";
@@ -9,11 +11,12 @@ import { ExpenseService } from "@haalkhata/protogen/expense/v1/expense_pb";
 import { ReceiptService } from "@haalkhata/protogen/receipt/v1/receipt_pb";
 import { SocialService } from "@haalkhata/protogen/social/v1/social_pb";
 import { PaymentMethodService } from "@haalkhata/protogen/payment/v1/payment_pb";
+import { PushService } from "@haalkhata/protogen/push/v1/push_pb";
 import { PersonalAnalyticsService } from "@haalkhata/protogen/personalanalytics/v1/personalanalytics_pb";
 import { AdminAnalyticsService } from "@haalkhata/protogen/adminanalytics/v1/adminanalytics_pb";
 
 /** Connect-Web transport that routes every RPC through the app's `/api/connect` proxy. */
-export const transport = createConnectTransport({ baseUrl: "/api/connect" });
+export const transport = createConnectTransport({ baseUrl: "/api/connect", defaultTimeoutMs: API_TIMEOUT_MS });
 
 /** Typed client for authentication RPCs (sign up, log in, session, log out). */
 export const authClient = createClient(AuthService, transport);
@@ -27,6 +30,8 @@ export const receiptClient = createClient(ReceiptService, transport);
 export const socialClient = createClient(SocialService, transport);
 /** Typed client for the caller's own payment methods (list, add, edit, remove, star). */
 export const paymentClient = createClient(PaymentMethodService, transport);
+/** Typed client for the phones that receive push notifications and which kinds they receive. */
+export const pushClient = createClient(PushService, transport);
 /** Typed client for the signed-in person's own insights. */
 export const personalAnalyticsClient = createClient(PersonalAnalyticsService, transport);
 /**
@@ -51,3 +56,6 @@ export function errorMessage(error: unknown): string {
   if (error instanceof Error) return error.message || "something went wrong";
   return "something went wrong";
 }
+
+/** Typed client for private reports and caller-owned blocks. */
+export const safetyClient = createClient(SafetyService, transport);

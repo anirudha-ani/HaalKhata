@@ -1,6 +1,7 @@
 "use client";
 /** Expense form queries (me, groups, friends, expense being edited) + create/update/parse mutations. */
 
+import { RECEIPT_TIMEOUT_MS } from "@haalkhata/shared/api/timeouts";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { MessageInitShape } from "@bufbuild/protobuf";
 import type { CreateExpenseRequestSchema } from "@haalkhata/protogen/expense/v1/expense_pb";
@@ -11,6 +12,8 @@ import {
   receiptClient,
   socialClient,
 } from "@/lib/api/connect";
+import { GroupStatus } from "@haalkhata/shared/group/status";
+import { groupsByStatus } from "@haalkhata/shared/group/archiving";
 import { MONEY_KEYS, queryKeys } from "@haalkhata/shared/api/queryKeys";
 
 /** Plain-object init shape of a CreateExpenseRequest proto message. */
@@ -58,7 +61,7 @@ export function useNewExpenseAPI(editExpenseId: string) {
     onSuccess: invalidateMoney,
   });
   const update = useMutation({
-    mutationFn: (input: { expenseId: string; expense: CreateExpenseInput }) =>
+    mutationFn: (input: { expenseId: string; expense: CreateExpenseInput; preserveSplitType?: boolean }) =>
       expenseClient.updateExpense(input),
     onSuccess: invalidateMoney,
   });
@@ -69,15 +72,16 @@ export function useNewExpenseAPI(editExpenseId: string) {
    * filling in this form, not a different kind of expense.
    */
   const parse = useMutation({
-    mutationFn: async (file: File) => {
-      const bytes = new Uint8Array(await file.arrayBuffer());
-      return receiptClient.parseReceipt({ image: bytes, mediaType: file.type });
+    mutationFn: async (input: { file: File; consentVersion: string; currency: string }) => {
+      const bytes = new Uint8Array(await input.file.arrayBuffer());
+      return receiptClient.parseReceipt({ image: bytes, mediaType: input.file.type, consentVersion: input.consentVersion, currency: input.currency }, { timeoutMs: RECEIPT_TIMEOUT_MS });
     },
   });
 
   return {
     me: currentUserQuery.data,
-    groups: groupsQuery.data?.groups ?? [],
+    groups: groupsByStatus(groupsQuery.data?.groups ?? []),
+    archivedGroups: groupsByStatus(groupsQuery.data?.groups ?? [], GroupStatus.ARCHIVED),
     friends: friendsQuery.data?.friends ?? [],
     editing: editingQuery.data,
     isLoading:

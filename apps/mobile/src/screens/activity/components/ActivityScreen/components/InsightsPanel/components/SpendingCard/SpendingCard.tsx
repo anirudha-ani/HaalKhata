@@ -1,6 +1,7 @@
 /** Spending card: the person's share per month as a column chart under its total. */
 
-import { StyleSheet, Text, View, type StyleProp, type ViewStyle } from "react-native";
+import { StyleSheet, View, type StyleProp, type ViewStyle } from "react-native";
+import { Text } from "@/components/ui/Text";
 import type { CurrencyInsights } from "@haalkhata/protogen/personalanalytics/v1/personalanalytics_pb";
 import { ColumnChart } from "@/components/charts/ColumnChart";
 import { compactMoney } from "@haalkhata/shared/analytics/chart";
