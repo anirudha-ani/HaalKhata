@@ -234,6 +234,26 @@ describe.skipIf(!reachable)("usage overview against Postgres", () => {
     expect(totals.invitedUserCount).toBe(1);
   });
 
+  it("counts an Apple sign-in as registered and a deleted account's stand-in as nobody", async () => {
+    // Account deletion leaves an identity-free row behind to hold the
+    // deleted person's share of shared ledgers: no sign-in, deleted_at set.
+    await database.query(
+      `INSERT INTO users (id, email, name, avatar_color, apple_sub, onboarded_at, created_at, deleted_at) VALUES
+         ('user-apple-1', 'relay.private@privaterelay.appleid.com', 'Apple Person', '#857a68', 'apple-sub-1',
+          now() - interval '300 days', now() - interval '300 days', NULL),
+         ('user-standin-1', NULL, 'Deleted member', '#857a68', NULL, NULL, now() - interval '2 days', now())`,
+    );
+    try {
+      const { totals, users } = await getUsageOverview();
+      expect(totals.registeredUserCount).toBe(7);
+      expect(totals.invitedUserCount).toBe(1);
+      expect(users.map((person) => person.name)).toContain("Apple Person");
+      expect(users.map((person) => person.name)).not.toContain("Deleted member");
+    } finally {
+      await database.query(`DELETE FROM users WHERE id IN ('user-apple-1', 'user-standin-1')`);
+    }
+  });
+
   it("counts activity by its window, one person once", async () => {
     const { totals } = await getUsageOverview();
 
