@@ -5,7 +5,8 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { queryKeys } from "@haalkhata/shared/api/queryKeys";
 import type { MergePreview } from "@haalkhata/protogen/auth/v1/auth_pb";
-import { authClient, errorMessage } from "@/lib/api/connect";
+import { authClient, errorMessage, isRefusal } from "@/lib/api/connect";
+import { useVerificationCode } from "@/lib/hooks/useVerificationCode";
 import { composeE164, DEFAULT_PHONE_REGION, isValidPhone, splitE164 } from "@haalkhata/shared/phone/phone";
 import { INVALID_PHONE_MESSAGE } from "@haalkhata/shared/phone/contact";
 
@@ -26,9 +27,10 @@ import { INVALID_PHONE_MESSAGE } from "@haalkhata/shared/phone/contact";
  * Only the payment step leaves onboarding, so everyone is asked once how
  * they want to be paid, and nobody is asked before their currency is known.
  *
- * @returns The step, field values with setters, the pending merge preview
- *   when one is waiting, actions for saving / confirming / skipping /
- *   finishing, and the busy flag.
+ * @returns The step, field values with setters, the code field, the pending
+ *   merge preview when one is waiting, actions for saving / verifying /
+ *   sending the code again / confirming / skipping / finishing, and the busy
+ *   flag.
  */
 export function useOnboarding() {
   const queryClient = useQueryClient();
@@ -46,7 +48,7 @@ export function useOnboarding() {
   const [pendingMerge, setPendingMerge] = useState<MergePreview | undefined>();
   const [mergeToken, setMergeToken] = useState("");
   const [verificationPhone, setVerificationPhone] = useState("");
-  const [verificationCode, setVerificationCode] = useState("");
+  const codeField = useVerificationCode();
   const [step, setStep] = useState<"profile" | "payment">("profile");
 
   /** Moves on from the profile step, however it ended, with a clean slate. */
@@ -98,7 +100,10 @@ export function useOnboarding() {
         // SMS round-trip to hear the same thing.
         if (!isValidPhone(region, nationalNumber)) throw new Error(INVALID_PHONE_MESSAGE);
         const result = await authClient.setPhone({ phone: claimedPhone, verificationCode: "" });
-        if (result.verificationSent) setVerificationPhone(claimedPhone);
+        if (result.verificationSent) {
+          codeField.clear();
+          setVerificationPhone(claimedPhone);
+        }
         return;
       }
       toPaymentStep();
@@ -112,10 +117,11 @@ export function useOnboarding() {
   });
 
   const verifyPhone = useMutation({
-    mutationFn: () => authClient.setPhone({ phone: verificationPhone, verificationCode }),
+    mutationFn: () =>
+      authClient.setPhone({ phone: verificationPhone, verificationCode: codeField.code }),
     onSuccess: async (result) => {
       setVerificationPhone("");
-      setVerificationCode("");
+      codeField.clear();
       if (result.pendingMerge) {
         setPendingMerge(result.pendingMerge);
         setMergeToken(result.mergeToken);
@@ -124,6 +130,21 @@ export function useOnboarding() {
       await queryClient.invalidateQueries({ queryKey: queryKeys.me });
       toPaymentStep();
     },
+    onError: (mutationError) => {
+      // A refused code is cleared, so the same code cannot be sent again by
+      // pressing Verify twice, and the next suggestion the keyboard offers
+      // replaces it rather than landing beside it.
+      if (isRefusal(mutationError)) codeField.clear();
+      setError(errorMessage(mutationError));
+    },
+  });
+
+  // Texts the code again. Inside its ten minutes it is the same code, under
+  // the same verification and its same five tries; the field is cleared so
+  // the keyboard can offer the latest text's code.
+  const resendCode = useMutation({
+    mutationFn: () => authClient.setPhone({ phone: verificationPhone, verificationCode: "" }),
+    onSuccess: () => codeField.markResent(),
     onError: (mutationError) => setError(errorMessage(mutationError)),
   });
 
@@ -169,12 +190,24 @@ export function useOnboarding() {
     error,
     pendingMerge,
     verificationPhone,
-    verificationCode,
-    setVerificationCode,
-    verifyPhone: () => verifyPhone.mutate(),
+    verificationCode: codeField.code,
+    /** True once the field holds a whole code. */
+    codeComplete: codeField.complete,
+    /** The line under the code field. */
+    codeHint: codeField.hint,
+    /** Reads a change to the code field; a code that cannot be ours says why. */
+    enterVerificationCode: (entered: string) => setError(codeField.enter(entered)),
+    verifyPhone: () => {
+      setError("");
+      verifyPhone.mutate();
+    },
+    resendCode: () => {
+      setError("");
+      resendCode.mutate();
+    },
     cancelVerification: () => {
       setVerificationPhone("");
-      setVerificationCode("");
+      codeField.clear();
       setError("");
     },
     confirmMerge: () => confirmMerge.mutate(),
@@ -187,7 +220,15 @@ export function useOnboarding() {
       setError("");
       complete.mutate();
     },
+    /** True while a code is being checked. */
+    isVerifying: verifyPhone.isPending,
+    /** True while the code is being sent again. */
+    isResending: resendCode.isPending,
     isPending:
-      save.isPending || verifyPhone.isPending || confirmMerge.isPending || complete.isPending,
+      save.isPending ||
+      verifyPhone.isPending ||
+      resendCode.isPending ||
+      confirmMerge.isPending ||
+      complete.isPending,
   };
 }

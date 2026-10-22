@@ -2,7 +2,7 @@
 
 import { createClient } from "@connectrpc/connect";
 import { createConnectTransport } from "@connectrpc/connect-web";
-import { ConnectError } from "@connectrpc/connect";
+import { Code, ConnectError } from "@connectrpc/connect";
 import { AuthService } from "@haalkhata/protogen/auth/v1/auth_pb";
 import { GroupService } from "@haalkhata/protogen/group/v1/group_pb";
 import { ExpenseService } from "@haalkhata/protogen/expense/v1/expense_pb";
@@ -41,4 +41,17 @@ export function errorMessage(error: unknown): string {
   }
   if (error instanceof Error) return error.message || "something went wrong";
   return "something went wrong";
+}
+
+/**
+ * Whether the server refused what was sent (a wrong code, a bad field)
+ * rather than failing to answer. A field whose value was refused is cleared,
+ * since sending it again can only be refused again; after an outage it is
+ * kept, so trying again needs nothing retyped.
+ *
+ * @param error - The unknown value caught from a failed RPC call.
+ * @returns True for an InvalidArgument refusal.
+ */
+export function isRefusal(error: unknown): boolean {
+  return error instanceof ConnectError && error.code === Code.InvalidArgument;
 }
