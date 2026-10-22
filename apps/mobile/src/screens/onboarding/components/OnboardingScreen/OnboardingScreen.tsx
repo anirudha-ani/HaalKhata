@@ -17,6 +17,7 @@ import { Spinner } from "@/components/ui/Spinner";
 import { TextField } from "@/components/ui/TextField";
 import { CurrencyPicker } from "@/components/ui/CurrencyPicker";
 import { MAX_USER_NAME_LENGTH } from "@haalkhata/shared/text/limits";
+import { VERIFICATION_CODE_INPUT_MAX_CHARACTERS } from "@haalkhata/shared/phone/phone.constants";
 import { colors, fonts, radii, spacing } from "@/lib/theme/theme";
 import { PaymentStep } from "../PaymentStep/PaymentStep";
 import { useOnboarding } from "./hooks/useOnboarding";
@@ -104,24 +105,33 @@ export function OnboardingScreen() {
                   </>
                 ) : verifying ? (
                   <>
-                    <TextInput
-                      accessibilityLabel="Verification code"
-                      autoComplete="one-time-code"
-                      keyboardType="number-pad"
-                      maxLength={10}
-                      onChangeText={(text) =>
-                        onboarding.setVerificationCode(text.replace(/\D/g, ""))
-                      }
-                      style={styles.codeInput}
-                      textContentType="oneTimeCode"
-                      value={onboarding.verificationCode}
-                    />
+                    <View style={styles.fieldBlock}>
+                      <TextInput
+                        accessibilityHint={onboarding.codeHint}
+                        accessibilityLabel="Verification code"
+                        autoComplete="one-time-code"
+                        keyboardType="number-pad"
+                        maxLength={VERIFICATION_CODE_INPUT_MAX_CHARACTERS}
+                        onChangeText={onboarding.enterVerificationCode}
+                        style={styles.codeInput}
+                        textContentType="oneTimeCode"
+                        value={onboarding.verificationCode}
+                      />
+                      <Text style={styles.hint}>{onboarding.codeHint}</Text>
+                    </View>
                     {onboarding.error ? <Text style={styles.error}>{onboarding.error}</Text> : null}
                     <Button
-                      busy={onboarding.isPending}
-                      disabled={onboarding.verificationCode.length < 4}
+                      busy={onboarding.isVerifying}
+                      disabled={onboarding.isPending || !onboarding.codeComplete}
                       label="Verify phone"
                       onPress={onboarding.verifyPhone}
+                    />
+                    <Button
+                      busy={onboarding.isResending}
+                      disabled={onboarding.isPending}
+                      label="Send the code again"
+                      onPress={onboarding.resendCode}
+                      variant="ghost"
                     />
                     <Button
                       disabled={onboarding.isPending}

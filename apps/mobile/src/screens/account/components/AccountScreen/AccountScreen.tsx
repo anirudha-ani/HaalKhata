@@ -17,6 +17,7 @@ import { Spinner } from "@/components/ui/Spinner";
 import { TextField } from "@/components/ui/TextField";
 import { CurrencyPicker } from "@/components/ui/CurrencyPicker";
 import { MAX_USER_NAME_LENGTH } from "@haalkhata/shared/text/limits";
+import { VERIFICATION_CODE_INPUT_MAX_CHARACTERS } from "@haalkhata/shared/phone/phone.constants";
 import { colors, radii, spacing } from "@/lib/theme/theme";
 import { PaymentMethodsSection } from "@/components/payment/PaymentMethodsSection";
 import { useAccountAPI, useProfileForm } from "./hooks/useAccount";
@@ -200,22 +201,33 @@ function ProfileForm({ me: currentUser }: { me: User }) {
               Enter the code sent to {form.verificationPhone}. No account data changes until the
               code is confirmed.
             </Text>
-            <TextInput
-              accessibilityLabel="Verification code"
-              autoComplete="one-time-code"
-              keyboardType="number-pad"
-              maxLength={10}
-              onChangeText={(text) => form.setVerificationCode(text.replace(/\D/g, ""))}
-              style={styles.codeInput}
-              textContentType="oneTimeCode"
-              value={form.verificationCode}
-            />
+            <View style={styles.fieldBlock}>
+              <TextInput
+                accessibilityHint={form.codeHint}
+                accessibilityLabel="Verification code"
+                autoComplete="one-time-code"
+                keyboardType="number-pad"
+                maxLength={VERIFICATION_CODE_INPUT_MAX_CHARACTERS}
+                onChangeText={form.enterVerificationCode}
+                style={styles.codeInput}
+                textContentType="oneTimeCode"
+                value={form.verificationCode}
+              />
+              <Text style={styles.fieldHint}>{form.codeHint}</Text>
+            </View>
             {form.error ? <Text style={styles.error}>{form.error}</Text> : null}
             <Button
-              busy={form.isSaving}
-              disabled={form.verificationCode.length < 4}
+              busy={form.isVerifying}
+              disabled={form.isSaving || !form.codeComplete}
               label="Verify phone"
               onPress={form.verifyPhone}
+            />
+            <Button
+              busy={form.isResending}
+              disabled={form.isSaving}
+              label="Send the code again"
+              onPress={form.resendCode}
+              variant="ghost"
             />
           </View>
         </Sheet>
