@@ -1,7 +1,7 @@
 "use client";
 /** Usage dashboard state: the chosen trend series, split type, search and ordering, over the overview query. */
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { errorMessage } from "@/lib/api/connect";
 import {
   ALL_SPLIT_TYPES,
@@ -10,10 +10,10 @@ import {
   type PeopleSortKey,
   type TrendMetric,
 } from "../constants/adminPage";
-import { isSessionEnded } from "../utils/isSessionEnded";
 import { searchPeople } from "../utils/searchPeople";
 import { sortPeople } from "../utils/sortPeople";
 import { useAdminAnalyticsAPI } from "./useAdminAnalyticsAPI";
+import { useSessionEndWatch } from "./useSessionEndWatch";
 
 /**
  * Holds what the operator has chosen on the usage dashboard and derives the
@@ -25,29 +25,19 @@ import { useAdminAnalyticsAPI } from "./useAdminAnalyticsAPI";
  *
  * @param options - Hook options.
  * @param options.onSessionEnded - Called when the server says the admin
- *   session is over, or once the operator signs out.
+ *   session is over.
  * @returns The `overview`, the visible `people`, each control's value and
  *   setter, and the query's loading, refreshing and error state.
  */
 export function useUsageDashboard({ onSessionEnded }: { onSessionEnded: () => void }) {
-  const { query, signOut, forgetOverview } = useAdminAnalyticsAPI({
-    onSignedOut: onSessionEnded,
-  });
+  const query = useAdminAnalyticsAPI();
   const [trendMetric, setTrendMetric] = useState<TrendMetric>(DEFAULT_TREND_METRIC);
   const [chosenWeek, setChosenWeek] = useState("");
   const [splitType, setSplitType] = useState(ALL_SPLIT_TYPES);
   const [searchText, setSearchText] = useState("");
   const [sort, setSort] = useState(DEFAULT_PEOPLE_SORT);
 
-  const sessionEnded = isSessionEnded(query.error);
-  // An ended session is not an error to read; it is a reason to sign in.
-  // The cached overview goes first: its figures must not outlive the
-  // session, and its error must not be what the next dashboard reads.
-  useEffect(() => {
-    if (!sessionEnded) return;
-    forgetOverview();
-    onSessionEnded();
-  }, [sessionEnded, forgetOverview, onSessionEnded]);
+  const sessionEnded = useSessionEndWatch([query.error], onSessionEnded);
 
   const overview = query.data;
   const weeks = overview?.weeks ?? [];
@@ -94,8 +84,5 @@ export function useUsageDashboard({ onSessionEnded }: { onSessionEnded: () => vo
     isRefreshing: query.isFetching && !query.isLoading,
     error: query.error && !sessionEnded ? errorMessage(query.error) : "",
     refresh: () => void query.refetch(),
-    signOut: () => signOut.mutate(),
-    isSigningOut: signOut.isPending,
-    signOutError: signOut.error ? errorMessage(signOut.error) : "",
   };
 }

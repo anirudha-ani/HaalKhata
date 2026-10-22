@@ -1,10 +1,10 @@
 "use client";
 /** Usage dashboard: how many people use the product and what they do with it. */
 
-import { RotateCw } from "lucide-react";
 import { Spinner } from "@/components/ui/Spinner/Spinner";
 import { useUsageDashboard } from "../../hooks/useUsageDashboard";
-import { DashboardHeader } from "./components/DashboardHeader/DashboardHeader";
+import { LoadError } from "../LoadError/LoadError";
+import { PanelHeader } from "../PanelHeader/PanelHeader";
 import { PeopleTable } from "./components/PeopleTable/PeopleTable";
 import { SplitTypeCard } from "./components/SplitTypeCard/SplitTypeCard";
 import { TotalsGrid } from "./components/TotalsGrid/TotalsGrid";
@@ -25,7 +25,7 @@ import { TrendCard } from "./components/TrendCard/TrendCard";
 export function UsageDashboard({
   onSessionEnded,
 }: {
-  /** Called when the admin session is over, by sign-out or by the server's say-so. */
+  /** Called when the server says the admin session is over. */
   onSessionEnded: () => void;
 }) {
   const dashboard = useUsageDashboard({ onSessionEnded });
@@ -33,40 +33,20 @@ export function UsageDashboard({
 
   return (
     <div className="space-y-6">
-      <DashboardHeader
+      <PanelHeader
         generatedAt={overview?.generatedAt ?? ""}
+        scope="Counts and display names only."
         onRefresh={dashboard.refresh}
         isRefreshing={dashboard.isRefreshing || dashboard.isLoading}
-        onSignOut={dashboard.signOut}
-        isSigningOut={dashboard.isSigningOut}
       />
 
-      {dashboard.signOutError ? (
-        <p
-          role="alert"
-          className="rounded-2xl border border-neg-600/20 bg-neg-50 px-4 py-3 text-sm font-medium text-neg-700"
-        >
-          Couldn&apos;t sign out: {dashboard.signOutError}. You are still signed in.
-        </p>
-      ) : null}
-
       {dashboard.error ? (
-        <div
-          role="alert"
-          className="flex flex-wrap items-center gap-3 rounded-2xl border border-neg-600/20 bg-neg-50 px-4 py-3 text-sm font-medium text-neg-700"
-        >
-          <span className="min-w-0 flex-1">
-            Couldn&apos;t load usage: {dashboard.error}
-            {overview ? ". The figures below are from the last successful read." : ""}
-          </span>
-          <button
-            type="button"
-            onClick={dashboard.refresh}
-            className="flex shrink-0 items-center gap-1.5 rounded-lg border border-neg-600/30 px-3 py-1.5 text-xs font-semibold hover:bg-card"
-          >
-            <RotateCw className="h-3.5 w-3.5" /> Try again
-          </button>
-        </div>
+        <LoadError
+          what="usage"
+          message={dashboard.error}
+          staleNote={overview ? "The figures below are from the last successful read." : ""}
+          onRetry={dashboard.refresh}
+        />
       ) : null}
 
       {dashboard.isLoading ? (

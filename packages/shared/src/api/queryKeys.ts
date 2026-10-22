@@ -97,8 +97,12 @@ export const queryKeys = {
    * @returns The query key tuple for that window.
    */
   insights: (months: number) => ["insights", months] as const,
+  /** Everything cached for the admin surface; forgotten together when the admin session ends. */
+  admin: ["admin"] as const,
   /** The operator's usage overview on the admin surface. */
   adminUsage: ["admin", "usage"] as const,
+  /** The operator's report queue on the admin surface. */
+  adminReports: ["admin", "reports"] as const,
 };
 
 /** Everything money-related that a new expense/settlement can change — invalidate these key prefixes after mutations. */

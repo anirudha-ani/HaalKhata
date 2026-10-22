@@ -56,3 +56,9 @@ export const DEFAULT_PEOPLE_SORT: { key: PeopleSortKey; direction: SortDirection
   key: "joined",
   direction: "descending",
 };
+
+/** Which half of the admin page is showing: the usage overview or the report queue. */
+export type AdminView = "usage" | "reports";
+
+/** The view the page opens on. Usage is what the page is for most days. */
+export const DEFAULT_ADMIN_VIEW: AdminView = "usage";

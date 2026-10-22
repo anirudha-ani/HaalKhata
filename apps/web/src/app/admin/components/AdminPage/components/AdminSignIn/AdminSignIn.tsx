@@ -35,7 +35,7 @@ export function AdminSignIn({
   return (
     <div className="mx-auto mt-[12vh] max-w-sm rounded-2xl border border-line bg-card p-6 text-center">
       <ShieldCheck className="mx-auto h-8 w-8 text-brand-600" aria-hidden="true" />
-      <h1 className="mt-3 text-2xl font-bold">HaalKhata usage</h1>
+      <h1 className="mt-3 text-2xl font-bold">HaalKhata admin</h1>
       <p className="mt-2 text-sm text-ink-soft">
         For the operator of this server. Sign in with a Google account on the admin allowlist.
       </p>

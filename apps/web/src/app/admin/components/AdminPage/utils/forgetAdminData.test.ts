@@ -4,7 +4,7 @@ import { Code, ConnectError } from "@connectrpc/connect";
 import { QueryClient, QueryObserver } from "@tanstack/react-query";
 import { describe, expect, it } from "vitest";
 import { queryKeys } from "@haalkhata/shared/api/queryKeys";
-import { forgetUsageOverview } from "./forgetUsageOverview";
+import { forgetAdminData } from "./forgetAdminData";
 import { isSessionEnded } from "./isSessionEnded";
 
 /**
@@ -48,7 +48,7 @@ function firstReadOnMount(queryClient: QueryClient) {
   return result;
 }
 
-describe("forgetUsageOverview", () => {
+describe("forgetAdminData", () => {
   it("is needed: without it the next dashboard reads the old session's refusal", async () => {
     const queryClient = await clientAfterSessionExpired();
 
@@ -62,7 +62,7 @@ describe("forgetUsageOverview", () => {
   it("leaves the next dashboard nothing to read: no refusal and no figures", async () => {
     const queryClient = await clientAfterSessionExpired();
 
-    forgetUsageOverview(queryClient);
+    forgetAdminData(queryClient);
 
     expect(queryClient.getQueryState(queryKeys.adminUsage)).toBeUndefined();
     const result = firstReadOnMount(queryClient);
@@ -71,11 +71,20 @@ describe("forgetUsageOverview", () => {
     expect(result.isLoading).toBe(true);
   });
 
+  it("forgets the report queue too: reported words do not outlive the session", async () => {
+    const queryClient = await clientAfterSessionExpired();
+    queryClient.setQueryData(queryKeys.adminReports, { reports: [{ text: "reported words" }] });
+
+    forgetAdminData(queryClient);
+
+    expect(queryClient.getQueryState(queryKeys.adminReports)).toBeUndefined();
+  });
+
   it("does not touch anything else in the cache", async () => {
     const queryClient = await clientAfterSessionExpired();
     queryClient.setQueryData(["unrelated"], "kept");
 
-    forgetUsageOverview(queryClient);
+    forgetAdminData(queryClient);
 
     expect(queryClient.getQueryData(["unrelated"])).toBe("kept");
   });
