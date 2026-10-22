@@ -54,12 +54,12 @@ The page and this service are served from their own hostname (`ADMIN_HOST`;
 | --- | --- | --- |
 | The admin page | Served (the root redirects to it) | 404 |
 | Any other page | 404 | Served |
-| This service's RPCs | Served | 404 |
+| This service's and AdminModerationService's RPCs | Served | 404 |
 | Every other service's RPCs | 404 | Served |
 
 - One function decides (`requestSurface`), and it is applied three times:
   the page proxy, the Connect mount (before the CSRF guard or the database),
-  and each handler of this service.
+  and each handler of both admin services.
 - With `ADMIN_HOST` unset, production has **no admin surface at all**.
   Development serves both from whatever host it runs on, since there is only
   one localhost.
@@ -128,8 +128,9 @@ the app**.
 
 ## What the Counts Mean
 
-- **Registered** people have signed in (a Google account or, in development,
-  a password). Merge tombstones are neither registered nor invited.
+- **Registered** people have signed in (Google, Apple or, in development, a
+  password). Merge tombstones, and the anonymous stand-ins account deletion
+  leaves in shared ledgers, are neither registered nor invited.
 - **Active** in 7 / 30 days: distinct people who did anything that reaches
   the feed. The `activity` table already records every such action with its
   actor, so no tracking table exists for this.
@@ -138,7 +139,9 @@ the app**.
 - **Expenses** count everything ever added, deleted ones included;
   `deleted_expense_count` says how many were later deleted.
 - **Payments** exclude a net settlement's cancelling (`offset`) entries.
-- **Receipt scans** are counted from the day scan counting shipped.
+- **Receipt scans** are counted from the day scan counting shipped, and only
+  once the person has allowed AI scanning: a scan refused for want of
+  permission never reached a provider. Deleting an account deletes its scans.
 - **Payment methods** are counted, and how many people have saved one. A
   method's name and details, and the name a payment keeps of the method it
   was made with (`settlements.method_label`), are never read here: they say

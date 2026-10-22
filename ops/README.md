@@ -210,12 +210,15 @@ once, including the attacker's.
 
 ## Usage page (`admin.haalkhata.app`)
 
-The operator's usage page is served by the same `web` container as the app,
+The operator's admin page (the usage overview, and the report queue described
+under "Content moderation") is served by the same `web` container as the app,
 on its own hostname. The app decides what to serve by the `Host` header:
-`admin.haalkhata.app` reaches the usage page and its API and nothing else,
-and the app's hostnames reach neither. It shows product-wide counts and
-display names only; see
-[`docs/backend/adminanalytics/adminanalytics-service.md`](../docs/backend/adminanalytics/adminanalytics-service.md).
+`admin.haalkhata.app` reaches the admin page and its two APIs and nothing
+else, and the app's hostnames reach none of them. The usage view shows
+product-wide counts and display names only, and the Reports view only what
+someone reported; see
+[`docs/backend/adminanalytics/adminanalytics-service.md`](../docs/backend/adminanalytics/adminanalytics-service.md)
+and [`docs/backend/adminmoderation/adminmoderation-service.md`](../docs/backend/adminmoderation/adminmoderation-service.md).
 
 First-time setup, **in this order**:
 
@@ -406,10 +409,17 @@ when Apple configuration or the native Google audience is missing.
 
 ## Content moderation
 
-Install `ops/moderate.sh` alongside the server ops scripts. Review the private
-queue at least daily and respond to safety reports promptly (target: within 24
-hours). The console reads the matching SQL from the deployed image; it uses the
-internal Postgres connection and exposes no public moderator endpoint.
+Review the queue at least daily and respond to safety reports promptly
+(target: within 24 hours). There are two ways in, and they do the same thing:
+
+- **The admin page**, Reports view (`admin.haalkhata.app`, set up as in
+  "Usage page" above). It groups reports by the content they are about,
+  shows the reported words and who wrote them (never who reported), asks
+  before removing or suspending, and lists who is suspended with a Resume
+  button. The count of waiting reports shows on its view switch.
+- **`ops/moderate.sh`**, installed alongside the server ops scripts. It reads
+  the matching SQL from the deployed image and uses the internal Postgres
+  connection. Use it when the admin page is unavailable.
 
 ```sh
 ./ops/moderate.sh list
@@ -417,6 +427,17 @@ internal Postgres connection and exposes no public moderator endpoint.
 ./ops/moderate.sh dismiss REPORT_UUID  # close a reviewed, non-actionable report
 ./ops/moderate.sh suspend REPORT_UUID  # revoke sessions and refuse new authenticated requests
 ./ops/moderate.sh resume REPORT_UUID   # restore access after review; old sessions stay invalid
+```
+
+Someone suspended whose every report has since gone (reports are deleted with
+the account of whoever made them) has nothing left to resume through, in
+either tool; the page lists them without a button. Resume them by hand:
+
+```sh
+docker compose -f docker-compose.prod.yml exec -T db psql -U haalkhata -d haalkhata \
+  -c "SELECT id, name, suspended_at FROM users WHERE suspended_at IS NOT NULL"
+docker compose -f docker-compose.prod.yml exec -T db psql -U haalkhata -d haalkhata \
+  -c "UPDATE users SET suspended_at = NULL, token_version = token_version + 1 WHERE id = '<id>'"
 ```
 
 Keep queue output private. Block controls work despite outstanding balances and

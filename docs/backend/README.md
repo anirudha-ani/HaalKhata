@@ -1,6 +1,6 @@
 # HaalKhata Backend Service Documentation
 
-HaalKhata's backend is a set of ten ConnectRPC services served by the Next.js
+HaalKhata's backend is a set of eleven ConnectRPC services served by the Next.js
 web app (`apps/web`). Every service is defined by a protobuf contract under
 `proto/` and implemented in `apps/web/src/server/<domain>/` following one
 layering rule:
@@ -44,6 +44,7 @@ HTTP; JSON or binary protobuf). The mount lives at
 | `payment.v1.PaymentMethodService` | [payment.proto](../../proto/payment/v1/payment.proto) | [payment/payment-service.md](payment/payment-service.md) | The payment methods a person defines (name, currency, labelled details), the preferred one per currency, and who is sent them |
 | `personalanalytics.v1.PersonalAnalyticsService` | [personalanalytics.proto](../../proto/personalanalytics/v1/personalanalytics.proto) | [personalanalytics/personalanalytics-service.md](personalanalytics/personalanalytics-service.md) | A person's own insights: spending by month and category, who they split with, lifetime figures |
 | `adminanalytics.v1.AdminAnalyticsService` | [adminanalytics.proto](../../proto/adminanalytics/v1/adminanalytics.proto) | [adminanalytics/adminanalytics-service.md](adminanalytics/adminanalytics-service.md) | The operator's usage overview (counts and display names only), with its own sign-in, on the admin hostname |
+| `adminmoderation.v1.AdminModerationService` | [adminmoderation.proto](../../proto/adminmoderation/v1/adminmoderation.proto) | [adminmoderation/adminmoderation-service.md](adminmoderation/adminmoderation-service.md) | The operator's report queue: what people reported, and dismiss, remove, suspend and resume, on the admin hostname |
 
 ## Cross-Cutting Documentation
 

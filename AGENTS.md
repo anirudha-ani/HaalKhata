@@ -40,9 +40,10 @@ apps/web/                    Next.js app
     <domain>.constants.ts      constants for this domain
   src/server/common/         shared infra: db/, ledger/, money/, secrets/,
                              rateLimit/, validation/, readiness/
-  src/server/api/connect/    context.ts (auth/cookies/error map), routes.ts, csrf.ts
+  src/server/api/connect/    context.ts (auth/cookies/error map), routes.ts, csrf.ts,
+                             adminRequest.ts (the admin services' host/origin checks)
   src/config/                securityHeaders.ts (CSP) and adminSurface.ts (which
-                             hostname reaches the admin page and its API)
+                             hostname reaches the admin page and its APIs)
   src/pages/api/connect/     [[...connect]].ts — mount point only
   src/app/<route>/           UI (thin page.tsx → components/<Page>/<Page>.tsx,
                              with its own components/, hooks/, constants/, utils/)
@@ -285,9 +286,9 @@ with colocated tests. Mobile-specific rules:
   `packages/shared` with its tests, never written twice. The only
   native-only RPCs are `LogInWithApple` and `RegisterDevice` (a browser
   has no Apple credential or Expo push token); `pnpm test:parity` names both.
-  The one page with no mobile twin is the operator's usage page (`/admin`):
-  it is not a user feature, and it is deliberately reachable from one
-  hostname only.
+  The one page with no mobile twin is the operator's admin page (`/admin`:
+  usage and reports): it is not a user feature, and it is deliberately
+  reachable from one hostname only.
 - **Auth is bearer-token**, not cookies: LogInWithGoogle (production) or
   LogIn/SignUp (development only) return `token`, stored
   in SecureStore (`src/lib/api/session.ts`) and attached by a transport
@@ -416,8 +417,11 @@ with colocated tests. Mobile-specific rules:
 - **The admin surface is a hostname, and it is checked three times.**
   `requestSurface()` in `config/adminSurface.ts` decides whether a request
   is on the app or the admin page, and the page proxy, the Connect mount and
-  the admin handlers each ask it. On `ADMIN_HOST` only the admin page and
-  `AdminAnalyticsService` exist; everywhere else neither does. A new page or
+  the admin handlers each ask it. On `ADMIN_HOST` only the admin page,
+  `AdminAnalyticsService` and `AdminModerationService` exist; everywhere
+  else none of them does. A new admin service goes in `ADMIN_RPC_PREFIXES`
+  and starts every method with `requireAdminPageRequest` and the admin
+  session (`api/connect/adminRequest.ts`). A new page or
   service lands on the app surface by default and needs nothing. Do not add
   a second mount of `routes`, an exception to the gate, or a redirect where
   it answers 404. Do not rewrite to the admin page from the proxy either:
@@ -440,6 +444,14 @@ with colocated tests. Mobile-specific rules:
   email address, a phone number or the start of the person's email is
   withheld in the same SQL. A new figure there is a new count; if it needs
   a column a person would call private, it does not belong on that page.
+- **The report queue shows what was reported, never who reported it.**
+  `adminmoderation/repo/moderation.repo.ts` takes the words out of the
+  report's server-made snapshot field by field, names the author through
+  the same withholding rule (`adminanalytics/repo/displayName.ts`), and
+  never selects `reporter_id` or any id but a report's own. Its removal
+  mirrors `safety/repo/moderation.sql` (what `ops/moderate.sh` runs), and
+  `moderationParity.integration.test.ts` runs both on the same data: change
+  one, change the other.
 - **Analytics are counted, not collected.** Personal insights and the usage
   overview are aggregates over rows the product already keeps. The single
   purpose-built tally is `receipt_scans` (who, when, parsed or failed),
