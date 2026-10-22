@@ -1,7 +1,10 @@
 /** Unit tests for the Twilio Verify possession-check boundary. */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { confirmPhoneVerification, startPhoneVerification } from "./phoneVerification";
+import { checkPhoneVerification, startPhoneVerification } from "./phoneVerification";
+
+const PHONE = "+16175551212";
+const CODE = "48291375";
 
 /** Builds a JSON response from the provider. */
 function providerResponse(status: number, body: object): Response {
@@ -39,10 +42,71 @@ describe("phone verification", () => {
     expect(options?.headers).toMatchObject({ "content-type": "application/x-www-form-urlencoded" });
   });
 
-  it("accepts only an approved verification check", async () => {
+  it("reads an approved check as approved", async () => {
     vi.mocked(fetch).mockResolvedValue(providerResponse(200, { status: "approved" }));
 
-    await expect(confirmPhoneVerification("+16175551212", "123456")).resolves.toBeUndefined();
+    await expect(checkPhoneVerification(PHONE, CODE)).resolves.toBe("approved");
+    const [, options] = vi.mocked(fetch).mock.calls[0];
+    expect(String(options?.body)).toBe(`To=%2B16175551212&Code=${CODE}`);
+  });
+
+  it("reads a still-pending verification as a wrong code", async () => {
+    // Twilio answers a wrong code with 200 and the verification unchanged.
+    vi.mocked(fetch).mockResolvedValue(providerResponse(200, { status: "pending" }));
+
+    await expect(checkPhoneVerification(PHONE, CODE)).resolves.toBe("rejected");
+  });
+
+  it("reads a missing verification as gone", async () => {
+    vi.mocked(fetch).mockResolvedValue(providerResponse(404, { code: 20404 }));
+
+    await expect(checkPhoneVerification(PHONE, CODE)).resolves.toBe("gone");
+  });
+
+  it("reads an ended verification as gone", async () => {
+    vi.mocked(fetch).mockResolvedValue(providerResponse(200, { status: "canceled" }));
+
+    await expect(checkPhoneVerification(PHONE, CODE)).resolves.toBe("gone");
+  });
+
+  it("reads the provider's check limit as exhausted", async () => {
+    vi.mocked(fetch).mockResolvedValue(providerResponse(429, { code: 60202, status: 429 }));
+
+    await expect(checkPhoneVerification(PHONE, CODE)).resolves.toBe("exhausted");
+  });
+
+  it("treats provider rate limiting and outages as unavailable", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(providerResponse(429, { code: 20429 }));
+    await expect(checkPhoneVerification(PHONE, CODE)).rejects.toMatchObject({
+      code: "unavailable",
+    });
+
+    vi.mocked(fetch).mockResolvedValueOnce(providerResponse(503, {}));
+    await expect(checkPhoneVerification(PHONE, CODE)).rejects.toMatchObject({
+      code: "unavailable",
+    });
+  });
+
+  it("never reports refused credentials as a wrong code", async () => {
+    vi.mocked(fetch).mockResolvedValue(providerResponse(401, { code: 20003 }));
+
+    await expect(checkPhoneVerification(PHONE, CODE)).rejects.toMatchObject({
+      code: "unavailable",
+    });
+  });
+
+  it("reads a code the provider cannot parse as rejected", async () => {
+    vi.mocked(fetch).mockResolvedValue(providerResponse(400, { code: 60200 }));
+
+    await expect(checkPhoneVerification(PHONE, CODE)).resolves.toBe("rejected");
+  });
+
+  it("treats a 200 with no readable status as unavailable", async () => {
+    vi.mocked(fetch).mockResolvedValue(new Response("not json", { status: 200 }));
+
+    await expect(checkPhoneVerification(PHONE, CODE)).rejects.toMatchObject({
+      code: "unavailable",
+    });
   });
 
   it("fails closed when provider credentials are missing", async () => {
@@ -54,19 +118,12 @@ describe("phone verification", () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 
-  it("rejects malformed codes before calling the provider", async () => {
-    await expect(confirmPhoneVerification("+16175551212", "12ab")).rejects.toMatchObject({
-      code: "invalid_argument",
-    });
+  it("rejects anything but a whole code before calling the provider", async () => {
+    for (const code of ["12ab", "482913", "4829137512"]) {
+      await expect(checkPhoneVerification(PHONE, code)).rejects.toMatchObject({
+        code: "invalid_argument",
+      });
+    }
     expect(fetch).not.toHaveBeenCalled();
-  });
-
-  it("maps an expired or incorrect code to a safe validation error", async () => {
-    vi.mocked(fetch).mockResolvedValue(providerResponse(404, { code: 20404 }));
-
-    await expect(confirmPhoneVerification("+16175551212", "123456")).rejects.toMatchObject({
-      code: "invalid_argument",
-      message: "that verification code is invalid or expired",
-    });
   });
 });

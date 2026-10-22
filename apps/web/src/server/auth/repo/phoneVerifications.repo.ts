@@ -2,27 +2,59 @@
 
 import { execute, query, queryOne } from "@/server/common/db";
 
+/** The live verification behind one account and number. */
+export interface PhoneVerificationRow {
+  /** Code checks spent on it so far. */
+  check_count: number;
+  /** When it stops being answerable, as an ISO timestamp. */
+  expires_at: string;
+}
+
 /** How a code-check attempt against the stored verification state resolved. */
 export type PhoneCheckAttempt =
   /** An attempt was available and has now been spent; call the provider. */
-  | "ok"
-  /** No live verification for this account and phone — expired, consumed, or never sent. */
-  | "no_verification"
-  /** The verification exists but its attempt budget is used up; a new SMS is required. */
-  | "exhausted";
+  | { status: "ok"; checkCount: number; expiresAt: string }
+  /** No live verification for this account and phone: expired, consumed, or never sent. */
+  | { status: "no_verification" }
+  /** The verification is live but its attempt budget is used up until it expires. */
+  | { status: "exhausted"; expiresAt: string };
 
 /**
- * Starts (or restarts) the account's one active verification. An account has
- * at most one: asking for a new code replaces the old state outright, which
- * also resets the attempt budget — the budget guards one delivered code, not
- * the account (per-account pacing is the rate limiter's job).
+ * Reads the live verification for this account and number, if there is one.
+ *
+ * @param userId - Account that asked for the code.
+ * @param phone - E.164 number the code was sent to.
+ * @returns The row, or undefined when none is live.
+ */
+export async function findPhoneVerification(
+  userId: string,
+  phone: string,
+): Promise<PhoneVerificationRow | undefined> {
+  return queryOne<PhoneVerificationRow>(
+    `SELECT check_count, expires_at FROM phone_verifications
+      WHERE user_id = $1 AND phone = $2 AND expires_at > NOW()`,
+    [userId, phone],
+  );
+}
+
+/**
+ * Starts the account's one active verification, or keeps it when a code for
+ * the same number is still live.
+ *
+ * Keeping it mirrors the provider. Twilio Verify answers a resend inside a
+ * verification's lifetime by texting the SAME code again, under the same
+ * verification, with the same five-check budget and the same expiry. A
+ * resend that reset the budget and pushed the expiry out here would let the
+ * two sides drift: this server would invite checks the provider has stopped
+ * accepting, and answer a correct code with "invalid". A different number,
+ * or nothing live, starts afresh on both sides, so the row does too.
  *
  * Expired rows are pruned here, the same bounded-cleanup pattern the sign-in
  * nonces use, so the table never outgrows its ten-minute horizon.
  *
  * @param userId - Account requesting the SMS.
  * @param phone - E.164 destination the code is being sent to.
- * @param lifetimeSeconds - Seconds until the verification stops being answerable.
+ * @param lifetimeSeconds - Seconds until a new verification stops being answerable.
  */
 export async function beginPhoneVerification(
   userId: string,
@@ -34,7 +66,9 @@ export async function beginPhoneVerification(
     `INSERT INTO phone_verifications (user_id, phone, check_count, expires_at)
      VALUES ($1, $2, 0, NOW() + make_interval(secs => $3))
      ON CONFLICT (user_id) DO UPDATE
-       SET phone = EXCLUDED.phone, check_count = 0, expires_at = EXCLUDED.expires_at`,
+       SET phone = EXCLUDED.phone, check_count = 0, expires_at = EXCLUDED.expires_at
+       WHERE phone_verifications.phone <> EXCLUDED.phone
+          OR phone_verifications.expires_at <= NOW()`,
     [userId, phone, lifetimeSeconds],
   );
 }
@@ -44,34 +78,48 @@ export async function beginPhoneVerification(
  *
  * The increment happens BEFORE the provider is called: a crash mid-check has
  * then still consumed the attempt, so the budget can never be exceeded by
- * retrying into a failure. An exhausted row is left in place — it keeps
- * blocking attempts until it expires, rather than letting deletion reopen
- * the budget.
+ * retrying into a failure. An exhausted row is left in place: it keeps
+ * blocking attempts, and sends, until it expires, rather than letting
+ * deletion reopen the budget.
  *
  * @param userId - Account submitting the code.
  * @param phone - E.164 number the code claims to verify.
- * @param maxChecks - Attempts allowed per delivered code.
- * @returns How the attempt resolved.
+ * @param maxChecks - Attempts allowed per verification.
+ * @returns How the attempt resolved, with the count and expiry it found.
  */
 export async function spendPhoneCheckAttempt(
   userId: string,
   phone: string,
   maxChecks: number,
 ): Promise<PhoneCheckAttempt> {
-  const spent = await queryOne<{ check_count: number }>(
+  const spent = await queryOne<PhoneVerificationRow>(
     `UPDATE phone_verifications
         SET check_count = check_count + 1
       WHERE user_id = $1 AND phone = $2 AND expires_at > NOW() AND check_count < $3
-      RETURNING check_count`,
+      RETURNING check_count, expires_at`,
     [userId, phone, maxChecks],
   );
-  if (spent) return "ok";
-  const existing = await queryOne<{ check_count: number }>(
-    `SELECT check_count FROM phone_verifications
-      WHERE user_id = $1 AND phone = $2 AND expires_at > NOW()`,
-    [userId, phone],
+  if (spent) return { status: "ok", checkCount: spent.check_count, expiresAt: spent.expires_at };
+  const existing = await findPhoneVerification(userId, phone);
+  return existing
+    ? { status: "exhausted", expiresAt: existing.expires_at }
+    : { status: "no_verification" };
+}
+
+/**
+ * Marks the account's verification as out of attempts, for when the
+ * provider reports its own check limit reached. The row stays until it
+ * expires, so sends and checks are refused with the time left instead of
+ * reaching a provider that will refuse them.
+ *
+ * @param userId - Account whose verification ran out.
+ * @param maxChecks - Attempts allowed per verification.
+ */
+export async function exhaustPhoneVerification(userId: string, maxChecks: number): Promise<void> {
+  await execute(
+    "UPDATE phone_verifications SET check_count = GREATEST(check_count, $2) WHERE user_id = $1",
+    [userId, maxChecks],
   );
-  return existing ? "exhausted" : "no_verification";
 }
 
 /**
