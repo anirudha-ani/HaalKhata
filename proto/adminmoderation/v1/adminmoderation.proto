@@ -1,0 +1,109 @@
+syntax = "proto3";
+
+package adminmoderation.v1;
+
+import "google/protobuf/empty.proto";
+
+// The operator's side of the app's report button: what people reported, and
+// the four things the operator can do about it. These are the actions of
+// ops/moderate.sh, on the admin page instead of a shell on the server.
+//
+// What crosses this contract is what someone chose to report, as the server
+// copied it at the time, and the display name of the person who wrote it.
+// Reading those words is the job, so they are shown as written. Nothing else
+// about anyone does: never who made a report, and never an email, phone,
+// avatar, account id, amount of money, payer, member list or group. A
+// report's own id is the only id here, and every action names a report
+// rather than a person.
+//
+// Like AdminAnalyticsService, this service answers only on the admin host,
+// only to the admin page itself, and only for a live admin session.
+service AdminModerationService {
+  // Open reports grouped by what they are about, oldest first, and the
+  // accounts suspended right now.
+  rpc ListReports(google.protobuf.Empty) returns (ReportQueue);
+  // Closes every open report about the same content and leaves the content
+  // as it is.
+  rpc DismissReport(ReportActionRequest) returns (google.protobuf.Empty);
+  // Deletes or blanks the reported content, exactly as `moderate.sh remove`
+  // does, and closes every open report about it. Balances, amounts and who
+  // owes whom are untouched.
+  rpc RemoveReportedContent(ReportActionRequest) returns (google.protobuf.Empty);
+  // Suspends the account that wrote the reported content and ends every
+  // session it has, on the web and on phones. The report stays open.
+  rpc SuspendAuthor(ReportActionRequest) returns (google.protobuf.Empty);
+  // Lifts that suspension. The person can sign in again; the sessions the
+  // suspension ended stay ended.
+  rpc ResumeAuthor(ReportActionRequest) returns (google.protobuf.Empty);
+}
+
+message ReportActionRequest {
+  // The report to act through, from ReportQueue.
+  string report_id = 1;
+}
+
+message ReportQueue {
+  // RFC 3339 instant the queue was read.
+  string generated_at = 1;
+  // One entry per piece of reported content, longest waiting first. Capped;
+  // see reports_truncated.
+  repeated ReportedContent reports = 2;
+  // True when more content is waiting than `reports` lists.
+  bool reports_truncated = 3;
+  // Accounts suspended right now, most recently suspended first. Capped.
+  repeated SuspendedAccount suspended = 4;
+}
+
+// One piece of content and every open report about it. Several people
+// reporting the same comment is one thing to decide, not several.
+message ReportedContent {
+  // The newest open report about this content: the handle every action takes.
+  string report_id = 1;
+  string target_kind = 2; // comment | expense | group | user
+  // How many open reports there are about it.
+  int32 report_count = 3;
+  // Why it was reported, most given reason first.
+  repeated ReasonCount reasons = 4;
+  // RFC 3339 instants of the oldest and newest open report about it.
+  string first_reported_at = 5;
+  string last_reported_at = 6;
+  // The reported words as the server copied them at the newest report: a
+  // comment's text, an expense's description, a group's name, or a
+  // person's display name.
+  string text = 7;
+  // An expense's notes; empty for everything else.
+  string notes = 8;
+  // An expense's item names; empty for everything else.
+  repeated string item_names = 9;
+  ReportedAuthor author = 10;
+}
+
+message ReasonCount {
+  string reason = 1; // harassment | hate | sexual | spam | other
+  int32 count = 2;
+}
+
+// Who wrote the reported content, as far as deciding about it needs.
+message ReportedAuthor {
+  // Their display name. Empty when the name is itself a way to reach them,
+  // by the same rule as the usage overview.
+  string name = 1;
+  bool suspended = 2;
+  // False when the account no longer stands for a person: it was merged
+  // into another account. There is no one to suspend through this report.
+  bool active = 3;
+  // How many pieces of content by the same person are waiting, this one
+  // included.
+  int32 open_report_count = 4;
+}
+
+message SuspendedAccount {
+  // Display name, withheld by the same rule as everywhere on this page.
+  string name = 1;
+  // RFC 3339 instant the suspension began.
+  string suspended_at = 2;
+  // The newest report about this person, open or closed, to resume
+  // through. Empty when there is none left, for instance because whoever
+  // reported them has since deleted their account.
+  string report_id = 3;
+}

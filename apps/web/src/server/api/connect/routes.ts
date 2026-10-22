@@ -12,6 +12,7 @@ import { PaymentMethodService } from "@haalkhata/protogen/payment/v1/payment_pb"
 import { PushService } from "@haalkhata/protogen/push/v1/push_pb";
 import { PersonalAnalyticsService } from "@haalkhata/protogen/personalanalytics/v1/personalanalytics_pb";
 import { AdminAnalyticsService } from "@haalkhata/protogen/adminanalytics/v1/adminanalytics_pb";
+import { AdminModerationService } from "@haalkhata/protogen/adminmoderation/v1/adminmoderation_pb";
 import { authHandler } from "@/server/auth/handler";
 import { groupHandler } from "@/server/group/handler";
 import { expenseHandler } from "@/server/expense/handler";
@@ -21,6 +22,7 @@ import { paymentMethodHandler } from "@/server/payment/handler";
 import { pushHandler } from "@/server/push/handler";
 import { personalAnalyticsHandler } from "@/server/personalanalytics/handler";
 import { adminAnalyticsHandler } from "@/server/adminanalytics/handler";
+import { adminModerationHandler } from "@/server/adminmoderation/handler";
 
 /**
  * Mounts every HaalKhata service implementation on the Connect router.
@@ -37,6 +39,7 @@ export default function routes(router: ConnectRouter): void {
   router.service(PaymentMethodService, paymentMethodHandler);
   router.service(PushService, pushHandler);
   router.service(PersonalAnalyticsService, personalAnalyticsHandler);
-  // Answers only on the admin hostname; see config/adminSurface.ts.
+  // These two answer only on the admin hostname; see config/adminSurface.ts.
   router.service(AdminAnalyticsService, adminAnalyticsHandler);
+  router.service(AdminModerationService, adminModerationHandler);
 }

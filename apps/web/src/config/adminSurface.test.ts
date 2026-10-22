@@ -8,6 +8,7 @@ const PRODUCTION_WITHOUT_ADMIN = { NODE_ENV: "production" };
 const DEVELOPMENT = { NODE_ENV: "development" };
 
 const ADMIN_RPC = "/api/connect/adminanalytics.v1.AdminAnalyticsService/GetUsageOverview";
+const MODERATION_RPC = "/api/connect/adminmoderation.v1.AdminModerationService/RemoveReportedContent";
 const APP_RPC = "/api/connect/expense.v1.ExpenseService/ListExpenses";
 
 describe("requestSurface", () => {
@@ -104,6 +105,15 @@ describe("rpcAllowedOnSurface", () => {
         PRODUCTION,
       ),
     ).toBe(false);
+  });
+
+  it("treats the moderation queue as the admin surface's own, on both hosts", () => {
+    expect(rpcAllowedOnSurface(MODERATION_RPC, "admin.haalkhata.app", PRODUCTION)).toBe(true);
+    expect(rpcAllowedOnSurface(MODERATION_RPC, "haalkhata.app", PRODUCTION)).toBe(false);
+    expect(rpcAllowedOnSurface(MODERATION_RPC, "haalkhata.app", PRODUCTION_WITHOUT_ADMIN)).toBe(false);
+    const smuggled =
+      "/api/connect/expense.v1.ExpenseService/../adminmoderation.v1.AdminModerationService/ListReports";
+    expect(rpcAllowedOnSurface(smuggled, "haalkhata.app", PRODUCTION)).toBe(false);
   });
 
   it("serves everything but the admin service on the app host", () => {

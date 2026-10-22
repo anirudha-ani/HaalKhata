@@ -13,11 +13,11 @@
  *   the two hostnames are the same site, so the browser would attach the
  *   admin cookie and SameSite would not object. What refuses that request
  *   is the Origin check every admin RPC makes for itself
- *   (adminanalytics/handler.ts), which is why that check is not optional
+ *   (api/connect/adminRequest.ts), which is why that check is not optional
  *   and why this host must never grow a CORS header.
- * - Each origin serves only its own half. The admin host never renders a
- *   page that shows what users typed, and the app host has no admin page or
- *   admin API to probe.
+ * - Each origin serves only its own half. The admin host shows what users
+ *   typed only where someone reported it, in the moderation queue, and the
+ *   app host has no admin page or admin API to probe.
  *
  * The Host header is the caller's to choose, so none of this is the access
  * control: that is the admin session, checked on every admin RPC. This file
@@ -27,8 +27,15 @@
 /** The admin page's route inside the Next app. */
 export const ADMIN_PAGE_PATH = "/admin";
 
-/** Path prefix of every admin RPC under the Connect mount. */
-export const ADMIN_RPC_PREFIX = "/api/connect/adminanalytics.v1.AdminAnalyticsService/";
+/**
+ * Path prefixes of the admin services under the Connect mount: the usage
+ * overview and the moderation queue. On the admin host these are the only
+ * RPCs that exist, and on the app host they are the only ones that do not.
+ */
+export const ADMIN_RPC_PREFIXES = [
+  "/api/connect/adminanalytics.v1.AdminAnalyticsService/",
+  "/api/connect/adminmoderation.v1.AdminModerationService/",
+] as const;
 
 /**
  * What a hostname serves. "both" exists only outside production, where
@@ -124,7 +131,7 @@ export function pageVerdict(
 
 /**
  * Whether an RPC may be served on the surface it arrived on: only the admin
- * service on the admin host, everything but the admin service on the app.
+ * services on the admin host, everything but the admin services on the app.
  *
  * The Connect adapter matches the raw path exactly, so today a path with
  * dot segments reaches no handler at all. The path is normalized here
@@ -150,6 +157,6 @@ export function rpcAllowedOnSurface(
   } catch {
     return false;
   }
-  const isAdminRpc = pathname.startsWith(ADMIN_RPC_PREFIX);
+  const isAdminRpc = ADMIN_RPC_PREFIXES.some((prefix) => pathname.startsWith(prefix));
   return surface === "admin" ? isAdminRpc : !isAdminRpc;
 }

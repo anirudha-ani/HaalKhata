@@ -6,7 +6,7 @@
  * money, a description, a group name or a user id, so there is no column
  * for a later layer to forget to drop: what the admin page must not show
  * never leaves the database. A display name that is itself contact
- * information is withheld here too (see DISPLAY_NAME).
+ * information is withheld here too (see repo/displayName.ts).
  *
  * Payment methods are counted and nothing more. A method's name, its
  * details and the name a payment keeps of the method it was made with
@@ -16,6 +16,7 @@
 
 import type { PoolClient } from "pg";
 import { query, queryOne } from "@/server/common/db/db";
+import { DISPLAY_NAME } from "@/server/adminanalytics/repo/displayName";
 
 /**
  * A row that stands for a person: not a tombstone left by an account merge,
@@ -43,34 +44,6 @@ const INVITED = `${PERSON} AND NOT ${SIGN_IN}`;
  * to created_at for the rare account still mid-onboarding.
  */
 const JOINED_AT = `COALESCE(usr.onboarded_at, usr.created_at)`;
-
-/**
- * A person's display name, or '' when the name is itself a way to reach
- * them. Written for a `users usr` alias.
- *
- * A display name is free text the person typed, and "names only" is a
- * promise about what the operator sees, not about what a column is called.
- * Three cases are withheld:
- *
- * - it contains "@": an email address typed as a name;
- * - it is made of digits and phone punctuation: a number typed as a name;
- * - it equals the part of their email before the "@". Sign-in falls back to
- *   exactly that when Google supplies no name, and with the domain almost
- *   always guessable it is the address in all but name.
- *
- * The last case compares against the email inside the database and returns
- * only the verdict, so the address still never leaves it. It will also
- * withhold a real name that happens to match (someone called "Ani" at
- * ani@...), which costs the operator one name and is the right way round to
- * be wrong.
- */
-const DISPLAY_NAME = `CASE
-    WHEN usr.name LIKE '%@%' THEN ''
-    WHEN usr.name ~ '^[+0-9 ().-]{7,}$' THEN ''
-    WHEN usr.email IS NOT NULL
-         AND lower(btrim(usr.name)) = lower(split_part(usr.email, '@', 1)) THEN ''
-    ELSE usr.name
-  END`;
 
 /** Product-wide totals. */
 export interface UsageTotalsRow {
