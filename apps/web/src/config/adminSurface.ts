@@ -96,11 +96,13 @@ function isAdminPagePath(pathname: string): boolean {
 }
 
 /**
- * Decides what a page request gets on its surface.
+ * Decides what a page request, or a request to an API route outside the
+ * Connect mount, gets on its surface.
  *
  * On the admin host only the admin page exists, plus the root, which the
- * root route turns into a redirect to it; on the app host the admin page
- * does not exist. Everything else is a 404 rather than a redirect, in both
+ * root route turns into a redirect to it: no app page and no app API route
+ * (health, the mobile release check, Apple's callback) answers there. On
+ * the app host the admin page does not exist. Everything else is a 404 rather than a redirect, in both
  * directions, so that neither hostname ever hands a visitor across to the
  * other. This is about keeping the two apart, not about hiding the admin
  * page: its hostname is in this repository for anyone to read.

@@ -2,7 +2,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
-import { proxy } from "../proxy";
+import { config, proxy } from "../proxy";
 
 /**
  * Builds a page request for a hostname, as the proxy would receive it.
@@ -61,6 +61,31 @@ describe("page proxy hostname routing", () => {
     expect(response.status).toBe(404);
     expect(response.headers.get("location")).toBeNull();
     expect(response.headers.get("Cache-Control")).toBe("no-store");
+  });
+
+  it("answers 404 for the app's API routes on the admin host", () => {
+    for (const pathname of ["/api/health", "/api/mobile-release", "/api/auth/apple/callback"]) {
+      const response = proxy(pageRequest("admin.haalkhata.app", pathname));
+      expect(response.status, pathname).toBe(404);
+    }
+  });
+
+  it("lets the app's API routes through on the app host, with no page policy", () => {
+    const response = proxy(pageRequest("haalkhata.app", "/api/health"));
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Content-Security-Policy")).toBeNull();
+  });
+
+  it("runs for API routes but leaves the Connect mount, which gates each RPC itself", () => {
+    const matcher = new RegExp(`^${config.matcher[0]}$`);
+
+    expect(matcher.test("/api/health")).toBe(true);
+    expect(matcher.test("/api/mobile-release")).toBe(true);
+    expect(matcher.test("/api/auth/apple/callback")).toBe(true);
+    expect(matcher.test("/admin")).toBe(true);
+    expect(matcher.test("/api/connect/expense.v1.ExpenseService/ListExpenses")).toBe(false);
+    expect(matcher.test("/_next/static/chunks/main.js")).toBe(false);
   });
 
   it("leaves the app's own pages untouched", () => {

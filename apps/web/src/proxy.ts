@@ -1,4 +1,4 @@
-/** Per-request routing by hostname and browser security policy for rendered application routes. */
+/** Per-request routing by hostname for pages and API routes, and browser security policy for rendered pages. */
 
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
@@ -38,22 +38,27 @@ function isPrefetch(request: NextRequest): boolean {
  * to framework and hydration scripts automatically.
  *
  * The hostname decision comes first and covers every page request,
- * prefetches included: the admin hostname serves the admin page and nothing
- * else, and the app's hostname has no admin page (see config/adminSurface).
- * The admin page checks its own surface again when it renders, so this is
- * the first gate and not the only one.
+ * prefetches included, and every API route outside the Connect mount
+ * (health, the mobile release check, Apple's callback): the admin hostname
+ * serves the admin page and nothing else, and the app's hostname has no
+ * admin page (see config/adminSurface). The Connect mount makes the same
+ * decision for each RPC itself, and the admin page checks its own surface
+ * again when it renders, so this is the first gate and not the only one.
  *
  * @param request - Incoming application request.
- * @returns A 404, or a continuation response carrying the request-specific CSP.
+ * @returns A 404, or a continuation response; a page's carries the
+ *   request-specific CSP.
  */
 export function proxy(request: NextRequest): NextResponse {
-  if (pageVerdict(request.nextUrl.pathname, request.headers.get("host")) === "not-found") {
+  const { pathname } = request.nextUrl;
+  if (pageVerdict(pathname, request.headers.get("host")) === "not-found") {
     return new NextResponse("Not found", {
       status: 404,
       headers: { "Cache-Control": "no-store", "Content-Type": "text/plain; charset=utf-8" },
     });
   }
-  if (isPrefetch(request)) return NextResponse.next();
+  // Neither a prefetch nor an API response is a document for a CSP to govern.
+  if (isPrefetch(request) || pathname.startsWith("/api/")) return NextResponse.next();
 
   const nonce = createCspNonce();
   const policy = contentSecurityPolicy(process.env.NODE_ENV, nonce);
@@ -67,12 +72,13 @@ export function proxy(request: NextRequest): NextResponse {
 }
 
 /**
- * Runs the proxy for rendered pages, excluding APIs and static assets.
- * Prefetches are included so the hostname routing above applies to them
- * too; they skip the nonce work inside the function instead.
+ * Runs the proxy for rendered pages and API routes, excluding the Connect
+ * mount (which gates each RPC by surface itself) and static assets.
+ * Prefetches and API routes are included so the hostname routing above
+ * applies to them too; they skip the nonce work inside the function.
  */
 export const config = {
   matcher: [
-    "/((?!api|_next/static|_next/image|favicon.ico|favicon-32.png|apple-touch-icon.png|icon.svg|icon-192.png|icon-512.png|manifest.webmanifest|sw.js).*)",
+    "/((?!api/connect/|_next/static|_next/image|favicon.ico|favicon-32.png|apple-touch-icon.png|icon.svg|icon-192.png|icon-512.png|manifest.webmanifest|sw.js).*)",
   ],
 };

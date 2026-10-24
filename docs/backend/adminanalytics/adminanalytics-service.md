@@ -61,12 +61,15 @@ The page and this service are served from their own hostname (`ADMIN_HOST`;
 | --- | --- | --- |
 | The admin page | Served (the root redirects to it) | 404 |
 | Any other page | 404 | Served |
+| Any other API route (`/api/health`, `/api/mobile-release`, Apple's callback) | 404 | Served |
 | This service's and AdminModerationService's RPCs | Served | 404 |
 | Every other service's RPCs | 404 | Served |
 
 - One function decides (`requestSurface`), and it is applied three times:
-  the page proxy, the Connect mount (before the CSRF guard or the database),
-  and each handler of both admin services.
+  the proxy (every page and every API route outside the Connect mount), the
+  Connect mount (before the CSRF guard or the database), and each handler
+  of both admin services. The container's healthcheck asks for
+  `/api/health` on `127.0.0.1`, which is the app's surface.
 - With `ADMIN_HOST` unset, production has **no admin surface at all**.
   Development serves both from whatever host it runs on, since there is only
   one localhost.
