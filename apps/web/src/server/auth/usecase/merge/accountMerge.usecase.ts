@@ -64,6 +64,21 @@ import {
   type PhoneCodeVerdict,
 } from "../phone/phoneVerification";
 
+/**
+ * The request limits SetPhone answers to. The transport supplies them,
+ * since they key on the caller's address and on process memory; this
+ * usecase decides which one applies, and when.
+ */
+export interface PhoneRequestLimits {
+  /**
+   * Runs before a send is recorded, once the number is known and is not
+   * locked out: a send refused for the lockout uses up none of them.
+   */
+  beforeSend: (phone: string) => Promise<void>;
+  /** Runs before a code check is read or spends an attempt. */
+  beforeCheck: () => void;
+}
+
 /** What SetPhone resolved to: either applied outright, or waiting on confirmation. */
 export interface SetPhoneResult {
   /** True when an SMS code was sent and no account data has been read or changed. */
@@ -230,21 +245,6 @@ async function refuseSendWhileLockedOut(userId: string, phone: string): Promise<
 }
 
 /**
- * The send-side lockout, for the handler to ask before it records a send
- * against the number's hourly ceiling: a send refused here must not use one
- * of those up. {@link setPhone} asks again itself.
- *
- * @param userId - Account asking for the code.
- * @param rawPhone - Whatever the user typed.
- * @throws UsecaseError "invalid_argument" for an unparseable number, or while locked out.
- */
-export async function assertCodeCanBeSent(userId: string, rawPhone: string): Promise<void> {
-  const phone = normalizePhone(rawPhone);
-  if (!phone) invalid(PHONE_FORMAT_HINT);
-  await refuseSendWhileLockedOut(userId, phone);
-}
-
-/**
  * Logs a wrong code without the code or the number: the attempt, how long
  * after the first send it came, and keyed fingerprints of the verification
  * and of the code within it. Equal codes in one verification share a
@@ -314,9 +314,15 @@ async function refuseCode(
 /**
  * Resolves the state of a phone number the caller wants to claim.
  *
+ * Whether the call sends or checks is decided here, once, on the trimmed
+ * code, and the matching limit runs in its place: a send is refused for
+ * the lockout before any send limit counts it.
+ *
  * @param userId - Authenticated caller.
  * @param rawPhone - Whatever the user typed.
- * @param verificationCode - Empty to send an SMS, or the code to confirm possession.
+ * @param verificationCode - Empty (or only spaces) to send an SMS, or the
+ *   code to confirm possession.
+ * @param limits - The transport's request limits.
  * @returns The updated user, or a preview plus token when confirmation is needed.
  * @throws UsecaseError "invalid_argument" for an unparseable number or one
  *   already on the caller's own account.
@@ -326,12 +332,15 @@ export async function setPhone(
   userId: string,
   rawPhone: string,
   verificationCode: string,
+  limits: PhoneRequestLimits,
 ): Promise<SetPhoneResult> {
   const phone = normalizePhone(rawPhone);
   if (!phone) invalid(PHONE_FORMAT_HINT);
+  const code = verificationCode.trim();
 
-  if (verificationCode.trim() === "") {
+  if (code === "") {
     await refuseSendWhileLockedOut(userId, phone);
+    await limits.beforeSend(phone);
     // State first, SMS second: a send the server has no record of would make
     // the delivered code unusable, while a recorded send that failed to
     // deliver just expires. The row also binds the coming check to THIS
@@ -355,7 +364,7 @@ export async function setPhone(
     }
     return { verificationSent: true, mergeToken: "" };
   }
-  const code = verificationCode.trim();
+  limits.beforeCheck();
   // A code of another length is refused before it costs an attempt: it
   // cannot be ours, and the provider would only count it against the
   // verification's five.

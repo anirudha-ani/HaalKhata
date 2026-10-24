@@ -84,7 +84,7 @@ vi.mock("@/server/common/db/db", () => ({
 vi.mock("@/server/social/repo/notifications.repo", () => ({ insertNotifications: vi.fn() }));
 
 import { insertNotifications } from "@/server/social/repo/notifications.repo";
-import { assertCodeCanBeSent, confirmPhoneMerge, setPhone } from "./accountMerge.usecase";
+import { confirmPhoneMerge, setPhone } from "./accountMerge.usecase";
 import { findUserById, findUserByPhone } from "@/server/auth/repo/users.repo";
 
 const KEEPER = "keeper-1";
@@ -96,6 +96,9 @@ const CODE = "48291375";
 function liveExpiry(): string {
   return new Date(Date.now() + 9.5 * 60 * 1000).toISOString();
 }
+
+/** The transport's limits, as the handler hands them over; each test sees fresh calls. */
+const limits = { beforeSend: vi.fn(), beforeCheck: vi.fn() };
 
 /** Twilio's id for the verification the tests check codes against. */
 const PROVIDER_SID = "VE00000000000000000000000000000001";
@@ -170,7 +173,7 @@ describe("setPhone", () => {
   });
 
   it("sends a code without looking up or changing the account", async () => {
-    const result = await setPhone(KEEPER, "(617) 555-1212", "");
+    const result = await setPhone(KEEPER, "(617) 555-1212", "", limits);
 
     expect(startPhoneVerificationMock).toHaveBeenCalledWith(PHONE);
     // The server records its own verification state, bound to this account
@@ -198,7 +201,7 @@ describe("setPhone", () => {
   it("refuses a code check no send of this account's ever set up", async () => {
     spendPhoneCheckAttemptMock.mockResolvedValue({ status: "no_verification" });
 
-    await expect(setPhone(KEEPER, PHONE, CODE)).rejects.toMatchObject({
+    await expect(setPhone(KEEPER, PHONE, CODE, limits)).rejects.toMatchObject({
       code: "invalid_argument",
       message: expect.stringContaining("no longer active"),
     });
@@ -210,7 +213,7 @@ describe("setPhone", () => {
   it("refuses further codes once the attempt budget is spent", async () => {
     spendPhoneCheckAttemptMock.mockResolvedValue({ status: "exhausted", expiresAt: liveExpiry() });
 
-    await expect(setPhone(KEEPER, PHONE, CODE)).rejects.toMatchObject({
+    await expect(setPhone(KEEPER, PHONE, CODE, limits)).rejects.toMatchObject({
       code: "invalid_argument",
       message: expect.stringContaining("too many incorrect codes"),
     });
@@ -220,7 +223,7 @@ describe("setPhone", () => {
   it("refuses a send while the verification is out of attempts, with the minutes left", async () => {
     findPhoneVerificationMock.mockResolvedValue({ check_count: 5, expires_at: liveExpiry() });
 
-    await expect(setPhone(KEEPER, PHONE, "")).rejects.toMatchObject({
+    await expect(setPhone(KEEPER, PHONE, "", limits)).rejects.toMatchObject({
       code: "invalid_argument",
       message: "too many incorrect codes, you can ask for a new one in 10 minutes",
     });
@@ -230,10 +233,54 @@ describe("setPhone", () => {
     expect(startPhoneVerificationMock).not.toHaveBeenCalled();
   });
 
+  it("refuses a locked-out send before any send limit counts it, reading the lockout once", async () => {
+    findPhoneVerificationMock.mockResolvedValue({ check_count: 5, expires_at: liveExpiry() });
+
+    await expect(setPhone(KEEPER, "(617) 555-1212", "", limits)).rejects.toMatchObject({
+      message: expect.stringContaining("too many incorrect codes"),
+    });
+    expect(findPhoneVerificationMock).toHaveBeenCalledTimes(1);
+    expect(limits.beforeSend).not.toHaveBeenCalled();
+    expect(beginPhoneVerificationMock).not.toHaveBeenCalled();
+  });
+
+  it("runs the send limits on the normalized number before the send is recorded", async () => {
+    await setPhone(KEEPER, "(617) 555-1212", "", limits);
+
+    expect(findPhoneVerificationMock).toHaveBeenCalledTimes(1);
+    expect(limits.beforeSend).toHaveBeenCalledWith(PHONE);
+    expect(limits.beforeSend.mock.invocationCallOrder[0]).toBeLessThan(
+      beginPhoneVerificationMock.mock.invocationCallOrder[0],
+    );
+    expect(limits.beforeCheck).not.toHaveBeenCalled();
+  });
+
+  it("sends a code for a code of only spaces, under the send limits", async () => {
+    await expect(setPhone(KEEPER, PHONE, "   ", limits)).resolves.toEqual({
+      verificationSent: true,
+      mergeToken: "",
+    });
+    expect(limits.beforeSend).toHaveBeenCalledWith(PHONE);
+    expect(limits.beforeCheck).not.toHaveBeenCalled();
+    expect(spendPhoneCheckAttemptMock).not.toHaveBeenCalled();
+  });
+
+  it("paces a code check before it costs an attempt, without the send limits", async () => {
+    vi.mocked(findUserByPhone).mockResolvedValue(undefined);
+
+    await setPhone(KEEPER, PHONE, CODE, limits);
+
+    expect(limits.beforeCheck).toHaveBeenCalledTimes(1);
+    expect(limits.beforeCheck.mock.invocationCallOrder[0]).toBeLessThan(
+      spendPhoneCheckAttemptMock.mock.invocationCallOrder[0],
+    );
+    expect(limits.beforeSend).not.toHaveBeenCalled();
+  });
+
   it("sends again while a verification is live with tries left", async () => {
     findPhoneVerificationMock.mockResolvedValue({ check_count: 4, expires_at: liveExpiry() });
 
-    await expect(setPhone(KEEPER, PHONE, "")).resolves.toEqual({
+    await expect(setPhone(KEEPER, PHONE, "", limits)).resolves.toEqual({
       verificationSent: true,
       mergeToken: "",
     });
@@ -241,7 +288,7 @@ describe("setPhone", () => {
   });
 
   it("refuses a code of another length before it costs an attempt", async () => {
-    await expect(setPhone(KEEPER, PHONE, "482913")).rejects.toMatchObject({
+    await expect(setPhone(KEEPER, PHONE, "482913", limits)).rejects.toMatchObject({
       code: "invalid_argument",
       message: "that code has 6 digits and ours have 8, use the code in our latest text",
     });
@@ -250,7 +297,7 @@ describe("setPhone", () => {
   });
 
   it("refuses a code with anything but digits before it costs an attempt", async () => {
-    await expect(setPhone(KEEPER, PHONE, "4829137a")).rejects.toMatchObject({
+    await expect(setPhone(KEEPER, PHONE, "4829137a", limits)).rejects.toMatchObject({
       code: "invalid_argument",
     });
     expect(spendPhoneCheckAttemptMock).not.toHaveBeenCalled();
@@ -260,7 +307,7 @@ describe("setPhone", () => {
     spendPhoneCheckAttemptMock.mockResolvedValue(spentAttempt(2));
     checkPhoneVerificationMock.mockResolvedValue("rejected");
 
-    await expect(setPhone(KEEPER, PHONE, CODE)).rejects.toMatchObject({
+    await expect(setPhone(KEEPER, PHONE, CODE, limits)).rejects.toMatchObject({
       code: "invalid_argument",
       message: "that code doesn't match the one we sent, 3 tries left",
     });
@@ -279,7 +326,7 @@ describe("setPhone", () => {
     spendPhoneCheckAttemptMock.mockResolvedValue(spentAttempt(1, false));
     checkPhoneVerificationMock.mockResolvedValue("rejected");
 
-    await expect(setPhone(KEEPER, PHONE, CODE)).rejects.toMatchObject({
+    await expect(setPhone(KEEPER, PHONE, CODE, limits)).rejects.toMatchObject({
       code: "invalid_argument",
       message: "that code doesn't match the one we sent",
     });
@@ -290,9 +337,9 @@ describe("setPhone", () => {
     spendPhoneCheckAttemptMock.mockResolvedValue(attempt);
     checkPhoneVerificationMock.mockResolvedValue("rejected");
 
-    await setPhone(KEEPER, PHONE, CODE).catch(() => undefined);
-    await setPhone(KEEPER, PHONE, CODE).catch(() => undefined);
-    await setPhone(KEEPER, PHONE, "11112222").catch(() => undefined);
+    await setPhone(KEEPER, PHONE, CODE, limits).catch(() => undefined);
+    await setPhone(KEEPER, PHONE, CODE, limits).catch(() => undefined);
+    await setPhone(KEEPER, PHONE, "11112222", limits).catch(() => undefined);
 
     const prints = logEventMock.mock.calls.map((call) => call[2].codeFingerprint);
     expect(prints[0]).toBe(prints[1]);
@@ -303,7 +350,7 @@ describe("setPhone", () => {
     spendPhoneCheckAttemptMock.mockResolvedValue(spentAttempt(5));
     checkPhoneVerificationMock.mockResolvedValue("rejected");
 
-    await expect(setPhone(KEEPER, PHONE, CODE)).rejects.toMatchObject({
+    await expect(setPhone(KEEPER, PHONE, CODE, limits)).rejects.toMatchObject({
       message: "too many incorrect codes, you can ask for a new one in 10 minutes",
     });
   });
@@ -311,7 +358,7 @@ describe("setPhone", () => {
   it("forgets its own verification when the provider no longer holds one", async () => {
     checkPhoneVerificationMock.mockResolvedValue("gone");
 
-    await expect(setPhone(KEEPER, PHONE, CODE)).rejects.toMatchObject({
+    await expect(setPhone(KEEPER, PHONE, CODE, limits)).rejects.toMatchObject({
       code: "invalid_argument",
       message: "that code is no longer active, send a new one",
     });
@@ -326,7 +373,7 @@ describe("setPhone", () => {
   it("locks out when the provider reports its own check limit reached", async () => {
     checkPhoneVerificationMock.mockResolvedValue("exhausted");
 
-    await expect(setPhone(KEEPER, PHONE, CODE)).rejects.toMatchObject({
+    await expect(setPhone(KEEPER, PHONE, CODE, limits)).rejects.toMatchObject({
       message: expect.stringContaining("too many incorrect codes"),
     });
     expect(exhaustPhoneVerificationMock).toHaveBeenCalledWith(KEEPER, PHONE, PROVIDER_SID, 5);
@@ -336,7 +383,7 @@ describe("setPhone", () => {
   it("consumes the verification on approval, making it single-use here", async () => {
     vi.mocked(findUserByPhone).mockResolvedValue(undefined);
 
-    await setPhone(KEEPER, PHONE, CODE);
+    await setPhone(KEEPER, PHONE, CODE, limits);
 
     expect(consumePhoneVerificationMock).toHaveBeenCalledWith(KEEPER, PHONE, PROVIDER_SID);
   });
@@ -344,7 +391,7 @@ describe("setPhone", () => {
   it("records nothing about the provider's verification when its answer names none", async () => {
     startPhoneVerificationMock.mockResolvedValue({ sid: null, createdAt: null });
 
-    await expect(setPhone(KEEPER, PHONE, "")).resolves.toEqual({
+    await expect(setPhone(KEEPER, PHONE, "", limits)).resolves.toEqual({
       verificationSent: true,
       mergeToken: "",
     });
@@ -358,7 +405,7 @@ describe("setPhone", () => {
       }),
     );
 
-    await expect(setPhone(KEEPER, PHONE, "")).rejects.toThrow(/temporarily unavailable/);
+    await expect(setPhone(KEEPER, PHONE, "", limits)).rejects.toThrow(/temporarily unavailable/);
     expect(beginPhoneVerificationMock).toHaveBeenCalled();
     expect(recordProviderVerificationMock).not.toHaveBeenCalled();
   });
@@ -372,7 +419,7 @@ describe("setPhone", () => {
       counterparty_names: Array.from({ length: 40 }, (unused, index) => `Person ${index}`),
     });
 
-    const result = await setPhone(KEEPER, PHONE, CODE);
+    const result = await setPhone(KEEPER, PHONE, CODE, limits);
 
     expect(result.pendingMerge?.counterpartyNames).toHaveLength(12);
   });
@@ -380,7 +427,7 @@ describe("setPhone", () => {
   it("writes the number straight through when nothing holds it", async () => {
     vi.mocked(findUserByPhone).mockResolvedValue(undefined);
 
-    const result = await setPhone(KEEPER, "(617) 555-1212", CODE);
+    const result = await setPhone(KEEPER, "(617) 555-1212", CODE, limits);
 
     expect(checkPhoneVerificationMock).toHaveBeenCalledWith(PHONE, CODE);
     expect(setUserPhoneMock).toHaveBeenCalledWith(KEEPER, PHONE);
@@ -402,7 +449,7 @@ describe("setPhone", () => {
       Object.assign(new Error("duplicate phone"), { code: "23505" }),
     );
 
-    const result = await setPhone(KEEPER, PHONE, CODE);
+    const result = await setPhone(KEEPER, PHONE, CODE, limits);
 
     expect(result.user).toBeDefined();
     expect(setUserPhoneMock).toHaveBeenCalledWith("someone-else", null, expect.anything());
@@ -418,7 +465,7 @@ describe("setPhone", () => {
       Object.assign(new Error("duplicate phone"), { code: "23505" }),
     );
 
-    const result = await setPhone(KEEPER, PHONE, CODE);
+    const result = await setPhone(KEEPER, PHONE, CODE, limits);
 
     expect(result.pendingMerge?.name).toBe("Ani");
     expect(result.mergeToken).not.toBe("");
@@ -430,14 +477,14 @@ describe("setPhone", () => {
     const databaseFailure = Object.assign(new Error("connection lost"), { code: "08006" });
     setUserPhoneMock.mockRejectedValueOnce(databaseFailure);
 
-    await expect(setPhone(KEEPER, PHONE, CODE)).rejects.toBe(databaseFailure);
+    await expect(setPhone(KEEPER, PHONE, CODE, limits)).rejects.toBe(databaseFailure);
     expect(findUserByPhone).toHaveBeenCalledTimes(1);
   });
 
   it("normalizes a national format before looking for a holder", async () => {
     vi.mocked(findUserByPhone).mockResolvedValue(undefined);
 
-    await setPhone(KEEPER, "617-555-1212", CODE);
+    await setPhone(KEEPER, "617-555-1212", CODE, limits);
 
     expect(findUserByPhone).toHaveBeenCalledWith(PHONE);
   });
@@ -445,7 +492,7 @@ describe("setPhone", () => {
   it("is a no-op re-save when the caller already holds the number", async () => {
     vi.mocked(findUserByPhone).mockResolvedValue(userRow({ phone: PHONE }));
 
-    const result = await setPhone(KEEPER, PHONE, CODE);
+    const result = await setPhone(KEEPER, PHONE, CODE, limits);
 
     expect(result.user).toBeDefined();
     expect(result.pendingMerge).toBeUndefined();
@@ -454,7 +501,7 @@ describe("setPhone", () => {
   it("previews rather than merges when an unclaimed invite holds it", async () => {
     vi.mocked(findUserByPhone).mockResolvedValue(invitedRow);
 
-    const result = await setPhone(KEEPER, PHONE, CODE);
+    const result = await setPhone(KEEPER, PHONE, CODE, limits);
 
     // Nothing may be written before the caller has seen what they would take on.
     expect(setUserPhoneMock).not.toHaveBeenCalled();
@@ -479,7 +526,7 @@ describe("setPhone", () => {
       counterparty_names: ["Rahul"],
     });
 
-    await expect(setPhone(KEEPER, PHONE, CODE)).rejects.toMatchObject({
+    await expect(setPhone(KEEPER, PHONE, CODE, limits)).rejects.toMatchObject({
       code: "failed_precondition",
       message: expect.stringMatching(/larger than this app can represent/),
     });
@@ -490,7 +537,7 @@ describe("setPhone", () => {
       userRow({ id: "someone-else", phone: PHONE, google_sub: "google-sub-2" }),
     );
 
-    const result = await setPhone(KEEPER, PHONE, CODE);
+    const result = await setPhone(KEEPER, PHONE, CODE, limits);
 
     expect(result.user).toBeDefined();
     expect(setUserPhoneMock).toHaveBeenCalledWith("someone-else", null, expect.anything());
@@ -506,7 +553,7 @@ describe("setPhone", () => {
       userRow({ id: "someone-else", phone: PHONE, email: null, google_sub: null, password_hash: "salt:hash" }),
     );
 
-    await expect(setPhone(KEEPER, PHONE, CODE)).rejects.toMatchObject({
+    await expect(setPhone(KEEPER, PHONE, CODE, limits)).rejects.toMatchObject({
       code: "failed_precondition",
     });
     expect(setUserPhoneMock).not.toHaveBeenCalled();
@@ -518,14 +565,14 @@ describe("setPhone", () => {
     );
     vi.mocked(transferClient.query).mockResolvedValue({ rows: [] } as never);
 
-    await expect(setPhone(KEEPER, PHONE, CODE)).rejects.toMatchObject({
+    await expect(setPhone(KEEPER, PHONE, CODE, limits)).rejects.toMatchObject({
       code: "invalid_argument",
       message: expect.stringContaining("changed while it was being claimed"),
     });
   });
 
   it("rejects an unparseable number before any lookup", async () => {
-    await expect(setPhone(KEEPER, "not-a-number", CODE)).rejects.toThrow(/valid phone number/);
+    await expect(setPhone(KEEPER, "not-a-number", CODE, limits)).rejects.toThrow(/valid phone number/);
     expect(findUserByPhone).not.toHaveBeenCalled();
   });
 });
@@ -555,7 +602,7 @@ describe("confirmPhoneMerge", () => {
    */
   async function issueToken(): Promise<string> {
     vi.mocked(findUserByPhone).mockResolvedValue(invitedRow);
-    const result = await setPhone(KEEPER, PHONE, CODE);
+    const result = await setPhone(KEEPER, PHONE, CODE, limits);
     return result.mergeToken;
   }
 
@@ -649,33 +696,5 @@ describe("confirmPhoneMerge", () => {
       message: expect.stringContaining("changed since the preview"),
     });
     expect(mergeAccountsMock).not.toHaveBeenCalled();
-  });
-});
-
-describe("assertCodeCanBeSent", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
-
-  it("allows a send with nothing live", async () => {
-    findPhoneVerificationMock.mockResolvedValue(undefined);
-
-    await expect(assertCodeCanBeSent(KEEPER, "(617) 555-1212")).resolves.toBeUndefined();
-    expect(findPhoneVerificationMock).toHaveBeenCalledWith(KEEPER, PHONE);
-  });
-
-  it("refuses a send while locked out", async () => {
-    findPhoneVerificationMock.mockResolvedValue({ check_count: 5, expires_at: liveExpiry() });
-
-    await expect(assertCodeCanBeSent(KEEPER, PHONE)).rejects.toMatchObject({
-      message: expect.stringContaining("too many incorrect codes"),
-    });
-  });
-
-  it("refuses a number that does not parse", async () => {
-    await expect(assertCodeCanBeSent(KEEPER, "not-a-number")).rejects.toThrow(
-      /valid phone number/,
-    );
-    expect(findPhoneVerificationMock).not.toHaveBeenCalled();
   });
 });

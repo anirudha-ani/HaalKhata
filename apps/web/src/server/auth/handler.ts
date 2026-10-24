@@ -14,7 +14,6 @@ import { wantsBearerToken } from "@/server/api/connect/credentials";
 import { rateLimitCheck } from "@/server/common/rateLimit/rateLimit";
 import {
   AUTH_RATE_LIMIT,
-  normalizePhone,
   PHONE_CHECK_RATE_LIMIT,
   PHONE_MERGE_RATE_LIMIT,
   PHONE_SEND_RATE_LIMIT,
@@ -158,28 +157,19 @@ export const authHandler: ServiceImpl<typeof AuthService> = {
     const userId = await requireUser(handlerContext);
     // Inside runUsecase so the durable limiter's own database errors are
     // sanitized like any other; its ConnectError refusals pass through.
-    return runUsecase(async () => {
-      // Trimmed as the usecase trims it: a code of only spaces is a send
-      // there, so it has to meet the send limits here.
-      const verificationCode = request.verificationCode.trim();
-      if (verificationCode === "") {
-        // A call without a code is the one that sends an SMS; it is also
-        // limited by destination and by client address, whoever the account
-        // is — durably, in Postgres.
-        enforcePhoneRateLimit(userId, "send", PHONE_SEND_RATE_LIMIT);
-        // Asked before the send is recorded: a send refused because the
-        // verification is out of attempts must not use up the number's
-        // hourly ceiling.
-        await accountMerge.assertCodeCanBeSent(userId, request.phone);
-        await enforcePhoneSendLimits(
-          normalizePhone(request.phone) ?? request.phone.trim(),
-          clientIp(handlerContext.requestHeader),
-        );
-      } else {
-        enforcePhoneRateLimit(userId, "check", PHONE_CHECK_RATE_LIMIT);
-      }
-      return accountMerge.setPhone(userId, request.phone, verificationCode);
-    }, handlerContext);
+    return runUsecase(
+      async () =>
+        accountMerge.setPhone(userId, request.phone, request.verificationCode, {
+          // The call that sends an SMS is also limited by destination and by
+          // client address, whoever the account is, durably, in Postgres.
+          beforeSend: async (phone) => {
+            enforcePhoneRateLimit(userId, "send", PHONE_SEND_RATE_LIMIT);
+            await enforcePhoneSendLimits(phone, clientIp(handlerContext.requestHeader));
+          },
+          beforeCheck: () => enforcePhoneRateLimit(userId, "check", PHONE_CHECK_RATE_LIMIT),
+        }),
+      handlerContext,
+    );
   },
 
   /** Carries out the merge that setPhone previewed. */

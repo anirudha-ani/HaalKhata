@@ -440,8 +440,12 @@ collision would require. One RPC, two calls:
   the verification and of the code within it, never the code or the
   number. The same code entered twice in one verification shows the same
   fingerprint.
-- **Rate limits:** 5/min per account across both calls; the SMS-sending call
-  additionally 3/hour + 8/day per destination and 20/hour per client IP.
+- **Rate limits:** per account, 3/min for the SMS-sending call and 5/min for
+  code checks, each in its own bucket; the SMS-sending call additionally
+  3/hour + 8/day per destination and 20/hour per client IP.
+  The usecase decides which call it is (on the trimmed code) and runs the
+  limits the handler hands it; a send refused for the lockout is refused
+  before any of them counts it.
 
 #### Request
 
