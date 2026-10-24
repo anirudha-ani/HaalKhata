@@ -14,6 +14,9 @@ export const PRESS_SCALE = 0.97;
 /** Opacity of a pressed button, which is all that changes under Reduce Motion. */
 export const PRESS_OPACITY = 0.88;
 
+/** Opacity of a button that cannot be pressed (disabled, or busy with its own request). */
+export const DISABLED_OPACITY = 0.5;
+
 /** Press in and out: quick and slightly lively. */
 export const PRESS_SPRING = { duration: 160, dampingRatio: 0.75 } as const;
 

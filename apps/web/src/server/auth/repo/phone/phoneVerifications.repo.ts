@@ -2,27 +2,66 @@
 
 import { execute, query, queryOne } from "@/server/common/db/db";
 
+/** The live verification behind one account and number. */
+export interface PhoneVerificationRow {
+  /** Code checks spent on it so far. */
+  check_count: number;
+  /** When it stops being answerable, as an ISO timestamp. */
+  expires_at: string;
+  /** Twilio's id for the verification, or null until a send was accepted. */
+  provider_sid: string | null;
+}
+
 /** How a code-check attempt against the stored verification state resolved. */
 export type PhoneCheckAttempt =
-  /** An attempt was available and has now been spent; call the provider. */
-  | "ok"
-  /** No live verification for this account and phone — expired, consumed, or never sent. */
-  | "no_verification"
-  /** The verification exists but its attempt budget is used up; a new SMS is required. */
-  | "exhausted";
+  /**
+   * An attempt was available and has now been spent; call the provider.
+   * providerSid names the verification it was spent on, for the writes
+   * that follow the provider's answer.
+   */
+  | { status: "ok"; checkCount: number; expiresAt: string; providerSid: string | null }
+  /** No live verification for this account and phone: expired, consumed, or never sent. */
+  | { status: "no_verification" }
+  /** The verification is live but its attempt budget is used up until it expires. */
+  | { status: "exhausted"; expiresAt: string };
 
 /**
- * Starts (or restarts) the account's one active verification. An account has
- * at most one: asking for a new code replaces the old state outright, which
- * also resets the attempt budget — the budget guards one delivered code, not
- * the account (per-account pacing is the rate limiter's job).
+ * Reads the live verification for this account and number, if there is one.
+ *
+ * @param userId - Account that asked for the code.
+ * @param phone - E.164 number the code was sent to.
+ * @returns The row, or undefined when none is live.
+ */
+export async function findPhoneVerification(
+  userId: string,
+  phone: string,
+): Promise<PhoneVerificationRow | undefined> {
+  return queryOne<PhoneVerificationRow>(
+    `SELECT check_count, expires_at, provider_sid FROM phone_verifications
+      WHERE user_id = $1 AND phone = $2 AND expires_at > NOW()`,
+    [userId, phone],
+  );
+}
+
+/**
+ * Starts the account's one active verification before an SMS is sent, or
+ * keeps it when one for the same number is still live.
+ *
+ * The row is written before the send so that a delivered code always has a
+ * row to be checked against. Its expiry is provisional until the provider
+ * accepts the send, when {@link recordProviderVerification} sets it from the
+ * verification Twilio actually holds. A live row for the same number is kept
+ * as it is: if it stands for an accepted verification, the resend reaches
+ * that same verification (same code, same five checks, same expiry), and
+ * resetting the count here would let this server invite checks Twilio has
+ * stopped accepting. A different number, or nothing live, starts afresh.
  *
  * Expired rows are pruned here, the same bounded-cleanup pattern the sign-in
  * nonces use, so the table never outgrows its ten-minute horizon.
  *
  * @param userId - Account requesting the SMS.
  * @param phone - E.164 destination the code is being sent to.
- * @param lifetimeSeconds - Seconds until the verification stops being answerable.
+ * @param lifetimeSeconds - Seconds until a new verification stops being answerable.
  */
 export async function beginPhoneVerification(
   userId: string,
@@ -31,11 +70,59 @@ export async function beginPhoneVerification(
 ): Promise<void> {
   await execute("DELETE FROM phone_verifications WHERE expires_at <= NOW()", []);
   await execute(
-    `INSERT INTO phone_verifications (user_id, phone, check_count, expires_at)
-     VALUES ($1, $2, 0, NOW() + make_interval(secs => $3))
+    `INSERT INTO phone_verifications (user_id, phone, check_count, expires_at, provider_sid)
+     VALUES ($1, $2, 0, NOW() + make_interval(secs => $3), NULL)
      ON CONFLICT (user_id) DO UPDATE
-       SET phone = EXCLUDED.phone, check_count = 0, expires_at = EXCLUDED.expires_at`,
+       SET phone = EXCLUDED.phone,
+           check_count = 0,
+           expires_at = EXCLUDED.expires_at,
+           provider_sid = NULL
+       WHERE phone_verifications.phone <> EXCLUDED.phone
+          OR phone_verifications.expires_at <= NOW()`,
     [userId, phone, lifetimeSeconds],
+  );
+}
+
+/**
+ * Binds the row to the verification the provider says the send reached.
+ *
+ * The same verification as before is a resend: Twilio kept its code, its
+ * five checks and its expiry, so the row keeps its count and expiry too. A
+ * different one (or the first one, after a send that failed and left the row
+ * with no id) is new on Twilio's side: the count starts at zero and the
+ * expiry is counted from when Twilio created it. A send that failed at
+ * minute 0 and succeeded at minute 9 is then answerable until minute 19,
+ * as Twilio's is, not until minute 10.
+ *
+ * Starting the count afresh for a row with no id can let it fall behind a
+ * verification Twilio created during a send that only looked failed (a
+ * timeout); Twilio's own limit (60202) then marks it exhausted, so the two
+ * meet again rather than drift.
+ *
+ * @param userId - Account the code was sent for.
+ * @param phone - E.164 number it was sent to.
+ * @param providerSid - Twilio's id for the verification the send reached.
+ * @param providerCreatedAt - When Twilio created it (ISO), or null when the
+ *   answer did not say; the expiry is then counted from now.
+ * @param lifetimeSeconds - Seconds a verification stays answerable after it is created.
+ */
+export async function recordProviderVerification(
+  userId: string,
+  phone: string,
+  providerSid: string,
+  providerCreatedAt: string | null,
+  lifetimeSeconds: number,
+): Promise<void> {
+  await execute(
+    `UPDATE phone_verifications
+        SET check_count = CASE WHEN provider_sid = $3 THEN check_count ELSE 0 END,
+            expires_at = CASE
+              WHEN provider_sid = $3 THEN expires_at
+              ELSE COALESCE($4::timestamptz, NOW()) + make_interval(secs => $5)
+            END,
+            provider_sid = $3
+      WHERE user_id = $1 AND phone = $2`,
+    [userId, phone, providerSid, providerCreatedAt, lifetimeSeconds],
   );
 }
 
@@ -44,44 +131,93 @@ export async function beginPhoneVerification(
  *
  * The increment happens BEFORE the provider is called: a crash mid-check has
  * then still consumed the attempt, so the budget can never be exceeded by
- * retrying into a failure. An exhausted row is left in place — it keeps
- * blocking attempts until it expires, rather than letting deletion reopen
- * the budget.
+ * retrying into a failure. An exhausted row is left in place: it keeps
+ * blocking attempts, and sends, until it expires, rather than letting
+ * deletion reopen the budget.
  *
  * @param userId - Account submitting the code.
  * @param phone - E.164 number the code claims to verify.
- * @param maxChecks - Attempts allowed per delivered code.
- * @returns How the attempt resolved.
+ * @param maxChecks - Attempts allowed per verification.
+ * @returns How the attempt resolved, with the count and expiry it found.
  */
 export async function spendPhoneCheckAttempt(
   userId: string,
   phone: string,
   maxChecks: number,
 ): Promise<PhoneCheckAttempt> {
-  const spent = await queryOne<{ check_count: number }>(
+  const spent = await queryOne<PhoneVerificationRow>(
     `UPDATE phone_verifications
         SET check_count = check_count + 1
       WHERE user_id = $1 AND phone = $2 AND expires_at > NOW() AND check_count < $3
-      RETURNING check_count`,
+      RETURNING check_count, expires_at, provider_sid`,
     [userId, phone, maxChecks],
   );
-  if (spent) return "ok";
-  const existing = await queryOne<{ check_count: number }>(
-    `SELECT check_count FROM phone_verifications
-      WHERE user_id = $1 AND phone = $2 AND expires_at > NOW()`,
-    [userId, phone],
-  );
-  return existing ? "exhausted" : "no_verification";
+  if (spent) {
+    return {
+      status: "ok",
+      checkCount: spent.check_count,
+      expiresAt: spent.expires_at,
+      providerSid: spent.provider_sid,
+    };
+  }
+  const existing = await findPhoneVerification(userId, phone);
+  return existing
+    ? { status: "exhausted", expiresAt: existing.expires_at }
+    : { status: "no_verification" };
 }
 
 /**
- * Consumes the account's verification after the provider approved the code,
- * making approval single-use on this side regardless of provider behavior.
+ * Marks a checked verification as out of attempts, for when the provider
+ * reports its own check limit reached. The row stays until it expires, so
+ * sends and checks are refused with the time left instead of reaching a
+ * provider that will refuse them.
  *
- * @param userId - Account whose verification succeeded.
+ * Only the verification that was checked is marked: the provider's answer
+ * can arrive after another session has started a verification for a
+ * different number, or Twilio has started a new one for the same number,
+ * and that one has its own five checks.
+ *
+ * @param userId - Account whose verification ran out.
+ * @param phone - E.164 number of the checked verification.
+ * @param providerSid - Twilio's id for it, as the attempt found it (null when unknown).
+ * @param maxChecks - Attempts allowed per verification.
  */
-export async function consumePhoneVerification(userId: string): Promise<void> {
-  await execute("DELETE FROM phone_verifications WHERE user_id = $1", [userId]);
+export async function exhaustPhoneVerification(
+  userId: string,
+  phone: string,
+  providerSid: string | null,
+  maxChecks: number,
+): Promise<void> {
+  await execute(
+    `UPDATE phone_verifications SET check_count = GREATEST(check_count, $4)
+      WHERE user_id = $1 AND phone = $2 AND provider_sid IS NOT DISTINCT FROM $3`,
+    [userId, phone, providerSid, maxChecks],
+  );
+}
+
+/**
+ * Removes a checked verification: after the provider approved its code,
+ * making approval single-use on this side regardless of provider behavior,
+ * or once the provider no longer holds it.
+ *
+ * Only the verification that was checked is removed, for the same reason as
+ * {@link exhaustPhoneVerification}: a late answer must not delete a newer
+ * verification whose code is still on its way.
+ *
+ * @param userId - Account the verification belongs to.
+ * @param phone - E.164 number of the checked verification.
+ * @param providerSid - Twilio's id for it, as the attempt found it (null when unknown).
+ */
+export async function consumePhoneVerification(
+  userId: string,
+  phone: string,
+  providerSid: string | null,
+): Promise<void> {
+  await execute(
+    `DELETE FROM phone_verifications
+      WHERE user_id = $1 AND phone = $2 AND provider_sid IS NOT DISTINCT FROM $3`,
+    [userId, phone, providerSid],
+  );
 }
 
 /** Send counts inside each ceiling's window, including the send just recorded. */

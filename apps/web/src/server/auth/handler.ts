@@ -164,6 +164,10 @@ export const authHandler: ServiceImpl<typeof AuthService> = {
         // limited by destination and by client address, whoever the account
         // is — durably, in Postgres.
         enforcePhoneRateLimit(userId, "send", PHONE_SEND_RATE_LIMIT);
+        // Asked before the send is recorded: a send refused because the
+        // verification is out of attempts must not use up the number's
+        // hourly ceiling.
+        await accountMerge.assertCodeCanBeSent(userId, request.phone);
         await enforcePhoneSendLimits(
           normalizePhone(request.phone) ?? request.phone.trim(),
           clientIp(handlerContext.requestHeader),

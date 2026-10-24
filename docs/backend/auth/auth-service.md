@@ -80,7 +80,7 @@ preview.
 | SignUp, LogIn, BeginGoogleSignIn, LogInWithGoogle, BeginAppleSignIn, LogInWithApple, CompleteAppleSignIn | 10/min per client IP |
 | DeleteAccount | Same 10/min per client IP authentication bucket, plus an authenticated session and explicit confirmation |
 | SetPhone with empty code (the SMS send) | 3/min per account, plus 3/hour + 8/day per destination number (across all accounts) and 20/hour per client IP — the ceilings are **durable** (Postgres `phone_send_events`), surviving restarts and replicas |
-| SetPhone with a code (the check) | 5/min per account, and at most **5 wrong codes per delivered SMS** (server-side attempt budget) |
+| SetPhone with a code (the check) | 5/min per account, and at most **5 checks per verification** (server-side attempt budget, the same as Twilio's; a resend does not renew it) |
 | ConfirmPhoneMerge, RemovePhone | 5/min per account |
 
 The per-destination limits exist because a per-account limit alone lets
@@ -378,8 +378,8 @@ collision would require. One RPC, two calls:
 
 | Call | `verification_code` | What happens |
 | --- | --- | --- |
-| First | empty | The server records its own verification state — bound to **this account and this number**, expiring in 10 minutes — then an SMS code is sent (Twilio Verify). **No account data is read or changed.** Response: `verification_sent: true`. |
-| Second | the received code | An attempt is spent from the server-side budget (5 per delivered code, refused before the provider is even called once exhausted or when no live verification exists for this account+number), possession is confirmed with the provider, the verification is **consumed** (single-use on our side, whatever the provider's semantics), then the number is resolved (below). |
+| First | empty | The server records its own verification state, bound to **this account and this number**, then an SMS code is sent (Twilio Verify). The row's expiry is provisional until Twilio accepts the send; the answer names the verification it reached, and the row follows it: the **same verification** (a resend inside its ten minutes, which texts the same code) keeps the row's attempt count and expiry, as Twilio does; a **new one** (including the first after a send that failed) starts the count afresh and counts ten minutes from when Twilio created it. Refused while the verification is out of checks, with the minutes left. **No account data is read or changed.** Response: `verification_sent: true`. |
+| Second | the received code | A code that is not exactly 8 digits is refused first, naming both lengths, and costs nothing. Then an attempt is spent from the server-side budget (5 per verification, refused before the provider is even called once exhausted or when no live verification exists for this account+number), possession is confirmed with the provider, the verification is **consumed** (single-use on our side, whatever the provider's semantics), then the number is resolved (below). Every write that follows the provider's answer (consumed, forgotten, locked) names the verification that was checked, by number and Twilio id, so a late answer cannot touch a newer verification another session started meanwhile. |
 
 #### Notes
 
@@ -417,10 +417,21 @@ collision would require. One RPC, two calls:
   disclosure is logged (it reveals the previous number-holder's counterparty
   names to whoever holds the number today — the deliberate recycled-number
   defense, kept auditable).
-- **Provider behavior:** codes are 4–10 digits; provider outages surface as
-  `Unavailable` "phone verification is temporarily unavailable"; a wrong or
-  expired code is `InvalidArgument`. Missing Twilio configuration fails
+- **Provider behavior:** codes are **8 digits**, the Twilio Verify service's
+  "Code length" setting, mirrored by `VERIFICATION_CODE_LENGTH` in
+  `packages/shared/src/phone/phone.constants.ts`; change both together.
+  Provider outages surface as `Unavailable` "phone verification is
+  temporarily unavailable". Every refused code is `InvalidArgument`, worded
+  for what happened: a wrong code says how many tries are left; a
+  verification Twilio no longer holds is forgotten here too ("no longer
+  active, send a new one"); Twilio's own check limit (error 60202) locks the
+  verification here until it expires. Missing Twilio configuration fails
   closed. Provider diagnostics go to the log, never the client.
+- **Wrong-code log line:** `phone verification code rejected` carries the
+  attempt number, seconds since the first send, and keyed fingerprints of
+  the verification and of the code within it, never the code or the
+  number. The same code entered twice in one verification shows the same
+  fingerprint.
 - **Rate limits:** 5/min per account across both calls; the SMS-sending call
   additionally 3/hour + 8/day per destination and 20/hour per client IP.
 

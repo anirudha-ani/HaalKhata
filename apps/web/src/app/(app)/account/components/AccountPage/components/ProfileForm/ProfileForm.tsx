@@ -8,6 +8,8 @@ import { BlockedPeople } from "@/components/safety/BlockedPeople/BlockedPeople";
 import { LegalLinks } from "@/components/legal/LegalLinks/LegalLinks";
 import { DeleteAccount } from "@/components/account/DeleteAccount/DeleteAccount";
 import { ACCOUNT_SETTINGS_COPY } from "@haalkhata/shared/account/settingsCopy";
+
+import { useId } from "react";
 import { Check, LogOut, Share2 } from "lucide-react";
 import type { User } from "@haalkhata/protogen/common/v1/common_pb";
 import { Avatar } from "@/components/ui/Avatar/Avatar";
@@ -19,6 +21,7 @@ import { PhoneField } from "@/components/ui/PhoneField/PhoneField";
 import { CurrencySelect } from "@/components/ui/CurrencySelect/CurrencySelect";
 import { useProfileForm } from "./hooks/useProfileForm";
 import { MAX_USER_NAME_LENGTH } from "@haalkhata/shared/text/limits";
+import { VERIFICATION_CODE_INPUT_MAX_CHARACTERS } from "@haalkhata/shared/phone/phone.constants";
 import { PaymentMethodsCard } from "@/components/payment/PaymentMethodsCard/PaymentMethodsCard";
 
 /**
@@ -32,6 +35,7 @@ import { PaymentMethodsCard } from "@/components/payment/PaymentMethodsCard/Paym
  */
 export function ProfileForm({ me: currentUser }: { me: User }) {
   const form = useProfileForm(currentUser);
+  const codeHintId = useId();
 
   return (
     <div className="mx-auto max-w-5xl space-y-6">
@@ -221,23 +225,37 @@ export function ProfileForm({ me: currentUser }: { me: User }) {
               Enter the code sent to {form.verificationPhone}. No account data changes until the
               code is confirmed.
             </p>
-            <input
-              value={form.verificationCode}
-              onChange={(event) => form.setVerificationCode(event.target.value.replace(/\D/g, ""))}
-              inputMode="numeric"
-              autoComplete="one-time-code"
-              maxLength={10}
-              aria-label="Verification code"
-              className="w-full rounded-xl border border-line bg-card px-3.5 py-3 text-center text-lg tracking-[0.35em] focus:border-brand-500 focus:outline-none"
-            />
+            <div className="space-y-1.5">
+              <input
+                value={form.verificationCode}
+                onChange={(event) => form.enterVerificationCode(event.target.value)}
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                maxLength={VERIFICATION_CODE_INPUT_MAX_CHARACTERS}
+                aria-label="Verification code"
+                aria-describedby={codeHintId}
+                className="w-full rounded-xl border border-line bg-card px-3.5 py-3 text-center text-lg tracking-[0.35em] focus:border-brand-500 focus:outline-none"
+              />
+              <p id={codeHintId} className="text-xs text-ink-soft">
+                {form.codeHint}
+              </p>
+            </div>
             {form.error ? <p className="text-sm text-brand-600">{form.error}</p> : null}
             <button
               type="button"
               onClick={form.verifyPhone}
-              disabled={form.isSaving || form.verificationCode.length < 4}
+              disabled={form.isSaving || !form.codeComplete}
               className="w-full rounded-xl bg-brand-600 py-3 font-semibold text-white hover:bg-brand-700 disabled:opacity-50"
             >
-              {form.isSaving ? "Verifying…" : "Verify phone"}
+              {form.isVerifying ? "Verifying…" : "Verify phone"}
+            </button>
+            <button
+              type="button"
+              onClick={form.resendCode}
+              disabled={form.isSaving}
+              className="w-full text-sm font-semibold text-brand-600 hover:text-brand-700 disabled:opacity-50"
+            >
+              {form.isResending ? "Sending…" : "Send the code again"}
             </button>
           </div>
         </Modal>

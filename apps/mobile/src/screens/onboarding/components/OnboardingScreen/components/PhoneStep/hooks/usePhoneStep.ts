@@ -8,7 +8,8 @@ import { queryKeys } from "@haalkhata/shared/api/queryKeys";
 import { isDiscoverable, onboardingDiscoveryChange } from "@haalkhata/shared/contacts/discovery";
 import { INVALID_PHONE_MESSAGE } from "@haalkhata/shared/phone/contact";
 import { composeE164, DEFAULT_PHONE_REGION, isValidPhone, splitE164 } from "@haalkhata/shared/phone/phone";
-import { authClient, errorMessage } from "@/lib/api/connect";
+import { authClient, errorMessage, isRefusal } from "@/lib/api/connect";
+import { useVerificationCode } from "@/lib/hooks/useVerificationCode";
 import { errorFeedback, successFeedback } from "@/lib/motion/haptics";
 import { RESEND_DELAY_SECONDS } from "../../../../../constants/onboarding";
 import { CODE_STEP } from "../../../../../constants/onboardingCopy";
@@ -42,7 +43,7 @@ export function usePhoneStep(user: User, onDone: (verified: boolean) => void) {
   const [findable, setFindable] = useState(isDiscoverable(user.contactDiscovery));
   const [stage, setStage] = useState<PhoneStage>("number");
   const [sentTo, setSentTo] = useState("");
-  const [code, setCode] = useState("");
+  const codeField = useVerificationCode();
   const [rejections, setRejections] = useState(0);
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
@@ -80,7 +81,7 @@ export function usePhoneStep(user: User, onDone: (verified: boolean) => void) {
         return;
       }
       setSentTo(phone);
-      setCode("");
+      codeField.clear();
       setStage("code");
       resendTimer.restart();
     },
@@ -101,8 +102,14 @@ export function usePhoneStep(user: User, onDone: (verified: boolean) => void) {
     },
     onError: (failure) => {
       errorFeedback();
-      setRejections((count) => count + 1);
-      setCode("");
+      // A refused code is cleared and the boxes shake: sending it again can
+      // only be refused again, and the next suggestion the keyboard offers
+      // then fills empty boxes instead of landing beside it. After an outage
+      // the code is kept, so Verify can simply be pressed again.
+      if (isRefusal(failure)) {
+        setRejections((count) => count + 1);
+        codeField.clear();
+      }
       setError(errorMessage(failure));
     },
   });
@@ -127,10 +134,19 @@ export function usePhoneStep(user: User, onDone: (verified: boolean) => void) {
     setFindable,
     alreadyVerified,
     sentTo,
-    code,
-    setCode: (digits: string) => {
-      setError("");
-      setCode(digits);
+    code: codeField.code,
+    /** True once the boxes hold a whole code. */
+    codeComplete: codeField.complete,
+    /**
+     * Reads a change to the code. A whole code that arrived in one piece
+     * (iOS's AutoFill from Messages, or a paste) is checked at once; one of
+     * another length came from another message and says so instead.
+     */
+    enterCode: (text: string) => {
+      setNotice("");
+      const entry = codeField.enter(text);
+      setError(entry.notice);
+      if (entry.arrivedWhole && !verify.isPending) verify.mutate(entry.code);
     },
     rejections,
     notice,
@@ -154,11 +170,11 @@ export function usePhoneStep(user: User, onDone: (verified: boolean) => void) {
       }
       sendCode.mutate(composeE164(region, nationalNumber));
     },
-    /** @param entered - The code to check; defaults to what is in the boxes. */
-    verify: (entered?: string) => {
+    /** Checks the code in the boxes. */
+    verify: () => {
       setError("");
       setNotice("");
-      verify.mutate(entered ?? code);
+      verify.mutate(codeField.code);
     },
     /** Sends a fresh code to the same number. */
     resend: () => {
@@ -168,7 +184,7 @@ export function usePhoneStep(user: User, onDone: (verified: boolean) => void) {
     /** Back to the number, keeping what was typed. */
     changeNumber: () => {
       setStage("number");
-      setCode("");
+      codeField.clear();
       setError("");
       setNotice("");
     },

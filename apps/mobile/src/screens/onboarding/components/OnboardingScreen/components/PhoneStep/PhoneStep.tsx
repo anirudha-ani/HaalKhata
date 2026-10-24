@@ -10,7 +10,6 @@ import { PhoneField } from "@/components/ui/PhoneField";
 import { Text } from "@/components/ui/Text";
 import { colors, radii, spacing } from "@/lib/theme/theme";
 import { CODE_STEP, MERGE_STEP, PHONE_STEP } from "../../../../constants/onboardingCopy";
-import { canSubmitCode } from "../../../../utils/codeEntry";
 import { StepArt } from "../StepArt/StepArt";
 import { StepLayout } from "../StepLayout/StepLayout";
 import { CodeBoxes } from "./components/CodeBoxes/CodeBoxes";
@@ -70,9 +69,9 @@ export function PhoneStep({
             {failure}
             <Button
               busy={phone.busy}
-              disabled={!canSubmitCode(phone.code)}
+              disabled={!phone.codeComplete}
               label={CODE_STEP.verify}
-              onPress={() => phone.verify()}
+              onPress={phone.verify}
             />
             <Button disabled={phone.busy} label={CODE_STEP.changeNumber} onPress={phone.changeNumber} variant="ghost" />
           </>
@@ -82,8 +81,7 @@ export function PhoneStep({
         <CodeBoxes
           code={phone.code}
           disabled={phone.busy}
-          onChange={phone.setCode}
-          onComplete={phone.verify}
+          onChangeText={phone.enterCode}
           rejections={phone.rejections}
         />
         <View style={styles.resendRow}>
