@@ -5,6 +5,7 @@ import { useState } from "react";
 import { errorMessage } from "@/lib/api/connect";
 import { ACTION_VERBS, type ModerationAction } from "../constants/moderation";
 import { isSessionEnded } from "../utils/isSessionEnded";
+import { questionAfterSuccess } from "../utils/questionAfterSuccess";
 import type { useAdminModerationAPI } from "./useAdminModerationAPI";
 
 /** An action on one report: the thing being confirmed, run, or reported as failed. */
@@ -79,12 +80,16 @@ export function useReportQueue(moderation: ReturnType<typeof useAdminModerationA
       setConfirming(null);
     },
     /**
-     * Runs an action; a question that led to it closes once it succeeds.
+     * Runs an action; the question that led to it closes once it succeeds,
+     * and a question open on another card stays open.
      *
      * @param reportId - The report the action goes through.
      * @param action - What to do.
      */
     run: (reportId: string, action: ModerationAction) =>
-      perform.mutate({ reportId, action }, { onSuccess: () => setConfirming(null) }),
+      perform.mutate(
+        { reportId, action },
+        { onSuccess: () => setConfirming((open) => questionAfterSuccess(open, { reportId, action })) },
+      ),
   };
 }
