@@ -48,7 +48,8 @@ apps/web/                    Next.js app
   src/app/<route>/           UI (thin page.tsx → components/<Page>/<Page>.tsx,
                              with its own components/, hooks/, constants/, utils/)
   src/lib/                   app-specific utilities (api/ transport, auth/ guard,
-                             hooks/ cross-route React hooks)
+                             hooks/ cross-route React hooks, googleIdentity/
+                             Google's sign-in script for the app and admin pages)
   src/components/<category>/ shared UI by category (ui, shell, people, modals,
                              providers, …): one folder per component,
                              <Name>/<Name>.tsx — see "Composition structure"

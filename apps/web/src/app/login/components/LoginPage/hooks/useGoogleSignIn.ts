@@ -5,8 +5,9 @@ import { useEffect, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { authClient, errorMessage } from "@/lib/api/connect";
 import { completeBrowserSignIn } from "@/lib/auth/completeSignIn";
-import { GOOGLE_BUTTON_OPTIONS, GOOGLE_CLIENT_ID } from "@/app/login/constants/googleSignIn";
-import { loadGoogleScript } from "../utils/loadGoogleScript";
+import { GOOGLE_CLIENT_ID } from "@/app/login/constants/googleSignIn";
+import { GOOGLE_BUTTON_OPTIONS } from "@/lib/googleIdentity/googleIdentity.constants";
+import { loadGoogleScript } from "@/lib/googleIdentity/loadGoogleScript";
 
 /**
  * Renders Google's sign-in button and exchanges the ID token it produces for a

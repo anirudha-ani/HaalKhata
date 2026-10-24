@@ -4,8 +4,8 @@
 import { useEffect, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { adminAnalyticsClient, errorMessage } from "@/lib/api/connect";
-import { GOOGLE_BUTTON_OPTIONS } from "@/app/login/constants/googleSignIn";
-import { loadGoogleScript } from "@/app/login/components/LoginPage/utils/loadGoogleScript";
+import { GOOGLE_BUTTON_OPTIONS } from "@/lib/googleIdentity/googleIdentity.constants";
+import { loadGoogleScript } from "@/lib/googleIdentity/loadGoogleScript";
 
 /**
  * Renders Google's sign-in button and exchanges the ID token it produces for

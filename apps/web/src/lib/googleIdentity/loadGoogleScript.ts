@@ -1,6 +1,6 @@
 /** Loads the Google Identity Services script once per document. */
 
-import { GOOGLE_SCRIPT_ELEMENT_ID, GOOGLE_SCRIPT_SOURCE } from "@/app/login/constants/googleSignIn";
+import { GOOGLE_SCRIPT_ELEMENT_ID, GOOGLE_SCRIPT_SOURCE } from "@/lib/googleIdentity/googleIdentity.constants";
 
 /**
  * Injects the Google Identity Services script once per document and resolves
