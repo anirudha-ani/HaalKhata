@@ -8,6 +8,7 @@ import { ensureMigrated } from "@/server/common/db/db";
 import { CONNECT_READ_MAX_BYTES } from "@/server/api/connect/connect.constants";
 import { logError } from "@/server/common/logger";
 import { DIRECT_CLIENT_IP_HEADER } from "@/server/auth/request/clientIp";
+import { rpcAllowedOnSurface } from "@/config/adminSurface";
 
 /** Next.js API handler that serves every registered Connect RPC under /api/connect. */
 const { handler } = nextJsApiRouter({
@@ -17,9 +18,17 @@ const { handler } = nextJsApiRouter({
 });
 
 /**
- * Wraps the Connect handler with a CSRF guard and a one-shot migration wait.
+ * Wraps the Connect handler with the surface gate, a CSRF guard and a
+ * one-shot migration wait.
  */
 export default async function connectHandler(request: NextApiRequest, response: NextApiResponse) {
+  // First, before anything reads a cookie or touches the database: the admin
+  // hostname serves the admin service and nothing else, and the app's
+  // hostname serves everything but. An RPC on the wrong one does not exist.
+  if (!rpcAllowedOnSurface(request.url, request.headers.host)) {
+    response.status(404).json({ error: "not found" });
+    return;
+  }
   // Always overwrite the internal header: direct deployments get the actual
   // socket peer, and a caller cannot smuggle a fake fallback through Caddy.
   request.headers[DIRECT_CLIENT_IP_HEADER] = request.socket?.remoteAddress ?? "";

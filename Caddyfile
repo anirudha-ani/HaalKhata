@@ -11,14 +11,17 @@
 	email {$ACME_EMAIL}
 }
 
-haalkhata.app, www.haalkhata.app {
+# Everything both sites share, written once. The proxy block below carries a
+# security-critical header overwrite; two copies of it would be two chances
+# to change one and forget the other. The one argument is the largest
+# request body the site accepts.
+(haalkhata) {
 	encode zstd gzip
 
 	# Reject oversized bodies at the public edge before proxying them into the
-	# 1 GB application host. The app independently enforces a 12 MiB decoded
-	# Connect-message limit; this slightly larger wire cap leaves framing room.
+	# 1 GB application host.
 	request_body {
-		max_size 16MB
+		max_size {args[0]}
 	}
 
 	header {
@@ -55,4 +58,26 @@ haalkhata.app, www.haalkhata.app {
 		# default. (nginx would need `proxy_set_header Host $host` or every
 		# browser POST 403s.)
 	}
+}
+
+haalkhata.app, www.haalkhata.app {
+	# The app independently enforces a 12 MiB decoded Connect-message limit
+	# (receipt photos); this slightly larger wire cap leaves framing room.
+	import haalkhata 16MB
+}
+
+# The operator's usage page. Same container as the app: it decides what to
+# serve by the Host header, which Caddy passes through untouched, so this
+# hostname reaches the admin page and its API and nothing else, and the
+# app's hostnames reach neither (apps/web/src/config/adminSurface.ts).
+#
+# Needs a DNS record for admin.haalkhata.app pointing at this server before
+# the stack starts with this file: Caddy requests the certificate on boot
+# and keeps retrying while the name does not resolve here.
+admin.haalkhata.app {
+	# Nothing sent here is larger than a sign-in token.
+	import haalkhata 64KB
+
+	# For one person; keep it out of search results even if a link leaks.
+	header X-Robots-Tag "noindex, nofollow"
 }

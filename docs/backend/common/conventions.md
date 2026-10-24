@@ -66,6 +66,13 @@ verifies signature/expiry/format, checks `token_version` against the row,
 performs the sliding renewal, and returns the user id — or throws
 `Unauthenticated`.
 
+**The admin surface is the one exception to all of the above.** The admin
+page on the admin hostname (usage overview and report queue) has its own
+sign-in, its own cookie and its own server-side session table; it never
+calls `requireUser`, and an app session of either kind opens nothing there.
+See [adminanalytics-service.md](../adminanalytics/adminanalytics-service.md)
+and [adminmoderation-service.md](../adminmoderation/adminmoderation-service.md).
+
 ## CSRF
 
 `csrfGuard` (in the mount, before routing): a state-changing request that is
@@ -81,6 +88,10 @@ bearer headers cross-site). Details that matter:
 - Duplicate session-cookie names are rejected outright
   (`sessionTokenFromCookieHeader` returns null) instead of trusting
   browser/proxy ordering — cookie tossing cannot select an attacker value.
+- The admin services do not rely on this guard alone. Their handlers require
+  `Origin` to equal `Host` on every call, with no bearer exemption, because
+  the app's hostname is the same *site* as the admin hostname and
+  `SameSite` does not keep the two apart.
 
 ## Error Model
 
@@ -136,6 +147,12 @@ tracked keys with LRU eviction so it cannot be a memory-exhaustion vector.
 | Payment method writes (create, update, delete, set-preferred) | per account, one shared bucket | 30/min |
 | `ParseReceipt` | per account | 5/min (+ max 2 concurrent per process) |
 | Ledger reads (`ListExpenses`, `ListGroups`, `GetFriendLedger`, `GetGroupBalances`, `GetOverallBalances`/`ListFriends`) | per account | 60/min each |
+| `GetInsights` | per account | 30/min |
+| Admin sign-in (`BeginSignIn` + `SignIn`) | `admin-auth:<client-ip>` | 5/min |
+| `GetUsageOverview` | one bucket for every admin session | 30/min |
+| `GetUsageTrend` | one bucket for every admin session | 60/min |
+| `ListReports` | one bucket for every admin session | 30/min |
+| Moderation actions (dismiss, remove, suspend, resume) | one shared bucket for every admin session | 30/min |
 
 The ledger reads are limited because each one rebuilds balances from every row
 in scope; a person tapping through screens uses a handful a minute, a script

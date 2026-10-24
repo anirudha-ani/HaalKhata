@@ -87,6 +87,9 @@ export function manualEnvironmentActions(configured) {
   if (!configured.COMPATIBLE_AI_API_KEY && !configured.COMPATIBLE_AI_API_KEY_FILE) {
     actions.push("Optional real receipt AI: fill COMPATIBLE_AI_API_KEY yourself; the local mock provider is available without it.");
   }
+  if (!configured.ADMIN_EMAILS?.trim()) {
+    actions.push("Optional admin page (/admin, usage and reports): put your Google address in ADMIN_EMAILS, then restart the dev server. Blank means nobody can sign in there.");
+  }
   if (!configured.TWILIO_API_KEY_SECRET && !configured.TWILIO_API_KEY_SECRET_FILE) {
     actions.push("Optional phone verification: fill TWILIO_API_KEY_SID, TWILIO_VERIFY_SERVICE_SID and TWILIO_API_KEY_SECRET yourself.");
   }

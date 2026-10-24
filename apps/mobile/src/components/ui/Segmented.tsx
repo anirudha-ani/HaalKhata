@@ -6,7 +6,7 @@ import { useResponsiveLayout } from "@/lib/layout/hooks/useResponsiveLayout";
 import { colors, radii, spacing } from "@/lib/theme/theme";
 
 /** One option of the control. */
-export interface SegmentedOption<OptionValue extends string> {
+export interface SegmentedOption<OptionValue extends string | number> {
   /** The value reported when this option is chosen. */
   value: OptionValue;
   /** The option's caption. */
@@ -23,7 +23,7 @@ export interface SegmentedOption<OptionValue extends string> {
  * gets a card background and brand text. An option may carry a count, quiet
  * by default and brand-coloured when it wants an answer.
  */
-export function Segmented<OptionValue extends string>({
+export function Segmented<OptionValue extends string | number>({
   options,
   value,
   onChange,

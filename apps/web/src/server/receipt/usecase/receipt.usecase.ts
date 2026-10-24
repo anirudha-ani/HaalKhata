@@ -18,7 +18,11 @@ import heicDecode from "heic-decode";
 import sharp from "sharp";
 import { invalid, unavailable, UsecaseError } from "@/server/common/errors";
 import { isRealCalendarDate } from "@/server/common/validation/validation";
-import { logEvent } from "@/server/common/logger";
+import { logError, logEvent } from "@/server/common/logger";
+import {
+  insertReceiptScan,
+  type ReceiptScanOutcome,
+} from "@/server/receipt/repo/receiptScans.repo";
 import {
   COMPATIBLE_AI,
   HEIF_BRANDS,
@@ -730,4 +734,51 @@ export async function parseReceipt(
   logEvent("warn", "no receipt provider could parse the image", { errors });
   if (readButEmpty) invalid("could not read the receipt. Try a clearer photo of the whole bill");
   unavailable("receipt scanning is unavailable right now. Please try again in a few minutes");
+}
+
+/**
+ * Counts one scan attempt. A failure to count is logged and swallowed: the
+ * tally is bookkeeping, and a person's scan must not fail (or a failed scan
+ * report a different error) because the counter could not be written.
+ *
+ * @param userId - The person who uploaded the image.
+ * @param outcome - Whether a provider returned line items.
+ */
+async function recordScan(userId: string, outcome: ReceiptScanOutcome): Promise<void> {
+  try {
+    await insertReceiptScan(userId, outcome);
+  } catch (error) {
+    logError(error, { scope: "receipt-scan-count" });
+  }
+}
+
+/**
+ * Parses a receipt for a signed-in person and counts the attempt.
+ *
+ * The count is the whole record of a scan (see the receipt_scans migration):
+ * who, when, and whether it worked. The image and everything read off it
+ * still leave no trace.
+ *
+ * Call it only once the person has allowed scanning: a scan refused for want
+ * of permission never reached a provider and is not an attempt.
+ *
+ * @param userId - The authenticated person who uploaded the image.
+ * @param image - Raw image bytes uploaded by the client.
+ * @param currency - Expense currency for receipts that do not print one.
+ * @returns Whatever {@link parseReceipt} returns.
+ * @throws Whatever {@link parseReceipt} throws, after the failure is counted.
+ */
+export async function scanReceipt(
+  userId: string,
+  image: Uint8Array,
+  currency = "USD",
+): Promise<{ receipt: ParsedReceiptData; provider: string; normalizedImage: Uint8Array }> {
+  try {
+    const parsed = await parseReceipt(image, currency);
+    await recordScan(userId, "parsed");
+    return parsed;
+  } catch (error) {
+    await recordScan(userId, "failed");
+    throw error;
+  }
 }

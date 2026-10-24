@@ -22,6 +22,7 @@ export const RPC_RATE_LIMITS = {
   findContacts: 5,
   getFriendLedger: 60,
   getGroupBalances: 60,
+  getInsights: 30,
   getOverallBalances: 60,
   listExpenses: 60,
   listGroups: 60,

@@ -51,6 +51,7 @@ async function seed(database: Client): Promise<void> {
   await database.query("INSERT INTO payment_methods (id, user_id, name) VALUES ('private-method', $1, 'Private Member checking')", [ACCOUNT_ID]);
   await database.query("INSERT INTO payment_method_details (method_id, position, kind, value) VALUES ('private-method', 0, 'account_name', 'Private Member')");
   await database.query("INSERT INTO payment_method_removals (user_id) VALUES ($1)", [ACCOUNT_ID]);
+  await database.query("INSERT INTO receipt_scans (id, user_id, outcome) VALUES ('private-scan', $1, 'parsed')", [ACCOUNT_ID]);
   await database.query("INSERT INTO phone_verifications (user_id, phone, expires_at) VALUES ($1, '+14155552671', NOW() + INTERVAL '5 minutes')", [ACCOUNT_ID]);
   await database.query("INSERT INTO invite_links (token, kind, inviter_id, invited_user_id) VALUES ($1, 'friend', $2, $3)", ["x".repeat(43), ACCOUNT_ID, FRIEND_ID]);
   await database.query("INSERT INTO activity (id, actor_id, type, message, audience, link) VALUES ('private-activity', $1, 'expense_added', 'Private Member added a receipt', jsonb_build_array($1::text, $2::text), '/expenses/dollars')", [ACCOUNT_ID, FRIEND_ID]);
@@ -121,7 +122,7 @@ describe.skipIf(!await databaseReachable())("permanent account deletion against 
     expect((await database.query("SELECT note, method_label FROM settlements WHERE id = 'payment'")).rows[0]).toEqual({ note: "", method_label: "" });
     expect((await database.query("SELECT name, email, phone, deleted_at IS NOT NULL AS erased FROM users WHERE id = $1", [MERGED_IDENTITY])).rows[0])
       .toEqual({ name: "Deleted member", email: null, phone: null, erased: true });
-    for (const table of ["friendships", "friend_requests", "payment_handles", "payment_methods", "payment_method_details", "payment_method_removals", "phone_verifications", "invite_links", "activity", "notifications"]) {
+    for (const table of ["friendships", "friend_requests", "payment_handles", "payment_methods", "payment_method_details", "payment_method_removals", "receipt_scans", "phone_verifications", "invite_links", "activity", "notifications"]) {
       expect((await database.query(`SELECT COUNT(*)::int AS count FROM ${table}`)).rows[0].count).toBe(0);
     }
   });

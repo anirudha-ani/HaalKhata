@@ -14,6 +14,7 @@ import { GroupService } from "@haalkhata/protogen/group/v1/group_pb";
 import { PaymentMethodService } from "@haalkhata/protogen/payment/v1/payment_pb";
 import { PushService } from "@haalkhata/protogen/push/v1/push_pb";
 import { ReceiptService } from "@haalkhata/protogen/receipt/v1/receipt_pb";
+import { PersonalAnalyticsService } from "@haalkhata/protogen/personalanalytics/v1/personalanalytics_pb";
 import { SocialService } from "@haalkhata/protogen/social/v1/social_pb";
 import { resolveApiBaseUrl } from "./api.constants";
 import { authorization } from "./authorization";
@@ -56,6 +57,8 @@ export const socialClient = createClient(SocialService, transport);
 export const paymentClient = createClient(PaymentMethodService, transport);
 /** Typed client for the phones that receive push notifications and which kinds they receive. */
 export const pushClient = createClient(PushService, transport);
+/** Typed client for the signed-in person's own insights. */
+export const personalAnalyticsClient = createClient(PersonalAnalyticsService, transport);
 
 /**
  * Extracts a human-readable message from a ConnectError (or any thrown value).

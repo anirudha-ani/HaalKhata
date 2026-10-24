@@ -28,6 +28,9 @@ packages/shared/             @haalkhata/shared — hand-written TS used by BOTH 
   src/payment/                 payment methods: detail kinds, starting points,
                                the validator (server + both forms), the form's
                                reducer, payer ordering and formatting
+  src/analytics/               chart.ts (axis ceilings, bar lengths, tick text)
+                               and insights.ts (wording, ranges, tail folding)
+                               for the Insights dashboard on both apps
   src/greeting.ts              time-of-day greeting
 apps/web/                    Next.js app
   src/server/<domain>/       per-domain fan-out mirroring /proto:
@@ -37,7 +40,10 @@ apps/web/                    Next.js app
     <domain>.constants.ts      constants for this domain
   src/server/common/         shared infra: db/, ledger/, money/, secrets/,
                              rateLimit/, validation/, readiness/
-  src/server/api/connect/    context.ts (auth/cookies/error map), routes.ts, csrf.ts
+  src/server/api/connect/    context.ts (auth/cookies/error map), routes.ts, csrf.ts,
+                             adminRequest.ts (the admin services' host/origin checks)
+  src/config/                securityHeaders.ts (CSP) and adminSurface.ts (which
+                             hostname reaches the admin page and its APIs)
   src/pages/api/connect/     [[...connect]].ts — mount point only
   src/app/<route>/           UI (thin page.tsx → components/<Page>/<Page>.tsx,
                              with its own components/, hooks/, constants/, utils/)
@@ -257,7 +263,7 @@ authentication. See `docs/local-auth.md` for Google and Apple sign-in.
 | `pnpm test`     | vitest unit tests (domain math + auth tokens)   |
 | `pnpm proto:lint`| buf lint + breaking                            |
 | `pnpm test:parity` | browser/native Connect feature entry-point parity |
-| `pnpm doctor`   | react-doctor scan                               |
+| `pnpm run doctor` | react-doctor scan (`pnpm doctor` without `run` is pnpm's own self-check, not this) |
 | `pnpm typecheck:mobile` / `lint:mobile` / `test:mobile` | same gates for apps/mobile |
 | `pnpm typecheck:shared` / `lint:shared` / `test:shared` | same gates for packages/shared |
 
@@ -280,6 +286,9 @@ with colocated tests. Mobile-specific rules:
   `packages/shared` with its tests, never written twice. The only
   native-only RPCs are `LogInWithApple` and `RegisterDevice` (a browser
   has no Apple credential or Expo push token); `pnpm test:parity` names both.
+  The one page with no mobile twin is the operator's admin page (`/admin`:
+  usage and reports): it is not a user feature, and it is deliberately
+  reachable from one hostname only.
 - **Auth is bearer-token**, not cookies: LogInWithGoogle (production) or
   LogIn/SignUp (development only) return `token`, stored
   in SecureStore (`src/lib/api/session.ts`) and attached by a transport
@@ -405,6 +414,53 @@ with colocated tests. Mobile-specific rules:
   `link` and `recipientId` as data. See `docs/backend/push/push-service.md`.
 - **Limiters are process-local** (`rateLimit.ts`, `phoneRateLimit.ts`): fine
   for one container, wrong for two replicas — see `docs/plan.txt` §28.
+- **The admin surface is a hostname, and it is checked three times.**
+  `requestSurface()` in `config/adminSurface.ts` decides whether a request
+  is on the app or the admin page, and the page proxy, the Connect mount and
+  the admin handlers each ask it. On `ADMIN_HOST` only the admin page,
+  `AdminAnalyticsService` and `AdminModerationService` exist; everywhere
+  else none of them does. A new admin service goes in `ADMIN_RPC_PREFIXES`
+  and starts every method with `requireAdminPageRequest` and the admin
+  session (`api/connect/adminRequest.ts`). A new page or
+  service lands on the app surface by default and needs nothing. Do not add
+  a second mount of `routes`, an exception to the gate, or a redirect where
+  it answers 404. Do not rewrite to the admin page from the proxy either:
+  Next resolves a rewrite against the address the server is bound to and
+  can send it back in under the wrong hostname.
+- **An admin is not a user.** The admin session is an allowlisted Google
+  identity (`ADMIN_EMAILS`) with its own cookie and its own table. Never
+  accept an app session, a bearer token, or a `users` row as proof of it,
+  and never let the admin sign-in create or link an account.
+- **The app and the admin page are the same site.** `SameSite` does not
+  separate `haalkhata.app` from `admin.haalkhata.app`: a request to the
+  admin host started on the app's hostname carries the admin cookie. Every
+  admin RPC therefore checks that `Origin` equals `Host` itself, with no
+  bearer exemption, and the admin host sends no CORS header. Keep both.
+- **The usage overview is counts and display names, enforced in SQL.** No
+  statement in `adminanalytics/repo/usage.repo.ts` selects an email, phone,
+  avatar, id, amount, description, group name or anything about a payment
+  method beyond how many exist, and an integration test searches the whole
+  response for them. A display name that is itself an
+  email address, a phone number or the start of the person's email is
+  withheld in the same SQL. A new figure there is a new count; if it needs
+  a column a person would call private, it does not belong on that page.
+- **The report queue shows what was reported, never who reported it.**
+  `adminmoderation/repo/moderation.repo.ts` takes the words out of the
+  report's server-made snapshot field by field, names the author through
+  the same withholding rule (`adminanalytics/repo/displayName.ts`), and
+  never selects `reporter_id` or any id but a report's own. Its removal
+  mirrors `safety/repo/moderation.sql` (what `ops/moderate.sh` runs), and
+  `moderationParity.integration.test.ts` runs both on the same data: change
+  one, change the other.
+- **Analytics are counted, not collected.** Personal insights and the usage
+  overview are aggregates over rows the product already keeps. The single
+  purpose-built tally is `receipt_scans` (who, when, parsed or failed),
+  because a scan otherwise leaves no trace. Do not add event tracking,
+  last-seen timestamps or per-person timelines to answer a usage question.
+- **Charts are plain elements.** The column chart and bar list in
+  `components/charts` (both apps) draw with divs/Views sized by
+  `@haalkhata/shared/analytics/chart`; there is no chart library. One colour
+  per series, every value also available as text, no second axis.
 
 ## Deploy
 
