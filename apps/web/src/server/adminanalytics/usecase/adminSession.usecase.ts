@@ -57,7 +57,8 @@ export async function beginAdminSignIn(): Promise<{ nonce: string }> {
  * its own, neither can one minted for the app's web sign-in.
  *
  * Nothing is written unless the address is allowlisted, and no users row is
- * read or written either way.
+ * read or written either way. The address is compared and stored in lower
+ * case, as the allowlist is: an address's case is not part of who owns it.
  *
  * @param idToken - Raw JWT credential produced by Google Identity Services.
  * @returns The new session's raw token, to be set as an HttpOnly cookie.
@@ -66,13 +67,23 @@ export async function beginAdminSignIn(): Promise<{ nonce: string }> {
  */
 export async function signInAdmin(idToken: string): Promise<{ token: string }> {
   const identity = await verifyGoogleSignIn(idToken, [adminGoogleClientId()]);
-  if (!adminEmails().has(identity.email)) {
-    // Logged without the address: a refused stranger's email is not ours to keep.
-    logEvent("warn", "admin sign-in refused: address is not on the allowlist");
-    denied("this Google account does not have admin access");
+  const email = identity.email.trim().toLowerCase();
+  const allowlist = adminEmails();
+  if (!allowlist.has(email)) {
+    // Logged without the address: a refused stranger's email is not ours to
+    // keep. How many addresses are allowed is, and tells an operator at once
+    // whether the setting reached the server at all.
+    logEvent("warn", "admin sign-in refused: address is not on the allowlist", {
+      allowlistSize: allowlist.size,
+    });
+    denied(
+      allowlist.size === 0
+        ? "no Google account can sign in here yet: ADMIN_EMAILS is empty on this server"
+        : "this Google account does not have admin access",
+    );
   }
   const token = crypto.randomBytes(ADMIN_SESSION_TOKEN_BYTES).toString("base64url");
-  await insertAdminSession(sessionTokenHash(token), identity.email, ADMIN_SESSION_LIFETIME_SECONDS);
+  await insertAdminSession(sessionTokenHash(token), email, ADMIN_SESSION_LIFETIME_SECONDS);
   logEvent("info", "admin session started");
   return { token };
 }

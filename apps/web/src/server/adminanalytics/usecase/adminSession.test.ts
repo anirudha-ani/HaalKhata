@@ -117,11 +117,22 @@ describe("signInAdmin", () => {
     expect(JSON.stringify(vi.mocked(logEvent).mock.calls)).not.toContain("stranger@example.com");
   });
 
-  it("refuses everyone when no allowlist is configured", async () => {
+  it("refuses everyone when no allowlist is configured, and says that is why", async () => {
     vi.stubEnv("ADMIN_EMAILS", "");
     googleVerifies(OPERATOR);
 
-    await expect(signInAdmin("id-token")).rejects.toMatchObject({ code: "permission_denied" });
+    await expect(signInAdmin("id-token")).rejects.toMatchObject({
+      code: "permission_denied",
+      message: expect.stringContaining("ADMIN_EMAILS is empty"),
+    });
+    expect(logEvent).toHaveBeenCalledWith("warn", expect.any(String), { allowlistSize: 0 });
+  });
+
+  it("matches the address Google returns without regard to case, and stores it in lower case", async () => {
+    googleVerifies("Operator@Example.COM");
+
+    await expect(signInAdmin("id-token")).resolves.toHaveProperty("token");
+    expect(insertAdminSession).toHaveBeenCalledWith(expect.any(String), OPERATOR, expect.any(Number));
   });
 
   it("matches the allowlist without regard to case or stray spaces in the setting", async () => {

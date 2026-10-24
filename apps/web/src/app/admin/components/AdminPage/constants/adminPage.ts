@@ -57,6 +57,14 @@ export const DEFAULT_PEOPLE_SORT: { key: PeopleSortKey; direction: SortDirection
   direction: "descending",
 };
 
+/**
+ * Shown on the sign-in card instead of Google's button when the server's
+ * allowlist is empty: every sign-in would be refused, so the page says why
+ * before anyone goes through Google to find out.
+ */
+export const EMPTY_ALLOWLIST_NOTE =
+  "No Google account can sign in here yet. Add yours to ADMIN_EMAILS on the server, then restart it.";
+
 /** Which half of the admin page is showing: the usage overview or the report queue. */
 export type AdminView = "usage" | "reports";
 

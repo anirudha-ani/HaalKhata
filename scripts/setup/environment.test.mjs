@@ -183,3 +183,8 @@ test("configured production callbacks still prompt for a local development URL",
   const output = manualEnvironmentActions({ APP_PUBLIC_URL: "https://haalkhata.app" }).join("\n");
   assert.ok(output.includes("registered HTTPS development origin"));
 });
+
+test("an empty admin allowlist is reported, and a filled one is not", () => {
+  assert.ok(manualEnvironmentActions({ ADMIN_EMAILS: " " }).join("\n").includes("ADMIN_EMAILS"));
+  assert.ok(!manualEnvironmentActions({ ADMIN_EMAILS: "operator@example.com" }).join("\n").includes("ADMIN_EMAILS"));
+});

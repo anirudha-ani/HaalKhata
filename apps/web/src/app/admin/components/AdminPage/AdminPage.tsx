@@ -20,6 +20,7 @@ import { AdminSignIn } from "./components/AdminSignIn/AdminSignIn";
 export function AdminPage({
   initiallySignedIn,
   googleClientId,
+  allowlistConfigured,
 }: {
   /**
    * Whether the request that rendered the page carried a live admin
@@ -29,6 +30,8 @@ export function AdminPage({
   initiallySignedIn: boolean;
   /** The OAuth client id Google's button is rendered for; "" when unconfigured. */
   googleClientId: string;
+  /** Whether the server's allowlist names anyone; when it does not, nobody can sign in. */
+  allowlistConfigured: boolean;
 }) {
   const [isSignedIn, setSignedIn] = useState(initiallySignedIn);
   const [sessionEnded, setSessionEnded] = useState(false);
@@ -50,6 +53,7 @@ export function AdminPage({
       ) : (
         <AdminSignIn
           googleClientId={googleClientId}
+          allowlistConfigured={allowlistConfigured}
           onSignedIn={handleSignedIn}
           sessionEnded={sessionEnded}
         />

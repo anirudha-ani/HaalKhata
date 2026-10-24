@@ -2,23 +2,29 @@
 /** Admin sign-in: the Google button that starts an operator session. */
 
 import { ShieldCheck } from "lucide-react";
+import { EMPTY_ALLOWLIST_NOTE } from "../../constants/adminPage";
 import { useAdminSignIn } from "../../hooks/useAdminSignIn";
 
 /**
  * Renders the admin page's signed-out state: what the page is, who it is
  * for, and Google's sign-in button. A refusal is shown directly under the
- * button that caused it.
+ * button that caused it. When the server's allowlist is empty there is no
+ * button: the card says the allowlist is empty instead, because every
+ * sign-in would be refused.
  *
  * @param props - Component props.
  * @returns The sign-in card.
  */
 export function AdminSignIn({
   googleClientId,
+  allowlistConfigured,
   onSignedIn,
   sessionEnded,
 }: {
   /** The OAuth client id Google's button is rendered for; "" when unconfigured. */
   googleClientId: string;
+  /** Whether the server's allowlist names anyone. When not, no button is offered. */
+  allowlistConfigured: boolean;
   /** Called once the admin session cookie is set. */
   onSignedIn: () => void;
   /** Whether the operator was signed in a moment ago and no longer is. */
@@ -27,8 +33,10 @@ export function AdminSignIn({
   // Destructured, not kept as one object: `setButtonElement` is handed to a
   // `ref`, and reading sibling fields off the same object would look to the
   // compiler like reading a ref during render.
+  // With nobody on the allowlist there is no button to set up, so Google's
+  // script is never loaded for a sign-in that could only be refused.
   const { setButtonElement, error, isPending, isConfigured } = useAdminSignIn({
-    googleClientId,
+    googleClientId: allowlistConfigured ? googleClientId : "",
     onSignedIn,
   });
 
@@ -47,7 +55,9 @@ export function AdminSignIn({
       ) : null}
 
       <div className="mt-5 flex min-h-11 justify-center">
-        {isConfigured ? (
+        {!allowlistConfigured ? (
+          <p className="text-sm text-ink-soft">{EMPTY_ALLOWLIST_NOTE}</p>
+        ) : isConfigured ? (
           <div ref={setButtonElement} />
         ) : (
           <p className="text-sm text-ink-soft">Google sign-in is not configured on this server.</p>

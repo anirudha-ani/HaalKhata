@@ -3,7 +3,7 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { adminSignedIn, onAdminSurface } from "@/lib/auth/adminSession.server";
-import { adminGoogleClientId } from "@/server/adminanalytics/adminanalytics.constants";
+import { adminEmails, adminGoogleClientId } from "@/server/adminanalytics/adminanalytics.constants";
 import { AdminPage } from "./components/AdminPage/AdminPage";
 
 /** Kept out of search results: this page is for one person. */
@@ -23,7 +23,8 @@ export const metadata: Metadata = {
  * environment at request time. The app's own sign-in gets its id from a
  * NEXT_PUBLIC_ variable inlined at build; doing the same for this page
  * would mean a second build argument for something only the server needs to
- * agree with itself about.
+ * agree with itself about. Whether anyone is on the allowlist is handed down
+ * too (never who), so an empty one is explained instead of tried.
  *
  * @returns The admin page element (or never, when the surface is wrong).
  */
@@ -33,6 +34,7 @@ export default async function Admin() {
     <AdminPage
       initiallySignedIn={await adminSignedIn()}
       googleClientId={adminGoogleClientId()}
+      allowlistConfigured={adminEmails().size > 0}
     />
   );
 }
