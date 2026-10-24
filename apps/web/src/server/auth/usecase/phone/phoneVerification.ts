@@ -159,9 +159,11 @@ export async function startPhoneVerification(phone: string): Promise<ProviderVer
 /**
  * Reads the provider's answer to a code check. Twilio answers a wrong code
  * with 200 and the verification still "pending", a verification it no longer
- * holds with 404, a code it cannot read with 400, and its own check limit
- * with error 60202. Anything else, credentials it refuses included, is this
- * side's problem and must not reach the person as "wrong code".
+ * holds with 404, and its own check limit with error 60202. Anything else is
+ * this side's problem and must not reach the person as "wrong code": refused
+ * credentials, and a 400, which means a request this side built wrong (only
+ * whole 8-digit codes are sent, so a parameter Twilio refuses points at the
+ * setup, such as a service whose code length is not 8).
  *
  * @param result - The provider's answer.
  * @returns The verdict, or undefined when the answer means the provider is unavailable.
@@ -176,7 +178,6 @@ function readCheckVerdict(result: ProviderResult): PhoneCodeVerdict | undefined 
     return undefined;
   }
   if (result.status === 404) return "gone";
-  if (result.status === 400) return "rejected";
   return undefined;
 }
 

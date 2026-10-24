@@ -129,10 +129,17 @@ describe("phone verification", () => {
     });
   });
 
-  it("reads a code the provider cannot parse as rejected", async () => {
+  it("never reports a request the provider refuses as a wrong code, and logs why", async () => {
+    // 60200 is Twilio's invalid parameter: a setup problem, not a typo.
     vi.mocked(fetch).mockResolvedValue(providerResponse(400, { code: 60200 }));
 
-    await expect(checkPhoneVerification(PHONE, CODE)).resolves.toBe("rejected");
+    await expect(checkPhoneVerification(PHONE, CODE)).rejects.toMatchObject({
+      code: "unavailable",
+    });
+    expect(logEvent).toHaveBeenCalledWith("warn", "phone verification provider check failed", {
+      providerStatus: 400,
+      providerCode: 60200,
+    });
   });
 
   it("treats a 200 with no readable status as unavailable", async () => {

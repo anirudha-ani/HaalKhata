@@ -426,7 +426,10 @@ collision would require. One RPC, two calls:
   service texts codes of another length` when the two differ; it refuses
   nothing.
   Provider outages surface as `Unavailable` "phone verification is
-  temporarily unavailable". Every refused code is `InvalidArgument`, worded
+  temporarily unavailable", and so does a check Twilio refuses as a bad
+  request (HTTP 400, such as 60200), which is logged with Twilio's status
+  and error code: only whole 8-digit codes are sent, so it points at the
+  setup, never at the person's code. Every refused code is `InvalidArgument`, worded
   for what happened: a wrong code says how many tries are left, unless the row cannot know (`checks_known` false); a
   verification Twilio no longer holds is forgotten here too ("no longer
   active, send a new one"); Twilio's own check limit (error 60202) locks the
