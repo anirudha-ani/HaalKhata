@@ -24,7 +24,9 @@ import {
   consumePhoneVerification,
   exhaustPhoneVerification,
   findPhoneVerification,
+  recordProviderVerification,
   spendPhoneCheckAttempt,
+  type PhoneCheckAttempt,
 } from "@/server/auth/repo/phone/phoneVerifications.repo";
 import { createHash } from "node:crypto";
 import { isUniqueViolation, transaction } from "@/server/common/db/db";
@@ -269,27 +271,34 @@ function logRejectedCode(
  * Answers a code the provider did not approve, keeping this server's state
  * in step with the provider's.
  *
+ * The writes name the verification that was checked (its number and
+ * Twilio id), not just the account: the answer can arrive after another
+ * session has started a verification for a different number, and that one's
+ * code is still on its way.
+ *
  * @param userId - Account that sent the code.
+ * @param phone - E.164 number the code was checked against.
  * @param code - The code the provider did not approve.
- * @param attempt - The spent attempt's count and the verification's expiry.
+ * @param attempt - The spent attempt: its count, the expiry, and the verification's id.
  * @param verdict - What the provider said.
  * @throws UsecaseError "invalid_argument" worded for the verdict, always.
  */
 async function refuseCode(
   userId: string,
+  phone: string,
   code: string,
-  attempt: { checkCount: number; expiresAt: string },
+  attempt: Extract<PhoneCheckAttempt, { status: "ok" }>,
   verdict: Exclude<PhoneCodeVerdict, "approved">,
 ): Promise<never> {
   if (verdict === "gone") {
     // The provider holds nothing to check a code against, so neither does
     // this server: the next send then starts afresh on both sides, instead
     // of keeping a budget and expiry for a verification that is not there.
-    await consumePhoneVerification(userId);
+    await consumePhoneVerification(userId, phone, attempt.providerSid);
     invalid(INACTIVE_CODE_MESSAGE);
   }
   if (verdict === "exhausted") {
-    await exhaustPhoneVerification(userId, MAX_PHONE_CODE_CHECKS);
+    await exhaustPhoneVerification(userId, phone, attempt.providerSid, MAX_PHONE_CODE_CHECKS);
     invalid(lockedOutMessage(attempt.expiresAt));
   }
   logRejectedCode(userId, code, attempt);
@@ -323,7 +332,19 @@ export async function setPhone(
     // account and THIS number. A resend while it is live keeps it as it is,
     // the way the provider keeps the verification and its code.
     await beginPhoneVerification(userId, phone, PHONE_VERIFICATION_LIFETIME_SECONDS);
-    await startPhoneVerification(phone);
+    const sent = await startPhoneVerification(phone);
+    // Then follow the verification the provider says it reached: the same
+    // one keeps its count and expiry, a new one (even after a send that
+    // failed earlier) counts from when Twilio created it.
+    if (sent.sid) {
+      await recordProviderVerification(
+        userId,
+        phone,
+        sent.sid,
+        sent.createdAt,
+        PHONE_VERIFICATION_LIFETIME_SECONDS,
+      );
+    }
     return { verificationSent: true, mergeToken: "" };
   }
   const code = verificationCode.trim();
@@ -338,10 +359,12 @@ export async function setPhone(
   if (attempt.status === "no_verification") invalid(INACTIVE_CODE_MESSAGE);
   if (attempt.status === "exhausted") invalid(lockedOutMessage(attempt.expiresAt));
   const verdict = await checkPhoneVerification(phone, code);
-  if (verdict !== "approved") await refuseCode(userId, code, attempt, verdict);
+  if (verdict !== "approved") await refuseCode(userId, phone, code, attempt, verdict);
   // Single-use on our side: a second check of the same approved code finds
-  // no verification, whatever the provider would have said.
-  await consumePhoneVerification(userId);
+  // no verification, whatever the provider would have said. Only the
+  // verification that was checked is removed; a newer one started by
+  // another session in the meantime keeps its code.
+  await consumePhoneVerification(userId, phone, attempt.providerSid);
 
   let holder = await findUserByPhone(phone);
 

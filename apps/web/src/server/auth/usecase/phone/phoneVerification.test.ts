@@ -42,6 +42,31 @@ describe("phone verification", () => {
     expect(options?.headers).toMatchObject({ "content-type": "application/x-www-form-urlencoded" });
   });
 
+  it("returns the verification a send reached, with when Twilio created it", async () => {
+    vi.mocked(fetch).mockResolvedValue(
+      providerResponse(201, {
+        status: "pending",
+        sid: "VE00000000000000000000000000000001",
+        date_created: "2026-10-24T09:00:00Z",
+      }),
+    );
+
+    await expect(startPhoneVerification(PHONE)).resolves.toEqual({
+      sid: "VE00000000000000000000000000000001",
+      createdAt: "2026-10-24T09:00:00Z",
+    });
+  });
+
+  it("reports an answer without a usable id or date as unknown, not as a value", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(providerResponse(201, { status: "pending" }));
+    await expect(startPhoneVerification(PHONE)).resolves.toEqual({ sid: null, createdAt: null });
+
+    vi.mocked(fetch).mockResolvedValueOnce(
+      providerResponse(201, { status: "pending", sid: "VE1", date_created: "yesterday-ish" }),
+    );
+    await expect(startPhoneVerification(PHONE)).resolves.toEqual({ sid: "VE1", createdAt: null });
+  });
+
   it("reads an approved check as approved", async () => {
     vi.mocked(fetch).mockResolvedValue(providerResponse(200, { status: "approved" }));
 

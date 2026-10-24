@@ -14,6 +14,7 @@ const {
   consumePhoneVerificationMock,
   findPhoneVerificationMock,
   exhaustPhoneVerificationMock,
+  recordProviderVerificationMock,
   logEventMock,
 } = vi.hoisted(() => {
   process.env.SESSION_SECRET = "test-secret-key-for-vitest-0123456789abcdef";
@@ -28,6 +29,7 @@ const {
     consumePhoneVerificationMock: vi.fn(),
     findPhoneVerificationMock: vi.fn(),
     exhaustPhoneVerificationMock: vi.fn(),
+    recordProviderVerificationMock: vi.fn(),
     logEventMock: vi.fn(),
   };
 });
@@ -57,6 +59,7 @@ vi.mock("@/server/auth/repo/phone/phoneVerifications.repo", () => ({
   consumePhoneVerification: consumePhoneVerificationMock,
   findPhoneVerification: findPhoneVerificationMock,
   exhaustPhoneVerification: exhaustPhoneVerificationMock,
+  recordProviderVerification: recordProviderVerificationMock,
 }));
 
 vi.mock("@/server/common/logger", () => ({ logEvent: logEventMock, logError: vi.fn() }));
@@ -94,9 +97,15 @@ function liveExpiry(): string {
   return new Date(Date.now() + 9.5 * 60 * 1000).toISOString();
 }
 
+/** Twilio's id for the verification the tests check codes against. */
+const PROVIDER_SID = "VE00000000000000000000000000000001";
+
+/** When Twilio created that verification, as its send answer says. */
+const PROVIDER_CREATED_AT = "2026-10-24T09:00:00Z";
+
 /** A spent attempt, the way the repo reports it. */
 function spentAttempt(checkCount = 1) {
-  return { status: "ok" as const, checkCount, expiresAt: liveExpiry() };
+  return { status: "ok" as const, checkCount, expiresAt: liveExpiry(), providerSid: PROVIDER_SID };
 }
 
 /**
@@ -141,6 +150,10 @@ describe("setPhone", () => {
     spendPhoneCheckAttemptMock.mockResolvedValue(spentAttempt());
     checkPhoneVerificationMock.mockResolvedValue("approved");
     findPhoneVerificationMock.mockResolvedValue(undefined);
+    startPhoneVerificationMock.mockResolvedValue({
+      sid: PROVIDER_SID,
+      createdAt: PROVIDER_CREATED_AT,
+    });
     vi.mocked(findUserById).mockResolvedValue(userRow({ phone: PHONE }));
     previewMergeMock.mockResolvedValue({
       name: "Ani",
@@ -159,6 +172,15 @@ describe("setPhone", () => {
     expect(beginPhoneVerificationMock).toHaveBeenCalledWith(KEEPER, PHONE, expect.any(Number));
     expect(beginPhoneVerificationMock.mock.invocationCallOrder[0]).toBeLessThan(
       startPhoneVerificationMock.mock.invocationCallOrder[0],
+    );
+    // Then it follows the verification the provider says the send reached,
+    // so the expiry counts from Twilio's creation, not from the first try.
+    expect(recordProviderVerificationMock).toHaveBeenCalledWith(
+      KEEPER,
+      PHONE,
+      PROVIDER_SID,
+      PROVIDER_CREATED_AT,
+      600,
     );
     expect(findUserByPhone).not.toHaveBeenCalled();
     expect(setUserPhoneMock).not.toHaveBeenCalled();
@@ -278,7 +300,9 @@ describe("setPhone", () => {
     });
     // So the next send starts afresh here too, rather than keeping a budget
     // and an expiry for a verification the provider does not have.
-    expect(consumePhoneVerificationMock).toHaveBeenCalledWith(KEEPER);
+    // Only the verification that was checked: a newer one another session
+    // started in the meantime keeps its code.
+    expect(consumePhoneVerificationMock).toHaveBeenCalledWith(KEEPER, PHONE, PROVIDER_SID);
     expect(setUserPhoneMock).not.toHaveBeenCalled();
   });
 
@@ -288,7 +312,7 @@ describe("setPhone", () => {
     await expect(setPhone(KEEPER, PHONE, CODE)).rejects.toMatchObject({
       message: expect.stringContaining("too many incorrect codes"),
     });
-    expect(exhaustPhoneVerificationMock).toHaveBeenCalledWith(KEEPER, 5);
+    expect(exhaustPhoneVerificationMock).toHaveBeenCalledWith(KEEPER, PHONE, PROVIDER_SID, 5);
     expect(setUserPhoneMock).not.toHaveBeenCalled();
   });
 
@@ -297,7 +321,29 @@ describe("setPhone", () => {
 
     await setPhone(KEEPER, PHONE, CODE);
 
-    expect(consumePhoneVerificationMock).toHaveBeenCalledWith(KEEPER);
+    expect(consumePhoneVerificationMock).toHaveBeenCalledWith(KEEPER, PHONE, PROVIDER_SID);
+  });
+
+  it("records nothing about the provider's verification when its answer names none", async () => {
+    startPhoneVerificationMock.mockResolvedValue({ sid: null, createdAt: null });
+
+    await expect(setPhone(KEEPER, PHONE, "")).resolves.toEqual({
+      verificationSent: true,
+      mergeToken: "",
+    });
+    expect(recordProviderVerificationMock).not.toHaveBeenCalled();
+  });
+
+  it("records nothing when the send fails, leaving the row's provisional expiry", async () => {
+    startPhoneVerificationMock.mockRejectedValue(
+      Object.assign(new Error("phone verification is temporarily unavailable"), {
+        code: "unavailable",
+      }),
+    );
+
+    await expect(setPhone(KEEPER, PHONE, "")).rejects.toThrow(/temporarily unavailable/);
+    expect(beginPhoneVerificationMock).toHaveBeenCalled();
+    expect(recordProviderVerificationMock).not.toHaveBeenCalled();
   });
 
   it("caps how many counterparty names a preview discloses", async () => {

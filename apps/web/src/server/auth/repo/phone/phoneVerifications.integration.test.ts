@@ -19,6 +19,8 @@ const TEST_URL = ADMIN_URL.replace(/\/[^/]*$/, `/${TEST_DATABASE}`);
 const USER = "phone-user-1";
 const PHONE = "+16175551212";
 const OTHER_PHONE = "+16175550000";
+const FIRST_SID = "VE00000000000000000000000000000001";
+const SECOND_SID = "VE00000000000000000000000000000002";
 const LIFETIME_SECONDS = 600;
 const MAX_CHECKS = 5;
 
@@ -52,10 +54,11 @@ describe.skipIf(!reachable)("phone verification state against Postgres", () => {
    * @returns The stored phone, count and expiry, or undefined.
    */
   async function storedRow(): Promise<
-    { phone: string; check_count: number; expires_at: string } | undefined
+    | { phone: string; check_count: number; expires_at: string; provider_sid: string | null }
+    | undefined
   > {
     const result = await database.query(
-      "SELECT phone, check_count, expires_at FROM phone_verifications WHERE user_id = $1",
+      "SELECT phone, check_count, expires_at, provider_sid FROM phone_verifications WHERE user_id = $1",
       [USER],
     );
     return result.rows[0];
@@ -195,7 +198,7 @@ describe.skipIf(!reachable)("phone verification state against Postgres", () => {
     await repo.beginPhoneVerification(USER, PHONE, LIFETIME_SECONDS);
     await repo.spendPhoneCheckAttempt(USER, PHONE, MAX_CHECKS);
 
-    await repo.exhaustPhoneVerification(USER, MAX_CHECKS);
+    await repo.exhaustPhoneVerification(USER, PHONE, null, MAX_CHECKS);
 
     expect((await storedRow())?.check_count).toBe(MAX_CHECKS);
     expect((await repo.spendPhoneCheckAttempt(USER, PHONE, MAX_CHECKS)).status).toBe("exhausted");
@@ -204,8 +207,142 @@ describe.skipIf(!reachable)("phone verification state against Postgres", () => {
   it("forgets the verification once consumed", async () => {
     await repo.beginPhoneVerification(USER, PHONE, LIFETIME_SECONDS);
 
-    await repo.consumePhoneVerification(USER);
+    await repo.consumePhoneVerification(USER, PHONE, null);
 
     expect(await storedRow()).toBeUndefined();
+  });
+
+  /**
+   * Seconds from now until the stored row expires.
+   *
+   * @returns The seconds left, fractional.
+   */
+  async function secondsLeft(): Promise<number> {
+    return (Date.parse((await storedRow())!.expires_at) - Date.now()) / 1000;
+  }
+
+  it("counts the expiry from Twilio's verification after a send that failed first", async () => {
+    // Minute 0: the row is written, the send fails, no verification exists
+    // at Twilio. A check against it still spends a try.
+    await repo.beginPhoneVerification(USER, PHONE, LIFETIME_SECONDS);
+    await repo.spendPhoneCheckAttempt(USER, PHONE, MAX_CHECKS);
+    await database.query(
+      "UPDATE phone_verifications SET expires_at = expires_at - interval '9 minutes'",
+    );
+    // Minute 9: the retry reaches Twilio, which creates the verification now.
+    await repo.beginPhoneVerification(USER, PHONE, LIFETIME_SECONDS);
+    await repo.recordProviderVerification(
+      USER,
+      PHONE,
+      FIRST_SID,
+      new Date().toISOString(),
+      LIFETIME_SECONDS,
+    );
+
+    // Answerable until minute 19, as Twilio's is, with its five fresh checks.
+    expect(await secondsLeft()).toBeGreaterThan(LIFETIME_SECONDS - 5);
+    expect(await storedRow()).toMatchObject({ check_count: 0, provider_sid: FIRST_SID });
+  });
+
+  it("keeps the count and expiry when a resend reaches the same verification", async () => {
+    await repo.beginPhoneVerification(USER, PHONE, LIFETIME_SECONDS);
+    await repo.recordProviderVerification(
+      USER,
+      PHONE,
+      FIRST_SID,
+      new Date(Date.now() - 3 * 60 * 1000).toISOString(),
+      LIFETIME_SECONDS,
+    );
+    for (let check = 0; check < 3; check += 1) {
+      await repo.spendPhoneCheckAttempt(USER, PHONE, MAX_CHECKS);
+    }
+    const before = await storedRow();
+
+    await repo.beginPhoneVerification(USER, PHONE, LIFETIME_SECONDS);
+    await repo.recordProviderVerification(
+      USER,
+      PHONE,
+      FIRST_SID,
+      new Date().toISOString(),
+      LIFETIME_SECONDS,
+    );
+
+    expect(await storedRow()).toEqual({ ...before, check_count: 3 });
+  });
+
+  it("starts afresh when Twilio starts a new verification for the same number", async () => {
+    await repo.beginPhoneVerification(USER, PHONE, LIFETIME_SECONDS);
+    await repo.recordProviderVerification(
+      USER,
+      PHONE,
+      FIRST_SID,
+      new Date(Date.now() - 5 * 60 * 1000).toISOString(),
+      LIFETIME_SECONDS,
+    );
+    await repo.spendPhoneCheckAttempt(USER, PHONE, MAX_CHECKS);
+    await repo.spendPhoneCheckAttempt(USER, PHONE, MAX_CHECKS);
+
+    await repo.recordProviderVerification(
+      USER,
+      PHONE,
+      SECOND_SID,
+      new Date().toISOString(),
+      LIFETIME_SECONDS,
+    );
+
+    expect(await storedRow()).toMatchObject({ check_count: 0, provider_sid: SECOND_SID });
+    expect(await secondsLeft()).toBeGreaterThan(LIFETIME_SECONDS - 5);
+  });
+
+  it("lets a late answer for one number leave another number's verification alone", async () => {
+    await repo.beginPhoneVerification(USER, PHONE, LIFETIME_SECONDS);
+    await repo.recordProviderVerification(USER, PHONE, FIRST_SID, null, LIFETIME_SECONDS);
+    const attempt = await repo.spendPhoneCheckAttempt(USER, PHONE, MAX_CHECKS);
+    if (attempt.status !== "ok") throw new Error(`attempt was ${attempt.status}`);
+    expect(attempt.providerSid).toBe(FIRST_SID);
+    // While that check waits on Twilio, another session asks for a code for
+    // a different number, which replaces the account's row.
+    await repo.beginPhoneVerification(USER, OTHER_PHONE, LIFETIME_SECONDS);
+    await repo.recordProviderVerification(USER, OTHER_PHONE, SECOND_SID, null, LIFETIME_SECONDS);
+
+    // Twilio's late "gone" and "exhausted" answers for the first number.
+    await repo.consumePhoneVerification(USER, PHONE, attempt.providerSid);
+    await repo.exhaustPhoneVerification(USER, PHONE, attempt.providerSid, MAX_CHECKS);
+
+    expect(await storedRow()).toMatchObject({
+      phone: OTHER_PHONE,
+      provider_sid: SECOND_SID,
+      check_count: 0,
+    });
+  });
+
+  it("lets a late answer leave a newer verification for the same number alone", async () => {
+    await repo.beginPhoneVerification(USER, PHONE, LIFETIME_SECONDS);
+    await repo.recordProviderVerification(USER, PHONE, FIRST_SID, null, LIFETIME_SECONDS);
+    const attempt = await repo.spendPhoneCheckAttempt(USER, PHONE, MAX_CHECKS);
+    if (attempt.status !== "ok") throw new Error(`attempt was ${attempt.status}`);
+    await repo.recordProviderVerification(USER, PHONE, SECOND_SID, null, LIFETIME_SECONDS);
+
+    await repo.consumePhoneVerification(USER, PHONE, attempt.providerSid);
+
+    expect(await storedRow()).toMatchObject({ provider_sid: SECOND_SID, check_count: 0 });
+  });
+
+  it("removes the verification that was checked", async () => {
+    await repo.beginPhoneVerification(USER, PHONE, LIFETIME_SECONDS);
+    await repo.recordProviderVerification(USER, PHONE, FIRST_SID, null, LIFETIME_SECONDS);
+
+    await repo.consumePhoneVerification(USER, PHONE, FIRST_SID);
+
+    expect(await storedRow()).toBeUndefined();
+  });
+
+  it("clears the provider id when a different number starts afresh", async () => {
+    await repo.beginPhoneVerification(USER, PHONE, LIFETIME_SECONDS);
+    await repo.recordProviderVerification(USER, PHONE, FIRST_SID, null, LIFETIME_SECONDS);
+
+    await repo.beginPhoneVerification(USER, OTHER_PHONE, LIFETIME_SECONDS);
+
+    expect(await storedRow()).toMatchObject({ phone: OTHER_PHONE, provider_sid: null });
   });
 });

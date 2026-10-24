@@ -15,6 +15,18 @@ import {
 interface VerificationResponse {
   status?: string;
   code?: number;
+  /** The verification's id (VE…), on a send's answer. */
+  sid?: string;
+  /** When Twilio created the verification (ISO 8601), on a send's answer. */
+  date_created?: string;
+}
+
+/** The verification a send reached, as far as the provider's answer says. */
+export interface ProviderVerification {
+  /** Twilio's id for it, or null when the answer did not carry one. */
+  sid: string | null;
+  /** When Twilio created it (ISO 8601), or null when missing or unreadable. */
+  createdAt: string | null;
 }
 
 /** One provider answer: whether the call succeeded, its HTTP status, and the parsed body. */
@@ -93,15 +105,27 @@ async function providerRequest(operation: {
 /**
  * Sends a one-time SMS code to a normalized E.164 number.
  *
+ * Inside a verification's ten minutes Twilio answers with that same
+ * verification and texts its code again; otherwise it creates a new one.
+ * Which one it was is returned, so the server's record can follow it.
+ *
  * @param phone - Verified-format E.164 destination.
+ * @returns The verification the send reached.
+ * @throws UsecaseError "unavailable" when the provider did not accept the send.
  */
-export async function startPhoneVerification(phone: string): Promise<void> {
+export async function startPhoneVerification(phone: string): Promise<ProviderVerification> {
   try {
     const result = await providerRequest({
       endpoint: "Verifications",
       fields: { To: phone, Channel: "sms" },
     });
-    if (result.ok && result.body.status === "pending") return;
+    if (result.ok && result.body.status === "pending") {
+      const createdAt = result.body.date_created ?? "";
+      return {
+        sid: result.body.sid || null,
+        createdAt: Number.isFinite(Date.parse(createdAt)) ? createdAt : null,
+      };
+    }
     logEvent("warn", "phone verification provider rejected send", {
       providerStatus: result.status,
       providerCode: result.body.code,
