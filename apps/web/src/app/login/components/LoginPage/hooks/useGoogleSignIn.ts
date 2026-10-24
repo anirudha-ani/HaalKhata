@@ -45,10 +45,9 @@ export function useGoogleSignIn() {
     let resizeObserver: ResizeObserver | undefined;
 
     Promise.all([loadGoogleScript(), authClient.beginGoogleSignIn({})])
-      .then(([_scriptReady, challenge]) => {
+      .then(([google, challenge]) => {
         if (cancelled) return;
-        if (!window.google) throw new Error("Google sign-in did not load");
-        window.google.accounts.id.initialize({
+        google.accounts.id.initialize({
           client_id: GOOGLE_CLIENT_ID,
           nonce: challenge.nonce,
           callback: (response) => {
@@ -61,7 +60,7 @@ export function useGoogleSignIn() {
           const width = Math.min(400, Math.floor(buttonElement.clientWidth));
           if (!width) return;
           buttonElement.replaceChildren();
-          window.google?.accounts.id.renderButton(buttonElement, { ...GOOGLE_BUTTON_OPTIONS, width });
+          google.accounts.id.renderButton(buttonElement, { ...GOOGLE_BUTTON_OPTIONS, width });
         };
         renderButton();
         resizeObserver = new ResizeObserver(renderButton);

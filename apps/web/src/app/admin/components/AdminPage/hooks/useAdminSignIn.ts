@@ -56,9 +56,9 @@ export function useAdminSignIn({
     let cancelled = false;
 
     Promise.all([loadGoogleScript(), adminAnalyticsClient.beginSignIn({})])
-      .then(([_scriptReady, challenge]) => {
-        if (cancelled || !window.google) return;
-        window.google.accounts.id.initialize({
+      .then(([google, challenge]) => {
+        if (cancelled) return;
+        google.accounts.id.initialize({
           client_id: googleClientId,
           nonce: challenge.nonce,
           callback: (response) => {
@@ -66,7 +66,7 @@ export function useAdminSignIn({
             mutate(response.credential);
           },
         });
-        window.google.accounts.id.renderButton(buttonElement, GOOGLE_BUTTON_OPTIONS);
+        google.accounts.id.renderButton(buttonElement, GOOGLE_BUTTON_OPTIONS);
       })
       .catch((setupError) => {
         if (!cancelled) setError(`Could not start Google sign-in: ${errorMessage(setupError)}`);
