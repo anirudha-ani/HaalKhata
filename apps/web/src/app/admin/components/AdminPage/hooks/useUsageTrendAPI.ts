@@ -22,5 +22,9 @@ export function useUsageTrendAPI(unit: TrendUnit, endOn: string) {
     queryFn: () => adminAnalyticsClient.getUsageTrend({ unit, endOn }),
     placeholderData: keepPreviousData,
     retry: (failureCount, error) => !isSessionEnded(error) && failureCount < 1,
+    // Each read aggregates across the whole product and spends the admin
+    // read budget; coming back to the tab is not a reason to redo it. The
+    // dashboard's Refresh button is.
+    refetchOnWindowFocus: false,
   });
 }

@@ -234,37 +234,44 @@ export interface UserUsageRow {
  * the id is not selected, so the rows that reach the process identify
  * nobody beyond the display name the person chose.
  *
+ * The people are picked first and each one's rows are counted through the
+ * author indexes, so the cost follows the length of the list rather than
+ * the size of the expense, payment and scan tables.
+ *
  * @param limit - Most people to return.
  * @param client - The snapshot's client.
  * @returns One row per person.
  */
 export async function listUserUsage(limit: number, client: PoolClient): Promise<UserUsageRow[]> {
   return query<UserUsageRow>(
-    `SELECT ${DISPLAY_NAME} AS name,
+    `WITH chosen AS (
+       SELECT usr.* FROM users usr
+        WHERE ${REGISTERED}
+        ORDER BY ${JOINED_AT} DESC, usr.id
+        LIMIT $1
+     )
+     SELECT ${DISPLAY_NAME} AS name,
             to_char(${JOINED_AT} AT TIME ZONE 'UTC', 'YYYY-MM-DD') AS joined_on,
             COALESCE(added.by_split_type, '{}'::json) AS expenses_by_split_type,
-            COALESCE(recorded.payment_count, 0) AS payment_count,
-            COALESCE(scanned.receipt_scan_count, 0) AS receipt_scan_count
-       FROM users usr
-       LEFT JOIN (
-         SELECT created_by, json_object_agg(split_type, expense_count) AS by_split_type
+            recorded.payment_count,
+            scanned.receipt_scan_count
+       FROM chosen usr
+       LEFT JOIN LATERAL (
+         SELECT json_object_agg(per_type.split_type, per_type.expense_count) AS by_split_type
            FROM (
-             SELECT created_by, split_type, COUNT(*)::int AS expense_count
-               FROM expenses GROUP BY created_by, split_type
+             SELECT split_type, COUNT(*)::int AS expense_count
+               FROM expenses WHERE created_by = usr.id GROUP BY split_type
            ) per_type
-          GROUP BY created_by
-       ) added ON added.created_by = usr.id
-       LEFT JOIN (
-         SELECT recorded_by, COUNT(*)::int AS payment_count
-           FROM settlements WHERE method <> 'offset' GROUP BY recorded_by
-       ) recorded ON recorded.recorded_by = usr.id
-       LEFT JOIN (
-         SELECT user_id, COUNT(*)::int AS receipt_scan_count
-           FROM receipt_scans GROUP BY user_id
-       ) scanned ON scanned.user_id = usr.id
-      WHERE ${REGISTERED}
-      ORDER BY ${JOINED_AT} DESC, usr.id
-      LIMIT $1`,
+       ) added ON true
+       CROSS JOIN LATERAL (
+         SELECT COUNT(*)::int AS payment_count
+           FROM settlements WHERE recorded_by = usr.id AND method <> 'offset'
+       ) recorded
+       CROSS JOIN LATERAL (
+         SELECT COUNT(*)::int AS receipt_scan_count
+           FROM receipt_scans WHERE user_id = usr.id
+       ) scanned
+      ORDER BY ${JOINED_AT} DESC, usr.id`,
     [limit],
     client,
   );
