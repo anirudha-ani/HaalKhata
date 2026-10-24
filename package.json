@@ -32,11 +32,11 @@
     "test:parity": "node --test scripts/client-parity.test.cjs"
   },
   "devDependencies": {
-    "@bufbuild/buf": "1.73.0",
+    "@bufbuild/buf": "1.75.0",
     "@bufbuild/protoc-gen-es": "^2.16.0",
     "braces": "3.0.3",
     "node-forge": "1.4.0",
-    "react-doctor": "0.9.17"
+    "react-doctor": "0.9.18"
   },
   "engines": {
     "node": ">=24"
