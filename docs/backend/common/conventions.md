@@ -148,7 +148,8 @@ tracked keys with LRU eviction so it cannot be a memory-exhaustion vector.
 | `ParseReceipt` | per account | 5/min (+ max 2 concurrent per process) |
 | Ledger reads (`ListExpenses`, `ListGroups`, `GetFriendLedger`, `GetGroupBalances`, `GetOverallBalances`/`ListFriends`) | per account | 60/min each |
 | `GetInsights` | per account | 30/min |
-| Admin sign-in (`BeginSignIn` + `SignIn`) | `admin-auth:<client-ip>` | 5/min |
+| Admin sign-in nonce (`BeginSignIn`) | `admin-nonce:<client-ip>` | 30/min: each page load and each refused sign-in asks for a fresh one |
+| Admin sign-in (`SignIn`) | `admin-auth:<client-ip>` | 5/min |
 | `GetUsageOverview` | one bucket for every admin session | 30/min |
 | `GetUsageTrend` | one bucket for every admin session | 60/min |
 | `ListReports` | one bucket for every admin session | 30/min |

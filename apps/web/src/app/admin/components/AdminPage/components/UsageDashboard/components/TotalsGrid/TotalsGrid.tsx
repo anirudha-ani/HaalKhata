@@ -8,8 +8,9 @@ import { StatTile } from "@/components/charts/StatTile/StatTile";
  * Renders the headline counts. Each is a single number, so each is a tile
  * rather than a bar: a chart of one value says nothing the number does not.
  * Where a count has a part worth knowing (how many were invited but never
- * joined, how many expenses were later deleted or payments removed, how many people the saved
- * payment methods belong to), the tile says so beneath it.
+ * joined, how many expenses were later deleted or payments removed, how
+ * many people the saved payment methods belong to), the tile says so
+ * beneath it.
  *
  * @param props - Component props.
  * @returns The grid.
