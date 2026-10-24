@@ -24,6 +24,7 @@ import {
   consumePhoneVerification,
   exhaustPhoneVerification,
   findPhoneVerification,
+  forgetPhoneVerification,
   recordProviderVerification,
   spendPhoneCheckAttempt,
   type PhoneCheckAttempt,
@@ -300,7 +301,7 @@ async function refuseCode(
     // The provider holds nothing to check a code against, so neither does
     // this server: the next send then starts afresh on both sides, instead
     // of keeping a budget and expiry for a verification that is not there.
-    await consumePhoneVerification(userId, phone, attempt.providerSid);
+    await forgetPhoneVerification(userId, phone, attempt.providerSid);
     invalid(INACTIVE_CODE_MESSAGE);
   }
   if (verdict === "exhausted") {
@@ -378,10 +379,10 @@ export async function setPhone(
   const verdict = await checkPhoneVerification(phone, code);
   if (verdict !== "approved") await refuseCode(userId, phone, code, attempt, verdict);
   // Single-use on our side: a second check of the same approved code finds
-  // no verification, whatever the provider would have said. Only the
-  // verification that was checked is removed; a newer one started by
-  // another session in the meantime keeps its code.
-  await consumePhoneVerification(userId, phone, attempt.providerSid);
+  // no verification, whatever the provider would have said. The number is
+  // proven for this account, so its verification goes whichever Twilio id
+  // a resend wrote meanwhile; another number's is left alone.
+  await consumePhoneVerification(userId, phone);
 
   let holder = await findUserByPhone(phone);
 

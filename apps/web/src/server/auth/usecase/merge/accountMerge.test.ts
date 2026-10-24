@@ -12,6 +12,7 @@ const {
   beginPhoneVerificationMock,
   spendPhoneCheckAttemptMock,
   consumePhoneVerificationMock,
+  forgetPhoneVerificationMock,
   findPhoneVerificationMock,
   exhaustPhoneVerificationMock,
   recordProviderVerificationMock,
@@ -27,6 +28,7 @@ const {
     beginPhoneVerificationMock: vi.fn(),
     spendPhoneCheckAttemptMock: vi.fn(),
     consumePhoneVerificationMock: vi.fn(),
+    forgetPhoneVerificationMock: vi.fn(),
     findPhoneVerificationMock: vi.fn(),
     exhaustPhoneVerificationMock: vi.fn(),
     recordProviderVerificationMock: vi.fn(),
@@ -57,6 +59,7 @@ vi.mock("@/server/auth/repo/phone/phoneVerifications.repo", () => ({
   beginPhoneVerification: beginPhoneVerificationMock,
   spendPhoneCheckAttempt: spendPhoneCheckAttemptMock,
   consumePhoneVerification: consumePhoneVerificationMock,
+  forgetPhoneVerification: forgetPhoneVerificationMock,
   findPhoneVerification: findPhoneVerificationMock,
   exhaustPhoneVerification: exhaustPhoneVerificationMock,
   recordProviderVerification: recordProviderVerificationMock,
@@ -366,7 +369,8 @@ describe("setPhone", () => {
     // and an expiry for a verification the provider does not have.
     // Only the verification that was checked: a newer one another session
     // started in the meantime keeps its code.
-    expect(consumePhoneVerificationMock).toHaveBeenCalledWith(KEEPER, PHONE, PROVIDER_SID);
+    expect(forgetPhoneVerificationMock).toHaveBeenCalledWith(KEEPER, PHONE, PROVIDER_SID);
+    expect(consumePhoneVerificationMock).not.toHaveBeenCalled();
     expect(setUserPhoneMock).not.toHaveBeenCalled();
   });
 
@@ -385,7 +389,10 @@ describe("setPhone", () => {
 
     await setPhone(KEEPER, PHONE, CODE, limits);
 
-    expect(consumePhoneVerificationMock).toHaveBeenCalledWith(KEEPER, PHONE, PROVIDER_SID);
+    // By number: whichever Twilio id the row follows by now, this account's
+    // verification of the number is done.
+    expect(consumePhoneVerificationMock).toHaveBeenCalledWith(KEEPER, PHONE);
+    expect(forgetPhoneVerificationMock).not.toHaveBeenCalled();
   });
 
   it("records nothing about the provider's verification when its answer names none", async () => {

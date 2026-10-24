@@ -244,19 +244,37 @@ export async function exhaustPhoneVerification(
 }
 
 /**
- * Removes a checked verification: after the provider approved its code,
- * making approval single-use on this side regardless of provider behavior,
- * or once the provider no longer holds it.
+ * Removes the account's verification of a number once the provider has
+ * approved a code for it, making approval single-use on this side whatever
+ * the provider does.
+ *
+ * Matched on the number, not on the provider's id: approval proves the
+ * number for this account, so its verification is done whichever one the
+ * row follows now, including an id a resend wrote while the check was in
+ * flight. Another number's verification is left alone.
+ *
+ * @param userId - Account the verification belongs to.
+ * @param phone - E.164 number the approved code was for.
+ */
+export async function consumePhoneVerification(userId: string, phone: string): Promise<void> {
+  await execute(`DELETE FROM phone_verifications WHERE user_id = $1 AND phone = $2`, [
+    userId,
+    phone,
+  ]);
+}
+
+/**
+ * Removes a checked verification once the provider no longer holds it.
  *
  * Only the verification that was checked is removed, for the same reason as
- * {@link exhaustPhoneVerification}: a late answer must not delete a newer
+ * {@link exhaustPhoneVerification}: a late "gone" says nothing about a newer
  * verification whose code is still on its way.
  *
  * @param userId - Account the verification belongs to.
  * @param phone - E.164 number of the checked verification.
  * @param providerSid - Twilio's id for it, as the attempt found it (null when unknown).
  */
-export async function consumePhoneVerification(
+export async function forgetPhoneVerification(
   userId: string,
   phone: string,
   providerSid: string | null,

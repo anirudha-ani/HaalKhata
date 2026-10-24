@@ -249,7 +249,7 @@ describe.skipIf(!reachable)("phone verification state against Postgres", () => {
   it("forgets the verification once consumed", async () => {
     await repo.beginPhoneVerification(USER, PHONE, LIFETIME_SECONDS);
 
-    await repo.consumePhoneVerification(USER, PHONE, null);
+    await repo.consumePhoneVerification(USER, PHONE);
 
     expect(await storedRow()).toBeUndefined();
   });
@@ -317,9 +317,11 @@ describe.skipIf(!reachable)("phone verification state against Postgres", () => {
     await repo.beginPhoneVerification(USER, OTHER_PHONE, LIFETIME_SECONDS);
     await record(OTHER_PHONE, SECOND_SID, null);
 
-    // Twilio's late "gone" and "exhausted" answers for the first number.
-    await repo.consumePhoneVerification(USER, PHONE, attempt.providerSid);
+    // Twilio's late "gone", "exhausted" and "approved" answers for the
+    // first number.
+    await repo.forgetPhoneVerification(USER, PHONE, attempt.providerSid);
     await repo.exhaustPhoneVerification(USER, PHONE, attempt.providerSid, MAX_CHECKS);
+    await repo.consumePhoneVerification(USER, PHONE);
 
     expect(await storedRow()).toMatchObject({
       phone: OTHER_PHONE,
@@ -335,16 +337,38 @@ describe.skipIf(!reachable)("phone verification state against Postgres", () => {
     if (attempt.status !== "ok") throw new Error(`attempt was ${attempt.status}`);
     await record(PHONE, SECOND_SID, null);
 
-    await repo.consumePhoneVerification(USER, PHONE, attempt.providerSid);
+    // Twilio's late "gone" for the first verification.
+    await repo.forgetPhoneVerification(USER, PHONE, attempt.providerSid);
 
     expect(await storedRow()).toMatchObject({ provider_sid: SECOND_SID, check_count: 0 });
   });
 
-  it("removes the verification that was checked", async () => {
+  it("forgets the verification that was checked", async () => {
     await repo.beginPhoneVerification(USER, PHONE, LIFETIME_SECONDS);
     await record(PHONE, FIRST_SID, null);
 
-    await repo.consumePhoneVerification(USER, PHONE, FIRST_SID);
+    await repo.forgetPhoneVerification(USER, PHONE, FIRST_SID);
+
+    expect(await storedRow()).toBeUndefined();
+  });
+
+  it("consumes the number's verification on approval after a resend wrote Twilio's id", async () => {
+    // A send that timed out but reached Twilio leaves the row with no id,
+    // and a check is spent on it.
+    await repo.beginPhoneVerification(USER, PHONE, LIFETIME_SECONDS);
+    const attempt = await repo.spendPhoneCheckAttempt(USER, PHONE, MAX_CHECKS);
+    if (attempt.status !== "ok") throw new Error(`attempt was ${attempt.status}`);
+    expect(attempt.providerSid).toBeNull();
+    // A minute later, while that check waits on Twilio, a resend reaches the
+    // same verification and records its id.
+    await database.query(
+      "UPDATE phone_verifications SET expires_at = expires_at - interval '1 minute'",
+    );
+    await record(PHONE, FIRST_SID, twilioTime(60), new Date().toISOString());
+    expect(await storedRow()).toMatchObject({ provider_sid: FIRST_SID, check_count: 1 });
+
+    // Twilio approves the check.
+    await repo.consumePhoneVerification(USER, PHONE);
 
     expect(await storedRow()).toBeUndefined();
   });
