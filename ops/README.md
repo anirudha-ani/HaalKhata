@@ -116,7 +116,7 @@ the file:
 | `ACME_EMAIL` | Secret `ACME_EMAIL` | Required — the deploy job refuses to run without it; Caddy registers it with the CA for expiry/problem notices. A secret only so the address stays out of public workflow logs; it is not authenticating material |
 | `GOOGLE_CLIENT_ID` | Variable `NEXT_PUBLIC_GOOGLE_CLIENT_ID` | Same id the browser bundle is built with, by contract |
 | `GOOGLE_MOBILE_CLIENT_IDS` | Variable `GOOGLE_MOBILE_CLIENT_IDS` | Optional |
-| `ADMIN_EMAILS` | Secret `ADMIN_EMAILS` | Optional; Google addresses allowed to sign in to the usage page, comma separated. Unset means nobody can. A secret only to keep a personal address out of public workflow logs, like `ACME_EMAIL` |
+| `ADMIN_EMAILS` | Secret `ADMIN_EMAILS` | Optional; Google addresses allowed to sign in to the usage page, comma separated (spaces after the commas are fine). Unset means nobody can. A secret only to keep a personal address out of public workflow logs, like `ACME_EMAIL` |
 | `ADMIN_GOOGLE_CLIENT_ID` | Variable `ADMIN_GOOGLE_CLIENT_ID` | Optional; an OAuth client for the usage page alone. Unset, that page signs in with `GOOGLE_CLIENT_ID` |
 | `APPLE_TEAM_ID` | Variable `APPLE_TEAM_ID` | Apple developer team identifier |
 | `APPLE_KEY_ID` | Variable `APPLE_KEY_ID` | Sign in with Apple signing key identifier |
