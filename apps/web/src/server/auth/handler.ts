@@ -159,7 +159,10 @@ export const authHandler: ServiceImpl<typeof AuthService> = {
     // Inside runUsecase so the durable limiter's own database errors are
     // sanitized like any other; its ConnectError refusals pass through.
     return runUsecase(async () => {
-      if (request.verificationCode === "") {
+      // Trimmed as the usecase trims it: a code of only spaces is a send
+      // there, so it has to meet the send limits here.
+      const verificationCode = request.verificationCode.trim();
+      if (verificationCode === "") {
         // A call without a code is the one that sends an SMS; it is also
         // limited by destination and by client address, whoever the account
         // is — durably, in Postgres.
@@ -175,7 +178,7 @@ export const authHandler: ServiceImpl<typeof AuthService> = {
       } else {
         enforcePhoneRateLimit(userId, "check", PHONE_CHECK_RATE_LIMIT);
       }
-      return accountMerge.setPhone(userId, request.phone, request.verificationCode);
+      return accountMerge.setPhone(userId, request.phone, verificationCode);
     }, handlerContext);
   },
 
