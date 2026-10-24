@@ -1,7 +1,7 @@
 /** The phone step's three stages (number, code, merge) and the discoverability switch that rides along. */
 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import type { MergePreview } from "@haalkhata/protogen/auth/v1/auth_pb";
 import type { User } from "@haalkhata/protogen/common/v1/common_pb";
 import { queryKeys } from "@haalkhata/shared/api/queryKeys";
@@ -50,6 +50,10 @@ export function usePhoneStep(user: User, onDone: (verified: boolean) => void) {
   const [preview, setPreview] = useState<MergePreview | undefined>();
   const [mergeToken, setMergeToken] = useState("");
   const resendTimer = useResendTimer(RESEND_DELAY_SECONDS);
+  // Whether a code check is running, known the moment one starts. The
+  // mutation's own isPending only changes on the next render, and two
+  // changes to the code can land before it (a suggestion inserted twice).
+  const checking = useRef(false);
 
   const alreadyVerified = user.phoneVerified && user.phone !== "" && composeE164(region, nationalNumber) === user.phone;
 
@@ -112,7 +116,22 @@ export function usePhoneStep(user: User, onDone: (verified: boolean) => void) {
       }
       setError(errorMessage(failure));
     },
+    onSettled: () => {
+      checking.current = false;
+    },
   });
+
+  /**
+   * Starts a code check unless one is already running, so one code costs at
+   * most one try however many times it arrives.
+   *
+   * @param entered - The whole code to check.
+   */
+  const startCheck = (entered: string) => {
+    if (checking.current) return;
+    checking.current = true;
+    verify.mutate(entered);
+  };
 
   const confirmMerge = useMutation({
     mutationFn: () => authClient.confirmPhoneMerge({ mergeToken }),
@@ -146,7 +165,7 @@ export function usePhoneStep(user: User, onDone: (verified: boolean) => void) {
       setNotice("");
       const entry = codeField.enter(text);
       setError(entry.notice);
-      if (entry.arrivedWhole && !verify.isPending) verify.mutate(entry.code);
+      if (entry.arrivedWhole) startCheck(entry.code);
     },
     rejections,
     notice,
@@ -174,7 +193,7 @@ export function usePhoneStep(user: User, onDone: (verified: boolean) => void) {
     verify: () => {
       setError("");
       setNotice("");
-      verify.mutate(codeField.code);
+      startCheck(codeField.code);
     },
     /** Sends a fresh code to the same number. */
     resend: () => {

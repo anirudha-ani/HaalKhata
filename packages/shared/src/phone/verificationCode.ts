@@ -53,6 +53,7 @@ interface InsertionReading {
  * - An insertion that could have landed in more than one place, reading as a
  *   different code in each, keeps the reading after the digits already there
  *   (where the cursor sits after typing) and waits for Verify too.
+ * - The code the field already held, arriving again, is not checked again.
  *
  * @param previous - The code the field held before this change.
  * @param entered - The field's full text after the change.
@@ -67,7 +68,9 @@ export function readVerificationCode(previous: string, entered: string): CodeEnt
   const [likeliest] = readings;
   const codes = new Set(readings.map((reading) => reading.code));
   if (likeliest.code && codes.size === 1) {
-    return { code: likeliest.code, notice: "", arrivedWhole: true };
+    // The code the field already held, arriving again (a suggestion
+    // inserted twice), is not a new code to check.
+    return { code: likeliest.code, notice: "", arrivedWhole: likeliest.code !== previous };
   }
   if (isCompleteVerificationCode(digits)) return { code: digits, notice: "", arrivedWhole: false };
   if (likeliest.code) return { code: likeliest.code, notice: "", arrivedWhole: false };

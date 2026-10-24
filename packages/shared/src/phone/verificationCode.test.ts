@@ -82,6 +82,15 @@ describe("readVerificationCode", () => {
     });
   });
 
+  it("does not check again a code made of one repeated digit that arrives twice", () => {
+    // Every placement reads the same code here, the one already in the field.
+    expect(readVerificationCode("11111111", "1111111111111111")).toEqual({
+      code: "11111111",
+      notice: "",
+      arrivedWhole: false,
+    });
+  });
+
   it("does not check at once a code that could have landed in two places", () => {
     // "48" typed, then a code: "48" + "29137548", or "48291375" + "48".
     // Only the person can tell which, so it waits for Verify.
