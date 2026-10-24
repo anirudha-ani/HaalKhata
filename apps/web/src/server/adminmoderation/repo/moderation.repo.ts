@@ -352,8 +352,12 @@ export async function resetProfile(userId: string, name: string, client: PoolCli
  *   comment line carries the expense's link but not the comment's id;
  * - an expense: every line linking to it, its comments' lines included,
  *   since each quotes the description;
- * - a group: its whole feed, since every expense, payment and member line
- *   in it names the group, and every notification linking to it;
+ * - a group: every line in its feed but comments, since every expense,
+ *   payment, member and setting line in it names the group and a comment
+ *   line does not; every notification linking to the group; and the
+ *   notifications about its expenses, whose body opens with the group's
+ *   name ("Trip · you owe Ani 600"), while comment notifications on those
+ *   expenses, which do not name it, stay;
  * - a profile: everything the person did, since each line opens with their
  *   name.
  *
@@ -376,7 +380,7 @@ export async function replaceQuotations(
         WHEN 'comment' THEN type = 'comment' AND (actor_id, link) =
           (SELECT user_id, '/expenses/' || expense_id FROM comments WHERE id = $2::text)
         WHEN 'expense' THEN link = '/expenses/' || $2::text
-        WHEN 'group' THEN group_id = $2::text
+        WHEN 'group' THEN group_id = $2::text AND type <> 'comment'
         WHEN 'user' THEN actor_id = $2::text
         ELSE false
       END`,
@@ -390,6 +394,8 @@ export async function replaceQuotations(
           (SELECT user_id, '/expenses/' || expense_id FROM comments WHERE id = $2::text)
         WHEN 'expense' THEN link = '/expenses/' || $2::text
         WHEN 'group' THEN link = '/groups/' || $2::text
+          OR (type IN ('expense_added', 'expense_updated', 'expense_deleted')
+              AND link IN (SELECT '/expenses/' || id FROM expenses WHERE group_id = $2::text))
         WHEN 'user' THEN actor_id = $2::text
         ELSE false
       END`,

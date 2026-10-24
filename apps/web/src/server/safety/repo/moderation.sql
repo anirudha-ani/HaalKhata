@@ -16,15 +16,16 @@ SELECT :'action' = 'list' AS listing, :'action' = 'remove' AS removing,
       -- others, before the content changes: a comment's lines are found through
       -- the comment row. Financial events and amounts stay as they are.
       -- A comment: its author's comment lines on that expense. An expense: what
-      -- links to it, comments included. A group: its feed (each line names the
-      -- group) and what links to it. A profile: what they did (each line opens
-      -- with their name).
+      -- links to it, comments included. A group: its feed but comments (every
+      -- other line names the group), what links to it, and the notifications
+      -- about its expenses (their body opens with the group's name). A profile:
+      -- what they did (each line opens with their name).
       UPDATE activity SET message = 'Content removed after moderation'
         WHERE CASE :'target_kind'
           WHEN 'comment' THEN type = 'comment' AND (actor_id, link) =
             (SELECT user_id, '/expenses/' || expense_id FROM comments WHERE id = :'target_id')
           WHEN 'expense' THEN link = '/expenses/' || :'target_id'
-          WHEN 'group' THEN group_id = :'target_id'
+          WHEN 'group' THEN group_id = :'target_id' AND type <> 'comment'
           WHEN 'user' THEN actor_id = :'target_id'
           ELSE false
         END;
@@ -34,6 +35,8 @@ SELECT :'action' = 'list' AS listing, :'action' = 'remove' AS removing,
             (SELECT user_id, '/expenses/' || expense_id FROM comments WHERE id = :'target_id')
           WHEN 'expense' THEN link = '/expenses/' || :'target_id'
           WHEN 'group' THEN link = '/groups/' || :'target_id'
+            OR (type IN ('expense_added', 'expense_updated', 'expense_deleted')
+                AND link IN (SELECT '/expenses/' || id FROM expenses WHERE group_id = :'target_id'))
           WHEN 'user' THEN actor_id = :'target_id'
           ELSE false
         END;

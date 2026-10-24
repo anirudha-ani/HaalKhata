@@ -28,7 +28,7 @@ export const TARGET_KIND_WORDING: Record<
     label: "Group name",
     removeLabel: "Reset the name",
     removeEffect:
-      "The group is renamed “Shared group”. Every line in the group's feed (its expenses, payments and members, since each one names the group) and every notification about the group changes to “Content removed after moderation”. Its members, expenses and balances stay as they are. This can't be undone.",
+      "The group is renamed “Shared group”. Every line in the group's feed that names it (its expenses, payments and members, but not comments), and every notification about the group or about an expense added, changed or deleted in it, changes to “Content removed after moderation”. Its members, expenses and balances stay as they are. This can't be undone.",
   },
   user: {
     label: "Profile",

@@ -210,12 +210,15 @@ describe.skipIf(!(await databaseReachable()))("moderation against Postgres", () 
       "act-author-3": 'Author Person added "Taxi"',
       "act-expense-1": 'Reporter Person updated "Offensive expense description" in "Offensive group name"',
       "act-group-1": 'Reporter Person added "Groceries" in "Offensive group name"',
+      "act-group-comment-1": 'Reporter Person commented on "Groceries": see you there',
     });
     const notifications = await database.query("SELECT id, title, body FROM notifications ORDER BY id");
     expect(notifications.rows).toEqual([
       { id: "ntf-author-1", title: "Content removed after moderation", body: "" },
       { id: "ntf-author-2", title: "Author Person paid you", body: "Settlement" },
       { id: "ntf-group-1", title: "Reporter Person added you", body: "Offensive group name" },
+      { id: "ntf-group-comment-1", title: 'Reporter Person commented on "Groceries"', body: "see you there" },
+      { id: "ntf-group-expense-1", title: 'Reporter Person added "Groceries"', body: "Offensive group name · you owe Reporter Person $6.17" },
       { id: "ntf-other-1", title: "Reporter commented", body: "Ordinary words" },
     ]);
     expect(await owedTotal()).toBe(owedBefore);
@@ -244,17 +247,23 @@ describe.skipIf(!(await databaseReachable()))("moderation against Postgres", () 
     });
   });
 
-  it("renames a group and replaces every line in its feed, and nothing outside it", async () => {
+  it("renames a group and replaces what names it, and nothing else", async () => {
     await moderation.removeReportedContent(REPORTS.group);
 
+    // Every line in the group's feed names the group except a comment's.
     expect(await feedLines()).toMatchObject({
       "act-group-1": "Content removed after moderation",
+      "act-group-comment-1": 'Reporter Person commented on "Groceries": see you there',
       "act-author-2": "Author Person commented elsewhere",
       "act-author-3": 'Author Person added "Taxi"',
       "act-reporter-1": "Reporter wrote elsewhere",
     });
+    // An expense notification's body opens with the group's name; a comment
+    // notification on the same expense does not name the group.
     expect(await notificationTitles()).toMatchObject({
       "ntf-group-1": "Content removed after moderation",
+      "ntf-group-expense-1": "Content removed after moderation",
+      "ntf-group-comment-1": 'Reporter Person commented on "Groceries"',
       "ntf-author-2": "Author Person paid you",
     });
   });

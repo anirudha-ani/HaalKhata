@@ -84,8 +84,12 @@ appear as these are handled.
   expense (a comment line carries the expense's link, not the comment's, so
   the author's other comments on the same expense go too); for an expense,
   every line and notification linking to it, comments included; for a
-  group, its whole feed, because every expense, payment and member line in
-  it names the group, and every notification linking to the group; for a
+  group, every line in its feed except comments, because every expense,
+  payment, member and setting line in it names the group and a comment
+  line does not, every notification linking to the group, and the
+  notifications about its expenses being added, changed or deleted, whose
+  body opens with the group's name (comment notifications on those
+  expenses do not name it and stay); for a
   profile, everything the person did, because each line opens with their
   name. The confirmation on the page says which of these will happen
   before anything does. None of it can be undone.
