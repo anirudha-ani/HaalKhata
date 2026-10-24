@@ -35,14 +35,14 @@ message GetInsightsResponse {
   repeated string months = 2;
   // One entry per currency the caller spent or settled in during the
   // window: their default currency first, then by how much they spent.
-  // Kept apart because a dollar and a euro are not the same cent.
+  // Kept apart because a dollar and a euro are not the same cent, and
+  // everything about the window's expenses (how they were split, with whom,
+  // where) is counted inside its currency's entry, so a client showing one
+  // currency shows one currency's expenses throughout.
   repeated CurrencyInsights currencies = 3;
-  // How the window's expenses were split, most used first.
-  repeated SplitTypeCount split_types = 4;
-  // The people the caller shared the most expenses with, most first.
-  repeated Companion companions = 5;
-  // Where the window's expenses happened, busiest first.
-  repeated GroupActivity groups = 6;
+  // Once counted across every currency; now inside each CurrencyInsights.
+  reserved 4, 5, 6;
+  reserved "split_types", "companions", "groups";
 }
 
 // How long the caller has been here and what they have done in total.
@@ -65,7 +65,7 @@ message Journey {
   int32 receipt_scan_count = 7;
 }
 
-// The window's money in one currency.
+// The window in one currency: its money, and the expenses in it.
 message CurrencyInsights {
   string currency = 1;
   // The caller's share of the window's expenses: what they actually spent,
@@ -81,6 +81,13 @@ message CurrencyInsights {
   int32 settled_out_cents = 6;
   // Payments the caller received during the window.
   int32 settled_in_cents = 7;
+  // How the window's expenses in this currency were split, most used first.
+  repeated SplitTypeCount split_types = 8;
+  // The people the caller shared the most expenses in this currency with,
+  // most first.
+  repeated Companion companions = 9;
+  // Where the window's expenses in this currency happened, busiest first.
+  repeated GroupActivity groups = 10;
 }
 
 message CategorySpending {
@@ -101,7 +108,7 @@ message Companion {
   string name = 2;
   string avatar_color = 3;
   string avatar_url = 4;
-  // Expenses in the window both people are on.
+  // Expenses in the window, in this currency, both people are on.
   int32 shared_expense_count = 5;
 }
 

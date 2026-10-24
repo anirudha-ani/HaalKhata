@@ -169,8 +169,9 @@ export async function listSpendingBreakdown(
   );
 }
 
-/** Someone the person shared expenses with in the window. */
+/** Someone the person shared expenses in one currency with in the window. */
 export interface CompanionRow {
+  currency: string;
   id: string;
   name: string;
   avatar_color: string;
@@ -179,7 +180,9 @@ export interface CompanionRow {
 }
 
 /**
- * The people a person shared the most expenses with in the window.
+ * The people a person shared the most expenses with in the window, ranked
+ * within each currency: the dashboard shows one currency at a time, and a
+ * trip in euros says nothing about who they split dollars with.
  *
  * Only the four columns an avatar and a link need are read: this is a list
  * of people the caller already sees on those expenses, and it has no use
@@ -192,9 +195,9 @@ export interface CompanionRow {
  *
  * @param userId - The person asking about themselves.
  * @param bounds - The window's calendar-day range.
- * @param limit - Most people to return.
+ * @param limit - Most people to return per currency.
  * @param client - The snapshot's client.
- * @returns People, most shared expenses first.
+ * @returns People by currency, most shared expenses first within each.
  */
 export async function listCompanions(
   userId: string,
@@ -204,25 +207,36 @@ export async function listCompanions(
 ): Promise<CompanionRow[]> {
   return query<CompanionRow>(
     `${MY_EXPENSES}, others AS (
-       SELECT spl.user_id, spl.expense_id
+       SELECT spl.user_id, spl.expense_id, mine.currency
          FROM expense_splits spl JOIN mine ON mine.id = spl.expense_id
         WHERE spl.user_id <> $1
        UNION
-       SELECT pay.user_id, pay.expense_id
+       SELECT pay.user_id, pay.expense_id, mine.currency
          FROM expense_payers pay JOIN mine ON mine.id = pay.expense_id
         WHERE pay.user_id <> $1
+     ), counted AS (
+       SELECT others.currency, usr.id, usr.name, usr.avatar_color, usr.avatar_url,
+              COUNT(*)::int AS shared_expense_count
+         FROM others JOIN users usr ON usr.id = others.user_id
+        WHERE NOT EXISTS (
+          SELECT 1 FROM user_blocks blk
+           WHERE (blk.blocker_id = $1 AND blk.blocked_id = usr.id)
+              OR (blk.blocker_id = usr.id AND blk.blocked_id = $1)
+        )
+        GROUP BY others.currency, usr.id
+     ), ranked AS (
+       SELECT counted.*,
+              ROW_NUMBER() OVER (
+                PARTITION BY counted.currency
+                ORDER BY counted.shared_expense_count DESC, counted.name, counted.id
+              ) AS place
+         FROM counted
      )
-     SELECT usr.id, usr.name, usr.avatar_color, usr.avatar_url,
-            COUNT(*)::int AS shared_expense_count
-       FROM others JOIN users usr ON usr.id = others.user_id
-      WHERE NOT EXISTS (
-        SELECT 1 FROM user_blocks blk
-         WHERE (blk.blocker_id = $1 AND blk.blocked_id = usr.id)
-            OR (blk.blocker_id = usr.id AND blk.blocked_id = $1)
-      )
-      GROUP BY usr.id
-      ORDER BY shared_expense_count DESC, usr.name, usr.id
-      LIMIT $4`,
+     SELECT ranked.currency, ranked.id, ranked.name, ranked.avatar_color, ranked.avatar_url,
+            ranked.shared_expense_count
+       FROM ranked
+      WHERE ranked.place <= $4
+      ORDER BY ranked.currency, ranked.place`,
     [userId, bounds.startDate, bounds.endDate, limit],
     client,
   );

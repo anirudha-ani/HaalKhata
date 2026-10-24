@@ -37,6 +37,36 @@ function monthKey(monthsAgo: number): string {
     .slice(0, 7);
 }
 
+/** What getInsights returns. */
+type Insights = Awaited<ReturnType<typeof import("./insights.usecase").getInsights>>;
+
+/**
+ * Every companion in every currency, each person once.
+ *
+ * @param insights - A getInsights result.
+ * @returns Their user ids, in the order first seen.
+ */
+function companionIds(insights: Insights): string[] {
+  const userIds = insights.currencies.flatMap((block) =>
+    block.companions.map((companion) => companion.userId),
+  );
+  return [...new Set(userIds)];
+}
+
+/**
+ * How many of the window's expenses the split-type lists count, across
+ * every currency. Each expense has one currency and one split type, so this
+ * is the window's expense count.
+ *
+ * @param insights - A getInsights result.
+ * @returns The count.
+ */
+function expenseTotal(insights: Insights): number {
+  return insights.currencies
+    .flatMap((block) => block.splitTypes)
+    .reduce((count, entry) => count + entry.expenseCount, 0);
+}
+
 const THIS_MONTH = monthKey(0);
 const LAST_MONTH = monthKey(1);
 const LONG_AGO = monthKey(30);
@@ -308,7 +338,7 @@ describe.skipIf(!reachable)("getInsights against Postgres", () => {
   it("keeps each currency's share, outlay and settling apart", async () => {
     const insights = await getInsights(CALLER, { months: 2, localMonth: "" });
 
-    expect(insights.currencies).toEqual([
+    expect(insights.currencies).toMatchObject([
       {
         currency: "USD",
         // Half the dinner and a third of the cab; nothing of the treat.
@@ -336,15 +366,16 @@ describe.skipIf(!reachable)("getInsights against Postgres", () => {
     ]);
   });
 
-  it("ranks split types, companions and places by the caller's own expenses", async () => {
+  it("ranks split types, companions and places within each currency", async () => {
     const insights = await getInsights(CALLER, { months: 2, localMonth: "" });
+    const [dollars, euros] = insights.currencies;
 
-    expect(insights.splitTypes).toEqual([
+    // The dinner, the cab and the treat were in dollars, all with Anika.
+    expect(dollars?.splitTypes).toEqual([
       { splitType: "equal", expenseCount: 2 },
       { splitType: "exact", expenseCount: 1 },
-      { splitType: "itemized", expenseCount: 1 },
     ]);
-    expect(insights.companions).toEqual([
+    expect(dollars?.companions).toEqual([
       {
         userId: ANIKA,
         name: "Anika Rahman",
@@ -352,6 +383,15 @@ describe.skipIf(!reachable)("getInsights against Postgres", () => {
         avatarUrl: "",
         sharedExpenseCount: 3,
       },
+    ]);
+    expect(dollars?.groups).toEqual([
+      { groupId: "", name: "", type: "", isMember: false, expenseCount: 2 },
+      { groupId: "grp-trip", name: "Cox's Bazar", type: "trip", isMember: true, expenseCount: 1 },
+    ]);
+    // The euro bill was Rifat's, itemized, outside any group: it shows only
+    // when euros are chosen, and the dollar lists know nothing of it.
+    expect(euros?.splitTypes).toEqual([{ splitType: "itemized", expenseCount: 1 }]);
+    expect(euros?.companions).toEqual([
       {
         userId: RIFAT,
         name: "Rifat Khan",
@@ -360,9 +400,8 @@ describe.skipIf(!reachable)("getInsights against Postgres", () => {
         sharedExpenseCount: 1,
       },
     ]);
-    expect(insights.groups).toEqual([
-      { groupId: "", name: "", type: "", isMember: false, expenseCount: 3 },
-      { groupId: "grp-trip", name: "Cox's Bazar", type: "trip", isMember: true, expenseCount: 1 },
+    expect(euros?.groups).toEqual([
+      { groupId: "", name: "", type: "", isMember: false, expenseCount: 1 },
     ]);
   });
 
@@ -375,10 +414,10 @@ describe.skipIf(!reachable)("getInsights against Postgres", () => {
       const callerView = await getInsights(CALLER, { months: 2, localMonth: "" });
       const blockedView = await getInsights(RIFAT, { months: 2, localMonth: "" });
 
-      expect(callerView.companions.map((companion) => companion.userId)).toEqual([ANIKA]);
-      expect(blockedView.companions.map((companion) => companion.userId)).toEqual([ANIKA]);
+      expect(companionIds(callerView)).toEqual([ANIKA]);
+      expect(companionIds(blockedView)).toEqual([ANIKA]);
       // The money is still theirs: only the person disappears from the list.
-      expect(callerView.splitTypes.reduce((count, entry) => count + entry.expenseCount, 0)).toBe(4);
+      expect(expenseTotal(callerView)).toBe(4);
     } finally {
       await database.query(`DELETE FROM user_blocks WHERE blocker_id = $1 AND blocked_id = $2`, [
         CALLER,
@@ -395,14 +434,15 @@ describe.skipIf(!reachable)("getInsights against Postgres", () => {
     try {
       const insights = await getInsights(ANIKA, { months: 2, localMonth: "" });
 
-      expect(insights.groups.find((place) => place.groupId === "grp-trip")).toEqual({
+      const places = insights.currencies.flatMap((block) => block.groups);
+      expect(places.find((place) => place.groupId === "grp-trip")).toEqual({
         groupId: "grp-trip",
         name: "Cox's Bazar",
         type: "trip",
         isMember: false,
         expenseCount: 1,
       });
-      expect(insights.groups.find((place) => place.groupId === "grp-theirs")).toMatchObject({
+      expect(places.find((place) => place.groupId === "grp-theirs")).toMatchObject({
         isMember: true,
       });
     } finally {
@@ -418,7 +458,7 @@ describe.skipIf(!reachable)("getInsights against Postgres", () => {
 
     expect(insights.months).toHaveLength(24);
     // 30 months back is still outside two years: the same four expenses.
-    expect(insights.splitTypes.reduce((count, entry) => count + entry.expenseCount, 0)).toBe(4);
+    expect(expenseTotal(insights)).toBe(4);
   });
 
   it("returns an empty dashboard, not an error, for someone with no history", async () => {
@@ -434,9 +474,6 @@ describe.skipIf(!reachable)("getInsights against Postgres", () => {
     });
     expect(insights.months).toHaveLength(3);
     expect(insights.currencies).toEqual([]);
-    expect(insights.splitTypes).toEqual([]);
-    expect(insights.companions).toEqual([]);
-    expect(insights.groups).toEqual([]);
   });
 
   it("shows a third party only their own side of the same ledger", async () => {
@@ -444,16 +481,14 @@ describe.skipIf(!reachable)("getInsights against Postgres", () => {
 
     // Rifat fronted the euro bill and owes half of the one in Anika's group;
     // nothing of the caller's dinner, cab or treat reaches him.
-    expect(insights.splitTypes.reduce((count, entry) => count + entry.expenseCount, 0)).toBe(2);
+    expect(expenseTotal(insights)).toBe(2);
     expect(
       insights.currencies.map((block) => [block.currency, block.shareCents, block.paidCents]),
     ).toEqual([
       ["USD", 25000, 0],
       ["EUR", 0, 2000],
     ]);
-    expect(insights.companions.map((companion) => companion.userId).sort()).toEqual(
-      [ANIKA, CALLER].sort(),
-    );
+    expect(companionIds(insights).sort()).toEqual([ANIKA, CALLER].sort());
   });
 
   it("refuses an account that no longer exists", async () => {

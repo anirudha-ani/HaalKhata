@@ -76,6 +76,9 @@ of it. The dashboard charts the first and states the second.
 
 - **Per currency, never summed across.** `currencies` has one entry per
   currency the caller spent or settled in, their default currency first.
+  How the expenses were split, with whom and where are counted inside each
+  entry too: the dashboard shows one currency at a time, and a list that
+  counted every currency would contradict the charts beside it.
 - Every money total passes through `toInt32Cents()` before it reaches the
   wire, so an overflow is a `FailedPrecondition`, not an encoder crash.
 - Soft-deleted expenses and removed payments count nowhere. A net
@@ -142,9 +145,9 @@ of it. The dashboard charts the first and states the second.
 | journey | Journey | Lifetime figures (below). Not bounded by the window. |
 | months | repeated string | The window's months, `YYYY-MM`, oldest first, no gaps. Every per-month list has one entry per month here, zeros included. |
 | currencies | repeated CurrencyInsights | One block per currency, default first, then by spending. |
-| split_types | repeated SplitTypeCount | How the window's expenses were split, most used first. |
-| companions | repeated Companion | The five people the caller shared the most expenses with. |
-| groups | repeated GroupActivity | The five busiest places; an empty `group_id` is the row for expenses outside any group. |
+
+Fields 4 to 6 (`split_types`, `companions`, `groups`) are reserved: they
+counted every currency together and now live in each `CurrencyInsights`.
 
 **GroupActivity:**
 
@@ -179,3 +182,6 @@ of it. The dashboard charts the first and states the second.
 | categories | repeated CategorySpending | `share_cents` by expense category, largest first. |
 | settled_out_cents | int32 | Payments they made during the window. |
 | settled_in_cents | int32 | Payments they received during the window. |
+| split_types | repeated SplitTypeCount | How the window's expenses in this currency were split, most used first. |
+| companions | repeated Companion | The five people the caller shared the most expenses in this currency with. |
+| groups | repeated GroupActivity | The five busiest places for this currency; an empty `group_id` is the row for expenses outside any group. |

@@ -83,6 +83,10 @@ export async function getInsights(
       })),
     );
 
+    // Everything about the window's expenses is counted inside its
+    // currency, so the one currency a client shows is the one counted.
+    const cellsIn = (currency: string) => cells.filter((cell) => cell.currency === currency);
+
     return {
       journey: {
         memberSince: journey.member_since,
@@ -109,16 +113,18 @@ export async function getInsights(
         })),
         settledOutCents: toInt32Cents(block.settledOutCents, "what you paid back"),
         settledInCents: toInt32Cents(block.settledInCents, "what you were paid back"),
+        splitTypes: splitTypeUseOf(cellsIn(block.currency)),
+        companions: companionRows
+          .filter((companionRow) => companionRow.currency === block.currency)
+          .map((companionRow) => ({
+            userId: companionRow.id,
+            name: companionRow.name,
+            avatarColor: companionRow.avatar_color,
+            avatarUrl: companionRow.avatar_url ?? "",
+            sharedExpenseCount: companionRow.shared_expense_count,
+          })),
+        groups: placeActivityOf(cellsIn(block.currency), TOP_GROUP_LIMIT),
       })),
-      splitTypes: splitTypeUseOf(cells),
-      companions: companionRows.map((companionRow) => ({
-        userId: companionRow.id,
-        name: companionRow.name,
-        avatarColor: companionRow.avatar_color,
-        avatarUrl: companionRow.avatar_url ?? "",
-        sharedExpenseCount: companionRow.shared_expense_count,
-      })),
-      groups: placeActivityOf(cells, TOP_GROUP_LIMIT),
     };
   });
 }

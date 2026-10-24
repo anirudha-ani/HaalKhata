@@ -94,9 +94,15 @@ export function InsightsPanel({
             style={styles.full}
           />
           <CategoriesCard block={state.currencyBlock} style={half ?? styles.full} />
-          <CompanionsCard companions={state.insights.companions} style={half ?? styles.full} />
-          <PlacesCard groups={state.insights.groups} style={half ?? styles.full} />
-          <SplitTypesCard splitTypes={state.insights.splitTypes} style={half ?? styles.full} />
+          <CompanionsCard
+            companions={state.currencyBlock?.companions ?? []}
+            style={half ?? styles.full}
+          />
+          <PlacesCard groups={state.currencyBlock?.groups ?? []} style={half ?? styles.full} />
+          <SplitTypesCard
+            splitTypes={state.currencyBlock?.splitTypes ?? []}
+            style={half ?? styles.full}
+          />
         </View>
       ) : null}
     </View>

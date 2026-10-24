@@ -108,9 +108,9 @@ export function InsightsPanel({
             className="@3xl:col-span-2"
           />
           <CategoriesCard block={state.currencyBlock} />
-          <CompanionsCard companions={state.insights.companions} />
-          <PlacesCard groups={state.insights.groups} />
-          <SplitTypesCard splitTypes={state.insights.splitTypes} />
+          <CompanionsCard companions={state.currencyBlock?.companions ?? []} />
+          <PlacesCard groups={state.currencyBlock?.groups ?? []} />
+          <SplitTypesCard splitTypes={state.currencyBlock?.splitTypes ?? []} />
         </div>
       ) : null}
     </section>
