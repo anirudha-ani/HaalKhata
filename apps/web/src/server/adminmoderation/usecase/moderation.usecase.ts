@@ -143,8 +143,8 @@ export async function dismissReport(reportId: string): Promise<void> {
 /**
  * Removes the reported content the way `moderate.sh remove` does, then
  * closes every open report about it. One transaction: the content, the feed
- * lines and notifications quoting it, and the reports change together or
- * not at all.
+ * lines and notifications quoting it (see `replaceQuotations` for which
+ * those are), and the reports change together or not at all.
  *
  * A comment is deleted. An expense keeps its amount, payers and splits and
  * loses its words. A group keeps its members and ledger under a neutral
@@ -158,6 +158,12 @@ export async function removeReportedContent(reportId: string): Promise<void> {
   const targetKind = await transaction(async (client) => {
     const report = await lockOpenReport(reportId, client);
     const targetId = report.target_id;
+    // First, while a comment's row still says which lines quote it.
+    await replaceQuotations(
+      { kind: report.target_kind, id: targetId },
+      REMOVED_CONTENT.quotation,
+      client,
+    );
     if (report.target_kind === "comment") {
       await deleteComment(targetId, client);
     } else if (report.target_kind === "expense") {
@@ -174,11 +180,6 @@ export async function removeReportedContent(reportId: string): Promise<void> {
       // The table's CHECK allows only the four kinds above.
       invalid(`cannot remove content of kind ${report.target_kind}`);
     }
-    await replaceQuotations(
-      { authorId: report.reported_user_id, targetId },
-      REMOVED_CONTENT.quotation,
-      client,
-    );
     await closeReportsAbout({ kind: report.target_kind, id: targetId }, "removed", client);
     return report.target_kind;
   });

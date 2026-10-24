@@ -16,25 +16,25 @@ export const TARGET_KIND_WORDING: Record<
     label: "Comment",
     removeLabel: "Delete comment",
     removeEffect:
-      "The comment is deleted for everyone. Feed lines and notifications that quoted it say the content was removed.",
+      "The comment is deleted for everyone. The feed lines and notifications about this author's comments on that expense, this one and any others, change to “Content removed after moderation”. This can't be undone.",
   },
   expense: {
     label: "Expense",
     removeLabel: "Remove its text",
     removeEffect:
-      "The description becomes “Content removed”, the notes are emptied and every item is renamed “Item”. The amount, who paid and who owes stay exactly as they are.",
+      "The description becomes “Content removed”, the notes are emptied and every item is renamed “Item”. Every feed line and notification about this expense, its comments included, changes to “Content removed after moderation”. The amount, who paid and who owes stay exactly as they are. This can't be undone.",
   },
   group: {
     label: "Group name",
     removeLabel: "Reset the name",
     removeEffect:
-      "The group is renamed “Shared group”. Its members, expenses and balances stay as they are.",
+      "The group is renamed “Shared group”. Every line in the group's feed (its expenses, payments and members, since each one names the group) and every notification about the group changes to “Content removed after moderation”. Its members, expenses and balances stay as they are. This can't be undone.",
   },
   user: {
     label: "Profile",
     removeLabel: "Reset the profile",
     removeEffect:
-      "Their name becomes “Member” and their profile picture is removed. Their account, sign-in and balances stay as they are.",
+      "Their name becomes “Member” and their profile picture is removed. Every feed line and notification about something they did, in every group, changes to “Content removed after moderation”, since each one starts with their name. Their account, sign-in and balances stay as they are. This can't be undone.",
   },
 };
 

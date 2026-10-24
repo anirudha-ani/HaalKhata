@@ -74,10 +74,21 @@ appear as these are handled.
 | RPC | What it does | Reports |
 | --- | --- | --- |
 | `DismissReport` | Nothing to the content | Every open report about it becomes `dismissed` |
-| `RemoveReportedContent` | Comment: deleted. Expense: description "Content removed", notes emptied, items renamed "Item". Group: renamed "Shared group". Profile: name "Member", picture and legacy payment handles removed. Feed lines and notifications by the author or linking to the content say "Content removed after moderation" | Every open report about it becomes `removed` |
+| `RemoveReportedContent` | Comment: deleted. Expense: description "Content removed", notes emptied, items renamed "Item". Group: renamed "Shared group". Profile: name "Member", picture and legacy payment handles removed. The feed lines and notifications that quote it say "Content removed after moderation" (see below) | Every open report about it becomes `removed` |
 | `SuspendAuthor` | Sets `suspended_at` and moves `token_version` on, so every session ends at once, web and phone | Unchanged |
 | `ResumeAuthor` | Clears `suspended_at` and moves `token_version` on again; the sessions the suspension ended stay ended | Unchanged |
 
+- **Only lines that quote the content are replaced.** The feed stores each
+  line as finished text, so a removal finds the lines by what they link to
+  and who wrote them: for a comment, its author's comment lines on that
+  expense (a comment line carries the expense's link, not the comment's, so
+  the author's other comments on the same expense go too); for an expense,
+  every line and notification linking to it, comments included; for a
+  group, its whole feed, because every expense, payment and member line in
+  it names the group, and every notification linking to the group; for a
+  profile, everything the person did, because each line opens with their
+  name. The confirmation on the page says which of these will happen
+  before anything does. None of it can be undone.
 - **Money is never touched.** Amounts, payers, splits, settlements and
   balances are the same after every action. The integration test checks the
   ledger before and after.

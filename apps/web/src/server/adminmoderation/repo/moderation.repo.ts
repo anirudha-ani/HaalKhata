@@ -286,31 +286,55 @@ export async function resetProfile(userId: string, name: string, client: PoolCli
 }
 
 /**
- * Replaces the feed lines and notifications that may quote removed content:
- * everything the author did, and everything that links to the content.
- * Queued pushes read their words from these notification rows, so a push
- * not yet sent goes out with the replacement.
+ * Replaces the feed lines and notifications that quote the reported content,
+ * and no others. Which lines those are depends on the kind:
  *
- * @param scope - The author (null when unknown) and the content's id.
+ * - a comment: its author's comment lines on the same expense, since a
+ *   comment line carries the expense's link but not the comment's id;
+ * - an expense: every line linking to it, its comments' lines included,
+ *   since each quotes the description;
+ * - a group: its whole feed, since every expense, payment and member line
+ *   in it names the group, and every notification linking to it;
+ * - a profile: everything the person did, since each line opens with their
+ *   name.
+ *
+ * Runs before the content changes, because a comment's lines are found
+ * through the comment row. Queued pushes read their words from these
+ * notification rows, so a push not yet sent goes out with the replacement.
+ *
+ * @param target - The content's kind and id, from the locked report.
  * @param quotation - The words to write instead.
  * @param client - The action's transaction.
  */
 export async function replaceQuotations(
-  scope: { authorId: string | null; targetId: string },
+  target: { kind: string; id: string },
   quotation: string,
   client: PoolClient,
 ): Promise<void> {
   await execute(
     `UPDATE activity SET message = $3
-      WHERE actor_id = $1::text OR group_id = $2::text OR link = '/expenses/' || $2::text`,
-    [scope.authorId, scope.targetId, quotation],
+      WHERE CASE $1::text
+        WHEN 'comment' THEN type = 'comment' AND (actor_id, link) =
+          (SELECT user_id, '/expenses/' || expense_id FROM comments WHERE id = $2::text)
+        WHEN 'expense' THEN link = '/expenses/' || $2::text
+        WHEN 'group' THEN group_id = $2::text
+        WHEN 'user' THEN actor_id = $2::text
+        ELSE false
+      END`,
+    [target.kind, target.id, quotation],
     client,
   );
   await execute(
     `UPDATE notifications SET title = $3, body = ''
-      WHERE actor_id = $1::text
-         OR link IN ('/expenses/' || $2::text, '/groups/' || $2::text)`,
-    [scope.authorId, scope.targetId, quotation],
+      WHERE CASE $1::text
+        WHEN 'comment' THEN type = 'comment' AND (actor_id, link) =
+          (SELECT user_id, '/expenses/' || expense_id FROM comments WHERE id = $2::text)
+        WHEN 'expense' THEN link = '/expenses/' || $2::text
+        WHEN 'group' THEN link = '/groups/' || $2::text
+        WHEN 'user' THEN actor_id = $2::text
+        ELSE false
+      END`,
+    [target.kind, target.id, quotation],
     client,
   );
 }

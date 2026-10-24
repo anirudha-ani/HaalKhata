@@ -129,14 +129,20 @@ export async function seedModeration(database: Client): Promise<void> {
   await database.query(
     `INSERT INTO activity (id, group_id, actor_id, type, message, audience, link) VALUES
        ('act-author-1', $1, $2, 'comment', 'Author Person: Offensive comment body', jsonb_build_array($2::text, $3::text), '/expenses/' || $4),
-       ('act-reporter-1', NULL, $3, 'comment', 'Reporter wrote elsewhere', jsonb_build_array($3::text), '/expenses/elsewhere')`,
+       ('act-reporter-1', NULL, $3, 'comment', 'Reporter wrote elsewhere', jsonb_build_array($3::text), '/expenses/elsewhere'),
+       ('act-author-2', NULL, $2, 'comment', 'Author Person commented elsewhere', jsonb_build_array($2::text, $3::text), '/expenses/elsewhere'),
+       ('act-author-3', NULL, $2, 'expense_added', 'Author Person added "Taxi"', jsonb_build_array($2::text, $3::text), '/expenses/elsewhere'),
+       ('act-expense-1', $1, $3, 'expense_updated', 'Reporter Person updated "Offensive expense description" in "Offensive group name"', jsonb_build_array($2::text, $3::text), '/expenses/' || $4),
+       ('act-group-1', $1, $3, 'expense_added', 'Reporter Person added "Groceries" in "Offensive group name"', jsonb_build_array($2::text, $3::text), '/expenses/in-group')`,
     [GROUP_ID, AUTHOR, REPORTER, EXPENSE_ID],
   );
   await database.query(
     `INSERT INTO notifications (id, user_id, actor_id, type, title, body, link) VALUES
        ('ntf-author-1', $1, $2, 'comment', 'Author Person commented', 'Offensive comment body', '/expenses/' || $3),
-       ('ntf-other-1', $2, $1, 'comment', 'Reporter commented', 'Ordinary words', '/expenses/elsewhere')`,
-    [REPORTER, AUTHOR, EXPENSE_ID],
+       ('ntf-other-1', $2, $1, 'comment', 'Reporter commented', 'Ordinary words', '/expenses/elsewhere'),
+       ('ntf-author-2', $1, $2, 'settlement', 'Author Person paid you', 'Settlement', '/friends/' || $2),
+       ('ntf-group-1', $2, $1, 'member_added', 'Reporter Person added you', 'Offensive group name', '/groups/' || $4)`,
+    [REPORTER, AUTHOR, EXPENSE_ID, GROUP_ID],
   );
   await database.query(
     `INSERT INTO payment_handles (user_id, method, handle) VALUES ($1, 'venmo', 'author-venmo-handle')`,

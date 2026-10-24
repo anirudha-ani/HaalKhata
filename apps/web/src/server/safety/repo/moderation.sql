@@ -12,6 +12,31 @@ SELECT :'action' = 'list' AS listing, :'action' = 'remove' AS removing,
     WHERE id = :'report_id' FOR UPDATE \gset
   \if :{?target_id}
     \if :removing
+      -- Replace the feed lines and notifications that quote the content, and no
+      -- others, before the content changes: a comment's lines are found through
+      -- the comment row. Financial events and amounts stay as they are.
+      -- A comment: its author's comment lines on that expense. An expense: what
+      -- links to it, comments included. A group: its feed (each line names the
+      -- group) and what links to it. A profile: what they did (each line opens
+      -- with their name).
+      UPDATE activity SET message = 'Content removed after moderation'
+        WHERE CASE :'target_kind'
+          WHEN 'comment' THEN type = 'comment' AND (actor_id, link) =
+            (SELECT user_id, '/expenses/' || expense_id FROM comments WHERE id = :'target_id')
+          WHEN 'expense' THEN link = '/expenses/' || :'target_id'
+          WHEN 'group' THEN group_id = :'target_id'
+          WHEN 'user' THEN actor_id = :'target_id'
+          ELSE false
+        END;
+      UPDATE notifications SET title = 'Content removed after moderation', body = ''
+        WHERE CASE :'target_kind'
+          WHEN 'comment' THEN type = 'comment' AND (actor_id, link) =
+            (SELECT user_id, '/expenses/' || expense_id FROM comments WHERE id = :'target_id')
+          WHEN 'expense' THEN link = '/expenses/' || :'target_id'
+          WHEN 'group' THEN link = '/groups/' || :'target_id'
+          WHEN 'user' THEN actor_id = :'target_id'
+          ELSE false
+        END;
       DELETE FROM comments WHERE id = :'target_id' AND :'target_kind' = 'comment';
       UPDATE expenses SET description = 'Content removed', notes = ''
         WHERE id = :'target_id' AND :'target_kind' = 'expense';
@@ -19,11 +44,6 @@ SELECT :'action' = 'list' AS listing, :'action' = 'remove' AS removing,
       UPDATE groups SET name = 'Shared group' WHERE id = :'target_id' AND :'target_kind' = 'group';
       UPDATE users SET name = 'Member', avatar_url = NULL WHERE id = :'target_id' AND :'target_kind' = 'user';
       DELETE FROM payment_handles WHERE user_id = :'target_id' AND :'target_kind' = 'user';
-      -- Remove duplicated quotations without changing financial events or amounts.
-      UPDATE activity SET message = 'Content removed after moderation'
-        WHERE actor_id = :'reported_user_id' OR group_id = :'target_id' OR link = '/expenses/' || :'target_id';
-      UPDATE notifications SET title = 'Content removed after moderation', body = ''
-        WHERE actor_id = :'reported_user_id' OR link IN ('/expenses/' || :'target_id', '/groups/' || :'target_id');
       UPDATE content_reports SET status = 'removed', resolved_at = now() WHERE id = :'report_id';
     \endif
     \if :dismissing

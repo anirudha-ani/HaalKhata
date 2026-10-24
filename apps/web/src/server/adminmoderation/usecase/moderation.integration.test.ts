@@ -62,6 +62,22 @@ describe.skipIf(!(await databaseReachable()))("moderation against Postgres", () 
     return Object.fromEntries(rows.map((resultRow) => [resultRow.id, resultRow.status]));
   }
 
+  /** @returns Every feed line's id, mapped to its message. */
+  async function feedLines(): Promise<Record<string, string>> {
+    const { rows } = await database.query<{ id: string; message: string }>(
+      "SELECT id, message FROM activity",
+    );
+    return Object.fromEntries(rows.map((resultRow) => [resultRow.id, resultRow.message]));
+  }
+
+  /** @returns Every notification's id, mapped to its title. */
+  async function notificationTitles(): Promise<Record<string, string>> {
+    const { rows } = await database.query<{ id: string; title: string }>(
+      "SELECT id, title FROM notifications",
+    );
+    return Object.fromEntries(rows.map((resultRow) => [resultRow.id, resultRow.title]));
+  }
+
   /** @returns The ledger's total of what everyone owes, which no action may move. */
   async function owedTotal(): Promise<number> {
     const { rows } = await database.query<{ total: number }>(
@@ -181,16 +197,22 @@ describe.skipIf(!(await databaseReachable()))("moderation against Postgres", () 
     const comments = await database.query("SELECT id FROM comments ORDER BY id");
     expect(comments.rows.map((resultRow) => resultRow.id)).toEqual([OWN_COMMENT_ID, SPAM_COMMENT_ID].sort());
     expect(comments.rows.map((resultRow) => resultRow.id)).not.toContain(COMMENT_ID);
-    // The feed line and the notification that quoted it now say it is gone;
-    // the reporter's own lines are untouched.
-    const activity = await database.query("SELECT id, message FROM activity ORDER BY id");
-    expect(activity.rows).toEqual([
-      { id: "act-author-1", message: "Content removed after moderation" },
-      { id: "act-reporter-1", message: "Reporter wrote elsewhere" },
-    ]);
+    // The feed line and the notification that quoted it now say it is gone.
+    // The author's lines about anything else, a comment on another expense
+    // included, and everyone else's lines are untouched.
+    expect(await feedLines()).toEqual({
+      "act-author-1": "Content removed after moderation",
+      "act-reporter-1": "Reporter wrote elsewhere",
+      "act-author-2": "Author Person commented elsewhere",
+      "act-author-3": 'Author Person added "Taxi"',
+      "act-expense-1": 'Reporter Person updated "Offensive expense description" in "Offensive group name"',
+      "act-group-1": 'Reporter Person added "Groceries" in "Offensive group name"',
+    });
     const notifications = await database.query("SELECT id, title, body FROM notifications ORDER BY id");
     expect(notifications.rows).toEqual([
       { id: "ntf-author-1", title: "Content removed after moderation", body: "" },
+      { id: "ntf-author-2", title: "Author Person paid you", body: "Settlement" },
+      { id: "ntf-group-1", title: "Reporter Person added you", body: "Offensive group name" },
       { id: "ntf-other-1", title: "Reporter commented", body: "Ordinary words" },
     ]);
     expect(await owedTotal()).toBe(owedBefore);
@@ -209,11 +231,43 @@ describe.skipIf(!(await databaseReachable()))("moderation against Postgres", () 
     ]);
     expect(items.rows).toEqual([{ name: "Item", total_cents: 98765 }]);
     expect(await owedTotal()).toBe(98765);
+    // Lines linking to the expense are replaced, whoever wrote them; the
+    // author's lines about other expenses are not.
+    expect(await feedLines()).toMatchObject({
+      "act-expense-1": "Content removed after moderation",
+      "act-author-2": "Author Person commented elsewhere",
+      "act-author-3": 'Author Person added "Taxi"',
+      "act-group-1": 'Reporter Person added "Groceries" in "Offensive group name"',
+    });
   });
 
-  it("renames a group and resets a profile, sign-in and contact details untouched", async () => {
+  it("renames a group and replaces every line in its feed, and nothing outside it", async () => {
     await moderation.removeReportedContent(REPORTS.group);
+
+    expect(await feedLines()).toMatchObject({
+      "act-group-1": "Content removed after moderation",
+      "act-author-2": "Author Person commented elsewhere",
+      "act-author-3": 'Author Person added "Taxi"',
+      "act-reporter-1": "Reporter wrote elsewhere",
+    });
+    expect(await notificationTitles()).toMatchObject({
+      "ntf-group-1": "Content removed after moderation",
+      "ntf-author-2": "Author Person paid you",
+    });
+  });
+
+  it("resets a profile and every line about what they did, sign-in and contact details untouched", async () => {
     await moderation.removeReportedContent(REPORTS.profile);
+
+    expect(await feedLines()).toMatchObject({
+      "act-author-2": "Content removed after moderation",
+      "act-author-3": "Content removed after moderation",
+      "act-reporter-1": "Reporter wrote elsewhere",
+    });
+    expect(await notificationTitles()).toMatchObject({
+      "ntf-author-2": "Content removed after moderation",
+      "ntf-other-1": "Reporter commented",
+    });
 
     const group = await database.query("SELECT name FROM groups WHERE id = $1", [GROUP_ID]);
     expect(group.rows).toEqual([{ name: "Shared group" }]);
