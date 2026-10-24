@@ -1,23 +1,23 @@
-/** The SMS code field's state: the code, the line under it, and reading each change. */
+/** The SMS code field's state: the shared code-field reducer, run so each change can be read at once. */
 
 import { useCallback, useRef, useState } from "react";
 import {
-  isCompleteVerificationCode,
-  readVerificationCode,
-  type CodeEntry,
-} from "@haalkhata/shared/phone/verificationCode";
-import {
-  VERIFICATION_CODE_HINT,
-  VERIFICATION_CODE_RESENT,
-} from "@haalkhata/shared/phone/phone.constants";
+  EMPTY_CODE_FIELD,
+  codeFieldReducer,
+  readCodeField,
+  type CodeFieldAction,
+  type CodeFieldState,
+} from "@haalkhata/shared/phone/codeField";
+import type { CodeEntry } from "@haalkhata/shared/phone/verificationCode";
 
 /**
  * Holds the code field of a phone verification step.
  *
- * Each change is read against the code the field held just before it, which
- * is kept in a ref as well as in state: two changes can land before a
- * re-render (a suggestion inserted twice), and the second has to be read
- * against the first rather than against the render before both.
+ * The reducer runs against a ref of the latest state as well as updating
+ * state: two changes can land before a re-render (a suggestion inserted
+ * twice), and the second has to be read against the first rather than
+ * against the render before both. It also lets a change hand back its
+ * reading at once.
  *
  * @returns The code, whether it is whole, the hint line, and actions to read
  *   a change (returning the reading: any notice for the error line, and
@@ -25,37 +25,25 @@ import {
  *   that the code was sent again.
  */
 export function useVerificationCode() {
-  const [code, setCode] = useState("");
-  const [resent, setResent] = useState(false);
-  const latestCode = useRef("");
+  const [field, setField] = useState<CodeFieldState>(EMPTY_CODE_FIELD);
+  const latest = useRef<CodeFieldState>(EMPTY_CODE_FIELD);
 
-  const enter = useCallback((entered: string): CodeEntry => {
-    const entry = readVerificationCode(latestCode.current, entered);
-    latestCode.current = entry.code;
-    setCode(entry.code);
-    return entry;
+  const apply = useCallback((action: CodeFieldAction): CodeFieldState => {
+    latest.current = codeFieldReducer(latest.current, action);
+    setField(latest.current);
+    return latest.current;
   }, []);
 
+  const enter = useCallback(
+    (entered: string): CodeEntry => apply({ type: "enter", entered }).lastEntry,
+    [apply],
+  );
   const clear = useCallback(() => {
-    latestCode.current = "";
-    setCode("");
-    setResent(false);
-  }, []);
-
+    apply({ type: "clear" });
+  }, [apply]);
   const markResent = useCallback(() => {
-    latestCode.current = "";
-    setCode("");
-    setResent(true);
-  }, []);
+    apply({ type: "resent" });
+  }, [apply]);
 
-  return {
-    code,
-    /** True once the field holds a whole code, the only thing worth sending. */
-    complete: isCompleteVerificationCode(code),
-    /** The line under the field: which code to enter, or that it was sent again. */
-    hint: resent ? VERIFICATION_CODE_RESENT : VERIFICATION_CODE_HINT,
-    enter,
-    clear,
-    markResent,
-  };
+  return { ...readCodeField(field), enter, clear, markResent };
 }
