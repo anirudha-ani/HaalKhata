@@ -25,10 +25,12 @@ import {
   blankExpenseText,
   closeReportsAbout,
   deleteComment,
+  findReportTarget,
   listReportedContent,
   listSuspendedAccounts,
   lockAccountStanding,
   lockReport,
+  lockReportsAbout,
   renameGroup,
   replaceQuotations,
   resetProfile,
@@ -92,15 +94,21 @@ function assertReportId(reportId: string): void {
 }
 
 /**
- * Locks a report that is still waiting for a decision.
+ * Locks a report that is still waiting for a decision, together with every
+ * other report about the same content (see `lockReportsAbout`), since the
+ * action will close them all.
  *
  * @param reportId - The report the operator acted through.
  * @param client - The action's transaction.
- * @returns The locked report.
+ * @returns The locked report, read after the lock.
  * @throws UsecaseError "not_found" for no such report, "failed_precondition"
- *   for one already dismissed or removed (a second tab, a double click).
+ *   for one already dismissed or removed (a second tab, a double click, an
+ *   action through another report about the same content).
  */
 async function lockOpenReport(reportId: string, client: PoolClient): Promise<LockedReportRow> {
+  const target = await findReportTarget(reportId, client);
+  if (!target) notFound("report not found");
+  await lockReportsAbout(target, client);
   const report = await lockReport(reportId, client);
   if (!report) notFound("report not found");
   if (report.status !== "open") {

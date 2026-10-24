@@ -92,10 +92,13 @@ appear as these are handled.
 - **Money is never touched.** Amounts, payers, splits, settlements and
   balances are the same after every action. The integration test checks the
   ledger before and after.
-- Each action is one transaction, with the report row locked first, so a
-  double click or a second tab runs after the first and sees what it did.
-  Dismissing or removing through a report that is no longer open is
-  `failed_precondition` ("already handled") and changes nothing.
+- Each action is one transaction. Dismissing and removing lock every report
+  about the content first, always in id order, because they close them all;
+  so a double click, a second tab, or a second report about the same content
+  runs after the first and sees what it did, instead of the two each holding
+  one report and deadlocking. Dismissing or removing through a report that
+  is no longer open is `failed_precondition` ("already handled") and
+  changes nothing.
 - Suspending someone already suspended, or resuming someone who is not, is
   not an error and changes nothing.
 - Suspend and resume work through any report about the person, open or

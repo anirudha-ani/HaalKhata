@@ -141,6 +141,59 @@ export async function listSuspendedAccounts(
   );
 }
 
+/** The content a report is about. A report's target never changes. */
+export interface ReportTargetRow {
+  target_kind: string;
+  target_id: string;
+}
+
+/**
+ * Reads which content a report is about, without locking anything.
+ *
+ * @param reportId - The report the operator acted through.
+ * @param client - The action's transaction.
+ * @returns The target, or undefined when there is no such report.
+ */
+export async function findReportTarget(
+  reportId: string,
+  client: PoolClient,
+): Promise<ReportTargetRow | undefined> {
+  return queryOne<ReportTargetRow>(
+    "SELECT target_kind, target_id FROM content_reports WHERE id = $1",
+    [reportId],
+    client,
+  );
+}
+
+/**
+ * Locks every report about one piece of content, in id order, for the rest
+ * of the transaction.
+ *
+ * An action through one report closes every open report about the same
+ * content. Locking only the report it was given, and the others when it
+ * closes them, let two actions through two reports about the same content
+ * each hold one and wait for the other: a deadlock, which Postgres ends by
+ * failing one of them. Taking them all, always in the same order, before
+ * anything else makes the second action wait for the first and then see
+ * what it did.
+ *
+ * @param target - The content's kind and id.
+ * @param client - The action's transaction.
+ */
+export async function lockReportsAbout(
+  target: ReportTargetRow,
+  client: PoolClient,
+): Promise<void> {
+  await query(
+    `SELECT id FROM content_reports
+      WHERE target_kind = $1 AND target_id = $2
+      ORDER BY id
+      FOR UPDATE`,
+    [target.target_kind, target.target_id],
+    client,
+  );
+}
+
 /** What an action needs to know about the report it was given. */
 export interface LockedReportRow {
   target_kind: string;
