@@ -56,6 +56,7 @@ export interface UsageTotalsRow {
   expense_count: number;
   deleted_expense_count: number;
   payment_count: number;
+  deleted_payment_count: number;
   receipt_scan_count: number;
   parsed_receipt_scan_count: number;
   comment_count: number;
@@ -90,6 +91,8 @@ export async function findUsageTotals(
        (SELECT COUNT(*)::int FROM expenses) AS expense_count,
        (SELECT COUNT(*)::int FROM expenses WHERE deleted_at IS NOT NULL) AS deleted_expense_count,
        (SELECT COUNT(*)::int FROM settlements WHERE method <> 'offset') AS payment_count,
+       (SELECT COUNT(*)::int FROM settlements
+         WHERE method <> 'offset' AND deleted_at IS NOT NULL) AS deleted_payment_count,
        (SELECT COUNT(*)::int FROM receipt_scans) AS receipt_scan_count,
        (SELECT COUNT(*)::int FROM receipt_scans WHERE outcome = 'parsed') AS parsed_receipt_scan_count,
        (SELECT COUNT(*)::int FROM comments) AS comment_count,

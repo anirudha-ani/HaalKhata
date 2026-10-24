@@ -74,8 +74,8 @@ message UsageTotals {
   int32 expense_count = 6;
   // How many of those were later deleted.
   int32 deleted_expense_count = 7;
-  // Payments recorded. A net settlement's cancelling entries moved no money
-  // and are not counted.
+  // Every payment ever recorded, including ones since removed. A net
+  // settlement's cancelling entries moved no money and are not counted.
   int32 payment_count = 8;
   // Receipt scans attempted. Counted from the day scan counting shipped;
   // earlier scans left no trace to count.
@@ -89,6 +89,8 @@ message UsageTotals {
   int32 payment_method_count = 12;
   // How many people have saved at least one.
   int32 payment_method_user_count = 13;
+  // How many of payment_count were later removed.
+  int32 deleted_payment_count = 14;
 }
 
 message SplitTypeCount {

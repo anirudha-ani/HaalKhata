@@ -149,7 +149,9 @@ the app**.
   made instead, so they do not all read as new in that one week.
 - **Expenses** count everything ever added, deleted ones included;
   `deleted_expense_count` says how many were later deleted.
-- **Payments** exclude a net settlement's cancelling (`offset`) entries.
+- **Payments** count every payment recorded, removed ones included, as
+  expenses do; `deleted_payment_count` says how many were later removed.
+  A net settlement's cancelling (`offset`) entries are not payments.
 - **Receipt scans** are counted from the day scan counting shipped, and only
   when a photo reached a provider: a request refused for want of
   permission, or before any provider was asked (a bad file, an unsupported

@@ -8,7 +8,7 @@ import { StatTile } from "@/components/charts/StatTile/StatTile";
  * Renders the headline counts. Each is a single number, so each is a tile
  * rather than a bar: a chart of one value says nothing the number does not.
  * Where a count has a part worth knowing (how many were invited but never
- * joined, how many expenses were later deleted, how many people the saved
+ * joined, how many expenses were later deleted or payments removed, how many people the saved
  * payment methods belong to), the tile says so beneath it.
  *
  * @param props - Component props.
@@ -37,7 +37,11 @@ export function TotalsGrid({
         value={totals.expenseCount.toLocaleString()}
         hint={`${totals.deletedExpenseCount.toLocaleString()} later deleted`}
       />
-      <StatTile label="Payments recorded" value={totals.paymentCount.toLocaleString()} />
+      <StatTile
+        label="Payments recorded"
+        value={totals.paymentCount.toLocaleString()}
+        hint={`${totals.deletedPaymentCount.toLocaleString()} later removed`}
+      />
       <StatTile
         label="Receipt scans"
         value={totals.receiptScanCount.toLocaleString()}

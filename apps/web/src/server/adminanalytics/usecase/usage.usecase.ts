@@ -49,6 +49,7 @@ export async function getUsageOverview() {
         expenseCount: totals.expense_count,
         deletedExpenseCount: totals.deleted_expense_count,
         paymentCount: totals.payment_count,
+        deletedPaymentCount: totals.deleted_payment_count,
         receiptScanCount: totals.receipt_scan_count,
         parsedReceiptScanCount: totals.parsed_receipt_scan_count,
         commentCount: totals.comment_count,

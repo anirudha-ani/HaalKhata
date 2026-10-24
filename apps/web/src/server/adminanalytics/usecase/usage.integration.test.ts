@@ -147,10 +147,11 @@ async function seed(database: Client): Promise<void> {
   );
 
   await database.query(
-    `INSERT INTO settlements (id, from_user, to_user, amount_cents, currency, method, recorded_by, created_at)
-     VALUES ('stl-1', $1, $2, 500, 'USD', 'venmo', $1, now()),
-            ('stl-2', $2, $1, 300, 'USD', 'cash', $1, now() - interval '9 days'),
-            ('stl-3', $2, $1, 200, 'USD', 'cash', $2, now() - interval '200 days')`,
+    `INSERT INTO settlements (id, from_user, to_user, amount_cents, currency, method, recorded_by, created_at, deleted_at, deleted_by)
+     VALUES ('stl-1', $1, $2, 500, 'USD', 'venmo', $1, now(), NULL, NULL),
+            ('stl-2', $2, $1, 300, 'USD', 'cash', $1, now() - interval '9 days', NULL, NULL),
+            -- Recorded, then removed: still a payment someone recorded.
+            ('stl-3', $2, $1, 200, 'USD', 'cash', $2, now() - interval '200 days', now(), $2)`,
     [ANIKA, RIFAT],
   );
   // Anika has saved two payment methods and Rifat one; one of Anika's
@@ -272,7 +273,7 @@ describe.skipIf(!reachable)("usage overview against Postgres", () => {
     expect(totals.monthlyActiveUserCount).toBe(2);
   });
 
-  it("counts everything that was ever added, deleted expenses included", async () => {
+  it("counts everything that was ever added, deleted expenses and removed payments included", async () => {
     const { totals, expensesBySplitType } = await getUsageOverview();
 
     expect(totals).toMatchObject({
@@ -280,6 +281,7 @@ describe.skipIf(!reachable)("usage overview against Postgres", () => {
       expenseCount: 5,
       deletedExpenseCount: 1,
       paymentCount: 3,
+      deletedPaymentCount: 1,
       receiptScanCount: 4,
       parsedReceiptScanCount: 3,
       commentCount: 2,
