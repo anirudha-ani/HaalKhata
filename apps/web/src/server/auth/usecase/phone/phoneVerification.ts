@@ -1,5 +1,6 @@
 /** SMS possession verification through Twilio Verify v2. */
 
+import { VERIFICATION_CODE_LENGTH } from "@haalkhata/shared/phone/phone.constants";
 import { isCompleteVerificationCode } from "@haalkhata/shared/phone/verificationCode";
 import { UsecaseError, invalid } from "@/server/common/errors";
 import { logEvent } from "@/server/common/logger";
@@ -47,6 +48,12 @@ export type PhoneCodeVerdict =
   /** The provider's own check limit for this verification is reached until it expires. */
   | "exhausted";
 
+/** The Verify service settings read at start-up. */
+interface ServiceResponse {
+  /** Digits in the codes the service texts. */
+  code_length?: number;
+}
+
 /** Required provider configuration, read at call time for testability. */
 interface VerificationConfiguration {
   apiKeySid: string;
@@ -71,6 +78,16 @@ function configuration(): VerificationConfiguration {
 }
 
 /**
+ * Builds the Basic authorization header for the configured API key.
+ *
+ * @param provider - Complete provider configuration.
+ * @returns The header value.
+ */
+function authorizationHeader(provider: VerificationConfiguration): string {
+  return `Basic ${Buffer.from(`${provider.apiKeySid}:${provider.apiKeySecret}`).toString("base64")}`;
+}
+
+/**
  * Calls one Twilio Verify endpoint with fixed-origin, form-encoded input.
  *
  * @param operation - Provider endpoint and form fields.
@@ -86,7 +103,7 @@ async function providerRequest(operation: {
     {
       method: "POST",
       headers: {
-        authorization: `Basic ${Buffer.from(`${provider.apiKeySid}:${provider.apiKeySecret}`).toString("base64")}`,
+        authorization: authorizationHeader(provider),
         "content-type": "application/x-www-form-urlencoded",
       },
       body: new URLSearchParams(operation.fields),
@@ -204,4 +221,50 @@ export async function checkPhoneVerification(
     });
   }
   throw new UsecaseError("unavailable", "phone verification is temporarily unavailable");
+}
+
+/**
+ * Says in the log when the Verify service texts codes of another length than
+ * the apps take. Both apps and the server accept only
+ * {@link VERIFICATION_CODE_LENGTH} digits, and a Verify service starts at
+ * Twilio's default of 6, so a service left at its default texts codes
+ * nobody can enter, and the apps refuse them before the server hears of it.
+ * Run once at start-up. It refuses nothing: unconfigured, it stays silent,
+ * and a key that may not read the service is only noted.
+ */
+export async function reportCodeLengthMismatch(): Promise<void> {
+  let provider: VerificationConfiguration;
+  try {
+    provider = configuration();
+  } catch {
+    return;
+  }
+  try {
+    const response = await fetch(
+      `${TWILIO_VERIFY_BASE_URL}/Services/${encodeURIComponent(provider.serviceSid)}`,
+      {
+        headers: { authorization: authorizationHeader(provider) },
+        signal: AbortSignal.timeout(PHONE_VERIFICATION_TIMEOUT_MS),
+      },
+    );
+    const service = response.ok
+      ? ((await response.json().catch(() => ({}))) as ServiceResponse)
+      : {};
+    if (typeof service.code_length !== "number") {
+      logEvent("info", "phone verification service settings unreadable", {
+        providerStatus: response.status,
+      });
+      return;
+    }
+    if (service.code_length !== VERIFICATION_CODE_LENGTH) {
+      logEvent("warn", "phone verification service texts codes of another length", {
+        serviceCodeLength: service.code_length,
+        codeLength: VERIFICATION_CODE_LENGTH,
+      });
+    }
+  } catch (error) {
+    logEvent("info", "phone verification service settings unreadable", {
+      error: error instanceof Error ? error.name : "unknown",
+    });
+  }
 }

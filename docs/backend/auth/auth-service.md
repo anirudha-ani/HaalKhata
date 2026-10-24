@@ -419,7 +419,12 @@ collision would require. One RPC, two calls:
   defense, kept auditable).
 - **Provider behavior:** codes are **8 digits**, the Twilio Verify service's
   "Code length" setting, mirrored by `VERIFICATION_CODE_LENGTH` in
-  `packages/shared/src/phone/phone.constants.ts`; change both together.
+  `packages/shared/src/phone/phone.constants.ts`; change both together, and
+  ship both apps, which keep the length they were built with. Twilio starts
+  a service at 6. At start-up `reportCodeLengthMismatch` (run from
+  `src/instrumentation.ts`) reads the service and logs `phone verification
+  service texts codes of another length` when the two differ; it refuses
+  nothing.
   Provider outages surface as `Unavailable` "phone verification is
   temporarily unavailable". Every refused code is `InvalidArgument`, worded
   for what happened: a wrong code says how many tries are left; a

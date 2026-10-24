@@ -1,7 +1,15 @@
 /** Unit tests for the Twilio Verify possession-check boundary. */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { checkPhoneVerification, startPhoneVerification } from "./phoneVerification";
+
+vi.mock("@/server/common/logger", () => ({ logEvent: vi.fn(), logError: vi.fn() }));
+
+import { logEvent } from "@/server/common/logger";
+import {
+  checkPhoneVerification,
+  reportCodeLengthMismatch,
+  startPhoneVerification,
+} from "./phoneVerification";
 
 const PHONE = "+16175551212";
 const CODE = "48291375";
@@ -20,6 +28,7 @@ describe("phone verification", () => {
     process.env.TWILIO_API_KEY_SECRET = "test-api-secret";
     process.env.TWILIO_VERIFY_SERVICE_SID = "VA00000000000000000000000000000000";
     vi.stubGlobal("fetch", vi.fn());
+    vi.mocked(logEvent).mockClear();
   });
 
   afterEach(() => {
@@ -150,5 +159,48 @@ describe("phone verification", () => {
       });
     }
     expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("warns when the Verify service texts codes of another length", async () => {
+    vi.mocked(fetch).mockResolvedValue(providerResponse(200, { code_length: 6 }));
+
+    await reportCodeLengthMismatch();
+
+    const [requestUrl] = vi.mocked(fetch).mock.calls[0];
+    expect(String(requestUrl)).toBe(
+      "https://verify.twilio.com/v2/Services/VA00000000000000000000000000000000",
+    );
+    expect(logEvent).toHaveBeenCalledWith(
+      "warn",
+      "phone verification service texts codes of another length",
+      { serviceCodeLength: 6, codeLength: 8 },
+    );
+  });
+
+  it("says nothing when the Verify service texts our length", async () => {
+    vi.mocked(fetch).mockResolvedValue(providerResponse(200, { code_length: 8 }));
+
+    await reportCodeLengthMismatch();
+
+    expect(logEvent).not.toHaveBeenCalled();
+  });
+
+  it("only notes a service it may not read", async () => {
+    vi.mocked(fetch).mockResolvedValue(providerResponse(403, { code: 20003 }));
+
+    await reportCodeLengthMismatch();
+
+    expect(logEvent).toHaveBeenCalledWith("info", "phone verification service settings unreadable", {
+      providerStatus: 403,
+    });
+  });
+
+  it("asks nothing when phone verification is not configured", async () => {
+    delete process.env.TWILIO_VERIFY_SERVICE_SID;
+
+    await reportCodeLengthMismatch();
+
+    expect(fetch).not.toHaveBeenCalled();
+    expect(logEvent).not.toHaveBeenCalled();
   });
 });
