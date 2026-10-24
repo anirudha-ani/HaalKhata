@@ -185,6 +185,11 @@ export interface CompanionRow {
  * of people the caller already sees on those expenses, and it has no use
  * for anything else about them.
  *
+ * Someone the caller blocked, or who blocked the caller, is left out, as the
+ * activity feed leaves out their lines in both directions: a block means
+ * neither sees the other turn up, and a ranking of who you split with
+ * with their name and picture at the top is exactly that.
+ *
  * @param userId - The person asking about themselves.
  * @param bounds - The window's calendar-day range.
  * @param limit - Most people to return.
@@ -210,6 +215,11 @@ export async function listCompanions(
      SELECT usr.id, usr.name, usr.avatar_color, usr.avatar_url,
             COUNT(*)::int AS shared_expense_count
        FROM others JOIN users usr ON usr.id = others.user_id
+      WHERE NOT EXISTS (
+        SELECT 1 FROM user_blocks blk
+         WHERE (blk.blocker_id = $1 AND blk.blocked_id = usr.id)
+            OR (blk.blocker_id = usr.id AND blk.blocked_id = $1)
+      )
       GROUP BY usr.id
       ORDER BY shared_expense_count DESC, usr.name, usr.id
       LIMIT $4`,

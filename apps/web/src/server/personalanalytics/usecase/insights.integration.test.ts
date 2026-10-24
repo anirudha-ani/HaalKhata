@@ -366,6 +366,27 @@ describe.skipIf(!reachable)("getInsights against Postgres", () => {
     ]);
   });
 
+  it("leaves out someone the caller blocked, and someone who blocked them", async () => {
+    await database.query(`INSERT INTO user_blocks (blocker_id, blocked_id) VALUES ($1, $2)`, [
+      CALLER,
+      RIFAT,
+    ]);
+    try {
+      const callerView = await getInsights(CALLER, { months: 2, localMonth: "" });
+      const blockedView = await getInsights(RIFAT, { months: 2, localMonth: "" });
+
+      expect(callerView.companions.map((companion) => companion.userId)).toEqual([ANIKA]);
+      expect(blockedView.companions.map((companion) => companion.userId)).toEqual([ANIKA]);
+      // The money is still theirs: only the person disappears from the list.
+      expect(callerView.splitTypes.reduce((count, entry) => count + entry.expenseCount, 0)).toBe(4);
+    } finally {
+      await database.query(`DELETE FROM user_blocks WHERE blocker_id = $1 AND blocked_id = $2`, [
+        CALLER,
+        RIFAT,
+      ]);
+    }
+  });
+
   it("still counts a group the caller has left, and says they are no longer in it", async () => {
     // Anika left the trip after the dinner; her share of it is still hers.
     await database.query(`DELETE FROM group_members WHERE group_id = 'grp-trip' AND user_id = $1`, [

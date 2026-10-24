@@ -41,6 +41,9 @@ The people listed under "who you split with" are the other participants of
 those same expenses, each already visible to the caller on the expense
 itself. Only what an avatar and a link need is returned for them: id, name,
 avatar colour and picture. No contact detail and no payment handle.
+Someone the caller blocked, or who blocked the caller, is left off the list,
+as the activity feed leaves out their lines in both directions; the
+expenses still count toward every figure.
 
 ## Two Figures, Not One
 
