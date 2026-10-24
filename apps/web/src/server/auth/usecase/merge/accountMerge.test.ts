@@ -104,8 +104,14 @@ const PROVIDER_SID = "VE00000000000000000000000000000001";
 const PROVIDER_CREATED_AT = "2026-10-24T09:00:00Z";
 
 /** A spent attempt, the way the repo reports it. */
-function spentAttempt(checkCount = 1) {
-  return { status: "ok" as const, checkCount, expiresAt: liveExpiry(), providerSid: PROVIDER_SID };
+function spentAttempt(checkCount = 1, checksKnown = true) {
+  return {
+    status: "ok" as const,
+    checkCount,
+    expiresAt: liveExpiry(),
+    providerSid: PROVIDER_SID,
+    checksKnown,
+  };
 }
 
 /**
@@ -174,13 +180,14 @@ describe("setPhone", () => {
       startPhoneVerificationMock.mock.invocationCallOrder[0],
     );
     // Then it follows the verification the provider says the send reached,
-    // so the expiry counts from Twilio's creation, not from the first try.
+    // so the expiry counts from Twilio's creation, not from the first try,
+    // and the count from whether this send created it.
     expect(recordProviderVerificationMock).toHaveBeenCalledWith(
       KEEPER,
       PHONE,
-      PROVIDER_SID,
-      PROVIDER_CREATED_AT,
+      { sid: PROVIDER_SID, createdAt: PROVIDER_CREATED_AT, startedAt: expect.any(String) },
       600,
+      5,
     );
     expect(findUserByPhone).not.toHaveBeenCalled();
     expect(setUserPhoneMock).not.toHaveBeenCalled();
@@ -266,6 +273,16 @@ describe("setPhone", () => {
     });
     expect(JSON.stringify(logEventMock.mock.calls)).not.toContain(CODE);
     expect(JSON.stringify(logEventMock.mock.calls)).not.toContain(PHONE);
+  });
+
+  it("names no number of tries when the provider's verification took checks elsewhere", async () => {
+    spendPhoneCheckAttemptMock.mockResolvedValue(spentAttempt(1, false));
+    checkPhoneVerificationMock.mockResolvedValue("rejected");
+
+    await expect(setPhone(KEEPER, PHONE, CODE)).rejects.toMatchObject({
+      code: "invalid_argument",
+      message: "that code doesn't match the one we sent",
+    });
   });
 
   it("fingerprints the same code alike and different codes apart within one verification", async () => {

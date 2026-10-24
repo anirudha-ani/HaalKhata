@@ -23,6 +23,17 @@ const FIRST_SID = "VE00000000000000000000000000000001";
 const SECOND_SID = "VE00000000000000000000000000000002";
 const LIFETIME_SECONDS = 600;
 const MAX_CHECKS = 5;
+const CLOCK_SLACK_SECONDS = 5;
+
+/**
+ * A time some way back, to the second, the way Twilio writes date_created.
+ *
+ * @param secondsAgo - How long ago.
+ * @returns The ISO timestamp.
+ */
+function twilioTime(secondsAgo: number): string {
+  return new Date(Date.now() - secondsAgo * 1000).toISOString().replace(/\.\d{3}Z$/, "Z");
+}
 
 /**
  * Checks whether the admin database accepts a connection.
@@ -54,14 +65,45 @@ describe.skipIf(!reachable)("phone verification state against Postgres", () => {
    * @returns The stored phone, count and expiry, or undefined.
    */
   async function storedRow(): Promise<
-    | { phone: string; check_count: number; expires_at: string; provider_sid: string | null }
+    | {
+        phone: string;
+        check_count: number;
+        expires_at: string;
+        provider_sid: string | null;
+        checks_known: boolean;
+      }
     | undefined
   > {
     const result = await database.query(
-      "SELECT phone, check_count, expires_at, provider_sid FROM phone_verifications WHERE user_id = $1",
+      "SELECT phone, check_count, expires_at, provider_sid, checks_known FROM phone_verifications WHERE user_id = $1",
       [USER],
     );
     return result.rows[0];
+  }
+
+  /**
+   * Records the verification a send reached, as the usecase does after an
+   * accepted send.
+   *
+   * @param phone - Number the send went to.
+   * @param providerSid - Twilio's id for the verification.
+   * @param createdAt - When Twilio created it, or null when its answer did not say.
+   * @param startedAt - When the send began; by default when Twilio created
+   *   the verification, as for a send that created it.
+   */
+  async function record(
+    phone: string,
+    providerSid: string,
+    createdAt: string | null,
+    startedAt: string = createdAt ?? new Date().toISOString(),
+  ): Promise<void> {
+    await repo.recordProviderVerification(
+      USER,
+      phone,
+      { sid: providerSid, createdAt, startedAt },
+      LIFETIME_SECONDS,
+      CLOCK_SLACK_SECONDS,
+    );
   }
 
   beforeAll(async () => {
@@ -231,13 +273,7 @@ describe.skipIf(!reachable)("phone verification state against Postgres", () => {
     );
     // Minute 9: the retry reaches Twilio, which creates the verification now.
     await repo.beginPhoneVerification(USER, PHONE, LIFETIME_SECONDS);
-    await repo.recordProviderVerification(
-      USER,
-      PHONE,
-      FIRST_SID,
-      new Date().toISOString(),
-      LIFETIME_SECONDS,
-    );
+    await record(PHONE, FIRST_SID, new Date().toISOString());
 
     // Answerable until minute 19, as Twilio's is, with its five fresh checks.
     expect(await secondsLeft()).toBeGreaterThan(LIFETIME_SECONDS - 5);
@@ -246,49 +282,25 @@ describe.skipIf(!reachable)("phone verification state against Postgres", () => {
 
   it("keeps the count and expiry when a resend reaches the same verification", async () => {
     await repo.beginPhoneVerification(USER, PHONE, LIFETIME_SECONDS);
-    await repo.recordProviderVerification(
-      USER,
-      PHONE,
-      FIRST_SID,
-      new Date(Date.now() - 3 * 60 * 1000).toISOString(),
-      LIFETIME_SECONDS,
-    );
+    await record(PHONE, FIRST_SID, new Date(Date.now() - 3 * 60 * 1000).toISOString());
     for (let check = 0; check < 3; check += 1) {
       await repo.spendPhoneCheckAttempt(USER, PHONE, MAX_CHECKS);
     }
     const before = await storedRow();
 
     await repo.beginPhoneVerification(USER, PHONE, LIFETIME_SECONDS);
-    await repo.recordProviderVerification(
-      USER,
-      PHONE,
-      FIRST_SID,
-      new Date().toISOString(),
-      LIFETIME_SECONDS,
-    );
+    await record(PHONE, FIRST_SID, new Date().toISOString());
 
     expect(await storedRow()).toEqual({ ...before, check_count: 3 });
   });
 
   it("starts afresh when Twilio starts a new verification for the same number", async () => {
     await repo.beginPhoneVerification(USER, PHONE, LIFETIME_SECONDS);
-    await repo.recordProviderVerification(
-      USER,
-      PHONE,
-      FIRST_SID,
-      new Date(Date.now() - 5 * 60 * 1000).toISOString(),
-      LIFETIME_SECONDS,
-    );
+    await record(PHONE, FIRST_SID, new Date(Date.now() - 5 * 60 * 1000).toISOString());
     await repo.spendPhoneCheckAttempt(USER, PHONE, MAX_CHECKS);
     await repo.spendPhoneCheckAttempt(USER, PHONE, MAX_CHECKS);
 
-    await repo.recordProviderVerification(
-      USER,
-      PHONE,
-      SECOND_SID,
-      new Date().toISOString(),
-      LIFETIME_SECONDS,
-    );
+    await record(PHONE, SECOND_SID, new Date().toISOString());
 
     expect(await storedRow()).toMatchObject({ check_count: 0, provider_sid: SECOND_SID });
     expect(await secondsLeft()).toBeGreaterThan(LIFETIME_SECONDS - 5);
@@ -296,14 +308,14 @@ describe.skipIf(!reachable)("phone verification state against Postgres", () => {
 
   it("lets a late answer for one number leave another number's verification alone", async () => {
     await repo.beginPhoneVerification(USER, PHONE, LIFETIME_SECONDS);
-    await repo.recordProviderVerification(USER, PHONE, FIRST_SID, null, LIFETIME_SECONDS);
+    await record(PHONE, FIRST_SID, null);
     const attempt = await repo.spendPhoneCheckAttempt(USER, PHONE, MAX_CHECKS);
     if (attempt.status !== "ok") throw new Error(`attempt was ${attempt.status}`);
     expect(attempt.providerSid).toBe(FIRST_SID);
     // While that check waits on Twilio, another session asks for a code for
     // a different number, which replaces the account's row.
     await repo.beginPhoneVerification(USER, OTHER_PHONE, LIFETIME_SECONDS);
-    await repo.recordProviderVerification(USER, OTHER_PHONE, SECOND_SID, null, LIFETIME_SECONDS);
+    await record(OTHER_PHONE, SECOND_SID, null);
 
     // Twilio's late "gone" and "exhausted" answers for the first number.
     await repo.consumePhoneVerification(USER, PHONE, attempt.providerSid);
@@ -318,10 +330,10 @@ describe.skipIf(!reachable)("phone verification state against Postgres", () => {
 
   it("lets a late answer leave a newer verification for the same number alone", async () => {
     await repo.beginPhoneVerification(USER, PHONE, LIFETIME_SECONDS);
-    await repo.recordProviderVerification(USER, PHONE, FIRST_SID, null, LIFETIME_SECONDS);
+    await record(PHONE, FIRST_SID, null);
     const attempt = await repo.spendPhoneCheckAttempt(USER, PHONE, MAX_CHECKS);
     if (attempt.status !== "ok") throw new Error(`attempt was ${attempt.status}`);
-    await repo.recordProviderVerification(USER, PHONE, SECOND_SID, null, LIFETIME_SECONDS);
+    await record(PHONE, SECOND_SID, null);
 
     await repo.consumePhoneVerification(USER, PHONE, attempt.providerSid);
 
@@ -330,7 +342,7 @@ describe.skipIf(!reachable)("phone verification state against Postgres", () => {
 
   it("removes the verification that was checked", async () => {
     await repo.beginPhoneVerification(USER, PHONE, LIFETIME_SECONDS);
-    await repo.recordProviderVerification(USER, PHONE, FIRST_SID, null, LIFETIME_SECONDS);
+    await record(PHONE, FIRST_SID, null);
 
     await repo.consumePhoneVerification(USER, PHONE, FIRST_SID);
 
@@ -339,10 +351,72 @@ describe.skipIf(!reachable)("phone verification state against Postgres", () => {
 
   it("clears the provider id when a different number starts afresh", async () => {
     await repo.beginPhoneVerification(USER, PHONE, LIFETIME_SECONDS);
-    await repo.recordProviderVerification(USER, PHONE, FIRST_SID, null, LIFETIME_SECONDS);
+    await record(PHONE, FIRST_SID, null);
 
     await repo.beginPhoneVerification(USER, OTHER_PHONE, LIFETIME_SECONDS);
 
     expect(await storedRow()).toMatchObject({ phone: OTHER_PHONE, provider_sid: null });
+  });
+
+  it("keeps the checks this row saw on a verification a send reached although it looked failed", async () => {
+    // Minute 0: the send times out, but Twilio created the verification and
+    // texted its code, and two wrong codes are checked against it here.
+    await repo.beginPhoneVerification(USER, PHONE, LIFETIME_SECONDS);
+    await repo.spendPhoneCheckAttempt(USER, PHONE, MAX_CHECKS);
+    await repo.spendPhoneCheckAttempt(USER, PHONE, MAX_CHECKS);
+    await database.query(
+      "UPDATE phone_verifications SET expires_at = expires_at - interval '3 minutes'",
+    );
+    // Minute 3: a resend reaches that same verification.
+    await record(PHONE, FIRST_SID, twilioTime(180), new Date().toISOString());
+
+    expect(await storedRow()).toMatchObject({
+      check_count: 2,
+      checks_known: true,
+      provider_sid: FIRST_SID,
+    });
+    // Twilio's ten minutes, counted from minute 0.
+    expect(await secondsLeft()).toBeGreaterThan(LIFETIME_SECONDS - 186);
+    expect(await secondsLeft()).toBeLessThan(LIFETIME_SECONDS - 174);
+  });
+
+  it("does not claim to know the checks of a verification started before this row followed it", async () => {
+    // Three wrong codes for the number, then a switch to another number.
+    const firstCreatedAt = twilioTime(120);
+    await repo.beginPhoneVerification(USER, PHONE, LIFETIME_SECONDS);
+    await record(PHONE, FIRST_SID, firstCreatedAt);
+    for (let check = 0; check < 3; check += 1) {
+      await repo.spendPhoneCheckAttempt(USER, PHONE, MAX_CHECKS);
+    }
+    await repo.beginPhoneVerification(USER, OTHER_PHONE, LIFETIME_SECONDS);
+    await record(OTHER_PHONE, SECOND_SID, twilioTime(0));
+
+    // Back to the first number inside its ten minutes: Twilio answers with
+    // the same verification, its three checks spent.
+    await repo.beginPhoneVerification(USER, PHONE, LIFETIME_SECONDS);
+    await record(PHONE, FIRST_SID, firstCreatedAt, new Date().toISOString());
+
+    expect(await storedRow()).toMatchObject({
+      phone: PHONE,
+      provider_sid: FIRST_SID,
+      check_count: 0,
+      checks_known: false,
+    });
+    expect(await repo.spendPhoneCheckAttempt(USER, PHONE, MAX_CHECKS)).toMatchObject({
+      status: "ok",
+      checkCount: 1,
+      checksKnown: false,
+    });
+    // A resend to it later keeps it unknown.
+    await record(PHONE, FIRST_SID, firstCreatedAt, new Date().toISOString());
+    expect(await storedRow()).toMatchObject({ check_count: 1, checks_known: false });
+  });
+
+  it("counts a verification this send created as fully known", async () => {
+    await repo.beginPhoneVerification(USER, PHONE, LIFETIME_SECONDS);
+    const startedAt = new Date().toISOString();
+    await record(PHONE, FIRST_SID, twilioTime(0), startedAt);
+
+    expect(await storedRow()).toMatchObject({ check_count: 0, checks_known: true });
   });
 });

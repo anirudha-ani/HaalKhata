@@ -10,6 +10,21 @@ export interface PhoneVerificationRow {
   expires_at: string;
   /** Twilio's id for the verification, or null until a send was accepted. */
   provider_sid: string | null;
+  /**
+   * False when the provider's verification began before this row followed
+   * it, so checks taken elsewhere are missing from check_count.
+   */
+  checks_known: boolean;
+}
+
+/** The verification an accepted send reached, as the provider's answer and the clock say. */
+export interface ProviderSend {
+  /** Twilio's id for the verification. */
+  sid: string;
+  /** When Twilio created it (ISO), or null when the answer did not say. */
+  createdAt: string | null;
+  /** When this server began the send (ISO). */
+  startedAt: string;
 }
 
 /** How a code-check attempt against the stored verification state resolved. */
@@ -17,9 +32,16 @@ export type PhoneCheckAttempt =
   /**
    * An attempt was available and has now been spent; call the provider.
    * providerSid names the verification it was spent on, for the writes
-   * that follow the provider's answer.
+   * that follow the provider's answer; checksKnown is false when checks
+   * taken elsewhere may be missing from checkCount.
    */
-  | { status: "ok"; checkCount: number; expiresAt: string; providerSid: string | null }
+  | {
+      status: "ok";
+      checkCount: number;
+      expiresAt: string;
+      providerSid: string | null;
+      checksKnown: boolean;
+    }
   /** No live verification for this account and phone: expired, consumed, or never sent. */
   | { status: "no_verification" }
   /** The verification is live but its attempt budget is used up until it expires. */
@@ -37,7 +59,7 @@ export async function findPhoneVerification(
   phone: string,
 ): Promise<PhoneVerificationRow | undefined> {
   return queryOne<PhoneVerificationRow>(
-    `SELECT check_count, expires_at, provider_sid FROM phone_verifications
+    `SELECT check_count, expires_at, provider_sid, checks_known FROM phone_verifications
       WHERE user_id = $1 AND phone = $2 AND expires_at > NOW()`,
     [userId, phone],
   );
@@ -70,13 +92,14 @@ export async function beginPhoneVerification(
 ): Promise<void> {
   await execute("DELETE FROM phone_verifications WHERE expires_at <= NOW()", []);
   await execute(
-    `INSERT INTO phone_verifications (user_id, phone, check_count, expires_at, provider_sid)
-     VALUES ($1, $2, 0, NOW() + make_interval(secs => $3), NULL)
+    `INSERT INTO phone_verifications (user_id, phone, check_count, expires_at, provider_sid, checks_known)
+     VALUES ($1, $2, 0, NOW() + make_interval(secs => $3), NULL, TRUE)
      ON CONFLICT (user_id) DO UPDATE
        SET phone = EXCLUDED.phone,
            check_count = 0,
            expires_at = EXCLUDED.expires_at,
-           provider_sid = NULL
+           provider_sid = NULL,
+           checks_known = TRUE
        WHERE phone_verifications.phone <> EXCLUDED.phone
           OR phone_verifications.expires_at <= NOW()`,
     [userId, phone, lifetimeSeconds],
@@ -86,43 +109,67 @@ export async function beginPhoneVerification(
 /**
  * Binds the row to the verification the provider says the send reached.
  *
- * The same verification as before is a resend: Twilio kept its code, its
- * five checks and its expiry, so the row keeps its count and expiry too. A
- * different one (or the first one, after a send that failed and left the row
- * with no id) is new on Twilio's side: the count starts at zero and the
- * expiry is counted from when Twilio created it. A send that failed at
- * minute 0 and succeeded at minute 9 is then answerable until minute 19,
- * as Twilio's is, not until minute 10.
+ * Twilio keeps one verification per number for its ten minutes, and what
+ * its creation time says decides the row's count:
+ * - The same verification as before is a resend: Twilio kept its code, its
+ *   five checks and its expiry, so the row keeps its count and expiry too.
+ * - One Twilio created during this send is new: no check has touched it,
+ *   so the count starts at zero, and the expiry is counted from its
+ *   creation. A send that failed at minute 0 and succeeded at minute 9 is
+ *   then answerable until minute 19, as Twilio's is.
+ * - One created earlier, while this row (with no id yet) already followed
+ *   the number, is one an earlier send reached although it looked failed (a
+ *   timeout). Every check on it went through this row, so the count stands.
+ * - Anything else was started before this row followed it: by this account
+ *   before it switched to another number and back, or by another account
+ *   holding the same number. Its earlier checks were spent elsewhere. The
+ *   count starts at zero and is marked unknown, so a wrong code is refused
+ *   without naming the tries left; Twilio's own limit (60202) still locks
+ *   the row when the provider reaches it.
  *
- * Starting the count afresh for a row with no id can let it fall behind a
- * verification Twilio created during a send that only looked failed (a
- * timeout); Twilio's own limit (60202) then marks it exhausted, so the two
- * meet again rather than drift.
+ * The provider's clock and ours are compared with some slack, since Twilio
+ * gives its creation time to the second.
  *
  * @param userId - Account the code was sent for.
  * @param phone - E.164 number it was sent to.
- * @param providerSid - Twilio's id for the verification the send reached.
- * @param providerCreatedAt - When Twilio created it (ISO), or null when the
- *   answer did not say; the expiry is then counted from now.
+ * @param send - The verification the send reached, and when the send began.
  * @param lifetimeSeconds - Seconds a verification stays answerable after it is created.
+ * @param clockSlackSeconds - How far apart the provider's clock and ours may read.
  */
 export async function recordProviderVerification(
   userId: string,
   phone: string,
-  providerSid: string,
-  providerCreatedAt: string | null,
+  send: ProviderSend,
   lifetimeSeconds: number,
+  clockSlackSeconds: number,
 ): Promise<void> {
+  // Every SET expression reads the row as it was before this update, so
+  // expires_at below is still the provisional one from the row's start.
   await execute(
     `UPDATE phone_verifications
-        SET check_count = CASE WHEN provider_sid = $3 THEN check_count ELSE 0 END,
+        SET check_count = CASE
+              WHEN provider_sid = $3 THEN check_count
+              WHEN $4::timestamptz >= $5::timestamptz - make_interval(secs => $7) THEN 0
+              WHEN provider_sid IS NULL
+               AND $4::timestamptz >= expires_at - make_interval(secs => $6) - make_interval(secs => $7)
+                THEN check_count
+              ELSE 0
+            END,
+            checks_known = CASE
+              WHEN provider_sid = $3 THEN checks_known
+              WHEN $4::timestamptz >= $5::timestamptz - make_interval(secs => $7) THEN TRUE
+              WHEN provider_sid IS NULL
+               AND $4::timestamptz >= expires_at - make_interval(secs => $6) - make_interval(secs => $7)
+                THEN TRUE
+              ELSE FALSE
+            END,
             expires_at = CASE
               WHEN provider_sid = $3 THEN expires_at
-              ELSE COALESCE($4::timestamptz, NOW()) + make_interval(secs => $5)
+              ELSE COALESCE($4::timestamptz, NOW()) + make_interval(secs => $6)
             END,
             provider_sid = $3
       WHERE user_id = $1 AND phone = $2`,
-    [userId, phone, providerSid, providerCreatedAt, lifetimeSeconds],
+    [userId, phone, send.sid, send.createdAt, send.startedAt, lifetimeSeconds, clockSlackSeconds],
   );
 }
 
@@ -149,7 +196,7 @@ export async function spendPhoneCheckAttempt(
     `UPDATE phone_verifications
         SET check_count = check_count + 1
       WHERE user_id = $1 AND phone = $2 AND expires_at > NOW() AND check_count < $3
-      RETURNING check_count, expires_at, provider_sid`,
+      RETURNING check_count, expires_at, provider_sid, checks_known`,
     [userId, phone, maxChecks],
   );
   if (spent) {
@@ -158,6 +205,7 @@ export async function spendPhoneCheckAttempt(
       checkCount: spent.check_count,
       expiresAt: spent.expires_at,
       providerSid: spent.provider_sid,
+      checksKnown: spent.checks_known,
     };
   }
   const existing = await findPhoneVerification(userId, phone);

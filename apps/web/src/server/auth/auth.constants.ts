@@ -88,6 +88,14 @@ export const PHONE_VERIFICATION_LIFETIME_SECONDS = 60 * 10;
 export const MAX_PHONE_CODE_CHECKS = 5;
 
 /**
+ * Seconds Twilio's clock and this server's may read apart when a send's
+ * answer says when its verification was created, which Twilio gives to the
+ * second. Used to tell a verification the send created from one that was
+ * already there.
+ */
+export const PROVIDER_CLOCK_SLACK_SECONDS = 5;
+
+/**
  * Most counterparty names a merge preview lists. The preview is the
  * recycled-number defense, but it is also a disclosure to whoever holds the
  * number today — a dozen names decide "is this my history?" as well as a

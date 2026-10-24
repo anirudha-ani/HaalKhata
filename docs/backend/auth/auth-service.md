@@ -378,7 +378,7 @@ collision would require. One RPC, two calls:
 
 | Call | `verification_code` | What happens |
 | --- | --- | --- |
-| First | empty | The server records its own verification state, bound to **this account and this number**, then an SMS code is sent (Twilio Verify). The row's expiry is provisional until Twilio accepts the send; the answer names the verification it reached, and the row follows it: the **same verification** (a resend inside its ten minutes, which texts the same code) keeps the row's attempt count and expiry, as Twilio does; a **new one** (including the first after a send that failed) starts the count afresh and counts ten minutes from when Twilio created it. Refused while the verification is out of checks, with the minutes left. **No account data is read or changed.** Response: `verification_sent: true`. |
+| First | empty | The server records its own verification state, bound to **this account and this number**, then an SMS code is sent (Twilio Verify). The row's expiry is provisional until Twilio accepts the send; the answer names the verification it reached, and the row follows it: the **same verification** (a resend inside its ten minutes, which texts the same code) keeps the row's attempt count and expiry, as Twilio does; **one this send created** (including the first after a send that failed) starts the count afresh and counts ten minutes from when Twilio created it; one created earlier while the row already followed the number (a send that only looked failed) keeps the row's count; and **one started before the row followed it** (the account switched numbers and back, or another account holds the number) starts the count at zero marked unknown (`checks_known`), so a wrong code is refused without naming the tries left. Refused while the verification is out of checks, with the minutes left. **No account data is read or changed.** Response: `verification_sent: true`. |
 | Second | the received code | A code that is not exactly 8 digits is refused first, naming both lengths, and costs nothing. Then an attempt is spent from the server-side budget (5 per verification, refused before the provider is even called once exhausted or when no live verification exists for this account+number), possession is confirmed with the provider, the verification is **consumed** (single-use on our side, whatever the provider's semantics), then the number is resolved (below). Every write that follows the provider's answer (consumed, forgotten, locked) names the verification that was checked, by number and Twilio id, so a late answer cannot touch a newer verification another session started meanwhile. |
 
 #### Notes
@@ -427,7 +427,7 @@ collision would require. One RPC, two calls:
   nothing.
   Provider outages surface as `Unavailable` "phone verification is
   temporarily unavailable". Every refused code is `InvalidArgument`, worded
-  for what happened: a wrong code says how many tries are left; a
+  for what happened: a wrong code says how many tries are left, unless the row cannot know (`checks_known` false); a
   verification Twilio no longer holds is forgotten here too ("no longer
   active, send a new one"); Twilio's own check limit (error 60202) locks the
   verification here until it expires. Missing Twilio configuration fails

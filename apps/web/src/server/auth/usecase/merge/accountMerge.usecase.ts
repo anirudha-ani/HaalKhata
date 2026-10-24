@@ -43,6 +43,7 @@ import {
   MINUTE_MS,
   PHONE_FORMAT_HINT,
   PHONE_VERIFICATION_LIFETIME_SECONDS,
+  PROVIDER_CLOCK_SLACK_SECONDS,
   normalizePhone,
 } from "@/server/auth/auth.constants";
 import {
@@ -182,15 +183,20 @@ function lockedOutMessage(expiresAt: string): string {
 }
 
 /**
- * Says a code was wrong and how many tries the verification has left.
+ * Says a code was wrong and how many tries the verification has left, when
+ * this server knows: a verification it did not follow from the start may
+ * have spent checks elsewhere, and naming a number then would promise tries
+ * the provider no longer gives.
  *
- * @param checkCount - Checks spent, this one included.
+ * @param checkCount - Checks spent here, this one included.
  * @param expiresAt - When the verification expires, as an ISO timestamp.
+ * @param checksKnown - Whether checkCount is every check the provider has taken.
  * @returns The refusal; the lockout message once no tries are left.
  */
-function wrongCodeMessage(checkCount: number, expiresAt: string): string {
+function wrongCodeMessage(checkCount: number, expiresAt: string, checksKnown: boolean): string {
   const triesLeft = MAX_PHONE_CODE_CHECKS - checkCount;
   if (triesLeft <= 0) return lockedOutMessage(expiresAt);
+  if (!checksKnown) return "that code doesn't match the one we sent";
   const unit = triesLeft === 1 ? "try" : "tries";
   return `that code doesn't match the one we sent, ${triesLeft} ${unit} left`;
 }
@@ -302,7 +308,7 @@ async function refuseCode(
     invalid(lockedOutMessage(attempt.expiresAt));
   }
   logRejectedCode(userId, code, attempt);
-  invalid(wrongCodeMessage(attempt.checkCount, attempt.expiresAt));
+  invalid(wrongCodeMessage(attempt.checkCount, attempt.expiresAt, attempt.checksKnown));
 }
 
 /**
@@ -332,17 +338,19 @@ export async function setPhone(
     // account and THIS number. A resend while it is live keeps it as it is,
     // the way the provider keeps the verification and its code.
     await beginPhoneVerification(userId, phone, PHONE_VERIFICATION_LIFETIME_SECONDS);
+    const startedAt = new Date().toISOString();
     const sent = await startPhoneVerification(phone);
     // Then follow the verification the provider says it reached: the same
-    // one keeps its count and expiry, a new one (even after a send that
-    // failed earlier) counts from when Twilio created it.
+    // one keeps its count and expiry, one this send created counts from
+    // when Twilio created it, and one that was already there keeps the
+    // checks this row saw, or says it cannot know them.
     if (sent.sid) {
       await recordProviderVerification(
         userId,
         phone,
-        sent.sid,
-        sent.createdAt,
+        { sid: sent.sid, createdAt: sent.createdAt, startedAt },
         PHONE_VERIFICATION_LIFETIME_SECONDS,
+        PROVIDER_CLOCK_SLACK_SECONDS,
       );
     }
     return { verificationSent: true, mergeToken: "" };
