@@ -68,8 +68,8 @@ export function PhoneStep({
           <>
             {failure}
             <Button
-              busy={phone.busy}
-              disabled={!phone.codeComplete}
+              busy={phone.isVerifying}
+              disabled={phone.busy || !phone.codeComplete}
               label={CODE_STEP.verify}
               onPress={phone.verify}
             />
@@ -89,6 +89,7 @@ export function PhoneStep({
             <Text accessibilityLiveRegion="polite" style={styles.notice}>{phone.notice}</Text>
           ) : null}
           <Button
+            busy={phone.isSending}
             compact
             disabled={phone.resendIn > 0 || phone.busy}
             label={phone.resendIn > 0 ? CODE_STEP.resendIn(phone.resendIn) : CODE_STEP.resend}

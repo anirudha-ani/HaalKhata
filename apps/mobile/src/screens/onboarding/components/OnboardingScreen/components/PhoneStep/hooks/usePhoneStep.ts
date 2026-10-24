@@ -169,6 +169,10 @@ export function usePhoneStep(user: User, onDone: (verified: boolean) => void) {
     preview,
     resendIn: codeField.resendIn,
     busy: sendCode.isPending || verify.isPending || confirmMerge.isPending || finish.isPending,
+    /** True while a code is being checked: the Verify button's spinner. */
+    isVerifying: verify.isPending,
+    /** True while a code is being sent: the resend button's spinner on the code stage. */
+    isSending: sendCode.isPending,
     /** Sends the code, or moves on when the number shown is already verified. */
     submitNumber: () => {
       setError("");
