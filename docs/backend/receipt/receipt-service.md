@@ -151,6 +151,11 @@ promised:
   or line item is kept. The count feeds the person's own insights and the
   operator's usage overview. A counter that cannot be written is logged and
   swallowed: it can never fail a scan or replace the scan's own error.
+  An attempt is a photo put to a provider: a request refused before that
+  (empty, oversized, not an image or undecodable, an unsupported currency,
+  no provider configured) gets its reason and no row, so a configuration
+  gap or a client bug never reads as failed scans. `failed` therefore means
+  a provider was asked and returned no line items or no answer.
 - Every other user-facing failure is `InvalidArgument` with actionable
   wording (unsupported file, too large, unconfigured provider, unreadable
   image); decoder internals are logged, never shown.

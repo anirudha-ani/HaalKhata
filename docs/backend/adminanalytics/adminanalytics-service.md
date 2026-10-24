@@ -151,8 +151,10 @@ the app**.
   `deleted_expense_count` says how many were later deleted.
 - **Payments** exclude a net settlement's cancelling (`offset`) entries.
 - **Receipt scans** are counted from the day scan counting shipped, and only
-  once the person has allowed AI scanning: a scan refused for want of
-  permission never reached a provider. Deleting an account deletes its scans.
+  when a photo reached a provider: a request refused for want of
+  permission, or before any provider was asked (a bad file, an unsupported
+  currency, no provider configured), is not a scan. A failed scan is one a
+  provider could not read. Deleting an account deletes its scans.
 - **Payment methods** are counted, and how many people have saved one. A
   method's name and details, and the name a payment keeps of the method it
   was made with (`settlements.method_label`), are never read here: they say

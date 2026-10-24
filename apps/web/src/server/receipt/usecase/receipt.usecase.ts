@@ -660,27 +660,32 @@ async function normalizeToJpeg(image: Uint8Array, format: ImageMediaType): Promi
   }
 }
 
+/** A receipt request that passed every check and is ready for the providers. */
+interface PreparedReceipt {
+  /** The providers to ask, in order. */
+  chain: Provider[];
+  /** The photo as the providers will see it. */
+  normalizedImage: Buffer;
+  /** Selected expense currency, upper case. */
+  currency: string;
+}
+
 /**
- * Parses a receipt image by trying each configured provider in order until one
- * returns at least one line item.
+ * Checks a receipt request and readies the photo, before any provider is
+ * asked: the currency, the bytes, the format, that some provider is
+ * configured, and that the image decodes.
  *
  * The format is detected from the bytes; the request's `media_type` field is
  * ignored because browsers report an empty string for HEIC.
  *
  * @param image - Raw image bytes uploaded by the client.
  * @param currency - Selected expense currency, used when the image is ambiguous.
- * @returns The normalized receipt, the name of the provider that produced it,
- *   and the JPEG that provider was shown, for the client to display alongside
- *   the extracted values.
- * @throws UsecaseError "invalid_argument" when the image is empty, too large, or not a
- *   supported image; when no provider is configured; or when a provider read the
- *   photo and found no line items. UsecaseError "unavailable" when no provider
- *   produced an answer at all (HTTP error, timeout, malformed response).
+ * @returns What the providers need.
+ * @throws UsecaseError "invalid_argument" when the currency is unsupported,
+ *   the image is empty, too large, not a supported image or cannot be
+ *   decoded, or when no provider is configured.
  */
-export async function parseReceipt(
-  image: Uint8Array,
-  currency = "USD",
-): Promise<{ receipt: ParsedReceiptData; provider: string; normalizedImage: Uint8Array }> {
+async function prepareReceipt(image: Uint8Array, currency: string): Promise<PreparedReceipt> {
   currency = currency.trim().toUpperCase() || "USD";
   if (!currencyInfo(currency)) invalid("unsupported receipt currency");
   if (image.length === 0) invalid("no image provided");
@@ -708,7 +713,24 @@ export async function parseReceipt(
     });
   }
 
-  const normalizedImage = await normalizeToJpeg(image, format);
+  return { chain, normalizedImage: await normalizeToJpeg(image, format), currency };
+}
+
+/**
+ * Asks each configured provider in order until one returns at least one
+ * line item.
+ *
+ * @param prepared - A request that passed {@link prepareReceipt}.
+ * @returns The normalized receipt, the name of the provider that produced it,
+ *   and the JPEG that provider was shown.
+ * @throws UsecaseError "invalid_argument" when a provider read the photo and
+ *   found no line items. UsecaseError "unavailable" when no provider produced
+ *   an answer at all (HTTP error, timeout, malformed response).
+ */
+async function readReceipt(
+  prepared: PreparedReceipt,
+): Promise<{ receipt: ParsedReceiptData; provider: string; normalizedImage: Uint8Array }> {
+  const { chain, normalizedImage, currency } = prepared;
   const imageBase64 = normalizedImage.toString("base64");
   const errors: string[] = [];
   // Set when a model answered and found nothing: then the photo is the
@@ -737,6 +759,24 @@ export async function parseReceipt(
 }
 
 /**
+ * Parses a receipt image: checks the request, then tries each configured
+ * provider in order until one returns at least one line item.
+ *
+ * @param image - Raw image bytes uploaded by the client.
+ * @param currency - Selected expense currency, used when the image is ambiguous.
+ * @returns The normalized receipt, the name of the provider that produced it,
+ *   and the JPEG that provider was shown, for the client to display alongside
+ *   the extracted values.
+ * @throws Whatever {@link prepareReceipt} or {@link readReceipt} throws.
+ */
+export async function parseReceipt(
+  image: Uint8Array,
+  currency = "USD",
+): Promise<{ receipt: ParsedReceiptData; provider: string; normalizedImage: Uint8Array }> {
+  return readReceipt(await prepareReceipt(image, currency));
+}
+
+/**
  * Counts one scan attempt. A failure to count is logged and swallowed: the
  * tally is bookkeeping, and a person's scan must not fail (or a failed scan
  * report a different error) because the counter could not be written.
@@ -759,22 +799,29 @@ async function recordScan(userId: string, outcome: ReceiptScanOutcome): Promise<
  * who, when, and whether it worked. The image and everything read off it
  * still leave no trace.
  *
- * Call it only once the person has allowed scanning: a scan refused for want
- * of permission never reached a provider and is not an attempt.
+ * An attempt is a photo put to a provider. A request refused before that
+ * (an empty or oversized file, one that is not an image or will not decode,
+ * an unsupported currency, a server with no provider configured) is
+ * answered with its reason and not counted: it says nothing about how often
+ * scanning works, and counting it would read as an outage on the admin
+ * page. For the same reason, call this only once the person has allowed
+ * scanning.
  *
  * @param userId - The authenticated person who uploaded the image.
  * @param image - Raw image bytes uploaded by the client.
  * @param currency - Expense currency for receipts that do not print one.
  * @returns Whatever {@link parseReceipt} returns.
- * @throws Whatever {@link parseReceipt} throws, after the failure is counted.
+ * @throws Whatever {@link parseReceipt} throws; a provider's failure is
+ *   counted first.
  */
 export async function scanReceipt(
   userId: string,
   image: Uint8Array,
   currency = "USD",
 ): Promise<{ receipt: ParsedReceiptData; provider: string; normalizedImage: Uint8Array }> {
+  const prepared = await prepareReceipt(image, currency);
   try {
-    const parsed = await parseReceipt(image, currency);
+    const parsed = await readReceipt(prepared);
     await recordScan(userId, "parsed");
     return parsed;
   } catch (error) {

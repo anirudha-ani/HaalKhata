@@ -64,10 +64,31 @@ describe("receipt scan counting", () => {
     expect(insertReceiptScan).toHaveBeenCalledExactlyOnceWith("user-1", "parsed");
   });
 
-  it("counts a refused image as failed and still reports why it was refused", async () => {
+  it("does not count a request refused before any provider saw it", async () => {
     await expect(scanReceipt("user-1", new Uint8Array())).rejects.toMatchObject({
       code: "invalid_argument",
       message: "no image provided",
+    });
+    await expect(scanReceipt("user-1", Uint8Array.from([1, 2, 3]))).rejects.toMatchObject({
+      code: "invalid_argument",
+    });
+    await expect(scanReceipt("user-1", jpegBytes(), "XYZ")).rejects.toMatchObject({
+      message: "unsupported receipt currency",
+    });
+    process.env.RECEIPT_AI_PROVIDERS = "nonexistent";
+    await expect(scanReceipt("user-1", jpegBytes())).rejects.toMatchObject({
+      code: "invalid_argument",
+    });
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(insertReceiptScan).not.toHaveBeenCalled();
+  });
+
+  it("counts a photo a provider read and found nothing on as failed", async () => {
+    fetchMock.mockResolvedValue(completion('{"merchant":"","items":[],"total_cents":0}'));
+
+    await expect(scanReceipt("user-1", jpegBytes())).rejects.toMatchObject({
+      code: "invalid_argument",
     });
 
     expect(insertReceiptScan).toHaveBeenCalledExactlyOnceWith("user-1", "failed");
@@ -94,10 +115,11 @@ describe("receipt scan counting", () => {
   });
 
   it("keeps the scan's own error when the counter also fails", async () => {
+    fetchMock.mockRejectedValue(new TypeError("fetch failed"));
     vi.mocked(insertReceiptScan).mockRejectedValue(new Error("connection refused"));
 
-    await expect(scanReceipt("user-1", new Uint8Array())).rejects.toMatchObject({
-      message: "no image provided",
+    await expect(scanReceipt("user-1", jpegBytes())).rejects.toMatchObject({
+      code: "unavailable",
     });
   });
 });
