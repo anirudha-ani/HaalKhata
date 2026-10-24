@@ -48,6 +48,12 @@ overrides:
   # through react-devtools-core under React Native, which still asks for the
   # 1.10 line; 1.11.0 is the patched release of the same major.
   "shell-quote@1.10.0": 1.11.0
+  # zod memory exhaustion on oversized constrained collections
+  # (GHSA-mrhx-c7xc-m3w5), fixed in 4.6.6. eslint-plugin-react-hooks and
+  # zod-validation-error accept "^3.25.0 || ^4.0.0", so their 4.x copy moves
+  # to the patched release. Expo's CLI asks for ^3.25.76 and has no patched
+  # 3.x to move to; see auditConfig below.
+  "zod@>=4.0.0 <4.6.6": 4.6.7
 
 # Advisories with no patched release to move to, reviewed and found
 # unreachable here. Remove an entry once its fix ships and take the upgrade
@@ -63,6 +69,15 @@ auditConfig:
     # under micromatch in Metro's file map and Next's eslint plugin, where the
     # patterns are this repo's own config, never request input.
     - GHSA-vfj7-8cjw-p6xm
+    # zod memory exhaustion on oversized constrained collections (fixed only
+    # in 4.6.6; 3.25.76 is the last 3.x). The one 3.x copy is @expo/cli's
+    # (^3.25.76, still so in 58.1.15), used only by `expo start` on a
+    # developer's machine: to check installed packages' dev-tools plugin
+    # config and to describe local dev-tools commands to an MCP client on that
+    # machine. It is in neither the web server nor the app bundle. Remove this
+    # entry once @expo/cli accepts zod >= 4.6.6. The 4.x copies are moved to
+    # the patched release by the override above.
+    - GHSA-mrhx-c7xc-m3w5
 
 # Native/postinstall packages allowed to run build scripts
 allowBuilds:
