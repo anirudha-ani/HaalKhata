@@ -1,8 +1,7 @@
 /** SMS possession verification through Twilio Verify v2. */
 
 import { VERIFICATION_CODE_LENGTH } from "@haalkhata/shared/phone/phone.constants";
-import { isCompleteVerificationCode } from "@haalkhata/shared/phone/verificationCode";
-import { UsecaseError, invalid } from "@/server/common/errors";
+import { UsecaseError } from "@/server/common/errors";
 import { logEvent } from "@/server/common/logger";
 import { readSecret } from "@/server/common/secrets/secrets";
 import {
@@ -187,16 +186,15 @@ function readCheckVerdict(result: ProviderResult): PhoneCodeVerdict | undefined 
  * since the caller holds the attempt count and the expiry.
  *
  * @param phone - E.164 number the code was sent to.
- * @param code - The code the person entered, already checked for length.
+ * @param code - A whole code: the caller refuses anything else before it
+ *   spends an attempt, so it is not checked again here.
  * @returns What the provider said about the code.
- * @throws UsecaseError "invalid_argument" for a code that is not a whole code,
- *   "unavailable" when the provider cannot answer.
+ * @throws UsecaseError "unavailable" when the provider cannot answer.
  */
 export async function checkPhoneVerification(
   phone: string,
   code: string,
 ): Promise<PhoneCodeVerdict> {
-  if (!isCompleteVerificationCode(code)) invalid("enter the code from our latest text");
   try {
     const result = await providerRequest({
       endpoint: "VerificationCheck",

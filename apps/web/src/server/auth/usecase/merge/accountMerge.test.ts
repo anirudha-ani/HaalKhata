@@ -302,8 +302,11 @@ describe("setPhone", () => {
   it("refuses a code with anything but digits before it costs an attempt", async () => {
     await expect(setPhone(KEEPER, PHONE, "4829137a", limits)).rejects.toMatchObject({
       code: "invalid_argument",
+      message: "enter the code from our latest text",
     });
     expect(spendPhoneCheckAttemptMock).not.toHaveBeenCalled();
+    // The only guard: the provider boundary trusts it and does not check again.
+    expect(checkPhoneVerificationMock).not.toHaveBeenCalled();
   });
 
   it("says how many tries are left after a wrong code, and logs it without the code", async () => {

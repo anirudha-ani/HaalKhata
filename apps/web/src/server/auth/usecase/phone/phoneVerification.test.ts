@@ -159,15 +159,6 @@ describe("phone verification", () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 
-  it("rejects anything but a whole code before calling the provider", async () => {
-    for (const code of ["12ab", "482913", "4829137512"]) {
-      await expect(checkPhoneVerification(PHONE, code)).rejects.toMatchObject({
-        code: "invalid_argument",
-      });
-    }
-    expect(fetch).not.toHaveBeenCalled();
-  });
-
   it("warns when the Verify service texts codes of another length", async () => {
     vi.mocked(fetch).mockResolvedValue(providerResponse(200, { code_length: 6 }));
 
