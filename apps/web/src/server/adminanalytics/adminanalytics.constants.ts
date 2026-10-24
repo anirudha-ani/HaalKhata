@@ -38,6 +38,13 @@ export const ADMIN_AUTH_RATE_LIMIT = 5;
  */
 export const ADMIN_READ_RATE_LIMIT = 30;
 
+/**
+ * How many digits in a display name make it a phone number as far as the
+ * admin pages are concerned. Every phone number has at least this many;
+ * almost no real name has any.
+ */
+export const PHONE_DIGIT_COUNT = 7;
+
 /** Most people the overview lists; the totals count everyone regardless. */
 export const USAGE_USER_LIMIT = 500;
 

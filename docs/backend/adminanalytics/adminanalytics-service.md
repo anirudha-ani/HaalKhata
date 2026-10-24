@@ -34,10 +34,16 @@ they finished signing up, and how many expenses, payments and receipt scans
 they added.
 
 A display name is free text, so "names only" is enforced on its content as
-well: a name that contains `@`, a name made of digits and phone punctuation,
-and a name equal to the part of the person's email before the `@` (what
-sign-in falls back to when Google supplies no name) all come back empty, and
-the page shows "Name hidden". The last comparison happens inside the
+well: a name that contains `@`, a name with seven or more digits in it (in
+any script, wherever they are), and a name equal to the part of the
+person's email before the `@` (what sign-in falls back to when Google
+supplies no name) all come back empty, and the page shows "Name hidden".
+The checks read the name after Unicode compatibility normalization and with
+invisible characters removed, so full-width forms, no-break spaces and
+hyphens, zero-width characters and Bengali or Arabic digits cannot carry an
+address or a number past them. Postgres's own `[[:digit:]]` and
+`[[:space:]]` follow the C library and miss those, so the character lists
+are built from Unicode properties (`repo/unicodeClass.ts`). The last comparison happens inside the
 database and returns only the verdict. The person is still counted and
 listed, so the totals and the table agree. People who were invited but never signed in are counted and
 never listed: they have not joined and did not choose to be here.

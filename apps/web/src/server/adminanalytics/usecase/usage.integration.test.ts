@@ -453,6 +453,45 @@ describe.skipIf(!reachable)("usage overview against Postgres", () => {
     }
   });
 
+  it("withholds contact details disguised with look-alike, no-break, invisible or foreign characters", async () => {
+    // Each display name below is a phone number or an email address that a
+    // plain-ASCII check would miss. All sign in, so all are listed.
+    const disguised: readonly [string, string, string][] = [
+      ["user-nbsp-phone", "nbsp.phone@example.com", "+1\u00A0(415)\u00A0555\u20110199"],
+      ["user-fullwidth-phone", "fullwidth.phone@example.com", "\uFF0B\uFF11 \uFF14\uFF11\uFF15 \uFF15\uFF15\uFF15 \uFF10\uFF11\uFF19\uFF19"],
+      ["user-bengali-phone", "bengali.phone@example.com", "+\u09EE\u09EE\u09E6 \u09E7\u09ED\u09E7\u09E7-\u09E7\u09E8\u09E9\u09EA\u09EB\u09EC"],
+      ["user-embedded-phone", "embedded.phone@example.com", "Ani 01711123456"],
+      ["user-zero-width-phone", "zero.width@example.com", "4\u200B1\u200B5\u200B5\u200B5\u200B0\u200B1\u200B9"],
+      ["user-fullwidth-at", "fullwidth.at@example.com", "someone\uFF20example.com"],
+      ["user-padded-local", "padded.local@example.com", "padded.local\u00A0"],
+      ["user-split-local", "split.local@example.com", "split\u200B.local"],
+    ];
+    // Names that must still show: Bengali script, a short number.
+    const ordinary: readonly [string, string, string][] = [
+      ["user-bengali-name", "bengali.name@example.com", "\u0985\u09A8\u09BF\u09B0\u09C1\u09A6\u09CD\u09A7 \u09AA\u09BE\u09B2"],
+      ["user-agent-name", "agent.name@example.com", "Agent 007"],
+    ];
+    const everyone = [...disguised, ...ordinary];
+    for (const [userId, email, name] of everyone) {
+      await database.query(
+        `INSERT INTO users (id, email, name, avatar_color, google_sub, onboarded_at, created_at)
+         VALUES ($1, $2, $3, '#857a68', $1, now() - interval '600 days', now() - interval '600 days')`,
+        [userId, email, name],
+      );
+    }
+    try {
+      const overview = await getUsageOverview();
+      const shown = JSON.stringify(overview);
+      for (const [, , name] of disguised) expect(shown).not.toContain(name);
+      const names = overview.users.map((person) => person.name);
+      for (const [, , name] of ordinary) expect(names).toContain(name);
+      // Withheld, not dropped: everyone is still listed.
+      expect(names.filter((name) => name === "").length).toBe(3 + disguised.length);
+    } finally {
+      await database.query("DELETE FROM users WHERE id = ANY($1)", [everyone.map(([userId]) => userId)]);
+    }
+  });
+
   it("carries names and counts and nothing else a person would call private", async () => {
     const overview = JSON.stringify(await getUsageOverview());
 
