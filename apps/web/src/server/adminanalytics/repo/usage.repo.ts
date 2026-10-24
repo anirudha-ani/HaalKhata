@@ -41,7 +41,8 @@ const INVITED = `${PERSON} AND NOT ${SIGN_IN}`;
  * When someone joined: the moment they finished signing up. An invited
  * person's row is created when a friend first types their name, which can
  * be months before they arrive; onboarded_at is when they did. Falls back
- * to created_at for the rare account still mid-onboarding.
+ * to created_at for the rare account still mid-onboarding. Accounts older
+ * than onboarding itself read created_at too (migration 1792838306857).
  */
 const JOINED_AT = `COALESCE(usr.onboarded_at, usr.created_at)`;
 
