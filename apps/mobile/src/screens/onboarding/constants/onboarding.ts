@@ -1,8 +1,5 @@
 /** Sizes and timings for the first-run flow. */
 
-/** Seconds before "Resend code" is offered again; the server also caps sends per number per hour. */
-export const RESEND_DELAY_SECONDS = 30;
-
 /** How far the code boxes shake on a wrong code. */
 export const CODE_SHAKE_DISTANCE = 8;
 

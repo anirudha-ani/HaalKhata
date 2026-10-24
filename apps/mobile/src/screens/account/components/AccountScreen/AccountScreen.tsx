@@ -28,6 +28,7 @@ import { TextField } from "@/components/ui/TextField";
 import { CurrencyPicker } from "@/components/ui/CurrencyPicker";
 import { MAX_USER_NAME_LENGTH } from "@haalkhata/shared/text/limits";
 import { VERIFICATION_CODE_INPUT_MAX_CHARACTERS } from "@haalkhata/shared/phone/phone.constants";
+import { resendCodeLabel } from "@haalkhata/shared/phone/codeField";
 import { colors, radii, spacing } from "@/lib/theme/theme";
 import { PaymentMethodsSection } from "@/components/payment/PaymentMethodsSection";
 import { useAccountAPI, useProfileForm } from "./hooks/useAccount";
@@ -252,8 +253,8 @@ function ProfileForm({ me: currentUser }: { me: User }) {
             />
             <Button
               busy={form.isResending}
-              disabled={form.isSaving}
-              label="Send the code again"
+              disabled={form.isSaving || form.resendIn > 0}
+              label={resendCodeLabel(form.resendIn)}
               onPress={form.resendCode}
               variant="ghost"
             />

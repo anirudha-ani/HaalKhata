@@ -11,9 +11,7 @@ import { composeE164, DEFAULT_PHONE_REGION, isValidPhone, splitE164 } from "@haa
 import { authClient, errorMessage, isRefusal } from "@/lib/api/connect";
 import { useVerificationCode } from "@/lib/hooks/useVerificationCode";
 import { errorFeedback, successFeedback } from "@/lib/motion/haptics";
-import { RESEND_DELAY_SECONDS } from "../../../../../constants/onboarding";
 import { CODE_STEP } from "../../../../../constants/onboardingCopy";
-import { useResendTimer } from "./useResendTimer";
 
 /** Where the phone step is. */
 export type PhoneStage = "number" | "code" | "merge";
@@ -49,7 +47,6 @@ export function usePhoneStep(user: User, onDone: (verified: boolean) => void) {
   const [error, setError] = useState("");
   const [preview, setPreview] = useState<MergePreview | undefined>();
   const [mergeToken, setMergeToken] = useState("");
-  const resendTimer = useResendTimer(RESEND_DELAY_SECONDS);
   // Whether a code check is running, known the moment one starts. The
   // mutation's own isPending only changes on the next render, and two
   // changes to the code can land before it (a suggestion inserted twice).
@@ -85,9 +82,8 @@ export function usePhoneStep(user: User, onDone: (verified: boolean) => void) {
         return;
       }
       setSentTo(phone);
-      codeField.clear();
+      codeField.markSent();
       setStage("code");
-      resendTimer.restart();
     },
     onError: (failure) => setError(errorMessage(failure)),
   });
@@ -171,7 +167,7 @@ export function usePhoneStep(user: User, onDone: (verified: boolean) => void) {
     notice,
     error,
     preview,
-    resendIn: resendTimer.remaining,
+    resendIn: codeField.resendIn,
     busy: sendCode.isPending || verify.isPending || confirmMerge.isPending || finish.isPending,
     /** Sends the code, or moves on when the number shown is already verified. */
     submitNumber: () => {

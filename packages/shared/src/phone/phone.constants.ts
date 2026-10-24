@@ -35,3 +35,13 @@ export const VERIFICATION_CODE_HINT = `Enter the ${VERIFICATION_CODE_LENGTH}-dig
 
 /** Shown under the code field after the code was sent again. */
 export const VERIFICATION_CODE_RESENT = "Sent again. Use the code in our latest text.";
+
+/**
+ * Seconds after each send before the code can be sent again. The server
+ * allows three texts to a number an hour, so two quick presses after the
+ * first send would use them all up.
+ */
+export const CODE_RESEND_DELAY_SECONDS = 30;
+
+/** The button that texts the code again. */
+export const VERIFICATION_CODE_RESEND = "Send the code again";

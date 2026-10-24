@@ -22,6 +22,7 @@ import { CurrencySelect } from "@/components/ui/CurrencySelect/CurrencySelect";
 import { useProfileForm } from "./hooks/useProfileForm";
 import { MAX_USER_NAME_LENGTH } from "@haalkhata/shared/text/limits";
 import { VERIFICATION_CODE_INPUT_MAX_CHARACTERS } from "@haalkhata/shared/phone/phone.constants";
+import { resendCodeLabel } from "@haalkhata/shared/phone/codeField";
 import { PaymentMethodsCard } from "@/components/payment/PaymentMethodsCard/PaymentMethodsCard";
 
 /**
@@ -252,10 +253,10 @@ export function ProfileForm({ me: currentUser }: { me: User }) {
             <button
               type="button"
               onClick={form.resendCode}
-              disabled={form.isSaving}
+              disabled={form.isSaving || form.resendIn > 0}
               className="w-full text-sm font-semibold text-brand-600 hover:text-brand-700 disabled:opacity-50"
             >
-              {form.isResending ? "Sending…" : "Send the code again"}
+              {form.isResending ? "Sending…" : resendCodeLabel(form.resendIn)}
             </button>
           </div>
         </Modal>

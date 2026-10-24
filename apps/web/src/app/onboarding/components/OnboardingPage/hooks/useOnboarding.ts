@@ -123,7 +123,7 @@ export function useOnboarding() {
         if (!isValidPhone(region, nationalNumber)) throw new Error(INVALID_PHONE_MESSAGE);
         const result = await authClient.setPhone({ phone: claimedPhone, verificationCode: "" });
         if (result.verificationSent) {
-          codeField.clear();
+          codeField.markSent();
           setVerificationPhone(claimedPhone);
         }
         return;
@@ -220,6 +220,8 @@ export function useOnboarding() {
     codeComplete: codeField.complete,
     /** The line under the code field. */
     codeHint: codeField.hint,
+    /** Seconds before the code can be sent again; 0 when it can be now. */
+    resendIn: codeField.resendIn,
     /** Reads a change to the code field; a code that cannot be ours says why. */
     enterVerificationCode: (entered: string) => setError(codeField.enter(entered).notice),
     verifyPhone: () => {

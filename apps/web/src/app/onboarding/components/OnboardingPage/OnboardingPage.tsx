@@ -10,6 +10,7 @@ import { useOnboarding } from "./hooks/useOnboarding";
 import { PaymentStep } from "./components/PaymentStep/PaymentStep";
 import { MAX_USER_NAME_LENGTH } from "@haalkhata/shared/text/limits";
 import { VERIFICATION_CODE_INPUT_MAX_CHARACTERS } from "@haalkhata/shared/phone/phone.constants";
+import { resendCodeLabel } from "@haalkhata/shared/phone/codeField";
 import { inputClass } from "./constants/onboardingPage";
 
 /**
@@ -127,10 +128,10 @@ export function OnboardingPage() {
               <button
                 type="button"
                 onClick={onboarding.resendCode}
-                disabled={onboarding.isPending}
+                disabled={onboarding.isPending || onboarding.resendIn > 0}
                 className="text-sm font-semibold text-brand-600 transition-colors hover:text-brand-700 disabled:opacity-50"
               >
-                {onboarding.isResending ? "Sending…" : "Send the code again"}
+                {onboarding.isResending ? "Sending…" : resendCodeLabel(onboarding.resendIn)}
               </button>
               <button
                 type="button"
