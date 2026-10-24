@@ -26,6 +26,9 @@ service AdminAnalyticsService {
   rpc SignOut(google.protobuf.Empty) returns (google.protobuf.Empty);
   // The whole overview in one read.
   rpc GetUsageOverview(google.protobuf.Empty) returns (UsageOverview);
+  // Activity over time: twelve weeks or twelve months, ending wherever the
+  // page asks, back to the first thing that ever happened.
+  rpc GetUsageTrend(GetUsageTrendRequest) returns (UsageTrend);
 }
 
 message BeginSignInResponse {
@@ -46,8 +49,9 @@ message UsageOverview {
   UsageTotals totals = 2;
   // Every expense ever added, by how it was split, most used first.
   repeated SplitTypeCount expenses_by_split_type = 3;
-  // The trailing weeks, oldest first with no gaps; weeks start on Monday, UTC.
-  repeated WeekUsage weeks = 4;
+  // The trend moved to GetUsageTrend, where it can be read for any period.
+  reserved 4;
+  reserved "weeks";
   // People who have signed in, newest first. Capped; see users_truncated.
   repeated UserUsage users = 5;
   // True when there are more people than `users` lists. The totals count
@@ -92,15 +96,50 @@ message SplitTypeCount {
   int32 count = 2;
 }
 
-// One week of activity.
-message WeekUsage {
-  // The Monday the week starts on, "YYYY-MM-DD", UTC.
-  string week_start = 1;
-  // People who finished signing up that week.
-  int32 new_user_count = 2;
-  int32 expense_count = 3;
-  int32 payment_count = 4;
-  int32 receipt_scan_count = 5;
+// How long one bar of the trend is. Weeks start on Monday and months on the
+// 1st, both in UTC, the boundaries Postgres's date_trunc uses.
+enum TrendUnit {
+  // Read as TREND_UNIT_WEEK.
+  TREND_UNIT_UNSPECIFIED = 0;
+  TREND_UNIT_WEEK = 1;
+  TREND_UNIT_MONTH = 2;
+}
+
+message GetUsageTrendRequest {
+  TrendUnit unit = 1;
+  // A day, "YYYY-MM-DD", inside the last period to show. Empty means today.
+  // A day after today is read as today, and a day before anything happened
+  // as the first day anything did, so every answer has something to show.
+  // The page never builds one itself: it sends back the *_end_on values of
+  // an earlier answer, or a period's end_on when switching units.
+  string end_on = 2;
+}
+
+message UsageTrend {
+  // RFC 3339 instant these figures were read.
+  string generated_at = 1;
+  TrendUnit unit = 2;
+  // The periods shown, oldest first with no gaps.
+  repeated TrendPeriod periods = 3;
+  // Where the page goes from here: end_on for the window just before this
+  // one, just after it, and the very first one. Each is empty when there is
+  // nowhere to go: nothing happened earlier, the window already holds
+  // today, or it already holds the first thing that ever happened.
+  string earlier_end_on = 4;
+  string later_end_on = 5;
+  string first_end_on = 6;
+}
+
+// One period of activity.
+message TrendPeriod {
+  // Its first and last day, "YYYY-MM-DD", UTC.
+  string start_on = 1;
+  string end_on = 2;
+  // People who finished signing up in it.
+  int32 new_user_count = 3;
+  int32 expense_count = 4;
+  int32 payment_count = 5;
+  int32 receipt_scan_count = 6;
 }
 
 // One person's usage. A display name and counts, and deliberately nothing

@@ -41,8 +41,15 @@ export const ADMIN_READ_RATE_LIMIT = 30;
 /** Most people the overview lists; the totals count everyone regardless. */
 export const USAGE_USER_LIMIT = 500;
 
-/** How many trailing weeks the overview's trend covers, the current one included. */
-export const USAGE_TREND_WEEKS = 12;
+/** How many periods (weeks or months) one window of the trend shows. */
+export const TREND_PERIOD_COUNT = 12;
+
+/**
+ * Trend reads accepted per minute across all admin sessions. Higher than
+ * the overview's: each press of Earlier or Later is one, and a person
+ * paging back through a year of weeks presses it a few times running.
+ */
+export const ADMIN_TREND_RATE_LIMIT = 60;
 
 /** Trailing days that count someone as active this week. */
 export const WEEKLY_ACTIVE_DAYS = 7;

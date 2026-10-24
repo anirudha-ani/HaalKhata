@@ -126,59 +126,88 @@ export async function listExpenseSplitTypeCounts(client: PoolClient): Promise<Sp
   );
 }
 
-/** One metric's count for one week. */
-export interface WeeklyCountRow {
+/** One metric's count for one period of the trend. */
+export interface TrendCountRow {
   /** Which series the count belongs to. */
   metric: "users" | "expenses" | "payments" | "scans";
-  /** The Monday the week starts on, "YYYY-MM-DD", UTC. */
-  week_start: string;
+  /** The period's first day, "YYYY-MM-DD", UTC. */
+  period_start: string;
   count: number;
 }
 
 /**
- * Weekly counts of new people, expenses, payments and receipt scans since
- * an instant, as one result set. Weeks start on Monday in UTC. A week with
- * nothing in it has no row; the caller fills the gaps.
+ * Counts of new people, expenses, payments and receipt scans per week or
+ * per month inside a window, as one result set. Periods start on Monday or
+ * on the 1st, in UTC. A period with nothing in it has no row; the caller
+ * fills the gaps.
  *
- * @param sinceInstant - RFC 3339 instant of the first week's Monday, 00:00 UTC.
+ * The unit reaches date_trunc as a parameter, never spliced into the text,
+ * and the caller passes only "week" or "month".
+ *
+ * @param unit - "week" or "month".
+ * @param window - RFC 3339 instants: the first period's start, and the
+ *   start of the period after the last (exclusive).
  * @param client - The snapshot's client.
- * @returns One row per metric and week that has anything.
+ * @returns One row per metric and period that has anything.
  */
-export async function listWeeklyCounts(
-  sinceInstant: string,
+export async function listTrendCounts(
+  unit: "week" | "month",
+  window: { fromInstant: string; untilInstant: string },
   client: PoolClient,
-): Promise<WeeklyCountRow[]> {
-  return query<WeeklyCountRow>(
+): Promise<TrendCountRow[]> {
+  return query<TrendCountRow>(
     `SELECT 'users' AS metric,
-            to_char(date_trunc('week', ${JOINED_AT} AT TIME ZONE 'UTC'), 'YYYY-MM-DD') AS week_start,
+            to_char(date_trunc($1, ${JOINED_AT} AT TIME ZONE 'UTC'), 'YYYY-MM-DD') AS period_start,
             COUNT(*)::int AS count
        FROM users usr
-      WHERE ${REGISTERED} AND ${JOINED_AT} >= $1
-      GROUP BY week_start
+      WHERE ${REGISTERED} AND ${JOINED_AT} >= $2 AND ${JOINED_AT} < $3
+      GROUP BY period_start
      UNION ALL
      SELECT 'expenses',
-            to_char(date_trunc('week', created_at AT TIME ZONE 'UTC'), 'YYYY-MM-DD') AS week_start,
+            to_char(date_trunc($1, created_at AT TIME ZONE 'UTC'), 'YYYY-MM-DD') AS period_start,
             COUNT(*)::int
        FROM expenses
-      WHERE created_at >= $1
-      GROUP BY week_start
+      WHERE created_at >= $2 AND created_at < $3
+      GROUP BY period_start
      UNION ALL
      SELECT 'payments',
-            to_char(date_trunc('week', created_at AT TIME ZONE 'UTC'), 'YYYY-MM-DD') AS week_start,
+            to_char(date_trunc($1, created_at AT TIME ZONE 'UTC'), 'YYYY-MM-DD') AS period_start,
             COUNT(*)::int
        FROM settlements
-      WHERE created_at >= $1 AND method <> 'offset'
-      GROUP BY week_start
+      WHERE created_at >= $2 AND created_at < $3 AND method <> 'offset'
+      GROUP BY period_start
      UNION ALL
      SELECT 'scans',
-            to_char(date_trunc('week', created_at AT TIME ZONE 'UTC'), 'YYYY-MM-DD') AS week_start,
+            to_char(date_trunc($1, created_at AT TIME ZONE 'UTC'), 'YYYY-MM-DD') AS period_start,
             COUNT(*)::int
        FROM receipt_scans
-      WHERE created_at >= $1
-      GROUP BY week_start`,
-    [sinceInstant],
+      WHERE created_at >= $2 AND created_at < $3
+      GROUP BY period_start`,
+    [unit, window.fromInstant, window.untilInstant],
     client,
   );
+}
+
+/**
+ * The first instant anything the trend counts happened: someone joining,
+ * an expense, a payment or a receipt scan. LEAST skips the sources with
+ * nothing in them.
+ *
+ * @param client - The snapshot's client.
+ * @returns RFC 3339 instant, or null when nothing has happened yet.
+ */
+export async function findFirstActivity(client: PoolClient): Promise<string | null> {
+  const first = await queryOne<{ first_at: string | null }>(
+    `SELECT LEAST(
+       (SELECT MIN(${JOINED_AT}) FROM users usr WHERE ${REGISTERED}),
+       (SELECT MIN(created_at) FROM expenses),
+       (SELECT MIN(created_at) FROM settlements WHERE method <> 'offset'),
+       (SELECT MIN(created_at) FROM receipt_scans)
+     ) AS first_at`,
+    [],
+    client,
+  );
+  return first?.first_at ?? null;
 }
 
 /** One person's usage: a name, a day, and counts. */

@@ -150,6 +150,7 @@ tracked keys with LRU eviction so it cannot be a memory-exhaustion vector.
 | `GetInsights` | per account | 30/min |
 | Admin sign-in (`BeginSignIn` + `SignIn`) | `admin-auth:<client-ip>` | 5/min |
 | `GetUsageOverview` | one bucket for every admin session | 30/min |
+| `GetUsageTrend` | one bucket for every admin session | 60/min |
 | `ListReports` | one bucket for every admin session | 30/min |
 | Moderation actions (dismiss, remove, suspend, resume) | one shared bucket for every admin session | 30/min |
 

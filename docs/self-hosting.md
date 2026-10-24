@@ -102,7 +102,8 @@ covers the native Android and iOS clients.
 
 An operator-only page with product-wide counts: how many people have signed
 in, how many are active, expenses by split type, payments, receipt scans, a
-twelve-week trend, and per person a display name with what they have added.
+trend by week or by month back to the first day, and per person a display
+name with what they have added.
 Counts and names only. No email, phone, amount or expense content is loaded
 on it, and nothing about a person is tracked to produce it: the figures are
 counted from the ledger on each visit.

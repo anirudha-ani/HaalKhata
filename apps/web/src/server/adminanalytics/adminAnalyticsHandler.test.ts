@@ -4,7 +4,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Code, type HandlerContext } from "@connectrpc/connect";
 import { create } from "@bufbuild/protobuf";
 import { EmptySchema } from "@bufbuild/protobuf/wkt";
-import { SignInRequestSchema } from "@haalkhata/protogen/adminanalytics/v1/adminanalytics_pb";
+import {
+  GetUsageTrendRequestSchema,
+  SignInRequestSchema,
+  TrendUnit,
+} from "@haalkhata/protogen/adminanalytics/v1/adminanalytics_pb";
 
 vi.mock("@/server/adminanalytics/usecase/adminSession.usecase", () => ({
   beginAdminSignIn: vi.fn(),
@@ -13,6 +17,7 @@ vi.mock("@/server/adminanalytics/usecase/adminSession.usecase", () => ({
   signOutAdmin: vi.fn(),
 }));
 vi.mock("@/server/adminanalytics/usecase/usage.usecase", () => ({ getUsageOverview: vi.fn() }));
+vi.mock("@/server/adminanalytics/usecase/usageTrend.usecase", () => ({ getUsageTrend: vi.fn() }));
 vi.mock("@/server/api/connect/context", () => ({
   runUsecase: vi.fn((operation: () => Promise<unknown>) => operation()),
 }));
@@ -25,6 +30,7 @@ import {
   signOutAdmin,
 } from "@/server/adminanalytics/usecase/adminSession.usecase";
 import { getUsageOverview } from "@/server/adminanalytics/usecase/usage.usecase";
+import { getUsageTrend } from "@/server/adminanalytics/usecase/usageTrend.usecase";
 import { rateLimitCheck } from "@/server/common/rateLimit/rateLimit";
 import { adminAnalyticsHandler } from "./handler";
 
@@ -269,6 +275,47 @@ describe("admin usage overview", () => {
       adminAnalyticsHandler.getUsageOverview(create(EmptySchema), context),
     ).rejects.toMatchObject({ code: Code.ResourceExhausted });
     expect(getUsageOverview).not.toHaveBeenCalled();
+  });
+});
+
+describe("admin usage trend", () => {
+  const request = create(GetUsageTrendRequestSchema, { unit: TrendUnit.MONTH, endOn: "2025-06-30" });
+
+  it("does not exist on the app's hostname, and refuses another origin", async () => {
+    await expect(
+      adminAnalyticsHandler.getUsageTrend(request, contextFor({ host: "haalkhata.app" }).context),
+    ).rejects.toMatchObject({ code: Code.NotFound });
+    await expect(
+      adminAnalyticsHandler.getUsageTrend(
+        request,
+        contextFor({ host: ADMIN_HOST, origin: "https://haalkhata.app" }).context,
+      ),
+    ).rejects.toMatchObject({ code: Code.PermissionDenied });
+    expect(requireAdminSession).not.toHaveBeenCalled();
+    expect(getUsageTrend).not.toHaveBeenCalled();
+  });
+
+  it("checks the session, then its own rate limit, then reads the window asked for", async () => {
+    vi.mocked(getUsageTrend).mockResolvedValue({} as never);
+    const { context } = contextFor({ host: ADMIN_HOST, cookie: `hk_admin=${TOKEN}` });
+
+    await adminAnalyticsHandler.getUsageTrend(request, context);
+
+    expect(requireAdminSession).toHaveBeenCalledExactlyOnceWith(TOKEN);
+    expect(rateLimitCheck).toHaveBeenCalledWith("admin-usage-trend", 60);
+    expect(getUsageTrend).toHaveBeenCalledExactlyOnceWith({ unit: TrendUnit.MONTH, endOn: "2025-06-30" });
+  });
+
+  it("reads nothing without a session or past the rate limit", async () => {
+    vi.mocked(requireAdminSession).mockRejectedValueOnce(new Error("sign in to continue"));
+    const { context } = contextFor({ host: ADMIN_HOST });
+    await expect(adminAnalyticsHandler.getUsageTrend(request, context)).rejects.toThrow();
+
+    vi.mocked(rateLimitCheck).mockReturnValue(false);
+    await expect(adminAnalyticsHandler.getUsageTrend(request, context)).rejects.toMatchObject({
+      code: Code.ResourceExhausted,
+    });
+    expect(getUsageTrend).not.toHaveBeenCalled();
   });
 });
 

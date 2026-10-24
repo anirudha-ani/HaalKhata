@@ -1,4 +1,6 @@
-/** Constants for the admin usage page. */
+/** Constants for the admin page. */
+
+import { TrendUnit } from "@haalkhata/protogen/adminanalytics/v1/adminanalytics_pb";
 
 /** Which weekly series the trend chart is showing. */
 export type TrendMetric = "expenses" | "users" | "payments" | "scans";
@@ -20,6 +22,15 @@ export const TREND_METRICS: readonly {
 
 /** The series the trend opens on: expenses are what the product is for. */
 export const DEFAULT_TREND_METRIC: TrendMetric = "expenses";
+
+/** How long one bar of the trend is, in the order its switch shows them. */
+export const TREND_UNITS: readonly { value: TrendUnit; label: string }[] = [
+  { value: TrendUnit.WEEK, label: "Weeks" },
+  { value: TrendUnit.MONTH, label: "Months" },
+];
+
+/** The unit the trend opens on: weeks, the finer view of the recent past. */
+export const DEFAULT_TREND_UNIT = TrendUnit.WEEK;
 
 /**
  * Shown in the people table where the server withheld a display name

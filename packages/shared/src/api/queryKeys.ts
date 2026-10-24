@@ -101,6 +101,11 @@ export const queryKeys = {
   admin: ["admin"] as const,
   /** The operator's usage overview on the admin surface. */
   adminUsage: ["admin", "usage"] as const,
+  /**
+   * One window of the operator's usage trend: its unit (a TrendUnit value)
+   * and the day its last period holds ("" for today).
+   */
+  adminTrend: (unit: number, endOn: string) => ["admin", "trend", unit, endOn] as const,
   /** The operator's report queue on the admin surface. */
   adminReports: ["admin", "reports"] as const,
 };

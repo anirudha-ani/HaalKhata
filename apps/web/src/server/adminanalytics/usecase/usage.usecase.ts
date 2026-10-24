@@ -3,20 +3,14 @@
 import { snapshot } from "@/server/common/db/db";
 import {
   MONTHLY_ACTIVE_DAYS,
-  USAGE_TREND_WEEKS,
   USAGE_USER_LIMIT,
   WEEKLY_ACTIVE_DAYS,
 } from "@/server/adminanalytics/adminanalytics.constants";
-import {
-  assembleWeeks,
-  rankSplitTypes,
-  trailingWeekStarts,
-} from "@/server/adminanalytics/domain/weeklyUsage";
+import { rankSplitTypes } from "@/server/adminanalytics/domain/splitTypes";
 import {
   findUsageTotals,
   listExpenseSplitTypeCounts,
   listUserUsage,
-  listWeeklyCounts,
 } from "@/server/adminanalytics/repo/usage.repo";
 
 /**
@@ -30,12 +24,11 @@ import {
  * moment: without it, a sign-up between two statements would show a total
  * that the list below it does not add up to.
  *
- * @returns The overview in proto shape: totals, split types, the weekly
- *   trend, and one row of counts per person who has signed in.
+ * @returns The overview in proto shape: totals, split types, and one row
+ *   of counts per person who has signed in. The trend is GetUsageTrend's.
  */
 export async function getUsageOverview() {
   const generatedAt = new Date();
-  const weekStarts = trailingWeekStarts(generatedAt, USAGE_TREND_WEEKS);
 
   return snapshot(async (client) => {
     const totals = await findUsageTotals(
@@ -43,7 +36,6 @@ export async function getUsageOverview() {
       client,
     );
     const splitTypes = await listExpenseSplitTypeCounts(client);
-    const weeklyCounts = await listWeeklyCounts(`${weekStarts[0]}T00:00:00.000Z`, client);
     const users = await listUserUsage(USAGE_USER_LIMIT, client);
 
     return {
@@ -67,14 +59,6 @@ export async function getUsageOverview() {
         splitType: splitTypeRow.split_type,
         count: splitTypeRow.count,
       })),
-      weeks: assembleWeeks(
-        weekStarts,
-        weeklyCounts.map((weeklyRow) => ({
-          metric: weeklyRow.metric,
-          weekStart: weeklyRow.week_start,
-          count: weeklyRow.count,
-        })),
-      ),
       users: users.map((userRow) => ({
         name: userRow.name,
         joinedOn: userRow.joined_on,

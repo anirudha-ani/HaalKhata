@@ -3,6 +3,7 @@
 
 import { Spinner } from "@/components/ui/Spinner/Spinner";
 import { useUsageDashboard } from "../../hooks/useUsageDashboard";
+import { useUsageTrend } from "../../hooks/useUsageTrend";
 import { LoadError } from "../LoadError/LoadError";
 import { PanelHeader } from "../PanelHeader/PanelHeader";
 import { PeopleTable } from "./components/PeopleTable/PeopleTable";
@@ -29,6 +30,7 @@ export function UsageDashboard({
   onSessionEnded: () => void;
 }) {
   const dashboard = useUsageDashboard({ onSessionEnded });
+  const trend = useUsageTrend({ onSessionEnded });
   const overview = dashboard.overview;
 
   return (
@@ -36,7 +38,10 @@ export function UsageDashboard({
       <PanelHeader
         generatedAt={overview?.generatedAt ?? ""}
         scope="Counts and display names only."
-        onRefresh={dashboard.refresh}
+        onRefresh={() => {
+          dashboard.refresh();
+          trend.refresh();
+        }}
         isRefreshing={dashboard.isRefreshing || dashboard.isLoading}
       />
 
@@ -59,13 +64,7 @@ export function UsageDashboard({
           {overview.totals ? <TotalsGrid totals={overview.totals} /> : null}
 
           <div className="grid gap-4 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
-            <TrendCard
-              weeks={overview.weeks}
-              metric={dashboard.trendMetric}
-              onMetricChange={dashboard.setTrendMetric}
-              activeWeek={dashboard.activeWeek}
-              onActivateWeek={dashboard.setActiveWeek}
-            />
+            <TrendCard state={trend} />
             <SplitTypeCard splitTypes={overview.expensesBySplitType} />
           </div>
 

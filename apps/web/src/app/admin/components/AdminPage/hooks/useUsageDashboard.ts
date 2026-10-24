@@ -1,14 +1,12 @@
 "use client";
-/** Usage dashboard state: the chosen trend series, split type, search and ordering, over the overview query. */
+/** Usage dashboard state: the chosen split type, search and ordering, over the overview query. */
 
 import { useMemo, useState } from "react";
 import { errorMessage } from "@/lib/api/connect";
 import {
   ALL_SPLIT_TYPES,
   DEFAULT_PEOPLE_SORT,
-  DEFAULT_TREND_METRIC,
   type PeopleSortKey,
-  type TrendMetric,
 } from "../constants/adminPage";
 import { searchPeople } from "../utils/searchPeople";
 import { sortPeople } from "../utils/sortPeople";
@@ -31,8 +29,6 @@ import { useSessionEndWatch } from "./useSessionEndWatch";
  */
 export function useUsageDashboard({ onSessionEnded }: { onSessionEnded: () => void }) {
   const query = useAdminAnalyticsAPI();
-  const [trendMetric, setTrendMetric] = useState<TrendMetric>(DEFAULT_TREND_METRIC);
-  const [chosenWeek, setChosenWeek] = useState("");
   const [splitType, setSplitType] = useState(ALL_SPLIT_TYPES);
   const [searchText, setSearchText] = useState("");
   const [sort, setSort] = useState(DEFAULT_PEOPLE_SORT);
@@ -40,7 +36,6 @@ export function useUsageDashboard({ onSessionEnded }: { onSessionEnded: () => vo
   const sessionEnded = useSessionEndWatch([query.error], onSessionEnded);
 
   const overview = query.data;
-  const weeks = overview?.weeks ?? [];
   const allPeople = overview?.users;
 
   const people = useMemo(
@@ -52,13 +47,6 @@ export function useUsageDashboard({ onSessionEnded }: { onSessionEnded: () => vo
   return {
     overview,
     people,
-    trendMetric,
-    setTrendMetric,
-    // The current week is the one the operator looks for first.
-    activeWeek: weeks.some((week) => week.weekStart === chosenWeek)
-      ? chosenWeek
-      : (weeks[weeks.length - 1]?.weekStart ?? ""),
-    setActiveWeek: setChosenWeek,
     splitType,
     setSplitType,
     searchText,

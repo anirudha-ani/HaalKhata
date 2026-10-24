@@ -16,6 +16,15 @@
 
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { Client } from "pg";
+import { TrendUnit } from "@haalkhata/protogen/adminanalytics/v1/adminanalytics_pb";
+
+/** The counts of one trend period, as the usecase returns them. */
+interface TrendPeriodShape {
+  newUserCount: number;
+  expenseCount: number;
+  paymentCount: number;
+  receiptScanCount: number;
+}
 
 const ADMIN_URL =
   process.env.MERGE_TEST_ADMIN_URL ?? "postgres://haalkhata:change-me@127.0.0.1:5432/postgres";
@@ -190,6 +199,7 @@ const reachable = await databaseReachable();
 describe.skipIf(!reachable)("usage overview against Postgres", () => {
   let database: Client;
   let getUsageOverview: typeof import("./usage.usecase").getUsageOverview;
+  let getUsageTrend: typeof import("./usageTrend.usecase").getUsageTrend;
   let sessions: typeof import("@/server/adminanalytics/repo/adminSessions.repo");
   let closePool: () => Promise<void>;
 
@@ -210,6 +220,7 @@ describe.skipIf(!reachable)("usage overview against Postgres", () => {
       await cache.__haalkhataPool?.end();
     };
     ({ getUsageOverview } = await import("./usage.usecase"));
+    ({ getUsageTrend } = await import("./usageTrend.usecase"));
     sessions = await import("@/server/adminanalytics/repo/adminSessions.repo");
 
     database = new Client({ connectionString: TEST_URL });
@@ -330,25 +341,83 @@ describe.skipIf(!reachable)("usage overview against Postgres", () => {
     expect(users[2].joinedOn).not.toBe(rows[0].created_on);
   });
 
-  it("returns twelve whole weeks, with this week's activity in the last one", async () => {
-    const { weeks } = await getUsageOverview();
+  /**
+   * Adds up one series over a window of the trend.
+   *
+   * @param periods - The window's periods.
+   * @param pick - Which count to read off each.
+   * @returns The total.
+   */
+  const totalOf = (
+    periods: readonly TrendPeriodShape[],
+    pick: (period: TrendPeriodShape) => number,
+  ) => periods.reduce((total, period) => total + pick(period), 0);
 
-    expect(weeks).toHaveLength(12);
-    for (const week of weeks) {
-      expect(new Date(`${week.weekStart}T00:00:00Z`).getUTCDay()).toBe(1);
+  it("returns twelve whole weeks ending this week, with nowhere later to go", async () => {
+    const trend = await getUsageTrend({ unit: TrendUnit.WEEK, endOn: "" });
+
+    expect(trend.unit).toBe(TrendUnit.WEEK);
+    expect(trend.periods).toHaveLength(12);
+    for (const period of trend.periods) {
+      expect(new Date(`${period.startOn}T00:00:00Z`).getUTCDay()).toBe(1);
+      expect(Date.parse(period.endOn) - Date.parse(period.startOn)).toBe(6 * 86_400_000);
     }
-    const totalOf = (pick: (week: (typeof weeks)[number]) => number) =>
-      weeks.reduce((total, week) => total + pick(week), 0);
     // Within twelve weeks: the three recent sign-ups; four of five expenses (one is
     // 100 days old); two of three payments (one is 200 days old); all scans.
-    expect(totalOf((week) => week.newUserCount)).toBe(3);
-    expect(totalOf((week) => week.expenseCount)).toBe(4);
-    expect(totalOf((week) => week.paymentCount)).toBe(2);
-    expect(totalOf((week) => week.receiptScanCount)).toBe(4);
+    expect(totalOf(trend.periods, (period) => period.newUserCount)).toBe(3);
+    expect(totalOf(trend.periods, (period) => period.expenseCount)).toBe(4);
+    expect(totalOf(trend.periods, (period) => period.paymentCount)).toBe(2);
+    expect(totalOf(trend.periods, (period) => period.receiptScanCount)).toBe(4);
+    expect(trend.laterEndOn).toBe("");
+    expect(trend.earlierEndOn).not.toBe("");
+    expect(trend.firstEndOn).not.toBe("");
+  });
+
+  it("returns twelve whole months, which reach the older expense and payment", async () => {
+    const trend = await getUsageTrend({ unit: TrendUnit.MONTH, endOn: "" });
+
+    expect(trend.periods).toHaveLength(12);
+    for (const period of trend.periods) expect(period.startOn.endsWith("-01")).toBe(true);
+    expect(totalOf(trend.periods, (period) => period.newUserCount)).toBe(3);
+    expect(totalOf(trend.periods, (period) => period.expenseCount)).toBe(5);
+    expect(totalOf(trend.periods, (period) => period.paymentCount)).toBe(3);
+  });
+
+  it("pages back without gaps or overlaps, and stops at the first thing that happened", async () => {
+    const latest = await getUsageTrend({ unit: TrendUnit.WEEK, endOn: "" });
+    const earlier = await getUsageTrend({ unit: TrendUnit.WEEK, endOn: latest.earlierEndOn });
+
+    const lastOfEarlier = earlier.periods[earlier.periods.length - 1];
+    expect(Date.parse(latest.periods[0].startOn) - Date.parse(lastOfEarlier.endOn)).toBe(86_400_000);
+    expect(earlier.laterEndOn).not.toBe("");
+
+    const first = await getUsageTrend({ unit: TrendUnit.WEEK, endOn: latest.firstEndOn });
+    // The first sign-ups, 400 to 402 days ago, open the very first window.
+    expect(first.periods[0].newUserCount).toBeGreaterThanOrEqual(1);
+    expect(first.earlierEndOn).toBe("");
+    expect(first.firstEndOn).toBe("");
+  });
+
+  it("reads a day before anything happened as the first window, and a future day as today", async () => {
+    const latest = await getUsageTrend({ unit: TrendUnit.WEEK, endOn: "" });
+    const first = await getUsageTrend({ unit: TrendUnit.WEEK, endOn: latest.firstEndOn });
+
+    const longAgo = await getUsageTrend({ unit: TrendUnit.WEEK, endOn: "1990-01-01" });
+    expect(longAgo.periods[0].startOn).toBe(first.periods[0].startOn);
+    const future = await getUsageTrend({ unit: TrendUnit.WEEK, endOn: "2999-01-01" });
+    expect(future.periods.map((period) => period.startOn)).toEqual(
+      latest.periods.map((period) => period.startOn),
+    );
+  });
+
+  it("refuses a day that does not exist", async () => {
+    await expect(getUsageTrend({ unit: TrendUnit.MONTH, endOn: "2026-02-30" })).rejects.toMatchObject({
+      code: "invalid_argument",
+    });
   });
 
   it("files a count under the week the database says it happened in", async () => {
-    const { weeks } = await getUsageOverview();
+    const { periods } = await getUsageTrend({ unit: TrendUnit.WEEK, endOn: "" });
     // The latecomer's own week, as Postgres truncates it, so the check holds
     // in the first hour of a Monday too.
     const { rows } = await database.query(
@@ -357,7 +426,7 @@ describe.skipIf(!reachable)("usage overview against Postgres", () => {
       [LATECOMER],
     );
 
-    const joinedWeek = weeks.find((week) => week.weekStart === rows[0].week_start);
+    const joinedWeek = periods.find((period) => period.startOn === rows[0].week_start);
     expect(joinedWeek?.newUserCount).toBeGreaterThanOrEqual(1);
   });
 
@@ -394,6 +463,17 @@ describe.skipIf(!reachable)("usage overview against Postgres", () => {
     expect(overview).toContain("Anika Rahman");
     expect(overview).not.toContain("Merged Away");
     expect(overview).not.toMatch(/@/);
+  });
+
+  it("carries only days and counts in the trend, in either unit", async () => {
+    const trends = JSON.stringify([
+      await getUsageTrend({ unit: TrendUnit.WEEK, endOn: "" }),
+      await getUsageTrend({ unit: TrendUnit.MONTH, endOn: "" }),
+    ]);
+
+    for (const privateValue of [...PRIVATE_VALUES, "Anika Rahman", "Rifat Khan"]) {
+      expect(trends).not.toContain(privateValue);
+    }
   });
 
   describe("admin sessions", () => {

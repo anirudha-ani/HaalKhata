@@ -14,10 +14,12 @@ import {
   ADMIN_AUTH_RATE_LIMIT,
   ADMIN_READ_RATE_LIMIT,
   ADMIN_SESSION_LIFETIME_SECONDS,
+  ADMIN_TREND_RATE_LIMIT,
   adminSessionCookieAttributes,
 } from "@/server/adminanalytics/adminanalytics.constants";
 import * as adminSession from "@/server/adminanalytics/usecase/adminSession.usecase";
 import { getUsageOverview } from "@/server/adminanalytics/usecase/usage.usecase";
+import { getUsageTrend } from "@/server/adminanalytics/usecase/usageTrend.usecase";
 
 /**
  * Enforces the per-address sign-in limit.
@@ -86,6 +88,18 @@ export const adminAnalyticsHandler: ServiceImpl<typeof AdminAnalyticsService> = 
         throw new ConnectError("too many requests, please try again later", Code.ResourceExhausted);
       }
       return getUsageOverview();
+    }, handlerContext);
+  },
+
+  /** One window of the trend, for a live admin session only. */
+  async getUsageTrend(request, handlerContext) {
+    requireAdminPageRequest(handlerContext);
+    return runUsecase(async () => {
+      await adminSession.requireAdminSession(adminSessionToken(handlerContext));
+      if (!rateLimitCheck("admin-usage-trend", ADMIN_TREND_RATE_LIMIT)) {
+        throw new ConnectError("too many requests, please try again later", Code.ResourceExhausted);
+      }
+      return getUsageTrend({ unit: request.unit, endOn: request.endOn });
     }, handlerContext);
   },
 };

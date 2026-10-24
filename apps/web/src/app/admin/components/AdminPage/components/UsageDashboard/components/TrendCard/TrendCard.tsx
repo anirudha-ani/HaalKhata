@@ -1,100 +1,106 @@
 "use client";
-/** Trend card: one weekly series as a column chart, with a switch between series. */
+/** Trend card: one series per week or per month as a column chart, movable through time. */
 
-import type { WeekUsage } from "@haalkhata/protogen/adminanalytics/v1/adminanalytics_pb";
-import { ColumnChart } from "@/components/charts/ColumnChart/ColumnChart";
+import { TrendUnit } from "@haalkhata/protogen/adminanalytics/v1/adminanalytics_pb";
 import { SegmentedControl } from "@/components/ui/SegmentedControl/SegmentedControl";
-import { compactNumber, countCeiling } from "@haalkhata/shared/analytics/chart";
-import { TREND_METRICS, type TrendMetric } from "../../../../constants/adminPage";
-import { weekLabel } from "../../../../utils/weekLabel";
-import { weeklyCount } from "../../../../utils/weeklyCount";
+import { Spinner } from "@/components/ui/Spinner/Spinner";
+import { TREND_METRICS, TREND_UNITS } from "../../../../constants/adminPage";
+import type { useUsageTrend } from "../../../../hooks/useUsageTrend";
+import { periodAxisLabel } from "../../../../utils/periodAxisLabel";
+import { periodCount } from "../../../../utils/periodCount";
+import { periodName } from "../../../../utils/periodName";
+import { windowLabel } from "../../../../utils/windowLabel";
+import { LoadError } from "../../../LoadError/LoadError";
+import { TrendChart } from "./components/TrendChart/TrendChart";
+import { TrendPager } from "./components/TrendPager/TrendPager";
 
 /**
- * Renders the last twelve weeks of one series.
+ * Renders twelve weeks or twelve months of one series, anywhere from the
+ * first thing that ever happened to today.
  *
  * One series at a time, on one axis. New people and expenses differ by an
  * order of magnitude, and drawing them together would mean either a second
  * axis, whose alignment would invent a relationship between them, or one
- * series flattened into the baseline. The switch above the chart picks the
- * series; the selected week's count is written out, so no value depends on
- * hovering a bar.
+ * series flattened into the baseline. The selected bar's count is written
+ * out, so no value depends on hovering.
  *
  * @param props - Component props.
  * @returns The card.
  */
-export function TrendCard({
-  weeks,
-  metric,
-  onMetricChange,
-  activeWeek,
-  onActivateWeek,
-}: {
-  /** The trailing weeks, oldest first. */
-  weeks: readonly WeekUsage[];
-  /** The series on show. */
-  metric: TrendMetric;
-  /** Called with the series the operator picked. */
-  onMetricChange: (metric: TrendMetric) => void;
-  /** The selected week's Monday, "YYYY-MM-DD". */
-  activeWeek: string;
-  /** Called with a week's key when its column is hovered, focused or tapped. */
-  onActivateWeek: (weekStart: string) => void;
-}) {
-  const series = TREND_METRICS.find((entry) => entry.value === metric) ?? TREND_METRICS[0];
+export function TrendCard({ state }: { state: ReturnType<typeof useUsageTrend> }) {
+  const trend = state.trend;
+  const unit = trend?.unit ?? state.unit;
+  const periods = trend?.periods ?? [];
+  const series = TREND_METRICS.find((entry) => entry.value === state.metric) ?? TREND_METRICS[0];
   /** Spells a count with the series' noun in the right number. */
   const countLabel = (count: number) =>
     `${count.toLocaleString()} ${count === 1 ? series.singular : series.plural}`;
+  const unitWord = unit === TrendUnit.MONTH ? "months" : "weeks";
 
-  const columns = weeks.map((week) => {
-    const count = weeklyCount(week, metric);
+  const columns = periods.map((period) => {
+    const count = periodCount(period, state.metric);
     return {
-      key: week.weekStart,
-      axisLabel: weekLabel(week.weekStart),
-      name: `Week of ${weekLabel(week.weekStart)}`,
+      key: period.startOn,
+      axisLabel: periodAxisLabel(period.startOn, unit),
+      name: periodName(period.startOn, unit),
       value: count,
       valueLabel: countLabel(count),
     };
   });
-  const active = columns.find((column) => column.key === activeWeek);
   const total = columns.reduce((count, column) => count + column.value, 0);
+  const range = windowLabel(periods, unit);
 
   return (
-    <section className="min-w-0 rounded-2xl border border-line bg-card p-4">
-      <header className="mb-3 flex flex-wrap items-center justify-between gap-2">
-        <div>
-          <h2 className="text-base font-semibold">Last {weeks.length} weeks</h2>
+    <section className="min-w-0 space-y-3 rounded-2xl border border-line bg-card p-4">
+      <header className="flex flex-wrap items-start justify-between gap-2">
+        <div className="min-w-0">
+          <h2 className="text-base font-semibold">{range || "Over time"}</h2>
           <p className="mt-0.5 text-xs text-ink-soft">
-            {countLabel(total)} in total. Weeks start on Monday, UTC.
+            {trend ? `${countLabel(total)} in these ${periods.length} ${unitWord}. ` : ""}
+            {unit === TrendUnit.MONTH ? "Months in UTC." : "Weeks start on Monday, UTC."}
           </p>
         </div>
+        <SegmentedControl
+          label="Length of each bar"
+          size="sm"
+          options={TREND_UNITS}
+          value={state.unit}
+          onChange={state.setUnit}
+        />
+      </header>
+
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <TrendPager {...state.moves} isSwitching={state.isSwitching} onGoTo={state.goTo} />
         <SegmentedControl
           label="Series"
           size="sm"
           options={TREND_METRICS}
-          value={metric}
-          onChange={onMetricChange}
+          value={state.metric}
+          onChange={state.setMetric}
         />
-      </header>
+      </div>
 
-      <p className="mb-3 text-sm" aria-live="polite">
-        {active ? (
-          <>
-            <span className="font-semibold text-ink">{active.name}</span>
-            <span className="text-ink-soft"> · </span>
-            <span className="text-ink tabular-nums">{active.valueLabel}</span>
-          </>
-        ) : null}
-      </p>
+      {state.error ? (
+        <LoadError
+          what="this stretch of time"
+          message={state.error}
+          staleNote={trend ? "The bars below are from the last one that loaded." : ""}
+          onRetry={state.refresh}
+        />
+      ) : null}
 
-      <ColumnChart
-        columns={columns}
-        ceiling={countCeiling(columns.reduce((maximum, column) => Math.max(maximum, column.value), 0))}
-        formatTick={compactNumber}
-        activeKey={activeWeek}
-        onActivate={onActivateWeek}
-        description={`${series.label} per week over the last ${weeks.length} weeks`}
-        valueHeading={series.label}
-      />
+      {state.isLoading ? (
+        <Spinner label="Counting…" />
+      ) : (
+        <TrendChart
+          columns={columns}
+          activeKey={state.activePeriod}
+          onActivate={state.setActivePeriod}
+          isSwitching={state.isSwitching}
+          description={`${series.label} per ${unit === TrendUnit.MONTH ? "month" : "week"}${range ? `, ${range}` : ""}`}
+          valueHeading={series.label}
+        />
+      )}
     </section>
   );
 }

@@ -6,7 +6,8 @@ they do with it. It backs the usage page on the admin hostname.
 The Admin Analytics Service is essential for:
 
 - **Seeing whether the product is used:** sign-ups, activity, expenses by
-  split type, payments, receipt scans, and a twelve-week trend.
+  split type, payments, receipt scans, and a trend over time that can be
+  read by week or by month for any stretch back to the start.
 - **Doing so without a view onto accounts:** the contract carries counts and
   display names, and nothing else.
 
@@ -125,6 +126,7 @@ the app**.
 | --- | --- |
 | BeginSignIn, SignIn | 5/min per client address, shared |
 | GetUsageOverview | 30/min across all admin sessions |
+| GetUsageTrend | 60/min across all admin sessions (each Earlier or Later is one) |
 
 ## What the Counts Mean
 
@@ -147,8 +149,10 @@ the app**.
   was made with (`settlements.method_label`), are never read here: they say
   where a person's money goes, and reach only someone who owes that person
   (see [payment-service.md](../payment/payment-service.md)).
-- Weeks start on **Monday, UTC**, the boundary `date_trunc('week')` uses.
-- The whole overview is read inside one `snapshot()`.
+- Weeks start on **Monday, UTC**, and months on the 1st, the boundaries
+  `date_trunc` uses.
+- The whole overview is read inside one `snapshot()`, and so is each
+  window of the trend.
 
 ---
 
@@ -158,6 +162,7 @@ the app**.
 2. [SignIn](#2-signin)
 3. [SignOut](#3-signout)
 4. [GetUsageOverview](#4-getusageoverview)
+5. [GetUsageTrend](#5-getusagetrend)
 
 ---
 
@@ -240,7 +245,6 @@ the app**.
 | generated_at | string | RFC 3339 instant the figures were read. |
 | totals | UsageTotals | Product-wide counts. |
 | expenses_by_split_type | repeated SplitTypeCount | Every expense ever added, by split type, most used first. |
-| weeks | repeated WeekUsage | The trailing twelve weeks, oldest first, no gaps. |
 | users | repeated UserUsage | People who have signed in, newest first. |
 | users_truncated | bool | True when there are more people than `users` lists. |
 
@@ -253,3 +257,57 @@ the app**.
 | expenses_by_split_type | repeated SplitTypeCount | Expenses they added, by split type. |
 | payment_count | int32 | Payments they recorded. |
 | receipt_scan_count | int32 | Receipt scans they attempted. |
+
+---
+
+### 5. GetUsageTrend
+
+**Method:** `GetUsageTrend`
+**Route:** `POST /api/connect/adminanalytics.v1.AdminAnalyticsService/GetUsageTrend`
+
+#### Notes
+
+- Requires a live admin session; `Unauthenticated` otherwise.
+- One window of twelve weeks or twelve months: new people, expenses,
+  payments and receipt scans per period, the same definitions as the
+  overview's totals.
+- The page names a day and the server does all the calendar math. A day
+  after today is read as today. A day whose window would open before the
+  first thing that ever happened (someone joining, an expense, a payment
+  or a scan) is read as the first window, so no window is a run of empty
+  bars from before there was anything to count.
+- The answer says where the page can go next: `earlier_end_on`,
+  `later_end_on` and `first_end_on`, each empty when there is nowhere to
+  go. The page sends one of these back, or a period's `end_on` when the
+  operator switches between weeks and months, so the place in time is kept.
+- `InvalidArgument` for an `end_on` that is not a real day.
+
+#### Request
+
+| Field | Type | Description |
+| --- | --- | --- |
+| unit | TrendUnit | `TREND_UNIT_WEEK` (also for unspecified) or `TREND_UNIT_MONTH`. |
+| end_on | string | A day, `YYYY-MM-DD`, inside the last period to show; empty for today. |
+
+#### Response
+
+**UsageTrend:**
+
+| Field | Type | Description |
+| --- | --- | --- |
+| generated_at | string | RFC 3339 instant the figures were read. |
+| unit | TrendUnit | The unit answered in. |
+| periods | repeated TrendPeriod | Twelve periods, oldest first, no gaps. |
+| earlier_end_on | string | `end_on` for the window just before; empty when nothing happened earlier. |
+| later_end_on | string | `end_on` for the window just after; empty when this one holds today. |
+| first_end_on | string | `end_on` for the first window with anything in it; empty when this is it. |
+
+**TrendPeriod:**
+
+| Field | Type | Description |
+| --- | --- | --- |
+| start_on, end_on | string | The period's first and last day, `YYYY-MM-DD`, UTC. |
+| new_user_count | int32 | People who finished signing up in it. |
+| expense_count | int32 | Expenses added in it, deleted ones included. |
+| payment_count | int32 | Payments recorded in it, not counting a net settlement's cancelling entries. |
+| receipt_scan_count | int32 | Receipt scans attempted in it. |
