@@ -109,6 +109,9 @@ export const HOUR_MS = 60 * 60 * 1000;
 /** One minute in milliseconds, for saying how long a locked-out code has left. */
 export const MINUTE_MS = 60 * 1000;
 
+/** Said to a code check with no live verification behind it, on this server or the provider. */
+export const INACTIVE_CODE_MESSAGE = "that code is no longer active, send a new one";
+
 /** A code made of digits only, whatever its length. */
 export const DIGITS_ONLY_PATTERN = /^\d+$/;
 

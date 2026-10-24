@@ -37,6 +37,7 @@ import { UsecaseError, invalid } from "@/server/common/errors";
 import { toInt32Cents } from "@/server/common/money/money";
 import {
   DIGITS_ONLY_PATTERN,
+  INACTIVE_CODE_MESSAGE,
   LOG_FINGERPRINT_LENGTH,
   MAX_PHONE_CODE_CHECKS,
   MAX_PREVIEW_COUNTERPARTY_NAMES,
@@ -52,18 +53,15 @@ import {
   isCompleteVerificationCode,
 } from "@haalkhata/shared/phone/verificationCode";
 import { signPayload, verifyPayloadSignature } from "@/server/auth/usecase/session/session";
-
-/** One message for every failed merge-token check: expired, forged, and malformed all just mean "start over". */
-const STALE_MERGE_TOKEN_MESSAGE = "that confirmation is no longer valid, please try again";
-
-/** Said to a code check with no live verification behind it, on this server or the provider. */
-const INACTIVE_CODE_MESSAGE = "that code is no longer active, send a new one";
 import { isRegisteredUser, toPrivateUser } from "../identity/user.mapper";
 import {
   checkPhoneVerification,
   startPhoneVerification,
   type PhoneCodeVerdict,
 } from "../phone/phoneVerification";
+
+/** One message for every failed merge-token check: expired, forged, and malformed all just mean "start over". */
+const STALE_MERGE_TOKEN_MESSAGE = "that confirmation is no longer valid, please try again";
 
 /**
  * The request limits SetPhone answers to. The transport supplies them,
