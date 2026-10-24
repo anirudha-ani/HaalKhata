@@ -8,7 +8,8 @@ import { useAdminSignIn } from "../../hooks/useAdminSignIn";
 /**
  * Renders the admin page's signed-out state: what the page is, who it is
  * for, and Google's sign-in button. A refusal is shown directly under the
- * button that caused it. When the server's allowlist is empty there is no
+ * button that caused it; a button that could not be set up says why and
+ * offers to try again. When the server's allowlist is empty there is no
  * button: the card says the allowlist is empty instead, because every
  * sign-in would be refused.
  *
@@ -35,7 +36,7 @@ export function AdminSignIn({
   // compiler like reading a ref during render.
   // With nobody on the allowlist there is no button to set up, so Google's
   // script is never loaded for a sign-in that could only be refused.
-  const { setButtonElement, error, isPending, isConfigured } = useAdminSignIn({
+  const { setButtonElement, error, isPending, isConfigured, setupFailed, retry } = useAdminSignIn({
     googleClientId: allowlistConfigured ? googleClientId : "",
     onSignedIn,
   });
@@ -73,6 +74,15 @@ export function AdminSignIn({
         <p role="alert" className="mt-3 text-sm font-medium text-neg-700">
           {error}
         </p>
+      ) : null}
+      {setupFailed ? (
+        <button
+          type="button"
+          onClick={retry}
+          className="mt-3 rounded-lg border border-line bg-card px-3 py-1.5 text-sm font-semibold text-ink-soft hover:text-ink"
+        >
+          Try again
+        </button>
       ) : null}
     </div>
   );

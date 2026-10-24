@@ -216,6 +216,15 @@ describe("admin sign-in", () => {
     expect(signInAdmin).not.toHaveBeenCalled();
     expect(beginAdminSignIn).not.toHaveBeenCalled();
   });
+
+  it("counts nonces apart from exchanges, so a refused sign-in does not spend the exchange budget twice", async () => {
+    vi.mocked(beginAdminSignIn).mockResolvedValue({ nonce: "nonce" });
+    const { context } = contextFor({ host: ADMIN_HOST, "x-haalkhata-peer-ip": "203.0.113.9" });
+
+    await adminAnalyticsHandler.beginSignIn(create(EmptySchema), context);
+
+    expect(rateLimitCheck).toHaveBeenCalledExactlyOnceWith("admin-nonce:203.0.113.9", 30);
+  });
 });
 
 describe("admin usage overview", () => {

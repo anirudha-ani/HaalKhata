@@ -130,7 +130,8 @@ the app**.
 
 | RPC | Limit |
 | --- | --- |
-| BeginSignIn, SignIn | 5/min per client address, shared |
+| BeginSignIn | 30/min per client address: each page load and each refused sign-in asks for a fresh nonce |
+| SignIn | 5/min per client address |
 | GetUsageOverview | 30/min across all admin sessions |
 | GetUsageTrend | 60/min across all admin sessions (each Earlier or Later is one) |
 

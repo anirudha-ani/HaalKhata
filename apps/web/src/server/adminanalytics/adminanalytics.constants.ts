@@ -26,10 +26,20 @@ export const ADMIN_SESSION_TOKEN_BYTES = 32;
 export const ADMIN_SESSION_TOKEN_PATTERN = /^[A-Za-z0-9_-]{43}$/;
 
 /**
- * Sign-in attempts (begin plus exchange) accepted per client address per
- * minute. Half the app's allowance: exactly one person is expected here.
+ * Sign-in exchanges (a Google token checked against the allowlist) accepted
+ * per client address per minute. Half the app's allowance: exactly one
+ * person is expected here.
  */
 export const ADMIN_AUTH_RATE_LIMIT = 5;
+
+/**
+ * Sign-in nonces issued per client address per minute, counted apart from
+ * the exchanges. Every page load asks for one and so does every refused
+ * sign-in (a nonce is single use), so sharing the exchange limit let two
+ * wrong-account picks lock the operator out. The ceiling still bounds how
+ * many nonce rows one address can create.
+ */
+export const ADMIN_NONCE_RATE_LIMIT = 30;
 
 /**
  * Overview reads accepted per minute across all admin sessions. Each one

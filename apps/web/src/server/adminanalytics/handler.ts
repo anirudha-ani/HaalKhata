@@ -12,6 +12,7 @@ import { clientIp } from "@/server/auth/request/clientIp";
 import { rateLimitCheck } from "@/server/common/rateLimit/rateLimit";
 import {
   ADMIN_AUTH_RATE_LIMIT,
+  ADMIN_NONCE_RATE_LIMIT,
   ADMIN_READ_RATE_LIMIT,
   ADMIN_SESSION_LIFETIME_SECONDS,
   ADMIN_TREND_RATE_LIMIT,
@@ -22,15 +23,20 @@ import { getUsageOverview } from "@/server/adminanalytics/usecase/usage.usecase"
 import { getUsageTrend } from "@/server/adminanalytics/usecase/usageTrend.usecase";
 
 /**
- * Enforces the per-address sign-in limit.
+ * Enforces one of the per-address sign-in limits.
  *
  * @param handlerContext - Connect handler context for the current request.
+ * @param bucket - Which limit: "admin-nonce" for issuing a nonce,
+ *   "admin-auth" for exchanging a Google token.
+ * @param limit - Requests that bucket accepts per address per minute.
  * @throws ConnectError with Code.ResourceExhausted when rate-limited.
  */
-function enforceAdminAuthRateLimit(handlerContext: HandlerContext): void {
-  if (
-    !rateLimitCheck(`admin-auth:${clientIp(handlerContext.requestHeader)}`, ADMIN_AUTH_RATE_LIMIT)
-  ) {
+function enforceAdminAuthRateLimit(
+  handlerContext: HandlerContext,
+  bucket: "admin-nonce" | "admin-auth",
+  limit: number,
+): void {
+  if (!rateLimitCheck(`${bucket}:${clientIp(handlerContext.requestHeader)}`, limit)) {
     throw new ConnectError("too many attempts, please try again later", Code.ResourceExhausted);
   }
 }
@@ -40,14 +46,14 @@ export const adminAnalyticsHandler: ServiceImpl<typeof AdminAnalyticsService> = 
   /** Issues the nonce for an admin sign-in. */
   async beginSignIn(_request, handlerContext) {
     requireAdminPageRequest(handlerContext);
-    enforceAdminAuthRateLimit(handlerContext);
+    enforceAdminAuthRateLimit(handlerContext, "admin-nonce", ADMIN_NONCE_RATE_LIMIT);
     return runUsecase(() => adminSession.beginAdminSignIn(), handlerContext);
   },
 
   /** Verifies the Google identity and, for an allowlisted address, sets the admin cookie. */
   async signIn(request, handlerContext) {
     requireAdminPageRequest(handlerContext);
-    enforceAdminAuthRateLimit(handlerContext);
+    enforceAdminAuthRateLimit(handlerContext, "admin-auth", ADMIN_AUTH_RATE_LIMIT);
     const { token } = await runUsecase(
       () => adminSession.signInAdmin(request.idToken),
       handlerContext,
