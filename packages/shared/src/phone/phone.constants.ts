@@ -14,6 +14,9 @@ export const VERIFICATION_CODE_PATTERN = new RegExp(`^\\d{${VERIFICATION_CODE_LE
 /** Anything in the code field that is not a digit. */
 export const NON_DIGIT_PATTERN = /\D/g;
 
+/** Each run of digits in a pasted message, for finding the one code among other numbers. */
+export const DIGIT_RUN_PATTERN = /\d+/g;
+
 /**
  * Fewest digits that can arrive in one change only by pasting or by tapping
  * the keyboard's code suggestion. Typing adds one digit per change.
