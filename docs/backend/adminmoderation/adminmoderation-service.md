@@ -105,7 +105,9 @@ appear as these are handled.
   closed: the page's list of suspended accounts resumes through the newest
   one. Someone with no report left (every report about them was removed
   when the reporters deleted their accounts) is listed without a button;
-  resume them by hand, see [ops/README.md](../../../ops/README.md).
+  resume them by hand, see [ops/README.md](../../../ops/README.md). An
+  account merged into another, or the stand-in a deleted account leaves,
+  keeps its `suspended_at` but is not listed: nobody signs in through it.
 - Suspending through a report about an account that was **merged into
   another** is refused: that row no longer signs anyone in, and suspending
   it would look like it worked and stop nobody. The page says so instead of

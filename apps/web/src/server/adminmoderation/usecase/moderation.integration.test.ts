@@ -20,6 +20,7 @@ import {
   COMMENT_ID,
   EXPENSE_ID,
   GROUP_ID,
+  MERGED,
   OWN_COMMENT_ID,
   PRIVATE_VALUES,
   REPORTED_WORDS,
@@ -32,6 +33,8 @@ const ADMIN_URL =
   process.env.MERGE_TEST_ADMIN_URL ?? "postgres://haalkhata:change-me@127.0.0.1:5432/postgres";
 const TEST_DATABASE = "haalkhata_moderation_test";
 const TEST_URL = ADMIN_URL.replace(/\/[^/]*$/, `/${TEST_DATABASE}`);
+/** The stand-in a deleted account leaves behind, added by one test. */
+const DELETED_STAND_IN = "user-deleted-f6a7";
 
 /**
  * Checks whether the admin database accepts a connection.
@@ -325,6 +328,29 @@ describe.skipIf(!(await databaseReachable()))("moderation against Postgres", () 
     expect(await authentication.sessionUser(session.createToken(AUTHOR, suspendedVersion))).toBeNull();
     expect(await authentication.sessionUser(session.createToken(AUTHOR, suspendedVersion + 1))).not.toBeNull();
     expect((await moderation.listReports()).suspended).toEqual([]);
+  });
+
+  it("leaves a suspended account that was merged away or deleted off the suspended list", async () => {
+    await moderation.suspendAuthor(REPORTS.profile);
+    try {
+      // Nothing clears suspended_at when an account is merged or deleted:
+      // the tombstone, and the stand-in a deletion leaves, stay suspended
+      // and stand for nobody.
+      await database.query("UPDATE users SET suspended_at = now() WHERE id = $1", [MERGED]);
+      await database.query(
+        `INSERT INTO users (id, name, avatar_color, deleted_at, suspended_at)
+         VALUES ($1, 'Deleted member', '#857a68', now(), now())`,
+        [DELETED_STAND_IN],
+      );
+
+      expect((await moderation.listReports()).suspended).toEqual([
+        { name: "Member", suspendedAt: expect.any(String), reportId: REPORTS.profile },
+      ]);
+    } finally {
+      await database.query("UPDATE users SET suspended_at = NULL WHERE id = $1", [MERGED]);
+      await database.query("DELETE FROM users WHERE id = $1", [DELETED_STAND_IN]);
+      await moderation.resumeAuthor(REPORTS.profile);
+    }
   });
 
   it("will not pretend to suspend an account that was merged away", async () => {

@@ -117,6 +117,11 @@ export interface SuspendedAccountRow {
  * Lists the accounts suspended right now, each with the newest report about
  * them, open or closed, to resume through.
  *
+ * Only rows that stand for a person: a merge tombstone or the stand-in a
+ * deleted account leaves keeps the suspended_at it had (nothing clears it),
+ * but nobody signs in through it, so listing it with a Resume button would
+ * offer to lift a suspension from no one.
+ *
  * @param limit - Most accounts to return.
  * @param client - The snapshot's client.
  * @returns Accounts, most recently suspended first.
@@ -134,6 +139,7 @@ export async function listSuspendedAccounts(
               LIMIT 1) AS report_id
        FROM users usr
       WHERE usr.suspended_at IS NOT NULL
+        AND usr.merged_into IS NULL AND usr.deleted_at IS NULL
       ORDER BY usr.suspended_at DESC, usr.id
       LIMIT $1`,
     [limit],
