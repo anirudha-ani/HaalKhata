@@ -11,11 +11,14 @@ import { currencyInfo, minorUnitDigits } from "../money/money.constants";
 const AMOUNT_STEPS = [1, 1.2, 1.5, 2, 3, 4, 5, 6, 8, 10];
 
 /**
- * Multiples of a power of ten a count axis may end on. All even, so the
- * halfway gridline of a count axis is always a whole number: half an
- * expense is not a thing to label.
+ * Multiples of a power of ten a count axis may end on, chosen so the
+ * halfway gridline is always a whole number: half an expense is not a
+ * thing to label. The even steps halve whole at any magnitude. 1 is there
+ * so a busiest bar of exactly 10, 100 or 1,000 fills the plot instead of
+ * half of it; it only applies from 10 up, where it halves to 5, 50, 500,
+ * because countCeiling never asks about a maximum below 2.
  */
-const COUNT_STEPS = [2, 4, 6, 8, 10];
+const COUNT_STEPS = [1, 2, 4, 6, 8, 10];
 
 /**
  * Rounds a maximum up to the next step on a ladder of round numbers.
@@ -49,7 +52,7 @@ export function niceCeiling(maximum: number): number {
  * biggest bar is 1 still has a whole-number halfway line.
  *
  * @param maximum - The largest count plotted.
- * @returns An even ceiling at or above it.
+ * @returns A ceiling at or above it whose half is a whole number.
  */
 export function countCeiling(maximum: number): number {
   return ceilingOnSteps(Math.max(maximum, 2), COUNT_STEPS);

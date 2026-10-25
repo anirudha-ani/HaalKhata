@@ -59,8 +59,8 @@ describe("niceCeiling", () => {
 });
 
 describe("countCeiling", () => {
-  it("always ends on an even number, so the halfway line is whole", () => {
-    for (const maximum of [0, 1, 2, 3, 5, 7, 9, 11, 25, 45, 99, 250]) {
+  it("always has a whole-number halfway line", () => {
+    for (const maximum of [0, 1, 2, 3, 5, 7, 9, 10, 11, 25, 45, 99, 100, 250, 1000]) {
       const ceiling = countCeiling(maximum);
       expect(ceiling).toBeGreaterThanOrEqual(Math.max(maximum, 2));
       expect(Number.isInteger(ceiling / 2)).toBe(true);
@@ -73,6 +73,12 @@ describe("countCeiling", () => {
     expect(countCeiling(9)).toBe(10);
     expect(countCeiling(11)).toBe(20);
     expect(countCeiling(45)).toBe(60);
+  });
+
+  it("ends on a round ten, hundred or thousand that is itself the busiest bar", () => {
+    expect(countCeiling(10)).toBe(10);
+    expect(countCeiling(100)).toBe(100);
+    expect(countCeiling(1000)).toBe(1000);
   });
 });
 
