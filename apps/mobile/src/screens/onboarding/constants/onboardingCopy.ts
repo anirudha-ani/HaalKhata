@@ -4,6 +4,8 @@
  * holds what only this flow says.
  */
 
+import { VERIFICATION_CODE_RESENT } from "@haalkhata/shared/phone/phone.constants";
+
 /** The profile step. */
 export const PROFILE_STEP = {
   welcomeNamed: (firstName: string) => `Welcome, ${firstName}`,
@@ -39,7 +41,9 @@ export const CODE_STEP = {
   verify: "Verify",
   resend: "Resend code",
   resendIn: (seconds: number) => `Resend code in ${seconds}s`,
-  resent: "A new code is on its way.",
+  // Inside its ten minutes Twilio texts the same code again, so this does
+  // not promise a new one.
+  resent: VERIFICATION_CODE_RESENT,
   changeNumber: "Use a different number",
   inputLabel: "Verification code",
 } as const;

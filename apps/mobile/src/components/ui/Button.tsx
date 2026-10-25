@@ -45,7 +45,7 @@ export function Button({
   compact?: boolean;
 }) {
   const blocked = disabled || busy;
-  const press = usePressFeedback();
+  const press = usePressFeedback(blocked);
   return (
     <AnimatedPressable
       accessibilityRole="button"
@@ -58,7 +58,7 @@ export function Button({
         styles.base,
         styles[variant],
         compact ? styles.compact : null,
-        blocked ? styles.blocked : press.animatedStyle,
+        press.animatedStyle,
       ]}
     >
       {busy ? (
@@ -94,9 +94,6 @@ const styles = StyleSheet.create({
     minHeight: 44,
     paddingHorizontal: spacing.lg,
     paddingVertical: 14,
-  },
-  blocked: {
-    opacity: 0.5,
   },
   compact: {
     paddingHorizontal: spacing.md,

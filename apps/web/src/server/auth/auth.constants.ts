@@ -78,11 +78,22 @@ export const PHONE_MERGE_RATE_LIMIT = 5;
 export const PHONE_VERIFICATION_LIFETIME_SECONDS = 60 * 10;
 
 /**
- * Wrong-code attempts allowed per delivered code before a fresh SMS is
- * required — OWASP's three-to-five band, enforced server-side rather than
- * delegated to the provider's own cap.
+ * Code checks allowed per verification, OWASP's three-to-five band, enforced
+ * server-side rather than delegated to the provider. It equals Twilio
+ * Verify's own limit (five per verification) on purpose: a resend inside the
+ * verification's lifetime is the same verification and the same code on
+ * Twilio's side, so the budget is not renewed by it here either, and the
+ * two never disagree about whether a check can still succeed.
  */
 export const MAX_PHONE_CODE_CHECKS = 5;
+
+/**
+ * Seconds Twilio's clock and this server's may read apart when a send's
+ * answer says when its verification was created, which Twilio gives to the
+ * second. Used to tell a verification the send created from one that was
+ * already there.
+ */
+export const PROVIDER_CLOCK_SLACK_SECONDS = 5;
 
 /**
  * Most counterparty names a merge preview lists. The preview is the
@@ -94,6 +105,22 @@ export const MAX_PREVIEW_COUNTERPARTY_NAMES = 12;
 
 /** One hour, for the longer rate-limit windows. */
 export const HOUR_MS = 60 * 60 * 1000;
+
+/** One minute in milliseconds, for saying how long a locked-out code has left. */
+export const MINUTE_MS = 60 * 1000;
+
+/** Said to a code check with no live verification behind it, on this server or the provider. */
+export const INACTIVE_CODE_MESSAGE = "that code is no longer active, send a new one";
+
+/** A code made of digits only, whatever its length. */
+export const DIGITS_ONLY_PATTERN = /^\d+$/;
+
+/**
+ * Characters kept of a keyed fingerprint in a log line: enough to tell
+ * codes and verifications apart in one log, too few to be worth anything
+ * outside it.
+ */
+export const LOG_FINGERPRINT_LENGTH = 8;
 
 /** One day, for the longest rate-limit window. */
 export const DAY_MS = 24 * HOUR_MS;
@@ -125,8 +152,19 @@ export const PHONE_VERIFICATION_TIMEOUT_MS = 10_000;
 /** Twilio Verify v2 base URL; fixed so user input can never influence the destination. */
 export const TWILIO_VERIFY_BASE_URL = "https://verify.twilio.com/v2";
 
-/** Verification codes are numeric and between four and ten digits. */
-export const PHONE_VERIFICATION_CODE_PATTERN = /^\d{4,10}$/;
+/**
+ * Twilio Verify's error for a verification whose check limit is reached.
+ * It stops accepting codes, the right one included, until it expires.
+ */
+export const TWILIO_MAX_CHECK_ATTEMPTS_ERROR = 60202;
+
+/** Verification statuses after which Twilio accepts no further code for it. */
+export const TWILIO_ENDED_VERIFICATION_STATUSES: ReadonlySet<string> = new Set([
+  "canceled",
+  "expired",
+  "deleted",
+  "failed",
+]);
 
 /**
  * OAuth client id that a Google ID token must name as its audience. Only the

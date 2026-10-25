@@ -12,7 +12,7 @@ const ADMIN_URL = process.env.MERGE_TEST_ADMIN_URL ?? "postgres://haalkhata:chan
 const TEST_URL = ADMIN_URL.replace(/\/[^/]*$/, "/haalkhata_release_migration_test");
 const MIGRATIONS_DIRECTORY = fileURLToPath(new URL("../../../../migrations/", import.meta.url));
 const MAIN_LAST_MIGRATION = "1791828578558_add-group-status.sql";
-const RELEASE_SUFFIXES = ["_apple_sign_in.sql", "_anonymous_ledger_members.sql", "_user_safety.sql", "_add-receipt-account-consent.sql", "_add-contact-discovery.sql", "_add-push-notifications.sql", "_track-push-delivery.sql", "_keep-removed-phones-off.sql"];
+const RELEASE_SUFFIXES = ["_apple_sign_in.sql", "_anonymous_ledger_members.sql", "_user_safety.sql", "_add-receipt-account-consent.sql", "_add-contact-discovery.sql", "_add-push-notifications.sql", "_track-push-delivery.sql", "_keep-removed-phones-off.sql", "_remember-provider-verification.sql", "_mark-unknown-provider-checks.sql"];
 
 /** @returns Whether the isolated integration database can be created. */
 async function databaseReachable(): Promise<boolean> {

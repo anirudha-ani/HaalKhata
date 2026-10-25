@@ -1,18 +1,17 @@
 /** The phone step's three stages (number, code, merge) and the discoverability switch that rides along. */
 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import type { MergePreview } from "@haalkhata/protogen/auth/v1/auth_pb";
 import type { User } from "@haalkhata/protogen/common/v1/common_pb";
 import { queryKeys } from "@haalkhata/shared/api/queryKeys";
 import { isDiscoverable, onboardingDiscoveryChange } from "@haalkhata/shared/contacts/discovery";
 import { INVALID_PHONE_MESSAGE } from "@haalkhata/shared/phone/contact";
 import { composeE164, DEFAULT_PHONE_REGION, isValidPhone, splitE164 } from "@haalkhata/shared/phone/phone";
-import { authClient, errorMessage } from "@/lib/api/connect";
+import { authClient, errorMessage, isRefusal } from "@/lib/api/connect";
+import { useVerificationCode } from "@/lib/hooks/useVerificationCode";
 import { errorFeedback, successFeedback } from "@/lib/motion/haptics";
-import { RESEND_DELAY_SECONDS } from "../../../../../constants/onboarding";
 import { CODE_STEP } from "../../../../../constants/onboardingCopy";
-import { useResendTimer } from "./useResendTimer";
 
 /** Where the phone step is. */
 export type PhoneStage = "number" | "code" | "merge";
@@ -42,13 +41,16 @@ export function usePhoneStep(user: User, onDone: (verified: boolean) => void) {
   const [findable, setFindable] = useState(isDiscoverable(user.contactDiscovery));
   const [stage, setStage] = useState<PhoneStage>("number");
   const [sentTo, setSentTo] = useState("");
-  const [code, setCode] = useState("");
+  const codeField = useVerificationCode();
   const [rejections, setRejections] = useState(0);
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
   const [preview, setPreview] = useState<MergePreview | undefined>();
   const [mergeToken, setMergeToken] = useState("");
-  const resendTimer = useResendTimer(RESEND_DELAY_SECONDS);
+  // Whether a code check is running, known the moment one starts. The
+  // mutation's own isPending only changes on the next render, and two
+  // changes to the code can land before it (a suggestion inserted twice).
+  const checking = useRef(false);
 
   const alreadyVerified = user.phoneVerified && user.phone !== "" && composeE164(region, nationalNumber) === user.phone;
 
@@ -80,9 +82,8 @@ export function usePhoneStep(user: User, onDone: (verified: boolean) => void) {
         return;
       }
       setSentTo(phone);
-      setCode("");
+      codeField.markSent();
       setStage("code");
-      resendTimer.restart();
     },
     onError: (failure) => setError(errorMessage(failure)),
   });
@@ -101,11 +102,32 @@ export function usePhoneStep(user: User, onDone: (verified: boolean) => void) {
     },
     onError: (failure) => {
       errorFeedback();
-      setRejections((count) => count + 1);
-      setCode("");
+      // A refused code is cleared and the boxes shake: sending it again can
+      // only be refused again, and the next suggestion the keyboard offers
+      // then fills empty boxes instead of landing beside it. After an outage
+      // the code is kept, so Verify can simply be pressed again.
+      if (isRefusal(failure)) {
+        setRejections((count) => count + 1);
+        codeField.clear();
+      }
       setError(errorMessage(failure));
     },
+    onSettled: () => {
+      checking.current = false;
+    },
   });
+
+  /**
+   * Starts a code check unless one is already running, so one code costs at
+   * most one try however many times it arrives.
+   *
+   * @param entered - The whole code to check.
+   */
+  const startCheck = (entered: string) => {
+    if (checking.current) return;
+    checking.current = true;
+    verify.mutate(entered);
+  };
 
   const confirmMerge = useMutation({
     mutationFn: () => authClient.confirmPhoneMerge({ mergeToken }),
@@ -127,17 +149,30 @@ export function usePhoneStep(user: User, onDone: (verified: boolean) => void) {
     setFindable,
     alreadyVerified,
     sentTo,
-    code,
-    setCode: (digits: string) => {
-      setError("");
-      setCode(digits);
+    code: codeField.code,
+    /** True once the boxes hold a whole code. */
+    codeComplete: codeField.complete,
+    /**
+     * Reads a change to the code. A whole code that arrived in one piece
+     * (iOS's AutoFill from Messages, or a paste) is checked at once; one of
+     * another length came from another message and says so instead.
+     */
+    enterCode: (text: string) => {
+      setNotice("");
+      const entry = codeField.enter(text);
+      setError(entry.notice);
+      if (entry.arrivedWhole) startCheck(entry.code);
     },
     rejections,
     notice,
     error,
     preview,
-    resendIn: resendTimer.remaining,
+    resendIn: codeField.resendIn,
     busy: sendCode.isPending || verify.isPending || confirmMerge.isPending || finish.isPending,
+    /** True while a code is being checked: the Verify button's spinner. */
+    isVerifying: verify.isPending,
+    /** True while a code is being sent: the resend button's spinner on the code stage. */
+    isSending: sendCode.isPending,
     /** Sends the code, or moves on when the number shown is already verified. */
     submitNumber: () => {
       setError("");
@@ -154,11 +189,11 @@ export function usePhoneStep(user: User, onDone: (verified: boolean) => void) {
       }
       sendCode.mutate(composeE164(region, nationalNumber));
     },
-    /** @param entered - The code to check; defaults to what is in the boxes. */
-    verify: (entered?: string) => {
+    /** Checks the code in the boxes. */
+    verify: () => {
       setError("");
       setNotice("");
-      verify.mutate(entered ?? code);
+      startCheck(codeField.code);
     },
     /** Sends a fresh code to the same number. */
     resend: () => {
@@ -168,7 +203,7 @@ export function usePhoneStep(user: User, onDone: (verified: boolean) => void) {
     /** Back to the number, keeping what was typed. */
     changeNumber: () => {
       setStage("number");
-      setCode("");
+      codeField.clear();
       setError("");
       setNotice("");
     },

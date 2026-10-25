@@ -6,7 +6,8 @@ import { useRouter } from "next/navigation";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import type { User } from "@haalkhata/protogen/common/v1/common_pb";
 import type { MergePreview } from "@haalkhata/protogen/auth/v1/auth_pb";
-import { authClient, errorMessage } from "@/lib/api/connect";
+import { authClient, errorMessage, isRefusal } from "@/lib/api/connect";
+import { useVerificationCode } from "@/lib/hooks/useVerificationCode";
 import { socialClient } from "@/lib/api/connect";
 import { MONEY_KEYS, queryKeys } from "@haalkhata/shared/api/queryKeys";
 import {
@@ -55,7 +56,7 @@ export function useProfileForm(currentUser: User) {
   const [pendingMerge, setPendingMerge] = useState<MergePreview | undefined>();
   const [mergeToken, setMergeToken] = useState("");
   const [verificationPhone, setVerificationPhone] = useState("");
-  const [verificationCode, setVerificationCode] = useState("");
+  const codeField = useVerificationCode();
   // The confirmation clears itself. Setting it in a timer rather than
   // synchronously in the effect body is deliberate — a synchronous setState
   // there is a cascading render, which the lint rule correctly rejects.
@@ -79,7 +80,10 @@ export function useProfileForm(currentUser: User) {
         // SMS round-trip to hear the same thing.
         if (!isValidPhone(region, nationalNumber)) throw new Error(INVALID_PHONE_MESSAGE);
         const result = await authClient.setPhone({ phone: claimedPhone, verificationCode: "" });
-        if (result.verificationSent) setVerificationPhone(claimedPhone);
+        if (result.verificationSent) {
+          codeField.markSent();
+          setVerificationPhone(claimedPhone);
+        }
         return false;
       }
       return true;
@@ -97,10 +101,11 @@ export function useProfileForm(currentUser: User) {
   });
 
   const verifyPhone = useMutation({
-    mutationFn: () => authClient.setPhone({ phone: verificationPhone, verificationCode }),
+    mutationFn: () =>
+      authClient.setPhone({ phone: verificationPhone, verificationCode: codeField.code }),
     onSuccess: (result) => {
       setVerificationPhone("");
-      setVerificationCode("");
+      codeField.clear();
       if (result.pendingMerge) {
         setPendingMerge(result.pendingMerge);
         setMergeToken(result.mergeToken);
@@ -109,6 +114,21 @@ export function useProfileForm(currentUser: User) {
       queryClient.invalidateQueries({ queryKey: queryKeys.me });
       setMessage("Saved ✓");
     },
+    onError: (mutationError) => {
+      // A refused code is cleared, so the same code cannot be sent again by
+      // pressing Verify twice, and the next suggestion the keyboard offers
+      // replaces it rather than landing beside it.
+      if (isRefusal(mutationError)) codeField.clear();
+      setError(errorMessage(mutationError));
+    },
+  });
+
+  // Texts the code again. Inside its ten minutes it is the same code, under
+  // the same verification and its same five tries; the field is cleared so
+  // the keyboard can offer the latest text's code.
+  const resendCode = useMutation({
+    mutationFn: () => authClient.setPhone({ phone: verificationPhone, verificationCode: "" }),
+    onSuccess: () => codeField.markResent(),
     onError: (mutationError) => setError(errorMessage(mutationError)),
   });
 
@@ -176,7 +196,10 @@ export function useProfileForm(currentUser: User) {
         phone: currentUser.phone,
         verificationCode: "",
       });
-      if (result.verificationSent) setVerificationPhone(currentUser.phone);
+      if (result.verificationSent) {
+        codeField.markSent();
+        setVerificationPhone(currentUser.phone);
+      }
     },
     onError: (mutationError) => setError(errorMessage(mutationError)),
   });
@@ -210,15 +233,30 @@ export function useProfileForm(currentUser: User) {
     setNationalNumber,
     pendingMerge,
     verificationPhone,
-    verificationCode,
-    setVerificationCode,
+    verificationCode: codeField.code,
+    /** True once the field holds a whole code. */
+    codeComplete: codeField.complete,
+    /** The line under the code field. */
+    codeHint: codeField.hint,
+    /** Seconds before the code can be sent again; 0 when it can be now. */
+    resendIn: codeField.resendIn,
+    /** Reads a change to the code field; a code that cannot be ours says why. */
+    enterVerificationCode: (entered: string) => setError(codeField.enter(entered).notice),
     verifyPhone: () => {
       setError("");
       verifyPhone.mutate();
     },
+    /** True while a code is being checked. */
+    isVerifying: verifyPhone.isPending,
+    resendCode: () => {
+      setError("");
+      resendCode.mutate();
+    },
+    /** True while the code is being sent again. */
+    isResending: resendCode.isPending,
     cancelVerification: () => {
       setVerificationPhone("");
-      setVerificationCode("");
+      codeField.clear();
       setError("");
     },
     confirmMerge: () => {
@@ -265,7 +303,8 @@ export function useProfileForm(currentUser: User) {
       setError("");
       save.mutate();
     },
-    isSaving: save.isPending || verifyPhone.isPending || confirmMerge.isPending,
+    isSaving:
+      save.isPending || verifyPhone.isPending || resendCode.isPending || confirmMerge.isPending,
     signOut,
   };
 }

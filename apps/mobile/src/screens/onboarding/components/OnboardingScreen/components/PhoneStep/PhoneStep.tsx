@@ -10,7 +10,6 @@ import { PhoneField } from "@/components/ui/PhoneField";
 import { Text } from "@/components/ui/Text";
 import { colors, radii, spacing } from "@/lib/theme/theme";
 import { CODE_STEP, MERGE_STEP, PHONE_STEP } from "../../../../constants/onboardingCopy";
-import { canSubmitCode } from "../../../../utils/codeEntry";
 import { StepArt } from "../StepArt/StepArt";
 import { StepLayout } from "../StepLayout/StepLayout";
 import { CodeBoxes } from "./components/CodeBoxes/CodeBoxes";
@@ -69,10 +68,10 @@ export function PhoneStep({
           <>
             {failure}
             <Button
-              busy={phone.busy}
-              disabled={!canSubmitCode(phone.code)}
+              busy={phone.isVerifying}
+              disabled={phone.busy || !phone.codeComplete}
               label={CODE_STEP.verify}
-              onPress={() => phone.verify()}
+              onPress={phone.verify}
             />
             <Button disabled={phone.busy} label={CODE_STEP.changeNumber} onPress={phone.changeNumber} variant="ghost" />
           </>
@@ -82,8 +81,7 @@ export function PhoneStep({
         <CodeBoxes
           code={phone.code}
           disabled={phone.busy}
-          onChange={phone.setCode}
-          onComplete={phone.verify}
+          onChangeText={phone.enterCode}
           rejections={phone.rejections}
         />
         <View style={styles.resendRow}>
@@ -91,6 +89,7 @@ export function PhoneStep({
             <Text accessibilityLiveRegion="polite" style={styles.notice}>{phone.notice}</Text>
           ) : null}
           <Button
+            busy={phone.isSending}
             compact
             disabled={phone.resendIn > 0 || phone.busy}
             label={phone.resendIn > 0 ? CODE_STEP.resendIn(phone.resendIn) : CODE_STEP.resend}

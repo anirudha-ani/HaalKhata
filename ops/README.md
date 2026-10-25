@@ -123,7 +123,7 @@ the file:
 | `SUPPORT_EMAIL` | Variable `SUPPORT_EMAIL` | Required monitored public support mailbox |
 | `ANDROID_SHA256_CERTIFICATES` | Variable `ANDROID_SHA256_CERTIFICATES` | Android signing fingerprints, when releasing Android |
 | `TWILIO_API_KEY_SID` | Secret `TWILIO_API_KEY_SID` | Optional; identifies but does not authenticate |
-| `TWILIO_VERIFY_SERVICE_SID` | Secret `TWILIO_VERIFY_SERVICE_SID` | Optional |
+| `TWILIO_VERIFY_SERVICE_SID` | Secret `TWILIO_VERIFY_SERVICE_SID` | Optional; the service's Code length must be 8 |
 
 Authenticating material never lands in `.env`. The same channel also
 carries these keys, which the deploy steps write as secret *files* instead
