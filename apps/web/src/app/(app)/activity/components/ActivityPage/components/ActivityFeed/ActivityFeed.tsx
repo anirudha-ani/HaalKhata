@@ -8,6 +8,7 @@ import { ActivityList } from "@/components/activity/ActivityList/ActivityList";
 import { ACTIVITY_FILTERS } from "@haalkhata/shared/activity/filters";
 import { monthLabel } from "@haalkhata/shared/activity/format";
 import type { useActivity } from "../../hooks/useActivity";
+import { FeedError } from "./components/FeedError/FeedError";
 
 /**
  * Renders the activity feed: search, a month window, type filters, and the
@@ -19,6 +20,11 @@ import type { useActivity } from "../../hooks/useActivity";
  * The feed's state lives in the page's `useActivity`, not here, so switching
  * to the insights view and back keeps the search, the filters and every
  * page already loaded.
+ *
+ * A failed read is said where its rows would be: in place of the whole
+ * feed when nothing has loaded, above the rows when a reload failed, and
+ * just above Load more when the next page did, so it is never mistaken
+ * for an empty history and never lands below a long list.
  *
  * @param props - Component props.
  * @returns The feed.
@@ -33,7 +39,12 @@ export function ActivityFeed({
     activity.query !== "" || activity.filter !== "all" || activity.month !== "";
 
   if (activity.events.length === 0 && !isFiltered) {
-    return (
+    return activity.loadError ? (
+      <FeedError
+        message={`Couldn't load your activity: ${activity.loadError}`}
+        onRetry={activity.retry}
+      />
+    ) : (
       <EmptyState
         icon={<Bell />}
         title="It's giving empty"
@@ -94,13 +105,24 @@ export function ActivityFeed({
         ) : null}
       </div>
 
-      {activity.visibleEvents.length === 0 ? (
+      {activity.loadError && !activity.loadMoreFailed ? (
+        <FeedError
+          message={`Couldn't load your activity: ${activity.loadError}`}
+          onRetry={activity.retry}
+        />
+      ) : null}
+
+      {activity.visibleEvents.length > 0 ? (
+        <ActivityList events={activity.visibleEvents} now={new Date()} />
+      ) : activity.loadError ? null : (
         <p className="rounded-2xl border border-line bg-card px-4 py-8 text-center text-sm text-ink-soft">
           Crickets. Nothing matches that.
         </p>
-      ) : (
-        <ActivityList events={activity.visibleEvents} now={new Date()} />
       )}
+
+      {activity.loadMoreFailed ? (
+        <FeedError message={`Couldn't load more: ${activity.loadError}`} />
+      ) : null}
 
       {activity.hasMore ? (
         <button

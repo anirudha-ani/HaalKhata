@@ -3,7 +3,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { socialClient } from "@/lib/api/connect";
+import { errorMessage, socialClient } from "@/lib/api/connect";
 import { queryKeys } from "@haalkhata/shared/api/queryKeys";
 import { matchesTerms, searchTerms } from "@haalkhata/shared/search/filter";
 import { ACTIVITY_FILTERS, type ActivityFilter } from "@haalkhata/shared/activity/filters";
@@ -22,8 +22,8 @@ import { ACTIVITY_FILTERS, type ActivityFilter } from "@haalkhata/shared/activit
  *
  * @returns `events` (everything loaded), `visibleEvents` (after search and
  *   type filter), the `query`/`filter`/`month` state with setters, the
- *   `months` available, `loadMore`/`hasMore`/`isLoadingMore`, `notifications`
- *   and `isLoading`.
+ *   `months` available, `loadMore`/`hasMore`/`isLoadingMore`, `notifications`,
+ *   `isLoading`, and `loadError`/`loadMoreFailed`/`retry` for a failed read.
  */
 export function useActivity() {
   const queryClient = useQueryClient();
@@ -100,5 +100,11 @@ export function useActivity() {
     loadMore: () => activity.fetchNextPage(),
     notifications: notifications.data?.notifications ?? [],
     isLoading: activity.isLoading,
+    /** Why the feed's last read failed; "" when it did not. */
+    loadError: activity.error ? errorMessage(activity.error) : "",
+    /** True when that failed read was the next page, so Load more is the retry. */
+    loadMoreFailed: activity.isFetchNextPageError,
+    /** Reads the feed again from the top. */
+    retry: () => void activity.refetch(),
   };
 }
