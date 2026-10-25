@@ -18,7 +18,21 @@ vi.mock("@/server/receipt/receipt.constants", async (importOriginal) => ({
   },
 }));
 
-import { parseReceipt } from "./receipt.usecase";
+vi.mock("@/server/receipt/repo/receiptScans.repo", () => ({ insertReceiptScan: vi.fn(async () => undefined) }));
+
+import { scanReceipt } from "./receipt.usecase";
+
+/**
+ * Parses as the server does for a signed-in person, with the scan count
+ * written nowhere.
+ *
+ * @param image - The uploaded bytes.
+ * @param currency - The expense's currency.
+ * @returns What scanReceipt returns.
+ */
+function parseAsSomeone(image: Uint8Array, currency?: string) {
+  return scanReceipt("user-scanning", image, currency);
+}
 
 /** Returns enough JPEG signature bytes for the server's format detector. */
 function jpegBytes(): Uint8Array {
@@ -50,7 +64,7 @@ describe("receipt provider failure reporting", () => {
   it("reports an outage, not a bad photo, when the provider rejects the request", async () => {
     fetchMock.mockResolvedValue(new Response('{"error":{"code":400}}', { status: 400 }));
 
-    await expect(parseReceipt(jpegBytes())).rejects.toMatchObject({
+    await expect(parseAsSomeone(jpegBytes())).rejects.toMatchObject({
       code: "unavailable",
       message: expect.stringMatching(/unavailable right now/),
     });
@@ -59,13 +73,13 @@ describe("receipt provider failure reporting", () => {
   it("reports an outage when the provider cannot be reached at all", async () => {
     fetchMock.mockRejectedValue(new TypeError("fetch failed"));
 
-    await expect(parseReceipt(jpegBytes())).rejects.toMatchObject({ code: "unavailable" });
+    await expect(parseAsSomeone(jpegBytes())).rejects.toMatchObject({ code: "unavailable" });
   });
 
   it("asks for a clearer photo only when a model read it and found no items", async () => {
     fetchMock.mockResolvedValue(completion('{"merchant":"Corner Cafe","items":[]}'));
 
-    await expect(parseReceipt(jpegBytes())).rejects.toMatchObject({
+    await expect(parseAsSomeone(jpegBytes())).rejects.toMatchObject({
       code: "invalid_argument",
       message: expect.stringMatching(/clearer photo/),
     });
@@ -74,7 +88,7 @@ describe("receipt provider failure reporting", () => {
 
 it.each(["INR", "JPY", "KWD"])("keeps mock scanning usable in %s forms", async (currency) => {
   process.env.RECEIPT_AI_PROVIDERS = "mock";
-  const result = await parseReceipt(jpegBytes(), currency);
+  const result = await parseAsSomeone(jpegBytes(), currency);
   expect(result.receipt.currency).toBe(currency);
   expect(result.receipt.items.length).toBeGreaterThan(0);
   expect(result.receipt.items[0].totalCents).toBe(currency === "JPY" ? 15 : currency === "KWD" ? 14500 : 1450);

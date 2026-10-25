@@ -759,24 +759,6 @@ async function readReceipt(
 }
 
 /**
- * Parses a receipt image: checks the request, then tries each configured
- * provider in order until one returns at least one line item.
- *
- * @param image - Raw image bytes uploaded by the client.
- * @param currency - Selected expense currency, used when the image is ambiguous.
- * @returns The normalized receipt, the name of the provider that produced it,
- *   and the JPEG that provider was shown, for the client to display alongside
- *   the extracted values.
- * @throws Whatever {@link prepareReceipt} or {@link readReceipt} throws.
- */
-export async function parseReceipt(
-  image: Uint8Array,
-  currency = "USD",
-): Promise<{ receipt: ParsedReceiptData; provider: string; normalizedImage: Uint8Array }> {
-  return readReceipt(await prepareReceipt(image, currency));
-}
-
-/**
  * Counts one scan attempt. A failure to count is logged and swallowed: the
  * tally is bookkeeping, and a person's scan must not fail (or a failed scan
  * report a different error) because the counter could not be written. For
@@ -796,7 +778,10 @@ async function recordScan(userId: string, outcome: ReceiptScanOutcome): Promise<
 }
 
 /**
- * Parses a receipt for a signed-in person and counts the attempt.
+ * Parses a receipt for a signed-in person and counts the attempt: checks
+ * the request, then tries each configured provider in order until one
+ * returns at least one line item. The only way into parsing, so no scan
+ * goes uncounted.
  *
  * The count is the whole record of a scan (see the receipt_scans migration):
  * who, when, and whether it worked. The image and everything read off it
@@ -813,9 +798,11 @@ async function recordScan(userId: string, outcome: ReceiptScanOutcome): Promise<
  * @param userId - The authenticated person who uploaded the image.
  * @param image - Raw image bytes uploaded by the client.
  * @param currency - Expense currency for receipts that do not print one.
- * @returns Whatever {@link parseReceipt} returns.
- * @throws Whatever {@link parseReceipt} throws; a provider's failure is
- *   counted too.
+ * @returns The normalized receipt, the name of the provider that produced it,
+ *   and the JPEG that provider was shown, for the client to display alongside
+ *   the extracted values.
+ * @throws Whatever {@link prepareReceipt} or {@link readReceipt} throws; a
+ *   provider's failure is counted too.
  */
 export async function scanReceipt(
   userId: string,
