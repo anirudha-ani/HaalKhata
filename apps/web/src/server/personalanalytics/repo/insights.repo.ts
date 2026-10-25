@@ -7,6 +7,7 @@
 
 import type { PoolClient } from "pg";
 import { query, queryOne } from "@/server/common/db/db";
+import { PAYMENT_KEY } from "@/server/common/ledger/paymentKey";
 
 /** The bounds every windowed statement shares. */
 export interface InsightBounds {
@@ -62,6 +63,9 @@ export interface JourneyRow {
 /**
  * Reads a person's lifetime figures in one statement.
  *
+ * A payment counts once however many balances it settled: it is stored as
+ * a row per place it paid down, and those rows are grouped by PAYMENT_KEY.
+ *
  * @param userId - The person asking about themselves.
  * @param client - The snapshot's client.
  * @returns Their figures, or undefined when the account no longer exists.
@@ -75,9 +79,12 @@ export async function findJourney(
             usr.default_currency,
             ledger.expense_count,
             ledger.first_expense_date,
-            (SELECT COUNT(*)::int FROM settlements stl
-              WHERE (stl.from_user = usr.id OR stl.to_user = usr.id)
-                AND stl.deleted_at IS NULL AND stl.method <> 'offset') AS payment_count,
+            (SELECT COUNT(*)::int FROM (
+               SELECT 1 FROM settlements stl
+                WHERE (stl.from_user = usr.id OR stl.to_user = usr.id)
+                  AND stl.deleted_at IS NULL AND stl.method <> 'offset'
+                GROUP BY ${PAYMENT_KEY}
+             ) payment) AS payment_count,
             (SELECT COUNT(*)::int FROM group_members mem
               WHERE mem.user_id = usr.id) AS group_count,
             (SELECT COUNT(*)::int FROM friendships fnd

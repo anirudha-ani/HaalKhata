@@ -82,7 +82,10 @@ of it. The dashboard charts the first and states the second.
 - Every money total passes through `toInt32Cents()` before it reaches the
   wire, so an overflow is a `FailedPrecondition`, not an encoder crash.
 - Soft-deleted expenses and removed payments count nowhere. A net
-  settlement's cancelling (`offset`) entries are not payments.
+  settlement's cancelling (`offset`) entries are not payments. The journey's
+  payment count counts a payment once however many balances it settled
+  (its rows are grouped by `PAYMENT_KEY`); the amounts paid and received
+  add up every row, which is the same money either way.
 
 ## Consistency and Cost
 
@@ -166,7 +169,7 @@ counted every currency together and now live in each `CurrencyInsights`.
 | member_since | string | RFC 3339 instant the caller finished signing up (not when a friend first invited them). |
 | first_expense_date | string | Earliest `YYYY-MM-DD` of a live expense they are on; empty when none. |
 | expense_count | int32 | Live expenses they paid for or owe a share of. |
-| payment_count | int32 | Payments they made or received. |
+| payment_count | int32 | Payments they made or received, each once however many balances it settled. |
 | group_count | int32 | Groups they belong to. |
 | friend_count | int32 | Their friends, invited ones included. |
 | receipt_scan_count | int32 | Receipts they scanned that a provider could read. Counted from the day scan counting shipped. |

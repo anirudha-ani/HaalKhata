@@ -55,8 +55,9 @@ message Journey {
   string first_expense_date = 2;
   // Live expenses the caller paid for or owes a share of.
   int32 expense_count = 3;
-  // Payments the caller made or received. Cancelling entries of a net
-  // settlement are not payments and are not counted.
+  // Payments the caller made or received, each once however many balances
+  // it settled. Cancelling entries of a net settlement are not payments and
+  // are not counted.
   int32 payment_count = 4;
   int32 group_count = 5;
   int32 friend_count = 6;

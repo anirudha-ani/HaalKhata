@@ -258,12 +258,20 @@ async function seed(database: Client): Promise<void> {
     `INSERT INTO settlements
        (id, from_user, to_user, amount_cents, currency, method, recorded_by, created_at, deleted_at, deleted_by)
      VALUES
-       ('stl-out', $1, $2, 1500, 'USD', 'venmo', $1, now(), NULL, NULL),
+       ('stl-out', $1, $2, 1000, 'USD', 'venmo', $1, now(), NULL, NULL),
        ('stl-in', $2, $1, 500, 'USD', 'cash', $2, now(), NULL, NULL),
        ('stl-removed', $1, $2, 7777, 'USD', 'cash', $1, now(), now(), $1),
        ('stl-old', $1, $2, 900, 'USD', 'cash', $1, now() - interval '3 years', NULL, NULL),
        ('stl-theirs', $2, $3, 8888, 'USD', 'cash', $2, now(), NULL, NULL)`,
     [CALLER, ANIKA, RIFAT],
+  );
+  // The rest of stl-out: the same payment also settled the caller's share
+  // of the trip, a row of its own written in the same transaction.
+  await database.query(
+    `INSERT INTO settlements
+       (id, group_id, from_user, to_user, amount_cents, currency, method, recorded_by, created_at)
+     SELECT 'stl-out-trip', 'grp-trip', from_user, to_user, 500, currency, method, recorded_by, created_at
+       FROM settlements WHERE id = 'stl-out'`,
   );
   await database.query(
     `INSERT INTO receipt_scans (id, user_id, outcome) VALUES
@@ -320,7 +328,7 @@ describe.skipIf(!reachable)("getInsights against Postgres", () => {
       firstExpenseDate: `${LONG_AGO}-15`,
       // dinner, cab, euro, treat, old. Not the deleted one, not theirs.
       expenseCount: 5,
-      // out, in, old. Not the removed one, not theirs.
+      // out (two rows, one payment), in, old. Not the removed one, not theirs.
       paymentCount: 3,
       groupCount: 1,
       friendCount: 1,

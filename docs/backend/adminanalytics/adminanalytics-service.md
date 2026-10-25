@@ -154,8 +154,12 @@ the app**.
 - **Expenses** count everything ever added, deleted ones included;
   `deleted_expense_count` says how many were later deleted.
 - **Payments** count every payment recorded, removed ones included, as
-  expenses do; `deleted_payment_count` says how many were later removed.
-  A net settlement's cancelling (`offset`) entries are not payments.
+  expenses do; `deleted_payment_count` says how many were later removed
+  (every part of them). A payment that settled several balances at once
+  is stored as a row per balance, written in one transaction; the rows are
+  grouped by `PAYMENT_KEY` (`common/ledger/paymentKey.ts`) so the payment
+  counts once, in the totals, the trend and each person's row alike. A net
+  settlement's cancelling (`offset`) entries are not payments.
 - **Receipt scans** are counted from the day scan counting shipped, and only
   when a photo reached a provider: a request refused for want of
   permission, or before any provider was asked (a bad file, an unsupported
@@ -272,7 +276,7 @@ the app**.
 | name | string | The person's display name; empty when the name is itself contact information (see above). |
 | joined_on | string | The day they finished signing up, `YYYY-MM-DD`, UTC. |
 | expenses_by_split_type | repeated SplitTypeCount | Expenses they added, by split type. |
-| payment_count | int32 | Payments they recorded. |
+| payment_count | int32 | Payments they recorded, each once however many balances it settled. |
 | receipt_scan_count | int32 | Receipt scans they attempted. |
 
 ---
@@ -326,5 +330,5 @@ the app**.
 | start_on, end_on | string | The period's first and last day, `YYYY-MM-DD`, UTC. |
 | new_user_count | int32 | People who finished signing up in it. |
 | expense_count | int32 | Expenses added in it, deleted ones included. |
-| payment_count | int32 | Payments recorded in it, not counting a net settlement's cancelling entries. |
+| payment_count | int32 | Payments recorded in it, each once, not counting a net settlement's cancelling entries. |
 | receipt_scan_count | int32 | Receipt scans attempted in it. |

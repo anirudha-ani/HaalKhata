@@ -154,6 +154,19 @@ async function seed(database: Client): Promise<void> {
             ('stl-3', $2, $1, 200, 'USD', 'cash', $2, now() - interval '200 days', now(), $2)`,
     [ANIKA, RIFAT],
   );
+  // The other parts of the same three payments: each settled a balance in
+  // a group as well, and is one more row of a payment already counted. One
+  // part of stl-2 was removed on its own, which leaves the payment standing.
+  await database.query(
+    `INSERT INTO settlements
+       (id, group_id, from_user, to_user, amount_cents, currency, method, recorded_by, created_at, deleted_at, deleted_by)
+     SELECT part.id, 'grp-1', stl.from_user, stl.to_user, 100, stl.currency, stl.method, stl.recorded_by,
+            stl.created_at, part.deleted_at, CASE WHEN part.deleted_at IS NOT NULL THEN stl.recorded_by END
+       FROM (VALUES ('stl-1b', 'stl-1', NULL::timestamptz),
+                    ('stl-2b', 'stl-2', now()),
+                    ('stl-3b', 'stl-3', now())) part (id, whole_id, deleted_at)
+       JOIN settlements stl ON stl.id = part.whole_id`,
+  );
   // Anika has saved two payment methods and Rifat one; one of Anika's
   // payments also kept the name of the method it was made with.
   await database.query(
@@ -274,6 +287,7 @@ describe.skipIf(!reachable)("usage overview against Postgres", () => {
   });
 
   it("counts everything that was ever added, deleted expenses and removed payments included", async () => {
+    // Three payments in six rows: a payment that settled two balances is one payment.
     const { totals, expensesBySplitType } = await getUsageOverview();
 
     expect(totals).toMatchObject({

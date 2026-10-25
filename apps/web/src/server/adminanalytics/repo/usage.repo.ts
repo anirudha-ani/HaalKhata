@@ -17,6 +17,7 @@
 import type { PoolClient } from "pg";
 import { query, queryOne } from "@/server/common/db/db";
 import { DISPLAY_NAME } from "@/server/adminanalytics/repo/displayName";
+import { PAYMENT_KEY } from "@/server/common/ledger/paymentKey";
 
 /**
  * A row that stands for a person: not a tombstone left by an account merge,
@@ -46,6 +47,20 @@ const INVITED = `${PERSON} AND NOT ${SIGN_IN}`;
  */
 const JOINED_AT = `COALESCE(usr.onboarded_at, usr.created_at)`;
 
+/**
+ * One row per payment ever recorded, removed ones included: when it was
+ * recorded and whether it has since been removed. The rows of one payment
+ * are grouped by PAYMENT_KEY, so a payment that settled three balances
+ * counts once, and a net settlement's cancelling rows moved no money and
+ * are not payments. A payment counts as removed once every part of it is:
+ * a part removed on its own leaves a payment that still happened.
+ */
+const PAYMENTS = `
+  SELECT stl.created_at, bool_and(stl.deleted_at IS NOT NULL) AS removed
+    FROM settlements stl
+   WHERE stl.method <> 'offset'
+   GROUP BY ${PAYMENT_KEY}`;
+
 /** Product-wide totals. */
 export interface UsageTotalsRow {
   registered_user_count: number;
@@ -66,6 +81,8 @@ export interface UsageTotalsRow {
 
 /**
  * Reads every product-wide total in one statement.
+ *
+ * Payments are counted as people recorded them, not as rows (see PAYMENTS).
  *
  * "Active" is anyone who did something that reaches the feed: the activity
  * table already records every such action with its actor, so it answers the
@@ -90,18 +107,22 @@ export async function findUsageTotals(
        (SELECT COUNT(*)::int FROM groups) AS group_count,
        (SELECT COUNT(*)::int FROM expenses) AS expense_count,
        (SELECT COUNT(*)::int FROM expenses WHERE deleted_at IS NOT NULL) AS deleted_expense_count,
-       (SELECT COUNT(*)::int FROM settlements WHERE method <> 'offset') AS payment_count,
-       (SELECT COUNT(*)::int FROM settlements
-         WHERE method <> 'offset' AND deleted_at IS NOT NULL) AS deleted_payment_count,
+       paid.payment_count,
+       paid.deleted_payment_count,
        (SELECT COUNT(*)::int FROM receipt_scans) AS receipt_scan_count,
        (SELECT COUNT(*)::int FROM receipt_scans WHERE outcome = 'parsed') AS parsed_receipt_scan_count,
        (SELECT COUNT(*)::int FROM comments) AS comment_count,
        (SELECT COUNT(*)::int FROM payment_methods) AS payment_method_count,
-       (SELECT COUNT(DISTINCT user_id)::int FROM payment_methods) AS payment_method_user_count`,
+       (SELECT COUNT(DISTINCT user_id)::int FROM payment_methods) AS payment_method_user_count
+       FROM (
+         SELECT COUNT(*)::int AS payment_count,
+                (COUNT(*) FILTER (WHERE pay.removed))::int AS deleted_payment_count
+           FROM (${PAYMENTS}) pay
+       ) paid`,
     [activeDays.week, activeDays.month],
     client,
   );
-  // A SELECT of scalar subqueries always returns exactly one row.
+  // Scalar subqueries over a one-row aggregate always return exactly one row.
   return totals!;
 }
 
@@ -175,10 +196,10 @@ export async function listTrendCounts(
       GROUP BY period_start
      UNION ALL
      SELECT 'payments',
-            to_char(date_trunc($1, created_at AT TIME ZONE 'UTC'), 'YYYY-MM-DD') AS period_start,
+            to_char(date_trunc($1, pay.created_at AT TIME ZONE 'UTC'), 'YYYY-MM-DD') AS period_start,
             COUNT(*)::int
-       FROM settlements
-      WHERE created_at >= $2 AND created_at < $3 AND method <> 'offset'
+       FROM (${PAYMENTS}) pay
+      WHERE pay.created_at >= $2 AND pay.created_at < $3
       GROUP BY period_start
      UNION ALL
      SELECT 'scans',
@@ -228,7 +249,8 @@ export interface UserUsageRow {
 
 /**
  * The people who have signed in, newest first, each with what they have
- * done: expenses added (by split type), payments recorded, receipts scanned.
+ * done: expenses added (by split type), payments recorded (each once,
+ * however many balances it settled), receipts scanned.
  *
  * The per-person counts are joined on the user id inside the database and
  * the id is not selected, so the rows that reach the process identify
@@ -265,7 +287,11 @@ export async function listUserUsage(limit: number, client: PoolClient): Promise<
        ) added ON true
        CROSS JOIN LATERAL (
          SELECT COUNT(*)::int AS payment_count
-           FROM settlements WHERE recorded_by = usr.id AND method <> 'offset'
+           FROM (
+             SELECT 1 FROM settlements stl
+              WHERE stl.recorded_by = usr.id AND stl.method <> 'offset'
+              GROUP BY ${PAYMENT_KEY}
+           ) payment
        ) recorded
        CROSS JOIN LATERAL (
          SELECT COUNT(*)::int AS receipt_scan_count
