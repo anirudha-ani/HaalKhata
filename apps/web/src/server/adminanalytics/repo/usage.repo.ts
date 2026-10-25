@@ -16,7 +16,7 @@
 
 import type { PoolClient } from "pg";
 import { query, queryOne } from "@/server/common/db/db";
-import { DISPLAY_NAME } from "@/server/adminanalytics/repo/displayName";
+import { displayNameSql } from "@/server/adminanalytics/repo/displayName";
 import { PAYMENT_KEY } from "@/server/common/ledger/paymentKey";
 
 /**
@@ -302,7 +302,7 @@ export async function listUserUsage(limit: number, client: PoolClient): Promise<
         ORDER BY ${JOINED_AT} DESC, usr.id
         LIMIT $1
      )
-     SELECT ${DISPLAY_NAME} AS name,
+     SELECT ${displayNameSql()} AS name,
             to_char(${JOINED_AT} AT TIME ZONE 'UTC', 'YYYY-MM-DD') AS joined_on,
             COALESCE(added.by_split_type, '{}'::json) AS expenses_by_split_type,
             recorded.payment_count,

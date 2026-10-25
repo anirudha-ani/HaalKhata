@@ -16,7 +16,7 @@
 
 import type { PoolClient } from "pg";
 import { execute, query, queryOne } from "@/server/common/db/db";
-import { DISPLAY_NAME } from "@/server/adminanalytics/repo/displayName";
+import { displayNameSql } from "@/server/adminanalytics/repo/displayName";
 
 /** One piece of reported content and the open reports about it. */
 export interface ReportedContentRow {
@@ -90,7 +90,7 @@ export async function listReportedContent(
             CASE WHEN grp.target_kind = 'expense' AND jsonb_typeof(grp.snapshot->'items') = 'array'
               THEN ARRAY(SELECT jsonb_array_elements_text(grp.snapshot->'items'))
             END AS item_names,
-            ${DISPLAY_NAME} AS author_name,
+            ${displayNameSql()} AS author_name,
             COALESCE(usr.suspended_at IS NOT NULL, false) AS author_suspended,
             COALESCE(usr.merged_into IS NULL AND usr.deleted_at IS NULL, false) AS author_active,
             COALESCE(usr.deleted_at IS NOT NULL, false) AS author_deleted,
@@ -134,7 +134,7 @@ export async function listSuspendedAccounts(
   client: PoolClient,
 ): Promise<SuspendedAccountRow[]> {
   return query<SuspendedAccountRow>(
-    `SELECT ${DISPLAY_NAME} AS name,
+    `SELECT ${displayNameSql()} AS name,
             usr.suspended_at,
             (SELECT rep.id FROM content_reports rep
               WHERE rep.reported_user_id = usr.id
