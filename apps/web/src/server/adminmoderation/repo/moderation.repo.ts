@@ -356,6 +356,23 @@ export async function resetProfile(userId: string, name: string, client: PoolCli
 }
 
 /**
+ * A regular expression that finds the reported person's stored name where
+ * it stands on its own, for the profile case of {@link replaceQuotations}.
+ * Written for the target's id as $2.
+ *
+ * The feed's lines and notifications are written by fixed templates, and a
+ * name in them sits between the start or end of the text, a space, a
+ * comma, a quote, a bracket or ending punctuation ("via Al's invite link"
+ * included). Those, and nothing else, count as the name's edges, so a
+ * short name does not match inside a longer word ("Al" in "Also" or
+ * "Al-Amin"), whatever script it is written in. Characters with a meaning
+ * in a pattern are escaped, so "A.J. (Tex)" matches only itself, and a
+ * name that is only spaces matches nothing. moderation.sql repeats this
+ * pattern; the parity test runs both.
+ */
+const NAME_ON_ITS_OWN = String.raw`(SELECT '(^|[ ,"''(“‘])' || regexp_replace(NULLIF(btrim(name), ''), '([.^$*+?()[\]{}|\\])', '\\\1', 'g') || '($|[ ,.:;!?)"''’”])' FROM users WHERE id = $2::text)`;
+
+/**
  * Replaces the feed lines and notifications that quote the reported content,
  * and no others. Which lines those are depends on the kind:
  *
@@ -378,8 +395,10 @@ export async function resetProfile(userId: string, name: string, client: PoolCli
  *   ("Trip · you owe Bob 600", "Ani added Bob to Trip") is about an event
  *   whose feed line had that person in its audience and the same link, or
  *   was sent to the person themselves. The name is compared as it is
- *   stored, before the reset, so a line in their audience that quotes the
- *   same words for another reason goes too: the safer mistake here.
+ *   stored, before the reset, and only where it stands on its own (see
+ *   NAME_ON_ITS_OWN), so "Al" does not take every "Also" and "Alex" in
+ *   their sight with it. A line in their audience that names the same
+ *   words for another reason still goes: the safer mistake here.
  *
  * Runs before the content changes, because a comment's lines are found
  * through the comment row. Queued pushes read their words from these
@@ -402,8 +421,7 @@ export async function replaceQuotations(
         WHEN 'expense' THEN link = '/expenses/' || $2::text
         WHEN 'group' THEN group_id = $2::text AND type <> 'comment'
         WHEN 'user' THEN actor_id = $2::text
-          OR (audience @> jsonb_build_array($2::text)
-              AND strpos(message, (SELECT name FROM users WHERE id = $2::text)) > 0)
+          OR (audience @> jsonb_build_array($2::text) AND message ~ ${NAME_ON_ITS_OWN})
         ELSE false
       END`,
     [target.kind, target.id, quotation],
@@ -419,8 +437,7 @@ export async function replaceQuotations(
           OR (type IN ('expense_added', 'expense_updated', 'expense_deleted')
               AND link IN (SELECT '/expenses/' || id FROM expenses WHERE group_id = $2::text))
         WHEN 'user' THEN actor_id = $2::text
-          OR ((strpos(title, (SELECT name FROM users WHERE id = $2::text)) > 0
-               OR strpos(body, (SELECT name FROM users WHERE id = $2::text)) > 0)
+          OR ((title ~ ${NAME_ON_ITS_OWN} OR body ~ ${NAME_ON_ITS_OWN})
               AND (user_id = $2::text
                    OR link IN (SELECT link FROM activity WHERE audience @> jsonb_build_array($2::text))))
         ELSE false

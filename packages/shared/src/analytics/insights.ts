@@ -52,8 +52,9 @@ export const UNKNOWN_DURATION_LABEL = "Not known";
  * "just joined". The server stamps the instant by its own clock, and a
  * phone or laptop running a few seconds or minutes behind would otherwise
  * show someone who signed up a moment ago that their membership is not
- * known. A day covers a clock set to the wrong time zone; anything further
- * ahead is not a clock that drifted, and is not shown.
+ * known. A day is far more than any clock drifts, and also covers one set
+ * by hand to read the right local time under the wrong time zone; anything
+ * further ahead is not a clock that drifted, and is not shown.
  */
 const CLOCK_DRIFT_ALLOWANCE_MS = 86_400_000;
 

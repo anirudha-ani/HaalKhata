@@ -98,9 +98,12 @@ appear as these are handled.
   A notification naming them ("Trip · you owe Bob 600", or a third member
   told "Ani added Bob") was sent to them or shares its link with such a
   feed line, and has their name in its title or body. The name is matched
-  as stored before the reset, so a line in their audience that quotes the
-  same words for another reason is replaced too, and a namesake's lines
-  outside it are not. The confirmation on the page says which of these
+  as stored before the reset, and only where it stands on its own: at the
+  start or end, or beside a space, comma, quote, bracket or ending
+  punctuation, so "Bob's" counts and "Bobby" does not, and someone called
+  "Al" does not take every "Also" in their sight with them. A line in their
+  audience that quotes the same name for another reason is replaced too,
+  and a namesake's lines outside it are not. The confirmation on the page says which of these
   will happen before anything does. None of it can be undone.
 - **Money is never touched.** Amounts, payers, splits, settlements and
   balances are the same after every action. The integration test checks the

@@ -30,8 +30,10 @@ export interface InsightBounds {
  * "YYYY-MM-DD" text, so the window is a plain text range and needs no
  * timezone. Parameters: $1 user id, $2 start date, $3 end date.
  *
- * MATERIALIZED, so a statement that reads `mine` more than once walks the
- * history once and reads the result back.
+ * Postgres already computes a CTE once when a statement reads it more than
+ * once, as the window statement does; MATERIALIZED keeps it that way should a
+ * later edit leave a single reference, which Postgres would otherwise fold
+ * into the query that reads it.
  */
 const MY_EXPENSES = `
   WITH involvement AS (

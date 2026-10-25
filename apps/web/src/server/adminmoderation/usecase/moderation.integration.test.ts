@@ -214,6 +214,8 @@ describe.skipIf(!(await databaseReachable()))("moderation against Postgres", () 
       "act-group-comment-1": 'Reporter Person commented on "Groceries": see you there',
       "act-names-author-1": "Reporter Person paid Author Person $20.00",
       "act-names-author-2": 'Reporter Person added Author Person and Second Reporter to "Weekend"',
+      "act-names-author-3": "Reporter Person joined through Author Person's invite",
+      "act-near-name-1": 'Reporter Person added "Author Personality quiz"',
       "act-namesake-1": "Second Reporter paid Author Person $5.00",
     });
     const notifications = await database.query("SELECT id, title, body FROM notifications ORDER BY id");
@@ -226,6 +228,7 @@ describe.skipIf(!(await databaseReachable()))("moderation against Postgres", () 
       { id: "ntf-names-author-1", title: 'Reporter Person added Author Person to "Weekend"', body: "" },
       { id: "ntf-names-author-2", title: 'Second Reporter added "Taxi"', body: "One-off expense · you owe Author Person $3.00" },
       { id: "ntf-namesake-1", title: "Second Reporter recorded a payment", body: "Paid to Author Person" },
+      { id: "ntf-near-name-1", title: 'Reporter Person added "Author Personality quiz"', body: "One-off expense · you owe $4.00" },
       { id: "ntf-other-1", title: "Reporter commented", body: "Ordinary words" },
     ]);
     expect(await owedTotal()).toBe(owedBefore);
@@ -285,10 +288,14 @@ describe.skipIf(!(await databaseReachable()))("moderation against Postgres", () 
       // Someone else's action that names them: a payment to them, being added.
       "act-names-author-1": "Content removed after moderation",
       "act-names-author-2": "Content removed after moderation",
+      // Their name with an apostrophe after it is still their name.
+      "act-names-author-3": "Content removed after moderation",
       // In their audience but not naming them.
       "act-group-comment-1": 'Reporter Person commented on "Groceries": see you there',
       // The same words about somebody else, in a feed they cannot see.
       "act-namesake-1": "Second Reporter paid Author Person $5.00",
+      // Their name as the start of a longer word is not their name.
+      "act-near-name-1": 'Reporter Person added "Author Personality quiz"',
     });
     expect(await notificationTitles()).toMatchObject({
       "ntf-author-2": "Content removed after moderation",
@@ -297,6 +304,7 @@ describe.skipIf(!(await databaseReachable()))("moderation against Postgres", () 
       "ntf-names-author-1": "Content removed after moderation",
       "ntf-names-author-2": "Content removed after moderation",
       "ntf-namesake-1": "Second Reporter recorded a payment",
+      "ntf-near-name-1": 'Reporter Person added "Author Personality quiz"',
     });
 
     const group = await database.query("SELECT name FROM groups WHERE id = $1", [GROUP_ID]);
