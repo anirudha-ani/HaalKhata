@@ -25,6 +25,13 @@ export interface ReportAction {
  * card has left the queue in the meantime (another tab handled it), the
  * failure is reported above the list instead, so it is never shown nowhere.
  *
+ * One action runs at a time. Every action shares one mutation, and a second
+ * call while one is pending would take its place: the first one's failure
+ * would then never be shown, and the controls would come back while it was
+ * still running on the server. So a run waits for the one in flight, and
+ * opening or closing a question clears an old failure only when nothing is
+ * running and the failure is that question's own.
+ *
  * @param moderation - The queue query and action mutation.
  * @returns The queue, its load state, the action state and the handlers.
  */
@@ -71,25 +78,32 @@ export function useReportQueue(moderation: ReturnType<typeof useAdminModerationA
      * @param action - What the operator asked to do.
      */
     ask: (reportId: string, action: ModerationAction) => {
+      if (perform.isPending) return;
       perform.reset();
       setConfirming({ reportId, action });
     },
-    /** Closes the question without doing anything. */
+    /** Closes the question without doing anything, and with it its own failure. */
     cancel: () => {
-      perform.reset();
+      const ownFailure =
+        perform.variables?.reportId === confirming?.reportId &&
+        perform.variables?.action === confirming?.action;
+      if (!perform.isPending && ownFailure) perform.reset();
       setConfirming(null);
     },
     /**
-     * Runs an action; the question that led to it closes once it succeeds,
-     * and a question open on another card stays open.
+     * Runs an action unless another is running; the question that led to
+     * it closes once it succeeds, and a question open on another card stays
+     * open.
      *
      * @param reportId - The report the action goes through.
      * @param action - What to do.
      */
-    run: (reportId: string, action: ModerationAction) =>
+    run: (reportId: string, action: ModerationAction) => {
+      if (perform.isPending) return;
       perform.mutate(
         { reportId, action },
         { onSuccess: () => setConfirming((open) => questionAfterSuccess(open, { reportId, action })) },
-      ),
+      );
+    },
   };
 }

@@ -88,6 +88,7 @@ export function ReportCard({
           effect={confirming === "remove" ? wording.removeEffect : SUSPEND_EFFECT}
           confirmLabel={confirming === "remove" ? wording.removeLabel : `Suspend ${authorName}`}
           isRunning={running === confirming}
+          isBlocked={anyRunning}
           error={error}
           onConfirm={() => onRun(confirming)}
           onCancel={onCancel}
