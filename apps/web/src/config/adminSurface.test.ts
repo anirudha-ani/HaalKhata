@@ -55,6 +55,20 @@ describe("requestSurface", () => {
   it("does not let a bracketed IPv6 literal confuse the port split", () => {
     expect(requestSurface("[::1]:3000", PRODUCTION)).toBe("app");
   });
+
+  it("reads an IPv6 admin host without a port as a hostname, on any port", () => {
+    const ipv6 = { NODE_ENV: "production", ADMIN_HOST: "[::1]" };
+    expect(requestSurface("[::1]:3000", ipv6)).toBe("admin");
+    expect(requestSurface("[::1]", ipv6)).toBe("admin");
+    expect(requestSurface("[::2]:3000", ipv6)).toBe("app");
+  });
+
+  it("requires the port when an IPv6 admin host names one", () => {
+    const ipv6WithPort = { NODE_ENV: "production", ADMIN_HOST: "[::1]:3000" };
+    expect(requestSurface("[::1]:3000", ipv6WithPort)).toBe("admin");
+    expect(requestSurface("[::1]:4000", ipv6WithPort)).toBe("app");
+    expect(requestSurface("[::1]", ipv6WithPort)).toBe("app");
+  });
 });
 
 describe("pageVerdict", () => {
