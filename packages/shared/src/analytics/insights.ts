@@ -193,19 +193,31 @@ export function memberDuration(memberSince: string, nowTime: Date = new Date()):
 }
 
 /**
+ * Reads a "YYYY-MM-DD" calendar day as that same day on the viewer's own
+ * calendar: local midnight, built from the parts.
+ *
+ * Not `new Date("YYYY-MM-DD")`, which is read as UTC midnight and lands on
+ * the previous day for anyone west of London. Every day the dashboards
+ * show is parsed here.
+ *
+ * @param isoDay - A "YYYY-MM-DD" calendar day.
+ * @returns Local midnight of that day, or null when the text is not a day.
+ */
+export function calendarDay(isoDay: string): Date | null {
+  const parts = /^(\d{4})-(\d{2})-(\d{2})$/.exec(isoDay);
+  if (!parts) return null;
+  return new Date(Number(parts[1]), Number(parts[2]) - 1, Number(parts[3]));
+}
+
+/**
  * A calendar day as a short date, e.g. "14 Jul 2026".
  *
- * Built from the parts rather than `new Date("YYYY-MM-DD")`, which is read
- * as UTC midnight and lands on the previous day for anyone west of London.
- *
- * @param calendarDay - A "YYYY-MM-DD" calendar day.
+ * @param isoDay - A "YYYY-MM-DD" calendar day.
  * @returns The formatted date, or "" when the text is not a day.
  */
-export function calendarDayLabel(calendarDay: string): string {
-  const parts = /^(\d{4})-(\d{2})-(\d{2})$/.exec(calendarDay);
-  if (!parts) return "";
-  const when = new Date(Number(parts[1]), Number(parts[2]) - 1, Number(parts[3]));
-  return when.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
+export function calendarDayLabel(isoDay: string): string {
+  const when = calendarDay(isoDay);
+  return when ? when.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" }) : "";
 }
 
 /**

@@ -3,6 +3,7 @@
 import { describe, expect, it } from "vitest";
 import {
   averagePerMonth,
+  calendarDay,
   calendarDayLabel,
   categoryLabel,
   countLabel,
@@ -111,6 +112,17 @@ describe("memberDuration", () => {
       "a few hours",
     );
     expect(memberDuration(new Date(2026, 9, 12, 16, 0).toISOString(), nowTime)).toBe("");
+  });
+});
+
+describe("calendarDay", () => {
+  it("reads the day that was written, whatever the timezone", () => {
+    expect(calendarDay("2026-10-05")?.getDate()).toBe(5);
+  });
+
+  it("refuses anything that is not a day", () => {
+    expect(calendarDay("soon")).toBeNull();
+    expect(calendarDay("2026-10")).toBeNull();
   });
 });
 

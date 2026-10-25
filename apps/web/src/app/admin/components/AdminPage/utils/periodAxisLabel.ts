@@ -1,7 +1,7 @@
 /** Labels one bar of the trend on the chart's axis. */
 
 import { TrendUnit } from "@haalkhata/protogen/adminanalytics/v1/adminanalytics_pb";
-import { calendarDay } from "./calendarDay";
+import { calendarDay } from "@haalkhata/shared/analytics/insights";
 
 /**
  * A period's start as a short axis label: "Oct 5" for a week, "Oct" for a

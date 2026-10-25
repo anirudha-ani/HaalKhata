@@ -1,7 +1,7 @@
 /** Names one bar of the trend in full, for the readout above the chart. */
 
 import { TrendUnit } from "@haalkhata/protogen/adminanalytics/v1/adminanalytics_pb";
-import { calendarDay } from "./calendarDay";
+import { calendarDay } from "@haalkhata/shared/analytics/insights";
 
 /**
  * A period's full name: "Week of Oct 5" or "October 2026".

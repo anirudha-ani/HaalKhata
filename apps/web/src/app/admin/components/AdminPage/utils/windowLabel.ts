@@ -1,7 +1,7 @@
 /** Names the stretch of time the trend is showing. */
 
 import { TrendUnit, type TrendPeriod } from "@haalkhata/protogen/adminanalytics/v1/adminanalytics_pb";
-import { calendarDay } from "./calendarDay";
+import { calendarDay } from "@haalkhata/shared/analytics/insights";
 
 /**
  * The window as a range: "Aug 3 to Oct 25, 2026" in weeks (the first year

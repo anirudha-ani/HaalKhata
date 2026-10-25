@@ -1,8 +1,7 @@
-/** Tests for the trend's day, axis, name and range labels. */
+/** Tests for the trend's axis, name and range labels. */
 
 import { describe, expect, it } from "vitest";
 import { TrendUnit } from "@haalkhata/protogen/adminanalytics/v1/adminanalytics_pb";
-import { calendarDay } from "./calendarDay";
 import { periodAxisLabel } from "./periodAxisLabel";
 import { periodName } from "./periodName";
 import { windowLabel } from "./windowLabel";
@@ -11,16 +10,6 @@ import { windowLabel } from "./windowLabel";
 function local(year: number, month: number, dayOfMonth: number, options: Intl.DateTimeFormatOptions): string {
   return new Date(year, month - 1, dayOfMonth).toLocaleDateString(undefined, options);
 }
-
-describe("calendarDay", () => {
-  it("reads the day that was written, whatever the timezone", () => {
-    expect(calendarDay("2026-10-05")?.getDate()).toBe(5);
-  });
-
-  it("refuses anything that is not a day", () => {
-    expect(calendarDay("soon")).toBeNull();
-  });
-});
 
 describe("periodAxisLabel", () => {
   it("writes a week as its Monday", () => {
