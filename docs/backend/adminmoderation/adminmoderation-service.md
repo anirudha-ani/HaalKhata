@@ -91,8 +91,17 @@ appear as these are handled.
   body opens with the group's name (comment notifications on those
   expenses do not name it and stay); for a
   profile, everything the person did, because each line opens with their
-  name. The confirmation on the page says which of these will happen
-  before anything does. None of it can be undone.
+  name, and every other line that names them. Someone else's line names a
+  person only when that person is in its audience ("Ani paid Bob", "added
+  Bob to Trip", "made Bob the owner", "via Bob's invite link"), so those
+  are the feed lines with them in the audience and their name in the text.
+  A notification naming them ("Trip · you owe Bob 600", or a third member
+  told "Ani added Bob") was sent to them or shares its link with such a
+  feed line, and has their name in its title or body. The name is matched
+  as stored before the reset, so a line in their audience that quotes the
+  same words for another reason is replaced too, and a namesake's lines
+  outside it are not. The confirmation on the page says which of these
+  will happen before anything does. None of it can be undone.
 - **Money is never touched.** Amounts, payers, splits, settlements and
   balances are the same after every action. The integration test checks the
   ledger before and after.

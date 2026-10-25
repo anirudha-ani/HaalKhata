@@ -19,7 +19,10 @@ SELECT :'action' = 'list' AS listing, :'action' = 'remove' AS removing,
       -- links to it, comments included. A group: its feed but comments (every
       -- other line names the group), what links to it, and the notifications
       -- about its expenses (their body opens with the group's name). A profile:
-      -- what they did (each line opens with their name).
+      -- what they did (each line opens with their name), and every other line
+      -- naming them: feed lines with them in the audience and their name in the
+      -- text, and notifications with their name in the text that were sent to
+      -- them or share a link with a feed line they are in the audience of.
       UPDATE activity SET message = 'Content removed after moderation'
         WHERE CASE :'target_kind'
           WHEN 'comment' THEN type = 'comment' AND (actor_id, link) =
@@ -27,6 +30,8 @@ SELECT :'action' = 'list' AS listing, :'action' = 'remove' AS removing,
           WHEN 'expense' THEN link = '/expenses/' || :'target_id'
           WHEN 'group' THEN group_id = :'target_id' AND type <> 'comment'
           WHEN 'user' THEN actor_id = :'target_id'
+            OR (audience @> jsonb_build_array(:'target_id'::text)
+                AND strpos(message, (SELECT name FROM users WHERE id = :'target_id')) > 0)
           ELSE false
         END;
       UPDATE notifications SET title = 'Content removed after moderation', body = ''
@@ -38,6 +43,11 @@ SELECT :'action' = 'list' AS listing, :'action' = 'remove' AS removing,
             OR (type IN ('expense_added', 'expense_updated', 'expense_deleted')
                 AND link IN (SELECT '/expenses/' || id FROM expenses WHERE group_id = :'target_id'))
           WHEN 'user' THEN actor_id = :'target_id'
+            OR ((strpos(title, (SELECT name FROM users WHERE id = :'target_id')) > 0
+                 OR strpos(body, (SELECT name FROM users WHERE id = :'target_id')) > 0)
+                AND (user_id = :'target_id'
+                     OR link IN (SELECT link FROM activity
+                                  WHERE audience @> jsonb_build_array(:'target_id'::text))))
           ELSE false
         END;
       DELETE FROM comments WHERE id = :'target_id' AND :'target_kind' = 'comment';

@@ -34,7 +34,7 @@ export const TARGET_KIND_WORDING: Record<
     label: "Profile",
     removeLabel: "Reset the profile",
     removeEffect:
-      "Their name becomes “Member” and their profile picture is removed. Every feed line and notification about something they did, in every group, changes to “Content removed after moderation”, since each one starts with their name. Their account, sign-in and balances stay as they are. This can't be undone.",
+      "Their name becomes “Member” and their profile picture is removed. Every feed line and notification about something they did, in every group, changes to “Content removed after moderation”, since each one starts with their name, and so does every other line that names them, such as a payment made to them or someone adding them to a group. Their account, sign-in and balances stay as they are. This can't be undone.",
   },
 };
 

@@ -145,6 +145,22 @@ export async function seedModeration(database: Client): Promise<void> {
        ('act-group-comment-1', $1, $3, 'comment', 'Reporter Person commented on "Groceries": see you there', jsonb_build_array($2::text, $3::text), '/expenses/' || $5)`,
     [GROUP_ID, AUTHOR, REPORTER, EXPENSE_ID, GROUP_EXPENSE_ID],
   );
+  // Lines that name the author although someone else did the thing, and one
+  // that quotes the same name about somebody else, out of the author's sight.
+  await database.query(
+    `INSERT INTO activity (id, group_id, actor_id, type, message, audience, link) VALUES
+       ('act-names-author-1', NULL, $2, 'settlement', 'Reporter Person paid Author Person $20.00', jsonb_build_array($1::text, $2::text), '/friends/' || $1),
+       ('act-names-author-2', NULL, $2, 'member_added', 'Reporter Person added Author Person and Second Reporter to "Weekend"', jsonb_build_array($1::text, $2::text, $3::text), '/groups/grp-weekend-0003'),
+       ('act-namesake-1', NULL, $3, 'settlement', 'Second Reporter paid Author Person $5.00', jsonb_build_array($2::text, $3::text), '/friends/' || $2)`,
+    [AUTHOR, REPORTER, SECOND_REPORTER],
+  );
+  await database.query(
+    `INSERT INTO notifications (id, user_id, actor_id, type, title, body, link) VALUES
+       ('ntf-names-author-1', $2, $1, 'member_added', 'Reporter Person added Author Person to "Weekend"', '', '/groups/grp-weekend-0003'),
+       ('ntf-names-author-2', $1, $2, 'expense_added', 'Second Reporter added "Taxi"', 'One-off expense · you owe Author Person $3.00', '/expenses/elsewhere'),
+       ('ntf-namesake-1', $1, $2, 'settlement', 'Second Reporter recorded a payment', 'Paid to Author Person', '/friends/' || $2)`,
+    [REPORTER, SECOND_REPORTER],
+  );
   await database.query(
     `INSERT INTO notifications (id, user_id, actor_id, type, title, body, link) VALUES
        ('ntf-author-1', $1, $2, 'comment', 'Author Person commented', 'Offensive comment body', '/expenses/' || $3),

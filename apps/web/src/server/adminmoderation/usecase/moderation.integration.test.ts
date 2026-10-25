@@ -211,6 +211,9 @@ describe.skipIf(!(await databaseReachable()))("moderation against Postgres", () 
       "act-expense-1": 'Reporter Person updated "Offensive expense description" in "Offensive group name"',
       "act-group-1": 'Reporter Person added "Groceries" in "Offensive group name"',
       "act-group-comment-1": 'Reporter Person commented on "Groceries": see you there',
+      "act-names-author-1": "Reporter Person paid Author Person $20.00",
+      "act-names-author-2": 'Reporter Person added Author Person and Second Reporter to "Weekend"',
+      "act-namesake-1": "Second Reporter paid Author Person $5.00",
     });
     const notifications = await database.query("SELECT id, title, body FROM notifications ORDER BY id");
     expect(notifications.rows).toEqual([
@@ -219,6 +222,9 @@ describe.skipIf(!(await databaseReachable()))("moderation against Postgres", () 
       { id: "ntf-group-1", title: "Reporter Person added you", body: "Offensive group name" },
       { id: "ntf-group-comment-1", title: 'Reporter Person commented on "Groceries"', body: "see you there" },
       { id: "ntf-group-expense-1", title: 'Reporter Person added "Groceries"', body: "Offensive group name · you owe Reporter Person $6.17" },
+      { id: "ntf-names-author-1", title: 'Reporter Person added Author Person to "Weekend"', body: "" },
+      { id: "ntf-names-author-2", title: 'Second Reporter added "Taxi"', body: "One-off expense · you owe Author Person $3.00" },
+      { id: "ntf-namesake-1", title: "Second Reporter recorded a payment", body: "Paid to Author Person" },
       { id: "ntf-other-1", title: "Reporter commented", body: "Ordinary words" },
     ]);
     expect(await owedTotal()).toBe(owedBefore);
@@ -275,10 +281,21 @@ describe.skipIf(!(await databaseReachable()))("moderation against Postgres", () 
       "act-author-2": "Content removed after moderation",
       "act-author-3": "Content removed after moderation",
       "act-reporter-1": "Reporter wrote elsewhere",
+      // Someone else's action that names them: a payment to them, being added.
+      "act-names-author-1": "Content removed after moderation",
+      "act-names-author-2": "Content removed after moderation",
+      // In their audience but not naming them.
+      "act-group-comment-1": 'Reporter Person commented on "Groceries": see you there',
+      // The same words about somebody else, in a feed they cannot see.
+      "act-namesake-1": "Second Reporter paid Author Person $5.00",
     });
     expect(await notificationTitles()).toMatchObject({
       "ntf-author-2": "Content removed after moderation",
       "ntf-other-1": "Reporter commented",
+      // Told to a third member, and the body of an expense they paid for.
+      "ntf-names-author-1": "Content removed after moderation",
+      "ntf-names-author-2": "Content removed after moderation",
+      "ntf-namesake-1": "Second Reporter recorded a payment",
     });
 
     const group = await database.query("SELECT name FROM groups WHERE id = $1", [GROUP_ID]);

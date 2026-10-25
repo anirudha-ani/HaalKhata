@@ -359,7 +359,16 @@ export async function resetProfile(userId: string, name: string, client: PoolCli
  *   name ("Trip · you owe Ani 600"), while comment notifications on those
  *   expenses, which do not name it, stay;
  * - a profile: everything the person did, since each line opens with their
- *   name.
+ *   name, and every other line that names them. A feed line names someone
+ *   besides its actor only when that someone is in its audience ("Ani paid
+ *   Bob", "Ani added Bob", "made Bob the owner", "via Bob's invite link"),
+ *   so those are the lines with the person in their audience and their
+ *   name in the text. A notification that names someone besides its actor
+ *   ("Trip · you owe Bob 600", "Ani added Bob to Trip") is about an event
+ *   whose feed line had that person in its audience and the same link, or
+ *   was sent to the person themselves. The name is compared as it is
+ *   stored, before the reset, so a line in their audience that quotes the
+ *   same words for another reason goes too: the safer mistake here.
  *
  * Runs before the content changes, because a comment's lines are found
  * through the comment row. Queued pushes read their words from these
@@ -382,6 +391,8 @@ export async function replaceQuotations(
         WHEN 'expense' THEN link = '/expenses/' || $2::text
         WHEN 'group' THEN group_id = $2::text AND type <> 'comment'
         WHEN 'user' THEN actor_id = $2::text
+          OR (audience @> jsonb_build_array($2::text)
+              AND strpos(message, (SELECT name FROM users WHERE id = $2::text)) > 0)
         ELSE false
       END`,
     [target.kind, target.id, quotation],
@@ -397,6 +408,10 @@ export async function replaceQuotations(
           OR (type IN ('expense_added', 'expense_updated', 'expense_deleted')
               AND link IN (SELECT '/expenses/' || id FROM expenses WHERE group_id = $2::text))
         WHEN 'user' THEN actor_id = $2::text
+          OR ((strpos(title, (SELECT name FROM users WHERE id = $2::text)) > 0
+               OR strpos(body, (SELECT name FROM users WHERE id = $2::text)) > 0)
+              AND (user_id = $2::text
+                   OR link IN (SELECT link FROM activity WHERE audience @> jsonb_build_array($2::text))))
         ELSE false
       END`,
     [target.kind, target.id, quotation],
