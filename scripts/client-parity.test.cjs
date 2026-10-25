@@ -25,6 +25,9 @@ const NATIVE_CONTACT_METHODS = ["socialClient.findContacts", "socialClient.sendF
 // allowlisted sign-in, and has no mobile twin by design (AGENTS.md). The
 // native app must never reach for it.
 const OPERATOR_CLIENTS = ["adminAnalyticsClient", "adminModerationClient"];
+// Where Connect clients are imported from: the app's, and the admin page's,
+// which sit apart so the app's pages do not ship the admin services.
+const CLIENT_MODULES = ["@/lib/api/connect", "@/lib/api/adminConnect"];
 /** @param method A client.method call. @returns Whether it belongs to the operator's admin page. */
 const isOperatorMethod = (method) => OPERATOR_CLIENTS.some((client) => method.startsWith(`${client}.`));
 /** Methods only the native app may call, each for a documented platform reason. */
@@ -36,7 +39,7 @@ function clientCalls(source) {
   const bindings = new Map();
   const calls = new Set();
   for (const statement of parsed.statements) {
-    if (!typescript.isImportDeclaration(statement) || statement.moduleSpecifier.text !== "@/lib/api/connect") continue;
+    if (!typescript.isImportDeclaration(statement) || !CLIENT_MODULES.includes(statement.moduleSpecifier.text)) continue;
     const named = statement.importClause?.namedBindings;
     if (!named || !typescript.isNamedImports(named)) continue;
     for (const binding of named.elements) {

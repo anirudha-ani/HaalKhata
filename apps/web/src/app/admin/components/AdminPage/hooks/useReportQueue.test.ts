@@ -7,11 +7,11 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { adminModerationClient } from "@/lib/api/connect";
+import { adminModerationClient } from "@/lib/api/adminConnect";
 import { useAdminModerationAPI } from "./useAdminModerationAPI";
 import { useReportQueue } from "./useReportQueue";
 
-vi.mock("@/lib/api/connect", () => ({
+vi.mock("@/lib/api/adminConnect", () => ({
   adminModerationClient: {
     listReports: vi.fn(),
     dismissReport: vi.fn(),
@@ -19,8 +19,8 @@ vi.mock("@/lib/api/connect", () => ({
     suspendAuthor: vi.fn(),
     resumeAuthor: vi.fn(),
   },
-  errorMessage: (error: Error) => error.message,
 }));
+vi.mock("@/lib/api/connect", () => ({ errorMessage: (error: Error) => error.message }));
 
 const QUEUE = create(ReportQueueSchema, {
   reports: [

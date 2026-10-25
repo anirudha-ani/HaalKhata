@@ -3,7 +3,7 @@
 
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import type { TrendUnit } from "@haalkhata/protogen/adminanalytics/v1/adminanalytics_pb";
-import { adminAnalyticsClient } from "@/lib/api/connect";
+import { adminAnalyticsClient } from "@/lib/api/adminConnect";
 import { queryKeys } from "@haalkhata/shared/api/queryKeys";
 import { isSessionEnded } from "../utils/isSessionEnded";
 
