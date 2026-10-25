@@ -1,7 +1,7 @@
 "use client";
 /** Activity feed: searchable, filterable, day-grouped events with keyset pagination. */
 
-import { Bell, ChevronDown } from "lucide-react";
+import { Bell } from "lucide-react";
 import { EmptyState } from "@/components/ui/EmptyState/EmptyState";
 import { SearchField } from "@/components/ui/SearchField/SearchField";
 import { ActivityList } from "@/components/activity/ActivityList/ActivityList";
@@ -9,6 +9,7 @@ import { ACTIVITY_FILTERS } from "@haalkhata/shared/activity/filters";
 import { monthLabel } from "@haalkhata/shared/activity/format";
 import type { useActivity } from "../../hooks/useActivity";
 import { FeedError } from "./components/FeedError/FeedError";
+import { FeedFooter } from "./components/FeedFooter/FeedFooter";
 
 /**
  * Renders the activity feed: search, a month window, type filters, and the
@@ -120,25 +121,7 @@ export function ActivityFeed({
         </p>
       )}
 
-      {activity.loadMoreFailed ? (
-        <FeedError message={`Couldn't load more: ${activity.loadError}`} />
-      ) : null}
-
-      {activity.hasMore ? (
-        <button
-          type="button"
-          onClick={activity.loadMore}
-          disabled={activity.isLoadingMore}
-          className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-line bg-card py-3 text-sm font-semibold text-ink-soft hover:border-brand-200 hover:text-brand-600 disabled:opacity-50"
-        >
-          <ChevronDown className="h-4 w-4" />
-          {activity.isLoadingMore ? "Loading…" : "Show me more"}
-        </button>
-      ) : activity.events.length > 0 ? (
-        <p className="pb-2 text-center text-xs text-ink-soft">
-          You&apos;ve hit the bottom{activity.month ? ` of ${monthLabel(activity.month)}` : ""}.
-        </p>
-      ) : null}
+      <FeedFooter activity={activity} />
     </div>
   );
 }
