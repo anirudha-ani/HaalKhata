@@ -45,7 +45,7 @@ export function InsightsPanel({
   return (
     <View style={styles.panel}>
       {state.error ? (
-        <ErrorAlert message={`Couldn't load your insights: ${state.error}`} onRetry={state.refresh} />
+        <ErrorAlert message={state.error} onRetry={state.refresh} />
       ) : null}
 
       {state.insights?.journey ? <JourneyCard journey={state.insights.journey} /> : null}

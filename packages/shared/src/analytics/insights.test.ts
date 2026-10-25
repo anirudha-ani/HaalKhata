@@ -8,6 +8,8 @@ import {
   categoryLabel,
   countLabel,
   currentLocalMonth,
+  insightRangePhrase,
+  insightsLoadError,
   memberDuration,
   monthShortLabel,
   percentLabel,
@@ -280,5 +282,30 @@ describe("pickActiveMonth", () => {
 
   it("is empty for an empty window", () => {
     expect(pickActiveMonth([], "2026-10")).toBe("");
+  });
+});
+
+describe("insightsLoadError", () => {
+  it("names the dashboard when nothing has loaded", () => {
+    expect(insightsLoadError("Network down")).toBe("Couldn't load your insights: Network down");
+  });
+
+  it("names the period that failed and the one still shown", () => {
+    expect(insightsLoadError("Network down", { failed: 12, shown: 6 })).toBe(
+      "Couldn't load the last year: Network down. Showing the last 6 months.",
+    );
+    expect(insightsLoadError("Try again later.", { failed: 3, shown: 12 })).toBe(
+      "Couldn't load the last 3 months: Try again later. Showing the last year.",
+    );
+  });
+});
+
+describe("insightRangePhrase", () => {
+  it("reads every offered window as a phrase", () => {
+    expect([3, 6, 12].map((range) => insightRangePhrase(range as 3 | 6 | 12))).toEqual([
+      "the last 3 months",
+      "the last 6 months",
+      "the last year",
+    ]);
   });
 });

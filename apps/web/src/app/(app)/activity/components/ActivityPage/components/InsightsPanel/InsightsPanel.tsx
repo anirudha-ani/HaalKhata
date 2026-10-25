@@ -48,7 +48,7 @@ export function InsightsPanel({
       {showHeading ? <h2 className="text-xl font-semibold">Insights</h2> : null}
 
       {state.error ? (
-        <ErrorAlert message={`Couldn't load your insights: ${state.error}`} onRetry={state.retry} />
+        <ErrorAlert message={state.error} onRetry={state.retry} />
       ) : null}
 
       {state.insights?.journey ? <JourneyCard journey={state.insights.journey} /> : null}
