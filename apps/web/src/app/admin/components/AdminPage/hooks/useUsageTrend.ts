@@ -17,6 +17,11 @@ import { useUsageTrendAPI } from "./useUsageTrendAPI";
  * time: the new window ends on the last day of the bar that was selected,
  * so the month someone was looking at is still on screen as weeks.
  *
+ * The last window that loaded stays on screen when a move fails. The query
+ * keeps the previous window only while the next one is pending; once that
+ * request fails it holds no data at all, and without the last window there
+ * would be no bars and no move to make, Latest included.
+ *
  * @param options - Hook options.
  * @param options.onSessionEnded - Called when the server says the admin session is over.
  * @returns The window, the chosen unit, series and bar with their setters,
@@ -29,8 +34,10 @@ export function useUsageTrend({ onSessionEnded }: { onSessionEnded: () => void }
   const [chosenPeriod, setChosenPeriod] = useState("");
   const query = useUsageTrendAPI(unit, endOn);
   const sessionEnded = useSessionEndWatch([query.error], onSessionEnded);
+  const [lastLoaded, setLastLoaded] = useState(query.data);
+  if (query.data !== undefined && query.data !== lastLoaded) setLastLoaded(query.data);
 
-  const trend = query.data;
+  const trend = query.data ?? lastLoaded;
   const periods = trend?.periods ?? [];
   // The newest bar is the one the operator looks for first.
   const activePeriod =
