@@ -20,6 +20,16 @@ const AMOUNT_STEPS = [1, 1.2, 1.5, 2, 3, 4, 5, 6, 8, 10];
  */
 const COUNT_STEPS = [1, 2, 4, 6, 8, 10];
 
+/** Most axis labels drawn under a column chart's columns before they are thinned out. */
+export const MAXIMUM_AXIS_LABELS = 6;
+
+/**
+ * Shortest a column with a value is drawn, as a percentage of the plot.
+ * Without a floor a small month next to a large one rounds to nothing and
+ * reads as "no spending", which is a different fact.
+ */
+export const MINIMUM_COLUMN_PERCENT = 2;
+
 /**
  * Rounds a maximum up to the next step on a ladder of round numbers.
  *
