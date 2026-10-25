@@ -23,8 +23,9 @@
 #             to sign in to the usage page on admin.haalkhata.app, comma
 #             separated. A secret for the same reason ACME_EMAIL is: it is a
 #             personal address and workflow logs are public. Unset means
-#             nobody can sign in there. The server's deploy.sh must already
-#             know this key (ops/README.md), or it refuses the deploy.
+#             nobody can sign in there. The deploy steps baked into the
+#             image (ops/deploy-release.sh) accept this key, so nothing on
+#             the server changes for it (ops/README.md).
 #   Variable  ADMIN_GOOGLE_CLIENT_ID         optional; an OAuth client for the
 #             usage page alone, authorized for the admin origin only. Unset,
 #             that page signs in with NEXT_PUBLIC_GOOGLE_CLIENT_ID. Not secret,
