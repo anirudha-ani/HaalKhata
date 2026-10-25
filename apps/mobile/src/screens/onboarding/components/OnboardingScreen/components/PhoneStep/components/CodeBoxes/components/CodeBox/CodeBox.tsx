@@ -85,9 +85,12 @@ const styles = StyleSheet.create({
     borderColor: colors.line,
     borderRadius: radii.md,
     borderWidth: 1.5,
+    // Shares the row with the other boxes: eight at full size are wider
+    // than a phone, so each takes an equal part, up to its full size.
+    flex: 1,
     height: 56,
     justifyContent: "center",
-    width: 46,
+    maxWidth: 46,
   },
   caret: { backgroundColor: colors.brand600, borderRadius: 1, height: 26, width: 2 },
   current: { borderColor: colors.brand500 },

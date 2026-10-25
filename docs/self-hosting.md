@@ -123,11 +123,27 @@ setup order; in development the page is at `/admin`.
 ### Phone verification (optional)
 
 Verified phone numbers let people invited by phone claim their history when
-they sign up. Create a Twilio Verify Service and a restricted API key with
-Verify permissions, then set `TWILIO_API_KEY_SID`, `TWILIO_VERIFY_SERVICE_SID`
+they sign up. Create a Twilio Verify Service and set its **Code length** to
+**8** in the service's settings. Twilio starts every service at 6, and both
+apps and the server take only 8-digit codes, so a service left at its
+default texts codes nobody can enter. Then create a restricted API key
+with Verify permissions and set `TWILIO_API_KEY_SID`, `TWILIO_VERIFY_SERVICE_SID`
 and `TWILIO_API_KEY_SECRET` (the last one as a secret file in production).
 Missing configuration fails closed: no phone number is ever written or merged
 without an approved code check, and phone features simply stay unavailable.
+
+At start-up the server reads the service's code length and logs
+`phone verification service texts codes of another length` when it is not
+8. That check needs the key to be allowed to read the service; without it
+the log says `phone verification service settings unreadable` and nothing
+else changes. The 8 is `VERIFICATION_CODE_LENGTH` in
+`packages/shared/src/phone/phone.constants.ts`. Changing it means changing
+the service setting and shipping both apps, since installed apps keep the
+length they were built with.
+
+To try it locally, use the same three variables in `.env` with a Twilio
+account of your own (a trial account texts verified numbers), sign in, and
+add a phone number on the onboarding screen or under Account.
 
 ### Receipt scanning in production
 

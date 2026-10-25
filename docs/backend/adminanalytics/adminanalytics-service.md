@@ -149,7 +149,7 @@ the app**.
 - **Joined** is `COALESCE(onboarded_at, created_at)`: the moment someone
   finished signing up, not the moment a friend first typed their name.
   Accounts older than the first-run flow were all stamped with the instant
-  it shipped; migration `1792838306857` dates them from when their row was
+  it shipped; migration `1792959311422` dates them from when their row was
   made instead, so they do not all read as new in that one week.
 - **Expenses** count everything ever added, deleted ones included;
   `deleted_expense_count` says how many were later deleted.

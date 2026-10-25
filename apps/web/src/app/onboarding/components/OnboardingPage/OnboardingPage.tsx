@@ -1,6 +1,7 @@
 "use client";
 /** First-run screen: name, currency, phone, plus the merge confirmation, then an optional payment step. */
 
+import { useId } from "react";
 import { CurrencySelect } from "@/components/ui/CurrencySelect/CurrencySelect";
 import { MergePreview } from "@/components/account/MergePreview/MergePreview";
 import { PhoneField } from "@/components/ui/PhoneField/PhoneField";
@@ -8,6 +9,8 @@ import { ContactDiscoveryToggle } from "@/components/account/ContactDiscoveryTog
 import { useOnboarding } from "./hooks/useOnboarding";
 import { PaymentStep } from "./components/PaymentStep/PaymentStep";
 import { MAX_USER_NAME_LENGTH } from "@haalkhata/shared/text/limits";
+import { VERIFICATION_CODE_INPUT_MAX_CHARACTERS } from "@haalkhata/shared/phone/phone.constants";
+import { resendCodeLabel } from "@haalkhata/shared/phone/codeField";
 import { inputClass } from "./constants/onboardingPage";
 
 /**
@@ -20,6 +23,7 @@ import { inputClass } from "./constants/onboardingPage";
  */
 export function OnboardingPage() {
   const onboarding = useOnboarding();
+  const codeHintId = useId();
 
   if (onboarding.isLoading) {
     return <main className="flex min-h-dvh items-center justify-center bg-paper" />;
@@ -95,27 +99,39 @@ export function OnboardingPage() {
             </div>
           ) : verifying ? (
             <div className="flex flex-col gap-4">
-              <input
-                value={onboarding.verificationCode}
-                onChange={(event) =>
-                  onboarding.setVerificationCode(event.target.value.replace(/\D/g, ""))
-                }
-                inputMode="numeric"
-                autoComplete="one-time-code"
-                maxLength={10}
-                aria-label="Verification code"
-                className={`${inputClass} text-center text-lg tracking-[0.35em]`}
-              />
+              <div className="flex flex-col gap-1.5">
+                <input
+                  value={onboarding.verificationCode}
+                  onChange={(event) => onboarding.enterVerificationCode(event.target.value)}
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  maxLength={VERIFICATION_CODE_INPUT_MAX_CHARACTERS}
+                  aria-label="Verification code"
+                  aria-describedby={codeHintId}
+                  className={`${inputClass} text-center text-lg tracking-[0.35em]`}
+                />
+                <p id={codeHintId} className="text-xs text-ink-soft">
+                  {onboarding.codeHint}
+                </p>
+              </div>
               {onboarding.error ? (
                 <p className="text-sm text-brand-600">{onboarding.error}</p>
               ) : null}
               <button
                 type="button"
                 onClick={onboarding.verifyPhone}
-                disabled={onboarding.isPending || onboarding.verificationCode.length < 4}
+                disabled={onboarding.isPending || !onboarding.codeComplete}
                 className="w-full rounded-xl bg-brand-600 py-3 font-semibold text-white transition-colors hover:bg-brand-700 disabled:opacity-50"
               >
-                {onboarding.isPending ? "Verifying…" : "Verify phone"}
+                {onboarding.isVerifying ? "Verifying…" : "Verify phone"}
+              </button>
+              <button
+                type="button"
+                onClick={onboarding.resendCode}
+                disabled={onboarding.isPending || onboarding.resendIn > 0}
+                className="text-sm font-semibold text-brand-600 transition-colors hover:text-brand-700 disabled:opacity-50"
+              >
+                {onboarding.isResending ? "Sending…" : resendCodeLabel(onboarding.resendIn)}
               </button>
               <button
                 type="button"

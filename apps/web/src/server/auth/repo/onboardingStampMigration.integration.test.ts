@@ -26,7 +26,7 @@ const TEST_URL = ADMIN_URL.replace(/\/[^/]*$/, `/${TEST_DATABASE}`);
 const MIGRATION_SQL = readFileSync(
   fileURLToPath(
     new URL(
-      "../../../../migrations/1792838306857_date-early-accounts-from-creation.sql",
+      "../../../../migrations/1792959311422_date-early-accounts-from-creation.sql",
       import.meta.url,
     ),
   ),
