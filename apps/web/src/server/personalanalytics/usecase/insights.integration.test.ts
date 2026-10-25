@@ -434,6 +434,29 @@ describe.skipIf(!reachable)("getInsights against Postgres", () => {
     }
   });
 
+  it("leaves out the stand-in a deleted account leaves behind", async () => {
+    // Anika's dinner share moved to an anonymous stand-in when she deleted
+    // her account; the stand-in has no one behind it to split with.
+    await database.query(
+      `INSERT INTO users (id, name, avatar_color, deleted_at) VALUES ('stand-in-1', 'Deleted member', '#857a68', now())`,
+    );
+    await database.query(`UPDATE expense_splits SET user_id = 'stand-in-1' WHERE expense_id = 'exp-dinner' AND user_id = $1`, [
+      ANIKA,
+    ]);
+    try {
+      const insights = await getInsights(CALLER, { months: 2, localMonth: "" });
+
+      expect(companionIds(insights)).not.toContain("stand-in-1");
+      // The money is still the caller's: only the stand-in leaves the list.
+      expect(expenseTotal(insights)).toBe(4);
+    } finally {
+      await database.query(`UPDATE expense_splits SET user_id = $1 WHERE expense_id = 'exp-dinner' AND user_id = 'stand-in-1'`, [
+        ANIKA,
+      ]);
+      await database.query(`DELETE FROM users WHERE id = 'stand-in-1'`);
+    }
+  });
+
   it("still counts a group the caller has left, and says they are no longer in it", async () => {
     // Anika left the trip after the dinner; her share of it is still hers.
     await database.query(`DELETE FROM group_members WHERE group_id = 'grp-trip' AND user_id = $1`, [

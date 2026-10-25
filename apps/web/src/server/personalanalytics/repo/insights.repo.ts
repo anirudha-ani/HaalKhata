@@ -200,6 +200,11 @@ export interface CompanionRow {
  * neither sees the other turn up, and a ranking of who you split with
  * with their name and picture at the top is exactly that.
  *
+ * So is a row that stands for nobody: the anonymous stand-in a deleted
+ * account's share of a shared ledger now belongs to ("Deleted member"),
+ * and a merge tombstone. Neither is someone to split with, and the link on
+ * their avatar would lead to a friend page about no one.
+ *
  * @param userId - The person asking about themselves.
  * @param bounds - The window's calendar-day range.
  * @param limit - Most people to return per currency.
@@ -225,7 +230,8 @@ export async function listCompanions(
        SELECT others.currency, usr.id, usr.name, usr.avatar_color, usr.avatar_url,
               COUNT(*)::int AS shared_expense_count
          FROM others JOIN users usr ON usr.id = others.user_id
-        WHERE NOT EXISTS (
+        WHERE usr.deleted_at IS NULL AND usr.merged_into IS NULL
+          AND NOT EXISTS (
           SELECT 1 FROM user_blocks blk
            WHERE (blk.blocker_id = $1 AND blk.blocked_id = usr.id)
               OR (blk.blocker_id = usr.id AND blk.blocked_id = $1)

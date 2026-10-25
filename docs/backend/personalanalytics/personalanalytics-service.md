@@ -43,7 +43,10 @@ itself. Only what an avatar and a link need is returned for them: id, name,
 avatar colour and picture. No contact detail and no payment handle.
 Someone the caller blocked, or who blocked the caller, is left off the list,
 as the activity feed leaves out their lines in both directions; the
-expenses still count toward every figure.
+expenses still count toward every figure. So is a row that stands for
+nobody: the anonymous "Deleted member" a deleted account's ledger share
+now belongs to, and a merge tombstone. Neither is someone to split with,
+and a link to their friend page would lead nowhere.
 
 ## Two Figures, Not One
 
