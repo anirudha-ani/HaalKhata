@@ -63,12 +63,15 @@ export function useUsageTrend({ onSessionEnded }: { onSessionEnded: () => void }
     setActivePeriod: setChosenPeriod,
     /**
      * Moves to another window by an end day the server named, or to today
-     * when given "".
+     * when given "". After a failed move the bars on screen are the last
+     * window that loaded, so pressing the same move again names the window
+     * that failed: that asks for it again.
      *
      * @param nextEndOn - The window's end day.
      */
     goTo: (nextEndOn: string) => {
       setChosenPeriod("");
+      if (nextEndOn === endOn && query.isError) void query.refetch();
       setEndOn(nextEndOn);
     },
     /** Where each move goes; "" where there is nowhere to go. */
