@@ -2,9 +2,9 @@
 /** Feed footer: the Load more button, why the last page did not load, or the bottom of the history. */
 
 import { ChevronDown } from "lucide-react";
+import { ErrorAlert } from "@/components/ui/ErrorAlert/ErrorAlert";
 import { monthLabel } from "@haalkhata/shared/activity/format";
 import type { useActivity } from "../../../../hooks/useActivity";
-import { FeedError } from "../FeedError/FeedError";
 
 /**
  * Renders what sits under the rows. A failed next page is said just above
@@ -31,7 +31,7 @@ export function FeedFooter({
   return (
     <>
       {activity.loadMoreFailed ? (
-        <FeedError message={`Couldn't load more: ${activity.loadError}`} />
+        <ErrorAlert message={`Couldn't load more: ${activity.loadError}`} />
       ) : null}
       <button
         type="button"
