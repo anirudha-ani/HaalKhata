@@ -13,8 +13,8 @@ export const SAMPLE_EXPENSES = [
 
 /** Example friends and their avatar colors in the animated product preview. */
 export const SAMPLE_PARTICIPANTS = [
-  { initials: "ON", colorClass: "bg-brand-600 text-white" },
-  { initials: "DO", colorClass: "bg-pos-600 text-white" },
-  { initials: "PZ", colorClass: "bg-neg-600 text-white" },
-  { initials: "JE", colorClass: "bg-ink text-white" },
+  { initials: "AP", colorClass: "bg-brand-600 text-white" },
+  { initials: "AD", colorClass: "bg-pos-600 text-white" },
+  { initials: "PB", colorClass: "bg-neg-600 text-white" },
+  { initials: "JZ", colorClass: "bg-ink text-white" },
 ] as const;
