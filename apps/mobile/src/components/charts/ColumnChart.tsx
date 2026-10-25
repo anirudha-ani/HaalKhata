@@ -2,15 +2,14 @@
 
 import { Pressable, StyleSheet, View } from "react-native";
 import { Text } from "@/components/ui/Text";
-import { barFraction, showsAxisLabel } from "@haalkhata/shared/analytics/chart";
-import { colors } from "@/lib/theme/theme";
 import {
-  COLUMN_PLOT_HEIGHT,
+  barFraction,
   MAXIMUM_AXIS_LABELS,
-  MAXIMUM_COLUMN_WIDTH,
   MINIMUM_COLUMN_PERCENT,
-  VALUE_AXIS_WIDTH,
-} from "./charts.constants";
+  showsAxisLabel,
+} from "@haalkhata/shared/analytics/chart";
+import { colors } from "@/lib/theme/theme";
+import { COLUMN_PLOT_HEIGHT, MAXIMUM_COLUMN_WIDTH, VALUE_AXIS_WIDTH } from "./charts.constants";
 
 /** One column of the chart. */
 export interface ChartColumn {

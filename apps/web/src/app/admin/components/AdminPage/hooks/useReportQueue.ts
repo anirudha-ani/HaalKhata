@@ -30,7 +30,8 @@ export interface ReportAction {
  * would then never be shown, and the controls would come back while it was
  * still running on the server. So a run waits for the one in flight, and
  * opening or closing a question clears an old failure only when nothing is
- * running and the failure is that question's own.
+ * running and the failure is that question's own: on its card when one
+ * opens, from that very action when one closes.
  *
  * @param moderation - The queue query and action mutation.
  * @returns The queue, its load state, the action state and the handlers.
@@ -72,14 +73,16 @@ export function useReportQueue(moderation: ReturnType<typeof useAdminModerationA
     /** The latest failure when its card or row is gone, to show above the list. */
     unplacedFailure: failed && !failureHasAPlace ? failed : null,
     /**
-     * Opens the question for an action that needs one.
+     * Opens the question for an action that needs one. A failure on the
+     * same card is cleared, because the question takes the place of the
+     * buttons it was shown beside; a failure on another card stays there.
      *
      * @param reportId - The report the action goes through.
      * @param action - What the operator asked to do.
      */
     ask: (reportId: string, action: ModerationAction) => {
       if (perform.isPending) return;
-      perform.reset();
+      if (perform.variables?.reportId === reportId) perform.reset();
       setConfirming({ reportId, action });
     },
     /** Closes the question without doing anything, and with it its own failure. */

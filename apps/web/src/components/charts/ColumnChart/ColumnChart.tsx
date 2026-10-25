@@ -1,8 +1,12 @@
 "use client";
 /** Column chart: one series of values over an ordered axis, with a selectable column. */
 
-import { barFraction, showsAxisLabel } from "@haalkhata/shared/analytics/chart";
-import { MAXIMUM_AXIS_LABELS, MINIMUM_COLUMN_PERCENT } from "./constants/columnChart";
+import {
+  barFraction,
+  MAXIMUM_AXIS_LABELS,
+  MINIMUM_COLUMN_PERCENT,
+  showsAxisLabel,
+} from "@haalkhata/shared/analytics/chart";
 
 /** One column of the chart. */
 export interface ChartColumn {

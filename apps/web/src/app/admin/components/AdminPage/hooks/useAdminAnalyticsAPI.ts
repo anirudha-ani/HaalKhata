@@ -2,7 +2,7 @@
 /** Admin analytics API: the usage overview query. */
 
 import { useQuery } from "@tanstack/react-query";
-import { adminAnalyticsClient } from "@/lib/api/connect";
+import { adminAnalyticsClient } from "@/lib/api/adminConnect";
 import { queryKeys } from "@haalkhata/shared/api/queryKeys";
 import { isSessionEnded } from "../utils/isSessionEnded";
 

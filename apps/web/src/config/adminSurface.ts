@@ -79,7 +79,10 @@ export function requestSurface(
   if (adminHost === "") return environment.NODE_ENV === "production" ? "app" : "both";
 
   const requestHost = (hostHeader ?? "").trim().toLowerCase();
-  const matches = adminHost.includes(":")
+  // A port is what follows the hostname, so "[::1]" names none even though
+  // it holds colons.
+  const adminHostHasPort = hostnameOf(adminHost) !== adminHost;
+  const matches = adminHostHasPort
     ? requestHost === adminHost
     : hostnameOf(requestHost) === adminHost;
   return matches ? "admin" : "app";

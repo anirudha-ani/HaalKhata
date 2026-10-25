@@ -3,12 +3,12 @@
 
 import { Bell } from "lucide-react";
 import { EmptyState } from "@/components/ui/EmptyState/EmptyState";
+import { ErrorAlert } from "@/components/ui/ErrorAlert/ErrorAlert";
 import { SearchField } from "@/components/ui/SearchField/SearchField";
 import { ActivityList } from "@/components/activity/ActivityList/ActivityList";
 import { ACTIVITY_FILTERS } from "@haalkhata/shared/activity/filters";
 import { monthLabel } from "@haalkhata/shared/activity/format";
 import type { useActivity } from "../../hooks/useActivity";
-import { FeedError } from "./components/FeedError/FeedError";
 import { FeedFooter } from "./components/FeedFooter/FeedFooter";
 
 /**
@@ -41,7 +41,7 @@ export function ActivityFeed({
 
   if (activity.events.length === 0 && !isFiltered) {
     return activity.loadError ? (
-      <FeedError
+      <ErrorAlert
         message={`Couldn't load your activity: ${activity.loadError}`}
         onRetry={activity.retry}
       />
@@ -107,7 +107,7 @@ export function ActivityFeed({
       </div>
 
       {activity.loadError && !activity.loadMoreFailed ? (
-        <FeedError
+        <ErrorAlert
           message={`Couldn't load your activity: ${activity.loadError}`}
           onRetry={activity.retry}
         />

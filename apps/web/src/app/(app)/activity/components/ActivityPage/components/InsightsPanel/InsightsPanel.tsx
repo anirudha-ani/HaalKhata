@@ -1,7 +1,7 @@
 "use client";
 /** Insights panel: the person's own dashboard, drawn from the same history as the feed. */
 
-import { RotateCw } from "lucide-react";
+import { ErrorAlert } from "@/components/ui/ErrorAlert/ErrorAlert";
 import { SegmentedControl } from "@/components/ui/SegmentedControl/SegmentedControl";
 import { Spinner } from "@/components/ui/Spinner/Spinner";
 import { INSIGHT_RANGES } from "@haalkhata/shared/analytics/insights";
@@ -48,19 +48,7 @@ export function InsightsPanel({
       {showHeading ? <h2 className="text-xl font-semibold">Insights</h2> : null}
 
       {state.error ? (
-        <div
-          role="alert"
-          className="flex items-center gap-3 rounded-2xl border border-neg-600/20 bg-neg-50 px-4 py-3 text-sm font-medium text-neg-700"
-        >
-          <span className="min-w-0 flex-1">Couldn&apos;t load your insights: {state.error}</span>
-          <button
-            type="button"
-            onClick={state.retry}
-            className="flex shrink-0 items-center gap-1.5 rounded-lg border border-neg-600/30 px-3 py-1.5 text-xs font-semibold hover:bg-card"
-          >
-            <RotateCw className="h-3.5 w-3.5" /> Try again
-          </button>
-        </div>
+        <ErrorAlert message={state.error} onRetry={state.retry} />
       ) : null}
 
       {state.insights?.journey ? <JourneyCard journey={state.insights.journey} /> : null}

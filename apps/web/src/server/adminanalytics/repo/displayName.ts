@@ -7,21 +7,16 @@ import { PHONE_DIGIT_COUNT } from "@/server/adminanalytics/adminanalytics.consta
 import { unicodeClass } from "@/server/adminanalytics/repo/unicodeClass";
 
 /** Decimal digits in every script: Bengali, Arabic-Indic, Devanagari and the rest. */
-const DIGITS = unicodeClass(/^\p{Nd}$/u);
+const DIGITS = /^\p{Nd}$/u;
 
 /** Characters nobody can see: zero-width spaces and joiners, bidi controls, soft hyphens. */
-const INVISIBLE = unicodeClass(/^\p{Cf}$/u);
+const INVISIBLE = /^\p{Cf}$/u;
 
 /** Every kind of space, no-break ones included. */
-const SPACE = unicodeClass(/^\p{White_Space}$/u);
+const SPACE = /^\p{White_Space}$/u;
 
-/**
- * The name as it is compared, never as it is shown: compatibility
- * normalized, so full-width letters and digits, "＠" and no-break spaces
- * become their plain forms, and with invisible characters removed, so a
- * zero-width space cannot split an address or a number in two.
- */
-const COMPARED_NAME = `regexp_replace(normalize(usr.name, NFKC), '[${INVISIBLE}]', '', 'g')`;
+/** The expression once built; see displayNameSql. */
+let builtDisplayName: string | undefined;
 
 /**
  * A person's display name, or '' when the name is itself a way to reach
@@ -40,7 +35,7 @@ const COMPARED_NAME = `regexp_replace(normalize(usr.name, NFKC), '[${INVISIBLE}]
  *   exactly that when Google supplies no name, and with the domain almost
  *   always guessable it is the address in all but name.
  *
- * Each test reads the compared form of the name (see COMPARED_NAME), so
+ * Each test reads the compared form of the name (see buildDisplayName), so
  * look-alike characters, no-break spaces and invisible characters cannot
  * slip a name past them; the name shown is the one the person saved. The
  * character lists come from Unicode itself, because Postgres's own classes
@@ -51,12 +46,38 @@ const COMPARED_NAME = `regexp_replace(normalize(usr.name, NFKC), '[${INVISIBLE}]
  * also withhold a real name that happens to match (someone called "Ani" at
  * ani@..., a name with a long number in it), which costs the operator one
  * name and is the right way round to be wrong.
+ *
+ * Built on first use, not when the module loads: reading Unicode's tables
+ * for the three character lists takes tens of milliseconds, and every
+ * server process loads this module with the Connect routes, while only an
+ * admin request ever names a person this way.
+ *
+ * @returns The SQL expression.
  */
-export const DISPLAY_NAME = `CASE
-    WHEN ${COMPARED_NAME} LIKE '%@%' THEN ''
-    WHEN length(regexp_replace(${COMPARED_NAME}, '[^${DIGITS}]', '', 'g')) >= ${PHONE_DIGIT_COUNT} THEN ''
+export function displayNameSql(): string {
+  builtDisplayName ??= buildDisplayName();
+  return builtDisplayName;
+}
+
+/**
+ * Writes the expression displayNameSql describes.
+ *
+ * @returns The SQL expression.
+ */
+function buildDisplayName(): string {
+  const digits = unicodeClass(DIGITS);
+  const space = unicodeClass(SPACE);
+  // The name as it is compared, never as it is shown: compatibility
+  // normalized, so full-width letters and digits, "＠" and no-break spaces
+  // become their plain forms, and with invisible characters removed, so a
+  // zero-width space cannot split an address or a number in two.
+  const comparedName = `regexp_replace(normalize(usr.name, NFKC), '[${unicodeClass(INVISIBLE)}]', '', 'g')`;
+  return `CASE
+    WHEN ${comparedName} LIKE '%@%' THEN ''
+    WHEN length(regexp_replace(${comparedName}, '[^${digits}]', '', 'g')) >= ${PHONE_DIGIT_COUNT} THEN ''
     WHEN usr.email IS NOT NULL
-         AND lower(regexp_replace(${COMPARED_NAME}, '^[${SPACE}]+|[${SPACE}]+$', '', 'g'))
+         AND lower(regexp_replace(${comparedName}, '^[${space}]+|[${space}]+$', '', 'g'))
              = lower(split_part(usr.email, '@', 1)) THEN ''
     ELSE usr.name
   END`;
+}

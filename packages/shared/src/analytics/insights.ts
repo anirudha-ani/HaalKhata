@@ -335,3 +335,33 @@ export function pickCurrencyBlock<Block extends { currency: string }>(
 export function pickActiveMonth(months: readonly string[], chosenMonth: string): string {
   return months.includes(chosenMonth) ? chosenMonth : (months[months.length - 1] ?? "");
 }
+
+/**
+ * How a window size reads in a sentence.
+ *
+ * @param range - The window size.
+ * @returns "the last 3 months", "the last 6 months" or "the last year".
+ */
+export function insightRangePhrase(range: InsightRange): string {
+  return range === 12 ? "the last year" : `the last ${range} months`;
+}
+
+/**
+ * The sentence shown when insights fail to load. When an earlier window is
+ * still on screen, it names both: the period that failed, and the one the
+ * numbers below are about, so the figures are never read as the period
+ * that was asked for.
+ *
+ * @param reason - Why, as the server or the network put it.
+ * @param kept - The period that failed and the one still shown; omitted
+ *   when nothing has loaded.
+ * @returns The whole sentence.
+ */
+export function insightsLoadError(
+  reason: string,
+  kept?: { failed: InsightRange; shown: InsightRange },
+): string {
+  if (!kept) return `Couldn't load your insights: ${reason}`;
+  const clause = reason.replace(/\.+$/, "");
+  return `Couldn't load ${insightRangePhrase(kept.failed)}: ${clause}. Showing ${insightRangePhrase(kept.shown)}.`;
+}

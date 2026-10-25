@@ -4,7 +4,7 @@
 import { useEffect, useRef } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ReportQueue } from "@haalkhata/protogen/adminmoderation/v1/adminmoderation_pb";
-import { adminModerationClient } from "@/lib/api/connect";
+import { adminModerationClient } from "@/lib/api/adminConnect";
 import { queryKeys } from "@haalkhata/shared/api/queryKeys";
 import { QUEUE_REFRESH_PAUSE_MS, type ModerationAction } from "../constants/moderation";
 import { isSessionEnded } from "../utils/isSessionEnded";

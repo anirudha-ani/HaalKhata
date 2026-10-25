@@ -1,18 +1,19 @@
 /** Activity feed: searchable, filterable, day-grouped events with keyset pagination. */
 
-import { Bell, ChevronDown } from "lucide-react-native";
+import { Bell } from "lucide-react-native";
 import { ScrollView, StyleSheet, View } from "react-native";
 import { Text } from "@/components/ui/Text";
 import { ActivityList } from "@/components/activity/ActivityList";
 import { useResponsiveLayout } from "@/lib/layout/hooks/useResponsiveLayout";
-import { Button } from "@/components/ui/Button";
 import { Chip } from "@/components/ui/Chip";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { ErrorAlert } from "@/components/ui/ErrorAlert";
 import { SearchField } from "@/components/ui/SearchField";
 import { ACTIVITY_FILTERS } from "@haalkhata/shared/activity/filters";
 import { monthLabel } from "@haalkhata/shared/activity/format";
 import { colors, radii, spacing } from "@/lib/theme/theme";
 import type { useActivity } from "../../hooks/useActivity";
+import { FeedFooter } from "./components/FeedFooter/FeedFooter";
 
 /**
  * Renders the activity feed: search, type filters, a month window, and the
@@ -24,6 +25,12 @@ import type { useActivity } from "../../hooks/useActivity";
  * The feed's state lives in the screen's `useActivity`, not here, so
  * switching to the insights view and back keeps the search, the filters and
  * every page already loaded.
+ *
+ * A failed read is said where its rows would be: in place of the whole
+ * feed when nothing has loaded, above the rows when a reload failed, and
+ * just above Show me more when the next page did. The rows already loaded
+ * stay on screen in the last two cases, so a failure costs nobody their
+ * place in a long history.
  *
  * @returns The feed.
  */
@@ -38,7 +45,12 @@ export function ActivityFeed({
     activity.query !== "" || activity.filter !== "all" || activity.month !== "";
 
   if (activity.events.length === 0 && !isFiltered) {
-    return (
+    return activity.loadError ? (
+      <ErrorAlert
+        message={`Couldn't load your activity: ${activity.loadError}`}
+        onRetry={activity.retry}
+      />
+    ) : (
       <EmptyState
         hint="Expenses, payments and group changes involving you will show up here."
         icon={<Bell color={colors.inkSoft} size={32} />}
@@ -102,38 +114,28 @@ export function ActivityFeed({
       </View>
 
       <View style={[styles.results, isExpanded ? styles.resultsExpanded : null]}>
-        {activity.visibleEvents.length === 0 ? (
+        {activity.loadError && !activity.loadMoreFailed ? (
+          <ErrorAlert
+            message={`Couldn't load your activity: ${activity.loadError}`}
+            onRetry={activity.retry}
+          />
+        ) : null}
+
+        {activity.visibleEvents.length > 0 ? (
+          <ActivityList events={activity.visibleEvents} now={new Date()} />
+        ) : activity.loadError ? null : (
           <View style={styles.emptyCard}>
             <Text style={styles.emptyText}>Crickets. Nothing matches that.</Text>
           </View>
-        ) : (
-          <ActivityList events={activity.visibleEvents} now={new Date()} />
         )}
 
-        {activity.hasMore ? (
-          <Button
-            busy={activity.isLoadingMore}
-            icon={<ChevronDown color={colors.inkSoft} size={16} />}
-            label="Show me more"
-            onPress={activity.loadMore}
-            variant="outline"
-          />
-        ) : activity.events.length > 0 ? (
-          <Text style={styles.bottom}>
-            You&apos;ve hit the bottom{activity.month ? ` of ${monthLabel(activity.month)}` : ""}.
-          </Text>
-        ) : null}
+        <FeedFooter activity={activity} />
       </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  bottom: {
-    color: colors.inkSoft,
-    fontSize: 12,
-    textAlign: "center",
-  },
   chips: {
     flexDirection: "row",
     flexWrap: "wrap",

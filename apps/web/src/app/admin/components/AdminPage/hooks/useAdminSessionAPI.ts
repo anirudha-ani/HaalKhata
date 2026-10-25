@@ -2,7 +2,7 @@
 /** Admin session API: ending the operator's session. */
 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { adminAnalyticsClient } from "@/lib/api/connect";
+import { adminAnalyticsClient } from "@/lib/api/adminConnect";
 import { forgetAdminData } from "../utils/forgetAdminData";
 
 /**

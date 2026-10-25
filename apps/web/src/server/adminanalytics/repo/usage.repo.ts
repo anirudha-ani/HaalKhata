@@ -16,7 +16,7 @@
 
 import type { PoolClient } from "pg";
 import { query, queryOne } from "@/server/common/db/db";
-import { DISPLAY_NAME } from "@/server/adminanalytics/repo/displayName";
+import { displayNameSql } from "@/server/adminanalytics/repo/displayName";
 import { PAYMENT_KEY } from "@/server/common/ledger/paymentKey";
 
 /**
@@ -80,13 +80,16 @@ export interface UsageTotalsRow {
 }
 
 /**
- * Reads every product-wide total in one statement.
+ * Reads every product-wide total in one statement, reading each table
+ * once: the totals that come from one table are filtered counts of the same
+ * pass, not a scan apiece.
  *
  * Payments are counted as people recorded them, not as rows (see PAYMENTS).
  *
  * "Active" is anyone who did something that reaches the feed: the activity
  * table already records every such action with its actor, so it answers the
- * question without a tracking table of its own.
+ * question without a tracking table of its own. Only the longer of the two
+ * windows is read, through the index on created_at.
  *
  * @param activeDays - Trailing days that count as active for the week and the month.
  * @param client - The snapshot's client.
@@ -97,32 +100,59 @@ export async function findUsageTotals(
   client: PoolClient,
 ): Promise<UsageTotalsRow> {
   const totals = await queryOne<UsageTotalsRow>(
-    `SELECT
-       (SELECT COUNT(*)::int FROM users usr WHERE ${REGISTERED}) AS registered_user_count,
-       (SELECT COUNT(*)::int FROM users usr WHERE ${INVITED}) AS invited_user_count,
-       (SELECT COUNT(DISTINCT act.actor_id)::int FROM activity act
-         WHERE act.created_at >= now() - make_interval(days => $1)) AS weekly_active_user_count,
-       (SELECT COUNT(DISTINCT act.actor_id)::int FROM activity act
-         WHERE act.created_at >= now() - make_interval(days => $2)) AS monthly_active_user_count,
-       (SELECT COUNT(*)::int FROM groups) AS group_count,
-       (SELECT COUNT(*)::int FROM expenses) AS expense_count,
-       (SELECT COUNT(*)::int FROM expenses WHERE deleted_at IS NOT NULL) AS deleted_expense_count,
-       paid.payment_count,
-       paid.deleted_payment_count,
-       (SELECT COUNT(*)::int FROM receipt_scans) AS receipt_scan_count,
-       (SELECT COUNT(*)::int FROM receipt_scans WHERE outcome = 'parsed') AS parsed_receipt_scan_count,
-       (SELECT COUNT(*)::int FROM comments) AS comment_count,
-       (SELECT COUNT(*)::int FROM payment_methods) AS payment_method_count,
-       (SELECT COUNT(DISTINCT user_id)::int FROM payment_methods) AS payment_method_user_count
+    `SELECT people.registered_user_count,
+            people.invited_user_count,
+            active.weekly_active_user_count,
+            active.monthly_active_user_count,
+            (SELECT COUNT(*)::int FROM groups) AS group_count,
+            added.expense_count,
+            added.deleted_expense_count,
+            paid.payment_count,
+            paid.deleted_payment_count,
+            scanned.receipt_scan_count,
+            scanned.parsed_receipt_scan_count,
+            (SELECT COUNT(*)::int FROM comments) AS comment_count,
+            methods.payment_method_count,
+            methods.payment_method_user_count
        FROM (
+         SELECT (COUNT(*) FILTER (WHERE ${REGISTERED}))::int AS registered_user_count,
+                (COUNT(*) FILTER (WHERE ${INVITED}))::int AS invited_user_count
+           FROM users usr
+       ) people,
+       (
+         SELECT (COUNT(DISTINCT act.actor_id)
+                   FILTER (WHERE act.created_at >= now() - make_interval(days => $1)))::int
+                  AS weekly_active_user_count,
+                (COUNT(DISTINCT act.actor_id)
+                   FILTER (WHERE act.created_at >= now() - make_interval(days => $2)))::int
+                  AS monthly_active_user_count
+           FROM activity act
+          WHERE act.created_at >= now() - make_interval(days => GREATEST($1::int, $2::int))
+       ) active,
+       (
+         SELECT COUNT(*)::int AS expense_count,
+                (COUNT(*) FILTER (WHERE deleted_at IS NOT NULL))::int AS deleted_expense_count
+           FROM expenses
+       ) added,
+       (
          SELECT COUNT(*)::int AS payment_count,
                 (COUNT(*) FILTER (WHERE pay.removed))::int AS deleted_payment_count
            FROM (${PAYMENTS}) pay
-       ) paid`,
+       ) paid,
+       (
+         SELECT COUNT(*)::int AS receipt_scan_count,
+                (COUNT(*) FILTER (WHERE outcome = 'parsed'))::int AS parsed_receipt_scan_count
+           FROM receipt_scans
+       ) scanned,
+       (
+         SELECT COUNT(*)::int AS payment_method_count,
+                COUNT(DISTINCT user_id)::int AS payment_method_user_count
+           FROM payment_methods
+       ) methods`,
     [activeDays.week, activeDays.month],
     client,
   );
-  // Scalar subqueries over a one-row aggregate always return exactly one row.
+  // A cross join of one-row aggregates always returns exactly one row.
   return totals!;
 }
 
@@ -272,7 +302,7 @@ export async function listUserUsage(limit: number, client: PoolClient): Promise<
         ORDER BY ${JOINED_AT} DESC, usr.id
         LIMIT $1
      )
-     SELECT ${DISPLAY_NAME} AS name,
+     SELECT ${displayNameSql()} AS name,
             to_char(${JOINED_AT} AT TIME ZONE 'UTC', 'YYYY-MM-DD') AS joined_on,
             COALESCE(added.by_split_type, '{}'::json) AS expenses_by_split_type,
             recorded.payment_count,

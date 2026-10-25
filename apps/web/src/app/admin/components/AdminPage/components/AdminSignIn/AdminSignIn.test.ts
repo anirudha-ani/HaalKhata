@@ -5,17 +5,17 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { adminAnalyticsClient } from "@/lib/api/connect";
+import { adminAnalyticsClient } from "@/lib/api/adminConnect";
 import {
   GOOGLE_SCRIPT_ELEMENT_ID,
   GOOGLE_SDK_MISSING_MESSAGE,
 } from "@/lib/googleIdentity/googleIdentity.constants";
 import { AdminSignIn } from "./AdminSignIn";
 
-vi.mock("@/lib/api/connect", () => ({
+vi.mock("@/lib/api/adminConnect", () => ({
   adminAnalyticsClient: { beginSignIn: vi.fn(), signIn: vi.fn() },
-  errorMessage: (error: Error) => error.message,
 }));
+vi.mock("@/lib/api/connect", () => ({ errorMessage: (error: Error) => error.message }));
 
 let root: Root;
 let container: HTMLDivElement;

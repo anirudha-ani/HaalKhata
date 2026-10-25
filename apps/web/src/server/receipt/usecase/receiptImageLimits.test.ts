@@ -16,7 +16,21 @@ vi.mock("heic-decode", () => ({
 }));
 
 import { MAX_IMAGE_PIXELS } from "@/server/receipt/receipt.constants";
-import { parseReceipt } from "./receipt.usecase";
+vi.mock("@/server/receipt/repo/receiptScans.repo", () => ({ insertReceiptScan: vi.fn(async () => undefined) }));
+
+import { scanReceipt } from "./receipt.usecase";
+
+/**
+ * Parses as the server does for a signed-in person, with the scan count
+ * written nowhere.
+ *
+ * @param image - The uploaded bytes.
+ * @param currency - The expense's currency.
+ * @returns What scanReceipt returns.
+ */
+function parseAsSomeone(image: Uint8Array, currency?: string) {
+  return scanReceipt("user-scanning", image, currency);
+}
 
 /** Returns enough PNG signature bytes for the server's format detector. */
 function pngBytes(): Uint8Array {
@@ -61,19 +75,19 @@ beforeEach(() => {
 
 describe("receipt image decode limits", () => {
   it("requires the WEBP brand instead of accepting every RIFF container", async () => {
-    await expect(parseReceipt(riffBytes("AVI "))).rejects.toThrow(/isn't a supported image/);
+    await expect(parseAsSomeone(riffBytes("AVI "))).rejects.toThrow(/isn't a supported image/);
 
     expect(sharpMock).not.toHaveBeenCalled();
   });
 
   it("accepts a RIFF container that carries the WEBP brand", async () => {
-    await parseReceipt(riffBytes("WEBP"));
+    await parseAsSomeone(riffBytes("WEBP"));
 
     expect(sharpMock).toHaveBeenCalledOnce();
   });
 
   it("passes the explicit pixel ceiling to Sharp for ordinary images", async () => {
-    await parseReceipt(pngBytes());
+    await parseAsSomeone(pngBytes());
 
     expect(sharpMock).toHaveBeenCalledWith(
       expect.any(Buffer),
@@ -88,7 +102,7 @@ describe("receipt image decode limits", () => {
     );
     heicDecodeAllMock.mockResolvedValue(images);
 
-    await expect(parseReceipt(heicBytes())).rejects.toThrow(/40000000-pixel limit/);
+    await expect(parseAsSomeone(heicBytes())).rejects.toThrow(/40000000-pixel limit/);
     expect(heicImageDecodeMock).not.toHaveBeenCalled();
     expect(disposeMock).toHaveBeenCalledOnce();
     expect(sharpMock).not.toHaveBeenCalled();
@@ -118,9 +132,9 @@ describe("receipt image decode limits", () => {
       )
       .mockResolvedValue(Buffer.from([0xff, 0xd8, 0xff]));
 
-    const firstParse = parseReceipt(heicBytes());
+    const firstParse = parseAsSomeone(heicBytes());
     await vi.waitFor(() => expect(sharpToBufferMock).toHaveBeenCalledOnce());
-    const secondParse = parseReceipt(heicBytes());
+    const secondParse = parseAsSomeone(heicBytes());
     await Promise.resolve();
 
     expect(heicDecodeAllMock).toHaveBeenCalledOnce();
