@@ -1,15 +1,13 @@
 /** Insights panel: the person's own dashboard, drawn from the same history as the feed. */
 
-import { RotateCw } from "lucide-react-native";
 import { StyleSheet, View } from "react-native";
-import { Text } from "@/components/ui/Text";
 import { useResponsiveLayout } from "@/lib/layout/hooks/useResponsiveLayout";
-import { Button } from "@/components/ui/Button";
 import { Chip } from "@/components/ui/Chip";
+import { ErrorAlert } from "@/components/ui/ErrorAlert";
 import { Segmented } from "@/components/ui/Segmented";
 import { Spinner } from "@/components/ui/Spinner";
 import { INSIGHT_RANGES } from "@haalkhata/shared/analytics/insights";
-import { colors, radii, spacing } from "@/lib/theme/theme";
+import { spacing } from "@/lib/theme/theme";
 import type { useInsights } from "../../hooks/useInsights";
 import { CategoriesCard } from "./components/CategoriesCard/CategoriesCard";
 import { CompanionsCard } from "./components/CompanionsCard/CompanionsCard";
@@ -47,16 +45,7 @@ export function InsightsPanel({
   return (
     <View style={styles.panel}>
       {state.error ? (
-        <View accessibilityRole="alert" style={styles.error}>
-          <Text style={styles.errorText}>Couldn&apos;t load your insights: {state.error}</Text>
-          <Button
-            compact
-            icon={<RotateCw color={colors.inkSoft} size={14} />}
-            label="Try again"
-            onPress={state.refresh}
-            variant="outline"
-          />
-        </View>
+        <ErrorAlert message={`Couldn't load your insights: ${state.error}`} onRetry={state.refresh} />
       ) : null}
 
       {state.insights?.journey ? <JourneyCard journey={state.insights.journey} /> : null}
@@ -122,19 +111,6 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     flexWrap: "wrap",
     gap: spacing.sm,
-  },
-  error: {
-    backgroundColor: colors.neg50,
-    borderColor: colors.neg600,
-    borderRadius: radii.lg,
-    borderWidth: 1,
-    gap: spacing.md,
-    padding: spacing.lg,
-  },
-  errorText: {
-    color: colors.neg700,
-    fontSize: 14,
-    fontWeight: "500",
   },
   filters: {
     gap: spacing.md,

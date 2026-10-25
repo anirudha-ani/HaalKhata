@@ -2,7 +2,7 @@
 
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
-import { socialClient } from "@/lib/api/connect";
+import { errorMessage, socialClient } from "@/lib/api/connect";
 import { ACTIVITY_FILTERS, type ActivityFilter } from "@haalkhata/shared/activity/filters";
 import { queryKeys } from "@haalkhata/shared/api/queryKeys";
 import { matchesTerms, searchTerms } from "@haalkhata/shared/search/filter";
@@ -23,7 +23,8 @@ import { usePullToRefresh } from "@/lib/hooks/usePullToRefresh";
  * @returns `events` (everything loaded), `visibleEvents` (after search and
  *   type filter), the `query`/`filter`/`month` state with setters, the
  *   `months` available, `loadMore`/`hasMore`/`isLoadingMore`, `notifications`,
- *   `isLoading`, and `refresh`/`isRefreshing` for pull-to-refresh.
+ *   `isLoading`, `loadError`/`loadMoreFailed`/`retry` for a failed read, and
+ *   `refresh`/`isRefreshing` for pull-to-refresh.
  */
 export function useActivity() {
   const queryClient = useQueryClient();
@@ -102,7 +103,15 @@ export function useActivity() {
     loadMore: () => void activity.fetchNextPage(),
     notifications: notifications.data?.notifications ?? [],
     isLoading: activity.isLoading,
-    loadError: activity.error || notifications.error,
+    /**
+     * Why the feed's last read failed; "" when it did not. The screen does
+     * not show notifications, so their read failing is not the feed's.
+     */
+    loadError: activity.error ? errorMessage(activity.error) : "",
+    /** True when that failed read was the next page, so Show me more is the retry. */
+    loadMoreFailed: activity.isFetchNextPageError,
+    /** Reads the feed again from the top. */
+    retry: () => void activity.refetch(),
     refresh: pull.refresh,
     isRefreshing: pull.isRefreshing,
   };
