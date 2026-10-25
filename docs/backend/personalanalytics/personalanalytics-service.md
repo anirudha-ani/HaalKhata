@@ -92,14 +92,17 @@ of it. The dashboard charts the first and states the second.
 
 ## Consistency and Cost
 
-- **Four statements per call, whatever the size of the history:** lifetime
-  figures, the window's spending, the people split with, and payments. There
-  is no query per row anywhere.
+- **Three statements per call, whatever the size of the history:** lifetime
+  figures, the window (its spending and the people split with), and
+  payments. There is no query per row anywhere.
 - The window's spending is read **once**, grouped by currency, month,
   category, split type and group, and regrouped in the domain layer into the
   monthly chart, the category list, the split-type list and the list of
   places. Those are four views of the same rows; four queries would walk the
-  caller's split and payer history four times.
+  caller's split and payer history four times. The people split with come
+  from the same statement: both read the window's expenses from one
+  `MATERIALIZED` CTE, so the history is walked once, and the two results
+  come back as two JSON arrays in one row.
 - The statements run one at a time inside one `snapshot()` (REPEATABLE READ,
   READ ONLY), so the total at the top of the dashboard always equals the
   months charted beneath it.

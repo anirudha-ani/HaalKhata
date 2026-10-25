@@ -29,6 +29,9 @@ export interface InsightBounds {
  * `expense_date` is the calendar day the person chose, stored as
  * "YYYY-MM-DD" text, so the window is a plain text range and needs no
  * timezone. Parameters: $1 user id, $2 start date, $3 end date.
+ *
+ * MATERIALIZED, so a statement that reads `mine` more than once walks the
+ * history once and reads the result back.
  */
 const MY_EXPENSES = `
   WITH involvement AS (
@@ -37,7 +40,7 @@ const MY_EXPENSES = `
     UNION ALL
     SELECT pay.expense_id, 0 AS share_cents, pay.amount_cents AS paid_cents
       FROM expense_payers pay WHERE pay.user_id = $1
-  ), mine AS (
+  ), mine AS MATERIALIZED (
     SELECT exp.id, exp.group_id, exp.currency, exp.category, exp.split_type, exp.expense_date,
            SUM(inv.share_cents)::bigint AS share_cents,
            SUM(inv.paid_cents)::bigint AS paid_cents
@@ -130,52 +133,6 @@ export interface SpendingBreakdownRow {
   expense_count: number;
 }
 
-/**
- * Reads the window's spending once, grouped by every dimension the
- * dashboard shows it by.
- *
- * The monthly chart, the category list, the split-type list and the list of
- * places are four regroupings of the same rows. Asking the database for
- * each separately would walk the person's whole split and payer history
- * four times; this walks it once and leaves the regrouping, which is a few
- * hundred rows at most, to the caller.
- *
- * Group names and membership are joined after the grouping, onto the
- * handful of grouped rows rather than onto every expense.
- *
- * @param userId - The person asking about themselves.
- * @param bounds - The window's calendar-day range.
- * @param client - The snapshot's client.
- * @returns One row per combination that has any expense.
- */
-export async function listSpendingBreakdown(
-  userId: string,
-  bounds: InsightBounds,
-  client: PoolClient,
-): Promise<SpendingBreakdownRow[]> {
-  return query<SpendingBreakdownRow>(
-    `${MY_EXPENSES}, breakdown AS (
-       SELECT mine.currency, substr(mine.expense_date, 1, 7) AS month,
-              mine.category, mine.split_type, mine.group_id,
-              SUM(mine.share_cents)::bigint AS share_cents,
-              SUM(mine.paid_cents)::bigint AS paid_cents,
-              COUNT(*)::int AS expense_count
-         FROM mine
-        GROUP BY mine.currency, month, mine.category, mine.split_type, mine.group_id
-     )
-     SELECT breakdown.currency, breakdown.month, breakdown.category, breakdown.split_type,
-            breakdown.group_id, grp.name AS group_name, grp.type AS group_type,
-            (mem.user_id IS NOT NULL) AS is_member,
-            breakdown.share_cents, breakdown.paid_cents, breakdown.expense_count
-       FROM breakdown
-       LEFT JOIN groups grp ON grp.id = breakdown.group_id
-       LEFT JOIN group_members mem
-              ON mem.group_id = breakdown.group_id AND mem.user_id = $1`,
-    [userId, bounds.startDate, bounds.endDate],
-    client,
-  );
-}
-
 /** Someone the person shared expenses in one currency with in the window. */
 export interface CompanionRow {
   currency: string;
@@ -186,14 +143,31 @@ export interface CompanionRow {
   shared_expense_count: number;
 }
 
+/** The window's spending breakdown and the people split with, from one statement. */
+export interface WindowInsightsRow {
+  /** One row per combination that has any expense. */
+  breakdown: SpendingBreakdownRow[];
+  /** People by currency, most shared expenses first within each. */
+  companions: CompanionRow[];
+}
+
 /**
- * The people a person shared the most expenses with in the window, ranked
- * within each currency: the dashboard shows one currency at a time, and a
- * trip in euros says nothing about who they split dollars with.
+ * Reads everything the window's charts and lists need in one statement,
+ * which walks the person's split and payer history once.
  *
- * Only the four columns an avatar and a link need are read: this is a list
- * of people the caller already sees on those expenses, and it has no use
- * for anything else about them.
+ * The spending, grouped by every dimension the dashboard shows it by: the
+ * monthly chart, the category list, the split-type list and the list of
+ * places are four regroupings of the same rows, left to the caller (a few
+ * hundred rows at most). Group names and membership are joined after the
+ * grouping, onto the handful of grouped rows rather than onto every
+ * expense.
+ *
+ * Beside it, the people the person shared the most expenses with, ranked
+ * within each currency: the dashboard shows one currency at a time, and a
+ * trip in euros says nothing about who they split dollars with. Only the
+ * four columns an avatar and a link need are read: this is a list of
+ * people the caller already sees on those expenses, and it has no use for
+ * anything else about them.
  *
  * Someone the caller blocked, or who blocked the caller, is left out, as the
  * activity feed leaves out their lines in both directions: a block means
@@ -205,20 +179,32 @@ export interface CompanionRow {
  * and a merge tombstone. Neither is someone to split with, and the link on
  * their avatar would lead to a friend page about no one.
  *
+ * Both halves read `mine`, which is materialized once for the statement;
+ * two statements would each walk the history. They come back as two JSON
+ * arrays in one row, sums as text as everywhere else here.
+ *
  * @param userId - The person asking about themselves.
  * @param bounds - The window's calendar-day range.
- * @param limit - Most people to return per currency.
+ * @param companionLimit - Most people to return per currency.
  * @param client - The snapshot's client.
- * @returns People by currency, most shared expenses first within each.
+ * @returns The breakdown and the companions.
  */
-export async function listCompanions(
+export async function listWindowInsights(
   userId: string,
   bounds: InsightBounds,
-  limit: number,
+  companionLimit: number,
   client: PoolClient,
-): Promise<CompanionRow[]> {
-  return query<CompanionRow>(
-    `${MY_EXPENSES}, others AS (
+): Promise<WindowInsightsRow> {
+  const result = await queryOne<WindowInsightsRow>(
+    `${MY_EXPENSES}, breakdown AS (
+       SELECT mine.currency, substr(mine.expense_date, 1, 7) AS month,
+              mine.category, mine.split_type, mine.group_id,
+              SUM(mine.share_cents)::bigint AS share_cents,
+              SUM(mine.paid_cents)::bigint AS paid_cents,
+              COUNT(*)::int AS expense_count
+         FROM mine
+        GROUP BY mine.currency, month, mine.category, mine.split_type, mine.group_id
+     ), others AS (
        SELECT spl.user_id, spl.expense_id, mine.currency
          FROM expense_splits spl JOIN mine ON mine.id = spl.expense_id
         WHERE spl.user_id <> $1
@@ -245,14 +231,42 @@ export async function listCompanions(
               ) AS place
          FROM counted
      )
-     SELECT ranked.currency, ranked.id, ranked.name, ranked.avatar_color, ranked.avatar_url,
-            ranked.shared_expense_count
-       FROM ranked
-      WHERE ranked.place <= $4
-      ORDER BY ranked.currency, ranked.place`,
-    [userId, bounds.startDate, bounds.endDate, limit],
+     SELECT
+       COALESCE((
+         SELECT json_agg(json_build_object(
+                  'currency', breakdown.currency,
+                  'month', breakdown.month,
+                  'category', breakdown.category,
+                  'split_type', breakdown.split_type,
+                  'group_id', breakdown.group_id,
+                  'group_name', grp.name,
+                  'group_type', grp.type,
+                  'is_member', (mem.user_id IS NOT NULL),
+                  'share_cents', breakdown.share_cents::text,
+                  'paid_cents', breakdown.paid_cents::text,
+                  'expense_count', breakdown.expense_count))
+           FROM breakdown
+           LEFT JOIN groups grp ON grp.id = breakdown.group_id
+           LEFT JOIN group_members mem
+                  ON mem.group_id = breakdown.group_id AND mem.user_id = $1
+       ), '[]'::json) AS breakdown,
+       COALESCE((
+         SELECT json_agg(json_build_object(
+                  'currency', ranked.currency,
+                  'id', ranked.id,
+                  'name', ranked.name,
+                  'avatar_color', ranked.avatar_color,
+                  'avatar_url', ranked.avatar_url,
+                  'shared_expense_count', ranked.shared_expense_count)
+                ORDER BY ranked.currency, ranked.place)
+           FROM ranked
+          WHERE ranked.place <= $4
+       ), '[]'::json) AS companions`,
+    [userId, bounds.startDate, bounds.endDate, companionLimit],
     client,
   );
+  // A SELECT with no FROM always returns exactly one row.
+  return result!;
 }
 
 /** What a person paid and was paid in one currency. */

@@ -17,8 +17,7 @@ import {
 } from "@/server/personalanalytics/personalanalytics.constants";
 import {
   findJourney,
-  listCompanions,
-  listSpendingBreakdown,
+  listWindowInsights,
   sumPayments,
 } from "@/server/personalanalytics/repo/insights.repo";
 
@@ -30,10 +29,11 @@ import {
  * statement is keyed on the caller's own id, so the answer is about them
  * and cannot be about anyone else.
  *
- * Four statements, whatever the size of the caller's history: lifetime
- * figures, the window's spending grouped once and regrouped here, the
- * people they split with, and their payments. They run one at a time inside
- * one snapshot, on its client. The figures are shown side by side (a total
+ * Three statements, whatever the size of the caller's history: lifetime
+ * figures; the window's spending, grouped once and regrouped here, with the
+ * people they split with, from one walk over their split and payer rows;
+ * and their payments. They run one at a time inside one snapshot, on its
+ * client. The figures are shown side by side (a total
  * above the months that add up to it), and an expense committing between
  * two statements would otherwise show a total its own chart disagrees with.
  *
@@ -54,8 +54,12 @@ export async function getInsights(
     const journey = await findJourney(userId, client);
     if (!journey) throw new UsecaseError("unauthenticated", "account no longer exists");
 
-    const breakdownRows = await listSpendingBreakdown(userId, window, client);
-    const companionRows = await listCompanions(userId, window, TOP_COMPANION_LIMIT, client);
+    const { breakdown: breakdownRows, companions: companionRows } = await listWindowInsights(
+      userId,
+      window,
+      TOP_COMPANION_LIMIT,
+      client,
+    );
     const paymentRows = await sumPayments(userId, window.startInstant, client);
 
     const cells = breakdownRows.map((breakdownRow) => ({
