@@ -47,6 +47,16 @@ export const OUTSIDE_GROUPS_LABEL = "Outside groups";
 /** Shown in place of a duration when the join date cannot be read. */
 export const UNKNOWN_DURATION_LABEL = "Not known";
 
+/**
+ * How far past the device's clock a join instant may be and still read as
+ * "just joined". The server stamps the instant by its own clock, and a
+ * phone or laptop running a few seconds or minutes behind would otherwise
+ * show someone who signed up a moment ago that their membership is not
+ * known. A day covers a clock set to the wrong time zone; anything further
+ * ahead is not a clock that drifted, and is not shown.
+ */
+const CLOCK_DRIFT_ALLOWANCE_MS = 86_400_000;
+
 /** What each split type is called, matching the tabs of the expense form. */
 const SPLIT_TYPE_LABELS: Record<string, string> = {
   equal: "Equally",
@@ -148,13 +158,20 @@ export function memberSinceLabel(memberSince: string): string {
  * next month does not have (the 31st, into February) reaches "1 month" on
  * the 1st of the month after, and reads as a day count until then.
  *
+ * A join instant slightly ahead of the device's clock is the device's
+ * clock running behind the server's, and reads as just joined (see
+ * CLOCK_DRIFT_ALLOWANCE_MS).
+ *
  * @param memberSince - RFC 3339 instant they joined.
  * @param nowTime - The current time; injected so this stays testable.
- * @returns The duration, or "" when the instant is unparseable or in the future.
+ * @returns The duration, or "" when the instant is unparseable or further
+ *   in the future than a drifting clock explains.
  */
 export function memberDuration(memberSince: string, nowTime: Date = new Date()): string {
-  const joined = new Date(memberSince);
-  if (Number.isNaN(joined.getTime()) || joined.getTime() > nowTime.getTime()) return "";
+  const stamped = new Date(memberSince);
+  if (Number.isNaN(stamped.getTime())) return "";
+  if (stamped.getTime() > nowTime.getTime() + CLOCK_DRIFT_ALLOWANCE_MS) return "";
+  const joined = stamped.getTime() > nowTime.getTime() ? nowTime : stamped;
 
   let months =
     (nowTime.getFullYear() - joined.getFullYear()) * 12 + (nowTime.getMonth() - joined.getMonth());

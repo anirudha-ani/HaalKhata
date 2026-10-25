@@ -102,6 +102,16 @@ describe("memberDuration", () => {
     expect(memberDuration("not a date", nowTime)).toBe("");
     expect(memberDuration(new Date(2027, 0, 1).toISOString(), nowTime)).toBe("");
   });
+
+  it("reads a join just past a clock that runs behind as just joined", () => {
+    expect(memberDuration(new Date(2026, 9, 11, 15, 0, 4).toISOString(), nowTime)).toBe(
+      "a few hours",
+    );
+    expect(memberDuration(new Date(2026, 9, 11, 22, 0).toISOString(), nowTime)).toBe(
+      "a few hours",
+    );
+    expect(memberDuration(new Date(2026, 9, 12, 16, 0).toISOString(), nowTime)).toBe("");
+  });
 });
 
 describe("calendarDayLabel", () => {
