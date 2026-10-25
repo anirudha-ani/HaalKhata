@@ -779,7 +779,10 @@ export async function parseReceipt(
 /**
  * Counts one scan attempt. A failure to count is logged and swallowed: the
  * tally is bookkeeping, and a person's scan must not fail (or a failed scan
- * report a different error) because the counter could not be written.
+ * report a different error) because the counter could not be written. For
+ * the same reason the scan does not wait for it: the caller starts it and
+ * answers the person, so a slow insert neither delays the receipt nor holds
+ * a parse slot. It never rejects, so nothing is left unhandled.
  *
  * @param userId - The person who uploaded the image.
  * @param outcome - Whether a provider returned line items.
@@ -812,7 +815,7 @@ async function recordScan(userId: string, outcome: ReceiptScanOutcome): Promise<
  * @param currency - Expense currency for receipts that do not print one.
  * @returns Whatever {@link parseReceipt} returns.
  * @throws Whatever {@link parseReceipt} throws; a provider's failure is
- *   counted first.
+ *   counted too.
  */
 export async function scanReceipt(
   userId: string,
@@ -822,10 +825,10 @@ export async function scanReceipt(
   const prepared = await prepareReceipt(image, currency);
   try {
     const parsed = await readReceipt(prepared);
-    await recordScan(userId, "parsed");
+    void recordScan(userId, "parsed");
     return parsed;
   } catch (error) {
-    await recordScan(userId, "failed");
+    void recordScan(userId, "failed");
     throw error;
   }
 }

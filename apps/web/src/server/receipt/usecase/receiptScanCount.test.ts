@@ -111,7 +111,19 @@ describe("receipt scan counting", () => {
     const parsed = await scanReceipt("user-1", jpegBytes());
 
     expect(parsed.receipt.merchant).toBe("Corner Cafe");
-    expect(logError).toHaveBeenCalledWith(expect.any(Error), { scope: "receipt-scan-count" });
+    await vi.waitFor(() =>
+      expect(logError).toHaveBeenCalledWith(expect.any(Error), { scope: "receipt-scan-count" }),
+    );
+  });
+
+  it("answers without waiting for the count to be written", async () => {
+    fetchMock.mockResolvedValue(completion(ONE_ITEM));
+    vi.mocked(insertReceiptScan).mockReturnValue(new Promise<void>(() => undefined));
+
+    const parsed = await scanReceipt("user-1", jpegBytes());
+
+    expect(parsed.receipt.merchant).toBe("Corner Cafe");
+    expect(insertReceiptScan).toHaveBeenCalledExactlyOnceWith("user-1", "parsed");
   });
 
   it("keeps the scan's own error when the counter also fails", async () => {

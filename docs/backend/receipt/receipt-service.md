@@ -150,7 +150,9 @@ promised:
   provider read the photo (`parsed` or `failed`). No image, merchant, amount
   or line item is kept. The count feeds the person's own insights and the
   operator's usage overview. A counter that cannot be written is logged and
-  swallowed: it can never fail a scan or replace the scan's own error.
+  swallowed: it can never fail a scan or replace the scan's own error. The
+  scan does not wait for the row either: the answer goes back as soon as
+  the provider's does, and the insert finishes on its own.
   An attempt is a photo put to a provider: a request refused before that
   (empty, oversized, not an image or undecodable, an unsupported currency,
   no provider configured) gets its reason and no row, so a configuration
