@@ -22,18 +22,40 @@ export const COOKIE_MAX_AGE = TOKEN_LIFETIME_SECONDS;
  */
 export const CONNECT_READ_MAX_BYTES = 12 * 1024 * 1024;
 
+/** Which session cookie to write, and how strictly a browser keeps it to requests its own site starts. */
+export interface SessionCookiePolicy {
+  /** The cookie's name. */
+  name: string;
+  /** Its SameSite attribute. */
+  sameSite: "Lax" | "Strict";
+}
+
 /**
- * Builds the Set-Cookie attribute string for the session token. The `Secure`
- * flag is added only in production so dev over plain HTTP (localhost) still
- * works; production must run behind a TLS-terminating reverse proxy.
+ * The app's session cookie. Lax, so following a link into the app from
+ * another site (an email, a shared invite) arrives signed in.
+ */
+export const APP_SESSION_COOKIE_POLICY: SessionCookiePolicy = { name: SESSION_COOKIE, sameSite: "Lax" };
+
+/**
+ * Builds the Set-Cookie attribute string for a session token: the app's,
+ * or with another policy the admin page's. Every session cookie is built
+ * here, so HttpOnly, the path and the `Secure` rule are written once. The
+ * `Secure` flag is added only in production so dev over plain HTTP
+ * (localhost) still works; production must run behind a TLS-terminating
+ * reverse proxy.
  *
  * @param token - Session token value, or empty string to clear the cookie.
  * @param maxAge - Lifetime in seconds; pass 0 to expire immediately.
+ * @param policy - Which cookie, and its SameSite; the app's by default.
  * @returns The full session-cookie attribute string for Set-Cookie.
  */
-export function sessionCookieAttributes(token: string, maxAge: number): string {
+export function sessionCookieAttributes(
+  token: string,
+  maxAge: number,
+  policy: SessionCookiePolicy = APP_SESSION_COOKIE_POLICY,
+): string {
   const secure = process.env.NODE_ENV === "production" ? "; Secure" : "";
-  return `${SESSION_COOKIE}=${token}; Path=/; HttpOnly; SameSite=Lax${secure}; Max-Age=${maxAge}`;
+  return `${policy.name}=${token}; Path=/; HttpOnly; SameSite=${policy.sameSite}${secure}; Max-Age=${maxAge}`;
 }
 
 /** Lookup from UsecaseErrorCode to the equivalent Connect status code. */

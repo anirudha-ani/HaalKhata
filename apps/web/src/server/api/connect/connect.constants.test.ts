@@ -19,6 +19,18 @@ describe("session cookies", () => {
     );
   });
 
+  it("writes the admin session's cookie with the same rules and its own name and SameSite", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    const { sessionCookieAttributes } = await import("./connect.constants");
+    const { ADMIN_SESSION_COOKIE_POLICY } = await import(
+      "@/server/adminanalytics/adminanalytics.constants"
+    );
+
+    expect(sessionCookieAttributes("admin-token", 60, ADMIN_SESSION_COOKIE_POLICY)).toBe(
+      "__Host-hk_admin=admin-token; Path=/; HttpOnly; SameSite=Strict; Secure; Max-Age=60",
+    );
+  });
+
   it("keeps the unprefixed cookie for HTTP development", async () => {
     vi.stubEnv("NODE_ENV", "development");
     const { SESSION_COOKIE, sessionCookieAttributes } = await import("./connect.constants");

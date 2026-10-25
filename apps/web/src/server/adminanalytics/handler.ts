@@ -7,6 +7,7 @@
 import { Code, ConnectError, type HandlerContext, type ServiceImpl } from "@connectrpc/connect";
 import type { AdminAnalyticsService } from "@haalkhata/protogen/adminanalytics/v1/adminanalytics_pb";
 import { adminSessionToken, requireAdminPageRequest } from "@/server/api/connect/adminRequest";
+import { sessionCookieAttributes } from "@/server/api/connect/connect.constants";
 import { runUsecase } from "@/server/api/connect/context";
 import { clientIp } from "@/server/auth/request/clientIp";
 import { rateLimitCheck } from "@/server/common/rateLimit/rateLimit";
@@ -14,9 +15,9 @@ import {
   ADMIN_AUTH_RATE_LIMIT,
   ADMIN_NONCE_RATE_LIMIT,
   ADMIN_READ_RATE_LIMIT,
+  ADMIN_SESSION_COOKIE_POLICY,
   ADMIN_SESSION_LIFETIME_SECONDS,
   ADMIN_TREND_RATE_LIMIT,
-  adminSessionCookieAttributes,
 } from "@/server/adminanalytics/adminanalytics.constants";
 import * as adminSession from "@/server/adminanalytics/usecase/adminSession.usecase";
 import { getUsageOverview } from "@/server/adminanalytics/usecase/usage.usecase";
@@ -60,7 +61,7 @@ export const adminAnalyticsHandler: ServiceImpl<typeof AdminAnalyticsService> = 
     );
     handlerContext.responseHeader.append(
       "set-cookie",
-      adminSessionCookieAttributes(token, ADMIN_SESSION_LIFETIME_SECONDS),
+      sessionCookieAttributes(token, ADMIN_SESSION_LIFETIME_SECONDS, ADMIN_SESSION_COOKIE_POLICY),
     );
     return {};
   },
@@ -81,7 +82,10 @@ export const adminAnalyticsHandler: ServiceImpl<typeof AdminAnalyticsService> = 
       () => adminSession.signOutAdmin(adminSessionToken(handlerContext)),
       handlerContext,
     );
-    handlerContext.responseHeader.append("set-cookie", adminSessionCookieAttributes("", 0));
+    handlerContext.responseHeader.append(
+      "set-cookie",
+      sessionCookieAttributes("", 0, ADMIN_SESSION_COOKIE_POLICY),
+    );
     return {};
   },
 

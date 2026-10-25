@@ -1,5 +1,6 @@
 /** Admin analytics domain constants: the operator allowlist, session settings and read limits. */
 
+import type { SessionCookiePolicy } from "@/server/api/connect/connect.constants";
 import { GOOGLE_CLIENT_ID } from "@/server/auth/auth.constants";
 
 /**
@@ -123,19 +124,16 @@ export function adminGoogleClientId(): string {
 }
 
 /**
- * Builds the Set-Cookie attribute string for the admin session.
+ * The admin session cookie, written through the app's
+ * `sessionCookieAttributes()` like every session cookie.
  *
  * SameSite=Strict, where the app's cookie is Lax: nothing links into the
  * admin page from elsewhere, so there is no cross-site navigation to keep
  * working, and Strict keeps the cookie off every request another site
  * starts. It does nothing against the app's own hostname, which is the same
  * site as this one; the admin handlers' Origin check is what covers that.
- *
- * @param token - Session token value, or empty string to clear the cookie.
- * @param maxAge - Lifetime in seconds; pass 0 to expire immediately.
- * @returns The full cookie attribute string for Set-Cookie.
  */
-export function adminSessionCookieAttributes(token: string, maxAge: number): string {
-  const secure = process.env.NODE_ENV === "production" ? "; Secure" : "";
-  return `${ADMIN_SESSION_COOKIE}=${token}; Path=/; HttpOnly; SameSite=Strict${secure}; Max-Age=${maxAge}`;
-}
+export const ADMIN_SESSION_COOKIE_POLICY: SessionCookiePolicy = {
+  name: ADMIN_SESSION_COOKIE,
+  sameSite: "Strict",
+};
