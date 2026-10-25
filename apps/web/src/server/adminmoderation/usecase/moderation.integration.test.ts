@@ -24,6 +24,7 @@ import {
   OWN_COMMENT_ID,
   PRIVATE_VALUES,
   REPORTED_WORDS,
+  REPORTER,
   REPORTS,
   SPAM_COMMENT_ID,
   seedModeration,
@@ -380,10 +381,47 @@ describe.skipIf(!(await databaseReachable()))("moderation against Postgres", () 
   });
 
   it("will not pretend to suspend an account that was merged away", async () => {
+    const merged = (await moderation.listReports()).reports.find(
+      (entry) => entry.reportId === REPORTS.merged,
+    );
+    expect(merged?.author).toMatchObject({ active: false, deleted: false });
     await expect(moderation.suspendAuthor(REPORTS.merged)).rejects.toMatchObject({
       code: "failed_precondition",
+      message: expect.stringContaining("merged into another"),
     });
     const { rows } = await database.query("SELECT suspended_at FROM users WHERE merged_into IS NOT NULL");
     expect(rows).toEqual([{ suspended_at: null }]);
+  });
+
+  it("says when the author deleted their account, rather than merged it", async () => {
+    // A deleted person's reports go with their account; what is left to
+    // report is content now belonging to the anonymous stand-in.
+    const standInReport = "99999999-9999-4999-8999-999999999999";
+    await database.query(
+      `INSERT INTO users (id, name, avatar_color, deleted_at) VALUES ($1, 'Deleted member', '#857a68', now())`,
+      [DELETED_STAND_IN],
+    );
+    await database.query(
+      `INSERT INTO content_reports (id, reporter_id, reported_user_id, target_kind, target_id, reason, snapshot, status)
+       VALUES ($1, $2, $3, 'expense', 'exp-stand-in-0003', 'spam', jsonb_build_object('description', 'Left behind'), 'open')`,
+      [standInReport, REPORTER, DELETED_STAND_IN],
+    );
+    try {
+      const entry = (await moderation.listReports()).reports.find(
+        (candidate) => candidate.reportId === standInReport,
+      );
+      expect(entry?.author).toMatchObject({ active: false, deleted: true });
+      await expect(moderation.suspendAuthor(standInReport)).rejects.toMatchObject({
+        code: "failed_precondition",
+        message: expect.stringContaining("deleted their account"),
+      });
+      const { rows } = await database.query("SELECT suspended_at FROM users WHERE id = $1", [
+        DELETED_STAND_IN,
+      ]);
+      expect(rows).toEqual([{ suspended_at: null }]);
+    } finally {
+      await database.query("DELETE FROM content_reports WHERE id = $1", [standInReport]);
+      await database.query("DELETE FROM users WHERE id = $1", [DELETED_STAND_IN]);
+    }
   });
 });

@@ -97,6 +97,7 @@ export function ReportCard({
         <ReportActions
           removeLabel={wording.removeLabel}
           authorActive={author?.active ?? false}
+          authorDeleted={author?.deleted ?? false}
           authorSuspended={author?.suspended ?? false}
           running={running}
           anyRunning={anyRunning}

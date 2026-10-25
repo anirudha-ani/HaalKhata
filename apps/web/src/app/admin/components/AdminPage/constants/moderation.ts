@@ -65,6 +65,10 @@ export const ACTION_VERBS: Record<ModerationAction, string> = {
 export const MERGED_AUTHOR_NOTE =
   "This account was merged into another, so there is no one to suspend through this report.";
 
+/** Shown in place of the suspend button when the author deleted their account. */
+export const DELETED_AUTHOR_NOTE =
+  "The person who wrote this deleted their account, so there is no one to suspend through this report.";
+
 /** Shown beside a suspended account that has no report left to resume through. */
 export const NO_REPORT_TO_RESUME_NOTE =
   "No report about them is left to resume through. Resume them on the server; see ops/README.md.";

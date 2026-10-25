@@ -1,13 +1,18 @@
 "use client";
 /** Report actions: the buttons under a reported item, and why one is missing when it is. */
 
-import { MERGED_AUTHOR_NOTE, type ModerationAction } from "../../../../../../constants/moderation";
+import {
+  DELETED_AUTHOR_NOTE,
+  MERGED_AUTHOR_NOTE,
+  type ModerationAction,
+} from "../../../../../../constants/moderation";
 
 /**
  * Renders what can be done about one reported item. Dismiss and Resume run
  * at once; Remove and Suspend open a question first. Only what the server
  * would accept is offered: Resume for a suspended author, and no suspend at
- * all, with the reason said, for an account merged into another. The last
+ * all, with the reason said, for an account merged into another or deleted
+ * by its person. The last
  * failure on this item is shown right under the buttons.
  *
  * @param props - Component props.
@@ -16,6 +21,7 @@ import { MERGED_AUTHOR_NOTE, type ModerationAction } from "../../../../../../con
 export function ReportActions({
   removeLabel,
   authorActive,
+  authorDeleted,
   authorSuspended,
   running,
   anyRunning,
@@ -27,6 +33,8 @@ export function ReportActions({
   removeLabel: string;
   /** Whether the author's account still stands for a person. */
   authorActive: boolean;
+  /** Whether it stopped because the person deleted it, rather than merged it. */
+  authorDeleted: boolean;
   /** Whether the author is suspended now. */
   authorSuspended: boolean;
   /** The action running on this item, if any. */
@@ -65,7 +73,11 @@ export function ReportActions({
           </button>
         ) : null}
       </div>
-      {authorActive ? null : <p className="mt-2 text-xs text-ink-soft">{MERGED_AUTHOR_NOTE}</p>}
+      {authorActive ? null : (
+        <p className="mt-2 text-xs text-ink-soft">
+          {authorDeleted ? DELETED_AUTHOR_NOTE : MERGED_AUTHOR_NOTE}
+        </p>
+      )}
       {error ? (
         <p role="alert" className="mt-2 text-sm font-medium text-neg-700">
           {error}

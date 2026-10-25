@@ -90,11 +90,17 @@ message ReportedAuthor {
   string name = 1;
   bool suspended = 2;
   // False when the account no longer stands for a person: it was merged
-  // into another account. There is no one to suspend through this report.
+  // into another account, or the person deleted their account (see
+  // deleted). There is no one to suspend through this report.
   bool active = 3;
   // How many pieces of content by the same person are waiting, this one
   // included.
   int32 open_report_count = 4;
+  // True when the person deleted their account: the report names the
+  // anonymous stand-in their content now belongs to, or a merge tombstone
+  // that deletion erased. With active false and this false, the account
+  // was merged into another one that still exists.
+  bool deleted = 5;
 }
 
 message SuspendedAccount {

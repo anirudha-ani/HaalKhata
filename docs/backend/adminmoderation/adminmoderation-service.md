@@ -122,9 +122,14 @@ appear as these are handled.
   account merged into another, or the stand-in a deleted account leaves,
   keeps its `suspended_at` but is not listed: nobody signs in through it.
 - Suspending through a report about an account that was **merged into
-  another** is refused: that row no longer signs anyone in, and suspending
-  it would look like it worked and stop nobody. The page says so instead of
-  offering the button.
+  another**, or whose person **deleted it**, is refused: that row no longer
+  signs anyone in, and suspending it would look like it worked and stop
+  nobody. The page says which of the two instead of offering the button,
+  so the operator does not look for a surviving account after a deletion.
+  Deleting an account removes the reports about it, so a report reaches a
+  deleted person only through the stand-in their content now belongs to, or
+  a merge tombstone the deletion erased; both carry `deleted_at`, which is
+  what `author.deleted` reads.
 - Each action writes one log line: the action, the report id and the kind
   of content. Never the words, a name or an address.
 
@@ -143,7 +148,7 @@ not make fails it.
 
 Two differences are deliberate and only make sense on a page: an action
 settles every open report about the same content (the script closes the one
-report it was given), and a suspension of a merged account is refused (the
+report it was given), and a suspension of a merged or deleted account is refused (the
 script applies it to the tombstone).
 
 ## Rate Limits (this service)
@@ -182,7 +187,7 @@ script applies it to the tombstone).
 `ReportedContent`: `report_id`, `target_kind` (comment, expense, group,
 user), `report_count`, `reasons` (reason and count, most given first),
 `first_reported_at`, `last_reported_at`, `text`, `notes`, `item_names`, and
-`author` (`name`, `suspended`, `active`, `open_report_count`).
+`author` (`name`, `suspended`, `active`, `open_report_count`, `deleted`).
 
 `SuspendedAccount`: `name`, `suspended_at`, `report_id` (empty when no
 report about them is left).
@@ -231,7 +236,7 @@ Same request as `DismissReport`; the report may be open or closed.
 | --- | --- |
 | `InvalidArgument` | Not a UUID |
 | `NotFound` | No such report |
-| `FailedPrecondition` | The account the report names no longer exists, or was merged into another |
+| `FailedPrecondition` | The account the report names no longer exists, was merged into another, or was deleted by its person |
 
 ---
 

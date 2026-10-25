@@ -35,6 +35,8 @@ export interface ReportedContentRow {
   author_name: string | null;
   author_suspended: boolean;
   author_active: boolean;
+  /** True when the person deleted their account; see ReportedAuthor.deleted. */
+  author_deleted: boolean;
   author_open_report_count: number;
   /** Pieces of content waiting in all, before the limit. */
   total_count: number;
@@ -91,6 +93,7 @@ export async function listReportedContent(
             ${DISPLAY_NAME} AS author_name,
             COALESCE(usr.suspended_at IS NOT NULL, false) AS author_suspended,
             COALESCE(usr.merged_into IS NULL AND usr.deleted_at IS NULL, false) AS author_active,
+            COALESCE(usr.deleted_at IS NOT NULL, false) AS author_deleted,
             CASE WHEN grp.author_id IS NULL THEN 1
               ELSE (COUNT(*) OVER (PARTITION BY grp.author_id))::int
             END AS author_open_report_count,
@@ -236,6 +239,13 @@ export interface AccountStandingRow {
   suspended: boolean;
   /** False for a merge tombstone or the stand-in a deleted account leaves. */
   active: boolean;
+  /**
+   * True when the person deleted their account. Deleting an account removes
+   * the reports about it, so a report reaches a deleted person only through
+   * the stand-in their content now belongs to, or through a merge tombstone
+   * the deletion erased; both carry deleted_at.
+   */
+  deleted: boolean;
 }
 
 /**
@@ -252,7 +262,8 @@ export async function lockAccountStanding(
 ): Promise<AccountStandingRow | undefined> {
   return queryOne<AccountStandingRow>(
     `SELECT suspended_at IS NOT NULL AS suspended,
-            (merged_into IS NULL AND deleted_at IS NULL) AS active
+            (merged_into IS NULL AND deleted_at IS NULL) AS active,
+            deleted_at IS NOT NULL AS deleted
        FROM users
       WHERE id = $1
       FOR UPDATE`,
