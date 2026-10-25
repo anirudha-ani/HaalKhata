@@ -20,6 +20,13 @@ const NATIVE_PUSH_METHOD = "pushClient.registerDevice";
 // The browser keeps the other half of the feature: the SetContactDiscovery
 // switch, so a web-only person can still choose to be found.
 const NATIVE_CONTACT_METHODS = ["socialClient.findContacts", "socialClient.sendFriendRequests"];
+// The operator's admin page (usage overview and report queue) is not a user
+// feature. It answers on the admin hostname alone, behind its own
+// allowlisted sign-in, and has no mobile twin by design (AGENTS.md). The
+// native app must never reach for it.
+const OPERATOR_CLIENTS = ["adminAnalyticsClient", "adminModerationClient"];
+/** @param method A client.method call. @returns Whether it belongs to the operator's admin page. */
+const isOperatorMethod = (method) => OPERATOR_CLIENTS.some((client) => method.startsWith(`${client}.`));
 /** Methods only the native app may call, each for a documented platform reason. */
 const NATIVE_ONLY_METHODS = new Set([NATIVE_AUTH_METHOD, NATIVE_PUSH_METHOD, ...NATIVE_CONTACT_METHODS]);
 
@@ -91,7 +98,11 @@ test("browser and native expose the same Connect feature entry points", (context
     assert.ok(browser.has(method), `Browser Apple sign-in must retain ${method}`);
   }
   const gaps = [];
+  for (const method of native.keys()) {
+    assert.ok(!isOperatorMethod(method), `The native app must not call the operator's ${method}`);
+  }
   for (const [method, filenames] of browser) {
+    if (isOperatorMethod(method)) continue;
     if (!native.has(method)) gaps.push(`Missing on native: ${method}\n  browser: ${filenames.join(", ")}`);
   }
   for (const method of NATIVE_CONTACT_METHODS) {
@@ -105,7 +116,7 @@ test("browser and native expose the same Connect feature entry points", (context
     }
   }
   assert.deepEqual(gaps, [], "A feature reached only one app. Implement both surfaces; document only genuine platform transport differences.");
-  context.diagnostic(`${browser.size} common Connect methods; native Apple proof and push registration have separate transports, and contact lookup is native-only. This checks API reachability, not visual or end-to-end parity.`);
+  context.diagnostic(`${browser.size} common Connect methods; native Apple proof and push registration have separate transports, contact lookup is native-only, and the operator's admin page is browser-only. This checks API reachability, not visual or end-to-end parity.`);
 });
 
 test("the scan includes aliases and bracket calls but excludes comments and query-cache clients", () => {

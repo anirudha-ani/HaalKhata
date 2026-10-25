@@ -8,7 +8,7 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { authClient } from "@/lib/api/connect";
-import { GOOGLE_SCRIPT_ELEMENT_ID } from "@/app/login/constants/googleSignIn";
+import { GOOGLE_SCRIPT_ELEMENT_ID } from "@/lib/googleIdentity/googleIdentity.constants";
 import { GoogleSignIn } from "./GoogleSignIn";
 
 vi.mock("@/lib/api/connect", () => ({ authClient: { beginGoogleSignIn: vi.fn(), logInWithGoogle: vi.fn() }, errorMessage: (error: Error) => error.message }));

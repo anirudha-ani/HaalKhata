@@ -55,10 +55,20 @@ human review.
 
 ## Internal moderation
 
-There is no public moderator RPC or client role toggle. The operator runs
-[ops/moderate.sh](../../../ops/moderate.sh) over the private Docker database
-connection. SQL is read from the matching deployed image at
-`/opt/release/moderation.sql`.
+There is no moderator RPC in the app and no client role toggle. The operator
+works the queue in one of two ways:
+
+- **The admin page** (`admin.haalkhata.app`, Reports view), behind the
+  operator's own allowlisted Google sign-in. It lists open reports grouped by
+  the content they are about, never shows who reported, and offers the same
+  four actions. See
+  [adminmoderation-service.md](../adminmoderation/adminmoderation-service.md).
+- **[ops/moderate.sh](../../../ops/moderate.sh)** over the private Docker
+  database connection. SQL is read from the matching deployed image at
+  `/opt/release/moderation.sql`.
+
+The page's removal is tested against `moderation.sql` on identical data, so
+the two remove content the same way.
 
 ```sh
 ./ops/moderate.sh list

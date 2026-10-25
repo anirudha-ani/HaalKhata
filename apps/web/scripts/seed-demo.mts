@@ -21,16 +21,16 @@ const API_URL = "http://127.0.0.1:3000/api/connect";
 const LOCAL_DATABASE_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]", "db"]);
 /** Fictional contacts; their reserved example.test email domains cannot deliver mail. */
 const DEMO_PEOPLE = [
-  { slug: "avery", name: "Avery Morgan" },
-  { slug: "nila", name: "Nila Rahman" },
-  { slug: "leo", name: "Leo Chen" },
-  { slug: "sam", name: "Sam Rivera" },
+  { slug: "jess", name: "Jess Zhang" },
+  { slug: "muskaan", name: "Muskaan Patel" },
+  { slug: "rad", name: "Radhika Mehrotra" },
+  { slug: "rathi", name: "Rathi Kashi" },
 ];
 /** Groups show household, trip, simplified-debt, and separate-currency scenarios. */
 const DEMO_GROUPS = [
-  { slug: "home", name: "[Demo] Shared apartment", type: "home", currency: "USD", people: ["owner", "avery", "nila"] },
-  { slug: "weekend", name: "[Demo] Catskills weekend", type: "trip", currency: "USD", people: ["owner", "avery", "leo", "sam"] },
-  { slug: "lisbon", name: "[Demo] Lisbon getaway", type: "trip", currency: "EUR", people: ["owner", "nila", "sam"] },
+  { slug: "home", name: "[Demo] Shared apartment", type: "home", currency: "USD", people: ["owner", "jess", "muskaan"] },
+  { slug: "weekend", name: "[Demo] Catskills weekend", type: "trip", currency: "USD", people: ["owner", "jess", "rad", "rathi"] },
+  { slug: "lisbon", name: "[Demo] Lisbon getaway", type: "trip", currency: "EUR", people: ["owner", "muskaan", "rathi"] },
 ];
 /** One expense fixture, with all monetary amounts expressed in integer cents. */
 interface DemoExpense {
@@ -48,26 +48,26 @@ interface DemoExpense {
 /** Realistic sample ledger spanning dates, categories, payers, and all five split types. */
 const DEMO_EXPENSES: DemoExpense[] = [
   { slug: "rent", group: "home", description: "October rent", amount: 210000, payer: "owner", category: "housing", daysAgo: 4 },
-  { slug: "groceries", group: "home", description: "Weekly grocery run", amount: 12647, payer: "nila", category: "groceries", daysAgo: 3 },
-  { slug: "internet", group: "home", description: "Home internet", amount: 7999, payer: "avery", category: "utilities", daysAgo: 6 },
+  { slug: "groceries", group: "home", description: "Weekly grocery run", amount: 12647, payer: "muskaan", category: "groceries", daysAgo: 3 },
+  { slug: "internet", group: "home", description: "Home internet", amount: 7999, payer: "jess", category: "utilities", daysAgo: 6 },
   { slug: "electricity", group: "home", description: "Electricity bill", amount: 11280, payer: "owner", category: "utilities", daysAgo: 9, split: "shares", values: [2, 1, 1] },
   { slug: "cabin", group: "weekend", description: "Weekend cabin", amount: 68000, payer: "owner", category: "travel", daysAgo: 15 },
-  { slug: "road-snacks", group: "weekend", description: "Groceries and road snacks", amount: 8453, payer: "avery", category: "groceries", daysAgo: 14 },
-  { slug: "fuel", group: "weekend", description: "Road trip fuel", amount: 6820, payer: "leo", category: "transport", daysAgo: 13, split: "percent", values: [3500, 2500, 2500, 1500] },
-  { slug: "trail", group: "weekend", description: "Trail passes", amount: 4000, payer: "sam", category: "entertainment", daysAgo: 12 },
+  { slug: "road-snacks", group: "weekend", description: "Groceries and road snacks", amount: 8453, payer: "jess", category: "groceries", daysAgo: 14 },
+  { slug: "fuel", group: "weekend", description: "Road trip fuel", amount: 6820, payer: "rad", category: "transport", daysAgo: 13, split: "percent", values: [3500, 2500, 2500, 1500] },
+  { slug: "trail", group: "weekend", description: "Trail passes", amount: 4000, payer: "rathi", category: "entertainment", daysAgo: 12 },
   { slug: "lisbon-stay", group: "lisbon", description: "Lisbon apartment stay", amount: 27900, payer: "owner", category: "travel", daysAgo: 28 },
-  { slug: "pastries", group: "lisbon", description: "Coffee and pasteis de nata", amount: 2350, payer: "nila", category: "food", daysAgo: 27, split: "exact", values: [900, 700, 750] },
-  { slug: "museum", group: "lisbon", description: "Museum tickets", amount: 5400, payer: "sam", category: "entertainment", daysAgo: 26 },
+  { slug: "pastries", group: "lisbon", description: "Coffee and pasteis de nata", amount: 2350, payer: "muskaan", category: "food", daysAgo: 27, split: "exact", values: [900, 700, 750] },
+  { slug: "museum", group: "lisbon", description: "Museum tickets", amount: 5400, payer: "rathi", category: "entertainment", daysAgo: 26 },
   { slug: "dinner", group: "lisbon", description: "Riverside dinner", amount: 9750, payer: "owner", category: "food", daysAgo: 25, split: "itemized" },
-  { slug: "coffee", group: "", description: "Coffee catch-up with Avery", amount: 1850, payer: "owner", category: "food", daysAgo: 2, people: ["owner", "avery"], split: "exact", values: [850, 1000] },
-  { slug: "concert", group: "", description: "Concert tickets with Leo", amount: 12000, payer: "leo", category: "entertainment", daysAgo: 1, people: ["owner", "leo"] },
-  { slug: "train", group: "", description: "Train tickets with Sam", amount: 48000, payer: "sam", category: "transport", daysAgo: 1, people: ["owner", "sam"] },
+  { slug: "coffee", group: "", description: "Coffee catch-up with Jess", amount: 1850, payer: "owner", category: "food", daysAgo: 2, people: ["owner", "jess"], split: "exact", values: [850, 1000] },
+  { slug: "concert", group: "", description: "Concert tickets with Rad", amount: 12000, payer: "rad", category: "entertainment", daysAgo: 1, people: ["owner", "rad"] },
+  { slug: "train", group: "", description: "Train tickets with Rathi", amount: 48000, payer: "rathi", category: "transport", daysAgo: 1, people: ["owner", "rathi"] },
 ];
 /** Comments make expense discussions and activity visible in both clients. */
 const DEMO_COMMENTS = [
-  { expense: "groceries", author: "nila", body: "This includes pantry basics and cleaning supplies. Sample data." },
-  { expense: "cabin", author: "avery", body: "The cabin deposit is included. Thanks for booking! Sample data." },
-  { expense: "dinner", author: "sam", body: "Dessert was shared; tax and tip are split by each person's items. Sample data." },
+  { expense: "groceries", author: "muskaan", body: "This includes pantry basics and cleaning supplies. Sample data." },
+  { expense: "cabin", author: "jess", body: "The cabin deposit is included. Thanks for booking! Sample data." },
+  { expense: "dinner", author: "rathi", body: "Dessert was shared; tax and tip are split by each person's items. Sample data." },
 ];
 /** A demo person and their authenticated API clients. */
 interface DemoPerson {
@@ -183,8 +183,8 @@ async function main(): Promise<void> {
     const splitType = fixture.split ?? "equal";
     const dinnerItems = fixture.slug === "dinner" ? [
       { name: "Grilled fish", quantity: 1, totalCents: 3000, assignments: [{ userId: people.owner.user.id, weight: 1 }] },
-      { name: "Vegetarian plate", quantity: 1, totalCents: 2400, assignments: [{ userId: people.nila.user.id, weight: 1 }] },
-      { name: "Pasta", quantity: 1, totalCents: 2100, assignments: [{ userId: people.sam.user.id, weight: 1 }] },
+      { name: "Vegetarian plate", quantity: 1, totalCents: 2400, assignments: [{ userId: people.muskaan.user.id, weight: 1 }] },
+      { name: "Pasta", quantity: 1, totalCents: 2100, assignments: [{ userId: people.rathi.user.id, weight: 1 }] },
       { name: "Shared dessert", quantity: 1, totalCents: 900, assignments: participantKeys.map((personKey) => ({ userId: people[personKey].user.id, weight: 1 })) },
     ] : [];
     const expense = existing ?? await people[fixture.payer].clients.expense.createExpense({
@@ -218,8 +218,8 @@ async function main(): Promise<void> {
 
   const existingSettlements = await listSettlementsInvolvingUser(owner.user.id);
   for (const fixture of [
-    { slug: "avery-rent-payment", groupId: groupIds.home, person: "avery", amount: 5000, received: true },
-    { slug: "leo-ticket-payment", groupId: "", person: "leo", amount: 2000, received: false },
+    { slug: "jess-rent-payment", groupId: groupIds.home, person: "jess", amount: 5000, received: true },
+    { slug: "rad-ticket-payment", groupId: "", person: "rad", amount: 2000, received: false },
   ]) {
     const marker = `[haalkhata-demo:${owner.user.id}:${fixture.slug}]`;
     if (!existingSettlements.some((settlement) => settlement.note.includes(marker))) {

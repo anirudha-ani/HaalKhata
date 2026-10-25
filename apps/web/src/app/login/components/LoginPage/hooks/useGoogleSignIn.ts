@@ -5,8 +5,9 @@ import { useEffect, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { authClient, errorMessage } from "@/lib/api/connect";
 import { completeBrowserSignIn } from "@/lib/auth/completeSignIn";
-import { GOOGLE_BUTTON_OPTIONS, GOOGLE_CLIENT_ID } from "@/app/login/constants/googleSignIn";
-import { loadGoogleScript } from "../utils/loadGoogleScript";
+import { GOOGLE_CLIENT_ID } from "@/app/login/constants/googleSignIn";
+import { GOOGLE_BUTTON_OPTIONS } from "@/lib/googleIdentity/googleIdentity.constants";
+import { loadGoogleScript } from "@/lib/googleIdentity/loadGoogleScript";
 
 /**
  * Renders Google's sign-in button and exchanges the ID token it produces for a
@@ -44,10 +45,9 @@ export function useGoogleSignIn() {
     let resizeObserver: ResizeObserver | undefined;
 
     Promise.all([loadGoogleScript(), authClient.beginGoogleSignIn({})])
-      .then(([_scriptReady, challenge]) => {
+      .then(([google, challenge]) => {
         if (cancelled) return;
-        if (!window.google) throw new Error("Google sign-in did not load");
-        window.google.accounts.id.initialize({
+        google.accounts.id.initialize({
           client_id: GOOGLE_CLIENT_ID,
           nonce: challenge.nonce,
           callback: (response) => {
@@ -60,7 +60,7 @@ export function useGoogleSignIn() {
           const width = Math.min(400, Math.floor(buttonElement.clientWidth));
           if (!width) return;
           buttonElement.replaceChildren();
-          window.google?.accounts.id.renderButton(buttonElement, { ...GOOGLE_BUTTON_OPTIONS, width });
+          google.accounts.id.renderButton(buttonElement, { ...GOOGLE_BUTTON_OPTIONS, width });
         };
         renderButton();
         resizeObserver = new ResizeObserver(renderButton);

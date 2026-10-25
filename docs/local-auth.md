@@ -123,6 +123,30 @@ availability response contains only booleans. Release readiness and actual
 sign-in still enforce all credential checks. No additional public Apple
 client ID or CI deployment is needed for local testing.
 
+## The admin page (`/admin`)
+
+The operator's admin page (usage overview and report queue) signs in with
+real Google too, through the same web OAuth client, but only addresses on an
+allowlist get in. Signing in there never creates an app account.
+
+1. In the root `.env`, put your Google address in `ADMIN_EMAILS` (comma
+   separate several). Leave `ADMIN_HOST` and `ADMIN_GOOGLE_CLIENT_ID` blank:
+   in development the page is at `/admin` on whatever host you run, and it
+   uses `GOOGLE_CLIENT_ID`.
+2. Restart the dev server. `.env` is read once at startup, so a running
+   server keeps the old allowlist.
+3. Open `http://localhost:3000/admin` (an origin the web OAuth client
+   already lists) and Continue with Google.
+
+What you should see: with `ADMIN_EMAILS` blank, the card says nobody can
+sign in yet instead of offering Google's button. With an address that is
+not on the list, Google succeeds and the card then says the account does
+not have admin access; the server logs
+`admin sign-in refused: address is not on the allowlist` with the size of
+the allowlist (never the address). Case does not matter on either side.
+Production uses its own hostname and client; see the "Usage page" section
+of `ops/README.md`.
+
 ## Native iPhone/iPad and Android
 
 Native iOS uses bundle ID **`com.haalkhata.app`**, already in app.json, as its

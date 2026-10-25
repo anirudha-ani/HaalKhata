@@ -4,7 +4,7 @@ import crypto from "node:crypto";
 import { UsecaseError } from "@/server/common/errors";
 import { COMPATIBLE_AI } from "../receipt.constants";
 import { findReceiptConsent, removeReceiptConsent, saveReceiptConsent } from "../repo/receiptConsent.repo";
-import { parseReceipt } from "./receipt.usecase";
+import { scanReceipt } from "./receipt.usecase";
 
 /**
  * Describes recipients and use before image sharing. Routine model upgrades do
@@ -58,6 +58,7 @@ export async function revokeReceiptConsent(userId: string) {
 /**
  * Checks saved permission on every scan, including requests from stale clients.
  * Revocation prevents subsequent processing; it cannot recall an in-flight provider request.
+ * Only a permitted scan is counted as an attempt: a refusal here sent nothing anywhere.
  * @param userId Signed-in account.
  * @param image Receipt image upload.
  * @param consentVersion Current sharing terms known to the client.
@@ -69,5 +70,5 @@ export async function parseReceiptWithConsent(userId: string, image: Uint8Array,
   if (!information.consentGranted || consentVersion !== information.consentVersion) {
     throw new UsecaseError("failed_precondition", "Allow AI receipt scanning before sharing this photo. Review the current receipt-sharing details.");
   }
-  return parseReceipt(image, currency);
+  return scanReceipt(userId, image, currency);
 }

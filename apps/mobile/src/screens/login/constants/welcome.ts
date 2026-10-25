@@ -15,10 +15,10 @@ export interface SamplePerson {
 
 /** The four friends every illustration shows, matching the web's sample ledger. */
 export const SAMPLE_PEOPLE: readonly SamplePerson[] = [
-  { id: "sample-oni", name: "Oni Nakamura", firstName: "Oni", avatarColor: colors.brand600, avatarUrl: "" },
-  { id: "sample-dot", name: "Dot Okafor", firstName: "Dot", avatarColor: colors.pos600, avatarUrl: "" },
-  { id: "sample-pz", name: "Pat Zhou", firstName: "PZ", avatarColor: colors.neg600, avatarUrl: "" },
-  { id: "sample-jess", name: "Jess Evans", firstName: "Jess", avatarColor: colors.ink, avatarUrl: "" },
+  { id: "sample-oni", name: "Anirudha Paul", firstName: "Oni", avatarColor: colors.brand600, avatarUrl: "" },
+  { id: "sample-dot", name: "Aditya Dot", firstName: "Dot", avatarColor: colors.pos600, avatarUrl: "" },
+  { id: "sample-pz", name: "Pooja Barai", firstName: "PZ", avatarColor: colors.neg600, avatarUrl: "" },
+  { id: "sample-jess", name: "Jess Zhang", firstName: "Jess", avatarColor: colors.ink, avatarUrl: "" },
 ];
 
 /** Lines on the receipt being scanned in "Snap it". */

@@ -31,7 +31,8 @@ export const receiptHandler: ServiceImpl<typeof ReceiptService> = {
    * Parses an uploaded receipt image into structured line items for the
    * signed-in user, and hands back the JPEG the provider was shown so the
    * client can display it next to the extracted values. The image is not
-   * stored anywhere — it only round-trips through this response.
+   * stored anywhere — it only round-trips through this response. The attempt
+   * itself is counted (who, when, whether it worked), nothing about the bill.
    */
   async parseReceipt(request, handlerContext) {
     const userId = await requireRateLimitedUser(

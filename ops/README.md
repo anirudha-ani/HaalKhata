@@ -116,6 +116,8 @@ the file:
 | `ACME_EMAIL` | Secret `ACME_EMAIL` | Required — the deploy job refuses to run without it; Caddy registers it with the CA for expiry/problem notices. A secret only so the address stays out of public workflow logs; it is not authenticating material |
 | `GOOGLE_CLIENT_ID` | Variable `NEXT_PUBLIC_GOOGLE_CLIENT_ID` | Same id the browser bundle is built with, by contract |
 | `GOOGLE_MOBILE_CLIENT_IDS` | Variable `GOOGLE_MOBILE_CLIENT_IDS` | Optional |
+| `ADMIN_EMAILS` | Secret `ADMIN_EMAILS` | Optional; Google addresses allowed to sign in to the usage page, comma separated (spaces after the commas are fine). Unset means nobody can. A secret only to keep a personal address out of public workflow logs, like `ACME_EMAIL` |
+| `ADMIN_GOOGLE_CLIENT_ID` | Variable `ADMIN_GOOGLE_CLIENT_ID` | Optional; an OAuth client for the usage page alone. Unset, that page signs in with `GOOGLE_CLIENT_ID` |
 | `APPLE_TEAM_ID` | Variable `APPLE_TEAM_ID` | Apple developer team identifier |
 | `APPLE_KEY_ID` | Variable `APPLE_KEY_ID` | Sign in with Apple signing key identifier |
 | `APPLE_SERVICE_ID` | Variable `APPLE_SERVICE_ID` | Grouped web Services ID |
@@ -205,6 +207,58 @@ recreate `web` — the old key must not stay accepted indefinitely.
 *Break-glass* (suspected token theft): write the new key, make sure
 `session_secret_previous` is empty, recreate `web`. Every session ends at
 once, including the attacker's.
+
+## Usage page (`admin.haalkhata.app`)
+
+The operator's admin page (the usage overview, and the report queue described
+under "Content moderation") is served by the same `web` container as the app,
+on its own hostname. The app decides what to serve by the `Host` header:
+`admin.haalkhata.app` reaches the admin page and its two APIs and nothing
+else, and the app's hostnames reach none of them. The usage view shows
+product-wide counts and display names only, and the Reports view only what
+someone reported; see
+[`docs/backend/adminanalytics/adminanalytics-service.md`](../docs/backend/adminanalytics/adminanalytics-service.md)
+and [`docs/backend/adminmoderation/adminmoderation-service.md`](../docs/backend/adminmoderation/adminmoderation-service.md).
+
+First-time setup, **in this order**:
+
+1. **DNS.** Add an `A` record (and `AAAA` if the server has IPv6) for
+   `admin.haalkhata.app` pointing at this server. Do this before the deploy:
+   Caddy requests the certificate when it starts with the new `Caddyfile`
+   and keeps retrying while the name does not resolve here. The app's own
+   hostnames are unaffected either way.
+2. **Google.** The usage page needs an OAuth client that lists
+   `https://admin.haalkhata.app` under "Authorized JavaScript origins";
+   without one Google's button refuses to render there. Two ways:
+   - *Recommended:* create a second OAuth client of type "Web application"
+     whose **only** authorized origin is `https://admin.haalkhata.app`, and
+     set its id as the `ADMIN_GOOGLE_CLIENT_ID` repository variable. Google
+     mints a token for a client only from one of that client's origins, so
+     no page on `haalkhata.app` can ever obtain a token the usage page
+     accepts, even if a script were injected into the app.
+   - *Simpler:* add the origin to the existing web client and leave
+     `ADMIN_GOOGLE_CLIENT_ID` unset. The allowlist still decides who gets
+     in; what is given up is that separation between the two origins.
+3. **Allowlist.** Set the `ADMIN_EMAILS` repository secret to the Google
+   address (or addresses, comma separated) that may sign in.
+4. **Deploy** as usual. The deploy steps that accept the `ADMIN_EMAILS`
+   and `ADMIN_GOOGLE_CLIENT_ID` keys ship inside the same release, so
+   nothing is copied to the server by hand.
+
+Afterwards:
+
+- **Revoking access** is removing the address from the `ADMIN_EMAILS` secret
+  and deploying. The allowlist is checked on every request, so existing
+  sessions for that address end when the new container starts.
+- **Sessions** last eight hours and do not renew. To end every admin session
+  at once: `docker compose -f docker-compose.prod.yml exec -T db psql -U
+  haalkhata -d haalkhata -c 'DELETE FROM admin_sessions'`.
+- **Turning the page off** is emptying `ADMIN_EMAILS` (nobody can sign in),
+  or removing `ADMIN_HOST` from the compose file and the second site from
+  the `Caddyfile` (the page and its API then do not exist at all).
+- An admin is a Google identity on the allowlist, not an app account.
+  Signing in there creates nothing in `users`, and an app session opens
+  nothing there.
 
 ### Offsite backup retention
 
@@ -355,10 +409,17 @@ when Apple configuration or the native Google audience is missing.
 
 ## Content moderation
 
-Install `ops/moderate.sh` alongside the server ops scripts. Review the private
-queue at least daily and respond to safety reports promptly (target: within 24
-hours). The console reads the matching SQL from the deployed image; it uses the
-internal Postgres connection and exposes no public moderator endpoint.
+Review the queue at least daily and respond to safety reports promptly
+(target: within 24 hours). There are two ways in, and they do the same thing:
+
+- **The admin page**, Reports view (`admin.haalkhata.app`, set up as in
+  "Usage page" above). It groups reports by the content they are about,
+  shows the reported words and who wrote them (never who reported), asks
+  before removing or suspending, and lists who is suspended with a Resume
+  button. The count of waiting reports shows on its view switch.
+- **`ops/moderate.sh`**, installed alongside the server ops scripts. It reads
+  the matching SQL from the deployed image and uses the internal Postgres
+  connection. Use it when the admin page is unavailable.
 
 ```sh
 ./ops/moderate.sh list
@@ -366,6 +427,17 @@ internal Postgres connection and exposes no public moderator endpoint.
 ./ops/moderate.sh dismiss REPORT_UUID  # close a reviewed, non-actionable report
 ./ops/moderate.sh suspend REPORT_UUID  # revoke sessions and refuse new authenticated requests
 ./ops/moderate.sh resume REPORT_UUID   # restore access after review; old sessions stay invalid
+```
+
+Someone suspended whose every report has since gone (reports are deleted with
+the account of whoever made them) has nothing left to resume through, in
+either tool; the page lists them without a button. Resume them by hand:
+
+```sh
+docker compose -f docker-compose.prod.yml exec -T db psql -U haalkhata -d haalkhata \
+  -c "SELECT id, name, suspended_at FROM users WHERE suspended_at IS NOT NULL"
+docker compose -f docker-compose.prod.yml exec -T db psql -U haalkhata -d haalkhata \
+  -c "UPDATE users SET suspended_at = NULL, token_version = token_version + 1 WHERE id = '<id>'"
 ```
 
 Keep queue output private. Block controls work despite outstanding balances and

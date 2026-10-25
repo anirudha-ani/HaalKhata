@@ -1,0 +1,165 @@
+syntax = "proto3";
+
+package adminanalytics.v1;
+
+import "google/protobuf/empty.proto";
+
+// Product usage for the operator: how many people use the app and how much
+// they do with it. Counts and display names only. No email, phone, avatar,
+// account id, amount of money, expense description or group name crosses
+// this contract, so the page built on it cannot show one.
+//
+// This service answers only on the admin host, and nothing else answers
+// there. It has its own sign-in and its own session, separate from the
+// app's: an app session, however it was obtained, is not an admin session.
+service AdminAnalyticsService {
+  // UNAUTHENTICATED. Issues the single-use nonce Google must copy into the
+  // ID token, exactly as the app's own sign-in does.
+  rpc BeginSignIn(google.protobuf.Empty) returns (BeginSignInResponse);
+  // UNAUTHENTICATED. Verifies a Google ID token and starts an admin session
+  // for a verified address on the operator allowlist. Never creates or
+  // touches a user account: an admin is an allowlisted Google identity, not
+  // a row in the users table. The session is an HttpOnly cookie; nothing
+  // readable comes back.
+  rpc SignIn(SignInRequest) returns (google.protobuf.Empty);
+  // Ends the caller's admin session on the server, then clears the cookie.
+  rpc SignOut(google.protobuf.Empty) returns (google.protobuf.Empty);
+  // The whole overview in one read.
+  rpc GetUsageOverview(google.protobuf.Empty) returns (UsageOverview);
+  // Activity over time: twelve weeks or twelve months, ending wherever the
+  // page asks, back to the first thing that ever happened.
+  rpc GetUsageTrend(GetUsageTrendRequest) returns (UsageTrend);
+}
+
+message BeginSignInResponse {
+  // Server-issued, short-lived value to pass to Google as the nonce.
+  string nonce = 1;
+}
+
+message SignInRequest {
+  // The credential Google Identity Services handed the browser. The server
+  // reads the identity from its verified claims, never from the request.
+  string id_token = 1;
+}
+
+message UsageOverview {
+  // RFC 3339 instant these figures were read. Everything in the response is
+  // one snapshot of the database at this moment.
+  string generated_at = 1;
+  UsageTotals totals = 2;
+  // Every expense ever added, by how it was split, most used first.
+  repeated SplitTypeCount expenses_by_split_type = 3;
+  // The trend moved to GetUsageTrend, where it can be read for any period.
+  reserved 4;
+  reserved "weeks";
+  // People who have signed in, newest first. Capped; see users_truncated.
+  repeated UserUsage users = 5;
+  // True when there are more people than `users` lists. The totals count
+  // everyone regardless.
+  bool users_truncated = 6;
+}
+
+message UsageTotals {
+  // Accounts someone has signed in to.
+  int32 registered_user_count = 1;
+  // Placeholder rows for people a member invited who have never signed in.
+  // Counted, never listed: they have not joined and did not choose to be here.
+  int32 invited_user_count = 2;
+  // People who did anything that reaches the feed in the last 7 days.
+  int32 weekly_active_user_count = 3;
+  // The same over the last 30 days.
+  int32 monthly_active_user_count = 4;
+  int32 group_count = 5;
+  // Every expense ever added, including ones since deleted.
+  int32 expense_count = 6;
+  // How many of those were later deleted.
+  int32 deleted_expense_count = 7;
+  // Every payment ever recorded, including ones since removed. A payment
+  // that settled several balances at once counts once. A net settlement's
+  // cancelling entries moved no money and are not counted.
+  int32 payment_count = 8;
+  // Receipt scans attempted. Counted from the day scan counting shipped;
+  // earlier scans left no trace to count.
+  int32 receipt_scan_count = 9;
+  // How many of those a provider could read.
+  int32 parsed_receipt_scan_count = 10;
+  int32 comment_count = 11;
+  // Payment methods people have saved, including the ones carried over from
+  // the old per-app handles. A count only: what a method is called and
+  // where it sends money are never read for this page.
+  int32 payment_method_count = 12;
+  // How many people have saved at least one.
+  int32 payment_method_user_count = 13;
+  // How many of payment_count were later removed, every part of them.
+  int32 deleted_payment_count = 14;
+}
+
+message SplitTypeCount {
+  string split_type = 1; // equal | exact | percent | shares | itemized
+  int32 count = 2;
+}
+
+// How long one bar of the trend is. Weeks start on Monday and months on the
+// 1st, both in UTC, the boundaries Postgres's date_trunc uses.
+enum TrendUnit {
+  // Read as TREND_UNIT_WEEK.
+  TREND_UNIT_UNSPECIFIED = 0;
+  TREND_UNIT_WEEK = 1;
+  TREND_UNIT_MONTH = 2;
+}
+
+message GetUsageTrendRequest {
+  TrendUnit unit = 1;
+  // A day, "YYYY-MM-DD", inside the last period to show. Empty means today.
+  // A day after today is read as today, and a day before anything happened
+  // as the first day anything did, so every answer has something to show.
+  // The page never builds one itself: it sends back the *_end_on values of
+  // an earlier answer, or a period's end_on when switching units.
+  string end_on = 2;
+}
+
+message UsageTrend {
+  // RFC 3339 instant these figures were read.
+  string generated_at = 1;
+  TrendUnit unit = 2;
+  // The periods shown, oldest first with no gaps.
+  repeated TrendPeriod periods = 3;
+  // Where the page goes from here: end_on for the window just before this
+  // one, just after it, and the very first one. Each is empty when there is
+  // nowhere to go: nothing happened earlier, the window already holds
+  // today, or it already holds the first thing that ever happened.
+  string earlier_end_on = 4;
+  string later_end_on = 5;
+  string first_end_on = 6;
+}
+
+// One period of activity.
+message TrendPeriod {
+  // Its first and last day, "YYYY-MM-DD", UTC.
+  string start_on = 1;
+  string end_on = 2;
+  // People who finished signing up in it.
+  int32 new_user_count = 3;
+  int32 expense_count = 4;
+  // Payments recorded in it, each once however many balances it settled.
+  int32 payment_count = 5;
+  int32 receipt_scan_count = 6;
+}
+
+// One person's usage. A display name and counts, and deliberately nothing
+// that could be used to contact or look up the person.
+message UserUsage {
+  // The person's display name. Empty when the name they go by is itself a
+  // way to reach them (an email address, a phone number, or the first part
+  // of their email): the page says a name was withheld instead of showing it.
+  string name = 1;
+  // The day they finished signing up, "YYYY-MM-DD", UTC.
+  string joined_on = 2;
+  // Expenses this person added, by how each was split.
+  repeated SplitTypeCount expenses_by_split_type = 3;
+  // Payments this person recorded, each once however many balances it
+  // settled.
+  int32 payment_count = 4;
+  // Receipt scans this person attempted.
+  int32 receipt_scan_count = 5;
+}

@@ -39,4 +39,14 @@ describe("receipt handler concurrency", () => {
     for (const release of releases) release();
     await Promise.all([first, second]);
   });
+
+  it("hands the usecase the caller, so the attempt is counted against them", async () => {
+    vi.mocked(parseReceipt).mockResolvedValue({} as never);
+    const image = new Uint8Array([1, 2, 3]);
+    const request = { image, consentVersion: "terms", currency: "EUR" } as ParseReceiptRequest;
+
+    await receiptHandler.parseReceipt(request, {} as HandlerContext);
+
+    expect(parseReceipt).toHaveBeenCalledWith("user-123", image, "terms", "EUR");
+  });
 });

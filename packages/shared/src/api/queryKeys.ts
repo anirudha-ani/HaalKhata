@@ -91,10 +91,27 @@ export const queryKeys = {
    * and nothing a payment or an expense does changes them.
    */
   paymentMethods: ["paymentMethods"] as const,
+  /**
+   * The user's own insights for one window size.
+   * @param months - How many calendar months the window covers.
+   * @returns The query key tuple for that window.
+   */
+  insights: (months: number) => ["insights", months] as const,
+  /** Everything cached for the admin surface; forgotten together when the admin session ends. */
+  admin: ["admin"] as const,
+  /** The operator's usage overview on the admin surface. */
+  adminUsage: ["admin", "usage"] as const,
+  /**
+   * One window of the operator's usage trend: its unit (a TrendUnit value)
+   * and the day its last period holds ("" for today).
+   */
+  adminTrend: (unit: number, endOn: string) => ["admin", "trend", unit, endOn] as const,
+  /** The operator's report queue on the admin surface. */
+  adminReports: ["admin", "reports"] as const,
 };
 
 /** Everything money-related that a new expense/settlement can change — invalidate these key prefixes after mutations. */
-export const MONEY_KEYS = [["groups"], ["expenses"], ["expense"], ["balances"], ["friends"], ["activity"], ["notifications"]];
+export const MONEY_KEYS = [["groups"], ["expenses"], ["expense"], ["balances"], ["friends"], ["activity"], ["notifications"], ["insights"]];
 
 /**
  * What a comment changes: it lands in the feed and notifies the other

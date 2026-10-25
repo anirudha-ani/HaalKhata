@@ -35,9 +35,30 @@ export function bearerTokenFromAuthorization(
 }
 
 /**
- * Extracts the one unambiguous session token from a Cookie header.
+ * Extracts the one unambiguous value of a named cookie from a Cookie header.
  * Duplicate names are rejected instead of accepting proxy/browser-dependent
  * ordering, which prevents cookie tossing from selecting an attacker value.
+ *
+ * @param cookieHeader - Raw Cookie request-header value.
+ * @param cookieName - Exact name of the cookie to read.
+ * @returns The value, or null when absent, empty, or duplicated.
+ */
+export function uniqueCookieValue(
+  cookieHeader: string | null | undefined,
+  cookieName: string,
+): string | null {
+  let cookieValue: string | null = null;
+  for (const cookiePart of (cookieHeader ?? "").split(";")) {
+    const [partName, ...valueParts] = cookiePart.trim().split("=");
+    if (partName !== cookieName) continue;
+    if (cookieValue !== null) return null;
+    cookieValue = valueParts.join("=");
+  }
+  return cookieValue || null;
+}
+
+/**
+ * Extracts the one unambiguous session token from a Cookie header.
  *
  * @param cookieHeader - Raw Cookie request-header value.
  * @returns The session token, or null when absent, empty, or duplicated.
@@ -45,14 +66,7 @@ export function bearerTokenFromAuthorization(
 export function sessionTokenFromCookieHeader(
   cookieHeader: string | null | undefined,
 ): string | null {
-  let sessionToken: string | null = null;
-  for (const cookiePart of (cookieHeader ?? "").split(";")) {
-    const [cookieName, ...valueParts] = cookiePart.trim().split("=");
-    if (cookieName !== SESSION_COOKIE) continue;
-    if (sessionToken !== null) return null;
-    sessionToken = valueParts.join("=");
-  }
-  return sessionToken || null;
+  return uniqueCookieValue(cookieHeader, SESSION_COOKIE);
 }
 
 /**

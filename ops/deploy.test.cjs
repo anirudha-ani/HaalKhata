@@ -119,6 +119,16 @@ test('invalid encoding, private keys, and encryption values preserve working sec
   }
 });
 
+test('a comma-and-space list deploys as the list it names, and other characters are still refused', (context) => {
+  const server = fixture(context);
+  const result = server.applyConfig('ADMIN_EMAILS= ops@example.com, second@example.org \n');
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(readFileSync(join(server.directory, '.env'), 'utf8'), 'ADMIN_EMAILS=ops@example.com,second@example.org\n');
+  const refused = server.applyConfig('ADMIN_EMAILS=ops@example.com;rm -rf /\n');
+  assert.notEqual(refused.status, 0);
+  assert.match(refused.stderr, /refusing: ADMIN_EMAILS/);
+});
+
 test('the new secret handling still rejects non-allowlisted destinations', (context) => {
   const server = fixture(context);
   assert.notEqual(server.applyConfig('ARBITRARY_FILE=/tmp/anything\n').status, 0);
