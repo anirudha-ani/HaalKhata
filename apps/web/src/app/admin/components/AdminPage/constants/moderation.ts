@@ -42,6 +42,17 @@ export const TARGET_KIND_WORDING: Record<
 export const SUSPEND_EFFECT =
   "They are signed out everywhere, on the web and on their phones, and cannot sign in until you resume them. Their expenses and balances stay as they are for everyone they share them with. The report stays open.";
 
+/**
+ * How long the queue waits after the last dismissal or removal before it
+ * reads itself again. The handled entry leaves the screen at once; the read
+ * that follows is for what changed elsewhere (a report that arrived, the
+ * next one past the list's limit). Working down the queue a click every
+ * second or two then reads it once, when the operator pauses, rather than
+ * once per click: reads and actions each have a budget of 30 a minute,
+ * shared by every admin session.
+ */
+export const QUEUE_REFRESH_PAUSE_MS = 4000;
+
 /** What an action is called in a sentence about it failing: "Couldn't {verb}". */
 export const ACTION_VERBS: Record<ModerationAction, string> = {
   dismiss: "dismiss the report",
