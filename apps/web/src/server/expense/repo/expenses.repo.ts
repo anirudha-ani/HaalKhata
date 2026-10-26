@@ -371,6 +371,34 @@ export async function listOneOffExpensesBetween(
 }
 
 /**
+ * Live one-off (non-group) expenses the user shares with any of the given
+ * people, for working out every one of those pair balances from one read
+ * instead of one read per person.
+ *
+ * @param userId - The person every expense must include.
+ * @param otherUserIds - People at least one of whom each expense must include too.
+ * @param client - Snapshot or transaction client; omitted, the pool.
+ * @returns The expenses; no query is sent for an empty list of people.
+ */
+export async function listOneOffExpensesWithAnyOf(
+  userId: string,
+  otherUserIds: readonly string[],
+  client?: PoolClient,
+): Promise<ExpenseRow[]> {
+  if (otherUserIds.length === 0) return [];
+  return query<ExpenseRow>(
+    `SELECT expense.* FROM expenses expense
+     WHERE expense.group_id IS NULL AND expense.deleted_at IS NULL
+       AND EXISTS (SELECT 1 FROM expense_splits split WHERE split.expense_id = expense.id AND split.user_id = $1
+                   UNION SELECT 1 FROM expense_payers payer WHERE payer.expense_id = expense.id AND payer.user_id = $1)
+       AND EXISTS (SELECT 1 FROM expense_splits split WHERE split.expense_id = expense.id AND split.user_id = ANY($2::text[])
+                   UNION SELECT 1 FROM expense_payers payer WHERE payer.expense_id = expense.id AND payer.user_id = ANY($2::text[]))`,
+    [userId, [...new Set(otherUserIds)]],
+    client,
+  );
+}
+
+/**
  * Every expense both users participate in, group ones included.
  *
  * The friend ledger totals across all shared scopes the way Splitwise's friend

@@ -54,7 +54,7 @@ import {
 import {
   amountOwed,
   groupCancelsOut,
-  oneOffNetsBetween,
+  oneOffNetsWith,
   owedByScope,
   pairScopeDebts,
   userNetInGroup,
@@ -1118,11 +1118,11 @@ export async function listExpenses(
     ];
     const viewerNetByGroupId = await userNetInGroups(userId, groupIds, client);
     // One-off slates are per currency, so the settledness lookup is keyed on
-    // the counterparty and the expense's currency. In turn, not side by side:
-    // one connection runs one statement at a time.
+    // the counterparty and the expense's currency. One batch for everyone on
+    // the page, not a round of reads per person.
     const oneOffNetByPair = new Map<string, number>();
-    for (const counterpartyId of counterpartyIds) {
-      for (const [currency, cents] of await oneOffNetsBetween(userId, counterpartyId, client)) {
+    for (const [counterpartyId, nets] of await oneOffNetsWith(userId, counterpartyIds, client)) {
+      for (const [currency, cents] of nets) {
         oneOffNetByPair.set(oneOffPairKey(counterpartyId, currency), cents);
       }
     }
@@ -1194,9 +1194,8 @@ export async function getExpense(userId: string, expenseId: string) {
       }
       const oneOffNetByPair = new Map<string, number>();
       if (!current.group_id) {
-        for (const participantId of participantIds) {
-          if (participantId === userId) continue;
-          for (const [currency, cents] of await oneOffNetsBetween(userId, participantId, client)) {
+        for (const [participantId, nets] of await oneOffNetsWith(userId, participantIds, client)) {
+          for (const [currency, cents] of nets) {
             oneOffNetByPair.set(oneOffPairKey(participantId, currency), cents);
           }
         }

@@ -365,6 +365,32 @@ export async function listOneOffSettlementsBetween(
 }
 
 /**
+ * Lists the live one-off settlements between the user and any of the given
+ * people, either direction, oldest first: the settlement side of every one
+ * of those pairs' one-off ledgers, from one read.
+ *
+ * @param userId - The person on every settlement.
+ * @param otherUserIds - The people on the other side.
+ * @param client - Snapshot or transaction client; omitted, the pool.
+ * @returns The settlement rows; no query is sent for an empty list of people.
+ */
+export async function listOneOffSettlementsWithAnyOf(
+  userId: string,
+  otherUserIds: readonly string[],
+  client?: PoolClient,
+): Promise<SettlementRow[]> {
+  if (otherUserIds.length === 0) return [];
+  return query<SettlementRow>(
+    `SELECT * FROM settlements
+     WHERE group_id IS NULL AND deleted_at IS NULL
+       AND ((from_user = $1 AND to_user = ANY($2::text[])) OR (to_user = $1 AND from_user = ANY($2::text[])))
+     ORDER BY created_at ASC`,
+    [userId, [...new Set(otherUserIds)]],
+    client,
+  );
+}
+
+/**
  * Lists every live settlement the user paid or received, oldest first.
  *
  * @param userId - Id of the user involved as payer or recipient.

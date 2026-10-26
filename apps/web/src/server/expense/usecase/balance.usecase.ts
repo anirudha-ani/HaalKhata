@@ -7,12 +7,14 @@ import {
   listExpensesByGroups,
   listExpensesInvolvingUser,
   listOneOffExpensesBetween,
+  listOneOffExpensesWithAnyOf,
   loadExpenseChildren,
   type ExpenseChildren,
   type ExpenseRow,
 } from "@/server/expense/repo/expenses.repo";
 import {
   listOneOffSettlementsBetween,
+  listOneOffSettlementsWithAnyOf,
   listSettlementsBetween,
   listSettlementsByGroups,
   listSettlementsInvolvingUser,
@@ -498,36 +500,69 @@ function owedInEntries(entries: LedgerEntry[], payerId: string, creditorId: stri
 }
 
 /**
- * The viewer's net in the pair's one-off scope alone, per currency: one-off
- * expenses between the two, netted against one-off settlement rows, group
- * scopes excluded entirely. The one-off counterpart of {@link userNetInGroup}.
+ * The viewer's net in each pair's one-off scope alone, per currency, for
+ * many counterparties at once: one-off expenses between the two, netted
+ * against one-off settlement rows, group scopes excluded entirely. The
+ * one-off counterpart of {@link userNetInGroup}.
+ *
+ * Three reads in all, whatever the number of people: the shared expenses,
+ * their payer and split rows, and the settlements. Each pair is then worked
+ * out in memory from its own rows alone, exactly as a read per pair would
+ * (a pair's balance never depends on anyone else's rows). It used to be
+ * three reads per person, run one after another on a held connection
+ * (audit A14).
  *
  * @param userId - The viewer.
- * @param otherUserId - The counterparty.
+ * @param otherUserIds - The counterparties; duplicates and the viewer are ignored.
  * @param client - Snapshot or transaction client; omitted, the pool.
- * @returns Cents per currency; > 0 ⇒ the other user owes the viewer one-off.
+ * @returns Counterparty id → cents per currency; > 0 ⇒ they owe the viewer one-off.
  */
-export async function oneOffNetsBetween(
+export async function oneOffNetsWith(
   userId: string,
-  otherUserId: string,
+  otherUserIds: readonly string[],
   client?: PoolClient,
-): Promise<CurrencyCents> {
-  const expenses = await listOneOffExpensesBetween(userId, otherUserId, client);
+): Promise<Map<string, CurrencyCents>> {
+  const counterpartyIds = [...new Set(otherUserIds)].filter((otherUserId) => otherUserId !== userId);
+  const netsByCounterparty = new Map<string, CurrencyCents>();
+  if (counterpartyIds.length === 0) return netsByCounterparty;
+  const expenses = await listOneOffExpensesWithAnyOf(userId, counterpartyIds, client);
   const children = await loadExpenseChildren(
     expenses.map((expense) => expense.id),
     client,
     false,
   );
-  const settlements = await listOneOffSettlementsBetween(userId, otherUserId, client);
-  const nets: CurrencyCents = new Map();
-  for (const [currency, entries] of ledgersByCurrency(expenses, children, settlements)) {
-    addCents(
-      nets,
-      currency,
-      owedInEntries(entries, otherUserId, userId) - owedInEntries(entries, userId, otherUserId),
+  const settlements = await listOneOffSettlementsWithAnyOf(userId, counterpartyIds, client);
+  for (const otherUserId of counterpartyIds) {
+    const shared = expenses.filter((expense) => participatesIn(expense.id, children, otherUserId));
+    const between = settlements.filter(
+      (settlement) => settlement.from_user === otherUserId || settlement.to_user === otherUserId,
     );
+    const nets: CurrencyCents = new Map();
+    for (const [currency, entries] of ledgersByCurrency(shared, children, between)) {
+      addCents(
+        nets,
+        currency,
+        owedInEntries(entries, otherUserId, userId) - owedInEntries(entries, userId, otherUserId),
+      );
+    }
+    netsByCounterparty.set(otherUserId, nets);
   }
-  return nets;
+  return netsByCounterparty;
+}
+
+/**
+ * Whether someone pays toward or owes a share of one expense.
+ *
+ * @param expenseId - The expense.
+ * @param children - Its payer and split rows.
+ * @param userId - The person.
+ * @returns True when they are among its payers or owers.
+ */
+function participatesIn(expenseId: string, children: ExpenseChildren, userId: string): boolean {
+  return (
+    (children.payers.get(expenseId) ?? []).some((payer) => payer.user_id === userId) ||
+    (children.splits.get(expenseId) ?? []).some((split) => split.user_id === userId)
+  );
 }
 
 /**
