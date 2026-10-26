@@ -51,6 +51,7 @@ import { listPayeeMethods } from "@/server/payment/usecase/paymentMethod.usecase
 import {
   LEDGER_DISPLAY_LIMIT,
   OFFSET_SETTLEMENT_METHOD,
+  formerMemberRefusal,
 } from "@/server/expense/expense.constants";
 
 /**
@@ -917,6 +918,51 @@ function settlementLedgerLines(
   });
 }
 
+/** One of the two people on a statement, as the removal check needs them. */
+interface LedgerParty {
+  /** Their name; undefined for the reader, who is addressed as "you". */
+  name: string | undefined;
+  /** Every group they belong to now. */
+  groupIds: Set<string>;
+}
+
+/**
+ * Why removing each payment between two people would be refused because one
+ * of them has since left the group it is in: the rule deleteSettlement
+ * enforces (audit A07), worked out for the statement so each line can say so
+ * in place of its Remove action instead of sending a request that fails. A
+ * net settlement is removed whole, so one of its lines in such a group blocks
+ * every line of it.
+ *
+ * @param settlements - Every payment between the pair, removed ones included.
+ * @param groupNames - Names of the groups those payments sit in.
+ * @param parties - The reader and the other person.
+ * @returns Settlement id → refusal, for the lines whose removal would be refused.
+ */
+function settlementRemovalRefusals(
+  settlements: SettlementRow[],
+  groupNames: Map<string, string>,
+  parties: LedgerParty[],
+): Map<string, string> {
+  const refusalByUnit = new Map<string, string>();
+  for (const settlement of settlements) {
+    const groupId = settlement.group_id;
+    if (settlement.deleted_at || !groupId) continue;
+    const unitKey = settlement.net_settlement_id ?? settlement.id;
+    if (refusalByUnit.has(unitKey)) continue;
+    const former = parties.find((party) => !party.groupIds.has(groupId));
+    if (former) {
+      refusalByUnit.set(unitKey, formerMemberRefusal(groupNames.get(groupId) ?? "this group", former.name));
+    }
+  }
+  const refusalById = new Map<string, string>();
+  for (const settlement of settlements) {
+    const refusal = refusalByUnit.get(settlement.net_settlement_id ?? settlement.id);
+    if (refusal) refusalById.set(settlement.id, refusal);
+  }
+  return refusalById;
+}
+
 /**
  * Sorts statement lines oldest-first and attaches one running balance per currency.
  *
@@ -1095,9 +1141,8 @@ export async function getFriendLedger(userId: string, friendId: string) {
     const friendGroupIds = new Set(
       (await listGroupsByUser(friendId, client)).map((group) => group.id),
     );
-    const mutualGroupRows = (await listGroupsByUser(userId, client)).filter((group) =>
-      friendGroupIds.has(group.id),
-    );
+    const callerGroupRows = await listGroupsByUser(userId, client);
+    const mutualGroupRows = callerGroupRows.filter((group) => friendGroupIds.has(group.id));
     if (!friend || (!isFriend && mutualGroupRows.length === 0 && entries.length === 0)) {
       // Identical for an unknown id and an existing unrelated account: callers
       // cannot use this endpoint as a user-existence oracle.
@@ -1155,12 +1200,21 @@ export async function getFriendLedger(userId: string, friendId: string) {
       ? await listPayeeMethods(friendId, client)
       : { methods: [], removedAt: "" };
 
+    // Each payment line says up front when removing it would be refused.
+    const removalRefusals = settlementRemovalRefusals(settlements, groupNames, [
+      { name: undefined, groupIds: new Set(callerGroupRows.map((group) => group.id)) },
+      { name: friend.name, groupIds: friendGroupIds },
+    ]);
+
     return {
       friend: toPublicUser(friend),
       netCents: toInt32Cents(nets.get(defaultCurrency) ?? 0, "this balance"),
       currency: defaultCurrency,
       nets: currencyAmounts(nets, defaultCurrency),
-      entries: shownEntries,
+      entries: shownEntries.map((entry) => ({
+        ...entry,
+        removalRefusal: removalRefusals.get(entry.id) ?? "",
+      })),
       truncated,
       settlePositions,
       payeeMethods: payee.methods,

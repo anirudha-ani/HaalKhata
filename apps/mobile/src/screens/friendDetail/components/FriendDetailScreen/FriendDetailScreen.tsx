@@ -513,7 +513,14 @@ export function FriendDetailScreen({
                       the first arms the button, the second sends. A cancelled
                       balance has no remove of its own: it goes when the
                       payment it belongs to goes, and the second tap says so. */}
-                  {isSettlement && !entry.deleted && !entry.offset ? (
+                  {/* Said in place of Remove when the server would refuse it:
+                      one of you has left the group this payment is in. */}
+                  {isSettlement && !entry.deleted && !entry.offset && entry.removalRefusal ? (
+                    <View style={styles.entryAction}>
+                      <Text style={styles.removalRefusal}>{entry.removalRefusal}</Text>
+                    </View>
+                  ) : null}
+                  {isSettlement && !entry.deleted && !entry.offset && !entry.removalRefusal ? (
                     <View style={styles.entryAction}>
                       <Button
                         busy={removing}
@@ -767,6 +774,11 @@ const styles = StyleSheet.create({
     color: colors.neg600,
     fontSize: 12,
     fontWeight: "500",
+  },
+  removalRefusal: {
+    color: colors.inkSoft,
+    fontSize: 12,
+    lineHeight: 17,
   },
   removeCancel: {
     color: colors.inkSoft,

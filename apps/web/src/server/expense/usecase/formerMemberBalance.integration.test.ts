@@ -44,6 +44,8 @@ describe.skipIf(!reachable)("changes that would move a former member's group bal
   let updateExpense: typeof import("./expense.usecase").updateExpense;
   let deleteExpense: typeof import("./expense.usecase").deleteExpense;
   let deleteSettlement: typeof import("./expense.usecase").deleteSettlement;
+  let getExpense: typeof import("./expense.usecase").getExpense;
+  let getFriendLedger: typeof import("./balance.usecase").getFriendLedger;
   let removeMemberFromGroup: typeof import("@/server/group/usecase/group.usecase").removeMemberFromGroup;
   let closePool: () => Promise<void>;
 
@@ -112,7 +114,8 @@ describe.skipIf(!reachable)("changes that would move a former member's group bal
       const cache = globalThis as unknown as { __haalkhataPool?: { end(): Promise<void> } };
       await cache.__haalkhataPool?.end();
     };
-    ({ createExpense, updateExpense, deleteExpense, deleteSettlement } = await import("./expense.usecase"));
+    ({ createExpense, updateExpense, deleteExpense, deleteSettlement, getExpense } = await import("./expense.usecase"));
+    ({ getFriendLedger } = await import("./balance.usecase"));
     ({ removeMemberFromGroup } = await import("@/server/group/usecase/group.usecase"));
     database = new Client({ connectionString: TEST_URL });
     await database.connect();
@@ -159,7 +162,10 @@ describe.skipIf(!reachable)("changes that would move a former member's group bal
   it("refuses the former member removing a payment they were part of", async () => {
     const { fromRahim } = await tomasSettlesAndLeaves();
 
-    await expect(deleteSettlement(TOMAS, fromRahim)).rejects.toMatchObject(leftGroup);
+    await expect(deleteSettlement(TOMAS, fromRahim)).rejects.toMatchObject({
+      code: "failed_precondition",
+      message: expect.stringContaining('You have left "Goa Trip"'),
+    });
     expect(await paymentStands(fromRahim)).toBe(true);
   });
 
@@ -211,5 +217,57 @@ describe.skipIf(!reachable)("changes that would move a former member's group bal
     await deleteSettlement(SARA, between);
 
     expect(await paymentStands(between)).toBe(false);
+  });
+
+  it("says up front, on the expense, why editing and deleting it would be refused", async () => {
+    const { dinner } = await tomasSettlesAndLeaves();
+
+    const detail = await getExpense(SARA, dinner.id);
+
+    expect(detail.editRefusal).toContain('Tomas has left "Goa Trip"');
+    expect(detail.deleteRefusal).toContain('Tomas has left "Goa Trip"');
+  });
+
+  it("offers deleting an expense that leaves the former member at zero, but not editing it", async () => {
+    const ownShare = await createExpense(SARA, {
+      ...dinnerRequest(1000),
+      amountCents: 1000,
+      payers: [{ userId: TOMAS, amountCents: 1000 }],
+      splitSpecs: [{ userId: TOMAS, amountCents: 1000, percentBp: 0, shares: 0 }],
+    } as unknown as CreateExpenseRequest);
+    await removeMemberFromGroup(TOMAS, { groupId, userId: TOMAS });
+
+    const detail = await getExpense(SARA, ownShare.id);
+
+    expect(detail.editRefusal).toContain('Tomas has left "Goa Trip"');
+    expect(detail.deleteRefusal).toBe("");
+  });
+
+  it("offers editing and deleting while everyone on the expense is still a member", async () => {
+    const dinner = await createExpense(SARA, dinnerRequest(3000));
+
+    const detail = await getExpense(SARA, dinner.id);
+
+    expect(detail).toMatchObject({ editRefusal: "", deleteRefusal: "" });
+  });
+
+  it("says up front, on each payment line, why removing it would be refused, to both people", async () => {
+    const { fromRahim } = await tomasSettlesAndLeaves();
+
+    const rahimsView = await getFriendLedger(RAHIM, TOMAS);
+    const tomassView = await getFriendLedger(TOMAS, RAHIM);
+
+    const lineIn = (ledger: Awaited<ReturnType<typeof getFriendLedger>>) =>
+      ledger.entries.find((entry) => entry.id === fromRahim);
+    expect(lineIn(rahimsView)?.removalRefusal).toContain('Tomas has left "Goa Trip"');
+    expect(lineIn(tomassView)?.removalRefusal).toContain('You have left "Goa Trip"');
+  });
+
+  it("leaves a payment between two members removable on the statement", async () => {
+    const between = await payment(RAHIM, SARA, 500);
+
+    const ledger = await getFriendLedger(RAHIM, SARA);
+
+    expect(ledger.entries.find((entry) => entry.id === between)?.removalRefusal).toBe("");
   });
 });

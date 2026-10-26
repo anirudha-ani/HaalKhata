@@ -19,12 +19,19 @@ export const ONE_OFF_NOT_CONNECTED_MESSAGE =
  * group because a payment is removed from a friend's page, where no group
  * is on screen.
  *
- * @param personName - The member who left.
  * @param groupName - The group they left.
+ * @param personName - The member who left; omitted when it is the reader.
+ * @param refused - What cannot happen, when "this can't be changed" is too broad.
  * @returns The sentence shown beside the refused control.
  */
-export function formerMemberRefusal(personName: string, groupName: string): string {
-  return `${personName} has left "${groupName}", so this can't be changed: their balance there has to stay settled`;
+export function formerMemberRefusal(
+  groupName: string,
+  personName?: string,
+  refused = "this can't be changed",
+): string {
+  return personName === undefined
+    ? `You have left "${groupName}", so ${refused}: your balance there has to stay settled`
+    : `${personName} has left "${groupName}", so ${refused}: their balance there has to stay settled`;
 }
 
 /** Split types the API accepts; mirrors the split calculators in domain/splits. */

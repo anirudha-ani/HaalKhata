@@ -516,12 +516,14 @@ async function assertLockedGroupParticipants(
  *
  * @param groupId - The group whose ledger is changing.
  * @param changeByUser - How much each person's net in that group moves, in cents.
+ * @param actorId - Who is making the change, addressed as "you" when they are the one who left.
  * @param client - Transaction client holding the group's ledger lock.
  * @throws UsecaseError (failed_precondition) naming a former member whose balance would move.
  */
 async function assertFormerMembersUnmoved(
   groupId: string,
   changeByUser: Map<string, number>,
+  actorId: string,
   client: PoolClient,
 ): Promise<void> {
   const movedIds = [...changeByUser].filter(([, cents]) => cents !== 0).map(([userId]) => userId);
@@ -533,8 +535,56 @@ async function assertFormerMembersUnmoved(
   const group = await findGroupById(groupId, client);
   throw new UsecaseError(
     "failed_precondition",
-    formerMemberRefusal(former?.name ?? "A former member", group?.name ?? "this group"),
+    formerMemberRefusal(
+      group?.name ?? "this group",
+      formerId === actorId ? undefined : (former?.name ?? "A former member"),
+    ),
   );
+}
+
+/**
+ * Why editing or deleting a group expense would be refused because somebody
+ * on it has left the group: the rule {@link assertFormerMembersUnmoved}
+ * enforces, worked out for the detail view so it can say so in place of the
+ * buttons rather than send a request that fails. Editing is refused while
+ * anyone on the expense has left, since an edit may name only members;
+ * deleting, only when it would move a former member's balance.
+ *
+ * @param group - The expense's group.
+ * @param expenseId - The expense.
+ * @param children - Its child rows, from the same snapshot.
+ * @param viewerId - Who is reading, addressed as "you" when they are the one who left.
+ * @param client - The snapshot's client.
+ * @returns Both refusals; "" where the action would go through.
+ */
+async function formerMemberRefusals(
+  group: { id: string; name: string },
+  expenseId: string,
+  children: ExpenseChildren,
+  viewerId: string,
+  client: PoolClient,
+): Promise<{ editRefusal: string; deleteRefusal: string }> {
+  const memberIds = new Set((await listMembers(group.id, client)).map((member) => member.id));
+  const formerIds = moneyParticipantIds(expenseId, children).filter(
+    (participantId) => !memberIds.has(participantId),
+  );
+  if (formerIds.length === 0) return { editRefusal: "", deleteRefusal: "" };
+  const nameById = new Map(
+    (await findUsersByIds(formerIds, client)).map((former) => [former.id, former.name] as const),
+  );
+  const refusalFor = (formerId: string, refused?: string) =>
+    formerMemberRefusal(
+      group.name,
+      formerId === viewerId ? undefined : (nameById.get(formerId) ?? "A former member"),
+      refused,
+    );
+  const deletionMoves = expenseNetChanges(storedAmounts(expenseId, children), { payers: [], splits: [] });
+  const movedFormerId = formerIds.find((formerId) => deletionMoves.has(formerId));
+  // Deleting still works when it would leave everyone who left at zero, so
+  // the edit refusal says only what it refuses.
+  return movedFormerId === undefined
+    ? { editRefusal: refusalFor(formerIds[0], "this expense can't be edited"), deleteRefusal: "" }
+    : { editRefusal: refusalFor(movedFormerId), deleteRefusal: refusalFor(movedFormerId) };
 }
 
 /**
@@ -876,6 +926,7 @@ export async function updateExpense(
       await assertFormerMembersUnmoved(
         current.group_id,
         expenseNetChanges(storedAmounts(expenseId, children), writtenAmounts(write)),
+        userId,
         client,
       );
     } else {
@@ -936,6 +987,7 @@ export async function deleteExpense(userId: string, expenseId: string): Promise<
       await assertFormerMembersUnmoved(
         existing.group_id,
         expenseNetChanges(storedAmounts(expenseId, children), { payers: [], splits: [] }),
+        userId,
         client,
       );
     } else {
@@ -1098,7 +1150,7 @@ export async function getExpense(userId: string, expenseId: string) {
   // and whether a payment came after it — are read at one instant, so an
   // edit or a payment committing mid-read cannot pair one version's amount
   // with another's shares.
-  const { expenseRow, children, settledForViewer, hasLaterSettlement, groupStatus } = await snapshot(
+  const { expenseRow, children, settledForViewer, hasLaterSettlement, groupStatus, refusals } = await snapshot(
     async (client) => {
       // Expenses are never hard-deleted, so the row checked above is still there.
       const current = (await findExpenseById(expenseId, client)) ?? found;
@@ -1156,12 +1208,18 @@ export async function getExpense(userId: string, expenseId: string) {
         client,
         scopeGroup ? !scopeGroup.simplify_debts : false,
       );
+      // What the edit and delete buttons would run into, so the page can
+      // say it in their place instead of sending a request that fails.
+      const changeRefusals = scopeGroup && !current.deleted_at
+        ? await formerMemberRefusals(scopeGroup, expenseId, currentChildren, userId, client)
+        : { editRefusal: "", deleteRefusal: "" };
       return {
         expenseRow: current,
         children: currentChildren,
         settledForViewer: settled,
         hasLaterSettlement: laterSettlement,
         groupStatus: scopeGroup ? GROUP_STATUS_PROTO[scopeGroup.status] : GroupStatus.UNSPECIFIED,
+        refusals: changeRefusals,
       };
     },
   );
@@ -1192,6 +1250,8 @@ export async function getExpense(userId: string, expenseId: string) {
     settledForViewer,
     hasLaterSettlement,
     groupStatus,
+    editRefusal: refusals.editRefusal,
+    deleteRefusal: refusals.deleteRefusal,
     expense: toExpense(expenseRow, children),
     comments: comments.map((comment) => ({
       id: comment.id,
@@ -1964,7 +2024,7 @@ export async function deleteSettlement(userId: string, settlementId: string): Pr
         changeByUser.set(portion.from_user, (changeByUser.get(portion.from_user) ?? 0) - portion.amount_cents);
         changeByUser.set(portion.to_user, (changeByUser.get(portion.to_user) ?? 0) + portion.amount_cents);
       }
-      await assertFormerMembersUnmoved(groupId, changeByUser, client);
+      await assertFormerMembersUnmoved(groupId, changeByUser, userId, client);
     }
     let removed: SettlementRow[];
     if (current.net_settlement_id) {

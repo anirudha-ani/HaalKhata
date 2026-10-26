@@ -95,6 +95,13 @@ export function ExpenseDetailScreen({ expenseId }: { expenseId: string }) {
   const hasLaterSettlement = expenseDetail.detail?.hasLaterSettlement === true;
   const isDeleted = expense.deletedAt !== "";
   const isArchived = expenseDetail.detail?.groupStatus === GroupStatus.ARCHIVED;
+  // Somebody on this group expense has left the group: the server says which
+  // change it would refuse and why, so the screen says it in place of the
+  // button rather than offering one that fails. A refused delete always
+  // comes with a refused edit, so the edit's reason is the one to show.
+  const editRefusal = expenseDetail.detail?.editRefusal ?? "";
+  const canEdit = editRefusal === "";
+  const canDelete = isCreator && (expenseDetail.detail?.deleteRefusal ?? "") === "";
   const deletion = expenseDetail.deletion;
   // Same wording as the list rows, from the same function — the list only
   // has room for the short label, so this screen is where the full sentence
@@ -172,16 +179,18 @@ export function ExpenseDetailScreen({ expenseId }: { expenseId: string }) {
         </View>
       ) : null}
 
-      {isParticipant && !isDeleted && !isArchived ? (
+      {isParticipant && !isDeleted && !isArchived && (canEdit || canDelete) ? (
         <View style={styles.actions}>
-          <Button
-            compact
-            icon={<Pencil color={colors.inkSoft} size={14} />}
-            label="Edit"
-            onPress={() => router.push(`/expenses/new?edit=${expense.id}`)}
-            variant="outline"
-          />
-          {isCreator ? (
+          {canEdit ? (
+            <Button
+              compact
+              icon={<Pencil color={colors.inkSoft} size={14} />}
+              label="Edit"
+              onPress={() => router.push(`/expenses/new?edit=${expense.id}`)}
+              variant="outline"
+            />
+          ) : null}
+          {canDelete ? (
             <Button
               compact
               icon={<Trash2 color={colors.inkSoft} size={14} />}
@@ -193,7 +202,14 @@ export function ExpenseDetailScreen({ expenseId }: { expenseId: string }) {
         </View>
       ) : null}
 
-      {isParticipant && !isDeleted && !isArchived && hasLaterSettlement ? (
+      {isParticipant && !isDeleted && !isArchived && editRefusal ? (
+        <View style={styles.settlementNoteCard}>
+          <Lock color={colors.inkSoft} size={16} />
+          <Text style={styles.settlementNoteText}>{editRefusal}</Text>
+        </View>
+      ) : null}
+
+      {isParticipant && !isDeleted && !isArchived && hasLaterSettlement && (canEdit || canDelete) ? (
         <View style={styles.settlementNoteCard}>
           <Lock color={colors.inkSoft} size={16} />
           <Text style={styles.settlementNoteText}>

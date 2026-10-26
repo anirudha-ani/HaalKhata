@@ -187,6 +187,15 @@ message GetExpenseResponse {
   // Group lifecycle read with the expense snapshot. Clients must hide edit
   // and delete actions while the group is archived. UNSPECIFIED for one-offs.
   group.v1.GroupStatus group_status = 7;
+  // Why editing this expense would be refused, in words to show in place of
+  // the Edit button; empty when it would not be. Set while somebody on this
+  // group expense has left the group: an edit names only members, and
+  // dropping them would move a balance nothing can settle again.
+  string edit_refusal = 8;
+  // Why deleting this expense would be refused, in words to show in place
+  // of the Delete button; empty when it would not be. Set when deleting would
+  // move the group balance of somebody on it who has left the group.
+  string delete_refusal = 9;
 }
 
 // One recorded change to an expense, for the detail view's history line.
@@ -371,6 +380,11 @@ message FriendLedgerEntry {
   // here was cancelled against one pointing the other way. It has no remove
   // of its own; removing the payment it belongs to removes it too.
   bool offset = 15;
+  // For a settlement line: why removing it would be refused, in words to
+  // show in place of its Remove action; empty when it would not be. Set when
+  // the payment (or any line of its net settlement) is in a group one of the
+  // two has since left: removing it would reopen a balance nothing can settle.
+  string removal_refusal = 16;
 }
 
 // One balance two people share, inside a settle position.

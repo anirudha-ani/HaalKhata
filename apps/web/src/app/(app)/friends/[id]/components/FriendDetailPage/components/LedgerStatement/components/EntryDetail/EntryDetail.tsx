@@ -88,7 +88,7 @@ export function EntryDetail({
             arms the button, the second sends. A cancelled balance has no
             remove of its own: it goes when the payment it belongs to goes,
             and the second tap says that is what will happen. */}
-        {entry.kind === "settlement" && !entry.deleted && !entry.offset ? (
+        {entry.kind === "settlement" && !entry.deleted && !entry.offset && !entry.removalRefusal ? (
           <button
             type="button"
             onClick={onRemove}
@@ -106,6 +106,11 @@ export function EntryDetail({
           </button>
         ) : null}
       </div>
+      {/* Said in place of Remove when the server would refuse it: one of
+          you has left the group this payment is in. */}
+      {entry.kind === "settlement" && !entry.deleted && !entry.offset && entry.removalRefusal ? (
+        <p className="max-w-xs text-xs whitespace-normal text-ink-soft">{entry.removalRefusal}</p>
+      ) : null}
       {/* On the line that was tapped: the statement can be screens below
           anything shown at the top of the page. */}
       {removalError ? (
