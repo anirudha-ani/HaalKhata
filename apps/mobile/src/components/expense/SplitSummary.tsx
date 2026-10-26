@@ -135,6 +135,7 @@ export function SplitSummary({
             onScroll={edges.onScroll}
             scrollEventThrottle={edges.scrollEventThrottle}
             showsHorizontalScrollIndicator={false}
+            style={styles.pillScroller}
           >
             {people.map((person) => (
               <View key={person.id} style={styles.pill}>
@@ -282,8 +283,12 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
   pills: {
+    alignItems: "center",
     flexDirection: "row",
     gap: 6,
+  },
+  pillScroller: {
+    flexGrow: 0,
   },
   pillsFrame: {
     flex: 1,

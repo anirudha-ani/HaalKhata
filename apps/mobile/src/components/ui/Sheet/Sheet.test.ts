@@ -7,7 +7,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Sheet } from "./Sheet";
 
 const viewport = vi.hoisted(() => ({ width: 1024, height: 600, fontScale: 1 }));
+const insets = vi.hoisted(() => ({ top: 24, bottom: 20, left: 0, right: 0 }));
 vi.mock("lucide-react-native", () => ({ X: () => null }));
+vi.mock("react-native-safe-area-context", () => ({
+  useSafeAreaInsets: () => insets,
+}));
 vi.mock("react-native", () => ({
   AccessibilityInfo: { isReduceMotionEnabled: async () => false, addEventListener: () => ({ remove: () => undefined }) },
   useWindowDimensions: () => viewport,
@@ -15,7 +19,10 @@ vi.mock("react-native", () => ({
   StyleSheet: { create: (styles: unknown) => styles },
   Modal: ({ children, supportedOrientations }: { children: ReactNode; supportedOrientations: string[] }) =>
     createElement("div", { role: "dialog", "data-orientations": supportedOrientations.join(",") }, children),
-  KeyboardAvoidingView: ({ children }: { children: ReactNode }) => createElement("div", null, children),
+  KeyboardAvoidingView: ({ children, style }: { children: ReactNode; style: object[] }) => {
+    const combined = Object.assign({}, ...style);
+    return createElement("div", { "data-safe-top": combined.paddingTop, "data-safe-left": combined.paddingLeft }, children);
+  },
   ScrollView: ({ children }: { children: ReactNode }) => createElement("section", { "data-scroll": true }, children),
   View: ({ children, style }: { children: ReactNode; style?: object | object[] }) => {
     const combined = Object.assign({}, ...(Array.isArray(style) ? style : [style]));
@@ -35,6 +42,7 @@ function render() {
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true); close.mockClear();
   viewport.width = 1024; viewport.height = 600;
+  Object.assign(insets, { top: 24, bottom: 20, left: 0, right: 0 });
   container = document.createElement("div"); document.body.append(container); root = createRoot(container);
 });
 afterEach(() => { act(() => root.unmount()); container.remove(); vi.unstubAllGlobals(); });
@@ -58,6 +66,14 @@ describe("resizable sheet", () => {
       footer: createElement("span", { "data-continue": true }, "Continue") })));
     expect(container.querySelectorAll("button")).toHaveLength(0);
     expect(container.querySelector("[data-continue]")?.textContent).toBe("Continue");
+  });
+  it("reserves the phone's notch and side insets when the available height is short", () => {
+    viewport.width = 390; viewport.height = 420;
+    Object.assign(insets, { top: 96, bottom: 34, left: 44, right: 44 });
+    render();
+    expect(container.querySelector("[data-safe-top]")?.getAttribute("data-safe-top")).toBe("96");
+    expect(container.querySelector("[data-safe-left]")?.getAttribute("data-safe-left")).toBe("44");
+    expect(Number(container.querySelector("[data-max-height]")?.getAttribute("data-max-height"))).toBeLessThanOrEqual(420 - 96);
   });
   it("preserves backdrop dismissal after resizing", () => {
     render(); viewport.width = 600; render();

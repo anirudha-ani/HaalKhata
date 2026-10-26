@@ -18,6 +18,7 @@ import { colors, spacing } from "@/lib/theme/theme";
 export function Screen({
   children,
   header,
+  error = "",
   refreshing = false,
   onRefresh,
 }: {
@@ -25,6 +26,8 @@ export function Screen({
   children: ReactNode;
   /** Fixed chrome rendered above the scroll view (e.g. ScreenHeader). */
   header?: ReactNode;
+  /** Action failure to show above the screen, including failures owned by its orchestrator. */
+  error?: string;
   /** Whether the pull-to-refresh spinner is active. */
   refreshing?: boolean;
   /** Called on pull-to-refresh; omitting it disables the gesture. */
@@ -33,7 +36,7 @@ export function Screen({
   const { isTablet } = useResponsiveLayout();
   return (
     <SafeAreaView edges={["top"]} style={styles.safeArea}>
-      <ToastProvider>
+      <ToastProvider error={error}>
       {header}
       <ScrollView
         automaticallyAdjustKeyboardInsets

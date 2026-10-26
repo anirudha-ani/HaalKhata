@@ -28,7 +28,22 @@ export function AddFriendSheet({
 }) {
   const router = useRouter();
   return (
-    <Sheet onClose={() => friendsState.setShowAdd(false)} title="Add a friend">
+    <Sheet
+      footer={
+        <View style={styles.body}>
+          {friendsState.error ? <Text accessibilityRole="alert" style={styles.error}>{friendsState.error}</Text> : null}
+          <Button
+            busy={friendsState.isAdding}
+            disabled={!friendsState.canSubmitAdd}
+            icon={<UserPlus color={colors.white} size={16} />}
+            label="Send request"
+            onPress={friendsState.submitAdd}
+          />
+        </View>
+      }
+      onClose={() => friendsState.setShowAdd(false)}
+      title="Add a friend"
+    >
       <View style={styles.body}>
         <Button
           icon={<Contact color={colors.inkSoft} size={16} />}
@@ -46,13 +61,6 @@ export function AddFriendSheet({
           onContactChange={friendsState.setContact}
           phoneLabel="Friend's phone number"
         />
-        <Button
-          busy={friendsState.isAdding}
-          disabled={!friendsState.canSubmitAdd}
-          icon={<UserPlus color={colors.white} size={16} />}
-          label="Send request"
-          onPress={friendsState.submitAdd}
-        />
         <Text style={styles.hint}>
           For privacy, we won’t reveal whether that identifier has an account. They must accept
           before either of you is added as a friend.
@@ -63,6 +71,10 @@ export function AddFriendSheet({
 }
 
 const styles = StyleSheet.create({
+  error: {
+    color: colors.neg700,
+    fontSize: 13,
+  },
   body: {
     gap: spacing.md,
   },

@@ -167,7 +167,21 @@ export function GroupsScreen() {
       )}
 
       {groupsState.creating ? (
-        <Sheet onClose={() => groupsState.setCreating(false)} title="New group">
+        <Sheet
+          footer={
+            <View style={styles.form}>
+              {groupsState.error ? <Text accessibilityRole="alert" style={styles.error}>{groupsState.error}</Text> : null}
+              <Button
+                busy={groupsState.isCreating}
+                disabled={groupsState.name.trim() === ""}
+                label="Create group"
+                onPress={groupsState.submitCreate}
+              />
+            </View>
+          }
+          onClose={() => groupsState.setCreating(false)}
+          title="New group"
+        >
           <View style={styles.form}>
             <TextField
               autoFocus
@@ -233,13 +247,6 @@ export function GroupsScreen() {
                 />
               </View>
             ) : null}
-            {groupsState.error ? <Text style={styles.error}>{groupsState.error}</Text> : null}
-            <Button
-              busy={groupsState.isCreating}
-              disabled={groupsState.name.trim() === ""}
-              label="Create group"
-              onPress={groupsState.submitCreate}
-            />
           </View>
         </Sheet>
       ) : null}
