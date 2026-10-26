@@ -70,9 +70,17 @@ export const ACTIVITY_PAGE_SIZE = 25;
 /** Hard ceiling on an activity page, so a client cannot ask for the whole table. */
 export const MAX_ACTIVITY_PAGE_SIZE = 100;
 
-/** Canonical UTC timestamp spelling emitted by the database boundary. */
+/**
+ * The UTC timestamp in a feed cursor: to the microsecond, as Postgres keeps
+ * it, so a page never starts after events in the same millisecond as the
+ * last one shown. Three fraction digits are still read, for a cursor from
+ * before microseconds were kept.
+ */
 export const ACTIVITY_CURSOR_TIMESTAMP_PATTERN =
-  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
+  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}(\d{3})?Z$/;
+
+/** The same instant as a cursor timestamp, cut to the milliseconds a Date holds. */
+export const ACTIVITY_CURSOR_MICROSECONDS_PATTERN = /(\.\d{3})\d{3}Z$/;
 
 /** UUID shape generated for every activity row id. */
 export const ACTIVITY_CURSOR_ID_PATTERN =
