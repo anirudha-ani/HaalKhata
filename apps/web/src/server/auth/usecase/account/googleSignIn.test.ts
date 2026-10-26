@@ -1,4 +1,4 @@
-/** Unit tests for the Google ID-token sign-in branches: link, claim, create, reject. */
+/** Unit tests for the Google ID-token sign-in branches: link, create, reject. */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { UserRow } from "@/server/auth/repo/users.repo";
@@ -25,7 +25,6 @@ vi.mock("google-auth-library", () => ({
 
 vi.mock("@/server/auth/repo/users.repo", () => ({
   bumpTokenVersion: vi.fn(),
-  claimUser: vi.fn(),
   findUserByEmail: vi.fn(),
   findUserByGoogleSub: vi.fn(),
   findUserById: vi.fn(),
@@ -97,7 +96,6 @@ function userRow(overrides: Partial<UserRow> = {}): UserRow {
     google_sub: null,
     onboarded_at: null,
     phone_verified_at: null,
-    merged_into: null,
     token_version: 0,
     created_at: "2026-07-27T00:00:00.000Z",
     ...overrides,
@@ -189,23 +187,7 @@ describe("logInWithGoogle", () => {
     expect(insertUser).not.toHaveBeenCalled();
   });
 
-  it("claims a shadow user by verified email and takes Google's display name", async () => {
-    googleReturns(VERIFIED);
-    vi.mocked(findUserByGoogleSub).mockResolvedValue(undefined);
-    // Shadow: no password and no Google account yet, named after the local part.
-    vi.mocked(findUserByEmail).mockResolvedValue(userRow({ name: "anirudha" }));
-    vi.mocked(findUserById).mockResolvedValue(
-      userRow({ name: "Anirudha Paul", google_sub: "google-sub-123" }),
-    );
-
-    const result = await logInWithGoogle("id-token");
-
-    expect(linkGoogleAccount).toHaveBeenCalledWith("user-1", "google-sub-123", "Anirudha Paul");
-    expect(result.user.registered).toBe(true);
-    expect(insertUser).not.toHaveBeenCalled();
-  });
-
-  it("never overwrites the name on an already-registered account", async () => {
+  it("links Google to the account that holds the verified email, keeping its name", async () => {
     googleReturns(VERIFIED);
     vi.mocked(findUserByGoogleSub).mockResolvedValue(undefined);
     vi.mocked(findUserByEmail).mockResolvedValue(
@@ -215,9 +197,11 @@ describe("logInWithGoogle", () => {
       userRow({ name: "Ani", password_hash: "salt:hash", google_sub: "google-sub-123" }),
     );
 
-    await logInWithGoogle("id-token");
+    const result = await logInWithGoogle("id-token");
 
-    expect(linkGoogleAccount).toHaveBeenCalledWith("user-1", "google-sub-123", "");
+    expect(linkGoogleAccount).toHaveBeenCalledWith("user-1", "google-sub-123");
+    expect(result.user.name).toBe("Ani");
+    expect(insertUser).not.toHaveBeenCalled();
   });
 
   it("creates a new account, lowercasing the email from the token", async () => {
@@ -401,6 +385,17 @@ describe("password auth is production-gated", () => {
       /invalid email\/phone or password/,
     );
     expect(findUserByEmail).toHaveBeenCalled();
+  });
+
+  it("refuses a sign-up for an email an account already holds, whatever its credential", async () => {
+    vi.stubEnv("NODE_ENV", "development");
+    // A Google account has no password; this form must not take it over.
+    vi.mocked(findUserByEmail).mockResolvedValue(userRow({ google_sub: "google-sub-9" }));
+
+    await expect(
+      signUp({ email: "me@example.com", phone: "", name: "Someone", password: "hunter22" }),
+    ).rejects.toMatchObject({ code: "already_exists" });
+    expect(insertUser).not.toHaveBeenCalled();
   });
 
   it("rejects an oversized signup name before hashing or persistence", async () => {

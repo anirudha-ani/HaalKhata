@@ -5,9 +5,8 @@ import { SafetyActions } from "@/components/safety/SafetyActions/SafetyActions";
 import Link from "next/link";
 import { useState } from "react";
 import { useMutation } from "@tanstack/react-query";
-import { ChevronRight, Crown, LogOut, Send, UserMinus, UserPlus } from "lucide-react";
+import { ChevronRight, Crown, LogOut, UserMinus, UserPlus } from "lucide-react";
 import type { Member } from "@haalkhata/protogen/group/v1/group_pb";
-import type { User } from "@haalkhata/protogen/common/v1/common_pb";
 import {
   memberActionPrompt,
   memberRemovalBlock,
@@ -69,8 +68,6 @@ export function MembersModal({
   removingUserId,
   onTransfer,
   transferringUserId,
-  onRemind,
-  remindingUserId,
   onResetLink,
   resettingLink,
   feedback,
@@ -93,10 +90,6 @@ export function MembersModal({
   onTransfer: (userId: string) => void;
   /** Id of the member being made owner, while that is in flight. */
   transferringUserId: string | undefined;
-  /** Shares an Invited member's personal sign-up link. */
-  onRemind: (person: User) => void;
-  /** Member whose remind-share is in flight, for the row's busy state. */
-  remindingUserId: string | undefined;
   /** Owner-only: turns the group's shared join link off. */
   onResetLink: () => void;
   /** Whether the link reset is in flight. */
@@ -192,9 +185,9 @@ export function MembersModal({
                     {isOwner ? (
                       <span className="ml-1.5 text-xs font-normal text-ink-soft">owner</span>
                     ) : null}
-                    {!person.registered ? (
+                    {person.deleted ? (
                       <span className="ml-1.5 rounded-full bg-paper px-2 py-0.5 text-[11px] font-medium text-ink-soft">
-                        invited
+                        deleted account
                       </span>
                     ) : null}
                   </span>
@@ -232,17 +225,8 @@ export function MembersModal({
                 )
               ) : (
                 <div className={stacked ? "flex flex-wrap gap-2 sm:pl-10" : "contents"}>
-                  {!person.registered ? (
-                    <button
-                      type="button"
-                      disabled={remindingUserId === person.id}
-                      onClick={() => onRemind(person)}
-                      className={rowActionClass}
-                    >
-                      <Send className="h-3.5 w-3.5" />{" "}
-                      {remindingUserId === person.id ? "Sharing…" : "Remind"}
-                    </button>
-                  ) : isFriend ? (
+                  {/* A Deleted member is nobody to befriend or open a ledger with. */}
+                  {person.deleted ? null : isFriend ? (
                     <Link href={`/friends/${person.id}`} className={rowActionClass}>
                       Ledger <ChevronRight className="h-3.5 w-3.5" />
                     </Link>

@@ -4,7 +4,7 @@ import type { ServiceImpl } from "@connectrpc/connect";
 import type { HandlerContext } from "@connectrpc/connect";
 import type { AuthService } from "@haalkhata/protogen/auth/v1/auth_pb";
 import * as auth from "@/server/auth/usecase/account/auth.usecase";
-import * as accountMerge from "@/server/auth/usecase/merge/accountMerge.usecase";
+import * as phoneNumber from "@/server/auth/usecase/phone/setPhone.usecase";
 import * as appleSignIn from "@/server/auth/usecase/apple/appleSignIn.usecase";
 import { getSignInOptions } from "@/server/auth/usecase/apple/signInOptions.usecase";
 import { deleteAccount } from "@/server/auth/usecase/deletion/accountDeletion.usecase";
@@ -15,8 +15,9 @@ import { rateLimitCheck } from "@/server/common/rateLimit/rateLimit";
 import {
   AUTH_RATE_LIMIT,
   PHONE_CHECK_RATE_LIMIT,
-  PHONE_MERGE_RATE_LIMIT,
+  PHONE_REMOVAL_RATE_LIMIT,
   PHONE_SEND_RATE_LIMIT,
+  RETIRED_PHONE_MERGE_MESSAGE,
 } from "@/server/auth/auth.constants";
 import { ConnectError, Code } from "@connectrpc/connect";
 import { clientIp } from "@/server/auth/request/clientIp";
@@ -36,9 +37,9 @@ function enforceAuthRateLimit(handlerContext: HandlerContext): void {
 }
 
 /**
- * Enforces one per-account phone bucket. Sends, checks, and merge actions
- * each pace separately so a fumbled code cannot lock the user out of the
- * confirmation; the durable anti-abuse ceilings live in Postgres.
+ * Enforces one per-account phone bucket. Sends, checks, and removals each
+ * pace separately so a fumbled code cannot lock the user out of removing a
+ * number; the durable anti-abuse ceilings live in Postgres.
  *
  * @param userId - Authenticated caller.
  * @param scope - Which phone operation is being paced.
@@ -47,7 +48,7 @@ function enforceAuthRateLimit(handlerContext: HandlerContext): void {
  */
 function enforcePhoneRateLimit(
   userId: string,
-  scope: "send" | "check" | "merge",
+  scope: "send" | "check" | "remove",
   maxAttempts: number,
 ): void {
   if (!rateLimitCheck(`phone:${scope}:${userId}`, maxAttempts)) {
@@ -149,17 +150,14 @@ export const authHandler: ServiceImpl<typeof AuthService> = {
     return runUsecase(async () => auth.updateProfile(await requireUser(handlerContext), request), handlerContext);
   },
 
-  /**
-   * Claims a phone number, or reports what merging would absorb when an
-   * unclaimed invitation already holds it.
-   */
+  /** Sends an SMS code, or checks it and puts the number on the caller's account. */
   async setPhone(request, handlerContext) {
     const userId = await requireUser(handlerContext);
     // Inside runUsecase so the durable limiter's own database errors are
     // sanitized like any other; its ConnectError refusals pass through.
     return runUsecase(
       async () =>
-        accountMerge.setPhone(userId, request.phone, request.verificationCode, {
+        phoneNumber.setPhone(userId, request.phone, request.verificationCode, {
           // The call that sends an SMS is also limited by destination and by
           // client address, whoever the account is, durably, in Postgres.
           beforeSend: async (phone) => {
@@ -172,20 +170,15 @@ export const authHandler: ServiceImpl<typeof AuthService> = {
     );
   },
 
-  /** Carries out the merge that setPhone previewed. */
-  async confirmPhoneMerge(request, handlerContext) {
-    const userId = await requireUser(handlerContext);
-    enforcePhoneRateLimit(userId, "merge", PHONE_MERGE_RATE_LIMIT);
-    return runUsecase(
-      async () => accountMerge.confirmPhoneMerge(userId, request.mergeToken),
-      handlerContext,
-    );
+  /** Retired: SetPhone never offers a merge, so there is nothing to confirm. */
+  async confirmPhoneMerge() {
+    throw new ConnectError(RETIRED_PHONE_MERGE_MESSAGE, Code.FailedPrecondition);
   },
 
   /** Detaches the caller's phone number; refused when it is their only identifier. */
   async removePhone(_request, handlerContext) {
     const userId = await requireUser(handlerContext);
-    enforcePhoneRateLimit(userId, "merge", PHONE_MERGE_RATE_LIMIT);
+    enforcePhoneRateLimit(userId, "remove", PHONE_REMOVAL_RATE_LIMIT);
     return runUsecase(async () => auth.removePhone(userId), handlerContext);
   },
 

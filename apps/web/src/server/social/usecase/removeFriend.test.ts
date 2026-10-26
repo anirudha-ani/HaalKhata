@@ -23,22 +23,16 @@ vi.mock("@/server/social/repo/friendships.repo", () => ({
   listOutgoingFriendRequests: vi.fn(),
 }));
 vi.mock("@/server/auth/repo/users.repo", () => ({
+  findUserByEmail: vi.fn(),
   findUserById: vi.fn(),
+  findUserByPhone: vi.fn(),
   findUsersByIds: vi.fn(),
 }));
-vi.mock("@/server/auth/usecase/account/auth.usecase", () => ({
-  findOrCreateUserByEmail: vi.fn(),
-  findOrCreateUserByPhone: vi.fn(),
-}));
-vi.mock("@/server/auth/repo/merge/accountMerge.repo", () => ({ mergeAccounts: vi.fn() }));
 vi.mock("@/server/social/repo/inviteLinks.repo", () => ({
-  findActiveFriendLink: vi.fn(),
   findActiveGroupLink: vi.fn(),
   findActiveLinkByToken: vi.fn(),
   findActiveProfileLink: vi.fn(),
   insertInviteLink: vi.fn(),
-  revokeFriendLinkForPair: vi.fn(),
-  revokeFriendLinksFor: vi.fn(),
   revokeGroupLinks: vi.fn(),
   revokeProfileLinks: vi.fn(),
 }));
@@ -82,7 +76,6 @@ vi.mock("@/server/common/db/db", () => ({
 
 import { findUserById } from "@/server/auth/repo/users.repo";
 import { deleteFriendship, friendshipExists } from "@/server/social/repo/friendships.repo";
-import { revokeFriendLinkForPair } from "@/server/social/repo/inviteLinks.repo";
 import { netWithUser } from "@/server/expense/usecase/balance.usecase";
 import {
   lockFriendRequestInboxes,
@@ -105,7 +98,6 @@ const friendRow: UserRow = {
   phone_verified_at: null,
   google_sub: "google-rifat",
   onboarded_at: "2026-09-01T00:00:00Z",
-  merged_into: null,
   token_version: 0,
   created_at: "2026-09-01T00:00:00Z",
 };
@@ -148,7 +140,6 @@ describe("removeFriend", () => {
       message: expect.stringContaining("Settle up first"),
     });
     expect(deleteFriendship).not.toHaveBeenCalled();
-    expect(revokeFriendLinkForPair).not.toHaveBeenCalled();
   });
 
   it("checks the balance only under both lock families", async () => {
@@ -171,12 +162,11 @@ describe("removeFriend", () => {
     expect(order).toEqual(["inboxes", "ledgers", "net"]);
   });
 
-  it("deletes the friendship and revokes the pair's claim link when settled", async () => {
+  it("deletes the friendship when settled", async () => {
     vi.mocked(netWithUser).mockResolvedValue(new Map([["USD", 0]]));
 
     await removeFriend(CALLER, FRIEND);
 
     expect(deleteFriendship).toHaveBeenCalledWith(CALLER, FRIEND, transactionClient);
-    expect(revokeFriendLinkForPair).toHaveBeenCalledWith(CALLER, FRIEND, transactionClient);
   });
 });

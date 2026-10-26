@@ -20,7 +20,6 @@ import {
   COMMENT_ID,
   EXPENSE_ID,
   GROUP_ID,
-  MERGED,
   OWN_COMMENT_ID,
   PRIVATE_VALUES,
   REPORTED_WORDS,
@@ -125,7 +124,6 @@ describe.skipIf(!(await databaseReachable()))("moderation against Postgres", () 
       ["group", REPORTED_WORDS.groupName],
       ["user", REPORTED_WORDS.profileName],
       ["comment", "Buy cheap followers now"],
-      ["user", "Merged Away"],
     ]);
     // Two people reported the same comment: one entry, both reasons, and
     // the newest report as the handle.
@@ -150,13 +148,11 @@ describe.skipIf(!(await databaseReachable()))("moderation against Postgres", () 
     });
   });
 
-  it("withholds an author's name that is an email address, and marks a merged author", async () => {
+  it("withholds an author's name that is an email address", async () => {
     const queue = await moderation.listReports();
     const spam = queue.reports.find((entry) => entry.reportId === REPORTS.spamComment);
-    const merged = queue.reports.find((entry) => entry.reportId === REPORTS.merged);
 
     expect(spam?.author).toMatchObject({ name: "", active: true, openReportCount: 1 });
-    expect(merged?.author).toMatchObject({ active: false });
   });
 
   it("carries the reported words and nothing else a person would call private", async () => {
@@ -318,9 +314,9 @@ describe.skipIf(!(await databaseReachable()))("moderation against Postgres", () 
     ]);
     const handles = await database.query("SELECT handle FROM payment_handles WHERE user_id = $1", [AUTHOR]);
     expect(handles.rows).toEqual([]);
-    // Everything about the author has been handled; only the merged account's report waits.
+    // Everything about the author has been handled; nothing waits.
     const queue = await moderation.listReports();
-    expect(queue.reports.map((entry) => entry.reportId)).toEqual([REPORTS.merged]);
+    expect(queue.reports.map((entry) => entry.reportId)).toEqual([]);
   });
 
   it("suspends through a closed report, ends every session, and does it once", async () => {
@@ -365,13 +361,11 @@ describe.skipIf(!(await databaseReachable()))("moderation against Postgres", () 
     expect((await moderation.listReports()).suspended).toEqual([]);
   });
 
-  it("leaves a suspended account that was merged away or deleted off the suspended list", async () => {
+  it("leaves a deleted account's suspended stand-in off the suspended list", async () => {
     await moderation.suspendAuthor(REPORTS.profile);
     try {
-      // Nothing clears suspended_at when an account is merged or deleted:
-      // the tombstone, and the stand-in a deletion leaves, stay suspended
-      // and stand for nobody.
-      await database.query("UPDATE users SET suspended_at = now() WHERE id = $1", [MERGED]);
+      // Nothing clears suspended_at when an account is deleted: the
+      // stand-in a deletion leaves stays suspended and stands for nobody.
       await database.query(
         `INSERT INTO users (id, name, avatar_color, deleted_at, suspended_at)
          VALUES ($1, 'Deleted member', '#857a68', now(), now())`,
@@ -382,26 +376,12 @@ describe.skipIf(!(await databaseReachable()))("moderation against Postgres", () 
         { name: "Member", suspendedAt: expect.any(String), reportId: REPORTS.profile },
       ]);
     } finally {
-      await database.query("UPDATE users SET suspended_at = NULL WHERE id = $1", [MERGED]);
       await database.query("DELETE FROM users WHERE id = $1", [DELETED_STAND_IN]);
       await moderation.resumeAuthor(REPORTS.profile);
     }
   });
 
-  it("will not pretend to suspend an account that was merged away", async () => {
-    const merged = (await moderation.listReports()).reports.find(
-      (entry) => entry.reportId === REPORTS.merged,
-    );
-    expect(merged?.author).toMatchObject({ active: false, deleted: false });
-    await expect(moderation.suspendAuthor(REPORTS.merged)).rejects.toMatchObject({
-      code: "failed_precondition",
-      message: expect.stringContaining("merged into another"),
-    });
-    const { rows } = await database.query("SELECT suspended_at FROM users WHERE merged_into IS NOT NULL");
-    expect(rows).toEqual([{ suspended_at: null }]);
-  });
-
-  it("says when the author deleted their account, rather than merged it", async () => {
+  it("says when the author deleted their account", async () => {
     // A deleted person's reports go with their account; what is left to
     // report is content now belonging to the anonymous stand-in.
     const standInReport = "99999999-9999-4999-8999-999999999999";

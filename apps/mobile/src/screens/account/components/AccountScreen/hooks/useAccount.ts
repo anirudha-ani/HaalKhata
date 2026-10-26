@@ -1,7 +1,6 @@
-/** Account data + profile form state: getMe query, updateProfile/setPhone/merge mutations, sign-out. */
+/** Account data + profile form state: getMe query, updateProfile/setPhone mutations, sign-out. */
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { MergePreview } from "@haalkhata/protogen/auth/v1/auth_pb";
 import type { User } from "@haalkhata/protogen/common/v1/common_pb";
 import { useRouter } from "expo-router";
 import { useEffect, useState } from "react";
@@ -9,7 +8,7 @@ import { Alert } from "react-native";
 import { authClient, errorMessage, isRefusal } from "@/lib/api/connect";
 import { useVerificationCode } from "@/lib/hooks/useVerificationCode";
 import { socialClient } from "@/lib/api/connect";
-import { MONEY_KEYS, queryKeys } from "@haalkhata/shared/api/queryKeys";
+import { queryKeys } from "@haalkhata/shared/api/queryKeys";
 import { clearMobileQueryCache } from "@/lib/api/queryCache";
 import { clearSession, sessionToken } from "@/lib/api/session";
 import { rememberUnfinishedSignOut, sessionAlreadyEnded } from "@/lib/api/unfinishedSignOut";
@@ -40,15 +39,13 @@ export function useAccountAPI() {
  * (initializer, no sync effect).
  *
  * Phone goes through its own RPC rather than riding along on UpdateProfile,
- * because claiming a number can turn up an unclaimed invitation holding it. In
- * that case nothing is written until the user confirms what they would absorb,
- * so `save` can finish in two ways: saved, or waiting on a merge.
+ * because a new number is written only once an SMS code proves it is the
+ * caller's, so `save` can finish in two ways: saved, or waiting on a code.
  *
  * @param currentUser - The already-loaded signed-in user used to seed the form fields.
  * @returns Form field values (`name`, `currency`, `region`, `nationalNumber`,
  *   `message`) with their setters, a `save` action with its
- *   `isSaving` flag, the phone verification step, the `pendingMerge` preview
- *   with `confirmMerge` / `declineMerge`, and a `signOut` action.
+ *   `isSaving` flag, the phone verification step, and a `signOut` action.
  */
 export function useProfileForm(currentUser: User) {
   const queryClient = useQueryClient();
@@ -69,8 +66,6 @@ export function useProfileForm(currentUser: User) {
   const [nationalNumber, setNationalNumber] = useState(
     () => splitE164(currentUser.phone)?.nationalNumber ?? "",
   );
-  const [pendingMerge, setPendingMerge] = useState<MergePreview | undefined>();
-  const [mergeToken, setMergeToken] = useState("");
   const [verificationPhone, setVerificationPhone] = useState("");
   const codeField = useVerificationCode();
   // The confirmation clears itself.
@@ -103,9 +98,8 @@ export function useProfileForm(currentUser: User) {
       return true;
     },
     onSuccess: (saved) => {
-      // No "Saved ✓" while a code or a merge is waiting — the number is not
-      // on the account until it is confirmed, and saying otherwise would be
-      // a lie.
+      // No "Saved ✓" while a code is waiting — the number is not on the
+      // account until it is confirmed, and saying otherwise would be a lie.
       setMessage(saved ? "Saved ✓" : "");
     },
     onError: (mutationError) => setError(errorMessage(mutationError)),
@@ -118,14 +112,9 @@ export function useProfileForm(currentUser: User) {
   const verifyPhone = useMutation({
     mutationFn: () =>
       authClient.setPhone({ phone: verificationPhone, verificationCode: codeField.code }),
-    onSuccess: (result) => {
+    onSuccess: () => {
       setVerificationPhone("");
       codeField.clear();
-      if (result.pendingMerge) {
-        setPendingMerge(result.pendingMerge);
-        setMergeToken(result.mergeToken);
-        return;
-      }
       queryClient.invalidateQueries({ queryKey: queryKeys.me });
       setMessage("Saved ✓");
     },
@@ -144,26 +133,6 @@ export function useProfileForm(currentUser: User) {
   const resendCode = useMutation({
     mutationFn: () => authClient.setPhone({ phone: verificationPhone, verificationCode: "" }),
     onSuccess: () => codeField.markResent(),
-    onError: (mutationError) => setError(errorMessage(mutationError)),
-  });
-
-  const confirmMerge = useMutation({
-    mutationFn: () => authClient.confirmPhoneMerge({ mergeToken }),
-    onSuccess: () => {
-      setPendingMerge(undefined);
-      setMergeToken("");
-      // Absorbing an account moves expenses, balances and friendships onto
-      // this one, so nothing money-shaped that is already cached is still
-      // true.
-      for (const moneyQueryKey of MONEY_KEYS) {
-        queryClient.invalidateQueries({ queryKey: moneyQueryKey });
-      }
-      queryClient.invalidateQueries({ queryKey: queryKeys.me });
-      setMessage("Saved ✓");
-    },
-    // Stays in the sheet. The row can be claimed by its rightful owner in the
-    // seconds between the preview and the answer, and that refusal has to be
-    // readable where the user is looking.
     onError: (mutationError) => setError(errorMessage(mutationError)),
   });
 
@@ -218,17 +187,6 @@ export function useProfileForm(currentUser: User) {
     onError: (mutationError) => setError(errorMessage(mutationError)),
   });
 
-  /** Backs out of a merge, leaving both accounts untouched and the number unclaimed. */
-  const declineMerge = () => {
-    setPendingMerge(undefined);
-    setMergeToken("");
-    // The country was almost certainly right; it is the digits after it that
-    // belonged to somebody else.
-    setNationalNumber("");
-    setMessage("");
-    setError("");
-  };
-
   /**
    * Stops pushes to this phone while the session can still ask, revokes the
    * token server-side, clears the local session and cache, and returns to
@@ -262,7 +220,6 @@ export function useProfileForm(currentUser: User) {
     setRegion,
     nationalNumber,
     setNationalNumber,
-    pendingMerge,
     verificationPhone,
     verificationCode: codeField.code,
     /** True once the field holds a whole code. */
@@ -290,11 +247,6 @@ export function useProfileForm(currentUser: User) {
       codeField.clear();
       setError("");
     },
-    confirmMerge: () => {
-      setError("");
-      confirmMerge.mutate();
-    },
-    declineMerge,
     /** Whether a number is on the account, enabling its removal. */
     hasPhone: currentUser.phone !== "",
     /** False on a number written before verification existed (§35). */
@@ -334,8 +286,7 @@ export function useProfileForm(currentUser: User) {
       setError("");
       save.mutate();
     },
-    isSaving:
-      save.isPending || verifyPhone.isPending || resendCode.isPending || confirmMerge.isPending,
+    isSaving: save.isPending || verifyPhone.isPending || resendCode.isPending,
     signOut,
   };
 }

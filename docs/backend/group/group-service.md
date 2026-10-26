@@ -33,18 +33,18 @@ SQL in [groups.repo.ts](../../../apps/web/src/server/group/repo/groups.repo.ts).
 | Archive / unarchive | **any member** | Archiving requires every participant to be settled in every currency; unarchiving restores money writes. |
 | Flip simplify-debts | **any member** | Same trust level as adding people: a routing mode over fully derived balances — rewrites nothing, always reversible. |
 
-**Who may be added (§33c): registered, connected people only.** A group
-seat belongs to somebody who can actually open the app. A bare user id is
-not authorization (a stranger's id would be enough to enrol them and start
-attributing debts to them), and an email/phone with **no claimed account**
+**Who may be added (§33c): connected people who signed up.** A group seat
+belongs to somebody who can actually open the app. A bare user id is not
+authorization (a stranger's id would be enough to enrol them and start
+attributing debts to them), and an email/phone that belongs to **nobody**
 refuses with a distinct `failed_precondition` ("they're not on HaalKhata
-yet — invite them to sign up first") that the clients render as the offer
-to send a sign-up invite (`social.InviteContactToSignUp`). Unregistered
-*friends* are refused by the same gate, by name, inside `enrollMembers` —
-where CreateGroup and AddMembers converge — so an Invited person can never
-hold a seat; once they sign up they are already the inviter's friend and
-addable like anyone. A registered stranger's consent path is the group's
-join link. The connected set includes co-members, not just friends,
+yet — share this group's invite link so they can join") that the clients
+answer with the group's own join link (`NOT_ON_HAALKHATA_COPY.group`).
+Nothing is created for that person; they sign up through the link as
+themselves. A Deleted member (the stand-in account deletion leaves) is
+refused by name inside `enrollMembers` — where CreateGroup and AddMembers
+converge — so it never takes a new seat. A stranger's consent path, whether
+or not they have signed up yet, is the group's join link. The connected set includes co-members, not just friends,
 because two people who met in somebody else's group have no friendship row
 yet would still be offered to each other in the picker.
 
@@ -225,12 +225,12 @@ three times is noise.
 - **Identifiers:** ids of connected people, plus at most one of
   `email`/`phone` naming an existing connected account (both set →
   `InvalidArgument`). The legacy `name` field is accepted and ignored —
-  shadow users are no longer created here.
-- **No existence oracle:** an email/phone that resolves to nobody — or to
-  somebody the caller isn't connected with — gets the same generic denial
-  ("you can only add people you already share a friendship or a group
-  with"), so the field cannot be used to probe which addresses have
-  accounts.
+  nothing is created here for anyone.
+- **One deliberate oracle:** an email/phone that resolves to nobody is
+  refused with `FailedPrecondition` (see above), so the client can offer
+  the join link. One that resolves to somebody the caller isn't connected
+  with gets the generic denial ("you can only add people you already share
+  a friendship or a group with") and reveals nothing about who they are.
 - **Skip, don't fail:** people already in the group are skipped so one stale
   checkbox cannot lose the other additions; only when *everybody* picked was
   already in does the call fail (`"they're already in this group"` /

@@ -12,13 +12,13 @@ import {
   Flag,
   Link2,
   Plus,
-  Send,
   UserPlus,
 } from "lucide-react-native";
 import { Pressable, StyleSheet, View } from "react-native";
 import { Text } from "@/components/ui/Text";
 import { ActivityList } from "@/components/activity/ActivityList";
 import { InviteShareSheet } from "@/components/modals/InviteShareSheet";
+import { NOT_ON_HAALKHATA_COPY } from "@haalkhata/shared/invite/inviteCopy";
 import { SettleUpModal } from "@/components/modals/SettleUpModal";
 import { SafetyDialog } from "@/components/safety/SafetyDialog/SafetyDialog";
 import { PersonChecklist } from "@/components/people/PersonChecklist";
@@ -373,9 +373,6 @@ export function GroupDetailScreen({
                         {person.name}
                         {isMe ? <Text style={styles.memberTag}> · you</Text> : null}
                         {isOwner ? <Text style={styles.memberTag}> · owner</Text> : null}
-                        {!person.registered ? (
-                          <Text style={styles.memberTag}> · invited</Text>
-                        ) : null}
                       </Text>
                     </PersonLink>
                     {!isMe && !person.deleted ? <SafetyActions targetKind="user" targetId={person.id} userId={person.id} /> : null}
@@ -391,16 +388,9 @@ export function GroupDetailScreen({
                       )
                     ) : (
                       <View style={styles.memberActions}>
-                        {!person.registered ? (
-                          <Button
-                            busy={groupDetail.remindingUserId === person.id}
-                            compact
-                            icon={<Send color={colors.inkSoft} size={14} />}
-                            label="Remind"
-                            onPress={() => groupDetail.remindMember(person)}
-                            variant="outline"
-                          />
-                        ) : isFriend ? (
+                        {/* A Deleted member keeps its seat for the money it
+                            holds, but there is nobody to befriend. */}
+                        {!person.registered ? null : isFriend ? (
                           <Button
                             compact
                             icon={<ChevronRight color={colors.inkSoft} size={14} />}
@@ -568,7 +558,7 @@ export function GroupDetailScreen({
                         .map((candidate) => candidate.id),
                     )
                   }
-                  disabledHint="invited — can add once they join"
+                  disabledHint="deleted their account"
                   onToggle={groupDetail.togglePicked}
                   people={groupDetail.candidates}
                   selectedIds={groupDetail.pickedIds}
@@ -597,15 +587,14 @@ export function GroupDetailScreen({
 
             {groupDetail.inviteOffer ? (
               <View style={styles.inviteOffer}>
-                <Text style={styles.addHint}>
-                  They&apos;re not on HaalKhata yet. Send them a sign-up invite?
-                  Once they join, you can add them here.
+                <Text accessibilityRole="alert" style={styles.addHint}>
+                  {NOT_ON_HAALKHATA_COPY.group.message}
                 </Text>
                 <Button
-                  busy={groupDetail.sendingSignUpInvite}
+                  busy={groupDetail.sharingLinkForOffer}
                   compact
-                  label="Send sign-up invite"
-                  onPress={groupDetail.sendSignUpInvite}
+                  label={NOT_ON_HAALKHATA_COPY.group.action}
+                  onPress={groupDetail.shareLinkForOffer}
                 />
                 <Button
                   compact
@@ -634,16 +623,6 @@ export function GroupDetailScreen({
           share={groupDetail.shareLinkToSheet}
           title="Group invite link"
           token={groupDetail.groupShareToken}
-        />
-      ) : null}
-
-      {groupDetail.signUpShare ? (
-        <InviteShareSheet
-          explainer={`This link signs ${groupDetail.signUpShare.contact} up and connects you as friends. Once they join, you can add them to ${groupDetail.group.name}.`}
-          onClose={groupDetail.closeSignUpShare}
-          share={groupDetail.signUpShareToSheet}
-          title="Sign-up invite"
-          token={groupDetail.signUpShare.token}
         />
       ) : null}
 

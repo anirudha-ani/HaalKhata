@@ -12,7 +12,7 @@
  * Skips itself when no database is reachable, so it is safe in the suite.
  */
 
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { Client } from "pg";
@@ -22,16 +22,19 @@ const ADMIN_URL =
 const TEST_DATABASE = "haalkhata_onboarding_stamp_test";
 const TEST_URL = ADMIN_URL.replace(/\/[^/]*$/, `/${TEST_DATABASE}`);
 
+const MIGRATIONS_DIRECTORY = fileURLToPath(new URL("../../../../migrations/", import.meta.url));
+const MIGRATION_FILE = "1792959311422_date-early-accounts-from-creation.sql";
+
 /** The migration under test, read from disk so the test runs what ships. */
-const MIGRATION_SQL = readFileSync(
-  fileURLToPath(
-    new URL(
-      "../../../../migrations/1792959311422_date-early-accounts-from-creation.sql",
-      import.meta.url,
-    ),
-  ),
-  "utf8",
-);
+const MIGRATION_SQL = readFileSync(`${MIGRATIONS_DIRECTORY}${MIGRATION_FILE}`, "utf8");
+
+/**
+ * Migrations up to and including this one. The suite stops there: a later
+ * migration retires the never-signed-in rows it seeds, and forbids them.
+ */
+const MIGRATIONS_THROUGH_THIS_ONE = readdirSync(MIGRATIONS_DIRECTORY).filter(
+  (filename) => filename.endsWith(".sql") && filename <= MIGRATION_FILE,
+).length;
 const [UP_SQL] = MIGRATION_SQL.split("-- Down Migration");
 
 /** The instant the onboarding migration stamped on every existing row. */
@@ -87,8 +90,9 @@ describe.skipIf(!(await databaseReachable()))("onboarding stamp migration agains
     const { runner } = await import("node-pg-migrate");
     await runner({
       databaseUrl: TEST_URL,
-      dir: fileURLToPath(new URL("../../../../migrations/", import.meta.url)),
+      dir: MIGRATIONS_DIRECTORY,
       direction: "up",
+      count: MIGRATIONS_THROUGH_THIS_ONE,
       migrationsTable: "pgmigrations",
       log: () => undefined,
     });

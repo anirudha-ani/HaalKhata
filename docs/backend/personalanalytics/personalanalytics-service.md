@@ -45,8 +45,8 @@ Someone the caller blocked, or who blocked the caller, is left off the list,
 as the activity feed leaves out their lines in both directions; the
 expenses still count toward every figure. So is a row that stands for
 nobody: the anonymous "Deleted member" a deleted account's ledger share
-now belongs to, and a merge tombstone. Neither is someone to split with,
-and a link to their friend page would lead nowhere.
+now belongs to. It is not someone to split with, and a link to its friend
+page would lead nowhere.
 
 ## Two Figures, Not One
 
@@ -172,12 +172,12 @@ counted every currency together and now live in each `CurrencyInsights`.
 
 | Field | Type | Description |
 | --- | --- | --- |
-| member_since | string | RFC 3339 instant the caller finished signing up (not when a friend first invited them). |
+| member_since | string | RFC 3339 instant the caller finished signing up (not when their row was made, which for an account that claimed an invitation before invitations were retired can be much earlier). |
 | first_expense_date | string | Earliest `YYYY-MM-DD` of a live expense they are on; empty when none. |
 | expense_count | int32 | Live expenses they paid for or owe a share of. |
 | payment_count | int32 | Payments they made or received, each once however many balances it settled. |
 | group_count | int32 | Groups they belong to. |
-| friend_count | int32 | Their friends, invited ones included. |
+| friend_count | int32 | Their friends: accounts they have a friendship with. |
 | receipt_scan_count | int32 | Receipts they scanned that a provider could read. Counted from the day scan counting shipped. |
 
 **CurrencyInsights:**

@@ -30,15 +30,6 @@ export const SESSION_SECRET_HEX_PATTERN = /^(?:[0-9a-fA-F]{2})+$/;
 /** Canonical padded or unpadded standard Base64 key material. */
 export const SESSION_SECRET_BASE64_PATTERN = /^[A-Za-z0-9+/]+={0,2}$/;
 
-/**
- * How long a pending account-merge confirmation stays valid, in seconds.
- *
- * Short on purpose: the token authorizes absorbing another row, and it is
- * meant to be confirmed on the screen that issued it. Ten minutes covers
- * someone reading the preview carefully and leaves nothing usable afterwards.
- */
-export const MERGE_TOKEN_LIFETIME_SECONDS = 60 * 10;
-
 /** Fixed set of avatar background colors; one is picked deterministically per email. */
 export const AVATAR_PALETTE = [
   "#c73e2e", "#0f8a5f", "#b45309", "#1d4ed8",
@@ -68,13 +59,14 @@ export const PROVIDER_NAME_FALLBACK = "Member";
 export const PHONE_SEND_RATE_LIMIT = 3;
 /** Per-account, per-minute pacing for code checks. */
 export const PHONE_CHECK_RATE_LIMIT = 5;
-/** Per-account, per-minute pacing for merge confirmations and phone removal. */
-export const PHONE_MERGE_RATE_LIMIT = 5;
+/** Answer to the retired ConfirmPhoneMerge, for app versions that still call it. */
+export const RETIRED_PHONE_MERGE_MESSAGE =
+  "there is nothing to merge — update HaalKhata and verify your number again";
 
-/**
- * Seconds an SMS verification stays answerable after the send. Matches the
- * merge-token lifetime deliberately: both are one sitting at one screen.
- */
+/** Per-account, per-minute pacing for phone removal. */
+export const PHONE_REMOVAL_RATE_LIMIT = 5;
+
+/** Seconds an SMS verification stays answerable after the send: one sitting at one screen. */
 export const PHONE_VERIFICATION_LIFETIME_SECONDS = 60 * 10;
 
 /**
@@ -94,14 +86,6 @@ export const MAX_PHONE_CODE_CHECKS = 5;
  * already there.
  */
 export const PROVIDER_CLOCK_SLACK_SECONDS = 5;
-
-/**
- * Most counterparty names a merge preview lists. The preview is the
- * recycled-number defense, but it is also a disclosure to whoever holds the
- * number today — a dozen names decide "is this my history?" as well as a
- * hundred would.
- */
-export const MAX_PREVIEW_COUNTERPARTY_NAMES = 12;
 
 /** One hour, for the longer rate-limit windows. */
 export const HOUR_MS = 60 * 60 * 1000;

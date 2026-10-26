@@ -13,7 +13,6 @@ import { useId } from "react";
 import { Check, LogOut, Share2 } from "lucide-react";
 import type { User } from "@haalkhata/protogen/common/v1/common_pb";
 import { Avatar } from "@/components/ui/Avatar/Avatar";
-import { MergePreview } from "@/components/account/MergePreview/MergePreview";
 import { Modal } from "@/components/ui/Modal/Modal";
 import { InviteShareModal } from "@/components/modals/InviteShareModal/InviteShareModal";
 import { shareProfileInvite } from "@/lib/invite/share";
@@ -261,47 +260,6 @@ export function ProfileForm({ me: currentUser }: { me: User }) {
           </div>
         </Modal>
       ) : null}
-
-      {/* A number can already belong to an invitation someone made. Nothing is
-          written until this is answered, so it is a decision, not a notice. */}
-      {form.pendingMerge ? (
-        <Modal title="Is this you?" onClose={form.declineMerge}>
-          <div className="space-y-4">
-            <p className="text-sm text-ink-soft">
-              Someone already added this number to shared expenses.
-            </p>
-            <MergePreview preview={form.pendingMerge} currency={form.currency} />
-            <p className="text-xs leading-relaxed text-ink-soft">
-              If you recognize these people, this history is yours and will move onto your
-              account. If you don&apos;t, the number was probably reassigned — leave it off.
-            </p>
-
-            {/* The dialog answers for itself. A refusal written into the form
-                behind the backdrop is a refusal nobody sees. */}
-            {form.error ? (
-              <p className="text-sm font-medium text-brand-600">{form.error}</p>
-            ) : null}
-
-            <button
-              type="button"
-              onClick={form.confirmMerge}
-              disabled={form.isSaving}
-              className="w-full rounded-xl bg-brand-600 py-3 font-semibold text-white hover:bg-brand-700 disabled:opacity-50"
-            >
-              {form.isSaving ? "One moment…" : "Yes, that's me"}
-            </button>
-            <button
-              type="button"
-              onClick={form.declineMerge}
-              disabled={form.isSaving}
-              className="w-full rounded-xl border border-line py-3 text-sm font-semibold text-ink-soft hover:bg-paper disabled:opacity-50"
-            >
-              That&apos;s not me
-            </button>
-          </div>
-        </Modal>
-      ) : null}
-
     </div>
   );
 }

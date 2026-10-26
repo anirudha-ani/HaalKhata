@@ -23,21 +23,16 @@ vi.mock("@/server/social/repo/friendships.repo", () => ({
   listOutgoingFriendRequests: vi.fn(),
 }));
 vi.mock("@/server/auth/repo/users.repo", () => ({
+  findUserByEmail: vi.fn(),
   findUserById: vi.fn(),
+  findUserByPhone: vi.fn(),
   findUsersByIds: vi.fn(),
 }));
-vi.mock("@/server/auth/usecase/account/auth.usecase", () => ({
-  findOrCreateUserByEmail: vi.fn(),
-  findOrCreateUserByPhone: vi.fn(),
-}));
-vi.mock("@/server/auth/repo/merge/accountMerge.repo", () => ({ mergeAccounts: vi.fn() }));
 vi.mock("@/server/social/repo/inviteLinks.repo", () => ({
-  findActiveFriendLink: vi.fn(),
   findActiveGroupLink: vi.fn(),
   findActiveLinkByToken: vi.fn(),
   findActiveProfileLink: vi.fn(),
   insertInviteLink: vi.fn(),
-  revokeFriendLinksFor: vi.fn(),
   revokeGroupLinks: vi.fn(),
   revokeProfileLinks: vi.fn(),
 }));
@@ -45,7 +40,6 @@ vi.mock("@/server/group/repo/groups.repo", () => ({
   addMember: vi.fn(),
   findGroupById: vi.fn(),
   isMember: vi.fn(),
-  listGroupsByUser: vi.fn(),
   listMembers: vi.fn(),
   memberRole: vi.fn(),
 }));
@@ -75,15 +69,11 @@ vi.mock("@/server/common/db/db", () => ({
 }));
 
 import { findUserById, findUsersByIds } from "@/server/auth/repo/users.repo";
-import { mergeAccounts } from "@/server/auth/repo/merge/accountMerge.repo";
-import { findOrCreateUserByEmail } from "@/server/auth/usecase/account/auth.usecase";
 import {
-  findActiveFriendLink,
   findActiveGroupLink,
   findActiveLinkByToken,
   findActiveProfileLink,
   insertInviteLink,
-  revokeFriendLinksFor,
   revokeGroupLinks,
 } from "@/server/social/repo/inviteLinks.repo";
 import {
@@ -95,7 +85,6 @@ import {
   addMember,
   findGroupById,
   isMember,
-  listGroupsByUser,
   listMembers,
   memberRole,
 } from "@/server/group/repo/groups.repo";
@@ -104,16 +93,13 @@ import { insertNotifications } from "@/server/social/repo/notifications.repo";
 import {
   acceptInviteLink,
   createGroupInviteLink,
-  getFriendInviteLink,
   getProfileInviteLink,
-  inviteContactToSignUp,
   previewInviteLink,
   revokeGroupInviteLink,
 } from "./social.usecase";
 
 const CALLER = "user-caller";
 const INVITER = "user-inviter";
-const INVITED = "user-invited";
 const GROUP = "group-1";
 const TOKEN = "a".repeat(43);
 
@@ -136,21 +122,11 @@ function userRow(overrides: Partial<UserRow> = {}): UserRow {
     google_sub: "google-someone",
     onboarded_at: null,
     phone_verified_at: null,
-    merged_into: null,
     token_version: 0,
     created_at: "2026-09-01T00:00:00Z",
     ...overrides,
   };
 }
-
-/** An unclaimed invited row — no way to sign into it. */
-const invitedRow = userRow({
-  id: INVITED,
-  name: "Rifat (invited)",
-  google_sub: null,
-  password_hash: null,
-  phone: "+8801712345678",
-});
 
 /**
  * Builds an invite-link row.
@@ -161,10 +137,9 @@ const invitedRow = userRow({
 function linkRow(overrides: Partial<InviteLinkRow> = {}): InviteLinkRow {
   return {
     token: TOKEN,
-    kind: "friend",
+    kind: "profile",
     inviter_id: INVITER,
     group_id: null,
-    invited_user_id: INVITED,
     ...overrides,
   };
 }
@@ -172,65 +147,11 @@ function linkRow(overrides: Partial<InviteLinkRow> = {}): InviteLinkRow {
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(findUserById).mockImplementation(async (userId: string) => {
-    if (userId === INVITED) return invitedRow;
     if (userId === INVITER) return userRow({ id: INVITER, name: "Anirudha" });
     return userRow({ id: userId });
   });
   vi.mocked(findUsersByIds).mockResolvedValue([]);
-  vi.mocked(listGroupsByUser).mockResolvedValue([]);
   vi.mocked(friendshipExists).mockResolvedValue(true);
-});
-
-describe("getFriendInviteLink", () => {
-  it("refuses a target who already has an account", async () => {
-    vi.mocked(findUserById).mockResolvedValue(userRow({ id: INVITED }));
-
-    await expect(getFriendInviteLink(CALLER, INVITED)).rejects.toMatchObject({
-      code: "invalid_argument",
-      message: expect.stringContaining("already have an account"),
-    });
-  });
-
-  it("refuses anyone but an actual inviter — co-membership is not enough (§33b)", async () => {
-    // An invited row's friends are exactly the people who invited it; a mere
-    // co-member could otherwise mint a claim link and, with a second
-    // account, inherit seats in groups nobody there consented to.
-    vi.mocked(friendshipExists).mockResolvedValue(false);
-
-    await expect(getFriendInviteLink(CALLER, INVITED)).rejects.toMatchObject({
-      code: "permission_denied",
-    });
-    expect(insertInviteLink).not.toHaveBeenCalled();
-  });
-
-  it("returns the existing active link rather than minting a second", async () => {
-    vi.mocked(findActiveFriendLink).mockResolvedValue(linkRow());
-
-    await expect(getFriendInviteLink(CALLER, INVITED)).resolves.toEqual({ token: TOKEN });
-    expect(insertInviteLink).not.toHaveBeenCalled();
-  });
-
-  it("mints a fresh unguessable token when none exists", async () => {
-    vi.mocked(findActiveFriendLink).mockResolvedValue(undefined);
-
-    const { token } = await getFriendInviteLink(CALLER, INVITED);
-
-    expect(token).toMatch(/^[A-Za-z0-9_-]{43}$/);
-    expect(insertInviteLink).toHaveBeenCalledWith(
-      expect.objectContaining({ kind: "friend", inviterId: CALLER, invitedUserId: INVITED }),
-    );
-  });
-
-  it("re-reads the winner when a concurrent ask wins the unique index", async () => {
-    vi.mocked(findActiveFriendLink)
-      .mockResolvedValueOnce(undefined)
-      .mockResolvedValueOnce(linkRow());
-    vi.mocked(insertInviteLink).mockRejectedValueOnce(
-      Object.assign(new Error("duplicate"), { code: "23505" }),
-    );
-
-    await expect(getFriendInviteLink(CALLER, INVITED)).resolves.toEqual({ token: TOKEN });
-  });
 });
 
 describe("createGroupInviteLink / revokeGroupInviteLink", () => {
@@ -288,29 +209,15 @@ describe("previewInviteLink", () => {
     vi.mocked(findActiveLinkByToken).mockResolvedValue(undefined);
     await expect(previewInviteLink(TOKEN)).rejects.toMatchObject(expected);
 
-    // A claimed invitation is a finished one.
+    // A profile link speaks for its owner; once they are gone it is dead.
     vi.mocked(findActiveLinkByToken).mockResolvedValue(linkRow());
-    vi.mocked(findUserById).mockImplementation(async (userId: string) =>
-      userId === INVITED ? userRow({ id: INVITED, google_sub: "claimed-now" }) : userRow(),
-    );
+    vi.mocked(findUserById).mockResolvedValue(undefined);
     await expect(previewInviteLink(TOKEN)).rejects.toMatchObject(expected);
-  });
-
-  it("names the inviter and the invited identity for a friend link", async () => {
-    vi.mocked(findActiveLinkByToken).mockResolvedValue(linkRow());
-
-    await expect(previewInviteLink(TOKEN)).resolves.toEqual({
-      kind: "friend",
-      inviterName: "Anirudha",
-      groupName: "",
-      memberCount: 0,
-      invitedName: "Rifat (invited)",
-    });
   });
 
   it("names the group and its size for a group link", async () => {
     vi.mocked(findActiveLinkByToken).mockResolvedValue(
-      linkRow({ kind: "group", group_id: GROUP, invited_user_id: null }),
+      linkRow({ kind: "group", group_id: GROUP }),
     );
     vi.mocked(findGroupById).mockResolvedValue({ id: GROUP, name: "Bali Trip" } as never);
     vi.mocked(listMembers).mockResolvedValue([{ id: "a" }, { id: "b" }] as never);
@@ -326,57 +233,9 @@ describe("previewInviteLink", () => {
 });
 
 describe("acceptInviteLink", () => {
-  it("claims the invited identity, revokes its links, and befriends the inviter", async () => {
-    vi.mocked(findActiveLinkByToken).mockResolvedValue(linkRow());
-
-    await expect(acceptInviteLink(CALLER, TOKEN)).resolves.toEqual({ groupId: "" });
-
-    // The claim is the §32 merge machinery on a moneyless row.
-    // adoptPhone false: the invite's number was the inviter's claim,
-    // verified by nobody — freed, never inherited (§33b).
-    expect(mergeAccounts).toHaveBeenCalledWith(CALLER, INVITED, "+8801712345678", {
-      adoptPhone: false,
-    });
-    expect(revokeFriendLinksFor).toHaveBeenCalledWith(INVITED);
-    expect(insertFriendship).toHaveBeenCalledWith(CALLER, INVITER);
-    expect(insertNotifications).toHaveBeenCalledWith(
-      [INVITER],
-      expect.objectContaining({ type: "invite_accepted" }),
-    );
-  });
-
-  it("announces every inherited seat so a roster face never changes silently", async () => {
-    vi.mocked(findActiveLinkByToken).mockResolvedValue(linkRow());
-    vi.mocked(listGroupsByUser).mockResolvedValue([{ id: GROUP, name: "Bali Trip" }] as never);
-    vi.mocked(listMembers).mockResolvedValue([{ id: CALLER }, { id: INVITER }] as never);
-
-    await acceptInviteLink(CALLER, TOKEN);
-
-    expect(insertActivity).toHaveBeenCalledWith(
-      expect.objectContaining({
-        groupId: GROUP,
-        type: "member_added",
-        message: expect.stringContaining("claimed Rifat (invited)'s invitation"),
-      }),
-    );
-  });
-
-  it("maps a lost claim race to the same dead-link sentence, not a 500", async () => {
-    vi.mocked(findActiveLinkByToken).mockResolvedValue(linkRow());
-    vi.mocked(mergeAccounts).mockRejectedValue(
-      new Error("account merge target changed while acquiring locks"),
-    );
-
-    await expect(acceptInviteLink(CALLER, TOKEN)).rejects.toMatchObject({
-      code: "not_found",
-      message: expect.stringContaining("isn't valid"),
-    });
-    expect(revokeFriendLinksFor).not.toHaveBeenCalled();
-  });
-
   it("refuses a group join when the roster is at its ceiling", async () => {
     vi.mocked(findActiveLinkByToken).mockResolvedValue(
-      linkRow({ kind: "group", group_id: GROUP, invited_user_id: null }),
+      linkRow({ kind: "group", group_id: GROUP }),
     );
     vi.mocked(findGroupById).mockResolvedValue({ id: GROUP, name: "Bali Trip" } as never);
     vi.mocked(isMember).mockResolvedValue(false);
@@ -391,39 +250,9 @@ describe("acceptInviteLink", () => {
     expect(addMember).not.toHaveBeenCalled();
   });
 
-  it("skips the merge when the caller already claimed the row by email match", async () => {
-    vi.mocked(findActiveLinkByToken).mockResolvedValue(linkRow({ invited_user_id: CALLER }));
-
-    await acceptInviteLink(CALLER, TOKEN);
-
-    expect(mergeAccounts).not.toHaveBeenCalled();
-    expect(insertFriendship).toHaveBeenCalledWith(CALLER, INVITER);
-  });
-
-  it("treats an identity claimed by somebody else as a dead link", async () => {
-    vi.mocked(findActiveLinkByToken).mockResolvedValue(linkRow());
-    vi.mocked(findUserById).mockImplementation(async (userId: string) =>
-      userId === INVITED
-        ? userRow({ id: INVITED, google_sub: "claimed-by-other" })
-        : userRow({ id: userId }),
-    );
-
-    await expect(acceptInviteLink(CALLER, TOKEN)).rejects.toMatchObject({ code: "not_found" });
-    expect(mergeAccounts).not.toHaveBeenCalled();
-  });
-
-  it("refuses the inviter's own friend link", async () => {
-    vi.mocked(findActiveLinkByToken).mockResolvedValue(linkRow({ inviter_id: CALLER }));
-
-    await expect(acceptInviteLink(CALLER, TOKEN)).rejects.toMatchObject({
-      code: "invalid_argument",
-      message: expect.stringContaining("your own invite link"),
-    });
-  });
-
   it("enrols a group-link acceptor under the group lock, with the feed event", async () => {
     vi.mocked(findActiveLinkByToken).mockResolvedValue(
-      linkRow({ kind: "group", group_id: GROUP, invited_user_id: null }),
+      linkRow({ kind: "group", group_id: GROUP }),
     );
     vi.mocked(findGroupById).mockResolvedValue({ id: GROUP, name: "Bali Trip" } as never);
     vi.mocked(isMember).mockResolvedValue(false);
@@ -445,7 +274,7 @@ describe("acceptInviteLink", () => {
 
   it("re-accepting a group link is a quiet no-op", async () => {
     vi.mocked(findActiveLinkByToken).mockResolvedValue(
-      linkRow({ kind: "group", group_id: GROUP, invited_user_id: null }),
+      linkRow({ kind: "group", group_id: GROUP }),
     );
     vi.mocked(findGroupById).mockResolvedValue({ id: GROUP, name: "Bali Trip" } as never);
     vi.mocked(isMember).mockResolvedValue(true);
@@ -467,14 +296,14 @@ describe("profile links (§33a)", () => {
     );
 
     vi.mocked(findActiveProfileLink).mockResolvedValue(
-      linkRow({ kind: "profile", inviter_id: CALLER, invited_user_id: null }),
+      linkRow({ kind: "profile", inviter_id: CALLER }),
     );
     await expect(getProfileInviteLink(CALLER)).resolves.toEqual({ token: TOKEN });
   });
 
   it("previews as the owner's connect card", async () => {
     vi.mocked(findActiveLinkByToken).mockResolvedValue(
-      linkRow({ kind: "profile", invited_user_id: null }),
+      linkRow({ kind: "profile" }),
     );
 
     await expect(previewInviteLink(TOKEN)).resolves.toEqual({
@@ -489,7 +318,7 @@ describe("profile links (§33a)", () => {
   it("accepting sends a friend request and notifies — never instant friendship", async () => {
     // A leaked bearer link must not attach a stranger to the owner's picker.
     vi.mocked(findActiveLinkByToken).mockResolvedValue(
-      linkRow({ kind: "profile", invited_user_id: null }),
+      linkRow({ kind: "profile" }),
     );
     vi.mocked(friendshipExists).mockResolvedValue(false);
     vi.mocked(insertFriendRequest).mockResolvedValue(true);
@@ -507,7 +336,7 @@ describe("profile links (§33a)", () => {
 
   it("accepts quietly when already friends or already requested", async () => {
     vi.mocked(findActiveLinkByToken).mockResolvedValue(
-      linkRow({ kind: "profile", invited_user_id: null }),
+      linkRow({ kind: "profile" }),
     );
 
     vi.mocked(friendshipExists).mockResolvedValue(true);
@@ -522,45 +351,12 @@ describe("profile links (§33a)", () => {
 
   it("refuses the owner's own link", async () => {
     vi.mocked(findActiveLinkByToken).mockResolvedValue(
-      linkRow({ kind: "profile", inviter_id: CALLER, invited_user_id: null }),
+      linkRow({ kind: "profile", inviter_id: CALLER }),
     );
 
     await expect(acceptInviteLink(CALLER, TOKEN)).rejects.toMatchObject({
       code: "invalid_argument",
       message: expect.stringContaining("your own invite link"),
     });
-  });
-});
-
-describe("inviteContactToSignUp (§33c)", () => {
-  it("creates the Invited contact, befriends, and hands back the claim link", async () => {
-    vi.mocked(findOrCreateUserByEmail).mockResolvedValue(invitedRow);
-    vi.mocked(findActiveFriendLink).mockResolvedValue(undefined);
-
-    const { token } = await inviteContactToSignUp(CALLER, {
-      email: "rifat@example.com",
-      phone: "",
-    });
-
-    expect(insertFriendship).toHaveBeenCalledWith(CALLER, INVITED);
-    expect(token).toMatch(/^[A-Za-z0-9_-]{43}$/);
-  });
-
-  it("refuses a contact who already has a claimed account", async () => {
-    vi.mocked(findOrCreateUserByEmail).mockResolvedValue(userRow({ id: "registered-1" }));
-
-    await expect(
-      inviteContactToSignUp(CALLER, { email: "tanvir@example.com", phone: "" }),
-    ).rejects.toMatchObject({
-      code: "invalid_argument",
-      message: expect.stringContaining("already on HaalKhata"),
-    });
-    expect(insertFriendship).not.toHaveBeenCalled();
-  });
-
-  it("requires exactly one identifier", async () => {
-    await expect(
-      inviteContactToSignUp(CALLER, { email: "", phone: "" }),
-    ).rejects.toMatchObject({ code: "invalid_argument" });
   });
 });

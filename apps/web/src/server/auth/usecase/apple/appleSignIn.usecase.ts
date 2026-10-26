@@ -63,11 +63,12 @@ async function bindIdentity(identity: AppleIdentity, name: string, clientId: str
   if (user?.apple_sub && user.apple_sub !== identity.subject) {
     throw new UsecaseError("already_exists", "a different Apple account is already linked to that email");
   }
-  const unclaimed = !user || (!user.password_hash && !user.google_sub && !user.apple_sub);
+  // A new account is born with its Apple identity, since a row nobody can
+  // sign in to is refused; an existing one keeps the name its owner chose.
   if (!user) user = await insertUser({ email: identity.email, name: displayName,
-    avatarColor: avatarColorFor(identity.subject), passwordHash: null }, client);
-  await appleRepository.saveAppleIdentity(user.id, identity.subject, unclaimed ? displayName : "",
-    clientId, encryptAppleToken(refreshToken), client);
+    avatarColor: avatarColorFor(identity.subject), passwordHash: null, appleSub: identity.subject }, client);
+  await appleRepository.saveAppleIdentity(user.id, identity.subject, clientId,
+    encryptAppleToken(refreshToken), client);
   return user.id;
 }
 
@@ -146,6 +147,6 @@ export async function completeAppleSignIn(input: { state: string; verifier: stri
  */
 async function appleSession(userId: string) {
   const user = await findUserById(userId);
-  if (!user || user.merged_into) throw new UsecaseError("unauthenticated", "account no longer exists");
+  if (!user) throw new UsecaseError("unauthenticated", "account no longer exists");
   return { user: toPrivateUser(user), token: createToken(user.id, user.token_version) };
 }

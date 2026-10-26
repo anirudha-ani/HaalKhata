@@ -32,9 +32,9 @@ FALSE`, set by `AuthService.SetContactDiscovery`), and only when:
 
 - the match is its verified phone (`phone_verified_at` set) or its sign-in
   email (Google and Apple both verify it);
-- it is registered (a password, Google or Apple), not merged, deleted or
-  suspended, and not the caller. Unclaimed invitation rows are NULL too, so
-  this check is what keeps a number an inviter typed from being "found";
+- it is a live account (every live row is somebody who signed up with a
+  password, Google or Apple — `chk_users_can_sign_in`), not deleted or
+  suspended, and not the caller;
 - there is no block in either direction.
 
 Accounts that predate the feature start unanswered (NULL), which is findable.
@@ -50,7 +50,7 @@ a yes and **Turn off** a no. The answer can be changed any time under
 | --- | --- |
 | Contact names, labels, photos | Never leave the phone |
 | Phones and emails sent to FindContacts | Not stored or logged; held only for the request |
-| Numbers that match nobody | Never become Invited rows (unlike AddFriend) |
+| Numbers that match nobody | Create nothing (nor does AddFriend) |
 | `contact_lookup_usage` | Per account and UTC day: a count of identifiers checked |
 | Friend requests and notifications | Written only when the person taps Add beside someone |
 

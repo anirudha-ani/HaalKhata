@@ -47,7 +47,6 @@ function account(overrides: Partial<DiscoverableAccountRow>): DiscoverableAccoun
     phone_verified_at: "2026-10-01T00:00:00Z",
     google_sub: "google-rifat",
     onboarded_at: "2026-10-01T00:00:00Z",
-    merged_into: null,
     token_version: 1,
     created_at: "2026-10-01T00:00:00Z",
     contact_discovery: true,

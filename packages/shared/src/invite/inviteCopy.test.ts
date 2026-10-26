@@ -1,9 +1,9 @@
-/** Invite text must distinguish joining, claiming an invitation and requesting friendship. */
+/** Invite text must distinguish joining a group from requesting friendship, and never promise a claim. */
 
 import { describe, expect, it } from "vitest";
-import { inviteCopy, type InvitePreview } from "./inviteCopy";
+import { inviteCopy, NOT_ON_HAALKHATA_COPY, type InvitePreview } from "./inviteCopy";
 
-const PREVIEW: InvitePreview = { kind: "group", inviterName: "Ari", groupName: "Trip", memberCount: 1, invitedName: "Sam" };
+const PREVIEW: InvitePreview = { kind: "group", inviterName: "Ari", groupName: "Trip", memberCount: 1 };
 
 describe("invite explanations", () => {
   it("names the group and handles singular and plural membership", () => {
@@ -18,10 +18,15 @@ describe("invite explanations", () => {
       requestSent: "Request sent — Ari will confirm from their side.",
     });
   });
-  it("explains that accepting a named invite claims existing group seats", () => {
-    const result = inviteCopy({ ...PREVIEW, kind: "person" });
-    expect(result.action).toBe("Accept the invite");
-    expect(result.description).toContain("“Sam”");
-    expect(result.description).toContain("group seats");
+  it("never offers to take over somebody else's invitation", () => {
+    // One-person links are retired; nothing a link opens claims a seat.
+    for (const kind of ["group", "profile", "friend"]) {
+      const result = inviteCopy({ ...PREVIEW, kind });
+      expect(`${result.title} ${result.description} ${result.action}`).not.toMatch(/claim|seat|added you as/i);
+    }
+  });
+  it("offers each add form the link that fits it when nobody has the typed contact", () => {
+    expect(NOT_ON_HAALKHATA_COPY.friend.action).toBe("Share your invite link");
+    expect(NOT_ON_HAALKHATA_COPY.group.message).toContain("join the group");
   });
 });

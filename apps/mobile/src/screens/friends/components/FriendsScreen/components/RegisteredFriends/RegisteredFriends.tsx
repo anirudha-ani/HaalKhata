@@ -37,7 +37,7 @@ export function RegisteredFriends({
 }) {
   const router = useRouter();
   const { isLargeText, isTablet } = useResponsiveLayout();
-  if (friendsState.registeredFriends.length === 0) {
+  if (friendsState.friends.length === 0) {
     return (
       <EmptyState
         action={<Button compact label="Add friend" onPress={() => friendsState.setShowAdd(true)} />}
@@ -78,7 +78,7 @@ export function RegisteredFriends({
         </View>
         {friendsState.query ? (
           <Text style={styles.searchCount}>
-            {friendsState.visibleFriends.length} of {friendsState.registeredFriends.length}
+            {friendsState.visibleFriends.length} of {friendsState.friends.length}
           </Text>
         ) : null}
       </View>

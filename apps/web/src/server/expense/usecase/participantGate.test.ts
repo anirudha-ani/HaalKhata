@@ -1,4 +1,4 @@
-/** Regression tests for the §33 gate: an Invited (unregistered) person is never on a transaction. */
+/** Regression tests for who may join a new expense: never a Deleted member, never a blocked person. */
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { PoolClient } from "pg";
@@ -50,7 +50,7 @@ import { insertExpense, findExpenseById, loadExpenseChildren } from "@/server/ex
 import type { CreateExpenseRequest } from "@haalkhata/protogen/expense/v1/expense_pb";
 
 const CALLER = "user-caller";
-const INVITED = "user-invited";
+const DELETED = "user-deleted-member";
 
 /**
  * Builds a users row with defaults for the columns a test does not care about.
@@ -71,7 +71,6 @@ function userRow(overrides: Partial<UserRow> = {}): UserRow {
     google_sub: "google-caller",
     onboarded_at: null,
     phone_verified_at: null,
-    merged_into: null,
     token_version: 0,
     created_at: "2026-09-01T00:00:00Z",
     ...overrides,
@@ -101,7 +100,7 @@ function splitRequest(otherId: string): CreateExpenseRequest {
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(findUserById).mockResolvedValue(userRow());
-  vi.mocked(listFriendIds).mockResolvedValue([INVITED, "user-friend"]);
+  vi.mocked(listFriendIds).mockResolvedValue([DELETED, "user-friend"]);
   vi.mocked(listCoMemberIds).mockResolvedValue([]);
   vi.mocked(insertExpense).mockResolvedValue("expense-1");
   vi.mocked(findExpenseById).mockResolvedValue({
@@ -127,21 +126,22 @@ beforeEach(() => {
   } as never);
 });
 
-describe("the Invited transaction gate (§33)", () => {
-  it("refuses an unregistered participant by name, with the remedy", async () => {
+describe("who may join a new expense", () => {
+  it("refuses the Deleted member a deleted account left behind", async () => {
+    // It keeps its shares in old expenses; it takes none in new ones.
     vi.mocked(findUsersByIds).mockResolvedValue([
       userRow(),
-      userRow({ id: INVITED, name: "Rifat", google_sub: null, password_hash: null }),
+      userRow({ id: DELETED, name: "Deleted member", email: null, google_sub: null, deleted_at: "2026-10-01T00:00:00Z" }),
     ]);
 
-    await expect(createExpense(CALLER, splitRequest(INVITED))).rejects.toMatchObject({
+    await expect(createExpense(CALLER, splitRequest(DELETED))).rejects.toMatchObject({
       code: "invalid_argument",
-      message: expect.stringContaining("Rifat hasn't joined HaalKhata yet"),
+      message: expect.stringContaining("Deleted member can't be added to a new expense"),
     });
     expect(insertExpense).not.toHaveBeenCalled();
   });
 
-  it("accepts the same split once the person is registered", async () => {
+  it("accepts the same split with somebody who can sign in", async () => {
     vi.mocked(findUsersByIds).mockResolvedValue([
       userRow(),
       userRow({ id: "user-friend", name: "Tanvir", google_sub: "google-friend" }),

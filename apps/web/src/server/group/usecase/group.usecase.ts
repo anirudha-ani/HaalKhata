@@ -41,6 +41,7 @@ import {
   MAX_GROUP_MEMBER_IDS_PER_REQUEST,
   MAX_GROUP_NAME_LENGTH,
   MEMBER_ROLE,
+  NOT_ON_HAALKHATA_GROUP_MESSAGE,
   OWNER_ROLE,
 } from "@/server/group/group.constants";
 import { lockGroupLedgers, withLedgerTransaction } from "@/server/common/ledger/ledgerLocks";
@@ -195,14 +196,11 @@ async function enrollMembers(
     // An id with no row is a client sending something stale, not an attack —
     // the authorization check above already passed, so just skip it.
     if (!user) continue;
-    // §33c: a seat belongs only to somebody who can open the app. Invited
-    // friends look pickable on stale clients, so the gate lives here, where
-    // CreateGroup and AddMembers converge.
+    // §33c: a seat belongs only to somebody who can open the app, which a
+    // Deleted member left in a friend's history cannot. The gate lives here,
+    // where CreateGroup and AddMembers converge.
     if (!isRegisteredUser(user)) {
-      throw new UsecaseError(
-        "failed_precondition",
-        `${user.name} hasn't joined HaalKhata yet — invite them to sign up first`,
-      );
+      throw new UsecaseError("failed_precondition", `${user.name} can't be added to a group`);
     }
     await addMember(groupId, userId, MEMBER_ROLE, client);
     await insertFriendship(callerId, userId, client);
@@ -211,22 +209,16 @@ async function enrollMembers(
   return added;
 }
 
-/** The §33c refusal the clients render as "send them a sign-up invite?". */
-const NOT_ON_PLATFORM_MESSAGE =
-  "they're not on HaalKhata yet — invite them to sign up first";
-
 /**
- * Resolves an optional email/phone to a REGISTERED account (§33c). A group
- * seat belongs only to somebody who can actually open the app: an identifier
- * with no claimed account refuses with a distinct failed_precondition, which
- * the clients render as the offer to send a sign-up invite
- * (social.InviteContactToSignUp). Once claimed, the person is already the
- * inviter's friend and addable like anyone.
+ * Resolves an optional email/phone to an account (§33c). Nothing is created
+ * for somebody who has not signed up: an identifier with no account refuses
+ * with a distinct failed_precondition, which the clients answer with the
+ * group's own invite link. Whoever joins through it signs up as themselves.
  *
  * @param input - The raw email and phone fields. The legacy name field is
  *   accepted for wire compatibility but ignored. Empty contact fields mean
  *   nobody was invited.
- * @returns The invited user row, or undefined when neither field was given.
+ * @returns The account, or undefined when neither field was given.
  * @throws UsecaseError (invalid_argument) when both fields are populated or
  *   the given identifier is malformed.
  */
@@ -247,9 +239,7 @@ async function resolveInvitee(input: {
   const invitee = email !== ""
     ? await findUserByEmail(email)
     : await findUserByPhone(assertPhoneShape(phone));
-  if (!invitee || isUnregistered(invitee)) {
-    throw new UsecaseError("failed_precondition", NOT_ON_PLATFORM_MESSAGE);
-  }
+  if (!invitee) throw new UsecaseError("failed_precondition", NOT_ON_HAALKHATA_GROUP_MESSAGE);
   return invitee;
 }
 
@@ -263,16 +253,6 @@ function assertPhoneShape(phone: string): string {
   const normalized = normalizePhone(phone);
   if (!normalized) invalid(PHONE_FORMAT_HINT);
   return normalized;
-}
-
-/**
- * Whether a row has no way to sign in — an invitation, not a member-to-be.
- *
- * @param user - Row to classify.
- * @returns True when neither credential is set.
- */
-function isUnregistered(user: UserRow): boolean {
-  return !isRegisteredUser(user);
 }
 
 /**

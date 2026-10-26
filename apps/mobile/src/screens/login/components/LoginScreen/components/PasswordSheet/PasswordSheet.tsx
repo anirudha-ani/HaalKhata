@@ -57,11 +57,6 @@ export function PasswordSheet({ onClose }: { onClose: () => void }) {
           value={login.password}
         />
         {login.error ? <Text accessibilityRole="alert" style={styles.error}>{login.error}</Text> : null}
-        {login.mode === "signup" ? (
-          <Text style={styles.hint}>
-            Invited by a friend? Sign up with the same email or phone and your shared expenses will already be here.
-          </Text>
-        ) : null}
       </View>
     </Sheet>
   );

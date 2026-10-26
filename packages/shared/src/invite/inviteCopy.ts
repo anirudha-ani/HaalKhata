@@ -1,8 +1,8 @@
-/** User-facing invite wording shared by browser and native landing screens. */
+/** User-facing invite wording shared by browser and native landing screens and add forms. */
 
 /** The public preview fields used to explain what accepting an invite does. */
 export interface InvitePreview {
-  /** Group, profile or a named-person invitation. */
+  /** "group" or "profile". */
   kind: string;
   /** Person who created the link. */
   inviterName: string;
@@ -10,9 +10,25 @@ export interface InvitePreview {
   groupName: string;
   /** Number of existing group members. */
   memberCount: number;
-  /** Placeholder identity claimed by a named-person invitation. */
-  invitedName: string;
 }
+
+/**
+ * What an add form says when the email or phone typed belongs to nobody on
+ * HaalKhata, and the link it offers instead. Nothing is made for that
+ * person: they sign up through the link and arrive as themselves.
+ */
+export const NOT_ON_HAALKHATA_COPY = {
+  /** Adding a friend: the caller's own profile link. */
+  friend: {
+    message: "They’re not on HaalKhata yet. Send them your invite link — once they sign up, you’ll get a friend request to confirm.",
+    action: "Share your invite link",
+  },
+  /** Adding to a group: the group's join link. */
+  group: {
+    message: "They’re not on HaalKhata yet. Send them this group’s invite link — once they sign up, they join the group.",
+    action: "Share the group’s invite link",
+  },
+} as const;
 
 /** Sign-in guidance that applies to both Google and Apple. */
 export const INVITE_SIGN_IN_HINT = "New here? Signing in creates your account. You’ll return here to accept the invite.";
@@ -28,18 +44,11 @@ export function inviteCopy(preview: InvitePreview) {
       requestSent,
     };
   }
-  if (preview.kind === "profile") {
-    return {
-      title: `${preview.inviterName} wants to connect on HaalKhata`,
-      description: "Accepting sends them a friend request; you'll be connected once they confirm.",
-      action: "Send friend request",
-      requestSent,
-    };
-  }
+  // A profile link, the only other kind there is.
   return {
-    title: `${preview.inviterName} invited you to HaalKhata`,
-    description: `They added you as “${preview.invitedName}”. Accepting brings that invitation — friendships and any group seats — onto your account.`,
-    action: "Accept the invite",
+    title: `${preview.inviterName} wants to connect on HaalKhata`,
+    description: "Accepting sends them a friend request; you'll be connected once they confirm.",
+    action: "Send friend request",
     requestSent,
   };
 }

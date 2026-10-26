@@ -1,5 +1,5 @@
 "use client";
-/** Friends route: overall position and four tabs (friends, requests, sent, invited), plus the add-friend dialog. */
+/** Friends route: overall position and three tabs (friends, requests, sent), plus the add-friend dialog. */
 
 import Link from "next/link";
 import { ChevronRight, HandCoins, Handshake, UserPlus, Wallet } from "lucide-react";
@@ -17,20 +17,20 @@ import { Spinner } from "@/components/ui/Spinner/Spinner";
 import { errorMessage } from "@/lib/api/connect";
 import { useHydrated } from "@/lib/hooks/useHydrated";
 import { leadingBucket, positionCaption } from "@haalkhata/shared/money/balances";
+import { NOT_ON_HAALKHATA_COPY } from "@haalkhata/shared/invite/inviteCopy";
 import type { FriendsTab } from "../../constants/friendsTabs";
 import { FriendsTabs } from "./components/FriendsTabs/FriendsTabs";
 import { IncomingRequests } from "./components/IncomingRequests/IncomingRequests";
-import { InvitedFriends } from "./components/InvitedFriends/InvitedFriends";
 import { SentRequests } from "./components/SentRequests/SentRequests";
 import { useFriends } from "./hooks/useFriends";
 import { bucketsOf } from "./utils/bucketsOf";
 
 /**
- * Renders the friends page as four tabs. Friends: your overall position
+ * Renders the friends page as three tabs. Friends: your overall position
  * (owed to you / you owe) and a searchable list where each row opens that
  * friendship's ledger, with a settle action that works whichever way the
  * money is owed. Friend requests: what awaits your answer. Sent requests:
- * what you are waiting on. Invited: people you added who have not joined.
+ * what you are waiting on.
  *
  * One list with sections grew past a screen as soon as a few requests were
  * pending; tabs keep each view short and give the pending ones a count you
@@ -46,10 +46,9 @@ export function FriendsPage() {
   const currency = friendsState.me?.defaultCurrency ?? "USD";
   const settleTarget = friendsState.settleWith;
   const counts: Record<FriendsTab, number> = {
-    friends: friendsState.registeredFriends.length,
+    friends: friendsState.friends.length,
     requests: friendsState.incomingRequests.length,
     sent: friendsState.outgoingRequests.length,
-    invited: friendsState.invitedFriends.length,
   };
 
   const addFriendButton = (
@@ -67,7 +66,7 @@ export function FriendsPage() {
       {/* One row of cards per currency: a dollar owed and a euro owed are two
           facts, never one total. Nothing outstanding shows zeros in the
           caller's own currency. */}
-      {friendsState.registeredFriends.length > 0
+      {friendsState.friends.length > 0
         ? (friendsState.totals.length > 0
             ? friendsState.totals
             : [{ currency, owedToYouCents: 0, youOweCents: 0 }]
@@ -97,7 +96,7 @@ export function FriendsPage() {
           ))
         : null}
 
-      {friendsState.registeredFriends.length === 0 ? (
+      {friendsState.friends.length === 0 ? (
         <EmptyState
           icon={<Handshake />}
           title="No friends yet"
@@ -115,7 +114,7 @@ export function FriendsPage() {
             />
             {friendsState.query ? (
               <span className="shrink-0 text-sm text-ink-soft tabular-nums">
-                {friendsState.visibleFriends.length} of {friendsState.registeredFriends.length}
+                {friendsState.visibleFriends.length} of {friendsState.friends.length}
               </span>
             ) : null}
           </div>
@@ -234,18 +233,17 @@ export function FriendsPage() {
             {friendsState.tab === "friends" ? friendsTab : null}
             {friendsState.tab === "requests" ? <IncomingRequests friendsState={friendsState} /> : null}
             {friendsState.tab === "sent" ? <SentRequests friendsState={friendsState} /> : null}
-            {friendsState.tab === "invited" ? <InvitedFriends friendsState={friendsState} /> : null}
           </div>
         </>
       )}
 
-      {friendsState.remindShare ? (
+      {friendsState.profileShareToken ? (
         <InviteShareModal
-          title="Remind them to sign up"
-          explainer={`This link signs ${friendsState.remindShare.personName} up and claims their invited identity, friendships and group seats included.`}
-          token={friendsState.remindShare.token}
-          share={friendsState.remindShareToSheet}
-          onClose={friendsState.closeRemindShare}
+          title="Share your invite link"
+          explainer="Whoever opens this signs up as themselves and sends you a friend request to confirm."
+          token={friendsState.profileShareToken}
+          share={friendsState.profileShareToSheet}
+          onClose={friendsState.closeProfileShare}
         />
       ) : null}
 
@@ -275,14 +273,29 @@ export function FriendsPage() {
               {friendsState.isAdding ? "Sending…" : "Send request"}
             </button>
           </form>
-          <p className="mt-3 text-sm text-ink-soft">
-            For privacy, we won’t reveal whether that identifier has an account. They must accept
-            before either of you is added as a friend.
-          </p>
+          {/* Beside the form that was refused: nobody has that email or
+              phone, so the way in is the caller's own link. */}
+          {friendsState.notOnHaalKhata ? (
+            <div role="status" className="mt-3 space-y-2 rounded-xl border border-line bg-paper p-3">
+              <p className="text-sm">{NOT_ON_HAALKHATA_COPY.friend.message}</p>
+              <button
+                type="button"
+                disabled={friendsState.sharingInviteLink}
+                onClick={friendsState.shareInviteLink}
+                className="w-full rounded-lg bg-brand-600 px-3 py-2 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-50"
+              >
+                {friendsState.sharingInviteLink ? "Opening…" : NOT_ON_HAALKHATA_COPY.friend.action}
+              </button>
+            </div>
+          ) : (
+            <p className="mt-3 text-sm text-ink-soft">
+              They must accept before either of you is added as a friend.
+            </p>
+          )}
         </Modal>
       ) : null}
 
-      {/* Add, accept, decline, cancel and remind all report here. Rendered
+      {/* Add, share, accept, decline and cancel all report here. Rendered
           after the dialog so a failed send paints above it. */}
       <ErrorPopup message={friendsState.error} onDismiss={friendsState.dismissError} />
 

@@ -11,5 +11,6 @@ export const PERSON_MENU_COPY = {
   report: "Report person",
   block: "Block person",
   blocked: "Blocked",
-  invited: "Invited — hasn’t signed in yet",
+  /** Under the name of the stand-in a deleted account left in shared history. */
+  deleted: "Deleted their account",
 } as const;

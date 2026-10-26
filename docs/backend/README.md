@@ -34,7 +34,7 @@ HTTP; JSON or binary protobuf). The mount lives at
 
 | Service | Proto | Doc | What it owns |
 | --- | --- | --- | --- |
-| `auth.v1.AuthService` | [auth.proto](../../proto/auth/v1/auth.proto) | [auth/auth-service.md](auth/auth-service.md) | Sign-in (Apple/Google + dev passwords), sessions, profile, phone verification, account merge, onboarding, permanent deletion |
+| `auth.v1.AuthService` | [auth.proto](../../proto/auth/v1/auth.proto) | [auth/auth-service.md](auth/auth-service.md) | Sign-in (Apple/Google + dev passwords), sessions, profile, phone verification and transfer, onboarding, permanent deletion |
 | `group.v1.GroupService` | [group.proto](../../proto/group/v1/group.proto) | [group/group-service.md](group/group-service.md) | Groups, membership, ownership, the simplify-debts mode |
 | `expense.v1.ExpenseService` | [expense.proto](../../proto/expense/v1/expense.proto) | [expense/expense-service.md](expense/expense-service.md) | Expenses, splits, comments, settlements, every balance and ledger read |
 | `social.v1.SocialService` | [social.proto](../../proto/social/v1/social.proto) | [social/social-service.md](social/social-service.md) | Friend requests (incoming, sent, cancel), friends list, activity feed, notifications, reminders |

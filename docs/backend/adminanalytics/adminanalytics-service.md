@@ -45,8 +45,9 @@ address or a number past them. Postgres's own `[[:digit:]]` and
 `[[:space:]]` follow the C library and miss those, so the character lists
 are built from Unicode properties (`repo/unicodeClass.ts`). The last comparison happens inside the
 database and returns only the verdict. The person is still counted and
-listed, so the totals and the table agree. People who were invited but never signed in are counted and
-never listed: they have not joined and did not choose to be here.
+listed, so the totals and the table agree. Nobody exists here before
+signing up, so there is no one who was merely invited to count or list;
+`UsageTotals.invited_user_count` is deprecated and always 0.
 
 An integration test seeds people with emails, a phone number, a picture URL,
 amounts, descriptions and group names, then searches the entire response for
@@ -141,13 +142,15 @@ the app**.
 ## What the Counts Mean
 
 - **Registered** people have signed in (Google, Apple or, in development, a
-  password). Merge tombstones, and the anonymous stand-ins account deletion
-  leaves in shared ledgers, are neither registered nor invited.
+  password) — every live row, since `chk_users_can_sign_in` allows no
+  other. The anonymous stand-ins account deletion leaves in shared ledgers
+  are not counted.
 - **Active** in 7 / 30 days: distinct people who did anything that reaches
   the feed. The `activity` table already records every such action with its
   actor, so no tracking table exists for this.
 - **Joined** is `COALESCE(onboarded_at, created_at)`: the moment someone
-  finished signing up, not the moment a friend first typed their name.
+  finished signing up. For an account that claimed an invitation before
+  invitations were retired, the row is older than the person's arrival.
   Accounts older than the first-run flow were all stamped with the instant
   it shipped; migration `1792959311422` dates them from when their row was
   made instead, so they do not all read as new in that one week.

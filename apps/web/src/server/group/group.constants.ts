@@ -38,6 +38,13 @@ export { MEMBER_ROLE, OWNER_ROLE };
  */
 export { MAX_GROUP_NAME_LENGTH };
 
+/**
+ * AddMembers' refusal for an email or phone that belongs to nobody on
+ * HaalKhata. The clients answer it with the group's invite link.
+ */
+export const NOT_ON_HAALKHATA_GROUP_MESSAGE =
+  "they're not on HaalKhata yet — share this group's invite link so they can join";
+
 /** Maximum member identifiers accepted by one create/add request. */
 export const MAX_GROUP_MEMBER_IDS_PER_REQUEST = 100;
 

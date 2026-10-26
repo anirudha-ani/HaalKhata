@@ -222,8 +222,6 @@ export function GroupDetailPage({
           removingUserId={groupDetail.removingUserId}
           onTransfer={groupDetail.transferOwnership}
           transferringUserId={groupDetail.transferringUserId}
-          onRemind={groupDetail.remindMember}
-          remindingUserId={groupDetail.remindingUserId}
           onResetLink={groupDetail.resetInviteLink}
           resettingLink={groupDetail.resettingInviteLink}
           feedback={groupDetail.memberFeedback}
@@ -247,23 +245,12 @@ export function GroupDetailPage({
           onContactChange={groupDetail.setContact}
           error={groupDetail.peopleError}
           inviteOffer={groupDetail.inviteOffer}
-          onSendInvite={groupDetail.sendSignUpInvite}
-          sendingInvite={groupDetail.sendingSignUpInvite}
+          onShareLink={groupDetail.shareLinkFromOffer}
           onDismissInvite={groupDetail.dismissInviteOffer}
           canSubmit={groupDetail.canAddPeople}
           isPending={groupDetail.addMembers.isPending}
           onSubmit={groupDetail.submitPeople}
           onClose={() => groupDetail.setAddingPeople(false)}
-        />
-      ) : null}
-
-      {groupDetail.signUpShare ? (
-        <InviteShareModal
-          title="Sign-up invite"
-          explainer={`This link signs ${groupDetail.signUpShare.contact} up and connects you as friends. Once they join, you can add them to ${groupDetail.group.name}.`}
-          token={groupDetail.signUpShare.token}
-          share={groupDetail.signUpShareToSheet}
-          onClose={groupDetail.closeSignUpShare}
         />
       ) : null}
 

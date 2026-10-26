@@ -12,8 +12,8 @@ import { AVATAR_FALLBACK_COLOR, AVATAR_SIZES } from "./ui.constants";
  * otherwise.
  *
  * The initials are not a legacy path: `avatarUrl` is empty for everyone who
- * was invited rather than signed in, and Google's picture claim is documented
- * as never guaranteed even for those who did. A picture that fails to load
+ * signed in without Google, and Google's picture claim is documented as
+ * never guaranteed even for those who did. A picture that fails to load
  * falls back to the same initials rather than an empty square.
  */
 export function Avatar({

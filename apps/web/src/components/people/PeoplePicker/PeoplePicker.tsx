@@ -80,11 +80,11 @@ export function PeoplePicker({
     [isGroupExpense, groupMembers, friends, currentUser?.id],
   );
   const selectedIds = people.map((person) => person.id);
-  // §33: an Invited person can be a friend but never on a transaction.
-  // Shown-but-disabled beats hidden ("why isn't Rifat here?" answers itself),
-  // and the checklist sinks them below everyone who can be picked. Memoised
-  // so the checklist does not re-sort on every keystroke elsewhere in the form.
-  const invitedIds = useMemo(
+  // A Deleted member keeps its shares in old expenses and takes none in new
+  // ones. Shown-but-disabled beats hidden (a group's roster still lists it),
+  // and the checklist sinks it below everyone who can be picked. Memoised so
+  // the checklist does not re-sort on every keystroke elsewhere in the form.
+  const deletedIds = useMemo(
     () => new Set(availablePeople.filter((person) => !person.registered).map((person) => person.id)),
     [availablePeople],
   );
@@ -215,8 +215,8 @@ export function PeoplePicker({
                   legend={isGroupExpense ? "Group members on this expense" : "Friends on this expense"}
                   searchLabel={isGroupExpense ? "Search group members" : "Search friends"}
                   autoFocus={focusSearch}
-                  disabledIds={invitedIds}
-                  disabledHint="invited, hasn't joined yet"
+                  disabledIds={deletedIds}
+                  disabledHint="deleted their account"
                 />
               </div>
             ) : null}

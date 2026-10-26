@@ -72,7 +72,7 @@ apps/mobile/                 Expo (React Native) app — @haalkhata/mobile
   split math is in `@haalkhata/shared/expense/` (the client previews with it).
 - `repo`: SQL only. No business decisions.
 - Within a crowded domain/layer, group by capability (for example
-  `auth/usecase/apple/`, `deletion/`, `merge/`, `phone/`, `session/`). Keep
+  `auth/usecase/apple/`, `deletion/`, `phone/`, `session/`). Keep
   tests beside the implementation. Shared infrastructure uses concern
   folders under `common/`; do not flatten it back into one directory.
 - UI must NOT import `@/server/*/repo/**` or `@/server/common/db/**` — go
@@ -386,6 +386,14 @@ with colocated tests. Mobile-specific rules:
   `softDeleteNetSettlement`. A net settlement must carry the
   `position_digest` the person was shown; the write recomputes it under the
   locks and refuses a ledger that has moved.
+- **Nobody exists before signing up.** AddFriend and AddMembers find only
+  accounts; an email or phone with none is refused (`failed_precondition`)
+  and the clients offer the caller's profile link or the group's join link.
+  Never create a row for a stranger, and never add a path that claims or
+  merges one row into another (sign-up, phone verification or a link).
+  `chk_users_can_sign_in` refuses a live row with no password, Google or
+  Apple credential; the only credential-less rows are the "Deleted member"
+  stand-ins account deletion leaves. Invite links are `group` or `profile`.
 - **A person's payment methods reach only someone who owes them.** They are
   not on `User`. The one read of another person's methods is
   `listPayeeMethods`, called from `getFriendLedger` when the caller owes in

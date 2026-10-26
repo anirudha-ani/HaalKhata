@@ -18,7 +18,6 @@ const USER_ROW: UserRow = {
   google_sub: "google-private",
   onboarded_at: "2026-08-28T00:00:00Z",
   phone_verified_at: "2026-09-01T00:00:00Z",
-  merged_into: null,
   contact_discovery: true,
   token_version: 3,
   created_at: "2026-08-01T00:00:00Z",

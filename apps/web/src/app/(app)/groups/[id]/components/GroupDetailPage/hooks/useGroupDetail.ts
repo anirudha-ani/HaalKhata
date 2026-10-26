@@ -61,8 +61,8 @@ export function useGroupDetail(groupId: string) {
   const pendingGroupStatus = archiveAction?.groupId === groupId ? archiveAction.status : null;
   const [linkNotice, setLinkNotice] = useState("");
   const [linkError, setLinkError] = useState("");
-  // §33c: set when a typed contact has no claimed account, so the modal
-  // can offer "send them a sign-up invite?" instead of a dead error.
+  // §33c: set when a typed contact belongs to nobody on HaalKhata, so the
+  // modal offers the group's invite link instead of a dead error.
   const [inviteOffer, setInviteOffer] = useState<{ email: string; phone: string } | null>(null);
   // `received` rides along because the same modal records both directions:
   // paying what you owe, and logging money that has arrived from someone who
@@ -113,7 +113,7 @@ export function useGroupDetail(groupId: string) {
           setAddingPeople(false);
         },
         onError: (mutationError) => {
-          // §33c: the not-on-platform refusal becomes the invite offer.
+          // §33c: the not-on-HaalKhata refusal becomes the invite-link offer.
           if (
             mutationError instanceof ConnectError &&
             mutationError.code === Code.FailedPrecondition &&
@@ -128,29 +128,6 @@ export function useGroupDetail(groupId: string) {
     );
   };
 
-  const [signUpShare, setSignUpShare] = useState<{ token: string; contact: string } | null>(
-    null,
-  );
-
-  /**
-   * Sends the sign-up invite the §33c offer promised, then opens the share
-   * dialog (QR code, copy, share sheet) with its claim link. The add-people
-   * modal closes: the invite's notice used to render behind it, unseen.
-   */
-  const sendSignUpInvite = useMutation({
-    mutationFn: async (offer: { email: string; phone: string }) => {
-      const { token } = await socialClient.inviteContactToSignUp(offer);
-      return { token, contact: offer.email || offer.phone };
-    },
-    onSuccess: (share) => {
-      setInviteOffer(null);
-      setContact(EMPTY_CONTACT);
-      setAddingPeople(false);
-      setSignUpShare(share);
-    },
-    onError: (mutationError) => setPeopleError(errorMessage(mutationError)),
-  });
-
   const [groupShareToken, setGroupShareToken] = useState("");
 
   /**
@@ -158,7 +135,7 @@ export function useGroupDetail(groupId: string) {
    * share dialog, which owns the QR code, the copy button, and the OS share
    * sheet. Anyone with the link sees who invited them to what before
    * accepting; a stranger joining this way is the consent path §33 gives
-   * registered non-friends.
+   * non-friends, and the way in for somebody not on HaalKhata yet.
    */
   const shareGroupLink = useMutation({
     mutationFn: async () => {
@@ -168,7 +145,7 @@ export function useGroupDetail(groupId: string) {
     onSuccess: (token) => setGroupShareToken(token),
     // Shown under the strip the button sits in. It used to go to the
     // add-people form's error, which is only on screen inside a modal that
-    // is closed when this runs.
+    // is closed when this runs (the §33c offer closes it before sharing).
     onError: (mutationError) => {
       setLinkNotice("");
       setLinkError(errorMessage(mutationError));
@@ -187,28 +164,6 @@ export function useGroupDetail(groupId: string) {
     },
     onError: (mutationError) =>
       setMemberFeedback({ userId: null, tone: "error", message: errorMessage(mutationError) }),
-  });
-
-  /** Shares an Invited member's personal sign-up link. */
-  const remindMember = useMutation({
-    mutationFn: async (person: User) => {
-      const { token } = await socialClient.getFriendInviteLink({ userId: person.id });
-      return shareInvite(
-        token,
-        groupDetailAPI.me?.name ?? "A member",
-        groupDetailAPI.group?.name ?? "",
-      );
-    },
-    onSuccess: (outcome, person) => {
-      const message = outcome === "copied" ? "Invite link copied ✓" : "Invite link shared ✓";
-      setLinkNotice(message);
-      setMemberFeedback({ userId: person.id, tone: "success", message });
-    },
-    onError: (mutationError, person) => {
-      // Dismissing the share sheet is a choice, not a failure.
-      if (mutationError instanceof Error && mutationError.name === "AbortError") return;
-      setMemberFeedback({ userId: person.id, tone: "error", message: errorMessage(mutationError) });
-    },
   });
 
   /**
@@ -351,11 +306,6 @@ export function useGroupDetail(groupId: string) {
       resetInviteLink.mutate();
     },
     resettingInviteLink: resetInviteLink.isPending,
-    remindMember: (person: User) => {
-      setMemberFeedback(null);
-      remindMember.mutate(person);
-    },
-    remindingUserId: remindMember.isPending ? remindMember.variables?.id : undefined,
     candidates,
     pickedIds,
     togglePicked,
@@ -363,16 +313,19 @@ export function useGroupDetail(groupId: string) {
     setContact,
     peopleError,
     inviteOffer,
-    sendSignUpInvite: () => {
-      if (inviteOffer) sendSignUpInvite.mutate(inviteOffer);
+    /**
+     * Answers the §33c offer: closes the add-people modal, so the share
+     * dialog and any failure under the link strip are on screen, and shares
+     * the group's join link.
+     */
+    shareLinkFromOffer: () => {
+      setInviteOffer(null);
+      setContact(EMPTY_CONTACT);
+      setAddingPeople(false);
+      setLinkNotice("");
+      setLinkError("");
+      shareGroupLink.mutate();
     },
-    sendingSignUpInvite: sendSignUpInvite.isPending,
-    /** The open sign-up share dialog's link and contact; null while closed. */
-    signUpShare,
-    closeSignUpShare: () => setSignUpShare(null),
-    /** Opens the OS share sheet with the link's message; for the dialog. */
-    signUpShareToSheet: () =>
-      shareInvite(signUpShare?.token ?? "", groupDetailAPI.me?.name ?? "A member", ""),
     dismissInviteOffer: () => setInviteOffer(null),
     submitPeople,
     canAddPeople: pickedIds.length > 0 || !contactIsEmpty(contact),

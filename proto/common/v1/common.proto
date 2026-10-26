@@ -2,9 +2,8 @@ syntax = "proto3";
 
 package common.v1;
 
-// A person. Users may be "shadow" users (invited, not yet registered) — they
-// participate in expenses like anyone else and claim the account by signing
-// up with the same email or phone.
+// A person who has signed up, or a "Deleted member" that stands in for one
+// in shared history (deleted = true). Nobody exists here before signing up.
 message User {
   string id = 1;
   // Private contact field populated only when the caller reads their own
@@ -15,6 +14,7 @@ message User {
   string avatar_color = 4;
   // ISO 4217 code, e.g. "USD", "BDT".
   string default_currency = 5;
+  // True for every account; false only on a Deleted member.
   bool registered = 6;
   // Private phone number in E.164 format (e.g. "+14155552671"); populated only
   // for the caller's own profile and empty in every public user projection.
@@ -32,8 +32,8 @@ message User {
   bool onboarded = 9;
   // Profile picture URL from the person's Google account; empty when they have
   // none. Clients must keep the initials-on-avatar_color rendering as the
-  // fallback: it is empty for everyone who was invited rather than signed in,
-  // and Google documents the claim as never guaranteed even for those who did.
+  // fallback: it is empty for everyone who signed in without Google, and
+  // Google documents the claim as never guaranteed even for those who did.
   string avatar_url = 10;
   // Whether `phone` has passed SMS possession verification. Private like
   // phone itself: meaningful only on the caller's own profile, always false

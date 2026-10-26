@@ -92,9 +92,9 @@ export function FriendDetailPage({
   const owedByYou = nets.filter((bucket) => bucket.cents < 0);
   // Their email and phone are private — the server sends them empty for
   // anyone but yourself — so the only things worth a line under the name are
-  // whether they have signed in yet and whether you have blocked them.
+  // whether they deleted their account and whether you have blocked them.
   const nameNote = [
-    friend.registered ? "" : PERSON_MENU_COPY.invited,
+    friend.deleted ? PERSON_MENU_COPY.deleted : "",
     view.isBlocked ? PERSON_MENU_COPY.blocked : "",
   ]
     .filter(Boolean)

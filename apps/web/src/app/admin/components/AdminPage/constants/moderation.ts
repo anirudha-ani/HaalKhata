@@ -61,10 +61,6 @@ export const ACTION_VERBS: Record<ModerationAction, string> = {
   resume: "resume the author",
 };
 
-/** Shown in place of the suspend button when the author's account was merged into another. */
-export const MERGED_AUTHOR_NOTE =
-  "This account was merged into another, so there is no one to suspend through this report.";
-
 /** Shown in place of the suspend button when the author deleted their account. */
 export const DELETED_AUTHOR_NOTE =
   "The person who wrote this deleted their account, so there is no one to suspend through this report.";

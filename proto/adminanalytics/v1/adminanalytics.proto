@@ -62,9 +62,9 @@ message UsageOverview {
 message UsageTotals {
   // Accounts someone has signed in to.
   int32 registered_user_count = 1;
-  // Placeholder rows for people a member invited who have never signed in.
-  // Counted, never listed: they have not joined and did not choose to be here.
-  int32 invited_user_count = 2;
+  // Retired with invitations by email or phone: nobody exists before
+  // signing up, so there is nothing to count. Always 0.
+  int32 invited_user_count = 2 [deprecated = true];
   // People who did anything that reaches the feed in the last 7 days.
   int32 weekly_active_user_count = 3;
   // The same over the last 30 days.

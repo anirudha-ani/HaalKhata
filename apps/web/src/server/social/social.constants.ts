@@ -21,6 +21,20 @@ export const INVITE_LINK_TOKEN_PATTERN = /^[A-Za-z0-9_-]{43}$/;
  */
 export const INVITE_PREVIEW_RATE_LIMIT = 30;
 
+/**
+ * AddFriend's refusal for an email or phone that belongs to nobody on
+ * HaalKhata. The clients answer it with the caller's own invite link.
+ */
+export const NOT_ON_HAALKHATA_MESSAGE =
+  "they're not on HaalKhata yet — share your invite link so they can sign up";
+
+/**
+ * Answer to the retired one-person invite RPCs, for app versions that still
+ * call them: what to do instead, in words the person can follow.
+ */
+export const RETIRED_PERSON_INVITE_MESSAGE =
+  "invites for one person have been retired — update HaalKhata and share your own invite link or the group's link instead";
+
 /** Maximum unanswered friend requests retained for one recipient. */
 export const MAX_PENDING_FRIEND_REQUESTS = 100;
 

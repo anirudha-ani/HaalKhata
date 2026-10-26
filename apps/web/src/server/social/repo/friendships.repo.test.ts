@@ -44,7 +44,7 @@ describe("friend request persistence", () => {
       [`friend-request-inbox:${RECIPIENT}`],
     );
     expect(database.queryOne).toHaveBeenCalledWith(
-      expect.stringContaining("usr.merged_into IS NULL"),
+      expect.stringContaining("usr.deleted_at IS NULL"),
       [REQUESTER, RECIPIENT, expect.any(Number), null],
       transactionClient,
     );
@@ -101,13 +101,13 @@ describe("friend request persistence", () => {
     expect(database.queryOne).toHaveBeenCalledOnce();
   });
 
-  it("counts only incoming requests from senders who still exist", async () => {
+  it("counts the requests addressed to the recipient", async () => {
     database.queryOne.mockResolvedValueOnce({ pending_count: 4 });
 
     await expect(countIncomingFriendRequests(RECIPIENT)).resolves.toBe(4);
 
     expect(database.queryOne).toHaveBeenCalledWith(
-      expect.stringContaining("merged_into IS NULL"),
+      expect.stringContaining("WHERE recipient_id = $1"),
       [RECIPIENT],
     );
   });
@@ -146,7 +146,7 @@ describe("friend request persistence", () => {
       transactionClient,
     );
     expect(database.execute).toHaveBeenCalledWith(
-      expect.stringMatching(/VALUES \(\$1::text, \$2::text\).*merged_into IS NULL/s),
+      expect.stringMatching(/VALUES \(\$1::text, \$2::text\).*deleted_at IS NULL/s),
       [REQUESTER, RECIPIENT],
       transactionClient,
     );

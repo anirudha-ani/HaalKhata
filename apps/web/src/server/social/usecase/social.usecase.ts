@@ -1,7 +1,6 @@
 /** Social business logic: friends (friendships ∪ expense counterparties), activity feed, notifications. */
 
 import { blockedBetween, blockedPairExists } from "@/server/safety/repo/safety.repo";
-import { isRegisteredUser } from "@/server/auth/usecase/identity/user.mapper";
 import {
   countIncomingFriendRequests,
   deleteFriendRequest,
@@ -15,20 +14,19 @@ import {
   listOutgoingFriendRequests,
 } from "@/server/social/repo/friendships.repo";
 import { randomBytes } from "node:crypto";
-import { findUserById, findUsersByIds, type UserRow } from "@/server/auth/repo/users.repo";
-import { mergeAccounts } from "@/server/auth/repo/merge/accountMerge.repo";
 import {
-  findOrCreateUserByEmail,
-  findOrCreateUserByPhone,
-} from "@/server/auth/usecase/account/auth.usecase";
+  findUserByEmail,
+  findUserById,
+  findUserByPhone,
+  findUsersByIds,
+  type UserRow,
+} from "@/server/auth/repo/users.repo";
+import { EMAIL_PATTERN, normalizePhone, PHONE_FORMAT_HINT } from "@/server/auth/auth.constants";
 import {
-  findActiveFriendLink,
   findActiveGroupLink,
   findActiveLinkByToken,
   findActiveProfileLink,
   insertInviteLink,
-  revokeFriendLinkForPair,
-  revokeFriendLinksFor,
   revokeGroupLinks,
   revokeProfileLinks,
   type InviteLinkRow,
@@ -36,7 +34,6 @@ import {
 import {
   addMember,
   findGroupById,
-  listGroupsByUser,
   listMembers,
   memberRole,
 } from "@/server/group/repo/groups.repo";
@@ -58,6 +55,7 @@ import {
   INVITE_LINK_TOKEN_BYTES,
   INVITE_LINK_TOKEN_PATTERN,
   MAX_ACTIVITY_PAGE_SIZE,
+  NOT_ON_HAALKHATA_MESSAGE,
   REMINDER_COOLDOWN_HOURS,
 } from "@/server/social/social.constants";
 import {
@@ -77,19 +75,18 @@ import { toFriendRequestUser, toPublicUser } from "@/server/auth/usecase/identit
 import { friendRequestNotice } from "@/server/social/usecase/friendRequestNotice";
 
 /**
- * Adds a friend by id, email, or phone.
+ * Adds a friend by id, email, or phone, as a friend request: nothing exists
+ * until they accept, and the caller's response stays empty, so self,
+ * duplicate and pending requests are indistinguishable.
  *
- * A REGISTERED target keeps the request flow: nothing exists until they
- * accept, and the caller's response stays empty. An email or phone that
- * matches nobody (or an unclaimed invite) becomes an immediate "Invited"
- * friendship — there is nobody to accept, and an unregistered row can be
- * part of no transaction (plan.txt §33), so the entry is a contact-book
- * line until the person signs up and claims it.
+ * Only somebody who has signed up can be added, and nothing is created for
+ * an email or phone that matches nobody: the person is reached through the
+ * caller's own invite link and signs up as themselves.
  *
- * Deliberate trade-off, direction over §21's strict oracle: the differing
- * outcomes ("Invited" appears vs a request quietly pends) reveal whether an
- * identifier has an account. Frictionless inviting won; the rate limit and
- * this note remain.
+ * Deliberate trade-off, direction over §21's strict oracle: an email or
+ * phone with no account is refused out loud, which reveals whether it has
+ * one. A refusal the caller can act on (share the link instead) won; the
+ * rate limit and this note remain.
  *
  * @param userId - Id of the authenticated caller adding the friend.
  * @param input - The friend's user id, or their email or phone (exactly one
@@ -97,6 +94,8 @@ import { friendRequestNotice } from "@/server/social/usecase/friendRequestNotice
  * @returns An intentionally empty User-shaped acknowledgement.
  * @throws UsecaseError (invalid_argument) when the request does not contain
  *   exactly one identifier or when that identifier is malformed.
+ * @throws UsecaseError (failed_precondition) when the email or phone belongs
+ *   to nobody on HaalKhata.
  */
 export async function addFriend(
   userId: string,
@@ -114,27 +113,16 @@ export async function addFriend(
 
   let friend: UserRow | undefined;
   if (targetId) {
+    // Picked from a list the caller was shown; a stale id is not worth a refusal.
     friend = await findUserById(targetId);
-  } else if (email) {
-    // Creates the Invited row when nobody holds the address; the shape
-    // validation lives inside and matches the old inline checks.
-    friend = await findOrCreateUserByEmail(email);
+    if (!friend) return {};
   } else {
-    friend = await findOrCreateUserByPhone(phone);
+    friend = await findUserByIdentifier(email, phone);
+    if (!friend) throw new UsecaseError("failed_precondition", NOT_ON_HAALKHATA_MESSAGE);
   }
 
-  if (!friend || friend.id === userId || friend.merged_into !== null) {
-    return {};
-  }
+  if (friend.id === userId) return {};
   if (await blockedBetween(userId, friend.id)) return {};
-  // An unclaimed row cannot accept anything, so the friendship is immediate
-  // and the person appears as "Invited" (registered=false) on refetch.
-  if (!isRegisteredUser(friend)) {
-    await insertFriendship(userId, friend.id);
-    return {};
-  }
-  // Registered targets: request flow, and self/duplicate/pending stay
-  // indistinguishable to the caller.
   if (await friendshipExists(userId, friend.id)) {
     return {};
   }
@@ -154,6 +142,24 @@ export async function addFriend(
     );
   });
   return {};
+}
+
+/**
+ * Finds the account an email or phone belongs to, after checking its shape.
+ *
+ * @param email - Typed email, or empty when a phone was given.
+ * @param phone - Typed phone in any format, or empty when an email was given.
+ * @returns The account, or undefined when nobody on HaalKhata has it.
+ * @throws UsecaseError (invalid_argument) when the identifier is malformed.
+ */
+async function findUserByIdentifier(email: string, phone: string): Promise<UserRow | undefined> {
+  if (email) {
+    if (!EMAIL_PATTERN.test(email.toLowerCase())) invalid("please enter a valid email address");
+    return findUserByEmail(email);
+  }
+  const normalizedPhone = normalizePhone(phone);
+  if (!normalizedPhone) invalid(PHONE_FORMAT_HINT);
+  return findUserByPhone(normalizedPhone);
 }
 
 /**
@@ -205,14 +211,10 @@ export async function listFriends(userId: string) {
     findUsersByIds(pickedRecipientIds),
   ]);
   const requesterById = new Map(
-    incomingRequesters
-      .filter((requester) => requester.merged_into === null)
-      .map((requester) => [requester.id, requester]),
+    incomingRequesters.map((requester) => [requester.id, requester]),
   );
   const recipientById = new Map(
-    pickedRecipients
-      .filter((recipient) => recipient.merged_into === null)
-      .map((recipient) => [recipient.id, recipient]),
+    pickedRecipients.map((recipient) => [recipient.id, recipient]),
   );
   return {
     friends: [
@@ -423,68 +425,6 @@ function newInviteToken(): string {
 }
 
 /**
- * Whether a row is an unclaimed invitation — no way to sign into it.
- *
- * @param user - Row to classify.
- * @returns True when neither credential is set.
- */
-function isUnclaimed(user: UserRow): boolean {
-  return !isRegisteredUser(user);
-}
-
-/**
- * The invited person's active reminder link, created on first ask.
- *
- * The target must be unregistered (a registered person signs in, they don't
- * need a claiming link) and connected to the caller — their friend, or a
- * co-member of some group — so a bare user id is not enough to mint a link
- * that would claim somebody else's invitation.
- *
- * @param userId - Authenticated caller who will share the link.
- * @param invitedUserId - The Invited person the link reminds.
- * @returns The link's bearer token.
- * @throws UsecaseError when the target is missing, already registered, or
- *   not connected to the caller.
- */
-export async function getFriendInviteLink(
-  userId: string,
-  invitedUserId: string,
-): Promise<{ token: string }> {
-  const invited = await findUserById(invitedUserId);
-  if (!invited || invited.merged_into !== null) notFound("that person no longer exists");
-  if (!isUnclaimed(invited)) {
-    invalid("they already have an account — no invite needed");
-  }
-  // Friendship-only, NOT co-membership (§33b): an invited row's friends are
-  // exactly the people who invited it somewhere. A mere co-member of one of
-  // its groups could otherwise mint a claim link and, with a second account,
-  // inherit the row's seats in groups nobody there consented to.
-  if (!(await friendshipExists(userId, invitedUserId))) {
-    denied("only somebody who invited them can share their invite link");
-  }
-
-  const existing = await findActiveFriendLink(userId, invitedUserId);
-  if (existing) return { token: existing.token };
-  const token = newInviteToken();
-  try {
-    await insertInviteLink({
-      token,
-      kind: "friend",
-      inviterId: userId,
-      groupId: null,
-      invitedUserId,
-    });
-  } catch (error) {
-    // A concurrent ask won the one-active-link index; both wanted the same link.
-    if (!isUniqueViolation(error)) throw error;
-    const winner = await findActiveFriendLink(userId, invitedUserId);
-    if (winner) return { token: winner.token };
-    throw error;
-  }
-  return { token };
-}
-
-/**
  * The group's one active join link, created on first ask. Any member may —
  * the same trust level as adding people directly, and the accept side still
  * shows who invited whom.
@@ -505,7 +445,7 @@ export async function createGroupInviteLink(
   if (existing) return { token: existing.token };
   const token = newInviteToken();
   try {
-    await insertInviteLink({ token, kind: "group", inviterId: userId, groupId, invitedUserId: null });
+    await insertInviteLink({ token, kind: "group", inviterId: userId, groupId });
   } catch (error) {
     if (!isUniqueViolation(error)) throw error;
     const winner = await findActiveGroupLink(groupId);
@@ -513,44 +453,6 @@ export async function createGroupInviteLink(
     throw error;
   }
   return { token };
-}
-
-/**
- * The one gesture behind "they're not on HaalKhata yet — send them a
- * sign-up invite?" (§33c): find-or-create the Invited contact, befriend the
- * caller with it (which is what authorizes minting), and hand back the
- * claim link to share. Deliberate oracle, same trade as addFriend's: the
- * distinct refusal for a registered identifier says an account exists, in
- * exchange for a flow a person can actually follow.
- *
- * @param userId - Authenticated caller doing the inviting.
- * @param input - Exactly one of email/phone identifying the contact.
- * @returns The claim link's bearer token.
- * @throws UsecaseError (invalid_argument) for malformed/both/neither
- *   identifiers, or when the contact already has a claimed account.
- */
-export async function inviteContactToSignUp(
-  userId: string,
-  input: { email: string; phone: string },
-): Promise<{ token: string }> {
-  const email = input.email.trim();
-  const phone = input.phone.trim();
-  if ((email === "") === (phone === "")) {
-    invalid("enter exactly one email address or phone number");
-  }
-  const contact = email !== ""
-    ? await findOrCreateUserByEmail(email)
-    : await findOrCreateUserByPhone(phone);
-  if (contact.id === userId || contact.merged_into !== null) {
-    invalid("that contact can't be invited");
-  }
-  if (!isUnclaimed(contact)) {
-    invalid("they're already on HaalKhata — add them directly");
-  }
-  // The friendship is the invite's record on the caller's side (the contact
-  // shows as Invited in Friends) and is what authorizes the link mint.
-  await insertFriendship(userId, contact.id);
-  return getFriendInviteLink(userId, contact.id);
 }
 
 /**
@@ -569,7 +471,6 @@ export async function getProfileInviteLink(userId: string): Promise<{ token: str
       kind: "profile",
       inviterId: userId,
       groupId: null,
-      invitedUserId: null,
     });
   } catch (error) {
     if (!isUniqueViolation(error)) throw error;
@@ -631,27 +532,14 @@ export async function previewInviteLink(token: string) {
       invitedName: "",
     };
   }
-  if (link.kind === "profile") {
-    if (!inviter || inviter.merged_into !== null) notFound(DEAD_LINK_MESSAGE);
-    return {
-      kind: "profile",
-      inviterName: inviter.name,
-      groupName: "",
-      memberCount: 0,
-      invitedName: "",
-    };
-  }
-  const invited = await findUserById(link.invited_user_id!);
-  // A claimed invitation is a finished one; the link no longer offers anything.
-  if (!invited || invited.merged_into !== null || !isUnclaimed(invited)) {
-    notFound(DEAD_LINK_MESSAGE);
-  }
+  // A profile link speaks for its owner; once they are gone it offers nothing.
+  if (!inviter) notFound(DEAD_LINK_MESSAGE);
   return {
-    kind: "friend",
-    inviterName: inviter?.name ?? "Someone",
+    kind: "profile",
+    inviterName: inviter.name,
     groupName: "",
     memberCount: 0,
-    invitedName: invited.name,
+    invitedName: "",
   };
 }
 
@@ -670,15 +558,10 @@ async function loadActiveLink(token: string): Promise<InviteLinkRow> {
 }
 
 /**
- * Accepts an invite link as the signed-in caller.
+ * Accepts an invite link as the signed-in caller. Nothing is claimed or
+ * merged: the caller joins as the account they signed in with.
  *
- * Friend link: the still-unclaimed invited identity is merged into the
- * caller's account — its friendships and group memberships move, and by the
- * no-transaction rule there is no money to move — then the caller and
- * inviter are befriended. If the caller already IS that identity (they
- * signed in with the matching email and claimed the row in place), only the
- * friendship is left to wire. A link whose identity was claimed by somebody
- * else is dead.
+ * Profile link: sends the owner an ordinary friend request.
  *
  * Group link: enrols the caller (idempotently), befriends them with the
  * inviter, and announces the join in the group's feed so a new face is
@@ -696,7 +579,7 @@ export async function acceptInviteLink(
   if (await blockedBetween(userId, link.inviter_id)) notFound(DEAD_LINK_MESSAGE);
   const acceptor = await findUserById(userId);
   if (!acceptor) denied("account no longer exists");
-  if (link.inviter_id === userId && link.kind !== "group") {
+  if (link.inviter_id === userId && link.kind === "profile") {
     invalid("that's your own invite link");
   }
 
@@ -720,35 +603,6 @@ export async function acceptInviteLink(
         client,
       );
     });
-    return { groupId: "" };
-  }
-
-  if (link.kind === "friend") {
-    const invitedId = link.invited_user_id!;
-    if (invitedId !== userId) {
-      const invited = await findUserById(invitedId);
-      if (!invited || invited.merged_into !== null || !isUnclaimed(invited)) {
-        notFound(DEAD_LINK_MESSAGE);
-      }
-      // Read before the merge: afterwards the seats belong to the acceptor
-      // and the invited row no longer answers for them.
-      const inheritedGroups = await listGroupsByUser(invitedId);
-      try {
-        // No-money claim: memberships and friendships ride along in one
-        // transaction; the invariant inside would roll back anything else.
-        // adoptPhone false (§33b): the invite's number was the INVITER'S
-        // claim, verified by nobody — it is freed, never inherited.
-        await mergeAccounts(userId, invitedId, invited.phone, { adoptPhone: false });
-      } catch {
-        // Two acceptors raced this link, or the row was claimed mid-flight;
-        // to the loser that is just a link that no longer works.
-        notFound(DEAD_LINK_MESSAGE);
-      }
-      await revokeFriendLinksFor(invitedId);
-      await announceClaimedSeats(acceptor.name, invited.name, inheritedGroups, userId, link.inviter_id);
-    }
-    await insertFriendship(userId, link.inviter_id);
-    await notifyInviteAccepted(link.inviter_id, acceptor.name, "/friends");
     return { groupId: "" };
   }
 
@@ -801,48 +655,6 @@ export async function acceptInviteLink(
 }
 
 /**
- * Announces a claimed invitation in every group whose seat it carried, so a
- * roster face never changes silently (§33b) — the same transparency rule a
- * direct link-join follows. Best-effort after the claim's own transaction:
- * a missing announcement is recoverable, an unclaimed announcement is not.
- *
- * @param acceptorName - Who now holds the seats.
- * @param invitedName - The name the invitation was known by.
- * @param groups - Groups the invited row belonged to before the claim.
- * @param acceptorId - The acceptor, as the events' actor.
- * @param inviterId - Who shared the link; told separately that it was accepted.
- */
-async function announceClaimedSeats(
-  acceptorName: string,
-  invitedName: string,
-  groups: { id: string; name: string }[],
-  acceptorId: string,
-  inviterId: string,
-): Promise<void> {
-  for (const group of groups) {
-    const audience = (await listMembers(group.id)).map((member) => member.id);
-    await recordActivity({
-      groupId: group.id,
-      actorId: acceptorId,
-      type: "member_added",
-      message: `${acceptorName} joined "${group.name}" — claimed ${invitedName}'s invitation`,
-      link: `/groups/${group.id}`,
-      audience,
-    });
-    await insertNotifications(
-      audience.filter((memberId) => memberId !== acceptorId && memberId !== inviterId),
-      {
-        actorId: acceptorId,
-        type: "member_added",
-        title: `${acceptorName} joined "${group.name}"`,
-        body: `Claimed ${invitedName}'s invitation.`,
-        link: `/groups/${group.id}`,
-      },
-    );
-  }
-}
-
-/**
  * Tells the inviter their link worked — the one moment an invite produces
  * for its sender.
  *
@@ -888,7 +700,7 @@ async function notifyInviteAccepted(
 export async function removeFriend(userId: string, friendId: string): Promise<void> {
   if (userId === friendId) invalid("you cannot remove yourself");
   const friend = await findUserById(friendId);
-  if (!friend || friend.merged_into !== null || !(await friendshipExists(userId, friendId))) {
+  if (!friend || !(await friendshipExists(userId, friendId))) {
     notFound("you're not friends with them");
   }
   await transaction(async (client) => {
@@ -906,10 +718,6 @@ export async function removeFriend(userId: string, friendId: string): Promise<vo
       );
     }
     await deleteFriendship(userId, friendId, client);
-    // An Invited friend's claim link promised "you two are friends when you
-    // join"; that promise is exactly what is being withdrawn. Other
-    // inviters' links for the same person live on.
-    await revokeFriendLinkForPair(userId, friendId, client);
   });
 }
 

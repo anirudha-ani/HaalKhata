@@ -21,11 +21,11 @@ export interface PushDeviceRow {
 
 /**
  * The condition a device must meet to be sent to: registered under the
- * owner's current session version, owner neither deleted, merged away nor
- * suspended. Expects push_devices as `device` and users as `owner`.
+ * owner's current session version, owner neither deleted nor suspended.
+ * Expects push_devices as `device` and users as `owner`.
  */
 const LIVE_DEVICE_CONDITION = `device.token_version = owner.token_version
-  AND owner.deleted_at IS NULL AND owner.suspended_at IS NULL AND owner.merged_into IS NULL`;
+  AND owner.deleted_at IS NULL AND owner.suspended_at IS NULL`;
 
 /**
  * Records a phone for a user, or refreshes it. One row per installation: a

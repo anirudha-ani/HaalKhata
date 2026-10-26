@@ -1,9 +1,12 @@
-/** Transport regressions for SetPhone: which limiter each of the usecase's limits runs. */
+/** Transport regressions for the phone RPCs: which limiter each of SetPhone's limits runs, and the retired merge. */
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { HandlerContext } from "@connectrpc/connect";
+import { Code, type HandlerContext } from "@connectrpc/connect";
 import { create } from "@bufbuild/protobuf";
-import { SetPhoneRequestSchema } from "@haalkhata/protogen/auth/v1/auth_pb";
+import {
+  ConfirmPhoneMergeRequestSchema,
+  SetPhoneRequestSchema,
+} from "@haalkhata/protogen/auth/v1/auth_pb";
 
 vi.mock("@/server/auth/usecase/account/auth.usecase", () => ({}));
 vi.mock("@/server/auth/usecase/apple/appleSignIn.usecase", () => ({}));
@@ -12,8 +15,8 @@ vi.mock("@/server/auth/usecase/deletion/accountDeletion.usecase", () => ({ delet
 vi.mock("@/server/auth/usecase/account/contactDiscovery.usecase", () => ({
   setContactDiscovery: vi.fn(),
 }));
-vi.mock("@/server/auth/usecase/merge/accountMerge.usecase", () => ({
-  setPhone: vi.fn().mockResolvedValue({ verificationSent: true, mergeToken: "" }),
+vi.mock("@/server/auth/usecase/phone/setPhone.usecase", () => ({
+  setPhone: vi.fn().mockResolvedValue({ verificationSent: true }),
 }));
 vi.mock("@/server/api/connect/context", () => ({
   clearSessionCookie: vi.fn(),
@@ -31,7 +34,7 @@ import { rateLimitCheck } from "@/server/common/rateLimit/rateLimit";
 import {
   setPhone,
   type PhoneRequestLimits,
-} from "@/server/auth/usecase/merge/accountMerge.usecase";
+} from "@/server/auth/usecase/phone/setPhone.usecase";
 import { authHandler } from "./handler";
 
 const PHONE = "+16175551212";
@@ -76,5 +79,16 @@ describe("SetPhone limits", () => {
 
     expect(rateLimitCheck).toHaveBeenCalledWith("phone:check:user-123", 5);
     expect(enforcePhoneSendLimits).not.toHaveBeenCalled();
+  });
+});
+
+describe("ConfirmPhoneMerge", () => {
+  it("is refused with a reason an installed app can show, merging nothing", async () => {
+    const context = { requestHeader: new Headers() } as HandlerContext;
+
+    await expect(
+      authHandler.confirmPhoneMerge(create(ConfirmPhoneMergeRequestSchema, { mergeToken: "any" }), context),
+    ).rejects.toMatchObject({ code: Code.FailedPrecondition, rawMessage: expect.stringContaining("nothing to merge") });
+    expect(setPhone).not.toHaveBeenCalled();
   });
 });

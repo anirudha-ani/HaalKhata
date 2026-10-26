@@ -10,7 +10,7 @@ import { requireUser, runUsecase } from "@/server/api/connect/context";
 import { requireRateLimitedUser, RPC_RATE_LIMITS } from "@/server/api/connect/rpcRateLimit";
 import { clientIp } from "@/server/auth/request/clientIp";
 import { rateLimitCheck } from "@/server/common/rateLimit/rateLimit";
-import { INVITE_PREVIEW_RATE_LIMIT } from "@/server/social/social.constants";
+import { INVITE_PREVIEW_RATE_LIMIT, RETIRED_PERSON_INVITE_MESSAGE } from "@/server/social/social.constants";
 
 /**
  * ConnectRPC implementation of SocialService. Each method authenticates the
@@ -100,12 +100,9 @@ export const socialHandler: ServiceImpl<typeof SocialService> = {
     return {};
   },
 
-  /** The invited person's active reminder link, created on first ask. */
-  async getFriendInviteLink(request, context) {
-    return runUsecase(
-      async () => social.getFriendInviteLink(await requireUser(context), request.userId),
-      context,
-    );
+  /** Retired with one-person invite links; always refused. */
+  async getFriendInviteLink() {
+    throw new ConnectError(RETIRED_PERSON_INVITE_MESSAGE, Code.FailedPrecondition);
   },
 
   /** The group's one active join link, created on first ask; any member may. */
@@ -116,16 +113,9 @@ export const socialHandler: ServiceImpl<typeof SocialService> = {
     );
   },
 
-  /** Creates the Invited contact and returns its claim link to share (§33c). */
-  async inviteContactToSignUp(request, context) {
-    return runUsecase(
-      async () =>
-        social.inviteContactToSignUp(
-          await requireRateLimitedUser(context, "add-friend", RPC_RATE_LIMITS.addFriend),
-          { email: request.email, phone: request.phone },
-        ),
-      context,
-    );
+  /** Retired with one-person invite links; always refused. */
+  async inviteContactToSignUp() {
+    throw new ConnectError(RETIRED_PERSON_INVITE_MESSAGE, Code.FailedPrecondition);
   },
 
   /** The caller's own "add me" link, minted on first ask. */

@@ -12,7 +12,6 @@ import { Check, LogOut, Share2 } from "lucide-react-native";
 import { Pressable, StyleSheet, TextInput, View } from "react-native";
 import { Text } from "@/components/ui/Text";
 import { DeleteAccount } from "@/components/account/DeleteAccount";
-import { MergePreview } from "@/components/account/MergePreview";
 import { DetailHeader } from "@/components/shell/DetailHeader/DetailHeader";
 import { useResponsiveLayout } from "@/lib/layout/hooks/useResponsiveLayout";
 import { Screen } from "@/components/shell/Screen/Screen";
@@ -51,7 +50,7 @@ export function AccountScreen() {
 /**
  * Renders the profile summary card, the editable profile form (display
  * name, phone number, default currency), the payment methods section, the
- * sign-out button, and the phone verification and merge sheets.
+ * sign-out button, and the phone verification sheet.
  *
  * @param props - Component props.
  * @param props.me - The signed-in user whose profile is shown and edited.
@@ -257,30 +256,6 @@ function ProfileForm({ me: currentUser }: { me: User }) {
               label={resendCodeLabel(form.resendIn)}
               onPress={form.resendCode}
               variant="ghost"
-            />
-          </View>
-        </Sheet>
-      ) : null}
-
-      {/* A number can already belong to an invitation someone made. Nothing
-          is written until this is answered, so it is a decision, not a
-          notice. */}
-      {form.pendingMerge ? (
-        <Sheet onClose={form.declineMerge} title="Is this you?">
-          <View style={styles.sheetBody}>
-            <Text style={styles.sheetText}>Someone already added this number to shared expenses.</Text>
-            <MergePreview currency={form.currency} preview={form.pendingMerge} />
-            <Text style={styles.fieldHint}>
-              If you recognize these people, this history is yours and will move onto your
-              account. If you don&apos;t, the number was probably reassigned — leave it off.
-            </Text>
-            {form.error ? <Text style={styles.error}>{form.error}</Text> : null}
-            <Button busy={form.isSaving} label="Yes, that's me" onPress={form.confirmMerge} />
-            <Button
-              disabled={form.isSaving}
-              label="That's not me"
-              onPress={form.declineMerge}
-              variant="outline"
             />
           </View>
         </Sheet>

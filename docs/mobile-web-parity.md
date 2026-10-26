@@ -23,7 +23,7 @@ cards must also shrink to fit the space actually available inside the shell.
 | --- | --- | --- | --- |
 | Google/Apple sign-in, session renewal | Cookie session; Apple HTTPS callback | Bearer session; native Apple on iOS | Auth usecases, session and provider regression tests |
 | Signed-out introduction | Landing page beside sign-in | Welcome screen: the same story in a pager, sign-in docked in reach | Shared `welcome/welcomeCopy.ts` ([details](mobile-onboarding.md)) |
-| Onboarding, profile, phone verification/merge | Present | Present as guided steps, plus find friends and notifications on first sign-in on each phone | Same AuthService operations ([details](mobile-onboarding.md)) |
+| Onboarding, profile, phone verification | Present | Present as guided steps, plus find friends and notifications on first sign-in on each phone | Same AuthService operations ([details](mobile-onboarding.md)) |
 | Home, multi-currency balances, people | Present | Present; wrapping columns | Shared money, balance and settlement-position helpers |
 | Friends, requests, invitation links | Present | Present | Same SocialService operations; shared invite wording |
 | Find friends from contacts | Not in this release; browsers cannot read the address book | Present | `FindContacts`/`SendFriendRequests` are native-only in `test:parity`; matching and wording in `shared/src/contacts/` ([details](contact-discovery.md)) |
@@ -81,7 +81,7 @@ all parameters, states, gestures or visual layouts are equivalent.
   wording in `shared/src/invite/`, and group choices in `shared/src/group/`.
   Renderer-specific input state, image preparation and navigation stay per app.
 - Server domains still own their `handler.ts`, `repo/` and `usecase/` layers.
-  Crowded auth layers now group Apple, deletion, merge, phone, identity and
+  Crowded auth layers now group Apple, deletion, phone, identity and
   account/session responsibilities into subfolders, with tests colocated.
 - Session signing/key rotation is isolated in `auth/usecase/session/session.ts`;
   importing token verification no longer pulls in account/provider workflows.

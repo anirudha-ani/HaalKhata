@@ -329,17 +329,14 @@ async function validateExpenseParticipants(
 ): Promise<void> {
   const users = await findUsersByIds(involved);
   if (users.length !== involved.length) invalid("unknown participant");
-  // The Invited rule (plan.txt §33): a person without an account can be a
-  // friend and a group member, but never on a transaction — the one gate
-  // that keeps a bearer invite link from ever moving money. Legacy rows
-  // with pre-§33 history keep it; they just can't join NEW expenses.
+  // Only somebody who can sign in joins a new expense. The one row that
+  // cannot is the Deleted member a deleted account leaves behind: it keeps
+  // its shares in old expenses and takes none in new ones.
   const unregistered = users.find(
     (participant) => !isRegisteredUser(participant),
   );
   if (unregistered) {
-    invalid(
-      `${unregistered.name} hasn't joined HaalKhata yet — remind them to sign up before splitting with them`,
-    );
+    invalid(`${unregistered.name} can't be added to a new expense`);
   }
   if (await blockedPairExists([...new Set([...involved, userId])], existingIds)) denied("a blocked person cannot be included in this expense");
   const { groupId, groupMemberIds } = scope;

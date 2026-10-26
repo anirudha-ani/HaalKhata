@@ -3,7 +3,6 @@
 
 import {
   DELETED_AUTHOR_NOTE,
-  MERGED_AUTHOR_NOTE,
   type ModerationAction,
 } from "../../../../../../constants/moderation";
 
@@ -11,8 +10,7 @@ import {
  * Renders what can be done about one reported item. Dismiss and Resume run
  * at once; Remove and Suspend open a question first. Only what the server
  * would accept is offered: Resume for a suspended author, and no suspend at
- * all, with the reason said, for an account merged into another or deleted
- * by its person. The last
+ * all, with the reason said, for an account its person deleted. The last
  * failure on this item is shown right under the buttons.
  *
  * @param props - Component props.
@@ -21,7 +19,6 @@ import {
 export function ReportActions({
   removeLabel,
   authorActive,
-  authorDeleted,
   authorSuspended,
   running,
   anyRunning,
@@ -31,10 +28,8 @@ export function ReportActions({
 }: {
   /** The remove button's label for this kind of content. */
   removeLabel: string;
-  /** Whether the author's account still stands for a person. */
+  /** Whether the author's account still stands for a person (false once deleted). */
   authorActive: boolean;
-  /** Whether it stopped because the person deleted it, rather than merged it. */
-  authorDeleted: boolean;
   /** Whether the author is suspended now. */
   authorSuspended: boolean;
   /** The action running on this item, if any. */
@@ -75,7 +70,7 @@ export function ReportActions({
       </div>
       {authorActive ? null : (
         <p className="mt-2 text-xs text-ink-soft">
-          {authorDeleted ? DELETED_AUTHOR_NOTE : MERGED_AUTHOR_NOTE}
+          {DELETED_AUTHOR_NOTE}
         </p>
       )}
       {error ? (

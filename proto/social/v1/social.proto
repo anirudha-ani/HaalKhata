@@ -53,20 +53,24 @@ service SocialService {
   // cannot become a way to harass somebody.
   rpc SendReminder(SendReminderRequest) returns (google.protobuf.Empty);
 
-  // Invite links. A person without an account appears as "Invited" and can
-  // be part of no transaction, which is what makes a bearer link safe to
-  // share: claiming an invite moves friendships and group memberships onto
-  // the acceptor's account, never money.
+  // Invite links. Nobody is invited by email or phone: a person who has not
+  // signed up does not exist here, and nothing is created for them. They are
+  // reached through a group's join link or a person's own profile link and
+  // sign up as themselves; accepting a link never claims or merges anything.
 
-  // The invited person's active reminder link, created on first ask. The
-  // target must be an unregistered ("Invited") connection of the caller.
-  rpc GetFriendInviteLink(GetFriendInviteLinkRequest) returns (InviteLink);
-  // One gesture behind the group-add flow's "they're not on HaalKhata yet —
-  // send them a sign-up invite?" offer (§33c): creates (or finds) the
-  // Invited contact, befriends the caller with it, and returns the claim
-  // link to share. Refused when the identifier already has a claimed
-  // account — that person is added directly, not invited.
-  rpc InviteContactToSignUp(InviteContactRequest) returns (InviteLink);
+  // Retired with one-person invite links, which claimed a placeholder made
+  // for somebody who had not signed up. Always refused with
+  // FAILED_PRECONDITION; kept so installed apps get an answer they can show.
+  rpc GetFriendInviteLink(GetFriendInviteLinkRequest) returns (InviteLink) {
+    option deprecated = true;
+  }
+  // Retired for the same reason: it made a placeholder for a contact and
+  // returned the link that claimed it. Always refused with
+  // FAILED_PRECONDITION; a group's join link or GetProfileInviteLink is
+  // shared instead.
+  rpc InviteContactToSignUp(InviteContactRequest) returns (InviteLink) {
+    option deprecated = true;
+  }
   // The group's one active join link, created on first ask. Any member may
   // — the same trust level as adding people directly.
   rpc CreateGroupInviteLink(CreateGroupInviteLinkRequest) returns (InviteLink);
@@ -85,8 +89,9 @@ service SocialService {
   // Possession of the unguessable token is the only credential; the call is
   // rate-limited by client address.
   rpc PreviewInviteLink(PreviewInviteLinkRequest) returns (InvitePreview);
-  // Accepts a link as the signed-in caller: joins the group and/or claims
-  // the invited identity, and befriends the inviter. Safe to repeat.
+  // Accepts a link as the signed-in caller: a group link joins the group and
+  // befriends the inviter, a profile link sends its owner a friend request.
+  // Safe to repeat.
   rpc AcceptInviteLink(AcceptInviteLinkRequest) returns (AcceptInviteLinkResponse);
 }
 
@@ -98,7 +103,7 @@ message SendReminderRequest {
 message AddFriendRequest {
   // Exactly one of email/phone/user_id identifies the recipient; phone is E.164.
   string email = 1;
-  string name = 2; // legacy field; ignored because shadow users are never created
+  string name = 2; // legacy field; ignored because nothing is created for a stranger
   string phone = 3;
   // An existing account by id — for requesting someone already on screen.
   string user_id = 4;
@@ -208,8 +213,8 @@ message ListNotificationsResponse {
   int32 pending_friend_request_count = 3;
 }
 
+// Request of the retired GetFriendInviteLink.
 message GetFriendInviteLinkRequest {
-  // The Invited (unregistered) person the link reminds.
   string user_id = 1;
 }
 
@@ -233,14 +238,13 @@ message PreviewInviteLinkRequest {
 }
 
 message InvitePreview {
-  string kind = 1; // "friend" | "group" | "profile"
+  string kind = 1; // "group" | "profile"
   string inviter_name = 2;
   // Group links only.
   string group_name = 3;
   int32 member_count = 4;
-  // Friend links only: the name the invitation was created under, so the
-  // landing page can say "join as Rifat".
-  string invited_name = 5;
+  // Retired with one-person links; always empty.
+  string invited_name = 5 [deprecated = true];
 }
 
 message AcceptInviteLinkRequest {
@@ -252,8 +256,8 @@ message AcceptInviteLinkResponse {
   string group_id = 1;
 }
 
+// Request of the retired InviteContactToSignUp.
 message InviteContactRequest {
-  // Exactly one of email/phone; phone in any format the user typed.
   string email = 1;
   string phone = 2;
 }

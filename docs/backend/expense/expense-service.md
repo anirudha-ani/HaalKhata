@@ -180,8 +180,8 @@ and the offsets share a parent in `net_settlements` (`currency`, `cash_cents`,
 The trigger runs for every insert, update and delete on `settlements`,
 whatever code issues it, so a unit that does not cancel out cannot be
 committed by a bug, a script or a hand-typed statement. It is deferred, so
-multi-statement work on a whole unit (recording it, removing it, an account
-merge repointing its rows) is judged once, at commit.
+multi-statement work on a whole unit (recording it, removing it, account
+deletion repointing its rows) is judged once, at commit.
 
 **It is removed as one unit.** `DeleteSettlement` on any row of a unit — the
 payment or a cancelled balance, by either person — removes every row of it,

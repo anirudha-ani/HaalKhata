@@ -28,12 +28,16 @@ service AuthService {
   rpc GetMe(google.protobuf.Empty) returns (common.v1.User);
   rpc UpdateProfile(UpdateProfileRequest) returns (common.v1.User);
 
-  // Phone is set through its own pair of RPCs rather than a field on
-  // UpdateProfile: the number may collide with a row someone was invited into,
-  // in which case the answer is a merge preview rather than an updated user,
-  // and UpdateProfile cannot return two shapes.
+  // Phone is set through its own RPC rather than a field on UpdateProfile:
+  // it takes two calls (send the SMS code, then check it), and a verified
+  // number another account holds moves to the caller with both told.
   rpc SetPhone(SetPhoneRequest) returns (SetPhoneResponse);
-  rpc ConfirmPhoneMerge(ConfirmPhoneMergeRequest) returns (common.v1.User);
+  // Retired: it merged a placeholder made for somebody who had not signed
+  // up, and no such row exists any more. SetPhone never offers a merge;
+  // this is always refused with FAILED_PRECONDITION.
+  rpc ConfirmPhoneMerge(ConfirmPhoneMergeRequest) returns (common.v1.User) {
+    option deprecated = true;
+  }
 
   // Detaches the caller's phone number — the release valve for a lost or
   // recycled number. Refused when the phone is the account's only
@@ -139,20 +143,15 @@ message SetPhoneResponse {
   // True on the first call after the verification provider accepted the SMS
   // request. The client should ask for the code and call SetPhone again.
   bool verification_sent = 4;
-  // Set when the number was free and simply written to the caller's account.
+  // Set once the code checks out and the number is on the caller's account.
   common.v1.User user = 1;
-  // Set instead when an unclaimed row created by an invite already holds this
-  // number. Nothing has changed yet — the caller confirms with merge_token.
-  MergePreview pending_merge = 2;
-  // Short-lived signed token naming the row that would be absorbed. Empty
-  // unless pending_merge is set.
-  string merge_token = 3;
+  // Retired with ConfirmPhoneMerge; never set.
+  MergePreview pending_merge = 2 [deprecated = true];
+  // Retired with ConfirmPhoneMerge; always empty.
+  string merge_token = 3 [deprecated = true];
 }
 
-// What a caller would take on by merging, shown after SMS verification but
-// before anything is written. Possession proves control today; this preview is
-// the additional defense against absorbing history created for a previous
-// holder of a recycled number.
+// Shape of the retired SetPhoneResponse.pending_merge.
 message MergePreview {
   // How many undeleted expenses the absorbed row appears in.
   int32 expense_count = 1;
@@ -169,8 +168,8 @@ message MergePreview {
   repeated common.v1.CurrencyAmount nets = 5;
 }
 
+// Request of the retired ConfirmPhoneMerge.
 message ConfirmPhoneMergeRequest {
-  // The merge_token handed back by SetPhone.
   string merge_token = 1;
 }
 

@@ -7,6 +7,7 @@ import type { ContactDraft } from "@haalkhata/shared/phone/contact";
 import { EmailOrPhoneField } from "@/components/ui/EmailOrPhoneField/EmailOrPhoneField";
 import { FriendChecklist } from "@/components/people/FriendChecklist/FriendChecklist";
 import { Modal } from "@/components/ui/Modal/Modal";
+import { NOT_ON_HAALKHATA_COPY } from "@haalkhata/shared/invite/inviteCopy";
 
 /**
  * Renders the group's add-people form.
@@ -19,9 +20,9 @@ import { Modal } from "@/components/ui/Modal/Modal";
  * already had on file, one dialog at a time.
  *
  * The address does not create an account. The server enrols only people the
- * caller already shares a friendship or a group with, and refuses anything
- * else with one generic denial, so the field cannot be used to discover who
- * has an account. Somebody genuinely new gets a friend request first.
+ * caller already shares a friendship or a group with. An address nobody on
+ * HaalKhata has is refused out loud, and the form offers the group's invite
+ * link instead: whoever opens it signs up as themselves and joins.
  *
  * @param props - Component props.
  * @returns The modal.
@@ -35,8 +36,7 @@ export function AddPeopleModal({
   onContactChange,
   error,
   inviteOffer,
-  onSendInvite,
-  sendingInvite,
+  onShareLink,
   onDismissInvite,
   canSubmit,
   isPending,
@@ -57,13 +57,11 @@ export function AddPeopleModal({
   onContactChange: (contact: ContactDraft) => void;
   /** Server error from the last attempt, or "" when there is none. */
   error: string;
-  /** §33c: the typed contact has no account; offer to send a sign-up invite. */
+  /** §33c: the typed contact has no account; offer the group's invite link. */
   inviteOffer: { email: string; phone: string } | null;
-  /** Sends the offered invite and opens the share sheet with its link. */
-  onSendInvite: () => void;
-  /** Whether the invite send/share is in flight. */
-  sendingInvite: boolean;
-  /** Dismisses the offer without inviting. */
+  /** Closes this modal and opens the share dialog with the group's link. */
+  onShareLink: () => void;
+  /** Dismisses the offer without sharing. */
   onDismissInvite: () => void;
   /** Whether anything is selected or typed — the submit button's enablement. */
   canSubmit: boolean;
@@ -100,7 +98,7 @@ export function AddPeopleModal({
                       .map((candidate) => candidate.id),
                   )
                 }
-                disabledHint="invited — can add once they join"
+                disabledHint="deleted their account"
                 autoFocus
                 people={candidates}
                 selectedIds={pickedIds}
@@ -142,19 +140,15 @@ export function AddPeopleModal({
         </div>
 
         {inviteOffer ? (
-          <div className="space-y-2 rounded-xl border border-line bg-paper p-3">
-            <p className="text-sm">
-              They&apos;re not on HaalKhata yet. Send them a sign-up invite? Once
-              they join, you can add them here.
-            </p>
+          <div role="status" className="space-y-2 rounded-xl border border-line bg-paper p-3">
+            <p className="text-sm">{NOT_ON_HAALKHATA_COPY.group.message}</p>
             <div className="flex gap-2">
               <button
                 type="button"
-                disabled={sendingInvite}
-                onClick={onSendInvite}
+                onClick={onShareLink}
                 className="flex-1 rounded-lg bg-brand-600 px-3 py-2 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-50"
               >
-                {sendingInvite ? "Sharing…" : "Send sign-up invite"}
+                {NOT_ON_HAALKHATA_COPY.group.action}
               </button>
               <button
                 type="button"

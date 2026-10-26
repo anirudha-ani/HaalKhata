@@ -237,7 +237,7 @@ export function GroupsPage() {
                           .map((friend) => friend.id),
                       )
                     }
-                    disabledHint="invited — can add once they join"
+                    disabledHint="deleted their account"
                   />
                 </div>
               </div>

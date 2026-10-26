@@ -41,10 +41,6 @@ vi.mock("@/server/social/repo/friendships.repo", () => ({
 }));
 vi.mock("@/server/social/repo/activity.repo", () => ({ insertActivity: vi.fn() }));
 vi.mock("@/server/social/repo/notifications.repo", () => ({ insertNotifications: vi.fn() }));
-vi.mock("@/server/auth/usecase/account/auth.usecase", () => ({
-  findOrCreateUserByEmail: vi.fn(),
-  findOrCreateUserByPhone: vi.fn(),
-}));
 vi.mock("@/server/expense/usecase/balance.usecase", () => ({
   userNetInGroup: vi.fn(),
   userNetInGroups: vi.fn(),
@@ -152,33 +148,34 @@ describe("group membership authorization", () => {
     expect(addMember).not.toHaveBeenCalled();
   });
 
-  it("refuses a contact with no claimed account, as the invite offer (§33c)", async () => {
+  it("refuses a contact with no account, pointing at the group's link (§33c)", async () => {
     vi.mocked(findUserByEmail).mockResolvedValue(undefined);
 
     await expect(
       addMembers(MEMBER, { groupId: TRIP, userIds: [], email: "new-person@example.com" }),
     ).rejects.toMatchObject({
       code: "failed_precondition",
-      message: expect.stringContaining("not on HaalKhata yet"),
+      message: expect.stringContaining("share this group's invite link"),
     });
     expect(addMember).not.toHaveBeenCalled();
   });
 
-  it("refuses enrolling an Invited (unregistered) friend by id (§33c)", async () => {
-    const invited = {
-      id: "invited-1",
-      name: "New Person",
+  it("refuses enrolling a Deleted member left in a friend's history (§33c)", async () => {
+    const standIn = {
+      id: "stand-in-1",
+      name: "Deleted member",
       google_sub: null,
       password_hash: null,
+      deleted_at: "2026-10-01T00:00:00Z",
     } as UserRow;
-    vi.mocked(listFriendIds).mockResolvedValue(["invited-1"]);
-    vi.mocked(findUsersByIds).mockResolvedValue([invited]);
+    vi.mocked(listFriendIds).mockResolvedValue(["stand-in-1"]);
+    vi.mocked(findUsersByIds).mockResolvedValue([standIn]);
 
     await expect(
-      addMembers(MEMBER, { groupId: TRIP, userIds: ["invited-1"], email: "" }),
+      addMembers(MEMBER, { groupId: TRIP, userIds: ["stand-in-1"], email: "" }),
     ).rejects.toMatchObject({
       code: "failed_precondition",
-      message: expect.stringContaining("New Person hasn't joined"),
+      message: expect.stringContaining("Deleted member can't be added to a group"),
     });
     expect(addMember).not.toHaveBeenCalled();
   });

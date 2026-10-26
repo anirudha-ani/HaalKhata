@@ -1,4 +1,4 @@
-/** Account business logic: password/Google sign-in, onboarding, invitations and profile changes. */
+/** Account business logic: password/Google sign-in, onboarding and profile changes. */
 
 import { assertSafeText } from "@/server/safety/usecase/contentFilter";
 import { providerDisplayName } from "../identity/providerDisplayName";
@@ -8,7 +8,6 @@ import { promisify } from "node:util";
 import { OAuth2Client } from "google-auth-library";
 import {
   bumpTokenVersion,
-  claimUser,
   findUserByEmail,
   findUserByGoogleSub,
   findUserById,
@@ -19,7 +18,6 @@ import {
   setAvatarUrl,
   setUserPhone,
   updateUserProfile,
-  type UserRow,
 } from "@/server/auth/repo/users.repo";
 import {
   consumeGoogleSignInNonce,
@@ -44,7 +42,7 @@ import {
 } from "@/server/auth/auth.constants";
 import { normalizeCurrencyCode } from "@/server/common/validation/validation";
 import { isUniqueViolation } from "@/server/common/db/db";
-import { isRegisteredUser, toPrivateUser } from "../identity/user.mapper";
+import { toPrivateUser } from "../identity/user.mapper";
 
 /**
  * Picks a stable avatar color for an email address by hashing it into the palette.
@@ -152,15 +150,14 @@ function requirePasswordAuthEnabled(): void {
 }
 
 /**
- * Registers a new account, or lets a shadow user claim their existing row,
- * and issues a session token. Exactly one of `email` or `phone` must be set;
- * the other is left null on the new account (and can be added later via
- * updateProfile once that supports it).
+ * Registers a new account and issues a session token. Exactly one of
+ * `email` or `phone` must be set; the other is left null on the new account
+ * (and can be added later via updateProfile once that supports it).
  *
  * @param input - Signup form values: email OR phone (E.164), display name, and plaintext password.
- * @returns The created (or claimed) user in proto shape plus a fresh session token.
+ * @returns The created user in proto shape plus a fresh session token.
  * @throws UsecaseError "invalid_argument" for a bad email/phone, empty name, or short password.
- * @throws UsecaseError "already_exists" when a registered account already uses that email/phone.
+ * @throws UsecaseError "already_exists" when an account already uses that email/phone.
  */
 export async function signUp(input: {
   email: string;
@@ -185,29 +182,19 @@ export async function signUp(input: {
   // Avatar color derives from whichever identifier is present.
   const colorSeed = email || phone!;
 
-  // Look up an existing (shadow or registered) account by whichever
-  // identifier was supplied so a shadow user can claim their invited row.
+  // Whoever already holds the identifier signed up for it; this form never
+  // takes over an existing row, whatever credential it has.
   const existing = email ? await findUserByEmail(email) : await findUserByPhone(phone!);
-  let user: UserRow;
   if (existing) {
-    // google_sub counts as claimed too — otherwise an account that signed in
-    // with Google (and so has no password) could be taken over through this
-    // form by anyone who knows the address.
-    if (isRegisteredUser(existing)) {
-      throw new UsecaseError("already_exists", "an account with this email or phone already exists");
-    }
-    // Shadow user invited earlier — claim the account (keeps expense history).
-    await claimUser(existing.id, name, await hashPassword(input.password));
-    user = (await findUserById(existing.id))!;
-  } else {
-    user = await insertUser({
-      email: email || null,
-      name,
-      avatarColor: avatarColorFor(colorSeed),
-      passwordHash: await hashPassword(input.password),
-      phone: phone ?? null,
-    });
+    throw new UsecaseError("already_exists", "an account with this email or phone already exists");
   }
+  const user = await insertUser({
+    email: email || null,
+    name,
+    avatarColor: avatarColorFor(colorSeed),
+    passwordHash: await hashPassword(input.password),
+    phone: phone ?? null,
+  });
   return { user: toPrivateUser(user), token: createToken(user.id, user.token_version) };
 }
 
@@ -217,8 +204,8 @@ export async function signUp(input: {
  *
  * @param input - Login form values: email OR phone, and plaintext password.
  * @returns The authenticated user in proto shape plus a fresh session token.
- * @throws UsecaseError "unauthenticated" when the identifier is unknown, the account is an
- *   unclaimed shadow user, or the password does not match.
+ * @throws UsecaseError "unauthenticated" when the identifier is unknown, the account has
+ *   no password, or the password does not match.
  */
 export async function logIn(input: { email: string; phone: string; password: string }) {
   requirePasswordAuthEnabled();
@@ -402,9 +389,8 @@ export async function verifyGoogleSignIn(
  * needed, and issues a session token.
  *
  * Three cases, in order: the Google account is already linked; its verified
- * email matches an existing row (a registered account, or a shadow user who
- * was invited earlier and now claims their expense history); or it is someone
- * new.
+ * email matches an existing account, which Google is then linked to; or it
+ * is someone new.
  *
  * @param idToken - Raw JWT credential produced by Google Identity Services.
  * @returns The signed-in user in proto shape plus a fresh session token.
@@ -417,11 +403,9 @@ export async function logInWithGoogle(idToken: string) {
   if (!user) {
     const existing = await findUserByEmail(claims.email);
     if (existing) {
-      // Safe because the email is verified: this row is only reachable by
-      // whoever controls that mailbox. An unclaimed row also takes Google's
-      // display name, since its own is a local-part placeholder.
-      const unclaimed = !isRegisteredUser(existing);
-      await linkGoogleAccount(existing.id, claims.googleSub, unclaimed ? providerDisplayName(claims.name) : "");
+      // Safe because the email is verified: this account is only reachable
+      // by whoever controls that mailbox, and it keeps the name they chose.
+      await linkGoogleAccount(existing.id, claims.googleSub);
       user = (await findUserById(existing.id))!;
     } else {
       try {
@@ -518,7 +502,7 @@ export async function updateProfile(
  * components that guard routes.
  *
  * Unlike bare {@link verifyToken}, this checks the embedded token_version
- * against the row and rejects merge tombstones — so a signed-out-everywhere
+ * against the row and rejects suspended accounts — so a signed-out-everywhere
  * cookie stops rendering the app shell before every RPC inside it fails.
  *
  * @param token - Raw session token from the cookie.
@@ -528,7 +512,7 @@ export async function sessionUser(token: string) {
   const userId = verifyToken(token);
   if (!userId) return null;
   const user = await findUserById(userId);
-  if (!user || user.merged_into !== null || user.suspended_at) return null;
+  if (!user || user.suspended_at) return null;
   if (user.token_version !== tokenVersion(token)) return null;
   return toPrivateUser(user);
 }
@@ -574,79 +558,3 @@ export async function removePhone(userId: string) {
   return getMe(userId);
 }
 
-/**
- * Finds a user by email or creates a claimable shadow user.
- *
- * @param email - Email address to look up, in any casing.
- * @param name - Optional display name for a newly created shadow user; defaults to
- *   the local part of the email.
- * @returns The existing or newly created users row.
- * @throws UsecaseError "invalid_argument" when the email is not a valid address.
- */
-export async function findOrCreateUserByEmail(
-  email: string,
-  name?: string,
-): Promise<UserRow> {
-  const normalizedEmail = email.trim().toLowerCase();
-  if (!EMAIL_PATTERN.test(normalizedEmail)) invalid("please enter a valid email address");
-  const requestedName = normalizeName(name ?? "");
-  const existing = await findUserByEmail(normalizedEmail);
-  if (existing) return existing;
-  try {
-    return await insertUser({
-      email: normalizedEmail,
-      name: requestedName || normalizedEmail.split("@")[0].slice(0, MAX_USER_NAME_LENGTH),
-      avatarColor: avatarColorFor(normalizedEmail),
-      passwordHash: null,
-    });
-  } catch (error) {
-    // TOCTOU: a concurrent invite to the same email won the unique-index
-    // race. Re-read the now-existing row instead of surfacing a 500.
-    if (isUniqueViolation(error)) {
-      const concurrent = await findUserByEmail(normalizedEmail);
-      if (concurrent) return concurrent;
-    }
-    throw error;
-  }
-}
-
-/**
- * Finds a user by phone number or creates a claimable shadow user with no
- * email. The phone-number counterpart of {@link findOrCreateUserByEmail};
- * `users.email` is nullable and `chk_users_has_identifier` accepts a row that
- * carries only a phone, so such an invite is claimed at signup exactly the
- * way an email invite is.
- *
- * @param phone - Phone number in any format the user typed it.
- * @param name - Optional display name for a newly created shadow user;
- *   defaults to the normalized number.
- * @returns The existing or newly created users row.
- * @throws UsecaseError "invalid_argument" when the number is not a valid phone number.
- */
-export async function findOrCreateUserByPhone(
-  phone: string,
-  name?: string,
-): Promise<UserRow> {
-  const normalizedPhone = normalizePhone(phone);
-  if (!normalizedPhone) invalid(PHONE_FORMAT_HINT);
-  const requestedName = normalizeName(name ?? "");
-  const existing = await findUserByPhone(normalizedPhone);
-  if (existing) return existing;
-  try {
-    return await insertUser({
-      email: null,
-      phone: normalizedPhone,
-      name: requestedName || normalizedPhone,
-      avatarColor: avatarColorFor(normalizedPhone),
-      passwordHash: null,
-    });
-  } catch (error) {
-    // TOCTOU: a concurrent invite to the same number won the unique-index
-    // race. Re-read rather than surfacing a 500.
-    if (isUniqueViolation(error)) {
-      const concurrent = await findUserByPhone(normalizedPhone);
-      if (concurrent) return concurrent;
-    }
-    throw error;
-  }
-}

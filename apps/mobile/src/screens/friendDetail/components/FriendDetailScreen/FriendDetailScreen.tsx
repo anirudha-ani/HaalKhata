@@ -146,7 +146,7 @@ export function FriendDetailScreen({
           }
           subtitle={
             [
-              friend.registered ? "" : PERSON_MENU_COPY.invited,
+              friend.deleted ? PERSON_MENU_COPY.deleted : "",
               view.isBlocked ? PERSON_MENU_COPY.blocked : "",
             ]
               .filter(Boolean)

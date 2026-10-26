@@ -219,7 +219,7 @@ export function GroupsScreen() {
                   </Text>
                 </Text>
                 <PersonChecklist
-                  disabledHint="invited — can add once they join"
+                  disabledHint="deleted their account"
                   disabledIds={
                     new Set(
                       groupsState.friends

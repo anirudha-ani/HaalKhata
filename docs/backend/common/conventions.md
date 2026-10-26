@@ -38,8 +38,8 @@ Two credential transports, one token format:
 
 **Token format:** `v2.<userId>.<tokenVersion>.<expiryUnixSeconds>.<signature>`
 — an HMAC-SHA256 over a purpose-bound payload (`"session\0" + payload`), so a
-session token can never validate as a phone-merge token or vice versa even
-though they share the root secret.
+session token can never validate as any other value signed with the same
+root secret (rate-limit keys, log fingerprints) or vice versa.
 
 - **Lifetime:** 7 days absolute (`TOKEN_LIFETIME_SECONDS`).
 - **Sliding renewal:** any authenticated RPC on a token past half its lifetime
@@ -133,7 +133,7 @@ tracked keys with LRU eviction so it cannot be a memory-exhaustion vector.
 | Sign-in/up, Google begin+finish | `auth:<client-ip>` | 10/min |
 | SetPhone (SMS send) | `phone:send:<userId>` | 3/min |
 | SetPhone (code check) | `phone:check:<userId>` | 5/min |
-| ConfirmPhoneMerge, RemovePhone | `phone:merge:<userId>` | 5/min |
+| RemovePhone | `phone:remove:<userId>` | 5/min |
 | SMS sends per destination number | keyed HMAC, **durable** (`phone_send_events`) | 3/hour, 8/day |
 | SMS sends per client IP | **durable** (`phone_send_events`) | 20/hour |
 | `AddFriend` | per account | 10/min |
@@ -294,12 +294,18 @@ a user. They reach somebody else in exactly one place,
 (see [payment-service.md](../payment/payment-service.md)). The retired
 `payment_handles` field is always empty.
 
-`registered` means "has a password **or** a Google account" — either
-credential counts, or every Google account would read as an unclaimed invite.
+`registered` means "has a password **or** a Google or Apple account" — any
+credential counts. Every live account has one (`chk_users_can_sign_in`), so
+it is false only on a Deleted member, the stand-in account deletion leaves.
 
-**No existence oracles.** Endpoints that look up accounts by contact info
-(`AddFriend`, `AddMembers`' email/phone, `GetFriendLedger` for strangers)
-return the same response/denial whether or not an account exists.
+**Existence oracles are narrow and deliberate.** `AddFriend` and
+`AddMembers`' email/phone refuse an identifier that belongs to nobody with
+`FailedPrecondition`, so the clients can offer an invite link instead of a
+dead end, and nothing is created for that person — a known trade, behind the
+per-account rate limit. Beyond that one answer, `AddFriend` says nothing
+about the account it found (self, already a friend, pending and blocked all
+succeed quietly), and `GetFriendLedger` for strangers returns the same
+denial whether or not an account exists.
 
 ## Secrets
 
