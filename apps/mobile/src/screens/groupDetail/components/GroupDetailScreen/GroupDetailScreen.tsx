@@ -25,6 +25,8 @@ import { PersonChecklist } from "@/components/people/PersonChecklist";
 import { PersonLink } from "@/components/people/PersonLink";
 import { DetailHeader } from "@/components/shell/DetailHeader/DetailHeader";
 import { useResponsiveLayout } from "@/lib/layout/hooks/useResponsiveLayout";
+import Animated from "react-native-reanimated";
+import { NOTICE_FADE_IN } from "@/lib/motion/entrances";
 import { Screen } from "@/components/shell/Screen/Screen";
 import { Avatar } from "@/components/ui/Avatar";
 import { AvatarStack } from "@/components/ui/AvatarStack/AvatarStack";
@@ -248,6 +250,7 @@ export function GroupDetailScreen({
       {/* Tabs */}
       <Segmented onChange={groupDetail.setTab} options={TABS} value={groupDetail.tab} />
 
+      <Animated.View entering={NOTICE_FADE_IN} key={groupDetail.tab} style={styles.tabContent}>
       {(groupDetail.tab === "expenses" && groupDetail.expensesError) || (groupDetail.tab === "balances" && groupDetail.balancesError) || (groupDetail.tab === "activity" && groupDetail.activityError) ? (
         <ErrorState error={groupDetail.tab === "expenses" ? groupDetail.expensesError : groupDetail.tab === "balances" ? groupDetail.balancesError : groupDetail.activityError} retry={groupDetail.refresh} />
       ) : groupDetail.tab === "expenses" ? (
@@ -296,6 +299,8 @@ export function GroupDetailScreen({
           ) : null}
         </>
       )}
+
+      </Animated.View>
 
       {groupDetail.viewingMembers ? (
         <Sheet
@@ -663,6 +668,9 @@ export function GroupDetailScreen({
 }
 
 const styles = StyleSheet.create({
+  tabContent: {
+    gap: spacing.xl,
+  },
   addExpenseExpanded: {
     alignSelf: "flex-start",
   },

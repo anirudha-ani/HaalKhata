@@ -4,6 +4,8 @@ import { ErrorState } from "@/components/ui/ErrorState";
 import { useRouter } from "expo-router";
 import { Contact, UserPlus } from "lucide-react-native";
 import { StyleSheet, View } from "react-native";
+import Animated from "react-native-reanimated";
+import { NOTICE_FADE_IN } from "@/lib/motion/entrances";
 import { FIND_FRIENDS_COPY } from "@haalkhata/shared/contacts/contactsCopy";
 import { Text } from "@/components/ui/Text";
 import { InviteShareSheet } from "@/components/modals/InviteShareSheet";
@@ -102,12 +104,14 @@ export function FriendsScreen() {
             }))}
             value={friendsState.tab}
           />
+          <Animated.View entering={NOTICE_FADE_IN} key={friendsState.tab}>
           {friendsState.tab === "friends" ? (
             <RegisteredFriends currency={currency} friendsState={friendsState} />
           ) : null}
           {friendsState.tab === "requests" ? <IncomingRequests friendsState={friendsState} /> : null}
           {friendsState.tab === "sent" ? <SentRequests friendsState={friendsState} /> : null}
           {friendsState.tab === "invited" ? <InvitedFriends friendsState={friendsState} /> : null}
+          </Animated.View>
         </>
       )}
 

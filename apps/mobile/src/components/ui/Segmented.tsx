@@ -1,6 +1,7 @@
 /** Segmented control: equal-width options on a paper track, matching the web tab switchers. */
 
-import { Pressable, ScrollView, StyleSheet, View } from "react-native";
+import { ScrollView, StyleSheet, View } from "react-native";
+import { FeedbackPressable } from "@/components/ui/FeedbackPressable/FeedbackPressable";
 import { Text } from "@/components/ui/Text";
 import { useResponsiveLayout } from "@/lib/layout/hooks/useResponsiveLayout";
 import { colors, radii, spacing } from "@/lib/theme/theme";
@@ -44,11 +45,11 @@ export function Segmented<OptionValue extends string | number>({
         const active = option.value === value;
         const count = option.count ?? 0;
         return (
-          <Pressable
+          <FeedbackPressable
             accessibilityRole="tab"
             accessibilityState={{ selected: active }}
             key={option.value}
-            onPress={() => onChange(option.value)}
+            onPress={() => { if (!active) onChange(option.value); }}
             style={[styles.segment, isLargeText ? styles.segmentLargeText : null, active ? styles.segmentActive : null]}
           >
             <Text style={[styles.label, active ? styles.labelActive : null]}>{option.label}</Text>
@@ -59,7 +60,7 @@ export function Segmented<OptionValue extends string | number>({
                 </Text>
               </View>
             ) : null}
-          </Pressable>
+          </FeedbackPressable>
         );
       })}
     </View>

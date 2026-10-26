@@ -6,6 +6,7 @@ import { expenseFormCurrency } from "@haalkhata/shared/expense/form/formCurrency
 import { useReceiptScanConsent } from "@/lib/receipt/hooks/useReceiptScanConsent";
 import type { User } from "@haalkhata/protogen/common/v1/common_pb";
 import { useRouter } from "expo-router";
+import { successFeedback } from "@/lib/motion/haptics";
 import * as ImagePicker from "expo-image-picker";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { errorMessage } from "@/lib/api/connect";
@@ -87,7 +88,8 @@ export function useNewExpense(
   const [provider, setProvider] = useState("");
   // One id per attempt at saving: a retry after a lost response sends the
   // same one and gets the expense the first attempt stored, not a second.
-  const operationIdRef = useRef(newOperationId());
+  const operationIdRef = useRef("");
+  if (operationIdRef.current === "") operationIdRef.current = newOperationId();
   const isItemized = splitType === "itemized";
 
   const selectedGroup = expenseAPI.groups.find(
@@ -331,6 +333,7 @@ export function useNewExpense(
     };
 
     const onSuccess = () => {
+      successFeedback();
       operationIdRef.current = newOperationId();
       router.replace(groupId ? `/groups/${groupId}` : "/friends");
     };

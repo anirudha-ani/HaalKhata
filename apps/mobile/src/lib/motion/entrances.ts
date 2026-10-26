@@ -141,7 +141,7 @@ export function stepExit(direction: FlowDirection, reduceMotion: boolean) {
 }
 
 /** Words that replace others in place fade in, with or without Reduce Motion. */
-export const NOTICE_FADE_IN = FadeIn.reduceMotion(ReduceMotion.Never);
+export const NOTICE_FADE_IN = FadeIn.duration(FADE_DURATION_MS).reduceMotion(ReduceMotion.Never);
 
 /** A card easing to its new height when what it holds changes size. */
 export const CARD_RESIZE = LinearTransition.springify(CARD_RESIZE_SPRING.duration).dampingRatio(

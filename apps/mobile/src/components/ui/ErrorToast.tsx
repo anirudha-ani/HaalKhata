@@ -2,10 +2,11 @@
 
 import { CircleAlert, X } from "lucide-react-native";
 import { useEffect } from "react";
-import { Pressable, StyleSheet, View } from "react-native";
+import { StyleSheet, View } from "react-native";
 import Animated from "react-native-reanimated";
 import { Text } from "@/components/ui/Text";
-import { dropIn, FADE_OUT_UP } from "@/lib/motion/entrances";
+import { FeedbackPressable } from "@/components/ui/FeedbackPressable/FeedbackPressable";
+import { dropIn, FADE_OUT, FADE_OUT_UP } from "@/lib/motion/entrances";
 import { errorFeedback } from "@/lib/motion/haptics";
 import { useReduceMotion } from "@/lib/motion/hooks/useReduceMotion";
 import { colors, radii, spacing } from "@/lib/theme/theme";
@@ -45,20 +46,19 @@ export function ErrorToast({
       <Animated.View
         accessibilityRole="alert"
         entering={dropIn(0, reduceMotion)}
-        exiting={FADE_OUT_UP}
+        exiting={reduceMotion ? FADE_OUT : FADE_OUT_UP}
         key={message}
         style={styles.toast}
       >
         <CircleAlert color={colors.brand600} size={18} />
         <Text style={styles.message}>{message}</Text>
-        <Pressable
+        <FeedbackPressable
           accessibilityLabel="Dismiss"
-          hitSlop={8}
           onPress={onDismiss}
           style={styles.dismiss}
         >
           <X color={colors.brand600} size={16} />
-        </Pressable>
+        </FeedbackPressable>
       </Animated.View>
     </View>
   );
@@ -66,8 +66,11 @@ export function ErrorToast({
 
 const styles = StyleSheet.create({
   dismiss: {
+    alignItems: "center",
     borderRadius: radii.full,
-    padding: 2,
+    justifyContent: "center",
+    minHeight: 44,
+    minWidth: 44,
   },
   host: {
     alignItems: "center",
@@ -86,7 +89,7 @@ const styles = StyleSheet.create({
     lineHeight: 19,
   },
   toast: {
-    alignItems: "flex-start",
+    alignItems: "center",
     backgroundColor: colors.brand50,
     borderColor: colors.brand200,
     borderRadius: radii.lg,

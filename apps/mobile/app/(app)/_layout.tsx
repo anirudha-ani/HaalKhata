@@ -9,6 +9,7 @@ import { queryKeys } from "@haalkhata/shared/api/queryKeys";
 import { useSession } from "@/lib/api/session";
 import { useDeviceSetupGate } from "@/lib/onboarding/hooks/useDeviceSetupGate";
 import { colors } from "@/lib/theme/theme";
+import { useReduceMotion } from "@/lib/motion/hooks/useReduceMotion";
 
 /**
  * Layout for every authenticated route: waits for session hydration,
@@ -47,6 +48,7 @@ export default function AppLayout() {
  * @returns The authed stack, a redirect to onboarding, or a spinner.
  */
 function OnboardingGate() {
+  const reduceMotion = useReduceMotion();
   const pathname = usePathname();
   const currentUser = useQuery({ queryKey: queryKeys.me, queryFn: () => authClient.getMe({}) });
   const deviceSetup = useDeviceSetupGate(currentUser.data);
@@ -58,6 +60,7 @@ function OnboardingGate() {
     <>
       <Stack
         screenOptions={{
+          animation: reduceMotion ? "fade" : "default",
           contentStyle: { backgroundColor: colors.paper },
           headerShown: false,
         }}

@@ -2,7 +2,8 @@
 
 import { useRouter } from "expo-router";
 import { Bell, CircleUserRound } from "lucide-react-native";
-import { Image, Pressable, StyleSheet, View } from "react-native";
+import { Image, StyleSheet, View } from "react-native";
+import { FeedbackPressable } from "@/components/ui/FeedbackPressable/FeedbackPressable";
 import { Text } from "@/components/ui/Text";
 import { Avatar } from "@/components/ui/Avatar";
 import { SCREEN_CONTENT_MAX_WIDTH } from "@/lib/layout/constants/layout";
@@ -30,7 +31,7 @@ export function ScreenHeader() {
           <Text adjustsFontSizeToFit minimumFontScale={0.5} numberOfLines={1} style={styles.wordmark}>HAALKHATA</Text>
         </View>
         <View style={styles.actions}>
-          <Pressable
+          <FeedbackPressable
             accessibilityLabel="Activity"
             hitSlop={8}
             onPress={() => router.push("/activity")}
@@ -38,8 +39,8 @@ export function ScreenHeader() {
           >
             <Bell color={colors.inkSoft} size={22} />
             {unreadCount > 0 ? <View style={styles.unreadDot} /> : null}
-          </Pressable>
-          <Pressable
+          </FeedbackPressable>
+          <FeedbackPressable
             accessibilityLabel="Account"
             hitSlop={8}
             onPress={() => router.push("/account")}
@@ -50,7 +51,7 @@ export function ScreenHeader() {
             ) : (
               <CircleUserRound color={colors.inkSoft} size={22} />
             )}
-          </Pressable>
+          </FeedbackPressable>
         </View>
       </View>
     </View>
@@ -85,7 +86,11 @@ const styles = StyleSheet.create({
     width: "100%",
   },
   iconButton: {
+    alignItems: "center",
     borderRadius: radii.full,
+    justifyContent: "center",
+    minHeight: 44,
+    minWidth: 44,
     padding: spacing.sm,
   },
   unreadDot: {

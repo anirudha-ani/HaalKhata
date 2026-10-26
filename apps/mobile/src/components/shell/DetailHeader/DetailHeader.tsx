@@ -3,7 +3,8 @@
 import { useRouter } from "expo-router";
 import { ChevronLeft } from "lucide-react-native";
 import type { ReactNode } from "react";
-import { Pressable, StyleSheet, View } from "react-native";
+import { StyleSheet, View } from "react-native";
+import { FeedbackPressable } from "@/components/ui/FeedbackPressable/FeedbackPressable";
 import { Text } from "@/components/ui/Text";
 import { HEADER_TITLE_MIN_SCALE, SCREEN_CONTENT_MAX_WIDTH } from "@/lib/layout/constants/layout";
 import { colors, fonts, radii, spacing } from "@/lib/theme/theme";
@@ -37,14 +38,14 @@ export function DetailHeader({
   return (
     <View style={styles.header}>
       <View style={styles.headerContent}>
-        <Pressable
+        <FeedbackPressable
           accessibilityLabel="Back"
           hitSlop={8}
           onPress={() => (router.canGoBack() ? router.back() : router.replace("/dashboard"))}
           style={styles.backButton}
         >
           <ChevronLeft color={colors.ink} size={24} />
-        </Pressable>
+        </FeedbackPressable>
         {leading ? <View style={styles.leading}>{leading}</View> : null}
         <View style={styles.titleBlock}>
           {/* A long name gives up a little size before it gives up letters:
