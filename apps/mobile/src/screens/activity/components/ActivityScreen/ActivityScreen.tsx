@@ -1,6 +1,8 @@
 /** Activity screen: the feed of what happened, and the person's own insights drawn from it. */
 
 import { useState } from "react";
+import Animated from "react-native-reanimated";
+import { NOTICE_FADE_IN } from "@/lib/motion/entrances";
 import { DetailHeader } from "@/components/shell/DetailHeader/DetailHeader";
 import { Screen } from "@/components/shell/Screen/Screen";
 import { Segmented } from "@/components/ui/Segmented";
@@ -40,6 +42,7 @@ export function ActivityScreen() {
       refreshing={showingFeed ? activity.isRefreshing : insights.isRefreshing}
     >
       <Segmented onChange={setView} options={ACTIVITY_VIEWS} value={view} />
+      <Animated.View entering={NOTICE_FADE_IN} key={view}>
       {showingFeed ? (
         activity.isLoading ? (
           <Spinner label="Loading activity…" />
@@ -49,6 +52,7 @@ export function ActivityScreen() {
       ) : (
         <InsightsPanel state={insights} />
       )}
+      </Animated.View>
     </Screen>
   );
 }

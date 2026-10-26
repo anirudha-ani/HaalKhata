@@ -22,11 +22,17 @@ const ToastContext = createContext<ToastHandle>({ showError: () => undefined });
  */
 export function ToastProvider({
   children,
+  error = "",
 }: {
   /** The screen content the toast may overlay. */
   children: ReactNode;
+  /** Failure owned above this provider, such as a screen orchestrator's mutation. */
+  error?: string;
 }) {
   const [message, setMessage] = useState("");
+  useEffect(() => {
+    if (error) setMessage(error);
+  }, [error]);
   const dismiss = useCallback(() => setMessage(""), []);
   const handle = useMemo<ToastHandle>(() => ({ showError: setMessage }), []);
   return (

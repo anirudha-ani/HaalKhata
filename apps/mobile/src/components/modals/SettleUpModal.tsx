@@ -13,6 +13,7 @@ import { Sheet } from "@/components/ui/Sheet/Sheet";
 import { TextField } from "@/components/ui/TextField";
 import { errorMessage, expenseClient } from "@/lib/api/connect";
 import { newOperationId } from "@/lib/api/operationId";
+import { errorFeedback, successFeedback } from "@/lib/motion/haptics";
 import { MONEY_KEYS, queryKeys } from "@haalkhata/shared/api/queryKeys";
 import { centsToInput, parseMoneyInput } from "@haalkhata/shared/money/money";
 import { ownMethodsFailedLine } from "@haalkhata/shared/payment/copy";
@@ -108,7 +109,8 @@ export function SettleUpModal({
   const [error, setError] = useState("");
   // One id per attempt at recording: a retry after a lost response sends
   // the same one and gets the first recording back, never a second.
-  const operationIdRef = useRef(newOperationId());
+  const operationIdRef = useRef("");
+  if (operationIdRef.current === "") operationIdRef.current = newOperationId();
 
   // The pair's position, computed by the code that records settlements, so
   // this sheet and the write it sends can never disagree about what is owed.
@@ -166,12 +168,14 @@ export function SettleUpModal({
         operationId: operationIdRef.current,
       }),
     onSuccess: () => {
+      successFeedback();
       operationIdRef.current = newOperationId();
       for (const moneyKey of MONEY_KEYS) queryClient.invalidateQueries({ queryKey: moneyKey });
       onClose();
       void offerPushExplainer();
     },
     onError: (mutationError) => {
+      errorFeedback();
       setError(errorMessage(mutationError));
       // A refusal usually means the balances are not what this sheet is
       // showing any more; reload them so the next attempt is against the
@@ -214,7 +218,31 @@ export function SettleUpModal({
   };
 
   return (
-    <Sheet onClose={onClose} title={received ? "Record a payment received" : "Settle up"}>
+    <Sheet
+      footer={
+        <View style={styles.submitBlock}>
+          {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
+          <Button
+            busy={mutation.isPending}
+            disabled={!loaded || reading.rows.length === 0}
+            label="Record payment"
+            onPress={submit}
+            variant="positive"
+          />
+          <Text style={styles.submitHint}>
+            {received
+              ? `Logs money ${firstName} has already sent you. It doesn't request anything.`
+              : payMethods.choice === CASH_CHOICE
+                ? "This only updates the balance here. Hand over the cash first."
+                : `This only updates the balance here. Move the money in ${
+                    payMethods.method?.name ?? "your app of choice"
+                  } first.`}
+          </Text>
+        </View>
+      }
+      onClose={onClose}
+      title={received ? "Record a payment received" : "Settle up"}
+    >
       <View style={styles.body}>
         <View style={styles.recipientCard}>
           <Avatar user={other} />
@@ -409,29 +437,6 @@ export function SettleUpModal({
           value={note}
         />
 
-        {error ? <Text style={styles.error}>{error}</Text> : null}
-
-        <View style={styles.submitBlock}>
-          <Button
-            busy={mutation.isPending}
-            disabled={!loaded || reading.rows.length === 0}
-            label="Record payment"
-            onPress={submit}
-            variant="positive"
-          />
-          {/* Said plainly: this app is a ledger, not a payment processor. The
-              received direction is a log of money that already arrived, so
-              telling the user to "move the money first" would be nonsense. */}
-          <Text style={styles.submitHint}>
-            {received
-              ? `Logs money ${firstName} has already sent you. It doesn't request anything.`
-              : payMethods.choice === CASH_CHOICE
-                ? "This only updates the balance here. Hand over the cash first."
-                : `This only updates the balance here. Move the money in ${
-                    payMethods.method?.name ?? "your app of choice"
-                  } first.`}
-          </Text>
-        </View>
       </View>
     </Sheet>
   );

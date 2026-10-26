@@ -2,7 +2,8 @@
 
 import { useRouter } from "expo-router";
 import { Plus } from "lucide-react-native";
-import { Pressable, StyleSheet, View } from "react-native";
+import { StyleSheet, View } from "react-native";
+import { FeedbackPressable } from "@/components/ui/FeedbackPressable/FeedbackPressable";
 import { colors, radii } from "@/lib/theme/theme";
 
 /**
@@ -16,14 +17,14 @@ export function AddExpenseTabButton() {
   const router = useRouter();
   return (
     <View style={styles.slot}>
-      <Pressable
+      <FeedbackPressable
         accessibilityLabel="Add expense"
         accessibilityRole="button"
         onPress={() => router.push("/expenses/new")}
-        style={({ pressed }) => [styles.button, pressed ? styles.pressed : null]}
+        style={styles.button}
       >
         <Plus color={colors.white} size={26} />
-      </Pressable>
+      </FeedbackPressable>
     </View>
   );
 }
@@ -37,9 +38,6 @@ const styles = StyleSheet.create({
     height: 52,
     justifyContent: "center",
     width: 52,
-  },
-  pressed: {
-    opacity: 0.85,
   },
   slot: {
     alignItems: "center",

@@ -4,6 +4,8 @@ import { ErrorState } from "@/components/ui/ErrorState";
 import { useRouter } from "expo-router";
 import { Contact, UserPlus } from "lucide-react-native";
 import { StyleSheet, View } from "react-native";
+import Animated from "react-native-reanimated";
+import { NOTICE_FADE_IN } from "@/lib/motion/entrances";
 import { FIND_FRIENDS_COPY } from "@haalkhata/shared/contacts/contactsCopy";
 import { Text } from "@/components/ui/Text";
 import { InviteShareSheet } from "@/components/modals/InviteShareSheet";
@@ -15,7 +17,6 @@ import { ScreenHeader } from "@/components/shell/ScreenHeader/ScreenHeader";
 import { Button } from "@/components/ui/Button";
 import { Segmented } from "@/components/ui/Segmented";
 import { Spinner } from "@/components/ui/Spinner";
-import { useErrorToast } from "@/components/ui/ToastProvider";
 import { colors, fonts, radii, spacing } from "@/lib/theme/theme";
 import { FRIENDS_TABS, type FriendsTab } from "../../constants/friendsTabs";
 import { AddFriendSheet } from "./components/AddFriendSheet/AddFriendSheet";
@@ -42,7 +43,6 @@ import { useFriends } from "./hooks/useFriends";
 export function FriendsScreen() {
   const friendsState = useFriends();
   const router = useRouter();
-  useErrorToast(friendsState.error);
   const currency = friendsState.me?.defaultCurrency ?? "USD";
   const counts: Record<FriendsTab, number> = {
     friends: friendsState.friends.length,
@@ -52,6 +52,7 @@ export function FriendsScreen() {
 
   return (
     <Screen
+      error={friendsState.showAdd ? "" : friendsState.error}
       header={<ScreenHeader />}
       onRefresh={friendsState.refresh}
       refreshing={friendsState.isRefreshing}
@@ -102,11 +103,13 @@ export function FriendsScreen() {
             }))}
             value={friendsState.tab}
           />
+          <Animated.View entering={NOTICE_FADE_IN} key={friendsState.tab}>
           {friendsState.tab === "friends" ? (
             <RegisteredFriends currency={currency} friendsState={friendsState} />
           ) : null}
           {friendsState.tab === "requests" ? <IncomingRequests friendsState={friendsState} /> : null}
           {friendsState.tab === "sent" ? <SentRequests friendsState={friendsState} /> : null}
+          </Animated.View>
         </>
       )}
 

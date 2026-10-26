@@ -77,6 +77,16 @@ export function useFriends() {
     cents: number;
   } | null>(null);
 
+  /**
+   * @param visible Whether the add-friend draft should be open; closed draft
+   *   errors and a not-on-HaalKhata offer are discarded.
+   */
+  const changeAddSheet = (visible: boolean) => {
+    setError("");
+    setNotOnHaalKhata(false);
+    setShowAdd(visible);
+  };
+
   const currentUser = useQuery({ queryKey: queryKeys.me, queryFn: () => authClient.getMe({}) });
   const friends = useQuery({
     queryKey: queryKeys.friends,
@@ -196,10 +206,7 @@ export function useFriends() {
     refresh: pull.refresh,
     isRefreshing: pull.isRefreshing,
     showAdd,
-    setShowAdd: (open: boolean) => {
-      setNotOnHaalKhata(false);
-      setShowAdd(open);
-    },
+    setShowAdd: changeAddSheet,
     contact,
     // The offer is about the contact that was refused; a new one starts over.
     setContact: (next: ContactDraft) => {

@@ -3,6 +3,7 @@
 import { useRouter } from "expo-router";
 import { useMemo, useState } from "react";
 import { errorMessage } from "@/lib/api/connect";
+import { successFeedback } from "@/lib/motion/haptics";
 import {
   matchesBalanceFilter,
   type GroupBalanceFilterOption,
@@ -57,6 +58,7 @@ export function useGroups() {
       { name, type, currency, memberIds },
       {
         onSuccess: (group) => {
+          successFeedback();
           setCreating(false);
           setName("");
           setMemberIds([]);

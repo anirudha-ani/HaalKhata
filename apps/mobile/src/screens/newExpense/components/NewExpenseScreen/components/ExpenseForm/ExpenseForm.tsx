@@ -141,7 +141,7 @@ export function ExpenseForm({
           </View>
           {isTablet ? <View style={[styles.chips, styles.chipsWrapped]}>
             {categoryChips}
-          </View> : <ScrollView horizontal keyboardShouldPersistTaps="handled" contentContainerStyle={styles.chips}>
+          </View> : <ScrollView horizontal keyboardShouldPersistTaps="handled" contentContainerStyle={styles.chips} style={styles.categoryScroller}>
             {categoryChips}
           </ScrollView>}
 
@@ -185,11 +185,15 @@ const styles = StyleSheet.create({
     flexDirection: "column",
   },
   chips: {
+    alignItems: "flex-start",
     flexDirection: "row",
     gap: spacing.sm,
   },
   chipsWrapped: {
     flexWrap: "wrap",
+  },
+  categoryScroller: {
+    flexGrow: 0,
   },
   form: {
     gap: spacing.xl,

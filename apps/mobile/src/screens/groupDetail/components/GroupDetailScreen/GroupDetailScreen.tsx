@@ -25,6 +25,8 @@ import { PersonChecklist } from "@/components/people/PersonChecklist";
 import { PersonLink } from "@/components/people/PersonLink";
 import { DetailHeader } from "@/components/shell/DetailHeader/DetailHeader";
 import { useResponsiveLayout } from "@/lib/layout/hooks/useResponsiveLayout";
+import Animated from "react-native-reanimated";
+import { NOTICE_FADE_IN } from "@/lib/motion/entrances";
 import { Screen } from "@/components/shell/Screen/Screen";
 import { Avatar } from "@/components/ui/Avatar";
 import { AvatarStack } from "@/components/ui/AvatarStack/AvatarStack";
@@ -248,6 +250,7 @@ export function GroupDetailScreen({
       {/* Tabs */}
       <Segmented onChange={groupDetail.setTab} options={TABS} value={groupDetail.tab} />
 
+      <Animated.View entering={NOTICE_FADE_IN} key={groupDetail.tab} style={styles.tabContent}>
       {(groupDetail.tab === "expenses" && groupDetail.expensesError) || (groupDetail.tab === "balances" && groupDetail.balancesError) || (groupDetail.tab === "activity" && groupDetail.activityError) ? (
         <ErrorState error={groupDetail.tab === "expenses" ? groupDetail.expensesError : groupDetail.tab === "balances" ? groupDetail.balancesError : groupDetail.activityError} retry={groupDetail.refresh} />
       ) : groupDetail.tab === "expenses" ? (
@@ -296,6 +299,8 @@ export function GroupDetailScreen({
           ) : null}
         </>
       )}
+
+      </Animated.View>
 
       {groupDetail.viewingMembers ? (
         <Sheet
@@ -369,7 +374,7 @@ export function GroupDetailScreen({
                       userId={person.id}
                     >
                       <Avatar size="sm" user={person} />
-                      <Text numberOfLines={1} style={styles.memberName}>
+                      <Text style={styles.memberName}>
                         {person.name}
                         {isMe ? <Text style={styles.memberTag}> · you</Text> : null}
                         {isOwner ? <Text style={styles.memberTag}> · owner</Text> : null}
@@ -534,6 +539,19 @@ export function GroupDetailScreen({
 
       {groupDetail.addingPeople ? (
         <Sheet
+          footer={
+            <View style={styles.addForm}>
+              {!groupDetail.inviteOffer && groupDetail.peopleError ? (
+                <Text accessibilityRole="alert" style={styles.addError}>{groupDetail.peopleError}</Text>
+              ) : null}
+              <Button
+                busy={groupDetail.addMembers.isPending}
+                disabled={!groupDetail.canAddPeople}
+                label="Add to group"
+                onPress={groupDetail.submitPeople}
+              />
+            </View>
+          }
           onClose={() => groupDetail.setAddingPeople(false)}
           title={`Add people to ${groupDetail.group.name}`}
         >
@@ -603,15 +621,7 @@ export function GroupDetailScreen({
                   variant="outline"
                 />
               </View>
-            ) : groupDetail.peopleError ? (
-              <Text style={styles.addError}>{groupDetail.peopleError}</Text>
             ) : null}
-            <Button
-              busy={groupDetail.addMembers.isPending}
-              disabled={!groupDetail.canAddPeople}
-              label="Add to group"
-              onPress={groupDetail.submitPeople}
-            />
           </View>
         </Sheet>
       ) : null}
@@ -642,6 +652,9 @@ export function GroupDetailScreen({
 }
 
 const styles = StyleSheet.create({
+  tabContent: {
+    gap: spacing.xl,
+  },
   addExpenseExpanded: {
     alignSelf: "flex-start",
   },
@@ -705,7 +718,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     flexWrap: "wrap",
     gap: spacing.sm,
-    justifyContent: "flex-end",
+    justifyContent: "flex-start",
   },
   memberBlocked: {
     backgroundColor: colors.neg50,
@@ -767,10 +780,7 @@ const styles = StyleSheet.create({
   },
   memberPerson: {
     alignItems: "center",
-    width: 160,
-    maxWidth: "100%",
-    flexGrow: 1,
-    flexShrink: 1,
+    width: "100%",
     flexDirection: "row",
     gap: spacing.md,
     minWidth: 0,

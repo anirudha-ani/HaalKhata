@@ -17,8 +17,8 @@ import type { FriendsController } from "../../hooks/useFriends";
  * one-field task, and opening it must not shove the list down. It closes
  * itself once the request is sent. Finding people from contacts starts here
  * too, on its own screen. An email or phone nobody on HaalKhata has is
- * answered here, under the field, with the caller's invite link to share:
- * nothing is created for that person, who signs up as themselves.
+ * answered in the footer, in place of Send, with the caller's invite link
+ * to share: nothing is created for that person, who signs up as themselves.
  *
  * @param props - Component props.
  * @returns The sheet.
@@ -31,7 +31,36 @@ export function AddFriendSheet({
 }) {
   const router = useRouter();
   return (
-    <Sheet onClose={() => friendsState.setShowAdd(false)} title="Add a friend">
+    <Sheet
+      footer={
+        <View style={styles.body}>
+          {friendsState.error ? <Text accessibilityRole="alert" style={styles.error}>{friendsState.error}</Text> : null}
+          {friendsState.notOnHaalKhata ? (
+            <View style={styles.offer}>
+              <Text accessibilityRole="alert" style={styles.offerText}>
+                {NOT_ON_HAALKHATA_COPY.friend.message}
+              </Text>
+              <Button
+                busy={friendsState.isSharingInviteLink}
+                icon={<Share2 color={colors.white} size={16} />}
+                label={NOT_ON_HAALKHATA_COPY.friend.action}
+                onPress={friendsState.shareInviteLink}
+              />
+            </View>
+          ) : (
+            <Button
+              busy={friendsState.isAdding}
+              disabled={!friendsState.canSubmitAdd}
+              icon={<UserPlus color={colors.white} size={16} />}
+              label="Send request"
+              onPress={friendsState.submitAdd}
+            />
+          )}
+        </View>
+      }
+      onClose={() => friendsState.setShowAdd(false)}
+      title="Add a friend"
+    >
       <View style={styles.body}>
         <Button
           icon={<Contact color={colors.inkSoft} size={16} />}
@@ -49,27 +78,6 @@ export function AddFriendSheet({
           onContactChange={friendsState.setContact}
           phoneLabel="Friend's phone number"
         />
-        {friendsState.notOnHaalKhata ? (
-          <View style={styles.offer}>
-            <Text accessibilityRole="alert" style={styles.offerText}>
-              {NOT_ON_HAALKHATA_COPY.friend.message}
-            </Text>
-            <Button
-              busy={friendsState.isSharingInviteLink}
-              icon={<Share2 color={colors.white} size={16} />}
-              label={NOT_ON_HAALKHATA_COPY.friend.action}
-              onPress={friendsState.shareInviteLink}
-            />
-          </View>
-        ) : (
-          <Button
-            busy={friendsState.isAdding}
-            disabled={!friendsState.canSubmitAdd}
-            icon={<UserPlus color={colors.white} size={16} />}
-            label="Send request"
-            onPress={friendsState.submitAdd}
-          />
-        )}
         <Text style={styles.hint}>
           They must accept before either of you is added as a friend.
         </Text>
@@ -79,6 +87,10 @@ export function AddFriendSheet({
 }
 
 const styles = StyleSheet.create({
+  error: {
+    color: colors.neg700,
+    fontSize: 13,
+  },
   body: {
     gap: spacing.md,
   },

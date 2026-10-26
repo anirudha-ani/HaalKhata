@@ -1,7 +1,8 @@
 /** Selectable pill chip used for categories, payment methods, and toggles. */
 
 import type { ReactNode } from "react";
-import { Pressable, StyleSheet } from "react-native";
+import { StyleSheet } from "react-native";
+import { FeedbackPressable } from "@/components/ui/FeedbackPressable/FeedbackPressable";
 import { Text } from "@/components/ui/Text";
 import { colors, radii, spacing } from "@/lib/theme/theme";
 
@@ -30,7 +31,7 @@ export function Chip({
   disabled?: boolean;
 }) {
   return (
-    <Pressable
+    <FeedbackPressable
       accessibilityRole="button"
       accessibilityState={{ disabled, selected }}
       disabled={disabled}
@@ -39,7 +40,7 @@ export function Chip({
     >
       {icon ?? null}
       <Text style={[styles.label, selected ? styles.labelSelected : null]}>{label}</Text>
-    </Pressable>
+    </FeedbackPressable>
   );
 }
 

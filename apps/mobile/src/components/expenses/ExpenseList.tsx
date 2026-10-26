@@ -6,6 +6,7 @@ import { useRouter } from "expo-router";
 import { Check, ReceiptText } from "lucide-react-native";
 import { Pressable, StyleSheet, View } from "react-native";
 import { Text } from "@/components/ui/Text";
+import { useResponsiveLayout } from "@/lib/layout/hooks/useResponsiveLayout";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Money } from "@/components/ui/Money";
 import { settledStatus } from "@haalkhata/shared/expense/settledStatus";
@@ -52,6 +53,7 @@ export function ExpenseList({
   settledIds?: Set<string>;
 }) {
   const router = useRouter();
+  const { isLargeText } = useResponsiveLayout();
 
   if (expenses.length === 0) {
     return (
@@ -113,14 +115,14 @@ export function ExpenseList({
             onPress={() => router.push(`/expenses/${expense.id}`)}
             style={({ pressed }) => [
               styles.row,
+              isLargeText ? styles.rowStacked : null,
               index > 0 ? styles.rowDivider : null,
               pressed ? styles.rowPressed : null,
             ]}
           >
             <Text style={styles.emoji}>{CATEGORY_EMOJI[expense.category] ?? "🧾"}</Text>
-            <View style={styles.rowText}>
+            <View style={[styles.rowText, isLargeText ? styles.rowTextFull : null]}>
               <Text
-                numberOfLines={1}
                 style={[styles.description, deleted ? styles.descriptionDeleted : null]}
               >
                 {expense.description}
@@ -137,21 +139,20 @@ export function ExpenseList({
                 {groupNameById ? (
                   <View style={[styles.pill, expense.groupId ? styles.pillGroup : null]}>
                     <Text
-                      numberOfLines={1}
                       style={[styles.pillText, expense.groupId ? styles.pillGroupText : null]}
                     >
                       {expense.groupId ? (groupNameById.get(expense.groupId) ?? "group") : "one-off"}
                     </Text>
                   </View>
                 ) : null}
-                <Text numberOfLines={1} style={styles.meta}>
+                <Text style={styles.meta}>
                   {expense.expenseDate} · {payerLabel}{" "}
                   {formatMoney(expense.amountCents, expense.currency)}
                   {expense.splitType === "itemized" ? " · itemized" : ""}
                 </Text>
               </View>
             </View>
-            <View style={styles.net}>
+            <View style={[styles.net, isLargeText ? styles.netStacked : null]}>
               {deleted ? (
                 <Text style={styles.netNone}>no longer counts</Text>
               ) : myNet === 0 ? (
@@ -224,8 +225,8 @@ const styles = StyleSheet.create({
     fontSize: 12,
   },
   metaRow: {
-    alignItems: "center",
-    flexDirection: "row",
+    alignItems: "flex-start",
+    flexDirection: "column",
     gap: spacing.xs + 2,
     marginTop: 2,
   },
@@ -235,6 +236,9 @@ const styles = StyleSheet.create({
   netAmount: {
     fontSize: 14,
     fontWeight: "600",
+  },
+  netStacked: {
+    alignItems: "flex-start",
   },
   netLabel: {
     fontSize: 11,
@@ -251,7 +255,7 @@ const styles = StyleSheet.create({
   pill: {
     backgroundColor: colors.paper,
     borderRadius: radii.full,
-    maxWidth: 120,
+    maxWidth: "100%",
     paddingHorizontal: spacing.sm,
     paddingVertical: 1,
   },
@@ -278,6 +282,10 @@ const styles = StyleSheet.create({
     borderTopColor: colors.line,
     borderTopWidth: 1,
   },
+  rowStacked: {
+    alignItems: "stretch",
+    flexDirection: "column",
+  },
   rowPressed: {
     backgroundColor: colors.paper,
   },
@@ -287,6 +295,9 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     flexShrink: 1,
     minWidth: 0,
+  },
+  rowTextFull: {
+    width: "100%",
   },
   settledLabel: {
     color: colors.pos600,

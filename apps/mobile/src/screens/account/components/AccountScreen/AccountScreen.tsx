@@ -24,6 +24,7 @@ import { InviteShareSheet } from "@/components/modals/InviteShareSheet";
 import { shareProfileInvite } from "@/lib/invite/share";
 import { Spinner } from "@/components/ui/Spinner";
 import { TextField } from "@/components/ui/TextField";
+import { useErrorToast } from "@/components/ui/ToastProvider";
 import { CurrencyPicker } from "@/components/ui/CurrencyPicker";
 import { MAX_USER_NAME_LENGTH } from "@haalkhata/shared/text/limits";
 import { VERIFICATION_CODE_INPUT_MAX_CHARACTERS } from "@haalkhata/shared/phone/phone.constants";
@@ -59,6 +60,7 @@ export function AccountScreen() {
 function ProfileForm({ me: currentUser }: { me: User }) {
   const form = useProfileForm(currentUser);
   const { isExpanded } = useResponsiveLayout();
+  useErrorToast(form.verificationPhone ? "" : form.error);
 
   return (
     <View style={styles.container}>
@@ -223,7 +225,28 @@ function ProfileForm({ me: currentUser }: { me: User }) {
       ) : null}
 
       {form.verificationPhone ? (
-        <Sheet onClose={form.cancelVerification} title="Verify your phone">
+        <Sheet
+          footer={
+            <View style={styles.sheetBody}>
+              {form.error ? <Text accessibilityRole="alert" style={styles.error}>{form.error}</Text> : null}
+              <Button
+                busy={form.isVerifying}
+                disabled={form.isSaving || !form.codeComplete}
+                label="Verify phone"
+                onPress={form.verifyPhone}
+              />
+              <Button
+                busy={form.isResending}
+                disabled={form.isSaving || form.resendIn > 0}
+                label={resendCodeLabel(form.resendIn)}
+                onPress={form.resendCode}
+                variant="ghost"
+              />
+            </View>
+          }
+          onClose={form.cancelVerification}
+          title="Verify your phone"
+        >
           <View style={styles.sheetBody}>
             <Text style={styles.sheetText}>
               Enter the code sent to {form.verificationPhone}. No account data changes until the
@@ -243,20 +266,6 @@ function ProfileForm({ me: currentUser }: { me: User }) {
               />
               <Text style={styles.fieldHint}>{form.codeHint}</Text>
             </View>
-            {form.error ? <Text style={styles.error}>{form.error}</Text> : null}
-            <Button
-              busy={form.isVerifying}
-              disabled={form.isSaving || !form.codeComplete}
-              label="Verify phone"
-              onPress={form.verifyPhone}
-            />
-            <Button
-              busy={form.isResending}
-              disabled={form.isSaving || form.resendIn > 0}
-              label={resendCodeLabel(form.resendIn)}
-              onPress={form.resendCode}
-              variant="ghost"
-            />
           </View>
         </Sheet>
       ) : null}

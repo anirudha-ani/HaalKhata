@@ -12,6 +12,7 @@ import {
   type TabItem,
 } from "@/components/shell/PrimaryNavigation/constants/navigation";
 import { useResponsiveLayout } from "@/lib/layout/hooks/useResponsiveLayout";
+import { FADE_DURATION_MS } from "@/lib/motion/motion.constants";
 import { useShellData } from "@/lib/hooks/useShellData";
 import { colors, radii, spacing } from "@/lib/theme/theme";
 
@@ -65,6 +66,8 @@ export function PrimaryNavigation() {
   return (
     <Tabs
       screenOptions={{
+        animation: "fade",
+        transitionSpec: { animation: "timing", config: { duration: FADE_DURATION_MS } },
         headerShown: false,
         sceneStyle: { backgroundColor: colors.paper },
         tabBarActiveTintColor: colors.brand600,

@@ -14,7 +14,9 @@ import {
   View,
 } from "react-native";
 import Animated from "react-native-reanimated";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Text } from "@/components/ui/Text";
+import { FeedbackPressable } from "@/components/ui/FeedbackPressable/FeedbackPressable";
 import { colors, fonts, radii, spacing } from "@/lib/theme/theme";
 import { TABLET_SHEET_MAX_WIDTH } from "@/lib/layout/constants/layout";
 import { useResponsiveLayout } from "@/lib/layout/hooks/useResponsiveLayout";
@@ -65,6 +67,9 @@ export function Sheet({
 }) {
   const { height: windowHeight } = useWindowDimensions();
   const { isTablet } = useResponsiveLayout();
+  const insets = useSafeAreaInsets();
+  const topPadding = Math.max(insets.top, isTablet ? spacing.xxl : 0);
+  const bottomPadding = isTablet ? Math.max(insets.bottom, spacing.xxl) : 0;
   const entrance = useSheetEntrance(isTablet);
   return (
     <Modal
@@ -76,7 +81,15 @@ export function Sheet({
     >
       <KeyboardAvoidingView
         behavior={Platform.OS === "ios" ? "padding" : undefined}
-        style={[styles.backdropContainer, isTablet ? styles.backdropContainerTablet : null]}
+        style={[
+          styles.backdropContainer,
+          isTablet ? styles.backdropContainerTablet : null,
+          {
+            paddingTop: topPadding,
+            paddingLeft: Math.max(insets.left, isTablet ? spacing.xxl : 0),
+            paddingRight: Math.max(insets.right, isTablet ? spacing.xxl : 0),
+          },
+        ]}
       >
         {onClose ? (
           <Pressable accessibilityLabel="Close" onPress={onClose} style={styles.backdrop} />
@@ -88,7 +101,10 @@ export function Sheet({
           accessibilityViewIsModal
           style={[
             styles.sheet,
-            { maxHeight: Math.max(0, Math.min(windowHeight * SHEET_MAX_HEIGHT_RATIO, windowHeight - (isTablet ? spacing.xxl * 2 : 0))) },
+            {
+              maxHeight: Math.max(0, Math.min(windowHeight * SHEET_MAX_HEIGHT_RATIO, windowHeight - topPadding - bottomPadding)),
+              paddingBottom: Math.max(insets.bottom, spacing.xxl),
+            },
             isTablet ? styles.sheetTablet : null,
             entrance,
           ]}
@@ -96,14 +112,14 @@ export function Sheet({
           <View style={styles.header}>
             <Text style={styles.title}>{title}</Text>
             {onClose ? (
-              <Pressable
+              <FeedbackPressable
                 accessibilityLabel="Close"
                 hitSlop={8}
                 onPress={onClose}
                 style={styles.closeButton}
               >
                 <X color={colors.inkSoft} size={20} />
-              </Pressable>
+              </FeedbackPressable>
             ) : null}
           </View>
           <ScrollView
