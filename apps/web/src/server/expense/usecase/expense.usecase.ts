@@ -67,6 +67,7 @@ import {
 } from "@/server/expense/domain/settlementAllocation";
 import { oneOffPairKey, settledExpenseIds } from "@/server/expense/domain/settledExpenses";
 import { readerShareLine } from "@/server/expense/domain/readerShareLine";
+import { expenseNetChanges, type PaidAndOwed } from "@/server/expense/domain/balances";
 import { snapshot } from "@/server/common/db/db";
 import { UsecaseError, denied, invalid, notFound } from "@/server/common/errors";
 import {
@@ -504,6 +505,69 @@ async function assertLockedGroupParticipants(
   }
 }
 
+/**
+ * Refuses a change that would move a former member's balance in a group.
+ * Leaving needs a zero balance there, and nobody can record a group payment
+ * with someone who has left, so a removed payment or a changed expense under
+ * them would leave a debt nobody can clear (audit A07). Changes between
+ * people who are still members, and changes that leave a former member at
+ * zero, are not affected.
+ *
+ * @param groupId - The group whose ledger is changing.
+ * @param changeByUser - How much each person's net in that group moves, in cents.
+ * @param client - Transaction client holding the group's ledger lock.
+ * @throws UsecaseError (failed_precondition) naming a former member whose balance would move.
+ */
+async function assertFormerMembersUnmoved(
+  groupId: string,
+  changeByUser: Map<string, number>,
+  client: PoolClient,
+): Promise<void> {
+  const movedIds = [...changeByUser].filter(([, cents]) => cents !== 0).map(([userId]) => userId);
+  if (movedIds.length === 0) return;
+  const memberIds = new Set((await listMembers(groupId, client)).map((member) => member.id));
+  const formerId = movedIds.find((userId) => !memberIds.has(userId));
+  if (formerId === undefined) return;
+  const [former] = await findUsersByIds([formerId], client);
+  throw new UsecaseError(
+    "failed_precondition",
+    `${former?.name ?? "A former member"} has left this group, so this can't be changed: their balance here has to stay settled`,
+  );
+}
+
+/**
+ * The stored payers and shares of one expense, for {@link expenseNetChanges}.
+ *
+ * @param expenseId - The expense.
+ * @param children - Its child rows, loaded under the expense lock.
+ * @returns Who paid and who owes, in cents.
+ */
+function storedAmounts(expenseId: string, children: ExpenseChildren): PaidAndOwed {
+  return {
+    payers: (children.payers.get(expenseId) ?? []).map((payer) => ({
+      userId: payer.user_id,
+      amountCents: payer.amount_cents,
+    })),
+    splits: (children.splits.get(expenseId) ?? []).map((split) => ({
+      userId: split.user_id,
+      amountCents: split.owed_cents,
+    })),
+  };
+}
+
+/**
+ * The payers and shares a validated write will store, for {@link expenseNetChanges}.
+ *
+ * @param write - The authoritative write.
+ * @returns Who will have paid and who will owe, in cents.
+ */
+function writtenAmounts(write: ExpenseWrite): PaidAndOwed {
+  return {
+    payers: write.payers.map((payer) => ({ userId: payer.userId, amountCents: payer.amountCents })),
+    splits: write.splits.map((split) => ({ userId: split.userId, amountCents: split.owedCents })),
+  };
+}
+
 
 /**
  * Rebuilds the write shape used for deletion activity from stored rows.
@@ -807,6 +871,11 @@ export async function updateExpense(
         involvedUserIds(write),
         client,
       );
+      await assertFormerMembersUnmoved(
+        current.group_id,
+        expenseNetChanges(storedAmounts(expenseId, children), writtenAmounts(write)),
+        client,
+      );
     } else {
       await lockParticipantLedgers(client, participantIds);
       await assertLockedOneOffParticipants(userId, involvedUserIds(write), client);
@@ -862,6 +931,11 @@ export async function deleteExpense(userId: string, expenseId: string): Promise<
       await lockGroupLedgers(client, [existing.group_id]);
       await assertCanDelete(userId, existing, client);
       await assertGroupActive(existing.group_id, client);
+      await assertFormerMembersUnmoved(
+        existing.group_id,
+        expenseNetChanges(storedAmounts(expenseId, children), { payers: [], splits: [] }),
+        client,
+      );
     } else {
       await lockParticipantLedgers(client, participantIds);
     }
@@ -1877,6 +1951,19 @@ export async function deleteSettlement(userId: string, settlementId: string): Pr
     // Removing a net settlement reopens every scope in its unit, even when
     // the selected row itself lives outside an archived group.
     const groupsById = await assertGroupsActive(groupIds, client);
+    // Nor may it reopen a group balance of somebody who has since left it:
+    // nothing could settle that again (audit A07).
+    const lockedUnit = current.net_settlement_id
+      ? await listSettlementsByNetSettlement(current.net_settlement_id, client)
+      : [current];
+    for (const groupId of groupIds) {
+      const changeByUser = new Map<string, number>();
+      for (const portion of lockedUnit.filter((unitRow) => unitRow.group_id === groupId)) {
+        changeByUser.set(portion.from_user, (changeByUser.get(portion.from_user) ?? 0) - portion.amount_cents);
+        changeByUser.set(portion.to_user, (changeByUser.get(portion.to_user) ?? 0) + portion.amount_cents);
+      }
+      await assertFormerMembersUnmoved(groupId, changeByUser, client);
+    }
     let removed: SettlementRow[];
     if (current.net_settlement_id) {
       removed = await softDeleteNetSettlement(current.net_settlement_id, userId, client);

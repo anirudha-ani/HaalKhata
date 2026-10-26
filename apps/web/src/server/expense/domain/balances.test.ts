@@ -3,6 +3,7 @@
 import { describe, expect, it } from "vitest";
 import {
   expenseDebts,
+  expenseNetChanges,
   netBalances,
   pairwiseBalances,
   simplifyDebts,
@@ -185,5 +186,40 @@ describe("simplifyDebts", () => {
       { from: "a", to: "c", amountCents: 400 },
       { from: "b", to: "c", amountCents: 400 },
     ]);
+  });
+});
+
+describe("expenseNetChanges", () => {
+  const dinner = {
+    payers: [{ userId: "tomas", amountCents: 3000 }],
+    splits: ["rahim", "sara", "tomas"].map((userId) => ({ userId, amountCents: 1000 })),
+  };
+  const nothing = { payers: [], splits: [] };
+
+  it("reverses every net when the expense is deleted", () => {
+    expect(expenseNetChanges(dinner, nothing)).toEqual(
+      new Map([["tomas", -2000], ["rahim", 1000], ["sara", 1000]]),
+    );
+  });
+
+  it("leaves out a person whose net does not move", () => {
+    const ownTicket = {
+      payers: [{ userId: "tomas", amountCents: 1000 }],
+      splits: [{ userId: "tomas", amountCents: 1000 }],
+    };
+    expect(expenseNetChanges(ownTicket, nothing)).toEqual(new Map());
+  });
+
+  it("reports only the people an edit actually moves", () => {
+    const rahimPaysInstead = {
+      payers: [
+        { userId: "tomas", amountCents: 2000 },
+        { userId: "rahim", amountCents: 1000 },
+      ],
+      splits: dinner.splits,
+    };
+    expect(expenseNetChanges(dinner, rahimPaysInstead)).toEqual(
+      new Map([["tomas", -1000], ["rahim", 1000]]),
+    );
   });
 });

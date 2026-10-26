@@ -123,6 +123,36 @@ export function netBalances(debts: LedgerEntry[]): Map<string, number> {
   return netByUser;
 }
 
+/** Who paid and who owes on one expense, as {@link expenseNetChanges} compares them. */
+export interface PaidAndOwed {
+  payers: PartyAmount[];
+  splits: PartyAmount[];
+}
+
+/**
+ * How much each person's net (paid − owed) moves when one expense changes
+ * from `before` to `after`. A deleted expense changes to nothing (empty
+ * lists). People whose net does not move are left out, so a replacement
+ * that only shuffles the same amounts between the same people moves nobody.
+ *
+ * @param before - The expense as stored.
+ * @param after - The expense as it will be; empty lists when it is deleted.
+ * @returns Map of user id → non-zero change in cents (> 0 ⇒ owed more).
+ */
+export function expenseNetChanges(
+  before: PaidAndOwed,
+  after: PaidAndOwed,
+): Map<string, number> {
+  const changeByUser = new Map<string, number>();
+  const addChange = (userId: string, cents: number) =>
+    changeByUser.set(userId, (changeByUser.get(userId) ?? 0) + cents);
+  for (const payer of after.payers) addChange(payer.userId, payer.amountCents);
+  for (const split of after.splits) addChange(split.userId, -split.amountCents);
+  for (const payer of before.payers) addChange(payer.userId, -payer.amountCents);
+  for (const split of before.splits) addChange(split.userId, split.amountCents);
+  return new Map([...changeByUser].filter(([, cents]) => cents !== 0));
+}
+
 /**
  * Greedy min-cash-flow simplification: repeatedly matches the largest
  * creditor with the largest debtor and settles the smaller of the two
