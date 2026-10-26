@@ -549,6 +549,19 @@ export function GroupDetailScreen({
 
       {groupDetail.addingPeople ? (
         <Sheet
+          footer={
+            <View style={styles.addForm}>
+              {!groupDetail.inviteOffer && groupDetail.peopleError ? (
+                <Text accessibilityRole="alert" style={styles.addError}>{groupDetail.peopleError}</Text>
+              ) : null}
+              <Button
+                busy={groupDetail.addMembers.isPending}
+                disabled={!groupDetail.canAddPeople}
+                label="Add to group"
+                onPress={groupDetail.submitPeople}
+              />
+            </View>
+          }
           onClose={() => groupDetail.setAddingPeople(false)}
           title={`Add people to ${groupDetail.group.name}`}
         >
@@ -619,15 +632,7 @@ export function GroupDetailScreen({
                   variant="outline"
                 />
               </View>
-            ) : groupDetail.peopleError ? (
-              <Text style={styles.addError}>{groupDetail.peopleError}</Text>
             ) : null}
-            <Button
-              busy={groupDetail.addMembers.isPending}
-              disabled={!groupDetail.canAddPeople}
-              label="Add to group"
-              onPress={groupDetail.submitPeople}
-            />
           </View>
         </Sheet>
       ) : null}

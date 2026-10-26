@@ -16,7 +16,6 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { Spinner } from "@/components/ui/Spinner";
 import { Text } from "@/components/ui/Text";
-import { useErrorToast } from "@/components/ui/ToastProvider";
 import { colors, radii, spacing } from "@/lib/theme/theme";
 import { ContactsAccessCard } from "@/components/contacts/ContactsAccessCard/ContactsAccessCard";
 import { FoundSection } from "@/components/contacts/FoundSection/FoundSection";
@@ -38,7 +37,6 @@ import { useFindFriends } from "@/lib/contacts/hooks/useFindFriends";
  */
 export function FindFriendsScreen() {
   const finder = useFindFriends();
-  useErrorToast(finder.actionError);
   const { groups } = finder;
 
   /** @returns The part of the screen below the discoverability prompt. */
@@ -128,7 +126,7 @@ export function FindFriendsScreen() {
   };
 
   return (
-    <Screen header={<DetailHeader title={FIND_FRIENDS_COPY.title} />}>
+    <Screen error={finder.actionError} header={<DetailHeader title={FIND_FRIENDS_COPY.title} />}>
       <View style={styles.content}>
         {finder.me ? <ContactDiscoveryPrompt answer={finder.me.contactDiscovery} /> : null}
         {body()}

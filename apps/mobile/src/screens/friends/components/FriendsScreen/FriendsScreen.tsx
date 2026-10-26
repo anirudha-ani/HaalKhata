@@ -16,7 +16,6 @@ import { ScreenHeader } from "@/components/shell/ScreenHeader/ScreenHeader";
 import { Button } from "@/components/ui/Button";
 import { Segmented } from "@/components/ui/Segmented";
 import { Spinner } from "@/components/ui/Spinner";
-import { useErrorToast } from "@/components/ui/ToastProvider";
 import { colors, fonts, radii, spacing } from "@/lib/theme/theme";
 import { FRIENDS_TABS, type FriendsTab } from "../../constants/friendsTabs";
 import { AddFriendSheet } from "./components/AddFriendSheet/AddFriendSheet";
@@ -43,7 +42,6 @@ import { useFriends } from "./hooks/useFriends";
 export function FriendsScreen() {
   const friendsState = useFriends();
   const router = useRouter();
-  useErrorToast(friendsState.error);
   const currency = friendsState.me?.defaultCurrency ?? "USD";
   const counts: Record<FriendsTab, number> = {
     friends: friendsState.registeredFriends.length,
@@ -54,6 +52,7 @@ export function FriendsScreen() {
 
   return (
     <Screen
+      error={friendsState.showAdd ? "" : friendsState.error}
       header={<ScreenHeader />}
       onRefresh={friendsState.refresh}
       refreshing={friendsState.isRefreshing}

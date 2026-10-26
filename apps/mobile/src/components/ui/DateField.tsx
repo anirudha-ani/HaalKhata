@@ -3,7 +3,10 @@
 import DateTimePicker, { type DateTimePickerEvent } from "@react-native-community/datetimepicker";
 import { CalendarDays } from "lucide-react-native";
 import { useState } from "react";
-import { Pressable, StyleSheet, View } from "react-native";
+import { Keyboard, Platform, StyleSheet, View } from "react-native";
+import { Button } from "@/components/ui/Button";
+import { FeedbackPressable } from "@/components/ui/FeedbackPressable/FeedbackPressable";
+import { Sheet } from "@/components/ui/Sheet/Sheet";
 import { Text } from "@/components/ui/Text";
 import { colors, radii, spacing } from "@/lib/theme/theme";
 
@@ -36,17 +39,43 @@ export function DateField({
   label?: string;
 }) {
   const [showPicker, setShowPicker] = useState(false);
+  const [draftDate, setDraftDate] = useState(value);
   // Anchor at noon so time-zone offsets can't shift the calendar day.
-  const parsed = value ? new Date(`${value}T12:00:00`) : new Date();
+  const selectedDate = Platform.OS === "ios" ? draftDate : value;
+  const parsed = selectedDate ? new Date(`${selectedDate}T12:00:00`) : new Date();
 
   return (
     <View style={styles.container}>
       {label ? <Text style={styles.label}>{label}</Text> : null}
-      <Pressable accessibilityRole="button" accessibilityLabel={`${label ?? "Date"}: ${value}`} onPress={() => setShowPicker(true)} style={styles.field}>
+      <FeedbackPressable accessibilityLabel={`${label ?? "Date"}: ${value}`} onPress={() => {
+        Keyboard.dismiss();
+        setDraftDate(value || formatISODate(new Date()));
+        setShowPicker(true);
+      }} style={styles.field}>
         <Text style={styles.value}>{value}</Text>
         <CalendarDays color={colors.inkSoft} size={18} />
-      </Pressable>
-      {showPicker ? (
+      </FeedbackPressable>
+      {showPicker && Platform.OS === "ios" ? (
+        <Sheet
+          footer={<Button label="Done" onPress={() => {
+            onChange(draftDate);
+            setShowPicker(false);
+          }} />}
+          onClose={() => setShowPicker(false)}
+          title={label ?? "Date"}
+        >
+          <DateTimePicker
+            display="spinner"
+            mode="date"
+            onChange={(_event: DateTimePickerEvent, selected?: Date) => {
+              if (selected) setDraftDate(formatISODate(selected));
+            }}
+            style={styles.picker}
+            themeVariant="light"
+            value={parsed}
+          />
+        </Sheet>
+      ) : showPicker ? (
         <DateTimePicker
           mode="date"
           onChange={(event: DateTimePickerEvent, selected?: Date) => {
@@ -81,6 +110,10 @@ const styles = StyleSheet.create({
     color: colors.ink,
     fontSize: 14,
     fontWeight: "500",
+  },
+  picker: {
+    alignSelf: "center",
+    width: "100%",
   },
   value: {
     color: colors.ink,
