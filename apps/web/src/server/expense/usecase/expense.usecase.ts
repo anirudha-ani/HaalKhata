@@ -97,6 +97,7 @@ import {
   SPLIT_TYPES,
   EXPENSE_LIST_DISPLAY_LIMIT,
   ONE_OFF_NOT_CONNECTED_MESSAGE,
+  formerMemberRefusal,
 } from "@/server/expense/expense.constants";
 import { toExpense, toSettlement } from "./expense.mapper";
 import { findPaymentMethod } from "@/server/payment/repo/paymentMethods.repo";
@@ -529,9 +530,10 @@ async function assertFormerMembersUnmoved(
   const formerId = movedIds.find((userId) => !memberIds.has(userId));
   if (formerId === undefined) return;
   const [former] = await findUsersByIds([formerId], client);
+  const group = await findGroupById(groupId, client);
   throw new UsecaseError(
     "failed_precondition",
-    `${former?.name ?? "A former member"} has left this group, so this can't be changed: their balance here has to stay settled`,
+    formerMemberRefusal(former?.name ?? "A former member", group?.name ?? "this group"),
   );
 }
 

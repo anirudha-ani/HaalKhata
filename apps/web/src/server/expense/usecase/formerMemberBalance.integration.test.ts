@@ -98,7 +98,7 @@ describe.skipIf(!reachable)("changes that would move a former member's group bal
     return rows[0];
   }
 
-  const leftGroup = { code: "failed_precondition", message: expect.stringContaining("Tomas has left this group") };
+  const leftGroup = { code: "failed_precondition", message: expect.stringContaining('Tomas has left "Goa Trip"') };
 
   beforeAll(async () => {
     const admin = new Client({ connectionString: ADMIN_URL });

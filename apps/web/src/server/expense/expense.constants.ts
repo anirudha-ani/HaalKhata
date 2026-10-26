@@ -14,6 +14,19 @@ import {
 export const ONE_OFF_NOT_CONNECTED_MESSAGE =
   "you can only split with people you already share a friendship or a group with";
 
+/**
+ * Why a change touching a former member's group balance is refused. Named by
+ * group because a payment is removed from a friend's page, where no group
+ * is on screen.
+ *
+ * @param personName - The member who left.
+ * @param groupName - The group they left.
+ * @returns The sentence shown beside the refused control.
+ */
+export function formerMemberRefusal(personName: string, groupName: string): string {
+  return `${personName} has left "${groupName}", so this can't be changed: their balance there has to stay settled`;
+}
+
 /** Split types the API accepts; mirrors the split calculators in domain/splits. */
 export const SPLIT_TYPES = new Set(["equal", "exact", "percent", "shares", "itemized"]);
 
