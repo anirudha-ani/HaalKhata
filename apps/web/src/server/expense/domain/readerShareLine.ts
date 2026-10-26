@@ -32,6 +32,43 @@ export function readerShareLine(
   payerNames: Map<string, string>,
 ): string {
   if (verb === "deleted") return "";
+  const position = readerPosition(money, readerId, payerNames);
+  if (position === "") return "";
+  return verb === "updated" ? `now you ${position}` : `you ${position}`;
+}
+
+/**
+ * The line for somebody an edit took off an expense: what they no longer
+ * owe or get back from it, read off the expense as it was before the edit.
+ *
+ * @param before - The expense's payers, splits and currency before the edit.
+ * @param readerId - The person who is no longer on it.
+ * @param payerNames - Display names of the payers who are known.
+ * @returns "you're no longer on it", with what that undid when it moved them.
+ */
+export function removedReaderLine(
+  before: ExpenseMoney,
+  readerId: string,
+  payerNames: Map<string, string>,
+): string {
+  const position = readerPosition(before, readerId, payerNames);
+  return position === "" ? "you're no longer on it" : `you're no longer on it, so you no longer ${position}`;
+}
+
+/**
+ * What an expense means for one person, as the rest of a sentence about
+ * them: "owe Ani ৳600", "get back ৳1,800", or "" when it leaves them even.
+ *
+ * @param money - The expense's payers, splits and currency.
+ * @param readerId - The person it is read for.
+ * @param payerNames - Display names of the payers who are known.
+ * @returns The phrase without its subject, or "".
+ */
+function readerPosition(
+  money: ExpenseMoney,
+  readerId: string,
+  payerNames: Map<string, string>,
+): string {
   const paidCents = money.payers
     .filter((payer) => payer.userId === readerId)
     .reduce((total, payer) => total + payer.amountCents, 0);
@@ -40,10 +77,9 @@ export function readerShareLine(
     .reduce((total, split) => total + split.owedCents, 0);
   const netCents = paidCents - owedCents;
   if (netCents === 0) return "";
-  const lead = verb === "updated" ? "now " : "";
   const amount = formatMoney(Math.abs(netCents), money.currency);
-  if (netCents > 0) return `${lead}you get back ${amount}`;
+  if (netCents > 0) return `get back ${amount}`;
   const otherPayers = [...new Set(money.payers.map((payer) => payer.userId))].filter((payerId) => payerId !== readerId);
   const payerName = otherPayers.length === 1 ? payerNames.get(otherPayers[0]) : undefined;
-  return payerName ? `${lead}you owe ${payerName} ${amount}` : `${lead}you owe ${amount}`;
+  return payerName ? `owe ${payerName} ${amount}` : `owe ${amount}`;
 }

@@ -66,7 +66,7 @@ import {
   positionDigest,
 } from "@/server/expense/domain/settlementAllocation";
 import { oneOffPairKey, settledExpenseIds } from "@/server/expense/domain/settledExpenses";
-import { readerShareLine } from "@/server/expense/domain/readerShareLine";
+import { readerShareLine, removedReaderLine } from "@/server/expense/domain/readerShareLine";
 import { expenseNetChanges, type PaidAndOwed } from "@/server/expense/domain/balances";
 import { snapshot } from "@/server/common/db/db";
 import { UsecaseError, denied, invalid, notFound } from "@/server/common/errors";
@@ -658,6 +658,13 @@ function storedExpenseWrite(expense: ExpenseRow, children: ExpenseChildren): Exp
  * notification for every participant except the actor, each carrying that
  * reader's own money line.
  *
+ * An edit also reaches everyone it took off the expense (audit A13): their
+ * balance moved too, and their notification says what they no longer owe or
+ * get back. Off a group expense they can still open it, so they are in the
+ * feed line as well. Off a one-off expense they cannot, so their
+ * notification links to their page with the editor instead, and the feed
+ * line, one link for everyone, stays with the people still on it.
+ *
  * @param actorId - User who performed the change.
  * @param expenseId - Id of the affected expense (used for links).
  * @param write - The expense contents used to build the messages.
@@ -666,6 +673,7 @@ function storedExpenseWrite(expense: ExpenseRow, children: ExpenseChildren): Exp
  *   feed event and notifications commit with it, or not at all: an expense
  *   that exists without its announcement, or an announcement of an expense
  *   that rolled back, are both records nobody can reconcile.
+ * @param before - For an edit, the expense as it was, to find who it took off.
  */
 async function recordExpenseActivity(
   actorId: string,
@@ -673,15 +681,20 @@ async function recordExpenseActivity(
   write: ExpenseWrite,
   verb: "added" | "updated" | "deleted",
   client: PoolClient,
+  before?: ExpenseWrite,
 ): Promise<void> {
   const actor = (await findUserById(actorId, client))!;
   const group = write.groupId ? await findGroupById(write.groupId, client) : undefined;
   const locationSuffix = group ? ` in "${group.name}"` : "";
+  const participantIds = involvedUserIds(write);
+  const removedIds = before
+    ? involvedUserIds(before).filter((participantId) => !participantIds.includes(participantId))
+    : [];
   // The participants plus whoever recorded it — never the whole group. A
   // transaction is announced to the people whose money it moved; a member
   // who is not on the expense reads the group's ledger tabs, not a feed
   // line about other people's dinner.
-  const audience = [...new Set([...involvedUserIds(write), actorId])];
+  const audience = [...new Set([...participantIds, ...(write.groupId ? removedIds : []), actorId])];
   await insertActivity(
     {
       groupId: write.groupId,
@@ -701,23 +714,28 @@ async function recordExpenseActivity(
   // for them: "Goa trip · you owe Ani ৳600". One row per reader, because the
   // money line is theirs alone, written in one statement while the ledger
   // lock is held.
-  const payerIds = [...new Set(write.payers.map((payer) => payer.userId))];
+  const payerIds = [
+    ...new Set([...write.payers, ...(before?.payers ?? [])].map((payer) => payer.userId)),
+  ];
   const payerNames = new Map(
     (await findUsersByIds(payerIds, client)).map((payer) => [payer.id, payer.name] as const),
   );
   const scopeName = group ? group.name : "One-off expense";
   await insertNotificationRows(
-    involvedUserIds(write)
+    [...participantIds, ...removedIds]
       .filter((participantId) => participantId !== actorId)
       .map((recipientId) => {
-        const moneyLine = readerShareLine(write, recipientId, verb, payerNames);
+        const removed = before !== undefined && removedIds.includes(recipientId);
+        const moneyLine = removed
+          ? removedReaderLine(before, recipientId, payerNames)
+          : readerShareLine(write, recipientId, verb, payerNames);
         return {
           userId: recipientId,
           actorId,
           type: `expense_${verb}`,
           title: `${actor.name} ${verb} "${write.description}"`,
           body: moneyLine ? `${scopeName} · ${moneyLine}` : scopeName,
-          link: `/expenses/${expenseId}`,
+          link: removed && !write.groupId ? `/friends/${actorId}` : `/expenses/${expenseId}`,
         };
       }),
     client,
@@ -951,7 +969,14 @@ export async function updateExpense(
     }
     write.createdBy = current.created_by;
     await replaceExpense(expenseId, write, client);
-    await recordExpenseActivity(userId, expenseId, write, "updated", client);
+    await recordExpenseActivity(
+      userId,
+      expenseId,
+      write,
+      "updated",
+      client,
+      storedExpenseWrite(current, children),
+    );
   });
   return getExpenseProto(expenseId);
 }

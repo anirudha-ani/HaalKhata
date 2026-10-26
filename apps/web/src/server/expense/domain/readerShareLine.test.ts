@@ -2,7 +2,7 @@
 
 import { describe, expect, it } from "vitest";
 import { formatMoney } from "@haalkhata/shared/money/money";
-import { readerShareLine, type ExpenseMoney } from "./readerShareLine";
+import { readerShareLine, removedReaderLine, type ExpenseMoney } from "./readerShareLine";
 
 const DINNER: ExpenseMoney = {
   currency: "BDT",
@@ -54,5 +54,28 @@ describe("readerShareLine", () => {
 
   it("falls back to no name when the payer's name is unknown", () => {
     expect(readerShareLine(DINNER, "boba", "added", new Map())).toBe(`you owe ${formatMoney(60_000, "BDT")}`);
+  });
+});
+
+describe("removedReaderLine", () => {
+  it("tells somebody taken off what they no longer owe, naming the payer", () => {
+    expect(removedReaderLine(DINNER, "boba", NAMES)).toBe(
+      `you're no longer on it, so you no longer owe Ani ${formatMoney(60_000, "BDT")}`,
+    );
+  });
+
+  it("tells the payer taken off what they no longer get back", () => {
+    expect(removedReaderLine(DINNER, "ani", NAMES)).toBe(
+      `you're no longer on it, so you no longer get back ${formatMoney(180_000, "BDT")}`,
+    );
+  });
+
+  it("says only that they are off it when it had left them even", () => {
+    const even: ExpenseMoney = {
+      currency: "BDT",
+      payers: [{ userId: "boba", amountCents: 60_000 }],
+      splits: [{ userId: "boba", owedCents: 60_000 }],
+    };
+    expect(removedReaderLine(even, "boba", NAMES)).toBe("you're no longer on it");
   });
 });
