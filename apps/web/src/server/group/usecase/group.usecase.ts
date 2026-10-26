@@ -466,6 +466,10 @@ export async function addMembers(
   // batch, the friendships it implies, and the announcement commit together.
   const added = await withLedgerTransaction(async (client) => {
     await lockGroupLedgers(client, [input.groupId]);
+    // Again under the lock: the check above ran before this request waited
+    // for it, and a removal that held the lock meanwhile must not be undone
+    // by an add the removed member already had in flight.
+    await assertGroupMember(input.groupId, userId, client);
     const enrolled = await enrollMembers(userId, input.groupId, candidateIds, client);
     if (enrolled.length === 0) {
       // Nothing happened, and silently reporting success would leave the modal
