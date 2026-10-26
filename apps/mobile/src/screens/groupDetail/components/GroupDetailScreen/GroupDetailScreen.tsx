@@ -374,7 +374,7 @@ export function GroupDetailScreen({
                       userId={person.id}
                     >
                       <Avatar size="sm" user={person} />
-                      <Text numberOfLines={1} style={styles.memberName}>
+                      <Text style={styles.memberName}>
                         {person.name}
                         {isMe ? <Text style={styles.memberTag}> · you</Text> : null}
                         {isOwner ? <Text style={styles.memberTag}> · owner</Text> : null}
@@ -734,7 +734,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     flexWrap: "wrap",
     gap: spacing.sm,
-    justifyContent: "flex-end",
+    justifyContent: "flex-start",
   },
   memberBlocked: {
     backgroundColor: colors.neg50,
@@ -796,10 +796,7 @@ const styles = StyleSheet.create({
   },
   memberPerson: {
     alignItems: "center",
-    width: 160,
-    maxWidth: "100%",
-    flexGrow: 1,
-    flexShrink: 1,
+    width: "100%",
     flexDirection: "row",
     gap: spacing.md,
     minWidth: 0,

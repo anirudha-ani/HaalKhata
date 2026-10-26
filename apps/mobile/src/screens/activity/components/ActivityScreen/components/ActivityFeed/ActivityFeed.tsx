@@ -94,7 +94,9 @@ export function ActivityFeed({
           <ScrollView
             contentContainerStyle={styles.months}
             horizontal
+            keyboardShouldPersistTaps="handled"
             showsHorizontalScrollIndicator={false}
+            style={styles.monthScroller}
           >
             <Chip
               label="All time"
@@ -169,8 +171,12 @@ const styles = StyleSheet.create({
     minWidth: 0,
   },
   months: {
+    alignItems: "flex-start",
     flexDirection: "row",
     gap: spacing.sm,
+  },
+  monthScroller: {
+    flexGrow: 0,
   },
   results: {
     gap: spacing.xl,
