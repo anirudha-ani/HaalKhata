@@ -142,9 +142,11 @@ describe("removeFriend", () => {
     expect(deleteFriendship).not.toHaveBeenCalled();
   });
 
-  it("checks the balance only under both lock families", async () => {
+  it("checks the balance only under both lock families, ledgers first", async () => {
     // The zero read is only trustworthy while one-off writers are held out;
-    // locks taken after the check would guard nothing.
+    // locks taken after the check would guard nothing. Ledgers before inboxes
+    // is the order a one-off expense takes them in (audit A06): the reverse
+    // let each hold one kind while waiting for the other, and deadlock.
     const order: string[] = [];
     vi.mocked(lockFriendRequestInboxes).mockImplementation(async () => {
       order.push("inboxes");
@@ -159,7 +161,7 @@ describe("removeFriend", () => {
 
     await removeFriend(CALLER, FRIEND);
 
-    expect(order).toEqual(["inboxes", "ledgers", "net"]);
+    expect(order).toEqual(["ledgers", "inboxes", "net"]);
   });
 
   it("deletes the friendship when settled", async () => {

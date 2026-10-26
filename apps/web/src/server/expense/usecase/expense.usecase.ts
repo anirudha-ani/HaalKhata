@@ -95,6 +95,7 @@ import {
   SETTLEMENT_METHODS,
   SPLIT_TYPES,
   EXPENSE_LIST_DISPLAY_LIMIT,
+  ONE_OFF_NOT_CONNECTED_MESSAGE,
 } from "@/server/expense/expense.constants";
 import { toExpense, toSettlement } from "./expense.mapper";
 import { findPaymentMethod } from "@/server/payment/repo/paymentMethods.repo";
@@ -348,14 +349,48 @@ async function validateExpenseParticipants(
     }
   } else {
     if (!involved.includes(userId)) denied("you must be part of a one-off expense");
-    const [friendIds, coMemberIds] = await Promise.all([
-      listFriendIds(userId),
-      listCoMemberIds(userId),
-    ]);
-    const connectedIds = new Set([...friendIds, ...coMemberIds, userId]);
+    const connectedIds = await connectedUserIds(userId);
     if (involved.some((participantId) => !connectedIds.has(participantId))) {
-      denied("you can only split with people you already share a friendship or a group with");
+      denied(ONE_OFF_NOT_CONNECTED_MESSAGE);
     }
+  }
+}
+
+/**
+ * Everyone a caller may share a one-off expense with: their friends, the
+ * people they share a group with, and themselves.
+ *
+ * @param userId - The caller.
+ * @param client - Transaction client, for the re-check under the ledger locks.
+ * @returns The connected user ids, the caller included.
+ */
+async function connectedUserIds(userId: string, client?: PoolClient): Promise<Set<string>> {
+  const friendIds = await listFriendIds(userId, client);
+  const coMemberIds = await listCoMemberIds(userId, client);
+  return new Set([...friendIds, ...coMemberIds, userId]);
+}
+
+/**
+ * Re-checks, under the participant ledger locks, that the caller is still
+ * connected to everyone on a one-off expense. The check in
+ * {@link validateExpenseParticipants} ran before this request waited for the
+ * locks, and a friend removal holding them meanwhile must not be undone by
+ * a write already in flight: it would put the removed friend into debt and
+ * re-create the friendship (audit A05).
+ *
+ * @param actorId - Authenticated caller writing the expense.
+ * @param participantIds - Everyone the write puts on the expense.
+ * @param client - The write's transaction, holding the participant locks.
+ * @throws UsecaseError (permission_denied) when anyone is no longer connected.
+ */
+async function assertLockedOneOffParticipants(
+  actorId: string,
+  participantIds: string[],
+  client: PoolClient,
+): Promise<void> {
+  const connectedIds = await connectedUserIds(actorId, client);
+  if (participantIds.some((participantId) => !connectedIds.has(participantId))) {
+    denied(ONE_OFF_NOT_CONNECTED_MESSAGE);
   }
 }
 
@@ -601,6 +636,7 @@ export async function createExpense(userId: string, request: CreateExpenseReques
       await assertLockedGroupParticipants(write.groupId, userId, participantIds, client);
     } else {
       await lockParticipantLedgers(client, participantIds);
+      await assertLockedOneOffParticipants(userId, participantIds, client);
     }
     const insertedId = await insertExpense(write, client);
     // One-off expenses imply a friend connection between all participants.
@@ -773,6 +809,7 @@ export async function updateExpense(
       );
     } else {
       await lockParticipantLedgers(client, participantIds);
+      await assertLockedOneOffParticipants(userId, involvedUserIds(write), client);
     }
     if (preserveSplitType) {
       const saved = {

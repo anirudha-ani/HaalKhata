@@ -96,8 +96,10 @@ export async function lockReminder(
 /**
  * Serializes pending-request and friendship changes for a deterministic set
  * of inboxes, preventing accept/send races from recreating stale requests.
- * Account merges take these same locks, in the same sorted order, before
- * their row locks on users — the one order every path takes them in.
+ * A path that also needs ledger locks (group or participant) takes those
+ * first and these second — a one-off expense befriending its participants,
+ * a group enrolment, a friend removal — so no two paths can each hold one
+ * kind while waiting for the other.
  *
  * @param client - Existing transaction client.
  * @param userIds - Inbox owner ids to lock, in any order.

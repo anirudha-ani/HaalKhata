@@ -686,9 +686,12 @@ async function notifyInviteAccepted(
  * no feed event. Shared history and group co-memberships are untouched, and
  * they can be re-added later.
  *
- * The transaction takes the pair's inbox locks first (the order every
- * friendship writer uses), then both participant ledger locks, so the zero
- * check cannot race a concurrent one-off expense or settlement. Group
+ * The transaction takes both participant ledger locks first, then the
+ * pair's inbox locks: the order every path that needs both takes them in
+ * (a one-off expense locks its ledgers, then befriends), so the two cannot
+ * deadlock. Holding the ledgers means the zero check cannot race a
+ * concurrent one-off expense or settlement, and an expense that queued
+ * behind this removal re-checks the friendship before writing. Group
  * writes need no serializing here: a group debt lives with the group and
  * both memberships either way.
  *
@@ -704,12 +707,13 @@ export async function removeFriend(userId: string, friendId: string): Promise<vo
     notFound("you're not friends with them");
   }
   await transaction(async (client) => {
-    // Inbox locks first (the order every friendship writer takes), then the
-    // participant ledger locks every one-off expense and settlement writer
-    // holds — so the zero check below cannot race money being written
-    // between this pair.
-    await lockFriendRequestInboxes(client, [userId, friendId]);
+    // Ledger locks first, then inbox locks: the one order every path that
+    // needs both takes them in, so this cannot deadlock with a one-off
+    // expense (ledgers, then the befriending inside insertFriendship). The
+    // ledger locks keep the zero check below from racing money being
+    // written between this pair.
     await lockParticipantLedgers(client, [userId, friendId]);
+    await lockFriendRequestInboxes(client, [userId, friendId]);
     const nets = await netWithUser(userId, friendId);
     if ([...nets.values()].some((cents) => cents !== 0)) {
       throw new UsecaseError(

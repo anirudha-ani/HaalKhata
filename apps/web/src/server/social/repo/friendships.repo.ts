@@ -81,12 +81,14 @@ export async function deleteFriendship(
  * Lists the ids of everyone the given user has an explicit friendship with.
  *
  * @param userId - Id of the user whose friends to look up.
+ * @param client - Transaction client, so a read under a lock stays on its connection.
  * @returns The friend user ids (unordered).
  */
-export async function listFriendIds(userId: string): Promise<string[]> {
+export async function listFriendIds(userId: string, client?: PoolClient): Promise<string[]> {
   const friendshipRows = await query<{ friend_id: string }>(
     `SELECT friend_id FROM friendships WHERE user_id = $1`,
     [userId],
+    client,
   );
   return friendshipRows.map((friendshipRow) => friendshipRow.friend_id);
 }

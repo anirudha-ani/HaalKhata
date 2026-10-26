@@ -10,6 +10,10 @@ import {
   MAX_SETTLEMENT_NOTE_LENGTH,
 } from "@haalkhata/shared/text/limits";
 
+/** The refusal for a one-off expense with somebody the caller is not connected to. */
+export const ONE_OFF_NOT_CONNECTED_MESSAGE =
+  "you can only split with people you already share a friendship or a group with";
+
 /** Split types the API accepts; mirrors the split calculators in domain/splits. */
 export const SPLIT_TYPES = new Set(["equal", "exact", "percent", "shares", "itemized"]);
 

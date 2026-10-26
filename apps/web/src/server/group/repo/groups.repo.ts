@@ -191,14 +191,16 @@ export async function listMembersByGroupIds(groupIds: string[]): Promise<Map<str
  * other, and the friends list shows them once they share an expense.
  *
  * @param userId - Id of the user whose co-members to look up.
+ * @param client - Transaction client, so a read under a lock stays on its connection.
  * @returns Distinct user ids sharing a group with them, excluding themselves.
  */
-export async function listCoMemberIds(userId: string): Promise<string[]> {
+export async function listCoMemberIds(userId: string, client?: PoolClient): Promise<string[]> {
   const coMemberRows = await query<{ user_id: string }>(
     `SELECT DISTINCT theirs.user_id FROM group_members AS mine
      JOIN group_members AS theirs ON theirs.group_id = mine.group_id
      WHERE mine.user_id = $1 AND theirs.user_id <> $1`,
     [userId],
+    client,
   );
   return coMemberRows.map((coMemberRow) => coMemberRow.user_id);
 }
