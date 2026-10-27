@@ -34,7 +34,7 @@ import { insertNotifications } from "@/server/social/repo/notifications.repo";
 import {
   currencyAmounts,
   groupIsSettled,
-  userNetInGroup,
+  memberDebtsInGroup,
   userNetInGroups,
 } from "@/server/expense/usecase/balance.usecase";
 import { denied, invalid, notFound, UsecaseError } from "@/server/common/errors";
@@ -652,8 +652,8 @@ export async function setSimplifyDebts(
 }
 
 /**
- * Removes a member from a group, but only when that member's net balance in
- * the group is settled (exactly zero) in every currency it holds.
+ * Removes a member from a group, but only when no debt in the group still
+ * names them — in any currency, along the group's own routing.
  *
  * @param userId - Id of the authenticated caller requesting the removal.
  * @param input - The group id and the id of the member to remove.
@@ -677,9 +677,11 @@ export async function removeMemberFromGroup(
     } else {
       await assertGroupOwner(input.groupId, userId, client);
     }
-    // Settled in every currency: a dollar owed and a euro paid back in the
-    // same group are two open balances, not a zero (audit A20).
-    if ((await userNetInGroup(input.userId, input.groupId, client)).size > 0) {
+    // No debt in the group may still name them, in any currency: a dollar
+    // owed and a euro paid back are two open balances (audit A20), and in a
+    // group that does not simplify, a zero total can be one person owed and
+    // another owing (B08) — neither payable once they are gone.
+    if ((await memberDebtsInGroup(input.userId, input.groupId, client)).length > 0) {
       // Worded for whoever is reading it: someone leaving is not "a member"
       // being removed. Clients explain this before asking, with the amount;
       // this is what a stale client, or a race with a new expense, shows.

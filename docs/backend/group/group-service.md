@@ -10,7 +10,7 @@ The Group Service is essential for:
 - **Membership:** who may be put on a group expense, and who hears the
   group's feed events.
 - **Consent boundaries:** who may add people, who may remove them, and the
-  zero-balance gate that keeps removal from erasing debt.
+  removal gate that keeps removal from erasing debt.
 - **Debt routing:** the per-group simplify-debts switch that changes which
   payments the whole system proposes and accepts.
 
@@ -28,7 +28,7 @@ SQL in [groups.repo.ts](../../../apps/web/src/server/group/repo/groups.repo.ts).
 | Read (`GetGroup`, `ListGroups`, feed, balances) | members only | |
 | Add members | **any member** | A group is a shared ledger; whoever notices somebody is missing from the dinner is rarely the person who happened to create the group. |
 | Remove somebody else | owner only | The destructive direction — and still gated on a settled balance. |
-| Remove yourself | any non-owner member | Membership is consensual only if the person a co-member enrolled can walk out again. Same zero-balance gate. |
+| Remove yourself | any non-owner member | Membership is consensual only if the person a co-member enrolled can walk out again. Same removal gate. |
 | Transfer ownership | owner only | Also how an owner leaves: hand the role on, become an ordinary member, then leave like anyone else. |
 | Archive / unarchive | **any member** | Archiving requires every participant to be settled in every currency; unarchiving restores money writes. |
 | Flip simplify-debts | **any member** | Same trust level as adding people: a routing mode over fully derived balances — rewrites nothing, always reversible. |
@@ -48,14 +48,26 @@ or not they have signed up yet, is the group's join link. The connected set incl
 because two people who met in somebody else's group have no friendship row
 yet would still be offered to each other in the picker.
 
-**The zero-balance removal gate:** a member can only be removed (or leave)
-when their net in the group is exactly zero **in every currency it holds**.
-Removing someone who owes—or is owed—would orphan derived debt. A group can
-hold a payment in a currency other than its own (written before 30 August
-2026, when a cross-scope payment took the payment's currency into every
-scope), and a dollar owed with a euro paid back is two open balances, not a
-zero (audit A20; `mixedCurrencyGroup.integration.test.ts`). Clients explain
-the refusal with every amount (`memberRemovalBlock`).
+**The removal gate:** a member can only be removed (or leave) once **no
+debt in the group names them**, in any currency, along the group's own
+routing (`memberDebtsInGroup`). Removing someone who owes—or is owed—would
+orphan the debt: a group payment needs both people to be members, so nobody
+could pay it, and the group could never be archived.
+
+- A zero total is not enough. In a group that does not simplify debts,
+  someone can owe one person and be owed by another (audit B08;
+  `pairwiseLeave.integration.test.ts`). Turning Simplify debts on routes
+  those around them and frees them to leave.
+- Nor is one currency. A group can hold a payment in a currency other than
+  its own (written before 30 August 2026, when a cross-scope payment took
+  the payment's currency into every scope), and a dollar owed with a euro
+  paid back is two open balances (audit A20;
+  `mixedCurrencyGroup.integration.test.ts`).
+- A person-to-person loop that cancels out holds nobody in: it is not debt,
+  and a payment along it is refused anyway.
+
+Clients explain the refusal before sending it, with every amount and, for an
+even total, every debt by name (`memberRemovalBlock`, `memberDebts`).
 
 ## Consistency
 

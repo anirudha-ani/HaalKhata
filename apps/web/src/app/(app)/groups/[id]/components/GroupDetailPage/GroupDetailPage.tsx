@@ -247,6 +247,7 @@ export function GroupDetailPage({
           resettingLink={groupDetail.resettingInviteLink}
           feedback={groupDetail.memberFeedback}
           balances={groupDetail.balanceSections ?? []}
+          simplified={groupDetail.simplified}
           onViewBalances={() => {
             groupDetail.setViewingMembers(false);
             groupDetail.setTab("balances");

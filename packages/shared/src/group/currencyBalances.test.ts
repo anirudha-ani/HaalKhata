@@ -1,7 +1,13 @@
 /** Unit tests for reading a group's balances one currency at a time. */
 
 import { describe, expect, it } from "vitest";
-import { groupBalanceSections, groupPositionCaption, memberBuckets, yourGroupBuckets } from "./currencyBalances";
+import {
+  groupBalanceSections,
+  groupPositionCaption,
+  memberBuckets,
+  memberDebts,
+  yourGroupBuckets,
+} from "./currencyBalances";
 
 const dollars = {
   currency: "USD",
@@ -81,3 +87,51 @@ describe("groupPositionCaption", () => {
     );
   });
 });
+
+describe("memberDebts", () => {
+  // Dev's total is zero, yet Ben owes him and he owes Ana (audit B08).
+  const trip = {
+    currency: "USD",
+    nets: [
+      { userId: "ana", netCents: 5000 },
+      { userId: "ben", netCents: -5000 },
+      { userId: "dev", netCents: 0 },
+    ],
+    debts: [
+      { fromUserId: "ben", toUserId: "dev", amountCents: 5000 },
+      { fromUserId: "dev", toUserId: "ana", amountCents: 5000 },
+    ],
+    simplified: [{ fromUserId: "ben", toUserId: "ana", amountCents: 5000 }],
+  };
+
+  it("reads the person-to-person debts naming a member whose total is zero", () => {
+    expect(memberDebts([trip], "dev", false)).toEqual([
+      { currency: "USD", counterpartId: "ben", cents: 5000 },
+      { currency: "USD", counterpartId: "ana", cents: -5000 },
+    ]);
+  });
+
+  it("finds none once the group simplifies, since the plan routes around them", () => {
+    expect(memberDebts([trip], "dev", true)).toEqual([]);
+    expect(memberDebts([trip], "ben", true)).toEqual([{ currency: "USD", counterpartId: "ana", cents: -5000 }]);
+  });
+
+  it("does not count a loop that cancels out", () => {
+    const loop = {
+      currency: "USD",
+      nets: [
+        { userId: "ana", netCents: 0 },
+        { userId: "ben", netCents: 0 },
+        { userId: "dev", netCents: 0 },
+      ],
+      debts: [
+        { fromUserId: "ben", toUserId: "ana", amountCents: 1000 },
+        { fromUserId: "dev", toUserId: "ben", amountCents: 1000 },
+        { fromUserId: "ana", toUserId: "dev", amountCents: 1000 },
+      ],
+      simplified: [],
+    };
+    expect(memberDebts([loop], "dev", false)).toEqual([]);
+  });
+});
+

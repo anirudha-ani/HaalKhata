@@ -1,6 +1,7 @@
 /** Per-currency balance helpers — a position is one amount per currency, never a sum across them. */
 
 import { formatMoney } from "./money";
+import { listInWords } from "../text/listInWords";
 
 /** One amount in one currency, as the API's CurrencyAmount carries it. */
 export interface CurrencyBucket {
@@ -104,9 +105,7 @@ export function outstandingBuckets(
  * @returns The amounts joined as English does; "" for none.
  */
 export function amountsInWords(buckets: readonly CurrencyBucket[]): string {
-  const amounts = buckets.map((bucket) => formatMoney(Math.abs(bucket.cents), bucket.currency));
-  if (amounts.length <= 1) return amounts.join("");
-  return `${amounts.slice(0, -1).join(", ")} and ${amounts[amounts.length - 1]}`;
+  return listInWords(buckets.map((bucket) => formatMoney(Math.abs(bucket.cents), bucket.currency)));
 }
 
 /**

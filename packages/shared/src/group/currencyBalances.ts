@@ -101,3 +101,46 @@ export function groupPositionCaption(buckets: readonly CurrencyBucket[]): string
   if (outstanding.every((bucket) => bucket.cents < 0)) return "you owe";
   return outstanding.map((bucket) => (bucket.cents > 0 ? "owed to you" : "you owe")).join(" · ");
 }
+
+/** A debt that names one member, read from their side. */
+export interface MemberDebt {
+  /** ISO 4217 code of the debt. */
+  currency: string;
+  /** The other person on it. */
+  counterpartId: string;
+  /** Signed cents: > 0 means the other person owes the member. */
+  cents: number;
+}
+
+/**
+ * The debts in a group that still name one member, along the group's own
+ * routing: person to person, or the simplified plan. The server refuses to
+ * let them leave, or be removed, while any remain (audit B08) — a total of
+ * zero can still be one person owed and another owing — so the clients say
+ * so first. A person-to-person loop that cancels out is not debt (every net
+ * is zero, and a payment along it is refused), so it holds nobody in.
+ *
+ * @param sections - The group's balances per currency.
+ * @param userId - The member.
+ * @param simplified - Whether the group simplifies debts.
+ * @returns The debts naming them, from their side; empty when they can go.
+ */
+export function memberDebts<Debt extends { fromUserId: string; toUserId: string; amountCents: number }>(
+  sections: readonly GroupCurrencySection<{ netCents: number }, Debt>[],
+  userId: string,
+  simplified: boolean,
+): MemberDebt[] {
+  return sections.flatMap((section) => {
+    const debts = simplified ? section.simplified : section.debts;
+    const cancelsOut = !simplified && section.nets.every((position) => position.netCents === 0);
+    if (cancelsOut) return [];
+    return debts.flatMap((debt) =>
+      debt.fromUserId === userId
+        ? [{ currency: section.currency, counterpartId: debt.toUserId, cents: -debt.amountCents }]
+        : debt.toUserId === userId
+          ? [{ currency: section.currency, counterpartId: debt.fromUserId, cents: debt.amountCents }]
+          : [],
+    );
+  });
+}
+

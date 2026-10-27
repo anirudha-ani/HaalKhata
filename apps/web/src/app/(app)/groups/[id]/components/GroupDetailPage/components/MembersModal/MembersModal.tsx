@@ -14,7 +14,11 @@ import {
   type MemberFeedback,
 } from "@haalkhata/shared/group/memberActions";
 import { OWNER_ROLE } from "@haalkhata/shared/group/roles";
-import { memberBuckets } from "@haalkhata/shared/group/currencyBalances";
+import {
+  memberBuckets,
+  memberDebts,
+  type GroupCurrencySection,
+} from "@haalkhata/shared/group/currencyBalances";
 import { errorMessage, socialClient } from "@/lib/api/connect";
 import { Avatar } from "@/components/ui/Avatar/Avatar";
 import { PersonLink } from "@/components/people/PersonLink/PersonLink";
@@ -73,6 +77,7 @@ export function MembersModal({
   resettingLink,
   feedback,
   balances,
+  simplified,
   onViewBalances,
   onClose,
 }: {
@@ -98,9 +103,15 @@ export function MembersModal({
   feedback: MemberFeedback | null;
   /**
    * The group's balances per currency (each member's net, > 0 means they are
-   * owed); empty until they load. A member leaves only once settled in all.
+   * owed, and the debts between people); empty until they load. A member
+   * leaves only once no debt names them in any currency.
    */
-  balances: readonly { currency: string; nets: readonly { userId: string; netCents: number }[] }[];
+  balances: readonly GroupCurrencySection<
+    { userId: string; netCents: number },
+    { fromUserId: string; toUserId: string; amountCents: number }
+  >[];
+  /** The group's simplify-debts mode, which decides which debts name whom. */
+  simplified: boolean;
   /** Closes this list and shows the group's balances. */
   onViewBalances: () => void;
   /** Called when the modal is dismissed. */
@@ -115,6 +126,11 @@ export function MembersModal({
   const [requestedIds, setRequestedIds] = useState<Set<string>>(new Set());
   // The member action waiting on its confirmation, if any.
   const [pending, setPending] = useState<{ userId: string; action: MemberAction } | null>(null);
+  // Names for the other person on a debt; one who has left the group is no
+  // longer a member to look up.
+  const nameOf = new Map(
+    members.flatMap((member) => (member.user ? [[member.user.id, member.user.name] as const] : [])),
+  );
   const viewerIsOwner = members.some(
     (member) => member.user?.id === meId && member.role === OWNER_ROLE,
   );
@@ -146,7 +162,17 @@ export function MembersModal({
           // over is allowed whatever anyone owes.
           const block =
             armed === "remove"
-              ? memberRemovalBlock(person.name, isMe, memberBuckets(balances, person.id))
+              ? memberRemovalBlock(
+                  person.name,
+                  isMe,
+                  memberBuckets(balances, person.id),
+                  memberDebts(balances, person.id, simplified).map((debt) => ({
+                    currency: debt.currency,
+                    cents: debt.cents,
+                    counterpartName: nameOf.get(debt.counterpartId) ?? "a former member",
+                    counterpartIsViewer: debt.counterpartId === meId,
+                  })),
+                )
               : null;
           const note: { tone: "error" | "success"; message: string } | null =
             requestError?.userId === person.id

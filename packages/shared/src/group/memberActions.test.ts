@@ -81,6 +81,44 @@ describe("memberRemovalBlock", () => {
     );
   });
 
+  it("names each debt when the total is even but debts still name the member", () => {
+    // Ben owes Dev and Dev owes Ana, in a group that does not simplify
+    // (audit B08): neither could be paid once Dev was gone.
+    const debts = [
+      { currency: "USD", cents: 5000, counterpartName: "Ben" },
+      { currency: "USD", cents: -5000, counterpartName: "Ana" },
+    ];
+    expect(memberRemovalBlock("Dev Rao", true, [], debts)).toEqual({
+      title: "You can't leave this group yet",
+      detail:
+        "Ben owes you $50.00 and you owe Ana $50.00 here. Your total is even, but each has to be settled before you can leave — or turn on Simplify debts so they are paid around you.",
+    });
+    expect(memberRemovalBlock("Dev Rao", false, [], debts)?.detail).toBe(
+      "Ben owes them $50.00 and they owe Ana $50.00 in this group. Their total is even, but each has to be settled first — or turn on Simplify debts so they are paid around them.",
+    );
+  });
+
+  it("calls the owner removing someone 'you' when a debt is with them", () => {
+    const debts = [
+      { currency: "USD", cents: 5000, counterpartName: "Ben" },
+      { currency: "USD", cents: -5000, counterpartName: "Ana", counterpartIsViewer: true },
+    ];
+    expect(memberRemovalBlock("Dev Rao", false, [], debts)?.detail).toMatch(
+      /^Ben owes them \$50\.00 and they owe you \$50\.00 in this group\./,
+    );
+    const owedByOwner = [{ currency: "USD", cents: 5000, counterpartName: "Ana", counterpartIsViewer: true }];
+    expect(memberRemovalBlock("Dev Rao", false, [], owedByOwner)?.detail).toMatch(
+      /^You owe them \$50\.00 in this group\./,
+    );
+  });
+
+  it("speaks of the totals when they are not even, as before", () => {
+    const debts = [{ currency: "USD", cents: -5000, counterpartName: "Ana" }];
+    expect(memberRemovalBlock("Dev Rao", true, [{ currency: "USD", cents: -5000 }], debts)?.detail).toBe(
+      "You owe $50.00 here. Settle up first, then you can leave.",
+    );
+  });
+
   it("never shows a signed amount", () => {
     expect(memberRemovalBlock("Leo Chen", false, [{ currency: "USD", cents: -1250 }])?.detail).not.toContain("-");
   });

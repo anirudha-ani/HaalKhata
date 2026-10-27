@@ -369,6 +369,48 @@ export async function userNetInGroup(
   return nets;
 }
 
+/** A debt in a group that names one member, in one currency, along the group's route. */
+export interface MemberDebt {
+  currency: string;
+  fromUserId: string;
+  toUserId: string;
+  amountCents: number;
+}
+
+/**
+ * The debts in a group that still name a member, currency by currency,
+ * along the route the group's mode prescribes — person to person, or the
+ * simplified plan.
+ *
+ * A member whose total is zero can still owe one person and be owed by
+ * another in a group that does not simplify. Once they left, neither debt
+ * could be paid — a group payment needs both people to be members — so
+ * leaving waits until none remain (audit B08). A pairwise loop that cancels
+ * out is not debt (see {@link groupCancelsOut}): nobody owes anybody
+ * overall and a payment along it is refused, so it holds nobody in.
+ *
+ * @param userId - The member.
+ * @param groupId - The group.
+ * @param client - Transaction client holding the group-ledger lock.
+ * @returns The debts naming them; empty when they can go.
+ */
+export async function memberDebtsInGroup(
+  userId: string,
+  groupId: string,
+  client?: PoolClient,
+): Promise<MemberDebt[]> {
+  const simplify = (await findGroupById(groupId, client))?.simplify_debts ?? false;
+  const debts: MemberDebt[] = [];
+  for (const [currency, ledger] of await groupLedger(groupId, client)) {
+    if (!simplify && cancelsOut(ledger)) continue;
+    for (const edge of routeDebts(ledger, simplify)) {
+      if (edge.from !== userId && edge.to !== userId) continue;
+      debts.push({ currency, fromUserId: edge.from, toUserId: edge.to, amountCents: edge.amountCents });
+    }
+  }
+  return debts;
+}
+
 /**
  * Batched: each group's net position for a specific user, per currency, in
  * one database query for every group at once. Nets are routing-independent,

@@ -41,7 +41,7 @@ import { Spinner } from "@/components/ui/Spinner";
 import { errorMessage } from "@/lib/api/connect";
 import { colors, radii, spacing } from "@/lib/theme/theme";
 import { memberActionPrompt, memberRemovalBlock } from "@haalkhata/shared/group/memberActions";
-import { memberBuckets } from "@haalkhata/shared/group/currencyBalances";
+import { memberBuckets, memberDebts } from "@haalkhata/shared/group/currencyBalances";
 import { OWNER_ROLE } from "@haalkhata/shared/group/roles";
 import {
   ARCHIVED_GROUP_HINT,
@@ -363,6 +363,15 @@ export function GroupDetailScreen({
                       person.name,
                       isMe,
                       memberBuckets(groupDetail.balanceSections ?? [], person.id),
+                      memberDebts(groupDetail.balanceSections ?? [], person.id, groupDetail.simplified).map(
+                        (debt) => ({
+                          currency: debt.currency,
+                          cents: debt.cents,
+                          // One who has left the group is no longer a member to look up.
+                          counterpartName: groupDetail.userById.get(debt.counterpartId)?.name ?? "a former member",
+                          counterpartIsViewer: debt.counterpartId === groupDetail.me?.id,
+                        }),
+                      ),
                     )
                   : null;
               const prompt =

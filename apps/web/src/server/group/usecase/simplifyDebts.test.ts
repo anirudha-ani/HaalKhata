@@ -42,6 +42,7 @@ vi.mock("@/server/social/repo/friendships.repo", () => ({
 vi.mock("@/server/social/repo/activity.repo", () => ({ insertActivity: vi.fn() }));
 vi.mock("@/server/social/repo/notifications.repo", () => ({ insertNotifications: vi.fn() }));
 vi.mock("@/server/expense/usecase/balance.usecase", () => ({
+  memberDebtsInGroup: vi.fn(),
   userNetInGroup: vi.fn(),
   userNetInGroups: vi.fn(),
   groupIsSettled: vi.fn(),
@@ -77,7 +78,7 @@ import {
 import { findUserByEmail, findUserById, findUsersByIds } from "@/server/auth/repo/users.repo";
 import { listFriendIds } from "@/server/social/repo/friendships.repo";
 import { insertActivity } from "@/server/social/repo/activity.repo";
-import { groupIsSettled, userNetInGroup } from "@/server/expense/usecase/balance.usecase";
+import { groupIsSettled, memberDebtsInGroup, userNetInGroup } from "@/server/expense/usecase/balance.usecase";
 import { lockGroupLedgers } from "@/server/common/ledger/ledgerLocks";
 import {
   MAX_GROUP_MEMBER_IDS_PER_REQUEST,
@@ -180,15 +181,27 @@ describe("group membership authorization", () => {
     expect(addMember).not.toHaveBeenCalled();
   });
 
-  it("lets a zero-balance non-owner leave a group", async () => {
+  it("lets a non-owner no debt names leave a group", async () => {
     vi.mocked(memberRole).mockResolvedValue("member");
-    vi.mocked(userNetInGroup).mockResolvedValue(new Map());
+    vi.mocked(memberDebtsInGroup).mockResolvedValue([]);
 
     await removeMemberFromGroup(MEMBER, { groupId: TRIP, userId: MEMBER });
 
     expect(lockGroupLedgers).toHaveBeenCalledWith(transactionClient, [TRIP]);
-    expect(userNetInGroup).toHaveBeenCalledWith(MEMBER, TRIP, transactionClient);
+    expect(memberDebtsInGroup).toHaveBeenCalledWith(MEMBER, TRIP, transactionClient);
     expect(removeMember).toHaveBeenCalledWith(TRIP, MEMBER, transactionClient);
+  });
+
+  it("keeps a member in while a debt still names them, whatever their total", async () => {
+    vi.mocked(memberRole).mockResolvedValue("member");
+    vi.mocked(memberDebtsInGroup).mockResolvedValue([
+      { currency: "USD", fromUserId: "user-ben", toUserId: MEMBER, amountCents: 5000 },
+    ]);
+
+    await expect(removeMemberFromGroup(MEMBER, { groupId: TRIP, userId: MEMBER })).rejects.toThrow(
+      /outstanding balance/,
+    );
+    expect(removeMember).not.toHaveBeenCalled();
   });
 
   it("still prevents the owner from leaving without handing the group on", async () => {
