@@ -1,7 +1,7 @@
 /** Archive and restore popup wording and decisions shared by web and mobile. */
 
 import { allBalancesSettled, ARCHIVE_GROUP_HINT, GROUP_ARCHIVE_ACTIONS } from "./archiving";
-import { formatMoney } from "../money/money";
+import { amountsInWords } from "../money/balances";
 import { GroupStatus, type GroupArchiveStatus } from "./status";
 
 /** Button captions for archive popups. */
@@ -25,14 +25,13 @@ export interface GroupArchivePrompt {
  * Chooses the archive popup without sending a mutation that is known to fail.
  * Restoration is always offered; archiving requires loaded, settled balances.
  *
- * @param input - Group name, currency, desired lifecycle status and current member nets.
+ * @param input - Group name, desired lifecycle status and current member nets per currency.
  * @returns A confirmation with consequences, or an explanation with no confirm action.
  */
 export function groupArchivePrompt(input: {
   groupName: string;
-  currency: string;
   status: GroupArchiveStatus;
-  balances: readonly { netCents: number }[] | undefined;
+  balances: readonly { currency: string; nets: readonly { netCents: number }[] }[] | undefined;
 }): GroupArchivePrompt {
   if (input.status === GroupStatus.ACTIVE) {
     return {
@@ -49,13 +48,17 @@ export function groupArchivePrompt(input: {
     };
   }
   if (!allBalancesSettled(input.balances)) {
-    const outstandingCents = input.balances.reduce(
-      (running, balance) => running + Math.max(0, balance.netCents),
-      0,
-    );
+    // What is still to change hands, per currency: the sum of what is owed
+    // to the people owed it. Never added across currencies.
+    const outstanding = input.balances
+      .map((section) => ({
+        currency: section.currency,
+        cents: section.nets.reduce((running, balance) => running + Math.max(0, balance.netCents), 0),
+      }))
+      .filter((bucket) => bucket.cents !== 0);
     return {
       title: "This group cannot be archived yet",
-      detail: `There is still ${formatMoney(outstandingCents, input.currency)} to settle in this group. ${ARCHIVE_GROUP_HINT}`,
+      detail: `There is still ${amountsInWords(outstanding)} to settle in this group. ${ARCHIVE_GROUP_HINT}`,
       confirmLabel: null,
     };
   }

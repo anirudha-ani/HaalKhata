@@ -14,6 +14,7 @@ import {
   type MemberFeedback,
 } from "@haalkhata/shared/group/memberActions";
 import { OWNER_ROLE } from "@haalkhata/shared/group/roles";
+import { memberBuckets } from "@haalkhata/shared/group/currencyBalances";
 import { errorMessage, socialClient } from "@/lib/api/connect";
 import { Avatar } from "@/components/ui/Avatar/Avatar";
 import { PersonLink } from "@/components/people/PersonLink/PersonLink";
@@ -71,8 +72,7 @@ export function MembersModal({
   onResetLink,
   resettingLink,
   feedback,
-  nets,
-  currency,
+  balances,
   onViewBalances,
   onClose,
 }: {
@@ -96,10 +96,11 @@ export function MembersModal({
   resettingLink: boolean;
   /** The last failure or confirmation from an action here, and the row it belongs under. */
   feedback: MemberFeedback | null;
-  /** Each member's net in the group (> 0 means they are owed); empty until balances load. */
-  nets: { userId: string; netCents: number }[];
-  /** The group's ISO 4217 currency code, for the amounts in a refusal. */
-  currency: string;
+  /**
+   * The group's balances per currency (each member's net, > 0 means they are
+   * owed); empty until they load. A member leaves only once settled in all.
+   */
+  balances: readonly { currency: string; nets: readonly { userId: string; netCents: number }[] }[];
   /** Closes this list and shows the group's balances. */
   onViewBalances: () => void;
   /** Called when the modal is dismissed. */
@@ -145,12 +146,7 @@ export function MembersModal({
           // over is allowed whatever anyone owes.
           const block =
             armed === "remove"
-              ? memberRemovalBlock(
-                  person.name,
-                  isMe,
-                  nets.find((position) => position.userId === person.id)?.netCents ?? 0,
-                  currency,
-                )
+              ? memberRemovalBlock(person.name, isMe, memberBuckets(balances, person.id))
               : null;
           const note: { tone: "error" | "success"; message: string } | null =
             requestError?.userId === person.id

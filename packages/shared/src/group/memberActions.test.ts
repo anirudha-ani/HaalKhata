@@ -38,12 +38,12 @@ describe("memberActionPrompt", () => {
 
 describe("memberRemovalBlock", () => {
   it("lets a settled member go", () => {
-    expect(memberRemovalBlock("Radhika Sen", false, 0, "USD")).toBeNull();
-    expect(memberRemovalBlock("Anirudha Paul", true, 0, "USD")).toBeNull();
+    expect(memberRemovalBlock("Radhika Sen", false, [])).toBeNull();
+    expect(memberRemovalBlock("Anirudha Paul", true, [])).toBeNull();
   });
 
   it("tells someone leaving what they owe", () => {
-    expect(memberRemovalBlock("Anirudha Paul", true, -5239, "USD")).toEqual({
+    expect(memberRemovalBlock("Anirudha Paul", true, [{ currency: "USD", cents: -5239 }])).toEqual({
       title: "You can't leave this group yet",
       detail: "You owe $52.39 here. Settle up first, then you can leave.",
     });
@@ -51,21 +51,37 @@ describe("memberRemovalBlock", () => {
 
   it("tells someone leaving what they are owed", () => {
     // Being owed money blocks leaving just the same: the net has to be zero.
-    const block = memberRemovalBlock("Anirudha Paul", true, 88000, "USD");
+    const block = memberRemovalBlock("Anirudha Paul", true, [{ currency: "USD", cents: 88000 }]);
     expect(block?.detail).toBe("You are owed $880.00 here. Once that is settled you can leave.");
   });
 
   it("names the member an owner is trying to remove, in either direction", () => {
-    expect(memberRemovalBlock("Diego Fernandez", false, 88000, "USD")).toEqual({
+    expect(memberRemovalBlock("Diego Fernandez", false, [{ currency: "USD", cents: 88000 }])).toEqual({
       title: "Diego Fernandez can't be removed yet",
       detail: "They are owed $880.00 in this group. That has to be settled first.",
     });
-    expect(memberRemovalBlock("Leo Chen", false, -1250, "EUR")?.detail).toBe(
+    expect(memberRemovalBlock("Leo Chen", false, [{ currency: "EUR", cents: -1250 }])?.detail).toBe(
       "They owe €12.50 in this group. That has to be settled first.",
     );
   });
 
+  it("names both balances when a member owes in one currency and is owed in another", () => {
+    // A dollar owed and a euro paid back in the same group are two balances,
+    // not one that cancels (a payment recorded in euros before group
+    // payments were kept to the group's currency).
+    const buckets = [
+      { currency: "USD", cents: -10000 },
+      { currency: "EUR", cents: 10000 },
+    ];
+    expect(memberRemovalBlock("Ben Ito", true, buckets)?.detail).toBe(
+      "You owe $100.00 and are owed €100.00 here. Both have to be settled before you can leave.",
+    );
+    expect(memberRemovalBlock("Ben Ito", false, buckets)?.detail).toBe(
+      "They owe $100.00 and are owed €100.00 in this group. Both have to be settled first.",
+    );
+  });
+
   it("never shows a signed amount", () => {
-    expect(memberRemovalBlock("Leo Chen", false, -1250, "USD")?.detail).not.toContain("-");
+    expect(memberRemovalBlock("Leo Chen", false, [{ currency: "USD", cents: -1250 }])?.detail).not.toContain("-");
   });
 });

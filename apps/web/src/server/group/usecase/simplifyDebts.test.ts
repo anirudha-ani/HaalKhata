@@ -182,7 +182,7 @@ describe("group membership authorization", () => {
 
   it("lets a zero-balance non-owner leave a group", async () => {
     vi.mocked(memberRole).mockResolvedValue("member");
-    vi.mocked(userNetInGroup).mockResolvedValue(0);
+    vi.mocked(userNetInGroup).mockResolvedValue(new Map());
 
     await removeMemberFromGroup(MEMBER, { groupId: TRIP, userId: MEMBER });
 
@@ -338,7 +338,7 @@ describe("setStatus", () => {
   });
 
   it("rejects archiving when anyone in the group still has an outstanding balance", async () => {
-    vi.mocked(userNetInGroup).mockResolvedValue(0);
+    vi.mocked(userNetInGroup).mockResolvedValue(new Map());
     vi.mocked(groupIsSettled).mockResolvedValue(false);
     await expect(setStatus(MEMBER, { groupId: TRIP, status: GroupStatus.ARCHIVED })).rejects.toMatchObject({
       code: "failed_precondition",

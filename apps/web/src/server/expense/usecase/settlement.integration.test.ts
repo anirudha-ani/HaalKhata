@@ -178,7 +178,7 @@ describe.skipIf(!reachable)("recordSettlement against Postgres", () => {
   it("moves every ledger the pair can see, together", async () => {
     // The other half of the incident: a friends-tab settlement used to leave
     // the group still demanding the money. One recording must zero both.
-    expect(await userNetInGroup(DEBTOR, "grp-1")).toBe(0);
+    expect(await userNetInGroup(DEBTOR, "grp-1")).toEqual(new Map());
     expect(await netWithUser(DEBTOR, CREDITOR)).toEqual(new Map());
   });
 
@@ -221,15 +221,15 @@ describe.skipIf(!reachable)("recordSettlement against Postgres", () => {
     // moves: they paid 5000 against a 5000 share; at a 4000 share they are
     // owed the 1000 they overpaid …
     await updateExpense(DEBTOR, "exp-1", campsite(8000));
-    expect(await userNetInGroup(DEBTOR, "grp-1")).toBe(1000);
+    expect(await userNetInGroup(DEBTOR, "grp-1")).toEqual(new Map([["USD", 1000]]));
     // … and at a 6000 share they owe the extra 1000 instead.
     await updateExpense(CREDITOR, "exp-1", campsite(12_000));
-    expect(await userNetInGroup(DEBTOR, "grp-1")).toBe(-1000);
+    expect(await userNetInGroup(DEBTOR, "grp-1")).toEqual(new Map([["USD", -1000]]));
 
     // Back to the recorded split, so the rest of the suite sees the settled
     // ledger it expects.
     await updateExpense(CREDITOR, "exp-1", campsite(10_000));
-    expect(await userNetInGroup(DEBTOR, "grp-1")).toBe(0);
+    expect(await userNetInGroup(DEBTOR, "grp-1")).toEqual(new Map());
     const { rows } = await database.query(
       `SELECT description, deleted_at FROM expenses WHERE id = 'exp-1'`,
     );
@@ -334,13 +334,13 @@ describe.skipIf(!reachable)("recordSettlement against Postgres", () => {
       tipCents: 0,
     } as never);
     await recordSettlement(...payment(DEBTOR, CREDITOR, 3000));
-    expect(await userNetInGroup(DEBTOR, "grp-1")).toBe(0);
+    expect(await userNetInGroup(DEBTOR, "grp-1")).toEqual(new Map());
 
     await deleteExpense(CREDITOR, snack.id);
 
     // Delete means owed-to-zero; the payment stays, so the debtor is now owed
     // the 3000 they paid for an expense that no longer counts.
-    expect(await userNetInGroup(DEBTOR, "grp-1")).toBe(3000);
+    expect(await userNetInGroup(DEBTOR, "grp-1")).toEqual(new Map([["USD", 3000]]));
     // … and every ledger surface still shows the row that explains why.
     const listed = await listExpenses(DEBTOR, { groupId: "grp-1" }, { cursor: "", limit: 0 });
     expect(listed.expenses.find((expense) => expense.id === snack.id)?.deletedAt).not.toBe("");
@@ -356,7 +356,7 @@ describe.skipIf(!reachable)("recordSettlement against Postgres", () => {
     // The creditor refunds the 3000, so the rest of the suite sees the
     // settled ledger it expects.
     await recordSettlement(...payment(CREDITOR, DEBTOR, 3000));
-    expect(await userNetInGroup(DEBTOR, "grp-1")).toBe(0);
+    expect(await userNetInGroup(DEBTOR, "grp-1")).toEqual(new Map());
   });
 
   it("brings the debt back when a mistaken payment is removed, keeping the line", async () => {
@@ -383,12 +383,12 @@ describe.skipIf(!reachable)("recordSettlement against Postgres", () => {
       method: "cash",
       note: "",
     });
-    expect(await userNetInGroup(DEBTOR, "grp-1")).toBe(0);
+    expect(await userNetInGroup(DEBTOR, "grp-1")).toEqual(new Map());
 
     // The recipient may remove it too; here the payer who mistyped it does.
     await deleteSettlement(DEBTOR, mistaken.id);
 
-    expect(await userNetInGroup(DEBTOR, "grp-1")).toBe(-2000);
+    expect(await userNetInGroup(DEBTOR, "grp-1")).toEqual(new Map([["USD", -2000]]));
     const ledgerLine = (await getFriendLedger(DEBTOR, CREDITOR)).entries.find(
       (entry) => entry.kind === "settlement" && entry.id === mistaken.id,
     );
@@ -405,7 +405,7 @@ describe.skipIf(!reachable)("recordSettlement against Postgres", () => {
       method: "cash",
       note: "",
     });
-    expect(await userNetInGroup(DEBTOR, "grp-1")).toBe(0);
+    expect(await userNetInGroup(DEBTOR, "grp-1")).toEqual(new Map());
     expect(fuel.id).toBeTruthy();
   });
 
@@ -511,8 +511,8 @@ describe.skipIf(!reachable)("recordSettlement against Postgres", () => {
     // process, one pool connection each. The SQL sum must land on the same
     // number the full walk does, live rows only.
     const batched = await userNetInGroups(DEBTOR, ["grp-1", "grp-missing"]);
-    expect(batched.get("grp-1")).toBe(await userNetInGroup(DEBTOR, "grp-1"));
-    expect(batched.get("grp-missing")).toBe(0);
+    expect(batched.get("grp-1")).toEqual(await userNetInGroup(DEBTOR, "grp-1"));
+    expect(batched.get("grp-missing")).toEqual(new Map());
   });
 
   it("delivers exactly one reminder under a concurrent burst at the cooldown boundary", async () => {

@@ -31,7 +31,12 @@ import { EMAIL_PATTERN, normalizePhone, PHONE_FORMAT_HINT } from "@/server/auth/
 import { insertFriendships, listFriendIds } from "@/server/social/repo/friendships.repo";
 import { insertActivity } from "@/server/social/repo/activity.repo";
 import { insertNotifications } from "@/server/social/repo/notifications.repo";
-import { groupIsSettled, userNetInGroup, userNetInGroups } from "@/server/expense/usecase/balance.usecase";
+import {
+  currencyAmounts,
+  groupIsSettled,
+  userNetInGroup,
+  userNetInGroups,
+} from "@/server/expense/usecase/balance.usecase";
 import { denied, invalid, notFound, UsecaseError } from "@/server/common/errors";
 import { toInt32Cents } from "@/server/common/money/money";
 import { normalizeCurrencyCode } from "@/server/common/validation/validation";
@@ -328,11 +333,15 @@ export async function listGroups(userId: string) {
     listMembersByGroupIds(groupIds),
     userNetInGroups(userId, groupIds),
   ]);
-  return groups.map((group) => ({
-    group: toGroup(group, membersByGroup.get(group.id) ?? []),
-    memberCount: (membersByGroup.get(group.id) ?? []).length,
-    yourNetCents: toInt32Cents(netByGroup.get(group.id) ?? 0, "your balance in a group"),
-  }));
+  return groups.map((group) => {
+    const nets = netByGroup.get(group.id) ?? new Map<string, number>();
+    return {
+      group: toGroup(group, membersByGroup.get(group.id) ?? []),
+      memberCount: (membersByGroup.get(group.id) ?? []).length,
+      yourNetCents: toInt32Cents(nets.get(group.currency) ?? 0, "your balance in a group"),
+      yourBalances: currencyAmounts(nets, group.currency),
+    };
+  });
 }
 
 /**
@@ -644,7 +653,7 @@ export async function setSimplifyDebts(
 
 /**
  * Removes a member from a group, but only when that member's net balance in
- * the group is settled (exactly zero).
+ * the group is settled (exactly zero) in every currency it holds.
  *
  * @param userId - Id of the authenticated caller requesting the removal.
  * @param input - The group id and the id of the member to remove.
@@ -668,7 +677,9 @@ export async function removeMemberFromGroup(
     } else {
       await assertGroupOwner(input.groupId, userId, client);
     }
-    if ((await userNetInGroup(input.userId, input.groupId, client)) !== 0) {
+    // Settled in every currency: a dollar owed and a euro paid back in the
+    // same group are two open balances, not a zero (audit A20).
+    if ((await userNetInGroup(input.userId, input.groupId, client)).size > 0) {
       // Worded for whoever is reading it: someone leaving is not "a member"
       // being removed. Clients explain this before asking, with the amount;
       // this is what a stale client, or a race with a new expense, shows.

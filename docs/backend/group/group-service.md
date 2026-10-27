@@ -49,8 +49,13 @@ because two people who met in somebody else's group have no friendship row
 yet would still be offered to each other in the picker.
 
 **The zero-balance removal gate:** a member can only be removed (or leave)
-when their net in the group is exactly zero. Removing someone who owes—or is
-owed—would orphan derived debt.
+when their net in the group is exactly zero **in every currency it holds**.
+Removing someone who owes—or is owed—would orphan derived debt. A group can
+hold a payment in a currency other than its own (written before 30 August
+2026, when a cross-scope payment took the payment's currency into every
+scope), and a dollar owed with a euro paid back is two open balances, not a
+zero (audit A20; `mixedCurrencyGroup.integration.test.ts`). Clients explain
+the refusal with every amount (`memberRemovalBlock`).
 
 ## Consistency
 
@@ -180,7 +185,9 @@ three times is noise.
   (`userNetInGroups`) rather than one ledger walk per group — nets are
   routing-independent, so the sum agrees with the ledger math.
 - `your_net_cents` is int32-checked (`FailedPrecondition` when a balance
-  exceeds what the wire can carry).
+  exceeds what the wire can carry). It is the group's own currency only;
+  `your_balances` has every currency the caller holds a balance in there,
+  the group's first, and both apps read it (`yourGroupBuckets`).
 
 #### Request
 
@@ -192,7 +199,7 @@ three times is noise.
 
 | Field | Type | Description |
 | --- | --- | --- |
-| groups | repeated GroupSummary | `{ group, member_count, your_net_cents }`; net > 0 = the caller is owed in that group (in the group's currency). |
+| groups | repeated GroupSummary | `{ group, member_count, your_net_cents, your_balances }`; net > 0 = the caller is owed in that group. `your_net_cents` is in the group's currency; `your_balances` is one amount per currency, only non-zero ones. |
 
 ---
 

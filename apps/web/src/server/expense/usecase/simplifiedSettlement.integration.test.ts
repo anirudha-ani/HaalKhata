@@ -199,7 +199,7 @@ describe.skipIf(!reachable)("simplified-edge settlement against Postgres", () =>
 
   it("one payment settles the whole chain", async () => {
     for (const member of [ALICE, BOBBY, CARA]) {
-      expect(await userNetInGroup(member, TRIP)).toBe(0);
+      expect(await userNetInGroup(member, TRIP)).toEqual(new Map());
     }
     expect(await netWithUser(ALICE, CARA)).toEqual(new Map());
     expect(await netWithUser(BOBBY, ALICE)).toEqual(new Map());

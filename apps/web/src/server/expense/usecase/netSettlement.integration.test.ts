@@ -299,8 +299,8 @@ describe.skipIf(!reachable)("net settlement against Postgres", () => {
       secondOwes: ["grp-lisbon EUR 7599"],
     });
     expect((await netWithUser(PAYER, OWED)).get("USD")).toBe(-669);
-    expect(await userNetInGroup(OWED, "grp-catskills")).toBe(0);
-    expect(await userNetInGroup(OWED, "grp-reunion")).toBe(0);
+    expect(await userNetInGroup(OWED, "grp-catskills")).toEqual(new Map());
+    expect(await userNetInGroup(OWED, "grp-reunion")).toEqual(new Map());
   });
 
   it("stores the cash and the cancellations as one unit under a parent that states their totals", async () => {

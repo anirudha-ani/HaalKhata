@@ -656,13 +656,16 @@ created.
   moved no money by any method. The friend statement reads "You paid via
   bKash" when a name was kept.
 - **Validation (pre-lock):** not yourself; amount positive and bounded; note
-  bounded; recipient exists; for a group — both people members, currency
-  must be the group's.
+  bounded; recipient exists; for a group — both people members. The currency
+  defaults to the group's; another is accepted only to pay down a balance
+  the group already holds in it (an old payment in that currency), which is
+  checked under the lock — otherwise "this group settles in USD, not EUR".
 - **Under the pair lock (+ group locks), re-validated:**
   - Group payment: membership re-checked; a **cancelling loop** refuses
     (see [Debt Routing](#debt-routing-simplify-debts)); the payer must owe
-    the creditor along the group's routed graph, and the amount must not
-    exceed it (both numbers named in the error).
+    the creditor along the group's routed graph **in the payment's
+    currency**, and the amount must not exceed it (both numbers named in the
+    error).
   - Cross-scope payment: every shared group is locked first, then scopes
     where the payer owes are re-read server-side (a stale client selection
     cannot double-record); explicitly selected foreign-currency scopes are
@@ -691,7 +694,7 @@ created.
 | group_id | string | Explicit scope; empty = cross-scope allocation. |
 | to_user_id | string | The other person, whichever way the money moved. |
 | amount_cents | int32 | > 0, ≤ 2e9. |
-| currency | string | Group payments: must be the group's. Cross-scope: which currency's balances this pays down; empty = caller's default. |
+| currency | string | Group payments: the group's (the default), or a currency the group still holds a balance in between the two. Cross-scope: which currency's balances this pays down; empty = caller's default. |
 | method | string | `venmo` \| `zelle` \| `cashapp` \| `paypal` \| `cash` \| `bank` \| `other`. |
 | note | string | Optional, bounded. |
 | received | bool | True = they paid you. |
@@ -781,6 +784,15 @@ per scope; callers only use the response to confirm the recording):
   mode calls for, and the settle dialog can show both.
 - Every aggregate is int32-checked (`FailedPrecondition` names which number
   overflowed).
+- **Per currency.** A group's rows are in its currency, but until
+  30 August 2026 a cross-scope payment was stamped with the payment's
+  currency in every scope it touched, so a group can hold a payment in
+  another one. That is a balance of its own, never netted against the
+  group's (audits A20/B26): `by_currency` lists the group's currency first
+  (every member, even at zero) and any other after it, alphabetically, while
+  it holds anything. The top-level fields repeat the group's currency for
+  older clients. Both apps read it through `groupBalanceSections`
+  (`@haalkhata/shared/group/currencyBalances`).
 
 #### Request
 
@@ -795,8 +807,9 @@ per scope; callers only use the response to confirm the recording):
 | Field | Type | Description |
 | --- | --- | --- |
 | nets | repeated NetBalance | Sorted by user id; > 0 = owed. In the group's currency. |
-| debts | repeated Debt | Raw pairwise: expenses minus settlements. |
+| debts | repeated Debt | Raw pairwise: expenses minus settlements, in the group's currency. |
 | simplified | repeated Debt | Min-cash-flow over the same nets. |
+| by_currency | repeated GroupCurrencyBalances | `{ currency, nets, debts, simplified }` per currency the group holds money in, the group's own first. |
 
 ---
 

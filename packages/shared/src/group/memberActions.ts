@@ -1,6 +1,6 @@
 /** Wording for the member actions that ask first, and for the one the ledger can refuse — shared so both clients say the same thing. */
 
-import { formatMoney } from "../money/money";
+import { amountsInWords, type CurrencyBucket } from "../money/balances";
 
 /**
  * The member actions that wait for a second, deliberate tap: taking someone
@@ -90,39 +90,47 @@ export interface MemberRemovalBlock {
  * group is unsettled.
  *
  * The server refuses a removal unless the member's net in the group is
- * exactly zero, and a client holding the group's balances knows that before
- * it asks. Saying so up front, with the amount, replaces sending a request
- * that can only fail and then reporting the failure.
+ * exactly zero in every currency, and a client holding the group's balances
+ * knows that before it asks. Saying so up front, with the amounts, replaces
+ * sending a request that can only fail and then reporting the failure.
+ *
+ * A group can hold two currencies (a payment recorded in another before
+ * group payments were kept to the group's own), and a dollar owed with a
+ * euro paid back is two balances to settle, not one that cancels.
  *
  * @param personName - Display name of the member.
  * @param isSelf - Whether that member is the person asking, i.e. leaving.
- * @param netCents - The member's net in the group; > 0 means they are owed
- *   money, < 0 means they owe it.
- * @param currency - The group's ISO 4217 currency code.
- * @returns The refusal in words, or null when the balance is settled and the
- *   removal can go ahead.
+ * @param buckets - The member's net in the group per currency; > 0 means
+ *   they are owed money, < 0 means they owe it.
+ * @returns The refusal in words, or null when every balance is settled and
+ *   the removal can go ahead.
  */
 export function memberRemovalBlock(
   personName: string,
   isSelf: boolean,
-  netCents: number,
-  currency: string,
+  buckets: readonly CurrencyBucket[],
 ): MemberRemovalBlock | null {
-  if (netCents === 0) return null;
-  const amount = formatMoney(Math.abs(netCents), currency);
-  const owes = netCents < 0;
+  const owes = amountsInWords(buckets.filter((bucket) => bucket.cents < 0));
+  const owed = amountsInWords(buckets.filter((bucket) => bucket.cents > 0));
+  if (!owes && !owed) return null;
   if (isSelf) {
     return {
       title: "You can't leave this group yet",
-      detail: owes
-        ? `You owe ${amount} here. Settle up first, then you can leave.`
-        : `You are owed ${amount} here. Once that is settled you can leave.`,
+      detail:
+        owes && owed
+          ? `You owe ${owes} and are owed ${owed} here. Both have to be settled before you can leave.`
+          : owes
+            ? `You owe ${owes} here. Settle up first, then you can leave.`
+            : `You are owed ${owed} here. Once that is settled you can leave.`,
     };
   }
   return {
     title: `${personName} can't be removed yet`,
-    detail: owes
-      ? `They owe ${amount} in this group. That has to be settled first.`
-      : `They are owed ${amount} in this group. That has to be settled first.`,
+    detail:
+      owes && owed
+        ? `They owe ${owes} and are owed ${owed} in this group. Both have to be settled first.`
+        : owes
+          ? `They owe ${owes} in this group. That has to be settled first.`
+          : `They are owed ${owed} in this group. That has to be settled first.`,
   };
 }

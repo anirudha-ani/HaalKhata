@@ -15,6 +15,7 @@ import { GROUP_BALANCE_FILTERS, noGroupsMessage } from "@haalkhata/shared/group/
 import { GroupStatus } from "@haalkhata/shared/group/status";
 import { GROUP_ARCHIVE_EMPTY, GROUP_ARCHIVE_VIEWS } from "@haalkhata/shared/group/archiving";
 import { GROUP_TYPES, groupEmoji } from "@haalkhata/shared/group/groupTypes";
+import { yourGroupBuckets } from "@haalkhata/shared/group/currencyBalances";
 import { useGroups } from "./hooks/useGroups";
 import { MAX_GROUP_NAME_LENGTH } from "@haalkhata/shared/text/limits";
 
@@ -141,21 +142,26 @@ export function GroupsPage() {
                       {summary.memberCount} member{summary.memberCount === 1 ? "" : "s"}
                     </p>
                   </div>
+                  {/* One line per currency: a group can still hold a payment
+                      recorded in another currency before group payments were
+                      kept to its own, and that is a balance of its own. */}
                   <p className="text-sm">
-                    {summary.yourNetCents === 0 ? (
+                    {yourGroupBuckets(summary).length === 0 ? (
                       <span className="text-ink-soft">all settled up</span>
                     ) : (
-                      <>
-                        <span className="text-ink-soft">
-                          {summary.yourNetCents > 0 ? "you are owed " : "you owe "}
+                      yourGroupBuckets(summary).map((bucket) => (
+                        <span key={bucket.currency} className="block">
+                          <span className="text-ink-soft">
+                            {bucket.cents > 0 ? "you are owed " : "you owe "}
+                          </span>
+                          <Money
+                            cents={bucket.cents}
+                            currency={bucket.currency}
+                            signed
+                            className="font-semibold"
+                          />
                         </span>
-                        <Money
-                          cents={summary.yourNetCents}
-                          currency={summary.group.currency}
-                          signed
-                          className="font-semibold"
-                        />
-                      </>
+                      ))
                     )}
                   </p>
                 </Link>

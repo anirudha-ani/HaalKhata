@@ -2,6 +2,7 @@
 
 import { describe, expect, it } from "vitest";
 import {
+  amountsInWords,
   leadingBucket,
   outstandingBuckets,
   positionCaption,
@@ -97,5 +98,25 @@ describe("positionCaption", () => {
         { currency: "EUR", cents: 7599 },
       ]),
     ).toBe("owes you");
+  });
+});
+
+describe("amountsInWords", () => {
+  it("joins amounts the way a sentence does, each in its own currency, sign dropped", () => {
+    expect(amountsInWords([])).toBe("");
+    expect(amountsInWords([{ currency: "USD", cents: -1250 }])).toBe("$12.50");
+    expect(
+      amountsInWords([
+        { currency: "USD", cents: 1250 },
+        { currency: "EUR", cents: -500 },
+      ]),
+    ).toBe("$12.50 and €5.00");
+    expect(
+      amountsInWords([
+        { currency: "USD", cents: 1250 },
+        { currency: "EUR", cents: 500 },
+        { currency: "GBP", cents: 300 },
+      ]),
+    ).toBe("$12.50, €5.00 and £3.00");
   });
 });

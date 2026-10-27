@@ -71,7 +71,7 @@ import {
   planNetSettlement,
   positionDigest,
 } from "@/server/expense/domain/settlementAllocation";
-import { oneOffPairKey, settledExpenseIds } from "@/server/expense/domain/settledExpenses";
+import { groupScopeKey, oneOffPairKey, settledExpenseIds } from "@/server/expense/domain/settledExpenses";
 import { readerShareLine, removedReaderLine } from "@/server/expense/domain/readerShareLine";
 import { expenseNetChanges, type PaidAndOwed } from "@/server/expense/domain/balances";
 import {
@@ -1155,7 +1155,10 @@ export async function listExpenses(
           .filter((participantId) => participantId !== userId),
       ),
     ];
-    const viewerNetByGroupId = await userNetInGroups(userId, groupIds, client);
+    const viewerNetByGroupScope = new Map<string, number>();
+    for (const [groupId, nets] of await userNetInGroups(userId, groupIds, client)) {
+      for (const [currency, cents] of nets) viewerNetByGroupScope.set(groupScopeKey(groupId, currency), cents);
+    }
     // One-off slates are per currency, so the settledness lookup is keyed on
     // the counterparty and the expense's currency. One batch for everyone on
     // the page, not a round of reads per person.
@@ -1165,7 +1168,7 @@ export async function listExpenses(
         oneOffNetByPair.set(oneOffPairKey(counterpartyId, currency), cents);
       }
     }
-    return { rows, children, hasMore, nextCursor, participants, viewerNetByGroupId, oneOffNetByPair };
+    return { rows, children, hasMore, nextCursor, participants, viewerNetByGroupScope, oneOffNetByPair };
   });
 
   return {
@@ -1176,7 +1179,7 @@ export async function listExpenses(
     settledExpenseIds: settledExpenseIds(
       listed.participants,
       userId,
-      listed.viewerNetByGroupId,
+      listed.viewerNetByGroupScope,
       listed.oneOffNetByPair,
     ),
     truncated: legacy && listed.hasMore,
@@ -1245,12 +1248,11 @@ export async function getExpense(userId: string, expenseId: string, commentLimit
       // expense, so the detail page and the row that linked to it can never
       // disagree.
       const participantIds = moneyParticipantIds(expenseId, currentChildren);
-      const viewerNetByGroupId = new Map<string, number>();
+      const viewerNetByGroupScope = new Map<string, number>();
       if (current.group_id) {
-        viewerNetByGroupId.set(
-          current.group_id,
-          await userNetInGroup(userId, current.group_id, client),
-        );
+        for (const [currency, cents] of await userNetInGroup(userId, current.group_id, client)) {
+          viewerNetByGroupScope.set(groupScopeKey(current.group_id, currency), cents);
+        }
       }
       const oneOffNetByPair = new Map<string, number>();
       if (!current.group_id) {
@@ -1271,7 +1273,7 @@ export async function getExpense(userId: string, expenseId: string, commentLimit
             },
           ],
           userId,
-          viewerNetByGroupId,
+          viewerNetByGroupScope,
           oneOffNetByPair,
         ).length === 1;
 
@@ -1670,15 +1672,11 @@ async function prepareSettlement(
     if (!callerIsMember || !recipientIsMember) {
       denied("both people must be members of the group");
     }
-    // A group settles only in its own currency; relabelling the requested
-    // amount would silently invent an exchange rate.
-    const requestedCurrency = request.currency
-      ? normalizeCurrencyCode(request.currency)
-      : group.currency;
-    if (requestedCurrency !== group.currency) {
-      invalid(`this group settles in ${group.currency}, not ${requestedCurrency}`);
-    }
-    currency = group.currency;
+    // A group settles in its own currency. Another is accepted only to pay
+    // down a balance the group already holds in it, which the write checks
+    // under the group's lock; relabelling the amount would invent an
+    // exchange rate.
+    currency = request.currency ? normalizeCurrencyCode(request.currency) : group.currency;
   }
   if (!currency) currency = (await findUserById(userId))?.default_currency ?? "USD";
   currency = normalizeCurrencyCode(currency);
@@ -1718,13 +1716,18 @@ async function storeGroupSettlement(
   }
   // A pairwise loop that nets to zero is not debt. Paying one edge would
   // instead leave the payer owed elsewhere around the loop.
-  if (await groupCancelsOut(groupId, client)) {
+  if (await groupCancelsOut(groupId, currency, client)) {
     invalid(
       "these debts cancel out around a loop — everyone here is settled up overall; turn on Simplify debts to clear the view",
     );
   }
-  const outstandingCents = await amountOwed(payerId, creditorId, groupId, client);
+  const outstandingCents = await amountOwed(payerId, creditorId, groupId, currency, client);
   if (outstandingCents <= 0) {
+    // A payment in another currency can only pay down a balance the group
+    // already holds in it (one recorded before group payments were kept to
+    // the group's currency); with none, the currency is the mistake.
+    const groupCurrency = (await findGroupById(groupId, client))?.currency ?? currency;
+    if (currency !== groupCurrency) invalid(`this group settles in ${groupCurrency}, not ${currency}`);
     invalid(
       request.received
         ? "this person doesn't owe you anything in this group"
@@ -1791,11 +1794,17 @@ async function storeSettlementPortions(
       (scope.groupId === null || lockedGroupIds.has(scope.groupId)) &&
       (selection.size === 0 || selection.has(scope.groupId ?? "")),
   );
-  const foreign = selected.find(
-    (scope) => scope.currency !== currency && selection.has(scope.groupId ?? ""),
-  );
   // There is no exchange rate in the request, so an explicitly selected
-  // foreign-currency balance must be rejected rather than relabelled.
+  // balance with nothing in the payment's currency must be rejected rather
+  // than relabelled. A group can hold balances in two currencies (one
+  // recorded before group payments were kept to its own); picking it pays
+  // down the one in the payment's currency.
+  const foreign = selected.find(
+    (scope) =>
+      scope.currency !== currency &&
+      selection.has(scope.groupId ?? "") &&
+      !selected.some((other) => other.groupId === scope.groupId && other.currency === currency),
+  );
   if (foreign) {
     invalid(
       `that balance is in ${foreign.currency} — settle it in ${foreign.currency}, not ${currency}`,

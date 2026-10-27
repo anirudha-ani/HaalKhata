@@ -41,6 +41,7 @@ import { Spinner } from "@/components/ui/Spinner";
 import { errorMessage } from "@/lib/api/connect";
 import { colors, radii, spacing } from "@/lib/theme/theme";
 import { memberActionPrompt, memberRemovalBlock } from "@haalkhata/shared/group/memberActions";
+import { memberBuckets } from "@haalkhata/shared/group/currencyBalances";
 import { OWNER_ROLE } from "@haalkhata/shared/group/roles";
 import {
   ARCHIVED_GROUP_HINT,
@@ -273,13 +274,12 @@ export function GroupDetailScreen({
         </>
       ) : groupDetail.tab === "balances" ? (
         <BalancesPanel
-          balances={groupDetail.balances}
+          sections={groupDetail.balanceSections}
           error={groupDetail.balancesError ? errorMessage(groupDetail.balancesError) : ""}
           onRetry={groupDetail.reloadBalances}
-          currency={groupDetail.group.currency}
           meId={groupDetail.me?.id}
-          onSettle={(user, cents, received) =>
-            groupDetail.setSettleWith({ user, cents, received })
+          onSettle={(user, cents, received, currency) =>
+            groupDetail.setSettleWith({ user, cents, received, currency })
           }
           onToggleSimplified={groupDetail.setSimplified}
           simplified={groupDetail.simplified}
@@ -362,9 +362,7 @@ export function GroupDetailScreen({
                   ? memberRemovalBlock(
                       person.name,
                       isMe,
-                      groupDetail.balances?.nets.find((position) => position.userId === person.id)
-                        ?.netCents ?? 0,
-                      groupDetail.group?.currency ?? "",
+                      memberBuckets(groupDetail.balanceSections ?? [], person.id),
                     )
                   : null;
               const prompt =
@@ -646,7 +644,7 @@ export function GroupDetailScreen({
 
       {groupDetail.settleWith ? (
         <SettleUpModal
-          currency={groupDetail.group.currency}
+          currency={groupDetail.settleWith.currency}
           onClose={() => groupDetail.setSettleWith(null)}
           received={groupDetail.settleWith.received}
           // On the group's screen, so it settles this group's balance alone.

@@ -21,6 +21,7 @@ import { safeActivityPath } from "@haalkhata/shared/navigation/activityPath";
 import { localDate } from "@haalkhata/shared/time/localTime";
 import { getGreeting } from "@haalkhata/shared/greeting";
 import { groupEmoji } from "@haalkhata/shared/group/groupTypes";
+import { groupPositionCaption, yourGroupBuckets } from "@haalkhata/shared/group/currencyBalances";
 import { useDashboard } from "./hooks/useDashboard";
 import { PayMethodPrompt } from "./components/PayMethodPrompt/PayMethodPrompt";
 import { SummaryCard } from "./components/SummaryCard/SummaryCard";
@@ -237,24 +238,24 @@ export function DashboardPage() {
                       <p className="truncate font-medium">{summary.group.name}</p>
                       <p className="text-xs text-ink-soft">
                         {summary.memberCount} member{summary.memberCount === 1 ? "" : "s"}
-                        {summary.yourNetCents === 0
-                          ? " · settled up"
-                          : summary.yourNetCents > 0
-                            ? " · owed to you"
-                            : " · you owe"}
+                        {` · ${groupPositionCaption(yourGroupBuckets(summary))}`}
                       </p>
                     </div>
-                    {/* The group's own currency, not yours — a group settles in
-                        one currency and showing your default here would label
-                        the number with money it was never counted in. */}
-                    {summary.yourNetCents === 0 ? null : (
-                      <Money
-                        cents={summary.yourNetCents}
-                        currency={summary.group.currency}
-                        signed
-                        className="font-semibold"
-                      />
-                    )}
+                    {/* Each amount in the currency it was counted in — the
+                        group's own, not yours, and a second one when the group
+                        still holds a payment recorded in another currency
+                        before group payments were kept to its own. */}
+                    <span className="flex flex-col items-end">
+                      {yourGroupBuckets(summary).map((bucket) => (
+                        <Money
+                          key={bucket.currency}
+                          cents={bucket.cents}
+                          currency={bucket.currency}
+                          signed
+                          className="font-semibold"
+                        />
+                      ))}
+                    </span>
                   </Link>
                 </li>
               ) : null,

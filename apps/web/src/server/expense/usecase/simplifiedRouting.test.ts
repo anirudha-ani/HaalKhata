@@ -262,16 +262,16 @@ describe("the settlement guards route with the group's mode", () => {
   it("simplified: the rerouted edge is owed, the pairwise one is not", async () => {
     // Alice's debt to Bob was rerouted into paying Cara directly; letting her
     // also pay Bob would let the same 1000 leave her twice.
-    expect(await amountOwed(ALICE, CARA, TRIP)).toBe(1000);
-    expect(await amountOwed(ALICE, BOBBY, TRIP)).toBe(0);
-    expect(await amountOwed(BOBBY, CARA, TRIP)).toBe(0);
+    expect(await amountOwed(ALICE, CARA, TRIP, "USD")).toBe(1000);
+    expect(await amountOwed(ALICE, BOBBY, TRIP, "USD")).toBe(0);
+    expect(await amountOwed(BOBBY, CARA, TRIP, "USD")).toBe(0);
   });
 
   it("pairwise: exactly the reverse", async () => {
     simplify = false;
-    expect(await amountOwed(ALICE, BOBBY, TRIP)).toBe(1000);
-    expect(await amountOwed(BOBBY, CARA, TRIP)).toBe(1000);
-    expect(await amountOwed(ALICE, CARA, TRIP)).toBe(0);
+    expect(await amountOwed(ALICE, BOBBY, TRIP, "USD")).toBe(1000);
+    expect(await amountOwed(BOBBY, CARA, TRIP, "USD")).toBe(1000);
+    expect(await amountOwed(ALICE, CARA, TRIP, "USD")).toBe(0);
   });
 
   it("owedByScope offers the simplified edge and only that", async () => {
@@ -367,10 +367,10 @@ describe("after paying along the simplified edge", () => {
   beforeEach(() => recordTripSettlement(ALICE, CARA, 1000));
 
   it("every guard, ledger and net reads settled", async () => {
-    expect(await amountOwed(ALICE, CARA, TRIP)).toBe(0);
+    expect(await amountOwed(ALICE, CARA, TRIP, "USD")).toBe(0);
     expect(await owedByScope(ALICE, CARA)).toEqual([]);
     for (const member of [ALICE, BOBBY, CARA]) {
-      expect(await userNetInGroup(member, TRIP)).toBe(0);
+      expect(await userNetInGroup(member, TRIP)).toEqual(new Map());
       expect((await getOverallBalances(member)).counterparties).toEqual([]);
     }
   });
@@ -380,15 +380,15 @@ describe("after paying along the simplified edge", () => {
     // Pairwise the three debts are all real — Alice→Bob and Bob→Cara from the
     // expenses, Cara→Alice from the payment — and they cancel around the
     // loop. This is the state the balances panel explains to the user.
-    expect(await amountOwed(ALICE, BOBBY, TRIP)).toBe(1000);
-    expect(await amountOwed(BOBBY, CARA, TRIP)).toBe(1000);
-    expect(await amountOwed(CARA, ALICE, TRIP)).toBe(1000);
+    expect(await amountOwed(ALICE, BOBBY, TRIP, "USD")).toBe(1000);
+    expect(await amountOwed(BOBBY, CARA, TRIP, "USD")).toBe(1000);
+    expect(await amountOwed(CARA, ALICE, TRIP, "USD")).toBe(1000);
     // M-01: visible, but not payable — nobody owes anybody overall, so no
     // scope offers an edge of the loop to a cross-scope payment.
-    expect(await groupCancelsOut(TRIP)).toBe(true);
+    expect(await groupCancelsOut(TRIP, "USD")).toBe(true);
     expect(await owedByScope(ALICE, BOBBY)).toEqual([]);
     for (const member of [ALICE, BOBBY, CARA]) {
-      expect(await userNetInGroup(member, TRIP)).toBe(0);
+      expect(await userNetInGroup(member, TRIP)).toEqual(new Map());
     }
   });
 });

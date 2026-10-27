@@ -18,6 +18,7 @@ import {
 import type { MemberFeedback } from "@haalkhata/shared/group/memberActions";
 import { GroupStatus, type GroupArchiveStatus } from "@haalkhata/shared/group/status";
 import { groupArchivePrompt } from "@haalkhata/shared/group/archivePrompt";
+import { groupBalanceSections } from "@haalkhata/shared/group/currencyBalances";
 import { useGroupDetailAPI } from "./useGroupDetailAPI";
 
 /** The tabs available on the group detail page. */
@@ -71,7 +72,16 @@ export function useGroupDetail(groupId: string) {
     user: User;
     cents: number;
     received: boolean;
+    /** The currency of the balance the action sat beside. */
+    currency: string;
   } | null>(null);
+
+  // The group's balances one currency at a time, its own first. Every view of
+  // them — the panel, the archive check, the members list — reads these, so
+  // a balance in a second currency is never left out of one of them.
+  const balanceSections = groupDetailAPI.balances
+    ? groupBalanceSections(groupDetailAPI.balances, groupDetailAPI.group?.currency ?? "USD")
+    : undefined;
 
   // Lookup map so panels can resolve a member's User from a bare user id.
   const userById = new Map(
@@ -206,9 +216,8 @@ export function useGroupDetail(groupId: string) {
 
   const archivePrompt = pendingGroupStatus === null ? null : groupArchivePrompt({
     groupName: groupDetailAPI.group?.name ?? "this group",
-    currency: groupDetailAPI.group?.currency ?? "USD",
     status: pendingGroupStatus,
-    balances: groupDetailAPI.balances?.nets,
+    balances: balanceSections,
   });
 
   /**
@@ -340,6 +349,7 @@ export function useGroupDetail(groupId: string) {
     simplifyError: groupDetailAPI.setSimplify.isError
       ? errorMessage(groupDetailAPI.setSimplify.error)
       : "",
+    balanceSections,
     settleWith,
     setSettleWith,
     userById,

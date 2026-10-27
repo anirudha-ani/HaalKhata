@@ -208,18 +208,17 @@ export function GroupDetailPage({
         )
       ) : groupDetail.tab === "balances" ? (
         <BalancesPanel
-          balances={groupDetail.balances}
+          sections={groupDetail.balanceSections}
           error={groupDetail.balancesError ? errorMessage(groupDetail.balancesError) : ""}
           onRetry={groupDetail.reloadBalances}
-          currency={groupDetail.group.currency}
           meId={groupDetail.me?.id}
           userById={groupDetail.userById}
           simplified={groupDetail.simplified}
           simplifyPending={groupDetail.simplifyPending}
           simplifyError={groupDetail.simplifyError}
           onToggleSimplified={groupDetail.setSimplified}
-          onSettle={(user, cents, received) =>
-            groupDetail.setSettleWith({ user, cents, received })
+          onSettle={(user, cents, received, currency) =>
+            groupDetail.setSettleWith({ user, cents, received, currency })
           }
         />
       ) : (
@@ -247,8 +246,7 @@ export function GroupDetailPage({
           onResetLink={groupDetail.resetInviteLink}
           resettingLink={groupDetail.resettingInviteLink}
           feedback={groupDetail.memberFeedback}
-          nets={groupDetail.balances?.nets ?? []}
-          currency={groupDetail.group.currency}
+          balances={groupDetail.balanceSections ?? []}
           onViewBalances={() => {
             groupDetail.setViewingMembers(false);
             groupDetail.setTab("balances");
@@ -281,7 +279,7 @@ export function GroupDetailPage({
           to={groupDetail.settleWith.user}
           suggestedCents={groupDetail.settleWith.cents}
           received={groupDetail.settleWith.received}
-          currency={groupDetail.group.currency}
+          currency={groupDetail.settleWith.currency}
           // On the group's page, so it settles this group's balance alone.
           scopeId={groupId}
           onClose={() => groupDetail.setSettleWith(null)}

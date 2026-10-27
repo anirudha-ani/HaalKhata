@@ -521,7 +521,7 @@ describe("who hears about a transaction", () => {
   it("tells the detail view when a later settlement was recorded against the expense", async () => {
     vi.mocked(listCommentsByExpense).mockResolvedValue([]);
     vi.mocked(listActivityForExpense).mockResolvedValue([]);
-    vi.mocked(userNetInGroup).mockResolvedValue(0);
+    vi.mocked(userNetInGroup).mockResolvedValue(new Map());
     vi.mocked(scopeHasSettlements).mockResolvedValue(true);
 
     const detail = await getExpense(PAYER, "expense-1");
@@ -549,7 +549,7 @@ describe("who hears about a transaction", () => {
     } as never);
     vi.mocked(listCommentsByExpense).mockResolvedValue([]);
     vi.mocked(listActivityForExpense).mockResolvedValue([]);
-    vi.mocked(userNetInGroup).mockResolvedValue(0);
+    vi.mocked(userNetInGroup).mockResolvedValue(new Map());
 
     await getExpense(PAYER, "expense-1");
 
@@ -565,7 +565,7 @@ describe("who hears about a transaction", () => {
   it("reports no later settlement while the scope has none", async () => {
     vi.mocked(listCommentsByExpense).mockResolvedValue([]);
     vi.mocked(listActivityForExpense).mockResolvedValue([]);
-    vi.mocked(userNetInGroup).mockResolvedValue(0);
+    vi.mocked(userNetInGroup).mockResolvedValue(new Map());
 
     const detail = await getExpense(OWER, "expense-1");
 
@@ -597,7 +597,7 @@ describe("who hears about a transaction", () => {
     });
     vi.mocked(listCommentsByExpense).mockResolvedValue([]);
     vi.mocked(listActivityForExpense).mockResolvedValue([]);
-    vi.mocked(userNetInGroup).mockResolvedValue(0);
+    vi.mocked(userNetInGroup).mockResolvedValue(new Map());
 
     const detail = await getExpense(OWER, "expense-1");
 
@@ -825,7 +825,7 @@ describe("who hears about a transaction", () => {
     expect(audience).toEqual([OWER, PAYER].sort());
     expect(audience).not.toContain(OUTSIDER);
     expect(lockGroupLedgers).toHaveBeenCalledWith(transactionClient, [GOA_TRIP]);
-    expect(amountOwed).toHaveBeenCalledWith(PAYER, OWER, GOA_TRIP, transactionClient);
+    expect(amountOwed).toHaveBeenCalledWith(PAYER, OWER, GOA_TRIP, "USD", transactionClient);
   });
 });
 

@@ -6,13 +6,13 @@ import { ARCHIVE_GROUP_HINT, GROUP_ARCHIVE_ACTIONS } from "./archiving";
 import { formatMoney } from "../money/money";
 import { GroupStatus } from "./status";
 
-const group = { groupName: "Weekend trip", currency: "USD", status: GroupStatus.ARCHIVED } as const;
+const group = { groupName: "Weekend trip", status: GroupStatus.ARCHIVED } as const;
 
 describe("archive action popups", () => {
   it("explains unsettled balances even when the caller's own balance is zero", () => {
     const prompt = groupArchivePrompt({
       ...group,
-      balances: [{ netCents: 0 }, { netCents: 1250 }, { netCents: -1250 }],
+      balances: [{ currency: "USD", nets: [{ netCents: 0 }, { netCents: 1250 }, { netCents: -1250 }] }],
     });
     expect(prompt.confirmLabel).toBeNull();
     expect(prompt.detail).toContain(ARCHIVE_GROUP_HINT);
@@ -20,7 +20,7 @@ describe("archive action popups", () => {
   });
 
   it("confirms archiving for everyone and describes access and restoration", () => {
-    const prompt = groupArchivePrompt({ ...group, balances: [{ netCents: 0 }] });
+    const prompt = groupArchivePrompt({ ...group, balances: [{ currency: "USD", nets: [{ netCents: 0 }] }] });
     expect(prompt.title).toContain(group.groupName);
     expect(prompt.confirmLabel).toBe(GROUP_ARCHIVE_ACTIONS.archive);
     expect(prompt.detail).toContain("for every member");
@@ -28,6 +28,28 @@ describe("archive action popups", () => {
     expect(prompt.detail).toContain("removes it from expense selectors");
     expect(prompt.detail).toContain("history stays available");
     expect(prompt.detail).toContain("Any member can unarchive it later");
+  });
+
+  it("names what is left in each currency of a group holding two, never a sum", () => {
+    // Settled in dollars, but a euro payment from before group payments were
+    // kept to the group's currency still stands.
+    const prompt = groupArchivePrompt({
+      ...group,
+      balances: [
+        { currency: "USD", nets: [{ netCents: 0 }, { netCents: 0 }] },
+        { currency: "EUR", nets: [{ netCents: -10000 }, { netCents: 10000 }] },
+      ],
+    });
+    expect(prompt.confirmLabel).toBeNull();
+    expect(prompt.detail).toContain(`There is still ${formatMoney(10000, "EUR")} to settle`);
+    const both = groupArchivePrompt({
+      ...group,
+      balances: [
+        { currency: "USD", nets: [{ netCents: 2500 }, { netCents: -2500 }] },
+        { currency: "EUR", nets: [{ netCents: -10000 }, { netCents: 10000 }] },
+      ],
+    });
+    expect(both.detail).toContain(`${formatMoney(2500, "USD")} and ${formatMoney(10000, "EUR")}`);
   });
 
   it("allows confirming an empty group", () => {

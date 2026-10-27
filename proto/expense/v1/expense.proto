@@ -367,11 +367,28 @@ message GetGroupBalancesRequest {
 }
 
 message BalancesResponse {
+  // The group's own currency only, kept for clients from before
+  // `by_currency`; `by_currency` carries it too, first.
   repeated common.v1.NetBalance nets = 1;
   // Raw pairwise debts derived from expenses minus settlements.
   repeated common.v1.Debt debts = 2;
   // Min-cash-flow simplification of the same balances.
   repeated common.v1.Debt simplified = 3;
+  // The group's balances in each currency it holds money in, the group's
+  // own currency first (every member listed, even at zero) and then any
+  // other, alphabetically (only those with something outstanding). A group's
+  // rows are in its currency today; a group holding a payment recorded in
+  // another one before that rule keeps it as a balance of its own. Nothing
+  // here is added across currencies.
+  repeated GroupCurrencyBalances by_currency = 4;
+}
+
+// One currency's balances in a group.
+message GroupCurrencyBalances {
+  string currency = 1;
+  repeated common.v1.NetBalance nets = 2;
+  repeated common.v1.Debt debts = 3;
+  repeated common.v1.Debt simplified = 4;
 }
 
 // Totals in one currency across every counterparty.
