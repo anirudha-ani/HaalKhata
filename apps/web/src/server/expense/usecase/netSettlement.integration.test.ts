@@ -720,7 +720,7 @@ describe.skipIf(!reachable)("net settlement against Postgres", () => {
     };
     const readWhileEditing = async () => {
       while (editing) {
-        for (const expense of (await listExpenses(PAYER, {})).expenses) check(expense);
+        for (const expense of (await listExpenses(PAYER, {}, { cursor: "", limit: 0 })).expenses) check(expense);
         const detail = (await getExpense(PAYER, "exp-flip")).expense;
         check(detail);
       }

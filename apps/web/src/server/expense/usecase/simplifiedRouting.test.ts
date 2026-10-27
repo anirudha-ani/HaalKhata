@@ -7,8 +7,8 @@
  */
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { ExpenseRow, PayerRow, SplitRow } from "@/server/expense/repo/expenses.repo";
-import type { SettlementRow } from "@/server/expense/repo/settlements.repo";
+import type { ListedExpenseRow, PayerRow, SplitRow } from "@/server/expense/repo/expenses.repo";
+import type { ListedSettlementRow } from "@/server/expense/repo/settlements.repo";
 import type { UserRow } from "@/server/auth/repo/users.repo";
 import type { GroupRow } from "@/server/group/repo/groups.repo";
 
@@ -21,7 +21,6 @@ vi.mock("@/server/common/db/db", async (importOriginal) => ({
 }));
 vi.mock("@/server/expense/repo/expenses.repo", () => ({
   listExpensesBetween: vi.fn(),
-  listExpensesByGroup: vi.fn(),
   listExpensesByGroups: vi.fn(),
   listExpensesInvolvingUser: vi.fn(),
   listOneOffExpensesBetween: vi.fn(),
@@ -62,7 +61,6 @@ import {
 } from "./balance.usecase";
 import {
   listExpensesBetween,
-  listExpensesByGroup,
   listExpensesByGroups,
   listExpensesInvolvingUser,
   listOneOffExpensesBetween,
@@ -88,7 +86,7 @@ const TRIP = "group-trip";
 /** Whether the trip group simplifies debts in the scenario being run. */
 let simplify = true;
 /** The settlement rows "stored" so far; tests append to simulate payments. */
-let settlementRows: SettlementRow[] = [];
+let settlementRows: ListedSettlementRow[] = [];
 
 /**
  * Builds the trip group's row with the scenario's current simplify mode.
@@ -115,7 +113,7 @@ function tripRow(): GroupRow {
  * @param description - Display description.
  * @returns An expenses-table row inside the trip group.
  */
-function expenseRow(expenseId: string, description: string): ExpenseRow {
+function expenseRow(expenseId: string, description: string): ListedExpenseRow {
   return {
     id: expenseId,
     group_id: TRIP,
@@ -130,6 +128,7 @@ function expenseRow(expenseId: string, description: string): ExpenseRow {
     tip_cents: 0,
     created_by: BOBBY,
     created_at: "2026-08-01T10:00:00Z",
+    created_at_exact: "2026-08-01T10:00:00.000000Z",
     ledger_event_order: "1",
     deleted_at: null,
     deleted_by: null,
@@ -155,7 +154,7 @@ const splitsByExpense = new Map<string, SplitRow[]>([
  * @param expense - The expense row to inspect.
  * @returns The distinct user ids on the expense.
  */
-function participants(expense: ExpenseRow): Set<string> {
+function participants(expense: ListedExpenseRow): Set<string> {
   return new Set([
     ...(payersByExpense.get(expense.id) ?? []).map((payer) => payer.user_id),
     ...(splitsByExpense.get(expense.id) ?? []).map((split) => split.user_id),
@@ -200,7 +199,6 @@ beforeEach(() => {
   );
   vi.mocked(listFriendIds).mockResolvedValue([]);
 
-  vi.mocked(listExpensesByGroup).mockResolvedValue([groceries, dinner]);
   vi.mocked(listExpensesInvolvingUser).mockImplementation(async (userId: string) =>
     [groceries, dinner].filter((expense) => participants(expense).has(userId)),
   );
@@ -251,6 +249,7 @@ function recordTripSettlement(fromUser: string, toUser: string, amountCents: num
     method_label: "",
     note: "",
     created_at: "2026-08-02T00:00:00Z",
+    created_at_exact: "2026-08-02T00:00:00.000000Z",
     ledger_event_order: "2",
     deleted_at: null,
     recorded_by: fromUser,

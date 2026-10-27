@@ -15,6 +15,7 @@ import { errorMessage, expenseClient } from "@/lib/api/connect";
 import { newOperationId } from "@/lib/api/operationId";
 import { errorFeedback, successFeedback } from "@/lib/motion/haptics";
 import { MONEY_KEYS, queryKeys } from "@haalkhata/shared/api/queryKeys";
+import { SETTLE_DIALOG_LEDGER_LIMIT } from "@haalkhata/shared/api/paging";
 import { centsToInput, parseMoneyInput } from "@haalkhata/shared/money/money";
 import { ownMethodsFailedLine } from "@haalkhata/shared/payment/copy";
 import { CASH_CHOICE } from "@haalkhata/shared/payment/payeeMethods";
@@ -114,9 +115,11 @@ export function SettleUpModal({
 
   // The pair's position, computed by the code that records settlements, so
   // this sheet and the write it sends can never disagree about what is owed.
+  // It reads the position, not the statement, so it asks for the smallest page.
   const ledgerQuery = useQuery({
     queryKey: queryKeys.friendLedger(other.id),
-    queryFn: () => expenseClient.getFriendLedger({ userId: other.id }),
+    queryFn: () =>
+      expenseClient.getFriendLedger({ userId: other.id, limit: SETTLE_DIALOG_LEDGER_LIMIT }),
   });
   const loaded = ledgerQuery.data !== undefined;
   const positions = ledgerQuery.data?.settlePositions ?? [];

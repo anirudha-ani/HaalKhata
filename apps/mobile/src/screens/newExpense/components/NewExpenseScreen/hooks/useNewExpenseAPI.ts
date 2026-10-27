@@ -1,6 +1,7 @@
 /** Expense form queries (me, groups, friends, expense being edited) + create/update/parse mutations. */
 
 import { RECEIPT_TIMEOUT_MS } from "@haalkhata/shared/api/timeouts";
+import { COMMENT_PAGE_SIZE } from "@haalkhata/shared/api/paging";
 import type { MessageInitShape } from "@bufbuild/protobuf";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { CreateExpenseRequestSchema } from "@haalkhata/protogen/expense/v1/expense_pb";
@@ -55,7 +56,8 @@ export function useNewExpenseAPI(editExpenseId: string) {
   });
   const editingQuery = useQuery({
     queryKey: queryKeys.expense(editExpenseId),
-    queryFn: () => expenseClient.getExpense({ expenseId: editExpenseId }),
+    // The same request as the expense's own screen, which shares this key.
+    queryFn: () => expenseClient.getExpense({ expenseId: editExpenseId, commentLimit: COMMENT_PAGE_SIZE }),
     enabled: editExpenseId !== "",
   });
 

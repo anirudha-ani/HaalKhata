@@ -15,6 +15,7 @@ import { errorMessage } from "@/lib/api/connect";
 import { useHydrated } from "@/lib/hooks/useHydrated";
 import { scopeLabel } from "@haalkhata/shared/expense/settlePosition";
 import { outstandingBuckets } from "@haalkhata/shared/money/balances";
+import { LoadMoreFooter } from "@/components/ui/LoadMoreFooter/LoadMoreFooter";
 import { LedgerStatement } from "./components/LedgerStatement/LedgerStatement";
 import { useFriendLedger } from "./hooks/useFriendLedger";
 
@@ -60,7 +61,6 @@ export function FriendDetailPage({
     friend,
     netCents,
     currency,
-    entries,
     groupBalances,
     isFriend = true,
     mutualGroups = [],
@@ -361,7 +361,7 @@ export function FriendDetailPage({
       <section className="space-y-2">
         <h2 className="text-sm font-semibold tracking-wide text-ink-soft uppercase">History</h2>
 
-        {entries.length === 0 ? (
+        {view.entries.length === 0 ? (
           <div className="rounded-2xl border border-line bg-card px-4 py-10 text-center">
             <Check className="mx-auto h-8 w-8 text-pos-600" />
             <p className="mt-2 font-semibold">Nothing shared yet</p>
@@ -371,7 +371,7 @@ export function FriendDetailPage({
           </div>
         ) : (
           <LedgerStatement
-            entries={entries}
+            entries={view.entries}
             currency={currency}
             confirmingSettlementId={view.confirmingSettlementId}
             removingSettlementId={view.removingSettlementId}
@@ -379,11 +379,16 @@ export function FriendDetailPage({
             onRemoveSettlement={view.removeSettlement}
           />
         )}
-        {entries.length > 0 ? (
+        <LoadMoreFooter
+          hasMore={view.hasMoreEntries}
+          isLoadingMore={view.isLoadingMoreEntries}
+          onLoadMore={view.loadMoreEntries}
+          error={view.loadMoreError}
+          notice={view.statementNotice}
+          endLabel={view.entries.length > 0 ? "That's where your history together starts." : ""}
+        />
+        {view.entries.length > 0 ? (
           <p className="text-xs text-ink-soft">
-            {view.ledger.truncated
-              ? "Showing the most recent lines — older ones still count toward every balance. "
-              : ""}
             &ldquo;Change&rdquo; is what each line did to your balance; positive means it went in
             your favour.{" "}
             {groupBalances.some((balance) => balance.simplified)

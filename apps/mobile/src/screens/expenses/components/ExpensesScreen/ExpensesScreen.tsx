@@ -12,6 +12,7 @@ import { ScreenHeader } from "@/components/shell/ScreenHeader/ScreenHeader";
 import { Button } from "@/components/ui/Button";
 import { Chip } from "@/components/ui/Chip";
 import { SearchField } from "@/components/ui/SearchField";
+import { ShowMoreFooter } from "@/components/ui/ShowMoreFooter/ShowMoreFooter";
 import { Spinner } from "@/components/ui/Spinner";
 import { FIXED_SCOPE_OPTIONS, noExpensesMessage } from "@haalkhata/shared/expense/scopeFilter";
 import { colors, fonts, radii, spacing } from "@/lib/theme/theme";
@@ -39,7 +40,6 @@ export function ExpensesScreen() {
     summary.group ? [{ id: summary.group.id, name: summary.group.name }] : [],
   );
   const filteredGroupName = listState.groupNameById.get(listState.scope) ?? "";
-  const isFiltered = listState.query !== "" || listState.scope !== "all";
 
   return (
     <Screen
@@ -57,9 +57,7 @@ export function ExpensesScreen() {
         />
       </View>
 
-      {listState.isLoading ? (
-        <Spinner label="Loading expenses…" />
-      ) : listState.listError ? (
+      {listState.listError ? (
         <ErrorState error={listState.listError} retry={listState.refresh} />
       ) : (
         <View style={[styles.workspace, isExpanded ? styles.workspaceExpanded : null]}>
@@ -72,11 +70,13 @@ export function ExpensesScreen() {
                   value={listState.query}
                 />
               </View>
-              {/* The count accounts for every active control, or it would read
-                  as unfiltered while rows are being hidden. */}
-              {isFiltered ? (
+              {/* The search narrows the loaded pages, so its count is stated
+                  against them — "loaded" while older pages remain — rather
+                  than read as a total. The scope is the server's own. */}
+              {listState.query && !listState.isLoading ? (
                 <Text style={styles.searchCount}>
                   {listState.visibleExpenses.length} of {listState.expenses.length}
+                  {listState.hasMore ? " loaded" : ""}
                 </Text>
               ) : null}
             </View>
@@ -98,21 +98,22 @@ export function ExpensesScreen() {
                 />
               ) : null}
             </View>
-
-            {/* The list is bounded; the balances are not. Say so rather than
-                let an old row's absence read as its deletion. */}
-            {listState.truncated ? (
-              <Text style={styles.truncated}>
-                Showing your most recent expenses — older ones still count toward every balance.
-              </Text>
-            ) : null}
           </View>
 
           <View style={[styles.results, isExpanded ? styles.resultsExpanded : null]}>
-            {listState.visibleExpenses.length === 0 ? (
+            {/* A chip reads its own scope from the server, so the filters stay
+                put while only the list below them loads. */}
+            {listState.isLoading ? (
+              <Spinner label="Loading expenses…" />
+            ) : listState.visibleExpenses.length === 0 ? (
               <View style={styles.emptyCard}>
                 <Text style={styles.emptyText}>
-                  {noExpensesMessage(listState.query, listState.scope, filteredGroupName)}
+                  {noExpensesMessage(
+                    listState.query,
+                    listState.scope,
+                    filteredGroupName,
+                    listState.hasMore,
+                  )}
                 </Text>
               </View>
             ) : (
@@ -123,6 +124,15 @@ export function ExpensesScreen() {
                 meId={listState.me?.id}
                 settledIds={listState.settledIds}
                 userById={listState.userById}
+              />
+            )}
+            {listState.isLoading ? null : (
+              <ShowMoreFooter
+                endLine={listState.expenses.length > 0 ? "You've hit the bottom." : ""}
+                error={listState.loadMoreError}
+                hasMore={listState.hasMore}
+                isLoadingMore={listState.isLoadingMore}
+                onShowMore={listState.loadMore}
               />
             )}
           </View>
@@ -158,6 +168,7 @@ const styles = StyleSheet.create({
     minWidth: 0,
   },
   results: {
+    gap: spacing.md,
     minWidth: 0,
   },
   resultsExpanded: {
@@ -182,10 +193,6 @@ const styles = StyleSheet.create({
     fontFamily: fonts.display,
     fontSize: 28,
     fontWeight: "700",
-  },
-  truncated: {
-    color: colors.inkSoft,
-    fontSize: 12,
   },
   titleRow: {
     alignItems: "center",

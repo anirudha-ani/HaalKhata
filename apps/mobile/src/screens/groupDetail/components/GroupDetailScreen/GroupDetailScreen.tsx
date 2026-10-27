@@ -36,6 +36,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { OverflowMenu } from "@/components/ui/OverflowMenu/OverflowMenu";
 import { Segmented } from "@/components/ui/Segmented";
 import { Sheet } from "@/components/ui/Sheet/Sheet";
+import { ShowMoreFooter } from "@/components/ui/ShowMoreFooter/ShowMoreFooter";
 import { Spinner } from "@/components/ui/Spinner";
 import { errorMessage } from "@/lib/api/connect";
 import { colors, radii, spacing } from "@/lib/theme/theme";
@@ -254,13 +255,22 @@ export function GroupDetailScreen({
       {(groupDetail.tab === "expenses" && groupDetail.expensesError) || (groupDetail.tab === "balances" && groupDetail.balancesError) || (groupDetail.tab === "activity" && groupDetail.activityError) ? (
         <ErrorState error={groupDetail.tab === "expenses" ? groupDetail.expensesError : groupDetail.tab === "balances" ? groupDetail.balancesError : groupDetail.activityError} retry={groupDetail.refresh} />
       ) : groupDetail.tab === "expenses" ? (
-        <ExpenseList
-          emptyHint="Add the first expense or scan a receipt to get this ledger going."
-          expenses={groupDetail.expenses?.expenses ?? []}
-          meId={groupDetail.me?.id}
-          settledIds={new Set(groupDetail.expenses?.settledExpenseIds ?? [])}
-          userById={groupDetail.userById}
-        />
+        <>
+          <ExpenseList
+            emptyHint="Add the first expense or scan a receipt to get this ledger going."
+            expenses={groupDetail.expenses.expenses}
+            meId={groupDetail.me?.id}
+            settledIds={groupDetail.expenses.settledIds}
+            userById={groupDetail.userById}
+          />
+          <ShowMoreFooter
+            endLine={groupDetail.expenses.expenses.length > 0 ? "You've hit the bottom." : ""}
+            error={groupDetail.loadMoreExpensesError}
+            hasMore={groupDetail.hasMoreExpenses}
+            isLoadingMore={groupDetail.isLoadingMoreExpenses}
+            onShowMore={groupDetail.loadMoreExpenses}
+          />
+        </>
       ) : groupDetail.tab === "balances" ? (
         <BalancesPanel
           balances={groupDetail.balances}

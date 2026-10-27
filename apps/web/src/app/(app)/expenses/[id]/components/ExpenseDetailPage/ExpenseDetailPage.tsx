@@ -3,7 +3,8 @@
 
 import { SafetyActions } from "@/components/safety/SafetyActions/SafetyActions";
 import Link from "next/link";
-import { Check, Lock, Pencil, Send, Trash2 } from "lucide-react";
+import { Check, ChevronUp, Lock, Pencil, Send, Trash2 } from "lucide-react";
+import { ErrorAlert } from "@/components/ui/ErrorAlert/ErrorAlert";
 import { Avatar } from "@/components/ui/Avatar/Avatar";
 import { AvatarStack } from "@/components/ui/AvatarStack/AvatarStack";
 import { PersonLink } from "@/components/people/PersonLink/PersonLink";
@@ -376,7 +377,23 @@ export function ExpenseDetailPage({ expenseId }: { expenseId: string }) {
       {/* Comments */}
       <section className="space-y-3">
         <h2 className="text-sm font-semibold tracking-wide text-ink-soft uppercase">Comments</h2>
-        {(expenseDetail.detail?.comments ?? []).map((comment) => (
+        {/* Older comments are read on request, above the ones shown, which
+            is where the person is looking when they ask for them. */}
+        {expenseDetail.earlierCommentsError ? (
+          <ErrorAlert message={`Couldn't load earlier comments: ${expenseDetail.earlierCommentsError}`} />
+        ) : null}
+        {expenseDetail.hasEarlierComments ? (
+          <button
+            type="button"
+            onClick={expenseDetail.showEarlierComments}
+            disabled={expenseDetail.isLoadingEarlierComments}
+            className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-line bg-card py-2.5 text-sm font-semibold text-ink-soft hover:border-brand-200 hover:text-brand-600 disabled:opacity-50"
+          >
+            <ChevronUp className="h-4 w-4" aria-hidden="true" />
+            {expenseDetail.isLoadingEarlierComments ? "Loading…" : "Show earlier comments"}
+          </button>
+        ) : null}
+        {expenseDetail.comments.map((comment) => (
           <div key={comment.id} className="flex gap-3 rounded-xl border border-line bg-card p-3">
             {comment.author ? (
               <PersonLink userId={comment.author.id} meId={meId}>

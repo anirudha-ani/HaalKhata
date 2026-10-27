@@ -6,6 +6,8 @@ import { useRouter } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { authClient, errorMessage, expenseClient } from "@/lib/api/connect";
 import { FEED_KEYS, MONEY_KEYS, queryKeys } from "@haalkhata/shared/api/queryKeys";
+import { COMMENT_PAGE_SIZE } from "@haalkhata/shared/api/paging";
+import { useEarlierCommentsAPI } from "./useEarlierCommentsAPI";
 
 /**
  * Loads one expense (with its users and comments) and exposes the page's
@@ -13,8 +15,13 @@ import { FEED_KEYS, MONEY_KEYS, queryKeys } from "@haalkhata/shared/api/queryKey
  * money-related queries and navigates back to the group or dashboard).
  *
  * @param expenseId - Id of the expense to load and act on.
+ * The detail carries the newest comments; older ones are read on request,
+ * a page at a time, and `comments` is the whole loaded thread in order.
+ *
  * @returns `me`, the expense `detail` response with `detailError`/`isLoading`,
- *   a `userById` lookup map, comment composer state (`comment`, `setComment`,
+ *   `comments` (earlier pages then the detail's, oldest first) with
+ *   `hasEarlierComments`/`showEarlierComments`/`isLoadingEarlierComments`/
+ *   `earlierCommentsError`, a `userById` lookup map, comment composer state (`comment`, `setComment`,
  *   `submitComment`, `isCommenting`), delete flow state (`confirmingDelete`,
  *   `setConfirmingDelete`, `remove`, `isRemoving`), and the last action `error`.
  */
@@ -31,8 +38,9 @@ export function useExpenseDetail(expenseId: string) {
   });
   const detailQuery = useQuery({
     queryKey: queryKeys.expense(expenseId),
-    queryFn: () => expenseClient.getExpense({ expenseId }),
+    queryFn: () => expenseClient.getExpense({ expenseId, commentLimit: COMMENT_PAGE_SIZE }),
   });
+  const earlier = useEarlierCommentsAPI(expenseId, detailQuery.data?.commentsNextCursor ?? "");
 
   const addComment = useMutation({
     mutationFn: (body: string) => expenseClient.addComment({ expenseId, body }),
@@ -78,6 +86,11 @@ export function useExpenseDetail(expenseId: string) {
     deletion: (detailQuery.data?.history ?? []).find(
       (event) => event.type === "expense_deleted",
     ),
+    comments: [...earlier.comments, ...(detailQuery.data?.comments ?? [])],
+    hasEarlierComments: earlier.hasEarlier,
+    showEarlierComments: earlier.showEarlier,
+    isLoadingEarlierComments: earlier.isLoadingEarlier,
+    earlierCommentsError: earlier.earlierError,
     detailError: detailQuery.error,
     isLoading: detailQuery.isLoading,
     userById,

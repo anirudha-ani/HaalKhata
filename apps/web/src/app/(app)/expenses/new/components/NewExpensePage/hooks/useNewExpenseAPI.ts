@@ -15,6 +15,7 @@ import {
 import { GroupStatus } from "@haalkhata/shared/group/status";
 import { groupsByStatus } from "@haalkhata/shared/group/archiving";
 import { MONEY_KEYS, queryKeys } from "@haalkhata/shared/api/queryKeys";
+import { COMMENT_PAGE_SIZE } from "@haalkhata/shared/api/paging";
 
 /** Plain-object init shape of a CreateExpenseRequest proto message. */
 export type CreateExpenseInput = MessageInitShape<typeof CreateExpenseRequestSchema>;
@@ -45,7 +46,8 @@ export function useNewExpenseAPI(editExpenseId: string) {
   });
   const editingQuery = useQuery({
     queryKey: queryKeys.expense(editExpenseId),
-    queryFn: () => expenseClient.getExpense({ expenseId: editExpenseId }),
+    // The same request as the detail page's: they share this cache entry.
+    queryFn: () => expenseClient.getExpense({ expenseId: editExpenseId, commentLimit: COMMENT_PAGE_SIZE }),
     enabled: editExpenseId !== "",
   });
 

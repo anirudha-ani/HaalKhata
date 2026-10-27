@@ -7,8 +7,8 @@
  */
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { ExpenseRow, PayerRow, SplitRow } from "@/server/expense/repo/expenses.repo";
-import type { SettlementRow } from "@/server/expense/repo/settlements.repo";
+import type { ListedExpenseRow, PayerRow, SplitRow } from "@/server/expense/repo/expenses.repo";
+import type { ListedSettlementRow } from "@/server/expense/repo/settlements.repo";
 import type { UserRow } from "@/server/auth/repo/users.repo";
 
 // The reads run inside a database snapshot. Every statement is mocked here,
@@ -20,7 +20,6 @@ vi.mock("@/server/common/db/db", async (importOriginal) => ({
 }));
 vi.mock("@/server/expense/repo/expenses.repo", () => ({
   listExpensesBetween: vi.fn(),
-  listExpensesByGroup: vi.fn(),
   listExpensesByGroups: vi.fn(),
   listExpensesInvolvingUser: vi.fn(),
   listOneOffExpensesBetween: vi.fn(),
@@ -97,7 +96,7 @@ function expenseRow(
   currency: string,
   amountCents: number,
   createdAt: string,
-): ExpenseRow {
+): ListedExpenseRow {
   return {
     id: expenseId,
     group_id: null,
@@ -112,6 +111,7 @@ function expenseRow(
     tip_cents: 0,
     created_by: BOBBY,
     created_at: createdAt,
+    created_at_exact: createdAt.replace("Z", ".000000Z"),
     ledger_event_order: "1",
     deleted_at: null,
     deleted_by: null,
@@ -130,7 +130,7 @@ const splitsByExpense = new Map<string, SplitRow[]>([
   ["expense-euros", [{ expense_id: "expense-euros", user_id: BOBBY, owed_cents: 500 }]],
 ]);
 /** Settlement rows "stored" so far; tests append to simulate payments. */
-let settlementRows: SettlementRow[] = [];
+let settlementRows: ListedSettlementRow[] = [];
 
 /**
  * Builds a users-table row for the scenario's people.
@@ -358,6 +358,7 @@ describe("balances are kept per currency", () => {
       method_label: "",
       note: "",
       created_at: "2026-08-03T00:00:00Z",
+      created_at_exact: "2026-08-03T00:00:00.000000Z",
       ledger_event_order: "3",
       deleted_at: null,
       recorded_by: ALICE,

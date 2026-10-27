@@ -4,18 +4,18 @@ import { canPreserveSplitType } from "@haalkhata/shared/expense/form/preserveSpl
 import { blockedPairExists } from "@/server/safety/repo/safety.repo";
 import { assertSafeText } from "@/server/safety/usecase/contentFilter";
 import { isRegisteredUser } from "@/server/auth/usecase/identity/user.mapper";
-import type { CreateExpenseRequest } from "@haalkhata/protogen/expense/v1/expense_pb";
+import { ExpenseListPart, type CreateExpenseRequest } from "@haalkhata/protogen/expense/v1/expense_pb";
 import type { PoolClient } from "pg";
 import {
   findExpenseById,
   insertExpense,
-  listExpensesByGroup,
-  listExpensesInvolvingUser,
-  listOneOffExpensesBetween,
+  listExpensePage,
   loadExpenseChildren,
   replaceExpense,
   softDeleteExpense,
   type ExpenseChildren,
+  type ExpenseListKey,
+  type ExpenseListScope,
   type ExpenseRow,
   type ExpenseWrite,
 } from "@/server/expense/repo/expenses.repo";
@@ -32,7 +32,13 @@ import { GROUP_STATUS_PROTO } from "@/server/group/group.constants";
 import { GroupStatus } from "@haalkhata/protogen/group/v1/group_pb";
 import { findUserById, findUsersByIds, type UserRow } from "@/server/auth/repo/users.repo";
 import { insertFriendship, listFriendIds } from "@/server/social/repo/friendships.repo";
-import { insertComment, listCommentsByExpense } from "@/server/expense/repo/comments.repo";
+import {
+  insertComment,
+  listCommentPage,
+  listCommentsByExpense,
+  type CommentKey,
+  type CommentRow,
+} from "@/server/expense/repo/comments.repo";
 import {
   findSettlementById,
   insertNetSettlement,
@@ -68,6 +74,14 @@ import {
 import { oneOffPairKey, settledExpenseIds } from "@/server/expense/domain/settledExpenses";
 import { readerShareLine, removedReaderLine } from "@/server/expense/domain/readerShareLine";
 import { expenseNetChanges, type PaidAndOwed } from "@/server/expense/domain/balances";
+import {
+  decodeCursor,
+  encodeCursor,
+  isCursorValue,
+  isExactTimestamp,
+  pageSize,
+} from "@/server/common/pagination/pagination";
+import { STALE_CURSOR_MESSAGE } from "@/server/common/pagination/pagination.constants";
 import { snapshot } from "@/server/common/db/db";
 import { UsecaseError, denied, invalid, notFound } from "@/server/common/errors";
 import {
@@ -96,6 +110,10 @@ import {
   SETTLEMENT_METHODS,
   SPLIT_TYPES,
   EXPENSE_LIST_DISPLAY_LIMIT,
+  COMMENT_PAGE_SIZE,
+  EXPENSE_PAGE_SIZE,
+  MAX_COMMENT_PAGE_SIZE,
+  MAX_EXPENSE_PAGE_SIZE,
   ONE_OFF_NOT_CONNECTED_MESSAGE,
   formerMemberRefusal,
 } from "@/server/expense/expense.constants";
@@ -1045,19 +1063,39 @@ async function usersReferenced(rows: ExpenseRow[], children: ExpenseChildren) {
 }
 
 /**
- * Lists expenses visible to the caller: a group's expenses, one-off expenses
- * shared with a specific user, or everything the caller participates in.
+ * Lists expenses visible to the caller, one page at a time, newest first: a
+ * group's expenses, one-off expenses shared with a specific user, or
+ * everything the caller participates in.
+ *
+ * Paged by keyset (date, time written, id), so expenses added while someone
+ * pages cannot shift the window. A request without a limit gets the one
+ * page of up to {@link EXPENSE_LIST_DISPLAY_LIMIT} with `truncated`, the
+ * shape app versions from before paging read.
  *
  * @param userId - Authenticated caller.
  * @param filter - Optional narrowing: `groupId` for one group, or `withUserId`
- *   for one-off expenses shared with that user; empty ⇒ all of the caller's expenses.
- * @returns The expenses plus the referenced users, as proto message init shapes.
- * @throws UsecaseError (permission_denied) if `groupId` is set and the caller is not a member.
+ *   for one-off expenses shared with that user; empty ⇒ the caller's own
+ *   expenses, all of them or the `part` named (one-off, or one group's).
+ * @param page - The previous page's cursor ("" for the first) and the page size (0 for the old single page).
+ * @returns The page's expenses, the users they reference, which are settled,
+ *   and the cursor for the next page ("" at the oldest).
+ * @throws UsecaseError (permission_denied) if `groupId` is set and the caller is not a member;
+ *   (invalid_argument) for a cursor that is not one of this list's, or a
+ *   `part` that does not fit the rest of the filter.
  */
 export async function listExpenses(
   userId: string,
-  filter: { groupId?: string; withUserId?: string },
+  filter: { groupId?: string; withUserId?: string; part?: ExpenseListPart; partGroupId?: string },
+  page: { cursor: string; limit: number },
 ) {
+  const part = filter.part ?? ExpenseListPart.UNSPECIFIED;
+  if (!Object.values(ExpenseListPart).includes(part)) invalid("unknown part of the expense list");
+  if (part !== ExpenseListPart.UNSPECIFIED && (filter.groupId || filter.withUserId)) {
+    invalid("a part of your own list cannot be combined with a group or a person");
+  }
+  if ((part === ExpenseListPart.GROUP) !== Boolean(filter.partGroupId)) {
+    invalid("name the group exactly when reading one group's part of your list");
+  }
   if (filter.groupId && !(await isMember(filter.groupId, userId))) {
     denied("you are not a member of this group");
   }
@@ -1066,28 +1104,33 @@ export async function listExpenses(
   // "settled" marks from balances read after them; an edit or a payment
   // committing in between would pair one expense's amount with another
   // version's shares, or mark a row against a ledger it was not listed from.
+  const legacy = page.limit <= 0;
+  const size = legacy
+    ? EXPENSE_LIST_DISPLAY_LIMIT
+    : pageSize(page.limit, EXPENSE_PAGE_SIZE, MAX_EXPENSE_PAGE_SIZE);
+  const after = page.cursor ? decodeExpenseListCursor(page.cursor) : null;
   const listed = await snapshot(async (client) => {
-    let rows: ExpenseRow[];
     // Deleted rows are listed too — struck through on every client — so a
     // payment made against a since-deleted expense keeps the row that explains
     // it. They contribute nothing to the balance math, which reads its own,
-    // deleted-excluded queries.
-    if (filter.groupId) {
-      rows = await listExpensesByGroup(filter.groupId, client, true);
-    } else if (filter.withUserId) {
-      rows = await listOneOffExpensesBetween(userId, filter.withUserId, client, true);
-    } else {
-      // One past the cap, so the response can say the list is cut without a
-      // second count query.
-      rows = await listExpensesInvolvingUser(
-        userId,
-        true,
-        EXPENSE_LIST_DISPLAY_LIMIT + 1,
-        client,
-      );
-    }
-    const truncated = rows.length > EXPENSE_LIST_DISPLAY_LIMIT;
-    if (truncated) rows = rows.slice(0, EXPENSE_LIST_DISPLAY_LIMIT);
+    // deleted-excluded queries. One row past the page says whether there is
+    // another, without a count query.
+    const scope: ExpenseListScope = filter.groupId
+      ? { kind: "group", groupId: filter.groupId }
+      : filter.withUserId
+        ? { kind: "withUser", userId, otherUserId: filter.withUserId }
+        : part === ExpenseListPart.ONE_OFF
+          ? { kind: "userOneOff", userId }
+          : part === ExpenseListPart.GROUP && filter.partGroupId
+            ? { kind: "userInGroup", userId, groupId: filter.partGroupId }
+            : { kind: "user", userId };
+    const pageRows = await listExpensePage(scope, after, size + 1, client);
+    const hasMore = pageRows.length > size;
+    const rows = hasMore ? pageRows.slice(0, size) : pageRows;
+    const lastRow = rows.at(-1);
+    const nextCursor = hasMore && lastRow
+      ? encodeCursor([lastRow.expense_date, lastRow.created_at_exact, lastRow.id])
+      : "";
     const children = await loadExpenseChildren(
       rows.map((expenseRow) => expenseRow.id),
       client,
@@ -1126,7 +1169,7 @@ export async function listExpenses(
         oneOffNetByPair.set(oneOffPairKey(counterpartyId, currency), cents);
       }
     }
-    return { rows, children, truncated, participants, viewerNetByGroupId, oneOffNetByPair };
+    return { rows, children, hasMore, nextCursor, participants, viewerNetByGroupId, oneOffNetByPair };
   });
 
   return {
@@ -1140,8 +1183,26 @@ export async function listExpenses(
       listed.viewerNetByGroupId,
       listed.oneOffNetByPair,
     ),
-    truncated: listed.truncated,
+    truncated: legacy && listed.hasMore,
+    nextCursor: listed.nextCursor,
   };
+}
+
+/**
+ * Reads an expense-list cursor back into a position in the list.
+ *
+ * @param cursor - The client's cursor.
+ * @returns The last expense of the previous page.
+ * @throws UsecaseError (invalid_argument) when the cursor is not one of this list's.
+ */
+function decodeExpenseListCursor(cursor: string): ExpenseListKey {
+  const parts = decodeCursor(cursor, 3);
+  if (!parts) invalid(STALE_CURSOR_MESSAGE);
+  const [expenseDate, createdAt, expenseId] = parts;
+  if (!isCursorValue(expenseDate) || !isExactTimestamp(createdAt) || !isCursorValue(expenseId)) {
+    invalid(STALE_CURSOR_MESSAGE);
+  }
+  return { expenseDate, createdAt, id: expenseId };
 }
 
 /**
@@ -1156,15 +1217,18 @@ async function getExpenseProto(expenseId: string) {
 }
 
 /**
- * Fetches one expense with its comments and every referenced user.
+ * Fetches one expense with its newest comments and every referenced user.
  *
  * @param userId - Authenticated caller; must be allowed to view the expense.
  * @param expenseId - Id of the expense to fetch.
+ * @param commentLimit - How many of the newest comments to include; 0
+ *   includes them all, as app versions from before paging expect.
  * @returns The expense (deleted ones included, marked by `deletedAt`), its
- *   comments (with authors), and referenced users.
+ *   newest comments (with authors) and the cursor for older ones, and
+ *   referenced users.
  * @throws UsecaseError if the expense is missing or the caller lacks access.
  */
-export async function getExpense(userId: string, expenseId: string) {
+export async function getExpense(userId: string, expenseId: string, commentLimit = 0) {
   const found = await findExpenseById(expenseId);
   // A deleted expense still has a page: the feed line that announced the
   // deletion links here, and the row explains any payment left behind.
@@ -1249,7 +1313,10 @@ export async function getExpense(userId: string, expenseId: string) {
   );
 
   // Words, not figures: comments and the edit history are read afterwards.
-  const comments = await listCommentsByExpense(expenseId, userId);
+  const commentPage = commentLimit > 0
+    ? await readCommentPage(expenseId, userId, null, commentLimit)
+    : { rows: await listCommentsByExpense(expenseId, userId), nextCursor: "" };
+  const comments = commentPage.rows;
   // The people to resolve are the comment authors AND whoever touched the
   // expense, looked up together so the history does not cost a second round
   // trip for a set that mostly overlaps.
@@ -1277,19 +1344,115 @@ export async function getExpense(userId: string, expenseId: string) {
     editRefusal: refusals.editRefusal,
     deleteRefusal: refusals.deleteRefusal,
     expense: toExpense(expenseRow, children),
-    comments: comments.map((comment) => ({
-      id: comment.id,
-      expenseId: comment.expense_id,
-      author: publicUserById(comment.user_id),
-      body: comment.body,
-      createdAt: comment.created_at,
-    })),
+    comments: comments.map((comment) => toCommentMessage(comment, publicUserById)),
+    commentsNextCursor: commentPage.nextCursor,
     users: await usersReferenced([expenseRow], children),
     history: events.map((event) => ({
       actor: publicUserById(event.actor_id),
       type: event.type,
       createdAt: event.created_at,
     })),
+  };
+}
+
+/**
+ * Lists an expense's older comments, one page at a time, going back in time
+ * from GetExpense's `commentsNextCursor`.
+ *
+ * @param userId - Authenticated caller; must be allowed to view the expense.
+ * @param expenseId - Id of the expense whose comments to list.
+ * @param page - The previous page's cursor and the page size.
+ * @returns The page's comments, oldest first, and the cursor for the ones
+ *   older still ("" at the first comment).
+ * @throws UsecaseError if the expense is missing, the caller lacks access,
+ *   or the cursor is not one of this thread's.
+ */
+export async function listComments(
+  userId: string,
+  expenseId: string,
+  page: { cursor: string; limit: number },
+) {
+  const found = await findExpenseById(expenseId);
+  if (!found) notFound("expense not found");
+  await assertCanTouch(userId, found);
+  const before = page.cursor ? decodeCommentCursor(page.cursor) : null;
+  const commentPage = await readCommentPage(expenseId, userId, before, page.limit);
+  const authors = new Map(
+    (await findUsersByIds([...new Set(commentPage.rows.map((comment) => comment.user_id))])).map(
+      (author) => [author.id, author] as const,
+    ),
+  );
+  return {
+    comments: commentPage.rows.map((comment) =>
+      toCommentMessage(comment, (authorId) => {
+        const author = authors.get(authorId);
+        return author ? toPublicUser(author) : undefined;
+      }),
+    ),
+    nextCursor: commentPage.nextCursor,
+  };
+}
+
+/**
+ * Reads one page of an expense's comments going back in time and puts it in
+ * reading order.
+ *
+ * @param expenseId - Id of the expense.
+ * @param viewerId - The reader, for leaving out comments across a block.
+ * @param before - The oldest comment already shown; null starts at the newest.
+ * @param limit - The requested page size, clamped to the comment limits.
+ * @returns The page oldest first, and the cursor for older comments ("" when none).
+ */
+async function readCommentPage(
+  expenseId: string,
+  viewerId: string,
+  before: CommentKey | null,
+  limit: number,
+): Promise<{ rows: CommentRow[]; nextCursor: string }> {
+  const size = pageSize(limit, COMMENT_PAGE_SIZE, MAX_COMMENT_PAGE_SIZE);
+  // One row past the page says whether there are older comments.
+  const newestFirst = await listCommentPage(expenseId, viewerId, before, size + 1);
+  const hasMore = newestFirst.length > size;
+  const page = hasMore ? newestFirst.slice(0, size) : newestFirst;
+  const oldest = page.at(-1);
+  return {
+    rows: [...page].reverse(),
+    nextCursor: hasMore && oldest ? encodeCursor([oldest.created_at_exact, oldest.id]) : "",
+  };
+}
+
+/**
+ * Reads a comment cursor back into a position in the thread.
+ *
+ * @param cursor - The client's cursor.
+ * @returns The oldest comment already shown.
+ * @throws UsecaseError (invalid_argument) when the cursor is not one of a thread's.
+ */
+function decodeCommentCursor(cursor: string): CommentKey {
+  const parts = decodeCursor(cursor, 2);
+  if (!parts) invalid(STALE_CURSOR_MESSAGE);
+  const [createdAt, commentId] = parts;
+  if (!isExactTimestamp(createdAt) || !isCursorValue(commentId)) invalid(STALE_CURSOR_MESSAGE);
+  return { createdAt, id: commentId };
+}
+
+/**
+ * Maps a comment row to its proto message shape.
+ *
+ * @param comment - The stored comment.
+ * @param authorById - Resolves the author to a public user; undefined when gone.
+ * @returns The comment message init shape.
+ */
+function toCommentMessage(
+  comment: CommentRow,
+  authorById: (authorId: string) => ReturnType<typeof toPublicUser> | undefined,
+) {
+  return {
+    id: comment.id,
+    expenseId: comment.expense_id,
+    author: authorById(comment.user_id),
+    body: comment.body,
+    createdAt: comment.created_at,
   };
 }
 

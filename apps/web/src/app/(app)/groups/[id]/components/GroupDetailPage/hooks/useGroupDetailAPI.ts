@@ -2,20 +2,24 @@
 /** TanStack Query bindings for group detail: me, group, friends, expenses, balances, add/remove members. */
 
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { authClient, expenseClient, groupClient, socialClient } from "@/lib/api/connect";
+import { authClient, errorMessage, expenseClient, groupClient, socialClient } from "@/lib/api/connect";
 import type { GroupStatus } from "@haalkhata/shared/group/status";
 import { MONEY_KEYS, queryKeys } from "@haalkhata/shared/api/queryKeys";
+import { EXPENSE_PAGE_SIZE } from "@haalkhata/shared/api/paging";
+import { mergeExpensePages } from "@haalkhata/shared/expense/pages";
 
 /**
  * Wraps every server call the group detail page makes: the signed-in user, the
  * group (with members), the caller's friends (for the add-people picker), the
- * group's expenses, its balances, and the add-members mutation (which
- * refreshes the group, the group list and the friends list on success).
+ * group's expenses a page at a time, its balances, and the add-members
+ * mutation (which refreshes the group, the group list and the friends list
+ * on success).
  *
  * @param groupId - Identifier of the group being viewed.
- * @returns An object with `me`, `group`, `groupError`, `friends`, `expenses`,
- *   `balances`, an `isLoading` flag covering the group and expense queries,
- *   and the `addMembers`, `removeMember` and `transferOwnership` mutations.
+ * @returns An object with `me`, `group`, `groupError`, `friends`, the loaded
+ *   `expenses` with their paging controls, `balances`, an `isLoading` flag
+ *   covering the group and the first page of expenses, and the
+ *   `addMembers`, `removeMember` and `transferOwnership` mutations.
  */
 export function useGroupDetailAPI(groupId: string) {
   const queryClient = useQueryClient();
@@ -25,10 +29,14 @@ export function useGroupDetailAPI(groupId: string) {
     queryKey: queryKeys.group(groupId),
     queryFn: () => groupClient.getGroup({ groupId }),
   });
-  const expenses = useQuery({
+  const expenses = useInfiniteQuery({
     queryKey: queryKeys.expenses({ groupId }),
-    queryFn: () => expenseClient.listExpenses({ groupId, withUserId: "" }),
+    initialPageParam: "",
+    queryFn: ({ pageParam }) =>
+      expenseClient.listExpenses({ groupId, withUserId: "", cursor: pageParam, limit: EXPENSE_PAGE_SIZE }),
+    getNextPageParam: (lastPage) => lastPage.nextCursor || undefined,
   });
+  const expenseFailure = expenses.error ? errorMessage(expenses.error) : "";
   const balances = useQuery({
     queryKey: queryKeys.groupBalances(groupId),
     queryFn: () => expenseClient.getGroupBalances({ groupId }),
@@ -122,7 +130,15 @@ export function useGroupDetailAPI(groupId: string) {
     group: group.data,
     groupError: group.error,
     friends: (friends.data?.friends ?? []).flatMap((friend) => (friend.user ? [friend.user] : [])),
-    expenses: expenses.data,
+    expenses: mergeExpensePages(expenses.data?.pages ?? []),
+    /** Why the first page of expenses did not load; "" when it did. */
+    expensesError: expenses.isFetchNextPageError ? "" : expenseFailure,
+    reloadExpenses: () => void expenses.refetch(),
+    expensesHasMore: expenses.hasNextPage,
+    expensesLoadingMore: expenses.isFetchingNextPage,
+    loadMoreExpenses: () => void expenses.fetchNextPage(),
+    /** Why the next page of expenses did not load; "" when it did. */
+    expensesLoadMoreError: expenses.isFetchNextPageError ? expenseFailure : "",
     balances: balances.isError ? undefined : balances.data,
     balancesError: balances.error,
     reloadBalances: () => void balances.refetch(),

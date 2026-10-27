@@ -54,18 +54,51 @@ export const MAX_ITEM_ASSIGNMENTS = 100;
 export const MAX_MONEY_CENTS = 2_000_000_000;
 
 /**
- * Most lines a friend statement returns, newest first. The balances are
- * computed over the whole history regardless; this bounds only what is
- * shipped to a screen, and the response says when it applied.
+ * Lines in the one page of a friend statement an app version from before
+ * paging asks for (limit 0), with `truncated` saying when more were left off.
  */
 export const LEDGER_DISPLAY_LIMIT = 300;
 
 /**
- * Most rows an expense list returns, newest first. Same shape as the
- * statement cap: settledness and every balance still read the whole
- * ledger, only the list itself is bounded.
+ * Where lines written on one day and moment fall in a friend statement,
+ * oldest first: an expense, then the balances a net settlement cancelled,
+ * then the payment itself. Part of the statement's order key, in memory and
+ * in the page queries alike.
+ */
+export const LEDGER_LINE_RANK = { expense: 0, offset: 1, payment: 2 } as const;
+
+/** Lines in a page of a friend statement when the client names no size. */
+export const LEDGER_PAGE_SIZE = 50;
+
+/** Most lines one page of a friend statement may hold. */
+export const MAX_LEDGER_PAGE_SIZE = 200;
+
+/**
+ * Why a later page of a friend statement was refused: a line was added,
+ * edited or removed since the first page was read, so the running balance
+ * that page would continue from no longer holds. Clients reload the
+ * statement from the top when they get it (failed_precondition).
+ */
+export const LEDGER_CHANGED_MESSAGE =
+  "this statement changed while you were reading it — reload it to see the current figures";
+
+/**
+ * Rows in the one page of an expense list an app version from before paging
+ * asks for (limit 0), with `truncated` saying when more were left off.
  */
 export const EXPENSE_LIST_DISPLAY_LIMIT = 500;
+
+/** Rows in a page of an expense list when the client names no size. */
+export const EXPENSE_PAGE_SIZE = 50;
+
+/** Most rows one page of an expense list may hold. */
+export const MAX_EXPENSE_PAGE_SIZE = 200;
+
+/** Comments in a page when the client names no size. */
+export const COMMENT_PAGE_SIZE = 30;
+
+/** Most comments one page may hold. */
+export const MAX_COMMENT_PAGE_SIZE = 100;
 
 /**
  * Text bounds on the expense write path. Defined once in the shared package

@@ -284,7 +284,7 @@ order).
 | Amount per expense/settlement | ≤ 2,000,000,000 cents |
 | Text | description ≤ shared limit, notes, item names, comment, settlement note — all bounded by shared limits |
 | `expense_date` | `YYYY-MM-DD`, must be a **real** calendar day; empty → server's UTC today (a backstop — the forms always send the user's local today) |
-| List caps | expenses ≤ 500 rows, friend ledger ≤ 300 lines (display only — `truncated: true`; balances always read everything) |
+| Page sizes | expenses: default 50, at most 200; statement lines: default 50, at most 200; comments: default 30, at most 100. `limit: 0` is an app from before paging: one page of ≤ 500 expenses / ≤ 300 lines / every comment, with `truncated` |
 
 ---
 
@@ -301,6 +301,34 @@ order).
 9. [GetGroupBalances](#9-getgroupbalances)
 10. [GetOverallBalances](#10-getoverallbalances)
 11. [GetFriendLedger](#11-getfriendledger)
+12. [ListFriendLedgerEntries](#12-listfriendledgerentries)
+13. [ListComments](#13-listcomments)
+
+### Paging
+
+Every list is paged by **keyset**: a page ends at its last row, and the
+next is every row strictly after it in the list's order, so rows added
+while someone pages cannot shift the window, and nothing is listed twice or
+skipped. Each order is total — an expense list by date, then the moment it
+was written **to the microsecond** (read with `to_char`, since a JavaScript
+`Date` keeps milliseconds), then id; a statement by day, moment, a rank on
+one moment (expense, then cancelled balances, then the payment), then id
+compared byte by byte (`COLLATE "C"`, the order JavaScript keeps when it
+merges expenses with payments). A cursor is opaque; one the server did not
+make, or made for another list, is refused (`invalid_argument`) rather than
+read as "from the top", which would list rows twice.
+
+The statement's running balance needs every older line, so its first page
+(`GetFriendLedger`) reads the whole history and hands the next page a
+**signed** cursor carrying the balance where it stopped, bound to the reader
+and the friend, plus a fingerprint of the pair's history (`pairHistoryDigest`
+in `ledger.repo.ts`: each shared expense's currency, date, moment, deleted
+flag, payers and splits, and each payment). A later page reads only its own
+rows, after checking the fingerprint: if any line was added, edited, moved
+or removed since the first page, it refuses with `failed_precondition`
+instead of continuing from balances that no longer hold — a figure that
+never existed. Clients answer by reading every loaded page again from the
+top and say so beside Show more.
 
 ---
 
@@ -436,7 +464,12 @@ created.
 
 - **Rate-limited** 60/min. Scope: `group_id` (member-only), `with_user_id`
   (one-offs shared with that user), or neither (everything involving the
-  caller).
+  caller) — narrowed by `part` to the caller's one-off expenses, or to one
+  group's expenses the caller is on. The narrowing is the server's, so a
+  filtered list pages through every match; `part` with a group or a person
+  is refused.
+- **Paged** newest first (see [Paging](#paging)); `next_cursor` is empty on
+  the last page.
 - **Deleted rows are listed** (struck through by clients) — a payment made
   against a since-deleted expense keeps the row that explains it. Balance
   math reads its own deleted-excluded queries.
@@ -452,8 +485,9 @@ created.
     "was a payment typed in?".
   - Viewer-relative, which is why it is a side list, not a field on Expense.
   - Deleted expenses are never "settled": nothing was pending from them.
-- **Truncation:** ≥ 500 rows → newest 500 + `truncated: true`. Balances and
-  settledness still read the whole ledger; only the display list is cut.
+- **`limit: 0`** (an app from before paging): newest 500 + `truncated: true`
+  when there are more. Balances and settledness read the whole ledger
+  either way; only the display list is paged.
 - `users` carries the public projection of everyone referenced (creators,
   payers, owers) so clients can render names without extra calls.
 
@@ -463,6 +497,10 @@ created.
 | --- | --- | --- |
 | group_id | string | Exactly one of these, or both empty = all of the caller's expenses. |
 | with_user_id | string | One-off expenses shared with this user. |
+| cursor | string | The previous page's `next_cursor`; empty for the newest page. |
+| limit | int32 | Page size, clamped to 200; 0 = the pre-paging single page. |
+| part | ExpenseListPart | With both above empty: `UNSPECIFIED` (everything), `ONE_OFF`, or `GROUP`. |
+| part_group_id | string | The group, exactly when `part` is `GROUP`. |
 
 #### Response
 
@@ -470,10 +508,11 @@ created.
 
 | Field | Type | Description |
 | --- | --- | --- |
-| expenses | repeated Expense | Newest first, capped for display. |
-| users | repeated User | Everyone referenced. |
+| expenses | repeated Expense | The page, newest first. |
+| users | repeated User | Everyone the page references. |
 | settled_expense_ids | repeated string | See notes. |
-| truncated | bool | True when older rows were cut. |
+| truncated | bool | Deprecated: with `limit: 0` only, true when older rows were left off. |
+| next_cursor | string | Where the next page starts; empty on the last. |
 
 ---
 
@@ -502,12 +541,17 @@ created.
   payment might have been for it. Same answer for every viewer.
 - Comments and history actors resolve through one batched user lookup;
   authors who no longer resolve are omitted rather than invented.
+- **Comments are paged:** with `comment_limit` the response carries the
+  newest that many, oldest first, and `comments_next_cursor` for the older
+  ones ([ListComments](#13-listcomments)). Without it (an app from before
+  paging) it carries every comment.
 
 #### Request
 
 | Field | Type | Description |
 | --- | --- | --- |
 | expense_id | string | |
+| comment_limit | int32 | Newest comments to include, clamped to 100; 0 = all. |
 
 #### Response
 
@@ -517,6 +561,7 @@ created.
 | --- | --- | --- |
 | expense | Expense | Including `deleted_at` when soft-deleted. |
 | comments | repeated Comment | Oldest first, with public-projection authors. |
+| comments_next_cursor | string | With `comment_limit`: where the older comments start; empty when none. |
 | users | repeated User | Everyone referenced by the expense. |
 | history | repeated ExpenseEvent | `{actor, type, created_at}`, oldest first. |
 | settled_for_viewer | bool | See notes. |
@@ -829,8 +874,11 @@ per scope; callers only use the response to confirm the recording):
 - **No existence oracle:** an unknown id and an existing account with no
   friendship, mutual group, or shared history return the identical
   `NotFound` "friend ledger not found".
-- Truncation: newest 300 lines + `truncated: true`; nets and group balances
-  are computed over everything regardless.
+- **Paged:** with `limit`, `entries` is the newest page and `next_cursor`
+  leads to [ListFriendLedgerEntries](#12-listfriendledgerentries) (see
+  [Paging](#paging)). `limit: 0` (an app from before paging) returns the
+  newest 300 lines + `truncated: true` when there are more. Nets and group
+  balances are computed over everything either way.
 - **`settle_positions` is what a settle dialog works from** — not the
   statement, but the position the settlement write will recompute, with its
   `digest`. One per currency with anything outstanding; scopes are signed
@@ -857,6 +905,7 @@ per scope; callers only use the response to confirm the recording):
 | Field | Type | Description |
 | --- | --- | --- |
 | user_id | string | The other person. |
+| limit | int32 | Lines on the page, clamped to 200; 0 = the pre-paging 300. |
 
 #### Response
 
@@ -871,7 +920,8 @@ per scope; callers only use the response to confirm the recording):
 | group_balances | repeated FriendGroupBalance | Per-scope routed balances (`""` group = one-off slate, one entry per currency). |
 | is_friend | bool | Whether an explicit friendship exists (the page also works for mutual group members and historical counterparties). |
 | mutual_groups | repeated MutualGroup | Every shared group, settled ones included. |
-| truncated | bool | True when older lines were cut. |
+| truncated | bool | Deprecated: with `limit: 0` only, true when older lines were left off. |
+| next_cursor | string | Signed; leads to the older lines. Empty on the last page. |
 | settle_positions | repeated SettlePosition | Per currency: `net_cents` (> 0 = they owe you), `scopes` (`group_id`, `group_name`, `net_cents`, `simplified`), and the `digest` a net settlement must send back. |
 | payee_methods | repeated payment.v1.PaymentMethod | The friend's payment methods, oldest first. Empty unless the caller owes them. |
 | read_at | string | The server's clock when this was read (ISO 8601). |
@@ -893,3 +943,74 @@ per scope; callers only use the response to confirm the recording):
 | currency | string | The column this line's running balance continues. |
 | net_settlement_id | string | The unit this line belongs to; empty for anything that is not part of a net settlement. |
 | offset | bool | True for a balance that was cancelled (no money moved); false for the payment itself. |
+
+---
+
+### 12. ListFriendLedgerEntries
+
+**Method:** `ListFriendLedgerEntries`
+**Route:** `POST /api/connect/expense.v1.ExpenseService/ListFriendLedgerEntries`
+
+#### Notes
+
+- **Rate-limited** 120/min: each page fingerprints the pair's history.
+- The next older page of the statement, from the `next_cursor` of
+  `GetFriendLedger` or of the previous page. Lines and `balance_after_cents`
+  are exactly what one read of the whole statement shows: the running
+  balance continues from the cursor (see [Paging](#paging)), and an
+  integration test reads the statement at page sizes 1–50 against the single
+  read, net settlements, two currencies, deleted and zero-change rows
+  included.
+- Expenses and payments are read as two keyset streams and merged in the
+  statement's order; an expense that moved nothing between the pair makes
+  no line, so the read continues past it.
+- A payment line's `removal_refusal` considers the whole net settlement it
+  belongs to, even when the rest of it sits on another page.
+- **Refusals:** `invalid_argument` for a cursor that is forged, malformed, or
+  for another reader or friend; `failed_precondition` when a line changed
+  since the first page was read (clients reload from the top);
+  `not_found` when the person no longer exists.
+
+#### Request
+
+| Field | Type | Description |
+| --- | --- | --- |
+| user_id | string | The other person. |
+| cursor | string | The previous page's `next_cursor`. |
+| limit | int32 | Lines on the page; default 50, clamped to 200. |
+
+#### Response
+
+| Field | Type | Description |
+| --- | --- | --- |
+| entries | repeated FriendLedgerEntry | Newest first, as in `GetFriendLedger`. |
+| next_cursor | string | Empty at the oldest line. |
+
+---
+
+### 13. ListComments
+
+**Method:** `ListComments`
+**Route:** `POST /api/connect/expense.v1.ExpenseService/ListComments`
+
+#### Notes
+
+- Access as for `GetExpense`. Comments across a block either way are left
+  out, as there.
+- Pages back in time from `GetExpense.comments_next_cursor`; each page reads
+  oldest first, so a client shows the last page it loaded at the top.
+
+#### Request
+
+| Field | Type | Description |
+| --- | --- | --- |
+| expense_id | string | |
+| cursor | string | `comments_next_cursor`, or the previous page's `next_cursor`. |
+| limit | int32 | Default 30, clamped to 100. |
+
+#### Response
+
+| Field | Type | Description |
+| --- | --- | --- |
+| comments | repeated Comment | Oldest first. |
+| next_cursor | string | Where older comments start; empty at the first comment. |

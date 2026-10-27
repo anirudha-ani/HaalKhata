@@ -34,28 +34,56 @@ export const queryKeys = {
    */
   groupBalances: (groupId: string) => ["groups", groupId, "balances"] as const,
   /**
-   * An expense list scoped by group and/or counterparty.
-   * @param filter - Optional scoping: `groupId` limits to one group, `withUserId` to expenses shared with one user.
+   * A paged expense list scoped by group and/or counterparty. Backs a
+   * `useInfiniteQuery`; every list of expenses is one.
+   * @param filter - Optional scoping: `groupId` limits to one group,
+   *   `withUserId` to expenses shared with one user, `scope` to one part of
+   *   the caller's own list (the all-expenses page's chips). Part of the key,
+   *   so changing it starts a fresh paged list rather than appending to the
+   *   previous one's pages.
    * @returns The query key tuple for that filtered expense list.
    */
-  expenses: (filter: { groupId?: string; withUserId?: string }) =>
-    ["expenses", filter.groupId ?? "", filter.withUserId ?? ""] as const,
+  expenses: (filter: { groupId?: string; withUserId?: string; scope?: string }) =>
+    ["expenses", filter.groupId ?? "", filter.withUserId ?? "", filter.scope ?? "all"] as const,
   /**
    * A single expense's detail.
    * @param expenseId - The expense's identifier.
    * @returns The query key tuple for that expense.
    */
   expense: (expenseId: string) => ["expense", expenseId] as const,
+  /**
+   * The comments older than the ones an expense's detail carries, paged
+   * back from its `commentsNextCursor`. That cursor is part of the key: when
+   * a new comment moves the detail's window, the earlier pages start again
+   * from the new edge instead of leaving a gap. Under the expense's prefix,
+   * so invalidating the expense clears them too.
+   * @param expenseId - The expense's identifier.
+   * @param cursor - The detail's `commentsNextCursor`.
+   * @returns The query key tuple for those earlier comments.
+   */
+  earlierComments: (expenseId: string, cursor: string) =>
+    ["expense", expenseId, "comments", cursor] as const,
   /** The user's net balances across all groups and friends. */
   overallBalances: ["balances", "overall"] as const,
   /** The user's friends list. */
   friends: ["friends"] as const,
   /**
-   * The full shared history with one friend.
+   * The position with one friend, as a settle dialog reads it: the
+   * GetFriendLedger response through a plain `useQuery`.
    * @param friendId - The friend's identifier.
    * @returns The query key tuple for that friendship's ledger.
    */
   friendLedger: (friendId: string) => ["friends", friendId, "ledger"] as const,
+  /**
+   * The statement with one friend, page by page: a `useInfiniteQuery` whose
+   * first page is GetFriendLedger and the rest ListFriendLedgerEntries.
+   * Longer than {@link friendLedger} so one invalidation clears both, and
+   * never equal to it, since a plain query and an infinite one cannot share
+   * a cache entry.
+   * @param friendId - The friend's identifier.
+   * @returns The query key tuple for that statement.
+   */
+  friendStatement: (friendId: string) => ["friends", friendId, "ledger", "statement"] as const,
   /**
    * A single page of activity, for callers that just want the latest events
    * (the dashboard's recent-activity strip).

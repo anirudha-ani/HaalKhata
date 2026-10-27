@@ -1,5 +1,6 @@
 /** Scope filter for the all-expenses page: everything, one-off only, or one group. */
 
+import { ExpenseListPart } from "@haalkhata/protogen/expense/v1/expense_pb";
 import { matchesTerms, searchTerms } from "../search/filter";
 
 /**
@@ -59,16 +60,20 @@ export function scopePickerGroups<Group extends { name: string }>(
 }
 
 /**
- * Whether an expense belongs under the given scope filter.
+ * The part of the caller's own list a scope filter reads, as ListExpenses
+ * takes it. The server applies it, so a narrowed list pages through every
+ * expense that matches instead of hiding the loaded rows that do not.
  *
- * @param groupId - The expense's group id; "" for a one-off expense.
- * @param filter - Active filter: "all", "oneoff", or a specific group id.
- * @returns True when the expense should be listed.
+ * @param filter - Active filter: "all", "oneoff", or a group id.
+ * @returns The request's `part` and `partGroupId`.
  */
-export function matchesScopeFilter(groupId: string, filter: ExpenseScopeFilter): boolean {
-  if (filter === "all") return true;
-  if (filter === "oneoff") return groupId === "";
-  return groupId === filter;
+export function scopeFilterRequest(filter: ExpenseScopeFilter): {
+  part: ExpenseListPart;
+  partGroupId: string;
+} {
+  if (filter === "all") return { part: ExpenseListPart.UNSPECIFIED, partGroupId: "" };
+  if (filter === "oneoff") return { part: ExpenseListPart.ONE_OFF, partGroupId: "" };
+  return { part: ExpenseListPart.GROUP, partGroupId: filter };
 }
 
 /**
@@ -77,16 +82,22 @@ export function matchesScopeFilter(groupId: string, filter: ExpenseScopeFilter):
  * the group page's `No groups match “”` regression, encoded here from the
  * start rather than repeated.
  *
+ * The scope is applied by the server, so an empty scope is empty. A search
+ * reads only the pages loaded so far; while older ones remain it says so,
+ * rather than claim no expense matches at all.
+ *
  * @param query - Current search text; "" when not searching.
  * @param filter - Active scope filter.
  * @param groupName - Display name of the filtered group when `filter` is a
  *   group id; ignored otherwise.
+ * @param moreToLoad - Whether older expenses remain to be loaded.
  * @returns A sentence naming what is hiding the expenses.
  */
 export function noExpensesMessage(
   query: string,
   filter: ExpenseScopeFilter,
   groupName: string,
+  moreToLoad = false,
 ): string {
   const scopePhrase =
     filter === "oneoff"
@@ -94,6 +105,9 @@ export function noExpensesMessage(
       : filter !== "all"
         ? `in ${groupName || "that group"}`
         : "";
+  if (query && moreToLoad) {
+    return `None of the expenses loaded so far match “${query}”${scopePhrase ? ` ${scopePhrase}` : ""}. Show more to search further back.`;
+  }
   if (query && scopePhrase) return `No expenses match “${query}” ${scopePhrase}.`;
   if (query) return `No expenses match “${query}”.`;
   if (scopePhrase) return `No expenses ${scopePhrase}.`;

@@ -341,7 +341,7 @@ describe.skipIf(!reachable)("recordSettlement against Postgres", () => {
     // the 3000 they paid for an expense that no longer counts.
     expect(await userNetInGroup(DEBTOR, "grp-1")).toBe(3000);
     // … and every ledger surface still shows the row that explains why.
-    const listed = await listExpenses(DEBTOR, { groupId: "grp-1" });
+    const listed = await listExpenses(DEBTOR, { groupId: "grp-1" }, { cursor: "", limit: 0 });
     expect(listed.expenses.find((expense) => expense.id === snack.id)?.deletedAt).not.toBe("");
     expect(listed.settledExpenseIds).not.toContain(snack.id);
     const detail = await getExpense(DEBTOR, snack.id);

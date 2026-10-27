@@ -3,6 +3,9 @@
 import type { PoolClient } from "pg";
 import { execute, newId, query, queryOne } from "@/server/common/db/db";
 import { lockParticipantLedgers, withLedgerTransaction } from "@/server/common/ledger/ledgerLocks";
+import { exactTimeSql, utcDaySql } from "@/server/common/pagination/pagination";
+import { LEDGER_LINE_RANK, OFFSET_SETTLEMENT_METHOD } from "@/server/expense/expense.constants";
+import type { LedgerLineKey } from "@/server/expense/domain/ledgerOrder";
 
 /** One row of the settlements table (column names mirror SQL). */
 export interface SettlementRow {
@@ -328,13 +331,83 @@ export async function listSettlementsBetween(
   secondUserId: string,
   includeDeleted = false,
   client?: PoolClient,
-): Promise<SettlementRow[]> {
-  return query<SettlementRow>(
-    `SELECT * FROM settlements
+): Promise<ListedSettlementRow[]> {
+  return query<ListedSettlementRow>(
+    `SELECT *, ${exactTimeSql("created_at")} AS created_at_exact FROM settlements
      WHERE ((from_user = $1 AND to_user = $2) OR (from_user = $2 AND to_user = $1))
        AND ($3::boolean OR deleted_at IS NULL)
      ORDER BY created_at ASC`,
     [firstUserId, secondUserId, includeDeleted],
+    client,
+  );
+}
+
+/** A settlement row with its creation time to the microsecond, for statement order. */
+export type ListedSettlementRow = SettlementRow & { created_at_exact: string };
+
+/**
+ * One page of the payments between two people (deleted ones included, every
+ * scope), going back in time from `before` in the friend statement's order:
+ * UTC day, moment written, rank (a cancelled balance before its payment),
+ * id. The same order {@link compareLedgerLineKeys} keeps in memory.
+ *
+ * @param firstUserId - One of the two people.
+ * @param secondUserId - The other.
+ * @param before - The oldest line already shown; null starts at the newest.
+ * @param limit - Most rows to return.
+ * @param client - Snapshot client.
+ * @returns The rows, newest first, each with its exact creation time.
+ */
+export async function listSettlementsBetweenPage(
+  firstUserId: string,
+  secondUserId: string,
+  before: LedgerLineKey | null,
+  limit: number,
+  client: PoolClient,
+): Promise<ListedSettlementRow[]> {
+  return query<ListedSettlementRow>(
+    `SELECT *, ${exactTimeSql("created_at")} AS created_at_exact
+       FROM settlements
+      WHERE ((from_user = $1 AND to_user = $2) OR (from_user = $2 AND to_user = $1))
+        AND ($3::text IS NULL
+             OR (${utcDaySql("created_at")}, created_at,
+                 CASE WHEN method = $7 THEN $8::int ELSE $9::int END, id COLLATE "C")
+                < ($3::text COLLATE "C", $4::timestamptz, $5::int, $6::text COLLATE "C"))
+      ORDER BY ${utcDaySql("created_at")} DESC, created_at DESC,
+               CASE WHEN method = $7 THEN $8::int ELSE $9::int END DESC, id COLLATE "C" DESC
+      LIMIT $10`,
+    [
+      firstUserId,
+      secondUserId,
+      before?.day ?? null,
+      before?.at ?? null,
+      before?.rank ?? null,
+      before?.id ?? null,
+      OFFSET_SETTLEMENT_METHOD,
+      LEDGER_LINE_RANK.offset,
+      LEDGER_LINE_RANK.payment,
+      limit,
+    ],
+    client,
+  );
+}
+
+/**
+ * Every row of the given net settlements, so a page holding one line of a
+ * unit can still tell what removing the whole unit would do.
+ *
+ * @param netSettlementIds - The units.
+ * @param client - Snapshot client.
+ * @returns Their rows; no query is sent for an empty list.
+ */
+export async function listSettlementsByNetSettlements(
+  netSettlementIds: readonly string[],
+  client: PoolClient,
+): Promise<SettlementRow[]> {
+  if (netSettlementIds.length === 0) return [];
+  return query<SettlementRow>(
+    "SELECT * FROM settlements WHERE net_settlement_id = ANY($1::text[])",
+    [[...new Set(netSettlementIds)]],
     client,
   );
 }

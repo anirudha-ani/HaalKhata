@@ -13,6 +13,7 @@ import { Avatar } from "@/components/ui/Avatar";
 import { Button } from "@/components/ui/Button";
 import { Money } from "@/components/ui/Money";
 import { Sheet } from "@/components/ui/Sheet/Sheet";
+import { ShowMoreFooter } from "@/components/ui/ShowMoreFooter/ShowMoreFooter";
 import { Spinner } from "@/components/ui/Spinner";
 import { errorMessage } from "@/lib/api/connect";
 import { settledStatus } from "@haalkhata/shared/expense/settledStatus";
@@ -359,7 +360,17 @@ export function ExpenseDetailScreen({ expenseId }: { expenseId: string }) {
       {/* Comments */}
       <View style={styles.commentsSection}>
         <Text style={styles.cardTitle}>COMMENTS</Text>
-        {(expenseDetail.detail?.comments ?? []).map((comment) => (
+        {/* Older comments sit above the thread, so the control that reads
+            them, and why a page did not load, sit above it too. */}
+        <ShowMoreFooter
+          direction="earlier"
+          error={expenseDetail.earlierCommentsError}
+          hasMore={expenseDetail.hasEarlierComments}
+          isLoadingMore={expenseDetail.isLoadingEarlierComments}
+          label="Show earlier comments"
+          onShowMore={expenseDetail.showEarlierComments}
+        />
+        {expenseDetail.comments.map((comment) => (
           <View key={comment.id} style={styles.commentCard}>
             {comment.author ? (
               <PersonLink meId={meId} userId={comment.author.id}>

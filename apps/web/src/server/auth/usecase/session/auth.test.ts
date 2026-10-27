@@ -91,7 +91,7 @@ describe("auth tokens", () => {
 
   it("does not accept a signature created for another token purpose", () => {
     const payload = `v2.user-123.0.${Math.floor(Date.now() / 1000) + 3600}`;
-    const wrongPurposeToken = `${payload}.${signPayload("phone-merge", payload)}`;
+    const wrongPurposeToken = `${payload}.${signPayload("ledger-cursor", payload)}`;
 
     expect(verifyToken(wrongPurposeToken)).toBeNull();
   });

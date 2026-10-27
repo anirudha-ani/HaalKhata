@@ -25,6 +25,9 @@ export const RPC_RATE_LIMITS = {
   getInsights: 30,
   getOverallBalances: 60,
   listExpenses: 60,
+  // Each older page of a statement fingerprints the pair's whole history
+  // before reading its own rows; someone scrolling a long one reads a few.
+  listFriendLedgerEntries: 120,
   listGroups: 60,
   parseReceipt: 5,
   registerDevice: 10,

@@ -8,6 +8,7 @@ import { errorMessage, expenseClient } from "@/lib/api/connect";
 import { newOperationId } from "@/lib/operations/operationId";
 import { centsToInput, parseMoneyInput } from "@haalkhata/shared/money/money";
 import { MONEY_KEYS, queryKeys } from "@haalkhata/shared/api/queryKeys";
+import { SETTLE_DIALOG_LEDGER_LIMIT } from "@haalkhata/shared/api/paging";
 import { ownMethodsFailedLine } from "@haalkhata/shared/payment/copy";
 import { CASH_CHOICE } from "@haalkhata/shared/payment/payeeMethods";
 import { Avatar } from "@/components/ui/Avatar/Avatar";
@@ -108,7 +109,8 @@ export function SettleUpModal({
   // this modal and the write it sends can never disagree about what is owed.
   const ledgerQuery = useQuery({
     queryKey: queryKeys.friendLedger(other.id),
-    queryFn: () => expenseClient.getFriendLedger({ userId: other.id }),
+    queryFn: () =>
+      expenseClient.getFriendLedger({ userId: other.id, limit: SETTLE_DIALOG_LEDGER_LIMIT }),
   });
   const loaded = ledgerQuery.data !== undefined;
   const positions = ledgerQuery.data?.settlePositions ?? [];

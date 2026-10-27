@@ -24,6 +24,8 @@ import { MembersModal } from "./components/MembersModal/MembersModal";
 import { MembersStrip } from "./components/MembersStrip/MembersStrip";
 import { BalancesPanel } from "./components/BalancesPanel/BalancesPanel";
 import { ExpenseList } from "@/components/expenses/ExpenseList/ExpenseList";
+import { ErrorAlert } from "@/components/ui/ErrorAlert/ErrorAlert";
+import { LoadMoreFooter } from "@/components/ui/LoadMoreFooter/LoadMoreFooter";
 import { TABS } from "../../constants/tabs";
 import { useGroupDetail } from "./hooks/useGroupDetail";
 
@@ -180,13 +182,29 @@ export function GroupDetailPage({
       </div>
 
       {groupDetail.tab === "expenses" ? (
-        <ExpenseList
-          expenses={groupDetail.expenses?.expenses ?? []}
-          meId={groupDetail.me?.id}
-          userById={groupDetail.userById}
-          emptyHint="Add the first expense or scan a receipt to get this ledger going."
-          settledIds={new Set(groupDetail.expenses?.settledExpenseIds ?? [])}
-        />
+        groupDetail.expensesError ? (
+          <ErrorAlert
+            message={`Couldn't load this group's expenses: ${groupDetail.expensesError}`}
+            onRetry={groupDetail.reloadExpenses}
+          />
+        ) : (
+          <div className="space-y-3">
+            <ExpenseList
+              expenses={groupDetail.expenses.expenses}
+              meId={groupDetail.me?.id}
+              userById={groupDetail.userById}
+              emptyHint="Add the first expense or scan a receipt to get this ledger going."
+              settledIds={groupDetail.expenses.settledIds}
+            />
+            <LoadMoreFooter
+              hasMore={groupDetail.expensesHasMore}
+              isLoadingMore={groupDetail.expensesLoadingMore}
+              onLoadMore={groupDetail.loadMoreExpenses}
+              error={groupDetail.expensesLoadMoreError}
+              endLabel={groupDetail.expenses.expenses.length > 0 ? "That's the group's first expense." : ""}
+            />
+          </div>
+        )
       ) : groupDetail.tab === "balances" ? (
         <BalancesPanel
           balances={groupDetail.balances}

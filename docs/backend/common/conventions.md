@@ -147,6 +147,7 @@ tracked keys with LRU eviction so it cannot be a memory-exhaustion vector.
 | Payment method writes (create, update, delete, set-preferred) | per account, one shared bucket | 30/min |
 | `ParseReceipt` | per account | 5/min (+ max 2 concurrent per process) |
 | Ledger reads (`ListExpenses`, `ListGroups`, `GetFriendLedger`, `GetGroupBalances`, `GetOverallBalances`/`ListFriends`) | per account | 60/min each |
+| Older statement pages (`ListFriendLedgerEntries`) | per account | 120/min: each fingerprints the pair's history; someone scrolling a long statement reads several |
 | `GetInsights` | per account | 30/min |
 | Admin sign-in nonce (`BeginSignIn`) | `admin-nonce:<client-ip>` | 30/min: each page load and each refused sign-in asks for a fresh one |
 | Admin sign-in (`SignIn`) | `admin-auth:<client-ip>` | 5/min |

@@ -4,6 +4,7 @@ import type { PoolClient } from "pg";
 
 import {
   listExpensesBetween,
+  listExpensesBetweenPage,
   listExpensesByGroups,
   listExpensesInvolvingUser,
   listOneOffExpensesBetween,
@@ -11,13 +12,17 @@ import {
   loadExpenseChildren,
   type ExpenseChildren,
   type ExpenseRow,
+  type ListedExpenseRow,
 } from "@/server/expense/repo/expenses.repo";
 import {
   listOneOffSettlementsBetween,
   listOneOffSettlementsWithAnyOf,
   listSettlementsBetween,
+  listSettlementsBetweenPage,
   listSettlementsByGroups,
+  listSettlementsByNetSettlements,
   listSettlementsInvolvingUser,
+  type ListedSettlementRow,
   type SettlementRow,
 } from "@/server/expense/repo/settlements.repo";
 import {
@@ -43,15 +48,27 @@ import {
   type DirectedScopeDebt,
   type ScopeDebt,
 } from "../domain/settlementAllocation";
+import { compareLedgerLineKeys, type LedgerLineKey } from "../domain/ledgerOrder";
+import { decodeLedgerCursor, encodeLedgerCursor } from "./ledgerCursor";
 import { listFriendIds } from "@/server/social/repo/friendships.repo";
-import { hasUnsettledGroupBalances, sumUserNetByGroup } from "@/server/expense/repo/ledger.repo";
+import {
+  hasUnsettledGroupBalances,
+  pairHistoryDigest,
+  sumUserNetByGroup,
+} from "@/server/expense/repo/ledger.repo";
 import { snapshot } from "@/server/common/db/db";
-import { denied, notFound } from "@/server/common/errors";
+import { UsecaseError, denied, invalid, notFound } from "@/server/common/errors";
 import { toInt32Cents } from "@/server/common/money/money";
+import { pageSize } from "@/server/common/pagination/pagination";
+import { STALE_CURSOR_MESSAGE } from "@/server/common/pagination/pagination.constants";
 import { toPublicUser } from "@/server/auth/usecase/identity/user.mapper";
 import { listPayeeMethods } from "@/server/payment/usecase/paymentMethod.usecase";
 import {
+  LEDGER_CHANGED_MESSAGE,
   LEDGER_DISPLAY_LIMIT,
+  LEDGER_LINE_RANK,
+  LEDGER_PAGE_SIZE,
+  MAX_LEDGER_PAGE_SIZE,
   OFFSET_SETTLEMENT_METHOD,
   formerMemberRefusal,
 } from "@/server/expense/expense.constants";
@@ -436,7 +453,7 @@ async function pairNetsForUser(
     groups.filter((group) => group.simplify_debts).map((group) => group.id),
   );
 
-  const allExpenses = await listExpensesInvolvingUser(userId, false, undefined, client);
+  const allExpenses = await listExpensesInvolvingUser(userId, client);
   const allSettlements = await listSettlementsInvolvingUser(userId, client);
   // A former member's history can still name groups they no longer list.
   const knownIds = new Set(groups.map((group) => group.id));
@@ -813,7 +830,8 @@ interface FriendLedgerLine {
   currency: string;
   totalCents: number;
   deltaCents: number;
-  sortKey: string;
+  /** Where the line sits in the statement. */
+  key: LedgerLineKey;
   createdAt: string;
   deleted: boolean;
   recordedByName: string;
@@ -853,6 +871,39 @@ async function groupsForHistory(
 }
 
 /**
+ * Where an expense sits in a statement.
+ *
+ * @param expense - The expense, with its exact creation time.
+ * @returns Its line key.
+ */
+function expenseLineKey(expense: ListedExpenseRow): LedgerLineKey {
+  return {
+    day: expense.expense_date,
+    at: expense.created_at_exact,
+    rank: LEDGER_LINE_RANK.expense,
+    id: expense.id,
+  };
+}
+
+/**
+ * Where a payment sits in a statement. A net settlement's rows share one
+ * moment; its cancelled balances rank ahead of its payment, so in the
+ * newest-first statement the payment leads and what it cancelled follows
+ * directly beneath it, in the same order for both people.
+ *
+ * @param settlement - The payment, with its exact creation time.
+ * @returns Its line key.
+ */
+function settlementLineKey(settlement: ListedSettlementRow): LedgerLineKey {
+  return {
+    day: settlement.created_at_exact.slice(0, 10),
+    at: settlement.created_at_exact,
+    rank: settlement.method === OFFSET_SETTLEMENT_METHOD ? LEDGER_LINE_RANK.offset : LEDGER_LINE_RANK.payment,
+    id: settlement.id,
+  };
+}
+
+/**
  * Maps shared expense rows to the movements they made between this pair.
  *
  * @param expenses - Expenses shared by the pair, deleted rows included.
@@ -863,7 +914,7 @@ async function groupsForHistory(
  * @returns Expense lines that affected the pair.
  */
 function expenseLedgerLines(
-  expenses: ExpenseRow[],
+  expenses: ListedExpenseRow[],
   children: ExpenseChildren,
   groupNames: ReadonlyMap<string, string>,
   userId: string,
@@ -886,7 +937,7 @@ function expenseLedgerLines(
       totalCents: expense.amount_cents,
       // A deleted line remains explanatory history but no longer moves money.
       deltaCents: deleted ? 0 : liveDeltaCents,
-      sortKey: `${expense.expense_date}T${expense.created_at}`,
+      key: expenseLineKey(expense),
       // An expense date is a calendar day, not a moment to localize.
       createdAt: "",
       deleted,
@@ -908,7 +959,7 @@ function expenseLedgerLines(
  * @returns One line per stored payment.
  */
 function settlementLedgerLines(
-  settlements: SettlementRow[],
+  settlements: ListedSettlementRow[],
   groupNames: ReadonlyMap<string, string>,
   userId: string,
   friendName: string,
@@ -938,11 +989,7 @@ function settlementLedgerLines(
       currency: settlement.currency,
       totalCents: settlement.amount_cents,
       deltaCents: deleted ? 0 : paidByYou ? settlement.amount_cents : -settlement.amount_cents,
-      // A net settlement's rows share one timestamp. Its cancelled balances
-      // sort ahead of its payment, so in the newest-first statement the
-      // payment leads and what it cancelled follows directly beneath it —
-      // in the same order for both people.
-      sortKey: `${settlement.created_at.slice(0, 10)}T${settlement.created_at}${offset ? "0" : "1"}${settlement.id}`,
+      key: settlementLineKey(settlement),
       createdAt: settlement.created_at,
       deleted,
       // A payment is a claim one of the pair recorded; keep who asserted it.
@@ -998,37 +1045,75 @@ function settlementRemovalRefusals(
   return refusalById;
 }
 
+/** A statement line with the running balance, in its currency, after it. */
+interface StatementLine {
+  line: FriendLedgerLine;
+  balanceAfterCents: number;
+}
+
 /**
- * Sorts statement lines oldest-first and attaches one running balance per currency.
+ * Sorts the whole history oldest-first and attaches one running balance per
+ * currency to each line.
  *
- * @param lines - Unordered expense and settlement movements.
- * @returns Proto-ready entries, newest first.
+ * @param lines - Every expense and settlement movement between the pair.
+ * @returns The lines with their balances, newest first.
  */
-function friendLedgerEntries(lines: FriendLedgerLine[]) {
-  lines.sort((first, second) => first.sortKey.localeCompare(second.sortKey));
+function withRunningBalances(lines: FriendLedgerLine[]): StatementLine[] {
   const runningByCurrency = new Map<string, number>();
-  const entries = lines.map((line) => {
-    const runningCents = (runningByCurrency.get(line.currency) ?? 0) + line.deltaCents;
-    runningByCurrency.set(line.currency, runningCents);
-    return {
-      kind: line.kind,
-      id: line.id,
-      date: line.date,
-      description: line.description,
-      groupId: line.groupId,
-      groupName: line.groupName,
-      currency: line.currency,
-      totalCents: line.totalCents,
-      deltaCents: toInt32Cents(line.deltaCents, "a line's change"),
-      balanceAfterCents: toInt32Cents(runningCents, "the running balance"),
-      createdAt: line.createdAt,
-      deleted: line.deleted,
-      recordedByName: line.recordedByName,
-      netSettlementId: line.netSettlementId,
-      offset: line.offset,
-    };
-  });
-  return entries.reverse();
+  return [...lines]
+    .sort((first, second) => compareLedgerLineKeys(first.key, second.key))
+    .map((line) => {
+      const runningCents = (runningByCurrency.get(line.currency) ?? 0) + line.deltaCents;
+      runningByCurrency.set(line.currency, runningCents);
+      return { line, balanceAfterCents: runningCents };
+    })
+    .reverse();
+}
+
+/**
+ * The running balance per currency after every line given: what a page
+ * that ends just above them hands the next one.
+ *
+ * @param olderLines - The lines older than the last one shown.
+ * @returns Currency → cents (> 0 ⇒ the friend owes the reader).
+ */
+function balancesAfter(olderLines: StatementLine[]): Map<string, number> {
+  const balances = new Map<string, number>();
+  for (const { line } of olderLines) {
+    balances.set(line.currency, (balances.get(line.currency) ?? 0) + line.deltaCents);
+  }
+  return balances;
+}
+
+/**
+ * Maps a statement line to its proto entry.
+ *
+ * @param statementLine - The line and the running balance after it.
+ * @param removalRefusals - Why removing each payment would be refused, by settlement id.
+ * @returns The entry init shape.
+ */
+function ledgerEntryMessage(
+  { line, balanceAfterCents }: StatementLine,
+  removalRefusals: Map<string, string>,
+) {
+  return {
+    kind: line.kind,
+    id: line.id,
+    date: line.date,
+    description: line.description,
+    groupId: line.groupId,
+    groupName: line.groupName,
+    currency: line.currency,
+    totalCents: line.totalCents,
+    deltaCents: toInt32Cents(line.deltaCents, "a line's change"),
+    balanceAfterCents: toInt32Cents(balanceAfterCents, "the running balance"),
+    createdAt: line.createdAt,
+    deleted: line.deleted,
+    recordedByName: line.recordedByName,
+    netSettlementId: line.netSettlementId,
+    offset: line.offset,
+    removalRefusal: line.kind === "settlement" ? (removalRefusals.get(line.id) ?? "") : "",
+  };
 }
 
 /**
@@ -1131,14 +1216,22 @@ async function friendScopeBalances(
  * balance continues that currency's column, and the headline is one net per
  * currency — never a sum across them.
  *
+ * The response holds the newest page of the statement. Its running balances
+ * need every older line, so this read covers the whole history either way;
+ * `nextCursor` carries the balance where the page ends, and
+ * {@link listFriendLedgerEntries} reads each older page from there without
+ * reading the history again.
+ *
  * @param userId - Authenticated caller.
  * @param friendId - The other person.
+ * @param limit - Lines on the page; 0 is an app from before paging, which
+ *   gets the newest LEDGER_DISPLAY_LIMIT and `truncated`.
  * @returns The friend, the nets per currency (> 0 ⇒ they owe you), the
- *   entries newest-first, and the per-scope breakdown.
+ *   newest entries, the cursor to the older ones, and the per-scope breakdown.
  * @throws UsecaseError (not_found) when the person is missing or has no
  *   friendship, mutual group, or shared ledger history with the caller.
  */
-export async function getFriendLedger(userId: string, friendId: string) {
+export async function getFriendLedger(userId: string, friendId: string, limit = 0) {
   const friend = await findUserById(friendId);
   const defaultCurrency = (await findUserById(userId))?.default_currency || "USD";
   const isFriend = (await listFriendIds(userId)).includes(friendId);
@@ -1161,12 +1254,21 @@ export async function getFriendLedger(userId: string, friendId: string) {
       ...expenseLedgerLines(expenses, children, groupNames, userId, friendId),
       ...settlementLedgerLines(settlements, groupNames, userId, friend?.name ?? ""),
     ];
-    const entries = friendLedgerEntries(lines);
-    // The statement is a display; the balances above it are computed over
-    // everything. Past the cap the oldest lines are left off and the response
-    // says so, rather than shipping an unbounded table to a phone.
-    const truncated = entries.length > LEDGER_DISPLAY_LIMIT;
-    const shownEntries = truncated ? entries.slice(0, LEDGER_DISPLAY_LIMIT) : entries;
+    const statement = withRunningBalances(lines);
+    // The page is a display; the balances above it are computed over
+    // everything. An app from before paging asked for no size and gets the
+    // old cap, told when lines were left off.
+    const legacy = limit <= 0;
+    const size = legacy ? LEDGER_DISPLAY_LIMIT : pageSize(limit, LEDGER_PAGE_SIZE, MAX_LEDGER_PAGE_SIZE);
+    const shownLines = statement.slice(0, size);
+    const hasMore = statement.length > size;
+    const nextCursor = hasMore
+      ? encodeLedgerCursor(userId, friendId, {
+          after: shownLines[shownLines.length - 1].line.key,
+          balances: balancesAfter(statement.slice(size)),
+          historyDigest: await pairHistoryDigest(userId, friendId, client),
+        })
+      : "";
 
     const netByScope = historyNetsByScope(lines);
 
@@ -1178,7 +1280,7 @@ export async function getFriendLedger(userId: string, friendId: string) {
     );
     const callerGroupRows = await listGroupsByUser(userId, client);
     const mutualGroupRows = callerGroupRows.filter((group) => friendGroupIds.has(group.id));
-    if (!friend || (!isFriend && mutualGroupRows.length === 0 && entries.length === 0)) {
+    if (!friend || (!isFriend && mutualGroupRows.length === 0 && statement.length === 0)) {
       // Identical for an unknown id and an existing unrelated account: callers
       // cannot use this endpoint as a user-existence oracle.
       notFound("friend ledger not found");
@@ -1246,11 +1348,9 @@ export async function getFriendLedger(userId: string, friendId: string) {
       netCents: toInt32Cents(nets.get(defaultCurrency) ?? 0, "this balance"),
       currency: defaultCurrency,
       nets: currencyAmounts(nets, defaultCurrency),
-      entries: shownEntries.map((entry) => ({
-        ...entry,
-        removalRefusal: removalRefusals.get(entry.id) ?? "",
-      })),
-      truncated,
+      entries: shownLines.map((statementLine) => ledgerEntryMessage(statementLine, removalRefusals)),
+      truncated: legacy && hasMore,
+      nextCursor,
       settlePositions,
       payeeMethods: payee.methods,
       // The server's own clock, so "changed 2 days ago" does not depend on
@@ -1267,6 +1367,181 @@ export async function getFriendLedger(userId: string, friendId: string) {
         groupName: group.name,
         groupType: group.type,
       })),
+    };
+  });
+}
+
+/** One of the two row streams an older page of a statement is merged from. */
+interface LedgerStream<Row> {
+  /** Rows read so far, newest first. */
+  rows: Row[];
+  /** The oldest position read so far: where its next read starts. */
+  before: LedgerLineKey;
+  /** True once it has returned its last row. */
+  done: boolean;
+}
+
+/** The rows behind one older page of a statement. */
+interface OlderStatementRows {
+  /** Expenses that make a line on the page. */
+  expenses: ListedExpenseRow[];
+  /** Payers and splits of the expenses read. */
+  children: ExpenseChildren;
+  /** Payments on the page. */
+  settlements: ListedSettlementRow[];
+  /** True when older lines remain past the page. */
+  hasMore: boolean;
+}
+
+/**
+ * Reads the rows of the statement's next `size` lines older than `before`,
+ * merging the two keyset streams (expenses, payments) in statement order.
+ *
+ * A row read from a stream is final in the order once it is at or newer than
+ * the frontier: the newest position among the streams not yet finished,
+ * since every row still unread from them is older. An expense that moved
+ * nothing between the pair makes no line, so the loop reads on until the
+ * page has one line more than it shows (to know whether more remain) or
+ * both streams end.
+ *
+ * @param userId - Statement reader.
+ * @param friendId - The friend.
+ * @param before - The oldest line already shown.
+ * @param size - Lines on the page.
+ * @param client - Snapshot client.
+ * @returns The page's rows, and whether older lines remain.
+ */
+async function readOlderStatementRows(
+  userId: string,
+  friendId: string,
+  before: LedgerLineKey,
+  size: number,
+  client: PoolClient,
+): Promise<OlderStatementRows> {
+  const batch = size + 1;
+  const expenseStream: LedgerStream<ListedExpenseRow> = { rows: [], before, done: false };
+  const settlementStream: LedgerStream<ListedSettlementRow> = { rows: [], before, done: false };
+  const children: ExpenseChildren = { payers: new Map(), splits: new Map(), items: new Map() };
+  const lineKeys: { key: LedgerLineKey; expense?: ListedExpenseRow; settlement?: ListedSettlementRow }[] = [];
+
+  for (;;) {
+    const open = [expenseStream, settlementStream].filter((stream) => !stream.done);
+    const frontier = open
+      .map((stream) => stream.before)
+      .sort((first, second) => compareLedgerLineKeys(second, first))[0];
+    const final = frontier
+      ? lineKeys.filter((entry) => compareLedgerLineKeys(entry.key, frontier) >= 0)
+      : lineKeys;
+    if (!frontier || final.length > size) break;
+
+    if (expenseStream.before === frontier && !expenseStream.done) {
+      const rows = await listExpensesBetweenPage(userId, friendId, expenseStream.before, batch, client);
+      const loaded = await loadExpenseChildren(rows.map((expense) => expense.id), client, false);
+      for (const [expenseId, payers] of loaded.payers) children.payers.set(expenseId, payers);
+      for (const [expenseId, splits] of loaded.splits) children.splits.set(expenseId, splits);
+      for (const expense of rows) {
+        const lineKey = expenseLineKey(expense);
+        expenseStream.before = lineKey;
+        if (pairDelta(debtsFromExpenses([expense], children), userId, friendId) !== 0) {
+          lineKeys.push({ key: lineKey, expense });
+        }
+      }
+      expenseStream.rows.push(...rows);
+      expenseStream.done = rows.length < batch;
+    } else {
+      const rows = await listSettlementsBetweenPage(userId, friendId, settlementStream.before, batch, client);
+      for (const settlement of rows) {
+        const lineKey = settlementLineKey(settlement);
+        settlementStream.before = lineKey;
+        lineKeys.push({ key: lineKey, settlement });
+      }
+      settlementStream.rows.push(...rows);
+      settlementStream.done = rows.length < batch;
+    }
+  }
+
+  const ordered = lineKeys.sort((first, second) => compareLedgerLineKeys(second.key, first.key));
+  const page = ordered.slice(0, size);
+  return {
+    expenses: page.flatMap((entry) => (entry.expense ? [entry.expense] : [])),
+    children,
+    settlements: page.flatMap((entry) => (entry.settlement ? [entry.settlement] : [])),
+    hasMore: ordered.length > size,
+  };
+}
+
+/**
+ * One older page of the statement with a friend, continuing from where the
+ * previous page ended. The running balances start from the ones the cursor
+ * carries, so the page reads only its own rows; it first checks the pair's
+ * history is the one those balances were worked out from, and refuses
+ * rather than continuing from one that has since changed.
+ *
+ * @param userId - Authenticated caller.
+ * @param friendId - The friend.
+ * @param page - The previous page's `nextCursor`, and the lines wanted.
+ * @returns The entries, newest first, and the cursor to the page after.
+ * @throws UsecaseError (invalid_argument) for a cursor that is not one of
+ *   this statement's; (failed_precondition) when a line was added, edited or
+ *   removed since the first page was read — the client reloads the
+ *   statement; (not_found) when the person no longer exists.
+ */
+export async function listFriendLedgerEntries(
+  userId: string,
+  friendId: string,
+  page: { cursor: string; limit: number },
+) {
+  const position = decodeLedgerCursor(page.cursor, userId, friendId);
+  if (!position) invalid(STALE_CURSOR_MESSAGE);
+  const size = pageSize(page.limit, LEDGER_PAGE_SIZE, MAX_LEDGER_PAGE_SIZE);
+  const friend = await findUserById(friendId);
+  if (!friend) notFound("friend ledger not found");
+
+  return snapshot(async (client) => {
+    if ((await pairHistoryDigest(userId, friendId, client)) !== position.historyDigest) {
+      throw new UsecaseError("failed_precondition", LEDGER_CHANGED_MESSAGE);
+    }
+    const rows = await readOlderStatementRows(userId, friendId, position.after, size, client);
+
+    // A net settlement is removed whole, so a page holding one of its lines
+    // needs the rest of it, which may sit on a neighbouring page.
+    const pageUnitIds = rows.settlements.flatMap((settlement) =>
+      settlement.net_settlement_id ? [settlement.net_settlement_id] : [],
+    );
+    const unitRows = await listSettlementsByNetSettlements(pageUnitIds, client);
+    const pageIds = new Set(rows.settlements.map((settlement) => settlement.id));
+    const removable = [...rows.settlements, ...unitRows.filter((unitRow) => !pageIds.has(unitRow.id))];
+
+    const historyGroups = await groupsForHistory(rows.expenses, removable, client);
+    const groupNames = new Map([...historyGroups].map(([groupId, group]) => [groupId, group.name]));
+    const lines = [
+      ...expenseLedgerLines(rows.expenses, rows.children, groupNames, userId, friendId),
+      ...settlementLedgerLines(rows.settlements, groupNames, userId, friend.name),
+    ].sort((first, second) => compareLedgerLineKeys(second.key, first.key));
+
+    // Walk back from the balance the previous page ended at: each line's
+    // balance is the one after it, and the one before it is what remains.
+    const running = new Map(position.balances);
+    const statementLines = lines.map((line) => {
+      const balanceAfterCents = running.get(line.currency) ?? 0;
+      running.set(line.currency, balanceAfterCents - line.deltaCents);
+      return { line, balanceAfterCents };
+    });
+
+    const removalRefusals = settlementRemovalRefusals(removable, groupNames, [
+      { name: undefined, groupIds: new Set((await listGroupsByUser(userId, client)).map((group) => group.id)) },
+      { name: friend.name, groupIds: new Set((await listGroupsByUser(friendId, client)).map((group) => group.id)) },
+    ]);
+
+    return {
+      entries: statementLines.map((statementLine) => ledgerEntryMessage(statementLine, removalRefusals)),
+      nextCursor: rows.hasMore && lines.length > 0
+        ? encodeLedgerCursor(userId, friendId, {
+            after: lines[lines.length - 1].key,
+            balances: running,
+            historyDigest: position.historyDigest,
+          })
+        : "",
     };
   });
 }

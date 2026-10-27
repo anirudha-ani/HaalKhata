@@ -118,7 +118,7 @@ function previousSecret(): Buffer | null {
  * "rate-limit", into a keyed fingerprint that lets a limiter key on a phone
  * number without holding the number itself.
  */
-export type TokenPurpose = "session" | "phone-merge" | "rate-limit" | "phone-code-log";
+export type TokenPurpose = "session" | "ledger-cursor" | "rate-limit" | "phone-code-log";
 
 /**
  * Signs a purpose-bound payload. The NUL separator cannot appear in any token

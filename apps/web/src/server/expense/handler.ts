@@ -43,14 +43,32 @@ export const expenseHandler: ServiceImpl<typeof ExpenseService> = {
           {
             groupId: request.groupId || undefined,
             withUserId: request.withUserId || undefined,
+            part: request.part,
+            partGroupId: request.partGroupId || undefined,
           },
+          { cursor: request.cursor, limit: request.limit },
         ),
       context,
     );
   },
 
   async getExpense(request, context) {
-    return runUsecase(async () => expenses.getExpense(await requireUser(context), request.expenseId), context);
+    return runUsecase(
+      async () => expenses.getExpense(await requireUser(context), request.expenseId, request.commentLimit),
+      context,
+    );
+  },
+
+  /** Older comments on an expense, a page at a time. */
+  async listComments(request, context) {
+    return runUsecase(
+      async () =>
+        expenses.listComments(await requireUser(context), request.expenseId, {
+          cursor: request.cursor,
+          limit: request.limit,
+        }),
+      context,
+    );
   },
 
   async deleteExpense(request, context) {
@@ -121,6 +139,24 @@ export const expenseHandler: ServiceImpl<typeof ExpenseService> = {
             RPC_RATE_LIMITS.getFriendLedger,
           ),
           request.userId,
+          request.limit,
+        ),
+      context,
+    );
+  },
+
+  /** Older lines of a friend statement, from the previous page's cursor. */
+  async listFriendLedgerEntries(request, context) {
+    return runUsecase(
+      async () =>
+        balances.listFriendLedgerEntries(
+          await requireRateLimitedUser(
+            context,
+            "list-friend-ledger-entries",
+            RPC_RATE_LIMITS.listFriendLedgerEntries,
+          ),
+          request.userId,
+          { cursor: request.cursor, limit: request.limit },
         ),
       context,
     );
