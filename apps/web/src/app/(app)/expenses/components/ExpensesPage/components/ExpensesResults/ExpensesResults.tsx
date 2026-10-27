@@ -5,6 +5,7 @@ import { ExpenseList } from "@/components/expenses/ExpenseList/ExpenseList";
 import { ErrorAlert } from "@/components/ui/ErrorAlert/ErrorAlert";
 import { LoadMoreFooter } from "@/components/ui/LoadMoreFooter/LoadMoreFooter";
 import { Spinner } from "@/components/ui/Spinner/Spinner";
+import { LIST_END_LINE } from "@haalkhata/shared/api/paging";
 import { noExpensesMessage } from "@haalkhata/shared/expense/scopeFilter";
 import type { useExpensesList } from "../../hooks/useExpensesList";
 
@@ -57,7 +58,7 @@ export function ExpensesResults({
         isLoadingMore={listState.isLoadingMore}
         onLoadMore={listState.loadMore}
         error={listState.loadMoreError}
-        endLabel={listState.expenses.length > 0 ? "That's the oldest one." : ""}
+        endLabel={listState.expenses.length > 0 ? LIST_END_LINE : ""}
       />
     </>
   );

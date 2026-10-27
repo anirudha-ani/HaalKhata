@@ -16,6 +16,7 @@ import { useHydrated } from "@/lib/hooks/useHydrated";
 import { scopeLabel } from "@haalkhata/shared/expense/settlePosition";
 import { outstandingBuckets } from "@haalkhata/shared/money/balances";
 import { LoadMoreFooter } from "@/components/ui/LoadMoreFooter/LoadMoreFooter";
+import { SHOW_OLDER_LINES_LABEL, statementEndLine } from "@haalkhata/shared/api/paging";
 import { LedgerStatement } from "./components/LedgerStatement/LedgerStatement";
 import { useFriendLedger } from "./hooks/useFriendLedger";
 
@@ -385,7 +386,8 @@ export function FriendDetailPage({
           onLoadMore={view.loadMoreEntries}
           error={view.loadMoreError}
           notice={view.statementNotice}
-          endLabel={view.entries.length > 0 ? "That's where your history together starts." : ""}
+          endLabel={view.entries.length > 0 ? statementEndLine(friend.name.split(" ")[0]) : ""}
+          label={SHOW_OLDER_LINES_LABEL}
         />
         {view.entries.length > 0 ? (
           <p className="text-xs text-ink-soft">

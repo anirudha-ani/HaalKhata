@@ -26,6 +26,7 @@ import { BalancesPanel } from "./components/BalancesPanel/BalancesPanel";
 import { ExpenseList } from "@/components/expenses/ExpenseList/ExpenseList";
 import { ErrorAlert } from "@/components/ui/ErrorAlert/ErrorAlert";
 import { LoadMoreFooter } from "@/components/ui/LoadMoreFooter/LoadMoreFooter";
+import { LIST_END_LINE } from "@haalkhata/shared/api/paging";
 import { TABS } from "../../constants/tabs";
 import { useGroupDetail } from "./hooks/useGroupDetail";
 
@@ -201,7 +202,7 @@ export function GroupDetailPage({
               isLoadingMore={groupDetail.expensesLoadingMore}
               onLoadMore={groupDetail.loadMoreExpenses}
               error={groupDetail.expensesLoadMoreError}
-              endLabel={groupDetail.expenses.expenses.length > 0 ? "That's the group's first expense." : ""}
+              endLabel={groupDetail.expenses.expenses.length > 0 ? LIST_END_LINE : ""}
             />
           </div>
         )
@@ -228,6 +229,9 @@ export function GroupDetailPage({
           hasMore={groupDetail.activityHasMore}
           isLoadingMore={groupDetail.activityLoadingMore}
           onLoadMore={groupDetail.loadMoreActivity}
+          error={groupDetail.activityError}
+          onRetry={groupDetail.reloadActivity}
+          loadMoreError={groupDetail.activityLoadMoreError}
         />
       )}
 

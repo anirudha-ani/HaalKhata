@@ -3,6 +3,7 @@
 
 import { ChevronDown } from "lucide-react";
 import { ErrorAlert } from "@/components/ui/ErrorAlert/ErrorAlert";
+import { SHOW_MORE_LABEL } from "@haalkhata/shared/api/paging";
 
 /**
  * Renders what sits under the rows of a paged list. A failed page is said
@@ -21,6 +22,7 @@ export function LoadMoreFooter({
   error,
   notice = "",
   endLabel,
+  label = SHOW_MORE_LABEL,
 }: {
   /** Whether older rows remain to be loaded. */
   hasMore: boolean;
@@ -34,6 +36,8 @@ export function LoadMoreFooter({
   notice?: string;
   /** What the end of the list says; "" says nothing. */
   endLabel: string;
+  /** What the button says. */
+  label?: string;
 }) {
   return (
     <>
@@ -52,7 +56,7 @@ export function LoadMoreFooter({
             className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-line bg-card py-3 text-sm font-semibold text-ink-soft hover:border-brand-200 hover:text-brand-600 disabled:opacity-50"
           >
             <ChevronDown className="h-4 w-4" aria-hidden="true" />
-            {isLoadingMore ? "Loading…" : "Show more"}
+            {isLoadingMore ? "Loading…" : label}
           </button>
         </>
       ) : endLabel ? (

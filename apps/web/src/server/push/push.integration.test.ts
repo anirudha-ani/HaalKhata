@@ -11,10 +11,11 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { Client } from "pg";
 import { formatMoney } from "@haalkhata/shared/money/money";
 import type { PushMessage, PushProvider } from "@/server/push/usecase/provider/pushTypes";
+import { testDatabaseName } from "@/server/common/testing/testDatabase";
 
 const ADMIN_URL =
   process.env.MERGE_TEST_ADMIN_URL ?? "postgres://haalkhata:change-me@127.0.0.1:5432/postgres";
-const TEST_DATABASE = "haalkhata_push_test";
+const TEST_DATABASE = testDatabaseName("haalkhata_push_test");
 const TEST_URL = ADMIN_URL.replace(/\/[^/]*$/, `/${TEST_DATABASE}`);
 
 const ANI_ID = "user-ani";

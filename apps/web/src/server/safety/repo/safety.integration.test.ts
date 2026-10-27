@@ -4,9 +4,10 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { Client } from "pg";
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
+import { testDatabaseName } from "@/server/common/testing/testDatabase";
 
 const ADMIN_URL = process.env.MERGE_TEST_ADMIN_URL ?? "postgres://haalkhata:change-me@127.0.0.1:5432/postgres";
-const TEST_DATABASE = "haalkhata_safety_test";
+const TEST_DATABASE = testDatabaseName("haalkhata_safety_test");
 const TEST_URL = ADMIN_URL.replace(/\/[^/]*$/, `/${TEST_DATABASE}`);
 const MODERATION_CONTAINER = process.env.MODERATION_TEST_CONTAINER;
 

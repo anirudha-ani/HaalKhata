@@ -56,6 +56,7 @@ export function useGroupDetailAPI(groupId: string) {
       socialClient.listActivity({ groupId, cursor: pageParam, month: "" }),
     getNextPageParam: (lastPage) => lastPage.nextCursor || undefined,
   });
+  const activityFailure = activity.error ? errorMessage(activity.error) : "";
 
   /**
    * Adds people by id plus an optional email/phone that must resolve to an
@@ -153,5 +154,10 @@ export function useGroupDetailAPI(groupId: string) {
     activityHasMore: activity.hasNextPage,
     activityLoadingMore: activity.isFetchingNextPage,
     loadMoreActivity: () => void activity.fetchNextPage(),
+    /** Why the group's feed could not be read; "" when it was. */
+    activityError: activity.isFetchNextPageError ? "" : activityFailure,
+    reloadActivity: () => void activity.refetch(),
+    /** Why the feed's next page did not load; "" when it did. */
+    activityLoadMoreError: activity.isFetchNextPageError ? activityFailure : "",
   };
 }

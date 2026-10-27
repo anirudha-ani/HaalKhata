@@ -5,6 +5,7 @@ import { SafetyActions } from "@/components/safety/SafetyActions/SafetyActions";
 import Link from "next/link";
 import { Check, ChevronUp, Lock, Pencil, Send, Trash2 } from "lucide-react";
 import { ErrorAlert } from "@/components/ui/ErrorAlert/ErrorAlert";
+import { SHOW_EARLIER_COMMENTS_LABEL } from "@haalkhata/shared/api/paging";
 import { Avatar } from "@/components/ui/Avatar/Avatar";
 import { AvatarStack } from "@/components/ui/AvatarStack/AvatarStack";
 import { PersonLink } from "@/components/people/PersonLink/PersonLink";
@@ -390,7 +391,7 @@ export function ExpenseDetailPage({ expenseId }: { expenseId: string }) {
             className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-line bg-card py-2.5 text-sm font-semibold text-ink-soft hover:border-brand-200 hover:text-brand-600 disabled:opacity-50"
           >
             <ChevronUp className="h-4 w-4" aria-hidden="true" />
-            {expenseDetail.isLoadingEarlierComments ? "Loading…" : "Show earlier comments"}
+            {expenseDetail.isLoadingEarlierComments ? "Loading…" : SHOW_EARLIER_COMMENTS_LABEL}
           </button>
         ) : null}
         {expenseDetail.comments.map((comment) => (

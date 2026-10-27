@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/Button";
 import { Money } from "@/components/ui/Money";
 import { Sheet } from "@/components/ui/Sheet/Sheet";
 import { ShowMoreFooter } from "@/components/ui/ShowMoreFooter/ShowMoreFooter";
+import { SHOW_EARLIER_COMMENTS_LABEL } from "@haalkhata/shared/api/paging";
 import { Spinner } from "@/components/ui/Spinner";
 import { errorMessage } from "@/lib/api/connect";
 import { settledStatus } from "@haalkhata/shared/expense/settledStatus";
@@ -367,7 +368,7 @@ export function ExpenseDetailScreen({ expenseId }: { expenseId: string }) {
           error={expenseDetail.earlierCommentsError}
           hasMore={expenseDetail.hasEarlierComments}
           isLoadingMore={expenseDetail.isLoadingEarlierComments}
-          label="Show earlier comments"
+          label={SHOW_EARLIER_COMMENTS_LABEL}
           onShowMore={expenseDetail.showEarlierComments}
         />
         {expenseDetail.comments.map((comment) => (

@@ -64,6 +64,9 @@ export function useGroupDetailAPI(groupId: string) {
       socialClient.listActivity({ groupId, cursor: pageParam, month: "" }),
     getNextPageParam: (lastPage) => lastPage.nextCursor || undefined,
   });
+  // A failed next page of the feed is said beside Show me more, with the
+  // events already loaded left in place; only a failed first read takes the tab.
+  const activityPageFailure = activity.isFetchNextPageError ? activity.error : null;
 
   /**
    * Adds people by id plus an optional email/phone that must resolve to an
@@ -154,7 +157,7 @@ export function useGroupDetailAPI(groupId: string) {
     groupError: group.error,
     expensesError: expensesPageFailure ? null : expenses.error,
     balancesError: balances.error,
-    activityError: activity.error,
+    activityError: activityPageFailure ? null : activity.error,
     friends: (friends.data?.friends ?? []).flatMap((friend) => (friend.user ? [friend.user] : [])),
     expenses: mergedExpenses,
     hasMoreExpenses: expenses.hasNextPage,
@@ -178,5 +181,7 @@ export function useGroupDetailAPI(groupId: string) {
     activityHasMore: activity.hasNextPage,
     activityLoadingMore: activity.isFetchingNextPage,
     loadMoreActivity: () => void activity.fetchNextPage(),
+    /** Why the feed's last next page did not load; "" when it did. */
+    loadMoreActivityError: activityPageFailure ? errorMessage(activityPageFailure) : "",
   };
 }

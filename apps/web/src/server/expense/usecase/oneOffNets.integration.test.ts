@@ -7,9 +7,10 @@
 
 import { Client } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { testDatabaseName } from "@/server/common/testing/testDatabase";
 
 const ADMIN_URL = process.env.MERGE_TEST_ADMIN_URL ?? "postgres://haalkhata:change-me@127.0.0.1:5432/postgres";
-const TEST_DATABASE = "haalkhata_one_off_nets_test";
+const TEST_DATABASE = testDatabaseName("haalkhata_one_off_nets_test");
 const TEST_URL = ADMIN_URL.replace(/\/[^/]*$/, `/${TEST_DATABASE}`);
 const ANIKA = "nets-anika";
 const BRUNO = "nets-bruno";

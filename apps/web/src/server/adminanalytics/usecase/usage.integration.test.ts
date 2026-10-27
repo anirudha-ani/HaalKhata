@@ -17,6 +17,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { Client } from "pg";
 import { TrendUnit } from "@haalkhata/protogen/adminanalytics/v1/adminanalytics_pb";
+import { testDatabaseName } from "@/server/common/testing/testDatabase";
 
 /** The counts of one trend period, as the usecase returns them. */
 interface TrendPeriodShape {
@@ -28,7 +29,7 @@ interface TrendPeriodShape {
 
 const ADMIN_URL =
   process.env.MERGE_TEST_ADMIN_URL ?? "postgres://haalkhata:change-me@127.0.0.1:5432/postgres";
-const TEST_DATABASE = "haalkhata_usage_test";
+const TEST_DATABASE = testDatabaseName("haalkhata_usage_test");
 const TEST_URL = ADMIN_URL.replace(/\/[^/]*$/, `/${TEST_DATABASE}`);
 
 const EMAIL_AS_NAME = "user-emailname-3b1c";

@@ -6,6 +6,7 @@ import { Text } from "@/components/ui/Text";
 import { Button } from "@/components/ui/Button";
 import { ErrorAlert } from "@/components/ui/ErrorAlert";
 import { colors, radii, spacing } from "@/lib/theme/theme";
+import { SHOW_MORE_LABEL } from "@haalkhata/shared/api/paging";
 
 /**
  * Renders what sits beside a paged list's rows. A failed page is said just
@@ -23,7 +24,7 @@ export function ShowMoreFooter({
   onShowMore,
   error = "",
   notice = "",
-  label = "Show me more",
+  label = SHOW_MORE_LABEL,
   endLine = "",
   direction = "older",
 }: {

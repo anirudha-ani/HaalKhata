@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/Button";
 import { Money } from "@/components/ui/Money";
 import { OverflowMenu } from "@/components/ui/OverflowMenu/OverflowMenu";
 import { ShowMoreFooter } from "@/components/ui/ShowMoreFooter/ShowMoreFooter";
+import { SHOW_OLDER_LINES_LABEL, statementEndLine } from "@haalkhata/shared/api/paging";
 import { Spinner } from "@/components/ui/Spinner";
 import { errorMessage } from "@/lib/api/connect";
 import { outstandingBuckets } from "@haalkhata/shared/money/balances";
@@ -553,11 +554,11 @@ export function FriendDetailScreen({
         )}
         {entries.length > 0 ? (
           <ShowMoreFooter
-            endLine={`That's your whole history with ${firstName}.`}
+            endLine={statementEndLine(firstName)}
             error={view.loadMoreError}
             hasMore={view.hasMoreLines}
             isLoadingMore={view.isLoadingMoreLines}
-            label="Show older lines"
+            label={SHOW_OLDER_LINES_LABEL}
             notice={view.statementNotice}
             onShowMore={() => void view.loadMoreLines()}
           />

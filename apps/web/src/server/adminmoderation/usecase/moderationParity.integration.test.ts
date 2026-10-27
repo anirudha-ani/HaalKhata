@@ -17,11 +17,12 @@ import { readFileSync } from "node:fs";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { Client } from "pg";
 import { REPORTS, contentState, seedModeration } from "./moderationFixtures";
+import { testDatabaseName } from "@/server/common/testing/testDatabase";
 
 const ADMIN_URL =
   process.env.MERGE_TEST_ADMIN_URL ?? "postgres://haalkhata:change-me@127.0.0.1:5432/postgres";
-const PAGE_DATABASE = "haalkhata_moderation_page_test";
-const SCRIPT_DATABASE = "haalkhata_moderation_script_test";
+const PAGE_DATABASE = testDatabaseName("haalkhata_moderation_page_test");
+const SCRIPT_DATABASE = testDatabaseName("haalkhata_moderation_script_test");
 const MODERATION_CONTAINER = process.env.MODERATION_TEST_CONTAINER;
 const PSQL = process.env.MODERATION_TEST_PSQL;
 

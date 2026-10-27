@@ -19,10 +19,11 @@ import { fileURLToPath } from "node:url";
 import { Client } from "pg";
 import { runner } from "node-pg-migrate";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { testDatabaseName } from "@/server/common/testing/testDatabase";
 
 const ADMIN_URL =
   process.env.MERGE_TEST_ADMIN_URL ?? "postgres://haalkhata:change-me@127.0.0.1:5432/postgres";
-const TEST_DATABASE = "haalkhata_retire_unregistered_test";
+const TEST_DATABASE = testDatabaseName("haalkhata_retire_unregistered_test");
 const TEST_URL = ADMIN_URL.replace(/\/[^/]*$/, `/${TEST_DATABASE}`);
 const MIGRATIONS_DIRECTORY = fileURLToPath(new URL("../../../../migrations/", import.meta.url));
 const MIGRATION_FILE = "1793040072450_retire-unregistered-people.sql";

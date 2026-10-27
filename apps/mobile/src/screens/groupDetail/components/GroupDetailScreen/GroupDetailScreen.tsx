@@ -7,7 +7,6 @@ import {
   Archive,
   ArchiveRestore,
   Bell,
-  ChevronDown,
   ChevronRight,
   Flag,
   Link2,
@@ -37,6 +36,7 @@ import { OverflowMenu } from "@/components/ui/OverflowMenu/OverflowMenu";
 import { Segmented } from "@/components/ui/Segmented";
 import { Sheet } from "@/components/ui/Sheet/Sheet";
 import { ShowMoreFooter } from "@/components/ui/ShowMoreFooter/ShowMoreFooter";
+import { LIST_END_LINE } from "@haalkhata/shared/api/paging";
 import { Spinner } from "@/components/ui/Spinner";
 import { errorMessage } from "@/lib/api/connect";
 import { colors, radii, spacing } from "@/lib/theme/theme";
@@ -264,7 +264,7 @@ export function GroupDetailScreen({
             userById={groupDetail.userById}
           />
           <ShowMoreFooter
-            endLine={groupDetail.expenses.expenses.length > 0 ? "You've hit the bottom." : ""}
+            endLine={groupDetail.expenses.expenses.length > 0 ? LIST_END_LINE : ""}
             error={groupDetail.loadMoreExpensesError}
             hasMore={groupDetail.hasMoreExpenses}
             isLoadingMore={groupDetail.isLoadingMoreExpenses}
@@ -298,15 +298,13 @@ export function GroupDetailScreen({
       ) : (
         <>
           <ActivityList events={groupDetail.activityEvents} now={new Date()} />
-          {groupDetail.activityHasMore ? (
-            <Button
-              busy={groupDetail.activityLoadingMore}
-              icon={<ChevronDown color={colors.inkSoft} size={16} />}
-              label="Show me more"
-              onPress={groupDetail.loadMoreActivity}
-              variant="outline"
-            />
-          ) : null}
+          <ShowMoreFooter
+            endLine={LIST_END_LINE}
+            error={groupDetail.loadMoreActivityError}
+            hasMore={groupDetail.activityHasMore}
+            isLoadingMore={groupDetail.activityLoadingMore}
+            onShowMore={groupDetail.loadMoreActivity}
+          />
         </>
       )}
 

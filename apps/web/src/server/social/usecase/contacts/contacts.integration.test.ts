@@ -9,10 +9,11 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { Client } from "pg";
 import { ContactDiscovery } from "@haalkhata/protogen/common/v1/common_pb";
 import { ContactRelation } from "@haalkhata/protogen/social/v1/social_pb";
+import { testDatabaseName } from "@/server/common/testing/testDatabase";
 
 const ADMIN_URL =
   process.env.MERGE_TEST_ADMIN_URL ?? "postgres://haalkhata:change-me@127.0.0.1:5432/postgres";
-const TEST_DATABASE = "haalkhata_contacts_usecase_test";
+const TEST_DATABASE = testDatabaseName("haalkhata_contacts_usecase_test");
 const TEST_URL = ADMIN_URL.replace(/\/[^/]*$/, `/${TEST_DATABASE}`);
 const ALICE_PHONE = "+8801712345678";
 const STRANGER_PHONE = "+8801812345678";

@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/Button";
 import { Chip } from "@/components/ui/Chip";
 import { SearchField } from "@/components/ui/SearchField";
 import { ShowMoreFooter } from "@/components/ui/ShowMoreFooter/ShowMoreFooter";
+import { LIST_END_LINE } from "@haalkhata/shared/api/paging";
 import { Spinner } from "@/components/ui/Spinner";
 import { FIXED_SCOPE_OPTIONS, noExpensesMessage } from "@haalkhata/shared/expense/scopeFilter";
 import { colors, fonts, radii, spacing } from "@/lib/theme/theme";
@@ -128,7 +129,7 @@ export function ExpensesScreen() {
             )}
             {listState.isLoading ? null : (
               <ShowMoreFooter
-                endLine={listState.expenses.length > 0 ? "You've hit the bottom." : ""}
+                endLine={listState.expenses.length > 0 ? LIST_END_LINE : ""}
                 error={listState.loadMoreError}
                 hasMore={listState.hasMore}
                 isLoadingMore={listState.isLoadingMore}
