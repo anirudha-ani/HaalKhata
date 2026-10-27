@@ -18,6 +18,7 @@ import {
   setAvatarUrl,
   setUserPhone,
   updateUserProfile,
+  type UserRow,
 } from "@/server/auth/repo/users.repo";
 import {
   consumeGoogleSignInNonce,
@@ -29,6 +30,7 @@ import {
   EMAIL_PATTERN,
   GOOGLE_AUDIENCES,
   GOOGLE_CLIENT_ID,
+  GOOGLE_SIGN_IN_INTERRUPTED_MESSAGE,
   GOOGLE_SIGN_IN_NONCE_BYTES,
   GOOGLE_SIGN_IN_NONCE_LIFETIME_SECONDS,
   GOOGLE_SIGN_IN_NONCE_PATTERN,
@@ -402,30 +404,12 @@ export async function logInWithGoogle(idToken: string) {
   let user = await findUserByGoogleSub(claims.googleSub);
   if (!user) {
     const existing = await findUserByEmail(claims.email);
-    if (existing) {
-      // Safe because the email is verified: this account is only reachable
-      // by whoever controls that mailbox, and it keeps the name they chose.
-      await linkGoogleAccount(existing.id, claims.googleSub);
-      user = (await findUserById(existing.id))!;
-    } else {
-      try {
-        user = await insertUser({
-          email: claims.email,
-          name: providerDisplayName(claims.name),
-          avatarColor: avatarColorFor(claims.email),
-          passwordHash: null,
-          googleSub: claims.googleSub,
-          avatarUrl: claims.picture || null,
-        });
-      } catch (error) {
-        // TOCTOU: a concurrent sign-in (double-clicked button, two tabs) won
-        // the unique-index race on email or google_sub. Re-read rather than
-        // surfacing a 500 for what is a successful sign-in either way.
-        if (!isUniqueViolation(error)) throw error;
-        user =
-          (await findUserByGoogleSub(claims.googleSub)) ?? (await findUserByEmail(claims.email))!;
-      }
-    }
+    // Safe because the email is verified: this account is only reachable by
+    // whoever controls that mailbox, and it keeps the name they chose. The
+    // link comes back empty when the account was deleted after it was found;
+    // the person then signs up afresh, as they would a moment later.
+    user = existing ? await linkGoogleAccount(existing.id, claims.googleSub) : undefined;
+    user ??= await insertGoogleUser(claims);
   }
 
   // Applied after all three branches so a changed Google photo follows the
@@ -438,6 +422,37 @@ export async function logInWithGoogle(idToken: string) {
   }
 
   return { user: toPrivateUser(user), token: createToken(user.id, user.token_version) };
+}
+
+/**
+ * Creates the account for a Google identity no live account holds.
+ *
+ * A concurrent sign-in (a double-clicked button, two tabs) can win the
+ * unique-index race on email or google_sub; the account it made is then
+ * this person's too, so it is read back rather than failing what is a
+ * successful sign-in either way.
+ *
+ * @param claims - The verified Google identity.
+ * @returns The new account, or the one the concurrent sign-in made.
+ * @throws UsecaseError "unavailable" when that account is gone again by the
+ *   time it is read back, so the person is asked to try once more.
+ */
+async function insertGoogleUser(claims: GoogleIdentity): Promise<UserRow> {
+  try {
+    return await insertUser({
+      email: claims.email,
+      name: providerDisplayName(claims.name),
+      avatarColor: avatarColorFor(claims.email),
+      passwordHash: null,
+      googleSub: claims.googleSub,
+      avatarUrl: claims.picture || null,
+    });
+  } catch (error) {
+    if (!isUniqueViolation(error)) throw error;
+    const winner = (await findUserByGoogleSub(claims.googleSub)) ?? (await findUserByEmail(claims.email));
+    if (!winner) throw new UsecaseError("unavailable", GOOGLE_SIGN_IN_INTERRUPTED_MESSAGE);
+    return winner;
+  }
 }
 
 /**

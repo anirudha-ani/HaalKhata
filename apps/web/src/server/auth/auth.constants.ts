@@ -184,6 +184,12 @@ export const GOOGLE_SIGN_IN_NONCE_PATTERN = /^[A-Za-z0-9_-]{43}$/;
 export const GOOGLE_SIGN_IN_NONCE_LIFETIME_SECONDS = 60 * 5;
 
 /**
+ * Said when a Google sign-in loses a race it cannot settle: the account a
+ * concurrent sign-in created is gone again by the time it is read back.
+ */
+export const GOOGLE_SIGN_IN_INTERRUPTED_MESSAGE = "signing in was interrupted, please try again";
+
+/**
  * Whether email/phone + password sign-in is accepted. Production uses Google
  * and Apple; the password flows survive in development so seeded accounts
  * stay reachable without an external provider round trip.

@@ -72,6 +72,7 @@ import {
   updateUserProfile,
 } from "@/server/auth/repo/users.repo";
 import {
+  GOOGLE_SIGN_IN_INTERRUPTED_MESSAGE,
   GOOGLE_SIGN_IN_NONCE_LIFETIME_SECONDS,
   MAX_USER_NAME_LENGTH,
 } from "@/server/auth/auth.constants";
@@ -193,7 +194,7 @@ describe("logInWithGoogle", () => {
     vi.mocked(findUserByEmail).mockResolvedValue(
       userRow({ name: "Ani", password_hash: "salt:hash" }),
     );
-    vi.mocked(findUserById).mockResolvedValue(
+    vi.mocked(linkGoogleAccount).mockResolvedValue(
       userRow({ name: "Ani", password_hash: "salt:hash", google_sub: "google-sub-123" }),
     );
 
@@ -202,6 +203,19 @@ describe("logInWithGoogle", () => {
     expect(linkGoogleAccount).toHaveBeenCalledWith("user-1", "google-sub-123");
     expect(result.user.name).toBe("Ani");
     expect(insertUser).not.toHaveBeenCalled();
+  });
+
+  it("signs the person up afresh when the account it found is deleted before the link", async () => {
+    googleReturns(VERIFIED);
+    vi.mocked(findUserByGoogleSub).mockResolvedValue(undefined);
+    vi.mocked(findUserByEmail).mockResolvedValue(userRow({ password_hash: "salt:hash" }));
+    vi.mocked(linkGoogleAccount).mockResolvedValue(undefined);
+    vi.mocked(insertUser).mockResolvedValue(userRow({ id: "user-2", google_sub: "google-sub-123" }));
+
+    const result = await logInWithGoogle("id-token");
+
+    expect(insertUser).toHaveBeenCalledWith(expect.objectContaining({ googleSub: "google-sub-123" }));
+    expect(result.user.id).toBe("user-2");
   });
 
   it("creates a new account, lowercasing the email from the token", async () => {
@@ -344,6 +358,18 @@ describe("logInWithGoogle", () => {
     const result = await logInWithGoogle("id-token");
 
     expect(result.user.id).toBe("user-1");
+  });
+
+  it("asks to try again when the account a concurrent sign-in made is gone by the re-read", async () => {
+    googleReturns(VERIFIED);
+    vi.mocked(findUserByGoogleSub).mockResolvedValue(undefined);
+    vi.mocked(findUserByEmail).mockResolvedValue(undefined);
+    vi.mocked(insertUser).mockRejectedValue(Object.assign(new Error("duplicate"), { code: "23505" }));
+
+    await expect(logInWithGoogle("id-token")).rejects.toMatchObject({
+      code: "unavailable",
+      message: GOOGLE_SIGN_IN_INTERRUPTED_MESSAGE,
+    });
   });
 });
 

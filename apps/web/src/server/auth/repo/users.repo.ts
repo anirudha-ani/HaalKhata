@@ -153,13 +153,19 @@ export async function findUserByGoogleSub(googleSub: string): Promise<UserRow | 
 
 /**
  * Links a Google account to an existing account, keeping the name its owner
- * chose.
+ * chose — if that account is still there. A sign-in finds the account by
+ * email first and links it second, and a deletion committing in between
+ * takes the row away; the link then changes nothing and says so.
  *
  * @param userId - Primary key of the account to link.
  * @param googleSub - Google's stable per-account identifier.
+ * @returns The linked account, or undefined when it no longer exists.
  */
-export async function linkGoogleAccount(userId: string, googleSub: string): Promise<void> {
-  await execute(`UPDATE users SET google_sub = $1 WHERE id = $2`, [googleSub, userId]);
+export async function linkGoogleAccount(userId: string, googleSub: string): Promise<UserRow | undefined> {
+  return queryOne<UserRow>(
+    `UPDATE users SET google_sub = $1 WHERE id = $2 AND deleted_at IS NULL RETURNING *`,
+    [googleSub, userId],
+  );
 }
 
 /**

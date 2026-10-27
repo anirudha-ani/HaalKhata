@@ -240,12 +240,18 @@ projection, plus `token` (bearer clients only).
 - **Three cases, in order:**
   1. `google_sub` already linked → sign in.
   2. Verified email matches an existing account → **link** the Google
-     account to it. The account keeps the name its owner chose.
+     account to it. The account keeps the name its owner chose. The link is
+     conditional on the row still being live: an account deletion that
+     commits between the email lookup and the link leaves nothing to link,
+     and the sign-in falls through to case 3 rather than failing
+     (`googleSignInDeletionRace.integration.test.ts`).
   3. Nobody → create the account (name falls back to the email local-part;
      avatar color derived from the email).
 - **TOCTOU:** a concurrent sign-in (double-clicked button, two tabs) losing
   the unique-index race on email/google_sub re-reads the winner instead of
-  surfacing a 500 — both attempts were the same successful sign-in.
+  surfacing a 500 — both attempts were the same successful sign-in. If even
+  the winner is gone by the re-read, the answer is `Unavailable` "signing in
+  was interrupted, please try again".
 - **Avatar refresh:** a changed Google photo is written on every sign-in, not
   only at creation — the URLs are not contractually stable, so a stored,
   never-refreshed one eventually points at nothing.
