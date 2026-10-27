@@ -330,4 +330,4 @@ EAS Update/OTA delivery is not configured by this change.
 The bundle/native verification used non-secret verification settings, not real
 OAuth/signing credentials. A signed physical-device IPA, live Apple/Google
 login/revocation, production deployment, upload, and App Review are not claimed
-by these local results. See [the exact dependency mitigations](build-security-patches.md).
+by these local results. See [how build-tool dependency advisories are handled](build-security-patches.md).
