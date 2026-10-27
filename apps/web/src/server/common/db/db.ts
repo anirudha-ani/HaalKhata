@@ -30,16 +30,22 @@ types.setTypeParser(types.builtins.TIMESTAMP, (value) => value);
 types.setTypeParser(types.builtins.DATE, (value) => value);
 
 /**
- * Resolves the Postgres connection string: DATABASE_URL when set; otherwise
- * assembled from the parts, with the password read through the `_FILE`
- * convention (POSTGRES_PASSWORD_FILE — the same secret the postgres image
- * initializes with) and URL-encoded, so no credential has to be exported
- * into the environment and no reserved character can break the URL.
+ * Resolves the Postgres connection string: the full URL when one is given;
+ * otherwise assembled from the parts, with the password read through the
+ * `_FILE` convention (POSTGRES_PASSWORD_FILE — the same secret the postgres
+ * image initializes with) and URL-encoded, so no credential has to be
+ * exported into the environment and no reserved character can break the URL.
+ *
+ * The full URL carries the password, so it is a secret like any other:
+ * DATABASE_URL_FILE first, then DATABASE_URL for development and tests. A
+ * DATABASE_URL_FILE that cannot be read is an error, never a reason to fall
+ * back to the parts and connect somewhere else.
  *
  * @returns The connection string to open the pool with.
  */
-function databaseUrl(): string {
-  if (process.env.DATABASE_URL) return process.env.DATABASE_URL;
+export function databaseUrl(): string {
+  const directUrl = readSecret("DATABASE_URL");
+  if (directUrl) return directUrl;
   const password = readSecret("POSTGRES_PASSWORD");
   if (!password) return DEFAULT_DATABASE_URL;
   const user = process.env.POSTGRES_USER ?? "haalkhata";

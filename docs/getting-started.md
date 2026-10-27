@@ -81,7 +81,9 @@ Using your own Postgres instead of the compose service? Set `DATABASE_URL`
 and append `?sslmode=verify-full` (or `&sslmode=verify-full` when the URL
 already has parameters). Remote database connections fail closed without
 certificate-verified TLS. Real shell variables still win over the file, so
-`DATABASE_URL=… pnpm dev` overrides it for a one-off.
+`DATABASE_URL=… pnpm dev` overrides it for a one-off. In a Docker
+deployment, mount the URL as a secret and set `DATABASE_URL_FILE` to its path
+instead, so the password never sits in the environment.
 
 For sample data, create a local account, keep `./dev.sh` running, then run
 `pnpm db:seed your-account@example.com`. This works on macOS and Linux and

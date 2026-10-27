@@ -356,8 +356,10 @@ with colocated tests. Mobile-specific rules:
   exact URL comparisons; Compose and direct deployments use different hosts.
 - **Don't read a secret from `process.env`** — go through `readSecret()` in
   `common/secrets/secrets.ts`, which honours the Docker `<NAME>_FILE` convention
-  production relies on. Without `DATABASE_URL` the pool assembles its URL
-  from `POSTGRES_PASSWORD(_FILE)` and the `POSTGRES_*` parts.
+  production relies on. That includes the full database URL, which carries
+  the password: `DATABASE_URL_FILE` wins over `DATABASE_URL`. Without either
+  the pool assembles its URL from `POSTGRES_PASSWORD(_FILE)` and the
+  `POSTGRES_*` parts.
 - **Money is per currency.** Balance maps are keyed by currency
   (`CurrencyCents` in `balance.usecase.ts`), responses carry `CurrencyAmount`
   buckets, and the legacy scalar fields are only the caller's default-currency
