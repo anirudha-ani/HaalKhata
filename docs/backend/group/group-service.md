@@ -121,7 +121,11 @@ three times is noise.
   so a group appearing in their list is explained by their feed. There is no
   separate "added" event at creation — the two are the same act.
 - Enrolment also befriends the creator with each added person (one-off
-  expenses between them become possible immediately).
+  expenses between them become possible immediately). The whole batch —
+  memberships, friendships, the inbox locks they need, and pending requests
+  cleared — takes the same few statements for a hundred people as for one
+  (`insertMembers`, `insertFriendships`), so AddMembers holds the group's
+  lock no longer for a crowd.
 - **Not idempotent** (no `operation_id`): a retried create makes a second
   group. The clients disable the button; an empty duplicate group is an
   annoyance, not a money error.

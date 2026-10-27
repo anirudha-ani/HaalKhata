@@ -24,7 +24,7 @@ vi.mock("@/server/auth/repo/users.repo", () => ({
   findUsersByIds: vi.fn(),
 }));
 vi.mock("@/server/social/repo/friendships.repo", () => ({
-  insertFriendship: vi.fn(),
+  insertFriendships: vi.fn(),
   listFriendIds: vi.fn(),
 }));
 vi.mock("@/server/social/repo/activity.repo", () => ({ insertActivity: vi.fn() }));

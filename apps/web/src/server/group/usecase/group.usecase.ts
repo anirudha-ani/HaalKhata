@@ -6,9 +6,9 @@ import { isRegisteredUser } from "@/server/auth/usecase/identity/user.mapper";
 import type { PoolClient } from "pg";
 import { GroupStatus } from "@haalkhata/protogen/group/v1/group_pb";
 import {
-  addMember,
   findGroupById,
   insertGroup,
+  insertMembers,
   isMember,
   listCoMemberIds,
   listGroupsByUser,
@@ -28,7 +28,7 @@ import {
   findUsersByIds,
 } from "@/server/auth/repo/users.repo";
 import { EMAIL_PATTERN, normalizePhone, PHONE_FORMAT_HINT } from "@/server/auth/auth.constants";
-import { insertFriendship, listFriendIds } from "@/server/social/repo/friendships.repo";
+import { insertFriendships, listFriendIds } from "@/server/social/repo/friendships.repo";
 import { insertActivity } from "@/server/social/repo/activity.repo";
 import { insertNotifications } from "@/server/social/repo/notifications.repo";
 import { groupIsSettled, userNetInGroup, userNetInGroups } from "@/server/expense/usecase/balance.usecase";
@@ -184,28 +184,25 @@ async function enrollMembers(
   const existingIds = new Set((await listMembers(groupId, client)).map((member) => member.id));
   const newIds = requestedIds.filter((userId) => !existingIds.has(userId));
   const usersById = new Map(
-    (await findUsersByIds(newIds)).map((userRow) => [userRow.id, userRow] as const),
+    (await findUsersByIds(newIds, client)).map((userRow) => [userRow.id, userRow] as const),
   );
-
-  // Every enrolment rides the caller's transaction, so a batch is all or
-  // nothing — a failure on the third person cannot leave two enrolled with
-  // no feed line explaining how they got there.
-  const added: UserRow[] = [];
-  for (const userId of newIds) {
-    const user = usersById.get(userId);
-    // An id with no row is a client sending something stale, not an attack —
-    // the authorization check above already passed, so just skip it.
-    if (!user) continue;
-    // §33c: a seat belongs only to somebody who can open the app, which a
-    // Deleted member left in a friend's history cannot. The gate lives here,
-    // where CreateGroup and AddMembers converge.
-    if (!isRegisteredUser(user)) {
-      throw new UsecaseError("failed_precondition", `${user.name} can't be added to a group`);
-    }
-    await addMember(groupId, userId, MEMBER_ROLE, client);
-    await insertFriendship(callerId, userId, client);
-    added.push(user);
+  // An id with no row is a client sending something stale, not an attack —
+  // the authorization check above already passed, so just skip it.
+  const added = newIds.flatMap((userId) => usersById.get(userId) ?? []);
+  // §33c: a seat belongs only to somebody who can open the app, which a
+  // Deleted member left in a friend's history cannot. The gate lives here,
+  // where CreateGroup and AddMembers converge.
+  const unregistered = added.find((user) => !isRegisteredUser(user));
+  if (unregistered) {
+    throw new UsecaseError("failed_precondition", `${unregistered.name} can't be added to a group`);
   }
+
+  // The whole batch in a fixed number of statements on the caller's
+  // transaction, so it is all or nothing and holds the group's lock no
+  // longer for a hundred people than for one.
+  const addedIds = added.map((user) => user.id);
+  await insertMembers(groupId, addedIds, MEMBER_ROLE, client);
+  await insertFriendships(callerId, addedIds, client);
   return added;
 }
 

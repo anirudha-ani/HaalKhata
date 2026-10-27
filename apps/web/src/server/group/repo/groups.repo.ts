@@ -206,13 +206,39 @@ export async function listCoMemberIds(userId: string, client?: PoolClient): Prom
 }
 
 /**
+ * Adds several users to a group in one statement, with the same role; a
+ * no-op for anyone already a member.
+ *
+ * @param groupId - Id of the group to add the users to.
+ * @param userIds - Ids of the users being added.
+ * @param role - Membership role to record for each of them.
+ * @param client - Transaction client when the enrolment must commit with the
+ *   rest of a batch and the feed event announcing it.
+ */
+export async function insertMembers(
+  groupId: string,
+  userIds: string[],
+  role: string,
+  client?: PoolClient,
+): Promise<void> {
+  if (userIds.length === 0) return;
+  await execute(
+    `INSERT INTO group_members (group_id, user_id, role)
+     SELECT $1, member_id, $3 FROM unnest($2::text[]) AS member_id
+     ON CONFLICT DO NOTHING`,
+    [groupId, userIds, role],
+    client,
+  );
+}
+
+/**
  * Adds a user to a group; a no-op if the membership already exists.
  *
  * @param groupId - Id of the group to add the user to.
  * @param userId - Id of the user being added.
  * @param role - Membership role to record (defaults to "member").
- * @param client - Transaction client when the enrolment must commit with the
- *   rest of a batch and the feed event announcing it.
+ * @param client - Transaction client when the membership must commit with
+ *   the change that implies it.
  */
 export async function addMember(
   groupId: string,
@@ -220,12 +246,7 @@ export async function addMember(
   role = "member",
   client?: PoolClient,
 ): Promise<void> {
-  await execute(
-    `INSERT INTO group_members (group_id, user_id, role) VALUES ($1, $2, $3)
-     ON CONFLICT DO NOTHING`,
-    [groupId, userId, role],
-    client,
-  );
+  await insertMembers(groupId, [userId], role, client);
 }
 
 /**

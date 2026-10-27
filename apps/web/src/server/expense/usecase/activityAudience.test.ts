@@ -48,7 +48,7 @@ vi.mock("@/server/auth/repo/users.repo", () => ({
   findUsersByIds: vi.fn(),
 }));
 vi.mock("@/server/social/repo/friendships.repo", () => ({
-  insertFriendship: vi.fn(),
+  insertFriendships: vi.fn(),
   listFriendIds: vi.fn(),
 }));
 vi.mock("@/server/expense/repo/comments.repo", () => ({
@@ -129,7 +129,7 @@ import {
 } from "@/server/common/ledger/ledgerLocks";
 import { insertActivity, listActivityForExpense } from "@/server/social/repo/activity.repo";
 import { insertNotificationRows, insertNotifications } from "@/server/social/repo/notifications.repo";
-import { insertFriendship, listFriendIds } from "@/server/social/repo/friendships.repo";
+import { insertFriendships, listFriendIds } from "@/server/social/repo/friendships.repo";
 import { amountOwed, userNetInGroup, groupCancelsOut } from "./balance.usecase";
 import {
   MAX_EXPENSE_ITEM_NAME_LENGTH,
@@ -653,7 +653,7 @@ describe("who hears about a transaction", () => {
     await createExpense(PAYER, validExpenseRequest({ groupId: "" }));
 
     expect(insertExpense).toHaveBeenCalledWith(expect.anything(), transactionClient);
-    expect(insertFriendship).toHaveBeenCalledWith(PAYER, OWER, transactionClient);
+    expect(insertFriendships).toHaveBeenCalledWith(PAYER, expect.arrayContaining([OWER]), transactionClient);
     expect(insertActivity).toHaveBeenCalledWith(
       expect.objectContaining({ type: "expense_added" }),
       transactionClient,

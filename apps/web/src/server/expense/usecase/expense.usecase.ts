@@ -31,7 +31,7 @@ import { assertGroupActive, assertGroupsActive } from "@/server/group/usecase/gr
 import { GROUP_STATUS_PROTO } from "@/server/group/group.constants";
 import { GroupStatus } from "@haalkhata/protogen/group/v1/group_pb";
 import { findUserById, findUsersByIds, type UserRow } from "@/server/auth/repo/users.repo";
-import { insertFriendship, listFriendIds } from "@/server/social/repo/friendships.repo";
+import { insertFriendships, listFriendIds } from "@/server/social/repo/friendships.repo";
 import {
   insertComment,
   listCommentPage,
@@ -791,14 +791,10 @@ export async function createExpense(userId: string, request: CreateExpenseReques
       await assertLockedOneOffParticipants(userId, participantIds, client);
     }
     const insertedId = await insertExpense(write, client);
-    // One-off expenses imply a friend connection between all participants.
-    // Ledger locks first, then the friend-request inbox locks inside
-    // insertFriendship — the one order every path takes them in.
-    if (!write.groupId) {
-      for (const participantId of participantIds) {
-        if (participantId !== userId) await insertFriendship(userId, participantId, client);
-      }
-    }
+    // A one-off expense befriends its creator with everyone on it. Ledger
+    // locks first, then the friend-request inbox locks inside
+    // insertFriendships — the one order every path takes them in.
+    if (!write.groupId) await insertFriendships(userId, participantIds, client);
     await recordExpenseActivity(userId, insertedId, write, "added", client);
     await finishOperation(operation, insertedId, client);
     return insertedId;

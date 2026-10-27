@@ -6,8 +6,58 @@ import { lockFriendRequestInboxes } from "@/server/common/ledger/ledgerLocks";
 import { MAX_PENDING_FRIEND_REQUESTS } from "@/server/social/social.constants";
 
 /**
- * Records a friendship as two symmetric rows (user→friend and friend→user);
- * a no-op for pairs that are already friends.
+ * Befriends one person with each of several others: two symmetric rows per
+ * pair, a no-op for pairs that are already friends, and any pending request
+ * between a pair removed.
+ *
+ * Three statements whatever the count, under every inbox lock taken at once
+ * in the one sorted order. Taking them pair by pair let two batches that
+ * share people in a different order each hold a lock the other wanted.
+ *
+ * @param userId - Id of the person on one side of every friendship.
+ * @param friendIds - Ids of the people on the other side; duplicates,
+ *   empty ids and `userId` itself are ignored.
+ * @param client - Existing transaction client when the friendships must
+ *   commit with the change that implies them.
+ */
+export async function insertFriendships(
+  userId: string,
+  friendIds: string[],
+  client?: PoolClient,
+): Promise<void> {
+  const otherIds = [...new Set(friendIds)].filter((friendId) => friendId !== "" && friendId !== userId);
+  if (otherIds.length === 0) return;
+  const persist = async (transactionClient: PoolClient): Promise<void> => {
+    await lockFriendRequestInboxes(transactionClient, [userId, ...otherIds]);
+    await execute(
+      `DELETE FROM friend_requests
+        WHERE (requester_id = $1 AND recipient_id = ANY($2::text[]))
+           OR (recipient_id = $1 AND requester_id = ANY($2::text[]))`,
+      [userId, otherIds],
+      transactionClient,
+    );
+    await execute(
+      `INSERT INTO friendships (user_id, friend_id)
+       SELECT pair.user_id, pair.friend_id
+         FROM users friend
+         CROSS JOIN LATERAL (VALUES ($1::text, friend.id), (friend.id, $1::text)) AS pair(user_id, friend_id)
+        WHERE friend.id = ANY($2::text[])
+          AND friend.deleted_at IS NULL
+          AND EXISTS (
+                SELECT 1 FROM users usr WHERE usr.id = $1 AND usr.deleted_at IS NULL
+              )
+       ON CONFLICT DO NOTHING`,
+      [userId, otherIds],
+      transactionClient,
+    );
+  };
+  if (client) await persist(client);
+  else await transaction(persist);
+}
+
+/**
+ * Records one friendship as two symmetric rows, through
+ * {@link insertFriendships}.
  *
  * @param userId - Id of one side of the friendship.
  * @param friendId - Id of the other side of the friendship.
@@ -18,33 +68,7 @@ export async function insertFriendship(
   friendId: string,
   client?: PoolClient,
 ): Promise<void> {
-  const persist = async (transactionClient: PoolClient): Promise<void> => {
-    await lockFriendRequestInboxes(transactionClient, [userId, friendId]);
-    await execute(
-      `DELETE FROM friend_requests
-        WHERE (requester_id = $1 AND recipient_id = $2)
-           OR (requester_id = $2 AND recipient_id = $1)`,
-      [userId, friendId],
-      transactionClient,
-    );
-    await execute(
-      `INSERT INTO friendships (user_id, friend_id)
-       SELECT pair.user_id, pair.friend_id
-         FROM (VALUES ($1::text, $2::text), ($2::text, $1::text)) AS pair(user_id, friend_id)
-        WHERE $1 <> $2
-          AND EXISTS (
-                SELECT 1 FROM users usr WHERE usr.id = $1 AND usr.deleted_at IS NULL
-              )
-          AND EXISTS (
-                SELECT 1 FROM users usr WHERE usr.id = $2 AND usr.deleted_at IS NULL
-              )
-       ON CONFLICT DO NOTHING`,
-      [userId, friendId],
-      transactionClient,
-    );
-  };
-  if (client) await persist(client);
-  else await transaction(persist);
+  await insertFriendships(userId, [friendId], client);
 }
 
 /**

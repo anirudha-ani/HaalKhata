@@ -12,16 +12,30 @@ import {
 } from "@/server/common/ledger/ledgerLocks.constants";
 
 /**
- * Acquires advisory locks for already-normalized keys in lexical order.
+ * Acquires advisory locks for already-normalized keys in lexical order, in
+ * one statement: a request that locks a hundred people waits on one round
+ * trip, not a hundred.
+ *
+ * The order is what keeps two requests from waiting on each other, so it
+ * is the sort's: PostgreSQL calls a volatile function in the select list
+ * after ORDER BY has sorted the rows, one row at a time. `COLLATE "C"`
+ * sorts by bytes, which for these ASCII keys is the order JavaScript's sort
+ * gave them when each lock was its own statement, so a release still
+ * locking that way agrees with this one during a deploy.
  *
  * @param client - Transaction client that must retain the locks through commit.
  * @param lockKeys - Distinct lock names; duplicates are removed defensively.
  * @returns A promise that resolves after every lock is held.
  */
 async function acquireKeys(client: PoolClient, lockKeys: string[]): Promise<void> {
-  for (const lockKey of [...new Set(lockKeys)].sort()) {
-    await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", [lockKey]);
-  }
+  const distinctKeys = [...new Set(lockKeys)];
+  if (distinctKeys.length === 0) return;
+  await client.query(
+    `SELECT pg_advisory_xact_lock(hashtextextended(lock_key, 0))
+       FROM unnest($1::text[]) AS lock_key
+      ORDER BY lock_key COLLATE "C"`,
+    [distinctKeys],
+  );
 }
 
 /**

@@ -214,9 +214,16 @@ commit/rollback. Six lock classes (`common/ledger/ledgerLocks.ts`):
 
 Deadlock avoidance rests on two rules:
 
-1. **Within a class, keys are acquired sorted** (`acquireKeys` dedups and
-   sorts lexically) — two transactions locking the same set always take it in
-   the same order.
+1. **Within a class, keys are acquired sorted, all at once.** `acquireKeys`
+   dedups the keys and takes them in one statement, `ORDER BY lock_key
+   COLLATE "C"` (Postgres calls the lock function after the sort, row by
+   row), so two transactions locking overlapping sets take the shared keys in
+   the same order, and a hundred locks cost one round trip.
+   `ledgerLocks.integration.test.ts` checks the order on a real server. Take
+   everything a request needs from one class in **one call**: two calls — say
+   one per person in a loop — are two sorted sets, and two requests walking
+   the same people in different orders can each hold a lock the other wants
+   (audit A17's enrolment deadlock).
 2. **Across classes, one global order:** expense lock → participant locks →
    group locks → friend-request-inbox locks. Every path takes them in that
    order; the constants file is the single spelling of each prefix, because

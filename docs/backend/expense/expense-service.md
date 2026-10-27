@@ -270,8 +270,8 @@ transaction**:
 | DeleteSettlement | `settlement_deleted` | The two people on it |
 
 One-off expense creation also **auto-befriends** the caller with every other
-participant (ledger locks first, then friendship inbox locks — the one global
-order).
+participant, in one batch (`insertFriendships`: ledger locks first, then every
+friendship inbox lock at once — the one global order).
 
 ## Vocabularies & Limits
 

@@ -19,6 +19,7 @@ import {
   friendshipExists,
   insertFriendRequest,
   insertFriendship,
+  insertFriendships,
 } from "./friendships.repo";
 
 const REQUESTER = "user-requester";
@@ -37,11 +38,7 @@ describe("friend request persistence", () => {
 
     expect(transactionClient.query).toHaveBeenCalledWith(
       expect.stringContaining("pg_advisory_xact_lock"),
-      [`friend-request-inbox:${REQUESTER}`],
-    );
-    expect(transactionClient.query).toHaveBeenCalledWith(
-      expect.stringContaining("pg_advisory_xact_lock"),
-      [`friend-request-inbox:${RECIPIENT}`],
+      [[`friend-request-inbox:${REQUESTER}`, `friend-request-inbox:${RECIPIENT}`]],
     );
     expect(database.queryOne).toHaveBeenCalledWith(
       expect.stringContaining("usr.deleted_at IS NULL"),
@@ -82,7 +79,7 @@ describe("friend request persistence", () => {
     );
     expect(transactionClient.query).toHaveBeenCalledWith(
       expect.stringContaining("pg_advisory_xact_lock"),
-      [`friend-request-inbox:${RECIPIENT}`],
+      [expect.arrayContaining([`friend-request-inbox:${RECIPIENT}`])],
     );
     expect(database.queryOne).toHaveBeenNthCalledWith(
       2,
@@ -142,13 +139,37 @@ describe("friend request persistence", () => {
 
     expect(database.execute).toHaveBeenCalledWith(
       expect.stringContaining("DELETE FROM friend_requests"),
-      [REQUESTER, RECIPIENT],
+      [REQUESTER, [RECIPIENT]],
       transactionClient,
     );
     expect(database.execute).toHaveBeenCalledWith(
-      expect.stringMatching(/VALUES \(\$1::text, \$2::text\).*deleted_at IS NULL/s),
-      [REQUESTER, RECIPIENT],
+      expect.stringMatching(/VALUES \(\$1::text, friend\.id\), \(friend\.id, \$1::text\).*deleted_at IS NULL/s),
+      [REQUESTER, [RECIPIENT]],
       transactionClient,
     );
+  });
+
+  it("befriends one person with many in three statements, locking every inbox at once", async () => {
+    const friends = ["user-b", "user-c", "user-b", "", REQUESTER];
+
+    await insertFriendships(REQUESTER, friends, transactionClient);
+
+    expect(transactionClient.query).toHaveBeenCalledTimes(1);
+    expect(transactionClient.query).toHaveBeenCalledWith(expect.stringContaining("pg_advisory_xact_lock"), [
+      [`friend-request-inbox:${REQUESTER}`, "friend-request-inbox:user-b", "friend-request-inbox:user-c"],
+    ]);
+    expect(database.execute).toHaveBeenCalledTimes(2);
+    expect(database.execute).toHaveBeenCalledWith(
+      expect.stringContaining("DELETE FROM friend_requests"),
+      [REQUESTER, ["user-b", "user-c"]],
+      transactionClient,
+    );
+  });
+
+  it("does nothing for a person befriended with nobody but themselves", async () => {
+    await insertFriendships(REQUESTER, [REQUESTER, ""], transactionClient);
+
+    expect(transactionClient.query).not.toHaveBeenCalled();
+    expect(database.execute).not.toHaveBeenCalled();
   });
 });
