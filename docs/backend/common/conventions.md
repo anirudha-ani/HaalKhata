@@ -114,6 +114,13 @@ id and the RPC name; the client receives only
 provider messages never reach a client. Rate-limit rejections use
 `ResourceExhausted` and are thrown by handlers directly.
 
+That covers only what runs **inside** `runUsecase`, so a handler does all its
+work there, the session check (`requireUser` / `requireRateLimitedUser`)
+included: it reads the database. Connect still hides an error thrown outside
+it (the client sees a bare `internal error`), but nothing is logged and there
+is no request id to look up. `api/connect/sessionCheckFailure.test.ts` calls
+the RPCs over HTTP with that read failing and checks for both.
+
 `UsecaseError` messages are written to be shown to the user verbatim — that is
 the contract: if a message is not safe to show, it must not be a
 `UsecaseError`.

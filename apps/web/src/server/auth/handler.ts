@@ -152,22 +152,21 @@ export const authHandler: ServiceImpl<typeof AuthService> = {
 
   /** Sends an SMS code, or checks it and puts the number on the caller's account. */
   async setPhone(request, handlerContext) {
-    const userId = await requireUser(handlerContext);
-    // Inside runUsecase so the durable limiter's own database errors are
-    // sanitized like any other; its ConnectError refusals pass through.
-    return runUsecase(
-      async () =>
-        phoneNumber.setPhone(userId, request.phone, request.verificationCode, {
-          // The call that sends an SMS is also limited by destination and by
-          // client address, whoever the account is, durably, in Postgres.
-          beforeSend: async (phone) => {
-            enforcePhoneRateLimit(userId, "send", PHONE_SEND_RATE_LIMIT);
-            await enforcePhoneSendLimits(phone, clientIp(handlerContext.requestHeader));
-          },
-          beforeCheck: () => enforcePhoneRateLimit(userId, "check", PHONE_CHECK_RATE_LIMIT),
-        }),
-      handlerContext,
-    );
+    // All inside runUsecase, the session check included, so a database
+    // failure in it or in the durable limiter is logged and answered
+    // generically like any other; the limiter's refusals pass through.
+    return runUsecase(async () => {
+      const userId = await requireUser(handlerContext);
+      return phoneNumber.setPhone(userId, request.phone, request.verificationCode, {
+        // The call that sends an SMS is also limited by destination and by
+        // client address, whoever the account is, durably, in Postgres.
+        beforeSend: async (phone) => {
+          enforcePhoneRateLimit(userId, "send", PHONE_SEND_RATE_LIMIT);
+          await enforcePhoneSendLimits(phone, clientIp(handlerContext.requestHeader));
+        },
+        beforeCheck: () => enforcePhoneRateLimit(userId, "check", PHONE_CHECK_RATE_LIMIT),
+      });
+    }, handlerContext);
   },
 
   /** Retired: SetPhone never offers a merge, so there is nothing to confirm. */
@@ -177,9 +176,11 @@ export const authHandler: ServiceImpl<typeof AuthService> = {
 
   /** Detaches the caller's phone number; refused when it is their only identifier. */
   async removePhone(_request, handlerContext) {
-    const userId = await requireUser(handlerContext);
-    enforcePhoneRateLimit(userId, "remove", PHONE_REMOVAL_RATE_LIMIT);
-    return runUsecase(async () => auth.removePhone(userId), handlerContext);
+    return runUsecase(async () => {
+      const userId = await requireUser(handlerContext);
+      enforcePhoneRateLimit(userId, "remove", PHONE_REMOVAL_RATE_LIMIT);
+      return auth.removePhone(userId);
+    }, handlerContext);
   },
 
   /** Marks the caller's first-run flow finished, skipped fields included. */

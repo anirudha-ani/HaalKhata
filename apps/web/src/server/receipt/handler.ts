@@ -35,19 +35,24 @@ export const receiptHandler: ServiceImpl<typeof ReceiptService> = {
    * itself is counted (who, when, whether it worked), nothing about the bill.
    */
   async parseReceipt(request, handlerContext) {
-    const userId = await requireRateLimitedUser(
-      handlerContext,
-      "parse-receipt",
-      RPC_RATE_LIMITS.parseReceipt,
-    );
-    if (activeReceiptParses >= MAX_CONCURRENT_RECEIPT_PARSES) {
-      throw new ConnectError("receipt parsing is busy, please try again", Code.ResourceExhausted);
-    }
-    activeReceiptParses += 1;
-    try {
-      return await runUsecase(() => parseReceiptWithConsent(userId, request.image, request.consentVersion, request.currency), handlerContext);
-    } finally {
-      activeReceiptParses -= 1;
-    }
+    // The session check runs inside runUsecase too, so a database failure in
+    // it is logged and answered generically; the refusals are ConnectErrors
+    // and pass through as they are.
+    return runUsecase(async () => {
+      const userId = await requireRateLimitedUser(
+        handlerContext,
+        "parse-receipt",
+        RPC_RATE_LIMITS.parseReceipt,
+      );
+      if (activeReceiptParses >= MAX_CONCURRENT_RECEIPT_PARSES) {
+        throw new ConnectError("receipt parsing is busy, please try again", Code.ResourceExhausted);
+      }
+      activeReceiptParses += 1;
+      try {
+        return await parseReceiptWithConsent(userId, request.image, request.consentVersion, request.currency);
+      } finally {
+        activeReceiptParses -= 1;
+      }
+    }, handlerContext);
   },
 };
