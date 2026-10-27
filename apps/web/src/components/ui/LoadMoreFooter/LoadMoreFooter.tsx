@@ -3,6 +3,7 @@
 
 import { ChevronDown } from "lucide-react";
 import { ErrorAlert } from "@/components/ui/ErrorAlert/ErrorAlert";
+import { useRevealWhenShown } from "@/lib/hooks/useRevealWhenShown";
 import { SHOW_MORE_LABEL } from "@haalkhata/shared/api/paging";
 
 /**
@@ -10,7 +11,9 @@ import { SHOW_MORE_LABEL } from "@haalkhata/shared/api/paging";
  * just above Show more, which is the way to ask for it again, so the error
  * is where the person is looking and never mistaken for the end of the
  * list. A notice (the list was read again because it changed) sits there
- * too. Once there is nothing further, a line says the end was reached.
+ * too. Either one pushes the button down, so it is scrolled back into view
+ * as it appears. Once there is nothing further, a line says the end was
+ * reached.
  *
  * @param props - Component props.
  * @returns The footer, or nothing for an empty list with no more to load.
@@ -39,6 +42,7 @@ export function LoadMoreFooter({
   /** What the button says. */
   label?: string;
 }) {
+  const buttonRef = useRevealWhenShown<HTMLButtonElement>(error !== "" || notice !== "");
   return (
     <>
       {notice ? (
@@ -50,10 +54,11 @@ export function LoadMoreFooter({
         <>
           {error ? <ErrorAlert message={`Couldn't load more: ${error}`} /> : null}
           <button
+            ref={buttonRef}
             type="button"
             onClick={onLoadMore}
             disabled={isLoadingMore}
-            className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-line bg-card py-3 text-sm font-semibold text-ink-soft hover:border-brand-200 hover:text-brand-600 disabled:opacity-50"
+            className="flex w-full scroll-my-5 items-center justify-center gap-1.5 rounded-xl border border-line bg-card py-3 text-sm font-semibold text-ink-soft hover:border-brand-200 hover:text-brand-600 disabled:opacity-50"
           >
             <ChevronDown className="h-4 w-4" aria-hidden="true" />
             {isLoadingMore ? "Loading…" : label}

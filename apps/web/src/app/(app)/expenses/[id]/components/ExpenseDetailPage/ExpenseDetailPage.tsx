@@ -14,6 +14,7 @@ import { Modal } from "@/components/ui/Modal/Modal";
 import { Money } from "@/components/ui/Money/Money";
 import { Spinner } from "@/components/ui/Spinner/Spinner";
 import { errorMessage } from "@/lib/api/connect";
+import { useRevealWhenShown } from "@/lib/hooks/useRevealWhenShown";
 import { useHydrated } from "@/lib/hooks/useHydrated";
 import { formatMoney } from "@haalkhata/shared/money/money";
 import { localDateTime } from "@haalkhata/shared/time/localTime";
@@ -37,6 +38,8 @@ import { ARCHIVED_GROUP_HINT, GROUP_ARCHIVE_ACTIONS } from "@haalkhata/shared/gr
 export function ExpenseDetailPage({ expenseId }: { expenseId: string }) {
   const expenseDetail = useExpenseDetail(expenseId);
   const hydrated = useHydrated();
+  // A failed page is said above the button that retries it, pushing it down.
+  const earlierRef = useRevealWhenShown<HTMLButtonElement>(expenseDetail.earlierCommentsError !== "");
 
   if (!hydrated || expenseDetail.isLoading) return <Spinner label="Loading expense…" />;
   const expense = expenseDetail.detail?.expense;
@@ -385,10 +388,11 @@ export function ExpenseDetailPage({ expenseId }: { expenseId: string }) {
         ) : null}
         {expenseDetail.hasEarlierComments ? (
           <button
+            ref={earlierRef}
             type="button"
             onClick={expenseDetail.showEarlierComments}
             disabled={expenseDetail.isLoadingEarlierComments}
-            className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-line bg-card py-2.5 text-sm font-semibold text-ink-soft hover:border-brand-200 hover:text-brand-600 disabled:opacity-50"
+            className="flex w-full scroll-my-5 items-center justify-center gap-1.5 rounded-xl border border-line bg-card py-2.5 text-sm font-semibold text-ink-soft hover:border-brand-200 hover:text-brand-600 disabled:opacity-50"
           >
             <ChevronUp className="h-4 w-4" aria-hidden="true" />
             {expenseDetail.isLoadingEarlierComments ? "Loading…" : SHOW_EARLIER_COMMENTS_LABEL}

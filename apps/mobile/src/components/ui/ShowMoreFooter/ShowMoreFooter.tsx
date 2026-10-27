@@ -5,6 +5,7 @@ import { StyleSheet, View } from "react-native";
 import { Text } from "@/components/ui/Text";
 import { Button } from "@/components/ui/Button";
 import { ErrorAlert } from "@/components/ui/ErrorAlert";
+import { useRevealWhenShown } from "@/components/shell/Screen/hooks/useRevealWhenShown";
 import { colors, radii, spacing } from "@/lib/theme/theme";
 import { SHOW_MORE_LABEL } from "@haalkhata/shared/api/paging";
 
@@ -12,8 +13,9 @@ import { SHOW_MORE_LABEL } from "@haalkhata/shared/api/paging";
  * Renders what sits beside a paged list's rows. A failed page is said just
  * above the button, which is the way to ask for it again, and the rows
  * already loaded stay where they are; a notice (a list that was read again
- * while it was being paged) sits in the same place. Once there is nothing
- * further, an optional line says the end was reached.
+ * while it was being paged) sits in the same place. Either one pushes the
+ * button down, so the footer is scrolled back into sight as it appears.
+ * Once there is nothing further, an optional line says the end was reached.
  *
  * @param props - The list's paging state and wording.
  * @returns The footer, or nothing when there is no more to load and no end line.
@@ -45,6 +47,7 @@ export function ShowMoreFooter({
   /** Which way the next page lies: below the rows ("older") or above them ("earlier"). */
   direction?: "older" | "earlier";
 }) {
+  const footerRef = useRevealWhenShown(error !== "" || notice !== "");
   if (!hasMore) {
     return endLine || notice ? (
       <View style={styles.footer}>
@@ -56,7 +59,7 @@ export function ShowMoreFooter({
 
   const Chevron = direction === "earlier" ? ChevronUp : ChevronDown;
   return (
-    <View style={styles.footer}>
+    <View ref={footerRef} style={styles.footer}>
       {notice ? (
         <Text accessibilityRole="alert" style={styles.notice}>
           {notice}
