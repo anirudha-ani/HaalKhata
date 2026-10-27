@@ -45,7 +45,7 @@ describe("sumUserNetByGroup", () => {
   });
 
   it("keeps a group's currencies apart rather than adding them", async () => {
-    // A dollar owed and a euro paid back, in one group (audit A20): two
+    // A dollar owed and a euro paid back, in one group: two
     // balances, never one zero.
     vi.mocked(query).mockResolvedValue([
       { group_id: "goa", currency: "USD", net: "-100" },

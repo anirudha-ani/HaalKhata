@@ -1,6 +1,6 @@
 /**
- * Real PostgreSQL regression for the remainder of audit A18: a Google
- * sign-in that finds an account by email while that account is being
+ * Real PostgreSQL regression: a Google sign-in that finds an account by
+ * email while that account is being
  * deleted must not fail, and must not hand out a session for the deleted
  * row. It signs the person up afresh, as it would a moment later.
  */

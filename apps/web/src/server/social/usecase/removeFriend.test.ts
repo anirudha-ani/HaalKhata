@@ -145,7 +145,7 @@ describe("removeFriend", () => {
   it("checks the balance only under both lock families, ledgers first", async () => {
     // The zero read is only trustworthy while one-off writers are held out;
     // locks taken after the check would guard nothing. Ledgers before inboxes
-    // is the order a one-off expense takes them in (audit A06): the reverse
+    // is the order a one-off expense takes them in: the reverse
     // let each hold one kind while waiting for the other, and deadlock.
     const order: string[] = [];
     vi.mocked(lockFriendRequestInboxes).mockImplementation(async () => {

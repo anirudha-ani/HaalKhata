@@ -1,5 +1,5 @@
 /**
- * Real PostgreSQL regression for audit A12: paging the activity feed must
+ * Real PostgreSQL regression: paging the activity feed must
  * not skip events that share a timestamp, or fall inside the same
  * millisecond as the last event on a page. Postgres keeps microseconds; a
  * cursor rounded to milliseconds used to start the next page after them.

@@ -1,5 +1,5 @@
 /**
- * Real PostgreSQL regression for audit A04: an AddMembers request that was
+ * Real PostgreSQL regression: an AddMembers request that was
  * already waiting for the group's ledger lock when its caller was removed
  * must not run, or a removed member could put themselves straight back.
  */

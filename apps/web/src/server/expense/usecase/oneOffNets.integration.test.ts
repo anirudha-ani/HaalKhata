@@ -1,5 +1,5 @@
 /**
- * Real PostgreSQL check for audit A14: the batched one-off balances come out
+ * Real PostgreSQL check: the batched one-off balances come out
  * exactly as a read per pair would give them, for several people at once,
  * across shared three-way expenses, two currencies, a deleted expense, a
  * group expense and payments both ways.

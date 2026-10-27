@@ -55,14 +55,14 @@ orphan the debt: a group payment needs both people to be members, so nobody
 could pay it, and the group could never be archived.
 
 - A zero total is not enough. In a group that does not simplify debts,
-  someone can owe one person and be owed by another (audit B08;
-  `pairwiseLeave.integration.test.ts`). Turning Simplify debts on routes
+  someone can owe one person and be owed by another
+  (`pairwiseLeave.integration.test.ts`). Turning Simplify debts on routes
   those around them and frees them to leave.
 - Nor is one currency. A group can hold a payment in a currency other than
   its own (written before 30 August 2026, when a cross-scope payment took
   the payment's currency into every scope), and a dollar owed with a euro
-  paid back is two open balances (audit A20;
-  `mixedCurrencyGroup.integration.test.ts`).
+  paid back is two open balances
+  (`mixedCurrencyGroup.integration.test.ts`).
 - A person-to-person loop that cancels out holds nobody in: it is not debt,
   and a payment along it is refused anyway.
 

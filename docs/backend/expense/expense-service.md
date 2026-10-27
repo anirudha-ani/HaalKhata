@@ -788,7 +788,7 @@ per scope; callers only use the response to confirm the recording):
   30 August 2026 a cross-scope payment was stamped with the payment's
   currency in every scope it touched, so a group can hold a payment in
   another one. That is a balance of its own, never netted against the
-  group's (audits A20/B26): `by_currency` lists the group's currency first
+  group's: `by_currency` lists the group's currency first
   (every member, even at zero) and any other after it, alphabetically, while
   it holds anything. The top-level fields repeat the group's currency for
   older clients. Both apps read it through `groupBalanceSections`

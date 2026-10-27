@@ -230,7 +230,7 @@ Deadlock avoidance rests on two rules:
    everything a request needs from one class in **one call**: two calls — say
    one per person in a loop — are two sorted sets, and two requests walking
    the same people in different orders can each hold a lock the other wants
-   (audit A17's enrolment deadlock).
+   — the deadlock group enrolment used to have.
 2. **Across classes, one global order:** expense lock → participant locks →
    group locks → friend-request-inbox locks. Every path takes them in that
    order; the constants file is the single spelling of each prefix, because

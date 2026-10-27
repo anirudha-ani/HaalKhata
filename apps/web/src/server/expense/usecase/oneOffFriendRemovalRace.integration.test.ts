@@ -1,5 +1,5 @@
 /**
- * Real PostgreSQL regression for audit A05: a one-off expense that was
+ * Real PostgreSQL regression: a one-off expense that was
  * already waiting for a participant's ledger lock when the friendship it
  * relies on was removed must not run. Writing it would put the removed
  * friend back into debt and quietly re-create the friendship.

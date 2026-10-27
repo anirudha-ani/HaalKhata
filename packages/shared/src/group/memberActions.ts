@@ -113,8 +113,8 @@ export interface MemberDebtInWords {
  * euro paid back is two balances to settle, not one that cancels.
  *
  * A total of zero is not always settled either: in a group that does not
- * simplify debts, someone can owe one person and be owed by another (audit
- * B08). Then each debt is named, with the way out that needs no payment:
+ * simplify debts, someone can owe one person and be owed by another. Then
+ * each debt is named, with the way out that needs no payment:
  * Simplify debts routes them around the member.
  *
  * @param personName - Display name of the member.

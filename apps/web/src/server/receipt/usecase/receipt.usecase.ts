@@ -280,7 +280,7 @@ export async function readProviderResponse(response: Response): Promise<string> 
   const declaredLength = Number(response.headers.get("content-length"));
   if (Number.isFinite(declaredLength) && declaredLength > MAX_PROVIDER_RESPONSE_BYTES) {
     // Cancelled, not just abandoned: a body neither read nor cancelled keeps
-    // its connection until garbage collection gets to it (audit A15). A
+    // its connection until garbage collection gets to it. A
     // cancel that fails changes nothing for the caller, who is told the size.
     await response.body?.cancel().catch(() => undefined);
     throw new Error(`provider response exceeds ${MAX_PROVIDER_RESPONSE_BYTES} bytes`);

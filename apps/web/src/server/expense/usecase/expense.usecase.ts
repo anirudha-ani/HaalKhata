@@ -396,7 +396,7 @@ async function connectedUserIds(userId: string, client?: PoolClient): Promise<Se
  * {@link validateExpenseParticipants} ran before this request waited for the
  * locks, and a friend removal holding them meanwhile must not be undone by
  * a write already in flight: it would put the removed friend into debt and
- * re-create the friendship (audit A05).
+ * re-create the friendship.
  *
  * @param actorId - Authenticated caller writing the expense.
  * @param participantIds - Everyone the write puts on the expense.
@@ -528,7 +528,7 @@ async function assertLockedGroupParticipants(
  * Refuses a change that would move a former member's balance in a group.
  * Leaving needs a zero balance there, and nobody can record a group payment
  * with someone who has left, so a removed payment or a changed expense under
- * them would leave a debt nobody can clear (audit A07). Changes between
+ * them would leave a debt nobody can clear. Changes between
  * people who are still members, and changes that leave a former member at
  * zero, are not affected.
  *
@@ -676,7 +676,7 @@ function storedExpenseWrite(expense: ExpenseRow, children: ExpenseChildren): Exp
  * notification for every participant except the actor, each carrying that
  * reader's own money line.
  *
- * An edit also reaches everyone it took off the expense (audit A13): their
+ * An edit also reaches everyone it took off the expense: their
  * balance moved too, and their notification says what they no longer owe or
  * get back. Off a group expense they can still open it, so they are in the
  * feed line as well. Off a one-off expense they cannot, so their
@@ -2206,7 +2206,7 @@ export async function deleteSettlement(userId: string, settlementId: string): Pr
     // the selected row itself lives outside an archived group.
     const groupsById = await assertGroupsActive(groupIds, client);
     // Nor may it reopen a group balance of somebody who has since left it:
-    // nothing could settle that again (audit A07).
+    // nothing could settle that again.
     const lockedUnit = current.net_settlement_id
       ? await listSettlementsByNetSettlement(current.net_settlement_id, client)
       : [current];

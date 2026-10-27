@@ -194,7 +194,7 @@ function debtsFromExpenses(expenses: ExpenseRow[], children: ExpenseChildren): L
 /**
  * A group's pairwise ledgers, one per currency it holds money in. A group's
  * rows are in its own currency, but one can hold a payment recorded in
- * another before group payments were kept to the group's (audit A20); that
+ * another before group payments were kept to the group's; that
  * payment is a balance of its own, never netted against the group's.
  */
 type CurrencyLedgers = Map<string, LedgerEntry[]>;
@@ -350,7 +350,7 @@ export async function getGroupBalances(userId: string, groupId: string) {
 
 /**
  * A user's net position inside one group, per currency. Settled means empty:
- * a dollar owed and a euro paid are two balances, not a zero (audit A20).
+ * a dollar owed and a euro paid are two balances, not a zero.
  *
  * @param userId - User whose position is computed.
  * @param groupId - Group to compute the position in.
@@ -385,7 +385,7 @@ export interface MemberDebt {
  * A member whose total is zero can still owe one person and be owed by
  * another in a group that does not simplify. Once they left, neither debt
  * could be paid — a group payment needs both people to be members — so
- * leaving waits until none remain (audit B08). A pairwise loop that cancels
+ * leaving waits until none remain. A pairwise loop that cancels
  * out is not debt (see {@link groupCancelsOut}): nobody owes anybody
  * overall and a payment along it is refused, so it holds nobody in.
  *
@@ -621,8 +621,7 @@ function owedInEntries(entries: LedgerEntry[], payerId: string, creditorId: stri
  * their payer and split rows, and the settlements. Each pair is then worked
  * out in memory from its own rows alone, exactly as a read per pair would
  * (a pair's balance never depends on anyone else's rows). It used to be
- * three reads per person, run one after another on a held connection
- * (audit A14).
+ * three reads per person, run one after another on a held connection.
  *
  * @param userId - The viewer.
  * @param otherUserIds - The counterparties; duplicates and the viewer are ignored.
@@ -1109,7 +1108,7 @@ interface LedgerParty {
 /**
  * Why removing each payment between two people would be refused because one
  * of them has since left the group it is in: the rule deleteSettlement
- * enforces (audit A07), worked out for the statement so each line can say so
+ * enforces, worked out for the statement so each line can say so
  * in place of its Remove action instead of sending a request that fails. A
  * net settlement is removed whole, so one of its lines in such a group blocks
  * every line of it.

@@ -1,5 +1,5 @@
 /**
- * Real PostgreSQL regressions for audit B08: in a group that does not
+ * Real PostgreSQL regressions: in a group that does not
  * simplify debts, a member whose total is zero can still owe one person and
  * be owed by another. Once they left, neither debt could be paid (a group
  * payment needs both people to be members) and the group could never be

@@ -1,5 +1,5 @@
 /**
- * Real PostgreSQL regressions for audits A20 and B26: a group that holds a
+ * Real PostgreSQL regressions: a group that holds a
  * payment in a currency other than its own. Group payments are kept to the
  * group's currency today, but until 30 August 2026 a "settle everything"
  * payment was split across a pair's balances and stamped with the payment's

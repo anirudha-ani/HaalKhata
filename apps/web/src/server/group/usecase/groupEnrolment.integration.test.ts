@@ -1,5 +1,5 @@
 /**
- * Real PostgreSQL regressions for audit A17: enrolling people in a group
+ * Real PostgreSQL regressions: enrolling people in a group
  * takes the same handful of statements however many are added, and two
  * enrolments sharing people never deadlock on their friend-request inboxes.
  */

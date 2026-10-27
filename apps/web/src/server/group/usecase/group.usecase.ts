@@ -678,9 +678,9 @@ export async function removeMemberFromGroup(
       await assertGroupOwner(input.groupId, userId, client);
     }
     // No debt in the group may still name them, in any currency: a dollar
-    // owed and a euro paid back are two open balances (audit A20), and in a
+    // owed and a euro paid back are two open balances, and in a
     // group that does not simplify, a zero total can be one person owed and
-    // another owing (B08) — neither payable once they are gone.
+    // another owing — neither payable once they are gone.
     if ((await memberDebtsInGroup(input.userId, input.groupId, client)).length > 0) {
       // Worded for whoever is reading it: someone leaving is not "a member"
       // being removed. Clients explain this before asking, with the amount;

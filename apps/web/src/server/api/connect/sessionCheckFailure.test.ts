@@ -3,8 +3,8 @@
  * the session fails unexpectedly (the database is unreachable), every RPC
  * answers with the same generic error carrying a reference, never the
  * cause, and the cause is logged under that reference with the RPC's name.
- * Audit A19: three RPCs checked the session before runUsecase, so their
- * failure reached nobody's log.
+ * Three RPCs used to check the session before runUsecase, so their failure
+ * reached nobody's log.
  */
 
 import http from "node:http";

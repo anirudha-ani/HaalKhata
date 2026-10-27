@@ -14,7 +14,7 @@ import { normalizeProviderOutput, readProviderResponse } from "./receipt.usecase
 /**
  * A provider body that keeps sending until it is cancelled, and records
  * whether it was: an oversized reply left neither read nor cancelled holds
- * its connection until garbage collection (audit A15).
+ * its connection until garbage collection.
  *
  * @returns The body and a check of whether it was cancelled.
  */

@@ -103,7 +103,7 @@ type PagedActivityRow = ActivityRow & {
  * The time is the row's own, to the microsecond. `created_at` comes back
  * cut to milliseconds, and a cursor built from it started the next page
  * after every event later in that millisecond, events written together in
- * one transaction included (audit A12).
+ * one transaction included.
  *
  * @param lastRow - The last row of the page just returned.
  * @returns The cursor string to hand back to the client.

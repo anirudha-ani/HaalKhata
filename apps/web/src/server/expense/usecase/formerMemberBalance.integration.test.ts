@@ -1,5 +1,5 @@
 /**
- * Real PostgreSQL regression for audit A07: somebody can leave a group only
+ * Real PostgreSQL regression: somebody can leave a group only
  * when their balance there is zero, and nothing can settle with them once
  * they have gone. So removing a payment or changing an expense must not move
  * a former member's balance in that group, or it leaves a debt nobody can

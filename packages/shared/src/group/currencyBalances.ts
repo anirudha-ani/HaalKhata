@@ -115,7 +115,7 @@ export interface MemberDebt {
 /**
  * The debts in a group that still name one member, along the group's own
  * routing: person to person, or the simplified plan. The server refuses to
- * let them leave, or be removed, while any remain (audit B08) — a total of
+ * let them leave, or be removed, while any remain — a total of
  * zero can still be one person owed and another owing — so the clients say
  * so first. A person-to-person loop that cancels out is not debt (every net
  * is zero, and a payment along it is refused), so it holds nobody in.

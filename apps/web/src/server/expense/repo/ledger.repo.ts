@@ -49,7 +49,7 @@ export async function hasUnsettledGroupBalances(groupId: string, client: PoolCli
  * connection.
  *
  * Per currency because a group can hold a payment recorded in another
- * currency before group payments were kept to the group's own (audit A20):
+ * currency before group payments were kept to the group's own:
  * a dollar owed and a euro paid are two balances, not a settled one.
  *
  * @param userId - User whose positions are computed.

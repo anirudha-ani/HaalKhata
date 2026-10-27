@@ -82,8 +82,8 @@ describe("memberRemovalBlock", () => {
   });
 
   it("names each debt when the total is even but debts still name the member", () => {
-    // Ben owes Dev and Dev owes Ana, in a group that does not simplify
-    // (audit B08): neither could be paid once Dev was gone.
+    // Ben owes Dev and Dev owes Ana, in a group that does not simplify:
+    // neither could be paid once Dev was gone.
     const debts = [
       { currency: "USD", cents: 5000, counterpartName: "Ben" },
       { currency: "USD", cents: -5000, counterpartName: "Ana" },

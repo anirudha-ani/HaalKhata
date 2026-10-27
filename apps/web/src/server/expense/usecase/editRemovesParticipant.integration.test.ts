@@ -1,5 +1,5 @@
 /**
- * Real PostgreSQL regression for audit A13: an edit that takes somebody off
+ * Real PostgreSQL regression: an edit that takes somebody off
  * an expense changes their balance, so they must hear about it, with a line
  * saying what they no longer owe or get back, and a link they can open.
  */

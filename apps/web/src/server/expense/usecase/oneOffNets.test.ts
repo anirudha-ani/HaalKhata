@@ -1,5 +1,5 @@
 /**
- * Regression for audit A14: working out the viewer's one-off balance with
+ * Regression: working out the viewer's one-off balance with
  * many people reads the database a fixed number of times, not a round of
  * reads per person.
  */

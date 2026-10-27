@@ -89,7 +89,7 @@ describe("groupPositionCaption", () => {
 });
 
 describe("memberDebts", () => {
-  // Dev's total is zero, yet Ben owes him and he owes Ana (audit B08).
+  // Dev's total is zero, yet Ben owes him and he owes Ana.
   const trip = {
     currency: "USD",
     nets: [
