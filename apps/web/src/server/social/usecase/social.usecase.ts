@@ -21,7 +21,8 @@ import {
   findUsersByIds,
   type UserRow,
 } from "@/server/auth/repo/users.repo";
-import { EMAIL_PATTERN, normalizePhone, PHONE_FORMAT_HINT } from "@/server/auth/auth.constants";
+import { normalizePhone, PHONE_FORMAT_HINT } from "@/server/auth/auth.constants";
+import { isEmailAddress } from "@haalkhata/shared/email/email";
 import {
   findActiveGroupLink,
   findActiveLinkByToken,
@@ -154,7 +155,7 @@ export async function addFriend(
  */
 async function findUserByIdentifier(email: string, phone: string): Promise<UserRow | undefined> {
   if (email) {
-    if (!EMAIL_PATTERN.test(email.toLowerCase())) invalid("please enter a valid email address");
+    if (!isEmailAddress(email)) invalid("please enter a valid email address");
     return findUserByEmail(email);
   }
   const normalizedPhone = normalizePhone(phone);

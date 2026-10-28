@@ -25,9 +25,9 @@ import {
   insertGoogleSignInNonce,
 } from "@/server/auth/repo/google/googleSignInNonces.repo";
 import { UsecaseError, invalid } from "@/server/common/errors";
+import { isEmailAddress } from "@haalkhata/shared/email/email";
 import {
   AVATAR_PALETTE,
-  EMAIL_PATTERN,
   GOOGLE_AUDIENCES,
   GOOGLE_CLIENT_ID,
   GOOGLE_SIGN_IN_INTERRUPTED_MESSAGE,
@@ -178,7 +178,7 @@ export async function signUp(input: {
     // shape it actually tried to parse rather than a generic "invalid".
     invalid(input.phone.trim() ? PHONE_FORMAT_HINT : "please enter an email address or phone number");
   }
-  if (email.length > 0 && !EMAIL_PATTERN.test(email)) {
+  if (email.length > 0 && !isEmailAddress(email)) {
     invalid("please enter a valid email address");
   }
   // Avatar color derives from whichever identifier is present.

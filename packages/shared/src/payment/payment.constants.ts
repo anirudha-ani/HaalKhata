@@ -23,9 +23,6 @@ export const MAX_RAW_DETAIL_ROWS = 32;
 /** How much of a refused value an error message repeats back. */
 export const MAX_ECHOED_CHARACTERS = 20;
 
-/** Loose sanity check for an email detail: something@something.tld, no whitespace. */
-export const PAYMENT_EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
 /** A SWIFT / BIC code: eight characters, or eleven with a branch. */
 export const SWIFT_PATTERN = /^[A-Z0-9]{8}(?:[A-Z0-9]{3})?$/;
 

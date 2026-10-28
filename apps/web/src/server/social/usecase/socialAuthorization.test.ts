@@ -58,6 +58,7 @@ import {
   findUsersByIds,
 } from "@/server/auth/repo/users.repo";
 import { getOverallBalances } from "@/server/expense/usecase/balance.usecase";
+import { SOCIAL_READ_MAX_BYTES } from "@/server/api/connect/connect.constants";
 import {
   countIncomingFriendRequests,
   deleteFriendRequest,
@@ -83,6 +84,8 @@ import {
 } from "./social.usecase";
 
 const CALLER = "user-caller";
+/** How long refusing a hostile email may take; the old pattern took minutes at this size. */
+const HOSTILE_EMAIL_BUDGET_MS = 100;
 const TARGET = "user-target";
 const TARGET_EMAIL = "target@example.com";
 
@@ -158,6 +161,18 @@ describe("addFriend contact lookup", () => {
       code: "invalid_argument",
     });
 
+    expect(findUserByEmail).not.toHaveBeenCalled();
+  });
+
+  it("refuses an email field the size of a whole request at once, before looking anybody up", async () => {
+    // Shaped to make a backtracking email pattern try every split of the dots.
+    const hostile = `a@${".".repeat(SOCIAL_READ_MAX_BYTES)}@`;
+    const start = performance.now();
+    await expect(addFriend(CALLER, { email: hostile, phone: "" })).rejects.toMatchObject({
+      code: "invalid_argument",
+    });
+
+    expect(performance.now() - start).toBeLessThan(HOSTILE_EMAIL_BUDGET_MS);
     expect(findUserByEmail).not.toHaveBeenCalled();
   });
 

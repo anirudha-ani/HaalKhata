@@ -31,6 +31,7 @@ packages/shared/             @haalkhata/shared — hand-written TS used by BOTH 
   src/analytics/               chart.ts (axis ceilings, bar lengths, tick text)
                                and insights.ts (wording, ranges, tail folding)
                                for the Insights dashboard on both apps
+  src/email/                   the one email check (isEmailAddress, canonicalEmail)
   src/greeting.ts              time-of-day greeting
 apps/web/                    Next.js app
   src/server/<domain>/       per-domain fan-out mirroring /proto:
@@ -376,6 +377,15 @@ with colocated tests. Mobile-specific rules:
   (auth and social do; the admin services' gate is `requireAdminPageRequest`);
   `mount/requestGates.test.ts` fails when a handler that never asks for a
   session is not listed, so a new anonymous call is never silently refused.
+- **There is one email check.** Whether text is an email address is
+  `isEmailAddress` (or `canonicalEmail`, which also trims and lower-cases)
+  in `@haalkhata/shared/email/email`; the server, the contacts lookup and the
+  payment-method form all call it. It measures the standard's lengths (254,
+  and 64 before the `@`) before it reads the shape, and the shape is loose,
+  something@something.something, because Google or Apple verified every
+  address that has an account. Never write another email pattern: one whose
+  parts can match the same characters takes seconds to refuse a long field,
+  and the server answers nobody while it does.
 - **Money is per currency.** Balance maps are keyed by currency
   (`CurrencyCents` in `balance.usecase.ts`), responses carry `CurrencyAmount`
   buckets, and the legacy scalar fields are only the caller's default-currency

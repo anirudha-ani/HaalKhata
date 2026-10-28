@@ -4,7 +4,7 @@ import crypto from "node:crypto";
 import { createRemoteJWKSet, importPKCS8, jwtVerify, SignJWT, type JWTVerifyGetKey } from "jose";
 import { readSecret } from "@/server/common/secrets/secrets";
 import { UsecaseError } from "@/server/common/errors";
-import { EMAIL_PATTERN } from "../../auth.constants";
+import { isEmailAddress } from "@haalkhata/shared/email/email";
 import { APPLE_CLIENT_SECRET_SECONDS, APPLE_HASH_PATTERN, APPLE_ISSUER, APPLE_KEYS_URL,
   APPLE_MAX_TOKEN_LENGTH, APPLE_NONCE_PATTERN, APPLE_REVOKE_URL, APPLE_TIMEOUT_MS,
   APPLE_TOKEN_URL } from "../../apple.constants";
@@ -30,7 +30,7 @@ export async function verifyAppleIdentity(identityToken: string, clientId: strin
       requiredClaims: ["exp", "iat", "sub", "nonce"],
     });
     if (!payload.sub || typeof payload.nonce !== "string" || !APPLE_NONCE_PATTERN.test(payload.nonce) ||
-        typeof payload.email !== "string" || !EMAIL_PATTERN.test(payload.email) ||
+        typeof payload.email !== "string" || !isEmailAddress(payload.email) ||
         ![true, "true"].includes(payload.email_verified as boolean | string)) throw new Error("invalid claims");
     return { subject: payload.sub, email: payload.email.trim().toLowerCase(), nonce: payload.nonce };
   } catch {

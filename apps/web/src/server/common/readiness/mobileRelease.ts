@@ -1,6 +1,7 @@
 /** Public mobile-release metadata and platform association documents. */
 
-import { GOOGLE_MOBILE_CLIENT_IDS, EMAIL_PATTERN } from "@/server/auth/auth.constants";
+import { GOOGLE_MOBILE_CLIENT_IDS } from "@/server/auth/auth.constants";
+import { isEmailAddress } from "@haalkhata/shared/email/email";
 import { APPLE_NATIVE_CLIENT_ID } from "@/server/auth/apple.constants";
 import { assertAppleSignInConfigured } from "@/server/auth/usecase/apple/apple.provider";
 
@@ -35,7 +36,7 @@ export function androidAssetLinks() {
  * @returns Public release-protocol and native Google audiences.
  */
 export async function mobileReleaseInfo() {
-  if (!EMAIL_PATTERN.test(process.env.SUPPORT_EMAIL ?? "") || !appleAppAssociation()) {
+  if (!isEmailAddress(process.env.SUPPORT_EMAIL ?? "") || !appleAppAssociation()) {
     throw new Error("mobile release requires a valid support address and Apple App ID prefix");
   }
   await assertAppleSignInConfigured();

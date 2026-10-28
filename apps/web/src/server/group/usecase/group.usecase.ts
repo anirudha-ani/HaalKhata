@@ -27,7 +27,8 @@ import {
   findUserByPhone,
   findUsersByIds,
 } from "@/server/auth/repo/users.repo";
-import { EMAIL_PATTERN, normalizePhone, PHONE_FORMAT_HINT } from "@/server/auth/auth.constants";
+import { normalizePhone, PHONE_FORMAT_HINT } from "@/server/auth/auth.constants";
+import { isEmailAddress } from "@haalkhata/shared/email/email";
 import { insertFriendships, listFriendIds } from "@/server/social/repo/friendships.repo";
 import { insertActivity } from "@/server/social/repo/activity.repo";
 import { insertNotifications } from "@/server/social/repo/notifications.repo";
@@ -235,7 +236,7 @@ async function resolveInvitee(input: {
     invalid("enter either an email address or a phone number, not both");
   }
   if (email === "" && phone === "") return undefined;
-  if (email !== "" && !EMAIL_PATTERN.test(email)) {
+  if (email !== "" && !isEmailAddress(email)) {
     invalid("please enter a valid email address");
   }
   const invitee = email !== ""

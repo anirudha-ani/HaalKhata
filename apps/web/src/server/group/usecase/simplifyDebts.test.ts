@@ -80,6 +80,7 @@ import { listFriendIds } from "@/server/social/repo/friendships.repo";
 import { insertActivity } from "@/server/social/repo/activity.repo";
 import { groupIsSettled, memberDebtsInGroup, userNetInGroup } from "@/server/expense/usecase/balance.usecase";
 import { lockGroupLedgers } from "@/server/common/ledger/ledgerLocks";
+import { DEFAULT_READ_MAX_BYTES } from "@/server/api/connect/connect.constants";
 import {
   MAX_GROUP_MEMBER_IDS_PER_REQUEST,
   MAX_GROUP_NAME_LENGTH,
@@ -89,6 +90,8 @@ const MEMBER = "user-member";
 const OUTSIDER = "user-outsider";
 const TARGET = "user-target";
 const TRIP = "group-trip";
+/** How long refusing a hostile email may take; the old pattern took seconds at this size. */
+const HOSTILE_EMAIL_BUDGET_MS = 100;
 
 /** The persisted mode the mocked repo reads and writes. */
 let storedSimplify = false;
@@ -282,6 +285,19 @@ describe("group persisted input bounds", () => {
       }),
     ).rejects.toThrow(/too many members/);
     expect(findGroupById).not.toHaveBeenCalled();
+    expect(addMember).not.toHaveBeenCalled();
+  });
+
+  it("refuses an email field the size of a whole request at once, before looking anybody up", async () => {
+    // Shaped to make a backtracking email pattern try every split of the dots.
+    const hostile = `a@${".".repeat(DEFAULT_READ_MAX_BYTES)}@`;
+    const start = performance.now();
+    await expect(
+      addMembers(MEMBER, { groupId: TRIP, userIds: [], email: hostile }),
+    ).rejects.toMatchObject({ code: "invalid_argument" });
+
+    expect(performance.now() - start).toBeLessThan(HOSTILE_EMAIL_BUDGET_MS);
+    expect(findUserByEmail).not.toHaveBeenCalled();
     expect(addMember).not.toHaveBeenCalled();
   });
 

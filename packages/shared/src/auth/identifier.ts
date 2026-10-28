@@ -16,7 +16,7 @@ export interface SplitIdentifier {
  *
  * Deliberately crude: this only decides which server-side validator runs, so
  * a stricter client-side guess would just reject addresses the server would
- * have accepted. `normalizePhone` and `EMAIL_PATTERN` are the real checks.
+ * have accepted. `normalizePhone` and `isEmailAddress` are the real checks.
  *
  * @param identifier - Raw user input from an "email or phone" field.
  * @returns `{ email, phone }` with exactly one populated.

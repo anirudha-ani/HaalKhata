@@ -1,4 +1,4 @@
-/** Auth domain constants: token lifetime, avatar palette, data directory, email/phone checks. */
+/** Auth domain constants: token lifetime, avatar palette, data directory, phone checks. */
 
 import path from "node:path";
 import { parsePhoneNumberFromString } from "libphonenumber-js";
@@ -39,9 +39,6 @@ export const AVATAR_PALETTE = [
 /** Directory holding server-local state such as the generated dev session secret. */
 export const DATA_DIRECTORY =
   process.env.HAALKHATA_DATA_DIR ?? path.join(process.cwd(), "data");
-
-/** Loose sanity check for email addresses: something@something.tld, no whitespace. */
-export const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 /** Max login/signup attempts per key (IP or email) per 60s window. */
 export const AUTH_RATE_LIMIT = 10;

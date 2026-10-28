@@ -1,6 +1,7 @@
 /** One validator for a payment method: the clients run it for inline errors, the server runs it as the authority. */
 
 import { parsePhoneNumberFromString } from "libphonenumber-js";
+import { isEmailAddress } from "../email/email";
 import { currencyInfo } from "../money/money.constants";
 import { stripHiddenCharacters } from "../text/hiddenCharacters";
 import {
@@ -20,7 +21,6 @@ import {
   MAX_PAYMENT_DETAILS_PER_METHOD,
   MAX_RAW_DETAIL_ROWS,
   MAX_RAW_FIELD_LENGTH,
-  PAYMENT_EMAIL_PATTERN,
   ROUTING_NUMBER_PATTERN,
   SECRET_REFUSAL,
   SWIFT_PATTERN,
@@ -132,7 +132,7 @@ function checkDetailValue(kindKey: string, typed: string): DetailOutcome {
     }
     return { value: parsed.number };
   }
-  if (kindKey === "email" && !PAYMENT_EMAIL_PATTERN.test(typed)) {
+  if (kindKey === "email" && !isEmailAddress(typed)) {
     return { value: typed, error: "enter a valid email address" };
   }
   if (kindKey === "account_type" && !ACCOUNT_TYPES.some((accountType) => accountType.key === typed)) {
