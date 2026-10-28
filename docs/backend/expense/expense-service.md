@@ -281,7 +281,8 @@ friendship inbox lock at once — the one global order).
 | `category` | the shared `CATEGORIES` list + legacy `lodging`, `other`; anything else → `general` |
 | Settlement `method` | `venmo` \| `zelle` \| `cashapp` \| `paypal` \| `cash` \| `bank` \| `other`; unknown → `cash` |
 | Participants / payers / items / split specs | ≤ 100 each; ≤ 100 assignees per item |
-| Amount per expense/settlement | ≤ 2,000,000,000 cents |
+| Amount per expense, payer, share, item, tax, tip or settlement | ≤ 10,000,000,000,000 minor units (`MAX_MONEY_CENTS`: 100,000,000,000.00 in a two-decimal currency) |
+| Everything one person is on, per currency | live expenses they pay or owe a share of add up to ≤ 10^15 minor units (`MAX_PERSON_VOLUME_CENTS`); a create or edit past it is a `FailedPrecondition` naming them, and an edit that lowers their total is always allowed |
 | Text | description ≤ shared limit, notes, item names, comment, settlement note — all bounded by shared limits |
 | `expense_date` | `YYYY-MM-DD`, must be a **real** calendar day; empty → server's UTC today (a backstop — the forms always send the user's local today) |
 | Page sizes | expenses: default 50, at most 200; statement lines: default 50, at most 200; comments: default 30, at most 100. `limit: 0` is an app from before paging: one page of ≤ 500 expenses / ≤ 300 lines / every comment, with `truncated` |
@@ -375,7 +376,7 @@ top and say so beside Show more.
 | --- | --- | --- |
 | group_id | string | Empty = one-off. |
 | description | string | Required. |
-| amount_cents | int32 | The stated total; for `itemized` it must equal items+tax+tip. |
+| amount_cents | int64 | The stated total; for `itemized` it must equal items+tax+tip. |
 | currency | string | Ignored for group expenses (the group's wins); empty one-off = caller's default. |
 | category | string | Unknown → `general`. |
 | expense_date | string | `YYYY-MM-DD`; empty → today (UTC). |
@@ -384,7 +385,7 @@ top and say so beside Show more.
 | payers | repeated Payer | `{user_id, amount_cents}`; must sum to the total. |
 | split_specs | repeated SplitSpec | Per-participant input; only the field matching `split_type` is read. |
 | items | repeated ExpenseItem | `itemized` only; ids may be empty. |
-| tax_cents / tip_cents | int32 | `itemized` only. |
+| tax_cents / tip_cents | int64 | `itemized` only. |
 | operation_id | string | **Required.** Client UUID naming this attempt; same id on every retry. |
 
 **Sample Request (JSON):**
@@ -703,7 +704,7 @@ created.
 | --- | --- | --- |
 | group_id | string | Explicit scope; empty = cross-scope allocation. |
 | to_user_id | string | The other person, whichever way the money moved. |
-| amount_cents | int32 | > 0, ≤ 2e9. |
+| amount_cents | int64 | > 0, ≤ 10^13. |
 | currency | string | Group payments: the group's (the default), or a currency the group still holds a balance in between the two. Cross-scope: which currency's balances this pays down; empty = caller's default. |
 | method | string | `venmo` \| `zelle` \| `cashapp` \| `paypal` \| `cash` \| `bank` \| `other`. |
 | note | string | Optional, bounded. |
@@ -792,8 +793,6 @@ per scope; callers only use the response to confirm the recording):
   (every member listed, settled ones at zero), the raw pairwise debts, and
   the min-cash-flow simplification — clients render whichever the group's
   mode calls for, and the settle dialog can show both.
-- Every aggregate is int32-checked (`FailedPrecondition` names which number
-  overflowed).
 - **Per currency.** A group's rows are in its currency, but until
   30 August 2026 a cross-scope payment was stamped with the payment's
   currency in every scope it touched, so a group can hold a payment in
@@ -861,7 +860,7 @@ per scope; callers only use the response to confirm the recording):
 
 | Field | Type | Description |
 | --- | --- | --- |
-| you_owe_cents / owed_to_you_cents | int32 | Legacy: default currency only. |
+| you_owe_cents / owed_to_you_cents | int64 | Legacy: default currency only. |
 | totals | repeated CurrencyTotals | `{currency, you_owe_cents, owed_to_you_cents}` per currency. |
 | counterparties | repeated CounterpartyBalance | Per-person breakdown with per-currency `balances`. |
 
@@ -937,7 +936,7 @@ per scope; callers only use the response to confirm the recording):
 | Field | Type | Description |
 | --- | --- | --- |
 | friend | User | Public projection. |
-| net_cents / currency | int32 / string | Legacy: net in the caller's default currency. |
+| net_cents / currency | int64 / string | Legacy: net in the caller's default currency. |
 | nets | repeated CurrencyAmount | Whole picture per currency; > 0 = they owe you. |
 | entries | repeated FriendLedgerEntry | Newest first; `balance_after_cents` accumulated oldest-first so the top entry carries the current net (per currency). |
 | group_balances | repeated FriendGroupBalance | Per-scope routed balances (`""` group = one-off slate, one entry per currency). |
@@ -957,9 +956,9 @@ per scope; callers only use the response to confirm the recording):
 | kind | string | `expense` \| `settlement`. |
 | id / date / description | | `date` is the calendar day (expense's chosen day; settlement's UTC day). |
 | group_id / group_name | string | Empty = one-off. |
-| total_cents | int32 | The whole expense, or the amount that changed hands. |
-| delta_cents | int32 | What this line did to the balance; 0 for deleted lines. |
-| balance_after_cents | int32 | Running balance in this line's currency. |
+| total_cents | int64 | The whole expense, or the amount that changed hands. |
+| delta_cents | int64 | What this line did to the balance; 0 for deleted lines. |
+| balance_after_cents | int64 | Running balance in this line's currency. |
 | created_at | string | Full timestamp for settlements (client localizes); empty for expenses. |
 | deleted | bool | Struck-through line. |
 | recorded_by_name | string | Settlements only: who asserted the payment. |

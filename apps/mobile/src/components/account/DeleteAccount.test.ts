@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 /** Account deletion reviews fresh balances without making settlement or a working balance read mandatory. */
 
-import { create } from "@bufbuild/protobuf";
+import { createPlain } from "@haalkhata/shared/api/wireNumbers";
 import { OverallBalancesResponseSchema } from "@haalkhata/protogen/expense/v1/expense_pb";
 import { queryKeys } from "@haalkhata/shared/api/queryKeys";
 import { onlineManager, QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -43,11 +43,11 @@ vi.mock("@/lib/api/connect", () => ({
   errorMessage: (error: Error) => error.message,
 }));
 
-const OUTSTANDING = create(OverallBalancesResponseSchema, { totals: [
+const OUTSTANDING = createPlain(OverallBalancesResponseSchema, { totals: [
   { currency: "USD", youOweCents: 1250, owedToYouCents: 1250 },
   { currency: "EUR", youOweCents: 0, owedToYouCents: 800 },
 ] });
-const SETTLED = create(OverallBalancesResponseSchema);
+const SETTLED = createPlain(OverallBalancesResponseSchema, {});
 let queryClient: QueryClient;
 let container: HTMLDivElement;
 let root: Root;

@@ -34,6 +34,19 @@ export function formerMemberRefusal(
     : `${personName} has left "${groupName}", so ${refused}: their balance there has to stay settled`;
 }
 
+/**
+ * Why an expense was refused for taking someone past
+ * {@link MAX_PERSON_VOLUME_CENTS} in one currency.
+ *
+ * @param ceiling - The ceiling, written in the expense's currency.
+ * @param personName - Who it would take past it; omitted when it is the caller.
+ * @returns The sentence shown beside the save button.
+ */
+export function volumeLimitRefusal(ceiling: string, personName?: string): string {
+  const whose = personName === undefined ? "the expenses you are on" : `the expenses ${personName} is on`;
+  return `This would take ${whose} past ${ceiling} in all, more than this app can add up exactly for one person`;
+}
+
 /** Split types the API accepts; mirrors the split calculators in domain/splits. */
 export const SPLIT_TYPES = new Set(["equal", "exact", "percent", "shares", "itemized"]);
 
@@ -47,11 +60,24 @@ export const MAX_EXPENSE_PARTICIPANTS = 100;
 export const MAX_ITEM_ASSIGNMENTS = 100;
 
 /**
- * Largest monetary value accepted for one stored field or transaction.
- * This stays below PostgreSQL/protobuf signed-int32 limits and leaves a small
- * margin so downstream formatting and arithmetic never approach overflow.
+ * Largest amount accepted for one expense, payer, share, item, tax, tip or
+ * payment: 100,000,000,000.00 in a two-decimal currency (10^13 minor units),
+ * far past any real expense in any currency. The database CHECKs hold the
+ * same ceiling.
  */
-export const MAX_MONEY_CENTS = 2_000_000_000;
+export const MAX_MONEY_CENTS = 10_000_000_000_000;
+
+/**
+ * Most that live expenses one person is on (as a payer or a share) may add
+ * up to in one currency: 10^15 minor units, a hundred expenses at the
+ * ceiling above. Every figure shown for a person — a balance in any scope, a
+ * debt, a running total, their insights — is at most twice this (the
+ * expenses plus the payments that settle them), which keeps it nine times
+ * below 2^53, where JavaScript numbers stop being exact. The check runs
+ * without locking anyone else's ledger, so a few writes landing at once can
+ * pass it together; that margin absorbs them.
+ */
+export const MAX_PERSON_VOLUME_CENTS = 1_000_000_000_000_000;
 
 /**
  * Lines in the one page of a friend statement an app version from before

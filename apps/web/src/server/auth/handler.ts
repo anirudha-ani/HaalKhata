@@ -1,6 +1,6 @@
 /** Thin AuthService Connect handlers: session-cookie side effects here, logic in auth.usecase. */
 
-import type { ServiceImpl } from "@connectrpc/connect";
+import type { PlainServiceImpl } from "@/server/api/connect/wire/plainService";
 import type { HandlerContext } from "@connectrpc/connect";
 import type { AuthService } from "@haalkhata/protogen/auth/v1/auth_pb";
 import * as auth from "@/server/auth/usecase/account/auth.usecase";
@@ -101,7 +101,7 @@ function deliverSession<Result extends { token: string }>(
 }
 
 /** AuthService implementation; every method delegates to auth.usecase and only manages cookies here. */
-export const authHandler: ServiceImpl<typeof AuthService> = {
+export const authHandler: PlainServiceImpl<typeof AuthService> = {
   /** Returns public provider availability without requiring a signed-in account. */
   async getSignInOptions(_request, handlerContext) {
     return runUsecase(getSignInOptions, handlerContext);

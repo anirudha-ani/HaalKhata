@@ -29,6 +29,23 @@ describe("allocate", () => {
   it("falls back to an equal split when all weights are zero", () => {
     expect(allocate(90, [0, 0, 0])).toEqual([30, 30, 30]);
   });
+
+  it("stays largest-remainder exact when amount × weight passes 2^53", () => {
+    // Tax of 77,541,947,541.70 spread over subtotals of 58.7 and 63.8
+    // billion: each product is near 10^25. The second share's leftover is
+    // the larger (6,128,790,760,671 vs 6,126,892,302,736 of 12,255,683,063,407),
+    // so the spare cent is theirs; floating-point division gave it to the first.
+    const result = allocate(7_754_194_754_170, [5_874_367_945_331, 6_381_315_118_076]);
+
+    expect(result).toEqual([3_716_724_140_962, 4_037_470_613_208]);
+    expect(result[0] + result[1]).toBe(7_754_194_754_170);
+  });
+
+  it("spreads the largest single amount evenly to the cent", () => {
+    const result = allocate(10_000_000_000_000, [1, 1, 1]);
+
+    expect(result).toEqual([3_333_333_333_334, 3_333_333_333_333, 3_333_333_333_333]);
+  });
 });
 
 describe("computeSplits", () => {

@@ -1,6 +1,8 @@
 /** @vitest-environment jsdom */
 /** Browser expense workflow regression tests using the real controller and shared money logic. */
 import { create } from "@bufbuild/protobuf";
+import { createPlain } from "@haalkhata/shared/api/wireNumbers";
+import type { Expense } from "@haalkhata/shared/api/plainMessages";
 import { UserSchema } from "@haalkhata/protogen/common/v1/common_pb";
 import { ExpenseSchema, GetExpenseResponseSchema } from "@haalkhata/protogen/expense/v1/expense_pb";
 import { computeSplits } from "@haalkhata/shared/expense/splits";
@@ -27,11 +29,11 @@ let root: Root;
 let container: HTMLDivElement;
 
 /** @param saved Existing expense, when editing. @returns Harness running the actual browser hook. */
-function Harness({ saved }: { saved?: ReturnType<typeof create<typeof ExpenseSchema>> }) {
+function Harness({ saved }: { saved?: Expense }) {
   const initial = buildInitialValues({ initialGroupId: "", initialFriendId: friend.id }, alice.id, saved);
   const expenseAPI = {
     me: alice, groups: [], friends: [{ user: friend }],
-    editing: saved ? create(GetExpenseResponseSchema, { expense: saved, users: [alice, friend] }) : undefined,
+    editing: saved ? createPlain(GetExpenseResponseSchema, { expense: saved, users: [alice, friend] }) : undefined,
     create: { mutate: stubs.create, isPending: false }, update: { mutate: stubs.update, isPending: false }, parse: { mutate: stubs.parse, isPending: false },
   } as unknown as ReturnType<typeof useNewExpenseAPI>;
   const value = useNewExpense(expenseAPI, initial, saved?.id ?? "");
@@ -75,7 +77,7 @@ it("keeps the operation id when retrying a failed request and retains the draft"
 });
 
 it.each(["percent", "shares"])("edits a saved %s expense without changing currency or allocations", async (splitType) => {
-  const saved = create(ExpenseSchema, { id: "saved", description: "Yen dinner", amountCents: 1001, currency: "JPY", splitType,
+  const saved = createPlain(ExpenseSchema, { id: "saved", description: "Yen dinner", amountCents: 1001, currency: "JPY", splitType,
     payers: [{ userId: "alice", amountCents: 1001 }], splits: [{ userId: "alice", owedCents: 333 }, { userId: "friend", owedCents: 668 }] });
   await act(async () => root.render(createElement(Harness, { saved })));
   expect(controller.currency).toBe("JPY"); expect(controller.totalCents).toBe(1001);
@@ -118,7 +120,7 @@ it("retains the normalized preview and draft on a currency mismatch", async () =
 });
 
 it.each(["person", "group"])("clears the saved-split notice after changing the %s", async (change) => {
-  const saved = create(ExpenseSchema, { id: "saved", description: "Dinner", amountCents: 1000, currency: "USD", splitType: "shares",
+  const saved = createPlain(ExpenseSchema, { id: "saved", description: "Dinner", amountCents: 1000, currency: "USD", splitType: "shares",
     payers: [{ userId: "alice", amountCents: 1000 }], splits: [{ userId: "alice", owedCents: 500 }, { userId: "friend", owedCents: 500 }] });
   await act(async () => root.render(createElement(Harness, { saved })));
   expect(controller.splitNotice).toBeTruthy();

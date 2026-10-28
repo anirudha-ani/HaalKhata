@@ -1,6 +1,6 @@
 /** Thin GroupService Connect handlers; logic lives in group.usecase. */
 
-import type { ServiceImpl } from "@connectrpc/connect";
+import type { PlainServiceImpl } from "@/server/api/connect/wire/plainService";
 import type { GroupService } from "@haalkhata/protogen/group/v1/group_pb";
 import * as groups from "@/server/group/usecase/group.usecase";
 import { requireUser, runUsecase } from "@/server/api/connect/context";
@@ -11,7 +11,7 @@ import { requireRateLimitedUser, RPC_RATE_LIMITS } from "@/server/api/connect/ra
  * caller via {@link requireUser} and delegates to the group usecase inside
  * {@link runUsecase}, which maps UsecaseError to ConnectError.
  */
-export const groupHandler: ServiceImpl<typeof GroupService> = {
+export const groupHandler: PlainServiceImpl<typeof GroupService> = {
   /** Creates a new group owned by the caller. */
   async createGroup(request, context) {
     return runUsecase(

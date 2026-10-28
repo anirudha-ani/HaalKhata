@@ -105,7 +105,7 @@ Usecases throw `UsecaseError` (via `invalid` / `notFound` / `denied` / `unavaila
 | `permission_denied` | `PermissionDenied` | Authenticated but not allowed |
 | `not_found` | `NotFound` | Entity missing (also used to avoid existence oracles) |
 | `already_exists` | `AlreadyExists` | Registered account already holds an identifier |
-| `failed_precondition` | `FailedPrecondition` | e.g. an aggregate exceeds the int32 wire field |
+| `failed_precondition` | `FailedPrecondition` | e.g. an expense would take someone past what their expenses may add up to |
 | `unavailable` | `Unavailable` | A dependency (SMS provider, receipt vision provider, in-flight duplicate) is temporarily unusable |
 
 Anything else (a pg error, a bug) is logged server-side with a random request
@@ -297,11 +297,23 @@ seam tests mock to intercept ledger transactions.
   number *per currency*; nothing in the system converts, sums across
   currencies, or invents an exchange rate. Zero buckets are expressed by
   absence.
-- **Bounds.** A single stored amount is capped at 2,000,000,000 cents
-  (`MAX_MONEY_CENTS`, below int32). Aggregates (sums of rows) can exceed
-  int32, so every aggregate crossing the wire goes through `toInt32Cents`,
-  which turns an unrepresentable sum into a named `FailedPrecondition` instead
-  of an opaque encoder crash.
+- **64-bit on the wire and in the database, plain numbers in the code.**
+  Money fields are `int64` in proto and `BIGINT` in Postgres. protobuf-es
+  represents int64 as `bigint`, so the conversion happens once, at the
+  boundary: every service is registered through `plainService`
+  (`api/connect/wire/`) and every client is made by `plainClient`
+  (`@haalkhata/shared/api`), both walking the message schema with
+  `wireNumbers`. Handlers, usecases, screens and the shared money helpers
+  only ever see numbers; a screen naming a money-bearing message imports it
+  from `@haalkhata/shared/api/plainMessages`. pg reads `BIGINT` as an exact
+  number (`common/db/int8.ts`). A value past 2^53 is refused at each of
+  these points, never rounded.
+- **Bounds.** One stored amount is at most 10^13 minor units
+  (`MAX_MONEY_CENTS`, held by the database CHECKs too). Everything one person
+  is on in one currency adds up to at most 10^15 (`MAX_PERSON_VOLUME_CENTS`),
+  checked when an expense is created or edited, so every figure shown for
+  them stays at least nine times below 2^53: sums never need a check of their
+  own.
 - **Currency codes** are validated against the product's currency catalog
   (§36): the full ISO 4217 list minus non-transactional codes (metals, fund
   and bond units, the test/none codes), the same catalog both clients'

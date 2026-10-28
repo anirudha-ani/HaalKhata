@@ -1,7 +1,7 @@
 /** Insights state: the chosen period, currency and month, over the insights query. */
 
 import { useState } from "react";
-import type { GetInsightsResponse } from "@haalkhata/protogen/personalanalytics/v1/personalanalytics_pb";
+import type { GetInsightsResponse } from "@haalkhata/shared/api/plainMessages";
 import { errorMessage } from "@/lib/api/connect";
 import { usePullToRefresh } from "@/lib/hooks/usePullToRefresh";
 import {

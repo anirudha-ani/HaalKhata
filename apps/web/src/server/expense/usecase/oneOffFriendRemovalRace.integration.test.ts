@@ -8,7 +8,7 @@
 import { randomUUID } from "node:crypto";
 import { Client } from "pg";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import type { CreateExpenseRequest } from "@haalkhata/protogen/expense/v1/expense_pb";
+import type { ExpenseInput } from "./expense.usecase";
 import { PARTICIPANT_LEDGER_LOCK_PREFIX } from "@/server/common/ledger/ledgerLocks.constants";
 import { testDatabaseName } from "@/server/common/testing/testDatabase";
 
@@ -38,7 +38,7 @@ async function databaseReachable(): Promise<boolean> {
  * A taxi Alice paid for, split evenly with Bobby.
  * @returns A one-off create request with a fresh operation id.
  */
-function taxiRequest(): CreateExpenseRequest {
+function taxiRequest(): ExpenseInput {
   return {
     groupId: "", description: "Taxi", amountCents: 4000, currency: "USD",
     category: "transport", expenseDate: "2026-10-20", splitType: "exact", notes: "",
@@ -48,7 +48,7 @@ function taxiRequest(): CreateExpenseRequest {
       { userId: BOBBY, amountCents: 2000, percentBp: 0, shares: 0 },
     ],
     items: [], taxCents: 0, tipCents: 0, operationId: randomUUID(),
-  } as unknown as CreateExpenseRequest;
+  } as unknown as ExpenseInput;
 }
 
 const reachable = await databaseReachable();
@@ -164,7 +164,7 @@ describe.skipIf(!reachable)("one-off expenses while a friend removal holds the l
 
   it("refuses an edit queued behind the removal", async () => {
     const saved = await createExpense(ALICE, taxiRequest());
-    const edited = { ...taxiRequest(), description: "Taxi home" } as CreateExpenseRequest;
+    const edited = { ...taxiRequest(), description: "Taxi home" } as ExpenseInput;
 
     const result = await writeQueuedBehindRemoval(() => updateExpense(ALICE, saved.id, edited));
 

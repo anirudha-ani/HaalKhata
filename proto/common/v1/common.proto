@@ -73,13 +73,13 @@ message PaymentHandle {
 message Debt {
   string from_user_id = 1;
   string to_user_id = 2;
-  int32 amount_cents = 3;
+  int64 amount_cents = 3;
 }
 
 // A user's net position: positive = they are owed, negative = they owe.
 message NetBalance {
   string user_id = 1;
-  int32 net_cents = 2;
+  int64 net_cents = 2;
 }
 
 // One amount in one currency. Balances are kept per currency and never added
@@ -87,7 +87,7 @@ message NetBalance {
 // here converts.
 message CurrencyAmount {
   string currency = 1;
-  int32 cents = 2;
+  int64 cents = 2;
 }
 
 // Overall position against one person across groups and one-off expenses.
@@ -95,7 +95,7 @@ message CounterpartyBalance {
   User user = 1;
   // The position in the caller's default currency only, kept for older
   // clients: > 0 means they owe you. `balances` is the whole picture.
-  int32 net_cents = 2;
+  int64 net_cents = 2;
   // The position in every currency the pair has dealings in, non-zero
   // buckets only: cents > 0 means they owe you that much of that currency.
   repeated CurrencyAmount balances = 3;

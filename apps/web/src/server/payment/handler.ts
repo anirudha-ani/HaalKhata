@@ -1,6 +1,6 @@
 /** Thin PaymentMethodService Connect handlers; logic lives in paymentMethod.usecase. */
 
-import type { ServiceImpl } from "@connectrpc/connect";
+import type { PlainServiceImpl } from "@/server/api/connect/wire/plainService";
 import type { PaymentMethodService } from "@haalkhata/protogen/payment/v1/payment_pb";
 import * as paymentMethods from "@/server/payment/usecase/paymentMethod.usecase";
 import { requireUser, runUsecase } from "@/server/api/connect/context";
@@ -14,7 +14,7 @@ import { PAYMENT_METHOD_WRITE_SCOPE } from "@/server/payment/payment.constants";
  * delegates to the usecase inside {@link runUsecase}, which maps
  * UsecaseError to ConnectError.
  */
-export const paymentMethodHandler: ServiceImpl<typeof PaymentMethodService> = {
+export const paymentMethodHandler: PlainServiceImpl<typeof PaymentMethodService> = {
   /** Lists the caller's own payment methods, oldest first. */
   async listMyPaymentMethods(_request, context) {
     return runUsecase(

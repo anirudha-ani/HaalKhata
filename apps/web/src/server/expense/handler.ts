@@ -1,6 +1,7 @@
 /** Thin ExpenseService Connect handlers; logic lives in the expense/balance usecases. */
 
-import { Code, ConnectError, type ServiceImpl } from "@connectrpc/connect";
+import { Code, ConnectError } from "@connectrpc/connect";
+import type { PlainServiceImpl } from "@/server/api/connect/wire/plainService";
 import type { ExpenseService } from "@haalkhata/protogen/expense/v1/expense_pb";
 import * as expenses from "@/server/expense/usecase/expense.usecase";
 import * as balances from "@/server/expense/usecase/balance.usecase";
@@ -13,7 +14,7 @@ import { assertOperationId } from "@/server/common/ledger/operations";
  * authenticated user and delegates to a usecase via `runUsecase`, which maps
  * UsecaseError codes onto ConnectError codes.
  */
-export const expenseHandler: ServiceImpl<typeof ExpenseService> = {
+export const expenseHandler: PlainServiceImpl<typeof ExpenseService> = {
   /** Every external create names its attempt, so a retry cannot store two. */
   async createExpense(request, context) {
     return runUsecase(async () => {

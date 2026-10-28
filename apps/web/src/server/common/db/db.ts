@@ -11,6 +11,7 @@ import {
   PLAINTEXT_DATABASE_HOSTS,
   WEAK_DATABASE_PASSWORDS,
 } from "@/server/common/db/db.constants";
+import { parseExactInt8 } from "@/server/common/db/int8";
 import { logError } from "@/server/common/logger";
 import { readSecret } from "@/server/common/secrets/secrets";
 
@@ -28,6 +29,11 @@ import { readSecret } from "@/server/common/secrets/secrets";
 types.setTypeParser(types.builtins.TIMESTAMPTZ, (value) => new Date(value).toISOString());
 types.setTypeParser(types.builtins.TIMESTAMP, (value) => value);
 types.setTypeParser(types.builtins.DATE, (value) => value);
+
+// 64-bit integers — money columns, their sums, ledger sequence numbers — as
+// plain numbers, exact because every one the app keeps stays far below 2^53
+// (see parseExactInt8); pg would otherwise hand back strings.
+types.setTypeParser(types.builtins.INT8, parseExactInt8);
 
 /**
  * Resolves the Postgres connection string: the full URL when one is given;

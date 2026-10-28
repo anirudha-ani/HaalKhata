@@ -1,7 +1,7 @@
 "use client";
 /** Shared activity feed list: day-grouped, linked rows with type tiles and amounts. */
 
-import type { ActivityEvent } from "@haalkhata/protogen/social/v1/social_pb";
+import type { ActivityEvent } from "@haalkhata/shared/api/plainMessages";
 import { groupByDay } from "@haalkhata/shared/activity/format";
 import { ActivityRow } from "./components/ActivityRow/ActivityRow";
 

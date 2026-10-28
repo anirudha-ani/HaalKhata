@@ -200,8 +200,7 @@ three times is noise.
 - The nets are computed by one batched SQL sum across all groups
   (`userNetInGroups`) rather than one ledger walk per group — nets are
   routing-independent, so the sum agrees with the ledger math.
-- `your_net_cents` is int32-checked (`FailedPrecondition` when a balance
-  exceeds what the wire can carry). It is the group's own currency only;
+- `your_net_cents` is the group's own currency only;
   `your_balances` has every currency the caller holds a balance in there,
   the group's first, and both apps read it (`yourGroupBuckets`).
 

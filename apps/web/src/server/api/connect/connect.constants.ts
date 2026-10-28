@@ -58,6 +58,21 @@ export const RECEIPT_SERVICE_PATH = "/receipt.v1.ReceiptService/";
 /** What a call that needs a session says when it has none. */
 export const SIGN_IN_REQUIRED_MESSAGE = "sign in to continue";
 
+/**
+ * A request carried a 64-bit integer a plain number cannot hold exactly. No
+ * form sends one (the largest amount anyone can enter is far smaller), so
+ * this only answers a hand-made request.
+ */
+export const REQUEST_NUMBER_REFUSED_MESSAGE = "an amount in this request is too large to record exactly";
+
+/**
+ * A figure in a response is beyond what the apps can count exactly. The
+ * limits on what can be recorded keep every figure far below that; this is
+ * what the person sees if one ever is not.
+ */
+export const RESPONSE_NUMBER_REFUSED_MESSAGE =
+  "a total here is larger than this app can show exactly; split it across groups or currencies";
+
 /** Which session cookie to write, and how strictly a browser keeps it to requests its own site starts. */
 export interface SessionCookiePolicy {
   /** The cookie's name. */

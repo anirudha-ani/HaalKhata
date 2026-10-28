@@ -1,6 +1,6 @@
 /** Entry balance: where the two people stood after one statement line. */
 
-import type { FriendLedgerEntry } from "@haalkhata/protogen/expense/v1/expense_pb";
+import type { FriendLedgerEntry } from "@haalkhata/shared/api/plainMessages";
 import { formatMoney } from "@haalkhata/shared/money/money";
 
 /**

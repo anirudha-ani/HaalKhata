@@ -12,6 +12,7 @@ import type { User } from "@haalkhata/protogen/common/v1/common_pb";
 import { ExpenseService } from "@haalkhata/protogen/expense/v1/expense_pb";
 import { GroupService } from "@haalkhata/protogen/group/v1/group_pb";
 import { SocialService } from "@haalkhata/protogen/social/v1/social_pb";
+import { plainClient } from "@haalkhata/shared/api/plainClient";
 import { BEARER_TRANSPORT, SESSION_TRANSPORT_HEADER } from "@haalkhata/shared/auth/sessionRenewal";
 import { readSecret } from "../src/server/common/secrets/secrets";
 
@@ -90,10 +91,10 @@ function makeClients(token = "") {
     }],
   });
   return {
-    auth: createClient(AuthService, transport),
-    expense: createClient(ExpenseService, transport),
-    group: createClient(GroupService, transport),
-    social: createClient(SocialService, transport),
+    auth: plainClient(AuthService, createClient(AuthService, transport)),
+    expense: plainClient(ExpenseService, createClient(ExpenseService, transport)),
+    group: plainClient(GroupService, createClient(GroupService, transport)),
+    social: plainClient(SocialService, createClient(SocialService, transport)),
   };
 }
 

@@ -129,7 +129,7 @@ function expenseRow(expenseId: string, description: string): ListedExpenseRow {
     created_by: BOBBY,
     created_at: "2026-08-01T10:00:00Z",
     created_at_exact: "2026-08-01T10:00:00.000000Z",
-    ledger_event_order: "1",
+    ledger_event_order: 1,
     deleted_at: null,
     deleted_by: null,
   };
@@ -250,7 +250,7 @@ function recordTripSettlement(fromUser: string, toUser: string, amountCents: num
     note: "",
     created_at: "2026-08-02T00:00:00Z",
     created_at_exact: "2026-08-02T00:00:00.000000Z",
-    ledger_event_order: "2",
+    ledger_event_order: 2,
     deleted_at: null,
     recorded_by: fromUser,
     deleted_by: null,

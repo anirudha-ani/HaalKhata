@@ -1,6 +1,6 @@
 /** Entry change: what one statement line did to the reader's balance, signed and coloured. */
 
-import type { FriendLedgerEntry } from "@haalkhata/protogen/expense/v1/expense_pb";
+import type { FriendLedgerEntry } from "@haalkhata/shared/api/plainMessages";
 import { formatMoney } from "@haalkhata/shared/money/money";
 
 /**

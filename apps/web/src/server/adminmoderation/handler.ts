@@ -4,7 +4,8 @@
  * moderation.usecase.
  */
 
-import { Code, ConnectError, type HandlerContext, type ServiceImpl } from "@connectrpc/connect";
+import { Code, ConnectError, type HandlerContext } from "@connectrpc/connect";
+import type { PlainServiceImpl } from "@/server/api/connect/wire/plainService";
 import type { AdminModerationService } from "@haalkhata/protogen/adminmoderation/v1/adminmoderation_pb";
 import { adminSessionToken, requireAdminPageRequest } from "@/server/api/connect/admin/adminRequest";
 import { runUsecase } from "@/server/api/connect/context";
@@ -47,7 +48,7 @@ async function moderate<Result>(
 const WRITE_BUCKET = { key: "admin-moderation-write", limit: MODERATION_WRITE_RATE_LIMIT };
 
 /** AdminModerationService implementation. */
-export const adminModerationHandler: ServiceImpl<typeof AdminModerationService> = {
+export const adminModerationHandler: PlainServiceImpl<typeof AdminModerationService> = {
   /** The queue and the suspended accounts. */
   async listReports(_request, handlerContext) {
     return moderate(

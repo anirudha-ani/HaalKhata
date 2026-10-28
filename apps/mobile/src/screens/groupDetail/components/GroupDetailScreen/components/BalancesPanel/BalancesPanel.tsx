@@ -1,6 +1,7 @@
 /** Group balances view: net positions plus pairwise/simplified debts with settle actions, per currency. */
 
-import type { Debt, NetBalance, User } from "@haalkhata/protogen/common/v1/common_pb";
+import type { Debt, NetBalance } from "@haalkhata/shared/api/plainMessages";
+import type { User } from "@haalkhata/protogen/common/v1/common_pb";
 import type { GroupCurrencySection } from "@haalkhata/shared/group/currencyBalances";
 import { ArrowRight, Wand2 } from "lucide-react-native";
 import { StyleSheet, Switch, View } from "react-native";

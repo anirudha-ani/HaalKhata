@@ -7,7 +7,7 @@
 import { randomUUID } from "node:crypto";
 import { Client } from "pg";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import type { CreateExpenseRequest } from "@haalkhata/protogen/expense/v1/expense_pb";
+import type { ExpenseInput } from "./expense.usecase";
 import { testDatabaseName } from "@/server/common/testing/testDatabase";
 
 const ADMIN_URL = process.env.MERGE_TEST_ADMIN_URL ?? "postgres://haalkhata:change-me@127.0.0.1:5432/postgres";
@@ -41,14 +41,14 @@ async function databaseReachable(): Promise<boolean> {
  * @param otherId - Who shares it with them.
  * @returns A create (or full replacement) request.
  */
-function billRequest(groupId: string, payerId: string, otherId: string): CreateExpenseRequest {
+function billRequest(groupId: string, payerId: string, otherId: string): ExpenseInput {
   return {
     groupId, description: "Electricity", amountCents: 6000, currency: "USD",
     category: "utilities", expenseDate: "2026-10-20", splitType: "exact", notes: "",
     payers: [{ userId: payerId, amountCents: 6000 }],
     splitSpecs: [payerId, otherId].map((userId) => ({ userId, amountCents: 3000, percentBp: 0, shares: 0 })),
     items: [], taxCents: 0, tipCents: 0, operationId: randomUUID(),
-  } as unknown as CreateExpenseRequest;
+  } as unknown as ExpenseInput;
 }
 
 const reachable = await databaseReachable();
@@ -174,7 +174,7 @@ describe.skipIf(!reachable)("editing somebody off an expense", () => {
   it("leaves people who stay on the expense with their usual line", async () => {
     const bill = await createExpense(SARA, billRequest(groupId, SARA, RAHIM));
 
-    await updateExpense(SARA, bill.id, { ...billRequest(groupId, SARA, RAHIM), description: "Electricity bill" } as CreateExpenseRequest);
+    await updateExpense(SARA, bill.id, { ...billRequest(groupId, SARA, RAHIM), description: "Electricity bill" } as ExpenseInput);
 
     expect(await updateNotices(RAHIM)).toEqual([
       { body: "Flat 4B · now you owe Sara $30.00", link: `/expenses/${bill.id}` },

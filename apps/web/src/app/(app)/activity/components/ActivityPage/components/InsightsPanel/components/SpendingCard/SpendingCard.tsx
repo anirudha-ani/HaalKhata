@@ -1,7 +1,7 @@
 "use client";
 /** Spending card: the person's share per month as a column chart under its total. */
 
-import type { CurrencyInsights } from "@haalkhata/protogen/personalanalytics/v1/personalanalytics_pb";
+import type { CurrencyInsights } from "@haalkhata/shared/api/plainMessages";
 import { ColumnChart } from "@/components/charts/ColumnChart/ColumnChart";
 import { compactMoney } from "@haalkhata/shared/analytics/chart";
 import { averagePerMonth } from "@haalkhata/shared/analytics/insights";

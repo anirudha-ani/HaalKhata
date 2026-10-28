@@ -2,7 +2,7 @@
 /** Entry detail: one statement line's name, the tags that qualify it, and the control that removes a payment. */
 
 import Link from "next/link";
-import type { FriendLedgerEntry } from "@haalkhata/protogen/expense/v1/expense_pb";
+import type { FriendLedgerEntry } from "@haalkhata/shared/api/plainMessages";
 import { ENTRY_TAG_CLASS } from "./constants/entryDetail";
 
 /**

@@ -2,7 +2,7 @@
 /** Group activity tab: the group's own feed, day-grouped, with keyset load-more. */
 
 import { Bell } from "lucide-react";
-import type { ActivityEvent } from "@haalkhata/protogen/social/v1/social_pb";
+import type { ActivityEvent } from "@haalkhata/shared/api/plainMessages";
 import { ActivityList } from "@/components/activity/ActivityList/ActivityList";
 import { EmptyState } from "@/components/ui/EmptyState/EmptyState";
 import { ErrorAlert } from "@/components/ui/ErrorAlert/ErrorAlert";

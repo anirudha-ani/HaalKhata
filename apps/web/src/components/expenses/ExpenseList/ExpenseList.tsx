@@ -3,7 +3,7 @@
 
 import Link from "next/link";
 import { Check, ReceiptText } from "lucide-react";
-import type { Expense } from "@haalkhata/protogen/expense/v1/expense_pb";
+import type { Expense } from "@haalkhata/shared/api/plainMessages";
 import type { User } from "@haalkhata/protogen/common/v1/common_pb";
 import { EmptyState } from "@/components/ui/EmptyState/EmptyState";
 import { Money } from "@/components/ui/Money/Money";

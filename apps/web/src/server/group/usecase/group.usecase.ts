@@ -40,7 +40,6 @@ import {
   userNetInGroups,
 } from "@/server/expense/usecase/balance.usecase";
 import { denied, invalid, notFound, UsecaseError } from "@/server/common/errors";
-import { toInt32Cents } from "@/server/common/money/money";
 import { normalizeCurrencyCode } from "@/server/common/validation/validation";
 import {
   GROUP_TYPES,
@@ -343,7 +342,7 @@ export async function listGroups(userId: string) {
     return {
       group: toGroup(group, membersByGroup.get(group.id) ?? []),
       memberCount: (membersByGroup.get(group.id) ?? []).length,
-      yourNetCents: toInt32Cents(nets.get(group.currency) ?? 0, "your balance in a group"),
+      yourNetCents: nets.get(group.currency) ?? 0,
       yourBalances: currencyAmounts(nets, group.currency),
     };
   });

@@ -20,6 +20,9 @@ buf.yaml / buf.gen.yaml      codegen → packages/protogen (regenerated, gitigno
 packages/protogen/           @haalkhata/protogen — generated TS (do NOT edit, do NOT commit)
 packages/shared/             @haalkhata/shared — hand-written TS used by BOTH apps
   src/api/queryKeys.ts         query-key registry + MONEY_KEYS invalidation set
+  src/api/wireNumbers.ts       the API's int64 money ⇄ plain numbers, by schema;
+                               plainClient.ts wraps both apps' Connect clients,
+                               plainMessages.ts names the plain message types
   src/money/                   money.ts, money.constants.ts (+ colocated tests)
   src/expense/form/            shared form validation, payloads, previews and warnings
   src/expense/                 allocate.ts + splits.ts — cent-exact split math,
@@ -41,10 +44,11 @@ apps/web/                    Next.js app
     usecase/                   ALL business logic. No SQL, no transport types.
     handler.ts                 thin Connect handler. No SQL, no business logic.
     <domain>.constants.ts      constants for this domain
-  src/server/common/         shared infra: db/, ledger/, money/, secrets/,
+  src/server/common/         shared infra: db/, ledger/, secrets/,
                              rateLimit/, validation/, readiness/
   src/server/api/connect/    routes.ts (each service, with its request cap and gate),
                              context.ts (requireUser, session cookies, runUsecase),
+                             wire/ (plainService: handlers in plain numbers),
                              connect.constants.ts; mount/ (what runs before a
                              handler: mount options, CSRF, body deadline), session/
                              (credentials), rateLimit/ (per-RPC limits), admin/ (the
@@ -89,8 +93,13 @@ apps/mobile/                 Expo (React Native) app — @haalkhata/mobile
 
 ## Conventions (mandated, enforced)
 
-- **Integer cents everywhere.** No floats for money. `int32` cents in proto,
-  `INTEGER` columns in Postgres, `allocate()` in `@haalkhata/shared/expense/allocate.ts`.
+- **Integer cents everywhere.** No floats for money. `int64` cents in proto,
+  `BIGINT` columns in Postgres, `allocate()` in `@haalkhata/shared/expense/allocate.ts`.
+  The code itself only sees plain numbers: every service registers through
+  `plainService` and every client is made with `plainClient`, which convert
+  protobuf-es's `bigint` at the boundary. Import a money-bearing message type
+  from `@haalkhata/shared/api/plainMessages`, never from protogen, in UI and
+  shared code.
 - **Server-recomputed splits.** Never trust client-supplied split amounts;
   recompute from the raw spec in the usecase.
 - **Transactions where they matter.** `insertExpense` / `replaceExpense` /
@@ -174,7 +183,7 @@ service BudgetService {
 message Budget {
   string id = 1;
   string name = 2;
-  int32 limit_cents = 3;
+  int64 limit_cents = 3;
   // …
 }
 // … request/response messages
@@ -223,8 +232,9 @@ Allowlists, limits, patterns for the domain — e.g. `BUDGET_TYPES`,
 
 ### 6. Handler: `src/server/budgets/handler.ts`
 
-Thin `ServiceImpl<typeof BudgetService>`. Each method:
-`runUsecase(async () => budget.createBudget(await requireUser(context), request), context)`.
+Thin `PlainServiceImpl<typeof BudgetService>` (from
+`api/connect/wire/plainService`: requests and responses in plain numbers).
+Each method: `runUsecase(async () => budget.createBudget(await requireUser(context), request), context)`.
 No SQL, no business logic. `requireUser` is async (awaits a token-version
 DB read) — always `await` it. Pass `context` to `runUsecase` so unexpected
 errors get logged with the RPC name.
@@ -234,8 +244,9 @@ errors get logged with the RPC name.
 ```ts
 import { BudgetService } from "@haalkhata/protogen/budgets/v1/budgets_pb";
 import { budgetHandler } from "@/server/budgets/handler";
+import { plainService } from "./wire/plainService";
 // …
-router.service(BudgetService, budgetHandler);
+router.service(BudgetService, plainService(BudgetService, budgetHandler));
 ```
 
 ### 8. UI: `src/app/<route>/`
@@ -402,9 +413,13 @@ with colocated tests. Mobile-specific rules:
 - **Money is per currency.** Balance maps are keyed by currency
   (`CurrencyCents` in `balance.usecase.ts`), responses carry `CurrencyAmount`
   buckets, and the legacy scalar fields are only the caller's default-currency
-  bucket. Never add cents across currencies, and pass every aggregate through
-  `toInt32Cents()` before it reaches a proto `int32` — an overflow is a
-  `failed_precondition`, not an encoder crash.
+  bucket. Never add cents across currencies.
+- **Every figure stays below 2^53.** One amount is at most `MAX_MONEY_CENTS`
+  (10^13, also a database CHECK), and `assertRoomInLedgers` refuses an
+  expense that takes anyone's expenses in one currency past
+  `MAX_PERSON_VOLUME_CENTS` (10^15). That is what keeps every balance and
+  total exact as a JavaScript number, so a new write path that stores an
+  expense must call it too; a new aggregate needs no check of its own.
 - **Side effects go in the transaction.** Activity, notification and
   friendship rows are written on the same `client` as the ledger change that
   announces them; repo insert functions take an optional `client` for that.

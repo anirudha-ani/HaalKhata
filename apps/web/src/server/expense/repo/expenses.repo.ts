@@ -27,7 +27,7 @@ export interface ExpenseRow {
   created_by: string;
   created_at: string;
   /** Monotonic order shared with settlements for mutation-safety checks. */
-  ledger_event_order: string;
+  ledger_event_order: number;
   /** Soft-delete timestamp; NULL ⇒ the expense is active. */
   deleted_at: string | null;
   /** The authenticated user who deleted it; NULL while it is active. */

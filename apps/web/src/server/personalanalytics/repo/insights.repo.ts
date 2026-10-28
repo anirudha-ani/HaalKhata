@@ -274,8 +274,8 @@ export async function listWindowInsights(
 /** What a person paid and was paid in one currency. */
 export interface PaymentTotalsRow {
   currency: string;
-  paid_cents: string;
-  received_cents: string;
+  paid_cents: number;
+  received_cents: number;
 }
 
 /**

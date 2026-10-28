@@ -79,7 +79,7 @@ message GroupSummary {
   int32 member_count = 2;
   // The calling user's net position in the group's own currency, kept for
   // clients from before `your_balances`.
-  int32 your_net_cents = 3;
+  int64 your_net_cents = 3;
   // The calling user's net position per currency, the group's own first;
   // only currencies with something outstanding. A group holds one currency
   // unless it keeps a payment recorded in another before that rule.

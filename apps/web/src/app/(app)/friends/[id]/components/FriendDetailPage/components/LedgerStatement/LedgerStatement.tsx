@@ -1,7 +1,7 @@
 "use client";
 /** Ledger statement: the shared history with one person — a table where there is room for one, a block per line where there is not. */
 
-import type { FriendLedgerEntry } from "@haalkhata/protogen/expense/v1/expense_pb";
+import type { FriendLedgerEntry } from "@haalkhata/shared/api/plainMessages";
 import { netSettlementTag } from "@haalkhata/shared/expense/netSettlementLines";
 import { formatMoney } from "@haalkhata/shared/money/money";
 import { localDate } from "@haalkhata/shared/time/localTime";

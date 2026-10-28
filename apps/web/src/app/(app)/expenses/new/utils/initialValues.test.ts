@@ -1,7 +1,7 @@
 /** Unit tests for the expense form's initial state, focused on the edit path. */
 
 import { describe, expect, it } from "vitest";
-import type { Expense } from "@haalkhata/protogen/expense/v1/expense_pb";
+import type { Expense } from "@haalkhata/shared/api/plainMessages";
 import { buildInitialValues } from "./initialValues";
 import { buildItemsPayload } from "@haalkhata/shared/expense/form/splitForm";
 

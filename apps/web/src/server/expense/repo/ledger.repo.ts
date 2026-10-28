@@ -64,7 +64,7 @@ export async function sumUserNetByGroup(
   client?: PoolClient,
 ): Promise<Map<string, Map<string, number>>> {
   if (groupIds.length === 0) return new Map();
-  const rows = await query<{ group_id: string; currency: string; net: string }>(
+  const rows = await query<{ group_id: string; currency: string; net: number }>(
     `SELECT movement.group_id, movement.currency, SUM(movement.delta)::bigint AS net
        FROM (
          SELECT exp.group_id, exp.currency, pay.amount_cents AS delta
@@ -89,10 +89,45 @@ export async function sumUserNetByGroup(
   const nets = new Map<string, Map<string, number>>();
   for (const entry of rows) {
     const byCurrency = nets.get(entry.group_id) ?? new Map<string, number>();
-    byCurrency.set(entry.currency, Number(entry.net));
+    byCurrency.set(entry.currency, entry.net);
     nets.set(entry.group_id, byCurrency);
   }
   return nets;
+}
+
+/**
+ * How much the live expenses each person is on — as a payer or with a share
+ * — add up to in one currency, counting each expense once per person.
+ *
+ * @param userIds - People to total.
+ * @param currency - The currency to total in.
+ * @param exceptExpenseId - An expense to leave out (the one being replaced), or null.
+ * @param client - Transaction client of the write being checked.
+ * @returns Person id → total minor units; people on no such expense are absent.
+ */
+export async function sumExpenseVolumes(
+  userIds: readonly string[],
+  currency: string,
+  exceptExpenseId: string | null,
+  client: PoolClient,
+): Promise<Map<string, number>> {
+  if (userIds.length === 0) return new Map();
+  // Summed as NUMERIC and read as text: a total is only compared against a
+  // ceiling, so it need not fit a BIGINT, let alone a JavaScript number.
+  const rows = await query<{ user_id: string; volume: string }>(
+    `SELECT involved.user_id, SUM(exp.amount_cents)::numeric::text AS volume
+       FROM (
+         SELECT pay.user_id, pay.expense_id FROM expense_payers pay WHERE pay.user_id = ANY($1::text[])
+         UNION
+         SELECT spl.user_id, spl.expense_id FROM expense_splits spl WHERE spl.user_id = ANY($1::text[])
+       ) involved
+       JOIN expenses exp ON exp.id = involved.expense_id
+      WHERE exp.currency = $2 AND exp.deleted_at IS NULL AND exp.id IS DISTINCT FROM $3
+      GROUP BY involved.user_id`,
+    [[...userIds], currency, exceptExpenseId],
+    client,
+  );
+  return new Map(rows.map((entry) => [entry.user_id, Number(entry.volume)]));
 }
 
 /**

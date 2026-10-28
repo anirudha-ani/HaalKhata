@@ -8,6 +8,11 @@ const { transactionClient } = vi.hoisted(() => ({ transactionClient: {} as PoolC
 
 vi.mock("@/server/safety/repo/safety.repo", () => ({ blockedBetween: vi.fn(async () => false), blockedPairExists: vi.fn(async () => false) }));
 
+// Nobody here is near the ceiling on what one person's expenses may add up to.
+vi.mock("@/server/expense/repo/ledger.repo", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/server/expense/repo/ledger.repo")>()),
+  sumExpenseVolumes: vi.fn(async () => new Map()),
+}));
 vi.mock("@/server/expense/repo/expenses.repo", () => ({
   findExpenseById: vi.fn(),
   insertExpense: vi.fn(),
@@ -47,7 +52,7 @@ import { findUserById, findUsersByIds } from "@/server/auth/repo/users.repo";
 import { listFriendIds } from "@/server/social/repo/friendships.repo";
 import { listCoMemberIds } from "@/server/group/repo/groups.repo";
 import { insertExpense, findExpenseById, loadExpenseChildren } from "@/server/expense/repo/expenses.repo";
-import type { CreateExpenseRequest } from "@haalkhata/protogen/expense/v1/expense_pb";
+import type { ExpenseInput } from "./expense.usecase";
 
 const CALLER = "user-caller";
 const DELETED = "user-deleted-member";
@@ -78,7 +83,7 @@ function userRow(overrides: Partial<UserRow> = {}): UserRow {
 }
 
 /** A one-off split between the caller and one other person. */
-function splitRequest(otherId: string): CreateExpenseRequest {
+function splitRequest(otherId: string): ExpenseInput {
   return {
     groupId: "",
     description: "Dinner",
@@ -94,7 +99,7 @@ function splitRequest(otherId: string): CreateExpenseRequest {
     taxCents: 0,
     tipCents: 0,
     operationId: "",
-  } as unknown as CreateExpenseRequest;
+  } as unknown as ExpenseInput;
 }
 
 beforeEach(() => {

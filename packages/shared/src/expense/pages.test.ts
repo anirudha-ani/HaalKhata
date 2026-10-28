@@ -1,13 +1,8 @@
 /** Unit tests for joining the pages of an expense list and a friend statement. */
 
 import { describe, expect, it } from "vitest";
+import type { Expense, FriendLedgerEntry, FriendLedgerResponse, ListExpensesResponse } from "../api/plainMessages";
 import type { User } from "@haalkhata/protogen/common/v1/common_pb";
-import type {
-  Expense,
-  FriendLedgerEntry,
-  FriendLedgerResponse,
-  ListExpensesResponse,
-} from "@haalkhata/protogen/expense/v1/expense_pb";
 import { firstStatementPage, mergeExpensePages, statementEntries } from "./pages";
 
 /**

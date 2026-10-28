@@ -82,8 +82,6 @@ of it. The dashboard charts the first and states the second.
   How the expenses were split, with whom and where are counted inside each
   entry too: the dashboard shows one currency at a time, and a list that
   counted every currency would contradict the charts beside it.
-- Every money total passes through `toInt32Cents()` before it reaches the
-  wire, so an overflow is a `FailedPrecondition`, not an encoder crash.
 - Soft-deleted expenses and removed payments count nowhere. A net
   settlement's cancelling (`offset`) entries are not payments. The journey's
   payment count counts a payment once however many balances it settled
@@ -185,12 +183,12 @@ counted every currency together and now live in each `CurrencyInsights`.
 | Field | Type | Description |
 | --- | --- | --- |
 | currency | string | ISO 4217 code. |
-| share_cents | int32 | The caller's share over the window. |
-| paid_cents | int32 | What they paid up front over the window. |
-| monthly_share_cents | repeated int32 | `share_cents` per month of `months`. |
+| share_cents | int64 | The caller's share over the window. |
+| paid_cents | int64 | What they paid up front over the window. |
+| monthly_share_cents | repeated int64 | `share_cents` per month of `months`. |
 | categories | repeated CategorySpending | `share_cents` by expense category, largest first. |
-| settled_out_cents | int32 | Payments they made during the window. |
-| settled_in_cents | int32 | Payments they received during the window. |
+| settled_out_cents | int64 | Payments they made during the window. |
+| settled_in_cents | int64 | Payments they received during the window. |
 | split_types | repeated SplitTypeCount | How the window's expenses in this currency were split, most used first. |
 | companions | repeated Companion | The five people the caller shared the most expenses in this currency with. |
 | groups | repeated GroupActivity | The five busiest places for this currency; an empty `group_id` is the row for expenses outside any group. |

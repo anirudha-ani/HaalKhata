@@ -5,6 +5,7 @@ import { blockedPairExists } from "@/server/safety/repo/safety.repo";
 import { assertSafeText } from "@/server/safety/usecase/contentFilter";
 import { isRegisteredUser } from "@/server/auth/usecase/identity/user.mapper";
 import { ExpenseListPart, type CreateExpenseRequest } from "@haalkhata/protogen/expense/v1/expense_pb";
+import type { PlainNumbers } from "@haalkhata/shared/api/wireNumbers";
 import type { PoolClient } from "pg";
 import {
   findExpenseById,
@@ -120,9 +121,10 @@ import {
   formerMemberRefusal,
 } from "@/server/expense/expense.constants";
 import { toExpense, toSettlement } from "./expense.mapper";
+import { assertRoomInLedgers } from "./volumeLimit";
 import { findPaymentMethod } from "@/server/payment/repo/paymentMethods.repo";
 import { cleanMethodRow } from "@/server/payment/usecase/paymentMethod.mapper";
-import { centsToInput } from "@haalkhata/shared/money/money";
+import { centsToInput, formatMoney as displayMoney } from "@haalkhata/shared/money/money";
 import { settlementMethodKey } from "@haalkhata/shared/payment/payeeMethods";
 
 /**
@@ -138,6 +140,18 @@ import { settlementMethodKey } from "@haalkhata/shared/payment/payeeMethods";
  */
 function formatMoney(cents: number, currency: string): string {
   return `${currency} ${centsToInput(cents, currency)}`;
+}
+
+/**
+ * Refuses an amount past the most one expense, share or payment can be,
+ * written the way the screens write money so a figure that long is
+ * readable.
+ *
+ * @param currency - Currency the ceiling is written in.
+ * @throws UsecaseError (invalid_argument), always.
+ */
+function refuseTooLarge(currency: string): never {
+  invalid(`amount is too large (the most one amount can be is ${displayMoney(MAX_MONEY_CENTS, currency)})`);
 }
 
 /**
@@ -178,12 +192,18 @@ interface ExpenseAmounts {
 }
 
 /**
+ * An expense as a client sends it to be created or saved, with its money in
+ * plain numbers (plainService converts the wire's 64-bit integers).
+ */
+export type ExpenseInput = PlainNumbers<CreateExpenseRequest>;
+
+/**
  * Validates request fields whose rules do not require database access.
  *
  * @param request - Raw expense request from the client.
  * @returns The trimmed, non-empty description.
  */
-function validateExpenseRequest(request: CreateExpenseRequest): string {
+function validateExpenseRequest(request: ExpenseInput): string {
   assertSafeText(request.description);
   assertSafeText(request.notes);
   for (const item of request.items) assertSafeText(item.name);
@@ -225,7 +245,7 @@ function validateExpenseRequest(request: CreateExpenseRequest): string {
  */
 async function resolveExpenseScope(
   userId: string,
-  request: CreateExpenseRequest,
+  request: ExpenseInput,
 ): Promise<ExpenseScope> {
   const groupId = request.groupId || null;
   let groupMemberIds: Set<string> | null = null;
@@ -253,7 +273,7 @@ async function resolveExpenseScope(
  * @returns Authoritative total, tax, tip, splits, and normalized items.
  */
 function computeExpenseAmounts(
-  request: CreateExpenseRequest,
+  request: ExpenseInput,
   currency: string,
 ): ExpenseAmounts {
   let amountCents: number;
@@ -261,6 +281,18 @@ function computeExpenseAmounts(
   let tipCents = 0;
   let splits: ExpenseWrite["splits"];
   let items: ExpenseWrite["items"] = [];
+
+  // Every figure the client states is checked before any is added up, so
+  // no sum below can pass 2^53 and come out rounded.
+  const stated = [
+    request.amountCents,
+    request.taxCents,
+    request.tipCents,
+    ...request.items.map((item) => item.totalCents),
+    ...request.payers.map((payer) => payer.amountCents),
+    ...request.splitSpecs.map((spec) => spec.amountCents),
+  ];
+  if (stated.some((cents) => cents > MAX_MONEY_CENTS)) refuseTooLarge(currency);
 
   try {
     if (request.splitType === "itemized") {
@@ -278,9 +310,7 @@ function computeExpenseAmounts(
       const computed = computeItemizedSplits(items, taxCents, tipCents);
       splits = computed.splits;
       amountCents = computed.totalCents;
-      if (amountCents > MAX_MONEY_CENTS) {
-        invalid(`amount is too large (max ${MAX_MONEY_CENTS} cents)`);
-      }
+      if (amountCents > MAX_MONEY_CENTS) refuseTooLarge(currency);
       if (request.amountCents !== amountCents) {
         invalid(
           `items + tax + tip (${formatMoney(amountCents, currency)}) do not match the stated total (${formatMoney(request.amountCents, currency)})`,
@@ -288,9 +318,6 @@ function computeExpenseAmounts(
       }
     } else {
       amountCents = request.amountCents;
-      if (amountCents > MAX_MONEY_CENTS) {
-        invalid(`amount is too large (max ${MAX_MONEY_CENTS} cents)`);
-      }
       splits = computeSplits(
         request.splitType,
         amountCents,
@@ -321,7 +348,7 @@ function computeExpenseAmounts(
  * @returns Nothing; throws when the contributions are invalid.
  */
 function validateExpensePayments(
-  request: CreateExpenseRequest,
+  request: ExpenseInput,
   amountCents: number,
   currency: string,
 ): void {
@@ -430,7 +457,7 @@ async function assertLockedOneOffParticipants(
  */
 async function buildExpenseWrite(
   userId: string,
-  request: CreateExpenseRequest,
+  request: ExpenseInput,
   existingIds: string[] = [],
 ): Promise<ExpenseWrite> {
   const description = validateExpenseRequest(request);
@@ -773,7 +800,7 @@ async function recordExpenseActivity(
  * @returns The stored expense as a proto message init shape.
  * @throws UsecaseError on validation, membership, or existence failures.
  */
-export async function createExpense(userId: string, request: CreateExpenseRequest) {
+export async function createExpense(userId: string, request: ExpenseInput) {
   const write = await buildExpenseWrite(userId, request);
   const participantIds = involvedUserIds(write);
   const operation = { userId, rpc: "CreateExpense", operationId: request.operationId ?? "" };
@@ -792,6 +819,11 @@ export async function createExpense(userId: string, request: CreateExpenseReques
       await lockParticipantLedgers(client, participantIds);
       await assertLockedOneOffParticipants(userId, participantIds, client);
     }
+    await assertRoomInLedgers(
+      { currency: write.currency, amountCents: write.amountCents, participantIds },
+      userId,
+      client,
+    );
     const insertedId = await insertExpense(write, client);
     // A one-off expense befriends its creator with everyone on it. Ledger
     // locks first, then the friend-request inbox locks inside
@@ -899,7 +931,7 @@ async function assertCanDelete(
 async function loadExpenseForEdit(
   userId: string,
   expenseId: string,
-  request: CreateExpenseRequest,
+  request: ExpenseInput,
   client?: PoolClient,
 ): Promise<{ expense: ExpenseRow; children: ExpenseChildren }> {
   const expense = await findExpenseById(expenseId, client);
@@ -933,7 +965,7 @@ async function loadExpenseForEdit(
 export async function updateExpense(
   userId: string,
   expenseId: string,
-  request: CreateExpenseRequest,
+  request: ExpenseInput,
   preserveSplitType = false,
 ) {
   const existing = await loadExpenseForEdit(userId, expenseId, request);
@@ -983,6 +1015,17 @@ export async function updateExpense(
       }
       write.splitType = current.split_type;
     }
+    await assertRoomInLedgers(
+      { currency: write.currency, amountCents: write.amountCents, participantIds: involvedUserIds(write) },
+      userId,
+      client,
+      {
+        id: expenseId,
+        currency: current.currency,
+        amountCents: current.amount_cents,
+        participantIds: moneyParticipantIds(expenseId, children),
+      },
+    );
     write.createdBy = current.created_by;
     await replaceExpense(expenseId, write, client);
     await recordExpenseActivity(
@@ -1645,9 +1688,6 @@ async function prepareSettlement(
 ): Promise<SettlementContext> {
   if (request.toUserId === userId) invalid("you cannot settle with yourself");
   if (request.amountCents <= 0) invalid("amount must be positive");
-  if (request.amountCents > MAX_MONEY_CENTS) {
-    invalid(`amount is too large (max ${MAX_MONEY_CENTS} cents)`);
-  }
   if (request.note.length > MAX_SETTLEMENT_NOTE_LENGTH) {
     invalid(`settlement note is too long (max ${MAX_SETTLEMENT_NOTE_LENGTH} characters)`);
   }
@@ -1682,6 +1722,7 @@ async function prepareSettlement(
   }
   if (!currency) currency = (await findUserById(userId))?.default_currency ?? "USD";
   currency = normalizeCurrencyCode(currency);
+  if (request.amountCents > MAX_MONEY_CENTS) refuseTooLarge(currency);
   const actor = await findUserById(userId);
   if (!actor) denied("account no longer exists");
   return {

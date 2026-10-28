@@ -112,7 +112,7 @@ function expenseRow(
     created_by: BOBBY,
     created_at: createdAt,
     created_at_exact: createdAt.replace("Z", ".000000Z"),
-    ledger_event_order: "1",
+    ledger_event_order: 1,
     deleted_at: null,
     deleted_by: null,
   };
@@ -320,26 +320,24 @@ describe("balances are kept per currency", () => {
     expect(listPaymentMethodsByUser).not.toHaveBeenCalled();
   });
 
-  it("refuses, by name, an aggregate the int32 wire field cannot carry", async () => {
-    // Two rows at the per-row cap are each valid; their sum is not
-    // representable. The encoder would throw an opaque internal error;
-    // instead the caller gets a precondition failure that says which number.
+  it("adds up a balance far past the old 32-bit ceiling, to the cent", async () => {
+    // Two expenses at the per-amount ceiling: 200,000,000,000.00 owed, where
+    // 21,474,836.47 was once the most any balance could show.
     const huge = [
-      expenseRow("expense-huge-1", "USD", 2_000_000_000, "2026-08-03T10:00:00Z"),
-      expenseRow("expense-huge-2", "USD", 2_000_000_000, "2026-08-04T10:00:00Z"),
+      expenseRow("expense-huge-1", "USD", 10_000_000_000_000, "2026-08-03T10:00:00Z"),
+      expenseRow("expense-huge-2", "USD", 10_000_000_000_000, "2026-08-04T10:00:00Z"),
     ];
     for (const expense of huge) {
       payersByExpense.set(expense.id, [
-        { expense_id: expense.id, user_id: BOBBY, amount_cents: 2_000_000_000 },
+        { expense_id: expense.id, user_id: BOBBY, amount_cents: 10_000_000_000_000 },
       ]);
       splitsByExpense.set(expense.id, [
-        { expense_id: expense.id, user_id: ALICE, owed_cents: 2_000_000_000 },
+        { expense_id: expense.id, user_id: ALICE, owed_cents: 10_000_000_000_000 },
       ]);
     }
     vi.mocked(listExpensesInvolvingUser).mockResolvedValue(huge);
-    await expect(getOverallBalances(ALICE)).rejects.toMatchObject({
-      code: "failed_precondition",
-    });
+    const overall = await getOverallBalances(ALICE);
+    expect(overall.totals.find((total) => total.currency === "USD")?.youOweCents).toBe(20_000_000_000_000);
     for (const expense of huge) {
       payersByExpense.delete(expense.id);
       splitsByExpense.delete(expense.id);
@@ -359,7 +357,7 @@ describe("balances are kept per currency", () => {
       note: "",
       created_at: "2026-08-03T00:00:00Z",
       created_at_exact: "2026-08-03T00:00:00.000000Z",
-      ledger_event_order: "3",
+      ledger_event_order: 3,
       deleted_at: null,
       recorded_by: ALICE,
       deleted_by: null,

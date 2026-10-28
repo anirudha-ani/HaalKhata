@@ -62,8 +62,8 @@ export const MAX_PARSED_NAME_LENGTH = 200;
 /** Maximum line-item quantity accepted from a model. */
 export const MAX_PARSED_QUANTITY = 10_000;
 
-/** Maximum cents value accepted from a model, within signed int32 storage. */
-export const MAX_PARSED_MONEY_CENTS = 2_000_000_000;
+/** Maximum cents value accepted from a model: the most one expense can be (MAX_MONEY_CENTS). */
+export const MAX_PARSED_MONEY_CENTS = 10_000_000_000_000;
 
 /**
  * Configuration for the `compatible` provider — any endpoint speaking the

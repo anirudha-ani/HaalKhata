@@ -4,6 +4,7 @@
 import { RECEIPT_TIMEOUT_MS } from "@haalkhata/shared/api/timeouts";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { MessageInitShape } from "@bufbuild/protobuf";
+import type { PlainNumbers } from "@haalkhata/shared/api/wireNumbers";
 import type { CreateExpenseRequestSchema } from "@haalkhata/protogen/expense/v1/expense_pb";
 import {
   authClient,
@@ -17,8 +18,8 @@ import { groupsByStatus } from "@haalkhata/shared/group/archiving";
 import { MONEY_KEYS, queryKeys } from "@haalkhata/shared/api/queryKeys";
 import { COMMENT_PAGE_SIZE } from "@haalkhata/shared/api/paging";
 
-/** Plain-object init shape of a CreateExpenseRequest proto message. */
-export type CreateExpenseInput = MessageInitShape<typeof CreateExpenseRequestSchema>;
+/** Plain-object init shape of a CreateExpenseRequest proto message, with its money as plain numbers. */
+export type CreateExpenseInput = PlainNumbers<MessageInitShape<typeof CreateExpenseRequestSchema>>;
 
 /**
  * Loads everything the expense form needs (current user, groups, friends,

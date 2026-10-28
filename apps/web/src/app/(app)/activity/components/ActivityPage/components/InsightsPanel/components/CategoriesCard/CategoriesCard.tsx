@@ -1,7 +1,7 @@
 "use client";
 /** Categories card: where the person's spending went, by expense category. */
 
-import type { CurrencyInsights } from "@haalkhata/protogen/personalanalytics/v1/personalanalytics_pb";
+import type { CurrencyInsights } from "@haalkhata/shared/api/plainMessages";
 import { BarList } from "@/components/charts/BarList/BarList";
 import { CATEGORY_EMOJI } from "@/components/expenses/ExpenseList/constants/categoryEmoji";
 import {

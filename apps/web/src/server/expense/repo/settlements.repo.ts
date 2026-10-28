@@ -28,7 +28,7 @@ export interface SettlementRow {
   note: string;
   created_at: string;
   /** Monotonic order shared with expenses for mutation-safety checks. */
-  ledger_event_order: string;
+  ledger_event_order: number;
   /** When the payment was removed; null while it counts. */
   deleted_at: string | null;
   /**
@@ -99,7 +99,7 @@ export async function withSettlementPairLock<Outcome>(
 export async function scopeHasSettlements(
   groupId: string | null,
   participantIds: string[],
-  expenseEventOrder: string,
+  expenseEventOrder: number,
   client?: PoolClient,
   groupParticipantsOnly = false,
 ): Promise<boolean> {

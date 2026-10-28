@@ -1,10 +1,12 @@
 /**
  * Typed Connect clients for the mobile app. Same contract as the web client
  * (`/api/connect` on the HaalKhata server), but authenticated with the bearer
- * token from {@link ../api/session} instead of a cookie.
+ * token from {@link ../api/session} instead of a cookie. Each client is
+ * wrapped by plainClient, so money arrives and leaves as plain numbers.
  */
 
 import { API_TIMEOUT_MS } from "@haalkhata/shared/api/timeouts";
+import { plainClient } from "@haalkhata/shared/api/plainClient";
 import { SafetyService } from "@haalkhata/protogen/safety/v1/safety_pb";
 import { Code, ConnectError, createClient } from "@connectrpc/connect";
 import { createConnectTransport } from "@connectrpc/connect-web";
@@ -44,21 +46,21 @@ export const transport = createConnectTransport({
 });
 
 /** Typed client for authentication RPCs (sign up, log in, session, log out). */
-export const authClient = createClient(AuthService, transport);
+export const authClient = plainClient(AuthService, createClient(AuthService, transport));
 /** Typed client for group management RPCs (create, list, members, balances). */
-export const groupClient = createClient(GroupService, transport);
+export const groupClient = plainClient(GroupService, createClient(GroupService, transport));
 /** Typed client for expense and settlement RPCs. */
-export const expenseClient = createClient(ExpenseService, transport);
+export const expenseClient = plainClient(ExpenseService, createClient(ExpenseService, transport));
 /** Typed client for receipt scanning/upload RPCs. */
-export const receiptClient = createClient(ReceiptService, transport);
+export const receiptClient = plainClient(ReceiptService, createClient(ReceiptService, transport));
 /** Typed client for social RPCs (friends, activity, notifications). */
-export const socialClient = createClient(SocialService, transport);
+export const socialClient = plainClient(SocialService, createClient(SocialService, transport));
 /** Typed client for the caller's own payment methods (list, add, edit, remove, star). */
-export const paymentClient = createClient(PaymentMethodService, transport);
+export const paymentClient = plainClient(PaymentMethodService, createClient(PaymentMethodService, transport));
 /** Typed client for the phones that receive push notifications and which kinds they receive. */
-export const pushClient = createClient(PushService, transport);
+export const pushClient = plainClient(PushService, createClient(PushService, transport));
 /** Typed client for the signed-in person's own insights. */
-export const personalAnalyticsClient = createClient(PersonalAnalyticsService, transport);
+export const personalAnalyticsClient = plainClient(PersonalAnalyticsService, createClient(PersonalAnalyticsService, transport));
 
 /**
  * Extracts a human-readable message from a ConnectError (or any thrown value).
@@ -78,7 +80,7 @@ export function errorMessage(error: unknown): string {
 }
 
 /** Typed client for private reports and caller-owned blocks. */
-export const safetyClient = createClient(SafetyService, transport);
+export const safetyClient = plainClient(SafetyService, createClient(SafetyService, transport));
 
 /**
  * Whether the server refused what was sent (a wrong code, a bad field)

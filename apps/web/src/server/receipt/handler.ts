@@ -1,6 +1,7 @@
 /** Thin ReceiptService Connect handlers; logic lives in receipt.usecase. */
 
-import { Code, ConnectError, type ServiceImpl } from "@connectrpc/connect";
+import { Code, ConnectError } from "@connectrpc/connect";
+import type { PlainServiceImpl } from "@/server/api/connect/wire/plainService";
 import type { ReceiptService } from "@haalkhata/protogen/receipt/v1/receipt_pb";
 import { parseReceiptWithConsent, getReceiptProcessingInfo, grantReceiptConsent, revokeReceiptConsent } from "@/server/receipt/usecase/receiptConsent.usecase";
 import { requireUser, runUsecase } from "@/server/api/connect/context";
@@ -14,7 +15,7 @@ import {
 let activeReceiptParses = 0;
 
 /** ReceiptService implementation; authentication happens here, parsing in receipt.usecase. */
-export const receiptHandler: ServiceImpl<typeof ReceiptService> = {
+export const receiptHandler: PlainServiceImpl<typeof ReceiptService> = {
   /** Returns processor disclosure before any photo leaves the device. */
   async getProcessingInfo(_request, handlerContext) {
     return runUsecase(async () => getReceiptProcessingInfo(await requireUser(handlerContext)), handlerContext);

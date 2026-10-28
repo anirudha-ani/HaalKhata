@@ -158,7 +158,7 @@ message MergePreview {
   // The absorbed row's net position in the caller's default currency only,
   // kept for older clients: positive means it is owed. `nets` is the whole
   // picture.
-  int32 net_cents = 2;
+  int64 net_cents = 2;
   // Display names of the people it shares expenses with — the actual check,
   // since someone who does not recognize them should back out.
   repeated string counterparty_names = 3;

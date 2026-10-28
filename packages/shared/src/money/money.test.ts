@@ -25,9 +25,35 @@ describe("parseMoneyInput", () => {
   });
 });
 
+describe("parseMoneyInput at scale", () => {
+  it("reads large amounts digit for digit, with no float rounding", () => {
+    expect(parseMoneyInput("100000000000.00")).toBe(10_000_000_000_000);
+    expect(parseMoneyInput("123456789012.34")).toBe(12_345_678_901_234);
+    expect(parseMoneyInput("25000000", "IDR")).toBe(2_500_000_000);
+    expect(parseMoneyInput("90071992547409.91")).toBe(Number.MAX_SAFE_INTEGER);
+  });
+
+  it("refuses an amount too long to hold exactly", () => {
+    expect(parseMoneyInput("90071992547409.92")).toBeNull();
+    expect(parseMoneyInput("99999999999999999999")).toBeNull();
+  });
+});
+
 describe("centsToInput", () => {
   it("round-trips with parseMoneyInput", () => {
     for (const cents of [0, 1, 99, 100, 1250, 99999]) {
+      expect(parseMoneyInput(centsToInput(cents))).toBe(cents);
+    }
+  });
+
+  it("writes large and negative amounts exactly", () => {
+    expect(centsToInput(12_345_678_901_234)).toBe("123456789012.34");
+    expect(centsToInput(Number.MAX_SAFE_INTEGER)).toBe("90071992547409.91");
+    expect(centsToInput(-1250)).toBe("-12.50");
+    expect(centsToInput(-5)).toBe("-0.05");
+    expect(centsToInput(10_000_000_000_000, "JPY")).toBe("10000000000000");
+    expect(centsToInput(1_000_000_000_001, "KWD")).toBe("1000000000.001");
+    for (const cents of [10_000_000_000_000, 12_345_678_901_234, Number.MAX_SAFE_INTEGER]) {
       expect(parseMoneyInput(centsToInput(cents))).toBe(cents);
     }
   });

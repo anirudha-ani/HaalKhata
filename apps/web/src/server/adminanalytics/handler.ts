@@ -4,7 +4,8 @@
  * here; the logic is in the usecases.
  */
 
-import { Code, ConnectError, type HandlerContext, type ServiceImpl } from "@connectrpc/connect";
+import { Code, ConnectError, type HandlerContext } from "@connectrpc/connect";
+import type { PlainServiceImpl } from "@/server/api/connect/wire/plainService";
 import type { AdminAnalyticsService } from "@haalkhata/protogen/adminanalytics/v1/adminanalytics_pb";
 import { adminSessionToken, requireAdminPageRequest } from "@/server/api/connect/admin/adminRequest";
 import { sessionCookieAttributes } from "@/server/api/connect/connect.constants";
@@ -43,7 +44,7 @@ function enforceAdminAuthRateLimit(
 }
 
 /** AdminAnalyticsService implementation. Every method starts by confirming the surface and the origin. */
-export const adminAnalyticsHandler: ServiceImpl<typeof AdminAnalyticsService> = {
+export const adminAnalyticsHandler: PlainServiceImpl<typeof AdminAnalyticsService> = {
   /** Issues the nonce for an admin sign-in. */
   async beginSignIn(_request, handlerContext) {
     requireAdminPageRequest(handlerContext);

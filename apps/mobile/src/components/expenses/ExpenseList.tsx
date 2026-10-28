@@ -1,7 +1,7 @@
 /** Expense list rows: category, payer summary, and your lent/borrowed net per expense. */
 
+import type { Expense } from "@haalkhata/shared/api/plainMessages";
 import type { User } from "@haalkhata/protogen/common/v1/common_pb";
-import type { Expense } from "@haalkhata/protogen/expense/v1/expense_pb";
 import { useRouter } from "expo-router";
 import { Check, ReceiptText } from "lucide-react-native";
 import { Pressable, StyleSheet, View } from "react-native";

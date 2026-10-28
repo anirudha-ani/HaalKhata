@@ -3,6 +3,7 @@
 import { RECEIPT_TIMEOUT_MS } from "@haalkhata/shared/api/timeouts";
 import { COMMENT_PAGE_SIZE } from "@haalkhata/shared/api/paging";
 import type { MessageInitShape } from "@bufbuild/protobuf";
+import type { PlainNumbers } from "@haalkhata/shared/api/wireNumbers";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { CreateExpenseRequestSchema } from "@haalkhata/protogen/expense/v1/expense_pb";
 import {
@@ -18,8 +19,8 @@ import { MONEY_KEYS, queryKeys } from "@haalkhata/shared/api/queryKeys";
 import { base64ToBytes } from "@/lib/encoding/encoding";
 import { offerPushExplainer } from "@/lib/push/pushStore";
 
-/** Plain-object init shape of a CreateExpenseRequest proto message. */
-export type CreateExpenseInput = MessageInitShape<typeof CreateExpenseRequestSchema>;
+/** Plain-object init shape of a CreateExpenseRequest proto message, with its money as plain numbers. */
+export type CreateExpenseInput = PlainNumbers<MessageInitShape<typeof CreateExpenseRequestSchema>>;
 
 /** A photo picked for scanning: its base64 payload and media type. */
 export interface ReceiptPhotoInput {

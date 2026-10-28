@@ -206,10 +206,10 @@ promised:
 | date | string | `YYYY-MM-DD` or `""` when unreadable. |
 | currency | string | ISO 4217 guess; defaults `"USD"`. |
 | items | repeated ParsedReceiptItem | `{name, quantity, unit_price_cents, total_cents}`; ≤ 100 rows; modifiers folded into their items. |
-| subtotal_cents | int32 | Derived from items when the receipt's own is unreadable. |
-| tax_cents | int32 | All taxes combined; 0 when absent. |
-| tip_cents | int32 | Tip/service charge; 0 when absent. |
-| total_cents | int32 | Derived from subtotal+tax+tip when unreadable. |
+| subtotal_cents | int64 | Derived from items when the receipt's own is unreadable. |
+| tax_cents | int64 | All taxes combined; 0 when absent. |
+| tip_cents | int64 | Tip/service charge; 0 when absent. |
+| total_cents | int64 | Derived from subtotal+tax+tip when unreadable. |
 
 **Sample Response (JSON):**
 

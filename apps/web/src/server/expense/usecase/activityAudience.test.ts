@@ -7,7 +7,8 @@
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { PoolClient } from "pg";
-import type { CreateExpenseRequest } from "@haalkhata/protogen/expense/v1/expense_pb";
+import type { ExpenseInput } from "./expense.usecase";
+import { formatMoney } from "@haalkhata/shared/money/money";
 import type { ExpenseRow } from "@/server/expense/repo/expenses.repo";
 import type { SettlementRow } from "@/server/expense/repo/settlements.repo";
 import type { UserRow } from "@/server/auth/repo/users.repo";
@@ -24,6 +25,11 @@ vi.mock("@/server/safety/repo/safety.repo", () => ({ blockedBetween: vi.fn(async
 vi.mock("@/server/common/db/db", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/server/common/db/db")>()),
   snapshot: (operation: (client: unknown) => unknown) => operation({}),
+}));
+// Nobody here is near the ceiling on what one person's expenses may add up to.
+vi.mock("@/server/expense/repo/ledger.repo", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/server/expense/repo/ledger.repo")>()),
+  sumExpenseVolumes: vi.fn(async () => new Map()),
 }));
 vi.mock("@/server/expense/repo/expenses.repo", () => ({
   findExpenseById: vi.fn(),
@@ -145,7 +151,7 @@ const GOA_TRIP = "group-goa";
 /** Builds a valid exact-split request for input-boundary tests. */
 function validExpenseRequest(
   overrides: Record<string, unknown> = {},
-): CreateExpenseRequest {
+): ExpenseInput {
   return {
     groupId: GOA_TRIP,
     description: "Dinner",
@@ -161,7 +167,7 @@ function validExpenseRequest(
     taxCents: 0,
     tipCents: 0,
     ...overrides,
-  } as unknown as CreateExpenseRequest;
+  } as unknown as ExpenseInput;
 }
 
 /** Every audience insertActivity received, in call order. */
@@ -215,7 +221,7 @@ beforeEach(() => {
     tip_cents: 0,
     created_by: PAYER,
     created_at: "2026-08-09T00:00:00Z",
-    ledger_event_order: "42",
+    ledger_event_order: 42,
     deleted_at: null,
   } as ExpenseRow);
   vi.mocked(loadExpenseChildren).mockResolvedValue({
@@ -337,28 +343,28 @@ describe("who hears about a transaction", () => {
         expenseDate: "2026-08-09",
         splitType: "itemized",
         notes: "",
-        payers: [{ userId: PAYER, amountCents: 2_000_000_000 }],
+        payers: [{ userId: PAYER, amountCents: 10_000_000_000_000 }],
         splitSpecs: [],
         items: [
           {
             name: "First item",
             quantity: 1,
-            totalCents: 1_500_000_000,
+            totalCents: 6_000_000_000_000,
             assignments: [{ userId: PAYER, weight: 1 }],
           },
           {
             name: "Second item",
             quantity: 1,
-            totalCents: 1_500_000_000,
+            totalCents: 6_000_000_000_000,
             assignments: [{ userId: PAYER, weight: 1 }],
           },
         ],
         taxCents: 0,
         tipCents: 0,
-      } as unknown as CreateExpenseRequest),
+      } as unknown as ExpenseInput),
     ).rejects.toMatchObject({
       code: "invalid_argument",
-      message: "amount is too large (max 2000000000 cents)",
+      message: `amount is too large (the most one amount can be is ${formatMoney(10_000_000_000_000, "USD")})`,
     });
     expect(insertExpense).not.toHaveBeenCalled();
   });
@@ -386,7 +392,7 @@ describe("who hears about a transaction", () => {
         ],
         taxCents: 0,
         tipCents: 0,
-      } as unknown as CreateExpenseRequest),
+      } as unknown as ExpenseInput),
     ).rejects.toMatchObject({
       code: "invalid_argument",
       message: expect.stringContaining("do not match the stated total"),
@@ -420,7 +426,7 @@ describe("who hears about a transaction", () => {
         ],
         taxCents: 0,
         tipCents: 0,
-      } as unknown as CreateExpenseRequest),
+      } as unknown as ExpenseInput),
     ).rejects.toMatchObject({
       code: "invalid_argument",
       message: "too many people assigned to one item (max 100)",
@@ -446,7 +452,7 @@ describe("who hears about a transaction", () => {
         items: [],
         taxCents: 0,
         tipCents: 0,
-      } as unknown as CreateExpenseRequest),
+      } as unknown as ExpenseInput),
     ).rejects.toMatchObject({ code: "permission_denied" });
     expect(insertExpense).not.toHaveBeenCalled();
   });
@@ -467,7 +473,7 @@ describe("who hears about a transaction", () => {
         items: [],
         taxCents: 0,
         tipCents: 0,
-      } as unknown as CreateExpenseRequest),
+      } as unknown as ExpenseInput),
     ).rejects.toMatchObject({
       code: "invalid_argument",
       message: "an expense cannot be moved between groups; delete it and create it in the right group",
@@ -533,7 +539,7 @@ describe("who hears about a transaction", () => {
     expect(scopeHasSettlements).toHaveBeenCalledWith(
       GOA_TRIP,
       [PAYER, OWER],
-      "42",
+      42,
       expect.anything(),
       true,
     );
@@ -556,7 +562,7 @@ describe("who hears about a transaction", () => {
     expect(scopeHasSettlements).toHaveBeenCalledWith(
       GOA_TRIP,
       [PAYER, OWER],
-      "42",
+      42,
       expect.anything(),
       false,
     );
@@ -618,7 +624,7 @@ describe("who hears about a transaction", () => {
       method: "cash",
       note: "",
       created_at: "2026-08-09T00:00:00Z",
-      ledger_event_order: "43",
+      ledger_event_order: 43,
       deleted_at: null,
     } as SettlementRow);
 
@@ -788,7 +794,7 @@ describe("who hears about a transaction", () => {
       items: [],
       taxCents: 0,
       tipCents: 0,
-    } as unknown as CreateExpenseRequest);
+    } as unknown as ExpenseInput);
 
     expect(audiences()).toEqual([[OWER, PAYER].sort()]);
     expect(lockGroupLedgers).toHaveBeenCalledWith(transactionClient, [GOA_TRIP]);

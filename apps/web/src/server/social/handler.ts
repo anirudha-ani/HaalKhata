@@ -1,8 +1,9 @@
 /** Thin SocialService Connect handlers; logic lives in social.usecase. */
 
-import type { HandlerContext, ServiceImpl } from "@connectrpc/connect";
+import type { HandlerContext } from "@connectrpc/connect";
 import type { SocialService } from "@haalkhata/protogen/social/v1/social_pb";
 import { Code, ConnectError } from "@connectrpc/connect";
+import type { PlainServiceImpl } from "@/server/api/connect/wire/plainService";
 import * as social from "@/server/social/usecase/social.usecase";
 import { findContacts } from "@/server/social/usecase/contacts/findContacts.usecase";
 import { sendFriendRequests } from "@/server/social/usecase/contacts/sendFriendRequests.usecase";
@@ -44,7 +45,7 @@ export function socialRequestGate(context: HandlerContext): void {
  * caller via {@link requireUser} and delegates to the social usecase inside
  * {@link runUsecase}, which maps UsecaseError to ConnectError.
  */
-export const socialHandler: ServiceImpl<typeof SocialService> = {
+export const socialHandler: PlainServiceImpl<typeof SocialService> = {
   /** Sends a privacy-preserving friend request. */
   async addFriend(request, context) {
     return runUsecase(

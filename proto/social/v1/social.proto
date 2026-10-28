@@ -176,7 +176,7 @@ message ActivityEvent {
   string link = 6;    // app path, e.g. /expenses/<id>
   string created_at = 7;
   // The money this event concerned; 0 when it concerned none.
-  int32 amount_cents = 8;
+  int64 amount_cents = 8;
   string currency = 9;
   // Whether this event moved money toward the reader — settlements only.
   // Computed per viewer, so the same row is inbound for one person and not

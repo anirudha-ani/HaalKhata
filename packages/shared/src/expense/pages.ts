@@ -1,12 +1,7 @@
 /** Merging the pages of a paged expense list or friend statement into what a screen shows — pure. */
 
+import type { Expense, FriendLedgerEntry, FriendLedgerResponse, ListExpensesResponse } from "../api/plainMessages";
 import type { User } from "@haalkhata/protogen/common/v1/common_pb";
-import type {
-  Expense,
-  FriendLedgerEntry,
-  FriendLedgerResponse,
-  ListExpensesResponse,
-} from "@haalkhata/protogen/expense/v1/expense_pb";
 
 /** An expense list's loaded pages, as one list. */
 export interface MergedExpensePages {

@@ -60,7 +60,7 @@ A pairwise directed debt.
 | --- | --- | --- |
 | from_user_id | string | The debtor. |
 | to_user_id | string | The creditor. |
-| amount_cents | int32 | Always > 0 when emitted. |
+| amount_cents | int64 | Always > 0 when emitted. |
 
 ## NetBalance
 
@@ -69,7 +69,7 @@ A user's net position within some scope.
 | Field | Type | Description |
 | --- | --- | --- |
 | user_id | string | The user. |
-| net_cents | int32 | Positive = they are owed; negative = they owe. |
+| net_cents | int64 | Positive = they are owed; negative = they owe. |
 
 ## CurrencyAmount
 
@@ -81,7 +81,7 @@ currency first, then alphabetically.
 | Field | Type | Description |
 | --- | --- | --- |
 | currency | string | ISO 4217 code. |
-| cents | int32 | Signed; zero buckets are omitted rather than sent. |
+| cents | int64 | Signed; zero buckets are omitted rather than sent. |
 
 ## CounterpartyBalance
 
@@ -91,7 +91,7 @@ expenses.
 | Field | Type | Description |
 | --- | --- | --- |
 | user | User | The counterparty (public projection). |
-| net_cents | int32 | **Legacy:** the position in the caller's default currency only; > 0 = they owe you. Kept for older clients. |
+| net_cents | int64 | **Legacy:** the position in the caller's default currency only; > 0 = they owe you. Kept for older clients. |
 | balances | repeated CurrencyAmount | The whole picture: one entry per currency with anything outstanding; cents > 0 = they owe you that much of that currency. |
 
 > **Gotcha:** `net_cents` is not "the total" — it is one currency's bucket.

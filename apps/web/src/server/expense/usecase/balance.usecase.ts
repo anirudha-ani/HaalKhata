@@ -58,7 +58,6 @@ import {
 } from "@/server/expense/repo/ledger.repo";
 import { snapshot } from "@/server/common/db/db";
 import { UsecaseError, denied, invalid, notFound } from "@/server/common/errors";
-import { toInt32Cents } from "@/server/common/money/money";
 import { pageSize } from "@/server/common/pagination/pagination";
 import { STALE_CURSOR_MESSAGE } from "@/server/common/pagination/pagination.constants";
 import { toPublicUser } from "@/server/auth/usecase/identity/user.mapper";
@@ -123,7 +122,7 @@ export function currencyAmounts(
   return [...buckets.entries()]
     .filter(([, cents]) => cents !== 0)
     .sort(([first], [second]) => compareCurrency(first, second))
-    .map(([currency, cents]) => ({ currency, cents: toInt32Cents(cents, "a balance") }));
+    .map(([currency, cents]) => ({ currency, cents }));
 }
 
 /**
@@ -285,26 +284,23 @@ function currencyBalances(currency: string, pairwise: LedgerEntry[], memberIds: 
   for (const memberId of memberIds) {
     if (!netByUser.has(memberId)) netByUser.set(memberId, 0);
   }
-  // Aggregates, checked against the wire: two valid rows can already sum
-  // past int32, and the encoder's own failure would be an opaque internal
-  // error.
   return {
     currency,
     nets: [...netByUser.entries()]
       .sort(([firstUserId], [secondUserId]) => firstUserId.localeCompare(secondUserId))
       .map(([memberId, netCents]) => ({
         userId: memberId,
-        netCents: toInt32Cents(netCents, "a member's balance in this group"),
+        netCents,
       })),
     debts: pairwise.map((debt) => ({
       fromUserId: debt.from,
       toUserId: debt.to,
-      amountCents: toInt32Cents(debt.amountCents, "a debt in this group"),
+      amountCents: debt.amountCents,
     })),
     simplified: simplifyDebts(netByUser).map((debt) => ({
       fromUserId: debt.from,
       toUserId: debt.to,
-      amountCents: toInt32Cents(debt.amountCents, "a debt in this group"),
+      amountCents: debt.amountCents,
     })),
   };
 }
@@ -875,14 +871,14 @@ export async function getOverallBalances(userId: string) {
   );
   const defaultTotals = totals.get(defaultCurrency) ?? { youOweCents: 0, owedToYouCents: 0 };
   return {
-    youOweCents: toInt32Cents(defaultTotals.youOweCents, "what you owe"),
-    owedToYouCents: toInt32Cents(defaultTotals.owedToYouCents, "what you are owed"),
+    youOweCents: defaultTotals.youOweCents,
+    owedToYouCents: defaultTotals.owedToYouCents,
     totals: [...totals.entries()]
       .sort(([first], [second]) => defaultCurrencyFirst(defaultCurrency)(first, second))
       .map(([currency, total]) => ({
         currency,
-        youOweCents: toInt32Cents(total.youOweCents, "what you owe"),
-        owedToYouCents: toInt32Cents(total.owedToYouCents, "what you are owed"),
+        youOweCents: total.youOweCents,
+        owedToYouCents: total.owedToYouCents,
       })),
     counterparties: [...perCounterparty.entries()]
       .sort(
@@ -895,7 +891,7 @@ export async function getOverallBalances(userId: string) {
         return [
           {
             user: toPublicUser(user),
-            netCents: toInt32Cents(buckets.get(defaultCurrency) ?? 0, "a balance"),
+            netCents: buckets.get(defaultCurrency) ?? 0,
             balances: currencyAmounts(buckets, defaultCurrency),
           },
         ];
@@ -1223,8 +1219,8 @@ function ledgerEntryMessage(
     groupName: line.groupName,
     currency: line.currency,
     totalCents: line.totalCents,
-    deltaCents: toInt32Cents(line.deltaCents, "a line's change"),
-    balanceAfterCents: toInt32Cents(balanceAfterCents, "the running balance"),
+    deltaCents: line.deltaCents,
+    balanceAfterCents,
     createdAt: line.createdAt,
     deleted: line.deleted,
     recordedByName: line.recordedByName,
@@ -1441,14 +1437,14 @@ export async function getFriendLedger(userId: string, friendId: string, limit = 
     const groupsById = new Map(mutualGroupRows.map((group) => [group.id, group]));
     const settlePositions = (await pairSettlePositions(userId, friendId, client)).map((position) => ({
       currency: position.currency,
-      netCents: toInt32Cents(position.netCents, "a balance"),
+      netCents: position.netCents,
       digest: position.digest,
       scopes: position.scopes.map((scope) => {
         const group = scope.groupId ? groupsById.get(scope.groupId) : undefined;
         return {
           groupId: scope.groupId ?? "",
           groupName: group?.name ?? "",
-          netCents: toInt32Cents(scope.netCents, "a balance"),
+          netCents: scope.netCents,
           simplified: group?.simplify_debts ?? false,
         };
       }),
@@ -1473,7 +1469,7 @@ export async function getFriendLedger(userId: string, friendId: string, limit = 
 
     return {
       friend: toPublicUser(friend),
-      netCents: toInt32Cents(nets.get(defaultCurrency) ?? 0, "this balance"),
+      netCents: nets.get(defaultCurrency) ?? 0,
       currency: defaultCurrency,
       nets: currencyAmounts(nets, defaultCurrency),
       entries: shownLines.map((statementLine) => ledgerEntryMessage(statementLine, removalRefusals)),
@@ -1487,7 +1483,7 @@ export async function getFriendLedger(userId: string, friendId: string, limit = 
       payeeMethodRemovedAt: payee.removedAt,
       groupBalances: groupBalances.map((scope) => ({
         ...scope,
-        netCents: toInt32Cents(scope.netCents, "a balance"),
+        netCents: scope.netCents,
       })),
       isFriend,
       mutualGroups: mutualGroupRows.map((group) => ({

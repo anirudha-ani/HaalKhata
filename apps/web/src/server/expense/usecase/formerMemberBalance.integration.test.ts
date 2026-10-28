@@ -10,7 +10,7 @@
 import { randomUUID } from "node:crypto";
 import { Client } from "pg";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import type { CreateExpenseRequest } from "@haalkhata/protogen/expense/v1/expense_pb";
+import type { ExpenseInput } from "./expense.usecase";
 import { testDatabaseName } from "@/server/common/testing/testDatabase";
 
 const ADMIN_URL = process.env.MERGE_TEST_ADMIN_URL ?? "postgres://haalkhata:change-me@127.0.0.1:5432/postgres";
@@ -56,7 +56,7 @@ describe.skipIf(!reachable)("changes that would move a former member's group bal
    * @param tomasPaysCents - What Tomas paid; the rest is paid by Sara.
    * @returns An even three-way split of 30.00 with a fresh operation id.
    */
-  function dinnerRequest(tomasPaysCents: number): CreateExpenseRequest {
+  function dinnerRequest(tomasPaysCents: number): ExpenseInput {
     const payers = [{ userId: TOMAS, amountCents: tomasPaysCents }];
     if (tomasPaysCents < 3000) payers.push({ userId: SARA, amountCents: 3000 - tomasPaysCents });
     return {
@@ -65,7 +65,7 @@ describe.skipIf(!reachable)("changes that would move a former member's group bal
       payers,
       splitSpecs: [RAHIM, SARA, TOMAS].map((userId) => ({ userId, amountCents: 1000, percentBp: 0, shares: 0 })),
       items: [], taxCents: 0, tipCents: 0, operationId: randomUUID(),
-    } as unknown as CreateExpenseRequest;
+    } as unknown as ExpenseInput;
   }
 
   /**
@@ -190,7 +190,7 @@ describe.skipIf(!reachable)("changes that would move a former member's group bal
       ...dinnerRequest(0),
       payers: [{ userId: SARA, amountCents: 3000 }],
       splitSpecs: [RAHIM, SARA].map((userId) => ({ userId, amountCents: 1500, percentBp: 0, shares: 0 })),
-    } as unknown as CreateExpenseRequest;
+    } as unknown as ExpenseInput;
 
     await expect(updateExpense(SARA, dinner.id, withoutTomas)).rejects.toMatchObject(leftGroup);
     expect(await expenseState(dinner.id)).toEqual({ description: "Dinner", stands: true });
@@ -204,7 +204,7 @@ describe.skipIf(!reachable)("changes that would move a former member's group bal
       amountCents: 1000,
       payers: [{ userId: TOMAS, amountCents: 1000 }],
       splitSpecs: [{ userId: TOMAS, amountCents: 1000, percentBp: 0, shares: 0 }],
-    } as unknown as CreateExpenseRequest);
+    } as unknown as ExpenseInput);
     await removeMemberFromGroup(TOMAS, { groupId, userId: TOMAS });
 
     await deleteExpense(SARA, ownShare.id);
@@ -235,7 +235,7 @@ describe.skipIf(!reachable)("changes that would move a former member's group bal
       amountCents: 1000,
       payers: [{ userId: TOMAS, amountCents: 1000 }],
       splitSpecs: [{ userId: TOMAS, amountCents: 1000, percentBp: 0, shares: 0 }],
-    } as unknown as CreateExpenseRequest);
+    } as unknown as ExpenseInput);
     await removeMemberFromGroup(TOMAS, { groupId, userId: TOMAS });
 
     const detail = await getExpense(SARA, ownShare.id);
