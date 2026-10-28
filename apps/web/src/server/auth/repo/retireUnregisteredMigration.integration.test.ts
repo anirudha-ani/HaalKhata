@@ -171,6 +171,8 @@ async function ledgerRows(database: Client) {
 describe.skipIf(!(await databaseReachable()))("retiring unregistered people against Postgres", () => {
   let database: Client;
   let baselineDirectory: string;
+  /** Every migration through this one, so a later migration never stands in for it. */
+  let throughDirectory: string;
   let ledgerBefore: Awaited<ReturnType<typeof ledgerRows>>;
 
   beforeAll(async () => {
@@ -180,9 +182,13 @@ describe.skipIf(!(await databaseReachable()))("retiring unregistered people agai
     await admin.query(`CREATE DATABASE ${TEST_DATABASE}`);
     await admin.end();
     baselineDirectory = mkdtempSync(join(tmpdir(), "haalkhata-retire-baseline-"));
+    throughDirectory = mkdtempSync(join(tmpdir(), "haalkhata-retire-through-"));
     for (const filename of readdirSync(MIGRATIONS_DIRECTORY)) {
       if (filename.endsWith(".sql") && filename < MIGRATION_FILE) {
         copyFileSync(join(MIGRATIONS_DIRECTORY, filename), join(baselineDirectory, filename));
+      }
+      if (filename.endsWith(".sql") && filename <= MIGRATION_FILE) {
+        copyFileSync(join(MIGRATIONS_DIRECTORY, filename), join(throughDirectory, filename));
       }
     }
     await migrate(baselineDirectory);
@@ -190,7 +196,7 @@ describe.skipIf(!(await databaseReachable()))("retiring unregistered people agai
     await database.connect();
     await seed(database);
     ledgerBefore = await ledgerRows(database);
-    await migrate(MIGRATIONS_DIRECTORY);
+    await migrate(throughDirectory);
   }, 120_000);
 
   afterAll(async () => {
@@ -200,6 +206,7 @@ describe.skipIf(!(await databaseReachable()))("retiring unregistered people agai
     await admin.query(`DROP DATABASE IF EXISTS ${TEST_DATABASE} WITH (FORCE)`);
     await admin.end();
     if (baselineDirectory) rmSync(baselineDirectory, { recursive: true, force: true });
+    if (throughDirectory) rmSync(throughDirectory, { recursive: true, force: true });
   });
 
   it("keeps everyone who signed in exactly as they were", async () => {
@@ -286,7 +293,7 @@ describe.skipIf(!(await databaseReachable()))("retiring unregistered people agai
   });
 
   it("rolls back to the old shape and forward again", async () => {
-    expect((await migrate(MIGRATIONS_DIRECTORY, "down", 1)).map((migration) => migration.name)).toEqual([
+    expect((await migrate(throughDirectory, "down", 1)).map((migration) => migration.name)).toEqual([
       MIGRATION_FILE.slice(0, -4),
     ]);
     const restored = await database.query(
@@ -294,7 +301,7 @@ describe.skipIf(!(await databaseReachable()))("retiring unregistered people agai
         WHERE table_name = 'users' AND column_name = 'merged_into'`,
     );
     expect(restored.rows).toHaveLength(1);
-    expect((await migrate(MIGRATIONS_DIRECTORY)).map((migration) => migration.name)).toEqual([
+    expect((await migrate(throughDirectory)).map((migration) => migration.name)).toEqual([
       MIGRATION_FILE.slice(0, -4),
     ]);
     expect(await ledgerRows(database)).toEqual(ledgerBefore);

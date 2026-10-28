@@ -29,6 +29,7 @@ import { LoadMoreFooter } from "@/components/ui/LoadMoreFooter/LoadMoreFooter";
 import { LIST_END_LINE } from "@haalkhata/shared/api/paging";
 import { TABS } from "../../constants/tabs";
 import { useGroupDetail } from "./hooks/useGroupDetail";
+import { groupInviteExplainer } from "@haalkhata/shared/invite/inviteCopy";
 
 /**
  * Renders a single group's page: header with the add-expense action and the
@@ -159,7 +160,7 @@ export function GroupDetailPage({
       {groupDetail.groupShareToken ? (
         <InviteShareModal
           title="Group invite link"
-          explainer={`Anyone who scans this or opens the link can join ${groupDetail.group.name}. They'll see who invited them before accepting.`}
+          explainer={groupInviteExplainer(groupDetail.group.name, groupDetail.groupShareExpiresAt)}
           token={groupDetail.groupShareToken}
           share={groupDetail.shareLinkToSheet}
           onClose={groupDetail.closeGroupShare}

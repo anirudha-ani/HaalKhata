@@ -5,6 +5,7 @@ import { MONEY_KEYS, queryKeys } from "@haalkhata/shared/api/queryKeys";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Code, ConnectError } from "@connectrpc/connect";
 import { authClient, socialClient } from "@/lib/api/connect";
 
 /**
@@ -15,8 +16,8 @@ import { authClient, socialClient } from "@/lib/api/connect";
  * anyone signs in; accepting does.
  *
  * @param token - The invite token from the URL.
- * @returns The preview and viewer queries, the accept mutation, and whether
- *   a profile link's friend request has gone out.
+ * @returns The preview and viewer queries, the accept mutation, whether a
+ *   profile link's friend request has gone out, and whether the link expired.
  */
 export function useJoin(token: string) {
   const router = useRouter();
@@ -49,5 +50,9 @@ export function useJoin(token: string) {
     },
   });
 
-  return { preview, viewer, accept, requestSent };
+  // A group link past its date is told apart from one that never worked
+  // (FAILED_PRECONDITION, not NOT_FOUND), so the page can say what to do.
+  const expired = preview.error instanceof ConnectError && preview.error.code === Code.FailedPrecondition;
+
+  return { preview, viewer, accept, requestSent, expired };
 }

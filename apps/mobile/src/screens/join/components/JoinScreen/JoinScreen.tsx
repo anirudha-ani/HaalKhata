@@ -9,7 +9,13 @@ import { Spinner } from "@/components/ui/Spinner";
 import { errorMessage } from "@/lib/api/connect";
 import { useJoinAPI } from "./hooks/useJoinAPI";
 import { FOCUSED_CONTENT_MAX_WIDTH } from "@/lib/layout/constants/layout";
-import { inviteCopy, INVITE_SIGN_IN_HINT } from "@haalkhata/shared/invite/inviteCopy";
+import {
+  inviteCopy,
+  INVITE_EXPIRED_BODY,
+  INVITE_EXPIRED_TITLE,
+  INVITE_INACTIVE_TITLE,
+  INVITE_SIGN_IN_HINT,
+} from "@haalkhata/shared/invite/inviteCopy";
 import { colors, radii, spacing } from "@/lib/theme/theme";
 
 /**
@@ -22,7 +28,7 @@ import { colors, radii, spacing } from "@/lib/theme/theme";
  */
 export function JoinScreen({ token }: { token: string }) {
   const router = useRouter();
-  const { preview, viewer, accept, requestSent, signIn } = useJoinAPI(token);
+  const { preview, viewer, accept, requestSent, signIn, expired } = useJoinAPI(token);
   const copy = preview.data ? inviteCopy(preview.data) : null;
 
   return (
@@ -33,8 +39,8 @@ export function JoinScreen({ token }: { token: string }) {
           <Spinner />
         ) : preview.isError ? (
           <>
-            <Text style={styles.title}>This invite link isn&apos;t active</Text>
-            <Text style={styles.body}>{errorMessage(preview.error)}</Text>
+            <Text style={styles.title}>{expired ? INVITE_EXPIRED_TITLE : INVITE_INACTIVE_TITLE}</Text>
+            <Text style={styles.body}>{expired ? INVITE_EXPIRED_BODY : errorMessage(preview.error)}</Text>
             <Button label="Open HaalKhata" onPress={() => router.replace("/")} />
           </>
         ) : preview.data ? (

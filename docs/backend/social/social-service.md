@@ -86,6 +86,21 @@ other. Tokens are 43-char random bearer credentials; every unusable token —
 malformed, revoked, missing, its owner gone — gets one identical sentence,
 so the endpoints scan as nothing. Delivery is the inviter's own share sheet;
 the server sends no email or SMS.
+
+**A group link works for 7 days** (`GROUP_INVITE_LINK_LIFETIME_DAYS` in
+`@haalkhata/shared/invite/invite.constants`; `invite_links.expires_at`, which
+`chk_invite_links_group_expiry` requires on every group link). A link that
+escaped into a chat or a screenshot stops letting people in a week later.
+Asking for the link again returns it unchanged until then, so sharing it
+again never extends it; asking after it has run out revokes that one token
+and mints a new link (two members asking at once both get the same new one,
+since each revokes only the expired token). A link past its date answers
+`FailedPrecondition`, "this invite link has expired", to anyone opening or
+accepting it — still after a new link has replaced it — and the join pages
+say so, with what to do. That tells the holder nothing they did not have; no
+group, inviter or member count comes with it. A link the owner turned off
+before its date keeps the generic `NotFound` sentence. Profile links only
+send a friend request the owner confirms, and have no expiry.
 Known residual: tokens ride in URLs, so they appear in front-proxy access
 logs (operator-visible only); revocation is the remedy — the standard trade
 every shareable-link product makes.
@@ -433,6 +448,8 @@ Never returns; always refused.
 - The group's one active join link, minted on first ask. **Any member may**
   — the same trust level as adding people directly, and the accept side
   still records who invited whom.
+- The link works for 7 days. Asking again returns the same link until then;
+  after that, a new one (see [Invite Links](#invite-links-33)).
 
 #### Request
 
@@ -442,7 +459,8 @@ Never returns; always refused.
 
 #### Response
 
-**InviteLink:** `{ token }`.
+**InviteLink:** `{ token, expires_at }` — `expires_at` (RFC 3339) is when
+the link stops working, for the share dialog to say ("until Nov 4").
 
 ---
 
@@ -481,7 +499,9 @@ Never returns; always refused.
   unguessable token is the credential; 30/min per client IP keeps the
   endpoint from being a scanning surface.
 - Every dead shape — malformed, unknown, revoked, a profile link whose owner
-  is gone — returns the identical `NotFound` sentence.
+  is gone — returns the identical `NotFound` sentence. A group link past its
+  date returns `FailedPrecondition`, "this invite link has expired"; so does
+  accepting it.
 
 #### Request
 

@@ -1,5 +1,8 @@
 /** User-facing invite wording shared by browser and native landing screens and add forms. */
 
+import { localDate } from "../time/localTime";
+import { GROUP_INVITE_LINK_LIFETIME_DAYS } from "./invite.constants";
+
 /** The public preview fields used to explain what accepting an invite does. */
 export interface InvitePreview {
   /** "group" or "profile". */
@@ -29,6 +32,30 @@ export const NOT_ON_HAALKHATA_COPY = {
     action: "Share the group’s invite link",
   },
 } as const;
+
+/** The join page's heading for a group link that has run past its date. */
+export const INVITE_EXPIRED_TITLE = "This invite link has expired";
+
+/** What the join page says under {@link INVITE_EXPIRED_TITLE}: why, and what to do. */
+export const INVITE_EXPIRED_BODY =
+  `Group invite links work for ${GROUP_INVITE_LINK_LIFETIME_DAYS} days. Ask someone in the group to share a new one.`;
+
+/** The join page's heading for any other link that does not work. */
+export const INVITE_INACTIVE_TITLE = "This invite link isn’t active";
+
+/**
+ * What the share dialog says about a group's join link, including until when
+ * it works, so whoever shares it knows a week-old message will not let anyone in.
+ *
+ * @param groupName - The group the link joins.
+ * @param expiresAt - When the link stops working (ISO 8601); "" when unknown.
+ * @param nowTime - The current time, injectable so tests stay deterministic.
+ * @returns One or two sentences for the dialog.
+ */
+export function groupInviteExplainer(groupName: string, expiresAt: string, nowTime: Date = new Date()): string {
+  const until = expiresAt ? localDate(expiresAt, nowTime) : "";
+  return `Anyone who scans this or opens the link can join ${groupName}${until ? ` until ${until}` : ""}. They'll see who invited them before accepting.`;
+}
 
 /** Sign-in guidance that applies to both Google and Apple. */
 export const INVITE_SIGN_IN_HINT = "New here? Signing in creates your account. You’ll return here to accept the invite.";

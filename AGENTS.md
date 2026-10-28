@@ -444,7 +444,10 @@ with colocated tests. Mobile-specific rules:
   merges one row into another (sign-up, phone verification or a link).
   `chk_users_can_sign_in` refuses a live row with no password, Google or
   Apple credential; the only credential-less rows are the "Deleted member"
-  stand-ins account deletion leaves. Invite links are `group` or `profile`.
+  stand-ins account deletion leaves. Invite links are `group` or `profile`;
+  a group link works for 7 days (`GROUP_INVITE_LINK_LIFETIME_DAYS` in shared)
+  and then answers `FailedPrecondition`, which both join pages show as
+  expired, with what to do.
 - **A person's payment methods reach only someone who owes them.** They are
   not on `User`. The one read of another person's methods is
   `listPayeeMethods`, called from `getFriendLedger` when the caller owes in

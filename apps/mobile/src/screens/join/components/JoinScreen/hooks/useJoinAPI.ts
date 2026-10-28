@@ -3,11 +3,12 @@
 import { useRouter } from "expo-router";
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Code, ConnectError } from "@connectrpc/connect";
 import { MONEY_KEYS, queryKeys } from "@haalkhata/shared/api/queryKeys";
 import { authClient, socialClient } from "@/lib/api/connect";
 import { stashPendingInvite } from "@/lib/invite/pendingInvite";
 
-/** @param token Invite token from the route. @returns Preview, viewer and visible action state. */
+/** @param token Invite token from the route. @returns Preview, viewer, visible action state, and whether the link expired. */
 export function useJoinAPI(token: string) {
   const router = useRouter();
   const queryClient = useQueryClient();
@@ -44,5 +45,9 @@ export function useJoinAPI(token: string) {
     onSuccess: () => router.replace("/login"),
   });
 
-  return { preview, viewer, accept, requestSent, signIn };
+  // A group link past its date is told apart from one that never worked
+  // (FAILED_PRECONDITION, not NOT_FOUND), so the page can say what to do.
+  const expired = preview.error instanceof ConnectError && preview.error.code === Code.FailedPrecondition;
+
+  return { preview, viewer, accept, requestSent, signIn, expired };
 }

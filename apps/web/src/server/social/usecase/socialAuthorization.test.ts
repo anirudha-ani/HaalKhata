@@ -35,7 +35,7 @@ vi.mock("@/server/common/db/db", () => ({
 }));
 vi.mock("@/server/social/repo/inviteLinks.repo", () => ({
   findActiveGroupLink: vi.fn(),
-  findActiveLinkByToken: vi.fn(),
+  findLinkByToken: vi.fn(),
   insertInviteLink: vi.fn(),
   revokeGroupLinks: vi.fn(),
 }));

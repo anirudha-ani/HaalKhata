@@ -1,7 +1,13 @@
 "use client";
 /** Invite landing page: who invited you, to what, and one button in. */
 
-import { inviteCopy, INVITE_SIGN_IN_HINT } from "@haalkhata/shared/invite/inviteCopy";
+import {
+  inviteCopy,
+  INVITE_EXPIRED_BODY,
+  INVITE_EXPIRED_TITLE,
+  INVITE_INACTIVE_TITLE,
+  INVITE_SIGN_IN_HINT,
+} from "@haalkhata/shared/invite/inviteCopy";
 import Link from "next/link";
 import { Handshake, UserPlus, Users } from "lucide-react";
 import { Spinner } from "@/components/ui/Spinner/Spinner";
@@ -26,7 +32,7 @@ export function JoinPage({
   /** The invite token from the URL. */
   token: string;
 }) {
-  const { preview, viewer, accept, requestSent } = useJoin(token);
+  const { preview, viewer, accept, requestSent, expired } = useJoin(token);
 
   const copy = preview.data ? inviteCopy(preview.data) : null;
 
@@ -37,8 +43,8 @@ export function JoinPage({
           <Spinner />
         ) : preview.isError ? (
           <>
-            <h1 className="text-xl font-bold">This invite link isn&apos;t active</h1>
-            <p className="text-sm text-ink-soft">{errorMessage(preview.error)}</p>
+            <h1 className="text-xl font-bold">{expired ? INVITE_EXPIRED_TITLE : INVITE_INACTIVE_TITLE}</h1>
+            <p className="text-sm text-ink-soft">{expired ? INVITE_EXPIRED_BODY : errorMessage(preview.error)}</p>
             <Link href="/" className="block text-sm font-semibold text-brand-600">
               Go to HaalKhata →
             </Link>

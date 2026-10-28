@@ -139,6 +139,8 @@ export function useGroupDetail(groupId: string) {
   };
 
   const [groupShareToken, setGroupShareToken] = useState("");
+  // When the shared link stops working, for the dialog to say.
+  const [groupShareExpiresAt, setGroupShareExpiresAt] = useState("");
 
   /**
    * Fetches the group's one join link (minted on first ask) and opens the
@@ -149,10 +151,13 @@ export function useGroupDetail(groupId: string) {
    */
   const shareGroupLink = useMutation({
     mutationFn: async () => {
-      const { token } = await socialClient.createGroupInviteLink({ groupId });
-      return token;
+      const { token, expiresAt } = await socialClient.createGroupInviteLink({ groupId });
+      return { token, expiresAt };
     },
-    onSuccess: (token) => setGroupShareToken(token),
+    onSuccess: (link) => {
+      setGroupShareToken(link.token);
+      setGroupShareExpiresAt(link.expiresAt);
+    },
     // Shown under the strip the button sits in. It used to go to the
     // add-people form's error, which is only on screen inside a modal that
     // is closed when this runs (the §33c offer closes it before sharing).
@@ -302,6 +307,7 @@ export function useGroupDetail(groupId: string) {
     sharingInviteLink: shareGroupLink.isPending,
     /** Token behind the open share dialog; empty while it is closed. */
     groupShareToken,
+    groupShareExpiresAt,
     closeGroupShare: () => setGroupShareToken(""),
     /** Opens the OS share sheet with the link's message; for the dialog. */
     shareLinkToSheet: () =>

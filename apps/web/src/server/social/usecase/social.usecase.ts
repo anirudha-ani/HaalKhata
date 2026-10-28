@@ -25,10 +25,11 @@ import { normalizePhone, PHONE_FORMAT_HINT } from "@/server/auth/auth.constants"
 import { isEmailAddress } from "@haalkhata/shared/email/email";
 import {
   findActiveGroupLink,
-  findActiveLinkByToken,
+  findLinkByToken,
   findActiveProfileLink,
   insertInviteLink,
   revokeGroupLinks,
+  revokeInviteLink,
   revokeProfileLinks,
   type InviteLinkRow,
 } from "@/server/social/repo/inviteLinks.repo";
@@ -54,6 +55,7 @@ import {
 } from "@/server/social/repo/notifications.repo";
 import {
   ACTIVITY_PAGE_SIZE,
+  EXPIRED_LINK_MESSAGE,
   INVITE_LINK_TOKEN_BYTES,
   INVITE_LINK_TOKEN_PATTERN,
   MAX_ACTIVITY_PAGE_SIZE,
@@ -71,6 +73,7 @@ import { listPaymentMethodsByUser } from "@/server/payment/repo/paymentMethods.r
 import { reminderPaymentHint } from "@/server/payment/usecase/paymentHint";
 import { cleanMethodRow } from "@/server/payment/usecase/paymentMethod.mapper";
 import { getOverallBalances, netWithUser } from "@/server/expense/usecase/balance.usecase";
+import { GROUP_INVITE_LINK_LIFETIME_DAYS } from "@haalkhata/shared/invite/invite.constants";
 import { denied, invalid, notFound, UsecaseError } from "@/server/common/errors";
 import { transaction } from "@/server/common/db/db";
 import { toFriendRequestUser, toPublicUser } from "@/server/auth/usecase/identity/user.mapper";
@@ -431,30 +434,40 @@ function newInviteToken(): string {
  * the same trust level as adding people directly, and the accept side still
  * shows who invited whom.
  *
+ * A link works for {@link GROUP_INVITE_LINK_LIFETIME_DAYS} days. Asking again
+ * while it works returns it unchanged, so sharing it again never extends it;
+ * asking after it has run out retires it and mints a new one.
+ *
  * @param userId - Authenticated caller; must be a member.
  * @param groupId - Group the link joins people into.
- * @returns The link's bearer token.
+ * @returns The link's bearer token and when it stops working.
  */
 export async function createGroupInviteLink(
   userId: string,
   groupId: string,
-): Promise<{ token: string }> {
+): Promise<{ token: string; expiresAt: string }> {
   const group = await findGroupById(groupId);
   if (!group) notFound("group not found");
   if (!(await isMember(groupId, userId))) denied("you are not a member of this group");
 
   const existing = await findActiveGroupLink(groupId);
-  if (existing) return { token: existing.token };
-  const token = newInviteToken();
+  if (existing && !existing.expired) return { token: existing.token, expiresAt: existing.expires_at ?? "" };
+  if (existing) await revokeInviteLink(existing.token);
   try {
-    await insertInviteLink({ token, kind: "group", inviterId: userId, groupId });
+    const created = await insertInviteLink({
+      token: newInviteToken(),
+      kind: "group",
+      inviterId: userId,
+      groupId,
+      lifetimeDays: GROUP_INVITE_LINK_LIFETIME_DAYS,
+    });
+    return { token: created.token, expiresAt: created.expires_at ?? "" };
   } catch (error) {
     if (!isUniqueViolation(error)) throw error;
     const winner = await findActiveGroupLink(groupId);
-    if (winner) return { token: winner.token };
+    if (winner && !winner.expired) return { token: winner.token, expiresAt: winner.expires_at ?? "" };
     throw error;
   }
-  return { token };
 }
 
 /**
@@ -473,6 +486,7 @@ export async function getProfileInviteLink(userId: string): Promise<{ token: str
       kind: "profile",
       inviterId: userId,
       groupId: null,
+      lifetimeDays: null,
     });
   } catch (error) {
     if (!isUniqueViolation(error)) throw error;
@@ -547,15 +561,23 @@ export async function previewInviteLink(token: string) {
 
 /**
  * Resolves a presented token to its live link, with one generic refusal for
- * every dead shape.
+ * every dead shape and its own for a group link past its date, including
+ * one already replaced by a new link. Saying it expired tells the holder
+ * nothing they did not have: the token is theirs, and no group, inviter or
+ * member count is given with it. A link its owner turned off before its date
+ * gets the generic refusal, like a token nobody made.
  *
  * @param token - The token from the shared URL.
  * @returns The active link row.
+ * @throws UsecaseError (not_found) for a missing, malformed or turned-off
+ *   token; (failed_precondition) for one that has expired.
  */
 async function loadActiveLink(token: string): Promise<InviteLinkRow> {
   if (!INVITE_LINK_TOKEN_PATTERN.test(token)) notFound(DEAD_LINK_MESSAGE);
-  const link = await findActiveLinkByToken(token);
+  const link = await findLinkByToken(token);
   if (!link) notFound(DEAD_LINK_MESSAGE);
+  if (link.expired) throw new UsecaseError("failed_precondition", EXPIRED_LINK_MESSAGE);
+  if (link.revoked) notFound(DEAD_LINK_MESSAGE);
   return link;
 }
 

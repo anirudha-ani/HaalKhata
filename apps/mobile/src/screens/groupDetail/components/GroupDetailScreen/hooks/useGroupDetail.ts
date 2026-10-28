@@ -146,6 +146,8 @@ export function useGroupDetail(groupId: string) {
   };
 
   const [groupShareToken, setGroupShareToken] = useState("");
+  // When the shared link stops working, for the dialog to say.
+  const [groupShareExpiresAt, setGroupShareExpiresAt] = useState("");
 
   /**
    * Answers the §33c offer: fetches the group's join link, then closes the
@@ -156,14 +158,15 @@ export function useGroupDetail(groupId: string) {
    */
   const shareLinkForOffer = useMutation({
     mutationFn: async () => {
-      const { token } = await socialClient.createGroupInviteLink({ groupId });
-      return token;
+      const { token, expiresAt } = await socialClient.createGroupInviteLink({ groupId });
+      return { token, expiresAt };
     },
-    onSuccess: (token) => {
+    onSuccess: (link) => {
       setInviteOffer(null);
       setContact(EMPTY_CONTACT);
       setAddingPeople(false);
-      setGroupShareToken(token);
+      setGroupShareToken(link.token);
+      setGroupShareExpiresAt(link.expiresAt);
     },
     onError: (mutationError) => setPeopleError(errorMessage(mutationError)),
   });
@@ -175,10 +178,13 @@ export function useGroupDetail(groupId: string) {
    */
   const shareGroupLink = useMutation({
     mutationFn: async () => {
-      const { token } = await socialClient.createGroupInviteLink({ groupId });
-      return token;
+      const { token, expiresAt } = await socialClient.createGroupInviteLink({ groupId });
+      return { token, expiresAt };
     },
-    onSuccess: (token) => setGroupShareToken(token),
+    onSuccess: (link) => {
+      setGroupShareToken(link.token);
+      setGroupShareExpiresAt(link.expiresAt);
+    },
     // Shown under the strip the button sits in. It used to go to the
     // add-people form's error, which is only on screen inside a sheet that
     // is closed when this runs.
@@ -357,6 +363,7 @@ export function useGroupDetail(groupId: string) {
     sharingInviteLink: shareGroupLink.isPending,
     /** Token behind the open share dialog; empty while it is closed. */
     groupShareToken,
+    groupShareExpiresAt,
     closeGroupShare: () => setGroupShareToken(""),
     /** Opens the OS share sheet with the link's message; for the dialog. */
     shareLinkToSheet: () =>

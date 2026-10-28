@@ -56,6 +56,7 @@ import { BalancesPanel } from "./components/BalancesPanel/BalancesPanel";
 import { ArchiveGroupSheet } from "./components/ArchiveGroupSheet/ArchiveGroupSheet";
 import { ExpenseList } from "@/components/expenses/ExpenseList";
 import { useGroupDetail } from "./hooks/useGroupDetail";
+import { groupInviteExplainer } from "@haalkhata/shared/invite/inviteCopy";
 
 /**
  * Renders a single group's screen: the header naming the group (emoji, name,
@@ -643,7 +644,7 @@ export function GroupDetailScreen({
 
       {groupDetail.groupShareToken ? (
         <InviteShareSheet
-          explainer={`Anyone who scans this or opens the link can join ${groupDetail.group.name}. They'll see who invited them before accepting.`}
+          explainer={groupInviteExplainer(groupDetail.group.name, groupDetail.groupShareExpiresAt)}
           onClose={groupDetail.closeGroupShare}
           share={groupDetail.shareLinkToSheet}
           title="Group invite link"

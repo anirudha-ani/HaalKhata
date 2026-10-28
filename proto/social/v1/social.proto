@@ -72,7 +72,8 @@ service SocialService {
     option deprecated = true;
   }
   // The group's one active join link, created on first ask. Any member may
-  // — the same trust level as adding people directly.
+  // — the same trust level as adding people directly. A link works for 7
+  // days; asking again returns it unchanged until then, and a new one after.
   rpc CreateGroupInviteLink(CreateGroupInviteLinkRequest) returns (InviteLink);
   // Disables the group's active link; a fresh one can be created after.
   // Owner only: revocation invalidates a link every member may have shared.
@@ -87,7 +88,9 @@ service SocialService {
   // UNAUTHENTICATED. What a clicked link offers — who invited you, to what —
   // so the landing page can say it before asking anyone to sign in.
   // Possession of the unguessable token is the only credential; the call is
-  // rate-limited by client address.
+  // rate-limited by client address. A group link past its date answers
+  // FAILED_PRECONDITION (and so does accepting it); any other unusable token
+  // answers NOT_FOUND.
   rpc PreviewInviteLink(PreviewInviteLinkRequest) returns (InvitePreview);
   // Accepts a link as the signed-in caller: a group link joins the group and
   // befriends the inviter, a profile link sends its owner a friend request.
@@ -231,6 +234,9 @@ message InviteLink {
   // https://haalkhata.app/join/<token>; the server never builds URLs so the
   // link origin stays a client concern.
   string token = 1;
+  // When a group's join link stops working (RFC 3339, UTC), for the share
+  // dialog to say. Empty for a profile link, which does not expire.
+  string expires_at = 2;
 }
 
 message PreviewInviteLinkRequest {

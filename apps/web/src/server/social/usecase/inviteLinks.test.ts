@@ -30,10 +30,11 @@ vi.mock("@/server/auth/repo/users.repo", () => ({
 }));
 vi.mock("@/server/social/repo/inviteLinks.repo", () => ({
   findActiveGroupLink: vi.fn(),
-  findActiveLinkByToken: vi.fn(),
+  findLinkByToken: vi.fn(),
   findActiveProfileLink: vi.fn(),
   insertInviteLink: vi.fn(),
   revokeGroupLinks: vi.fn(),
+  revokeInviteLink: vi.fn(),
   revokeProfileLinks: vi.fn(),
 }));
 vi.mock("@/server/group/repo/groups.repo", () => ({
@@ -72,10 +73,11 @@ vi.mock("@/server/common/db/db", () => ({
 import { findUserById, findUsersByIds } from "@/server/auth/repo/users.repo";
 import {
   findActiveGroupLink,
-  findActiveLinkByToken,
+  findLinkByToken,
   findActiveProfileLink,
   insertInviteLink,
   revokeGroupLinks,
+  revokeInviteLink,
 } from "@/server/social/repo/inviteLinks.repo";
 import {
   friendshipExists,
@@ -141,6 +143,9 @@ function linkRow(overrides: Partial<InviteLinkRow> = {}): InviteLinkRow {
     kind: "profile",
     inviter_id: INVITER,
     group_id: null,
+    expires_at: null,
+    expired: false,
+    revoked: false,
     ...overrides,
   };
 }
@@ -168,16 +173,49 @@ describe("createGroupInviteLink / revokeGroupInviteLink", () => {
     } as never);
   });
 
-  it("lets any member mint the group's one link", async () => {
+  it("lets any member mint the group's one link, working for a week", async () => {
     vi.mocked(isMember).mockResolvedValue(true);
     vi.mocked(findActiveGroupLink).mockResolvedValue(undefined);
+    vi.mocked(insertInviteLink).mockImplementation(async (link) =>
+      linkRow({ token: link.token, kind: link.kind, group_id: link.groupId, expires_at: "2026-11-04T10:00:00.000Z" }),
+    );
+
+    const { token, expiresAt } = await createGroupInviteLink(CALLER, GROUP);
+
+    expect(token).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    expect(expiresAt).toBe("2026-11-04T10:00:00.000Z");
+    expect(insertInviteLink).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: "group", groupId: GROUP, lifetimeDays: 7 }),
+    );
+  });
+
+  it("hands back the link that still works, with its date, without extending it", async () => {
+    vi.mocked(isMember).mockResolvedValue(true);
+    vi.mocked(findActiveGroupLink).mockResolvedValue(
+      linkRow({ kind: "group", group_id: GROUP, expires_at: "2026-10-30T10:00:00.000Z", expired: false }),
+    );
+
+    await expect(createGroupInviteLink(CALLER, GROUP)).resolves.toEqual({
+      token: TOKEN,
+      expiresAt: "2026-10-30T10:00:00.000Z",
+    });
+    expect(insertInviteLink).not.toHaveBeenCalled();
+    expect(revokeInviteLink).not.toHaveBeenCalled();
+  });
+
+  it("retires a link that has run out and mints a new one", async () => {
+    vi.mocked(isMember).mockResolvedValue(true);
+    vi.mocked(findActiveGroupLink).mockResolvedValue(
+      linkRow({ kind: "group", group_id: GROUP, expires_at: "2026-10-20T10:00:00.000Z", expired: true }),
+    );
+    vi.mocked(insertInviteLink).mockImplementation(async (link) =>
+      linkRow({ token: link.token, kind: link.kind, group_id: link.groupId, expires_at: "2026-11-04T10:00:00.000Z" }),
+    );
 
     const { token } = await createGroupInviteLink(CALLER, GROUP);
 
-    expect(token).toMatch(/^[A-Za-z0-9_-]{43}$/);
-    expect(insertInviteLink).toHaveBeenCalledWith(
-      expect.objectContaining({ kind: "group", groupId: GROUP }),
-    );
+    expect(revokeInviteLink).toHaveBeenCalledWith(TOKEN);
+    expect(token).not.toBe(TOKEN);
   });
 
   it("refuses a non-member", async () => {
@@ -207,17 +245,17 @@ describe("previewInviteLink", () => {
 
     await expect(previewInviteLink("not-a-token")).rejects.toMatchObject(expected);
 
-    vi.mocked(findActiveLinkByToken).mockResolvedValue(undefined);
+    vi.mocked(findLinkByToken).mockResolvedValue(undefined);
     await expect(previewInviteLink(TOKEN)).rejects.toMatchObject(expected);
 
     // A profile link speaks for its owner; once they are gone it is dead.
-    vi.mocked(findActiveLinkByToken).mockResolvedValue(linkRow());
+    vi.mocked(findLinkByToken).mockResolvedValue(linkRow());
     vi.mocked(findUserById).mockResolvedValue(undefined);
     await expect(previewInviteLink(TOKEN)).rejects.toMatchObject(expected);
   });
 
   it("names the group and its size for a group link", async () => {
-    vi.mocked(findActiveLinkByToken).mockResolvedValue(
+    vi.mocked(findLinkByToken).mockResolvedValue(
       linkRow({ kind: "group", group_id: GROUP }),
     );
     vi.mocked(findGroupById).mockResolvedValue({ id: GROUP, name: "Bali Trip" } as never);
@@ -235,7 +273,7 @@ describe("previewInviteLink", () => {
 
 describe("acceptInviteLink", () => {
   it("refuses a group join when the roster is at its ceiling", async () => {
-    vi.mocked(findActiveLinkByToken).mockResolvedValue(
+    vi.mocked(findLinkByToken).mockResolvedValue(
       linkRow({ kind: "group", group_id: GROUP }),
     );
     vi.mocked(findGroupById).mockResolvedValue({ id: GROUP, name: "Bali Trip" } as never);
@@ -252,7 +290,7 @@ describe("acceptInviteLink", () => {
   });
 
   it("enrols a group-link acceptor under the group lock, with the feed event", async () => {
-    vi.mocked(findActiveLinkByToken).mockResolvedValue(
+    vi.mocked(findLinkByToken).mockResolvedValue(
       linkRow({ kind: "group", group_id: GROUP }),
     );
     vi.mocked(findGroupById).mockResolvedValue({ id: GROUP, name: "Bali Trip" } as never);
@@ -274,7 +312,7 @@ describe("acceptInviteLink", () => {
   });
 
   it("re-accepting a group link is a quiet no-op", async () => {
-    vi.mocked(findActiveLinkByToken).mockResolvedValue(
+    vi.mocked(findLinkByToken).mockResolvedValue(
       linkRow({ kind: "group", group_id: GROUP }),
     );
     vi.mocked(findGroupById).mockResolvedValue({ id: GROUP, name: "Bali Trip" } as never);
@@ -303,7 +341,7 @@ describe("profile links (§33a)", () => {
   });
 
   it("previews as the owner's connect card", async () => {
-    vi.mocked(findActiveLinkByToken).mockResolvedValue(
+    vi.mocked(findLinkByToken).mockResolvedValue(
       linkRow({ kind: "profile" }),
     );
 
@@ -318,7 +356,7 @@ describe("profile links (§33a)", () => {
 
   it("accepting sends a friend request and notifies — never instant friendship", async () => {
     // A leaked bearer link must not attach a stranger to the owner's picker.
-    vi.mocked(findActiveLinkByToken).mockResolvedValue(
+    vi.mocked(findLinkByToken).mockResolvedValue(
       linkRow({ kind: "profile" }),
     );
     vi.mocked(friendshipExists).mockResolvedValue(false);
@@ -336,7 +374,7 @@ describe("profile links (§33a)", () => {
   });
 
   it("accepts quietly when already friends or already requested", async () => {
-    vi.mocked(findActiveLinkByToken).mockResolvedValue(
+    vi.mocked(findLinkByToken).mockResolvedValue(
       linkRow({ kind: "profile" }),
     );
 
@@ -351,7 +389,7 @@ describe("profile links (§33a)", () => {
   });
 
   it("refuses the owner's own link", async () => {
-    vi.mocked(findActiveLinkByToken).mockResolvedValue(
+    vi.mocked(findLinkByToken).mockResolvedValue(
       linkRow({ kind: "profile", inviter_id: CALLER }),
     );
 
@@ -359,5 +397,28 @@ describe("profile links (§33a)", () => {
       code: "invalid_argument",
       message: expect.stringContaining("your own invite link"),
     });
+  });
+});
+
+describe("a group link past its date", () => {
+  beforeEach(() => {
+    vi.mocked(findLinkByToken).mockResolvedValue(
+      linkRow({ kind: "group", group_id: GROUP, expires_at: "2026-10-20T10:00:00.000Z", expired: true }),
+    );
+  });
+
+  it("tells someone opening it that it expired, and nothing about the group", async () => {
+    const preview = previewInviteLink(TOKEN);
+
+    await expect(preview).rejects.toMatchObject({ code: "failed_precondition", message: expect.stringMatching(/has expired/) });
+    await expect(preview).rejects.not.toMatchObject({ message: expect.stringMatching(new RegExp(GROUP)) });
+  });
+
+  it("refuses to let anyone join with it, saying why", async () => {
+    await expect(acceptInviteLink(CALLER, TOKEN)).rejects.toMatchObject({
+      code: "failed_precondition",
+      message: expect.stringMatching(/ask someone in the group to share a new one/),
+    });
+    expect(addMember).not.toHaveBeenCalled();
   });
 });

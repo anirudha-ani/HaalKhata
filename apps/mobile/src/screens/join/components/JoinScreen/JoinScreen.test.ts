@@ -9,6 +9,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, createElement, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { Code, ConnectError } from "@connectrpc/connect";
 import { authClient, socialClient } from "@/lib/api/connect";
 import { stashPendingInvite } from "@/lib/invite/pendingInvite";
 import { JoinScreen } from "./JoinScreen";
@@ -85,6 +86,23 @@ describe("native invite landing", () => {
     await render(); await click("Join the group");
     expect(container.textContent).toContain("Invitation was revoked");
     expect(navigation.replace).not.toHaveBeenCalled();
+  });
+  it("says a link past its date has expired and what to do, offering no way in", async () => {
+    vi.mocked(socialClient.previewInviteLink).mockRejectedValue(
+      new ConnectError("this invite link has expired", Code.FailedPrecondition),
+    );
+    await render();
+    expect(container.textContent).toContain("This invite link has expired");
+    expect(container.textContent).toContain("Group invite links work for 7 days. Ask someone in the group to share a new one.");
+    expect(container.textContent).not.toContain("Join the group");
+  });
+  it("keeps the general wording for a link that never worked or was turned off", async () => {
+    vi.mocked(socialClient.previewInviteLink).mockRejectedValue(
+      new ConnectError("that invite link isn't valid or was turned off", Code.NotFound),
+    );
+    await render();
+    expect(container.textContent).toContain("This invite link isn’t active");
+    expect(container.textContent).toContain("that invite link isn't valid or was turned off");
   });
   it("shows storage failures and retries before leaving for login", async () => {
     vi.mocked(authClient.getMe).mockRejectedValue(new Error("Not signed in"));
