@@ -38,6 +38,7 @@ vi.mock("@/server/social/repo/inviteLinks.repo", () => ({
 }));
 vi.mock("@/server/group/repo/groups.repo", () => ({
   addMember: vi.fn(),
+  countGroupMemberships: vi.fn(async () => new Map()),
   findGroupById: vi.fn(),
   isMember: vi.fn(),
   listMembers: vi.fn(),

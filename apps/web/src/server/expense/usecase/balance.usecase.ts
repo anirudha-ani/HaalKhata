@@ -677,6 +677,32 @@ function participatesIn(expenseId: string, children: ExpenseChildren, userId: st
 }
 
 /**
+ * The groups two people both belong to that can still hold a balance between
+ * them: not archived, not deleted. The one definition of the group scopes a
+ * pair can owe each other in — {@link owedByScope} reads balances from these
+ * groups, and recording a payment between the two locks exactly these. A
+ * group joins or leaves the set only through a roster or status change,
+ * which takes that group's ledger lock.
+ *
+ * @param firstId - One of the two people.
+ * @param secondId - The other.
+ * @param client - Settlement transaction client; omitted for ordinary reads.
+ * @returns The shared active groups, newest first.
+ */
+export async function sharedActiveGroups(
+  firstId: string,
+  secondId: string,
+  client?: PoolClient,
+): Promise<GroupRow[]> {
+  const firstGroupIds = new Set(
+    (await listGroupsByUser(firstId, client)).filter((group) => !groupIsInactive(group)).map((group) => group.id),
+  );
+  return (await listGroupsByUser(secondId, client)).filter(
+    (group) => firstGroupIds.has(group.id) && !groupIsInactive(group),
+  );
+}
+
+/**
  * Where a payer's debt to a creditor actually lives, scope by scope.
  *
  * Each scope — every shared group, plus the pair's one-off ledger — is
@@ -723,12 +749,7 @@ export async function owedByScope(
     if (oneOffCents > 0) scopes.push({ groupId: null, currency, owedCents: oneOffCents });
   }
 
-  const payerGroupIds = new Set(
-    (await listGroupsByUser(payerId, client)).filter((group) => !groupIsInactive(group)).map((group) => group.id),
-  );
-  const mutualGroups = (await listGroupsByUser(creditorId, client)).filter(
-    (group) => payerGroupIds.has(group.id) && !groupIsInactive(group),
-  );
+  const mutualGroups = await sharedActiveGroups(payerId, creditorId, client);
   const ledgers = await groupLedgers(mutualGroups.map((group) => group.id), client);
   for (const group of mutualGroups) {
     for (const [currency, ledger] of ledgers.get(group.id) ?? []) {

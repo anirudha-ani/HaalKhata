@@ -208,7 +208,7 @@ Recording and deleting money runs under transaction-scoped advisory locks
 | CreateExpense (group) | group ledger; membership re-checked under the lock |
 | CreateExpense (one-off) | one participant-ledger lock per participant |
 | UpdateExpense / DeleteExpense | expense lock → participant or group locks |
-| RecordSettlement | settlement pair lock → group locks (the explicit group, or **every** group either person belongs to for cross-scope) |
+| RecordSettlement | settlement pair lock → group locks (the explicit group, or for cross-scope the active groups the two people **share**, read again under the locks and retried if one was added) |
 | DeleteSettlement | pair lock → its group's lock (for a net settlement: every group the unit touches) |
 
 The over-settle guard is a read followed by writes; without the locks two
@@ -655,8 +655,13 @@ created.
   to be read for someone the debt check turns away. A net settlement's cancelling rows carry no name, since they
   moved no money by any method. The friend statement reads "You paid via
   bKash" when a name was kept.
+- **Rate-limited:** 20/min per account.
 - **Validation (pre-lock):** not yourself; amount positive and bounded; note
-  bounded; recipient exists; for a group — both people members. The currency
+  bounded; recipient exists; for a group — both people members. For a
+  payment that names no group, a payer who owes the recipient nothing
+  anywhere is refused here, on a snapshot read, before any lock is taken (a
+  retry of an operation already recorded passes through, to be replayed).
+  The currency
   defaults to the group's; another is accepted only to pay down a balance
   the group already holds in it (an old payment in that currency), which is
   checked under the lock — otherwise "this group settles in USD, not EUR".
@@ -666,8 +671,13 @@ created.
     the creditor along the group's routed graph **in the payment's
     currency**, and the amount must not exceed it (both numbers named in the
     error).
-  - Cross-scope payment: every shared group is locked first, then scopes
-    where the payer owes are re-read server-side (a stale client selection
+  - Cross-scope payment: the active groups the two people share are locked
+    first, the only groups a payment between them can touch (never every
+    group either belongs to). A group joins that set only through a roster
+    or status change, which takes its lock, so the set is read again under
+    the locks; if it grew, the transaction starts again with the new group
+    locked (three tries, then "your groups with this person changed"). Then
+    scopes where the payer owes are re-read server-side (a stale client selection
     cannot double-record); explicitly selected foreign-currency scopes are
     refused by name; the amount must not exceed the sum of the selected
     same-currency debts. `allocateSettlement` then stores **one row per

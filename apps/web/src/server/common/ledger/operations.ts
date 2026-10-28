@@ -111,6 +111,20 @@ export async function beginOperation(
 }
 
 /**
+ * Whether an operation id has already been claimed, so a check that runs
+ * before the transaction can step aside for a retry, which the transaction
+ * then answers by replaying what the first attempt did.
+ *
+ * @param operation - The caller, the RPC, and the client's operation id.
+ * @param client - Any client; a read outside the operation's transaction.
+ * @returns True when the id is non-empty and a claim exists for it.
+ */
+export async function operationClaimed(operation: OperationKey, client: PoolClient): Promise<boolean> {
+  if (operation.operationId === "") return false;
+  return (await findOperation(operation, client)) !== undefined;
+}
+
+/**
  * Marks a claimed operation complete with the id of what it produced. A
  * no-op for an empty id, matching {@link beginOperation}.
  *

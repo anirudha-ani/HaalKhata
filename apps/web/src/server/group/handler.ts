@@ -14,7 +14,14 @@ import { requireRateLimitedUser, RPC_RATE_LIMITS } from "@/server/api/connect/ra
 export const groupHandler: ServiceImpl<typeof GroupService> = {
   /** Creates a new group owned by the caller. */
   async createGroup(request, context) {
-    return runUsecase(async () => groups.createGroup(await requireUser(context), request), context);
+    return runUsecase(
+      async () =>
+        groups.createGroup(
+          await requireRateLimitedUser(context, "create-group", RPC_RATE_LIMITS.createGroup),
+          request,
+        ),
+      context,
+    );
   },
 
   /** Lists the caller's groups with member counts and the caller's net balance. */

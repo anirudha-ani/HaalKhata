@@ -40,6 +40,7 @@ import {
 } from "@/server/group/repo/groups.repo";
 import { insertActivity as recordActivity } from "@/server/social/repo/activity.repo";
 import { MAX_GROUP_MEMBERS, OWNER_ROLE } from "@/server/group/group.constants";
+import { assertRoomForAnotherGroup } from "@/server/group/usecase/groupLimit";
 import { listActivityMonths, listActivityPage } from "@/server/social/repo/activity.repo";
 import { isMember } from "@/server/group/repo/groups.repo";
 import { isUniqueViolation } from "@/server/common/db/db";
@@ -621,6 +622,7 @@ export async function acceptInviteLink(
     if ((await listMembers(group.id, client)).length >= MAX_GROUP_MEMBERS) {
       invalid("this group is full");
     }
+    await assertRoomForAnotherGroup([acceptor], userId, client);
     await addMember(group.id, userId, "member", client);
     if (link.inviter_id !== userId) {
       await insertFriendship(userId, link.inviter_id, client);

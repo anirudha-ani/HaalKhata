@@ -55,3 +55,26 @@ export const MAX_GROUP_MEMBER_IDS_PER_REQUEST = 100;
  * than that could never split one bill across everyone anyway.
  */
 export const MAX_GROUP_MEMBERS = 100;
+
+/**
+ * Most groups one person can be in (200), archived ones included and deleted
+ * ones not. Recording a payment between two people locks every group they
+ * share, so this bounds what one payment can lock, and one account can no
+ * longer create groups without end. Archiving does not free a place, so an
+ * archived group cannot be restored past the limit.
+ */
+export const MAX_GROUPS_PER_PERSON = 200;
+
+/** The refusal when the person joining or creating a group is at the limit. */
+export const OWN_GROUP_LIMIT_MESSAGE =
+  `you're in ${MAX_GROUPS_PER_PERSON} groups, the most one person can be in — leave or delete one you no longer use, then try again`;
+
+/**
+ * The refusal when somebody being added is at the limit.
+ *
+ * @param name - Their display name.
+ * @returns The sentence naming them.
+ */
+export function groupLimitMessage(name: string): string {
+  return `${name} is in ${MAX_GROUPS_PER_PERSON} groups, the most one person can be in, so they can't be added to another`;
+}

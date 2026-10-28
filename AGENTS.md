@@ -413,6 +413,16 @@ with colocated tests. Mobile-specific rules:
   handler); the usecase claims it with `beginOperation` inside the ledger
   transaction and `finishOperation` before commit, so a retry replays the
   stored result. Clients mint one per submit (`newOperationId()`).
+- **A payment locks only what it can touch, and never waits for long.**
+  Recording a payment between two people locks the active groups they share
+  (`sharedActiveGroups`), never every group either is in, reads that set
+  again under the locks and starts over if it grew; a payment to somebody
+  owed nothing is refused before any lock. Nobody can be in more than 200
+  groups (`MAX_GROUPS_PER_PERSON`, checked in `group/usecase/groupLimit.ts`
+  wherever someone joins). `withLedgerTransaction` gives every ledger
+  transaction a 5 s lock and 15 s statement limit and answers either as
+  busy with nothing saved. A new ledger path takes the fewest locks the
+  change needs, through `withLedgerTransaction`.
 - **A balance is read at one instant.** It is assembled from several
   statements, and a settlement committing between two of them yields a
   position that never existed. Every read that returns a figure

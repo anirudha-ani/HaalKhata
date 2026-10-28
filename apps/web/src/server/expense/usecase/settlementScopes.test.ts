@@ -59,6 +59,12 @@ vi.mock("./balance.usecase", () => ({
   amountOwed: vi.fn(),
   groupCancelsOut: vi.fn(),
   owedByScope: vi.fn(),
+  sharedActiveGroups: vi.fn(),
+}));
+// The check before the locks reads on a snapshot; here it runs on the mocks.
+vi.mock("@/server/common/db/db", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/server/common/db/db")>()),
+  snapshot: (operation: (client: unknown) => unknown) => operation({}),
 }));
 
 import { recordSettlement } from "./expense.usecase";
@@ -69,10 +75,10 @@ import {
   listGroupsByUser,
   listMembers,
 } from "@/server/group/repo/groups.repo";
-import { insertSettlement } from "@/server/expense/repo/settlements.repo";
+import { insertSettlement, withSettlementPairLock } from "@/server/expense/repo/settlements.repo";
 import { insertActivity } from "@/server/social/repo/activity.repo";
 import { insertNotifications } from "@/server/social/repo/notifications.repo";
-import { owedByScope } from "./balance.usecase";
+import { owedByScope, sharedActiveGroups } from "./balance.usecase";
 import { lockGroupLedgers } from "@/server/common/ledger/ledgerLocks";
 
 const PAYER = "user-payer";
@@ -98,6 +104,7 @@ function armRepos(): void {
   vi.mocked(listGroupsByUser).mockResolvedValue([
     { id: "goa", name: "Goa", currency: "USD" },
   ] as never);
+  vi.mocked(sharedActiveGroups).mockResolvedValue([{ id: "goa", name: "Goa", currency: "USD" }] as never);
   vi.mocked(listMembers).mockResolvedValue([]);
   vi.mocked(insertSettlement).mockImplementation(
     async (input) =>
@@ -228,5 +235,61 @@ describe("recordSettlement — rows land in the scope holding the debt", () => {
     for (const call of vi.mocked(insertSettlement).mock.calls) {
       expect(call[1]).toBeDefined();
     }
+  });
+});
+
+describe("recordSettlement — what a payment between two people locks", () => {
+  /** A shared group, as the shared-groups read returns one. */
+  const group = (groupId: string) => ({ id: groupId, name: groupId, currency: "USD" }) as never;
+
+  it("locks only the groups the two share, read again once they are locked", async () => {
+    vi.mocked(owedByScope).mockResolvedValue([{ groupId: "goa", currency: "USD", owedCents: 5000 }]);
+
+    await settle(5000);
+
+    expect(lockGroupLedgers).toHaveBeenCalledTimes(1);
+    expect(lockGroupLedgers).toHaveBeenCalledWith(transactionClient, ["goa"]);
+    expect(sharedActiveGroups).toHaveBeenCalledTimes(2);
+    expect(sharedActiveGroups).toHaveBeenNthCalledWith(2, PAYER, CREDITOR, transactionClient);
+  });
+
+  it("refuses a payment to somebody owed nothing anywhere before taking any lock", async () => {
+    vi.mocked(owedByScope).mockResolvedValue([]);
+
+    await expect(settle(5000)).rejects.toThrow(/don't owe this person anything/);
+
+    expect(withSettlementPairLock).not.toHaveBeenCalled();
+    expect(lockGroupLedgers).not.toHaveBeenCalled();
+  });
+
+  it("starts again with the new group locked when one becomes shared while paying", async () => {
+    vi.mocked(owedByScope).mockResolvedValue([{ groupId: "goa", currency: "USD", owedCents: 5000 }]);
+    vi.mocked(sharedActiveGroups)
+      .mockResolvedValueOnce([group("goa")])
+      .mockResolvedValueOnce([group("goa"), group("kerala")])
+      .mockResolvedValue([group("goa"), group("kerala")]);
+
+    const inserted = await settle(5000);
+
+    expect(withSettlementPairLock).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(lockGroupLedgers).mock.calls.map(([, groupIds]) => groupIds)).toEqual([
+      ["goa"],
+      ["goa", "kerala"],
+    ]);
+    expect(inserted).toHaveLength(1);
+  });
+
+  it("asks the person to look again when the shared groups keep changing", async () => {
+    vi.mocked(owedByScope).mockResolvedValue([{ groupId: "goa", currency: "USD", owedCents: 5000 }]);
+    let call = 0;
+    vi.mocked(sharedActiveGroups).mockImplementation(async () => {
+      call += 1;
+      return Array.from({ length: call }, (_unused, index) => group(`group-${index}`));
+    });
+
+    await expect(settle(5000)).rejects.toThrow(/groups with this person changed/);
+
+    expect(withSettlementPairLock).toHaveBeenCalledTimes(3);
+    expect(insertSettlement).not.toHaveBeenCalled();
   });
 });

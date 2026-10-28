@@ -24,7 +24,6 @@ import {
   findGroupsByIds,
   isMember,
   listCoMemberIds,
-  listGroupsByUser,
   listMembers,
 } from "@/server/group/repo/groups.repo";
 import { assertGroupActive, assertGroupsActive } from "@/server/group/usecase/groupArchive";
@@ -63,6 +62,7 @@ import {
   oneOffNetsWith,
   owedByScope,
   pairScopeDebts,
+  sharedActiveGroups,
   userNetInGroup,
   userNetInGroups,
 } from "./balance.usecase";
@@ -91,7 +91,8 @@ import {
   withLedgerTransaction,
 } from "@/server/common/ledger/ledgerLocks";
 import { isRealCalendarDate, normalizeCurrencyCode } from "@/server/common/validation/validation";
-import { beginOperation, finishOperation } from "@/server/common/ledger/operations";
+import { beginOperation, finishOperation, operationClaimed } from "@/server/common/ledger/operations";
+import type { OperationKey } from "@/server/common/ledger/operations.repo";
 import { toPublicUser } from "@/server/auth/usecase/identity/user.mapper";
 import {
   COMMENT_PREVIEW_LENGTH,
@@ -115,6 +116,7 @@ import {
   MAX_COMMENT_PAGE_SIZE,
   MAX_EXPENSE_PAGE_SIZE,
   ONE_OFF_NOT_CONNECTED_MESSAGE,
+  SETTLEMENT_ATTEMPTS,
   formerMemberRefusal,
 } from "@/server/expense/expense.constants";
 import { toExpense, toSettlement } from "./expense.mapper";
@@ -1761,6 +1763,60 @@ async function storeGroupSettlement(
 }
 
 /**
+ * Raised inside a settlement's transaction when a group became shared
+ * between the two people after their shared groups were locked. The
+ * transaction rolls back and the settlement starts again with that group
+ * locked too.
+ */
+class SharedGroupsChanged extends Error {
+  /** Names the error for logs. */
+  constructor() {
+    super("the groups two people share changed while their payment was being recorded");
+  }
+}
+
+/**
+ * Refuses a payment between two people when the payer owes nothing.
+ *
+ * @param context - The prepared settlement.
+ * @throws UsecaseError (invalid_argument), always, worded for the kind of payment.
+ */
+function refuseNothingOwed(context: SettlementContext): never {
+  const { request, currency } = context;
+  if (request.netAcrossScopes) {
+    invalid(
+      request.received
+        ? `this person doesn't owe you anything overall in ${currency}`
+        : `you don't owe this person anything overall in ${currency}`,
+    );
+  }
+  invalid(
+    request.received
+      ? `this person doesn't owe you anything in the selected ${currency} balances`
+      : `you don't owe this person anything in the selected ${currency} balances`,
+  );
+}
+
+/**
+ * Refuses, before any lock is taken, a payment to somebody the payer owes
+ * nothing anywhere: not in a group they share, not one to one. Read on a
+ * snapshot, like every figure. It only ever refuses; whatever it lets
+ * through is checked again under the locks. A retry of an operation already
+ * recorded is let through, for the transaction to replay: by then the debt
+ * it paid is gone, and refusing would lose the answer the first attempt gave.
+ *
+ * @param context - A prepared settlement that names no group.
+ * @param operation - The request's operation, to recognise a retry.
+ * @throws UsecaseError (invalid_argument) when nothing is owed.
+ */
+async function refuseUnlessAnythingOwed(context: SettlementContext, operation: OperationKey): Promise<void> {
+  const owed = await snapshot(async (client) =>
+    (await operationClaimed(operation, client)) ? null : owedByScope(context.payerId, context.creditorId, client),
+  );
+  if (owed !== null && owed.length === 0) refuseNothingOwed(context);
+}
+
+/**
  * Validates a prepared payment against current locked ledgers and stores one
  * settlement row per scope it pays down.
  *
@@ -1776,15 +1832,18 @@ async function storeSettlementPortions(
   const { userId, request, payerId, creditorId, groupId, currency } = context;
   if (groupId) return { rows: await storeGroupSettlement(context, client), netOutcome: null };
 
-  // Lock every group either person belongs to before selecting the shared
-  // scopes. That snapshot cannot gain an unlocked group midway through the
-  // read-then-write guard.
-  const payerGroups = await listGroupsByUser(payerId, client);
-  const creditorGroups = await listGroupsByUser(creditorId, client);
+  // Lock the groups the two share, the only groups a payment between them
+  // can touch, before reading what is owed in them: never every group either
+  // belongs to, which one person can make thousands of. A group joins the
+  // shared set only through a roster or status change, which takes its lock,
+  // so the set is read again under the locks, and one that grew in between
+  // is retried from the start rather than settled around.
   const lockedGroupIds = new Set(
-    [...payerGroups, ...creditorGroups].map((group) => group.id),
+    (await sharedActiveGroups(payerId, creditorId, client)).map((group) => group.id),
   );
   await lockGroupLedgers(client, [...lockedGroupIds]);
+  const sharedUnderLock = await sharedActiveGroups(payerId, creditorId, client);
+  if (sharedUnderLock.some((group) => !lockedGroupIds.has(group.id))) throw new SharedGroupsChanged();
   if (request.netAcrossScopes) return storeNetSettlement(context, lockedGroupIds, client);
   const selection = new Set(request.scopeGroupIds ?? []);
   // The client chooses scopes, never amounts. Re-read current server balances
@@ -1812,13 +1871,7 @@ async function storeSettlementPortions(
   }
   const scopes = selected.filter((scope) => scope.currency === currency);
   const totalOwedCents = scopes.reduce((running, scope) => running + scope.owedCents, 0);
-  if (totalOwedCents <= 0) {
-    invalid(
-      request.received
-        ? `this person doesn't owe you anything in the selected ${currency} balances`
-        : `you don't owe this person anything in the selected ${currency} balances`,
-    );
-  }
+  if (totalOwedCents <= 0) refuseNothingOwed(context);
   if (request.amountCents > totalOwedCents) {
     invalid(
       `settlement (${formatMoney(request.amountCents, currency)}) exceeds what ${
@@ -1895,13 +1948,7 @@ async function storeNetSettlement(
     scopes.reduce((running, scope) => running + scope.owedCents, 0);
   const offsetCents = total(opposing);
   const netCents = total(owing) - offsetCents;
-  if (netCents <= 0) {
-    invalid(
-      request.received
-        ? `this person doesn't owe you anything overall in ${currency}`
-        : `you don't owe this person anything overall in ${currency}`,
-    );
-  }
+  if (netCents <= 0) refuseNothingOwed(context);
   if (request.amountCents > netCents) {
     invalid(
       `settlement (${formatMoney(request.amountCents, currency)}) exceeds what ${
@@ -2125,6 +2172,8 @@ export async function recordSettlement(
   request: SettlementRequest,
 ) {
   const context = await prepareSettlement(userId, request);
+  const operation = { userId, rpc: "RecordSettlement", operationId: request.operationId ?? "" };
+  if (!context.groupId) await refuseUnlessAnythingOwed(context, operation);
 
   // Validation + inserts inside the pair lock, so a concurrent recording of
   // the same real-world payment — from another tab, another device, or the
@@ -2134,8 +2183,8 @@ export async function recordSettlement(
   // become visible at the same instant the lock releases — and so do the
   // feed rows and the notification, which commit with the payment or not at
   // all.
-  const operation = { userId, rpc: "RecordSettlement", operationId: request.operationId ?? "" };
-  const settlements = await withSettlementPairLock(
+  /** One attempt, in one transaction under the pair's lock. */
+  const attempt = () => withSettlementPairLock(
     context.payerId,
     context.creditorId,
     async (client) => {
@@ -2153,6 +2202,17 @@ export async function recordSettlement(
       return stored.rows;
     },
   );
+  let settlements: SettlementRow[] | undefined;
+  for (let attemptNumber = 1; settlements === undefined; attemptNumber++) {
+    try {
+      settlements = await attempt();
+    } catch (error) {
+      if (!(error instanceof SharedGroupsChanged)) throw error;
+      if (attemptNumber >= SETTLEMENT_ATTEMPTS) {
+        invalid("your groups with this person changed while you were paying — check the amounts and try again");
+      }
+    }
+  }
   if (settlements.length === 0) notFound("payment not found");
   return toSettlement(settlements[0]);
 }

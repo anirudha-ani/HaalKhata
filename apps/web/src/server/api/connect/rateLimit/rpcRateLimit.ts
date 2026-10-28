@@ -17,6 +17,9 @@ export const RPC_RATE_LIMITS = {
   addFriend: 10,
   addMembers: 15,
   createExpense: 30,
+  // A person makes a group for a trip or a household; a script making them
+  // by the thousand is what the per-person cap and this limit stop.
+  createGroup: 10,
   // A lookup checks up to 1,000 identifiers; the daily total is capped in
   // the database as well.
   findContacts: 5,
@@ -30,6 +33,9 @@ export const RPC_RATE_LIMITS = {
   listFriendLedgerEntries: 120,
   listGroups: 60,
   parseReceipt: 5,
+  // Settling up with several friends in a row stays well inside this; each
+  // payment locks the groups the two people share.
+  recordSettlement: 20,
   registerDevice: 10,
   removeFriend: 10,
   // The apps send one request per call, from each person's Add on Find

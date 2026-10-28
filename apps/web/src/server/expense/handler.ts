@@ -96,7 +96,10 @@ export const expenseHandler: ServiceImpl<typeof ExpenseService> = {
   async recordSettlement(request, context) {
     return runUsecase(async () => {
       assertOperationId(request.operationId);
-      return expenses.recordSettlement(await requireUser(context), request);
+      return expenses.recordSettlement(
+        await requireRateLimitedUser(context, "record-settlement", RPC_RATE_LIMITS.recordSettlement),
+        request,
+      );
     }, context);
   },
 

@@ -61,6 +61,30 @@ export async function insertGroup(
 }
 
 /**
+ * Counts the groups each person is in, deleted groups left out.
+ *
+ * @param userIds - The people to count for.
+ * @param client - Transaction client holding the lock of the group they are joining.
+ * @returns Groups per person; somebody in none is absent.
+ */
+export async function countGroupMemberships(
+  userIds: string[],
+  client?: PoolClient,
+): Promise<Map<string, number>> {
+  if (userIds.length === 0) return new Map();
+  const rows = await query<{ user_id: string; total: number }>(
+    `SELECT group_members.user_id, count(*)::int AS total
+       FROM group_members
+       JOIN groups ON groups.id = group_members.group_id
+      WHERE group_members.user_id = ANY($1::text[]) AND groups.status <> 'deleted'
+      GROUP BY group_members.user_id`,
+    [userIds],
+    client,
+  );
+  return new Map(rows.map((membership) => [membership.user_id, membership.total]));
+}
+
+/**
  * Looks up a single group by primary key.
  *
  * @param groupId - Id of the group to fetch.

@@ -268,6 +268,18 @@ Deadlock avoidance rests on two rules:
    nothing. The payment-methods lock is always taken alone, so it has no
    place in the order.
 
+**Lock only what the change can touch.** A payment between two people locks
+the active groups they share, never every group either is in (one account
+could make that thousands). Nobody can be in more than 200 groups, deleted
+ones aside, so one payment locks at most that many.
+
+**Time limits.** `withLedgerTransaction` sets `lock_timeout` (5 s) and
+`statement_timeout` (15 s) with `SET LOCAL`, so they end with the
+transaction. Ledger locks are held for milliseconds; a wait that long means
+something is stuck, and giving up frees one of the pool's connections. Either
+limit rolls the transaction back and answers `Unavailable`: "nothing was
+saved, try again in a moment".
+
 One-off mutations lock **per participant, not per pair**: a pair set is
 quadratic in the cast (a 100-participant expense would need 4,950 locks —
 more than Postgres's shared lock table holds), while per-participant locks

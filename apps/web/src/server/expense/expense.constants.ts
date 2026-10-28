@@ -142,3 +142,11 @@ export const OFFSET_ACTIVITY_TYPE = "settlement_offset";
  * short enough to stay a preview and long enough to carry a whole short remark.
  */
 export const COMMENT_PREVIEW_LENGTH = 120;
+
+/**
+ * Tries a payment between two people gets when a group becomes shared
+ * between them while it is being recorded. Each try locks the groups they
+ * share at that moment; a roster change landing in between that often is
+ * not a race any more, and the person is asked to look again.
+ */
+export const SETTLEMENT_ATTEMPTS = 3;

@@ -98,7 +98,7 @@ three times is noise.
 | --- | --- | --- |
 | Group `type` | `trip` \| `home` \| `couple` \| `other` | unrecognized → `other` |
 | Member `role` | `owner` \| `member` | exactly one owner per group |
-| Limits | name ≤ shared `MAX_GROUP_NAME_LENGTH`; ≤ **100** member identifiers per create/add request | |
+| Limits | name ≤ shared `MAX_GROUP_NAME_LENGTH`; ≤ **100** member identifiers per create/add request; nobody in more than **200** groups (archived ones count, deleted ones do not) | |
 
 ---
 
@@ -122,10 +122,14 @@ three times is noise.
 
 #### Notes
 
+- **Rate-limited:** 10/min per account.
 - **Validation:** name required (trimmed, bounded); type coerced to `other`
   when unrecognized; currency falls back to the creator's default currency,
   then `"USD"`, and is validated against the ISO 4217 catalog (§36). ≤ 100
-  member ids.
+  member ids. Neither the creator nor anyone enrolled may already be in 200
+  groups (`FailedPrecondition`, naming who); the same cap applies to
+  AddMembers and to joining by link. A payment between two people locks
+  the groups they share, so the cap bounds what one payment can lock.
 - **The currency is declared here and frozen.** No endpoint (or SQL path)
   changes a group's currency after creation: every expense, settlement, and
   derived balance in the group is denominated in it, so changing it would

@@ -30,6 +30,7 @@ import {
 import { normalizePhone, PHONE_FORMAT_HINT } from "@/server/auth/auth.constants";
 import { isEmailAddress } from "@haalkhata/shared/email/email";
 import { insertFriendships, listFriendIds } from "@/server/social/repo/friendships.repo";
+import { assertRoomForAnotherGroup } from "./groupLimit";
 import { insertActivity } from "@/server/social/repo/activity.repo";
 import { insertNotifications } from "@/server/social/repo/notifications.repo";
 import {
@@ -203,6 +204,8 @@ async function enrollMembers(
     throw new UsecaseError("failed_precondition", `${unregistered.name} can't be added to a group`);
   }
 
+  await assertRoomForAnotherGroup(added, callerId, client);
+
   // The whole batch in a fixed number of statements on the caller's
   // transaction, so it is all or nothing and holds the group's lock no
   // longer for a hundred people than for one.
@@ -295,6 +298,7 @@ export async function createGroup(
   // event announcing it commit together: a group that exists with half its
   // members and no announcement is what a retry would then create twice.
   const group = await withLedgerTransaction(async (client) => {
+    await assertRoomForAnotherGroup([actor], userId, client);
     const created = await insertGroup({ name, type, currency, createdBy: userId }, client);
     const added = await enrollMembers(userId, created.id, input.memberIds ?? [], client);
     // Everyone enrolled at creation sees the event, so a group appearing in
