@@ -3,9 +3,15 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { nextJsApiRouter } from "@connectrpc/connect-next";
 import routes from "@/server/api/connect/routes";
-import { csrfGuard } from "@/server/api/connect/csrf";
+import { csrfGuard } from "@/server/api/connect/mount/csrf";
 import { ensureMigrated } from "@/server/common/db/db";
-import { CONNECT_READ_MAX_BYTES } from "@/server/api/connect/connect.constants";
+import { CONNECT_MOUNT_OPTIONS } from "@/server/api/connect/mount/mountOptions";
+import { enforceBodyDeadline } from "@/server/api/connect/mount/bodyDeadline";
+import {
+  BODY_READ_TIMEOUT_MS,
+  RECEIPT_BODY_READ_TIMEOUT_MS,
+  RECEIPT_SERVICE_PATH,
+} from "@/server/api/connect/connect.constants";
 import { logError } from "@/server/common/logger";
 import { DIRECT_CLIENT_IP_HEADER } from "@/server/auth/request/clientIp";
 import { rpcAllowedOnSurface } from "@/config/adminSurface";
@@ -14,12 +20,12 @@ import { rpcAllowedOnSurface } from "@/config/adminSurface";
 const { handler } = nextJsApiRouter({
   routes,
   prefix: "/api/connect",
-  readMaxBytes: CONNECT_READ_MAX_BYTES,
+  ...CONNECT_MOUNT_OPTIONS,
 });
 
 /**
- * Wraps the Connect handler with the surface gate, a CSRF guard and a
- * one-shot migration wait.
+ * Wraps the Connect handler with the surface gate, a CSRF guard, a deadline
+ * for the request body and a one-shot migration wait.
  */
 export default async function connectHandler(request: NextApiRequest, response: NextApiResponse) {
   // First, before anything reads a cookie or touches the database: the admin
@@ -33,6 +39,13 @@ export default async function connectHandler(request: NextApiRequest, response: 
   // socket peer, and a caller cannot smuggle a fake fallback through Caddy.
   request.headers[DIRECT_CLIENT_IP_HEADER] = request.socket?.remoteAddress ?? "";
   if (!csrfGuard(request, response)) return;
+  // From here the body may be read: it has to arrive in time, receipts
+  // (a photo) given longer than everything else.
+  enforceBodyDeadline(
+    request,
+    response,
+    request.url?.includes(RECEIPT_SERVICE_PATH) ? RECEIPT_BODY_READ_TIMEOUT_MS : BODY_READ_TIMEOUT_MS,
+  );
   try {
     // ensureMigrated caches a successful/in-flight run process-wide and clears
     // its cache on failure. Calling it here makes that retry path reachable on

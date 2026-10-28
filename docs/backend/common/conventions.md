@@ -125,6 +125,36 @@ the RPCs over HTTP with that read failing and checks for both.
 the contract: if a message is not safe to show, it must not be a
 `UsecaseError`.
 
+## Before the Handler
+
+Connect reads, decompresses and decodes a request body before any of the
+app's code runs, so everything that bounds what an anonymous request can
+cost has to sit in front of that:
+
+- **Request caps** (`readMaxBytes`, checked after decompression): 64 KiB by
+  default; 512 KiB for social (a 1,000-contact lookup is about 257 KB),
+  1 MiB for expenses (100 items × 100 assignments is about 0.5 MB), 12 MiB
+  for receipts (an 8 MiB photo plus encoding overhead). The numbers and
+  their arithmetic are in `api/connect/connect.constants.ts`;
+  `mount/requestCaps.test.ts` builds each service's largest legitimate
+  request and checks it fits.
+- **Unknown fields are dropped** while decoding
+  (`binaryOptions.readUnknownFields: false`). The app never reads them, and
+  kept, a few megabytes of them cost about a gigabyte of objects.
+- **Request gates** run once the headers are in, before the body is read.
+  The default asks for a validly signed, unexpired session token (no
+  database read; `requireUser` still checks revocation in the handler).
+  Auth and social let their anonymous calls through and pace them per
+  address there; the admin services check host and origin.
+  `mount/requestLimits.test.ts` drives all of this over HTTP, including a
+  12 MiB body brotli-compressed to a few bytes.
+- **Body deadlines**: a body has 15 s to arrive in full (60 s for a receipt
+  photo) before the connection is dropped (`mount/bodyDeadline.ts`); Caddy
+  gives a whole request 60 s at the edge.
+- **Memory ceiling**: in production the web container is capped at 640 MB
+  with Node's heap at 384 MB, so a runaway allocation restarts web instead of
+  starving Postgres on the same droplet.
+
 ## Rate Limiting
 
 An in-memory sliding-window limiter (`rateLimitCheck(key, max, windowMs)`),
@@ -137,7 +167,7 @@ tracked keys with LRU eviction so it cannot be a memory-exhaustion vector.
 
 | Bucket | Key | Limit |
 | --- | --- | --- |
-| Sign-in/up, Google begin+finish | `auth:<client-ip>` | 10/min |
+| Sign-in/up, Google begin+finish (checked in the auth request gate, before the body is read) | `auth:<client-ip>` | 10/min |
 | SetPhone (SMS send) | `phone:send:<userId>` | 3/min |
 | SetPhone (code check) | `phone:check:<userId>` | 5/min |
 | RemovePhone | `phone:remove:<userId>` | 5/min |

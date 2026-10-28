@@ -1,7 +1,7 @@
 /** CSRF guard: reject cookie-authenticated state-changing requests with a foreign Origin. */
 
 import type { NextApiRequest, NextApiResponse } from "next";
-import { bearerTokenFromAuthorization } from "./credentials";
+import { bearerTokenFromAuthorization } from "../session/credentials";
 
 /**
  * Connect RPCs are all POST. A browser performing a CSRF attack would send a

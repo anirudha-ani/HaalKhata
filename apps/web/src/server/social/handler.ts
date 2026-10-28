@@ -1,16 +1,43 @@
 /** Thin SocialService Connect handlers; logic lives in social.usecase. */
 
-import type { ServiceImpl } from "@connectrpc/connect";
+import type { HandlerContext, ServiceImpl } from "@connectrpc/connect";
 import type { SocialService } from "@haalkhata/protogen/social/v1/social_pb";
 import { Code, ConnectError } from "@connectrpc/connect";
 import * as social from "@/server/social/usecase/social.usecase";
 import { findContacts } from "@/server/social/usecase/contacts/findContacts.usecase";
 import { sendFriendRequests } from "@/server/social/usecase/contacts/sendFriendRequests.usecase";
-import { requireUser, runUsecase } from "@/server/api/connect/context";
-import { requireRateLimitedUser, RPC_RATE_LIMITS } from "@/server/api/connect/rpcRateLimit";
+import { requireSignedSession, requireUser, runUsecase } from "@/server/api/connect/context";
+import { requireRateLimitedUser, RPC_RATE_LIMITS } from "@/server/api/connect/rateLimit/rpcRateLimit";
 import { clientIp } from "@/server/auth/request/clientIp";
 import { rateLimitCheck } from "@/server/common/rateLimit/rateLimit";
-import { INVITE_PREVIEW_RATE_LIMIT, RETIRED_PERSON_INVITE_MESSAGE } from "@/server/social/social.constants";
+import {
+  ANONYMOUS_SOCIAL_RPCS,
+  INVITE_PREVIEW_RATE_LIMIT,
+  RETIRED_PERSON_INVITE_MESSAGE,
+} from "@/server/social/social.constants";
+
+/**
+ * The social service's request gate, run once the headers are in and before
+ * the body is read. The invite preview a signed-out visitor sees is paced
+ * per address there, so a flood of previews is refused without reading
+ * their bodies; the retired invite calls pass through to refuse in their
+ * handlers; every other call needs a signed session.
+ *
+ * @param context - Connect handler context for the current request.
+ * @throws ConnectError ResourceExhausted when paced, Unauthenticated without a session.
+ */
+export function socialRequestGate(context: HandlerContext): void {
+  if (!ANONYMOUS_SOCIAL_RPCS.has(context.method.name)) {
+    requireSignedSession(context);
+    return;
+  }
+  if (
+    context.method.name === "PreviewInviteLink" &&
+    !rateLimitCheck(`invite-preview:${clientIp(context.requestHeader)}`, INVITE_PREVIEW_RATE_LIMIT)
+  ) {
+    throw new ConnectError("too many requests, please try again later", Code.ResourceExhausted);
+  }
+}
 
 /**
  * ConnectRPC implementation of SocialService. Each method authenticates the
@@ -150,9 +177,6 @@ export const socialHandler: ServiceImpl<typeof SocialService> = {
    * per-address limit just keeps the endpoint from being a scanner target.
    */
   async previewInviteLink(request, context) {
-    if (!rateLimitCheck(`invite-preview:${clientIp(context.requestHeader)}`, INVITE_PREVIEW_RATE_LIMIT)) {
-      throw new ConnectError("too many requests, please try again later", Code.ResourceExhausted);
-    }
     return runUsecase(() => social.previewInviteLink(request.token), context);
   },
 

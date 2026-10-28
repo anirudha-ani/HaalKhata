@@ -1,7 +1,7 @@
 /** Canonical parsing for Connect bearer and cookie credentials. */
 
 import { BEARER_TRANSPORT, SESSION_TRANSPORT_HEADER } from "@haalkhata/shared/auth/sessionRenewal";
-import { SESSION_COOKIE } from "./connect.constants";
+import { SESSION_COOKIE } from "../connect.constants";
 
 /**
  * Whether the client asked to receive its session as a bearer token.

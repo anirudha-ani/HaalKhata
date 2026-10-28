@@ -5,7 +5,7 @@ import type { ExpenseService } from "@haalkhata/protogen/expense/v1/expense_pb";
 import * as expenses from "@/server/expense/usecase/expense.usecase";
 import * as balances from "@/server/expense/usecase/balance.usecase";
 import { requireUser, runUsecase } from "@/server/api/connect/context";
-import { requireRateLimitedUser, RPC_RATE_LIMITS } from "@/server/api/connect/rpcRateLimit";
+import { requireRateLimitedUser, RPC_RATE_LIMITS } from "@/server/api/connect/rateLimit/rpcRateLimit";
 import { assertOperationId } from "@/server/common/ledger/operations";
 
 /**

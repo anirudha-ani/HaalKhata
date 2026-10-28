@@ -3,7 +3,7 @@
 import type { ServiceImpl } from "@connectrpc/connect";
 import type { PersonalAnalyticsService } from "@haalkhata/protogen/personalanalytics/v1/personalanalytics_pb";
 import { runUsecase } from "@/server/api/connect/context";
-import { requireRateLimitedUser, RPC_RATE_LIMITS } from "@/server/api/connect/rpcRateLimit";
+import { requireRateLimitedUser, RPC_RATE_LIMITS } from "@/server/api/connect/rateLimit/rpcRateLimit";
 import { getInsights } from "@/server/personalanalytics/usecase/insights.usecase";
 
 /**

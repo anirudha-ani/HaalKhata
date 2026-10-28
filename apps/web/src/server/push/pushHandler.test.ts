@@ -19,7 +19,7 @@ vi.mock("@/server/api/connect/context", () => ({
   runUsecase: vi.fn((operation: () => Promise<unknown>) => operation()),
   sessionTokenVersion: () => 7,
 }));
-vi.mock("@/server/api/connect/rpcRateLimit", () => ({
+vi.mock("@/server/api/connect/rateLimit/rpcRateLimit", () => ({
   requireRateLimitedUser: mocks.requireRateLimitedUser,
   RPC_RATE_LIMITS: { registerDevice: 10, sendTestPush: 3, updatePushPreferences: 30 },
 }));

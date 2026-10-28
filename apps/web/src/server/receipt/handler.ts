@@ -8,7 +8,7 @@ import {
   MAX_CONCURRENT_RECEIPT_PARSES,
   requireRateLimitedUser,
   RPC_RATE_LIMITS,
-} from "@/server/api/connect/rpcRateLimit";
+} from "@/server/api/connect/rateLimit/rpcRateLimit";
 
 /** Number of receipt parsing jobs currently holding image/provider resources. */
 let activeReceiptParses = 0;

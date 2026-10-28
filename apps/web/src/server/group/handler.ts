@@ -4,7 +4,7 @@ import type { ServiceImpl } from "@connectrpc/connect";
 import type { GroupService } from "@haalkhata/protogen/group/v1/group_pb";
 import * as groups from "@/server/group/usecase/group.usecase";
 import { requireUser, runUsecase } from "@/server/api/connect/context";
-import { requireRateLimitedUser, RPC_RATE_LIMITS } from "@/server/api/connect/rpcRateLimit";
+import { requireRateLimitedUser, RPC_RATE_LIMITS } from "@/server/api/connect/rateLimit/rpcRateLimit";
 
 /**
  * ConnectRPC implementation of GroupService. Each method authenticates the

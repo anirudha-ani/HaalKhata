@@ -33,7 +33,7 @@ vi.mock("@/server/common/logger", async (importOriginal) => ({
   logError: vi.fn(),
 }));
 
-import routes from "./routes";
+import routes from "../routes";
 import { createToken } from "@/server/auth/usecase/session/session";
 import { logError } from "@/server/common/logger";
 

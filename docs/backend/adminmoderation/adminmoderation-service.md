@@ -27,7 +27,7 @@ Exactly who can reach the usage overview, checked the same way
   `config/adminSurface.ts` lists it beside AdminAnalyticsService and nothing
   else answers there.
 - Every RPC requires an `Origin` naming the admin host itself, with no
-  bearer exemption (`api/connect/adminRequest.ts`, shared by both admin
+  bearer exemption (`api/connect/admin/adminRequest.ts`, shared by both admin
   services).
 - Every RPC requires a live admin session from the admin cookie. The
   allowlist is checked again on each call. An app session or a bearer token

@@ -2,8 +2,8 @@
 
 import { describe, expect, it, vi } from "vitest";
 import type { NextApiRequest, NextApiResponse } from "next";
-import { SESSION_COOKIE } from "./connect.constants";
-import { sessionTokenFromCookieHeader, tokenFromHeaders } from "./credentials";
+import { SESSION_COOKIE } from "../connect.constants";
+import { sessionTokenFromCookieHeader, tokenFromHeaders } from "../session/credentials";
 import { csrfGuard } from "./csrf";
 
 /** Builds the response methods used by the CSRF rejection path. */

@@ -2,7 +2,7 @@
 
 import { headers } from "next/headers";
 import { sessionUser as resolveSessionUser } from "@/server/auth/usecase/account/auth.usecase";
-import { sessionTokenFromCookieHeader } from "@/server/api/connect/credentials";
+import { sessionTokenFromCookieHeader } from "@/server/api/connect/session/credentials";
 
 /**
  * Reads the session cookie and resolves it to the signed-in user.

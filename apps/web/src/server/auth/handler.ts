@@ -9,10 +9,17 @@ import * as appleSignIn from "@/server/auth/usecase/apple/appleSignIn.usecase";
 import { getSignInOptions } from "@/server/auth/usecase/apple/signInOptions.usecase";
 import { deleteAccount } from "@/server/auth/usecase/deletion/accountDeletion.usecase";
 import { setContactDiscovery } from "@/server/auth/usecase/account/contactDiscovery.usecase";
-import { clearSessionCookie, requireUser, runUsecase, setSessionCookie } from "@/server/api/connect/context";
-import { wantsBearerToken } from "@/server/api/connect/credentials";
+import {
+  clearSessionCookie,
+  requireSignedSession,
+  requireUser,
+  runUsecase,
+  setSessionCookie,
+} from "@/server/api/connect/context";
+import { wantsBearerToken } from "@/server/api/connect/session/credentials";
 import { rateLimitCheck } from "@/server/common/rateLimit/rateLimit";
 import {
+  ANONYMOUS_AUTH_RPCS,
   AUTH_RATE_LIMIT,
   PHONE_CHECK_RATE_LIMIT,
   PHONE_REMOVAL_RATE_LIMIT,
@@ -24,8 +31,10 @@ import { clientIp } from "@/server/auth/request/clientIp";
 import { enforcePhoneSendLimits } from "@/server/auth/request/phoneRateLimit";
 
 /**
- * Enforces the per-IP login/signup rate limit, throwing a ResourceExhausted
- * ConnectError when the caller has exceeded AUTH_RATE_LIMIT attempts/minute.
+ * Paces sign-in, sign-up and account deletion per client address, throwing
+ * a ResourceExhausted ConnectError once the caller has made AUTH_RATE_LIMIT
+ * of them this minute. For the calls made before there is a session it runs
+ * in the request gate, before their bodies are read.
  *
  * @param handlerContext - Connect handler context for the current request.
  * @throws ConnectError with Code.ResourceExhausted when rate-limited.
@@ -34,6 +43,20 @@ function enforceAuthRateLimit(handlerContext: HandlerContext): void {
   if (!rateLimitCheck(`auth:${clientIp(handlerContext.requestHeader)}`, AUTH_RATE_LIMIT)) {
     throw new ConnectError("too many attempts, please try again later", Code.ResourceExhausted);
   }
+}
+
+/**
+ * The auth service's request gate, run once the headers are in and before
+ * the body is read: a call made before there is a session is paced per
+ * address, so a flood of them is refused without reading their bodies, and
+ * every other call needs a signed session like the rest of the API.
+ *
+ * @param handlerContext - Connect handler context for the current request.
+ * @throws ConnectError ResourceExhausted when paced, Unauthenticated without a session.
+ */
+export function authRequestGate(handlerContext: HandlerContext): void {
+  if (ANONYMOUS_AUTH_RPCS.has(handlerContext.method.name)) enforceAuthRateLimit(handlerContext);
+  else requireSignedSession(handlerContext);
 }
 
 /**
@@ -81,7 +104,6 @@ function deliverSession<Result extends { token: string }>(
 export const authHandler: ServiceImpl<typeof AuthService> = {
   /** Returns public provider availability without requiring a signed-in account. */
   async getSignInOptions(_request, handlerContext) {
-    enforceAuthRateLimit(handlerContext);
     return runUsecase(getSignInOptions, handlerContext);
   },
   /** Permanently erases the authenticated account, then expires the browser session. */
@@ -93,40 +115,33 @@ export const authHandler: ServiceImpl<typeof AuthService> = {
   },
   /** Issues a native Apple nonce or a verifier-bound browser challenge. */
   async beginAppleSignIn(request, handlerContext) {
-    enforceAuthRateLimit(handlerContext);
     return runUsecase(() => appleSignIn.beginAppleSignIn(request), handlerContext);
   },
   /** Verifies native Apple proof and delivers the appropriate session credential. */
   async logInWithApple(request, handlerContext) {
-    enforceAuthRateLimit(handlerContext);
     return deliverSession(handlerContext, await runUsecase(() => appleSignIn.logInWithApple(request), handlerContext));
   },
   /** Redeems a browser callback using the initiating client's private verifier. */
   async completeAppleSignIn(request, handlerContext) {
-    enforceAuthRateLimit(handlerContext);
     return deliverSession(handlerContext, await runUsecase(() => appleSignIn.completeAppleSignIn(request), handlerContext));
   },
   /** Creates (or claims) an account, then starts a session the way the client carries it. */
   async signUp(request, handlerContext) {
-    enforceAuthRateLimit(handlerContext);
     return deliverSession(handlerContext, await runUsecase(() => auth.signUp(request), handlerContext));
   },
 
   /** Verifies credentials, then starts a session the way the client carries it. */
   async logIn(request, handlerContext) {
-    enforceAuthRateLimit(handlerContext);
     return deliverSession(handlerContext, await runUsecase(() => auth.logIn(request), handlerContext));
   },
 
   /** Creates a short-lived, single-use nonce for a Google ID-token request. */
   async beginGoogleSignIn(_request, handlerContext) {
-    enforceAuthRateLimit(handlerContext);
     return runUsecase(() => auth.beginGoogleSignIn(), handlerContext);
   },
 
   /** Verifies a Google ID token, then starts a session the way the client carries it. */
   async logInWithGoogle(request, handlerContext) {
-    enforceAuthRateLimit(handlerContext);
     return deliverSession(
       handlerContext,
       await runUsecase(() => auth.logInWithGoogle(request.idToken), handlerContext),

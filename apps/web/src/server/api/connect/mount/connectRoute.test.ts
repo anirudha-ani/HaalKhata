@@ -1,24 +1,30 @@
-/** Route-level tests for the Connect mount: the surface gate and recoverable startup migration failures. */
+/** Route-level tests for the Connect mount: the surface gate, the body deadline and recoverable startup migration failures. */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { NextApiRequest, NextApiResponse } from "next";
 
-const { ensureMigratedMock, handlerMock, csrfGuardMock, logErrorMock } = vi.hoisted(() => ({
+const { ensureMigratedMock, handlerMock, csrfGuardMock, logErrorMock, enforceBodyDeadlineMock } = vi.hoisted(() => ({
   ensureMigratedMock: vi.fn(),
   handlerMock: vi.fn(),
   csrfGuardMock: vi.fn(),
   logErrorMock: vi.fn(),
+  enforceBodyDeadlineMock: vi.fn(),
 }));
 
 vi.mock("@connectrpc/connect-next", () => ({
   nextJsApiRouter: vi.fn(() => ({ handler: handlerMock })),
 }));
 vi.mock("@/server/api/connect/routes", () => ({ default: vi.fn() }));
-vi.mock("@/server/api/connect/csrf", () => ({ csrfGuard: csrfGuardMock }));
+vi.mock("@/server/api/connect/mount/csrf", () => ({ csrfGuard: csrfGuardMock }));
 vi.mock("@/server/common/db/db", () => ({ ensureMigrated: ensureMigratedMock }));
 vi.mock("@/server/common/logger", () => ({ logError: logErrorMock }));
+vi.mock("@/server/api/connect/mount/bodyDeadline", () => ({ enforceBodyDeadline: enforceBodyDeadlineMock }));
 
 import connectHandler from "@/pages/api/connect/[[...connect]]";
+import {
+  BODY_READ_TIMEOUT_MS,
+  RECEIPT_BODY_READ_TIMEOUT_MS,
+} from "@/server/api/connect/connect.constants";
 
 /** Builds the response methods used by the route wrapper. */
 function responseStub(): NextApiResponse {
@@ -94,6 +100,36 @@ describe("Connect route surface gate", () => {
     expect(handlerMock).toHaveBeenCalledTimes(2);
     expect(handlerMock.mock.calls[0][0]).toBe(adminRequest);
     expect(handlerMock.mock.calls[1][0]).toBe(appRequest);
+  });
+});
+
+describe("Connect route body deadline", () => {
+  beforeEach(() => {
+    ensureMigratedMock.mockResolvedValue(undefined);
+  });
+
+  it("gives a receipt photo the longer time to arrive, and every other request the shorter", async () => {
+    const receipt = rpcRequest("haalkhata.app", "/api/connect/receipt.v1.ReceiptService/ParseReceipt");
+    const expense = rpcRequest("haalkhata.app", "/api/connect/expense.v1.ExpenseService/CreateExpense");
+    const receiptResponse = responseStub();
+    const expenseResponse = responseStub();
+
+    await connectHandler(receipt, receiptResponse);
+    await connectHandler(expense, expenseResponse);
+
+    expect(enforceBodyDeadlineMock).toHaveBeenCalledWith(receipt, receiptResponse, RECEIPT_BODY_READ_TIMEOUT_MS);
+    expect(enforceBodyDeadlineMock).toHaveBeenCalledWith(expense, expenseResponse, BODY_READ_TIMEOUT_MS);
+  });
+
+  it("sets no deadline on a request the surface gate turns away", async () => {
+    vi.stubEnv("ADMIN_HOST", "admin.haalkhata.app");
+
+    await connectHandler(
+      rpcRequest("haalkhata.app", "/api/connect/adminanalytics.v1.AdminAnalyticsService/GetUsageOverview"),
+      responseStub(),
+    );
+
+    expect(enforceBodyDeadlineMock).not.toHaveBeenCalled();
   });
 });
 

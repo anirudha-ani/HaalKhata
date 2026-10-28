@@ -3,7 +3,7 @@
 import type { ServiceImpl } from "@connectrpc/connect";
 import type { SafetyService } from "@haalkhata/protogen/safety/v1/safety_pb";
 import { requireUser, runUsecase } from "@/server/api/connect/context";
-import { requireRateLimitedUser } from "@/server/api/connect/rpcRateLimit";
+import { requireRateLimitedUser } from "@/server/api/connect/rateLimit/rpcRateLimit";
 import { SAFETY_WRITE_LIMIT } from "./safety.constants";
 import * as safety from "./usecase/safety.usecase";
 

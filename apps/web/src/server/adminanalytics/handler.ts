@@ -6,7 +6,7 @@
 
 import { Code, ConnectError, type HandlerContext, type ServiceImpl } from "@connectrpc/connect";
 import type { AdminAnalyticsService } from "@haalkhata/protogen/adminanalytics/v1/adminanalytics_pb";
-import { adminSessionToken, requireAdminPageRequest } from "@/server/api/connect/adminRequest";
+import { adminSessionToken, requireAdminPageRequest } from "@/server/api/connect/admin/adminRequest";
 import { sessionCookieAttributes } from "@/server/api/connect/connect.constants";
 import { runUsecase } from "@/server/api/connect/context";
 import { clientIp } from "@/server/auth/request/clientIp";

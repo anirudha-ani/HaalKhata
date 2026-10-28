@@ -4,7 +4,7 @@ import type { ServiceImpl } from "@connectrpc/connect";
 import type { PaymentMethodService } from "@haalkhata/protogen/payment/v1/payment_pb";
 import * as paymentMethods from "@/server/payment/usecase/paymentMethod.usecase";
 import { requireUser, runUsecase } from "@/server/api/connect/context";
-import { requireRateLimitedUser, RPC_RATE_LIMITS } from "@/server/api/connect/rpcRateLimit";
+import { requireRateLimitedUser, RPC_RATE_LIMITS } from "@/server/api/connect/rateLimit/rpcRateLimit";
 import { PAYMENT_METHOD_WRITE_SCOPE } from "@/server/payment/payment.constants";
 
 /**

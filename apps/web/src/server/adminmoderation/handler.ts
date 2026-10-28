@@ -6,7 +6,7 @@
 
 import { Code, ConnectError, type HandlerContext, type ServiceImpl } from "@connectrpc/connect";
 import type { AdminModerationService } from "@haalkhata/protogen/adminmoderation/v1/adminmoderation_pb";
-import { adminSessionToken, requireAdminPageRequest } from "@/server/api/connect/adminRequest";
+import { adminSessionToken, requireAdminPageRequest } from "@/server/api/connect/admin/adminRequest";
 import { runUsecase } from "@/server/api/connect/context";
 import { rateLimitCheck } from "@/server/common/rateLimit/rateLimit";
 import { requireAdminSession } from "@/server/adminanalytics/usecase/adminSession.usecase";

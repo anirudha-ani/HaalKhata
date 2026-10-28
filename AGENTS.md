@@ -40,8 +40,12 @@ apps/web/                    Next.js app
     <domain>.constants.ts      constants for this domain
   src/server/common/         shared infra: db/, ledger/, money/, secrets/,
                              rateLimit/, validation/, readiness/
-  src/server/api/connect/    context.ts (auth/cookies/error map), routes.ts, csrf.ts,
-                             adminRequest.ts (the admin services' host/origin checks)
+  src/server/api/connect/    routes.ts (each service, with its request cap and gate),
+                             context.ts (requireUser, session cookies, runUsecase),
+                             connect.constants.ts; mount/ (what runs before a
+                             handler: mount options, CSRF, body deadline), session/
+                             (credentials), rateLimit/ (per-RPC limits), admin/ (the
+                             admin services' host/origin checks)
   src/config/                securityHeaders.ts (CSP) and adminSurface.ts (which
                              hostname reaches the admin page and its APIs)
   src/pages/api/connect/     [[...connect]].ts — mount point only
@@ -360,6 +364,18 @@ with colocated tests. Mobile-specific rules:
   the password: `DATABASE_URL_FILE` wins over `DATABASE_URL`. Without either
   the pool assembles its URL from `POSTGRES_PASSWORD(_FILE)` and the
   `POSTGRES_*` parts.
+- **A request is capped and gated before it is read.** Connect reads,
+  unzips and decodes a body before any of the app's code runs, so the mount
+  (`api/connect/mount/mountOptions.ts`) caps every request at 64 KiB after
+  decompression, drops fields no message defines, and runs a request gate
+  that refuses a call without a validly signed session before reading its
+  body. A service whose legitimate requests are bigger gets its own cap in
+  `routes.ts`, with the arithmetic in `connect.constants.ts` and a case in
+  `mount/requestCaps.test.ts`. A call that works without a session is listed
+  in its service's `ANONYMOUS_*_RPCS` and its service gets its own gate
+  (auth and social do; the admin services' gate is `requireAdminPageRequest`);
+  `mount/requestGates.test.ts` fails when a handler that never asks for a
+  session is not listed, so a new anonymous call is never silently refused.
 - **Money is per currency.** Balance maps are keyed by currency
   (`CurrencyCents` in `balance.usecase.ts`), responses carry `CurrencyAmount`
   buckets, and the legacy scalar fields are only the caller's default-currency
@@ -432,7 +448,7 @@ with colocated tests. Mobile-specific rules:
   `AdminAnalyticsService` and `AdminModerationService` exist; everywhere
   else none of them does. A new admin service goes in `ADMIN_RPC_PREFIXES`
   and starts every method with `requireAdminPageRequest` and the admin
-  session (`api/connect/adminRequest.ts`). A new page or
+  session (`api/connect/admin/adminRequest.ts`). A new page or
   service lands on the app surface by default and needs nothing. Do not add
   a second mount of `routes`, an exception to the gate, or a redirect where
   it answers 404. Do not rewrite to the admin page from the proxy either:

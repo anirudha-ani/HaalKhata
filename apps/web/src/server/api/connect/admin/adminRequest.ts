@@ -7,7 +7,7 @@
 
 import { Code, ConnectError, type HandlerContext } from "@connectrpc/connect";
 import { requestSurface } from "@/config/adminSurface";
-import { uniqueCookieValue } from "@/server/api/connect/credentials";
+import { uniqueCookieValue } from "@/server/api/connect/session/credentials";
 import { ADMIN_SESSION_COOKIE } from "@/server/adminanalytics/adminanalytics.constants";
 
 /**

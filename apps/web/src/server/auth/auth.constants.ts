@@ -46,6 +46,23 @@ export const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 /** Max login/signup attempts per key (IP or email) per 60s window. */
 export const AUTH_RATE_LIMIT = 10;
 
+/**
+ * The auth calls made before there is a session: signing in and up, and the
+ * retired phone-merge confirmation, which only refuses. Their request gate
+ * paces them per address instead of asking for a session.
+ */
+export const ANONYMOUS_AUTH_RPCS: ReadonlySet<string> = new Set([
+  "GetSignInOptions",
+  "SignUp",
+  "LogIn",
+  "BeginGoogleSignIn",
+  "LogInWithGoogle",
+  "BeginAppleSignIn",
+  "LogInWithApple",
+  "CompleteAppleSignIn",
+  "ConfirmPhoneMerge",
+]);
+
 /** Neutral fallback when an external provider supplies no publishable name. */
 export const PROVIDER_NAME_FALLBACK = "Member";
 

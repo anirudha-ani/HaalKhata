@@ -18,12 +18,12 @@ vi.mock("@/server/api/connect/context", () => ({
   requireUser: vi.fn(),
   runUsecase: vi.fn((operation: () => Promise<unknown>) => operation()),
 }));
-vi.mock("@/server/api/connect/rpcRateLimit", () => ({
+vi.mock("@/server/api/connect/rateLimit/rpcRateLimit", () => ({
   RPC_RATE_LIMITS: { getOverallBalances: 60, findContacts: 5, sendFriendRequests: 3 },
   requireRateLimitedUser: vi.fn().mockResolvedValue("user-123"),
 }));
 
-import { requireRateLimitedUser } from "@/server/api/connect/rpcRateLimit";
+import { requireRateLimitedUser } from "@/server/api/connect/rateLimit/rpcRateLimit";
 import { listFriends } from "@/server/social/usecase/social.usecase";
 import { findContacts } from "@/server/social/usecase/contacts/findContacts.usecase";
 import { sendFriendRequests } from "@/server/social/usecase/contacts/sendFriendRequests.usecase";

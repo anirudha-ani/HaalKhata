@@ -9,12 +9,12 @@ vi.mock("@/server/personalanalytics/usecase/insights.usecase", () => ({ getInsig
 vi.mock("@/server/api/connect/context", () => ({
   runUsecase: vi.fn((operation: () => Promise<unknown>) => operation()),
 }));
-vi.mock("@/server/api/connect/rpcRateLimit", () => ({
+vi.mock("@/server/api/connect/rateLimit/rpcRateLimit", () => ({
   RPC_RATE_LIMITS: { getInsights: 30 },
   requireRateLimitedUser: vi.fn().mockResolvedValue("user-123"),
 }));
 
-import { requireRateLimitedUser } from "@/server/api/connect/rpcRateLimit";
+import { requireRateLimitedUser } from "@/server/api/connect/rateLimit/rpcRateLimit";
 import { getInsights } from "@/server/personalanalytics/usecase/insights.usecase";
 import { personalAnalyticsHandler } from "./handler";
 

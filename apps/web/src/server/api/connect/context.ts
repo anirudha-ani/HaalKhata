@@ -7,11 +7,29 @@ import { findUserTokenVersion } from "@/server/auth/repo/users.repo";
 import { TOKEN_RENEWAL_THRESHOLD_SECONDS } from "@/server/auth/auth.constants";
 import { UsecaseError } from "@/server/common/errors";
 import { logError } from "@/server/common/logger";
-import { CODE_MAP, COOKIE_MAX_AGE, sessionCookieAttributes } from "./connect.constants";
-import { bearerTokenFromAuthorization, tokenFromHeaders } from "./credentials";
+import { CODE_MAP, COOKIE_MAX_AGE, SIGN_IN_REQUIRED_MESSAGE, sessionCookieAttributes } from "./connect.constants";
+import { bearerTokenFromAuthorization, tokenFromHeaders } from "./session/credentials";
 
 /** The one RPC that must not hand back a fresh session on its way out. */
 const LOG_OUT_METHOD = "LogOut";
+
+/**
+ * The request gate for every call that needs a session: runs once the
+ * headers are in, before the body is read, decompressed or parsed. A caller
+ * without a validly signed, unexpired session token is refused right there,
+ * so an anonymous request costs its headers and nothing more. Only the
+ * signature is checked — no database read; whether the session was revoked
+ * is {@link requireUser}'s job inside the handler.
+ *
+ * @param handlerContext - Connect handler context for the current request.
+ * @throws ConnectError with Code.Unauthenticated when no valid session token is present.
+ */
+export function requireSignedSession(handlerContext: HandlerContext): void {
+  const token = tokenFromHeaders(handlerContext.requestHeader);
+  if (!token || !verifyToken(token)) {
+    throw new ConnectError(SIGN_IN_REQUIRED_MESSAGE, Code.Unauthenticated);
+  }
+}
 
 /**
  * Returns the calling user's id, rejecting the request when unauthenticated.
@@ -27,7 +45,7 @@ export async function requireUser(handlerContext: HandlerContext): Promise<strin
   const token = tokenFromHeaders(handlerContext.requestHeader);
   const userId = token ? verifyToken(token) : null;
   if (!userId || !token) {
-    throw new ConnectError("sign in to continue", Code.Unauthenticated);
+    throw new ConnectError(SIGN_IN_REQUIRED_MESSAGE, Code.Unauthenticated);
   }
   const embeddedVersion = tokenVersion(token);
   const currentVersion = await findUserTokenVersion(userId);

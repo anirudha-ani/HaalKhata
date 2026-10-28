@@ -8,7 +8,7 @@ vi.mock("@/server/receipt/usecase/receiptConsent.usecase", () => ({ parseReceipt
 vi.mock("@/server/api/connect/context", () => ({
   runUsecase: vi.fn((operation: () => Promise<unknown>) => operation()),
 }));
-vi.mock("@/server/api/connect/rpcRateLimit", () => ({
+vi.mock("@/server/api/connect/rateLimit/rpcRateLimit", () => ({
   MAX_CONCURRENT_RECEIPT_PARSES: 2,
   RPC_RATE_LIMITS: { parseReceipt: 5 },
   requireRateLimitedUser: vi.fn().mockResolvedValue("user-123"),

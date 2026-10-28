@@ -22,6 +22,17 @@ export const INVITE_LINK_TOKEN_PATTERN = /^[A-Za-z0-9_-]{43}$/;
 export const INVITE_PREVIEW_RATE_LIMIT = 30;
 
 /**
+ * Social calls that need no session: the invite preview a signed-out visitor
+ * sees, and two retired invite calls that only refuse. Every other social
+ * call's request gate asks for a session.
+ */
+export const ANONYMOUS_SOCIAL_RPCS: ReadonlySet<string> = new Set([
+  "PreviewInviteLink",
+  "GetFriendInviteLink",
+  "InviteContactToSignUp",
+]);
+
+/**
  * AddFriend's refusal for an email or phone that belongs to nobody on
  * HaalKhata. The clients answer it with the caller's own invite link.
  */

@@ -3,7 +3,7 @@
 import type { ServiceImpl } from "@connectrpc/connect";
 import type { PushService } from "@haalkhata/protogen/push/v1/push_pb";
 import { requireUser, runUsecase, sessionTokenVersion } from "@/server/api/connect/context";
-import { requireRateLimitedUser, RPC_RATE_LIMITS } from "@/server/api/connect/rpcRateLimit";
+import { requireRateLimitedUser, RPC_RATE_LIMITS } from "@/server/api/connect/rateLimit/rpcRateLimit";
 import * as devices from "@/server/push/usecase/devices/devices.usecase";
 import * as preferences from "@/server/push/usecase/preferences/preferences.usecase";
 
