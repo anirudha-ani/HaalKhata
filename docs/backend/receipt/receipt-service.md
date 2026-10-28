@@ -50,9 +50,9 @@ to `COMPATIBLE_AI_MODEL`, not code.
 
 ## Image Pipeline
 
-1. **Size gates:** non-empty, ≤ 8 MB compressed, ≤ 40 MP decoded (checked
-   *without* multiplying attacker-controlled dimensions first — width is
-   bounded by `MAX_PIXELS / height`).
+1. **Size gates:** non-empty and ≤ 8 MB compressed. A file's size says
+   nothing about what it unpacks to (a plain 40 MP page is a few hundred
+   kilobytes), so the decoded size is checked separately in step 3.
 2. **Format detection from magic bytes** — the client's `media_type` is
    advisory and ignored. Browsers report an empty string for HEIC, so a
    perfectly valid iPhone photo arrives unlabeled; sniffing is both more
@@ -60,20 +60,31 @@ to `COMPATIBLE_AI_MODEL`, not code.
    `.png` full of script is recognized for what it is). Accepted: JPEG, PNG,
    WebP, GIF, HEIC/HEIF (still-image brands only — HEIF containers also
    hold video, and only stills are worth transcoding).
-3. **HEIC decode** via `heic-decode`, *not* sharp: sharp's bundled libheif
-   caps `iref` boxes at 16 references and real iPhone photos carry ~48 (HDR
-   gain map, depth map, thumbnails), so every one of them would fail.
-   Metadata is read **before** pixel decode (the decoder otherwise allocates
-   width×height×4 before reporting dimensions), and decodes are limited to
-   **one at a time per process** — the slot is held through Sharp's
-   consumption of the raw RGBA buffer, so a second upload cannot allocate
-   while the first is still compressing.
-4. **Normalization to JPEG** (every format, not just HEIC): EXIF rotation is
+3. **Measured before it is unpacked** (`usecase/image/`). For JPEG, PNG,
+   WebP and GIF, sharp reads the header alone and the image is refused when
+   it has more than 40 MP or would unpack to more than 128 MiB (width ×
+   height × channels × bytes per sample, so a 16-bit PNG with transparency
+   counts four times an ordinary photo). Dimensions are compared without
+   multiplying values the file chose (width ≤ `max / height`).
+4. **Decode slots:** the process unpacks at most two images at once. A HEIC
+   takes both, because its decoder needs several times the memory of the
+   other formats; slots are given out in arrival order, so a HEIC is not
+   overtaken by smaller images.
+5. **HEIC decode in a worker thread**, through libheif-js, *not* sharp:
+   sharp's bundled libheif caps `iref` boxes at 16 references and real
+   iPhone photos carry ~48 (HDR gain map, depth map, thumbnails), so every
+   one of them would fail. libheif is WebAssembly, whose memory grows to the
+   largest photo decoded and never shrinks, so each photo gets a fresh worker
+   that is stopped once it answers and its memory leaves with it. The worker
+   checks the primary image's dimensions (≤ 25 MP: an iPhone's default 24 MP
+   photo fits) before decoding, hands the decoder's own pixel buffer to sharp
+   without a copy, and returns only the JPEG.
+6. **Normalization to JPEG** (every format, not just HEIC): EXIF rotation is
    applied (providers read pixels; a sideways receipt would be transcribed
    sideways), the long edge is capped at 2576 px (larger is downsampled
    provider-side anyway), quality 88 (small receipt print must stay
    legible).
-5. The resulting JPEG is what the provider sees **and** what the response
+7. The resulting JPEG is what the provider sees **and** what the response
    returns (`normalized_image`) — browsers cannot render the original HEIC,
    and showing the user exactly what the model read is the honest preview.
 
@@ -105,8 +116,9 @@ promised:
 | Guard | Value |
 | --- | --- |
 | Rate limit | 5/min per account |
-| Concurrency | 2 parses per process (handler gate, `ResourceExhausted` when busy); 1 HEIC decode per process |
-| Upload | 8 MB bytes, 40 MP pixels |
+| Concurrency | 2 parses per process (handler gate, `ResourceExhausted` when busy); 2 decode slots, a HEIC takes both |
+| Upload | 8 MB bytes; 40 MP and 128 MiB unpacked (JPEG, PNG, WebP, GIF); 25 MP (HEIC) |
+| Memory | Measured in the production image at its 640 MB limit: idle about 90 MB, a 24 MP HEIC peaks near 400 MB and returns to idle when its worker stops |
 | Provider | 90 s timeout, 1 MiB response cap |
 
 ---

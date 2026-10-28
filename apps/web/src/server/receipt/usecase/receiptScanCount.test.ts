@@ -7,7 +7,7 @@ const { sharpMock, fetchMock } = vi.hoisted(() => ({
   fetchMock: vi.fn(),
 }));
 
-vi.mock("sharp", () => ({ default: sharpMock }));
+vi.mock("sharp", () => ({ default: Object.assign(sharpMock, { cache: vi.fn() }) }));
 vi.mock("@/server/receipt/receipt.constants", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/server/receipt/receipt.constants")>()),
   COMPATIBLE_AI: {
@@ -42,7 +42,8 @@ beforeEach(() => {
   vi.clearAllMocks();
   process.env.RECEIPT_AI_PROVIDERS = "compatible";
   vi.stubGlobal("fetch", fetchMock);
-  const pipeline = { rotate: vi.fn(), resize: vi.fn(), jpeg: vi.fn(), toBuffer: vi.fn() };
+  const pipeline = { metadata: vi.fn(), rotate: vi.fn(), resize: vi.fn(), jpeg: vi.fn(), toBuffer: vi.fn() };
+  pipeline.metadata.mockResolvedValue({ width: 1200, height: 1600, channels: 3, depth: "uchar" });
   pipeline.rotate.mockReturnValue(pipeline);
   pipeline.resize.mockReturnValue(pipeline);
   pipeline.jpeg.mockReturnValue(pipeline);

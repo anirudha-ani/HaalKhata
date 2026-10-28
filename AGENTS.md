@@ -377,6 +377,13 @@ with colocated tests. Mobile-specific rules:
   (auth and social do; the admin services' gate is `requireAdminPageRequest`);
   `mount/requestGates.test.ts` fails when a handler that never asks for a
   session is not listed, so a new anonymous call is never silently refused.
+- **A receipt image is measured before it is unpacked.** A file's size says
+  nothing about its pixels, so `receipt/usecase/image/` reads the header
+  first and refuses more than 40 MP or 128 MiB unpacked (25 MP for HEIC),
+  gives each decode its slots (two in all; a HEIC takes both), and converts
+  HEIC in a worker thread that is stopped after every photo, because
+  libheif's WebAssembly memory never shrinks. Never decode an upload on the
+  server's own thread with libheif, and never decode before measuring.
 - **There is one email check.** Whether text is an email address is
   `isEmailAddress` (or `canonicalEmail`, which also trims and lower-cases)
   in `@haalkhata/shared/email/email`; the server, the contacts lookup and the

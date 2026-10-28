@@ -20,16 +20,59 @@ export type ImageMediaType = (typeof IMAGE_MEDIA_TYPES)[number];
 export const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
 
 /**
- * Maximum decoded pixel count (40 MP). Compressed byte size does not bound
- * decoded memory: at four channels this ceiling is already about 160 MB.
+ * Most pixels a JPEG, PNG, WebP or GIF may have (40 MP). The file's size says
+ * nothing about this: a plain 40 MP page compresses to a few hundred
+ * kilobytes and still unpacks to every pixel.
  */
 export const MAX_IMAGE_PIXELS = 40_000_000;
 
 /**
- * HEIC decoding is memory-heavy and mostly synchronous. One conversion per
- * server process prevents concurrent uploads from multiplying peak RGBA use.
+ * Most memory a JPEG, PNG, WebP or GIF may unpack to (128 MiB): width ×
+ * height × channels × bytes per sample, read from the file's header before
+ * anything is decoded. A 40 MP colour photo is 114 MiB and a 24 MP photo with
+ * transparency 93 MiB; a 40 MP 16-bit PNG with transparency would be 305 MiB
+ * and is refused. Two of these at once stay under 256 MiB.
  */
-export const MAX_CONCURRENT_HEIC_DECODES = 1;
+export const MAX_DECODED_IMAGE_BYTES = 128 * 1024 * 1024;
+
+/** Bytes in one sample of each pixel format the image header can name. */
+export const BYTES_PER_SAMPLE: Readonly<Record<string, number>> = {
+  uchar: 1,
+  char: 1,
+  ushort: 2,
+  short: 2,
+  uint: 4,
+  int: 4,
+  float: 4,
+  complex: 8,
+  double: 8,
+  dpcomplex: 16,
+};
+
+/** Bytes per sample assumed for a format the table does not name: the largest, so it is never underestimated. */
+export const UNKNOWN_BYTES_PER_SAMPLE = 16;
+
+/**
+ * Most pixels a HEIC/HEIF photo may have (25 MP). Its decoder needs about
+ * eleven bytes per pixel, several times what the other formats need, so its
+ * ceiling is lower: an iPhone's default 24 MP photo (5712 × 4284) fits and
+ * adds about 300 MB while it converts; a 48 MP one would need over 500 MB,
+ * most of the container's 640, and is refused.
+ */
+export const MAX_HEIC_PIXELS = 25_000_000;
+
+/**
+ * Image decodes the process runs at once, out of the parses it allows. A
+ * JPEG, PNG, WebP or GIF takes one; a HEIC takes them all, because one HEIC
+ * already uses as much as two of the others.
+ */
+export const IMAGE_DECODE_SLOTS = 2;
+
+/**
+ * How long a HEIC conversion may take before its worker is stopped. A 24 MP
+ * photo takes under two seconds; anything near this is stuck.
+ */
+export const HEIC_TRANSCODE_TIMEOUT_MS = 30_000;
 
 /**
  * Longest edge, in pixels, sent to the vision provider. 2576px is the ceiling

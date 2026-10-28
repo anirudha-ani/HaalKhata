@@ -401,12 +401,12 @@ importers:
       google-auth-library:
         specifier: ^11.3.1
         version: 11.3.1(supports-color@8.1.1)
-      heic-decode:
-        specifier: ^2.1.0
-        version: 2.1.0
       jose:
         specifier: ^6.2.13
         version: 6.2.13
+      libheif-js:
+        specifier: ^1.19.8
+        version: 1.19.8
       libphonenumber-js:
         specifier: ^1.13.15
         version: 1.13.15
@@ -4459,10 +4459,6 @@ packages:
   hasown@2.0.4:
     resolution: {integrity: sha512-T2UbfbBEF32wiepXIsMlTW9+dDYC6wMh/t/vYA4tuOMKqWz/n3vr1NFSxQiyP+zk2mXsoMA/i/7qV6LKut1t1A==}
     engines: {node: '>= 0.4'}
-
-  heic-decode@2.1.0:
-    resolution: {integrity: sha512-0fB3O3WMk38+PScbHLVp66jcNhsZ/ErtQ6u2lMYu/YxXgbBtl+oKOhGQHa4RpvE68k8IzbWkABzHnyAIjR758A==}
-    engines: {node: '>=8.0.0'}
 
   hermes-compiler@260318099.0.4:
     resolution: {integrity: sha512-8odcPFkPC82HlqCl0C5QI9mBN4rEAT+IAo55sJhzwKw//K3qZloiv3ex6J2O8CuBbhdmkJozfidNsset2KH25w==}
@@ -10683,10 +10679,6 @@ snapshots:
   hasown@2.0.4:
     dependencies:
       function-bind: 1.1.2
-
-  heic-decode@2.1.0:
-    dependencies:
-      libheif-js: 1.19.8
 
   hermes-compiler@260318099.0.4: {}
 

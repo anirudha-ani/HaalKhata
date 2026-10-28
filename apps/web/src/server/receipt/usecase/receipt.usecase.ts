@@ -1,6 +1,7 @@
 /**
- * Receipt-parsing business logic: provider selection, image normalization,
- * and untrusted provider output normalized to integer currency minor units.
+ * Receipt-parsing business logic: provider selection, the upload checks (the
+ * image itself is unpacked and re-encoded in `image/`), and untrusted provider
+ * output normalized to integer currency minor units.
  *
  * There is deliberately no provider-specific SDK here. OpenRouter fronts every
  * model worth using for this — Claude and Gemini included — behind one
@@ -14,9 +15,7 @@
  */
 
 import { currencyInfo, minorUnitDigits } from "@haalkhata/shared/money/money.constants";
-import heicDecode from "heic-decode";
-import sharp from "sharp";
-import { invalid, unavailable, UsecaseError } from "@/server/common/errors";
+import { invalid, unavailable } from "@/server/common/errors";
 import { isRealCalendarDate } from "@/server/common/validation/validation";
 import { logError, logEvent } from "@/server/common/logger";
 import {
@@ -28,11 +27,7 @@ import {
   HEIF_BRANDS,
   IMAGE_MEDIA_TYPES,
   IMAGE_SIGNATURES,
-  JPEG_QUALITY,
-  MAX_CONCURRENT_HEIC_DECODES,
   MAX_IMAGE_BYTES,
-  MAX_IMAGE_EDGE_PIXELS,
-  MAX_IMAGE_PIXELS,
   MAX_PARSED_ITEMS,
   MAX_PARSED_MONEY_CENTS,
   MAX_PARSED_NAME_LENGTH,
@@ -43,12 +38,7 @@ import {
   RECEIPT_JSON_SCHEMA,
   type ImageMediaType,
 } from "@/server/receipt/receipt.constants";
-
-/** Number of HEIC decodes currently holding a process-local memory slot. */
-let activeHeicDecodes = 0;
-
-/** FIFO waiters for the bounded HEIC decode slot. */
-const heicDecodeWaiters: Array<() => void> = [];
+import { normalizeToJpeg } from "./image/normalizeToJpeg";
 
 /** A receipt extracted from an image, with all money amounts in the currency's integer minor units. */
 export interface ParsedReceiptData {
@@ -507,161 +497,6 @@ function detectImageFormat(image: Uint8Array): ImageMediaType | null {
     return mediaType;
   }
   return null;
-}
-
-/**
- * Runs a memory-heavy HEIC operation within the process-local concurrency cap.
- *
- * @param operation - Decode operation to run once a slot is available.
- * @returns The operation's result.
- */
-async function withHeicDecodeSlot<Result>(operation: () => Promise<Result>): Promise<Result> {
-  if (activeHeicDecodes < MAX_CONCURRENT_HEIC_DECODES) {
-    activeHeicDecodes++;
-  } else {
-    await new Promise<void>((resolve) => heicDecodeWaiters.push(resolve));
-  }
-  try {
-    return await operation();
-  } finally {
-    const nextWaiter = heicDecodeWaiters.shift();
-    if (nextWaiter) nextWaiter();
-    else activeHeicDecodes--;
-  }
-}
-
-/** Raw primary HEIC image ready for Sharp's raw-pixel input. */
-interface DecodedHeicImage {
-  /** Four-channel pixel bytes. */
-  data: Buffer;
-  /** Pixel width. */
-  width: number;
-  /** Pixel height. */
-  height: number;
-}
-
-/**
- * Validates dimensions without multiplying attacker-controlled values first.
- *
- * @param width - Decoded image width.
- * @param height - Decoded image height.
- * @throws UsecaseError (invalid_argument) when dimensions are invalid or exceed the pixel ceiling.
- */
-function assertSafeDimensions(width: number, height: number): void {
-  if (
-    !Number.isSafeInteger(width) ||
-    !Number.isSafeInteger(height) ||
-    width <= 0 ||
-    height <= 0 ||
-    width > Math.floor(MAX_IMAGE_PIXELS / height)
-  ) {
-    // Our own limit, so its wording is ours to show; decoder failures are not.
-    invalid(`image dimensions exceed the ${MAX_IMAGE_PIXELS}-pixel limit`);
-  }
-}
-
-/**
- * Reads HEIC/HEIF metadata first, then decodes only when the primary image is
- * within the pixel limit. This is the critical ordering: the one-shot decoder
- * allocates width × height × 4 before returning dimensions to its caller.
- *
- * This does NOT go through sharp. sharp bundles libheif 1.23, whose security
- * limits cap an `iref` box at 16 references — and real iPhone photos carry ~48
- * (HDR gain map, depth map, thumbnails), so every one of them fails to decode
- * with "Security limit exceeded". libheif does not expose that limit through
- * libvips, so there is no option to relax.
- *
- * heic-decode uses the same alternate libheif build as heic-convert and
- * decodes the same files at full resolution. ffmpeg also decodes them, but
- * returns a half-size preview image rather than the primary one — worse for
- * small receipt print, and a system dependency besides.
- *
- * @param image - Raw HEIC/HEIF bytes.
- * @returns Decoded four-channel pixels, with orientation already applied.
- */
-async function decodeHeic(image: Uint8Array): Promise<DecodedHeicImage> {
-  const images = await heicDecode.all({ buffer: image });
-  try {
-    const primaryImage = images[0];
-    if (!primaryImage) throw new Error("HEIF image not found");
-    assertSafeDimensions(primaryImage.width, primaryImage.height);
-    const decoded = await primaryImage.decode();
-    return {
-      data: Buffer.from(decoded.data.buffer, decoded.data.byteOffset, decoded.data.byteLength),
-      width: decoded.width,
-      height: decoded.height,
-    };
-  } finally {
-    images.dispose();
-  }
-}
-
-/**
- * Transcodes any accepted upload into the JPEG the vision providers actually
- * take, and returns it base64-encoded.
- *
- * Three things happen here, all of which matter for receipts:
- *  - **HEIC becomes JPEG.** iPhones shoot HEIC by default and no vision API
- *    accepts it, so without this every default iPhone photo fails.
- *  - **EXIF rotation is applied.** Phone cameras record orientation as metadata
- *    rather than rotating pixels; providers read pixels, so a sideways receipt
- *    would otherwise be transcribed sideways. (HEIC arrives already oriented
- *    from the decoder, so this is a no-op for that path.)
- *  - **The long edge is capped.** Anything beyond what the model uses is
- *    downsampled on their side anyway, so sending it only costs upload time.
- *
- * Every format goes through the sharp stage, not just HEIC — the orientation
- * fix and size cap are worth just as much on a JPEG straight off a phone.
- *
- * @param currency - Expense currency when the receipt is ambiguous.
- * @param image - Raw uploaded bytes, already validated.
- * @param format - Format detected from the bytes by {@link detectImageFormat}.
- * @returns The JPEG bytes, which are both sent to the provider (base64) and
- *   handed back to the client so it can show what the model actually read.
- * @throws UsecaseError (invalid_argument) when the bytes cannot be decoded as an image.
- */
-async function normalizeToJpeg(image: Uint8Array, format: ImageMediaType): Promise<Buffer> {
-  try {
-    const isHeic = format === "image/heic" || format === "image/heif";
-    const transcode = async (): Promise<Buffer> => {
-      const decodedHeic = isHeic ? await decodeHeic(image) : null;
-      const decoded = decodedHeic?.data ?? Buffer.from(image);
-      return sharp(decoded, {
-        limitInputPixels: MAX_IMAGE_PIXELS,
-        ...(decodedHeic
-          ? {
-              raw: {
-                width: decodedHeic.width,
-                height: decodedHeic.height,
-                channels: 4 as const,
-              },
-            }
-          : {}),
-      })
-        .rotate() // no argument = apply the EXIF orientation tag
-        .resize({
-          width: MAX_IMAGE_EDGE_PIXELS,
-          height: MAX_IMAGE_EDGE_PIXELS,
-          fit: "inside",
-          withoutEnlargement: true,
-        })
-        .jpeg({ quality: JPEG_QUALITY })
-        .toBuffer();
-    };
-    // Hold the slot through Sharp's consumption of the raw RGBA buffer; a
-    // decode-only lock would let the next upload allocate while this one was
-    // still being compressed.
-    return isHeic ? await withHeicDecodeSlot(transcode) : await transcode();
-  } catch (error) {
-    // Our own limits are already worded for the user; only a decoder's
-    // failure is rewritten. The decoder's words name a native library and
-    // its internals, so they go to the log and the user gets what to do.
-    if (error instanceof UsecaseError) throw error;
-    logEvent("warn", "receipt image could not be decoded", {
-      detail: error instanceof Error ? error.message : String(error),
-    });
-    invalid("could not read that image. Try a clear JPEG, PNG or WebP photo");
-  }
 }
 
 /** A receipt request that passed every check and is ready for the providers. */

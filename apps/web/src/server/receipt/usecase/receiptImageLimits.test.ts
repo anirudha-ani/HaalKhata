@@ -1,24 +1,26 @@
-/** Regression tests for decoded-pixel and HEIC allocation limits. */
+/** Regression tests for how a receipt upload is measured, routed and given decode slots before it is unpacked. */
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { sharpMock, sharpToBufferMock, heicDecodeAllMock, heicImageDecodeMock, disposeMock } = vi.hoisted(() => ({
+const { sharpMock, sharpMetadataMock, sharpToBufferMock, transcodeHeicMock } = vi.hoisted(() => ({
   sharpMock: vi.fn(),
+  sharpMetadataMock: vi.fn(),
   sharpToBufferMock: vi.fn(),
-  heicDecodeAllMock: vi.fn(),
-  heicImageDecodeMock: vi.fn(),
-  disposeMock: vi.fn(),
+  transcodeHeicMock: vi.fn(),
 }));
 
-vi.mock("sharp", () => ({ default: sharpMock }));
-vi.mock("heic-decode", () => ({
-  default: Object.assign(vi.fn(), { all: heicDecodeAllMock }),
-}));
-
-import { MAX_IMAGE_PIXELS } from "@/server/receipt/receipt.constants";
+vi.mock("sharp", () => ({ default: Object.assign(sharpMock, { cache: vi.fn() }) }));
+vi.mock("@/server/receipt/usecase/image/heicTranscode", () => ({ transcodeHeic: transcodeHeicMock }));
 vi.mock("@/server/receipt/repo/receiptScans.repo", () => ({ insertReceiptScan: vi.fn(async () => undefined) }));
 
+import { MAX_IMAGE_PIXELS } from "@/server/receipt/receipt.constants";
 import { scanReceipt } from "./receipt.usecase";
+
+/** What a JPEG off a phone's camera reports in its header. */
+const ORDINARY_PHOTO = { width: 4032, height: 3024, channels: 3, depth: "uchar" };
+
+/** A JPEG's first bytes, which is what the mocked transcoders hand back. */
+const JPEG = Buffer.from([0xff, 0xd8, 0xff]);
 
 /**
  * Parses as the server does for a signed-in person, with the scan count
@@ -55,12 +57,24 @@ function heicBytes(): Uint8Array {
   ]);
 }
 
+/**
+ * A promise the test settles when it chooses, for holding a decode open.
+ *
+ * @returns The promise and the function that settles it.
+ */
+function heldOpen(): { promise: Promise<Buffer>; finish: () => void } {
+  let finish = () => {};
+  const promise = new Promise<Buffer>((resolve) => { finish = () => resolve(JPEG); });
+  return { promise, finish };
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
-  heicDecodeAllMock.mockReset();
   sharpToBufferMock.mockReset();
+  transcodeHeicMock.mockReset();
   process.env.RECEIPT_AI_PROVIDERS = "mock";
   const pipeline = {
+    metadata: sharpMetadataMock,
     rotate: vi.fn(),
     resize: vi.fn(),
     jpeg: vi.fn(),
@@ -69,11 +83,13 @@ beforeEach(() => {
   pipeline.rotate.mockReturnValue(pipeline);
   pipeline.resize.mockReturnValue(pipeline);
   pipeline.jpeg.mockReturnValue(pipeline);
-  sharpToBufferMock.mockResolvedValue(Buffer.from([0xff, 0xd8, 0xff]));
+  sharpMetadataMock.mockResolvedValue(ORDINARY_PHOTO);
+  sharpToBufferMock.mockResolvedValue(JPEG);
+  transcodeHeicMock.mockResolvedValue(JPEG);
   sharpMock.mockReturnValue(pipeline);
 });
 
-describe("receipt image decode limits", () => {
+describe("receipt image formats", () => {
   it("requires the WEBP brand instead of accepting every RIFF container", async () => {
     await expect(parseAsSomeone(riffBytes("AVI "))).rejects.toThrow(/isn't a supported image/);
 
@@ -83,10 +99,19 @@ describe("receipt image decode limits", () => {
   it("accepts a RIFF container that carries the WEBP brand", async () => {
     await parseAsSomeone(riffBytes("WEBP"));
 
-    expect(sharpMock).toHaveBeenCalledOnce();
+    expect(sharpToBufferMock).toHaveBeenCalledOnce();
   });
 
-  it("passes the explicit pixel ceiling to Sharp for ordinary images", async () => {
+  it("sends a HEIC to its own worker and never to sharp", async () => {
+    await parseAsSomeone(heicBytes());
+
+    expect(transcodeHeicMock).toHaveBeenCalledOnce();
+    expect(sharpMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("receipt image decode budget", () => {
+  it("passes the explicit pixel ceiling to sharp for ordinary images", async () => {
     await parseAsSomeone(pngBytes());
 
     expect(sharpMock).toHaveBeenCalledWith(
@@ -95,52 +120,78 @@ describe("receipt image decode limits", () => {
     );
   });
 
-  it("rejects oversized HEIC metadata before allocating its pixel buffer", async () => {
-    const images = Object.assign(
-      [{ width: 10_000, height: 5_000, decode: heicImageDecodeMock }],
-      { dispose: disposeMock },
-    );
-    heicDecodeAllMock.mockResolvedValue(images);
+  it("refuses an image whose header says it unpacks to more than the budget, before decoding", async () => {
+    // 8000 × 5000 at 16 bits with transparency: 305 MiB from a 465 KB file.
+    sharpMetadataMock.mockResolvedValue({ width: 8000, height: 5000, channels: 4, depth: "ushort" });
 
-    await expect(parseAsSomeone(heicBytes())).rejects.toThrow(/40000000-pixel limit/);
-    expect(heicImageDecodeMock).not.toHaveBeenCalled();
-    expect(disposeMock).toHaveBeenCalledOnce();
-    expect(sharpMock).not.toHaveBeenCalled();
+    await expect(parseAsSomeone(pngBytes())).rejects.toThrow(/far more detail than a receipt needs/);
+    expect(sharpToBufferMock).not.toHaveBeenCalled();
   });
 
-  it("holds the HEIC slot until Sharp releases the raw pixel buffer", async () => {
-    const decoded = {
-      width: 1,
-      height: 1,
-      data: new Uint8ClampedArray([0, 0, 0, 255]),
-    };
-    const firstImages = Object.assign(
-      [{ width: 1, height: 1, decode: vi.fn().mockResolvedValue(decoded) }],
-      { dispose: vi.fn() },
-    );
-    const secondImages = Object.assign(
-      [{ width: 1, height: 1, decode: vi.fn().mockResolvedValue(decoded) }],
-      { dispose: vi.fn() },
-    );
-    heicDecodeAllMock
-      .mockResolvedValueOnce(firstImages)
-      .mockResolvedValueOnce(secondImages);
-    let releaseFirstTranscode: ((jpeg: Buffer) => void) | undefined;
-    sharpToBufferMock
-      .mockImplementationOnce(
-        () => new Promise<Buffer>((resolve) => { releaseFirstTranscode = resolve; }),
-      )
-      .mockResolvedValue(Buffer.from([0xff, 0xd8, 0xff]));
+  it("refuses an image over the pixel ceiling from its header", async () => {
+    sharpMetadataMock.mockResolvedValue({ width: 10_000, height: 5_000, channels: 3, depth: "uchar" });
 
-    const firstParse = parseAsSomeone(heicBytes());
+    await expect(parseAsSomeone(pngBytes())).rejects.toThrow(/over 40 megapixels/);
+    expect(sharpToBufferMock).not.toHaveBeenCalled();
+  });
+
+  it("counts a sample format it does not know as the largest", async () => {
+    // 9 MP is small at one byte a sample and far over the budget at sixteen.
+    sharpMetadataMock.mockResolvedValue({ width: 3000, height: 3000, channels: 4, depth: "something-new" });
+
+    await expect(parseAsSomeone(pngBytes())).rejects.toThrow(/far more detail/);
+  });
+
+  it("words an unreadable header for the person, not the decoder", async () => {
+    sharpMetadataMock.mockRejectedValue(new Error("pngload: libspng read error"));
+
+    await expect(parseAsSomeone(pngBytes())).rejects.toThrow(/could not read that image/);
+  });
+});
+
+describe("receipt image decode slots", () => {
+  it("decodes two ordinary images at once", async () => {
+    const first = heldOpen();
+    const second = heldOpen();
+    sharpToBufferMock.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
+
+    const parses = [parseAsSomeone(pngBytes()), parseAsSomeone(pngBytes())];
+
+    await vi.waitFor(() => expect(sharpToBufferMock).toHaveBeenCalledTimes(2));
+    first.finish();
+    second.finish();
+    await Promise.all(parses);
+  });
+
+  it("starts a HEIC only once no other image is decoding", async () => {
+    const ordinary = heldOpen();
+    sharpToBufferMock.mockReturnValueOnce(ordinary.promise);
+
+    const ordinaryParse = parseAsSomeone(pngBytes());
     await vi.waitFor(() => expect(sharpToBufferMock).toHaveBeenCalledOnce());
-    const secondParse = parseAsSomeone(heicBytes());
-    await Promise.resolve();
+    const heicParse = parseAsSomeone(heicBytes());
+    await new Promise((resolve) => setTimeout(resolve, 20));
 
-    expect(heicDecodeAllMock).toHaveBeenCalledOnce();
-    releaseFirstTranscode?.(Buffer.from([0xff, 0xd8, 0xff]));
-    await firstParse;
-    await vi.waitFor(() => expect(heicDecodeAllMock).toHaveBeenCalledTimes(2));
-    await secondParse;
+    expect(transcodeHeicMock).not.toHaveBeenCalled();
+    ordinary.finish();
+    await ordinaryParse;
+    await vi.waitFor(() => expect(transcodeHeicMock).toHaveBeenCalledOnce());
+    await heicParse;
+  });
+
+  it("decodes nothing else while a HEIC is decoding", async () => {
+    const heic = heldOpen();
+    transcodeHeicMock.mockReturnValueOnce(heic.promise);
+
+    const heicParse = parseAsSomeone(heicBytes());
+    await vi.waitFor(() => expect(transcodeHeicMock).toHaveBeenCalledOnce());
+    const ordinaryParse = parseAsSomeone(pngBytes());
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    expect(sharpToBufferMock).not.toHaveBeenCalled();
+    heic.finish();
+    await heicParse;
+    await vi.waitFor(() => expect(sharpToBufferMock).toHaveBeenCalledOnce());
+    await ordinaryParse;
   });
 });
