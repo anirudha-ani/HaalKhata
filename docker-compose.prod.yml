@@ -59,9 +59,9 @@ services:
     # allocation kills web alone (restart brings it back) instead of drawing
     # the 1 GB droplet down until the kernel's OOM killer picks Postgres.
     # 640 MB: Node's heap is capped at 384 MB below (NODE_OPTIONS), and the
-    # rest is for what lives outside it, such as converting a 24 MP HEIC
-    # receipt (about 300 MB on top of an idle 90 MB, returned when its worker
-    # stops). No swap beyond it; a fixed number of processes.
+    # rest is for what lives outside it, such as request bodies. Receipt
+    # photos arrive prepared by the apps, so nothing here decodes an image;
+    # idle is about 90 MB. No swap beyond it; a fixed number of processes.
     mem_limit: 640m
     memswap_limit: 640m
     pids_limit: 256

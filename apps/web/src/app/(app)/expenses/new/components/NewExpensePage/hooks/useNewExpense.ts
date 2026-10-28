@@ -284,16 +284,6 @@ export function useNewExpense(
   useEffect(() => () => URL.revokeObjectURL(receiptUrl), [receiptUrl]);
 
   /**
-   * Whether the browser can actually paint this file in an `<img>`. HEIC is
-   * accepted and transcoded server-side, but Chrome and Firefox cannot decode
-   * it, so rendering the object URL would show a broken-image icon for a file
-   * that is perfectly fine. Once parsed, `receiptUrl` (the server's JPEG)
-   * takes over and this no longer matters.
-   */
-  const isPreviewRenderable =
-    file !== null && !/^image\/hei[cf]$/i.test(file.type) && !/\.hei[cf]$/i.test(file.name);
-
-  /**
    * Sends the chosen photo to the AI parser and pours the result into this
    * form: merchant becomes the description, and the extracted lines become
    * the itemized draft with the split switched to match.
@@ -352,11 +342,12 @@ export function useNewExpense(
    * Stores a newly chosen receipt photo and clears anything a previous scan
    * produced, so a second photo cannot leave the first one's items behind.
    *
-   * The photo is shrunk to upload size first ({@link prepareReceiptImage}).
-   * A phone shot is 3–12 MB, all of which would otherwise cross a mobile
-   * connection for the server to discard — and over 8 MB is rejected outright
-   * after the wait. `isPreparing` covers the decode, which is a visible pause
-   * on a 12-megapixel image and would otherwise look like a dead tap.
+   * The photo is prepared to the upload standard first
+   * ({@link prepareReceiptImage}): converted to JPEG, turned upright and
+   * shrunk, here on the device, since the server only checks it. A photo the
+   * browser cannot read is refused here, beside the control, with words to
+   * act on. `isPreparing` covers the decode, which is a visible pause on a
+   * large photo and would otherwise look like a dead tap.
    *
    * @param picked - The image file chosen or captured by the user.
    */
@@ -376,6 +367,8 @@ export function useNewExpense(
         URL.revokeObjectURL(previousUrl);
         return URL.createObjectURL(prepared);
       });
+    } catch (prepareError) {
+      setError(errorMessage(prepareError));
     } finally {
       setIsPreparing(false);
     }
@@ -543,10 +536,8 @@ export function useNewExpense(
     receiptConsent,
     isReceiptBusy: expenseAPI.parse.isPending || receiptConsent.busy,
     file,
-    fileName: file?.name ?? "",
     previewUrl,
     receiptUrl,
-    isPreviewRenderable,
     pickFile,
     isPreparing,
     parseNow: () => { void receiptConsent.request(); },

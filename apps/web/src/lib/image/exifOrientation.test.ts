@@ -1,7 +1,7 @@
 /** Unit tests for the EXIF orientation reader, against bytes a real encoder produced. */
 
 import { describe, expect, it } from "vitest";
-import { orientationTransform, readJpegOrientation } from "@/lib/image/exifOrientation";
+import { orientationTransform, readJpegFrameSize, readJpegOrientation, remainingTurn } from "@/lib/image/exifOrientation";
 import { EXIF_JPEG_FIXTURES } from "@/lib/image/exifFixtures";
 
 /**
@@ -79,5 +79,39 @@ describe("orientationTransform", () => {
     expect(orientationTransform(0).rotate).toBe(0);
     expect(orientationTransform(99).rotate).toBe(0);
     expect(orientationTransform(-1).rotate).toBe(0);
+  });
+});
+
+describe("readJpegFrameSize", () => {
+  it("reads the stored size out of real encoder output, whatever the tag says", () => {
+    expect(readJpegFrameSize(fixture("1"))).toEqual({ width: 8, height: 4 });
+    expect(readJpegFrameSize(fixture("6"))).toEqual({ width: 8, height: 4 });
+  });
+
+  it("gives up on bytes that are not a JPEG or end before the frame", () => {
+    expect(readJpegFrameSize(Uint8Array.from([0x89, 0x50, 0x4e, 0x47]))).toBeNull();
+    expect(readJpegFrameSize(fixture("6").subarray(0, 30))).toBeNull();
+  });
+});
+
+describe("remainingTurn", () => {
+  const portrait = orientationTransform(6);
+  const stored = { width: 4000, height: 3000 };
+
+  it("leaves a photo the browser already turned alone, as Chrome does even when asked not to", () => {
+    expect(remainingTurn(portrait, stored, { width: 3000, height: 4000 })).toEqual(orientationTransform(1));
+  });
+
+  it("makes the turn when the browser ignored the tag, as Safari before 16.4 does", () => {
+    expect(remainingTurn(portrait, stored, { width: 4000, height: 3000 })).toEqual(portrait);
+  });
+
+  it("takes a half turn as done, since the size cannot tell", () => {
+    expect(remainingTurn(orientationTransform(3), stored, { width: 4000, height: 3000 })).toEqual(orientationTransform(1));
+  });
+
+  it("takes the turn as done when the stored size is unknown or square", () => {
+    expect(remainingTurn(portrait, null, { width: 4000, height: 3000 })).toEqual(orientationTransform(1));
+    expect(remainingTurn(portrait, { width: 3000, height: 3000 }, { width: 3000, height: 3000 })).toEqual(orientationTransform(1));
   });
 });

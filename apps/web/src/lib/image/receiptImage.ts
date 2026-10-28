@@ -1,134 +1,141 @@
-/** Shrinks a receipt photo in the browser so a phone uploads kilobytes, not megabytes. */
+/**
+ * Prepares a receipt photo in the browser to the upload standard
+ * (`@haalkhata/shared/receipt/receipt.constants`): a JPEG at most 2576 pixels
+ * on its longer side, already upright, with no metadata. The server checks
+ * those facts and accepts nothing else, so it never has to decode a photo.
+ */
 
-import { orientationTransform, readJpegOrientation } from "./exifOrientation";
+import {
+  MAX_RECEIPT_IMAGE_BYTES,
+  MAX_RECEIPT_IMAGE_EDGE_PIXELS,
+  RECEIPT_IMAGE_MEDIA_TYPE,
+} from "@haalkhata/shared/receipt/receipt.constants";
+import {
+  orientationTransform,
+  readJpegFrameSize,
+  readJpegOrientation,
+  remainingTurn,
+  type OrientationTransform,
+} from "./exifOrientation";
+import { heicToJpeg } from "./heicToJpeg";
 import {
   EXIF_SCAN_BYTES,
-  MAX_UPLOAD_EDGE_PIXELS,
-  SKIP_RESIZE_BELOW_BYTES,
+  FLATTEN_BACKGROUND,
+  HEIF_BRANDS,
+  HEIF_FILE_TYPE,
+  HEIF_HEADER_BYTES,
+  PHOTO_TOO_LARGE_MESSAGE,
+  PHOTO_UNREADABLE_MESSAGE,
   UPLOAD_JPEG_QUALITY,
 } from "./image.constants";
-
-/** Pixel dimensions of an image. */
-export interface ImageSize {
-  /** Width in pixels. */
-  width: number;
-  /** Height in pixels. */
-  height: number;
-}
+import { uploadSize } from "./imageSize";
 
 /**
- * Whether the browser can decode this file at all.
- *
- * HEIC is what an iPhone shoots by default and no browser engine decodes it,
- * so it has to go up untouched for the server to transcode. This is the same
- * limitation that makes a HEIC preview impossible before parsing.
+ * Whether a file is a HEIC/HEIF still, the format an iPhone shoots by default.
+ * Browsers often give it no type, so its name and first bytes count too.
  *
  * @param file - The chosen file.
- * @returns True when the file is a HEIC/HEIF still.
+ * @param header - The file's first bytes.
+ * @returns True for a HEIC/HEIF photo.
  */
-export function isHeic(file: File): boolean {
-  return /^image\/hei[cf]$/i.test(file.type) || /\.hei[cf]$/i.test(file.name);
+export function isHeic(file: File, header: Uint8Array): boolean {
+  if (/^image\/hei[cf]$/i.test(file.type) || /\.hei[cf]$/i.test(file.name)) return true;
+  if (header.length < HEIF_HEADER_BYTES) return false;
+  const hasFileType = HEIF_FILE_TYPE.every((byte, index) => header[4 + index] === byte);
+  const brand = String.fromCharCode(...header.subarray(8, HEIF_HEADER_BYTES));
+  return hasFileType && HEIF_BRANDS.includes(brand);
 }
 
 /**
- * Computes the size to redraw an image at so its longest edge fits `maxEdge`,
- * preserving aspect ratio.
+ * Draws a decoded photo upright at upload size on a white page and encodes it
+ * as a JPEG. The canvas writes no metadata, so EXIF (and where the photo was
+ * taken) stays on the device.
  *
- * @param size - The image's natural dimensions.
- * @param maxEdge - Longest edge allowed, in pixels.
- * @returns The target size, or null when the image already fits and should be
- *   left alone. Never enlarges: upscaling invents detail and costs bytes.
+ * @param bitmap - The decoded photo.
+ * @param turn - Rotation the pixels still need.
+ * @returns The JPEG.
+ * @throws Error when the browser has no canvas to draw on.
  */
-export function scaledSize(size: ImageSize, maxEdge: number): ImageSize | null {
-  const longest = Math.max(size.width, size.height);
-  if (longest <= maxEdge || longest === 0) return null;
-  const ratio = maxEdge / longest;
-  return {
-    // Round, then floor to at least 1: a 4000×3 panorama must not scale to a
-    // zero-height canvas, which throws.
-    width: Math.max(1, Math.round(size.width * ratio)),
-    height: Math.max(1, Math.round(size.height * ratio)),
-  };
+async function drawAsJpeg(bitmap: ImageBitmap, turn: OrientationTransform): Promise<Blob> {
+  const target = uploadSize({ width: bitmap.width, height: bitmap.height }, MAX_RECEIPT_IMAGE_EDGE_PIXELS);
+  const canvas = document.createElement("canvas");
+  // A quarter turn swaps the axes, so the canvas takes the drawn size
+  // transposed or the image is cropped to its own corner.
+  canvas.width = turn.swapsAxes ? target.height : target.width;
+  canvas.height = turn.swapsAxes ? target.width : target.height;
+  const context = canvas.getContext("2d");
+  if (!context) throw new Error("no 2D canvas");
+  context.fillStyle = FLATTEN_BACKGROUND;
+  context.fillRect(0, 0, canvas.width, canvas.height);
+  context.translate(canvas.width / 2, canvas.height / 2);
+  if (turn.rotate !== 0) context.rotate((turn.rotate * Math.PI) / 180);
+  if (turn.mirrored) context.scale(-1, 1);
+  context.drawImage(bitmap, -target.width / 2, -target.height / 2, target.width, target.height);
+  const blob = await new Promise<Blob | null>((resolve) =>
+    canvas.toBlob(resolve, RECEIPT_IMAGE_MEDIA_TYPE, UPLOAD_JPEG_QUALITY),
+  );
+  if (!blob) throw new Error("the canvas produced no JPEG");
+  return blob;
 }
 
 /**
- * Whether a file is worth trying to shrink before upload.
+ * Decodes the photo with the browser's own decoder and prepares it.
+ *
+ * The browser is asked to turn the photo upright as it decodes. Current
+ * browsers do; Safari before 16.4 ignores the request for a JPEG, which shows
+ * in the decoded size, and then the turn read from the EXIF tag is made here
+ * ({@link remainingTurn}). A HEIC keeps its rotation in the image itself,
+ * which Safari (the one browser that opens HEIC) applies as it decodes.
  *
  * @param file - The chosen file.
- * @returns True when it is a browser-decodable image above the size floor.
+ * @param header - The file's first bytes.
+ * @param heic - Whether it is a HEIC.
+ * @returns The prepared JPEG.
+ * @throws Error when the browser cannot decode it.
  */
-export function shouldResize(file: File): boolean {
-  return !isHeic(file) && file.size > SKIP_RESIZE_BELOW_BYTES;
+async function prepareInBrowser(file: File, header: Uint8Array, heic: boolean): Promise<Blob> {
+  const bitmap = await createImageBitmap(file, { imageOrientation: "from-image" });
+  try {
+    const turn = heic
+      ? orientationTransform(1)
+      : remainingTurn(orientationTransform(readJpegOrientation(header)), readJpegFrameSize(header), bitmap);
+    return await drawAsJpeg(bitmap, turn);
+  } finally {
+    bitmap.close();
+  }
 }
 
 /**
- * Re-encodes a receipt photo down to {@link MAX_UPLOAD_EDGE_PIXELS} for upload.
+ * Turns any photo the person picked or shot into a prepared receipt photo.
  *
- * A phone camera produces 3–12 MB per shot, all of which currently crosses a
- * mobile connection so the server can throw most of it away — and anything
- * over 8 MB is rejected outright after the wait. Doing the downscale here
- * turns a typical receipt photo into a few hundred kilobytes.
- *
- * Every failure path returns the original file rather than throwing: a photo
- * that uploads slowly still works, whereas one that never uploads does not.
- * That covers HEIC (undecodable), an unavailable canvas, a re-encode that
- * came out larger, and any browser that lacks `createImageBitmap`.
- *
- * Rotation is applied from the EXIF tag we read ourselves rather than via
- * `imageOrientation: "from-image"`, which Safari only honours from 16.4. On
- * an older iPhone that option is silently ignored, and since the re-encode
- * drops the EXIF block the server loses its chance to rotate too — the
- * receipt would arrive sideways with nothing left to say it was.
+ * Every photo is re-encoded, even one already small, because that is what
+ * applies its rotation and leaves its metadata behind. A HEIC the browser
+ * cannot open (Chrome, Firefox, Edge) is converted by libheif in a Web Worker.
  *
  * @param file - The photo the user chose or captured.
- * @returns A smaller JPEG File, or the original when shrinking is impossible
- *   or not worthwhile.
+ * @returns The JPEG to upload.
+ * @throws Error with words for the person when the photo cannot be read or is
+ *   still over the upload limit once prepared.
  */
 export async function prepareReceiptImage(file: File): Promise<File> {
-  if (!shouldResize(file)) return file;
-  if (typeof createImageBitmap !== "function") return file;
-
-  let bitmap: ImageBitmap | undefined;
+  const header = new Uint8Array(await file.slice(0, EXIF_SCAN_BYTES).arrayBuffer());
+  const heic = isHeic(file, header);
+  let jpeg: Blob;
   try {
-    const header = new Uint8Array(await file.slice(0, EXIF_SCAN_BYTES).arrayBuffer());
-    const turn = orientationTransform(readJpegOrientation(header));
-
-    // "none" so the browser applies nothing and the transform below is the
-    // only thing acting on the pixels — otherwise a browser that does honour
-    // the tag would rotate it a second time.
-    bitmap = await createImageBitmap(file, { imageOrientation: "none" });
-    const target = scaledSize({ width: bitmap.width, height: bitmap.height }, MAX_UPLOAD_EDGE_PIXELS);
-    // Already small enough in pixels; its bytes are just a generous encode,
-    // and re-encoding to chase that risks coming out worse. Nothing to do
-    // about rotation either — the untouched file keeps its EXIF for the
-    // server to act on.
-    if (!target) return file;
-
-    const canvas = document.createElement("canvas");
-    // A quarter turn swaps the axes, so the canvas takes the drawn size
-    // transposed or the image is cropped to its own corner.
-    canvas.width = turn.swapsAxes ? target.height : target.width;
-    canvas.height = turn.swapsAxes ? target.width : target.height;
-    const context = canvas.getContext("2d");
-    if (!context) return file;
-
-    context.translate(canvas.width / 2, canvas.height / 2);
-    if (turn.rotate !== 0) context.rotate((turn.rotate * Math.PI) / 180);
-    if (turn.mirrored) context.scale(-1, 1);
-    context.drawImage(bitmap, -target.width / 2, -target.height / 2, target.width, target.height);
-
-    const blob = await new Promise<Blob | null>((resolve) =>
-      canvas.toBlob(resolve, "image/jpeg", UPLOAD_JPEG_QUALITY),
-    );
-    if (!blob || blob.size >= file.size) return file;
-
-    // Name it .jpg to match the bytes: the server checks the declared media
-    // type against the file's magic bytes and rejects a mismatch.
-    const baseName = file.name.replace(/\.[^.]+$/, "") || "receipt";
-    return new File([blob], `${baseName}.jpg`, { type: "image/jpeg" });
-  } catch {
-    return file;
-  } finally {
-    bitmap?.close();
+    jpeg = await prepareInBrowser(file, header, heic);
+  } catch (browserError) {
+    if (!heic) {
+      console.warn("receipt photo could not be decoded by the browser", browserError);
+      throw new Error(PHOTO_UNREADABLE_MESSAGE);
+    }
+    try {
+      jpeg = await heicToJpeg(file);
+    } catch (workerError) {
+      console.warn("receipt HEIC could not be converted", workerError);
+      throw new Error(PHOTO_UNREADABLE_MESSAGE);
+    }
   }
+  if (jpeg.size > MAX_RECEIPT_IMAGE_BYTES) throw new Error(PHOTO_TOO_LARGE_MESSAGE);
+  const baseName = file.name.replace(/\.[^.]+$/, "") || "receipt";
+  return new File([jpeg], `${baseName}.jpg`, { type: RECEIPT_IMAGE_MEDIA_TYPE });
 }

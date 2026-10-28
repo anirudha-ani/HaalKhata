@@ -3,7 +3,7 @@
 
 /* eslint-disable @next/next/no-img-element */
 
-import { Camera, FileImage, ImageUp, Loader2, ScanLine } from "lucide-react";
+import { Camera, ImageUp, Loader2, ScanLine } from "lucide-react";
 import { useState } from "react";
 import { ReceiptConsentPrompt } from "@/components/receipt/ReceiptConsentPrompt/ReceiptConsentPrompt";
 import { Spinner } from "@/components/ui/Spinner/Spinner";
@@ -29,9 +29,9 @@ export function ReceiptPanel({
   /** The expense-form controller from useNewExpense that owns the receipt state. */
   form: NewExpenseController;
 }) {
-  // The server's normalized JPEG once parsed (the only renderable form of an
-  // iPhone HEIC, and exactly what the model read); the local file before that.
-  const shownImage = form.receiptUrl || (form.isPreviewRenderable ? form.previewUrl : "");
+  // The JPEG the model read once parsed; before that the photo as prepared on
+  // this device, which is always a JPEG any browser can show, HEIC included.
+  const shownImage = form.receiptUrl || form.previewUrl;
   // A normalized photo can exist even when its currency prevented import.
   const hasReceipt = form.provider !== "";
   // On a phone the photo sits above the grid rather than beside it, so a
@@ -69,17 +69,6 @@ export function ReceiptPanel({
             } lg:max-h-[70vh]`}
           />
         </button>
-      ) : null}
-
-      {/* HEIC cannot be painted by Chrome or Firefox, so an <img> would render
-          a broken icon for a file that is perfectly fine. Say so in words
-          until the server sends the transcoded JPEG back. */}
-      {!shownImage && form.previewUrl ? (
-        <div className="flex flex-col items-center gap-1 rounded-2xl border border-line bg-card py-5">
-          <FileImage className="h-8 w-8 text-brand-600" />
-          <p className="px-4 text-center text-sm font-semibold break-all">{form.fileName}</p>
-          <p className="text-xs text-ink-soft">iPhone photo ready — shown once itemized</p>
-        </div>
       ) : null}
 
       {form.isPreparing ? (

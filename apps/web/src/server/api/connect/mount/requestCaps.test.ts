@@ -20,7 +20,7 @@ import {
 import { describe, expect, it } from "vitest";
 import { MAX_EXPENSE_PARTICIPANTS, MAX_ITEM_ASSIGNMENTS } from "@/server/expense/expense.constants";
 import { MAX_GROUP_MEMBER_IDS_PER_REQUEST } from "@/server/group/group.constants";
-import { MAX_IMAGE_BYTES } from "@/server/receipt/receipt.constants";
+import { MAX_RECEIPT_IMAGE_BYTES } from "@haalkhata/shared/receipt/receipt.constants";
 import { MAX_CONTACT_IDENTIFIER_LENGTH, MAX_CONTACT_IDENTIFIERS_PER_LOOKUP } from "@/server/social/social.constants";
 import {
   DEFAULT_READ_MAX_BYTES,
@@ -86,8 +86,8 @@ describe("request caps", () => {
     const size = toBinary(
       ParseReceiptRequestSchema,
       create(ParseReceiptRequestSchema, {
-        image: new Uint8Array(MAX_IMAGE_BYTES),
-        mediaType: "image/heic",
+        image: new Uint8Array(MAX_RECEIPT_IMAGE_BYTES),
+        mediaType: "image/jpeg",
         consentVersion: "1",
         currency: "USD",
       }),

@@ -32,6 +32,8 @@ packages/shared/             @haalkhata/shared — hand-written TS used by BOTH 
                                and insights.ts (wording, ranges, tail folding)
                                for the Insights dashboard on both apps
   src/email/                   the one email check (isEmailAddress, canonicalEmail)
+  src/receipt/                 the receipt photo standard both apps prepare to
+                               and the server checks
   src/greeting.ts              time-of-day greeting
 apps/web/                    Next.js app
   src/server/<domain>/       per-domain fan-out mirroring /proto:
@@ -377,13 +379,17 @@ with colocated tests. Mobile-specific rules:
   (auth and social do; the admin services' gate is `requireAdminPageRequest`);
   `mount/requestGates.test.ts` fails when a handler that never asks for a
   session is not listed, so a new anonymous call is never silently refused.
-- **A receipt image is measured before it is unpacked.** A file's size says
-  nothing about its pixels, so `receipt/usecase/image/` reads the header
-  first and refuses more than 40 MP or 128 MiB unpacked (25 MP for HEIC),
-  gives each decode its slots (two in all; a HEIC takes both), and converts
-  HEIC in a worker thread that is stopped after every photo, because
-  libheif's WebAssembly memory never shrinks. Never decode an upload on the
-  server's own thread with libheif, and never decode before measuring.
+- **A receipt photo is prepared on the device; the server never decodes
+  one.** Both apps turn any photo, HEIC and 200 MP camera JPEGs included,
+  into the standard in `@haalkhata/shared/receipt/receipt.constants` (a JPEG,
+  upright, at most 2576 px, no metadata): the web in the browser, with libheif
+  in a Web Worker for a HEIC the browser cannot open; mobile with
+  `expo-image-manipulator`. `receipt/usecase/image/preparedJpeg.ts` checks
+  the standard from the JPEG's headers, refuses anything else, strips EXIF
+  and forwards the bytes. A file's size says nothing about what it unpacks
+  to (a 20 KB HEIC can need 600 MB), which is why no upload is decoded here.
+  Never add an image decoder to the server; change the standard in shared
+  and both apps instead.
 - **There is one email check.** Whether text is an email address is
   `isEmailAddress` (or `canonicalEmail`, which also trims and lower-cases)
   in `@haalkhata/shared/email/email`; the server, the contacts lookup and the

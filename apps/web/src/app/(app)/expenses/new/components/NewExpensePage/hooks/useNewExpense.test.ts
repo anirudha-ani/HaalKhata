@@ -12,7 +12,7 @@ import { useNewExpense } from "./useNewExpense";
 import type { useNewExpenseAPI } from "./useNewExpenseAPI";
 import { ReceiptPanel } from "../components/ReceiptPanel/ReceiptPanel";
 
-const stubs = vi.hoisted(() => ({ create: vi.fn(), update: vi.fn(), replace: vi.fn(), parse: vi.fn() }));
+const stubs = vi.hoisted(() => ({ create: vi.fn(), update: vi.fn(), replace: vi.fn(), parse: vi.fn(), prepare: vi.fn(async (file: File) => file) }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ replace: stubs.replace, push: stubs.replace }) }));
 vi.mock("@/lib/api/connect", () => ({ errorMessage: (error: Error) => error.message }));
 vi.mock("@/lib/operations/operationId", () => ({ newOperationId: () => crypto.randomUUID() }));
@@ -21,7 +21,7 @@ vi.mock("@/lib/receipt/hooks/useReceiptScanConsent", () => ({ useReceiptScanCons
 const alice = create(UserSchema, { id: "alice", name: "Alice", defaultCurrency: "USD", registered: true });
 const friend = create(UserSchema, { id: "friend", name: "Friend", defaultCurrency: "USD", registered: true });
 let controller: ReturnType<typeof useNewExpense>;
-vi.mock("@/lib/image/receiptImage", () => ({ prepareReceiptImage: async (file: File) => file }));
+vi.mock("@/lib/image/receiptImage", () => ({ prepareReceiptImage: stubs.prepare }));
 
 let root: Root;
 let container: HTMLDivElement;
@@ -88,7 +88,19 @@ it.each(["percent", "shares"])("edits a saved %s expense without changing curren
   expect(payload.splitSpecs.map((split: { amountCents: number }) => split.amountCents)).toEqual([333, 668]);
 });
 
-it("retains the normalized HEIC preview and draft on a currency mismatch", async () => {
+it("shows why a photo the browser cannot read was refused, and keeps no file to send", async () => {
+  stubs.prepare.mockRejectedValueOnce(new Error("Couldn't read this photo. Try another one, or a screenshot of the receipt."));
+  await act(async () => root.render(createElement(Harness)));
+
+  await act(async () => controller.pickFile(new File(["heic"], "receipt.heic", { type: "image/heic" })));
+
+  expect(controller.error).toContain("Couldn't read this photo");
+  expect(controller.file).toBeNull();
+  expect(controller.isPreparing).toBe(false);
+  expect(stubs.parse).not.toHaveBeenCalled();
+});
+
+it("retains the normalized preview and draft on a currency mismatch", async () => {
   await act(async () => root.render(createElement(Harness)));
   act(() => { controller.setDescription("Manual meal"); controller.setAmount("12"); });
   await act(async () => controller.pickFile(new File(["heic"], "receipt.heic", { type: "image/heic" })));
@@ -98,7 +110,6 @@ it("retains the normalized HEIC preview and draft on a currency mismatch", async
   act(() => callbacks.onSuccess({ provider: "compatible", normalizedImage: new Uint8Array([0xff, 0xd8, 0xff]),
     receipt: { currency: "JPY", merchant: "Other meal", items: [], date: "", taxCents: 0, tipCents: 0 } }));
   expect(controller.receiptUrl).toBe("blob:normalized-receipt");
-  expect(controller.isPreviewRenderable).toBe(false);
   expect(controller.error).toContain("receipt is in JPY");
   expect(controller.description).toBe("Manual meal"); expect(controller.amount).toBe("12");
   expect(container.querySelector('img[alt="Receipt"]')?.getAttribute("src")).toBe("blob:normalized-receipt");

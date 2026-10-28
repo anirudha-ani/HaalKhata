@@ -1,6 +1,6 @@
-/** Type declarations for the parts of libheif-js's WebAssembly build the HEIC worker uses. */
+/** Type declarations for the parts of libheif-js's browser build the HEIC worker uses. */
 
-declare module "libheif-js/libheif-wasm/libheif-bundle.js" {
+declare module "libheif-js/libheif-wasm/libheif-bundle.mjs" {
   /** One image inside a HEIF file, before its pixels are decoded. */
   interface HeifImage {
     /** Native handle passed to the decode call. */

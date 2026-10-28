@@ -1,7 +1,7 @@
 /**
  * Receipt-parsing business logic: provider selection, the upload checks (the
- * image itself is unpacked and re-encoded in `image/`), and untrusted provider
- * output normalized to integer currency minor units.
+ * photo arrives prepared by the app and is only checked, in `image/`), and
+ * untrusted provider output normalized to integer currency minor units.
  *
  * There is deliberately no provider-specific SDK here. OpenRouter fronts every
  * model worth using for this — Claude and Gemini included — behind one
@@ -15,6 +15,10 @@
  */
 
 import { currencyInfo, minorUnitDigits } from "@haalkhata/shared/money/money.constants";
+import {
+  MAX_RECEIPT_IMAGE_BYTES,
+  RECEIPT_IMAGE_MEDIA_TYPE,
+} from "@haalkhata/shared/receipt/receipt.constants";
 import { invalid, unavailable } from "@/server/common/errors";
 import { isRealCalendarDate } from "@/server/common/validation/validation";
 import { logError, logEvent } from "@/server/common/logger";
@@ -24,10 +28,6 @@ import {
 } from "@/server/receipt/repo/receiptScans.repo";
 import {
   COMPATIBLE_AI,
-  HEIF_BRANDS,
-  IMAGE_MEDIA_TYPES,
-  IMAGE_SIGNATURES,
-  MAX_IMAGE_BYTES,
   MAX_PARSED_ITEMS,
   MAX_PARSED_MONEY_CENTS,
   MAX_PARSED_NAME_LENGTH,
@@ -36,9 +36,8 @@ import {
   PROMPT,
   PROVIDER_TIMEOUT_MS,
   RECEIPT_JSON_SCHEMA,
-  type ImageMediaType,
 } from "@/server/receipt/receipt.constants";
-import { normalizeToJpeg } from "./image/normalizeToJpeg";
+import { acceptPreparedJpeg } from "./image/preparedJpeg";
 
 /** A receipt extracted from an image, with all money amounts in the currency's integer minor units. */
 export interface ParsedReceiptData {
@@ -63,8 +62,8 @@ interface Provider {
   name: string;
   /** Whether the provider's configuration (API keys, URLs) is present. */
   available(): boolean;
-  /** Extracts a receipt from a base64-encoded image of the given media type. */
-  parse(imageBase64: string, mediaType: ImageMediaType, currency: string): Promise<ParsedReceiptData>;
+  /** Extracts a receipt from a base64-encoded prepared JPEG. */
+  parse(imageBase64: string, currency: string): Promise<ParsedReceiptData>;
 }
 
 /** One normalized line item in a parsed receipt. */
@@ -349,7 +348,7 @@ function extractJsonObject(text: string): string {
 const compatibleProvider: Provider = {
   name: "compatible",
   available: () => Boolean(COMPATIBLE_AI.baseUrl && COMPATIBLE_AI.model),
-  async parse(imageBase64, mediaType, currency) {
+  async parse(imageBase64, currency) {
     const response = await fetch(`${COMPATIBLE_AI.baseUrl}/chat/completions`, {
       method: "POST",
       signal: AbortSignal.timeout(PROVIDER_TIMEOUT_MS),
@@ -376,7 +375,7 @@ const compatibleProvider: Provider = {
           {
             role: "user",
             content: [
-              { type: "image_url", image_url: { url: `data:${mediaType};base64,${imageBase64}` } },
+              { type: "image_url", image_url: { url: `data:${RECEIPT_IMAGE_MEDIA_TYPE};base64,${imageBase64}` } },
               { type: "text", text: `${PROMPT}\nRespond with ONLY the JSON object.` },
             ],
           },
@@ -408,7 +407,7 @@ const compatibleProvider: Provider = {
 const mockProvider: Provider = {
   name: "mock",
   available: () => true,
-  async parse(_imageBase64, _mediaType, currency) {
+  async parse(_imageBase64, currency) {
     return normalizeProviderOutput({
       merchant: "Demo Diner",
       date: new Date().toISOString().slice(0, 10),
@@ -466,74 +465,38 @@ function providerChain(): { chain: Provider[]; unconfigured: string[] } {
   return { chain: wantsMock ? [mockProvider] : [], unconfigured };
 }
 
-/**
- * Identifies the image format from its magic bytes, ignoring whatever the
- * client claimed.
- *
- * The declared type cannot be trusted: browsers have no MIME mapping for HEIC
- * and report an empty string for it, so a perfectly valid iPhone photo arrives
- * labelled `""`. Sniffing the bytes is both more permissive (it accepts files
- * the browser could not name) and stricter (a `.png` full of script is
- * recognised for what it is), so it replaces the declared-type check entirely.
- *
- * @param currency - Expense currency when the receipt is ambiguous.
- * @param image - Raw uploaded bytes.
- * @returns The detected media type, or null when the bytes are not a supported image.
- */
-function detectImageFormat(image: Uint8Array): ImageMediaType | null {
-  for (const mediaType of IMAGE_MEDIA_TYPES) {
-    const matches = IMAGE_SIGNATURES[mediaType].some((signature) =>
-      signature.fragments.every((fragment) =>
-        fragment.bytes.every((byte, index) => image[fragment.offset + index] === byte),
-      ),
-    );
-    if (!matches) continue;
-    // HEIF containers also hold video and image sequences; the brand at offset
-    // 8 distinguishes still photos, which are the only ones worth transcoding.
-    if (mediaType === "image/heic" || mediaType === "image/heif") {
-      const brand = Buffer.from(image.slice(8, 12)).toString("latin1");
-      if (!HEIF_BRANDS.includes(brand)) return null;
-    }
-    return mediaType;
-  }
-  return null;
-}
-
 /** A receipt request that passed every check and is ready for the providers. */
 interface PreparedReceipt {
   /** The providers to ask, in order. */
   chain: Provider[];
-  /** The photo as the providers will see it. */
+  /** The photo as the providers will see it: the upload without its metadata. */
   normalizedImage: Buffer;
   /** Selected expense currency, upper case. */
   currency: string;
 }
 
 /**
- * Checks a receipt request and readies the photo, before any provider is
- * asked: the currency, the bytes, the format, that some provider is
- * configured, and that the image decodes.
+ * Checks a receipt request before any provider is asked: the currency, the
+ * bytes, that the photo was prepared to the standard on the device, and that
+ * some provider is configured.
  *
- * The format is detected from the bytes; the request's `media_type` field is
- * ignored because browsers report an empty string for HEIC.
+ * The photo is checked from its own bytes; the request's `media_type` field
+ * is ignored. It is never decoded here: both apps convert, rotate and shrink
+ * it before upload, and anything else is refused.
  *
  * @param image - Raw image bytes uploaded by the client.
  * @param currency - Selected expense currency, used when the image is ambiguous.
  * @returns What the providers need.
  * @throws UsecaseError "invalid_argument" when the currency is unsupported,
- *   the image is empty, too large, not a supported image or cannot be
- *   decoded, or when no provider is configured.
+ *   the image is empty, too large or not a prepared photo, or when no
+ *   provider is configured.
  */
-async function prepareReceipt(image: Uint8Array, currency: string): Promise<PreparedReceipt> {
+function prepareReceipt(image: Uint8Array, currency: string): PreparedReceipt {
   currency = currency.trim().toUpperCase() || "USD";
   if (!currencyInfo(currency)) invalid("unsupported receipt currency");
   if (image.length === 0) invalid("no image provided");
-  if (image.length > MAX_IMAGE_BYTES) invalid("image is too large (max 8 MB)");
-  // The client's declared media type is advisory only — see detectImageFormat.
-  const format = detectImageFormat(image);
-  if (format === null) {
-    invalid("that file isn't a supported image. Use JPEG, PNG, WebP, GIF or HEIC");
-  }
+  if (image.length > MAX_RECEIPT_IMAGE_BYTES) invalid("image is too large (max 8 MB)");
+  const photo = acceptPreparedJpeg(image);
 
   const { chain, unconfigured } = providerChain();
   if (chain.length === 0) {
@@ -552,7 +515,7 @@ async function prepareReceipt(image: Uint8Array, currency: string): Promise<Prep
     });
   }
 
-  return { chain, normalizedImage: await normalizeToJpeg(image, format), currency };
+  return { chain, normalizedImage: Buffer.from(photo.buffer, photo.byteOffset, photo.length), currency };
 }
 
 /**
@@ -578,7 +541,7 @@ async function readReceipt(
   let readButEmpty = false;
   for (const provider of chain) {
     try {
-      const receipt = await provider.parse(imageBase64, "image/jpeg", currency);
+      const receipt = await provider.parse(imageBase64, currency);
       if (receipt.items.length === 0) {
         readButEmpty = true;
         errors.push(`${provider.name}: no line items detected`);
@@ -648,7 +611,7 @@ export async function scanReceipt(
   image: Uint8Array,
   currency = "USD",
 ): Promise<{ receipt: ParsedReceiptData; provider: string; normalizedImage: Uint8Array }> {
-  const prepared = await prepareReceipt(image, currency);
+  const prepared = prepareReceipt(image, currency);
   try {
     const parsed = await readReceipt(prepared);
     void recordScan(userId, "parsed");

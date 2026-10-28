@@ -1,13 +1,12 @@
 /** Tests that a scan attempt is counted by outcome, and that counting can never change the scan's result. */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { jpegWith } from "./image/testing/jpegSegments";
 
-const { sharpMock, fetchMock } = vi.hoisted(() => ({
-  sharpMock: vi.fn(),
+const { fetchMock } = vi.hoisted(() => ({
   fetchMock: vi.fn(),
 }));
 
-vi.mock("sharp", () => ({ default: Object.assign(sharpMock, { cache: vi.fn() }) }));
 vi.mock("@/server/receipt/receipt.constants", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/server/receipt/receipt.constants")>()),
   COMPATIBLE_AI: {
@@ -24,9 +23,9 @@ import { logError } from "@/server/common/logger";
 import { insertReceiptScan } from "@/server/receipt/repo/receiptScans.repo";
 import { scanReceipt } from "./receipt.usecase";
 
-/** Returns enough JPEG signature bytes for the server's format detector. */
+/** Returns a photo prepared to the upload standard, as both apps send one. */
 function jpegBytes(): Uint8Array {
-  return Uint8Array.from([0xff, 0xd8, 0xff]);
+  return jpegWith({ width: 1200, height: 1600 });
 }
 
 /** Builds a successful chat-completions response whose model text is `content`. */
@@ -42,13 +41,6 @@ beforeEach(() => {
   vi.clearAllMocks();
   process.env.RECEIPT_AI_PROVIDERS = "compatible";
   vi.stubGlobal("fetch", fetchMock);
-  const pipeline = { metadata: vi.fn(), rotate: vi.fn(), resize: vi.fn(), jpeg: vi.fn(), toBuffer: vi.fn() };
-  pipeline.metadata.mockResolvedValue({ width: 1200, height: 1600, channels: 3, depth: "uchar" });
-  pipeline.rotate.mockReturnValue(pipeline);
-  pipeline.resize.mockReturnValue(pipeline);
-  pipeline.jpeg.mockReturnValue(pipeline);
-  pipeline.toBuffer.mockResolvedValue(Buffer.from(jpegBytes()));
-  sharpMock.mockReturnValue(pipeline);
 });
 
 afterEach(() => {
