@@ -3,7 +3,6 @@
 import * as AppleAuthentication from "expo-apple-authentication";
 import * as Crypto from "expo-crypto";
 import * as WebBrowser from "expo-web-browser";
-import { useRouter } from "expo-router";
 import { Platform } from "react-native";
 import { useEffect, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
@@ -16,7 +15,6 @@ import { startSession } from "../../../utils/startSession";
  * @returns Availability, pending/error state, and sign-in action.
  */
 export function useAppleSignIn() {
-  const router = useRouter();
   const options = useSignInOptionsAPI();
   const [deviceSupported, setDeviceSupported] = useState<boolean | null>(Platform.OS === "ios" ? null : Platform.OS === "android");
   const available = deviceSupported === true && options.isSuccess &&
@@ -52,7 +50,7 @@ export function useAppleSignIn() {
     },
     onSuccess: async (result) => {
       if (!result) return;
-      router.replace(await startSession(result.token));
+      await startSession(result.token);
     },
     onError: (failure) => {
       if ((failure as { code?: string }).code !== "ERR_REQUEST_CANCELED") setError(errorMessage(failure));

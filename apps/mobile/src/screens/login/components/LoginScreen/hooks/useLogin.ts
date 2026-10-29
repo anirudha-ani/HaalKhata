@@ -1,7 +1,6 @@
 /** Login/signup form state and the auth mutation for the login screen. */
 
 import { useMutation } from "@tanstack/react-query";
-import { useRouter } from "expo-router";
 import { useState } from "react";
 import { splitIdentifier } from "@haalkhata/shared/auth/identifier";
 import { authClient, errorMessage } from "@/lib/api/connect";
@@ -12,8 +11,8 @@ export type LoginMode = "login" | "signup";
 
 /**
  * Manages the login screen: the login/signup mode toggle, the credentials
- * form fields, and the mutation that signs in (or signs up), stores the
- * returned bearer token, and navigates to the dashboard. The identifier
+ * form fields, and the mutation that signs in (or signs up) and stores the
+ * returned bearer token; the screen then moves on by itself. The identifier
  * field accepts either an email or a phone number; the server looks the
  * account up by whichever was supplied.
  *
@@ -22,14 +21,13 @@ export type LoginMode = "login" | "signup";
  *   message, `submit` to run the mutation, and `isPending` while in flight.
  */
 export function useLogin() {
-  const router = useRouter();
   const [mode, setMode] = useState<LoginMode>("login");
   const [identifier, setIdentifier] = useState("");
   const [name, setName] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
 
-  /** Signs in or signs up depending on mode; stores the token, then goes to the dashboard. */
+  /** Signs in or signs up depending on mode and starts the session; the screen leaves once it exists. */
   const mutation = useMutation({
     mutationFn: () => {
       const { email, phone } = splitIdentifier(identifier);
@@ -38,7 +36,7 @@ export function useLogin() {
         : authClient.signUp({ email, phone, name, password });
     },
     onSuccess: async (response) => {
-      router.replace(await startSession(response.token));
+      await startSession(response.token);
     },
     onError: (mutationError) => setError(errorMessage(mutationError)),
   });

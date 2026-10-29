@@ -1,5 +1,5 @@
 /** @vitest-environment jsdom */
-/** Public invites retain visible acceptance, storage errors and profile-request confirmation. */
+/** Public invites retain visible acceptance, storage errors and profile-request confirmation, and never ask a signed-in person to sign in. */
 
 import { create } from "@bufbuild/protobuf";
 import { UserSchema } from "@haalkhata/protogen/common/v1/common_pb";
@@ -15,6 +15,27 @@ import { stashPendingInvite } from "@/lib/invite/pendingInvite";
 import { JoinScreen } from "./JoinScreen";
 
 const navigation = vi.hoisted(() => ({ replace: vi.fn() }));
+// The phone's saved session as the app holds it: unread at first on a cold
+// start, then the stored token or none.
+const savedSession = vi.hoisted(() => {
+  let state: { token: string | null; hydrated: boolean } = { token: "sam-session", hydrated: true };
+  const listeners = new Set<() => void>();
+  return {
+    read: () => state,
+    set: (next: { token: string | null; hydrated: boolean }) => {
+      state = next;
+      for (const listener of listeners) listener();
+    },
+    subscribe: (listener: () => void) => {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+  };
+});
+vi.mock("@/lib/api/session", async () => {
+  const { useSyncExternalStore } = await import("react");
+  return { useSession: () => useSyncExternalStore(savedSession.subscribe, savedSession.read) };
+});
 vi.mock("expo-router", () => ({ useRouter: () => navigation }));
 vi.mock("react-native", () => ({
   AccessibilityInfo: { isReduceMotionEnabled: async () => false, addEventListener: () => ({ remove: () => undefined }) },
@@ -57,7 +78,12 @@ beforeEach(() => {
   vi.clearAllMocks(); vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
   container = document.createElement("div"); document.body.append(container); root = createRoot(container);
-  vi.mocked(authClient.getMe).mockResolvedValue(create(UserSchema, { id: "viewer", name: "Sam" }));
+  savedSession.set({ token: "sam-session", hydrated: true });
+  // As the server answers: a call carrying no session is refused.
+  vi.mocked(authClient.getMe).mockImplementation(async () => {
+    if (!savedSession.read().token) throw new ConnectError("sign in first", Code.Unauthenticated);
+    return create(UserSchema, { id: "viewer", name: "Sam" });
+  });
   vi.mocked(socialClient.previewInviteLink).mockResolvedValue(create(InvitePreviewSchema, { kind: "group", inviterName: "Ari", groupName: "Trip", memberCount: 2 }));
   vi.mocked(socialClient.acceptInviteLink).mockResolvedValue(create(AcceptInviteLinkResponseSchema, { groupId: "trip" }));
   vi.mocked(stashPendingInvite).mockResolvedValue();
@@ -105,14 +131,42 @@ describe("native invite landing", () => {
     expect(container.textContent).toContain("that invite link isn't valid or was turned off");
   });
   it("shows storage failures and retries before leaving for login", async () => {
-    vi.mocked(authClient.getMe).mockRejectedValue(new Error("Not signed in"));
+    savedSession.set({ token: null, hydrated: true });
     vi.mocked(stashPendingInvite).mockRejectedValue(new Error("Could not save invite"));
-    await render(); await click("Sign in to accept");
+    await render();
+    // Nobody is signed in on this phone: nothing to ask the server.
+    expect(authClient.getMe).not.toHaveBeenCalled();
+    await click("Sign in to accept");
     expect(container.querySelector('[role="alert"]')?.textContent).toBe("Could not save invite");
     expect(navigation.replace).not.toHaveBeenCalled();
     vi.mocked(stashPendingInvite).mockResolvedValue();
     await click("Sign in to accept");
     expect(stashPendingInvite).toHaveBeenLastCalledWith("invite-token");
     expect(navigation.replace).toHaveBeenCalledExactlyOnceWith("/login");
+  });
+  it("waits for the saved sign-in when a link starts the app, and greets the person signed in", async () => {
+    // The app was not running: the link opens this screen before the saved
+    // session has been read off the phone.
+    savedSession.set({ token: null, hydrated: false });
+    await render();
+    expect(authClient.getMe).not.toHaveBeenCalled();
+    expect(container.textContent).not.toContain("Sign in to accept");
+
+    await act(async () => savedSession.set({ token: "sam-session", hydrated: true }));
+    await settle();
+
+    expect(container.textContent).toContain("Signed in as Sam");
+    expect(container.textContent).toContain("Join the group");
+    expect(container.textContent).not.toContain("Sign in to accept");
+  });
+  it("says when it cannot tell who is signed in, and asks again on a tap, never offering a second sign-in", async () => {
+    vi.mocked(authClient.getMe).mockRejectedValueOnce(new Error("HaalKhata could not be reached"));
+    await render();
+    expect(container.querySelector('[role="alert"]')?.textContent).toBe("HaalKhata could not be reached");
+    expect(container.textContent).not.toContain("Sign in to accept");
+
+    await click("Try again");
+
+    expect(container.textContent).toContain("Signed in as Sam");
   });
 });

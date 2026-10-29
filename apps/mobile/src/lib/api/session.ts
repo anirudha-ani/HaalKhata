@@ -6,6 +6,7 @@
 
 import * as SecureStore from "expo-secure-store";
 import { useSyncExternalStore } from "react";
+import { clearPendingInvite } from "@/lib/invite/pendingInvite";
 import { TOKEN_STORAGE_KEY } from "./api.constants";
 
 /** Snapshot of the session state exposed to React. */
@@ -89,10 +90,18 @@ export async function setSessionToken(token: string): Promise<void> {
   await persist(() => SecureStore.setItemAsync(TOKEN_STORAGE_KEY, token));
 }
 
-/** Clears the session (sign-out, or the server rejected the token). */
+/**
+ * Clears the session (sign-out, account deletion, or the server rejected the
+ * token), and with it any join link saved for the next sign-in on this
+ * phone: whoever signs in after this is not necessarily who saved it.
+ */
 export async function clearSession(): Promise<void> {
   publish({ token: null, hydrated: true });
-  await persist(() => SecureStore.deleteItemAsync(TOKEN_STORAGE_KEY));
+  await Promise.all([
+    persist(() => SecureStore.deleteItemAsync(TOKEN_STORAGE_KEY)),
+    // Storage that cannot be written leaves a link that still expires.
+    clearPendingInvite().catch(() => undefined),
+  ]);
 }
 
 /**
