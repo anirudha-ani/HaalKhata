@@ -34,6 +34,9 @@ service AdminAnalyticsService {
 message BeginSignInResponse {
   // Server-issued, short-lived value to pass to Google as the nonce.
   string nonce = 1;
+  // How long, from when it was issued, the nonce is accepted; the page
+  // renews it well before then.
+  int32 lifetime_seconds = 2;
 }
 
 message SignInRequest {

@@ -260,17 +260,19 @@ function googleSignInNonceHash(nonce: string): string {
 /**
  * Issues and persists a short-lived challenge for one Google sign-in attempt.
  *
- * @returns The raw nonce the client must include in Google's ID-token request.
+ * @returns The raw nonce the client must include in Google's ID-token
+ *   request, and how many seconds it is accepted for, so a page left open
+ *   can renew it in time.
  * @throws UsecaseError "invalid_argument" when Google sign-in is not configured.
  */
-export async function beginGoogleSignIn(): Promise<{ nonce: string }> {
+export async function beginGoogleSignIn(): Promise<{ nonce: string; lifetimeSeconds: number }> {
   googleClient();
   const nonce = crypto.randomBytes(GOOGLE_SIGN_IN_NONCE_BYTES).toString("base64url");
   await insertGoogleSignInNonce(
     googleSignInNonceHash(nonce),
     GOOGLE_SIGN_IN_NONCE_LIFETIME_SECONDS,
   );
-  return { nonce };
+  return { nonce, lifetimeSeconds: GOOGLE_SIGN_IN_NONCE_LIFETIME_SECONDS };
 }
 
 /**

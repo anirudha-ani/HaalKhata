@@ -85,6 +85,10 @@ message GoogleSignInChallenge {
   // Server-issued, short-lived value that the client asks Google to copy into
   // the ID token. The server accepts it exactly once before creating a session.
   string nonce = 1;
+  // How long, from when it was issued, the nonce is accepted. A page that
+  // stays open renews it well before then, so a click always carries one
+  // with room left for Google's own steps.
+  int32 lifetime_seconds = 2;
 }
 
 message LogInWithGoogleRequest {

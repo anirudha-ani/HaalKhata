@@ -194,8 +194,13 @@ export const GOOGLE_SIGN_IN_NONCE_BYTES = 32;
 /** Base64url shape of a nonce produced from {@link GOOGLE_SIGN_IN_NONCE_BYTES}. */
 export const GOOGLE_SIGN_IN_NONCE_PATTERN = /^[A-Za-z0-9_-]{43}$/;
 
-/** Seconds before an unused Google authentication nonce is rejected. */
-export const GOOGLE_SIGN_IN_NONCE_LIFETIME_SECONDS = 60 * 5;
+/**
+ * Seconds before an unused Google authentication nonce is rejected. Ten
+ * minutes, and a page renews its nonce at half that, so a click always has
+ * at least five minutes for Google's own steps — choosing an account,
+ * approving a two-step prompt on another device — before the nonce runs out.
+ */
+export const GOOGLE_SIGN_IN_NONCE_LIFETIME_SECONDS = 60 * 10;
 
 /**
  * Said when a Google sign-in loses a race it cannot settle: the account a

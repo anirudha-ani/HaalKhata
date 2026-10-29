@@ -139,6 +139,9 @@ describe("logInWithGoogle", () => {
     expect(storedHash).toMatch(/^[0-9a-f]{64}$/);
     expect(storedHash).not.toContain(first.nonce);
     expect(lifetimeSeconds).toBe(GOOGLE_SIGN_IN_NONCE_LIFETIME_SECONDS);
+    // The page is told the same lifetime, so it renews the nonce in time.
+    expect(first.lifetimeSeconds).toBe(GOOGLE_SIGN_IN_NONCE_LIFETIME_SECONDS);
+    expect(GOOGLE_SIGN_IN_NONCE_LIFETIME_SECONDS).toBe(600);
   });
 
   it("accepts the web client and every native mobile client as the token audience", async () => {

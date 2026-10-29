@@ -82,3 +82,44 @@ it("recovers from a failed backend challenge without a page reload", async () =>
   expect(window.google.accounts.id.initialize).toHaveBeenCalledOnce();
   expect(authClient.beginGoogleSignIn).toHaveBeenCalledTimes(2);
 });
+
+it("keeps Google's button armed with a fresh nonce while the page stays open", async () => {
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
+  const initialize = vi.fn();
+  window.google = { accounts: { id: { initialize, renderButton: vi.fn() } } };
+  vi.mocked(authClient.beginGoogleSignIn)
+    .mockResolvedValueOnce(create(GoogleSignInChallengeSchema, { nonce: "first-nonce", lifetimeSeconds: 600 }))
+    .mockResolvedValueOnce(create(GoogleSignInChallengeSchema, { nonce: "second-nonce", lifetimeSeconds: 600 }));
+  try {
+    await render();
+    expect(initialize).toHaveBeenLastCalledWith(expect.objectContaining({ nonce: "first-nonce" }));
+
+    // Half of its ten minutes later, before anyone could be refused for it.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(300_000);
+    });
+
+    expect(authClient.beginGoogleSignIn).toHaveBeenCalledTimes(2);
+    expect(initialize).toHaveBeenLastCalledWith(expect.objectContaining({ nonce: "second-nonce" }));
+    expect(container.querySelector('[role="alert"]')).toBeNull();
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it("arms the button with a fresh nonce straight after a failed sign-in, keeping the reason on screen", async () => {
+  const initialize = vi.fn();
+  window.google = { accounts: { id: { initialize, renderButton: vi.fn() } } };
+  vi.mocked(authClient.beginGoogleSignIn)
+    .mockResolvedValueOnce(create(GoogleSignInChallengeSchema, { nonce: "spent-nonce", lifetimeSeconds: 600 }))
+    .mockResolvedValueOnce(create(GoogleSignInChallengeSchema, { nonce: "fresh-nonce", lifetimeSeconds: 600 }));
+  vi.mocked(authClient.logInWithGoogle).mockRejectedValue(new Error("that Google sign-in has expired"));
+  await render();
+  const { callback } = initialize.mock.calls[0][0] as { callback: (response: { credential: string }) => void };
+
+  await act(async () => callback({ credential: "google-id-token" }));
+
+  expect(container.textContent).toContain("that Google sign-in has expired");
+  expect(authClient.beginGoogleSignIn).toHaveBeenCalledTimes(2);
+  expect(initialize).toHaveBeenLastCalledWith(expect.objectContaining({ nonce: "fresh-nonce" }));
+});

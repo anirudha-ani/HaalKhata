@@ -193,8 +193,16 @@ projection, plus `token` (bearer clients only).
   bytes, base64url. The client passes it to Google Identity Services, which
   copies it into the ID token; `LogInWithGoogle` then accepts it **exactly
   once**.
-- Only the SHA-256 **hash** of the nonce is stored (with a 5-minute expiry),
+- Only the SHA-256 **hash** of the nonce is stored (with a 10-minute expiry),
   so a database read can never reveal a still-usable challenge.
+- **The web page keeps its nonce fresh.** The response says how long the
+  nonce lasts (`lifetime_seconds`); the login page renews it at half that
+  while it is in view, at once when it comes back into view stale, and
+  straight after a failed sign-in spent it (`useNonceRenewal`). A click
+  therefore always carries a nonce with at least five minutes left for
+  Google's own steps, two-step prompts included. An earlier nonce stays
+  valid until it expires, so renewing never breaks a sign-in already under
+  way. The mobile app asks for a fresh nonce on every tap.
 - Fails `InvalidArgument` when `GOOGLE_CLIENT_ID` is unset — a misconfigured
   deploy should fail loudly on the first sign-in, not verify tokens against
   an empty audience.
@@ -212,7 +220,8 @@ projection, plus `token` (bearer clients only).
 
 | Field | Type | Description |
 | --- | --- | --- |
-| nonce | string | Base64url, 43 chars; single-use; expires in 5 minutes. |
+| nonce | string | Base64url, 43 chars; single-use; expires in 10 minutes. |
+| lifetime_seconds | int32 | How long the nonce is accepted, from when it was issued (600). |
 
 ---
 

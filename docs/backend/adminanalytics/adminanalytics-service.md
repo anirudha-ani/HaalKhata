@@ -197,8 +197,10 @@ the app**.
 
 #### Notes
 
-- **Unauthenticated.** Issues the single-use, five-minute nonce Google must
+- **Unauthenticated.** Issues the single-use, ten-minute nonce Google must
   copy into the ID token. The same challenge store the app's sign-in uses.
+  The page renews it at half its life while in view, and after a refused
+  sign-in spent it.
 - `InvalidArgument` when Google sign-in is not configured on the server.
 
 #### Response
@@ -208,6 +210,7 @@ the app**.
 | Field | Type | Description |
 | --- | --- | --- |
 | nonce | string | Server-issued value to pass to Google as the nonce. |
+| lifetime_seconds | int32 | How long the nonce is accepted, from when it was issued (600). |
 
 ---
 
