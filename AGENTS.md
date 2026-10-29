@@ -417,6 +417,10 @@ with colocated tests. Mobile-specific rules:
   address that has an account. Never write another email pattern: one whose
   parts can match the same characters takes seconds to refuse a long field,
   and the server answers nobody while it does.
+- **An expense never changes currency.** `updateExpense` keeps the saved
+  currency, group expenses included, and refuses an edit naming another;
+  the forms work in it when editing (`expenseFormCurrency` puts the saved
+  currency first). Converting is never the server's job.
 - **Money is per currency.** Balance maps are keyed by currency
   (`CurrencyCents` in `balance.usecase.ts`), responses carry `CurrencyAmount`
   buckets, and the legacy scalar fields are only the caller's default-currency

@@ -119,6 +119,7 @@ import {
   MAX_EXPENSE_PAGE_SIZE,
   ONE_OFF_NOT_CONNECTED_MESSAGE,
   SETTLEMENT_ATTEMPTS,
+  currencyChangeRefusal,
   formerMemberRefusal,
 } from "@/server/expense/expense.constants";
 import { toExpense, toSettlement } from "./expense.mapper";
@@ -452,17 +453,27 @@ async function assertLockedOneOffParticipants(
  *
  * @param userId - Authenticated caller creating or updating the expense.
  * @param request - Raw expense request from the client.
+ * @param existingIds - For an edit, the people on the expense as saved.
+ * @param savedCurrency - For an edit, the currency the expense was saved in.
+ *   It is kept, group expenses included, and a request naming another is
+ *   refused: its amounts were typed in that other currency's units.
  * @returns A fully validated `ExpenseWrite` ready for the repo layer.
  * @throws UsecaseError (invalid_argument / not_found / permission_denied) on
- *   any validation, existence, or membership failure.
+ *   any validation, existence, or membership failure; (failed_precondition)
+ *   on an edit that names a currency other than the saved one.
  */
 async function buildExpenseWrite(
   userId: string,
   request: ExpenseInput,
   existingIds: string[] = [],
+  savedCurrency?: string,
 ): Promise<ExpenseWrite> {
   const description = validateExpenseRequest(request);
-  const scope = await resolveExpenseScope(userId, request);
+  if (savedCurrency !== undefined && request.currency.trim() !== "" && normalizeCurrencyCode(request.currency) !== savedCurrency) {
+    throw new UsecaseError("failed_precondition", currencyChangeRefusal(savedCurrency));
+  }
+  const resolvedScope = await resolveExpenseScope(userId, request);
+  const scope = savedCurrency === undefined ? resolvedScope : { ...resolvedScope, currency: savedCurrency };
   const amounts = computeExpenseAmounts(request, scope.currency);
   validateExpensePayments(request, amounts.amountCents, scope.currency);
   const involved = [
@@ -955,6 +966,10 @@ async function loadExpenseForEdit(
  * against what was already paid — whoever paid more than their corrected
  * share is owed the difference, whoever paid less owes it.
  *
+ * The expense keeps the currency it was saved in. An edit naming another —
+ * an app from before the forms kept it, or a hand-made request — is refused
+ * rather than relabelling the debt: BDT 5,000 must never become USD 5,000.
+ *
  * @param userId - Authenticated caller performing the update.
  * @param expenseId - Id of the expense to update.
  * @param request - Full replacement request (same shape as create).
@@ -970,7 +985,12 @@ export async function updateExpense(
   preserveSplitType = false,
 ) {
   const existing = await loadExpenseForEdit(userId, expenseId, request);
-  const write = await buildExpenseWrite(userId, request, storedParticipantIds(existing.expense, existing.children));
+  const write = await buildExpenseWrite(
+    userId,
+    request,
+    storedParticipantIds(existing.expense, existing.children),
+    existing.expense.currency,
+  );
   await withLedgerTransaction(async (client) => {
     await lockExpenseLedger(client, expenseId);
     const { expense: current, children } = await loadExpenseForEdit(

@@ -433,6 +433,15 @@ created.
 - **Who:** anyone on the expense (see [Authorization](#authorization)).
 - **Cannot move scopes:** a changed `group_id` is refused — "delete it and
   create it in the right group". A debt cannot silently jump ledgers.
+- **Cannot change currency:** the expense keeps the currency it was saved
+  in, group expenses included. An `expense.currency` naming another is
+  refused with `FailedPrecondition` ("This expense is in BDT and its
+  currency can't be changed…") and nothing changes: its amounts were typed in
+  that other currency's units, so relabelling would turn BDT 5,000 into
+  USD 5,000 and keeping them would turn ¥3,500 into ¥350,000. An empty
+  `currency` keeps the saved one. Both apps' forms work in the saved
+  currency when editing (`expenseFormCurrency`); the refusal answers app
+  versions from before they did, and hand-made requests.
 - **Checked twice by design:** existence/edit-rights/scope are verified once
   before the expensive validation (fail fast, no locks) and again on the
   locked client (everything checked can change in between).

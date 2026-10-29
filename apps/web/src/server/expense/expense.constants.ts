@@ -47,6 +47,20 @@ export function volumeLimitRefusal(ceiling: string, personName?: string): string
   return `This would take ${whose} past ${ceiling} in all, more than this app can add up exactly for one person`;
 }
 
+/**
+ * Why an edit naming another currency was refused. An expense keeps the
+ * currency it was saved in. Amounts sent with another currency were typed
+ * in that currency's units — ¥3,500 arrives as 350000 from a form that
+ * thought in dollars — so neither relabelling the expense nor keeping those
+ * amounts under its own currency would be right.
+ *
+ * @param savedCurrency - The expense's currency.
+ * @returns The sentence shown beside the save button.
+ */
+export function currencyChangeRefusal(savedCurrency: string): string {
+  return `This expense is in ${savedCurrency} and its currency can't be changed. If your app is out of date, update it (or reload the page) and try again.`;
+}
+
 /** Split types the API accepts; mirrors the split calculators in domain/splits. */
 export const SPLIT_TYPES = new Set(["equal", "exact", "percent", "shares", "itemized"]);
 
