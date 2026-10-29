@@ -32,7 +32,10 @@ export type GroupTab = "expenses" | "balances" | "activity";
  * @returns Everything from {@link useGroupDetailAPI} plus `tab`/`setTab`,
  *   `addingPeople`/`setAddingPeople` and the add-people form (`pickedIds`,
  *   `togglePicked`, `contact`/`setContact`, `submitPeople`,
- *   `peopleError`, `canAddPeople`), `candidates` (friends not already in the
+ *   `peopleError`, `canAddPeople`), the invite-link offer for a contact
+ *   nobody on HaalKhata has (`inviteOffer`, `shareLinkForOffer`,
+ *   `sharingLinkForOffer`, `offerError`, `dismissInviteOffer`),
+ *   `candidates` (friends not already in the
  *   group), `reportingGroup`/`setReportingGroup` for the report sheet the
  *   group menu opens, the members sheet (`viewingMembers`/`setViewingMembers`,
  *   `pendingMemberAction` with `askMemberAction`/`cancelMemberAction`/
@@ -66,6 +69,10 @@ export function useGroupDetail(groupId: string) {
   // §33c: set when a typed contact has no account, so the sheet can offer
   // the group's invite link instead of a dead error.
   const [inviteOffer, setInviteOffer] = useState<{ email: string; phone: string } | null>(null);
+  // Why sharing the link from that offer failed. Its own message, said in
+  // the offer under the button: the form's error line gives way to the
+  // offer, so a failure kept there was never on screen.
+  const [offerError, setOfferError] = useState("");
   // The server deliberately does not expose outgoing-request state, so this
   // local marker prevents accidental duplicate taps while the sheet is open.
   const [requestedIds, setRequestedIds] = useState<string[]>([]);
@@ -118,6 +125,7 @@ export function useGroupDetail(groupId: string) {
   const submitPeople = () => {
     setPeopleError("");
     setInviteOffer(null);
+    setOfferError("");
     const payload = contactPayload(contact);
     // A number that cannot exist in the selected country never leaves the
     // form; the server's generic denial is reserved for real lookups.
@@ -154,7 +162,8 @@ export function useGroupDetail(groupId: string) {
    * add-people sheet and opens the share dialog with it — two native modals
    * cannot stack. Whoever signs up through the link joins the group as
    * themselves; nothing is created for the typed contact. A failure stays in
-   * the sheet, beside the button that caused it.
+   * the sheet, in the offer, under the button that caused it, and the offer
+   * stays up to try again.
    */
   const shareLinkForOffer = useMutation({
     mutationFn: async () => {
@@ -168,7 +177,7 @@ export function useGroupDetail(groupId: string) {
       setGroupShareToken(link.token);
       setGroupShareExpiresAt(link.expiresAt);
     },
-    onError: (mutationError) => setPeopleError(errorMessage(mutationError)),
+    onError: (mutationError) => setOfferError(errorMessage(mutationError)),
   });
 
   /**
@@ -330,7 +339,11 @@ export function useGroupDetail(groupId: string) {
     tab: activeTab,
     setTab: setActiveTab,
     addingPeople,
-    setAddingPeople,
+    /** Opens or closes the add-people sheet; a failed share from its offer is not kept for next time. */
+    setAddingPeople: (open: boolean) => {
+      setOfferError("");
+      setAddingPeople(open);
+    },
     reportingGroup,
     setReportingGroup,
     viewingMembers,
@@ -393,11 +406,15 @@ export function useGroupDetail(groupId: string) {
     peopleError,
     inviteOffer,
     shareLinkForOffer: () => {
-      setPeopleError("");
+      setOfferError("");
       shareLinkForOffer.mutate();
     },
     sharingLinkForOffer: shareLinkForOffer.isPending,
-    dismissInviteOffer: () => setInviteOffer(null),
+    offerError,
+    dismissInviteOffer: () => {
+      setOfferError("");
+      setInviteOffer(null);
+    },
     submitPeople,
     canAddPeople: pickedIds.length > 0 || !contactIsEmpty(contact),
     // The persisted group mode, not view state: everyone in the group sees
@@ -417,3 +434,6 @@ export function useGroupDetail(groupId: string) {
     userById,
   };
 }
+
+/** Everything the group screen and its sheets read from {@link useGroupDetail}. */
+export type GroupDetailController = ReturnType<typeof useGroupDetail>;

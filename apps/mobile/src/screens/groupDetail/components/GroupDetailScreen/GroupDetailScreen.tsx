@@ -17,10 +17,8 @@ import { Pressable, StyleSheet, View } from "react-native";
 import { Text } from "@/components/ui/Text";
 import { ActivityList } from "@/components/activity/ActivityList";
 import { InviteShareSheet } from "@/components/modals/InviteShareSheet";
-import { NOT_ON_HAALKHATA_COPY } from "@haalkhata/shared/invite/inviteCopy";
 import { SettleUpModal } from "@/components/modals/SettleUpModal";
 import { SafetyDialog } from "@/components/safety/SafetyDialog/SafetyDialog";
-import { PersonChecklist } from "@/components/people/PersonChecklist";
 import { PersonLink } from "@/components/people/PersonLink";
 import { DetailHeader } from "@/components/shell/DetailHeader/DetailHeader";
 import { useResponsiveLayout } from "@/lib/layout/hooks/useResponsiveLayout";
@@ -30,7 +28,6 @@ import { Screen } from "@/components/shell/Screen/Screen";
 import { Avatar } from "@/components/ui/Avatar";
 import { AvatarStack } from "@/components/ui/AvatarStack/AvatarStack";
 import { Button } from "@/components/ui/Button";
-import { EmailOrPhoneField } from "@/components/ui/EmailOrPhoneField";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { OverflowMenu } from "@/components/ui/OverflowMenu/OverflowMenu";
 import { Segmented } from "@/components/ui/Segmented";
@@ -53,6 +50,7 @@ import { groupEmoji, groupTypeLabel } from "@haalkhata/shared/group/groupTypes";
 import { MEMBERS_STRIP_AVATAR_SLOTS } from "../../constants/membersStrip";
 import { TABS } from "../../constants/tabs";
 import { BalancesPanel } from "./components/BalancesPanel/BalancesPanel";
+import { AddPeopleSheet } from "./components/AddPeopleSheet/AddPeopleSheet";
 import { ArchiveGroupSheet } from "./components/ArchiveGroupSheet/ArchiveGroupSheet";
 import { ExpenseList } from "@/components/expenses/ExpenseList";
 import { useGroupDetail } from "./hooks/useGroupDetail";
@@ -554,92 +552,7 @@ export function GroupDetailScreen({
       ) : null}
 
       {groupDetail.addingPeople ? (
-        <Sheet
-          footer={
-            <View style={styles.addForm}>
-              {!groupDetail.inviteOffer && groupDetail.peopleError ? (
-                <Text accessibilityRole="alert" style={styles.addError}>{groupDetail.peopleError}</Text>
-              ) : null}
-              <Button
-                busy={groupDetail.addMembers.isPending}
-                disabled={!groupDetail.canAddPeople}
-                label="Add to group"
-                onPress={groupDetail.submitPeople}
-              />
-            </View>
-          }
-          onClose={() => groupDetail.setAddingPeople(false)}
-          title={`Add people to ${groupDetail.group.name}`}
-        >
-          {/* People you already know come first; typing an address is the
-              fallback for somebody you are connected with but who is not on
-              that list. It never creates an account — the server enrols only
-              people the caller already shares a friendship or a group with. */}
-          <View style={styles.addForm}>
-            {groupDetail.candidates.length > 0 ? (
-              <>
-                <Text style={styles.addLabel}>
-                  Your people
-                  {groupDetail.pickedIds.length > 0
-                    ? ` · ${groupDetail.pickedIds.length} selected`
-                    : ""}
-                </Text>
-                <PersonChecklist
-                  disabledIds={
-                    new Set(
-                      groupDetail.candidates
-                        .filter((candidate) => !candidate.registered)
-                        .map((candidate) => candidate.id),
-                    )
-                  }
-                  disabledHint="deleted their account"
-                  onToggle={groupDetail.togglePicked}
-                  people={groupDetail.candidates}
-                  selectedIds={groupDetail.pickedIds}
-                />
-              </>
-            ) : (
-              <Text style={styles.addHint}>
-                Everyone on your friends list is already here. Know somebody from another group?
-                Add them below.
-              </Text>
-            )}
-
-            <Text style={styles.addLabel}>Not on the list?</Text>
-            <EmailOrPhoneField
-              contact={groupDetail.contact}
-              onContactChange={groupDetail.setContact}
-              emailPlaceholder="Email address"
-              emailLabel="Email of somebody already connected with you"
-              phoneLabel="Phone of somebody already connected with you"
-            />
-            <Text style={styles.addHint}>
-              Works for anyone already connected with you on HaalKhata — a friend, or someone you
-              share another group with. New here? Send them a friend request from Friends first;
-              once they accept, you can add them.
-            </Text>
-
-            {groupDetail.inviteOffer ? (
-              <View style={styles.inviteOffer}>
-                <Text accessibilityRole="alert" style={styles.addHint}>
-                  {NOT_ON_HAALKHATA_COPY.group.message}
-                </Text>
-                <Button
-                  busy={groupDetail.sharingLinkForOffer}
-                  compact
-                  label={NOT_ON_HAALKHATA_COPY.group.action}
-                  onPress={groupDetail.shareLinkForOffer}
-                />
-                <Button
-                  compact
-                  label="Cancel"
-                  onPress={groupDetail.dismissInviteOffer}
-                  variant="outline"
-                />
-              </View>
-            ) : null}
-          </View>
-        </Sheet>
+        <AddPeopleSheet groupDetail={groupDetail} groupName={groupDetail.group.name} />
       ) : null}
 
       {groupDetail.groupShareToken ? (
@@ -674,19 +587,6 @@ const styles = StyleSheet.create({
   addExpenseExpanded: {
     alignSelf: "flex-start",
   },
-  addError: {
-    color: colors.brand600,
-    fontSize: 14,
-  },
-  addForm: {
-    gap: spacing.lg,
-  },
-  addHint: {
-    color: colors.inkSoft,
-    fontSize: 13,
-    lineHeight: 18,
-    marginTop: -spacing.sm,
-  },
   archivedHint: {
     backgroundColor: colors.card,
     borderColor: colors.line,
@@ -700,12 +600,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     lineHeight: 20,
   },
-  addLabel: {
-    color: colors.ink,
-    fontSize: 14,
-    fontWeight: "500",
-    marginBottom: -spacing.sm,
-  },
   groupEmoji: {
     fontSize: 20,
   },
@@ -716,9 +610,6 @@ const styles = StyleSheet.create({
     height: 36,
     justifyContent: "center",
     width: 36,
-  },
-  inviteOffer: {
-    gap: spacing.sm,
   },
   linkError: {
     color: colors.brand600,
