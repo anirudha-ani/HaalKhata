@@ -95,6 +95,7 @@ describe.skipIf(!reachable)("recordSettlement against Postgres", () => {
   ).removeMemberFromGroup;
   let userNetInGroup: typeof import("./balance.usecase").userNetInGroup;
   let userNetInGroups: typeof import("./balance.usecase").userNetInGroups;
+  let getGroupBalances: typeof import("./balance.usecase").getGroupBalances;
   let netWithUser: typeof import("./balance.usecase").netWithUser;
   let getFriendLedger: typeof import("./balance.usecase").getFriendLedger;
   let sendReminder: typeof import("@/server/social/usecase/social.usecase").sendReminder;
@@ -127,7 +128,7 @@ describe.skipIf(!reachable)("recordSettlement against Postgres", () => {
     } = await import("./expense.usecase"));
     ({ removeMemberFromGroup } = await import("@/server/group/usecase/group.usecase"));
     ({ sendReminder } = await import("@/server/social/usecase/social.usecase"));
-    ({ getFriendLedger, userNetInGroup, userNetInGroups, netWithUser } = await import(
+    ({ getFriendLedger, getGroupBalances, userNetInGroup, userNetInGroups, netWithUser } = await import(
       "./balance.usecase"
     ));
 
@@ -506,12 +507,19 @@ describe.skipIf(!reachable)("recordSettlement against Postgres", () => {
     expect(await settlementCount()).toBe(before + 1);
   });
 
-  it("sums each group's net in one query, agreeing with the ledger walk", async () => {
-    // M-02: the group list used to rebuild every group's whole ledger in the
-    // process, one pool connection each. The SQL sum must land on the same
-    // number the full walk does, live rows only.
+  it("sums each group's net in one query, agreeing with the group page's walk of its ledger", async () => {
+    // The group list and the expense page add a person's net up in Postgres
+    // instead of loading the group's whole history. The sum must land on the
+    // number the group's page works out from that history, live rows only.
+    const walked = new Map(
+      (await getGroupBalances(CREDITOR, "grp-1")).byCurrency.flatMap(({ currency, nets }) =>
+        nets
+          .filter((memberNet) => memberNet.userId === DEBTOR && memberNet.netCents !== 0)
+          .map((memberNet) => [currency, memberNet.netCents] as const),
+      ),
+    );
     const batched = await userNetInGroups(DEBTOR, ["grp-1", "grp-missing"]);
-    expect(batched.get("grp-1")).toEqual(await userNetInGroup(DEBTOR, "grp-1"));
+    expect(batched.get("grp-1")).toEqual(walked);
     expect(batched.get("grp-missing")).toEqual(new Map());
   });
 

@@ -53,11 +53,11 @@ vi.mock("@/server/payment/repo/paymentMethods.repo", () => ({
 import {
   amountOwed,
   getFriendLedger,
+  getGroupBalances,
   getOverallBalances,
   groupCancelsOut,
   netWithUser,
   owedByScope,
-  userNetInGroup,
 } from "./balance.usecase";
 import {
   listExpensesBetween,
@@ -73,7 +73,7 @@ import {
   listSettlementsByGroups,
   listSettlementsInvolvingUser,
 } from "@/server/expense/repo/settlements.repo";
-import { findGroupsByIds, findGroupById, listGroupsByUser, listMembers } from "@/server/group/repo/groups.repo";
+import { findGroupsByIds, findGroupById, isMember, listGroupsByUser, listMembers } from "@/server/group/repo/groups.repo";
 import { findUserById, findUsersByIds } from "@/server/auth/repo/users.repo";
 import { listFriendIds } from "@/server/social/repo/friendships.repo";
 
@@ -192,6 +192,7 @@ beforeEach(() => {
 
   vi.mocked(findGroupById).mockImplementation(async () => tripRow());
   vi.mocked(listGroupsByUser).mockImplementation(async () => [tripRow()]);
+  vi.mocked(isMember).mockResolvedValue(true);
   vi.mocked(listMembers).mockResolvedValue([]);
   vi.mocked(findUserById).mockImplementation(async (userId: string) => userRow(userId));
   vi.mocked(findUsersByIds).mockImplementation(async (userIds: string[]) =>
@@ -229,6 +230,19 @@ beforeEach(() => {
   );
   vi.mocked(listOneOffSettlementsBetween).mockResolvedValue([]);
 });
+
+/**
+ * Each person's net in the trip, as the group's page works it out from the
+ * group's whole ledger.
+ *
+ * @returns Person id → net cents in dollars; > 0 ⇒ they are owed.
+ */
+async function tripNets(): Promise<Map<string, number>> {
+  return new Map((await getGroupBalances(ALICE, TRIP)).nets.map((memberNet) => [memberNet.userId, memberNet.netCents]));
+}
+
+/** Everyone in the trip at zero. */
+const SETTLED_TRIP = new Map([[ALICE, 0], [BOBBY, 0], [CARA, 0]]);
 
 /**
  * Appends a stored settlement inside the trip group.
@@ -369,8 +383,8 @@ describe("after paying along the simplified edge", () => {
   it("every guard, ledger and net reads settled", async () => {
     expect(await amountOwed(ALICE, CARA, TRIP, "USD")).toBe(0);
     expect(await owedByScope(ALICE, CARA)).toEqual([]);
+    expect(await tripNets()).toEqual(SETTLED_TRIP);
     for (const member of [ALICE, BOBBY, CARA]) {
-      expect(await userNetInGroup(member, TRIP)).toEqual(new Map());
       expect((await getOverallBalances(member)).counterparties).toEqual([]);
     }
   });
@@ -387,8 +401,6 @@ describe("after paying along the simplified edge", () => {
     // scope offers an edge of the loop to a cross-scope payment.
     expect(await groupCancelsOut(TRIP, "USD")).toBe(true);
     expect(await owedByScope(ALICE, BOBBY)).toEqual([]);
-    for (const member of [ALICE, BOBBY, CARA]) {
-      expect(await userNetInGroup(member, TRIP)).toEqual(new Map());
-    }
+    expect(await tripNets()).toEqual(SETTLED_TRIP);
   });
 });

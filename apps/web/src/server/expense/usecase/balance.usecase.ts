@@ -348,9 +348,12 @@ export async function getGroupBalances(userId: string, groupId: string) {
  * A user's net position inside one group, per currency. Settled means empty:
  * a dollar owed and a euro paid are two balances, not a zero.
  *
+ * Postgres adds it up ({@link userNetInGroups}): one number for one person
+ * needs none of the group's history in the process, however long it is.
+ *
  * @param userId - User whose position is computed.
  * @param groupId - Group to compute the position in.
- * @param client - Optional transaction client holding the group-ledger lock.
+ * @param client - Snapshot or transaction client; omitted, the pool.
  * @returns Non-zero cents per currency; > 0 ⇒ the user is owed money.
  */
 export async function userNetInGroup(
@@ -358,11 +361,7 @@ export async function userNetInGroup(
   groupId: string,
   client?: PoolClient,
 ): Promise<CurrencyCents> {
-  const nets: CurrencyCents = new Map();
-  for (const [currency, ledger] of await groupLedger(groupId, client)) {
-    addCents(nets, currency, netBalances(ledger).get(userId) ?? 0);
-  }
-  return nets;
+  return (await userNetInGroups(userId, [groupId], client)).get(groupId) ?? new Map();
 }
 
 /** A debt in a group that names one member, in one currency, along the group's route. */
@@ -410,9 +409,9 @@ export async function memberDebtsInGroup(
 /**
  * Batched: each group's net position for a specific user, per currency, in
  * one database query for every group at once. Nets are routing-independent,
- * so Postgres adding up the rows gives what {@link userNetInGroup}'s ledger
- * walk would — without loading every group's whole history into the
- * process, one pool connection per group.
+ * so Postgres adding up the rows gives what a walk of each group's ledger
+ * would — without loading every group's whole history into the process,
+ * one pool connection per group.
  *
  * @param userId - User whose positions are computed.
  * @param groupIds - Groups to compute the position in.
@@ -699,6 +698,78 @@ export async function sharedActiveGroups(
 }
 
 /**
+ * Everything a pair's balances by scope are worked out from: their one-off
+ * ledger and the ledger of each active group they share. Both directions
+ * of a pair's position are read out of one copy, so working out the whole
+ * position reads each shared group's history once, not once per direction.
+ */
+interface PairLedgers {
+  /** The pair's one-off ledger, per currency. */
+  oneOff: CurrencyLedgers;
+  /** Each active group they share, with its ledgers per currency, newest first. */
+  groups: { group: GroupRow; ledgers: CurrencyLedgers }[];
+}
+
+/**
+ * Reads a pair's one-off ledger and the ledgers of their shared active groups.
+ *
+ * @param firstId - One of the two people.
+ * @param secondId - The other.
+ * @param client - Snapshot or locked transaction shared by every statement.
+ * @param sharedGroups - Their shared active groups, when the caller has read
+ *   them on the same client already (a payment does, under their locks);
+ *   omitted, they are read here.
+ * @returns The pair's ledgers.
+ */
+async function loadPairLedgers(
+  firstId: string,
+  secondId: string,
+  client?: PoolClient,
+  sharedGroups?: readonly GroupRow[],
+): Promise<PairLedgers> {
+  const oneOffExpenses = await listOneOffExpensesBetween(firstId, secondId, client);
+  const children = await loadExpenseChildren(
+    oneOffExpenses.map((expense) => expense.id),
+    client,
+    false,
+  );
+  const oneOffSettlements = await listOneOffSettlementsBetween(firstId, secondId, client);
+  const groups = sharedGroups ?? (await sharedActiveGroups(firstId, secondId, client));
+  const ledgers = await groupLedgers(groups.map((group) => group.id), client);
+  return {
+    oneOff: ledgersByCurrency(oneOffExpenses, children, oneOffSettlements),
+    groups: groups.map((group) => ({ group, ledgers: ledgers.get(group.id) ?? new Map() })),
+  };
+}
+
+/**
+ * The pure half of {@link owedByScope}: where a payer's debt to a creditor
+ * lives, read out of the pair's ledgers.
+ *
+ * @param ledgers - The pair's ledgers.
+ * @param payerId - The user paying.
+ * @param creditorId - The user being paid.
+ * @returns Scopes with a positive payer→creditor debt.
+ */
+function owedInPairLedgers(ledgers: PairLedgers, payerId: string, creditorId: string): ScopeDebt[] {
+  const scopes: ScopeDebt[] = [];
+  for (const [currency, entries] of ledgers.oneOff) {
+    const oneOffCents = owedInEntries(entries, payerId, creditorId);
+    if (oneOffCents > 0) scopes.push({ groupId: null, currency, owedCents: oneOffCents });
+  }
+  for (const { group, ledgers: ledgerByCurrency } of ledgers.groups) {
+    for (const [currency, ledger] of ledgerByCurrency) {
+      // A pairwise loop that nets to zero is not debt anyone should pay down
+      // — see groupCancelsOut. Simplified groups route it away themselves.
+      if (!group.simplify_debts && cancelsOut(ledger)) continue;
+      const owedCents = owedInEntries(routeDebts(ledger, group.simplify_debts), payerId, creditorId);
+      if (owedCents > 0) scopes.push({ groupId: group.id, currency, owedCents });
+    }
+  }
+  return scopes;
+}
+
+/**
  * Where a payer's debt to a creditor actually lives, scope by scope.
  *
  * Each scope — every shared group, plus the pair's one-off ledger — is
@@ -720,43 +791,46 @@ export async function sharedActiveGroups(
  * @param payerId - The user paying.
  * @param creditorId - The user being paid.
  * @param client - Settlement transaction client; omitted for ordinary reads.
+ * @param sharedGroups - The pair's shared active groups, already read on
+ *   `client` under their locks; omitted, they are read here.
  * @returns Scopes with a positive payer→creditor debt; order is not meaningful.
  */
 export async function owedByScope(
   payerId: string,
   creditorId: string,
   client?: PoolClient,
+  sharedGroups?: readonly GroupRow[],
 ): Promise<ScopeDebt[]> {
-  const scopes: ScopeDebt[] = [];
-
-  const oneOffExpenses = await listOneOffExpensesBetween(payerId, creditorId, client);
-  const children = await loadExpenseChildren(
-    oneOffExpenses.map((expense) => expense.id),
-    client,
-    false,
+  return owedInPairLedgers(
+    await loadPairLedgers(payerId, creditorId, client, sharedGroups),
+    payerId,
+    creditorId,
   );
-  const oneOffSettlements = await listOneOffSettlementsBetween(payerId, creditorId, client);
-  for (const [currency, entries] of ledgersByCurrency(
-    oneOffExpenses,
-    children,
-    oneOffSettlements,
-  )) {
-    const oneOffCents = owedInEntries(entries, payerId, creditorId);
-    if (oneOffCents > 0) scopes.push({ groupId: null, currency, owedCents: oneOffCents });
-  }
+}
 
-  const mutualGroups = await sharedActiveGroups(payerId, creditorId, client);
-  const ledgers = await groupLedgers(mutualGroups.map((group) => group.id), client);
-  for (const group of mutualGroups) {
-    for (const [currency, ledger] of ledgers.get(group.id) ?? []) {
-      // A pairwise loop that nets to zero is not debt anyone should pay down
-      // — see groupCancelsOut. Simplified groups route it away themselves.
-      if (!group.simplify_debts && cancelsOut(ledger)) continue;
-      const owedCents = owedInEntries(routeDebts(ledger, group.simplify_debts), payerId, creditorId);
-      if (owedCents > 0) scopes.push({ groupId: group.id, currency, owedCents });
-    }
-  }
-  return scopes;
+/**
+ * The pure half of {@link pairScopeDebts}: both directions of a pair's
+ * position, read out of one copy of their ledgers.
+ *
+ * @param ledgers - The pair's ledgers.
+ * @param firstId - One of the two people.
+ * @param secondId - The other.
+ * @returns Each outstanding debt with its debtor and creditor named, the
+ *   first person's debts first.
+ */
+function directedPairDebts(ledgers: PairLedgers, firstId: string, secondId: string): DirectedScopeDebt[] {
+  return [
+    ...owedInPairLedgers(ledgers, firstId, secondId).map((scope) => ({
+      ...scope,
+      debtorId: firstId,
+      creditorId: secondId,
+    })),
+    ...owedInPairLedgers(ledgers, secondId, firstId).map((scope) => ({
+      ...scope,
+      debtorId: secondId,
+      creditorId: firstId,
+    })),
+  ];
 }
 
 /**
@@ -766,23 +840,24 @@ export async function owedByScope(
  * is shown it (through {@link pairSettlePositions}) and the net-settlement
  * write recomputes it under its locks, so the two cannot be looking at
  * different ledgers: same scopes, same routing, same cancelling-loop rule.
+ * Both directions come from one read of the pair's ledgers: the write holds
+ * every shared group's lock while it reads, and a second pass over the same
+ * histories would only keep everyone else waiting longer.
  *
  * @param firstId - One of the two people.
  * @param secondId - The other.
  * @param client - Settlement transaction client; omitted for ordinary reads.
+ * @param sharedGroups - The pair's shared active groups, already read on
+ *   `client` under their locks; omitted, they are read here.
  * @returns Each outstanding debt with its debtor and creditor named.
  */
 export async function pairScopeDebts(
   firstId: string,
   secondId: string,
   client?: PoolClient,
+  sharedGroups?: readonly GroupRow[],
 ): Promise<DirectedScopeDebt[]> {
-  const forward = await owedByScope(firstId, secondId, client);
-  const backward = await owedByScope(secondId, firstId, client);
-  return [
-    ...forward.map((scope) => ({ ...scope, debtorId: firstId, creditorId: secondId })),
-    ...backward.map((scope) => ({ ...scope, debtorId: secondId, creditorId: firstId })),
-  ];
+  return directedPairDebts(await loadPairLedgers(firstId, secondId, client, sharedGroups), firstId, secondId);
 }
 
 /** What two people can settle between them in one currency, from one side. */
@@ -799,22 +874,17 @@ export interface PairSettlePosition {
 /**
  * A pair's settle positions, one per currency with anything outstanding.
  *
- * A position is read at one instant. Its two directions and each scope are
- * separate statements, so without a snapshot a settlement committing between
- * them would produce a position that never existed — one direction from
- * before the payment, the other from after.
+ * The debts must be read at one instant. Their two directions and each scope
+ * are separate statements, so read outside a snapshot a settlement
+ * committing between them would produce a position that never existed — one
+ * direction from before the payment, the other from after.
  *
+ * @param debts - The pair's debts in both directions, from
+ *   {@link directedPairDebts} over ledgers read on one snapshot.
  * @param userId - The viewer.
- * @param friendId - The other person.
- * @param client - Snapshot client, so every scope reads the same instant.
  * @returns Positions by currency code, each with its scopes and digest.
  */
-export async function pairSettlePositions(
-  userId: string,
-  friendId: string,
-  client: PoolClient,
-): Promise<PairSettlePosition[]> {
-  const debts = await pairScopeDebts(userId, friendId, client);
+function pairSettlePositions(debts: readonly DirectedScopeDebt[], userId: string): PairSettlePosition[] {
   const currencies = [...new Set(debts.map((debt) => debt.currency))].sort();
   return currencies.map((currency) => {
     const scopes = debts
@@ -1259,31 +1329,28 @@ function historyNetsByScope(lines: FriendLedgerLine[]): Map<string, number> {
 /**
  * Replaces raw history with the routed edge for simplified mutual groups.
  *
- * @param mutualGroups - Groups both people currently belong to.
+ * @param sharedGroups - The active groups both people belong to, with their
+ *   ledgers ({@link PairLedgers}).
  * @param historyNets - Raw pair history by scope; consumed by this function.
  * @param historyGroups - Group metadata keyed by id, including past memberships.
  * @param userId - Statement viewer.
  * @param friendId - Other person on the statement.
- * @param client - Snapshot client the rest of the statement is read on.
  * @returns Per-scope balances following each group's routing mode.
  */
-async function friendScopeBalances(
-  mutualGroups: GroupRow[],
+function friendScopeBalances(
+  sharedGroups: PairLedgers["groups"],
   historyNets: Map<string, number>,
   historyGroups: ReadonlyMap<string, GroupRow>,
   userId: string,
   friendId: string,
-  client: PoolClient,
-): Promise<FriendLedgerScopeBalance[]> {
+): FriendLedgerScopeBalance[] {
   const balances: FriendLedgerScopeBalance[] = [];
   for (const scope of historyNets.keys()) {
     const group = historyGroups.get(scope.split("|")[0]);
     if (group && groupIsInactive(group)) historyNets.delete(scope);
   }
-  const routedGroups = mutualGroups.filter((group) => group.simplify_debts && !groupIsInactive(group));
-  const ledgers = await groupLedgers(routedGroups.map((group) => group.id), client);
-  for (const group of routedGroups) {
-    const groupLedgerByCurrency = ledgers.get(group.id) ?? new Map<string, LedgerEntry[]>();
+  for (const { group, ledgers: groupLedgerByCurrency } of sharedGroups) {
+    if (!group.simplify_debts) continue;
     const currencies = new Set([
       ...groupLedgerByCurrency.keys(),
       ...[...historyNets.keys()].flatMap((scope) => {
@@ -1410,6 +1477,16 @@ export async function getFriendLedger(userId: string, friendId: string, limit = 
       notFound("friend ledger not found");
     }
 
+    // The pair's one-off ledger and every active group they share, read
+    // once: the balances below and the settle dialog's position both come
+    // from this one copy, never from a second read of the same histories.
+    const pairLedgers = await loadPairLedgers(
+      userId,
+      friendId,
+      client,
+      mutualGroupRows.filter((group) => !groupIsInactive(group)),
+    );
+
     // Per-scope balances, each routed the way its scope routes debt. A group
     // that simplifies debts contributes the simplified edge between the pair —
     // possibly zero while their shared history is not (the debt was rerouted
@@ -1418,13 +1495,12 @@ export async function getFriendLedger(userId: string, friendId: string, limit = 
     // balance always has a line explaining where it went, and the headline is
     // the sum of these rows — the same routed number the dashboard shows and
     // the settlement guards enforce, not the raw history total.
-    const groupBalances = await friendScopeBalances(
-      mutualGroupRows,
+    const groupBalances = friendScopeBalances(
+      pairLedgers.groups,
       netByScope,
       historyGroups,
       userId,
       friendId,
-      client,
     );
     // The headline: one net per currency, each the sum of that currency's
     // scopes — the same routed numbers the dashboard shows and the settlement
@@ -1435,7 +1511,10 @@ export async function getFriendLedger(userId: string, friendId: string, limit = 
     // What a settle dialog works from: not the statement above, but the very
     // position the settlement write will recompute, with its fingerprint.
     const groupsById = new Map(mutualGroupRows.map((group) => [group.id, group]));
-    const settlePositions = (await pairSettlePositions(userId, friendId, client)).map((position) => ({
+    const settlePositions = pairSettlePositions(
+      directedPairDebts(pairLedgers, userId, friendId),
+      userId,
+    ).map((position) => ({
       currency: position.currency,
       netCents: position.netCents,
       digest: position.digest,

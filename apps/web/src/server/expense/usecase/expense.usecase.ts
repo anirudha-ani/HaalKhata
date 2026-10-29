@@ -26,6 +26,7 @@ import {
   isMember,
   listCoMemberIds,
   listMembers,
+  type GroupRow,
 } from "@/server/group/repo/groups.repo";
 import { assertGroupActive, assertGroupsActive } from "@/server/group/usecase/groupArchive";
 import { GROUP_STATUS_PROTO } from "@/server/group/group.constants";
@@ -1906,14 +1907,16 @@ async function storeSettlementPortions(
   await lockGroupLedgers(client, [...lockedGroupIds]);
   const sharedUnderLock = await sharedActiveGroups(payerId, creditorId, client);
   if (sharedUnderLock.some((group) => !lockedGroupIds.has(group.id))) throw new SharedGroupsChanged();
-  if (request.netAcrossScopes) return storeNetSettlement(context, lockedGroupIds, client);
+  // From here every balance is read from exactly these groups, all locked,
+  // and each group's history is read once, however many directions or
+  // scopes the payment looks at: everyone else's writes to them wait while
+  // it does.
+  if (request.netAcrossScopes) return storeNetSettlement(context, sharedUnderLock, client);
   const selection = new Set(request.scopeGroupIds ?? []);
   // The client chooses scopes, never amounts. Re-read current server balances
   // so a stale selection cannot double-record a payment.
-  const selected = (await owedByScope(payerId, creditorId, client)).filter(
-    (scope) =>
-      (scope.groupId === null || lockedGroupIds.has(scope.groupId)) &&
-      (selection.size === 0 || selection.has(scope.groupId ?? "")),
+  const selected = (await owedByScope(payerId, creditorId, client, sharedUnderLock)).filter(
+    (scope) => selection.size === 0 || selection.has(scope.groupId ?? ""),
   );
   // There is no exchange rate in the request, so an explicitly selected
   // balance with nothing in the payment's currency must be rejected rather
@@ -1975,8 +1978,9 @@ async function storeSettlementPortions(
  * Three guarantees, in order:
  * 1. It settles what the person saw. Both directions are re-read here, under
  *    the locks, by the same function that built the position the dialog
- *    showed, and the two fingerprints must match. A ledger that moved in
- *    between is refused rather than settled differently than agreed.
+ *    showed, from one read of the pair's ledgers, and the two fingerprints
+ *    must match. A ledger that moved in between is refused rather than
+ *    settled differently than agreed.
  * 2. It is checked against the net — the one place a settlement is — because
  *    the opposing scopes are cancelled in this same transaction, so here they
  *    do absorb the difference.
@@ -1985,20 +1989,19 @@ async function storeSettlementPortions(
  *    cancel out, or to leave one partly removed later.
  *
  * @param context - Prepared settlement with no group id.
- * @param lockedGroupIds - Groups locked for this transaction; a scope outside
- *   them is left alone.
+ * @param sharedGroups - The groups the pair shares, read under their locks:
+ *   the only groups it reads or touches.
  * @param client - Pair-lock transaction client.
  * @returns Stored rows, the cash first, and what the settlement did overall.
  */
 async function storeNetSettlement(
   context: SettlementContext,
-  lockedGroupIds: ReadonlySet<string>,
+  sharedGroups: readonly GroupRow[],
   client: PoolClient,
 ): Promise<StoredSettlement> {
   const { userId, request, payerId, creditorId, currency } = context;
-  const debts = (await pairScopeDebts(payerId, creditorId, client)).filter(
-    (debt) =>
-      (debt.groupId === null || lockedGroupIds.has(debt.groupId)) && debt.currency === currency,
+  const debts = (await pairScopeDebts(payerId, creditorId, client, sharedGroups)).filter(
+    (debt) => debt.currency === currency,
   );
   if (!request.positionDigest) invalid("a net settlement must name the balances it settles");
   if (positionDigest(currency, debts) !== request.positionDigest) {

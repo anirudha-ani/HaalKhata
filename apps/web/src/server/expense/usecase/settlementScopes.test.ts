@@ -155,7 +155,11 @@ describe("recordSettlement — rows land in the scope holding the debt", () => {
     vi.mocked(owedByScope).mockResolvedValue([{ groupId: "goa", currency: "USD", owedCents: 10652 }]);
     const inserted = await settle(10652);
     expect(lockGroupLedgers).toHaveBeenCalledWith(transactionClient, ["goa"]);
-    expect(owedByScope).toHaveBeenCalledWith(PAYER, CREDITOR, transactionClient);
+    // Read on the locked transaction, from the shared groups read under the
+    // locks: no second read of them.
+    expect(owedByScope).toHaveBeenCalledWith(PAYER, CREDITOR, transactionClient, [
+      expect.objectContaining({ id: "goa" }),
+    ]);
     expect(inserted).toHaveLength(1);
     expect(inserted[0].groupId).toBe("goa");
   });
