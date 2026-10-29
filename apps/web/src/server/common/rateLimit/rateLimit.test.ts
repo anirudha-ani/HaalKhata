@@ -36,3 +36,20 @@ describe("rate limiter retention", () => {
     expect(limiter.trackedRateLimitKeyCount()).toBe(limiter.MAX_TRACKED_RATE_LIMIT_KEYS);
   });
 });
+
+describe("rateLimitWouldAllow", () => {
+  it("answers whether the next attempt would pass without spending it", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-28T00:00:00Z"));
+    const limiter = await import("./rateLimit");
+
+    expect(limiter.rateLimitWouldAllow("peek-key", 2)).toBe(true);
+    expect(limiter.rateLimitWouldAllow("peek-key", 2)).toBe(true);
+    expect(limiter.rateLimitCheck("peek-key", 2)).toBe(true);
+    expect(limiter.rateLimitCheck("peek-key", 2)).toBe(true);
+    expect(limiter.rateLimitWouldAllow("peek-key", 2)).toBe(false);
+
+    vi.advanceTimersByTime(60_001);
+    expect(limiter.rateLimitWouldAllow("peek-key", 2)).toBe(true);
+  });
+});

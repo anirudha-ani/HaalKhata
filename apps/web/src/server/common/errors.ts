@@ -9,7 +9,8 @@ export type UsecaseErrorCode =
   | "already_exists"
   | "failed_precondition"
   | "resource_exhausted"
-  | "unavailable";
+  | "unavailable"
+  | "aborted";
 
 /** Error thrown by usecases so handlers can report failures without transport knowledge. */
 export class UsecaseError extends Error {

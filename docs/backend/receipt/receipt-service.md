@@ -119,8 +119,8 @@ promised:
 
 | Guard | Value |
 | --- | --- |
-| Rate limit | 5/min per account |
-| Concurrency | 2 parses per process (handler gate, `ResourceExhausted` when busy) |
+| Rate limit | 5 scans a minute per account, spent only when a scan gets a lane |
+| Concurrency | 6 lanes per process, then a line of 8 that waits up to 20 s; one scan per person at a time |
 | Upload | A prepared JPEG: 8 MB, 2576 px on its longer side |
 | Memory | No image is decoded on the server; a scan costs its request body |
 | Provider | 90 s timeout, 1 MiB response cap |
@@ -159,6 +159,30 @@ promised:
     response): `Unavailable` "receipt scanning is unavailable right now.
     Please try again in a few minutes". Asking for a clearer photo here
     would blame the user for an outage.
+- **Who scans now** (`usecase/scanLanes/scanLanes.ts`, in
+  `parseReceiptWithConsent`, in this order):
+  1. Permission, as above.
+  2. The person's 5 scans a minute, checked but not spent: somebody out of
+     scans gets `ResourceExhausted` "you've scanned 5 receipts in the last
+     minute — try again in a moment" at once, without waiting in line.
+  3. A lane. A process runs 6 scans at once (`RECEIPT_SCAN_LANES`): a scan
+     spends nearly all its time waiting for the provider, since both apps
+     prepare the photo. With every lane taken, up to 8 scans wait in line,
+     first come first served, for at most 20 s; a scan that finds the line
+     full, or waits that long, gets `ResourceExhausted` "lots of receipts
+     are being read right now — try again in a minute". 20 s plus the
+     provider's 90 s stays inside the apps' own 120 s limit on a scan.
+  4. Only now is one of the person's scans for the minute spent: a scan
+     turned away as busy, or that gave up waiting, costs nothing.
+- **One scan per person, and it stops when they leave.** A person's newer
+  scan stops their earlier one, running or waiting, which answers
+  `Aborted` "you started another receipt scan, so this one was stopped".
+  When the request goes away — the app closed, the person left the form
+  (both apps hang up on a scan when its form unmounts) — the scan stops at
+  once: it leaves the line, or hangs up on the provider, and its lane goes
+  to the next. A stopped scan asks no further provider and is not counted.
+  Hanging up frees the lane; it does not stop the provider billing a
+  request it has started (OpenRouter bills an unstreamed request in full).
 - No `operation_id`: parsing stores nothing about the receipt, so a retry
   costs money but can never duplicate data.
 - **Each attempt is counted, and that is all.** `scanReceipt` wraps the parse

@@ -3,6 +3,7 @@
 
 import { RECEIPT_TIMEOUT_MS } from "@haalkhata/shared/api/timeouts";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useRef } from "react";
 import type { MessageInitShape } from "@bufbuild/protobuf";
 import type { PlainNumbers } from "@haalkhata/shared/api/wireNumbers";
 import type { CreateExpenseRequestSchema } from "@haalkhata/protogen/expense/v1/expense_pb";
@@ -69,6 +70,18 @@ export function useNewExpenseAPI(editExpenseId: string) {
     onSuccess: invalidateMoney,
   });
 
+  // A scan answers this form only. Leaving the form, or starting another
+  // scan, hangs up on the one in flight: the server stops it and gives its
+  // lane to someone else rather than finishing a reply nobody will read.
+  const scanInFlight = useRef<AbortController | null>(null);
+  useEffect(() => () => scanInFlight.current?.abort(), []);
+  /** Hangs up on any scan in flight and returns the controller for a new one. */
+  const startScan = () => {
+    scanInFlight.current?.abort();
+    scanInFlight.current = new AbortController();
+    return scanInFlight.current;
+  };
+
   /**
    * Sends a receipt photo to the AI parser and yields the structured draft.
    * Lives here rather than on its own route because a scan is a way of
@@ -76,8 +89,12 @@ export function useNewExpenseAPI(editExpenseId: string) {
    */
   const parse = useMutation({
     mutationFn: async (input: { file: File; consentVersion: string; currency: string }) => {
+      const scan = startScan();
       const bytes = new Uint8Array(await input.file.arrayBuffer());
-      return receiptClient.parseReceipt({ image: bytes, mediaType: input.file.type, consentVersion: input.consentVersion, currency: input.currency }, { timeoutMs: RECEIPT_TIMEOUT_MS });
+      return receiptClient.parseReceipt(
+        { image: bytes, mediaType: input.file.type, consentVersion: input.consentVersion, currency: input.currency },
+        { timeoutMs: RECEIPT_TIMEOUT_MS, signal: scan.signal },
+      );
     },
   });
 

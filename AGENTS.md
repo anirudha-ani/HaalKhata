@@ -404,7 +404,10 @@ with colocated tests. Mobile-specific rules:
   and forwards the bytes. A file's size says nothing about what it unpacks
   to (a 20 KB HEIC can need 600 MB), which is why no upload is decoded here.
   Never add an image decoder to the server; change the standard in shared
-  and both apps instead.
+  and both apps instead. Scans run in lanes (`receipt/usecase/scanLanes`):
+  6 at once per process, then a short line, one per person, and a scan
+  stops when its request goes away. The 5-a-minute allowance is spent only
+  once a scan has a lane, so being told "busy" costs nothing.
 - **There is one email check.** Whether text is an email address is
   `isEmailAddress` (or `canonicalEmail`, which also trims and lower-cases)
   in `@haalkhata/shared/email/email`; the server, the contacts lookup and the

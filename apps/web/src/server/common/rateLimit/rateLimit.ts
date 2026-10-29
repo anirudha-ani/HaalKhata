@@ -74,6 +74,22 @@ export function rateLimitCheck(
   return true;
 }
 
+/**
+ * Whether one more attempt for the key would be allowed, without recording
+ * one. For a caller that should refuse early but only spend the attempt once
+ * the work actually starts — a receipt scan that waits for a free lane.
+ *
+ * @param rateLimitKey - Identifier of the rate-limited actor.
+ * @param maxAttempts - Maximum attempts allowed within the rolling window.
+ * @returns True when {@link rateLimitCheck} would allow the next attempt now.
+ */
+export function rateLimitWouldAllow(rateLimitKey: string, maxAttempts: number): boolean {
+  const bucket = buckets.get(rateLimitKey);
+  if (!bucket) return true;
+  prune(bucket, Date.now());
+  return bucket.attempts.length < maxAttempts;
+}
+
 /** Returns retained key count for health diagnostics and deterministic tests. */
 export function trackedRateLimitKeyCount(): number {
   return buckets.size;

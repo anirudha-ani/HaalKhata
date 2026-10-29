@@ -2,17 +2,31 @@
 
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { scanReceipt } from "./receipt.usecase";
-import { grantReceiptConsent, getReceiptProcessingInfo, parseReceiptWithConsent, receiptProcessingInfo, revokeReceiptConsent } from "./receiptConsent.usecase";
+import { grantReceiptConsent, getReceiptProcessingInfo, parseReceiptWithConsent as parseWithSignal, receiptProcessingInfo, revokeReceiptConsent } from "./receiptConsent.usecase";
 
 const state = vi.hoisted(() => ({ saved: new Map<string, string>(),
   configuration: { baseUrl: "https://openrouter.ai/api/v1", model: "google/gemini-3-flash-preview", zeroDataRetention: true } }));
-vi.mock("../receipt.constants", () => ({ COMPATIBLE_AI: state.configuration }));
+vi.mock("../receipt.constants", async (importOriginal) => ({ ...(await importOriginal<typeof import("../receipt.constants")>()), COMPATIBLE_AI: state.configuration }));
+// Permission is what these tests are about; the per-minute allowance has its own.
+vi.mock("@/server/common/rateLimit/rateLimit", () => ({ rateLimitCheck: () => true, rateLimitWouldAllow: () => true }));
 vi.mock("../repo/receiptConsent.repo", () => ({
   findReceiptConsent: async (userId: string) => state.saved.get(userId),
   saveReceiptConsent: async (userId: string, version: string) => { state.saved.set(userId, version); },
   removeReceiptConsent: async (userId: string) => { state.saved.delete(userId); },
 }));
 vi.mock("./receipt.usecase", () => ({ scanReceipt: vi.fn().mockResolvedValue({ receipt: {}, provider: "mock" }) }));
+/**
+ * Scans as the handler does, for a request nobody cancels.
+ *
+ * @param userId - Signed-in account.
+ * @param image - Receipt image upload.
+ * @param consentVersion - Sharing terms the client knows.
+ * @param currency - Expense currency.
+ * @returns What parseReceiptWithConsent returns.
+ */
+function parseReceiptWithConsent(userId: string, image: Uint8Array, consentVersion: string, currency = "USD") {
+  return parseWithSignal(userId, image, consentVersion, currency, new AbortController().signal);
+}
 beforeEach(() => {
   state.saved.clear();
   Object.assign(state.configuration, { baseUrl: "https://openrouter.ai/api/v1", model: "google/gemini-3-flash-preview", zeroDataRetention: true });
@@ -78,5 +92,5 @@ it("hands a permitted scan the account and currency, so the attempt is counted a
   await grantReceiptConsent("first-account", version);
   const image = new Uint8Array([1]);
   await parseReceiptWithConsent("first-account", image, version, "EUR");
-  expect(scanReceipt).toHaveBeenCalledExactlyOnceWith("first-account", image, "EUR");
+  expect(scanReceipt).toHaveBeenCalledExactlyOnceWith("first-account", image, "EUR", expect.any(AbortSignal));
 });

@@ -50,6 +50,54 @@ export const NOT_PREPARED_MESSAGE =
 /** Request timeout for the vision provider, in milliseconds. */
 export const PROVIDER_TIMEOUT_MS = 90_000;
 
+/**
+ * Receipt scans one server process runs at once. A scan spends almost all
+ * its time waiting for the provider: the apps prepare the photo, so the
+ * server only checks its headers and forwards it, holding the photo (at most
+ * MAX_RECEIPT_IMAGE_BYTES) and its base64 copy until the answer comes back.
+ */
+export const RECEIPT_SCAN_LANES = 6;
+
+/**
+ * Scans that may wait for a lane when every lane is taken; one more is told
+ * scanning is busy. A waiting scan already holds its uploaded photo, so the
+ * line is short.
+ */
+export const RECEIPT_SCAN_LINE_LENGTH = 8;
+
+/**
+ * Longest a scan waits in line for a lane before being told scanning is
+ * busy. With PROVIDER_TIMEOUT_MS it stays inside the apps' own limit on a
+ * scan (RECEIPT_TIMEOUT_MS, 120 s), so the server always answers first.
+ */
+export const RECEIPT_SCAN_LINE_WAIT_MS = 20_000;
+
+/**
+ * Receipt scans one person may start in a rolling minute. Spent only when a
+ * scan gets a lane: one turned away as busy, or that gave up waiting, costs
+ * nothing.
+ */
+export const RECEIPT_SCANS_PER_MINUTE = 5;
+
+/** Rate-limit key prefix for a person's receipt scans. */
+export const RECEIPT_SCAN_RATE_KEY = "receipt-scan:";
+
+/** Told to someone whose scan found every lane taken and the line full, or waited too long. */
+export const RECEIPT_SCAN_BUSY_MESSAGE = "lots of receipts are being read right now — try again in a minute";
+
+/** Told to someone who has started as many scans as a minute allows. */
+export const RECEIPT_SCAN_RATE_MESSAGE = `you've scanned ${RECEIPT_SCANS_PER_MINUTE} receipts in the last minute — try again in a moment`;
+
+/**
+ * Told on the scan a person's newer scan replaced. One person runs one scan
+ * at a time, and the newest is the one they are waiting for — an older one
+ * is usually from a screen they left or a connection that dropped.
+ */
+export const RECEIPT_SCAN_REPLACED_MESSAGE = "you started another receipt scan, so this one was stopped";
+
+/** What a scan that stopped because its request went away answers, should anyone still be listening. */
+export const RECEIPT_SCAN_STOPPED_MESSAGE = "the receipt scan was stopped";
+
 /** Maximum bytes read from a provider response before aborting it. */
 export const MAX_PROVIDER_RESPONSE_BYTES = 1024 * 1024;
 

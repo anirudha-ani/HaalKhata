@@ -1,18 +1,9 @@
 /** Thin ReceiptService Connect handlers; logic lives in receipt.usecase. */
 
-import { Code, ConnectError } from "@connectrpc/connect";
 import type { PlainServiceImpl } from "@/server/api/connect/wire/plainService";
 import type { ReceiptService } from "@haalkhata/protogen/receipt/v1/receipt_pb";
 import { parseReceiptWithConsent, getReceiptProcessingInfo, grantReceiptConsent, revokeReceiptConsent } from "@/server/receipt/usecase/receiptConsent.usecase";
 import { requireUser, runUsecase } from "@/server/api/connect/context";
-import {
-  MAX_CONCURRENT_RECEIPT_PARSES,
-  requireRateLimitedUser,
-  RPC_RATE_LIMITS,
-} from "@/server/api/connect/rateLimit/rpcRateLimit";
-
-/** Number of receipt parsing jobs currently holding image/provider resources. */
-let activeReceiptParses = 0;
 
 /** ReceiptService implementation; authentication happens here, parsing in receipt.usecase. */
 export const receiptHandler: PlainServiceImpl<typeof ReceiptService> = {
@@ -36,24 +27,20 @@ export const receiptHandler: PlainServiceImpl<typeof ReceiptService> = {
    * itself is counted (who, when, whether it worked), nothing about the bill.
    */
   async parseReceipt(request, handlerContext) {
-    // The session check runs inside runUsecase too, so a database failure in
-    // it is logged and answered generically; the refusals are ConnectErrors
-    // and pass through as they are.
-    return runUsecase(async () => {
-      const userId = await requireRateLimitedUser(
-        handlerContext,
-        "parse-receipt",
-        RPC_RATE_LIMITS.parseReceipt,
-      );
-      if (activeReceiptParses >= MAX_CONCURRENT_RECEIPT_PARSES) {
-        throw new ConnectError("receipt parsing is busy, please try again", Code.ResourceExhausted);
-      }
-      activeReceiptParses += 1;
-      try {
-        return await parseReceiptWithConsent(userId, request.image, request.consentVersion, request.currency);
-      } finally {
-        activeReceiptParses -= 1;
-      }
-    }, handlerContext);
+    // Which scans run, wait or are refused, and what a scan costs the
+    // person's per-minute allowance, is the usecase's: it spends the
+    // allowance only once the scan has a lane. The request's signal stops the
+    // scan when the person goes away.
+    return runUsecase(
+      async () =>
+        parseReceiptWithConsent(
+          await requireUser(handlerContext),
+          request.image,
+          request.consentVersion,
+          request.currency,
+          handlerContext.signal,
+        ),
+      handlerContext,
+    );
   },
 };

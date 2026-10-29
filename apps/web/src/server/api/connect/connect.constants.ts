@@ -119,4 +119,5 @@ export const CODE_MAP: Record<UsecaseErrorCode, Code> = {
   failed_precondition: Code.FailedPrecondition,
   resource_exhausted: Code.ResourceExhausted,
   unavailable: Code.Unavailable,
+  aborted: Code.Aborted,
 };

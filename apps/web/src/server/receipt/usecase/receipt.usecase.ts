@@ -38,6 +38,7 @@ import {
   RECEIPT_JSON_SCHEMA,
 } from "@/server/receipt/receipt.constants";
 import { acceptPreparedJpeg } from "./image/preparedJpeg";
+import { scanStoppedError } from "./scanLanes/scanLanes";
 
 /** A receipt extracted from an image, with all money amounts in the currency's integer minor units. */
 export interface ParsedReceiptData {
@@ -62,8 +63,11 @@ interface Provider {
   name: string;
   /** Whether the provider's configuration (API keys, URLs) is present. */
   available(): boolean;
-  /** Extracts a receipt from a base64-encoded prepared JPEG. */
-  parse(imageBase64: string, currency: string): Promise<ParsedReceiptData>;
+  /**
+   * Extracts a receipt from a base64-encoded prepared JPEG, giving up when
+   * `signal` aborts (the scan stopped).
+   */
+  parse(imageBase64: string, currency: string, signal: AbortSignal): Promise<ParsedReceiptData>;
 }
 
 /** One normalized line item in a parsed receipt. */
@@ -348,10 +352,14 @@ function extractJsonObject(text: string): string {
 const compatibleProvider: Provider = {
   name: "compatible",
   available: () => Boolean(COMPATIBLE_AI.baseUrl && COMPATIBLE_AI.model),
-  async parse(imageBase64, currency) {
+  async parse(imageBase64, currency, signal) {
     const response = await fetch(`${COMPATIBLE_AI.baseUrl}/chat/completions`, {
       method: "POST",
-      signal: AbortSignal.timeout(PROVIDER_TIMEOUT_MS),
+      // The scan's own signal hangs up when the person leaves, so the lane
+      // frees at once. The provider may still finish and bill a request it
+      // has started (OpenRouter does for unstreamed ones); hanging up only
+      // stops this server waiting for it.
+      signal: AbortSignal.any([signal, AbortSignal.timeout(PROVIDER_TIMEOUT_MS)]),
       headers: {
         "content-type": "application/json",
         ...(COMPATIBLE_AI.apiKey
@@ -522,15 +530,21 @@ function prepareReceipt(image: Uint8Array, currency: string): PreparedReceipt {
  * Asks each configured provider in order until one returns at least one
  * line item.
  *
+ * A stopped scan asks no further provider: its reason is thrown as soon as
+ * the signal aborts, before or during a provider's call.
+ *
  * @param prepared - A request that passed {@link prepareReceipt}.
+ * @param signal - Aborts when the scan stops.
  * @returns The normalized receipt, the name of the provider that produced it,
  *   and the JPEG that provider was shown.
  * @throws UsecaseError "invalid_argument" when a provider read the photo and
  *   found no line items. UsecaseError "unavailable" when no provider produced
- *   an answer at all (HTTP error, timeout, malformed response).
+ *   an answer at all (HTTP error, timeout, malformed response). The stop
+ *   reason when the scan stopped.
  */
 async function readReceipt(
   prepared: PreparedReceipt,
+  signal: AbortSignal,
 ): Promise<{ receipt: ParsedReceiptData; provider: string; normalizedImage: Uint8Array }> {
   const { chain, normalizedImage, currency } = prepared;
   const imageBase64 = normalizedImage.toString("base64");
@@ -540,8 +554,9 @@ async function readReceipt(
   // a clearer photo would blame the user for an outage.
   let readButEmpty = false;
   for (const provider of chain) {
+    if (signal.aborted) throw scanStoppedError(signal);
     try {
-      const receipt = await provider.parse(imageBase64, currency);
+      const receipt = await provider.parse(imageBase64, currency, signal);
       if (receipt.items.length === 0) {
         readButEmpty = true;
         errors.push(`${provider.name}: no line items detected`);
@@ -549,6 +564,7 @@ async function readReceipt(
       }
       return { receipt, provider: provider.name, normalizedImage };
     } catch (error) {
+      if (signal.aborted) throw scanStoppedError(signal);
       errors.push(`${provider.name}: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
@@ -595,11 +611,13 @@ async function recordScan(userId: string, outcome: ReceiptScanOutcome): Promise<
  * answered with its reason and not counted: it says nothing about how often
  * scanning works, and counting it would read as an outage on the admin
  * page. For the same reason, call this only once the person has allowed
- * scanning.
+ * scanning, and a scan that stopped because the person left or started
+ * another is not counted either.
  *
  * @param userId - The authenticated person who uploaded the image.
  * @param image - Raw image bytes uploaded by the client.
  * @param currency - Expense currency for receipts that do not print one.
+ * @param signal - Aborts when the scan stops (its lane's signal); never, by default.
  * @returns The normalized receipt, the name of the provider that produced it,
  *   and the JPEG that provider was shown, for the client to display alongside
  *   the extracted values.
@@ -610,14 +628,15 @@ export async function scanReceipt(
   userId: string,
   image: Uint8Array,
   currency = "USD",
+  signal: AbortSignal = new AbortController().signal,
 ): Promise<{ receipt: ParsedReceiptData; provider: string; normalizedImage: Uint8Array }> {
   const prepared = prepareReceipt(image, currency);
   try {
-    const parsed = await readReceipt(prepared);
+    const parsed = await readReceipt(prepared, signal);
     void recordScan(userId, "parsed");
     return parsed;
   } catch (error) {
-    void recordScan(userId, "failed");
+    if (!signal.aborted) void recordScan(userId, "failed");
     throw error;
   }
 }

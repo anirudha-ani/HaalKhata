@@ -32,7 +32,6 @@ export const RPC_RATE_LIMITS = {
   // before reading its own rows; someone scrolling a long one reads a few.
   listFriendLedgerEntries: 120,
   listGroups: 60,
-  parseReceipt: 5,
   // Settling up with several friends in a row stays well inside this; each
   // payment locks the groups the two people share.
   recordSettlement: 20,
@@ -48,9 +47,6 @@ export const RPC_RATE_LIMITS = {
   updatePushPreferences: 30,
   writePaymentMethod: 30,
 } as const;
-
-/** Maximum receipt-provider jobs allowed in this process at once. */
-export const MAX_CONCURRENT_RECEIPT_PARSES = 2;
 
 /**
  * Resolves the authenticated caller and consumes one per-account rate-limit slot.
