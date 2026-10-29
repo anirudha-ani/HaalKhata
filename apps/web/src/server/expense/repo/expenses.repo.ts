@@ -2,6 +2,7 @@
 
 import { execute, newId, query, queryOne, transaction } from "@/server/common/db/db";
 import { exactTimeSql } from "@/server/common/pagination/pagination";
+import { expenseInvolvesSql } from "./expenseInvolvement";
 import { LEDGER_LINE_RANK } from "@/server/expense/expense.constants";
 import type { LedgerLineKey } from "@/server/expense/domain/ledgerOrder";
 import type { PoolClient } from "pg";
@@ -333,18 +334,6 @@ export type ExpenseListScope =
 export type ListedExpenseRow = ExpenseRow & { created_at_exact: string };
 
 /**
- * SQL that is true when a user pays for or owes on the expense aliased
- * `expense`.
- *
- * @param placeholder - The user id's placeholder, e.g. "$1".
- * @returns The EXISTS clause.
- */
-function participatesSql(placeholder: string): string {
-  return `EXISTS (SELECT 1 FROM expense_splits split WHERE split.expense_id = expense.id AND split.user_id = ${placeholder}
-                  UNION SELECT 1 FROM expense_payers payer WHERE payer.expense_id = expense.id AND payer.user_id = ${placeholder})`;
-}
-
-/**
  * One page of an expense list, newest first: a group's expenses, the
  * one-off expenses two people share, or every expense a user is on. Deleted
  * rows are listed too, marked, so a payment made against one keeps the row
@@ -373,18 +362,18 @@ export async function listExpensePage(
   } else if (scope.kind === "withUser") {
     conditions.push(
       "expense.group_id IS NULL",
-      participatesSql(placeholderFor(scope.userId)),
-      participatesSql(placeholderFor(scope.otherUserId)),
+      expenseInvolvesSql(`= ${placeholderFor(scope.userId)}`),
+      expenseInvolvesSql(`= ${placeholderFor(scope.otherUserId)}`),
     );
   } else if (scope.kind === "userOneOff") {
-    conditions.push("expense.group_id IS NULL", participatesSql(placeholderFor(scope.userId)));
+    conditions.push("expense.group_id IS NULL", expenseInvolvesSql(`= ${placeholderFor(scope.userId)}`));
   } else if (scope.kind === "userInGroup") {
     conditions.push(
       `expense.group_id = ${placeholderFor(scope.groupId)}`,
-      participatesSql(placeholderFor(scope.userId)),
+      expenseInvolvesSql(`= ${placeholderFor(scope.userId)}`),
     );
   } else {
-    conditions.push(participatesSql(placeholderFor(scope.userId)));
+    conditions.push(expenseInvolvesSql(`= ${placeholderFor(scope.userId)}`));
   }
   if (after) {
     conditions.push(
@@ -432,12 +421,10 @@ export async function listOneOffExpensesBetween(
   client?: PoolClient,
 ): Promise<ExpenseRow[]> {
   return query<ExpenseRow>(
-    `SELECT DISTINCT expense.* FROM expenses expense
+    `SELECT expense.* FROM expenses expense
      WHERE expense.group_id IS NULL AND expense.deleted_at IS NULL
-       AND EXISTS (SELECT 1 FROM expense_splits split WHERE split.expense_id = expense.id AND split.user_id = $1
-                   UNION SELECT 1 FROM expense_payers payer WHERE payer.expense_id = expense.id AND payer.user_id = $1)
-       AND EXISTS (SELECT 1 FROM expense_splits split WHERE split.expense_id = expense.id AND split.user_id = $2
-                   UNION SELECT 1 FROM expense_payers payer WHERE payer.expense_id = expense.id AND payer.user_id = $2)
+       AND ${expenseInvolvesSql("= $1")}
+       AND ${expenseInvolvesSql("= $2")}
      ORDER BY expense.expense_date DESC, expense.created_at DESC`,
     [firstUserId, secondUserId],
     client,
@@ -463,10 +450,8 @@ export async function listOneOffExpensesWithAnyOf(
   return query<ExpenseRow>(
     `SELECT expense.* FROM expenses expense
      WHERE expense.group_id IS NULL AND expense.deleted_at IS NULL
-       AND EXISTS (SELECT 1 FROM expense_splits split WHERE split.expense_id = expense.id AND split.user_id = $1
-                   UNION SELECT 1 FROM expense_payers payer WHERE payer.expense_id = expense.id AND payer.user_id = $1)
-       AND EXISTS (SELECT 1 FROM expense_splits split WHERE split.expense_id = expense.id AND split.user_id = ANY($2::text[])
-                   UNION SELECT 1 FROM expense_payers payer WHERE payer.expense_id = expense.id AND payer.user_id = ANY($2::text[]))`,
+       AND ${expenseInvolvesSql("= $1")}
+       AND ${expenseInvolvesSql("= ANY($2::text[])")}`,
     [userId, [...new Set(otherUserIds)]],
     client,
   );
@@ -492,13 +477,11 @@ export async function listExpensesBetween(
   client?: PoolClient,
 ): Promise<ListedExpenseRow[]> {
   return query<ListedExpenseRow>(
-    `SELECT DISTINCT expense.*, ${exactTimeSql("expense.created_at")} AS created_at_exact
+    `SELECT expense.*, ${exactTimeSql("expense.created_at")} AS created_at_exact
        FROM expenses expense
      WHERE ($3::boolean OR expense.deleted_at IS NULL)
-       AND EXISTS (SELECT 1 FROM expense_splits split WHERE split.expense_id = expense.id AND split.user_id = $1
-                   UNION SELECT 1 FROM expense_payers payer WHERE payer.expense_id = expense.id AND payer.user_id = $1)
-       AND EXISTS (SELECT 1 FROM expense_splits split WHERE split.expense_id = expense.id AND split.user_id = $2
-                   UNION SELECT 1 FROM expense_payers payer WHERE payer.expense_id = expense.id AND payer.user_id = $2)
+       AND ${expenseInvolvesSql("= $1")}
+       AND ${expenseInvolvesSql("= $2")}
      ORDER BY expense.expense_date DESC, expense.created_at DESC`,
     [firstUserId, secondUserId, includeDeleted],
     client,
@@ -528,8 +511,8 @@ export async function listExpensesBetweenPage(
   return query<ListedExpenseRow>(
     `SELECT expense.*, ${exactTimeSql("expense.created_at")} AS created_at_exact
        FROM expenses expense
-      WHERE ${participatesSql("$1")}
-        AND ${participatesSql("$2")}
+      WHERE ${expenseInvolvesSql("= $1")}
+        AND ${expenseInvolvesSql("= $2")}
         AND ($3::text IS NULL
              OR (expense.expense_date COLLATE "C", expense.created_at, $7::int, expense.id COLLATE "C")
                 < ($3::text COLLATE "C", $4::timestamptz, $5::int, $6::text COLLATE "C"))
@@ -562,10 +545,9 @@ export async function listExpensesInvolvingUser(
   client?: PoolClient,
 ): Promise<ExpenseRow[]> {
   return query<ExpenseRow>(
-    `SELECT DISTINCT expense.* FROM expenses expense
+    `SELECT expense.* FROM expenses expense
      WHERE expense.deleted_at IS NULL
-       AND EXISTS (SELECT 1 FROM expense_splits split WHERE split.expense_id = expense.id AND split.user_id = $1
-                   UNION SELECT 1 FROM expense_payers payer WHERE payer.expense_id = expense.id AND payer.user_id = $1)
+       AND ${expenseInvolvesSql("= $1")}
      ORDER BY expense.expense_date DESC, expense.created_at DESC`,
     [userId],
     client,

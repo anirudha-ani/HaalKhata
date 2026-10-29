@@ -356,6 +356,15 @@ named seam tests mock to intercept ledger transactions.
 - `isUniqueViolation(error)` is the one spelling of "SQLSTATE 23505" — the
   signal that a concurrent writer won an insert race the caller recovers from
   by re-reading (used in sign-up/sign-in/invite/phone TOCTOU paths).
+- **A person's expenses are a set, found by person.** "Is this person on
+  the expense?" is `expenseInvolvesSql` (`expense/repo/expenseInvolvement.ts`):
+  the expense ids from their payer and share rows, through `idx_payers_user`
+  and `idx_splits_user`, kept with `expense.id IN (…)`. Asked per expense —
+  `EXISTS (… UNION …)` — Postgres cannot use those indexes and checks every
+  expense in the app: about 900 ms for one person at 200,000 expenses, against
+  1–3 ms, and a payment ran it under its locks. Two people are two such
+  conditions. `expenseInvolvement.integration.test.ts` fails a query that
+  reads the expenses more than about once over.
 
 ## Privacy Projections
 

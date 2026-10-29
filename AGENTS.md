@@ -357,6 +357,10 @@ with colocated tests. Mobile-specific rules:
 - **Don't trust client split amounts** — recompute in the usecase.
 - **Don't add a `for` loop of `INSERT`s** — use the `multiRowValues` helper
   in `expenses.repo.ts` for bulk inserts.
+- **Find a person's expenses with `expenseInvolvesSql`** (in
+  `expense/repo/expenseInvolvement.ts`), never an `EXISTS (… UNION …)`
+  checked against each expense: that form cannot use the per-person indexes
+  and reads every expense in the app for one person's list.
 - **Don't run migrations inside `query()`** — migrations run once at mount
   time via `ensureMigrated()`; the query hot path is just `pool().query()`.
 - **Don't commit `packages/protogen/src/`** — it's gitignored and

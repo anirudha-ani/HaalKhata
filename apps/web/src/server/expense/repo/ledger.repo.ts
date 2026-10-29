@@ -3,6 +3,7 @@
 import type { PoolClient } from "pg";
 import { query, queryOne } from "@/server/common/db/db";
 import { exactTimeSql } from "@/server/common/pagination/pagination";
+import { expenseInvolvesSql } from "./expenseInvolvement";
 
 /**
  * Checks live movements for a nonzero participant net in any group currency.
@@ -165,10 +166,8 @@ export async function pairHistoryDigest(
                                      ORDER BY split.user_id COLLATE "C", split.owed_cents)
                      FROM expense_splits split WHERE split.expense_id = expense.id)) AS part
            FROM expenses expense
-          WHERE EXISTS (SELECT 1 FROM expense_splits split WHERE split.expense_id = expense.id AND split.user_id = $1
-                        UNION SELECT 1 FROM expense_payers payer WHERE payer.expense_id = expense.id AND payer.user_id = $1)
-            AND EXISTS (SELECT 1 FROM expense_splits split WHERE split.expense_id = expense.id AND split.user_id = $2
-                        UNION SELECT 1 FROM expense_payers payer WHERE payer.expense_id = expense.id AND payer.user_id = $2)
+          WHERE ${expenseInvolvesSql("= $1")}
+            AND ${expenseInvolvesSql("= $2")}
          UNION ALL
          SELECT concat_ws(':', 'payment', settlement.id, settlement.from_user, settlement.currency,
                   settlement.amount_cents::text, (settlement.deleted_at IS NULL)::text)
