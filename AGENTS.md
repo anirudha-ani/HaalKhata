@@ -427,7 +427,12 @@ with colocated tests. Mobile-specific rules:
   `RecordSettlement` require a client UUID (`assertOperationId` in the
   handler); the usecase claims it with `beginOperation` inside the ledger
   transaction and `finishOperation` before commit, so a retry replays the
-  stored result. Clients mint one per submit (`newOperationId()`).
+  stored result. Clients mint one per submit (`newOperationId()`). Claim
+  first, before any ledger lock, and never touch another claim in a money
+  write: claims past 24 hours are cleared by the background sweep
+  (`common/ledger/operationsSweep.ts`), because a write that cleared them
+  itself queued every other money write behind it and deadlocked with
+  a payment.
 - **A payment locks only what it can touch, and never waits for long.**
   Recording a payment between two people locks the active groups they share
   (`sharedActiveGroups`), never every group either is in, reads that set
@@ -435,8 +440,8 @@ with colocated tests. Mobile-specific rules:
   owed nothing is refused before any lock. Nobody can be in more than 200
   groups (`MAX_GROUPS_PER_PERSON`, checked in `group/usecase/groupLimit.ts`
   wherever someone joins). `withLedgerTransaction` gives every ledger
-  transaction a 5 s lock and 15 s statement limit and answers either as
-  busy with nothing saved. A new ledger path takes the fewest locks the
+  transaction a 5 s lock and 15 s statement limit and answers either, or a
+  deadlock Postgres broke, as busy with nothing saved. A new ledger path takes the fewest locks the
   change needs, through `withLedgerTransaction`.
 - **A balance is read at one instant.** It is assembled from several
   statements, and a settlement committing between two of them yields a

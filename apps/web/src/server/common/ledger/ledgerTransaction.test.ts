@@ -1,4 +1,4 @@
-/** Tests for the time limits every ledger transaction runs under, and how running out of time is answered. */
+/** Tests for the time limits every ledger transaction runs under, and how running out of time or a deadlock is answered. */
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { PoolClient } from "pg";
@@ -57,6 +57,14 @@ describe("withLedgerTransaction", () => {
     await expect(
       withLedgerTransaction(async () => {
         throw postgresError("57014");
+      }),
+    ).rejects.toMatchObject({ code: "unavailable", message: LEDGER_BUSY_MESSAGE });
+  });
+
+  it("answers a deadlock Postgres broke by cancelling this change the same way", async () => {
+    await expect(
+      withLedgerTransaction(async () => {
+        throw postgresError("40P01");
       }),
     ).rejects.toMatchObject({ code: "unavailable", message: LEDGER_BUSY_MESSAGE });
   });

@@ -220,7 +220,7 @@ practice:
 | Retry after success, same payload | The first result is **replayed** (same expense/settlement returned; nothing new stored) |
 | Same id, **different payload** | `InvalidArgument`: "operation_id was already used for a different request" |
 | Retry while the first is still in flight | Blocks on the first claim's insert; then replays it, or gets `Unavailable` "still being processed — try again" |
-| Reused after 24 h (`OPERATION_RETENTION_HOURS`) | The claim has been pruned; the id runs again as new |
+| Reused after 24 h (`OPERATION_RETENTION_HOURS`) | The claim has expired; the id runs again as new, taking its old row over |
 
 Mechanics: the `operations` table is keyed `(user_id, rpc, operation_id)` with
 a SHA-256 **fingerprint** of the canonical-JSON payload (object keys sorted at
@@ -231,6 +231,16 @@ can never outlive a rolled-back mutation. Ids are 1–64 chars of
 callers; the transport boundary (`assertOperationId`) rejects it on external
 requests. Updates and deletes carry no `operation_id`: they name the row they
 change and are idempotent by nature.
+
+A money write claims its id **first, before any ledger lock**, so a retry is
+answered without waiting on a ledger, and the claim touches no row but its
+own. Claims past retention are removed by a background sweep
+(`common/ledger/operationsSweep.ts`, started in `instrumentation.ts`): every
+10 minutes, 500 per autocommit statement, skipping rows another transaction
+holds. Never clear them inside a money transaction. A write that did held
+the old claims locked until it committed, so every other money write that
+reached them queued behind it, and an expense (claim, then ledger locks) and
+a payment (ledger locks, then claim) sharing a person deadlocked.
 
 ## Advisory Ledger Locks
 
@@ -277,16 +287,17 @@ ones aside, so one payment locks at most that many.
 `statement_timeout` (15 s) with `SET LOCAL`, so they end with the
 transaction. Ledger locks are held for milliseconds; a wait that long means
 something is stuck, and giving up frees one of the pool's connections. Either
-limit rolls the transaction back and answers `Unavailable`: "nothing was
-saved, try again in a moment".
+limit, or a deadlock Postgres breaks by cancelling the transaction (`40P01`),
+rolls the transaction back and answers `Unavailable`: "nothing was saved,
+try again in a moment".
 
 One-off mutations lock **per participant, not per pair**: a pair set is
 quadratic in the cast (a 100-participant expense would need 4,950 locks —
 more than Postgres's shared lock table holds), while per-participant locks
 are a superset of the pair exclusion and grow linearly.
 
-`withLedgerTransaction` is an alias of `transaction`; it exists as the named
-seam tests mock to intercept ledger transactions.
+`withLedgerTransaction` is `transaction` with these limits; it is also the
+named seam tests mock to intercept ledger transactions.
 
 ## Money Rules
 

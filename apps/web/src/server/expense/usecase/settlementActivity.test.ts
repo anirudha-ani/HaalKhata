@@ -36,6 +36,7 @@ vi.mock("@/server/expense/repo/settlements.repo", () => ({
   scopeHasSettlements: vi.fn(),
   // The lock is orthogonal to attribution; run the operation directly. The
   // client handed through is never dereferenced by the mocked insert.
+  lockSettlementPair: vi.fn(),
   withSettlementPairLock: vi.fn(
     (first: string, second: string, operation: (client: PoolClient) => Promise<unknown>) =>
       operation({} as PoolClient),

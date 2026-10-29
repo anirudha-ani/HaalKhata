@@ -68,6 +68,7 @@ vi.mock("@/server/expense/repo/settlements.repo", () => ({
   softDeleteNetSettlement: vi.fn(),
   scopeHasSettlements: vi.fn(),
   softDeleteSettlement: vi.fn(),
+  lockSettlementPair: vi.fn(),
   withSettlementPairLock: vi.fn(
     (first: string, second: string, operation: (client: PoolClient) => Promise<unknown>) =>
       operation(transactionClient),

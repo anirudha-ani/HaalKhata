@@ -37,6 +37,7 @@ vi.mock("@/server/expense/repo/comments.repo", () => ({
 vi.mock("@/server/expense/repo/settlements.repo", () => ({
   insertSettlement: vi.fn(),
   scopeHasSettlements: vi.fn(),
+  lockSettlementPair: vi.fn(),
   withSettlementPairLock: vi.fn(
     (first: string, second: string, operation: (client: PoolClient) => Promise<unknown>) =>
       operation(transactionClient),
@@ -75,7 +76,7 @@ import {
   listGroupsByUser,
   listMembers,
 } from "@/server/group/repo/groups.repo";
-import { insertSettlement, withSettlementPairLock } from "@/server/expense/repo/settlements.repo";
+import { insertSettlement, lockSettlementPair } from "@/server/expense/repo/settlements.repo";
 import { insertActivity } from "@/server/social/repo/activity.repo";
 import { insertNotifications } from "@/server/social/repo/notifications.repo";
 import { owedByScope, sharedActiveGroups } from "./balance.usecase";
@@ -258,7 +259,7 @@ describe("recordSettlement — what a payment between two people locks", () => {
 
     await expect(settle(5000)).rejects.toThrow(/don't owe this person anything/);
 
-    expect(withSettlementPairLock).not.toHaveBeenCalled();
+    expect(lockSettlementPair).not.toHaveBeenCalled();
     expect(lockGroupLedgers).not.toHaveBeenCalled();
   });
 
@@ -271,7 +272,7 @@ describe("recordSettlement — what a payment between two people locks", () => {
 
     const inserted = await settle(5000);
 
-    expect(withSettlementPairLock).toHaveBeenCalledTimes(2);
+    expect(lockSettlementPair).toHaveBeenCalledTimes(2);
     expect(vi.mocked(lockGroupLedgers).mock.calls.map(([, groupIds]) => groupIds)).toEqual([
       ["goa"],
       ["goa", "kerala"],
@@ -289,7 +290,7 @@ describe("recordSettlement — what a payment between two people locks", () => {
 
     await expect(settle(5000)).rejects.toThrow(/groups with this person changed/);
 
-    expect(withSettlementPairLock).toHaveBeenCalledTimes(3);
+    expect(lockSettlementPair).toHaveBeenCalledTimes(3);
     expect(insertSettlement).not.toHaveBeenCalled();
   });
 });

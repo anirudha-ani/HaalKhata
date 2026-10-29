@@ -47,8 +47,14 @@ export const LEDGER_LOCK_TIMEOUT_MS = 5_000;
  */
 export const LEDGER_STATEMENT_TIMEOUT_MS = 15_000;
 
-/** Postgres error codes for a lock wait and a statement that ran out of time. */
-export const LEDGER_TIMEOUT_ERROR_CODES: ReadonlySet<string> = new Set(["55P03", "57014"]);
+/**
+ * Postgres error codes for a ledger change that gave up and rolled back: a
+ * lock wait or a statement that ran out of time, and a deadlock Postgres
+ * broke by cancelling this transaction. Each is answered as busy, with
+ * nothing saved — a deadlock is two changes colliding, not a fault, and
+ * trying again goes through.
+ */
+export const LEDGER_BUSY_ERROR_CODES: ReadonlySet<string> = new Set(["55P03", "57014", "40P01"]);
 
 /** What a person is told when their change gave up waiting: nothing was saved. */
 export const LEDGER_BUSY_MESSAGE =

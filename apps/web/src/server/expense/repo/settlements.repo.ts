@@ -51,10 +51,11 @@ export interface SettlementRow {
  * Serializes all settlement writes between one pair of users.
  *
  * Runs `operation` inside a transaction that first takes a Postgres advisory
- * lock keyed on the ordered pair. Every settlement writer must go through
- * this: the over-settle guard is a read followed by an insert, and without
- * the lock two concurrent recordings both read the same outstanding debt,
- * both pass, and both insert — the pair ends up double-settled.
+ * lock keyed on the ordered pair. Every settlement writer must take this
+ * lock — here, or with {@link lockSettlementPair} in its own ledger
+ * transaction: the over-settle guard is a read followed by an insert, and
+ * without the lock two concurrent recordings both read the same outstanding
+ * debt, both pass, and both insert — the pair ends up double-settled.
  *
  * Every validation read and insert inside `operation` must use the provided
  * client. Borrowing from the shared pool while this transaction holds one
@@ -72,9 +73,23 @@ export async function withSettlementPairLock<Outcome>(
   operation: (client: PoolClient) => Promise<Outcome>,
 ): Promise<Outcome> {
   return withLedgerTransaction(async (client) => {
-    await lockParticipantLedgers(client, [firstUserId, secondUserId]);
+    await lockSettlementPair(client, firstUserId, secondUserId);
     return operation(client);
   });
+}
+
+/**
+ * Takes the pair's lock inside a ledger transaction the caller already
+ * opened — the lock {@link withSettlementPairLock} takes first. Recording a
+ * payment uses it to claim its operation id before any lock, as every money
+ * write does, so a retry is answered without waiting for the pair.
+ *
+ * @param client - The ledger transaction (from withLedgerTransaction).
+ * @param firstUserId - One side of the pair, in either order.
+ * @param secondUserId - The other side.
+ */
+export async function lockSettlementPair(client: PoolClient, firstUserId: string, secondUserId: string): Promise<void> {
+  await lockParticipantLedgers(client, [firstUserId, secondUserId]);
 }
 
 /**

@@ -203,6 +203,8 @@ owed again.
 Recording and deleting money runs under transaction-scoped advisory locks
 (see [conventions.md § Advisory Ledger Locks](../common/conventions.md#advisory-ledger-locks)):
 
+Both money creates claim their `operation_id` before the first lock (see Idempotency).
+
 | Operation | Locks (in order) |
 | --- | --- |
 | CreateExpense (group) | group ledger; membership re-checked under the lock |

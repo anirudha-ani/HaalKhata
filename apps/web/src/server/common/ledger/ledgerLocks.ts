@@ -10,7 +10,7 @@ import {
   LEDGER_BUSY_MESSAGE,
   LEDGER_LOCK_TIMEOUT_MS,
   LEDGER_STATEMENT_TIMEOUT_MS,
-  LEDGER_TIMEOUT_ERROR_CODES,
+  LEDGER_BUSY_ERROR_CODES,
   PARTICIPANT_LEDGER_LOCK_PREFIX,
   PAYMENT_METHODS_LOCK_PREFIX,
   REMINDER_LOCK_PREFIX,
@@ -148,15 +148,15 @@ export async function lockPaymentMethods(client: PoolClient, userId: string): Pr
 }
 
 /**
- * Whether an error is Postgres giving up on a lock wait or a statement that
- * ran past the ledger's time limits.
+ * Whether an error is Postgres giving up on a ledger change: a lock wait or
+ * a statement past the ledger's time limits, or a deadlock it broke.
  *
  * @param error - Anything thrown inside a ledger transaction.
- * @returns True for a lock timeout or a statement timeout.
+ * @returns True for a lock timeout, a statement timeout or a deadlock.
  */
-function isLedgerTimeout(error: unknown): boolean {
+function isLedgerBusy(error: unknown): boolean {
   const code = (error as { code?: unknown } | null)?.code;
-  return typeof code === "string" && LEDGER_TIMEOUT_ERROR_CODES.has(code);
+  return typeof code === "string" && LEDGER_BUSY_ERROR_CODES.has(code);
 }
 
 /**
@@ -167,11 +167,13 @@ function isLedgerTimeout(error: unknown): boolean {
  * The transaction waits at most {@link LEDGER_LOCK_TIMEOUT_MS} for any lock
  * and runs no statement longer than {@link LEDGER_STATEMENT_TIMEOUT_MS}
  * (`SET LOCAL`, so the pooled connection is back to normal after it). Either
- * limit rolls everything back and tells the person nothing was saved.
+ * limit, or a deadlock Postgres breaks by cancelling this transaction, rolls
+ * everything back and tells the person nothing was saved.
  *
  * @param operation - Lock acquisition, validation, and writes on one client.
  * @returns The operation's committed result.
- * @throws UsecaseError (unavailable) when a lock or statement ran out of time.
+ * @throws UsecaseError (unavailable) when a lock or statement ran out of
+ *   time, or the transaction was chosen to end a deadlock.
  */
 export async function withLedgerTransaction<Outcome>(
   operation: (client: PoolClient) => Promise<Outcome>,
@@ -184,7 +186,7 @@ export async function withLedgerTransaction<Outcome>(
     try {
       return await operation(client);
     } catch (error) {
-      if (isLedgerTimeout(error)) unavailable(LEDGER_BUSY_MESSAGE);
+      if (isLedgerBusy(error)) unavailable(LEDGER_BUSY_MESSAGE);
       throw error;
     }
   });

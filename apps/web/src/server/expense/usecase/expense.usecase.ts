@@ -47,6 +47,7 @@ import {
   softDeleteNetSettlement,
   scopeHasSettlements,
   softDeleteSettlement,
+  lockSettlementPair,
   withSettlementPairLock,
   type SettlementRow,
 } from "@/server/expense/repo/settlements.repo";
@@ -2225,24 +2226,22 @@ export async function recordSettlement(
   // feed rows and the notification, which commit with the payment or not at
   // all.
   /** One attempt, in one transaction under the pair's lock. */
-  const attempt = () => withSettlementPairLock(
-    context.payerId,
-    context.creditorId,
-    async (client) => {
-      // A retry of a lost response finds the claim the first attempt
-      // committed and answers with its recording — never a second one, which
-      // the over-settle guard alone could not catch for a partial payment.
-      const claim = await beginOperation(operation, request, client);
-      if (claim.replayOf !== null) {
-        const replayed = await findSettlementById(claim.replayOf, client);
-        return replayed ? [replayed] : [];
-      }
-      const stored = await storeSettlementPortions(context, client);
-      await announceSettlement(context, stored, client);
-      await finishOperation(operation, stored.rows[0].id, client);
-      return stored.rows;
-    },
-  );
+  const attempt = () => withLedgerTransaction(async (client) => {
+    // Claimed before any lock, as every money write claims: a retry of a
+    // lost response finds the claim the first attempt committed and answers
+    // with its recording at once — never a second one, which the over-settle
+    // guard alone could not catch for a partial payment.
+    const claim = await beginOperation(operation, request, client);
+    if (claim.replayOf !== null) {
+      const replayed = await findSettlementById(claim.replayOf, client);
+      return replayed ? [replayed] : [];
+    }
+    await lockSettlementPair(client, context.payerId, context.creditorId);
+    const stored = await storeSettlementPortions(context, client);
+    await announceSettlement(context, stored, client);
+    await finishOperation(operation, stored.rows[0].id, client);
+    return stored.rows;
+  });
   let settlements: SettlementRow[] | undefined;
   for (let attemptNumber = 1; settlements === undefined; attemptNumber++) {
     try {
