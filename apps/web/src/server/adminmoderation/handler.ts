@@ -9,7 +9,7 @@ import type { PlainServiceImpl } from "@/server/api/connect/wire/plainService";
 import type { AdminModerationService } from "@haalkhata/protogen/adminmoderation/v1/adminmoderation_pb";
 import { adminSessionToken, requireAdminPageRequest } from "@/server/api/connect/admin/adminRequest";
 import { runUsecase } from "@/server/api/connect/context";
-import { rateLimitCheck } from "@/server/common/rateLimit/rateLimit";
+import { adminRateLimits } from "@/server/common/rateLimit/rateLimit";
 import { requireAdminSession } from "@/server/adminanalytics/usecase/adminSession.usecase";
 import {
   MODERATION_READ_RATE_LIMIT,
@@ -37,7 +37,7 @@ async function moderate<Result>(
   requireAdminPageRequest(handlerContext);
   return runUsecase(async () => {
     await requireAdminSession(adminSessionToken(handlerContext));
-    if (!rateLimitCheck(bucket.key, bucket.limit)) {
+    if (!adminRateLimits.check(bucket.key, bucket.limit)) {
       throw new ConnectError("too many requests, please try again later", Code.ResourceExhausted);
     }
     return operation();

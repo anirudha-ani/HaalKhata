@@ -9,8 +9,8 @@ import { findContacts } from "@/server/social/usecase/contacts/findContacts.usec
 import { sendFriendRequests } from "@/server/social/usecase/contacts/sendFriendRequests.usecase";
 import { requireSignedSession, requireUser, runUsecase } from "@/server/api/connect/context";
 import { requireRateLimitedUser, RPC_RATE_LIMITS } from "@/server/api/connect/rateLimit/rpcRateLimit";
-import { clientIp } from "@/server/auth/request/clientIp";
-import { rateLimitCheck } from "@/server/common/rateLimit/rateLimit";
+import { clientNetwork } from "@/server/auth/request/clientIp";
+import { addressRateLimits } from "@/server/common/rateLimit/rateLimit";
 import {
   ANONYMOUS_SOCIAL_RPCS,
   INVITE_PREVIEW_RATE_LIMIT,
@@ -34,7 +34,7 @@ export function socialRequestGate(context: HandlerContext): void {
   }
   if (
     context.method.name === "PreviewInviteLink" &&
-    !rateLimitCheck(`invite-preview:${clientIp(context.requestHeader)}`, INVITE_PREVIEW_RATE_LIMIT)
+    !addressRateLimits.check(`invite-preview:${clientNetwork(context.requestHeader)}`, INVITE_PREVIEW_RATE_LIMIT)
   ) {
     throw new ConnectError("too many requests, please try again later", Code.ResourceExhausted);
   }

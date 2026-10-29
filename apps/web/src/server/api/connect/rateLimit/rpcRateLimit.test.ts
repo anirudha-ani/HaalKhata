@@ -3,11 +3,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/server/api/connect/context", () => ({ requireUser: vi.fn() }));
-vi.mock("@/server/common/rateLimit/rateLimit", () => ({ rateLimitCheck: vi.fn() }));
+vi.mock("@/server/common/rateLimit/rateLimit", () => ({ accountRateLimits: { check: vi.fn() } }));
 
 import { Code, type HandlerContext } from "@connectrpc/connect";
 import { requireUser } from "@/server/api/connect/context";
-import { rateLimitCheck } from "@/server/common/rateLimit/rateLimit";
+import { accountRateLimits } from "@/server/common/rateLimit/rateLimit";
 import { requireRateLimitedUser } from "./rpcRateLimit";
 
 beforeEach(() => {
@@ -17,16 +17,16 @@ beforeEach(() => {
 
 describe("requireRateLimitedUser", () => {
   it("keys the limiter by operation and authenticated account", async () => {
-    vi.mocked(rateLimitCheck).mockReturnValue(true);
+    vi.mocked(accountRateLimits.check).mockReturnValue(true);
 
     await expect(
       requireRateLimitedUser({} as HandlerContext, "parse-receipt", 5),
     ).resolves.toBe("user-123");
-    expect(rateLimitCheck).toHaveBeenCalledWith("rpc:parse-receipt:user-123", 5);
+    expect(accountRateLimits.check).toHaveBeenCalledWith("rpc:parse-receipt:user-123", 5);
   });
 
   it("rejects an exhausted account with ResourceExhausted", async () => {
-    vi.mocked(rateLimitCheck).mockReturnValue(false);
+    vi.mocked(accountRateLimits.check).mockReturnValue(false);
 
     await expect(
       requireRateLimitedUser({} as HandlerContext, "parse-receipt", 5),

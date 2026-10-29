@@ -157,37 +157,53 @@ cost has to sit in front of that:
 
 ## Rate Limiting
 
-An in-memory sliding-window limiter (`rateLimitCheck(key, max, windowMs)`),
+In-memory sliding-window limiters (`common/rateLimit/rateLimit.ts`),
 1-minute window by default. **Per process** — a multi-replica deploy needs a
-shared store; today's deployment is single-instance. The exception is the
-SMS anti-abuse ceilings, which live in Postgres (`phone_send_events`) and
-therefore survive restarts and span replicas — a harassment ceiling that
-forgets on deploy is not a ceiling. Hard-capped at 10,000
-tracked keys with LRU eviction so it cannot be a memory-exhaustion vector.
+shared store; today's deployment is single-instance. The exceptions guard
+secrets and harassment and live in Postgres, so they survive restarts and
+span replicas: the SMS ceilings (`phone_send_events`), the 5 guesses per
+phone code, and the daily contact-lookup budget.
+
+There are **three tables, each with its own cap**, so a flood in one can
+never reset counters in another:
+
+- `addressRateLimits` — callers not signed in, keyed by **network**
+  (`clientNetwork()`: an IPv4 address, or the /64 of an IPv6 one; anyone can
+  rotate through the 2^64 addresses of a /64). 10,000 buckets.
+- `accountRateLimits` — signed-in callers, keyed by account. Only an
+  account Google or Apple vouched for can make one. 100,000 buckets.
+- `adminRateLimits` — the admin page. 1,000 buckets.
+
+A full table makes room by sweeping out expired buckets (at most once a
+second), else by dropping the least recently used bucket that is not
+refusing anyone. A refusing bucket is never dropped, so being told to wait
+cannot be undone by flooding the table; if the oldest 64 are all refusing,
+the newcomer is let through untracked rather than shutting every new caller
+out.
 
 | Bucket | Key | Limit |
 | --- | --- | --- |
-| Sign-in/up, Google begin+finish (checked in the auth request gate, before the body is read) | `auth:<client-ip>` | 10/min |
+| Sign-in/up, Google begin+finish (checked in the auth request gate, before the body is read) | `auth:<client network>` | 10/min |
 | SetPhone (SMS send) | `phone:send:<userId>` | 3/min |
-| SetPhone (code check) | `phone:check:<userId>` | 5/min |
+| SetPhone (code check) | `phone:check:<userId>` | 5/min, plus 5 guesses per code, **durable** |
 | RemovePhone | `phone:remove:<userId>` | 5/min |
 | SMS sends per destination number | keyed HMAC, **durable** (`phone_send_events`) | 3/hour, 8/day |
-| SMS sends per client IP | **durable** (`phone_send_events`) | 20/hour |
+| SMS sends per client network | **durable** (`phone_send_events`) | 20/hour |
 | `AddFriend` | per account | 10/min |
 | `AcceptInviteLink` | per account | 10/min |
-| `PreviewInviteLink` | per client IP (unauthenticated) | 30/min |
+| `PreviewInviteLink` | per client network (unauthenticated) | 30/min |
 | `AddMembers` | per account | 15/min |
 | `CreateExpense` | per account | 30/min |
 | `SendReminder` | per account | 10/min |
 | `FindContacts` | per account | 5/min, plus 5,000 identifiers per UTC day, **durable** (`contact_lookup_usage`) |
 | `SendFriendRequests` | per account | 3/min |
 | Payment method writes (create, update, delete, set-preferred) | per account, one shared bucket | 30/min |
-| `ParseReceipt` | per account | 5/min (+ max 2 concurrent per process) |
+| `ParseReceipt` | per account | 5/min, spent only once a scan has a lane (6 lanes per process, a line of 8, one scan per person) |
 | Ledger reads (`ListExpenses`, `ListGroups`, `GetFriendLedger`, `GetGroupBalances`, `GetOverallBalances`/`ListFriends`) | per account | 60/min each |
 | Older statement pages (`ListFriendLedgerEntries`) | per account | 120/min: each fingerprints the pair's history; someone scrolling a long statement reads several |
 | `GetInsights` | per account | 30/min |
-| Admin sign-in nonce (`BeginSignIn`) | `admin-nonce:<client-ip>` | 30/min: each page load and each refused sign-in asks for a fresh one |
-| Admin sign-in (`SignIn`) | `admin-auth:<client-ip>` | 5/min |
+| Admin sign-in nonce (`BeginSignIn`) | `admin-nonce:<client network>` | 30/min: each page load and each refused sign-in asks for a fresh one |
+| Admin sign-in (`SignIn`) | `admin-auth:<client network>` | 5/min |
 | `GetUsageOverview` | one bucket for every admin session | 30/min |
 | `GetUsageTrend` | one bucket for every admin session | 60/min |
 | `ListReports` | one bucket for every admin session | 30/min |
@@ -204,7 +220,10 @@ number never sits in process state that doesn't need it.
 Client IP comes from `clientIp()`: proxy headers (`X-Forwarded-For`,
 `X-Real-IP`) are trusted **only** when `TRUST_PROXY_HEADERS=true` (a deployment
 assertion that the front proxy overwrites them); otherwise the mount-injected
-socket address is used, and anything non-IP resolves to `"unknown"`.
+socket address is used, and anything non-IP resolves to `"unknown"`. Limits
+count `clientNetwork()`, never the raw address: an IPv6 address counts as its
+/64, and an IPv4 address written as IPv6 (`::ffff:192.0.2.7`) as the IPv4
+address.
 
 ## Idempotent Operations (`operation_id`)
 

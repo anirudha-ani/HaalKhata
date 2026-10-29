@@ -21,7 +21,7 @@ vi.mock("@/server/adminanalytics/usecase/usageTrend.usecase", () => ({ getUsageT
 vi.mock("@/server/api/connect/context", () => ({
   runUsecase: vi.fn((operation: () => Promise<unknown>) => operation()),
 }));
-vi.mock("@/server/common/rateLimit/rateLimit", () => ({ rateLimitCheck: vi.fn() }));
+vi.mock("@/server/common/rateLimit/rateLimit", () => ({ adminRateLimits: { check: vi.fn() } }));
 
 import {
   beginAdminSignIn,
@@ -31,7 +31,7 @@ import {
 } from "@/server/adminanalytics/usecase/adminSession.usecase";
 import { getUsageOverview } from "@/server/adminanalytics/usecase/usage.usecase";
 import { getUsageTrend } from "@/server/adminanalytics/usecase/usageTrend.usecase";
-import { rateLimitCheck } from "@/server/common/rateLimit/rateLimit";
+import { adminRateLimits } from "@/server/common/rateLimit/rateLimit";
 import { adminAnalyticsHandler } from "./handler";
 
 const ADMIN_HOST = "admin.haalkhata.app";
@@ -64,7 +64,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   vi.stubEnv("NODE_ENV", "production");
   vi.stubEnv("ADMIN_HOST", ADMIN_HOST);
-  vi.mocked(rateLimitCheck).mockReturnValue(true);
+  vi.mocked(adminRateLimits.check).mockReturnValue(true);
 });
 
 afterEach(() => {
@@ -164,7 +164,7 @@ describe("admin handlers and requests the admin page did not start", () => {
   it("do not spend a sign-in attempt on a request they refuse", async () => {
     await refusalCodes({ host: ADMIN_HOST, origin: "https://haalkhata.app" });
 
-    expect(rateLimitCheck).not.toHaveBeenCalled();
+    expect(adminRateLimits.check).not.toHaveBeenCalled();
   });
 });
 
@@ -202,7 +202,7 @@ describe("admin sign-in", () => {
   });
 
   it("is rate-limited per client address before Google is consulted", async () => {
-    vi.mocked(rateLimitCheck).mockReturnValue(false);
+    vi.mocked(adminRateLimits.check).mockReturnValue(false);
     const { context } = contextFor({ host: ADMIN_HOST, "x-haalkhata-peer-ip": "203.0.113.9" });
 
     await expect(
@@ -212,7 +212,7 @@ describe("admin sign-in", () => {
       adminAnalyticsHandler.beginSignIn(create(EmptySchema), context),
     ).rejects.toMatchObject({ code: Code.ResourceExhausted });
 
-    expect(rateLimitCheck).toHaveBeenCalledWith("admin-auth:203.0.113.9", 5);
+    expect(adminRateLimits.check).toHaveBeenCalledWith("admin-auth:203.0.113.9", 5);
     expect(signInAdmin).not.toHaveBeenCalled();
     expect(beginAdminSignIn).not.toHaveBeenCalled();
   });
@@ -223,7 +223,7 @@ describe("admin sign-in", () => {
 
     await adminAnalyticsHandler.beginSignIn(create(EmptySchema), context);
 
-    expect(rateLimitCheck).toHaveBeenCalledExactlyOnceWith("admin-nonce:203.0.113.9", 30);
+    expect(adminRateLimits.check).toHaveBeenCalledExactlyOnceWith("admin-nonce:203.0.113.9", 30);
   });
 });
 
@@ -277,7 +277,7 @@ describe("admin usage overview", () => {
 
   it("is rate-limited once the session is known to be an admin's", async () => {
     vi.mocked(requireAdminSession).mockResolvedValue(undefined);
-    vi.mocked(rateLimitCheck).mockReturnValue(false);
+    vi.mocked(adminRateLimits.check).mockReturnValue(false);
     const { context } = contextFor({ host: ADMIN_HOST, cookie: `hk_admin=${TOKEN}` });
 
     await expect(
@@ -311,7 +311,7 @@ describe("admin usage trend", () => {
     await adminAnalyticsHandler.getUsageTrend(request, context);
 
     expect(requireAdminSession).toHaveBeenCalledExactlyOnceWith(TOKEN);
-    expect(rateLimitCheck).toHaveBeenCalledWith("admin-usage-trend", 60);
+    expect(adminRateLimits.check).toHaveBeenCalledWith("admin-usage-trend", 60);
     expect(getUsageTrend).toHaveBeenCalledExactlyOnceWith({ unit: TrendUnit.MONTH, endOn: "2025-06-30" });
   });
 
@@ -320,7 +320,7 @@ describe("admin usage trend", () => {
     const { context } = contextFor({ host: ADMIN_HOST });
     await expect(adminAnalyticsHandler.getUsageTrend(request, context)).rejects.toThrow();
 
-    vi.mocked(rateLimitCheck).mockReturnValue(false);
+    vi.mocked(adminRateLimits.check).mockReturnValue(false);
     await expect(adminAnalyticsHandler.getUsageTrend(request, context)).rejects.toMatchObject({
       code: Code.ResourceExhausted,
     });

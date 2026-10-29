@@ -503,7 +503,12 @@ with colocated tests. Mobile-specific rules:
   it has one it is never pushed. A push carries only `notificationId`,
   `link` and `recipientId` as data. See `docs/backend/push/push-service.md`.
 - **Limiters are process-local** (`rateLimit.ts`, `phoneRateLimit.ts`): fine
-  for one container, wrong for two replicas — see `docs/plan.txt` §28.
+  for one container, wrong for two replicas — see `docs/plan.txt` §28. Use
+  the right table: `addressRateLimits` for a caller not signed in, keyed by
+  `clientNetwork()` (never the raw address: an IPv6 caller has a whole /64),
+  `accountRateLimits` for a signed-in one, `adminRateLimits` for the admin
+  page. Anonymous callers can flood their table; they cannot touch the
+  others. A limit that guards a secret belongs in Postgres.
 - **The admin surface is a hostname, and it is checked three times.**
   `requestSurface()` in `config/adminSurface.ts` decides whether a request
   is on the app or the admin page, and the page proxy, the Connect mount and

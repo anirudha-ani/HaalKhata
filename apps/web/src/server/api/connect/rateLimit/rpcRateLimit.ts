@@ -2,7 +2,7 @@
 
 import { Code, ConnectError, type HandlerContext } from "@connectrpc/connect";
 import { requireUser } from "@/server/api/connect/context";
-import { rateLimitCheck } from "@/server/common/rateLimit/rateLimit";
+import { accountRateLimits } from "@/server/common/rateLimit/rateLimit";
 
 /**
  * Per-minute limits for resource-intensive authenticated operations.
@@ -63,7 +63,7 @@ export async function requireRateLimitedUser(
   maxAttempts: number,
 ): Promise<string> {
   const userId = await requireUser(handlerContext);
-  if (!rateLimitCheck(`rpc:${scope}:${userId}`, maxAttempts)) {
+  if (!accountRateLimits.check(`rpc:${scope}:${userId}`, maxAttempts)) {
     throw new ConnectError("too many requests, please try again later", Code.ResourceExhausted);
   }
   return userId;

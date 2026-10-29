@@ -8,7 +8,7 @@ const state = vi.hoisted(() => ({ saved: new Map<string, string>(),
   configuration: { baseUrl: "https://openrouter.ai/api/v1", model: "google/gemini-3-flash-preview", zeroDataRetention: true } }));
 vi.mock("../receipt.constants", async (importOriginal) => ({ ...(await importOriginal<typeof import("../receipt.constants")>()), COMPATIBLE_AI: state.configuration }));
 // Permission is what these tests are about; the per-minute allowance has its own.
-vi.mock("@/server/common/rateLimit/rateLimit", () => ({ rateLimitCheck: () => true, rateLimitWouldAllow: () => true }));
+vi.mock("@/server/common/rateLimit/rateLimit", () => ({ accountRateLimits: { check: () => true, wouldAllow: () => true } }));
 vi.mock("../repo/receiptConsent.repo", () => ({
   findReceiptConsent: async (userId: string) => state.saved.get(userId),
   saveReceiptConsent: async (userId: string, version: string) => { state.saved.set(userId, version); },

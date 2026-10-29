@@ -2,7 +2,7 @@
 
 import crypto from "node:crypto";
 import { UsecaseError } from "@/server/common/errors";
-import { rateLimitCheck, rateLimitWouldAllow } from "@/server/common/rateLimit/rateLimit";
+import { accountRateLimits } from "@/server/common/rateLimit/rateLimit";
 import {
   COMPATIBLE_AI,
   RECEIPT_SCAN_RATE_KEY,
@@ -101,10 +101,10 @@ export async function parseReceiptWithConsent(
     throw new UsecaseError("failed_precondition", "Allow AI receipt scanning before sharing this photo. Review the current receipt-sharing details.");
   }
   const rateKey = `${RECEIPT_SCAN_RATE_KEY}${userId}`;
-  if (!rateLimitWouldAllow(rateKey, RECEIPT_SCANS_PER_MINUTE)) throw new UsecaseError("resource_exhausted", RECEIPT_SCAN_RATE_MESSAGE);
+  if (!accountRateLimits.wouldAllow(rateKey, RECEIPT_SCANS_PER_MINUTE)) throw new UsecaseError("resource_exhausted", RECEIPT_SCAN_RATE_MESSAGE);
   const lane = await receiptScanLanes.enter(userId, requestSignal);
   try {
-    if (!rateLimitCheck(rateKey, RECEIPT_SCANS_PER_MINUTE)) throw new UsecaseError("resource_exhausted", RECEIPT_SCAN_RATE_MESSAGE);
+    if (!accountRateLimits.check(rateKey, RECEIPT_SCANS_PER_MINUTE)) throw new UsecaseError("resource_exhausted", RECEIPT_SCAN_RATE_MESSAGE);
     return await scanReceipt(userId, image, currency || "USD", lane.signal);
   } finally {
     lane.release();

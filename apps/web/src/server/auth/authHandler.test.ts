@@ -25,12 +25,15 @@ vi.mock("@/server/api/connect/context", () => ({
   setSessionCookie: vi.fn(),
 }));
 vi.mock("@/server/api/connect/session/credentials", () => ({ wantsBearerToken: vi.fn() }));
-vi.mock("@/server/common/rateLimit/rateLimit", () => ({ rateLimitCheck: vi.fn().mockReturnValue(true) }));
-vi.mock("@/server/auth/request/clientIp", () => ({ clientIp: vi.fn().mockReturnValue("203.0.113.7") }));
+vi.mock("@/server/common/rateLimit/rateLimit", () => ({
+  accountRateLimits: { check: vi.fn().mockReturnValue(true) },
+  addressRateLimits: { check: vi.fn().mockReturnValue(true) },
+}));
+vi.mock("@/server/auth/request/clientIp", () => ({ clientNetwork: vi.fn().mockReturnValue("203.0.113.7") }));
 vi.mock("@/server/auth/request/phoneRateLimit", () => ({ enforcePhoneSendLimits: vi.fn() }));
 
 import { enforcePhoneSendLimits } from "@/server/auth/request/phoneRateLimit";
-import { rateLimitCheck } from "@/server/common/rateLimit/rateLimit";
+import { accountRateLimits } from "@/server/common/rateLimit/rateLimit";
 import {
   setPhone,
   type PhoneRequestLimits,
@@ -59,7 +62,7 @@ describe("SetPhone limits", () => {
   it("leaves send or check to the usecase, which trims the code", async () => {
     await limitsHandedOver("  ");
 
-    expect(rateLimitCheck).not.toHaveBeenCalled();
+    expect(accountRateLimits.check).not.toHaveBeenCalled();
     expect(enforcePhoneSendLimits).not.toHaveBeenCalled();
   });
 
@@ -68,7 +71,7 @@ describe("SetPhone limits", () => {
 
     await limits.beforeSend(PHONE);
 
-    expect(rateLimitCheck).toHaveBeenCalledWith("phone:send:user-123", 3);
+    expect(accountRateLimits.check).toHaveBeenCalledWith("phone:send:user-123", 3);
     expect(enforcePhoneSendLimits).toHaveBeenCalledWith(PHONE, "203.0.113.7");
   });
 
@@ -77,7 +80,7 @@ describe("SetPhone limits", () => {
 
     limits.beforeCheck();
 
-    expect(rateLimitCheck).toHaveBeenCalledWith("phone:check:user-123", 5);
+    expect(accountRateLimits.check).toHaveBeenCalledWith("phone:check:user-123", 5);
     expect(enforcePhoneSendLimits).not.toHaveBeenCalled();
   });
 });

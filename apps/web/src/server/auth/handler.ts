@@ -17,7 +17,7 @@ import {
   setSessionCookie,
 } from "@/server/api/connect/context";
 import { wantsBearerToken } from "@/server/api/connect/session/credentials";
-import { rateLimitCheck } from "@/server/common/rateLimit/rateLimit";
+import { accountRateLimits, addressRateLimits } from "@/server/common/rateLimit/rateLimit";
 import {
   ANONYMOUS_AUTH_RPCS,
   AUTH_RATE_LIMIT,
@@ -27,7 +27,7 @@ import {
   RETIRED_PHONE_MERGE_MESSAGE,
 } from "@/server/auth/auth.constants";
 import { ConnectError, Code } from "@connectrpc/connect";
-import { clientIp } from "@/server/auth/request/clientIp";
+import { clientNetwork } from "@/server/auth/request/clientIp";
 import { enforcePhoneSendLimits } from "@/server/auth/request/phoneRateLimit";
 
 /**
@@ -40,7 +40,7 @@ import { enforcePhoneSendLimits } from "@/server/auth/request/phoneRateLimit";
  * @throws ConnectError with Code.ResourceExhausted when rate-limited.
  */
 function enforceAuthRateLimit(handlerContext: HandlerContext): void {
-  if (!rateLimitCheck(`auth:${clientIp(handlerContext.requestHeader)}`, AUTH_RATE_LIMIT)) {
+  if (!addressRateLimits.check(`auth:${clientNetwork(handlerContext.requestHeader)}`, AUTH_RATE_LIMIT)) {
     throw new ConnectError("too many attempts, please try again later", Code.ResourceExhausted);
   }
 }
@@ -74,7 +74,7 @@ function enforcePhoneRateLimit(
   scope: "send" | "check" | "remove",
   maxAttempts: number,
 ): void {
-  if (!rateLimitCheck(`phone:${scope}:${userId}`, maxAttempts)) {
+  if (!accountRateLimits.check(`phone:${scope}:${userId}`, maxAttempts)) {
     throw new ConnectError("too many verification attempts, please try again later", Code.ResourceExhausted);
   }
 }
@@ -177,7 +177,7 @@ export const authHandler: PlainServiceImpl<typeof AuthService> = {
         // client address, whoever the account is, durably, in Postgres.
         beforeSend: async (phone) => {
           enforcePhoneRateLimit(userId, "send", PHONE_SEND_RATE_LIMIT);
-          await enforcePhoneSendLimits(phone, clientIp(handlerContext.requestHeader));
+          await enforcePhoneSendLimits(phone, clientNetwork(handlerContext.requestHeader));
         },
         beforeCheck: () => enforcePhoneRateLimit(userId, "check", PHONE_CHECK_RATE_LIMIT),
       });
