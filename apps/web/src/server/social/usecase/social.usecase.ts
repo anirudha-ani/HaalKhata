@@ -14,6 +14,7 @@ import {
   listOutgoingFriendRequests,
 } from "@/server/social/repo/friendships.repo";
 import { randomBytes } from "node:crypto";
+import type { PoolClient } from "pg";
 import {
   findUserByEmail,
   findUserById,
@@ -72,7 +73,7 @@ import { safeActivityPath } from "@haalkhata/shared/navigation/activityPath";
 import { listPaymentMethodsByUser } from "@/server/payment/repo/paymentMethods.repo";
 import { reminderPaymentHint } from "@/server/payment/usecase/paymentHint";
 import { cleanMethodRow } from "@/server/payment/usecase/paymentMethod.mapper";
-import { getOverallBalances, netWithUser } from "@/server/expense/usecase/balance.usecase";
+import { getOverallBalances, netWithUser, oneOffNetsWith } from "@/server/expense/usecase/balance.usecase";
 import { GROUP_INVITE_LINK_LIFETIME_DAYS } from "@haalkhata/shared/invite/invite.constants";
 import { denied, invalid, notFound, UsecaseError } from "@/server/common/errors";
 import { transaction } from "@/server/common/db/db";
@@ -711,14 +712,19 @@ async function notifyInviteAccepted(
  * no feed event. Shared history and group co-memberships are untouched, and
  * they can be re-added later.
  *
- * The transaction takes both participant ledger locks first, then the
- * pair's inbox locks: the order every path that needs both takes them in
- * (a one-off expense locks its ledgers, then befriends), so the two cannot
- * deadlock. Holding the ledgers means the zero check cannot race a
- * concurrent one-off expense or settlement, and an expense that queued
- * behind this removal re-checks the friendship before writing. Group
- * writes need no serializing here: a group debt lives with the group and
- * both memberships either way.
+ * The whole balance — groups included — is read first, at one instant, on
+ * a connection of its own. The transaction then takes both participant
+ * ledger locks, then the pair's inbox locks (the order every path that
+ * needs both takes them in: a one-off expense locks its ledgers, then
+ * befriends, so the two cannot deadlock), and checks the one-off ledger
+ * again, on the transaction's own connection, under those locks. That is
+ * the balance a racing one-off
+ * expense or payment would change, and the friendship is what lets one be
+ * written; an expense that queued behind this removal re-checks the
+ * friendship before writing. A group balance lives with the group and both
+ * memberships either way, so group writes need no serializing here. Never
+ * read the balance inside the transaction through a snapshot: that would
+ * hold two connections at once.
  *
  * @param userId - Id of the authenticated caller.
  * @param friendId - The friend being removed.
@@ -731,21 +737,20 @@ export async function removeFriend(userId: string, friendId: string): Promise<vo
   if (!friend || !(await friendshipExists(userId, friendId))) {
     notFound("you're not friends with them");
   }
-  await transaction(async (client) => {
-    // Ledger locks first, then inbox locks: the one order every path that
-    // needs both takes them in, so this cannot deadlock with a one-off
-    // expense (ledgers, then the befriending inside insertFriendship). The
-    // ledger locks keep the zero check below from racing money being
-    // written between this pair.
-    await lockParticipantLedgers(client, [userId, friendId]);
-    await lockFriendRequestInboxes(client, [userId, friendId]);
-    const nets = await netWithUser(userId, friendId);
+  /** Refuses while any currency in `nets` is not settled. */
+  const refuseWhileOwing = (nets: Map<string, number>) => {
     if ([...nets.values()].some((cents) => cents !== 0)) {
       throw new UsecaseError(
         "failed_precondition",
         `you still have unsettled balances with ${friend.name}. Settle up first`,
       );
     }
+  };
+  refuseWhileOwing(await netWithUser(userId, friendId));
+  await withLedgerTransaction(async (client) => {
+    await lockParticipantLedgers(client, [userId, friendId]);
+    await lockFriendRequestInboxes(client, [userId, friendId]);
+    refuseWhileOwing((await oneOffNetsWith(userId, [friendId], client)).get(friendId) ?? new Map());
     await deleteFriendship(userId, friendId, client);
   });
 }
@@ -773,32 +778,45 @@ export async function sendReminder(userId: string, debtorId: string): Promise<vo
 
   const link = `/friends/${userId}`;
   const sender = (await findUserById(userId))!;
+  /**
+   * Refuses while the last reminder to this person is inside the cooldown.
+   *
+   * @param client - The reminder's transaction, or none for the early check.
+   */
+  const refuseWithinCooldown = async (client?: PoolClient) => {
+    const lastSentAt = await findLatestNotificationAt(debtorId, "reminder", link, client);
+    if (!lastSentAt) return;
+    const elapsedHours = (Date.now() - new Date(lastSentAt).getTime()) / 3_600_000;
+    if (elapsedHours < REMINDER_COOLDOWN_HOURS) {
+      invalid(
+        `you already reminded ${debtor.name} — you can send another in ${Math.ceil(
+          REMINDER_COOLDOWN_HOURS - elapsedHours,
+        )}h`,
+      );
+    }
+  };
+
+  // A rejected cooldown is one indexed lookup. Only callers who may actually
+  // send another reminder pay for the full expense-and-settlement ledger walk.
+  await refuseWithinCooldown();
+  // What they owe, read at one instant on a connection of its own, before
+  // the reminder's transaction takes one: holding that and asking for this
+  // would take two at once. It needs no lock — a payment landing a moment
+  // later is no different from one landing a moment after the reminder.
+  // Per currency: the nudge names each amount in its own currency, and a
+  // dollar they owe is not cancelled by a euro they are owed.
+  const owedBuckets = [...(await netWithUser(userId, debtorId)).entries()].filter(
+    ([, cents]) => cents > 0,
+  );
+  if (owedBuckets.length === 0) invalid("they don't owe you anything right now");
+
   // The cooldown check and the insert it guards run on one transaction
   // behind an advisory lock on the (sender, debtor) pair: without it, ten
   // concurrent sends all read "no previous reminder" before any commits,
   // and the cooldown exists precisely to stop that.
   await withLedgerTransaction(async (client) => {
     await lockReminder(client, userId, debtorId);
-    const lastSentAt = await findLatestNotificationAt(debtorId, "reminder", link, client);
-    if (lastSentAt) {
-      const elapsedHours = (Date.now() - new Date(lastSentAt).getTime()) / 3_600_000;
-      if (elapsedHours < REMINDER_COOLDOWN_HOURS) {
-        invalid(
-          `you already reminded ${debtor.name} — you can send another in ${Math.ceil(
-            REMINDER_COOLDOWN_HOURS - elapsedHours,
-          )}h`,
-        );
-      }
-    }
-
-    // A rejected cooldown is one indexed lookup. Only callers who may actually
-    // send another reminder pay for the full expense-and-settlement ledger walk.
-    // Per currency: the nudge names each amount in its own currency, and a
-    // dollar they owe is not cancelled by a euro they are owed.
-    const owedBuckets = [...(await netWithUser(userId, debtorId)).entries()].filter(
-      ([, cents]) => cents > 0,
-    );
-    if (owedBuckets.length === 0) invalid("they don't owe you anything right now");
+    await refuseWithinCooldown(client);
 
     // The nudge says how the sender wants to be paid, because "where do I
     // send it?" is the very next question and making the debtor ask defeats

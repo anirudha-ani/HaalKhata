@@ -461,6 +461,9 @@ with colocated tests. Mobile-specific rules:
   `listExpenses`, `getExpense`) runs inside `snapshot()` from `common/db/db.ts`
   and passes its `client` to every statement, one at a time — one sent to
   the pool reads outside the snapshot and holds a second connection.
+  Never open a snapshot or transaction, or send a pool query, inside
+  another transaction: read the balance first, then open the transaction.
+  `connectionHold.ts` refuses it outside production and logs it in it.
 - **A net settlement is one unit.** Its cash and `offset` rows share a
   `net_settlements` parent and a deferred constraint trigger refuses a unit
   that does not cancel out or is only partly removed. Never insert, update

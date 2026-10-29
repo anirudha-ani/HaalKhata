@@ -19,6 +19,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { Client } from "pg";
 import { testDatabaseName } from "@/server/common/testing/testDatabase";
+import { asSeparateRequest } from "@/server/common/db/connectionHold";
 
 const ADMIN_URL =
   process.env.MERGE_TEST_ADMIN_URL ?? "postgres://haalkhata:change-me@127.0.0.1:5432/postgres";
@@ -555,8 +556,9 @@ describe.skipIf(!reachable)("net settlement against Postgres", () => {
     const seen = await snapshot(async (client) => {
       // The first statement fixes the instant this read sees.
       const keeperOwes = describeDebts(await owedByScope(KEEPER, OWED, client));
-      // The pair now settles on the net, on another connection, and it commits.
-      recordedId = (await settleKeeperOnNet()).id;
+      // The pair now settles on the net, as another request on another
+      // connection, and it commits.
+      recordedId = (await asSeparateRequest(settleKeeperOnNet)).id;
       // The second half of the same read. Taken from the ledger as it stands
       // now it would say Sam owes nothing, beside a first half that still
       // has the keeper owing 50.00: a position that never existed.

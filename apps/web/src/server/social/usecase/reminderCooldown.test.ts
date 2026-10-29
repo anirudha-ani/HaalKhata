@@ -138,14 +138,25 @@ describe("reminder cooldown ordering", () => {
 
     await expect(sendReminder(SENDER_ID, DEBTOR_ID)).rejects.toThrow(/already reminded/);
 
-    expect(findLatestNotificationAt).toHaveBeenCalledWith(
+    expect(findLatestNotificationAt).toHaveBeenCalledExactlyOnceWith(
       DEBTOR_ID,
       "reminder",
       `/friends/${SENDER_ID}`,
-      transactionClient,
+      undefined,
     );
     expect(netWithUser).not.toHaveBeenCalled();
+    expect(lockReminder).not.toHaveBeenCalled();
     expect(insertNotifications).not.toHaveBeenCalled();
+  });
+
+  it("reads what they owe before the reminder's transaction, never while holding it", async () => {
+    // Inside the transaction, the balance's own snapshot would take a second
+    // connection while the first is held.
+    await sendReminder(SENDER_ID, DEBTOR_ID);
+
+    const ledgerOrder = vi.mocked(netWithUser).mock.invocationCallOrder[0];
+    const lockOrder = vi.mocked(lockReminder).mock.invocationCallOrder[0];
+    expect(ledgerOrder).toBeLessThan(lockOrder);
   });
 
   it("computes the balance only after the cooldown lookup passes", async () => {
@@ -157,17 +168,18 @@ describe("reminder cooldown ordering", () => {
     expect(insertNotifications).toHaveBeenCalledTimes(1);
   });
 
-  it("checks and inserts on one transaction, behind the pair's lock", async () => {
-    // M-05: a check-then-insert across two connections lets concurrent sends
-    // all pass the check. The lock is taken first, and every step after it
-    // rides the same client.
+  it("checks the cooldown again and inserts on one transaction, behind the pair's lock", async () => {
+    // A check-then-insert across two connections lets concurrent sends all
+    // pass the check. The early check only saves the ledger walk; the one
+    // that counts runs after the lock, and every step after it rides the
+    // same client.
     await sendReminder(SENDER_ID, DEBTOR_ID);
 
     expect(lockReminder).toHaveBeenCalledWith(transactionClient, SENDER_ID, DEBTOR_ID);
     const lockOrder = vi.mocked(lockReminder).mock.invocationCallOrder[0];
-    const cooldownOrder = vi.mocked(findLatestNotificationAt).mock.invocationCallOrder[0];
-    expect(lockOrder).toBeLessThan(cooldownOrder);
-    expect(findLatestNotificationAt).toHaveBeenCalledWith(
+    const lockedCooldownOrder = vi.mocked(findLatestNotificationAt).mock.invocationCallOrder[1];
+    expect(lockOrder).toBeLessThan(lockedCooldownOrder);
+    expect(findLatestNotificationAt).toHaveBeenLastCalledWith(
       DEBTOR_ID,
       "reminder",
       `/friends/${SENDER_ID}`,

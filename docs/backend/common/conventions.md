@@ -375,6 +375,19 @@ named seam tests mock to intercept ledger transactions.
 - `isUniqueViolation(error)` is the one spelling of "SQLSTATE 23505" — the
   signal that a concurrent writer won an insert race the caller recovers from
   by re-reading (used in sign-up/sign-in/invite/phone TOCTOU paths).
+- **One connection per request at a time.** A transaction or snapshot
+  holds its connection until it ends, so everything inside it runs on its
+  client. A pool query, snapshot or transaction started inside one would
+  wait for a second connection while holding the first: a burst of such
+  requests holds the whole pool (20) while each waits for one more, and they
+  all fail after the 5 s connection wait, with every other request in the
+  app. `common/db/connectionHold.ts` notices it — an `AsyncLocalStorage`
+  marks the work inside a transaction — and refuses it outside production
+  (`SecondConnectionError`), logging it in production; every
+  real-Postgres test runs with it on. A read that needs its own instant
+  (a balance's snapshot) runs before the transaction, never inside it.
+  `poolSaturation.integration.test.ts` sends 60 friend removals and
+  reminders at once against the real pool.
 - **A person's expenses are a set, found by person.** "Is this person on
   the expense?" is `expenseInvolvesSql` (`expense/repo/expenseInvolvement.ts`):
   the expense ids from their payer and share rows, through `idx_payers_user`

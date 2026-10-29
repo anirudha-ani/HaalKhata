@@ -11,6 +11,7 @@ import {
   PLAINTEXT_DATABASE_HOSTS,
   WEAK_DATABASE_PASSWORDS,
 } from "@/server/common/db/db.constants";
+import { refuseSecondConnection, whileHoldingConnection } from "@/server/common/db/connectionHold";
 import { parseExactInt8 } from "@/server/common/db/int8";
 import { logError } from "@/server/common/logger";
 import { readSecret } from "@/server/common/secrets/secrets";
@@ -215,6 +216,7 @@ export async function query<ResultRow extends QueryResultRow>(
   params: unknown[] = [],
   client?: PoolClient,
 ): Promise<ResultRow[]> {
+  if (!client) refuseSecondConnection("a pool query");
   const executor = client ?? pool();
   const { rows } = await executor.query<ResultRow>(text, params as never[]);
   return rows;
@@ -253,7 +255,10 @@ export async function execute(
 
 /**
  * Runs operation inside BEGIN/COMMIT, rolling back if it throws; the supplied
- * client must be used for every statement inside the transaction.
+ * client must be used for every statement inside the transaction. A pool
+ * query, snapshot or transaction started inside it would take a second
+ * connection while this one is held, which is refused outside production
+ * (see connectionHold.ts).
  *
  * @param operation - Callback that performs all transactional statements on the supplied client.
  * @returns Whatever operation resolves to, once the transaction has committed.
@@ -261,12 +266,13 @@ export async function execute(
 export async function transaction<TransactionResult>(
   operation: (client: PoolClient) => Promise<TransactionResult>,
 ): Promise<TransactionResult> {
+  refuseSecondConnection("a transaction");
   const client = await pool().connect();
   let releaseError: Error | undefined;
   let transactionFailed = false;
   try {
     await client.query("BEGIN");
-    const result = await operation(client);
+    const result = await whileHoldingConnection(() => operation(client));
     await client.query("COMMIT");
     return result;
   } catch (error) {
