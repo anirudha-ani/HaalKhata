@@ -15,6 +15,8 @@ import {
   INVITE_EXPIRED_TITLE,
   INVITE_INACTIVE_TITLE,
   INVITE_SIGN_IN_HINT,
+  LIVE_SPLIT_ENDED_BODY,
+  LIVE_SPLIT_ENDED_TITLE,
 } from "@haalkhata/shared/invite/inviteCopy";
 import { colors, radii, spacing } from "@/lib/theme/theme";
 
@@ -28,7 +30,7 @@ import { colors, radii, spacing } from "@/lib/theme/theme";
  */
 export function JoinScreen({ token }: { token: string }) {
   const router = useRouter();
-  const { preview, viewer, viewerStatus, accept, requestSent, signIn, expired } = useJoinAPI(token);
+  const { preview, viewer, viewerStatus, accept, requestSent, signIn, expired, liveSplitEnded } = useJoinAPI(token);
   const copy = preview.data ? inviteCopy(preview.data) : null;
 
   return (
@@ -39,8 +41,12 @@ export function JoinScreen({ token }: { token: string }) {
           <Spinner />
         ) : preview.isError ? (
           <>
-            <Text style={styles.title}>{expired ? INVITE_EXPIRED_TITLE : INVITE_INACTIVE_TITLE}</Text>
-            <Text style={styles.body}>{expired ? INVITE_EXPIRED_BODY : errorMessage(preview.error)}</Text>
+            <Text style={styles.title}>
+              {liveSplitEnded ? LIVE_SPLIT_ENDED_TITLE : expired ? INVITE_EXPIRED_TITLE : INVITE_INACTIVE_TITLE}
+            </Text>
+            <Text style={styles.body}>
+              {liveSplitEnded ? LIVE_SPLIT_ENDED_BODY : expired ? INVITE_EXPIRED_BODY : errorMessage(preview.error)}
+            </Text>
             <Button label="Open HaalKhata" onPress={() => router.replace("/")} />
           </>
         ) : preview.data ? (

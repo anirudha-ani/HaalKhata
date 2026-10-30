@@ -3,7 +3,7 @@
 
 import { SafetyActions } from "@/components/safety/SafetyActions/SafetyActions";
 import Link from "next/link";
-import { Check, ChevronUp, Lock, Pencil, Send, Trash2 } from "lucide-react";
+import { Check, ChevronUp, Lock, Pencil, Radio, Send, Trash2 } from "lucide-react";
 import { ErrorAlert } from "@/components/ui/ErrorAlert/ErrorAlert";
 import { SHOW_EARLIER_COMMENTS_LABEL } from "@haalkhata/shared/api/paging";
 import { Avatar } from "@/components/ui/Avatar/Avatar";
@@ -89,6 +89,7 @@ export function ExpenseDetailPage({ expenseId }: { expenseId: string }) {
   // comes with a refused edit, so the edit's reason is the one to show.
   const editRefusal = expenseDetail.detail?.editRefusal ?? "";
   const canEdit = editRefusal === "";
+  const liveSplit = expenseDetail.detail?.liveSplit;
   const canDelete = isCreator && (expenseDetail.detail?.deleteRefusal ?? "") === "";
   const deletion = expenseDetail.deletion;
   // Same wording as the list rows, from the same function — the list's
@@ -171,15 +172,37 @@ export function ExpenseDetailPage({ expenseId }: { expenseId: string }) {
         </div>
       ) : null}
 
+      {liveSplit ? (
+        <Link
+          href={`/expenses/${expense.id}/live`}
+          className="flex items-center gap-2 rounded-2xl border border-brand-200 bg-brand-50 px-4 py-3 text-sm font-semibold text-brand-700"
+        >
+          <Radio className="h-4 w-4 shrink-0" />
+          <span className="min-w-0 flex-1">Everyone is splitting this live. Open it to claim what you had.</span>
+        </Link>
+      ) : null}
+
       {isParticipant && !isDeleted && !isArchived && (canEdit || canDelete) ? (
-        <div className="flex gap-2">
-          {canEdit ? (
+        <div className="flex flex-wrap gap-2">
+          {/* Lines can have nobody on them while it runs, which the form
+              cannot save: changes go through the live split until it ends. */}
+          {canEdit && !liveSplit ? (
             <Link
               href={`/expenses/new?edit=${expense.id}`}
               className="flex items-center gap-1.5 rounded-lg border border-line bg-card px-3 py-2 text-xs font-semibold text-ink-soft hover:border-brand-200"
             >
               <Pencil className="h-3.5 w-3.5" /> Edit
             </Link>
+          ) : null}
+          {canEdit && !liveSplit && expense.items.length > 0 && expense.payers.length === 1 ? (
+            <button
+              type="button"
+              disabled={expenseDetail.isStartingLive}
+              onClick={expenseDetail.startLive}
+              className="flex items-center gap-1.5 rounded-lg border border-line bg-card px-3 py-2 text-xs font-semibold text-ink-soft hover:border-brand-200 disabled:opacity-50"
+            >
+              <Radio className="h-3.5 w-3.5" /> Split live
+            </button>
           ) : null}
           {canDelete ? (
             <button

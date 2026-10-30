@@ -2,7 +2,7 @@
 
 import { describe, expect, it } from "vitest";
 import { allocate } from "./allocate";
-import { SplitError, computeItemizedSplits, computeSplits, itemShareCents } from "./splits";
+import { SplitError, computeItemizedSplits, computeSplits, itemShareCents, unclaimedOnPayers } from "./splits";
 
 const sumOwedCents = (splits: { owedCents: number }[]) =>
   splits.reduce((runningTotal, split) => runningTotal + split.owedCents, 0);
@@ -226,5 +226,23 @@ describe("itemShareCents", () => {
     for (const split of splits) {
       expect(itemShareCents(uneven, split.userId)).toBe(split.owedCents);
     }
+  });
+});
+
+describe("unclaimedOnPayers", () => {
+  it("puts a line nobody has claimed on whoever paid, and leaves a claimed one alone", () => {
+    const claimed = { name: "Beer", totalCents: 800, assignments: [{ userId: "tomas", weight: 2 }] };
+    const open = { name: "Pizza", totalCents: 2000, assignments: [] };
+
+    expect(unclaimedOnPayers([claimed, open], ["sara"])).toEqual([
+      claimed,
+      { ...open, assignments: [{ userId: "sara", weight: 1 }] },
+    ]);
+  });
+
+  it("shares it equally between several payers", () => {
+    const [line] = unclaimedOnPayers([{ name: "Pizza", totalCents: 2000, assignments: [] }], ["tomas", "sara"]);
+
+    expect(line.assignments).toEqual([{ userId: "sara", weight: 1 }, { userId: "tomas", weight: 1 }]);
   });
 });

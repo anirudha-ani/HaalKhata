@@ -18,7 +18,13 @@ import {
   toggleExpensePerson,
 } from "@haalkhata/shared/expense/participants";
 import { draftItemsFromLines } from "@/lib/expense/itemDraft";
-import { buildItemsPayload as itemsPayload, previewSplitShares } from "@haalkhata/shared/expense/form/splitForm";
+import {
+  buildItemsPayload as itemsPayload,
+  canStartLiveSplit,
+  previewSplitShares,
+  unclaimedUnlessPicked,
+  type DraftLineItem,
+} from "@haalkhata/shared/expense/form/splitForm";
 import { draftExpenseState } from "@haalkhata/shared/expense/merge/editDraft";
 import { useItemDraft } from "@/lib/hooks/useItemDraft";
 import { prepareReceiptPhoto } from "../../../utils/prepareReceiptPhoto";
@@ -366,20 +372,23 @@ export function useNewExpense(
     splits: participantIds.map((userId) => ({ userId, owedCents: parseMoneyInput(splitInputs[userId] ?? "", currency) ?? -1 })),
   });
 
-  /** Builds the request from the current fields and fires create or update. */
-  const submit = () => {
-    if (!canSubmit || totalCents === null) return;
-    setError("");
+  /**
+   * Builds the request from the current fields.
+   *
+   * @param total - The expense's total.
+   * @param lines - The lines to save.
+   * @returns The create request, which an edit carries too.
+   */
+  const buildRequest = (total: number, lines: readonly DraftLineItem[]) => {
     const payers = multiPayer
       ? Object.entries(payerAmounts)
           .map(([userId, value]) => ({ userId, amountCents: parseMoneyInput(value, currency) ?? 0 }))
           .filter((payer) => payer.amountCents > 0)
-      : [{ userId: singlePayerId, amountCents: totalCents }];
-
-    const request = {
+      : [{ userId: singlePayerId, amountCents: total }];
+    return {
       groupId,
       description: description.trim(),
-      amountCents: totalCents,
+      amountCents: total,
       currency,
       category,
       expenseDate: date,
@@ -388,16 +397,52 @@ export function useNewExpense(
       payers,
       splitSpecs: buildSplitSpecs({
         splitType,
-        totalCents,
+        totalCents: total,
         participantIds,
         inputs: splitInputs,
         currency,
       }),
-      items: isItemized ? itemsPayload(itemDraft.items ?? [], currency) : [],
+      items: isItemized ? itemsPayload([...lines], currency) : [],
       taxCents: isItemized ? itemDraft.taxCents : 0,
       tipCents: isItemized ? itemDraft.tipCents : 0,
       operationId: operationIdRef.current,
     };
+  };
+
+  // A live split needs a name, priced lines and one person who paid. Who had
+  // what is what it is there to settle, so nobody has to be ticked yet, and
+  // nobody else needs to be on the form: they join through the link.
+  const canStartLive =
+    !editExpenseId &&
+    isItemized &&
+    !multiPayer &&
+    description.trim() !== "" &&
+    totalCents !== null &&
+    canStartLiveSplit(itemDraft.items ?? [], currency);
+
+  /** Saves the bill and opens it to the table. */
+  const startLive = () => {
+    if (!canStartLive || totalCents === null) return;
+    setError("");
+    const peopleIds = people.map((person) => person.id);
+    expenseAPI.create.mutate(
+      { ...buildRequest(totalCents, unclaimedUnlessPicked(itemDraft.items ?? [], peopleIds)), startLiveSplit: true },
+      {
+        onSuccess: (saved) => {
+          successFeedback();
+          operationIdRef.current = newOperationId();
+          router.replace(`/expenses/${saved.id}/live`);
+        },
+        onError: (mutationError) => setError(errorMessage(mutationError)),
+      },
+    );
+  };
+
+  /** Builds the request from the current fields and fires create or update. */
+  const submit = () => {
+    if (!canSubmit || totalCents === null) return;
+    setError("");
+    const request = buildRequest(totalCents, itemDraft.items ?? []);
 
     const onSuccess = () => {
       successFeedback();
@@ -483,6 +528,8 @@ export function useNewExpense(
     canSubmit,
     error,
     submit,
+    canStartLive,
+    startLive,
     // Somebody else editing at the same time.
     editNote: editSync.note,
     editConflicts: editSync.conflicts,

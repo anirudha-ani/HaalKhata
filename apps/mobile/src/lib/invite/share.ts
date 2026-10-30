@@ -1,7 +1,7 @@
 /** Hands an invite link to the native share sheet. */
 
 import { Share } from "react-native";
-import { inviteShareMessage, inviteUrl, profileShareMessage } from "@haalkhata/shared/invite/invite";
+import { inviteShareMessage, inviteUrl, liveSplitShareMessage, profileShareMessage } from "@haalkhata/shared/invite/invite";
 
 /** How the link left the device, for the confirmation the UI shows. */
 export type ShareOutcome = "shared" | "dismissed";
@@ -40,6 +40,23 @@ export async function shareProfileInvite(token: string, name: string): Promise<S
   const result = await Share.share(
     { message: `${profileShareMessage(name)} ${linkUrl}`, url: linkUrl },
     { dialogTitle: "Share your profile" },
+  );
+  return result.action === Share.dismissedAction ? "dismissed" : "shared";
+}
+
+/**
+ * Shares a live split's link, with its wording.
+ *
+ * @param token - The link's token.
+ * @param inviterName - Whoever is sharing.
+ * @param description - The expense being split.
+ * @returns Whether the person actually shared or closed the sheet.
+ */
+export async function shareLiveSplit(token: string, inviterName: string, description: string): Promise<ShareOutcome> {
+  const linkUrl = inviteUrl(token);
+  const result = await Share.share(
+    { message: `${liveSplitShareMessage(inviterName, description)} ${linkUrl}`, url: linkUrl },
+    { dialogTitle: "Share this live split" },
   );
   return result.action === Share.dismissedAction ? "dismissed" : "shared";
 }

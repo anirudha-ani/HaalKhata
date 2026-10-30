@@ -74,6 +74,15 @@ vi.mock("@/server/expense/repo/settlements.repo", () => ({
       operation(transactionClient),
   ),
 }));
+vi.mock("@/server/expense/repo/liveSplits.repo", () => ({
+  assignUnclaimedLines: vi.fn(),
+  bumpExpenseVersion: vi.fn(),
+  findRunningLiveSplit: vi.fn(async () => undefined),
+  isInLiveSplit: vi.fn(async () => false),
+  listLiveSplitPeople: vi.fn(async () => []),
+  markLiveSplitChanged: vi.fn(),
+  markLiveSplitFinished: vi.fn(),
+}));
 vi.mock("@/server/common/ledger/ledgerLocks", () => ({
   lockExpenseLedger: vi.fn(),
   lockGroupLedgers: vi.fn(),

@@ -1,6 +1,9 @@
 /** New/edit expense form: receipt panel, context picker, basics (amount/date/category), payer + split editors, summary, submit. */
 
+import { Radio } from "lucide-react-native";
 import { ScrollView, StyleSheet, View } from "react-native";
+import { LIVE_SPLIT_START_HINT } from "@haalkhata/shared/expense/live/live.constants";
+import { Text } from "@/components/ui/Text";
 import { SplitSummary } from "@/components/expense/SplitSummary";
 import { PeoplePicker } from "@/components/people/PeoplePicker";
 import { useResponsiveLayout } from "@/lib/layout/hooks/useResponsiveLayout";
@@ -12,7 +15,7 @@ import { useErrorToast } from "@/components/ui/ToastProvider";
 import { EditSyncPanel } from "../EditSyncPanel/EditSyncPanel";
 import { centsToInput } from "@haalkhata/shared/money/money";
 import { CATEGORIES } from "@haalkhata/shared/money/money.constants";
-import { spacing } from "@/lib/theme/theme";
+import { colors, spacing } from "@/lib/theme/theme";
 import type { ExpenseFormInitial } from "../../../../utils/initialValues";
 import { previewSplitShares } from "@haalkhata/shared/expense/form/splitForm";
 import { useNewExpense } from "../../hooks/useNewExpense";
@@ -170,12 +173,33 @@ export function ExpenseForm({
           label={form.isEdit ? "Save changes" : "Add expense"}
           onPress={form.submit}
         />
+
+        {/* The other way to finish a receipt: everyone at the table says
+            what they had, instead of one person ticking it all in. */}
+        {!form.isEdit && form.isItemized ? (
+          <>
+            <Button
+              disabled={!form.canStartLive || form.isSaving}
+              icon={<Radio color={colors.inkSoft} size={16} />}
+              label="Split live with the table"
+              onPress={form.startLive}
+              variant="outline"
+            />
+            <Text style={styles.liveHint}>{LIVE_SPLIT_START_HINT}</Text>
+          </>
+        ) : null}
       </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
+  liveHint: {
+    color: colors.inkSoft,
+    fontSize: 13,
+    lineHeight: 18,
+    textAlign: "center",
+  },
   basicsCell: {
     flex: 1,
     minWidth: 0,

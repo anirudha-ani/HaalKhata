@@ -27,6 +27,16 @@ service ExpenseService {
   // the ledger — so deleting a paid-for expense leaves the payer owed a
   // refund, with the struck-through row explaining why.
   rpc DeleteExpense(DeleteExpenseRequest) returns (google.protobuf.Empty);
+  // Opens an itemized expense for everyone at the table for 30 minutes: a link
+  // anyone can join through, lines they claim for themselves, one summary at
+  // the end. Returns the one already running if there is one. Refuses an
+  // expense several people paid: lines nobody claims stay with whoever paid,
+  // and a total that moves has to stay theirs alone.
+  rpc StartLiveSplit(StartLiveSplitRequest) returns (LiveSplit);
+  // Ends a live split early. Only whoever started it may; otherwise it ends by
+  // itself. Lines nobody claimed stay with whoever paid, and everyone on the
+  // expense then hears what they owe.
+  rpc FinishLiveSplit(FinishLiveSplitRequest) returns (google.protobuf.Empty);
   rpc AddComment(AddCommentRequest) returns (Comment);
   // An expense's comments, a page at a time, going back in time from
   // GetExpenseResponse.comments_next_cursor. Open to whoever may read the
@@ -134,6 +144,29 @@ message CreateExpenseRequest {
   // edit, so a retry neither saves nor announces it twice; app versions from
   // before edits carried one leave it empty.
   string operation_id = 14;
+  // Opens a live split with the new expense, so it can start with lines
+  // nobody has claimed. Ignored inside UpdateExpenseRequest.
+  bool start_live_split = 15;
+}
+
+// An expense open to everyone at the table for a short while.
+message LiveSplit {
+  // The join link's token, to share.
+  string token = 1;
+  // Who started it.
+  string host_id = 2;
+  // When it ends by itself (ISO 8601).
+  string ends_at = 3;
+  // Everyone who has joined, whoever started it included.
+  repeated string people_ids = 4;
+}
+
+message StartLiveSplitRequest {
+  string expense_id = 1;
+}
+
+message FinishLiveSplitRequest {
+  string expense_id = 1;
 }
 
 message UpdateExpenseRequest {
@@ -265,6 +298,8 @@ message GetExpenseResponse {
   // Pass to ListComments for the comments older than `comments`; empty when
   // there are none.
   string comments_next_cursor = 10;
+  // The live split running on this expense; unset when there is none.
+  LiveSplit live_split = 11;
 }
 
 // One recorded change to an expense, for the detail view's history line.

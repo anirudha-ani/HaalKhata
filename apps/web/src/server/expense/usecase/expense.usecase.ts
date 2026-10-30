@@ -59,7 +59,20 @@ import {
   computeItemizedSplits,
   computeSplits,
   SplitError,
+  unclaimedOnPayers,
 } from "@haalkhata/shared/expense/splits";
+import {
+  assignUnclaimedLines,
+  bumpExpenseVersion,
+  findRunningLiveSplit,
+  isInLiveSplit,
+  listLiveSplitPeople,
+  markLiveSplitChanged,
+  markLiveSplitFinished,
+  type LiveSplitRow,
+} from "@/server/expense/repo/liveSplits.repo";
+import { revokeLiveSplitLink } from "@/server/social/repo/inviteLinks.repo";
+import { assertCanSplitLive, liveSessionOf, openLiveSession } from "./liveSplit/liveSession";
 import {
   expenseStateOf,
   sameExpense,
@@ -282,11 +295,14 @@ async function resolveExpenseScope(
  *
  * @param request - Expense request containing amount and split specifications.
  * @param currency - Normalized currency used in validation messages.
+ * @param allowUnclaimed - Whether a line may have nobody on it: only while a
+ *   live split runs, when it counts against whoever paid.
  * @returns Authoritative total, tax, tip, splits, and normalized items.
  */
 function computeExpenseAmounts(
   request: ExpenseInput,
   currency: string,
+  allowUnclaimed: boolean,
 ): ExpenseAmounts {
   let amountCents: number;
   let taxCents = 0;
@@ -320,7 +336,11 @@ function computeExpenseAmounts(
           weight: assignment.weight > 0 ? assignment.weight : 1,
         })),
       }));
-      const computed = computeItemizedSplits(items, taxCents, tipCents);
+      const computed = computeItemizedSplits(
+        allowUnclaimed ? unclaimedOnPayers(items, request.payers.map((payer) => payer.userId)) : items,
+        taxCents,
+        tipCents,
+      );
       splits = computed.splits;
       amountCents = computed.totalCents;
       if (amountCents > MAX_MONEY_CENTS) refuseTooLarge(currency);
@@ -382,6 +402,10 @@ function validateExpensePayments(
  * @param userId - Authenticated caller creating or updating the expense.
  * @param involved - Distinct payer and ower ids referenced by the request.
  * @param scope - Resolved group membership or one-off scope.
+ * @param existingIds - For an edit, the people on the expense as saved.
+ * @param livePeople - Everyone a running live split has brought to this
+ *   expense, who may share it whoever is saving; null when none is running.
+ * @param payerIds - Who paid.
  * @returns Nothing once every participant is authorized.
  */
 async function validateExpenseParticipants(
@@ -389,6 +413,8 @@ async function validateExpenseParticipants(
   involved: string[],
   scope: ExpenseScope,
   existingIds: string[] = [],
+  livePeople: readonly string[] | null = null,
+  payerIds: readonly string[] = [],
 ): Promise<void> {
   const users = await findUsersByIds(involved);
   if (users.length !== involved.length) invalid("unknown participant");
@@ -410,11 +436,44 @@ async function validateExpenseParticipants(
       }
     }
   } else {
-    if (!involved.includes(userId)) denied("you must be part of a one-off expense");
-    const connectedIds = await connectedUserIds(userId);
-    if (involved.some((participantId) => !connectedIds.has(participantId))) {
-      denied(ONE_OFF_NOT_CONNECTED_MESSAGE);
-    }
+    if (!livePeople && !involved.includes(userId)) denied("you must be part of a one-off expense");
+    await assertConnectedToExpense(userId, involved, { existingIds, payerIds, livePeople: livePeople ?? [] });
+  }
+}
+
+/**
+ * Refuses a one-off expense with somebody on it who has no business being
+ * there. Everyone must be connected to whoever is saving it, or be on it
+ * already and connected to somebody who paid: their debt runs to the payer,
+ * not to the editor, so two people who met over a shared bill can each
+ * still correct it, while a payer who has removed a friend cannot put them
+ * back in debt.
+ *
+ * @param actorId - Who is saving it.
+ * @param participantIds - Everyone the write puts on the expense.
+ * @param expense - Who is on it as saved, who paid, and who a running live
+ *   split has brought to it.
+ * @param client - Transaction client, for the re-check under the ledger locks.
+ * @throws UsecaseError (permission_denied) when anyone is not connected.
+ */
+async function assertConnectedToExpense(
+  actorId: string,
+  participantIds: readonly string[],
+  expense: { existingIds: readonly string[]; payerIds: readonly string[]; livePeople: readonly string[] },
+  client?: PoolClient,
+): Promise<void> {
+  const connectedIds = new Set([...(await connectedUserIds(actorId, client)), ...expense.livePeople]);
+  const strangers = participantIds.filter((participantId) => !connectedIds.has(participantId));
+  if (strangers.length === 0) return;
+  if (strangers.some((participantId) => !expense.existingIds.includes(participantId))) {
+    denied(ONE_OFF_NOT_CONNECTED_MESSAGE);
+  }
+  const connectedToPayers = new Set<string>();
+  for (const payerId of expense.payerIds) {
+    for (const connectedId of await connectedUserIds(payerId, client)) connectedToPayers.add(connectedId);
+  }
+  if (strangers.some((participantId) => !connectedToPayers.has(participantId))) {
+    denied(ONE_OFF_NOT_CONNECTED_MESSAGE);
   }
 }
 
@@ -443,17 +502,21 @@ async function connectedUserIds(userId: string, client?: PoolClient): Promise<Se
  * @param actorId - Authenticated caller writing the expense.
  * @param participantIds - Everyone the write puts on the expense.
  * @param client - The write's transaction, holding the participant locks.
+ * @param expense - Who is on it as saved, who paid, and who a running live
+ *   split has brought to it; omitted for a new expense.
  * @throws UsecaseError (permission_denied) when anyone is no longer connected.
  */
 async function assertLockedOneOffParticipants(
   actorId: string,
   participantIds: string[],
   client: PoolClient,
+  expense: { existingIds: readonly string[]; payerIds: readonly string[]; livePeople: readonly string[] } = {
+    existingIds: [],
+    payerIds: [],
+    livePeople: [],
+  },
 ): Promise<void> {
-  const connectedIds = await connectedUserIds(actorId, client);
-  if (participantIds.some((participantId) => !connectedIds.has(participantId))) {
-    denied(ONE_OFF_NOT_CONNECTED_MESSAGE);
-  }
+  await assertConnectedToExpense(actorId, participantIds, expense, client);
 }
 
 /**
@@ -468,6 +531,8 @@ async function assertLockedOneOffParticipants(
  * @param savedCurrency - For an edit, the currency the expense was saved in.
  *   It is kept, group expenses included, and a request naming another is
  *   refused: its amounts were typed in that other currency's units.
+ * @param live - What a live split changes: whether a line may have nobody on
+ *   it, and who it has brought to the expense (null when none is running).
  * @returns A fully validated `ExpenseWrite` ready for the repo layer.
  * @throws UsecaseError (invalid_argument / not_found / permission_denied) on
  *   any validation, existence, or membership failure; (failed_precondition)
@@ -478,6 +543,7 @@ async function buildExpenseWrite(
   request: ExpenseInput,
   existingIds: string[] = [],
   savedCurrency?: string,
+  live: { allowUnclaimed: boolean; people: readonly string[] | null } = { allowUnclaimed: false, people: null },
 ): Promise<ExpenseWrite> {
   const description = validateExpenseRequest(request);
   if (savedCurrency !== undefined && request.currency.trim() !== "" && normalizeCurrencyCode(request.currency) !== savedCurrency) {
@@ -485,7 +551,7 @@ async function buildExpenseWrite(
   }
   const resolvedScope = await resolveExpenseScope(userId, request);
   const scope = savedCurrency === undefined ? resolvedScope : { ...resolvedScope, currency: savedCurrency };
-  const amounts = computeExpenseAmounts(request, scope.currency);
+  const amounts = computeExpenseAmounts(request, scope.currency, live.allowUnclaimed);
   validateExpensePayments(request, amounts.amountCents, scope.currency);
   const involved = [
     ...new Set([
@@ -493,7 +559,14 @@ async function buildExpenseWrite(
       ...request.payers.map((payer) => payer.userId),
     ]),
   ];
-  await validateExpenseParticipants(userId, involved, scope, existingIds);
+  await validateExpenseParticipants(
+    userId,
+    involved,
+    scope,
+    existingIds,
+    live.people,
+    request.payers.map((payer) => payer.userId),
+  );
 
   return {
     groupId: scope.groupId,
@@ -549,7 +622,7 @@ function moneyParticipantIds(expenseId: string, children: ExpenseChildren): stri
  * @param children - Child rows loaded for that expense.
  * @returns Distinct creator, payer, and ower ids.
  */
-function storedParticipantIds(expense: ExpenseRow, children: ExpenseChildren): string[] {
+export function storedParticipantIds(expense: ExpenseRow, children: ExpenseChildren): string[] {
   return [...new Set([expense.created_by, ...moneyParticipantIds(expense.id, children)])];
 }
 
@@ -792,7 +865,9 @@ async function recordExpenseActivity(
   client: PoolClient,
   before?: ExpenseWrite,
 ): Promise<void> {
-  const actor = (await findUserById(actorId, client))!;
+  // Found even if they have no account any more: a live split's end is
+  // announced for whoever started it, who may have deleted theirs since.
+  const [actor] = await findUsersByIds([actorId], client);
   const group = write.groupId ? await findGroupById(write.groupId, client) : undefined;
   const locationSuffix = group ? ` in "${group.name}"` : "";
   const participantIds = involvedUserIds(write);
@@ -857,13 +932,21 @@ async function recordExpenseActivity(
  * and fans out activity + notifications — all in one transaction, so a
  * failure anywhere leaves nothing behind for a retry to duplicate.
  *
+ * Asked to start a live split, it opens one with the expense, whose lines may
+ * then have nobody on them yet, and says nothing to anyone: the split's end
+ * announces the expense once, with everyone's real share.
+ *
  * @param userId - Authenticated caller creating the expense.
  * @param request - Raw create request from the client.
  * @returns The stored expense as a proto message init shape.
  * @throws UsecaseError on validation, membership, or existence failures.
  */
 export async function createExpense(userId: string, request: ExpenseInput) {
-  const write = await buildExpenseWrite(userId, request);
+  const write = await buildExpenseWrite(userId, request, [], undefined, {
+    allowUnclaimed: request.startLiveSplit,
+    people: request.startLiveSplit ? [userId] : null,
+  });
+  if (request.startLiveSplit) assertCanSplitLive(write);
   const participantIds = involvedUserIds(write);
   const operation = { userId, rpc: "CreateExpense", operationId: request.operationId ?? "" };
   const expenseId = await withLedgerTransaction(async (client) => {
@@ -891,7 +974,8 @@ export async function createExpense(userId: string, request: ExpenseInput) {
     // locks first, then the friend-request inbox locks inside
     // insertFriendships — the one order every path takes them in.
     if (!write.groupId) await insertFriendships(userId, participantIds, client);
-    await recordExpenseActivity(userId, insertedId, write, "added", client);
+    if (request.startLiveSplit) await openLiveSession(insertedId, userId, true, client);
+    else await recordExpenseActivity(userId, insertedId, write, "added", client);
     await finishOperation(operation, insertedId, client);
     return insertedId;
   });
@@ -900,7 +984,8 @@ export async function createExpense(userId: string, request: ExpenseInput) {
 
 /**
  * Ensures the caller may read an expense: group membership for group
- * expenses, otherwise being a participant (creator, payer, or ower).
+ * expenses, otherwise being a participant (creator, payer, or ower) or in a
+ * live split running on it.
  *
  * @param userId - Authenticated caller to authorize.
  * @param expense - The expense row being accessed.
@@ -914,17 +999,17 @@ async function assertCanTouch(userId: string, expense: ExpenseRow): Promise<void
     return;
   }
   const children = await loadExpenseChildren([expense.id]);
-  if (!storedParticipantIds(expense, children).includes(userId)) {
-    denied("you are not part of this expense");
-  }
+  if (storedParticipantIds(expense, children).includes(userId)) return;
+  if (!(await isInLiveSplit(expense.id, userId))) denied("you are not part of this expense");
 }
 
 /**
  * Ensures the caller may EDIT an expense: anyone on it — its creator, a payer
  * or somebody who owes a share — may correct it, since each of them can see
- * the mistake and each is affected by it. For group expenses the editor must
- * additionally still be a member of the group. Everyone on the expense hears
- * about the edit through the "updated" activity fan-out.
+ * the mistake and each is affected by it, and so may anyone in a live split
+ * running on it. For group expenses the editor must additionally still be a
+ * member of the group. Everyone on the expense hears about the edit through
+ * the "updated" activity fan-out.
  *
  * @param userId - Authenticated caller requesting the edit.
  * @param expense - The expense row being edited.
@@ -933,13 +1018,14 @@ async function assertCanTouch(userId: string, expense: ExpenseRow): Promise<void
  * @throws UsecaseError (permission_denied) if the caller is not on the
  *   expense, or (for group expenses) is no longer a member.
  */
-async function assertCanEdit(
+export async function assertCanEdit(
   userId: string,
   expense: ExpenseRow,
   children: ExpenseChildren,
   client?: PoolClient,
 ): Promise<void> {
-  if (!storedParticipantIds(expense, children).includes(userId)) {
+  const onExpense = storedParticipantIds(expense, children).includes(userId);
+  if (!onExpense && !(await isInLiveSplit(expense.id, userId, client))) {
     denied("only people on this expense can edit it");
   }
   if (expense.group_id && !(await isMember(expense.group_id, userId, client))) {
@@ -1030,6 +1116,9 @@ async function loadExpenseForEdit(
  * A retry of a lost response neither saves nor announces the edit a second
  * time, and an edit that changes nothing is not saved or announced at all.
  *
+ * While a live split runs nothing is announced: everyone is there, and each
+ * tick would buzz the whole table. Its end says it once.
+ *
  * @param userId - Authenticated caller performing the update.
  * @param expenseId - Id of the expense to update.
  * @param request - Full replacement request (same shape as create).
@@ -1047,12 +1136,12 @@ export async function updateExpense(
   base?: ExpenseStateSource,
 ) {
   const existing = await loadExpenseForEdit(userId, expenseId, request);
-  const mine = await buildExpenseWrite(
-    userId,
-    request,
-    storedParticipantIds(existing.expense, existing.children),
-    existing.expense.currency,
-  );
+  const existingIds = storedParticipantIds(existing.expense, existing.children);
+  const open = await findRunningLiveSplit(expenseId);
+  const mine = await buildExpenseWrite(userId, request, existingIds, existing.expense.currency, {
+    allowUnclaimed: open !== undefined,
+    people: open ? [...(await listLiveSplitPeople(open.id)), ...existingIds] : null,
+  });
   const operation = { userId, rpc: "UpdateExpense", operationId: request.operationId ?? "" };
   await withLedgerTransaction(async (client) => {
     // Claimed before any lock, like every money write: a retry of a lost
@@ -1060,6 +1149,9 @@ export async function updateExpense(
     const claim = await beginOperation(operation, { expenseId, request, preserveSplitType, base }, client);
     if (claim.replayOf !== null) return;
     await lockExpenseLedger(client, expenseId);
+    const running = await findRunningLiveSplit(expenseId, client);
+    if (running?.due) await closeLiveSplit(running, client);
+    const session = await liveSessionOf(expenseId, client);
     const { expense: current, children } = await loadExpenseForEdit(
       userId,
       expenseId,
@@ -1067,7 +1159,7 @@ export async function updateExpense(
       client,
     );
     const stored = storedExpenseWrite(current, children);
-    const write = base ? mergedWrite(base, mine, stored) : mine;
+    const write = base ? mergedWrite(base, mine, stored, session !== null) : mine;
     if (sameExpense(expenseStateOf(write), expenseStateOf(stored))) {
       await finishOperation(operation, expenseId, client);
       return;
@@ -1096,7 +1188,11 @@ export async function updateExpense(
       );
     } else {
       await lockParticipantLedgers(client, participantIds);
-      await assertLockedOneOffParticipants(userId, involvedUserIds(write), client);
+      await assertLockedOneOffParticipants(userId, involvedUserIds(write), client, {
+        existingIds: storedParticipantIds(current, children),
+        payerIds: write.payers.map((payer) => payer.userId),
+        livePeople: session?.peopleIds ?? [],
+      });
     }
     // A merge has already kept the saved mode of a split nobody changed.
     if (preserveSplitType && !base) {
@@ -1128,7 +1224,8 @@ export async function updateExpense(
     );
     write.createdBy = current.created_by;
     await replaceExpense(expenseId, write, userId, client);
-    await recordExpenseActivity(userId, expenseId, write, "updated", client, stored);
+    if (session) await markLiveSplitChanged(session.split.id, client);
+    else await recordExpenseActivity(userId, expenseId, write, "updated", client, stored);
     await finishOperation(operation, expenseId, client);
   });
   return getExpenseProto(expenseId);
@@ -1140,17 +1237,51 @@ export async function updateExpense(
  * @param base - The expense as their form opened it.
  * @param mine - Their edit, validated.
  * @param stored - The expense as saved, read under its lock.
+ * @param allowUnclaimed - Whether a line may end up with nobody on it: a live
+ *   split is running.
  * @returns The write to save.
  * @throws UsecaseError (aborted) when somebody else changed the same thing.
  */
-function mergedWrite(base: ExpenseStateSource, mine: ExpenseWrite, stored: ExpenseWrite): ExpenseWrite {
+function mergedWrite(
+  base: ExpenseStateSource,
+  mine: ExpenseWrite,
+  stored: ExpenseWrite,
+  allowUnclaimed: boolean,
+): ExpenseWrite {
   const { merged, conflicts } = mergeExpenseEdit(
     expenseStateOf(base),
     expenseStateOf(mine),
     expenseStateOf(stored),
+    { allowUnclaimed },
   );
   if (conflicts.length > 0) throw new UsecaseError("aborted", EDIT_CONFLICT_MESSAGE);
   return writeFromState(mine, merged);
+}
+
+/**
+ * Ends a live split, inside the caller's transaction, which holds the
+ * expense's lock. Lines nobody claimed go to whoever paid for good, which moves
+ * no money, leaving an ordinary expense. Everyone on it then hears the result
+ * once, unless the split changed nothing or the expense has been deleted.
+ *
+ * @param split - The split.
+ * @param client - The transaction.
+ */
+export async function closeLiveSplit(split: LiveSplitRow, client: PoolClient): Promise<void> {
+  await assignUnclaimedLines(split.expense_id, client);
+  await markLiveSplitFinished(split.id, client);
+  await revokeLiveSplitLink(split.id, client);
+  await bumpExpenseVersion(split.expense_id, client);
+  const expense = (await findExpenseById(split.expense_id, client))!;
+  if (expense.deleted_at || !(split.new_expense || split.changed)) return;
+  const children = await loadExpenseChildren([split.expense_id], client);
+  await recordExpenseActivity(
+    split.host_id,
+    split.expense_id,
+    storedExpenseWrite(expense, children),
+    split.new_expense ? "added" : "updated",
+    client,
+  );
 }
 
 /**
@@ -1207,6 +1338,8 @@ export async function deleteExpense(userId: string, expenseId: string): Promise<
       await lockParticipantLedgers(client, participantIds);
     }
     await softDeleteExpense(expenseId, userId, client);
+    const running = await findRunningLiveSplit(expenseId, client);
+    if (running) await closeLiveSplit(running, client);
     await recordExpenseActivity(
       userId,
       expenseId,
@@ -1512,6 +1645,14 @@ export async function getExpense(userId: string, expenseId: string, commentLimit
     return person ? toPublicUser(person) : undefined;
   };
 
+  const session = await liveSessionOf(expenseId);
+  const usersById = new Map(
+    [
+      ...(await usersReferenced([expenseRow], children)),
+      ...(await findUsersByIds(session?.peopleIds ?? [])).map(toPublicUser),
+    ].map((person) => [person.id, person]),
+  );
+
   return {
     settledForViewer,
     hasLaterSettlement,
@@ -1521,7 +1662,15 @@ export async function getExpense(userId: string, expenseId: string, commentLimit
     expense: toExpense(expenseRow, children),
     comments: comments.map((comment) => toCommentMessage(comment, publicUserById)),
     commentsNextCursor: commentPage.nextCursor,
-    users: await usersReferenced([expenseRow], children),
+    users: [...usersById.values()],
+    liveSplit: session
+      ? {
+          token: session.split.token,
+          hostId: session.split.host_id,
+          endsAt: session.split.ends_at,
+          peopleIds: session.peopleIds,
+        }
+      : undefined,
     history: events.map((event) => ({
       actor: publicUserById(event.actor_id),
       type: event.type,

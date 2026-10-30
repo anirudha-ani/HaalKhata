@@ -143,6 +143,7 @@ function linkRow(overrides: Partial<InviteLinkRow> = {}): InviteLinkRow {
     kind: "profile",
     inviter_id: INVITER,
     group_id: null,
+    live_split_id: null,
     expires_at: null,
     expired: false,
     revoked: false,
@@ -297,7 +298,7 @@ describe("acceptInviteLink", () => {
     vi.mocked(isMember).mockResolvedValue(false);
     vi.mocked(listMembers).mockResolvedValue([{ id: CALLER }, { id: INVITER }] as never);
 
-    await expect(acceptInviteLink(CALLER, TOKEN)).resolves.toEqual({ groupId: GROUP });
+    await expect(acceptInviteLink(CALLER, TOKEN)).resolves.toEqual({ groupId: GROUP, expenseId: "" });
 
     expect(addMember).toHaveBeenCalledWith(GROUP, CALLER, "member", transactionClient);
     expect(insertFriendship).toHaveBeenCalledWith(CALLER, INVITER, transactionClient);
@@ -318,7 +319,7 @@ describe("acceptInviteLink", () => {
     vi.mocked(findGroupById).mockResolvedValue({ id: GROUP, name: "Bali Trip" } as never);
     vi.mocked(isMember).mockResolvedValue(true);
 
-    await expect(acceptInviteLink(CALLER, TOKEN)).resolves.toEqual({ groupId: GROUP });
+    await expect(acceptInviteLink(CALLER, TOKEN)).resolves.toEqual({ groupId: GROUP, expenseId: "" });
     expect(addMember).not.toHaveBeenCalled();
     expect(insertActivity).not.toHaveBeenCalled();
   });
@@ -362,7 +363,7 @@ describe("profile links (§33a)", () => {
     vi.mocked(friendshipExists).mockResolvedValue(false);
     vi.mocked(insertFriendRequest).mockResolvedValue(true);
 
-    await expect(acceptInviteLink(CALLER, TOKEN)).resolves.toEqual({ groupId: "" });
+    await expect(acceptInviteLink(CALLER, TOKEN)).resolves.toEqual({ groupId: "", expenseId: "" });
 
     expect(insertFriendship).not.toHaveBeenCalled();
     expect(insertFriendRequest).toHaveBeenCalledWith(CALLER, INVITER, expect.anything());
@@ -379,12 +380,12 @@ describe("profile links (§33a)", () => {
     );
 
     vi.mocked(friendshipExists).mockResolvedValue(true);
-    await expect(acceptInviteLink(CALLER, TOKEN)).resolves.toEqual({ groupId: "" });
+    await expect(acceptInviteLink(CALLER, TOKEN)).resolves.toEqual({ groupId: "", expenseId: "" });
     expect(insertFriendRequest).not.toHaveBeenCalled();
 
     vi.mocked(friendshipExists).mockResolvedValue(false);
     vi.mocked(insertFriendRequest).mockResolvedValue(false);
-    await expect(acceptInviteLink(CALLER, TOKEN)).resolves.toEqual({ groupId: "" });
+    await expect(acceptInviteLink(CALLER, TOKEN)).resolves.toEqual({ groupId: "", expenseId: "" });
     expect(insertNotifications).not.toHaveBeenCalled();
   });
 

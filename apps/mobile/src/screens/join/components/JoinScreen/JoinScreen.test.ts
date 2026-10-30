@@ -10,6 +10,7 @@ import { act, createElement, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Code, ConnectError } from "@connectrpc/connect";
+import { LIVE_SPLIT_ENDED_MESSAGE } from "@haalkhata/shared/expense/live/live.constants";
 import { authClient, socialClient } from "@/lib/api/connect";
 import { stashPendingInvite } from "@/lib/invite/pendingInvite";
 import { JoinScreen } from "./JoinScreen";
@@ -55,6 +56,16 @@ vi.mock("@/lib/api/connect", () => ({
   errorMessage: (error: Error) => error.message,
 }));
 vi.mock("@/lib/invite/pendingInvite", () => ({ stashPendingInvite: vi.fn() }));
+/**
+ * An invite preview as the plain client hands it over.
+ *
+ * @param init - Its fields.
+ * @returns The preview.
+ */
+function previewOf(init: Parameters<typeof create<typeof InvitePreviewSchema>>[1]) {
+  return { ...create(InvitePreviewSchema, init), totalCents: 0 };
+}
+
 let root: Root;
 let container: HTMLDivElement;
 let queryClient: QueryClient;
@@ -84,7 +95,7 @@ beforeEach(() => {
     if (!savedSession.read().token) throw new ConnectError("sign in first", Code.Unauthenticated);
     return create(UserSchema, { id: "viewer", name: "Sam" });
   });
-  vi.mocked(socialClient.previewInviteLink).mockResolvedValue(create(InvitePreviewSchema, { kind: "group", inviterName: "Ari", groupName: "Trip", memberCount: 2 }));
+  vi.mocked(socialClient.previewInviteLink).mockResolvedValue(previewOf({ kind: "group", inviterName: "Ari", groupName: "Trip", memberCount: 2 }));
   vi.mocked(socialClient.acceptInviteLink).mockResolvedValue(create(AcceptInviteLinkResponseSchema, { groupId: "trip" }));
   vi.mocked(stashPendingInvite).mockResolvedValue();
 });
@@ -102,7 +113,7 @@ describe("native invite landing", () => {
     expect(navigation.replace).toHaveBeenCalledExactlyOnceWith("/groups/trip");
   });
   it("keeps a profile request confirmation visible instead of opening an empty Friends list", async () => {
-    vi.mocked(socialClient.previewInviteLink).mockResolvedValue(create(InvitePreviewSchema, { kind: "profile", inviterName: "Ari" }));
+    vi.mocked(socialClient.previewInviteLink).mockResolvedValue(previewOf({ kind: "profile", inviterName: "Ari" }));
     await render(); await click("Send friend request");
     expect(container.textContent).toContain("Request sent — Ari will confirm from their side");
     expect(navigation.replace).not.toHaveBeenCalled();
@@ -168,5 +179,24 @@ describe("native invite landing", () => {
     await click("Try again");
 
     expect(container.textContent).toContain("Signed in as Sam");
+  });
+  it("lands on the live split after joining it", async () => {
+    vi.mocked(socialClient.previewInviteLink).mockResolvedValue({
+      ...previewOf({ kind: "live", inviterName: "Ari", memberCount: 2, expenseDescription: "Dinner", currency: "USD" }),
+      totalCents: 4400,
+    });
+    vi.mocked(socialClient.acceptInviteLink).mockResolvedValue(create(AcceptInviteLinkResponseSchema, { expenseId: "dinner" }));
+    await render();
+    expect(container.textContent).toContain("Ari is splitting “Dinner” live");
+    await click("Join the split");
+    expect(navigation.replace).toHaveBeenCalledExactlyOnceWith("/expenses/dinner/live");
+  });
+  it("says a live split has ended, and what to do", async () => {
+    vi.mocked(socialClient.previewInviteLink).mockRejectedValue(
+      new ConnectError(LIVE_SPLIT_ENDED_MESSAGE, Code.FailedPrecondition),
+    );
+    await render();
+    expect(container.textContent).toContain("This live split has ended");
+    expect(container.textContent).toContain("Ask whoever started it to start another.");
   });
 });

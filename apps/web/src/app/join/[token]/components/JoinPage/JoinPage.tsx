@@ -7,9 +7,11 @@ import {
   INVITE_EXPIRED_TITLE,
   INVITE_INACTIVE_TITLE,
   INVITE_SIGN_IN_HINT,
+  LIVE_SPLIT_ENDED_BODY,
+  LIVE_SPLIT_ENDED_TITLE,
 } from "@haalkhata/shared/invite/inviteCopy";
 import Link from "next/link";
-import { Handshake, UserPlus, Users } from "lucide-react";
+import { Handshake, Receipt, UserPlus, Users } from "lucide-react";
 import { Spinner } from "@/components/ui/Spinner/Spinner";
 import { errorMessage } from "@/lib/api/connect";
 import { useJoin } from "./hooks/useJoin";
@@ -32,7 +34,7 @@ export function JoinPage({
   /** The invite token from the URL. */
   token: string;
 }) {
-  const { preview, viewer, accept, requestSent, expired } = useJoin(token);
+  const { preview, viewer, accept, requestSent, expired, liveSplitEnded } = useJoin(token);
 
   const copy = preview.data ? inviteCopy(preview.data) : null;
 
@@ -43,8 +45,12 @@ export function JoinPage({
           <Spinner />
         ) : preview.isError ? (
           <>
-            <h1 className="text-xl font-bold">{expired ? INVITE_EXPIRED_TITLE : INVITE_INACTIVE_TITLE}</h1>
-            <p className="text-sm text-ink-soft">{expired ? INVITE_EXPIRED_BODY : errorMessage(preview.error)}</p>
+            <h1 className="text-xl font-bold">
+              {liveSplitEnded ? LIVE_SPLIT_ENDED_TITLE : expired ? INVITE_EXPIRED_TITLE : INVITE_INACTIVE_TITLE}
+            </h1>
+            <p className="text-sm text-ink-soft">
+              {liveSplitEnded ? LIVE_SPLIT_ENDED_BODY : expired ? INVITE_EXPIRED_BODY : errorMessage(preview.error)}
+            </p>
             <Link href="/" className="block text-sm font-semibold text-brand-600">
               Go to HaalKhata →
             </Link>
@@ -52,7 +58,9 @@ export function JoinPage({
         ) : preview.data ? (
           <>
             <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-brand-50 text-brand-700">
-              {preview.data.kind === "group" ? (
+              {preview.data.kind === "live" ? (
+                <Receipt className="h-6 w-6" />
+              ) : preview.data.kind === "group" ? (
                 <Users className="h-6 w-6" />
               ) : preview.data.kind === "profile" ? (
                 <UserPlus className="h-6 w-6" />

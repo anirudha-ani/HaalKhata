@@ -16,6 +16,9 @@ export const INVITE_LINK_TOKEN_BYTES = 32;
 /** Base64url shape of a token produced from {@link INVITE_LINK_TOKEN_BYTES}. */
 export const INVITE_LINK_TOKEN_PATTERN = /^[A-Za-z0-9_-]{43}$/;
 
+/** One generic sentence for every unusable token: missing, revoked, malformed. */
+export const DEAD_LINK_MESSAGE = "that invite link isn't valid or was turned off";
+
 /** What anyone opening or accepting a group link past its date is told. */
 export const EXPIRED_LINK_MESSAGE =
   `this invite link has expired — group invite links stop working after ${GROUP_INVITE_LINK_LIFETIME_DAYS} days, so ask someone in the group to share a new one`;

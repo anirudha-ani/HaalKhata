@@ -27,7 +27,8 @@ packages/shared/             @haalkhata/shared — hand-written TS used by BOTH 
   src/expense/form/            shared form validation, payloads, previews and warnings
   src/expense/                 allocate.ts + splits.ts — cent-exact split math,
                                run by the SERVER usecase and by the client for
-                               its live per-person preview (one implementation)
+                               its live per-person preview (one implementation);
+                               merge/ (editing together) and live/ (live splits)
   src/payment/                 payment methods: detail kinds, starting points,
                                the validator (server + both forms), the form's
                                reducer, payer ordering and formatting
@@ -430,6 +431,18 @@ with colocated tests. Mobile-specific rules:
   cents: an equal split gives its odd cent to whoever the form listed first. A
   form asks `GetExpenseVersion` every 10 s and folds in what it can
   (`useExpenseEditSync`, one per app, over the shared `catchUpForm`).
+- **A live split is an ordinary expense with the door open.** One itemized
+  expense, one payer, 30 minutes (`LIVE_SPLIT_MINUTES`). People come in through
+  a `live` invite link (accounts only, as ever; on a group's bill joining joins
+  the group, which the join page says first; on a one-off it befriends them
+  with whoever started it and whoever paid). Every tap is a merged
+  `UpdateExpense` through `liveEdits` in shared, sent one at a time. Lines may
+  have nobody on them only while one runs, and such a line counts against whoever
+  paid (`unclaimedOnPayers`), so the ledger is exact at every moment and the
+  end moves no money: `closeLiveSplit` writes those lines to the payer and
+  announces the result once. Nothing is announced before that, so nobody's
+  phone buzzes per tick. `live_split_people` is what lets somebody with no
+  share yet read and edit, and is deleted when it ends. See `docs/live-split.md`.
 - **An expense never changes currency.** `updateExpense` keeps the saved
   currency, group expenses included, and refuses an edit naming another;
   the forms work in it when editing (`expenseFormCurrency` puts the saved
@@ -493,8 +506,8 @@ with colocated tests. Mobile-specific rules:
   merges one row into another (sign-up, phone verification or a link).
   `chk_users_can_sign_in` refuses a live row with no password, Google or
   Apple credential; the only credential-less rows are the "Deleted member"
-  stand-ins account deletion leaves. Invite links are `group` or `profile`;
-  a group link works for 7 days (`GROUP_INVITE_LINK_LIFETIME_DAYS` in shared)
+  stand-ins account deletion leaves. Invite links are `group`, `profile` or
+  `live`; a group link works for 7 days (`GROUP_INVITE_LINK_LIFETIME_DAYS` in shared)
   and then answers `FailedPrecondition`, which both join pages show as
   expired, with what to do.
 - **A person's payment methods reach only someone who owes them.** They are

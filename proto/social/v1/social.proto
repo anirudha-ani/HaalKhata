@@ -244,13 +244,18 @@ message PreviewInviteLinkRequest {
 }
 
 message InvitePreview {
-  string kind = 1; // "group" | "profile"
+  string kind = 1; // "group" | "profile" | "live"
   string inviter_name = 2;
-  // Group links only.
+  // The group a group link joins, or that a live split's expense belongs to.
   string group_name = 3;
+  // Group links: the group's members. Live splits: who has joined so far.
   int32 member_count = 4;
   // Retired with one-person links; always empty.
   string invited_name = 5 [deprecated = true];
+  // Live splits only: the expense being split, and its total.
+  string expense_description = 6;
+  int64 total_cents = 7;
+  string currency = 8;
 }
 
 message AcceptInviteLinkRequest {
@@ -260,6 +265,8 @@ message AcceptInviteLinkRequest {
 message AcceptInviteLinkResponse {
   // Set for a group link so the client can land on the group afterwards.
   string group_id = 1;
+  // Set for a live split so the client can land on it afterwards.
+  string expense_id = 2;
 }
 
 // Request of the retired InviteContactToSignUp.

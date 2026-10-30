@@ -61,6 +61,17 @@ export function useExpenseDetail(expenseId: string) {
     onError: (mutationError) => setError(errorMessage(mutationError)),
   });
 
+  const startLive = useMutation({
+    mutationFn: () => expenseClient.startLiveSplit({ expenseId }),
+    onSuccess: async () => {
+      // The live page looks for changes only once it sees a split running, so
+      // it has to open on a copy that already has one.
+      await queryClient.invalidateQueries({ queryKey: queryKeys.expense(expenseId) });
+      router.push(`/expenses/${expenseId}/live`);
+    },
+    onError: (mutationError) => setError(errorMessage(mutationError)),
+  });
+
   const remove = useMutation({
     mutationFn: () => expenseClient.deleteExpense({ expenseId }),
     onSuccess: () => {
@@ -110,6 +121,8 @@ export function useExpenseDetail(expenseId: string) {
       addComment.mutate(commentAttempt.current);
     },
     isCommenting: addComment.isPending,
+    startLive: () => startLive.mutate(),
+    isStartingLive: startLive.isPending,
     confirmingDelete,
     setConfirmingDelete,
     remove: () => remove.mutate(),

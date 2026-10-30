@@ -6,11 +6,13 @@ import { execute, queryOne } from "@/server/common/db/db";
 /** One stored link, exactly as the table holds it, and whether it has run out or been turned off. */
 export interface InviteLinkRow {
   token: string;
-  /** 'group' (join link) or 'profile' ("add me"). */
-  kind: "group" | "profile";
+  /** 'group' (join link), 'profile' ("add me") or 'live' (join a live split). */
+  kind: "group" | "profile" | "live";
   inviter_id: string;
   group_id: string | null;
-  /** When a group link stops working (ISO 8601); null for a profile link. */
+  /** The live split a 'live' link joins; null for any other. */
+  live_split_id: string | null;
+  /** When a group or live link stops working (ISO 8601); null for a profile link. */
   expires_at: string | null;
   /**
    * Whether it reached its date while it was still on, by the database's
@@ -21,7 +23,7 @@ export interface InviteLinkRow {
   revoked: boolean;
 }
 
-const LINK_COLUMNS = `token, kind, inviter_id, group_id, expires_at,
+const LINK_COLUMNS = `token, kind, inviter_id, group_id, live_split_id, expires_at,
   (expires_at IS NOT NULL AND expires_at <= COALESCE(revoked_at, now())) AS expired,
   (revoked_at IS NOT NULL) AS revoked`;
 
@@ -74,6 +76,37 @@ export async function insertInviteLink(link: {
      RETURNING ${LINK_COLUMNS}`,
     [link.token, link.kind, link.inviterId, link.groupId, link.lifetimeDays],
   ))!;
+}
+
+/**
+ * Stores the join link of a live split, which ends when the split does.
+ *
+ * @param link - The token, who started the split, which split, and when it ends.
+ * @param client - The transaction starting the split.
+ */
+export async function insertLiveSplitLink(
+  link: { token: string; inviterId: string; liveSplitId: string; endsAt: string },
+  client: PoolClient,
+): Promise<void> {
+  await execute(
+    `INSERT INTO invite_links (token, kind, inviter_id, live_split_id, expires_at) VALUES ($1, 'live', $2, $3, $4)`,
+    [link.token, link.inviterId, link.liveSplitId, link.endsAt],
+    client,
+  );
+}
+
+/**
+ * Turns off a live split's join link when it finishes.
+ *
+ * @param liveSplitId - The split.
+ * @param client - The transaction finishing it.
+ */
+export async function revokeLiveSplitLink(liveSplitId: string, client: PoolClient): Promise<void> {
+  await execute(
+    `UPDATE invite_links SET revoked_at = now() WHERE live_split_id = $1 AND revoked_at IS NULL`,
+    [liveSplitId],
+    client,
+  );
 }
 
 /**

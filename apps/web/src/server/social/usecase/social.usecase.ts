@@ -1,6 +1,6 @@
 /** Social business logic: friends (friendships ∪ expense counterparties), activity feed, notifications. */
 
-import { blockedBetween, blockedPairExists } from "@/server/safety/repo/safety.repo";
+import { blockedBetween } from "@/server/safety/repo/safety.repo";
 import {
   countIncomingFriendRequests,
   deleteFriendRequest,
@@ -13,7 +13,6 @@ import {
   listIncomingFriendRequestIds,
   listOutgoingFriendRequests,
 } from "@/server/social/repo/friendships.repo";
-import { randomBytes } from "node:crypto";
 import type { PoolClient } from "pg";
 import {
   findUserByEmail,
@@ -35,14 +34,15 @@ import {
   type InviteLinkRow,
 } from "@/server/social/repo/inviteLinks.repo";
 import {
-  addMember,
   findGroupById,
   listMembers,
   memberRole,
 } from "@/server/group/repo/groups.repo";
-import { insertActivity as recordActivity } from "@/server/social/repo/activity.repo";
-import { MAX_GROUP_MEMBERS, OWNER_ROLE } from "@/server/group/group.constants";
-import { assertRoomForAnotherGroup } from "@/server/group/usecase/groupLimit";
+import { OWNER_ROLE } from "@/server/group/group.constants";
+import { joinLiveSplit, previewLiveSplit } from "@/server/expense/usecase/liveSplit/liveSplit.usecase";
+import { LIVE_SPLIT_ENDED_MESSAGE } from "@haalkhata/shared/expense/live/live.constants";
+import { joinGroupThroughLink } from "./groupLinkJoin";
+import { newInviteToken } from "./inviteToken";
 import { listActivityMonths, listActivityPage } from "@/server/social/repo/activity.repo";
 import { isMember } from "@/server/group/repo/groups.repo";
 import { isUniqueViolation } from "@/server/common/db/db";
@@ -56,8 +56,8 @@ import {
 } from "@/server/social/repo/notifications.repo";
 import {
   ACTIVITY_PAGE_SIZE,
+  DEAD_LINK_MESSAGE,
   EXPIRED_LINK_MESSAGE,
-  INVITE_LINK_TOKEN_BYTES,
   INVITE_LINK_TOKEN_PATTERN,
   MAX_ACTIVITY_PAGE_SIZE,
   NOT_ON_HAALKHATA_MESSAGE,
@@ -65,7 +65,6 @@ import {
 } from "@/server/social/social.constants";
 import {
   lockFriendRequestInboxes,
-  lockGroupLedgers,
   lockParticipantLedgers,
 } from "@/server/common/ledger/ledgerLocks";
 import { formatMoney } from "@haalkhata/shared/money/money";
@@ -422,14 +421,6 @@ export async function markNotificationsRead(userId: string): Promise<void> {
   await markAllRead(userId);
 }
 
-/** One generic sentence for every unusable token: missing, revoked, malformed. */
-const DEAD_LINK_MESSAGE = "that invite link isn't valid or was turned off";
-
-/** Mints a fresh bearer token for an invite link. */
-function newInviteToken(): string {
-  return randomBytes(INVITE_LINK_TOKEN_BYTES).toString("base64url");
-}
-
 /**
  * The group's one active join link, created on first ask. Any member may —
  * the same trust level as adding people directly, and the accept side still
@@ -536,6 +527,7 @@ export async function revokeGroupInviteLink(userId: string, groupId: string): Pr
  */
 export async function previewInviteLink(token: string) {
   const link = await loadActiveLink(token);
+  if (link.kind === "live") return previewLiveSplit(link);
   const inviter = await findUserById(link.inviter_id);
   if (link.kind === "group") {
     const group = await findGroupById(link.group_id!);
@@ -577,6 +569,9 @@ async function loadActiveLink(token: string): Promise<InviteLinkRow> {
   if (!INVITE_LINK_TOKEN_PATTERN.test(token)) notFound(DEAD_LINK_MESSAGE);
   const link = await findLinkByToken(token);
   if (!link) notFound(DEAD_LINK_MESSAGE);
+  if (link.kind === "live" && (link.expired || link.revoked)) {
+    throw new UsecaseError("failed_precondition", LIVE_SPLIT_ENDED_MESSAGE);
+  }
   if (link.expired) throw new UsecaseError("failed_precondition", EXPIRED_LINK_MESSAGE);
   if (link.revoked) notFound(DEAD_LINK_MESSAGE);
   return link;
@@ -592,14 +587,17 @@ async function loadActiveLink(token: string): Promise<InviteLinkRow> {
  * inviter, and announces the join in the group's feed so a new face is
  * explained.
  *
+ * Live split link: joins the caller to the split running on an expense.
+ *
  * @param userId - Authenticated acceptor.
  * @param token - The token from the shared URL.
- * @returns The joined group's id for group links; empty otherwise.
+ * @returns The joined group's id for group links, or the expense for a live
+ *   split; each empty otherwise.
  */
 export async function acceptInviteLink(
   userId: string,
   token: string,
-): Promise<{ groupId: string }> {
+): Promise<{ groupId: string; expenseId: string }> {
   const link = await loadActiveLink(token);
   if (await blockedBetween(userId, link.inviter_id)) notFound(DEAD_LINK_MESSAGE);
   const acceptor = await findUserById(userId);
@@ -607,12 +605,13 @@ export async function acceptInviteLink(
   if (link.inviter_id === userId && link.kind === "profile") {
     invalid("that's your own invite link");
   }
+  if (link.kind === "live") return { groupId: "", expenseId: await joinLiveSplit(acceptor, link) };
 
   if (link.kind === "profile") {
     // The link removes the typing, not the consent: acceptance is an
     // ordinary friend request the owner confirms from Friends, so a leaked
     // bearer string cannot attach a stranger to somebody's expense picker.
-    if (await friendshipExists(userId, link.inviter_id)) return { groupId: "" };
+    if (await friendshipExists(userId, link.inviter_id)) return { groupId: "", expenseId: "" };
     await transaction(async (client) => {
       const inserted = await insertFriendRequest(userId, link.inviter_id, client);
       if (!inserted) return;
@@ -628,56 +627,15 @@ export async function acceptInviteLink(
         client,
       );
     });
-    return { groupId: "" };
+    return { groupId: "", expenseId: "" };
   }
 
   const group = await findGroupById(link.group_id!);
   if (!group) notFound(DEAD_LINK_MESSAGE);
-  if (await isMember(group.id, userId)) return { groupId: group.id };
-  if (await blockedPairExists([userId, ...(await listMembers(group.id)).map((member) => member.id)])) notFound(DEAD_LINK_MESSAGE);
-
-  const inviter = await findUserById(link.inviter_id);
-  // Under the group's ledger lock like every roster change: a settlement
-  // being validated sees the roster before or after the join, never mid-way.
-  await transaction(async (client) => {
-    await lockGroupLedgers(client, [group.id]);
-    // §33b: a leaked bearer link must not grow a roster without bound.
-    if ((await listMembers(group.id, client)).length >= MAX_GROUP_MEMBERS) {
-      invalid("this group is full");
-    }
-    await assertRoomForAnotherGroup([acceptor], userId, client);
-    await addMember(group.id, userId, "member", client);
-    if (link.inviter_id !== userId) {
-      await insertFriendship(userId, link.inviter_id, client);
-    }
-    const audience = (await listMembers(group.id, client)).map((member) => member.id);
-    await recordActivity(
-      {
-        groupId: group.id,
-        actorId: userId,
-        type: "member_added",
-        message: `${acceptor.name} joined "${group.name}" via ${inviter?.name ?? "a member"}'s invite link`,
-        link: `/groups/${group.id}`,
-        audience,
-      },
-      client,
-    );
-    // The rest of the roster hears who joined; the inviter is told by the
-    // "accepted your invite" notice below instead.
-    await insertNotifications(
-      audience.filter((memberId) => memberId !== userId && memberId !== link.inviter_id),
-      {
-        actorId: userId,
-        type: "member_added",
-        title: `${acceptor.name} joined "${group.name}"`,
-        body: "",
-        link: `/groups/${group.id}`,
-      },
-      client,
-    );
-  });
+  if (await isMember(group.id, userId)) return { groupId: group.id, expenseId: "" };
+  await joinGroupThroughLink(acceptor, group, link.inviter_id, (await findUserById(link.inviter_id))?.name ?? "a member");
   await notifyInviteAccepted(link.inviter_id, acceptor.name, `/groups/${group.id}`);
-  return { groupId: group.id };
+  return { groupId: group.id, expenseId: "" };
 }
 
 /**

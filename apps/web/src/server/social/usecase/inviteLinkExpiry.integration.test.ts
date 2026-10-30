@@ -132,7 +132,7 @@ describe.skipIf(!reachable)("group invite links expire, against Postgres", () =>
     expect(replacement.token).not.toBe(oldToken);
     expect(Math.abs(Date.parse(replacement.expiresAt) - Date.now() - WEEK_MS)).toBeLessThan(60_000);
     await expect(social.previewInviteLink(oldToken)).rejects.toMatchObject({ code: "failed_precondition" });
-    await expect(social.acceptInviteLink(JOINER, replacement.token)).resolves.toEqual({ groupId: GROUP });
+    await expect(social.acceptInviteLink(JOINER, replacement.token)).resolves.toEqual({ groupId: GROUP, expenseId: "" });
     expect(await joinerIsMember(JOINER)).toBe(true);
   });
 

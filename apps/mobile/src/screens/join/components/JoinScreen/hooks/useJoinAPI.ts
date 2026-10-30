@@ -5,6 +5,7 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Code, ConnectError } from "@connectrpc/connect";
 import { MONEY_KEYS, queryKeys } from "@haalkhata/shared/api/queryKeys";
+import { LIVE_SPLIT_ENDED_MESSAGE } from "@haalkhata/shared/expense/live/live.constants";
 import { authClient, socialClient } from "@/lib/api/connect";
 import { useSession } from "@/lib/api/session";
 import { stashPendingInvite } from "@/lib/invite/pendingInvite";
@@ -62,6 +63,10 @@ export function useJoinAPI(token: string) {
         setRequestSent(true);
         return;
       }
+      if (result.expenseId) {
+        router.replace(`/expenses/${result.expenseId}/live`);
+        return;
+      }
       router.replace(result.groupId ? `/groups/${result.groupId}` : "/friends");
     },
   });
@@ -75,6 +80,7 @@ export function useJoinAPI(token: string) {
   // A group link past its date is told apart from one that never worked
   // (FAILED_PRECONDITION, not NOT_FOUND), so the page can say what to do.
   const expired = preview.error instanceof ConnectError && preview.error.code === Code.FailedPrecondition;
+  const liveSplitEnded = expired && (preview.error as ConnectError).rawMessage === LIVE_SPLIT_ENDED_MESSAGE;
 
-  return { preview, viewer, viewerStatus, accept, requestSent, signIn, expired };
+  return { preview, viewer, viewerStatus, accept, requestSent, signIn, expired, liveSplitEnded };
 }

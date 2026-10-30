@@ -3,6 +3,7 @@
 
 import { create } from "@bufbuild/protobuf";
 import { Code, ConnectError } from "@connectrpc/connect";
+import { LIVE_SPLIT_ENDED_MESSAGE } from "@haalkhata/shared/expense/live/live.constants";
 import { UserSchema } from "@haalkhata/protogen/common/v1/common_pb";
 import { InvitePreviewSchema } from "@haalkhata/protogen/social/v1/social_pb";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -21,6 +22,16 @@ vi.mock("@/lib/api/connect", () => ({
   socialClient: { previewInviteLink: vi.fn(), acceptInviteLink: vi.fn() },
   errorMessage: (error: unknown) => (error instanceof ConnectError ? error.rawMessage : String(error)),
 }));
+
+/**
+ * An invite preview as the plain client hands it over.
+ *
+ * @param init - Its fields.
+ * @returns The preview.
+ */
+function previewOf(init: Parameters<typeof create<typeof InvitePreviewSchema>>[1]) {
+  return { ...create(InvitePreviewSchema, init), totalCents: 0 };
+}
 
 let root: Root;
 let container: HTMLDivElement;
@@ -56,7 +67,7 @@ afterEach(() => {
 describe("the invite landing page", () => {
   it("offers a link that works", async () => {
     vi.mocked(socialClient.previewInviteLink).mockResolvedValue(
-      create(InvitePreviewSchema, { kind: "group", inviterName: "Ari", groupName: "Trip", memberCount: 2 }),
+      previewOf({ kind: "group", inviterName: "Ari", groupName: "Trip", memberCount: 2 }),
     );
 
     await render();
@@ -86,5 +97,28 @@ describe("the invite landing page", () => {
 
     expect(container.querySelector("h1")?.textContent).toBe("This invite link isn’t active");
     expect(container.textContent).toContain("that invite link isn't valid or was turned off");
+  });
+  it("says a live split has ended, and what to do", async () => {
+    vi.mocked(socialClient.previewInviteLink).mockRejectedValue(
+      new ConnectError(LIVE_SPLIT_ENDED_MESSAGE, Code.FailedPrecondition),
+    );
+
+    await render();
+
+    expect(container.textContent).toContain("This live split has ended");
+    expect(container.textContent).toContain("Ask whoever started it to start another.");
+  });
+
+  it("says what joining a live split on a group's bill does", async () => {
+    vi.mocked(socialClient.previewInviteLink).mockResolvedValue({
+      ...previewOf({ kind: "live", inviterName: "Ari", groupName: "Trip", memberCount: 2, expenseDescription: "Dinner", currency: "USD" }),
+      totalCents: 4400,
+    });
+
+    await render();
+
+    expect(container.textContent).toContain("Ari is splitting “Dinner” live");
+    expect(container.textContent).toContain("$44.00 · 2 people here so far. Claim what you had. Joining adds you to “Trip”.");
+    expect(container.textContent).toContain("Join the split");
   });
 });

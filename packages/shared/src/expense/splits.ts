@@ -37,6 +37,23 @@ export interface ItemInput {
 }
 
 /**
+ * Puts every line nobody has claimed on whoever paid, one portion each: while
+ * a live split runs, the bill is theirs until somebody says otherwise, so the
+ * ledger is exact before anyone has claimed anything.
+ *
+ * @param items - The receipt's lines.
+ * @param payerIds - Who paid.
+ * @returns The lines to work shares out from.
+ */
+export function unclaimedOnPayers<Item extends ItemInput>(items: readonly Item[], payerIds: readonly string[]): Item[] {
+  return items.map((item) =>
+    item.assignments.length > 0
+      ? item
+      : { ...item, assignments: [...payerIds].sort().map((userId) => ({ userId, weight: 1 })) },
+  );
+}
+
+/**
  * Ensures no user id appears twice in a participant list.
  *
  * @param userIds - Participant ids to check.

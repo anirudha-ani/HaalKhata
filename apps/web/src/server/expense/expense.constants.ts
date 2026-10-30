@@ -190,3 +190,9 @@ export const COMMENT_PREVIEW_LENGTH = 120;
  * not a race any more, and the person is asked to look again.
  */
 export const SETTLEMENT_ATTEMPTS = 3;
+
+/** How often the background sweep looks for live splits past their end. */
+export const LIVE_SPLIT_SWEEP_INTERVAL_MS = 30_000;
+
+/** How many live splits one pass of the sweep finishes; the rest go on the next. */
+export const LIVE_SPLIT_SWEEP_BATCH_SIZE = 100;

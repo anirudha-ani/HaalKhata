@@ -1,6 +1,6 @@
 /** An expense reduced to what people can change on it, in one shape for the server's rows, its messages and an open form. */
 
-import { computeItemizedSplits, type ItemInput } from "../splits";
+import { computeItemizedSplits, unclaimedOnPayers, type ItemInput } from "../splits";
 
 /** One line of a receipt. */
 export interface LineState {
@@ -193,18 +193,14 @@ export function sameExpense(first: ExpenseState, second: ExpenseState): boolean 
  * @returns The items to compute shares from.
  */
 export function linesToItems(lines: readonly LineState[], payerIds: readonly string[]): ItemInput[] {
-  const unclaimed = [...payerIds].sort();
-  return lines.map((line) => {
-    const claimed = Object.keys(line.shares).sort();
-    return {
+  return unclaimedOnPayers(
+    lines.map((line) => ({
       name: line.name,
       totalCents: line.totalCents,
-      assignments: (claimed.length > 0 ? claimed : unclaimed).map((userId) => ({
-        userId,
-        weight: line.shares[userId] ?? 1,
-      })),
-    };
-  });
+      assignments: Object.keys(line.shares).sort().map((userId) => ({ userId, weight: line.shares[userId] })),
+    })),
+    payerIds,
+  );
 }
 
 /**

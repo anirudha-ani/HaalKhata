@@ -68,6 +68,7 @@ export async function eraseAccountData(input: { userId: string; anonymousId: str
   await execute("DELETE FROM friendships WHERE user_id = $1 OR friend_id = $1", [input.userId], client);
   await execute("DELETE FROM friend_requests WHERE requester_id = $1 OR recipient_id = $1", [input.userId], client);
   await execute("DELETE FROM invite_links WHERE inviter_id = $1", [input.userId], client);
+  await execute("DELETE FROM live_split_people WHERE user_id = $1", [input.userId], client);
   await execute("DELETE FROM phone_verifications WHERE user_id = $1", [input.userId], client);
   await execute("DELETE FROM operations WHERE user_id = $1", [input.userId], client);
   await execute("DELETE FROM apple_sign_in_challenges WHERE user_id = $1", [input.userId], client);
@@ -88,6 +89,7 @@ export async function eraseAccountData(input: { userId: string; anonymousId: str
   await execute("UPDATE expenses SET created_by = $2 WHERE created_by = $1", identity, client);
   await execute("UPDATE expenses SET deleted_by = $2 WHERE deleted_by = $1", identity, client);
   await execute("UPDATE expenses SET updated_by = $2 WHERE updated_by = $1", identity, client);
+  await execute("UPDATE live_splits SET host_id = $2 WHERE host_id = $1", identity, client);
   await execute("UPDATE settlements SET from_user = $2 WHERE from_user = $1", identity, client);
   await execute("UPDATE settlements SET to_user = $2 WHERE to_user = $1", identity, client);
   await execute("UPDATE settlements SET recorded_by = $2 WHERE recorded_by = $1", identity, client);

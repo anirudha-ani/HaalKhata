@@ -41,3 +41,14 @@ export function inviteShareMessage(inviterName: string, groupName: string): stri
 export function profileShareMessage(name: string): string {
   return `Add ${name} on HaalKhata — split expenses and settle up without the spreadsheet.`;
 }
+
+/**
+ * The message beside a shared live split, written for whoever is at the table.
+ *
+ * @param inviterName - Whoever is sharing.
+ * @param description - The expense being split.
+ * @returns One sentence saying what the link is for.
+ */
+export function liveSplitShareMessage(inviterName: string, description: string): string {
+  return `${inviterName} is splitting "${description}" on HaalKhata. Tap to claim what you had.`;
+}

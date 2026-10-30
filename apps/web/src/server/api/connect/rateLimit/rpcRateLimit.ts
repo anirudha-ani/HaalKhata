@@ -29,8 +29,8 @@ export const RPC_RATE_LIMITS = {
   getFriendLedger: 60,
   getGroupBalances: 60,
   getInsights: 30,
-  // An open edit form asks every 10 s. A person with a few tabs open stays
-  // well inside this.
+  // An open edit form asks every 10 s and a live split every 3 s. A person
+  // with a few tabs open stays well inside this.
   getExpenseVersion: 120,
   getOverallBalances: 60,
   listExpenses: 60,
@@ -50,6 +50,9 @@ export const RPC_RATE_LIMITS = {
   sendReminder: 10,
   sendTestPush: 3,
   setGroupStatus: 30,
+  startLiveSplit: 10,
+  // Claiming a line in a live split is an edit, and one person may tick
+  // a dozen in a few seconds.
   updateExpense: 60,
   updatePushPreferences: 30,
   writePaymentMethod: 30,

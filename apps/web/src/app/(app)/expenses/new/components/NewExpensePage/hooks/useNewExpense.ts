@@ -22,6 +22,7 @@ import { adoptDraftLines, draftExpenseState } from "@haalkhata/shared/expense/me
 import {
   buildItemsPayload,
   buildSplitSpecs,
+  canStartLiveSplit,
   checkItemized,
   checkPayers,
   checkSplit,
@@ -30,6 +31,7 @@ import {
   previewItemizedShares,
   previewSplitShares,
   shareEveryItemWith,
+  unclaimedUnlessPicked,
   type DraftLineItem,
   type FormSplitType,
 } from "@haalkhata/shared/expense/form/splitForm";
@@ -481,20 +483,23 @@ export function useNewExpense(
     splits: participantIds.map((userId) => ({ userId, owedCents: parseMoneyInput(splitInputs[userId] ?? "", currency) ?? -1 })),
   });
 
-  /** Builds the request from the current fields and fires create or update. */
-  const submit = () => {
-    if (!canSubmit || totalCents === null) return;
-    setError("");
+  /**
+   * Builds the request from the current fields.
+   *
+   * @param total - The expense's total.
+   * @param lines - The lines to save.
+   * @returns The create request, which an edit carries too.
+   */
+  const buildRequest = (total: number, lines: DraftLineItem[]) => {
     const payers = multiPayer
       ? Object.entries(payerAmounts)
           .map(([userId, value]) => ({ userId, amountCents: parseMoneyInput(value, currency) ?? 0 }))
           .filter((payer) => payer.amountCents > 0)
-      : [{ userId: singlePayerId, amountCents: totalCents }];
-
-    const request = {
+      : [{ userId: singlePayerId, amountCents: total }];
+    return {
       groupId,
       description: description.trim(),
-      amountCents: totalCents,
+      amountCents: total,
       currency,
       category,
       expenseDate: date,
@@ -503,18 +508,53 @@ export function useNewExpense(
       payers,
       splitSpecs: buildSplitSpecs({
         splitType,
-        totalCents,
+        totalCents: total,
         participantIds,
         inputs: splitInputs,
         currency,
       }),
-      items: isItemized ? buildItemsPayload(items, currency) : [],
+      items: isItemized ? buildItemsPayload(lines, currency) : [],
       taxCents: isItemized ? taxCents : 0,
       tipCents: isItemized ? tipCents : 0,
       // Names this attempt: a retry after a lost response sends the same id
       // and gets the expense the first attempt stored, not a second one.
       operationId: operationIdRef.current,
     };
+  };
+
+  // A live split needs a name, priced lines and one person who paid. Who had
+  // what is what it is there to settle, so nobody has to be ticked yet, and
+  // nobody else needs to be on the form: they join through the link.
+  const canStartLive =
+    !editExpenseId &&
+    isItemized &&
+    !multiPayer &&
+    description.trim() !== "" &&
+    totalCents !== null &&
+    canStartLiveSplit(items, currency);
+
+  /** Saves the bill and opens it to the table. */
+  const startLive = () => {
+    if (!canStartLive || totalCents === null) return;
+    setError("");
+    const peopleIds = people.map((person) => person.id);
+    expenseAPI.create.mutate(
+      { ...buildRequest(totalCents, unclaimedUnlessPicked(items, peopleIds)), startLiveSplit: true },
+      {
+        onSuccess: (saved) => {
+          operationIdRef.current = newOperationId();
+          router.push(`/expenses/${saved.id}/live`);
+        },
+        onError: (mutationError) => setError(errorMessage(mutationError)),
+      },
+    );
+  };
+
+  /** Builds the request from the current fields and fires create or update. */
+  const submit = () => {
+    if (!canSubmit || totalCents === null) return;
+    setError("");
+    const request = buildRequest(totalCents, items);
 
     // Land on the thing you just made, not on the list you started from.
     // Both RPCs return the saved Expense, so the id is already here — and
@@ -616,6 +656,8 @@ export function useNewExpense(
     error,
     dismissError,
     submit,
+    canStartLive,
+    startLive,
     // Somebody else editing at the same time.
     editNote: editSync.note,
     editConflicts: editSync.conflicts,

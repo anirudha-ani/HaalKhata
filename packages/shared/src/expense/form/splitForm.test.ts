@@ -4,8 +4,10 @@ import { describe, expect, it } from "vitest";
 import {
   buildItemsPayload,
   buildSplitSpecs,
+  canStartLiveSplit,
   checkItemized,
   checkSplit,
+  unclaimedUnlessPicked,
   includeInEveryItem,
   itemizedTotals,
   percentOfItems,
@@ -209,5 +211,33 @@ describe("percentOfItems", () => {
 
   it("does not hide a tax bigger than the bill", () => {
     expect(percentOfItems(20000, 10000)).toBe("200%");
+  });
+});
+
+describe("starting a live split from a draft", () => {
+  const SARA = "user-sara";
+  const TOMAS = "user-tomas";
+  /**
+   * A draft line.
+   *
+   * @param total - Its price as typed.
+   * @param assignees - Who is on it.
+   * @returns The line.
+   */
+  const draftRow = (total: string, assignees: Record<string, number>) => ({ key: total, name: "Line", total, assignees });
+
+  it("needs priced lines, and nobody ticked", () => {
+    expect(canStartLiveSplit([draftRow("20.00", {})], "USD")).toBe(true);
+    expect(canStartLiveSplit([draftRow("", {})], "USD")).toBe(false);
+    expect(canStartLiveSplit([], "USD")).toBe(false);
+  });
+
+  it("opens a line left on everyone with nobody on it, and keeps one narrowed down by hand", () => {
+    const lines = unclaimedUnlessPicked(
+      [draftRow("20.00", { [SARA]: 1, [TOMAS]: 1 }), draftRow("8.00", { [TOMAS]: 1 })],
+      [SARA, TOMAS],
+    );
+
+    expect(lines.map((line) => line.assignees)).toEqual([{}, { [TOMAS]: 1 }]);
   });
 });

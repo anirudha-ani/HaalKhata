@@ -1,7 +1,7 @@
 /**
  * Next.js start-up hook: on the Node.js runtime, checks the SMS provider's
- * code length, starts the sweep of expired operation claims and starts the
- * in-process push worker.
+ * code length, starts the sweeps of expired operation claims and finished
+ * live splits, and starts the in-process push worker.
  */
 
 /**
@@ -18,6 +18,8 @@ export async function register(): Promise<void> {
   void reportCodeLengthMismatch();
   const { startOperationsSweep } = await import("@/server/common/ledger/operationsSweep");
   startOperationsSweep();
+  const { startLiveSplitSweep } = await import("@/server/expense/usecase/liveSplit/liveSplitSweep");
+  startLiveSplitSweep();
   if (process.env.PUSH_WORKER === "off") return;
   const { startPushWorker } = await import("@/server/push/worker/pushWorker");
   startPushWorker();

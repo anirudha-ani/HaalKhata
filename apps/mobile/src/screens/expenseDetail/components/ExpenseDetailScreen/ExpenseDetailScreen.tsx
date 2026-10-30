@@ -3,7 +3,7 @@
 import { ErrorState } from "@/components/ui/ErrorState";
 import { SafetyActions } from "@/components/safety/SafetyActions";
 import { useRouter } from "expo-router";
-import { Check, Lock, Pencil, Send, Trash2 } from "lucide-react-native";
+import { Check, Lock, Pencil, Radio, Send, Trash2 } from "lucide-react-native";
 import { Pressable, StyleSheet, TextInput, View } from "react-native";
 import { Text } from "@/components/ui/Text";
 import { PersonLink } from "@/components/people/PersonLink";
@@ -103,6 +103,7 @@ export function ExpenseDetailScreen({ expenseId }: { expenseId: string }) {
   // comes with a refused edit, so the edit's reason is the one to show.
   const editRefusal = expenseDetail.detail?.editRefusal ?? "";
   const canEdit = editRefusal === "";
+  const liveSplit = expenseDetail.detail?.liveSplit;
   const canDelete = isCreator && (expenseDetail.detail?.deleteRefusal ?? "") === "";
   const deletion = expenseDetail.deletion;
   // Same wording as the list rows, from the same function — the list only
@@ -181,14 +182,37 @@ export function ExpenseDetailScreen({ expenseId }: { expenseId: string }) {
         </View>
       ) : null}
 
+      {liveSplit ? (
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => router.push(`/expenses/${expense.id}/live`)}
+          style={styles.liveBanner}
+        >
+          <Radio color={colors.brand700} size={16} />
+          <Text style={styles.liveBannerText}>Everyone is splitting this live. Open it to claim what you had.</Text>
+        </Pressable>
+      ) : null}
+
       {isParticipant && !isDeleted && !isArchived && (canEdit || canDelete) ? (
         <View style={styles.actions}>
-          {canEdit ? (
+          {/* Lines can have nobody on them while it runs, which the form
+              cannot save: changes go through the live split until it ends. */}
+          {canEdit && !liveSplit ? (
             <Button
               compact
               icon={<Pencil color={colors.inkSoft} size={14} />}
               label="Edit"
               onPress={() => router.push(`/expenses/new?edit=${expense.id}`)}
+              variant="outline"
+            />
+          ) : null}
+          {canEdit && !liveSplit && expense.items.length > 0 && expense.payers.length === 1 ? (
+            <Button
+              busy={expenseDetail.isStartingLive}
+              compact
+              icon={<Radio color={colors.inkSoft} size={14} />}
+              label="Split live"
+              onPress={expenseDetail.startLive}
               variant="outline"
             />
           ) : null}
@@ -460,6 +484,21 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     flexWrap: "wrap",
     gap: spacing.sm,
+  },
+  liveBanner: {
+    alignItems: "center",
+    backgroundColor: colors.brand50,
+    borderRadius: radii.lg,
+    flexDirection: "row",
+    gap: spacing.sm,
+    padding: spacing.md,
+  },
+  liveBannerText: {
+    color: colors.brand700,
+    flex: 1,
+    fontSize: 14,
+    fontWeight: "600",
+    lineHeight: 20,
   },
   amount: {
     color: colors.ink,

@@ -1,18 +1,26 @@
 /** User-facing invite wording shared by browser and native landing screens and add forms. */
 
+import { LIVE_SPLIT_MINUTES } from "../expense/live/live.constants";
+import { formatMoney } from "../money/money";
 import { localDate } from "../time/localTime";
 import { GROUP_INVITE_LINK_LIFETIME_DAYS } from "./invite.constants";
 
 /** The public preview fields used to explain what accepting an invite does. */
 export interface InvitePreview {
-  /** "group" or "profile". */
+  /** "group", "profile" or "live". */
   kind: string;
   /** Person who created the link. */
   inviterName: string;
-  /** Group being joined, when applicable. */
+  /** Group being joined, or that a live split's expense belongs to. */
   groupName: string;
-  /** Number of existing group members. */
+  /** Number of existing group members, or of people in a live split so far. */
   memberCount: number;
+  /** Live splits only: the expense being split. */
+  expenseDescription?: string;
+  /** Live splits only: its total. */
+  totalCents?: number;
+  /** Live splits only: its currency. */
+  currency?: string;
 }
 
 /**
@@ -40,6 +48,13 @@ export const INVITE_EXPIRED_TITLE = "This invite link has expired";
 export const INVITE_EXPIRED_BODY =
   `Group invite links work for ${GROUP_INVITE_LINK_LIFETIME_DAYS} days. Ask someone in the group to share a new one.`;
 
+/** The join page's heading for a live split that has finished. */
+export const LIVE_SPLIT_ENDED_TITLE = "This live split has ended";
+
+/** What the join page says under {@link LIVE_SPLIT_ENDED_TITLE}. */
+export const LIVE_SPLIT_ENDED_BODY =
+  `Live splits run for ${LIVE_SPLIT_MINUTES} minutes. Ask whoever started it to start another.`;
+
 /** The join page's heading for any other link that does not work. */
 export const INVITE_INACTIVE_TITLE = "This invite link isn’t active";
 
@@ -63,6 +78,17 @@ export const INVITE_SIGN_IN_HINT = "New here? Signing in creates your account. Y
 /** @param preview Public invite details. @returns Matching title, explanation, action and confirmation. */
 export function inviteCopy(preview: InvitePreview) {
   const requestSent = `Request sent — ${preview.inviterName} will confirm from their side.`;
+  if (preview.kind === "live") {
+    const total = formatMoney(preview.totalCents ?? 0, preview.currency ?? "USD");
+    const people = `${preview.memberCount} ${preview.memberCount === 1 ? "person" : "people"} here so far.`;
+    const joinsGroup = preview.groupName ? ` Joining adds you to “${preview.groupName}”.` : "";
+    return {
+      title: `${preview.inviterName} is splitting “${preview.expenseDescription}” live`,
+      description: `${total} · ${people} Claim what you had.${joinsGroup}`,
+      action: "Join the split",
+      requestSent,
+    };
+  }
   if (preview.kind === "group") {
     return {
       title: `${preview.inviterName} invited you to “${preview.groupName}”`,

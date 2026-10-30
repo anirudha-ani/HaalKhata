@@ -5,6 +5,7 @@ import type { PlainServiceImpl } from "@/server/api/connect/wire/plainService";
 import type { ExpenseService } from "@haalkhata/protogen/expense/v1/expense_pb";
 import * as expenses from "@/server/expense/usecase/expense.usecase";
 import * as balances from "@/server/expense/usecase/balance.usecase";
+import * as liveSplits from "@/server/expense/usecase/liveSplit/liveSplit.usecase";
 import { requireUser, runUsecase } from "@/server/api/connect/context";
 import { requireRateLimitedUser, RPC_RATE_LIMITS } from "@/server/api/connect/rateLimit/rpcRateLimit";
 import { assertOperationId } from "@/server/common/ledger/operations";
@@ -77,6 +78,24 @@ export const expenseHandler: PlainServiceImpl<typeof ExpenseService> = {
         ),
       context,
     );
+  },
+
+  /** Opens an expense to everyone at the table, or returns the split already running. */
+  async startLiveSplit(request, context) {
+    return runUsecase(
+      async () =>
+        liveSplits.startLiveSplit(
+          await requireRateLimitedUser(context, "start-live-split", RPC_RATE_LIMITS.startLiveSplit),
+          request.expenseId,
+        ),
+      context,
+    );
+  },
+
+  /** Ends a live split before its time. */
+  async finishLiveSplit(request, context) {
+    await runUsecase(async () => liveSplits.finishLiveSplit(await requireUser(context), request.expenseId), context);
+    return {};
   },
 
   /** Older comments on an expense, a page at a time. */
