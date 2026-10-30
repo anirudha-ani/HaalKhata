@@ -417,6 +417,19 @@ with colocated tests. Mobile-specific rules:
   address that has an account. Never write another email pattern: one whose
   parts can match the same characters takes seconds to refuse a long field,
   and the server answers nobody while it does.
+- **An edit is a merge, not a replacement.** Several people can edit one
+  expense at once. A form sends what it opened (`base`) with what it wants,
+  and `mergeExpenseEdit` in `@haalkhata/shared/expense/merge` applies this
+  person's changes to the expense as it stands, part by part: each text field,
+  tax, tip, who paid, a receipt line's details, and each person's portion of a
+  line; on an expense that is not itemized the amount and split are one part.
+  Only a part two people changed to different values stops the save, as
+  `Code.Aborted` with nothing written, and the apps read the latest and offer
+  Keep mine or Use theirs. Receipt lines keep their ids across edits, which is
+  what makes a line the same line. Compare money with `sameMoney`, never by
+  cents: an equal split gives its odd cent to whoever the form listed first. A
+  form asks `GetExpenseVersion` every 10 s and folds in what it can
+  (`useExpenseEditSync`, one per app, over the shared `catchUpForm`).
 - **An expense never changes currency.** `updateExpense` keeps the saved
   currency, group expenses included, and refuses an edit naming another;
   the forms work in it when editing (`expenseFormCurrency` puts the saved
@@ -438,7 +451,9 @@ with colocated tests. Mobile-specific rules:
   `RecordSettlement` require a client UUID (`assertOperationId` in the
   handler); the usecase claims it with `beginOperation` inside the ledger
   transaction and `finishOperation` before commit, so a retry replays the
-  stored result. Clients mint one per submit (`newOperationId()`). Claim
+  stored result. Clients mint one per submit (`newOperationId()`).
+  `UpdateExpense` and `AddComment` use the same claim, so a retry neither
+  saves nor announces twice, and accept none from an older app. Claim
   first, before any ledger lock, and never touch another claim in a money
   write: claims past 24 hours are cleared by the background sweep
   (`common/ledger/operationsSweep.ts`), because a write that cleared them

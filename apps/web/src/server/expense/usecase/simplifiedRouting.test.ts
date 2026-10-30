@@ -132,6 +132,8 @@ function expenseRow(expenseId: string, description: string): ListedExpenseRow {
     ledger_event_order: 1,
     deleted_at: null,
     deleted_by: null,
+    version: 1,
+    updated_by: null,
   };
 }
 

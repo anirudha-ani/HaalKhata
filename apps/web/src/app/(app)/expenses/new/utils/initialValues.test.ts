@@ -142,9 +142,9 @@ describe("round trip — opening an edit and saving it unchanged", () => {
 
     expect(buildItemsPayload(initial.items, "USD")).toEqual(
       expense.items.map((item) => ({
-        // Ids are dropped on the way out: UpdateExpense replaces the receipt
-        // wholesale rather than diffing rows.
-        id: "",
+        // Ids go back unchanged: they are how UpdateExpense merges two
+        // people's edits to one receipt line by line.
+        id: item.id,
         name: item.name,
         quantity: item.quantity,
         totalCents: item.totalCents,

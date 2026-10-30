@@ -32,6 +32,7 @@ async function seed(database: Client): Promise<void> {
   await database.query(`INSERT INTO expenses (id, group_id, description, amount_cents, currency, expense_date, split_type, created_by, notes)
     VALUES ('dollars', 'shared-group', 'Private receipt', 1000, 'USD', '2026-10-01', 'equal', $1, 'Private note'),
     ('euros', 'shared-group', 'Dinner', 500, 'EUR', '2026-10-02', 'equal', $2, '')`, [ACCOUNT_ID, FRIEND_ID]);
+  await database.query("UPDATE expenses SET updated_by = $1 WHERE id = 'euros'", [ACCOUNT_ID]);
   await database.query("INSERT INTO expense_payers (expense_id, user_id, amount_cents) VALUES ('dollars', $1, 1000), ('euros', $2, 500)", [ACCOUNT_ID, FRIEND_ID]);
   await database.query(`INSERT INTO expense_splits (expense_id, user_id, owed_cents) VALUES
     ('dollars', $1, 500), ('dollars', $2, 500), ('euros', $1, 250), ('euros', $2, 250)`, [ACCOUNT_ID, FRIEND_ID]);
@@ -109,6 +110,8 @@ describe.skipIf(!await databaseReachable())("permanent account deletion against 
     const after = await ledgerSnapshot(database);
     const remapped = after.map((entry) => ({ ...entry, user_id: entry.user_id === anonymous.id ? ACCOUNT_ID : entry.user_id }));
     expect(remapped.sort((first, second) => `${first.user_id}:${first.currency}`.localeCompare(`${second.user_id}:${second.currency}`))).toEqual(before);
+    // The last edit of somebody else's expense stays attributed, to nobody in particular.
+    expect((await database.query("SELECT updated_by FROM expenses WHERE id = 'euros'")).rows[0].updated_by).toBe(anonymous.id);
   });
   it("erases personal content and transfers ownership without deleting the surviving member's comment", async () => {
     expect((await database.query("SELECT created_by, name FROM groups WHERE id = 'shared-group'")).rows[0]).toEqual({ created_by: FRIEND_ID, name: "Shared group" });

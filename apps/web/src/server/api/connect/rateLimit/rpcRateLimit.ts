@@ -14,6 +14,9 @@ import { accountRateLimits } from "@/server/common/rateLimit/rateLimit";
  */
 export const RPC_RATE_LIMITS = {
   acceptInvite: 10,
+  // A comment pushes to everyone on the expense, so this is what stops one
+  // person buzzing a whole group as fast as they can type.
+  addComment: 20,
   addFriend: 10,
   addMembers: 15,
   createExpense: 30,
@@ -26,6 +29,9 @@ export const RPC_RATE_LIMITS = {
   getFriendLedger: 60,
   getGroupBalances: 60,
   getInsights: 30,
+  // An open edit form asks every 10 s. A person with a few tabs open stays
+  // well inside this.
+  getExpenseVersion: 120,
   getOverallBalances: 60,
   listExpenses: 60,
   // Each older page of a statement fingerprints the pair's whole history
@@ -44,6 +50,7 @@ export const RPC_RATE_LIMITS = {
   sendReminder: 10,
   sendTestPush: 3,
   setGroupStatus: 30,
+  updateExpense: 60,
   updatePushPreferences: 30,
   writePaymentMethod: 30,
 } as const;

@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 import { nextDraftKey } from "@haalkhata/shared/expense/draftKey";
+import { adoptDraftLines } from "@haalkhata/shared/expense/merge/editDraft";
+import type { LineState } from "@haalkhata/shared/expense/merge/expenseState";
 import { centsToInput } from "@haalkhata/shared/money/money";
 import { draftCompleteness, draftTotals, unassignedCount, type DraftItem } from "@/lib/expense/itemDraft";
 import { itemizedWarnings } from "@haalkhata/shared/expense/form/itemizedWarnings";
@@ -68,6 +70,15 @@ export function useItemDraft(
       setItems(nextItems);
       setTaxInput(nextTax);
       setTipInput(nextTip);
+    },
+    /**
+     * Takes in lines merged with what somebody else saved, keeping each row's
+     * key and the text typed into it where it still means the same thing.
+     *
+     * @param lines - The merged lines.
+     */
+    adoptLines: (lines: readonly LineState[]) => {
+      setItems((current) => adoptDraftLines(current ?? [], lines, currency));
     },
     /**
      * Applies a partial update to one line.

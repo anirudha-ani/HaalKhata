@@ -1,10 +1,11 @@
 "use client";
 /** Expense detail data + actions: getExpense query, comment and delete mutations. */
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { authClient, errorMessage, expenseClient } from "@/lib/api/connect";
+import { newOperationId } from "@/lib/operations/operationId";
 import { FEED_KEYS, MONEY_KEYS, queryKeys } from "@haalkhata/shared/api/queryKeys";
 import { COMMENT_PAGE_SIZE } from "@haalkhata/shared/api/paging";
 import { useEarlierCommentsAPI } from "./useEarlierCommentsAPI";
@@ -42,9 +43,14 @@ export function useExpenseDetail(expenseId: string) {
   });
   const earlier = useEarlierCommentsAPI(expenseId, detailQuery.data?.commentsNextCursor ?? "");
 
+  // One id per comment being sent: the same words sent again after a failure
+  // are a retry, so a comment whose reply got lost is not stored twice.
+  const commentAttempt = useRef<{ body: string; operationId: string } | null>(null);
   const addComment = useMutation({
-    mutationFn: (body: string) => expenseClient.addComment({ expenseId, body }),
+    mutationFn: (attempt: { body: string; operationId: string }) =>
+      expenseClient.addComment({ expenseId, ...attempt }),
     onSuccess: () => {
+      commentAttempt.current = null;
       setComment("");
       queryClient.invalidateQueries({ queryKey: queryKeys.expense(expenseId) });
       // A comment is a feed event too, so the cached activity list is now stale.
@@ -96,7 +102,13 @@ export function useExpenseDetail(expenseId: string) {
     userById,
     comment,
     setComment,
-    submitComment: () => comment.trim() && addComment.mutate(comment),
+    submitComment: () => {
+      if (!comment.trim()) return;
+      if (commentAttempt.current?.body !== comment) {
+        commentAttempt.current = { body: comment, operationId: newOperationId() };
+      }
+      addComment.mutate(commentAttempt.current);
+    },
     isCommenting: addComment.isPending,
     confirmingDelete,
     setConfirmingDelete,

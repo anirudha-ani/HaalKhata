@@ -482,9 +482,9 @@ describe("who hears about a transaction", () => {
   });
 
   it("lets a participant who did not create the expense edit it", async () => {
-    await updateExpense(OWER, "expense-1", validExpenseRequest());
+    await updateExpense(OWER, "expense-1", validExpenseRequest({ notes: "Corrected" }));
 
-    expect(replaceExpense).toHaveBeenCalledWith("expense-1", expect.anything(), transactionClient);
+    expect(replaceExpense).toHaveBeenCalledWith("expense-1", expect.anything(), OWER, transactionClient);
   });
 
   it("refuses edits from somebody who is not on the expense", async () => {
@@ -505,11 +505,11 @@ describe("who hears about a transaction", () => {
     // and the derived balance simply rebalances against what was paid.
     vi.mocked(scopeHasSettlements).mockResolvedValue(true);
 
-    await updateExpense(PAYER, "expense-1", validExpenseRequest());
+    await updateExpense(PAYER, "expense-1", validExpenseRequest({ notes: "Corrected" }));
 
     expect(lockExpenseLedger).toHaveBeenCalledWith(transactionClient, "expense-1");
     expect(lockGroupLedgers).toHaveBeenCalledWith(transactionClient, [GOA_TRIP]);
-    expect(replaceExpense).toHaveBeenCalledWith("expense-1", expect.anything(), transactionClient);
+    expect(replaceExpense).toHaveBeenCalledWith("expense-1", expect.anything(), PAYER, transactionClient);
   });
 
   it("locks every affected one-off participant before replacing the expense", async () => {
@@ -519,10 +519,10 @@ describe("who hears about a transaction", () => {
     });
     vi.mocked(listFriendIds).mockResolvedValue([OWER]);
 
-    await updateExpense(PAYER, "expense-1", validExpenseRequest({ groupId: "" }));
+    await updateExpense(PAYER, "expense-1", validExpenseRequest({ groupId: "", notes: "Corrected" }));
 
     expect(lockParticipantLedgers).toHaveBeenCalledWith(transactionClient, [PAYER, OWER]);
-    expect(replaceExpense).toHaveBeenCalledWith("expense-1", expect.anything(), transactionClient);
+    expect(replaceExpense).toHaveBeenCalledWith("expense-1", expect.anything(), PAYER, transactionClient);
   });
 
   it("tells the detail view when a later settlement was recorded against the expense", async () => {
@@ -874,7 +874,7 @@ describe("archived groups keep their settled ledger", () => {
     vi.mocked(lockGroupLedgers).mockImplementationOnce(async () => {
       vi.mocked(findGroupById).mockImplementation(async () => archivedGroup());
     });
-    await expect(updateExpense(PAYER, "expense-1", validExpenseRequest())).rejects.toMatchObject({
+    await expect(updateExpense(PAYER, "expense-1", validExpenseRequest({ notes: "Corrected" }))).rejects.toMatchObject({
       code: "failed_precondition",
     });
     expect(replaceExpense).not.toHaveBeenCalled();
@@ -944,20 +944,25 @@ it.each(["percent", "shares"])("keeps a saved %s mode on a notes-only exact-amou
   const stored = (await findExpenseById("expense-1"))!;
   vi.mocked(findExpenseById).mockResolvedValue({ ...stored, split_type: splitType });
   await updateExpense(PAYER, "expense-1", validExpenseRequest({ notes: "Corrected note" }), true);
-  expect(replaceExpense).toHaveBeenCalledWith("expense-1", expect.objectContaining({ splitType, notes: "Corrected note", splits: [{ userId: OWER, owedCents: 1000 }] }), transactionClient);
+  expect(replaceExpense).toHaveBeenCalledWith("expense-1", expect.objectContaining({ splitType, notes: "Corrected note", splits: [{ userId: OWER, owedCents: 1000 }] }), PAYER, transactionClient);
 });
 
 it("rechecks preserved allocations under the ledger lock and refuses a concurrent edit", async () => {
   const stored = (await findExpenseById("expense-1"))!;
   vi.mocked(findExpenseById).mockResolvedValueOnce({ ...stored, split_type: "percent" })
     .mockResolvedValue({ ...stored, split_type: "percent", amount_cents: 2000 });
-  await expect(updateExpense(PAYER, "expense-1", validExpenseRequest(), true)).rejects.toMatchObject({ code: "failed_precondition" });
+  await expect(updateExpense(PAYER, "expense-1", validExpenseRequest({ notes: "Corrected" }), true)).rejects.toMatchObject({ code: "failed_precondition" });
   expect(replaceExpense).not.toHaveBeenCalled();
 });
 
 it("does not preserve the old ratio type when explicitly saving changed allocations", async () => {
   const stored = (await findExpenseById("expense-1"))!;
   vi.mocked(findExpenseById).mockResolvedValue({ ...stored, split_type: "shares" });
-  await updateExpense(PAYER, "expense-1", validExpenseRequest(), false);
-  expect(replaceExpense).toHaveBeenCalledWith("expense-1", expect.objectContaining({ splitType: "exact" }), transactionClient);
+  await updateExpense(PAYER, "expense-1", validExpenseRequest({
+    splitSpecs: [
+      { userId: OWER, amountCents: 600, percentBp: 0, shares: 0 },
+      { userId: PAYER, amountCents: 400, percentBp: 0, shares: 0 },
+    ],
+  }), false);
+  expect(replaceExpense).toHaveBeenCalledWith("expense-1", expect.objectContaining({ splitType: "exact" }), PAYER, transactionClient);
 });

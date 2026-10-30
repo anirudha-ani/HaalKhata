@@ -17,6 +17,7 @@ import {
 import { GroupStatus } from "@haalkhata/shared/group/status";
 import { groupsByStatus } from "@haalkhata/shared/group/archiving";
 import { MONEY_KEYS, queryKeys } from "@haalkhata/shared/api/queryKeys";
+import { EXPENSE_EDIT_CHECK_INTERVAL_MS } from "@haalkhata/shared/expense/merge/merge.constants";
 import { base64ToBytes } from "@/lib/encoding/encoding";
 import { offerPushExplainer } from "@/lib/push/pushStore";
 
@@ -62,6 +63,26 @@ export function useNewExpenseAPI(editExpenseId: string) {
     queryFn: () => expenseClient.getExpense({ expenseId: editExpenseId, commentLimit: COMMENT_PAGE_SIZE }),
     enabled: editExpenseId !== "",
   });
+  // Asked again on a timer while the app is in front, so somebody else's
+  // save reaches a form that is open here.
+  const versionQuery = useQuery({
+    queryKey: queryKeys.expenseVersion(editExpenseId),
+    queryFn: () => expenseClient.getExpenseVersion({ expenseId: editExpenseId }),
+    enabled: editExpenseId !== "",
+    refetchInterval: EXPENSE_EDIT_CHECK_INTERVAL_MS,
+  });
+
+  /**
+   * Reads the expense as it is saved now, into the same cache entry.
+   *
+   * @returns The getExpense response.
+   */
+  const readLatest = () =>
+    queryClient.fetchQuery({
+      queryKey: queryKeys.expense(editExpenseId),
+      queryFn: () => expenseClient.getExpense({ expenseId: editExpenseId, commentLimit: COMMENT_PAGE_SIZE }),
+      staleTime: 0,
+    });
 
   /** Invalidates every balance/expense-affecting query after a write. */
   const invalidateMoney = () => {
@@ -80,8 +101,7 @@ export function useNewExpenseAPI(editExpenseId: string) {
     },
   });
   const update = useMutation({
-    mutationFn: (input: { expenseId: string; expense: CreateExpenseInput; preserveSplitType?: boolean }) =>
-      expenseClient.updateExpense(input),
+    mutationFn: (input: Parameters<typeof expenseClient.updateExpense>[0]) => expenseClient.updateExpense(input),
     onSuccess: invalidateMoney,
   });
 
@@ -128,6 +148,9 @@ export function useNewExpenseAPI(editExpenseId: string) {
       (editExpenseId !== "" && editingQuery.isLoading),
     create,
     update,
+    savedVersion: versionQuery.data?.version,
+    versionCheckedAt: versionQuery.dataUpdatedAt,
+    readLatest,
     parse,
   };
 }

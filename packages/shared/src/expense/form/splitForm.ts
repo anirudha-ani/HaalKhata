@@ -14,6 +14,8 @@ export type FormSplitType = "equal" | "exact" | "percent" | "shares" | "itemized
 export interface DraftLineItem {
   /** Stable React key; not sent to the server. */
   key: string;
+  /** The saved line this row edits; absent on a line not saved yet. */
+  id?: string;
   /** Item name as typed; blank falls back to "Item" on submit. */
   name: string;
   /** Raw money input for the item's own total (e.g. "12.50"). */
@@ -306,7 +308,7 @@ export function shareEveryItemWith(
  */
 export function buildItemsPayload(items: DraftLineItem[], currency: string) {
   return items.map((item) => ({
-    id: "",
+    id: item.id ?? "",
     name: item.name.trim() || "Item",
     quantity: Math.max(1, item.quantity ?? 1),
     totalCents: parseMoneyInput(item.total, currency) ?? 0,

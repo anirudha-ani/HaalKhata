@@ -25,9 +25,11 @@ export const DEFAULT_READ_MAX_BYTES = 64 * 1024;
 
 /**
  * Largest expense request: an itemized expense may carry 100 items each
- * assigned to up to 100 people, about half a mebibyte.
+ * assigned to up to 100 people, about half a mebibyte, and an edit carries
+ * that twice over, once as the person's edit and once as the expense it
+ * started from.
  */
-export const EXPENSE_READ_MAX_BYTES = 1024 * 1024;
+export const EXPENSE_READ_MAX_BYTES = 2 * 1024 * 1024;
 
 /**
  * Largest social request: one contact lookup sends up to 1,000 identifiers of

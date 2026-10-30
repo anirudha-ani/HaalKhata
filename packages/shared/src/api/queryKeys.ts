@@ -51,6 +51,8 @@ export const queryKeys = {
    * @returns The query key tuple for that expense.
    */
   expense: (expenseId: string) => ["expense", expenseId] as const,
+  /** The small read an open edit form repeats to learn that somebody saved a change. */
+  expenseVersion: (expenseId: string) => ["expense-version", expenseId] as const,
   /**
    * The comments older than the ones an expense's detail carries, paged
    * back from its `commentsNextCursor`. That cursor is part of the key: when

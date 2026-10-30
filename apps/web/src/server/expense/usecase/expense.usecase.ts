@@ -34,6 +34,7 @@ import { GroupStatus } from "@haalkhata/protogen/group/v1/group_pb";
 import { findUserById, findUsersByIds, type UserRow } from "@/server/auth/repo/users.repo";
 import { insertFriendships, listFriendIds } from "@/server/social/repo/friendships.repo";
 import {
+  findCommentById,
   insertComment,
   listCommentPage,
   listCommentsByExpense,
@@ -59,6 +60,14 @@ import {
   computeSplits,
   SplitError,
 } from "@haalkhata/shared/expense/splits";
+import {
+  expenseStateOf,
+  sameExpense,
+  type ExpenseState,
+  type ExpenseStateSource,
+} from "@haalkhata/shared/expense/merge/expenseState";
+import { mergeExpenseEdit } from "@haalkhata/shared/expense/merge/mergeExpenseEdit";
+import { EDIT_CONFLICT_MESSAGE } from "@haalkhata/shared/expense/merge/merge.constants";
 import {
   amountOwed,
   groupCancelsOut,
@@ -302,6 +311,7 @@ function computeExpenseAmounts(
       taxCents = request.taxCents;
       tipCents = request.tipCents;
       items = request.items.map((item) => ({
+        id: item.id,
         name: item.name.trim() || "Item",
         quantity: Math.max(1, item.quantity),
         totalCents: item.totalCents,
@@ -709,7 +719,46 @@ function storedExpenseWrite(expense: ExpenseRow, children: ExpenseChildren): Exp
       userId: split.user_id,
       owedCents: split.owed_cents,
     })),
-    items: [],
+    items: (children.items.get(expense.id) ?? []).map((item) => ({
+      id: item.id,
+      name: item.name,
+      quantity: item.quantity,
+      totalCents: item.total_cents,
+      assignments: item.assignments.map((assignment) => ({
+        userId: assignment.user_id,
+        weight: assignment.weight,
+      })),
+    })),
+  };
+}
+
+/**
+ * Puts a merged expense back in the shape the repo writes.
+ *
+ * @param write - The write it came from, which keeps its scope.
+ * @param merged - The merged expense.
+ * @returns The write to save.
+ */
+function writeFromState(write: ExpenseWrite, merged: ExpenseState): ExpenseWrite {
+  return {
+    ...write,
+    description: merged.description,
+    category: merged.category,
+    expenseDate: merged.expenseDate,
+    notes: merged.notes,
+    splitType: merged.splitType,
+    amountCents: merged.amountCents,
+    taxCents: merged.taxCents,
+    tipCents: merged.tipCents,
+    payers: Object.entries(merged.payers).map(([userId, amountCents]) => ({ userId, amountCents })),
+    splits: Object.entries(merged.owed).map(([userId, owedCents]) => ({ userId, owedCents })),
+    items: merged.lines.map((line) => ({
+      id: line.id,
+      name: line.name,
+      quantity: line.quantity,
+      totalCents: line.totalCents,
+      assignments: Object.entries(line.shares).map(([userId, weight]) => ({ userId, weight })),
+    })),
   };
 }
 
@@ -971,28 +1020,45 @@ async function loadExpenseForEdit(
  * an app from before the forms kept it, or a hand-made request — is refused
  * rather than relabelling the debt: BDT 5,000 must never become USD 5,000.
  *
+ * Several people can edit at once. Under the expense's lock, what this person
+ * changed since `base` goes on top of the expense as it stands now, part by
+ * part ({@link mergeExpenseEdit}), and only a part two people changed to
+ * different values stops the save. Nothing in the edit is saved then; the app
+ * reads the latest and asks. An app that sends no `base` replaces the whole
+ * expense, as every app used to.
+ *
+ * A retry of a lost response neither saves nor announces the edit a second
+ * time, and an edit that changes nothing is not saved or announced at all.
+ *
  * @param userId - Authenticated caller performing the update.
  * @param expenseId - Id of the expense to update.
  * @param request - Full replacement request (same shape as create).
  * @param preserveSplitType - Retain an existing ratio mode only for identical allocations.
+ * @param base - The expense as this person's form opened it.
  * @returns The updated expense as a proto message init shape.
  * @throws UsecaseError if the expense is missing/deleted, the caller lacks
- *   access, or validation fails.
+ *   access, validation fails, or (aborted) somebody else changed the same thing.
  */
 export async function updateExpense(
   userId: string,
   expenseId: string,
   request: ExpenseInput,
   preserveSplitType = false,
+  base?: ExpenseStateSource,
 ) {
   const existing = await loadExpenseForEdit(userId, expenseId, request);
-  const write = await buildExpenseWrite(
+  const mine = await buildExpenseWrite(
     userId,
     request,
     storedParticipantIds(existing.expense, existing.children),
     existing.expense.currency,
   );
+  const operation = { userId, rpc: "UpdateExpense", operationId: request.operationId ?? "" };
   await withLedgerTransaction(async (client) => {
+    // Claimed before any lock, like every money write: a retry of a lost
+    // response resolves here without waiting on ledgers it will not touch.
+    const claim = await beginOperation(operation, { expenseId, request, preserveSplitType, base }, client);
+    if (claim.replayOf !== null) return;
     await lockExpenseLedger(client, expenseId);
     const { expense: current, children } = await loadExpenseForEdit(
       userId,
@@ -1000,6 +1066,17 @@ export async function updateExpense(
       request,
       client,
     );
+    const stored = storedExpenseWrite(current, children);
+    const write = base ? mergedWrite(base, mine, stored) : mine;
+    if (sameExpense(expenseStateOf(write), expenseStateOf(stored))) {
+      await finishOperation(operation, expenseId, client);
+      return;
+    }
+    const savedLineIds = new Set((children.items.get(expenseId) ?? []).map((item) => item.id));
+    write.items = write.items.map((item) => ({
+      ...item,
+      id: item.id && savedLineIds.has(item.id) ? item.id : undefined,
+    }));
     const participantIds = [
       ...new Set([...storedParticipantIds(current, children), ...involvedUserIds(write)]),
     ];
@@ -1021,7 +1098,8 @@ export async function updateExpense(
       await lockParticipantLedgers(client, participantIds);
       await assertLockedOneOffParticipants(userId, involvedUserIds(write), client);
     }
-    if (preserveSplitType) {
+    // A merge has already kept the saved mode of a split nobody changed.
+    if (preserveSplitType && !base) {
       const saved = {
         splitType: current.split_type,
         amountCents: current.amount_cents,
@@ -1049,17 +1127,46 @@ export async function updateExpense(
       },
     );
     write.createdBy = current.created_by;
-    await replaceExpense(expenseId, write, client);
-    await recordExpenseActivity(
-      userId,
-      expenseId,
-      write,
-      "updated",
-      client,
-      storedExpenseWrite(current, children),
-    );
+    await replaceExpense(expenseId, write, userId, client);
+    await recordExpenseActivity(userId, expenseId, write, "updated", client, stored);
+    await finishOperation(operation, expenseId, client);
   });
   return getExpenseProto(expenseId);
+}
+
+/**
+ * Applies what this person changed to the expense as it stands now.
+ *
+ * @param base - The expense as their form opened it.
+ * @param mine - Their edit, validated.
+ * @param stored - The expense as saved, read under its lock.
+ * @returns The write to save.
+ * @throws UsecaseError (aborted) when somebody else changed the same thing.
+ */
+function mergedWrite(base: ExpenseStateSource, mine: ExpenseWrite, stored: ExpenseWrite): ExpenseWrite {
+  const { merged, conflicts } = mergeExpenseEdit(
+    expenseStateOf(base),
+    expenseStateOf(mine),
+    expenseStateOf(stored),
+  );
+  if (conflicts.length > 0) throw new UsecaseError("aborted", EDIT_CONFLICT_MESSAGE);
+  return writeFromState(mine, merged);
+}
+
+/**
+ * Whether anyone has saved a change to an expense: what an open edit form
+ * asks on a timer, so it costs one small read rather than the whole expense.
+ *
+ * @param userId - Authenticated caller; must be allowed to view the expense.
+ * @param expenseId - Id of the expense.
+ * @returns Its version.
+ * @throws UsecaseError if the expense is missing or the caller lacks access.
+ */
+export async function getExpenseVersion(userId: string, expenseId: string) {
+  const expense = await findExpenseById(expenseId);
+  if (!expense) notFound("expense not found");
+  await assertCanTouch(userId, expense);
+  return { version: expense.version };
 }
 
 /**
@@ -1120,7 +1227,10 @@ export async function deleteExpense(userId: string, expenseId: string): Promise<
  */
 async function usersReferenced(rows: ExpenseRow[], children: ExpenseChildren) {
   const userIds = new Set(
-    rows.flatMap((expenseRow) => storedParticipantIds(expenseRow, children)),
+    rows.flatMap((expenseRow) => [
+      ...storedParticipantIds(expenseRow, children),
+      ...(expenseRow.updated_by ? [expenseRow.updated_by] : []),
+    ]),
   );
   return (await findUsersByIds([...userIds])).map(toPublicUser);
 }
@@ -1525,14 +1635,18 @@ function toCommentMessage(
  * Adds a comment to an expense, records it in the activity feed, and notifies
  * the other participants.
  *
+ * A retry of a lost response gets the comment the first attempt stored: no
+ * second comment, and nobody is told twice.
+ *
  * @param userId - Authenticated caller writing the comment.
  * @param expenseId - Id of the expense being commented on.
  * @param body - Comment text; trimmed, must be non-empty.
+ * @param operationId - Names this attempt; "" from an app that does not send one.
  * @returns The stored comment (with author) as a proto message init shape.
  * @throws UsecaseError if the expense is missing, the caller lacks access, or
  *   the comment is empty.
  */
-export async function addComment(userId: string, expenseId: string, body: string) {
+export async function addComment(userId: string, expenseId: string, body: string, operationId = "") {
   const expenseRow = await findExpenseById(expenseId);
   // Deleted expenses stay open to comments: "why was this removed?" is
   // exactly the conversation the kept row is there to host.
@@ -1553,7 +1667,14 @@ export async function addComment(userId: string, expenseId: string, body: string
   // One transaction for the comment and everything that announces it: a
   // comment nobody was told about, or a feed line quoting a comment that was
   // never stored, are both what a retry would then duplicate.
+  const operation = { userId, rpc: "AddComment", operationId };
   const comment = await withLedgerTransaction(async (client) => {
+    const claim = await beginOperation(operation, { expenseId, body: trimmed }, client);
+    if (claim.replayOf !== null) {
+      const earlier = await findCommentById(claim.replayOf, client);
+      if (!earlier) notFound("comment not found");
+      return earlier;
+    }
     const stored = await insertComment(expenseId, userId, trimmed, client);
     const children = await loadExpenseChildren([expenseId], client);
     const involved = new Set(storedParticipantIds(expenseRow, children));
@@ -1588,6 +1709,7 @@ export async function addComment(userId: string, expenseId: string, body: string
       },
       client,
     );
+    await finishOperation(operation, stored.id, client);
     return stored;
   });
   return {

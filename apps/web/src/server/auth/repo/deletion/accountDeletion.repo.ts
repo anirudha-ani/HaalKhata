@@ -87,6 +87,7 @@ export async function eraseAccountData(input: { userId: string; anonymousId: str
   await execute("UPDATE group_members SET user_id = $2 WHERE user_id = $1", identity, client);
   await execute("UPDATE expenses SET created_by = $2 WHERE created_by = $1", identity, client);
   await execute("UPDATE expenses SET deleted_by = $2 WHERE deleted_by = $1", identity, client);
+  await execute("UPDATE expenses SET updated_by = $2 WHERE updated_by = $1", identity, client);
   await execute("UPDATE settlements SET from_user = $2 WHERE from_user = $1", identity, client);
   await execute("UPDATE settlements SET to_user = $2 WHERE to_user = $1", identity, client);
   await execute("UPDATE settlements SET recorded_by = $2 WHERE recorded_by = $1", identity, client);

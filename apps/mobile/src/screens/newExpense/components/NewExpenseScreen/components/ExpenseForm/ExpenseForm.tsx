@@ -9,6 +9,7 @@ import { Chip } from "@/components/ui/Chip";
 import { DateField } from "@/components/ui/DateField";
 import { TextField } from "@/components/ui/TextField";
 import { useErrorToast } from "@/components/ui/ToastProvider";
+import { EditSyncPanel } from "../EditSyncPanel/EditSyncPanel";
 import { centsToInput } from "@haalkhata/shared/money/money";
 import { CATEGORIES } from "@haalkhata/shared/money/money.constants";
 import { spacing } from "@/lib/theme/theme";
@@ -160,6 +161,8 @@ export function ExpenseForm({
           placeholder="Notes (optional)"
           value={form.notes}
         />
+
+        <EditSyncPanel form={form} />
 
         <Button
           busy={form.isSaving}

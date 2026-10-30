@@ -18,6 +18,9 @@ service ExpenseService {
   rpc UpdateExpense(UpdateExpenseRequest) returns (Expense);
   rpc ListExpenses(ListExpensesRequest) returns (ListExpensesResponse);
   rpc GetExpense(GetExpenseRequest) returns (GetExpenseResponse);
+  // The one number an open edit form asks for on a timer: whether anyone has
+  // saved a change since it last looked. Open to whoever may read the expense.
+  rpc GetExpenseVersion(GetExpenseVersionRequest) returns (GetExpenseVersionResponse);
   // Creator only. A soft delete: the expense stops counting toward every
   // balance but stays visible everywhere the ledger is shown, marked deleted
   // (Expense.deleted_at), and payments already recorded against it stay on
@@ -101,6 +104,11 @@ message Expense {
   // conversation the kept row exists to host — but contributes nothing to
   // any balance, cannot be edited, and is never reported as settled.
   string deleted_at = 17;
+  // Goes up with every saved change. An open form compares it with
+  // GetExpenseVersion to learn that somebody else saved something.
+  int32 version = 18;
+  // Who saved the latest change; empty until the first edit.
+  string updated_by = 19;
 }
 
 message CreateExpenseRequest {
@@ -122,8 +130,9 @@ message CreateExpenseRequest {
   // server stores at most one expense per (caller, operation_id): a retry
   // of a lost response gets the expense the first attempt created, the
   // same id with a different payload is refused, and a claim is kept for
-  // 24 hours. Ignored inside UpdateExpenseRequest — an update replaces the
-  // row it names and is idempotent by nature.
+  // 24 hours. Inside UpdateExpenseRequest it names one attempt at saving an
+  // edit, so a retry neither saves nor announces it twice; app versions from
+  // before edits carried one leave it empty.
   string operation_id = 14;
 }
 
@@ -133,6 +142,14 @@ message UpdateExpenseRequest {
   // Keep a historical percent/shares mode when submitting its unchanged saved
   // allocations as exact. The server rechecks under the ledger lock.
   bool preserve_split_type = 3;
+  // The expense as this form opened it, exactly as the server sent it (or as
+  // the form last caught up with it). The server compares it with `expense`
+  // to see what this person changed and applies only that to the expense as
+  // it stands now, so two people can edit at once. Answers Code.Aborted,
+  // saving nothing, when both changed the same thing to different values;
+  // the client then reads the latest expense and shows the choice. App
+  // versions from before merging leave it unset and replace the whole expense.
+  Expense base = 4;
 }
 
 // Which part of the caller's own list a ListExpenses request reads, when it
@@ -184,6 +201,15 @@ message ListExpensesResponse {
   bool truncated = 4 [deprecated = true];
   // Pass back as `cursor` for the next, older page; empty at the oldest.
   string next_cursor = 5;
+}
+
+message GetExpenseVersionRequest {
+  string expense_id = 1;
+}
+
+message GetExpenseVersionResponse {
+  // Expense.version as it stands now.
+  int32 version = 1;
 }
 
 message GetExpenseRequest {
@@ -265,6 +291,11 @@ message DeleteSettlementRequest {
 message AddCommentRequest {
   string expense_id = 1;
   string body = 2;
+  // A client-generated id (a UUID) naming one attempt at sending this
+  // comment, sent unchanged on every retry of it. A retry of a lost response
+  // gets the comment the first attempt stored, not a second one. App versions
+  // from before this leave it empty.
+  string operation_id = 3;
 }
 
 message ListCommentsRequest {

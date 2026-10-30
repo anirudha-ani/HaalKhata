@@ -26,14 +26,21 @@ export const expenseHandler: PlainServiceImpl<typeof ExpenseService> = {
     }, context);
   },
 
+  /** An edit names its attempt, so a retry neither saves nor announces it twice; older apps send none. */
   async updateExpense(request, context) {
     if (!request.expense) {
       throw new ConnectError("expense payload is required", Code.InvalidArgument);
     }
-    return runUsecase(
-      async () => expenses.updateExpense(await requireUser(context), request.expenseId, request.expense!, request.preserveSplitType),
-      context,
-    );
+    return runUsecase(async () => {
+      if (request.expense!.operationId) assertOperationId(request.expense!.operationId);
+      return expenses.updateExpense(
+        await requireRateLimitedUser(context, "update-expense", RPC_RATE_LIMITS.updateExpense),
+        request.expenseId,
+        request.expense!,
+        request.preserveSplitType,
+        request.base,
+      );
+    }, context);
   },
 
   async listExpenses(request, context) {
@@ -56,6 +63,18 @@ export const expenseHandler: PlainServiceImpl<typeof ExpenseService> = {
   async getExpense(request, context) {
     return runUsecase(
       async () => expenses.getExpense(await requireUser(context), request.expenseId, request.commentLimit),
+      context,
+    );
+  },
+
+  /** Whether anyone has saved a change: what an open edit form asks on a timer. */
+  async getExpenseVersion(request, context) {
+    return runUsecase(
+      async () =>
+        expenses.getExpenseVersion(
+          await requireRateLimitedUser(context, "get-expense-version", RPC_RATE_LIMITS.getExpenseVersion),
+          request.expenseId,
+        ),
       context,
     );
   },
@@ -86,11 +105,17 @@ export const expenseHandler: PlainServiceImpl<typeof ExpenseService> = {
     return {};
   },
 
+  /** A comment names its attempt, so a retry stores one and tells everyone once; older apps send none. */
   async addComment(request, context) {
-    return runUsecase(
-      async () => expenses.addComment(await requireUser(context), request.expenseId, request.body),
-      context,
-    );
+    return runUsecase(async () => {
+      if (request.operationId) assertOperationId(request.operationId);
+      return expenses.addComment(
+        await requireRateLimitedUser(context, "add-comment", RPC_RATE_LIMITS.addComment),
+        request.expenseId,
+        request.body,
+        request.operationId,
+      );
+    }, context);
   },
 
   /** Every external recording names its attempt, so a retry cannot store two. */

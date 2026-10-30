@@ -79,7 +79,8 @@ describe("request caps", () => {
     ).length;
 
     expect(size).toBeGreaterThan(DEFAULT_READ_MAX_BYTES);
-    expect(size).toBeLessThan(EXPENSE_READ_MAX_BYTES);
+    // An edit carries the expense twice: the person's edit and what it started from.
+    expect(size * 2).toBeLessThan(EXPENSE_READ_MAX_BYTES);
   });
 
   it("fit the largest receipt photo", () => {

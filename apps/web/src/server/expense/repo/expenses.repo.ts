@@ -31,6 +31,10 @@ export interface ExpenseRow {
   ledger_event_order: number;
   /** Soft-delete timestamp; NULL ⇒ the expense is active. */
   deleted_at: string | null;
+  /** Goes up with every saved change. */
+  version: number;
+  /** Who saved the latest change; NULL until the first edit. */
+  updated_by: string | null;
   /** The authenticated user who deleted it; NULL while it is active. */
   deleted_by: string | null;
 }
@@ -82,6 +86,8 @@ export interface ExpenseWrite {
   payers: { userId: string; amountCents: number }[];
   splits: { userId: string; owedCents: number }[];
   items: {
+    /** The saved line this is, so it keeps its identity across edits; absent on a new line. */
+    id?: string;
     name: string;
     quantity: number;
     totalCents: number;
@@ -156,18 +162,20 @@ async function insertChildren(
   }
 
   // Items + assignments: items are multi-row, then assignments reference the
-  // freshly generated item ids.
-  const itemRows = input.items.map((item) => ({
-    id: newId(),
+  // item ids. A saved line keeps its id, which is how two people editing at
+  // once can tell they are talking about the same line.
+  const itemRows = input.items.map((item, position) => ({
+    id: item.id || newId(),
     expenseId,
     name: item.name,
     quantity: item.quantity,
     totalCents: item.totalCents,
+    position,
   }));
   if (itemRows.length > 0) {
-    const itemsValues = multiRowValues(itemRows, ["id", "expenseId", "name", "quantity", "totalCents"] as const);
+    const itemsValues = multiRowValues(itemRows, ["id", "expenseId", "name", "quantity", "totalCents", "position"] as const);
     await client.query(
-      `INSERT INTO expense_items (id, expense_id, name, quantity, total_cents) VALUES ${itemsValues!.clause}`,
+      `INSERT INTO expense_items (id, expense_id, name, quantity, total_cents, position) VALUES ${itemsValues!.clause}`,
       itemsValues!.params,
     );
 
@@ -231,11 +239,13 @@ export async function insertExpense(input: ExpenseWrite, client?: PoolClient): P
  *
  * @param expenseId - Id of the expense to overwrite.
  * @param input - Validated replacement expense.
+ * @param updatedBy - Who is saving this change.
  * @param client - Optional transaction client holding the expense scope lock.
  */
 export async function replaceExpense(
   expenseId: string,
   input: ExpenseWrite,
+  updatedBy: string,
   client?: PoolClient,
 ): Promise<void> {
   const persist = async (transactionClient: PoolClient) => {
@@ -243,7 +253,7 @@ export async function replaceExpense(
       `UPDATE expenses SET
          group_id = $1, description = $2, amount_cents = $3, currency = $4,
          category = $5, expense_date = $6, split_type = $7, notes = $8,
-         tax_cents = $9, tip_cents = $10
+         tax_cents = $9, tip_cents = $10, updated_by = $12, version = version + 1
        WHERE id = $11`,
       [
         input.groupId,
@@ -257,6 +267,7 @@ export async function replaceExpense(
         input.taxCents,
         input.tipCents,
         expenseId,
+        updatedBy,
       ],
     );
     await transactionClient.query(
@@ -595,7 +606,7 @@ export async function loadExpenseChildren(
     );
   const loadItems = () =>
     includeItems ? query<ItemRow>(
-      `SELECT * FROM expense_items WHERE expense_id = ANY($1::text[])`,
+      `SELECT * FROM expense_items WHERE expense_id = ANY($1::text[]) ORDER BY position, id`,
       [expenseIds],
       client,
     ) : Promise.resolve([] as ItemRow[]);

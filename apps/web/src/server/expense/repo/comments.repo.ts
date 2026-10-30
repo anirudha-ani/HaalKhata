@@ -1,7 +1,7 @@
 /** All SQL for the comments table. */
 
 import type { PoolClient } from "pg";
-import { newId, query } from "@/server/common/db/db";
+import { newId, query, queryOne } from "@/server/common/db/db";
 import { exactTimeSql } from "@/server/common/pagination/pagination";
 
 /** One row of the comments table (column names mirror SQL). */
@@ -36,6 +36,17 @@ export async function insertComment(
     client,
   );
   return rows[0];
+}
+
+/**
+ * Finds one comment, for answering a retry of the request that stored it.
+ *
+ * @param commentId - Id of the comment.
+ * @param client - The retry's transaction.
+ * @returns The row, or undefined.
+ */
+export async function findCommentById(commentId: string, client: PoolClient): Promise<CommentRow | undefined> {
+  return queryOne<CommentRow>(`SELECT * FROM comments WHERE id = $1`, [commentId], client);
 }
 
 /**

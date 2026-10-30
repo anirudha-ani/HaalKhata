@@ -18,6 +18,7 @@ import {
   toggleExpensePerson,
 } from "@haalkhata/shared/expense/participants";
 import { nextDraftKey } from "@haalkhata/shared/expense/draftKey";
+import { adoptDraftLines, draftExpenseState } from "@haalkhata/shared/expense/merge/editDraft";
 import {
   buildItemsPayload,
   buildSplitSpecs,
@@ -32,7 +33,8 @@ import {
   type DraftLineItem,
   type FormSplitType,
 } from "@haalkhata/shared/expense/form/splitForm";
-import type { ExpenseFormInitial } from "../../../utils/initialValues";
+import { buildInitialValues, type ExpenseFormInitial } from "../../../utils/initialValues";
+import { useExpenseEditSync, type TakenChanges } from "./useExpenseEditSync";
 import type { useNewExpenseAPI } from "./useNewExpenseAPI";
 import { omitKey } from "../utils/omitKey";
 
@@ -94,6 +96,9 @@ export function useNewExpense(
   // One id per attempt at saving: a retry after a lost response sends the
   // same one and gets the expense the first attempt stored, not a second.
   const operationIdRef = useRef(newOperationId());
+  // What the last attempt at saving an edit sent: the same again is a retry
+  // and keeps its id; anything else is a new attempt and gets a new one.
+  const lastEditAttempt = useRef("");
 
   const selectedGroup = expenseAPI.groups.find(
     (groupSummary) => groupSummary.group?.id === groupId,
@@ -403,6 +408,62 @@ export function useNewExpense(
     ? previewItemizedShares(items, taxCents, tipCents, currency)
     : previewSplitShares({ splitType, totalCents, participantIds, inputs: splitInputs, currency });
   const payerCheck = checkPayers(totalCents, multiPayer, payerAmounts, currency);
+
+  /**
+   * Puts what somebody else saved into the form, leaving everything this
+   * person has touched as it is.
+   *
+   * @param taken - The parts to take, and their values.
+   */
+  const takeIn = ({ parts, merged, latest }: TakenChanges) => {
+    const saved = buildInitialValues({ initialGroupId: "", initialFriendId: "" }, expenseAPI.me?.id ?? "", latest);
+    if (parts.has("description")) setDescription(merged.description);
+    if (parts.has("category")) setCategory(merged.category);
+    if (parts.has("expenseDate")) setDate(merged.expenseDate);
+    if (parts.has("notes")) setNotes(merged.notes);
+    if (parts.has("taxCents")) setTaxInput(centsToInput(merged.taxCents, currency));
+    if (parts.has("tipCents")) setTipInput(centsToInput(merged.tipCents, currency));
+    if (parts.has("line") || parts.has("share")) {
+      setItems((current) => adoptDraftLines(current, merged.lines, currency));
+      // A line can name somebody a hand-picked cast does not have yet.
+      if (!groupId) {
+        const onLines = merged.lines.flatMap((line) => Object.keys(line.shares));
+        setPersonIds((current) => [...new Set([...(current ?? []), ...onLines])]);
+      }
+    }
+    if (parts.has("money")) {
+      setAmount(saved.amount);
+      setSplitType(saved.splitType);
+      setSplitInputs(saved.splitInputs);
+      setCheckedOverride(saved.checked);
+      setItems(saved.items);
+      setTaxInput(saved.taxInput);
+      setTipInput(saved.tipInput);
+      if (!groupId) setPersonIds(saved.friendIds);
+    }
+    if (parts.has("payers")) {
+      setMultiPayer(saved.multiPayer);
+      setSinglePayerId(saved.singlePayerId);
+      setPayerAmounts(saved.payerAmounts);
+    }
+  };
+
+  const editSync = useExpenseEditSync({
+    opened: expenseAPI.editing?.expense,
+    savedVersion: expenseAPI.savedVersion,
+    versionCheckedAt: expenseAPI.versionCheckedAt,
+    myId: expenseAPI.me?.id ?? "",
+    isSaving: expenseAPI.update.isPending,
+    currency,
+    readLatest: expenseAPI.readLatest,
+    readForm: () =>
+      draftExpenseState({
+        description, category, date, notes, splitType, totalCents, previewShares,
+        multiPayer, singlePayerId, payerAmounts, items, taxCents, tipCents, currency,
+      }),
+    takeIn,
+  });
+
   // A group, or at least one other person — mirrors exactly what the picker
   // shows, so the button never disables for a reason that isn't on screen.
   const hasParticipants = groupId !== "" || friendIds.length > 0;
@@ -412,7 +473,8 @@ export function useNewExpense(
     totalCents !== null &&
     totalCents > 0 &&
     splitCheck.ok &&
-    payerCheck.ok;
+    payerCheck.ok &&
+    editSync.conflicts.length === 0;
 
   const preserveSplitType = canPreserveSplitType(savedSplit, {
     groupId, currency, splitType, amountCents: totalCents ?? 0,
@@ -460,15 +522,38 @@ export function useNewExpense(
     // more than a group page where the new row is one line among many.
     const onSuccess = (saved: { id: string }) => {
       operationIdRef.current = newOperationId();
+      lastEditAttempt.current = "";
       router.push(`/expenses/${saved.id}`);
     };
-    const onError = (mutationError: unknown) => setError(errorMessage(mutationError));
     if (editExpenseId) {
+      const attempt = JSON.stringify([{ ...request, operationId: "" }, preserveSplitType, editSync.base?.version]);
+      if (lastEditAttempt.current !== "" && lastEditAttempt.current !== attempt) {
+        operationIdRef.current = newOperationId();
+      }
+      lastEditAttempt.current = attempt;
       expenseAPI.update.mutate(
-        { expenseId: editExpenseId, expense: request, preserveSplitType },
-        { onSuccess, onError },
+        {
+          expenseId: editExpenseId,
+          expense: { ...request, operationId: operationIdRef.current },
+          preserveSplitType,
+          base: editSync.base,
+        },
+        {
+          onSuccess,
+          // Somebody else changed the same thing: the form shows that and
+          // asks, so it is not an error. Anything else is.
+          onError: (mutationError) => {
+            editSync.answerRefusedSave(mutationError).then(
+              (shown) => {
+                if (!shown) setError(errorMessage(mutationError));
+              },
+              (readError) => setError(errorMessage(readError)),
+            );
+          },
+        },
       );
     } else {
+      const onError = (mutationError: unknown) => setError(errorMessage(mutationError));
       expenseAPI.create.mutate(request, { onSuccess, onError });
     }
   };
@@ -531,6 +616,12 @@ export function useNewExpense(
     error,
     dismissError,
     submit,
+    // Somebody else editing at the same time.
+    editNote: editSync.note,
+    editConflicts: editSync.conflicts,
+    editChangedBy: editSync.changedBy,
+    keepMyEdit: editSync.keepMine,
+    takeSavedEdit: editSync.takeSaved,
     isSaving: expenseAPI.create.isPending || expenseAPI.update.isPending,
     // Receipt scanning.
     receiptConsent,
