@@ -110,12 +110,13 @@ export function useGroupDetailAPI(groupId: string) {
 
   /**
    * Sends a friend request to another member. The recipient must accept
-   * before a friendship exists, so nothing here is invalidated — the server
-   * deliberately does not expose outgoing-request state.
+   * before a friendship exists, so all that changes is the Friends tab's
+   * list of requests waiting for an answer.
    */
   const addFriend = useMutation({
     mutationFn: (userId: string) =>
       socialClient.addFriend({ email: "", phone: "", name: "", userId }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.friends, exact: true }),
   });
 
   /** Archives or restores the group and refreshes lists and open group views. */

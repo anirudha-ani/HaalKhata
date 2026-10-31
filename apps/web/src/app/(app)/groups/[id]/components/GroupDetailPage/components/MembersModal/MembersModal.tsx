@@ -4,7 +4,7 @@
 import { SafetyActions } from "@/components/safety/SafetyActions/SafetyActions";
 import Link from "next/link";
 import { useState } from "react";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { ChevronRight, Crown, LogOut, UserMinus, UserPlus } from "lucide-react";
 import type { Member } from "@haalkhata/protogen/group/v1/group_pb";
 import {
@@ -19,6 +19,7 @@ import {
   memberDebts,
   type GroupCurrencySection,
 } from "@haalkhata/shared/group/currencyBalances";
+import { queryKeys } from "@haalkhata/shared/api/queryKeys";
 import { errorMessage, socialClient } from "@/lib/api/connect";
 import { Avatar } from "@/components/ui/Avatar/Avatar";
 import { PersonLink } from "@/components/people/PersonLink/PersonLink";
@@ -135,11 +136,13 @@ export function MembersModal({
     (member) => member.user?.id === meId && member.role === OWNER_ROLE,
   );
 
+  const queryClient = useQueryClient();
   const addFriend = useMutation({
     mutationFn: (targetUserId: string) =>
       socialClient.addFriend({ email: "", phone: "", name: "", userId: targetUserId }),
     onSuccess: (_acknowledgement, targetUserId) => {
       setRequestedIds((existing) => new Set([...existing, targetUserId]));
+      queryClient.invalidateQueries({ queryKey: queryKeys.friends, exact: true });
     },
     onError: (mutationError, targetUserId) =>
       setRequestError({ userId: targetUserId, message: errorMessage(mutationError) }),

@@ -121,6 +121,8 @@ export function useFriendLedger(friendId: string) {
     onSuccess: () => {
       setFriendRequestSent(true);
       setReminderNote("Friend request sent");
+      // The list shows requests waiting for an answer; this screen's own figures are unchanged.
+      queryClient.invalidateQueries({ queryKey: queryKeys.friends, exact: true });
     },
     onError: (mutationError) => setReminderNote(errorMessage(mutationError)),
   });
