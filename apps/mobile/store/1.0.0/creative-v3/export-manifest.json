@@ -1,0 +1,118 @@
+{
+  "status": "Approved six-image sets uploaded and processed for required medium iPhone and 13-inch iPad slots. Order verified 01 through 06.",
+  "outputs": [
+    {
+      "file": "iphone/01-ai.png",
+      "width": 1320,
+      "height": 2868,
+      "hasAlpha": false
+    },
+    {
+      "file": "iphone/02-itemized.png",
+      "width": 1320,
+      "height": 2868,
+      "hasAlpha": false
+    },
+    {
+      "file": "iphone/03-live.png",
+      "width": 1320,
+      "height": 2868,
+      "hasAlpha": false
+    },
+    {
+      "file": "iphone/04-settle.png",
+      "width": 1320,
+      "height": 2868,
+      "hasAlpha": false
+    },
+    {
+      "file": "iphone/05-groups.png",
+      "width": 1320,
+      "height": 2868,
+      "hasAlpha": false
+    },
+    {
+      "file": "iphone/06-balances.png",
+      "width": 1320,
+      "height": 2868,
+      "hasAlpha": false
+    },
+    {
+      "file": "iphone-medium/01-ai.png",
+      "width": 1206,
+      "height": 2622,
+      "hasAlpha": false
+    },
+    {
+      "file": "iphone-medium/02-itemized.png",
+      "width": 1206,
+      "height": 2622,
+      "hasAlpha": false
+    },
+    {
+      "file": "iphone-medium/03-live.png",
+      "width": 1206,
+      "height": 2622,
+      "hasAlpha": false
+    },
+    {
+      "file": "iphone-medium/04-settle.png",
+      "width": 1206,
+      "height": 2622,
+      "hasAlpha": false
+    },
+    {
+      "file": "iphone-medium/05-groups.png",
+      "width": 1206,
+      "height": 2622,
+      "hasAlpha": false
+    },
+    {
+      "file": "iphone-medium/06-balances.png",
+      "width": 1206,
+      "height": 2622,
+      "hasAlpha": false
+    },
+    {
+      "file": "ipad/01-ai.png",
+      "width": 2064,
+      "height": 2752,
+      "hasAlpha": false
+    },
+    {
+      "file": "ipad/02-itemized.png",
+      "width": 2064,
+      "height": 2752,
+      "hasAlpha": false
+    },
+    {
+      "file": "ipad/03-live.png",
+      "width": 2064,
+      "height": 2752,
+      "hasAlpha": false
+    },
+    {
+      "file": "ipad/04-settle.png",
+      "width": 2064,
+      "height": 2752,
+      "hasAlpha": false
+    },
+    {
+      "file": "ipad/05-groups.png",
+      "width": 2064,
+      "height": 2752,
+      "hasAlpha": false
+    },
+    {
+      "file": "ipad/06-balances.png",
+      "width": 2064,
+      "height": 2752,
+      "hasAlpha": false
+    }
+  ],
+  "uploadStatus": {
+    "iphone-medium": "6 screenshots uploaded and processed",
+    "ipad": "6 screenshots uploaded and processed",
+    "iphone": "optional large set not uploaded"
+  }
+}

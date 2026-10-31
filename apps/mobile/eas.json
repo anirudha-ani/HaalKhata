@@ -17,5 +17,7 @@
       "autoIncrement": true
     }
   },
-  "submit": { "production": {} }
+  "submit": {
+    "production": { "ios": { "ascAppId": "6822393405", "metadataPath": "./store.config.cjs" } }
+  }
 }

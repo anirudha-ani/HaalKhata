@@ -1,0 +1,61 @@
+{
+  "status": "Approved six-image sets uploaded and processed for required medium iPhone and 13-inch iPad slots. Order verified 01 through 06.",
+  "screenshots": [
+    {
+      "key": "ai",
+      "label": "AI RECEIPT SCANNING",
+      "title": [
+        "Snap the bill.",
+        "Skip the typing."
+      ],
+      "detail": "AI reads the receipt. You choose the split."
+    },
+    {
+      "key": "itemized",
+      "label": "PICK YOUR ITEMS",
+      "title": [
+        "Your meal.",
+        "Your share."
+      ],
+      "detail": "Pick your items. Share the dessert."
+    },
+    {
+      "key": "live",
+      "label": "SPLIT LIVE",
+      "title": [
+        "One bill.",
+        "Everyone joins in."
+      ],
+      "detail": "Friends open the link and pick their items."
+    },
+    {
+      "key": "settle",
+      "label": "SETTLE UP",
+      "title": [
+        "Settle up.",
+        "Your way."
+      ],
+      "detail": "Open Venmo or copy Zelle details.",
+      "secondDetail": "Pay there, then record it here."
+    },
+    {
+      "key": "groups",
+      "label": "YOUR PEOPLE. YOUR PLANS.",
+      "title": [
+        "Dinner. Rent.",
+        "Tahoe weekend."
+      ],
+      "detail": "Keep shared expenses together."
+    },
+    {
+      "key": "balances",
+      "label": "CLEAR BALANCES",
+      "title": [
+        "Who owes what.",
+        "Clear at a glance."
+      ],
+      "detail": "See each person’s balance in one place."
+    }
+  ],
+  "reviewStatus": "Approved six-image sets uploaded and processed for required medium iPhone and 13-inch iPad slots. Order verified 01 through 06."
+}

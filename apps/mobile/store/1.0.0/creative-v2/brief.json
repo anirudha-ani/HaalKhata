@@ -1,0 +1,117 @@
+{
+  "status": "Bold direction and Settle up. Your way. headline selected by user. Six-image iPhone/iPad sets prepared; upload validation in progress.",
+  "audience": "United States, primarily California",
+  "locale": "en-US",
+  "currency": "USD",
+  "palette": "Warm cream and terracotta matching HaalKhata",
+  "subtitle": "Shared expenses, made simple",
+  "demoOwner": "Oni",
+  "demoFriends": [
+    "Aditya",
+    "Pezanne",
+    "Radhika",
+    "Jess",
+    "Rathi",
+    "Muskaan"
+  ],
+  "scenarios": [
+    "Dinner in San Francisco",
+    "Shared apartment expenses",
+    "Tahoe weekend"
+  ],
+  "coverOptions": [
+    {
+      "id": "A",
+      "headline": [
+        "Snap the bill.",
+        "Skip the typing."
+      ],
+      "support": "AI reads the receipt. You choose who had what."
+    },
+    {
+      "id": "B",
+      "headline": [
+        "Your receipt.",
+        "Ready to split."
+      ],
+      "support": "Scan with AI. Pick your items. Split tax and tip."
+    }
+  ],
+  "sequence": [
+    "AI receipt scanning",
+    "Everyone picks their own items",
+    "Split together with a live link",
+    "Tax and tip shared by items",
+    "Clear balances across friends and groups"
+  ],
+  "receiptAsset": {
+    "file": "california-receipt.png",
+    "source": "Built-in image generation tool",
+    "prompt": "Use case: text-localization. Edit the reference receipt for a California-focused expense splitting app. Preserve the photoreal ivory thermal paper, straight-on view, gentle crease, torn bottom and black monospace printing. Replace the printed receipt with this exact text, using aligned columns: RIVERSIDE DINER / SAN FRANCISCO, CA / 10/31/2026 / TABLE 07 / Grilled fish 30.00 / Vegetarian plate 24.00 / Pasta 21.00 / Shared dessert 9.00 / SUBTOTAL $84.00 / TAX $7.35 / TIP $16.80 / TOTAL $108.15 / THANK YOU. No EUR anywhere. No extra decorative objects. This is a fictional demonstration receipt. Do not print the words fictional or demonstration. Remove the dark surrounding background entirely; the receipt should be an isolated cutout on genuine transparency with no glow or shadow backdrop. The complete paper fits within the frame with clear transparent margins."
+  },
+  "captureNotes": "Actual native app UI with fictional local data. Local receipt provider is demonstration-only; these assets do not establish real-provider test coverage. Do not upload rejected v1 assets.",
+  "selectedCover": "A",
+  "availability": "All available countries and regions",
+  "monetization": {
+    "price": "Free",
+    "subscriptions": false,
+    "inAppPurchases": false,
+    "paidFeatures": false,
+    "advertising": false,
+    "otherMonetization": false
+  },
+  "openSource": {
+    "repository": "https://github.com/anirudha-ani/HaalKhata",
+    "license": "GPL-3.0",
+    "verifiedPublic": true
+  },
+  "copyStyle": "No em dashes in descriptions or other App Store copy.",
+  "graphicsFeedback": {
+    "repeatedBadges": "Do not repeat free/open-source messaging on screenshot artwork. Keep the product experience prominent.",
+    "creativeApproval": "Present multiple researched visual directions before a full redesign or upload.",
+    "approvedHeadline": "Snap the bill. Skip the typing."
+  },
+  "researchDirections": [
+    {
+      "id": "A",
+      "name": "Bold product story",
+      "file": "research-directions/direction-a.png",
+      "recommended": true
+    },
+    {
+      "id": "B",
+      "name": "Clean app showcase",
+      "file": "research-directions/direction-b.png"
+    },
+    {
+      "id": "C",
+      "name": "Warm dinner story",
+      "file": "research-directions/direction-c.png"
+    }
+  ],
+  "selectedResearchDirection": "A",
+  "settlementProposal": {
+    "placement": 4,
+    "replaces": "Separate tax and tip slide",
+    "recommendedHeadline": [
+      "Settle up.",
+      "Your way."
+    ],
+    "alternativeHeadline": [
+      "From split",
+      "to settled."
+    ],
+    "support": "Open Venmo or copy Zelle details. Pay there, then record it here.",
+    "verifiedBehavior": {
+      "venmo": "Opens a URL with a valid USD amount and optional note; payment is confirmed externally.",
+      "zelle": "Shows recipient email or phone for copying into a banking app. There is no universal Zelle link.",
+      "recording": "Record payment changes the ledger after money was sent externally."
+    },
+    "approval": "User selected Settle up. Your way. for the fourth image."
+  },
+  "currentExports": "../creative-v3/",
+  "ownerDeclarations": {
+    "euTraderStatus": "User confirmed personal noncommercial project outside business/professional activity; non-trader selected for declaration.",
+    "contentRights": "User confirmed only our app and user-provided content, no additional licensed third-party media."
+  }
+}
