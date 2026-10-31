@@ -20,6 +20,19 @@ export interface LiveSplitRow {
 }
 
 const LIVE_SPLIT_COLUMNS = `live.*, COALESCE(link.token, '') AS token, (live.ends_at <= now()) AS due`;
+/**
+ * The people of a split who still count. On a group's bill somebody who has
+ * left the group is out of the split too: nothing can be saved with them on
+ * the bill, and they could not pay a share of it.
+ */
+const SPLIT_PEOPLE_SQL = `live_split_people person
+  JOIN live_splits split ON split.id = person.live_split_id
+  JOIN expenses bill ON bill.id = split.expense_id
+ WHERE person.live_split_id = $1
+   AND (bill.group_id IS NULL OR EXISTS (
+     SELECT 1 FROM group_members member
+      WHERE member.group_id = bill.group_id AND member.user_id = person.user_id))`;
+
 const LIVE_SPLIT_FROM = `live_splits live LEFT JOIN invite_links link ON link.live_split_id = live.id`;
 
 /**
@@ -85,7 +98,7 @@ export async function findLiveSplitById(liveSplitId: string, client?: PoolClient
  */
 export async function listLiveSplitPeople(liveSplitId: string, client?: PoolClient): Promise<string[]> {
   const rows = await query<{ user_id: string }>(
-    `SELECT user_id FROM live_split_people WHERE live_split_id = $1 ORDER BY joined_at, user_id`,
+    `SELECT person.user_id FROM ${SPLIT_PEOPLE_SQL} ORDER BY person.joined_at, person.user_id`,
     [liveSplitId],
     client,
   );
@@ -101,7 +114,7 @@ export async function listLiveSplitPeople(liveSplitId: string, client?: PoolClie
  */
 export async function listLiveSplitSavers(liveSplitId: string, client?: PoolClient): Promise<string[]> {
   const rows = await query<{ user_id: string }>(
-    `SELECT user_id FROM live_split_people WHERE live_split_id = $1 AND saved_at IS NOT NULL ORDER BY saved_at, user_id`,
+    `SELECT person.user_id FROM ${SPLIT_PEOPLE_SQL} AND person.saved_at IS NOT NULL ORDER BY person.saved_at, person.user_id`,
     [liveSplitId],
     client,
   );
@@ -118,12 +131,11 @@ export async function listLiveSplitSavers(liveSplitId: string, client?: PoolClie
  */
 export async function listJoinedSinceLastSave(liveSplitId: string, client: PoolClient): Promise<string[]> {
   const rows = await query<{ user_id: string }>(
-    `SELECT user_id FROM live_split_people
-      WHERE live_split_id = $1
-        AND joined_at > COALESCE(
+    `SELECT person.user_id FROM ${SPLIT_PEOPLE_SQL}
+        AND person.joined_at > COALESCE(
           (SELECT max(saved_at) FROM live_split_people WHERE live_split_id = $1),
           '-infinity'::timestamptz)
-      ORDER BY joined_at, user_id`,
+      ORDER BY person.joined_at, person.user_id`,
     [liveSplitId],
     client,
   );

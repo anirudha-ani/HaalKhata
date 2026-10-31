@@ -5,6 +5,7 @@ import {
   buildItemsPayload,
   buildSplitSpecs,
   liveDraft,
+  withNewcomersTicked,
   checkItemized,
   checkSplit,
   unclaimedUnlessPicked,
@@ -257,5 +258,15 @@ describe("liveDraft", () => {
 
   it("saves tax on no lines as nothing", () => {
     expect(liveDraft({ ...form, isItemized: true, items: [draftRow("", {})], taxCents: 150 }).totalCents).toBe(0);
+  });
+});
+
+describe("withNewcomersTicked", () => {
+  it("ticks whoever joined, and leaves everyone else as they were", () => {
+    expect(withNewcomersTicked({ alice: true, bob: false }, ["noor"])).toEqual({ alice: true, bob: false, noor: true });
+  });
+
+  it("leaves a form where everyone already counts as ticked", () => {
+    expect(withNewcomersTicked(null, ["noor"])).toBeNull();
   });
 });

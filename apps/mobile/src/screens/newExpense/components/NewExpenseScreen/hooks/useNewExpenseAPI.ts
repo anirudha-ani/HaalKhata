@@ -154,6 +154,8 @@ export function useNewExpenseAPI(editExpenseId: string) {
     create,
     startLive,
     update,
+    /** Reads the groups again, for somebody who just joined one through a live split. */
+    refreshGroups: () => void queryClient.invalidateQueries({ queryKey: queryKeys.groups }),
     savedVersion: versionQuery.data?.version,
     versionCheckedAt: versionQuery.dataUpdatedAt,
     readLatest,

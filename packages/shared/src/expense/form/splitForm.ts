@@ -326,6 +326,22 @@ export function liveDraft<Line extends DraftLineItem>(form: {
 }
 
 /**
+ * Ticks people who joined a live split while a form was open. A form opened on a
+ * saved bill holds a tick per person, so anybody new would otherwise come in
+ * unticked, and a save from that form would leave them out of an even split.
+ *
+ * @param checked - The form's ticks, or null when everyone counts as ticked.
+ * @param userIds - Who joined.
+ * @returns The ticks with theirs added.
+ */
+export function withNewcomersTicked(
+  checked: Record<string, boolean> | null,
+  userIds: readonly string[],
+): Record<string, boolean> | null {
+  return checked && { ...checked, ...Object.fromEntries(userIds.map((userId) => [userId, true])) };
+}
+
+/**
  * Prepares a draft for a live split. A scanned or added line starts out shared
  * by everyone on the form, which is the form's default rather than anybody's
  * choice, so such a line opens with nobody on it for people to claim. A line

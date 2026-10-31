@@ -66,9 +66,7 @@ export function expenseStateOf(source: ExpenseStateSource): ExpenseState {
     notes: source.notes,
     splitType: source.splitType,
     amountCents: source.amountCents,
-    // Somebody on it with nothing to pay yet moves no money, so joining a live
-    // split is nothing a form has to answer.
-    owed: Object.fromEntries(source.splits.filter((split) => split.owedCents > 0).map((split) => [split.userId, split.owedCents])),
+    owed: Object.fromEntries(source.splits.map((split) => [split.userId, split.owedCents])),
     payers: Object.fromEntries(source.payers.map((payer) => [payer.userId, payer.amountCents])),
     lines: source.items.map((item) => ({
       id: item.id ?? "",
@@ -146,11 +144,22 @@ export function sameMoney(first: ExpenseState, second: ExpenseState): boolean {
     });
   }
   if (first.splitType === "equal" && second.splitType === "equal") {
-    const firstPeople = Object.keys(first.owed);
-    return firstPeople.length === Object.keys(second.owed).length
-      && firstPeople.every((userId) => userId in second.owed);
+    const firstPeople = sharingIds(first);
+    const secondPeople = new Set(sharingIds(second));
+    return firstPeople.length === secondPeople.size && firstPeople.every((userId) => secondPeople.has(userId));
   }
   return sameRecord(first.owed, second.owed);
+}
+
+/**
+ * Who has a part of an even split. Somebody can be on the bill at nothing, and
+ * ticking them moves everyone's share, so being listed is not enough.
+ *
+ * @param state - The state.
+ * @returns Everyone with something to pay.
+ */
+function sharingIds(state: ExpenseState): string[] {
+  return Object.keys(state.owed).filter((userId) => (state.owed[userId] ?? 0) > 0);
 }
 
 /**

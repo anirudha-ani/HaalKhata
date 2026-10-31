@@ -121,7 +121,8 @@ export interface FormCatchUp {
  * Works out what an open form should do with the latest saved expense.
  *
  * @param change - The form's starting point, the form as it stands, the
- *   latest expense, who saved it, and conflicts already waiting.
+ *   latest expense, who saved it, conflicts already waiting, and whether a live
+ *   split is running.
  * @returns What to take in, what to ask, and what to say.
  */
 export function catchUpForm(change: {
@@ -133,9 +134,11 @@ export function catchUpForm(change: {
   /** Whether that was this person, on another device or an earlier attempt. */
   byMe: boolean;
   held: readonly EditConflict[];
+  /** Whether a live split is running, under which lines may have nobody on them. */
+  live: boolean;
 }): FormCatchUp {
   const latestState = expenseStateOf(change.latest);
-  const outcome = mergeExpenseEdit(expenseStateOf(change.base), change.form, latestState);
+  const outcome = mergeExpenseEdit(expenseStateOf(change.base), change.form, latestState, { live: change.live });
   const fresh = new Set(outcome.conflicts.map((conflict) => editPartKey(conflict.edit)));
   return {
     parts: new Set(outcome.theirChanges.map((theirChange) => theirChange.part)),

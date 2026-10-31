@@ -23,6 +23,7 @@ import {
   buildItemsPayload,
   buildSplitSpecs,
   liveDraft,
+  withNewcomersTicked,
   checkItemized,
   checkPayers,
   checkSplit,
@@ -453,8 +454,12 @@ export function useNewExpense(
   const addPeople = (userIds: string[]) => {
     const onForm = new Set(personIds);
     const newcomers = userIds.filter((userId) => userId !== expenseAPI.me?.id && !onForm.has(userId));
-    if (newcomers.length === 0 || (groupId && personIds === null)) return;
+    if (newcomers.length === 0) return;
+    // A group's roster is its own read, which has not heard of them yet.
+    if (groupId) expenseAPI.refreshGroups();
+    if (groupId && personIds === null) return;
     setPersonIds((current) => [...new Set([...(current ?? []), ...newcomers])]);
+    setCheckedOverride((current) => withNewcomersTicked(current, newcomers));
   };
 
   const editSync = useExpenseEditSync({

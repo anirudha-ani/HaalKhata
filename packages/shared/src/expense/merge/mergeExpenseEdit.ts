@@ -83,11 +83,14 @@ export interface MergeOptions {
  * @returns The merged expense, any conflicts, and what somebody else changed.
  */
 export function mergeExpenseEdit(
-  base: ExpenseState,
-  mine: ExpenseState,
-  theirs: ExpenseState,
+  baseState: ExpenseState,
+  mineState: ExpenseState,
+  theirState: ExpenseState,
   options: MergeOptions = {},
 ): ExpenseMerge {
+  const [base, mine, theirs] = options.live
+    ? [baseState, mineState, theirState].map(withoutUnsharedPeople)
+    : [baseState, mineState, theirState];
   const conflicts: EditConflict[] = [];
   const theirChanges: EditPart[] = [];
   let merged: ExpenseState = { ...theirs };
@@ -158,6 +161,18 @@ export function mergeExpenseEdit(
   if (options.live) merged.payers = fitPayers(merged.payers, merged.amountCents);
   else merged.payers = payersFor(merged, conflicts);
   return { merged, conflicts, theirChanges };
+}
+
+/**
+ * A state without the people on it who have nothing to pay. While a split runs
+ * that is how somebody joins, which moves no money and is nothing a form has to
+ * answer. Outside one, somebody at zero is on the bill like anyone else.
+ *
+ * @param state - The state.
+ * @returns The state with only people who owe something in `owed`.
+ */
+function withoutUnsharedPeople(state: ExpenseState): ExpenseState {
+  return { ...state, owed: Object.fromEntries(Object.entries(state.owed).filter(([, cents]) => cents > 0)) };
 }
 
 /**

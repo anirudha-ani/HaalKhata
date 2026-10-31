@@ -425,11 +425,12 @@ async function validateExpenseParticipants(
 ): Promise<void> {
   const users = await findUsersByIds(involved);
   if (users.length !== involved.length) invalid("unknown participant");
-  // Only somebody who can sign in joins a new expense. The one row that
-  // cannot is the Deleted member a deleted account leaves behind: it keeps
-  // its shares in old expenses and takes none in new ones.
+  // Only somebody who can sign in joins an expense. The one row that cannot
+  // is the Deleted member a deleted account leaves behind: it keeps its shares
+  // in the expenses it is already on, which stay editable, and joins no others.
+  const alreadyOnIt = new Set(existingIds);
   const unregistered = users.find(
-    (participant) => !isRegisteredUser(participant),
+    (participant) => !isRegisteredUser(participant) && !alreadyOnIt.has(participant.id),
   );
   if (unregistered) {
     invalid(`${unregistered.name} can't be added to a new expense`);
@@ -454,7 +455,7 @@ async function validateExpenseParticipants(
  * already and connected to somebody who paid: their debt runs to the payer,
  * not to the editor, so two people who met over a shared bill can each
  * still correct it, while a payer who has removed a friend cannot put them
- * back in debt.
+ * back in debt. Nobody's own deleted account makes a bill uneditable.
  *
  * @param actorId - Who is saving it.
  * @param participantIds - Everyone the write puts on the expense.
@@ -476,11 +477,17 @@ async function assertConnectedToExpense(
   if (strangers.some((participantId) => !alreadyOn.has(participantId))) {
     denied(ONE_OFF_NOT_CONNECTED_MESSAGE);
   }
+  // A Deleted member has no connections left. It stays on the bills it was on,
+  // and a debt that runs only to one runs to nobody who could have removed anyone.
+  const people = await findUsersByIds([...strangers, ...expense.payerIds], client);
+  const deletedIds = new Set(people.filter((person) => !isRegisteredUser(person)).map((person) => person.id));
+  const livingPayerIds = expense.payerIds.filter((payerId) => !deletedIds.has(payerId));
+  if (expense.payerIds.length > 0 && livingPayerIds.length === 0) return;
   const connectedToPayers = new Set<string>();
-  for (const payerId of expense.payerIds) {
+  for (const payerId of livingPayerIds) {
     for (const connectedId of await connectedUserIds(payerId, client)) connectedToPayers.add(connectedId);
   }
-  if (strangers.some((participantId) => !connectedToPayers.has(participantId))) {
+  if (strangers.some((participantId) => !deletedIds.has(participantId) && !connectedToPayers.has(participantId))) {
     denied(ONE_OFF_NOT_CONNECTED_MESSAGE);
   }
 }
@@ -611,7 +618,10 @@ async function buildExpenseWrite(
     taxCents: amounts.taxCents,
     tipCents: amounts.tipCents,
     createdBy: userId,
-    payers: request.payers.map((payer) => ({ userId: payer.userId, amountCents: payer.amountCents })),
+    // An empty bill is nothing yet, whatever the request says anybody paid.
+    payers: isEmptyBill
+      ? [...new Set(request.payers.map((payer) => payer.userId))].map((payerId) => ({ userId: payerId, amountCents: 0 }))
+      : request.payers.map((payer) => ({ userId: payer.userId, amountCents: payer.amountCents })),
     splits: amounts.splits,
     items: amounts.items,
   };
@@ -837,14 +847,33 @@ function storedExpenseWrite(expense: ExpenseRow, children: ExpenseChildren): Exp
 }
 
 /**
+ * An even split of an amount.
+ *
+ * @param amountCents - The amount.
+ * @param userIds - Who shares it, in order.
+ * @returns Each person's share.
+ */
+function evenSplits(amountCents: number, userIds: readonly string[]): ExpenseWrite["splits"] {
+  return computeSplits("equal", amountCents, userIds.map((userId) => ({ userId, amountCents: 0, percentBp: 0, shares: 0 })));
+}
+
+/**
  * Keeps everyone who has joined a live split on the expense. Somebody can be on
  * it with nothing to pay, and a save that gives them no share must not take them
- * off: they are still at the table.
+ * off: they are still at the table. A form that had not seen somebody join could
+ * not have ticked them, so an even split counts them here, as it would have.
  *
  * @param write - The write about to be saved.
  * @param peopleIds - Who is in the split.
+ * @param base - The expense as the form saw it, when it says.
  */
-function keepJoinersOn(write: ExpenseWrite, peopleIds: readonly string[]): void {
+function keepJoinersOn(write: ExpenseWrite, peopleIds: readonly string[], base: ExpenseStateSource | undefined): void {
+  const seenIds = new Set(base ? base.splits.map((split) => split.userId) : peopleIds);
+  const unseenIds = peopleIds.filter((userId) => !seenIds.has(userId));
+  if (write.splitType === "equal" && write.amountCents > 0 && unseenIds.length > 0) {
+    const sharingIds = write.splits.filter((split) => split.owedCents > 0).map((split) => split.userId);
+    write.splits = evenSplits(write.amountCents, [...new Set([...sharingIds, ...unseenIds])]);
+  }
   const listed = new Set(write.splits.map((split) => split.userId));
   for (const userId of peopleIds) {
     if (!listed.has(userId)) write.splits.push({ userId, owedCents: 0 });
@@ -1208,7 +1237,7 @@ export async function updateExpense(
     );
     const stored = storedExpenseWrite(current, children);
     const write = base ? mergedWrite(base, mine, stored, session !== null) : mine;
-    if (session) keepJoinersOn(write, session.peopleIds);
+    if (session) keepJoinersOn(write, session.peopleIds, base);
     if (sameExpense(expenseStateOf(write), expenseStateOf(stored))) {
       // Saving nothing new is still saying they are done, and their avatar says so.
       if (session) {
@@ -1245,7 +1274,8 @@ export async function updateExpense(
       await assertLockedOneOffParticipants(userId, involvedUserIds(write), client, {
         existingIds: storedParticipantIds(current, children),
         payerIds: write.payers.map((payer) => payer.userId),
-        livePeople: session?.peopleIds ?? [],
+        // connectPayersToBill connects whoever starts paying with everyone on it.
+        livePeople: session ? [...session.peopleIds, ...storedParticipantIds(current, children)] : [],
       });
     }
     // A merge has already kept the saved mode of a split nobody changed.
@@ -1342,9 +1372,12 @@ function mergedWrite(
 /**
  * Gives a share of an evenly split bill to whoever joined after the last save.
  * Their form never got to count them, and joining is how you say you are on
- * the bill. Somebody at no share who joined before a save was taken off it, so
- * they stay off. Past the volume limit they stay off too, or the split could
- * never end.
+ * the bill. Only somebody the join put on the bill counts: whoever started the
+ * split need not be on it, and somebody at no share who joined before a save
+ * was taken off it, so they stay off. It holds to everything a save would: a
+ * group that has been archived, or a former member whose balance this would
+ * move, leaves the bill as it is, as does a ledger with no room, or the split
+ * could never end.
  *
  * @param split - The split.
  * @param expense - Its expense.
@@ -1352,21 +1385,33 @@ function mergedWrite(
  */
 async function countLateJoiners(split: LiveSplitRow, expense: ExpenseRow, client: PoolClient): Promise<void> {
   if (expense.split_type !== "equal" || expense.deleted_at) return;
-  const stored = storedExpenseWrite(expense, await loadExpenseChildren([expense.id], client));
-  const sharing = stored.splits.filter((split) => split.owedCents > 0).map((split) => split.userId);
-  const alreadySharing = new Set(sharing);
-  const lateIds = (await listJoinedSinceLastSave(split.id, client)).filter((userId) => !alreadySharing.has(userId));
+  const children = await loadExpenseChildren([expense.id], client);
+  const stored = storedExpenseWrite(expense, children);
+  const sharingIds = stored.splits.filter((share) => share.owedCents > 0).map((share) => share.userId);
+  const unsharedIds = new Set(stored.splits.filter((share) => share.owedCents === 0).map((share) => share.userId));
+  const lateIds = (await listJoinedSinceLastSave(split.id, client)).filter((userId) => unsharedIds.has(userId));
   if (lateIds.length === 0) return;
+  const counted = { ...stored, splits: evenSplits(expense.amount_cents, [...sharingIds, ...lateIds]) };
   const participantIds = [...new Set([...involvedUserIds(stored), ...lateIds])];
-  if (expense.group_id) await lockGroupLedgers(client, [expense.group_id]);
-  else await lockParticipantLedgers(client, participantIds);
   try {
+    if (expense.group_id) {
+      await lockGroupLedgers(client, [expense.group_id]);
+      await assertGroupActive(expense.group_id, client);
+      await assertFormerMembersUnmoved(
+        expense.group_id,
+        expenseNetChanges(storedAmounts(expense.id, children), writtenAmounts(counted)),
+        split.host_id,
+        client,
+      );
+    } else {
+      await lockParticipantLedgers(client, participantIds);
+    }
     await assertRoomInLedgers({ currency: expense.currency, amountCents: expense.amount_cents, participantIds }, split.host_id, client);
-  } catch {
-    return;
+  } catch (refusal) {
+    if (refusal instanceof UsecaseError) return;
+    throw refusal;
   }
-  const specs = [...sharing, ...lateIds].map((userId) => ({ userId, amountCents: 0, percentBp: 0, shares: 0 }));
-  await replaceExpense(expense.id, { ...stored, splits: computeSplits("equal", expense.amount_cents, specs) }, split.host_id, client);
+  await replaceExpense(expense.id, counted, split.host_id, client);
 }
 
 /**

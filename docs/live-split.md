@@ -35,13 +35,22 @@ of splitting, any number of people who paid, and nobody has to settle.
 - **Nothing stops the first press.** A half-filled form is saved as it stands. With
   no amount yet the bill is simply at zero, a blank name becomes "Receipt", a line
   with no price waits, and half-typed amounts start as an even split. One that is
-  never filled in is removed when the split ends.
+  never filled in is removed when the split ends, and shows in nobody's list.
 - **Joining adds you and moves no money.** You are on the expense straight away
   with nothing to pay, so nobody's typing is disturbed by a join. On an even split
-  you share from the next save. That is what the two avatar states mean: joined, and
-  counted.
-- **Nobody gets a free meal.** If nobody saves after you join, an even split counts
-  you when it ends. If somebody saved and left you unticked, you stay off it.
+  an open form ticks you as soon as it sees you, and you share from the next save.
+  That is what the two avatar states mean: joined, and counted.
+- **Nobody gets a free meal.** A save from a form that had not seen you yet counts
+  you on an even split, and so does the end of the split if nobody saved after you
+  joined. Only somebody who saw you and left you unticked takes you off it.
+- **Starting a split does not put you on the bill.** Whoever started it can stay off
+  a bill they are not on, as they could before.
+- **Leaving a group leaves the split.** Somebody who joined a group's bill and leaves
+  the group while a split runs drops out with nothing owed, and saves carry on. The end
+  of a split holds to what a save would: an archived group's bill, or a former
+  member whose balance would move, stays as it is.
+- **A block between two people stops nobody else.** The link refuses you only if
+  you have blocked, or been blocked by, whoever started it or somebody on the bill.
 - **What each person paid follows the total.** A total moves as people edit, so
   what was paid moves with it, keeping its proportions, on every kind of split. A
   bill's payers always add up: the save refuses anything else.
@@ -90,4 +99,4 @@ The sweep picks it up within 30 seconds. Drop the database when you are done.
 
 `expense/usecase/liveSplit/liveSplit.integration.test.ts` runs the whole session
 against real Postgres. `@haalkhata/shared/expense/live` and `merge` hold the pure
-rules and their tests, and each app tests its screen's tap queue in `useLiveSplit`.
+rules and their tests.

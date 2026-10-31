@@ -1,11 +1,12 @@
 /** Two people editing one expense at once: what merges, what conflicts, and that the money always reconciles. */
 
 import { describe, expect, it } from "vitest";
-import { sameExpense, type ExpenseState, type LineState } from "./expenseState";
+import { sameExpense, sameMoney, type ExpenseState, type LineState } from "./expenseState";
 import { mergeExpenseEdit } from "./mergeExpenseEdit";
 
 const SARA = "user-sara";
 const TOMAS = "user-tomas";
+const NOOR = "user-noor";
 const PRIYA = "user-priya";
 
 /**
@@ -373,6 +374,20 @@ describe("money that must still reconcile", () => {
     const filled = { ...empty, amountCents: 6000, owed: { [SARA]: 3000, [TOMAS]: 3000 } };
 
     expect(mergeExpenseEdit(empty, filled, empty, { live: true }).merged.payers).toEqual({ [SARA]: 6000 });
+  });
+
+  it("sees ticking somebody who joined an even split as moving the money", () => {
+    const even = { ...groceries, splitType: "equal", owed: { [SARA]: 4500, [TOMAS]: 4500, [NOOR]: 0 } };
+    const shared = { ...even, owed: { [SARA]: 3000, [TOMAS]: 3000, [NOOR]: 3000 } };
+
+    expect(sameMoney(even, shared)).toBe(false);
+    expect(mergeExpenseEdit(even, shared, even, { live: true }).merged.owed).toEqual(shared.owed);
+  });
+
+  it("outside a live split, leaves somebody at nothing on the bill", () => {
+    const exact = { ...groceries, splitType: "exact", owed: { [SARA]: 9000, [TOMAS]: 0 } };
+
+    expect(mergeExpenseEdit(exact, { ...exact, description: "Renamed" }, exact).merged.owed).toEqual({ [SARA]: 9000, [TOMAS]: 0 });
   });
 
   it("outside a live split, several people's typed amounts stay theirs to change", () => {

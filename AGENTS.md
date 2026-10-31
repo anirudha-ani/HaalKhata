@@ -452,13 +452,13 @@ with colocated tests. Mobile-specific rules:
   which the join page says first; on a one-off it befriends them with whoever
   started it and whoever paid) lands on the same edit form as a participant. They
   join with a split row at zero, so a join moves no money and disturbs nobody's
-  typing: `expenseStateOf` leaves zero rows out, and a save keeps them
-  (`keepJoinersOn`). `LiveBar` on the form and the bill shows everyone's avatar,
+  typing: while a split runs the merge ignores zero rows, and a save keeps them
+  (`keepJoinersOn`). Outside one, somebody at zero is on the bill like anyone else. `LiveBar` on the form and the bill shows everyone's avatar,
   joined or saved (`live_split_people.saved_at`), and pressing Save with nothing
   changed still counts. While one runs, what each person paid follows the total on
   every kind of split (`fitPayers`), and `mergedWrite` refuses payers that do not
   add up. A line with nobody on it counts against whoever paid (`unclaimedOnPayers`).
-  `closeLiveSplit` writes those lines to the payers, counts anyone who joined an
+  `closeLiveSplit` writes those lines to the payers, counts anyone a join put on an
   even split since the last save, takes everyone with nothing to pay off the bill,
   removes a bill never filled in, and announces the result once. Nothing is announced
   before that. See `docs/live-split.md`.
@@ -535,7 +535,8 @@ with colocated tests. Mobile-specific rules:
   merges one row into another (sign-up, phone verification or a link).
   `chk_users_can_sign_in` refuses a live row with no password, Google or
   Apple credential; the only credential-less rows are the "Deleted member"
-  stand-ins account deletion leaves. Invite links are `group`, `profile` or
+  stand-ins account deletion leaves, which stay on the bills they were on
+  (those stay editable) and join no others. Invite links are `group`, `profile` or
   `live`; a group link works for 7 days (`GROUP_INVITE_LINK_LIFETIME_DAYS` in shared)
   and then answers `FailedPrecondition`, which both join pages show as
   expired, with what to do.

@@ -118,6 +118,7 @@ describe("catching up with a save", () => {
       who: "Sara",
       byMe: false,
       held: [],
+      live: false,
     });
 
     expect([...caughtUp.parts]).toEqual(["expenseDate"]);
@@ -133,6 +134,7 @@ describe("catching up with a save", () => {
       who: "Sara",
       byMe: true,
       held: [],
+      live: false,
     });
 
     expect(caughtUp.note).toBe("");
@@ -147,6 +149,7 @@ describe("catching up with a save", () => {
       who: "Sara",
       byMe: false,
       held: [],
+      live: false,
     });
     const second = catchUpForm({
       base: { ...dinner, description: "Tea" },
@@ -155,9 +158,43 @@ describe("catching up with a save", () => {
       who: "Sara",
       byMe: false,
       held: first.conflicts,
+      live: false,
     });
 
     expect(second.conflicts.map((conflict) => editPartKey(conflict.edit))).toEqual(["description"]);
+  });
+});
+
+describe("catching up during a live split", () => {
+  const unclaimed = {
+    ...dinner,
+    items: [
+      { id: "pizza", name: "Pizza", quantity: 1, totalCents: 2000, assignments: [] },
+      { id: "beer", name: "Beer", quantity: 1, totalCents: 800, assignments: [] },
+    ],
+    amountCents: 2800,
+    taxCents: 0,
+    tipCents: 0,
+    splits: [{ userId: SARA, owedCents: 2800 }],
+    payers: [{ userId: SARA, amountCents: 2800 }],
+  };
+  const beerClaimed = {
+    ...unclaimed,
+    items: [unclaimed.items[0], { ...unclaimed.items[1], assignments: [{ userId: TOMAS, weight: 1 }] }],
+    splits: [{ userId: SARA, owedCents: 2000 }, { userId: TOMAS, owedCents: 800 }],
+  };
+
+  it("asks nothing about a line nobody has claimed yet", () => {
+    const form = { ...expenseStateOf(unclaimed) };
+    const caughtUp = catchUpForm({ base: unclaimed, form, latest: beerClaimed, who: "Tomas", byMe: false, held: [], live: true });
+    expect(caughtUp.conflicts).toEqual([]);
+  });
+
+  it("asks nothing when somebody joins with nothing to pay", () => {
+    const form = { ...expenseStateOf(dinner), amountCents: 9000 };
+    const latest = { ...dinner, splits: [...dinner.splits, { userId: "user-noor", owedCents: 0 }] };
+    const caughtUp = catchUpForm({ base: dinner, form, latest, who: "Noor", byMe: false, held: [], live: true });
+    expect(caughtUp.conflicts).toEqual([]);
   });
 });
 

@@ -65,6 +65,7 @@ async function liveSplitMessage(expenseId: string) {
  *   not edit it.
  */
 export async function startLiveSplit(userId: string, expenseId: string) {
+  let removed = false;
   await withLedgerTransaction(async (client) => {
     await lockExpenseLedger(client, expenseId);
     const expense = await findExpenseById(expenseId, client);
@@ -75,9 +76,13 @@ export async function startLiveSplit(userId: string, expenseId: string) {
     const running = await findRunningLiveSplit(expenseId, client);
     if (running && !running.due) return;
     if (running) await closeLiveSplit(running, client);
+    // Closing removes a bill nobody ever filled in, and nothing can open on that.
+    removed = (await findExpenseById(expenseId, client))?.deleted_at != null;
+    if (removed) return;
     await openLiveSession(expenseId, userId, false, client);
     await bumpExpenseVersion(expenseId, client);
   });
+  if (removed) notFound("expense not found");
   return (await liveSplitMessage(expenseId))!;
 }
 
@@ -168,8 +173,10 @@ export async function joinLiveSplit(acceptor: UserRow, link: InviteLinkRow): Pro
   const expense = split ? await findExpenseById(split.expense_id) : undefined;
   if (!split || !expense || expense.deleted_at) throw new UsecaseError("failed_precondition", LIVE_SPLIT_ENDED_MESSAGE);
   const expenseId = expense.id;
-  const onExpense = storedParticipantIds(expense, await loadExpenseChildren([expenseId]));
-  if (await blockedPairExists([userId, split.host_id, ...onExpense])) notFound(DEAD_LINK_MESSAGE);
+  // Only a block involving whoever is joining counts: one between two people
+  // already here stops nobody else.
+  const alreadyHere = [split.host_id, ...storedParticipantIds(expense, await loadExpenseChildren([expenseId]))];
+  if (await blockedPairExists([userId, ...alreadyHere], alreadyHere)) notFound(DEAD_LINK_MESSAGE);
 
   if (expense.group_id && !(await isMember(expense.group_id, userId))) {
     const group = await findGroupById(expense.group_id);

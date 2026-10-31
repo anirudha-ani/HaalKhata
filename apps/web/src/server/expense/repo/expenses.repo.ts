@@ -348,7 +348,9 @@ export type ListedExpenseRow = ExpenseRow & { created_at_exact: string };
  * One page of an expense list, newest first: a group's expenses, the
  * one-off expenses two people share, or every expense a user is on. Deleted
  * rows are listed too, marked, so a payment made against one keeps the row
- * that explains it; balances read their own, deleted-excluded queries.
+ * that explains it; balances read their own, deleted-excluded queries. The one
+ * exception is a bill opened to the table and never filled in: it never had any
+ * money, and nobody was ever told about it, so nothing needs it explained.
  *
  * @param scope - Which expenses the list shows.
  * @param after - The last expense of the previous page; null for the first.
@@ -367,7 +369,7 @@ export async function listExpensePage(
     values.push(value);
     return `$${values.length}`;
   };
-  const conditions: string[] = [];
+  const conditions = ["NOT (expense.deleted_at IS NOT NULL AND expense.amount_cents = 0)"];
   if (scope.kind === "group") {
     conditions.push(`expense.group_id = ${placeholderFor(scope.groupId)}`);
   } else if (scope.kind === "withUser") {

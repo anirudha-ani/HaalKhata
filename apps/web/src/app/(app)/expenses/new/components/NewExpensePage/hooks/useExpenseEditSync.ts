@@ -35,7 +35,7 @@ interface EditSyncOptions {
    *
    * @returns The expense and the people it names.
    */
-  readLatest: () => Promise<{ expense?: Expense; users: readonly { id: string; name: string }[] }>;
+  readLatest: () => Promise<{ expense?: Expense; users: readonly { id: string; name: string }[]; liveSplit?: unknown }>;
   /**
    * Reads the form as it stands.
    *
@@ -99,6 +99,7 @@ export function useExpenseEditSync(options: EditSyncOptions) {
       who: editor,
       byMe: latest.updatedBy === current.myId,
       held: conflictsRef.current,
+      live: response.liveSplit !== undefined,
     });
     baseRef.current = latest;
     latestRef.current = latest;
