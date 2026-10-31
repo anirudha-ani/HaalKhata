@@ -39,6 +39,7 @@ vi.mock("@/components/shell/Screen/Screen", () => ({
   Screen: ({ children }: { children: ReactNode }) => createElement("main", null, children),
 }));
 vi.mock("@/components/shell/DetailHeader/DetailHeader", () => ({ DetailHeader: () => null }));
+vi.mock("@/components/ui/Sheet/Sheet", () => ({ Sheet: () => null }));
 vi.mock("@/components/activity/ActivityList", () => ({
   ActivityList: ({ events }: { events: { id: string; message: string }[] }) =>
     createElement("ul", null, ...events.map((event) => createElement("li", { key: event.id }, event.message))),
