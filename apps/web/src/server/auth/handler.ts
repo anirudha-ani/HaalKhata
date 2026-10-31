@@ -150,8 +150,10 @@ export const authHandler: PlainServiceImpl<typeof AuthService> = {
 
   /** Ends the web session by expiring the session cookie and revoking the token. */
   async logOut(_request, handlerContext) {
-    await runUsecase(async () => auth.logOut(await requireUser(handlerContext)), handlerContext);
+    // First: a session revoked elsewhere is refused below, and that refusal
+    // must still take its dead cookie with it.
     clearSessionCookie(handlerContext);
+    await runUsecase(async () => auth.logOut(await requireUser(handlerContext)), handlerContext);
     return {};
   },
 

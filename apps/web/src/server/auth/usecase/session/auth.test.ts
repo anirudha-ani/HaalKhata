@@ -39,14 +39,15 @@ describe("auth tokens", () => {
     expect(tokenExpiresAt("not-a-token")).toBeNaN();
   });
 
-  it("has a seven-day absolute lifetime", () => {
+  it("lasts 400 days, so somebody who rarely opens the app stays signed in", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-08-28T00:00:00.000Z"));
     const token = createToken("user-456", 0);
 
-    vi.setSystemTime(new Date("2026-09-03T23:59:59.000Z"));
+    vi.setSystemTime(new Date(Date.UTC(2026, 7, 28 + 399)));
     expect(verifyToken(token)).toBe("user-456");
-    vi.setSystemTime(new Date("2026-09-04T00:00:00.000Z"));
+
+    vi.setSystemTime(new Date(Date.UTC(2026, 7, 28 + 400, 0, 0, 1)));
     expect(verifyToken(token)).toBeNull();
   });
 

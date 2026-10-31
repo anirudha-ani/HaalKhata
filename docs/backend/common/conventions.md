@@ -41,12 +41,14 @@ Two credential transports, one token format:
 session token can never validate as any other value signed with the same
 root secret (rate-limit keys, log fingerprints) or vice versa.
 
-- **Lifetime:** 7 days absolute (`TOKEN_LIFETIME_SECONDS`).
-- **Sliding renewal:** any authenticated RPC on a token past half its lifetime
+- **Lifetime:** 400 days absolute (`TOKEN_LIFETIME_SECONDS`), the most a browser
+  keeps a cookie. People open a bill splitter when there is a bill, which can be
+  months apart, so a session is meant to survive long gaps. There is no idle
+  timeout and no cap on how long a session can be renewed.
+- **Sliding renewal:** any authenticated RPC on a token more than a day old
   re-issues it — as a fresh cookie for cookie callers, or in the session-renewal
-  response header for bearer callers. Someone who opens the app at least weekly
-  is never signed out; an abandoned token still dies on schedule. `LogOut` is
-  exempt (renewal would race the cookie clear).
+  response header for bearer callers. The 400 days count from the last time the
+  app was opened. `LogOut` is exempt (renewal would race the cookie clear).
 - **Revocation:** the token embeds the user's `token_version`; `requireUser`
   compares it against the row on every request. `LogOut` bumps the version,
   revoking every outstanding token at once.
@@ -54,8 +56,11 @@ root secret (rate-limit keys, log fingerprints) or vice versa.
   in production; dev generates and persists one under `data/.secret`).
   `SESSION_SECRET_PREVIOUS` may hold the prior key during a planned rotation —
   verification checks both keys (all of them, in constant time, so timing does
-  not reveal which matched); issuance uses only the current one. Incident
-  rotation leaves it unset, invalidating every session at once.
+  not reveal which matched); issuance uses only the current one. A session moves
+  to the new key the next time its owner opens the app, so keep the old key for
+  the full 400 days to sign nobody out; removing it sooner signs out everyone who
+  has not been back since. Incident rotation leaves it unset, invalidating every
+  session at once.
 - **Bearer secrecy rule:** a browser never receives bearer material. Auth
   responses return `token: ""` to cookie clients — an HttpOnly cookie exists
   precisely so script cannot read the session, and echoing the token in JSON

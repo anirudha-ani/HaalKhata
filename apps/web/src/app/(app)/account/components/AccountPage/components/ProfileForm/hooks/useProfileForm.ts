@@ -2,10 +2,10 @@
 /** Profile form state: field drafts, validation, the updateProfile mutation, the phone code, and sign-out. */
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import type { User } from "@haalkhata/protogen/common/v1/common_pb";
 import { authClient, errorMessage, isRefusal } from "@/lib/api/connect";
+import { beginSignOut } from "@/lib/auth/signOut";
 import { useVerificationCode } from "@/lib/hooks/useVerificationCode";
 import { socialClient } from "@/lib/api/connect";
 import { queryKeys } from "@haalkhata/shared/api/queryKeys";
@@ -33,7 +33,6 @@ import { SAVED_BADGE_MS } from "../constants/profileForm";
  */
 export function useProfileForm(currentUser: User) {
   const queryClient = useQueryClient();
-  const router = useRouter();
   const [name, setName] = useState(currentUser.name);
   const [currency, setCurrency] = useState(currentUser.defaultCurrency || "USD");
   // Confirmation and failure are separate values, not one string: they are
@@ -173,13 +172,6 @@ export function useProfileForm(currentUser: User) {
     onError: (mutationError) => setError(errorMessage(mutationError)),
   });
 
-  /** Ends the session, clears every cached query, and returns to the login page. */
-  const signOut = async () => {
-    await authClient.logOut({});
-    queryClient.clear();
-    router.push("/login");
-  };
-
   return {
     name,
     setName,
@@ -257,6 +249,6 @@ export function useProfileForm(currentUser: User) {
     },
     isSaving:
       save.isPending || verifyPhone.isPending || resendCode.isPending,
-    signOut,
+    signOut: beginSignOut,
   };
 }

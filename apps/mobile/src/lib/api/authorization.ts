@@ -11,8 +11,8 @@ import { clearSession, sessionRevision, sessionToken, setSessionToken } from "./
 
 /**
  * Attaches the bearer token to every RPC, stores the renewed token the server
- * hands back once a session is past half its lifetime (so regular use never
- * hits the absolute expiry), and signs the app out locally when the server
+ * hands back once a session is a day old (so its lifetime counts from the last
+ * time the app was opened), and signs the app out locally when the server
  * reports the token is no longer valid (revoked or expired), so the auth gate
  * returns the user to the login screen.
  */

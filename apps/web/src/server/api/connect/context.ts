@@ -73,12 +73,12 @@ export function sessionTokenVersion(handlerContext: HandlerContext): number {
 }
 
 /**
- * Re-issues a session that has used up more than half its lifetime, so a
- * person who keeps using the app is never signed out by the absolute token
- * limit — only by inactivity or by signing out. The fresh token travels the
- * way the old one arrived: a cookie for the browser, a response header the
- * mobile transport stores. Sign-out is skipped, or the renewal would race the
- * cookie clear and the mobile token delete.
+ * Re-issues a session once it is a day old, so its lifetime counts from the
+ * last time the person opened the app, and only a very long absence or
+ * signing out ends it. The fresh token travels the way the old one arrived: a
+ * cookie for the browser, a response header the mobile transport stores.
+ * Sign-out is skipped, or the renewal would race the cookie clear and the
+ * mobile token delete.
  *
  * @param handlerContext - Connect handler context for the current request.
  * @param token - The verified token the request arrived with.

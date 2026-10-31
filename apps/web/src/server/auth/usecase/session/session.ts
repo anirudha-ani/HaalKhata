@@ -101,8 +101,10 @@ function secret(): Buffer {
  * The previous signing key, kept for verification only while a rotation is
  * in flight. Set SESSION_SECRET_PREVIOUS (or _FILE) to the old key when
  * changing SESSION_SECRET and tokens issued under it stay valid until they
- * expire; unset it afterwards. Incident rotation leaves it unset, which
- * invalidates every session at once as before.
+ * expire. A session moves to the new key the next time its owner opens the
+ * app, and people can go months between bills, so unsetting it sooner than
+ * the session lifetime signs out everyone who has not been back. Incident
+ * rotation leaves it unset, which invalidates every session at once as before.
  *
  * @returns The decoded previous key, or null when none is configured.
  */

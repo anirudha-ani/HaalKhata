@@ -5,18 +5,22 @@ import { parsePhoneNumberFromString } from "libphonenumber-js";
 import { MAX_USER_NAME_LENGTH } from "@haalkhata/shared/text/limits";
 
 /**
- * Absolute lifetime of an issued browser or mobile session token (seven days).
- * Sign-out can revoke it sooner through the user's token version.
+ * Absolute lifetime of an issued browser or mobile session token: 400 days,
+ * the most a browser keeps a cookie. People open a bill splitter when there is
+ * a bill, which can be months apart, and being asked to sign in again is what
+ * stops them coming back. Signing out revokes it at once, through the user's
+ * token version.
  */
-export const TOKEN_LIFETIME_SECONDS = 60 * 60 * 24 * 7;
+export const TOKEN_LIFETIME_SECONDS = 60 * 60 * 24 * 400;
 
 /**
  * Remaining lifetime below which an authenticated request re-issues the
- * session. Half the lifetime: a person who opens the app at least weekly
- * stays signed in indefinitely, while a token that stops being used still
- * dies on schedule.
+ * session: at most once a day. Renewing only past half the lifetime would let
+ * somebody who dropped in on day 100 and again on day 300 run out on day 400,
+ * though they had used it 100 days earlier. This way the 400 days count from
+ * the last time they opened the app.
  */
-export const TOKEN_RENEWAL_THRESHOLD_SECONDS = TOKEN_LIFETIME_SECONDS / 2;
+export const TOKEN_RENEWAL_THRESHOLD_SECONDS = TOKEN_LIFETIME_SECONDS - 60 * 60 * 24;
 
 /** Signed-session payload version; changing it deliberately invalidates legacy tokens. */
 export const SESSION_TOKEN_FORMAT = "v2";

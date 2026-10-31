@@ -18,9 +18,14 @@ import { SocialService } from "@haalkhata/protogen/social/v1/social_pb";
 import { PaymentMethodService } from "@haalkhata/protogen/payment/v1/payment_pb";
 import { PushService } from "@haalkhata/protogen/push/v1/push_pb";
 import { PersonalAnalyticsService } from "@haalkhata/protogen/personalanalytics/v1/personalanalytics_pb";
+import { sessionWatch } from "./sessionWatch";
 
 /** Connect-Web transport that routes every RPC through the app's `/api/connect` proxy. */
-export const transport = createConnectTransport({ baseUrl: "/api/connect", defaultTimeoutMs: API_TIMEOUT_MS });
+export const transport = createConnectTransport({
+  baseUrl: "/api/connect",
+  defaultTimeoutMs: API_TIMEOUT_MS,
+  interceptors: [sessionWatch],
+});
 
 /** Typed client for authentication RPCs (sign up, log in, session, log out). */
 export const authClient = plainClient(AuthService, createClient(AuthService, transport));

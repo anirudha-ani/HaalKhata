@@ -43,6 +43,6 @@ describe("session cookies", () => {
     const { COOKIE_MAX_AGE } = await import("./connect.constants");
 
     expect(COOKIE_MAX_AGE).toBe(TOKEN_LIFETIME_SECONDS);
-    expect(COOKIE_MAX_AGE).toBe(60 * 60 * 24 * 7);
+    expect(COOKIE_MAX_AGE).toBe(60 * 60 * 24 * 400);
   });
 });

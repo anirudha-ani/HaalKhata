@@ -315,8 +315,8 @@ with colocated tests. Mobile-specific rules:
   interceptor. Google sign-in uses `expo-auth-session`'s Google provider with
   the platform's native client id (`EXPO_PUBLIC_GOOGLE_{ANDROID,IOS}_CLIENT_ID`
   at build time; the server accepts them through `GOOGLE_MOBILE_CLIENT_IDS`)
-  and the same server-issued nonce as the web. Sessions renew themselves: once a token is past half its
-  seven-day life, any authenticated RPC returns a fresh one (a cookie for
+  and the same server-issued nonce as the web. Sessions renew themselves: once a token is a day
+  old, any authenticated RPC returns a fresh one (a cookie for
   the browser, the `x-haalkhata-session` header for mobile, which the
   interceptor stores). `Code.Unauthenticated` clears the session; the `(app)/_layout`
   gate redirects to /login. The server's CSRF guard exempts bearer clients.
@@ -545,6 +545,17 @@ with colocated tests. Mobile-specific rules:
   `packages/shared/src/notifications/categories.ts` and the DB CHECK; until
   it has one it is never pushed. A push carries only `notificationId`,
   `link` and `recipientId` as data. See `docs/backend/push/push-service.md`.
+- **A session is meant to survive months of absence.** People open a bill
+  splitter when there is a bill, so a session lasts 400 days from the last time
+  the app was opened (`TOKEN_LIFETIME_SECONDS`, the most a browser keeps a
+  cookie). Do not add an idle timeout, a cap on renewal, or a rule that automatic
+  polling does not count as use. Because a session lasts this long, signing out
+  must really end it, which only the server can do (the cookie is `HttpOnly`):
+  the web takes the data off the screen at once through `SignOutGate`, keeps
+  asking until the server answers, and says so if it cannot. A refused session
+  anywhere inside the app goes the same way (`sessionWatch`), and every other
+  tab follows. Rotating `SESSION_SECRET` needs the old key kept for the same 400
+  days, or everyone who has not been back is signed out.
 - **Limiters are process-local** (`rateLimit.ts`, `phoneRateLimit.ts`): fine
   for one container, wrong for two replicas — see `docs/plan.txt` §28. Use
   the right table: `addressRateLimits` for a caller not signed in, keyed by
