@@ -180,7 +180,7 @@ describe("native invite landing", () => {
 
     expect(container.textContent).toContain("Signed in as Sam");
   });
-  it("lands on the live split after joining it", async () => {
+  it("lands on the bill's edit form after joining it", async () => {
     vi.mocked(socialClient.previewInviteLink).mockResolvedValue({
       ...previewOf({ kind: "live", inviterName: "Ari", memberCount: 2, expenseDescription: "Dinner", currency: "USD" }),
       totalCents: 4400,
@@ -189,7 +189,7 @@ describe("native invite landing", () => {
     await render();
     expect(container.textContent).toContain("Ari is splitting “Dinner” live");
     await click("Join the split");
-    expect(navigation.replace).toHaveBeenCalledExactlyOnceWith("/expenses/dinner/live");
+    expect(navigation.replace).toHaveBeenCalledExactlyOnceWith("/expenses/new?edit=dinner");
   });
   it("says a live split has ended, and what to do", async () => {
     vi.mocked(socialClient.previewInviteLink).mockRejectedValue(

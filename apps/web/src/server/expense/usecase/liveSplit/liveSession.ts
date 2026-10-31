@@ -1,13 +1,13 @@
 /** What the expense code needs to know of a live split: whether one is open, and how to open one inside an expense's own transaction. */
 
 import type { PoolClient } from "pg";
-import { LIVE_SPLIT_LINES_MESSAGE, LIVE_SPLIT_MINUTES } from "@haalkhata/shared/expense/live/live.constants";
-import { invalid } from "@/server/common/errors";
+import { LIVE_SPLIT_MINUTES } from "@haalkhata/shared/expense/live/live.constants";
 import {
   findRunningLiveSplit,
   insertLiveSplit,
   insertLiveSplitPerson,
   listLiveSplitPeople,
+  listLiveSplitSavers,
   type LiveSplitRow,
 } from "@/server/expense/repo/liveSplits.repo";
 import { insertLiveSplitLink } from "@/server/social/repo/inviteLinks.repo";
@@ -17,6 +17,8 @@ import { newInviteToken } from "@/server/social/usecase/inviteToken";
 export interface LiveSession {
   split: LiveSplitRow;
   peopleIds: string[];
+  /** Who has pressed Save since it opened. */
+  savedIds: string[];
 }
 
 /**
@@ -30,17 +32,11 @@ export interface LiveSession {
 export async function liveSessionOf(expenseId: string, client?: PoolClient): Promise<LiveSession | null> {
   const split = await findRunningLiveSplit(expenseId, client);
   if (!split || split.due) return null;
-  return { split, peopleIds: await listLiveSplitPeople(split.id, client) };
-}
-
-/**
- * Refuses an expense a live split cannot run on: it needs lines to claim.
- *
- * @param expense - The expense's split and lines.
- * @throws UsecaseError (invalid_argument) saying why.
- */
-export function assertCanSplitLive(expense: { splitType: string; items: readonly unknown[] }): void {
-  if (expense.splitType !== "itemized" || expense.items.length === 0) invalid(LIVE_SPLIT_LINES_MESSAGE);
+  return {
+    split,
+    peopleIds: await listLiveSplitPeople(split.id, client),
+    savedIds: await listLiveSplitSavers(split.id, client),
+  };
 }
 
 /**

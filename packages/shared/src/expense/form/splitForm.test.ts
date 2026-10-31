@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildItemsPayload,
   buildSplitSpecs,
-  canStartLiveSplit,
+  liveDraft,
   checkItemized,
   checkSplit,
   unclaimedUnlessPicked,
@@ -31,6 +31,15 @@ function draftItem(overrides: Partial<DraftLineItem> = {}): DraftLineItem {
     ...overrides,
   };
 }
+
+/**
+ * A draft line.
+ *
+ * @param total - Its price as typed.
+ * @param assignees - Who is on it.
+ * @returns The line.
+ */
+const draftRow = (total: string, assignees: Record<string, number>) => ({ key: total, name: "Line", total, assignees });
 
 describe("itemizedTotals", () => {
   it("sums items and adds tax and tip", () => {
@@ -217,20 +226,6 @@ describe("percentOfItems", () => {
 describe("starting a live split from a draft", () => {
   const SARA = "user-sara";
   const TOMAS = "user-tomas";
-  /**
-   * A draft line.
-   *
-   * @param total - Its price as typed.
-   * @param assignees - Who is on it.
-   * @returns The line.
-   */
-  const draftRow = (total: string, assignees: Record<string, number>) => ({ key: total, name: "Line", total, assignees });
-
-  it("needs priced lines, and nobody ticked", () => {
-    expect(canStartLiveSplit([draftRow("20.00", {})], "USD")).toBe(true);
-    expect(canStartLiveSplit([draftRow("", {})], "USD")).toBe(false);
-    expect(canStartLiveSplit([], "USD")).toBe(false);
-  });
 
   it("opens a line left on everyone with nobody on it, and keeps one narrowed down by hand", () => {
     const lines = unclaimedUnlessPicked(
@@ -239,5 +234,28 @@ describe("starting a live split from a draft", () => {
     );
 
     expect(lines.map((line) => line.assignees)).toEqual([{}, { [TOMAS]: 1 }]);
+  });
+});
+
+describe("liveDraft", () => {
+  const form = { description: "Dinner", isItemized: false, items: [], totalCents: 4800, taxCents: 0, tipCents: 0, currency: "USD" };
+
+  it("takes a form as it stands", () => {
+    expect(liveDraft(form)).toEqual({ description: "Dinner", totalCents: 4800, lines: [] });
+  });
+
+  it("needs nothing filled in", () => {
+    expect(liveDraft({ ...form, description: "  ", totalCents: null })).toEqual({ description: "Receipt", totalCents: 0, lines: [] });
+  });
+
+  it("leaves out a line with no price, and counts the rest", () => {
+    const priced = draftRow("20.00", {});
+    const draft = liveDraft({ ...form, isItemized: true, items: [priced, draftRow("", {})], taxCents: 150 });
+    expect(draft.lines).toEqual([priced]);
+    expect(draft.totalCents).toBe(2150);
+  });
+
+  it("saves tax on no lines as nothing", () => {
+    expect(liveDraft({ ...form, isItemized: true, items: [draftRow("", {})], taxCents: 150 }).totalCents).toBe(0);
   });
 });

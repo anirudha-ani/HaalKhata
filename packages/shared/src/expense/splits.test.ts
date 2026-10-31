@@ -3,7 +3,6 @@
 import { describe, expect, it } from "vitest";
 import { allocate } from "./allocate";
 import { MAX_ASSIGNMENT_WEIGHT } from "./live/live.constants";
-import { lineShareCents } from "./live/liveEdits";
 import { SplitError, computeItemizedSplits, computeSplits, itemShareCents, payerWeights, unclaimedOnPayers } from "./splits";
 
 const sumOwedCents = (splits: { owedCents: number }[]) =>
@@ -291,11 +290,5 @@ describe("an item's odd cent", () => {
     });
 
     expect(computeItemizedSplits([portions("ana", "ben")], 0, 0).splits).toEqual(computeItemizedSplits([portions("ben", "ana")], 0, 0).splits);
-  });
-
-  it("agrees with what a live split shows for the same line", () => {
-    const line = { id: "tea", name: "Tea", quantity: 1, totalCents: 101, shares: { ben: 1, ana: 1 } };
-
-    expect(lineShareCents(line, "ana")).toBe(itemShareCents(assignedTo("ben", "ana"), "ana"));
   });
 });

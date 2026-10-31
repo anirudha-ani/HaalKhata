@@ -48,6 +48,13 @@ interface EditSyncOptions {
    * @param taken - What to take.
    */
   takeIn: (taken: TakenChanges) => void;
+  /**
+   * Puts everyone on the saved expense on the form, for whoever joined a live
+   * split since it opened.
+   *
+   * @param userIds - Who is on it.
+   */
+  addPeople: (userIds: string[]) => void;
 }
 
 /**
@@ -102,6 +109,7 @@ export function useExpenseEditSync(options: EditSyncOptions) {
     setNote(caughtUp.note);
     setConflicts(caughtUp.conflicts);
     if (caughtUp.parts.size > 0) current.takeIn({ parts: caughtUp.parts, merged: caughtUp.merged, latest });
+    current.addPeople(latest.splits.map((split) => split.userId));
   }, []);
 
   useEffect(() => {

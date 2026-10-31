@@ -64,7 +64,7 @@ export function useJoinAPI(token: string) {
         return;
       }
       if (result.expenseId) {
-        router.replace(`/expenses/${result.expenseId}/live`);
+        router.replace(`/expenses/new?edit=${result.expenseId}`);
         return;
       }
       router.replace(result.groupId ? `/groups/${result.groupId}` : "/friends");

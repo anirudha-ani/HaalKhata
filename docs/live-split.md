@@ -1,72 +1,61 @@
 # Live split
 
-Scan a receipt or type its lines, then open it to the whole table for 30
-minutes. Everyone joins through a link, claims what they had and fixes the bill
-together. Nobody's phone buzzes while that happens. When it ends, everyone on the
-expense hears what they owe, once.
+Start an expense, press **Split live**, and share it with the table. It is the
+normal expense form, opened to everyone: there is no separate screen. Anyone with
+the link joins the expense and gets the same full edit as you for 30 minutes, and
+everyone can see who has joined and who has saved.
 
-It is an ordinary bill with a way to join on the spot, so it asks nothing a bill
-would not. Any number of people can have paid, the normal Edit form works
-throughout, and nobody has to settle: the bill stays in everyone's balances for
-as long as they like.
+It is an ordinary bill with a way in, so it asks nothing a bill would not: any way
+of splitting, any number of people who paid, and nobody has to settle.
 
 ## What people see
 
-1. On the expense form, in Itemized, **Split live with the table** saves the bill
-   and opens it. Any itemized expense has **Split live** on its own page too, so
-   anyone on the bill can open it again after it ends.
-2. **Invite** shows the link, a QR code and the share sheet.
-3. The link opens the join page, which names the bill and its total. Joining needs
-   an account: anyone new signs up and comes back here. On a group's bill the page
-   says that joining also joins the group.
-4. Each line has a chip per person. Tapping one puts them on the line or takes
-   them off, for yourself or anyone else. Two people on a line share it. Anyone can
-   correct a line, add one, remove one, or set the tax and tip.
-5. **Paid by** lists who paid. If you put a card down too, tap your name under
-   **Also paid** and enter what it was: the others' amounts adjust so the bill still
-   adds up. Enter the whole bill and you take it over, which is also how to fix a
-   bill that named the wrong person. Anyone can do this for anyone.
-6. The screen shows your share of the bill and what nobody has claimed. **Settle**
-   sits beside each person you owe, for now or for later. Once you have paid it says
-   your share is settled. Whoever paid more than their share sees what they covered
-   for others.
-7. **Edit** on the expense's page opens the normal form at any time, for anything
-   the live screen does not do: a friend who is not at the table, unequal portions,
-   the date or the notes.
-8. It ends after 30 minutes, or when whoever started it taps **Finish now**.
+1. **Split live** is at the top of the expense form and first on a saved bill's
+   page. Press it at any point, even on an empty form: what is there is saved in the
+   background, and the QR code and invite link appear right away.
+2. Behind the invite is the same form, now with a bar along the top: how long is
+   left, everyone's avatar, **Invite** to show the link again, and **Finish now** for
+   whoever started it.
+3. The link opens the join page, which names the bill. Joining needs an account:
+   anyone new signs up and comes back here. On a group's bill the page says that
+   joining also joins the group.
+4. Whoever joins lands on the same edit form, on the bill as a participant. They
+   can change anything: lines, amounts, who paid, who is on it, the receipt.
+5. Each avatar shows a state. **Joined** is faded in a dashed ring. **Saved** has a
+   solid ring and a tick. Everyone sees the same thing, on the form and on the bill's
+   page, within a few seconds and without reloading.
+6. **Save** works as it always does, and merges: two people can save the same bill.
+   What somebody saves reaches every open form with a note saying who changed what,
+   and only a part two people changed differently asks to keep one.
+7. It ends after 30 minutes, or at **Finish now**. Everyone on the bill then hears
+   what they owe, once.
 
 ## The rules, and why
 
-- **The ledger is right at every moment.** Each tap is an ordinary saved edit. A
-  line nobody has claimed counts against whoever paid, in proportion to what each
-  paid, so before anyone claims anything nobody owes anybody, not even by a cent.
-- **Nothing is refused for not adding up.** A total moves as lines change, so what
-  each person paid moves with it, keeping their proportions. If a card's real
-  figure differs, change it in **Paid by**. Outside a live split several people's
-  typed amounts stay theirs to change, and a save that breaks them says so.
-- **Adding your card connects you.** On a one-off bill, whoever starts paying
-  becomes friends with everyone on it, because a debt now runs between them and a
-  friendship is what lets them settle it.
-- **A debt runs to particular people.** With several payers each person owes
-  whichever payers the ledger's rule names, which is why Settle sits beside each
-  payer instead of under the total.
-- **The balance is read when it can have changed.** Every tap at the table rereads
-  the bill on every phone, so who you still owe is its own read (`ListOwedPeople`).
-  It runs only for somebody who owes on the bill, when that debt changes or a
-  payment is recorded. Until it answers, or if it fails, whoever the bill says you
-  owe stays owed, so nobody is told they are settled when they are not.
-- **One announcement.** Nothing reaches the feed or anyone's bell while it runs.
-  At the end the result goes out once: as a new expense if the split created it,
-  as an edit if it changed one, and not at all if nothing changed.
-- **The end moves no money.** Lines nobody claimed are written to those who paid,
-  leaving an ordinary expense that the normal form can edit.
-- **Who is in it is not kept.** `live_split_people` gives somebody with no share yet
-  access while it runs, and is deleted when it ends. Anyone who claimed nothing
-  loses access then.
-- **Settle covers the balance, not the bill.** The figure on the screen is your
-  share of this bill, and the Settle button uses the pair's normal balance in that
-  scope. If you already owed that person, or have already paid part of it, the
-  dialog lists what is really owed. You can change the amount there.
+- **Nothing stops the first press.** A half-filled form is saved as it stands. With
+  no amount yet the bill is simply at zero, a blank name becomes "Receipt", a line
+  with no price waits, and half-typed amounts start as an even split. One that is
+  never filled in is removed when the split ends.
+- **Joining adds you and moves no money.** You are on the expense straight away
+  with nothing to pay, so nobody's typing is disturbed by a join. On an even split
+  you share from the next save. That is what the two avatar states mean: joined, and
+  counted.
+- **Nobody gets a free meal.** If nobody saves after you join, an even split counts
+  you when it ends. If somebody saved and left you unticked, you stay off it.
+- **What each person paid follows the total.** A total moves as people edit, so
+  what was paid moves with it, keeping its proportions, on every kind of split. A
+  bill's payers always add up: the save refuses anything else.
+- **Lines may be unclaimed.** While a split runs, a line nobody is on counts against
+  whoever paid, so the ledger is exact at every moment. When it ends those lines stay
+  with whoever paid, and everyone left with nothing to pay comes off the bill.
+- **One announcement.** Nothing reaches the feed or anyone's bell while it runs. At
+  the end the result goes out once: as a new expense if the split created it, as an
+  edit if anything changed, and not at all if nothing did.
+- **Adding your card connects you.** On a one-off bill, joining connects you with
+  whoever started it and whoever paid, and whoever starts paying becomes friends with
+  everyone on it, because a friendship is what lets them settle.
+- **Who was in it is not kept.** `live_split_people` holds who joined and when they
+  saved, for the avatars, and goes when the split ends.
 
 ## Run it locally
 
@@ -80,11 +69,12 @@ DATABASE_URL=postgres://haalkhata:change-me@127.0.0.1:5432/hk_live \
   node scripts/next.mjs dev --turbopack -H 127.0.0.1 -p 3112
 ```
 
-1. As the first person, add an expense, pick **Itemized**, add lines, then
-   **Split live with the table**.
+1. As the first person, open **Add expense** and press **Split live** at the top.
+   The invite appears with the bill saved behind it.
 2. Open **Invite** and open the link as the others, swapping the shown host for
    `http://127.0.0.1:3112`.
-3. Tap chips on two screens at once. Each sees the other's taps within 3 seconds.
+3. Each person lands on the edit form. Save on one, and within 3 seconds the other
+   sees their avatar turn saved and their change arrive in the form.
 4. Tap **Finish now** and check the bell on the other accounts.
 
 To see one end by itself without waiting 30 minutes:

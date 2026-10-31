@@ -8,6 +8,7 @@ import { ErrorAlert } from "@/components/ui/ErrorAlert/ErrorAlert";
 import { SHOW_EARLIER_COMMENTS_LABEL } from "@haalkhata/shared/api/paging";
 import { Avatar } from "@/components/ui/Avatar/Avatar";
 import { AvatarStack } from "@/components/ui/AvatarStack/AvatarStack";
+import { LiveBar } from "@/components/expense/LiveBar/LiveBar";
 import { PersonLink } from "@/components/people/PersonLink/PersonLink";
 import { settledStatus } from "@haalkhata/shared/expense/settledStatus";
 import { Modal } from "@/components/ui/Modal/Modal";
@@ -172,26 +173,18 @@ export function ExpenseDetailPage({ expenseId }: { expenseId: string }) {
       ) : null}
 
       {liveSplit ? (
-        <Link
-          href={`/expenses/${expense.id}/live`}
-          className="flex items-center gap-2 rounded-2xl border border-brand-200 bg-brand-50 px-4 py-3 text-sm font-semibold text-brand-700"
-        >
-          <Radio className="h-4 w-4 shrink-0" />
-          <span className="min-w-0 flex-1">Everyone is splitting this live. Open it to claim what you had.</span>
-        </Link>
+        <LiveBar
+          expenseId={expense.id}
+          description={expense.description}
+          liveSplit={liveSplit}
+          users={expenseDetail.detail?.users ?? []}
+          meId={meId ?? ""}
+        />
       ) : null}
 
       {isParticipant && !isDeleted && !isArchived && (canEdit || canDelete) ? (
         <div className="flex flex-wrap gap-2">
-          {canEdit ? (
-            <Link
-              href={`/expenses/new?edit=${expense.id}`}
-              className="flex items-center gap-1.5 rounded-lg border border-line bg-card px-3 py-2 text-xs font-semibold text-ink-soft hover:border-brand-200"
-            >
-              <Pencil className="h-3.5 w-3.5" /> Edit
-            </Link>
-          ) : null}
-          {canEdit && !liveSplit && expense.items.length > 0 ? (
+          {canEdit && !liveSplit ? (
             <button
               type="button"
               disabled={expenseDetail.isStartingLive}
@@ -200,6 +193,14 @@ export function ExpenseDetailPage({ expenseId }: { expenseId: string }) {
             >
               <Radio className="h-3.5 w-3.5" /> Split live
             </button>
+          ) : null}
+          {canEdit ? (
+            <Link
+              href={`/expenses/new?edit=${expense.id}`}
+              className="flex items-center gap-1.5 rounded-lg border border-line bg-card px-3 py-2 text-xs font-semibold text-ink-soft hover:border-brand-200"
+            >
+              <Pencil className="h-3.5 w-3.5" /> Edit
+            </Link>
           ) : null}
           {canDelete ? (
             <button

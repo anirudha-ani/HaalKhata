@@ -10,7 +10,6 @@
 
 import type { UserRow } from "@/server/auth/repo/users.repo";
 import { findUserById } from "@/server/auth/repo/users.repo";
-import { snapshot } from "@/server/common/db/db";
 import { denied, invalid, notFound, UsecaseError } from "@/server/common/errors";
 import { lockExpenseLedger, lockParticipantLedgers, withLedgerTransaction } from "@/server/common/ledger/ledgerLocks";
 import { logError } from "@/server/common/logger";
@@ -22,8 +21,10 @@ import {
   findLiveSplitById,
   findRunningLiveSplit,
   insertLiveSplitPerson,
+  insertUnsharedPerson,
   listDueLiveSplitExpenses,
   listLiveSplitPeople,
+  markLiveSplitChanged,
 } from "@/server/expense/repo/liveSplits.repo";
 import { findGroupById, isMember } from "@/server/group/repo/groups.repo";
 import { assertGroupActive } from "@/server/group/usecase/groupArchive";
@@ -32,9 +33,8 @@ import { insertFriendships } from "@/server/social/repo/friendships.repo";
 import type { InviteLinkRow } from "@/server/social/repo/inviteLinks.repo";
 import { DEAD_LINK_MESSAGE } from "@/server/social/social.constants";
 import { joinGroupThroughLink } from "@/server/social/usecase/groupLinkJoin";
-import { oneOffNetsWith, peopleOwedInGroup } from "../balance.usecase";
-import { assertCanEdit, assertCanTouch, closeLiveSplit, moneyParticipantIds, storedParticipantIds } from "../expense.usecase";
-import { assertCanSplitLive, liveSessionOf, openLiveSession } from "./liveSession";
+import { assertCanEdit, closeLiveSplit, storedParticipantIds } from "../expense.usecase";
+import { liveSessionOf, openLiveSession } from "./liveSession";
 
 /**
  * A running split as the API speaks it.
@@ -50,18 +50,19 @@ async function liveSplitMessage(expenseId: string) {
     hostId: session.split.host_id,
     endsAt: session.split.ends_at,
     peopleIds: session.peopleIds,
+    savedIds: session.savedIds,
   };
 }
 
 /**
- * Opens an itemized expense for everyone at the table, or returns the split
- * already running on it. Anyone who may edit the expense may start one.
+ * Opens an expense for everyone at the table, or returns the split already
+ * running on it. Anyone who may edit the expense may start one.
  *
  * @param userId - Authenticated caller.
  * @param expenseId - The expense.
  * @returns The running split.
  * @throws UsecaseError when the expense is missing or deleted, the caller may
- *   not edit it, or a live split cannot run on it.
+ *   not edit it.
  */
 export async function startLiveSplit(userId: string, expenseId: string) {
   await withLedgerTransaction(async (client) => {
@@ -71,10 +72,6 @@ export async function startLiveSplit(userId: string, expenseId: string) {
     const children = await loadExpenseChildren([expenseId], client);
     await assertCanEdit(userId, expense, children, client);
     if (expense.group_id) await assertGroupActive(expense.group_id, client);
-    assertCanSplitLive({
-      splitType: expense.split_type,
-      items: children.items.get(expenseId) ?? [],
-    });
     const running = await findRunningLiveSplit(expenseId, client);
     if (running && !running.due) return;
     if (running) await closeLiveSplit(running, client);
@@ -123,30 +120,6 @@ export async function finishDueLiveSplits(): Promise<number> {
     }
   }
   return finished;
-}
-
-/**
- * Everyone a person still owes in an expense's scope and currency, by the
- * balance: what a bill's Settle buttons need, since a bill alone cannot say
- * who has been paid.
- *
- * @param userId - Authenticated caller; must be allowed to read the expense.
- * @param expenseId - The expense.
- * @returns The people.
- * @throws UsecaseError when the expense is missing or the caller lacks access.
- */
-export async function listOwedPeople(userId: string, expenseId: string) {
-  const expense = await findExpenseById(expenseId);
-  if (!expense) notFound("expense not found");
-  await assertCanTouch(userId, expense);
-  const groupId = expense.group_id;
-  const userIds = await snapshot(async (client) => {
-    if (groupId) return peopleOwedInGroup(userId, groupId, expense.currency, client);
-    const children = await loadExpenseChildren([expenseId], client, false);
-    const nets = await oneOffNetsWith(userId, moneyParticipantIds(expenseId, children), client);
-    return [...nets].filter(([, cents]) => (cents.get(expense.currency) ?? 0) < 0).map(([personId]) => personId);
-  });
-  return { userIds };
 }
 
 /**
@@ -217,6 +190,8 @@ export async function joinLiveSplit(acceptor: UserRow, link: InviteLinkRow): Pro
       await insertFriendships(userId, [split.host_id, ...payerIds], client);
     }
     await insertLiveSplitPerson(split.id, userId, client);
+    await insertUnsharedPerson(expenseId, userId, client);
+    await markLiveSplitChanged(split.id, client);
     await bumpExpenseVersion(expenseId, client);
   });
   return expenseId;

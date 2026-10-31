@@ -18,6 +18,7 @@ import { GroupStatus } from "@haalkhata/shared/group/status";
 import { groupsByStatus } from "@haalkhata/shared/group/archiving";
 import { MONEY_KEYS, queryKeys } from "@haalkhata/shared/api/queryKeys";
 import { EXPENSE_EDIT_CHECK_INTERVAL_MS } from "@haalkhata/shared/expense/merge/merge.constants";
+import { LIVE_SPLIT_CHECK_INTERVAL_MS } from "@haalkhata/shared/expense/live/live.constants";
 import { base64ToBytes } from "@/lib/encoding/encoding";
 import { offerPushExplainer } from "@/lib/push/pushStore";
 
@@ -69,7 +70,7 @@ export function useNewExpenseAPI(editExpenseId: string) {
     queryKey: queryKeys.expenseVersion(editExpenseId),
     queryFn: () => expenseClient.getExpenseVersion({ expenseId: editExpenseId }),
     enabled: editExpenseId !== "",
-    refetchInterval: EXPENSE_EDIT_CHECK_INTERVAL_MS,
+    refetchInterval: editingQuery.data?.liveSplit ? LIVE_SPLIT_CHECK_INTERVAL_MS : EXPENSE_EDIT_CHECK_INTERVAL_MS,
   });
 
   /**
@@ -99,6 +100,10 @@ export function useNewExpenseAPI(editExpenseId: string) {
       // add, change or settle this with you.
       void offerPushExplainer();
     },
+  });
+  const startLive = useMutation({
+    mutationFn: () => expenseClient.startLiveSplit({ expenseId: editExpenseId }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.expense(editExpenseId) }),
   });
   const update = useMutation({
     mutationFn: (input: Parameters<typeof expenseClient.updateExpense>[0]) => expenseClient.updateExpense(input),
@@ -147,6 +152,7 @@ export function useNewExpenseAPI(editExpenseId: string) {
       friendsQuery.isLoading ||
       (editExpenseId !== "" && editingQuery.isLoading),
     create,
+    startLive,
     update,
     savedVersion: versionQuery.data?.version,
     versionCheckedAt: versionQuery.dataUpdatedAt,

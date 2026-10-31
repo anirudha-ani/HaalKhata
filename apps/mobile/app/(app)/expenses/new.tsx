@@ -1,4 +1,4 @@
-/** /expenses/new route: reads group/friend/edit params and renders NewExpenseScreen. */
+/** /expenses/new route: reads group/friend/edit/invite params and renders NewExpenseScreen. */
 
 import { useLocalSearchParams } from "expo-router";
 import { NewExpenseScreen } from "@/screens/newExpense/components/NewExpenseScreen/NewExpenseScreen";
@@ -9,12 +9,13 @@ import { NewExpenseScreen } from "@/screens/newExpense/components/NewExpenseScre
  * @returns The /expenses/new screen.
  */
 export default function NewExpense() {
-  const params = useLocalSearchParams<{ group?: string; friend?: string; edit?: string }>();
+  const params = useLocalSearchParams<{ group?: string; friend?: string; edit?: string; invite?: string }>();
   return (
     <NewExpenseScreen
       editExpenseId={params.edit ?? ""}
       initialFriendId={params.friend ?? ""}
       initialGroupId={params.group ?? ""}
+      openInvite={params.invite === "1"}
     />
   );
 }

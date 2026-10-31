@@ -2,6 +2,7 @@
 /** Expense detail data + actions: getExpense query, comment and delete mutations. */
 
 import { useRef, useState } from "react";
+import { LIVE_SPLIT_CHECK_INTERVAL_MS } from "@haalkhata/shared/expense/live/live.constants";
 import { useRouter } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { authClient, errorMessage, expenseClient } from "@/lib/api/connect";
@@ -40,6 +41,8 @@ export function useExpenseDetail(expenseId: string) {
   const detailQuery = useQuery({
     queryKey: queryKeys.expense(expenseId),
     queryFn: () => expenseClient.getExpense({ expenseId, commentLimit: COMMENT_PAGE_SIZE }),
+    // Who has joined and who has saved change by the moment while a split runs.
+    refetchInterval: (query) => (query.state.data?.liveSplit ? LIVE_SPLIT_CHECK_INTERVAL_MS : false),
   });
   const earlier = useEarlierCommentsAPI(expenseId, detailQuery.data?.commentsNextCursor ?? "");
 
@@ -64,10 +67,10 @@ export function useExpenseDetail(expenseId: string) {
   const startLive = useMutation({
     mutationFn: () => expenseClient.startLiveSplit({ expenseId }),
     onSuccess: async () => {
-      // The live page looks for changes only once it sees a split running, so
-      // it has to open on a copy that already has one.
+      // The form shows the invite once it sees a split running, so it has to
+      // open on a copy that already has one.
       await queryClient.invalidateQueries({ queryKey: queryKeys.expense(expenseId) });
-      router.push(`/expenses/${expenseId}/live`);
+      router.push(`/expenses/new?edit=${expenseId}&invite=1`);
     },
     onError: (mutationError) => setError(errorMessage(mutationError)),
   });

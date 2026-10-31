@@ -28,7 +28,7 @@ packages/shared/             @haalkhata/shared — hand-written TS used by BOTH 
   src/expense/                 allocate.ts + splits.ts — cent-exact split math,
                                run by the SERVER usecase and by the client for
                                its live per-person preview (one implementation);
-                               merge/ (editing together) and live/ (live splits)
+                               merge/ (editing together) and live/ (a live split's wording and clock)
   src/payment/                 payment methods: detail kinds, starting points,
                                the validator (server + both forms), the form's
                                reducer, payer ordering and formatting
@@ -442,26 +442,26 @@ with colocated tests. Mobile-specific rules:
   cents: an equal split gives its odd cent to whoever the form listed first. A
   form asks `GetExpenseVersion` every 10 s and folds in what it can
   (`useExpenseEditSync`, one per app, over the shared `catchUpForm`).
-- **A live split is an ordinary expense with the door open.** One itemized
-  expense, 30 minutes (`LIVE_SPLIT_MINUTES`), and it adds no rule the bill would
-  not have anyway: any number of people can have paid, the normal form still
-  edits it, and nobody has to settle. People come in through a `live` invite
-  link (accounts only, as ever; on a group's bill joining joins the group, which
-  the join page says first; on a one-off it befriends them with whoever started
-  it and whoever paid). Every tap is a merged `UpdateExpense` through `liveEdits`
-  in shared, sent one at a time. While one runs, what each person paid follows
-  the total (`fitPayers`), so nothing is refused for not adding up, and somebody
-  who starts paying is befriended with everyone on a one-off, or they could
-  never settle. Lines may have nobody on them only while one runs, and such a
-  line counts against whoever paid, by what each paid (`unclaimedOnPayers`), so
-  the ledger is exact at every moment and the end moves no money:
-  `closeLiveSplit` writes those lines to the payers and announces the result
-  once. Nothing is announced before that, so nobody's phone buzzes per tick.
-  `live_split_people` is what lets somebody with no share yet read and edit, and
-  is deleted when it ends. A split rereads `GetExpense` on every tap on every
-  phone, so nothing that reads a group's history belongs in it: who a person
-  still owes is `ListOwedPeople`, keyed on their own debt (`billDebts`). See
-  `docs/live-split.md`.
+- **A live split is an ordinary expense with the door open.** It is the normal
+  expense form, shared for 30 minutes (`LIVE_SPLIT_MINUTES`), and there is no
+  separate screen: do not add one, or any rule the bill would not have anyway.
+  **Split live** sits at the top of the form and first on a saved bill. Pressing
+  it saves whatever is there, an empty form included (`liveDraft`, and
+  `emptyBillAmounts` on the server), and the invite opens. Whoever follows the
+  `live` link (accounts only, as ever; on a group's bill joining joins the group,
+  which the join page says first; on a one-off it befriends them with whoever
+  started it and whoever paid) lands on the same edit form as a participant. They
+  join with a split row at zero, so a join moves no money and disturbs nobody's
+  typing: `expenseStateOf` leaves zero rows out, and a save keeps them
+  (`keepJoinersOn`). `LiveBar` on the form and the bill shows everyone's avatar,
+  joined or saved (`live_split_people.saved_at`), and pressing Save with nothing
+  changed still counts. While one runs, what each person paid follows the total on
+  every kind of split (`fitPayers`), and `mergedWrite` refuses payers that do not
+  add up. A line with nobody on it counts against whoever paid (`unclaimedOnPayers`).
+  `closeLiveSplit` writes those lines to the payers, counts anyone who joined an
+  even split since the last save, takes everyone with nothing to pay off the bill,
+  removes a bill never filled in, and announces the result once. Nothing is announced
+  before that. See `docs/live-split.md`.
 - **An expense never changes currency.** `updateExpense` keeps the saved
   currency, group expenses included, and refuses an edit naming another;
   the forms work in it when editing (`expenseFormCurrency` puts the saved

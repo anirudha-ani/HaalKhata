@@ -168,6 +168,22 @@ describe.skipIf(!reachable)("a live split, against Postgres", () => {
     return { id: created.id, token, saved: (await read(created.id)).expense! as Saved };
   };
 
+  /**
+   * Adds a person with no connection to anybody.
+   *
+   * @param name - What they are called.
+   * @returns Their id.
+   */
+  const stranger = async (name: string) => {
+    const userId = `user-${randomUUID()}`;
+    await database.query(
+      `INSERT INTO users (id, email, name, avatar_color, onboarded_at, google_sub)
+       VALUES ($1, $1 || '@example.com', $2, '#c73e2e', now(), 'google-' || $1)`,
+      [userId, name],
+    );
+    return userId;
+  };
+
   beforeAll(async () => {
     const admin = new Client({ connectionString: ADMIN_URL });
     await admin.connect();
@@ -271,7 +287,7 @@ describe.skipIf(!reachable)("a live split, against Postgres", () => {
 
     await expenses.updateExpense(TOMAS, id, claim(saved, TOMAS, "Pizza"), false, saved);
 
-    expect(await owed(id)).toEqual({ [SARA]: 1700, [TOMAS]: 2000 });
+    expect(await owed(id)).toEqual({ [SARA]: 1700, [TOMAS]: 2000, [PRIYA]: 0 });
     expect((await balances.netWithUser(SARA, TOMAS)).get("USD")).toBeGreaterThanOrEqual(2000);
     expect(await bell(id)).toEqual([]);
   });
@@ -420,33 +436,213 @@ describe.skipIf(!reachable)("a live split, against Postgres", () => {
     expect((await read(created.id)).liveSplit).toBeUndefined();
   });
 
-  it("refuses a bill it cannot run on", async () => {
-    await expect(expenses.createExpense(SARA, billRequest({
-      splitType: "equal",
-      items: [],
-      splitSpecs: [{ userId: SARA, amountCents: 0, percentBp: 0, shares: 0 }],
-    }))).rejects.toThrow(/needs a receipt/);
+  describe("on the ordinary form", () => {
+    /**
+     * A saved bill Sara paid, split evenly between her and Tomas.
+     *
+     * @param change - Changes to the request.
+     * @returns The saved bill.
+     */
+    const evenBill = (change: Record<string, unknown> = {}) =>
+      expenses.createExpense(SARA, billRequest({
+        splitType: "equal",
+        amountCents: 3000,
+        items: [],
+        taxCents: 0,
+        tipCents: 0,
+        startLiveSplit: false,
+        payers: [{ userId: SARA, amountCents: 3000 }],
+        splitSpecs: [SARA, TOMAS].map((userId) => ({ userId, amountCents: 0, percentBp: 0, shares: 0 })),
+        ...change,
+      }));
+
+    /**
+     * What saving the even split among some people sends, as the form does.
+     *
+     * @param saved - The bill as the form opened it.
+     * @param userIds - Who is ticked.
+     * @returns The request.
+     */
+    const evenSave = (saved: Saved, userIds: string[]) =>
+      editOf(saved, { items: [], splitSpecs: userIds.map((userId) => ({ userId, amountCents: 0, percentBp: 0, shares: 0 })) });
+
+    it("opens with nothing on it yet, and goes away if nothing ever is", async () => {
+      const created = await expenses.createExpense(SARA, billRequest({
+        description: "Receipt",
+        splitType: "equal",
+        amountCents: 0,
+        items: [],
+        taxCents: 0,
+        tipCents: 0,
+        payers: [{ userId: SARA, amountCents: 0 }],
+        splitSpecs: [],
+      }));
+      expect((await read(created.id)).liveSplit?.peopleIds).toEqual([SARA]);
+      expect(await owed(created.id)).toEqual({ [SARA]: 0 });
+
+      await live.finishLiveSplit(SARA, created.id);
+
+      const ended = await read(created.id);
+      expect(ended.expense?.deletedAt).not.toBe("");
+      expect((await bell(created.id)).length).toBe(0);
+    });
+
+    it("fills in like any bill once somebody saves real numbers", async () => {
+      const created = await expenses.createExpense(SARA, billRequest({
+        splitType: "equal", amountCents: 0, items: [], taxCents: 0, tipCents: 0,
+        payers: [{ userId: SARA, amountCents: 0 }], splitSpecs: [],
+      }));
+      const token = (await read(created.id)).liveSplit!.token;
+      await social.acceptInviteLink(TOMAS, token);
+      const opened = (await read(created.id)).expense! as Saved;
+
+      await expenses.updateExpense(TOMAS, created.id, editOf(opened, {
+        amountCents: 3000,
+        items: [],
+        payers: [{ userId: SARA, amountCents: 3000 }],
+        splitSpecs: [SARA, TOMAS].map((userId) => ({ userId, amountCents: 0, percentBp: 0, shares: 0 })),
+      }), false, opened);
+
+      expect(await owed(created.id)).toEqual({ [SARA]: 1500, [TOMAS]: 1500 });
+      expect((await read(created.id)).expense?.payers).toEqual([expect.objectContaining({ userId: SARA, amountCents: 3000 })]);
+      expect((await balances.netWithUser(SARA, TOMAS)).get("USD")).toBeGreaterThanOrEqual(1500);
+      await live.finishLiveSplit(SARA, created.id);
+      expect((await read(created.id)).expense?.deletedAt).toBe("");
+    });
+
+    it("runs on an even bill without changing how it is split", async () => {
+      const saved = await evenBill();
+      await live.startLiveSplit(SARA, saved.id);
+      const opened = await read(saved.id);
+      expect(opened.expense?.splitType).toBe("equal");
+      expect(opened.expense?.items).toEqual([]);
+      expect(await owed(saved.id)).toEqual({ [SARA]: 1500, [TOMAS]: 1500 });
+    });
+
+    it("puts whoever joins on the expense with nothing to pay, moving no money", async () => {
+      const saved = await evenBill();
+      const guest = await stranger("Noor");
+      const { token } = await live.startLiveSplit(SARA, saved.id);
+
+      await social.acceptInviteLink(guest, token);
+
+      expect(await owed(saved.id)).toEqual({ [SARA]: 1500, [TOMAS]: 1500, [guest]: 0 });
+      expect((await read(saved.id, guest)).liveSplit?.peopleIds).toEqual([SARA, guest]);
+    });
+
+    it("gives somebody who joined the same edit anyone has, and shows they saved", async () => {
+      const saved = await evenBill();
+      const guest = await stranger("Noor");
+      const { token } = await live.startLiveSplit(SARA, saved.id);
+      await social.acceptInviteLink(guest, token);
+      expect((await read(saved.id)).liveSplit?.savedIds).toEqual([]);
+      const opened = (await read(saved.id, guest)).expense! as Saved;
+
+      await expenses.updateExpense(guest, saved.id, evenSave(opened, [SARA, TOMAS, guest]), false, opened);
+
+      expect(await owed(saved.id)).toEqual({ [SARA]: 1000, [TOMAS]: 1000, [guest]: 1000 });
+      expect((await read(saved.id)).liveSplit?.savedIds).toEqual([guest]);
+    });
+
+    it("counts pressing Save with nothing to change as having saved", async () => {
+      const saved = await evenBill();
+      await live.startLiveSplit(SARA, saved.id);
+      const opened = (await read(saved.id)).expense! as Saved;
+      const before = opened.version;
+
+      await expenses.updateExpense(SARA, saved.id, evenSave(opened, [SARA, TOMAS]), false, opened);
+
+      const after = await read(saved.id);
+      expect(after.liveSplit?.savedIds).toEqual([SARA]);
+      expect(after.expense!.version).toBeGreaterThan(before);
+    });
+
+    it("does not let somebody joining disturb what another person is typing", async () => {
+      const saved = await evenBill();
+      const guest = await stranger("Noor");
+      const { token } = await live.startLiveSplit(SARA, saved.id);
+      const openedBeforeTheyJoined = (await read(saved.id)).expense! as Saved;
+      await social.acceptInviteLink(guest, token);
+
+      await expenses.updateExpense(SARA, saved.id, editOf(openedBeforeTheyJoined, {
+        amountCents: 4000,
+        items: [],
+        payers: [{ userId: SARA, amountCents: 4000 }],
+        splitSpecs: [SARA, TOMAS].map((userId) => ({ userId, amountCents: 0, percentBp: 0, shares: 0 })),
+      }), false, openedBeforeTheyJoined);
+
+      expect(await owed(saved.id)).toEqual({ [SARA]: 2000, [TOMAS]: 2000, [guest]: 0 });
+      expect((await read(saved.id)).expense?.payers).toEqual([expect.objectContaining({ userId: SARA, amountCents: 4000 })]);
+    });
+
+    it("keeps what each of several people paid adding up when the total moves", async () => {
+      const saved = await evenBill({ payers: [{ userId: SARA, amountCents: 2000 }, { userId: TOMAS, amountCents: 1000 }] });
+      await live.startLiveSplit(SARA, saved.id);
+      const opened = (await read(saved.id)).expense! as Saved;
+
+      await expenses.updateExpense(SARA, saved.id, editOf(opened, {
+        amountCents: 6000,
+        items: [],
+        splitSpecs: [SARA, TOMAS].map((userId) => ({ userId, amountCents: 0, percentBp: 0, shares: 0 })),
+        payers: [{ userId: SARA, amountCents: 4000 }, { userId: TOMAS, amountCents: 2000 }],
+      }), false, opened);
+
+      const paid = (await read(saved.id)).expense!.payers.reduce((total, payer) => total + payer.amountCents, 0);
+      expect(paid).toBe(6000);
+    });
+
+    it("counts whoever joined since the last save when it ends, so nobody gets a free meal", async () => {
+      const saved = await evenBill();
+      const guest = await stranger("Noor");
+      const { token } = await live.startLiveSplit(SARA, saved.id);
+      await social.acceptInviteLink(guest, token);
+
+      await live.finishLiveSplit(SARA, saved.id);
+
+      expect(Object.values(await owed(saved.id)).sort()).toEqual([1000, 1000, 1000]);
+      expect((await bell(saved.id)).map((notice) => notice.user_id)).toContain(guest);
+    });
+
+    it("leaves off anybody unticked after they joined", async () => {
+      const saved = await evenBill();
+      const guest = await stranger("Noor");
+      const { token } = await live.startLiveSplit(SARA, saved.id);
+      await social.acceptInviteLink(guest, token);
+      const opened = (await read(saved.id)).expense! as Saved;
+
+      await expenses.updateExpense(SARA, saved.id, editOf(opened, {
+        amountCents: 3001,
+        items: [],
+        payers: [{ userId: SARA, amountCents: 3001 }],
+        splitSpecs: [SARA, TOMAS].map((userId) => ({ userId, amountCents: 0, percentBp: 0, shares: 0 })),
+      }), false, opened);
+      await live.finishLiveSplit(SARA, saved.id);
+
+      expect(Object.keys(await owed(saved.id)).sort()).toEqual([SARA, TOMAS].sort());
+    });
+
+    it("takes somebody who ended with nothing to pay off an unevenly split bill", async () => {
+      const saved = await evenBill({
+        splitType: "exact",
+        splitSpecs: [
+          { userId: SARA, amountCents: 1000, percentBp: 0, shares: 0 },
+          { userId: TOMAS, amountCents: 2000, percentBp: 0, shares: 0 },
+        ],
+      });
+      const guest = await stranger("Noor");
+      const { token } = await live.startLiveSplit(SARA, saved.id);
+      await social.acceptInviteLink(guest, token);
+      expect(await owed(saved.id)).toEqual({ [SARA]: 1000, [TOMAS]: 2000, [guest]: 0 });
+
+      await live.finishLiveSplit(SARA, saved.id);
+
+      expect(await owed(saved.id)).toEqual({ [SARA]: 1000, [TOMAS]: 2000 });
+    });
   });
 
   describe("with more than one card", () => {
     /** Sara paid $20 and Tomas $17. */
     const twoCards = [{ userId: SARA, amountCents: 2000 }, { userId: TOMAS, amountCents: 1700 }];
-
-    /**
-     * Adds a person with no connection to anybody.
-     *
-     * @param name - What they are called.
-     * @returns Their id.
-     */
-    const stranger = async (name: string) => {
-      const userId = `user-${randomUUID()}`;
-      await database.query(
-        `INSERT INTO users (id, email, name, avatar_color, onboarded_at, google_sub)
-         VALUES ($1, $1 || '@example.com', $2, '#c73e2e', now(), 'google-' || $1)`,
-        [userId, name],
-      );
-      return userId;
-    };
 
     it("starts with several people having paid", async () => {
       const { id } = await openBill([TOMAS], { payers: twoCards });
@@ -516,46 +712,6 @@ describe.skipIf(!reachable)("a live split, against Postgres", () => {
         operationId: randomUUID(),
       } as never);
       expect((await balances.netWithUser(cardHolder, guest)).get("USD") ?? 0).toBe(0);
-    });
-
-    it("says who somebody still owes, person by person, as they pay each one", async () => {
-      const guest = await stranger("Lina");
-      const card = await stranger("Bo");
-      const { id, saved } = await openBill([guest, card]);
-      await expenses.updateExpense(card, id, editOf(saved, {
-        payers: [{ userId: SARA, amountCents: 2000 }, { userId: card, amountCents: 1700 }],
-      }), false, saved);
-      const carded = (await read(id)).expense! as Saved;
-      await expenses.updateExpense(guest, id, editOf(carded, {
-        items: carded.items.map((item) => ({ ...item, assignments: [{ userId: guest, weight: 1 }] })),
-      }), false, carded);
-      expect((await live.listOwedPeople(guest, id)).userIds.sort()).toEqual([SARA, card].sort());
-
-      await expenses.recordSettlement(guest, {
-        groupId: "",
-        toUserId: SARA,
-        amountCents: 2000,
-        currency: "USD",
-        method: "cash",
-        note: "",
-        operationId: randomUUID(),
-      } as never);
-
-      expect((await live.listOwedPeople(guest, id)).userIds).toEqual([card]);
-      expect((await read(id, guest)).settledForViewer).toBe(false);
-    });
-
-    it("reads a group's debts along the group's route", async () => {
-      const { id, saved } = await openBill([TOMAS], { groupId: FLAT });
-      await expenses.updateExpense(TOMAS, id, claim(saved, TOMAS, "Beer"), false, saved);
-
-      expect((await live.listOwedPeople(TOMAS, id)).userIds).toEqual([SARA]);
-    });
-
-    it("tells nobody who else a stranger to the expense owes", async () => {
-      const { id } = await openBill([TOMAS]);
-
-      await expect(live.listOwedPeople(LENA, id)).rejects.toMatchObject({ code: "permission_denied" });
     });
 
     it("brings a later joiner together with every payer", async () => {

@@ -21,10 +21,6 @@ service ExpenseService {
   // The one number an open edit form asks for on a timer: whether anyone has
   // saved a change since it last looked. Open to whoever may read the expense.
   rpc GetExpenseVersion(GetExpenseVersionRequest) returns (GetExpenseVersionResponse);
-  // Everyone the caller still owes in this expense's scope and currency. Its
-  // own call, not a field of GetExpense: a live split rereads the expense on
-  // every tap, and this only changes when the caller's own debt does.
-  rpc ListOwedPeople(ListOwedPeopleRequest) returns (ListOwedPeopleResponse);
   // Creator only. A soft delete: the expense stops counting toward every
   // balance but stays visible everywhere the ledger is shown, marked deleted
   // (Expense.deleted_at), and payments already recorded against it stay on
@@ -33,9 +29,7 @@ service ExpenseService {
   rpc DeleteExpense(DeleteExpenseRequest) returns (google.protobuf.Empty);
   // Opens an itemized expense for everyone at the table for 30 minutes: a link
   // anyone can join through, lines they claim for themselves, one summary at
-  // the end. Returns the one already running if there is one. Refuses an
-  // expense several people paid: lines nobody claims stay with whoever paid,
-  // and a total that moves has to stay theirs alone.
+  // the end. Returns the one already running if there is one.
   rpc StartLiveSplit(StartLiveSplitRequest) returns (LiveSplit);
   // Ends a live split early. Only whoever started it may; otherwise it ends by
   // itself. Lines nobody claimed stay with whoever paid, and everyone on the
@@ -148,8 +142,9 @@ message CreateExpenseRequest {
   // edit, so a retry neither saves nor announces it twice; app versions from
   // before edits carried one leave it empty.
   string operation_id = 14;
-  // Opens a live split with the new expense, so it can start with lines
-  // nobody has claimed. Ignored inside UpdateExpenseRequest.
+  // Opens a live split with the new expense, so it can start half filled in:
+  // with lines nobody has claimed, or with nothing on it at all. Ignored inside
+  // UpdateExpenseRequest.
   bool start_live_split = 15;
 }
 
@@ -163,6 +158,8 @@ message LiveSplit {
   string ends_at = 3;
   // Everyone who has joined, whoever started it included.
   repeated string people_ids = 4;
+  // Who among them has pressed Save, which their avatar shows.
+  repeated string saved_ids = 5;
 }
 
 message StartLiveSplitRequest {
@@ -238,17 +235,6 @@ message ListExpensesResponse {
   bool truncated = 4 [deprecated = true];
   // Pass back as `cursor` for the next, older page; empty at the oldest.
   string next_cursor = 5;
-}
-
-message ListOwedPeopleRequest {
-  string expense_id = 1;
-}
-
-message ListOwedPeopleResponse {
-  // By the balance rather than by this bill: paying one of several payers
-  // takes that person off, which settled_for_viewer, one answer for everybody
-  // on the expense, cannot say.
-  repeated string user_ids = 1;
 }
 
 message GetExpenseVersionRequest {

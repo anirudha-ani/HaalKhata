@@ -419,32 +419,6 @@ export async function listExpensesByGroups(groupIds: readonly string[], client?:
 }
 
 /**
- * One person's live expenses in a group, in one currency: all a pairwise
- * ledger needs to say who they owe, since a debt only comes from an expense
- * both people are on.
- *
- * @param groupId - The group.
- * @param userId - The person.
- * @param currency - The currency.
- * @param client - Snapshot or transaction client; omitted, the pool.
- * @returns Their expense rows.
- */
-export async function listGroupExpensesInvolving(
-  groupId: string,
-  userId: string,
-  currency: string,
-  client?: PoolClient,
-): Promise<ExpenseRow[]> {
-  return query<ExpenseRow>(
-    `SELECT expense.* FROM expenses expense
-      WHERE expense.group_id = $1 AND expense.currency = $3 AND expense.deleted_at IS NULL
-        AND ${expenseInvolvesSql("= $2")}`,
-    [groupId, userId, currency],
-    client,
-  );
-}
-
-/**
  * One-off (non-group) expenses where both users participate (payer or ower).
  *
  * @param firstUserId - One of the two participants.

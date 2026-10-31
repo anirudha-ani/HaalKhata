@@ -65,15 +65,18 @@ import {
 import {
   assignUnclaimedLines,
   bumpExpenseVersion,
+  deleteUnsharedPeople,
   findRunningLiveSplit,
   isInLiveSplit,
+  listJoinedSinceLastSave,
   listLiveSplitPeople,
   markLiveSplitChanged,
   markLiveSplitFinished,
+  markLiveSplitSaved,
   type LiveSplitRow,
 } from "@/server/expense/repo/liveSplits.repo";
 import { revokeLiveSplitLink } from "@/server/social/repo/inviteLinks.repo";
-import { assertCanSplitLive, liveSessionOf, openLiveSession } from "./liveSplit/liveSession";
+import { liveSessionOf, openLiveSession } from "./liveSplit/liveSession";
 import {
   expenseStateOf,
   sameExpense,
@@ -525,6 +528,25 @@ async function assertLockedOneOffParticipants(
 }
 
 /**
+ * What a bill opened to the table before anything is on it comes to: nothing,
+ * with everyone the form named on it.
+ *
+ * @param userId - Who opened it.
+ * @param request - The form as it stood.
+ * @returns The amounts to save.
+ */
+function emptyBillAmounts(userId: string, request: ExpenseInput): ExpenseAmounts {
+  const people = new Set([userId, ...request.splitSpecs.map((spec) => spec.userId), ...request.payers.map((payer) => payer.userId)]);
+  return {
+    amountCents: 0,
+    taxCents: 0,
+    tipCents: 0,
+    splits: [...people].map((personId) => ({ userId: personId, owedCents: 0 })),
+    items: [],
+  };
+}
+
+/**
  * Validates a create/update request and computes the authoritative repo write.
  *
  * The stages deliberately run in validation order: cheap shape checks first,
@@ -537,7 +559,8 @@ async function assertLockedOneOffParticipants(
  *   It is kept, group expenses included, and a request naming another is
  *   refused: its amounts were typed in that other currency's units.
  * @param live - What a live split changes: whether a line may have nobody on
- *   it, and who it has brought to the expense (null when none is running).
+ *   it, who it has brought to the expense (null when none is running), and
+ *   whether a bill just opened may have nothing on it yet.
  * @returns A fully validated `ExpenseWrite` ready for the repo layer.
  * @throws UsecaseError (invalid_argument / not_found / permission_denied) on
  *   any validation, existence, or membership failure; (failed_precondition)
@@ -548,7 +571,7 @@ async function buildExpenseWrite(
   request: ExpenseInput,
   existingIds: string[] = [],
   savedCurrency?: string,
-  live: { allowUnclaimed: boolean; people: readonly string[] | null } = { allowUnclaimed: false, people: null },
+  live: { allowUnclaimed: boolean; people: readonly string[] | null; allowEmpty?: boolean } = { allowUnclaimed: false, people: null },
 ): Promise<ExpenseWrite> {
   const description = validateExpenseRequest(request);
   if (savedCurrency !== undefined && request.currency.trim() !== "" && normalizeCurrencyCode(request.currency) !== savedCurrency) {
@@ -556,8 +579,11 @@ async function buildExpenseWrite(
   }
   const resolvedScope = await resolveExpenseScope(userId, request);
   const scope = savedCurrency === undefined ? resolvedScope : { ...resolvedScope, currency: savedCurrency };
-  const amounts = computeExpenseAmounts(request, scope.currency, live.allowUnclaimed);
-  validateExpensePayments(request, amounts.amountCents, scope.currency);
+  const isEmptyBill = live.allowEmpty === true && request.amountCents === 0;
+  const amounts = isEmptyBill
+    ? emptyBillAmounts(userId, request)
+    : computeExpenseAmounts(request, scope.currency, live.allowUnclaimed);
+  if (!isEmptyBill) validateExpensePayments(request, amounts.amountCents, scope.currency);
   const involved = [
     ...new Set([
       ...amounts.splits.map((split) => split.userId),
@@ -811,6 +837,21 @@ function storedExpenseWrite(expense: ExpenseRow, children: ExpenseChildren): Exp
 }
 
 /**
+ * Keeps everyone who has joined a live split on the expense. Somebody can be on
+ * it with nothing to pay, and a save that gives them no share must not take them
+ * off: they are still at the table.
+ *
+ * @param write - The write about to be saved.
+ * @param peopleIds - Who is in the split.
+ */
+function keepJoinersOn(write: ExpenseWrite, peopleIds: readonly string[]): void {
+  const listed = new Set(write.splits.map((split) => split.userId));
+  for (const userId of peopleIds) {
+    if (!listed.has(userId)) write.splits.push({ userId, owedCents: 0 });
+  }
+}
+
+/**
  * Puts a merged expense back in the shape the repo writes.
  *
  * @param write - The write it came from, which keeps its scope.
@@ -952,8 +993,8 @@ export async function createExpense(userId: string, request: ExpenseInput) {
   const write = await buildExpenseWrite(userId, request, [], undefined, {
     allowUnclaimed: request.startLiveSplit,
     people: request.startLiveSplit ? [userId] : null,
+    allowEmpty: request.startLiveSplit,
   });
-  if (request.startLiveSplit) assertCanSplitLive(write);
   const participantIds = involvedUserIds(write);
   const operation = { userId, rpc: "CreateExpense", operationId: request.operationId ?? "" };
   const expenseId = await withLedgerTransaction(async (client) => {
@@ -1167,7 +1208,13 @@ export async function updateExpense(
     );
     const stored = storedExpenseWrite(current, children);
     const write = base ? mergedWrite(base, mine, stored, session !== null) : mine;
+    if (session) keepJoinersOn(write, session.peopleIds);
     if (sameExpense(expenseStateOf(write), expenseStateOf(stored))) {
+      // Saving nothing new is still saying they are done, and their avatar says so.
+      if (session) {
+        await markLiveSplitSaved(session.split.id, userId, client);
+        await bumpExpenseVersion(expenseId, client);
+      }
       await finishOperation(operation, expenseId, client);
       return;
     }
@@ -1232,8 +1279,12 @@ export async function updateExpense(
     write.createdBy = current.created_by;
     await replaceExpense(expenseId, write, userId, client);
     if (session && !current.group_id) await connectPayersToBill(write, stored, client);
-    if (session) await markLiveSplitChanged(session.split.id, client);
-    else await recordExpenseActivity(userId, expenseId, write, "updated", client, stored);
+    if (session) {
+      await markLiveSplitChanged(session.split.id, client);
+      await markLiveSplitSaved(session.split.id, userId, client);
+    } else {
+      await recordExpenseActivity(userId, expenseId, write, "updated", client, stored);
+    }
     await finishOperation(operation, expenseId, client);
   });
   return getExpenseProto(expenseId);
@@ -1283,30 +1334,74 @@ function mergedWrite(
     { live },
   );
   if (conflicts.length > 0) throw new UsecaseError("aborted", EDIT_CONFLICT_MESSAGE);
+  const paidCents = Object.values(merged.payers).reduce((total, cents) => total + cents, 0);
+  if (paidCents !== merged.amountCents) throw new UsecaseError("aborted", EDIT_CONFLICT_MESSAGE);
   return writeFromState(mine, merged);
 }
 
 /**
+ * Gives a share of an evenly split bill to whoever joined after the last save.
+ * Their form never got to count them, and joining is how you say you are on
+ * the bill. Somebody at no share who joined before a save was taken off it, so
+ * they stay off. Past the volume limit they stay off too, or the split could
+ * never end.
+ *
+ * @param split - The split.
+ * @param expense - Its expense.
+ * @param client - The transaction, holding the expense's lock.
+ */
+async function countLateJoiners(split: LiveSplitRow, expense: ExpenseRow, client: PoolClient): Promise<void> {
+  if (expense.split_type !== "equal" || expense.deleted_at) return;
+  const stored = storedExpenseWrite(expense, await loadExpenseChildren([expense.id], client));
+  const sharing = stored.splits.filter((split) => split.owedCents > 0).map((split) => split.userId);
+  const lateIds = (await listJoinedSinceLastSave(split.id, client)).filter((userId) => !sharing.includes(userId));
+  if (lateIds.length === 0) return;
+  const participantIds = [...new Set([...involvedUserIds(stored), ...lateIds])];
+  if (expense.group_id) await lockGroupLedgers(client, [expense.group_id]);
+  else await lockParticipantLedgers(client, participantIds);
+  try {
+    await assertRoomInLedgers({ currency: expense.currency, amountCents: expense.amount_cents, participantIds }, split.host_id, client);
+  } catch {
+    return;
+  }
+  const specs = [...sharing, ...lateIds].map((userId) => ({ userId, amountCents: 0, percentBp: 0, shares: 0 }));
+  await replaceExpense(expense.id, { ...stored, splits: computeSplits("equal", expense.amount_cents, specs) }, split.host_id, client);
+}
+
+/**
  * Ends a live split, inside the caller's transaction, which holds the
- * expense's lock. Lines nobody claimed go to whoever paid for good, which moves
- * no money, leaving an ordinary expense. Everyone on it then hears the result
- * once, unless the split changed nothing or the expense has been deleted.
+ * expense's lock. Whoever joined since the last save is counted on an evenly
+ * split bill, and lines nobody claimed go to whoever paid for good, leaving an
+ * ordinary expense with only people who have something to pay. One nobody ever
+ * filled in is removed. Otherwise everyone on it hears the result once, unless
+ * the split changed nothing or the expense has been deleted.
  *
  * @param split - The split.
  * @param client - The transaction.
  */
 export async function closeLiveSplit(split: LiveSplitRow, client: PoolClient): Promise<void> {
-  const payers = (await loadExpenseChildren([split.expense_id], client)).payers.get(split.expense_id) ?? [];
-  await assignUnclaimedLines(
-    split.expense_id,
-    payerWeights(payers.map((payer) => ({ userId: payer.user_id, amountCents: payer.amount_cents }))),
-    client,
-  );
+  const opened = (await findExpenseById(split.expense_id, client))!;
+  if (opened.amount_cents > 0) {
+    await countLateJoiners(split, opened, client);
+    const payers = (await loadExpenseChildren([split.expense_id], client)).payers.get(split.expense_id) ?? [];
+    await assignUnclaimedLines(
+      split.expense_id,
+      payerWeights(payers.map((payer) => ({ userId: payer.user_id, amountCents: payer.amount_cents }))),
+      client,
+    );
+  }
+  await deleteUnsharedPeople(split.expense_id, client);
   await markLiveSplitFinished(split.id, client);
   await revokeLiveSplitLink(split.id, client);
   await bumpExpenseVersion(split.expense_id, client);
   const expense = (await findExpenseById(split.expense_id, client))!;
-  if (expense.deleted_at || !(split.new_expense || split.changed)) return;
+  if (expense.deleted_at) return;
+  // Opened and never filled in: there is no bill here to keep or announce.
+  if (expense.amount_cents === 0) {
+    await softDeleteExpense(split.expense_id, split.host_id, client);
+    return;
+  }
+  if (!(split.new_expense || split.changed)) return;
   const children = await loadExpenseChildren([split.expense_id], client);
   await recordExpenseActivity(
     split.host_id,
@@ -1702,6 +1797,7 @@ export async function getExpense(userId: string, expenseId: string, commentLimit
           hostId: session.split.host_id,
           endsAt: session.split.ends_at,
           peopleIds: session.peopleIds,
+          savedIds: session.savedIds,
         }
       : undefined,
     history: events.map((event) => ({

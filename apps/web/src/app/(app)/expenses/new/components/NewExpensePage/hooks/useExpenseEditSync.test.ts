@@ -63,6 +63,7 @@ function Harness() {
     readLatest: async () => ({ expense: latest, users: [{ id: TOMAS, name: "Tomas Berg" }] }),
     readForm: () => form,
     takeIn,
+    addPeople: () => undefined,
   }));
   return null;
 }

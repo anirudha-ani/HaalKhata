@@ -46,5 +46,5 @@ export function profileShareMessage(name: string): string {
  * @returns One sentence saying what the link is for.
  */
 export function liveSplitShareMessage(inviterName: string, description: string): string {
-  return `${inviterName} is splitting "${description}" on HaalKhata. Tap to claim what you had.`;
+  return `${inviterName} is splitting "${description}" on HaalKhata. Tap to join and edit it together.`;
 }

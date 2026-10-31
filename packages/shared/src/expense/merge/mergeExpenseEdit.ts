@@ -7,6 +7,7 @@ import {
   sameMoney,
   samePayers,
   withComputedShares,
+  fitPayers,
   withFittedPayers,
   type ExpenseState,
   type LineState,
@@ -152,7 +153,10 @@ export function mergeExpenseEdit(
       conflicts.push({ edit: { part: "money" }, lineName: "", mine: mine.amountCents, theirs: theirs.amountCents });
     }
   }
-  if (!options.live) merged.payers = payersFor(merged, conflicts);
+  // While a split runs, what each person paid follows the total, whichever way
+  // the bill is divided: nobody is asked to retype it, and it always adds up.
+  if (options.live) merged.payers = fitPayers(merged.payers, merged.amountCents);
+  else merged.payers = payersFor(merged, conflicts);
   return { merged, conflicts, theirChanges };
 }
 

@@ -34,6 +34,7 @@ function Harness({ saved }: { saved?: Expense }) {
     me: alice, groups: [], friends: [{ user: friend }],
     editing: saved ? createPlain(GetExpenseResponseSchema, { expense: saved, users: [alice, friend] }) : undefined,
     create: { mutate: stubs.create, isPending: false }, update: { mutate: stubs.update, isPending: false }, parse: { mutate: stubs.parse, isPending: false },
+    startLive: { mutate: vi.fn(), isPending: false },
   } as unknown as ReturnType<typeof useNewExpenseAPI>;
   const value = useNewExpense(expenseAPI, initial, saved?.id ?? "");
   useEffect(() => { controller = value; });

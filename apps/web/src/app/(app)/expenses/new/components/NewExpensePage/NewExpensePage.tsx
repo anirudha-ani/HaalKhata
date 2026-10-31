@@ -22,6 +22,7 @@ export function NewExpensePage({
   initialGroupId,
   initialFriendId,
   editExpenseId,
+  openInvite,
 }: {
   /** Group id from the ?group= search param, preselecting the group context ("" = none). */
   initialGroupId: string;
@@ -29,6 +30,8 @@ export function NewExpensePage({
   initialFriendId: string;
   /** Expense id from the ?edit= search param, or "" when creating a new expense. */
   editExpenseId: string;
+  /** Whether a live split was just started, so its invite opens by itself. */
+  openInvite: boolean;
 }) {
   const expenseAPI = useNewExpenseAPI(editExpenseId);
   const hydrated = useHydrated();
@@ -68,6 +71,7 @@ export function NewExpensePage({
       api={expenseAPI}
       initial={initial}
       editExpenseId={editExpenseId}
+      openInvite={openInvite}
     />
   );
 }

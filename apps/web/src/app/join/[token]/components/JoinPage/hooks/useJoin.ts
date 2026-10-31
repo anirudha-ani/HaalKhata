@@ -48,7 +48,7 @@ export function useJoin(token: string) {
         return;
       }
       if (result.expenseId) {
-        router.push(`/expenses/${result.expenseId}/live`);
+        router.push(`/expenses/new?edit=${result.expenseId}`);
         return;
       }
       router.push(result.groupId ? `/groups/${result.groupId}` : "/friends");

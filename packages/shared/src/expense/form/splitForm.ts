@@ -2,6 +2,7 @@
 
 import { centsToInput, parseMoneyInput } from "@haalkhata/shared/money/money";
 import { computeItemizedSplits, computeSplits } from "@haalkhata/shared/expense/splits";
+import { LIVE_SPLIT_DEFAULT_NAME } from "@haalkhata/shared/expense/live/live.constants";
 
 /** Split modes the form supports. */
 export type FormSplitType = "equal" | "exact" | "percent" | "shares" | "itemized";
@@ -300,15 +301,28 @@ export function shareEveryItemWith(
 }
 
 /**
- * Whether an itemized draft can open a live split: lines with prices are all
- * it needs, since who had what is what the split is there to settle.
+ * What a form has so far, as a bill that can be saved the moment somebody
+ * presses Split live. Nothing is required: it is saved as it stands so the
+ * table can finish it together. A line with no price waits, because a saved
+ * line needs one, and a bill with no name yet is called a receipt.
  *
- * @param items - The draft line items.
- * @param currency - ISO 4217 code the amounts are typed in.
- * @returns True when every line has a price and there is at least one.
+ * @param form - The form's description, lines, amounts and currency.
+ * @returns The name, the total and the lines to save.
  */
-export function canStartLiveSplit(items: readonly DraftLineItem[], currency: string): boolean {
-  return items.length > 0 && items.every((item) => (parseMoneyInput(item.total, currency) ?? 0) > 0);
+export function liveDraft<Line extends DraftLineItem>(form: {
+  description: string;
+  isItemized: boolean;
+  items: readonly Line[];
+  totalCents: number | null;
+  taxCents: number;
+  tipCents: number;
+  currency: string;
+}): { description: string; totalCents: number; lines: Line[] } {
+  const description = form.description.trim() || LIVE_SPLIT_DEFAULT_NAME;
+  if (!form.isItemized) return { description, totalCents: Math.max(form.totalCents ?? 0, 0), lines: [] };
+  const lines = form.items.filter((item) => (parseMoneyInput(item.total, form.currency) ?? 0) > 0);
+  const totalCents = lines.length > 0 ? itemizedTotals(lines, form.taxCents, form.tipCents, form.currency).totalCents : 0;
+  return { description, totalCents, lines };
 }
 
 /**

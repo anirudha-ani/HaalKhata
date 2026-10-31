@@ -368,6 +368,13 @@ describe("money that must still reconcile", () => {
     expect(outcome.merged.payers).toEqual({ [SARA]: 2714, [TOMAS]: 1086 });
   });
 
+  it("while a split runs, makes whoever paid follow the total on a bill with no lines too", () => {
+    const empty = { ...dinner, splitType: "equal", lines: [], taxCents: 0, tipCents: 0, amountCents: 0, payers: { [SARA]: 0 }, owed: {} };
+    const filled = { ...empty, amountCents: 6000, owed: { [SARA]: 3000, [TOMAS]: 3000 } };
+
+    expect(mergeExpenseEdit(empty, filled, empty, { live: true }).merged.payers).toEqual({ [SARA]: 6000 });
+  });
+
   it("outside a live split, several people's typed amounts stay theirs to change", () => {
     const twoCards = { ...dinner, payers: { [SARA]: 2000, [TOMAS]: 800 } };
     const repriced = withLine(twoCards, "pizza", { totalCents: 3000 });

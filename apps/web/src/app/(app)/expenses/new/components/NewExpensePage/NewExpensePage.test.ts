@@ -27,7 +27,7 @@ let container: HTMLDivElement;
 async function open(reads: object, editExpenseId = "expense-1") {
   vi.mocked(useNewExpenseAPI).mockReturnValue(reads as never);
   await act(async () => {
-    root.render(createElement(NewExpensePage, { editExpenseId, initialFriendId: "", initialGroupId: "" }));
+    root.render(createElement(NewExpensePage, { editExpenseId, initialFriendId: "", initialGroupId: "", openInvite: false }));
   });
 }
 

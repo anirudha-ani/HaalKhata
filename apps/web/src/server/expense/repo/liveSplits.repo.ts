@@ -93,6 +93,44 @@ export async function listLiveSplitPeople(liveSplitId: string, client?: PoolClie
 }
 
 /**
+ * Who in a split has pressed Save.
+ *
+ * @param liveSplitId - The split.
+ * @param client - Snapshot or transaction client; omitted, the pool.
+ * @returns Their user ids.
+ */
+export async function listLiveSplitSavers(liveSplitId: string, client?: PoolClient): Promise<string[]> {
+  const rows = await query<{ user_id: string }>(
+    `SELECT user_id FROM live_split_people WHERE live_split_id = $1 AND saved_at IS NOT NULL ORDER BY saved_at, user_id`,
+    [liveSplitId],
+    client,
+  );
+  return rows.map((person) => person.user_id);
+}
+
+/**
+ * Who joined a split after the last time anyone in it pressed Save, so no
+ * form has counted them yet.
+ *
+ * @param liveSplitId - The split.
+ * @param client - The transaction.
+ * @returns Their user ids, in the order they joined.
+ */
+export async function listJoinedSinceLastSave(liveSplitId: string, client: PoolClient): Promise<string[]> {
+  const rows = await query<{ user_id: string }>(
+    `SELECT user_id FROM live_split_people
+      WHERE live_split_id = $1
+        AND joined_at > COALESCE(
+          (SELECT max(saved_at) FROM live_split_people WHERE live_split_id = $1),
+          '-infinity'::timestamptz)
+      ORDER BY joined_at, user_id`,
+    [liveSplitId],
+    client,
+  );
+  return rows.map((person) => person.user_id);
+}
+
+/**
  * Whether somebody is in a split still within its time on an expense.
  *
  * @param expenseId - The expense.
@@ -126,6 +164,48 @@ export async function insertLiveSplitPerson(liveSplitId: string, userId: string,
     client,
   );
   return rows.length > 0;
+}
+
+/**
+ * Records somebody pressing Save, which their avatar shows. Anyone who can edit
+ * the expense can, so it also brings in somebody who never used the link.
+ *
+ * @param liveSplitId - The split.
+ * @param userId - Who saved.
+ * @param client - The transaction saving the change.
+ */
+export async function markLiveSplitSaved(liveSplitId: string, userId: string, client: PoolClient): Promise<void> {
+  await execute(
+    `INSERT INTO live_split_people (live_split_id, user_id, saved_at) VALUES ($1, $2, now())
+     ON CONFLICT (live_split_id, user_id) DO UPDATE SET saved_at = now()`,
+    [liveSplitId, userId],
+    client,
+  );
+}
+
+/**
+ * Puts somebody on an expense with nothing to pay yet.
+ *
+ * @param expenseId - The expense.
+ * @param userId - Who.
+ * @param client - The transaction.
+ */
+export async function insertUnsharedPerson(expenseId: string, userId: string, client: PoolClient): Promise<void> {
+  await execute(
+    `INSERT INTO expense_splits (expense_id, user_id, owed_cents) VALUES ($1, $2, 0) ON CONFLICT DO NOTHING`,
+    [expenseId, userId],
+    client,
+  );
+}
+
+/**
+ * Takes everyone with nothing to pay off an expense, once a split has ended.
+ *
+ * @param expenseId - The expense.
+ * @param client - The transaction.
+ */
+export async function deleteUnsharedPeople(expenseId: string, client: PoolClient): Promise<void> {
+  await execute(`DELETE FROM expense_splits WHERE expense_id = $1 AND owed_cents = 0`, [expenseId], client);
 }
 
 /**

@@ -1,6 +1,7 @@
 /** Expense detail screen: payers, splits, receipt items, history, comments, and delete flow. */
 
 import { ErrorState } from "@/components/ui/ErrorState";
+import { LiveBar } from "@/components/expense/LiveBar/LiveBar";
 import { SafetyActions } from "@/components/safety/SafetyActions";
 import { useRouter } from "expo-router";
 import { Check, Lock, Pencil, Radio, Send, Trash2 } from "lucide-react-native";
@@ -182,34 +183,33 @@ export function ExpenseDetailScreen({ expenseId }: { expenseId: string }) {
       ) : null}
 
       {liveSplit ? (
-        <Pressable
-          accessibilityRole="button"
-          onPress={() => router.push(`/expenses/${expense.id}/live`)}
-          style={styles.liveBanner}
-        >
-          <Radio color={colors.brand700} size={16} />
-          <Text style={styles.liveBannerText}>Everyone is splitting this live. Open it to claim what you had.</Text>
-        </Pressable>
+        <LiveBar
+          description={expense.description}
+          expenseId={expense.id}
+          liveSplit={liveSplit}
+          meId={meId ?? ""}
+          users={expenseDetail.detail?.users ?? []}
+        />
       ) : null}
 
       {isParticipant && !isDeleted && !isArchived && (canEdit || canDelete) ? (
         <View style={styles.actions}>
-          {canEdit ? (
-            <Button
-              compact
-              icon={<Pencil color={colors.inkSoft} size={14} />}
-              label="Edit"
-              onPress={() => router.push(`/expenses/new?edit=${expense.id}`)}
-              variant="outline"
-            />
-          ) : null}
-          {canEdit && !liveSplit && expense.items.length > 0 ? (
+          {canEdit && !liveSplit ? (
             <Button
               busy={expenseDetail.isStartingLive}
               compact
               icon={<Radio color={colors.inkSoft} size={14} />}
               label="Split live"
               onPress={expenseDetail.startLive}
+              variant="outline"
+            />
+          ) : null}
+          {canEdit ? (
+            <Button
+              compact
+              icon={<Pencil color={colors.inkSoft} size={14} />}
+              label="Edit"
+              onPress={() => router.push(`/expenses/new?edit=${expense.id}`)}
               variant="outline"
             />
           ) : null}
@@ -481,21 +481,6 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     flexWrap: "wrap",
     gap: spacing.sm,
-  },
-  liveBanner: {
-    alignItems: "center",
-    backgroundColor: colors.brand50,
-    borderRadius: radii.lg,
-    flexDirection: "row",
-    gap: spacing.sm,
-    padding: spacing.md,
-  },
-  liveBannerText: {
-    color: colors.brand700,
-    flex: 1,
-    fontSize: 14,
-    fontWeight: "600",
-    lineHeight: 20,
   },
   amount: {
     color: colors.ink,

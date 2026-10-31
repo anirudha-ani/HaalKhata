@@ -6,7 +6,6 @@ import {
   listExpensesBetween,
   listExpensesBetweenPage,
   listExpensesByGroups,
-  listGroupExpensesInvolving,
   listExpensesInvolvingUser,
   listOneOffExpensesBetween,
   listOneOffExpensesWithAnyOf,
@@ -20,7 +19,6 @@ import {
   listOneOffSettlementsWithAnyOf,
   listSettlementsBetween,
   listSettlementsBetweenPage,
-  listGroupSettlementsInvolving,
   listSettlementsByGroups,
   listSettlementsByNetSettlements,
   listSettlementsInvolvingUser,
@@ -56,7 +54,6 @@ import { listFriendIds } from "@/server/social/repo/friendships.repo";
 import {
   hasUnsettledGroupBalances,
   pairHistoryDigest,
-  sumGroupNets,
   sumUserNetByGroup,
 } from "@/server/expense/repo/ledger.repo";
 import { snapshot } from "@/server/common/db/db";
@@ -407,44 +404,6 @@ export async function memberDebtsInGroup(
     }
   }
   return debts;
-}
-
-/**
- * Everyone a person still owes in a group, in one currency, along the route
- * the group's mode prescribes: what {@link memberDebtsInGroup} says of them,
- * for a question asked often enough that a group's whole history is too much
- * to load for it. A simplified route comes from everyone's nets, which
- * Postgres adds up. A pairwise one needs only this person's own rows, because
- * a debt between two people only comes from an expense or a payment that
- * names them both. Those rows also say whether the group is worth asking
- * about a loop that cancels out: a loop leaves everybody's net at zero, so it
- * cannot be one unless this person's is.
- *
- * @param userId - The person.
- * @param groupId - The group.
- * @param currency - The currency.
- * @param client - Snapshot or transaction client; omitted, the pool.
- * @returns The people they owe.
- */
-export async function peopleOwedInGroup(
-  userId: string,
-  groupId: string,
-  currency: string,
-  client?: PoolClient,
-): Promise<string[]> {
-  if ((await findGroupById(groupId, client))?.simplify_debts) {
-    const nets = await sumGroupNets(groupId, currency, client);
-    return simplifyDebts(nets).filter((edge) => edge.from === userId).map((edge) => edge.to);
-  }
-  const expenses = await listGroupExpensesInvolving(groupId, userId, currency, client);
-  const children = await loadExpenseChildren(expenses.map((expense) => expense.id), client, false);
-  const settlements = await listGroupSettlementsInvolving(groupId, userId, currency, client);
-  const ledger = ledgersByCurrency(expenses, children, settlements).get(currency) ?? [];
-  const owed = ledger.filter((entry) => entry.from === userId);
-  if (owed.length === 0) return [];
-  const myNet = ledger.reduce((running, entry) => running + (entry.to === userId ? entry.amountCents : -entry.amountCents), 0);
-  if (myNet === 0 && (await sumGroupNets(groupId, currency, client)).size === 0) return [];
-  return owed.map((entry) => entry.to);
 }
 
 /**

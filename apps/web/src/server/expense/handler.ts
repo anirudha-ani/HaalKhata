@@ -80,18 +80,6 @@ export const expenseHandler: PlainServiceImpl<typeof ExpenseService> = {
     );
   },
 
-  /** Who the caller still owes in an expense's scope: what a live split's Settle buttons read. */
-  async listOwedPeople(request, context) {
-    return runUsecase(
-      async () =>
-        liveSplits.listOwedPeople(
-          await requireRateLimitedUser(context, "list-owed-people", RPC_RATE_LIMITS.listOwedPeople),
-          request.expenseId,
-        ),
-      context,
-    );
-  },
-
   /** Opens an expense to everyone at the table, or returns the split already running. */
   async startLiveSplit(request, context) {
     return runUsecase(

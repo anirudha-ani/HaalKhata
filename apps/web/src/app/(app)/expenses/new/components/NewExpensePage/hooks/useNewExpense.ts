@@ -22,7 +22,7 @@ import { adoptDraftLines, draftExpenseState } from "@haalkhata/shared/expense/me
 import {
   buildItemsPayload,
   buildSplitSpecs,
-  canStartLiveSplit,
+  liveDraft,
   checkItemized,
   checkPayers,
   checkSplit,
@@ -94,6 +94,7 @@ export function useNewExpense(
   const [previewUrl, setPreviewUrl] = useState("");
   const [receiptUrl, setReceiptUrl] = useState("");
   const [provider, setProvider] = useState("");
+  const [sharingOnStart, setSharingOnStart] = useState(false);
   const [isPreparing, setIsPreparing] = useState(false);
   // One id per attempt at saving: a retry after a lost response sends the
   // same one and gets the expense the first attempt stored, not a second.
@@ -442,6 +443,19 @@ export function useNewExpense(
     }
   };
 
+  /**
+   * Brings onto the form whoever has joined since it opened. Nobody is added
+   * to a part of the bill somebody has already filled in by hand: they appear
+   * in the cast, and on an even split they are ticked like anyone else.
+   *
+   * @param userIds - Everyone on the saved expense.
+   */
+  const addPeople = (userIds: string[]) => {
+    const newcomers = userIds.filter((userId) => userId !== expenseAPI.me?.id && !(personIds ?? []).includes(userId));
+    if (newcomers.length === 0 || (groupId && personIds === null)) return;
+    setPersonIds((current) => [...new Set([...(current ?? []), ...newcomers])]);
+  };
+
   const editSync = useExpenseEditSync({
     opened: expenseAPI.editing?.expense,
     savedVersion: expenseAPI.savedVersion,
@@ -456,6 +470,7 @@ export function useNewExpense(
         multiPayer, singlePayerId, payerAmounts, items, taxCents, tipCents, currency,
       }),
     takeIn,
+    addPeople,
   });
 
   // A group, or at least one other person — mirrors exactly what the picker
@@ -514,28 +529,36 @@ export function useNewExpense(
     };
   };
 
-  // A live split needs a name and priced lines. Who had what is what it is
-  // there to settle, so nobody has to be ticked yet, and nobody else needs to
-  // be on the form: they join through the link.
-  const canStartLive =
-    !editExpenseId &&
-    isItemized &&
-    payerCheck.ok &&
-    description.trim() !== "" &&
-    totalCents !== null &&
-    canStartLiveSplit(items, currency);
-
-  /** Saves the bill and opens it to the table. */
+  /** Saves the bill as it stands and opens it to the table. */
   const startLive = () => {
-    if (!canStartLive || totalCents === null) return;
     setError("");
-    const peopleIds = people.map((person) => person.id);
+    if (editExpenseId) {
+      setSharingOnStart(true);
+      expenseAPI.startLive.mutate(undefined, {
+        onError: (mutationError) => setError(errorMessage(mutationError)),
+      });
+      return;
+    }
+    const draft = liveDraft({ description, isItemized, items, totalCents, taxCents, tipCents, currency });
+    const request = buildRequest(draft.totalCents, unclaimedUnlessPicked(draft.lines, people.map((person) => person.id)));
+    // Half-typed amounts cannot be saved yet, so they start even and whoever
+    // is at the table finishes them. Nothing here is a reason to stop.
+    const unfinishedSplit = !isItemized && !splitCheck.ok;
     expenseAPI.create.mutate(
-      { ...buildRequest(totalCents, unclaimedUnlessPicked(items, peopleIds)), startLiveSplit: true },
+      {
+        ...request,
+        description: draft.description,
+        splitType: unfinishedSplit ? "equal" : request.splitType,
+        splitSpecs: unfinishedSplit
+          ? buildSplitSpecs({ splitType: "equal", totalCents: draft.totalCents, participantIds, inputs: splitInputs, currency })
+          : request.splitSpecs,
+        payers: payerCheck.ok ? request.payers : [{ userId: singlePayerId, amountCents: draft.totalCents }],
+        startLiveSplit: true,
+      },
       {
         onSuccess: (saved) => {
           operationIdRef.current = newOperationId();
-          router.push(`/expenses/${saved.id}/live`);
+          router.replace(`/expenses/new?edit=${saved.id}&invite=1`);
         },
         onError: (mutationError) => setError(errorMessage(mutationError)),
       },
@@ -601,7 +624,6 @@ export function useNewExpense(
     setGroupId: changeGroup,
     friendIds,
     togglePerson,
-    hasParticipants,
     description,
     setDescription,
     amount,
@@ -648,8 +670,11 @@ export function useNewExpense(
     error,
     dismissError,
     submit,
-    canStartLive,
     startLive,
+    isStartingLive: expenseAPI.create.isPending || expenseAPI.startLive.isPending,
+    liveSplit: expenseAPI.editing?.liveSplit,
+    liveUsers: expenseAPI.editing?.users ?? [],
+    sharingOnStart,
     // Somebody else editing at the same time.
     editNote: editSync.note,
     editConflicts: editSync.conflicts,

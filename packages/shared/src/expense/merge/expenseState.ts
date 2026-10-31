@@ -66,7 +66,9 @@ export function expenseStateOf(source: ExpenseStateSource): ExpenseState {
     notes: source.notes,
     splitType: source.splitType,
     amountCents: source.amountCents,
-    owed: Object.fromEntries(source.splits.map((split) => [split.userId, split.owedCents])),
+    // Somebody on it with nothing to pay yet moves no money, so joining a live
+    // split is nothing a form has to answer.
+    owed: Object.fromEntries(source.splits.filter((split) => split.owedCents > 0).map((split) => [split.userId, split.owedCents])),
     payers: Object.fromEntries(source.payers.map((payer) => [payer.userId, payer.amountCents])),
     lines: source.items.map((item) => ({
       id: item.id ?? "",
