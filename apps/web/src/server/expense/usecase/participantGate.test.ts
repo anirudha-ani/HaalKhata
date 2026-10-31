@@ -47,6 +47,7 @@ vi.mock("@/server/common/ledger/ledgerLocks", () => ({
 }));
 
 import { blockedPairExists } from "@/server/safety/repo/safety.repo";
+import { DUPLICATE_PAYER_MESSAGE } from "@/server/expense/expense.constants";
 import { createExpense } from "./expense.usecase";
 import { findUserById, findUsersByIds } from "@/server/auth/repo/users.repo";
 import { listFriendIds } from "@/server/social/repo/friendships.repo";
@@ -144,6 +145,12 @@ describe("who may join a new expense", () => {
       message: expect.stringContaining("Deleted member can't be added to a new expense"),
     });
     expect(insertExpense).not.toHaveBeenCalled();
+  });
+
+  it("refuses the same person listed twice among those who paid, instead of failing in the database", async () => {
+    const request = { ...splitRequest("friend"), payers: [{ userId: CALLER, amountCents: 1000 }, { userId: CALLER, amountCents: 1000 }] } as ExpenseInput;
+
+    await expect(createExpense(CALLER, request)).rejects.toMatchObject({ code: "invalid_argument", message: DUPLICATE_PAYER_MESSAGE });
   });
 
   it("accepts the same split with somebody who can sign in", async () => {

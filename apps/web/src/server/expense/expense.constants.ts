@@ -82,6 +82,16 @@ export const MAX_ITEM_ASSIGNMENTS = 100;
 export const MAX_MONEY_CENTS = 10_000_000_000_000;
 
 /**
+ * Why a net settlement cannot be recorded: what it would cancel is more than
+ * one row can hold. Each balance's own Settle pays it down separately.
+ */
+export const NET_SETTLEMENT_TOO_LARGE_MESSAGE =
+  "these balances are too large to settle together — settle one balance at a time";
+
+/** Why the same person cannot be listed twice among those who paid. */
+export const DUPLICATE_PAYER_MESSAGE = "each person can only be listed once among those who paid";
+
+/**
  * Most that live expenses one person is on (as a payer or a share) may add
  * up to in one currency: 10^15 minor units, a hundred expenses at the
  * ceiling above. Every figure shown for a person — a balance in any scope, a

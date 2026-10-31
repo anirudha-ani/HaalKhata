@@ -493,6 +493,29 @@ describe.skipIf(!reachable)("net settlement against Postgres", () => {
     expect(shownAfter).not.toBe(request.positionDigest);
   });
 
+  it("refuses, with a way forward, a net whose cancelled side is more than one row can hold", async () => {
+    const largestRow = 10_000_000_000_000;
+    for (const index of [1, 2, 3]) {
+      await insertDebt(database, { id: `exp-huge-${index}`, groupId: null, amountCents: largestRow, currency: "USD", paidBy: OWED, owedBy: PAYER });
+    }
+    // In a group, so it is not netted against the one-off debts until a
+    // settlement cancels the two against each other.
+    for (const index of [4, 5]) {
+      await insertDebt(database, { id: `exp-huge-${index}`, groupId: "grp-reunion", amountCents: largestRow, currency: "USD", paidBy: PAYER, owedBy: OWED });
+    }
+    const before = await countRows("settlements");
+
+    await expect(recordSettlement(PAYER, await netRequest(100))).rejects.toMatchObject({
+      code: "invalid_argument",
+      message: expect.stringContaining("one balance at a time"),
+    });
+
+    expect(await countRows("settlements")).toBe(before);
+    await database.query("DELETE FROM expense_splits WHERE expense_id LIKE 'exp-huge-%'");
+    await database.query("DELETE FROM expense_payers WHERE expense_id LIKE 'exp-huge-%'");
+    await database.query("DELETE FROM expenses WHERE id LIKE 'exp-huge-%'");
+  });
+
   it("is an ordinary payment, with no parent, when nothing points the other way", async () => {
     await insertDebt(database, { id: "exp-museum", groupId: null, amountCents: 4000, currency: "USD", paidBy: OWED, owedBy: PAYER });
     const parentsBefore = await countRows("net_settlements");

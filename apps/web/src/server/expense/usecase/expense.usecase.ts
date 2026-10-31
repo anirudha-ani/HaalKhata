@@ -130,7 +130,9 @@ import {
   MAX_EXPENSE_NOTES_LENGTH,
   MAX_EXPENSE_PARTICIPANTS,
   MAX_ITEM_ASSIGNMENTS,
+  DUPLICATE_PAYER_MESSAGE,
   MAX_MONEY_CENTS,
+  NET_SETTLEMENT_TOO_LARGE_MESSAGE,
   MAX_SETTLEMENT_NOTE_LENGTH,
   OFFSET_ACTIVITY_TYPE,
   OFFSET_SETTLEMENT_METHOD,
@@ -386,6 +388,9 @@ function validateExpensePayments(
 ): void {
   if (request.payers.some((payer) => payer.amountCents <= 0)) {
     invalid("each payer amount must be positive");
+  }
+  if (new Set(request.payers.map((payer) => payer.userId)).size !== request.payers.length) {
+    invalid(DUPLICATE_PAYER_MESSAGE);
   }
   const paidCents = request.payers.reduce((runningTotal, payer) => runningTotal + payer.amountCents, 0);
   if (paidCents !== amountCents) {
@@ -2320,9 +2325,11 @@ async function storeNetSettlement(
 
   const { method, methodLabel } = await resolveSettlementMethod(request, creditorId, client);
   const plan = planNetSettlement(owing, opposing, request.amountCents);
-  await assertGroupsActive([...plan.cash, ...plan.offsetOwing, ...plan.offsetOpposing].flatMap(
-    (portion) => portion.groupId ? [portion.groupId] : [],
-  ), client);
+  const portions = [...plan.cash, ...plan.offsetOwing, ...plan.offsetOpposing];
+  if (offsetCents > MAX_MONEY_CENTS || portions.some((portion) => portion.amountCents > MAX_MONEY_CENTS)) {
+    invalid(NET_SETTLEMENT_TOO_LARGE_MESSAGE);
+  }
+  await assertGroupsActive(portions.flatMap((portion) => portion.groupId ? [portion.groupId] : []), client);
   // Nothing pointing the other way means nothing to cancel: the rows are an
   // ordinary payment and need no parent.
   const netSettlementId =
