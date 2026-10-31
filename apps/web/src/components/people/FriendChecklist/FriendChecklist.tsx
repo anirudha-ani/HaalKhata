@@ -75,6 +75,7 @@ export function FriendChecklist({
 }) {
   const [query, setQuery] = useState("");
   const listRef = useRef<HTMLFieldSetElement>(null);
+  const selected = new Set(selectedIds);
 
   // Pickable rows first, then the rest, each half in its given order.
   const ordered = useMemo(() => {
@@ -122,7 +123,7 @@ export function FriendChecklist({
               >
                 <input
                   type="checkbox"
-                  checked={selectedIds.includes(person.id)}
+                  checked={selected.has(person.id)}
                   disabled={disabled}
                   onChange={() => onToggle(person.id)}
                   className="h-4 w-4 accent-brand-600"

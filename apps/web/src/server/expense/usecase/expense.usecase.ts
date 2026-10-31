@@ -469,7 +469,8 @@ async function assertConnectedToExpense(
   const connectedIds = new Set([...(await connectedUserIds(actorId, client)), ...expense.livePeople]);
   const strangers = participantIds.filter((participantId) => !connectedIds.has(participantId));
   if (strangers.length === 0) return;
-  if (strangers.some((participantId) => !expense.existingIds.includes(participantId))) {
+  const alreadyOn = new Set(expense.existingIds);
+  if (strangers.some((participantId) => !alreadyOn.has(participantId))) {
     denied(ONE_OFF_NOT_CONNECTED_MESSAGE);
   }
   const connectedToPayers = new Set<string>();
@@ -875,9 +876,11 @@ async function recordExpenseActivity(
   const group = write.groupId ? await findGroupById(write.groupId, client) : undefined;
   const locationSuffix = group ? ` in "${group.name}"` : "";
   const participantIds = involvedUserIds(write);
+  const stillOn = new Set(participantIds);
   const removedIds = before
-    ? involvedUserIds(before).filter((participantId) => !participantIds.includes(participantId))
+    ? involvedUserIds(before).filter((participantId) => !stillOn.has(participantId))
     : [];
+  const takenOff = new Set(removedIds);
   // The participants plus whoever recorded it — never the whole group. A
   // transaction is announced to the people whose money it moved; a member
   // who is not on the expense reads the group's ledger tabs, not a feed
@@ -913,7 +916,7 @@ async function recordExpenseActivity(
     [...participantIds, ...removedIds]
       .filter((participantId) => participantId !== actorId)
       .map((recipientId) => {
-        const removed = before !== undefined && removedIds.includes(recipientId);
+        const removed = before !== undefined && takenOff.has(recipientId);
         const moneyLine = removed
           ? removedReaderLine(before, recipientId, payerNames)
           : readerShareLine(write, recipientId, verb, payerNames);

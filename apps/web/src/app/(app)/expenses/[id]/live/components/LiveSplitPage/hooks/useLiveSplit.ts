@@ -25,7 +25,7 @@ export function useLiveSplit(expenseId: string) {
   const [clock, setClock] = useState(() => Date.now());
   const [settlingWith, setSettlingWith] = useState("");
   const [sharing, setSharing] = useState(false);
-  const queue = useRef(Promise.resolve());
+  const queue = useRef<Promise<void>>(undefined);
 
   useEffect(() => {
     const timer = setInterval(() => setClock(Date.now()), LIVE_SPLIT_CLOCK_INTERVAL_MS);
@@ -56,7 +56,7 @@ export function useLiveSplit(expenseId: string) {
     }
     setError("");
     setPending((queued) => [...queued, edit]);
-    queue.current = queue.current.then(async () => {
+    queue.current = (queue.current ?? Promise.resolve()).then(async () => {
       try {
         await liveAPI.saveEdit(edit);
       } catch (failure) {

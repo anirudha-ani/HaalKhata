@@ -97,7 +97,8 @@ export function useNewExpense(
   const [isPreparing, setIsPreparing] = useState(false);
   // One id per attempt at saving: a retry after a lost response sends the
   // same one and gets the expense the first attempt stored, not a second.
-  const operationIdRef = useRef(newOperationId());
+  const [firstOperationId] = useState(newOperationId);
+  const operationIdRef = useRef(firstOperationId);
   // What the last attempt at saving an edit sent: the same again is a retry
   // and keeps its id; anything else is a new attempt and gets a new one.
   const lastEditAttempt = useRef("");
@@ -307,10 +308,7 @@ export function useNewExpense(
         // viewable at all, and it is the image the numbers came from.
         if (result.normalizedImage.length > 0) {
           const blob = new Blob([result.normalizedImage as BlobPart], { type: "image/jpeg" });
-          setReceiptUrl((previousUrl) => {
-            URL.revokeObjectURL(previousUrl);
-            return URL.createObjectURL(blob);
-          });
+          setReceiptUrl(URL.createObjectURL(blob));
         }
         const receipt = result.receipt;
         if (!receipt) return;
@@ -362,18 +360,12 @@ export function useNewExpense(
     if (expenseAPI.parse.isPending || receiptConsent.busy || receiptConsent.prompt) return;
     setProvider("");
     setError("");
-    setReceiptUrl((previousUrl) => {
-      URL.revokeObjectURL(previousUrl);
-      return "";
-    });
+    setReceiptUrl("");
     setIsPreparing(true);
     try {
       const prepared = await prepareReceiptImage(picked);
       setFile(prepared);
-      setPreviewUrl((previousUrl) => {
-        URL.revokeObjectURL(previousUrl);
-        return URL.createObjectURL(prepared);
-      });
+      setPreviewUrl(URL.createObjectURL(prepared));
     } catch (prepareError) {
       setError(errorMessage(prepareError));
     } finally {
