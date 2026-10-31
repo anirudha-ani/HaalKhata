@@ -71,11 +71,11 @@ export function useActivity() {
   // description, amount and group name, so searching it plus the actor covers
   // "that dinner with Ani" without any extra fields.
   const visibleEvents = useMemo(() => {
-    const kinds = ACTIVITY_FILTERS.find((entry) => entry.value === filter)?.types ?? [];
+    const kinds = new Set<string>(ACTIVITY_FILTERS.find((entry) => entry.value === filter)?.types ?? []);
     const terms = searchTerms(query);
     return events.filter(
       (event) =>
-        (kinds.length === 0 || kinds.includes(event.type)) &&
+        (kinds.size === 0 || kinds.has(event.type)) &&
         matchesTerms(terms, event.message, event.actor?.name, event.type),
     );
   }, [events, query, filter]);

@@ -27,6 +27,9 @@ export function allocate(totalCents: number, weights: number[]): number[] {
   const weightSum = weights.reduce((runningTotal, weight) => runningTotal + weight, 0);
   const effectiveWeights = weightSum === 0 ? weights.map(() => 1) : weights;
   const effectiveSum = weightSum === 0 ? weights.length : weightSum;
+  if (!productsAreExact(totalCents, effectiveWeights)) {
+    return allocateExactly(totalCents, effectiveWeights, effectiveSum);
+  }
 
   const exactShares = effectiveWeights.map((weight) => (totalCents * weight) / effectiveSum);
   const result = exactShares.map(Math.floor);
@@ -39,6 +42,52 @@ export function allocate(totalCents: number, weights: number[]): number[] {
       (first, second) =>
         second.fractionalPart - first.fractionalPart || first.index - second.index,
     );
+  for (let centIndex = 0; remainder > 0; centIndex++, remainder--) {
+    result[remainderOrder[centIndex % remainderOrder.length].index] += 1;
+  }
+  return result;
+}
+
+/**
+ * Whether every `totalCents × weight` is a whole number below 2^53, where
+ * floating-point division still floors exactly. Past that — a tax of
+ * billions spread over subtotals of billions — a share can round up across
+ * a whole cent and the allocation would no longer add up.
+ *
+ * @param totalCents - Amount being distributed.
+ * @param weights - The weights in use.
+ * @returns True when the floating-point path is exact.
+ */
+function productsAreExact(totalCents: number, weights: readonly number[]): boolean {
+  return weights.every((weight) => Number.isSafeInteger(totalCents * weight));
+}
+
+/**
+ * The same largest-remainder allocation in integer arithmetic, for amounts
+ * and weights whose products pass 2^53. Remainders are compared as exact
+ * fractions of the weight sum; ties still break by index.
+ *
+ * @param totalCents - Amount to distribute, a non-negative integer.
+ * @param weights - Non-negative weights; fractional weights are not exact here either.
+ * @param weightSum - Their sum, already known to be positive.
+ * @returns Integer cents per recipient, summing exactly to `totalCents`.
+ */
+function allocateExactly(totalCents: number, weights: readonly number[], weightSum: number): number[] {
+  if (!weights.every(Number.isSafeInteger) || !Number.isSafeInteger(weightSum)) {
+    throw new Error("allocate: amounts this large need whole-number weights");
+  }
+  const total = BigInt(totalCents);
+  const divisor = BigInt(weightSum);
+  const shares = weights.map((weight, index) => {
+    const product = total * BigInt(weight);
+    return { floor: product / divisor, leftover: product % divisor, index };
+  });
+  const result = shares.map((share) => Number(share.floor));
+  let remainder = totalCents - result.reduce((runningTotal, cents) => runningTotal + cents, 0);
+  const remainderOrder = [...shares].sort(
+    (first, second) =>
+      (second.leftover > first.leftover ? 1 : second.leftover < first.leftover ? -1 : 0) || first.index - second.index,
+  );
   for (let centIndex = 0; remainder > 0; centIndex++, remainder--) {
     result[remainderOrder[centIndex % remainderOrder.length].index] += 1;
   }

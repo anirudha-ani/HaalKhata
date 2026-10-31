@@ -16,10 +16,11 @@ import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { Client } from "pg";
 import { checkPaymentMethod } from "@haalkhata/shared/payment/validateMethod";
+import { testDatabaseName } from "@/server/common/testing/testDatabase";
 
 const ADMIN_URL =
   process.env.MERGE_TEST_ADMIN_URL ?? "postgres://haalkhata:change-me@127.0.0.1:5432/postgres";
-const TEST_DATABASE = "haalkhata_handles_backfill_test";
+const TEST_DATABASE = testDatabaseName("haalkhata_handles_backfill_test");
 const TEST_URL = ADMIN_URL.replace(/\/[^/]*$/, `/${TEST_DATABASE}`);
 
 /** The migration under test, read from disk so the test runs what ships. */

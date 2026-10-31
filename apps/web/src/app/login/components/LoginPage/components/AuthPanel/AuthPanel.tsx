@@ -187,11 +187,6 @@ export function AuthPanel({
             </button>
           </form>
 
-          {login.mode === "signup" ? (
-            <p className="mt-4 text-xs leading-relaxed text-ink-soft">
-              Invited by a friend? Use the same email or phone and your shared expenses will already be here.
-            </p>
-          ) : null}
         </>
       ) : null}
 

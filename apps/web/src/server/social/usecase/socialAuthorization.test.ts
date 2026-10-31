@@ -33,17 +33,10 @@ vi.mock("@/server/common/db/db", () => ({
   transaction: vi.fn((operation) => operation({ query: vi.fn() })),
   isUniqueViolation: vi.fn(() => false),
 }));
-vi.mock("@/server/auth/usecase/account/auth.usecase", () => ({
-  findOrCreateUserByEmail: vi.fn(),
-  findOrCreateUserByPhone: vi.fn(),
-}));
-vi.mock("@/server/auth/repo/merge/accountMerge.repo", () => ({ mergeAccounts: vi.fn() }));
 vi.mock("@/server/social/repo/inviteLinks.repo", () => ({
-  findActiveFriendLink: vi.fn(),
   findActiveGroupLink: vi.fn(),
-  findActiveLinkByToken: vi.fn(),
+  findLinkByToken: vi.fn(),
   insertInviteLink: vi.fn(),
-  revokeFriendLinksFor: vi.fn(),
   revokeGroupLinks: vi.fn(),
 }));
 vi.mock("@/server/social/repo/notifications.repo", () => ({
@@ -58,9 +51,14 @@ vi.mock("@/server/expense/usecase/balance.usecase", () => ({
   netWithUser: vi.fn(),
 }));
 
-import { findUserById, findUsersByIds } from "@/server/auth/repo/users.repo";
-import { findOrCreateUserByEmail } from "@/server/auth/usecase/account/auth.usecase";
+import {
+  findUserByEmail,
+  findUserById,
+  findUserByPhone,
+  findUsersByIds,
+} from "@/server/auth/repo/users.repo";
 import { getOverallBalances } from "@/server/expense/usecase/balance.usecase";
+import { SOCIAL_READ_MAX_BYTES } from "@/server/api/connect/connect.constants";
 import {
   countIncomingFriendRequests,
   deleteFriendRequest,
@@ -86,6 +84,8 @@ import {
 } from "./social.usecase";
 
 const CALLER = "user-caller";
+/** How long refusing a hostile email may take; the old pattern took minutes at this size. */
+const HOSTILE_EMAIL_BUDGET_MS = 100;
 const TARGET = "user-target";
 const TARGET_EMAIL = "target@example.com";
 
@@ -102,7 +102,6 @@ const targetRow = {
   google_sub: "google-target",
   onboarded_at: null,
   phone_verified_at: null,
-  merged_into: null,
   token_version: 0,
   created_at: "2026-08-01T00:00:00Z",
 } satisfies UserRow;
@@ -116,7 +115,7 @@ beforeEach(() => {
 
 describe("addFriend contact lookup", () => {
   it("keeps the request flow for a registered account", async () => {
-    vi.mocked(findOrCreateUserByEmail).mockResolvedValue(targetRow);
+    vi.mocked(findUserByEmail).mockResolvedValue(targetRow);
 
     await expect(addFriend(CALLER, { email: TARGET_EMAIL, phone: "" })).resolves.toEqual({});
 
@@ -130,25 +129,63 @@ describe("addFriend contact lookup", () => {
     );
   });
 
-  it("befriends an unregistered contact immediately as Invited (§33)", async () => {
-    // Nobody exists to accept, and an unregistered row can hold no
-    // transactions, so the entry is a contact-book line until claimed.
-    vi.mocked(findOrCreateUserByEmail).mockResolvedValue({
-      ...targetRow,
-      id: "invited-1",
-      google_sub: null,
-      password_hash: null,
+  it("refuses an email nobody on HaalKhata has, and records nothing for it", async () => {
+    // The person is reached through the caller's own invite link and signs
+    // up as themselves; nothing is made here for anyone to claim later.
+    vi.mocked(findUserByEmail).mockResolvedValue(undefined);
+
+    await expect(addFriend(CALLER, { email: TARGET_EMAIL, phone: "" })).rejects.toMatchObject({
+      code: "failed_precondition",
+      message: expect.stringContaining("share your invite link"),
     });
 
-    await expect(addFriend(CALLER, { email: TARGET_EMAIL, phone: "" })).resolves.toEqual({});
-
-    expect(insertFriendship).toHaveBeenCalledWith(CALLER, "invited-1");
+    expect(findUserByEmail).toHaveBeenCalledWith(TARGET_EMAIL);
+    expect(insertFriendship).not.toHaveBeenCalled();
     expect(insertFriendRequest).not.toHaveBeenCalled();
     expect(insertNotifications).not.toHaveBeenCalled();
   });
 
+  it("looks a typed phone up in E.164 and refuses it when nobody has it", async () => {
+    vi.mocked(findUserByPhone).mockResolvedValue(undefined);
+
+    await expect(addFriend(CALLER, { email: "", phone: "+1 (415) 555-2671" })).rejects.toMatchObject({
+      code: "failed_precondition",
+    });
+
+    expect(findUserByPhone).toHaveBeenCalledWith("+14155552671");
+    expect(insertFriendship).not.toHaveBeenCalled();
+  });
+
+  it("refuses a malformed email before looking anybody up", async () => {
+    await expect(addFriend(CALLER, { email: "not-an-address", phone: "" })).rejects.toMatchObject({
+      code: "invalid_argument",
+    });
+
+    expect(findUserByEmail).not.toHaveBeenCalled();
+  });
+
+  it("refuses an email field the size of a whole request at once, before looking anybody up", async () => {
+    // Shaped to make a backtracking email pattern try every split of the dots.
+    const hostile = `a@${".".repeat(SOCIAL_READ_MAX_BYTES)}@`;
+    const start = performance.now();
+    await expect(addFriend(CALLER, { email: hostile, phone: "" })).rejects.toMatchObject({
+      code: "invalid_argument",
+    });
+
+    expect(performance.now() - start).toBeLessThan(HOSTILE_EMAIL_BUDGET_MS);
+    expect(findUserByEmail).not.toHaveBeenCalled();
+  });
+
+  it("answers a stale picked id quietly, without a request", async () => {
+    vi.mocked(findUserById).mockResolvedValue(undefined);
+
+    await expect(addFriend(CALLER, { email: "", phone: "", userId: "gone" })).resolves.toEqual({});
+
+    expect(insertFriendRequest).not.toHaveBeenCalled();
+  });
+
   it("does not reveal or notify a duplicate pending request", async () => {
-    vi.mocked(findOrCreateUserByEmail).mockResolvedValue(targetRow);
+    vi.mocked(findUserByEmail).mockResolvedValue(targetRow);
     vi.mocked(insertFriendRequest).mockResolvedValue(false);
 
     const result = await addFriend(CALLER, { email: TARGET_EMAIL, phone: "" });
@@ -159,7 +196,7 @@ describe("addFriend contact lookup", () => {
   });
 
   it("does not create a pending request for an accepted friendship", async () => {
-    vi.mocked(findOrCreateUserByEmail).mockResolvedValue(targetRow);
+    vi.mocked(findUserByEmail).mockResolvedValue(targetRow);
     vi.mocked(friendshipExists).mockResolvedValue(true);
 
     await expect(addFriend(CALLER, { email: TARGET_EMAIL, phone: "" })).resolves.toEqual({});
@@ -245,17 +282,6 @@ describe("what each side of a pending request may see", () => {
         createdAt: SENT_AT,
       },
     ]);
-  });
-
-  it("drops a picked recipient who has since merged away", async () => {
-    vi.mocked(listOutgoingFriendRequests).mockResolvedValue([
-      { recipient_id: PICKED, recipient_identifier: null, created_at: SENT_AT },
-    ]);
-    vi.mocked(findUsersByIds).mockResolvedValue([
-      { ...targetRow, id: PICKED, merged_into: "user-keeper" },
-    ]);
-
-    await expect(listFriends(CALLER)).resolves.toMatchObject({ outgoingRequests: [] });
   });
 
   it("counts the caller's unanswered incoming requests alongside notifications", async () => {

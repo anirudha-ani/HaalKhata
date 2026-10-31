@@ -1,21 +1,24 @@
-/** Bottom sheet holding the add-friend form: email or phone, send, and the privacy note. */
+/** Bottom sheet holding the add-friend form: email or phone, send, and the invite link for somebody not on HaalKhata. */
 
 import { useRouter } from "expo-router";
-import { Contact, UserPlus } from "lucide-react-native";
+import { Contact, Share2, UserPlus } from "lucide-react-native";
 import { StyleSheet, View } from "react-native";
 import { FIND_FRIENDS_COPY } from "@haalkhata/shared/contacts/contactsCopy";
+import { NOT_ON_HAALKHATA_COPY } from "@haalkhata/shared/invite/inviteCopy";
 import { Text } from "@/components/ui/Text";
 import { Button } from "@/components/ui/Button";
 import { EmailOrPhoneField } from "@/components/ui/EmailOrPhoneField";
 import { Sheet } from "@/components/ui/Sheet/Sheet";
-import { colors, spacing } from "@/lib/theme/theme";
+import { colors, radii, spacing } from "@/lib/theme/theme";
 import type { FriendsController } from "../../hooks/useFriends";
 
 /**
  * The add form as a dialog, not a panel spliced into the screen: it is a
  * one-field task, and opening it must not shove the list down. It closes
  * itself once the request is sent. Finding people from contacts starts here
- * too, on its own screen.
+ * too, on its own screen. An email or phone nobody on HaalKhata has is
+ * answered in the footer, in place of Send, with the caller's invite link
+ * to share: nothing is created for that person, who signs up as themselves.
  *
  * @param props - Component props.
  * @returns The sheet.
@@ -32,13 +35,27 @@ export function AddFriendSheet({
       footer={
         <View style={styles.body}>
           {friendsState.error ? <Text accessibilityRole="alert" style={styles.error}>{friendsState.error}</Text> : null}
-          <Button
-            busy={friendsState.isAdding}
-            disabled={!friendsState.canSubmitAdd}
-            icon={<UserPlus color={colors.white} size={16} />}
-            label="Send request"
-            onPress={friendsState.submitAdd}
-          />
+          {friendsState.notOnHaalKhata ? (
+            <View style={styles.offer}>
+              <Text accessibilityRole="alert" style={styles.offerText}>
+                {NOT_ON_HAALKHATA_COPY.friend.message}
+              </Text>
+              <Button
+                busy={friendsState.isSharingInviteLink}
+                icon={<Share2 color={colors.white} size={16} />}
+                label={NOT_ON_HAALKHATA_COPY.friend.action}
+                onPress={friendsState.shareInviteLink}
+              />
+            </View>
+          ) : (
+            <Button
+              busy={friendsState.isAdding}
+              disabled={!friendsState.canSubmitAdd}
+              icon={<UserPlus color={colors.white} size={16} />}
+              label="Send request"
+              onPress={friendsState.submitAdd}
+            />
+          )}
         </View>
       }
       onClose={() => friendsState.setShowAdd(false)}
@@ -62,8 +79,7 @@ export function AddFriendSheet({
           phoneLabel="Friend's phone number"
         />
         <Text style={styles.hint}>
-          For privacy, we won’t reveal whether that identifier has an account. They must accept
-          before either of you is added as a friend.
+          They must accept before either of you is added as a friend.
         </Text>
       </View>
     </Sheet>
@@ -82,5 +98,18 @@ const styles = StyleSheet.create({
     color: colors.inkSoft,
     fontSize: 13,
     lineHeight: 18,
+  },
+  offer: {
+    backgroundColor: colors.paper,
+    borderColor: colors.line,
+    borderRadius: radii.lg,
+    borderWidth: 1,
+    gap: spacing.sm,
+    padding: spacing.md,
+  },
+  offerText: {
+    color: colors.ink,
+    fontSize: 14,
+    lineHeight: 20,
   },
 });

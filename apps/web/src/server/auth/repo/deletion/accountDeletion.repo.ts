@@ -11,7 +11,7 @@ import type { UserRow } from "../users.repo";
  * @returns Live account or undefined.
  */
 export async function lockAccountForDeletion(userId: string, client: PoolClient) {
-  return queryOne<UserRow>("SELECT * FROM users WHERE id = $1 AND deleted_at IS NULL AND merged_into IS NULL FOR UPDATE", [userId], client);
+  return queryOne<UserRow>("SELECT * FROM users WHERE id = $1 AND deleted_at IS NULL FOR UPDATE", [userId], client);
 }
 
 /**
@@ -24,7 +24,7 @@ export async function listDeletionGroupMembers(userId: string, client: PoolClien
   return query<UserRow & { group_id: string }>(`SELECT members.group_id, candidate.* FROM group_members members
     JOIN users candidate ON candidate.id = members.user_id
     JOIN groups owned ON owned.id = members.group_id
-    WHERE owned.created_by = $1 AND candidate.id <> $1 AND candidate.deleted_at IS NULL AND candidate.merged_into IS NULL
+    WHERE owned.created_by = $1 AND candidate.id <> $1 AND candidate.deleted_at IS NULL
     ORDER BY members.joined_at, candidate.id`, [userId], client);
 }
 
@@ -67,16 +67,17 @@ export async function eraseAccountData(input: { userId: string; anonymousId: str
   await execute("DELETE FROM comments WHERE user_id = $1", [input.userId], client);
   await execute("DELETE FROM friendships WHERE user_id = $1 OR friend_id = $1", [input.userId], client);
   await execute("DELETE FROM friend_requests WHERE requester_id = $1 OR recipient_id = $1", [input.userId], client);
-  await execute("DELETE FROM invite_links WHERE inviter_id = $1 OR invited_user_id = $1", [input.userId], client);
+  await execute("DELETE FROM invite_links WHERE inviter_id = $1", [input.userId], client);
+  await execute("DELETE FROM live_split_people WHERE user_id = $1", [input.userId], client);
   await execute("DELETE FROM phone_verifications WHERE user_id = $1", [input.userId], client);
   await execute("DELETE FROM operations WHERE user_id = $1", [input.userId], client);
   await execute("DELETE FROM apple_sign_in_challenges WHERE user_id = $1", [input.userId], client);
   await execute("DELETE FROM apple_credentials WHERE user_id = $1", [input.userId], client);
   await execute("DELETE FROM push_devices WHERE user_id = $1", [input.userId], client);
+  await execute("DELETE FROM user_sessions WHERE user_id = $1", [input.userId], client);
   await execute("DELETE FROM push_preferences WHERE user_id = $1", [input.userId], client);
   await execute("DELETE FROM push_kept_off WHERE user_id = $1", [input.userId], client);
-  await execute(`DELETE FROM payment_handles WHERE user_id = $1 OR user_id IN
-    (SELECT id FROM users WHERE merged_into = $1)`, [input.userId], client);
+  await execute("DELETE FROM payment_handles WHERE user_id = $1", [input.userId], client);
   await execute(`UPDATE expense_items SET name = $2 WHERE expense_id IN
     (SELECT id FROM expenses WHERE created_by = $1)`, [input.userId, input.itemName], client);
   await execute("UPDATE expenses SET description = $2, notes = '' WHERE created_by = $1", [input.userId, input.expenseDescription], client);
@@ -88,15 +89,12 @@ export async function eraseAccountData(input: { userId: string; anonymousId: str
   await execute("UPDATE group_members SET user_id = $2 WHERE user_id = $1", identity, client);
   await execute("UPDATE expenses SET created_by = $2 WHERE created_by = $1", identity, client);
   await execute("UPDATE expenses SET deleted_by = $2 WHERE deleted_by = $1", identity, client);
+  await execute("UPDATE expenses SET updated_by = $2 WHERE updated_by = $1", identity, client);
+  await execute("UPDATE live_splits SET host_id = $2 WHERE host_id = $1", identity, client);
   await execute("UPDATE settlements SET from_user = $2 WHERE from_user = $1", identity, client);
   await execute("UPDATE settlements SET to_user = $2 WHERE to_user = $1", identity, client);
   await execute("UPDATE settlements SET recorded_by = $2 WHERE recorded_by = $1", identity, client);
   await execute("UPDATE settlements SET deleted_by = $2 WHERE deleted_by = $1", identity, client);
   await execute("UPDATE groups SET created_by = $2 WHERE created_by = $1", identity, client);
-  // Merge tombstones also contain historical display names. Break their link
-  // to the original account and erase those identity columns in the same write.
-  await execute(`UPDATE users SET merged_into = $2, name = $3, email = NULL, phone = NULL, phone_verified_at = NULL,
-    password_hash = NULL, google_sub = NULL, apple_sub = NULL, avatar_url = NULL, deleted_at = NOW(), token_version = token_version + 1
-    WHERE merged_into = $1`, [input.userId, input.anonymousId, input.anonymousName], client);
   await execute("DELETE FROM users WHERE id = $1", [input.userId], client);
 }

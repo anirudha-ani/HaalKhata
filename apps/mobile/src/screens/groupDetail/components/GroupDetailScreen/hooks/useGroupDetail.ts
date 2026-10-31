@@ -3,8 +3,8 @@
 import type { User } from "@haalkhata/protogen/common/v1/common_pb";
 import { useRouter } from "expo-router";
 import { useState } from "react";
-import { Code, ConnectError } from "@connectrpc/connect";
 import { errorMessage, socialClient } from "@/lib/api/connect";
+import { isNotOnHaalKhata } from "@/lib/api/notOnHaalKhata";
 import { shareInvite } from "@/lib/invite/share";
 import { useMutation } from "@tanstack/react-query";
 import {
@@ -17,6 +17,7 @@ import {
 import type { MemberAction, MemberFeedback } from "@haalkhata/shared/group/memberActions";
 import { GroupStatus, type GroupArchiveStatus } from "@haalkhata/shared/group/status";
 import { groupArchivePrompt } from "@haalkhata/shared/group/archivePrompt";
+import { groupBalanceSections } from "@haalkhata/shared/group/currencyBalances";
 import { useGroupDetailAPI } from "./useGroupDetailAPI";
 
 /** The tabs available on the group detail screen. */
@@ -31,7 +32,10 @@ export type GroupTab = "expenses" | "balances" | "activity";
  * @returns Everything from {@link useGroupDetailAPI} plus `tab`/`setTab`,
  *   `addingPeople`/`setAddingPeople` and the add-people form (`pickedIds`,
  *   `togglePicked`, `contact`/`setContact`, `submitPeople`,
- *   `peopleError`, `canAddPeople`), `candidates` (friends not already in the
+ *   `peopleError`, `canAddPeople`), the invite-link offer for a contact
+ *   nobody on HaalKhata has (`inviteOffer`, `shareLinkForOffer`,
+ *   `sharingLinkForOffer`, `offerError`, `dismissInviteOffer`),
+ *   `candidates` (friends not already in the
  *   group), `reportingGroup`/`setReportingGroup` for the report sheet the
  *   group menu opens, the members sheet (`viewingMembers`/`setViewingMembers`,
  *   `pendingMemberAction` with `askMemberAction`/`cancelMemberAction`/
@@ -62,9 +66,13 @@ export function useGroupDetail(groupId: string) {
   const pendingGroupStatus = archiveAction?.groupId === groupId ? archiveAction.status : null;
   const [linkNotice, setLinkNotice] = useState("");
   const [linkError, setLinkError] = useState("");
-  // §33c: set when a typed contact has no claimed account, so the sheet
-  // can offer "send them a sign-up invite?" instead of a dead error.
+  // §33c: set when a typed contact has no account, so the sheet can offer
+  // the group's invite link instead of a dead error.
   const [inviteOffer, setInviteOffer] = useState<{ email: string; phone: string } | null>(null);
+  // Why sharing the link from that offer failed. Its own message, said in
+  // the offer under the button: the form's error line gives way to the
+  // offer, so a failure kept there was never on screen.
+  const [offerError, setOfferError] = useState("");
   // The server deliberately does not expose outgoing-request state, so this
   // local marker prevents accidental duplicate taps while the sheet is open.
   const [requestedIds, setRequestedIds] = useState<string[]>([]);
@@ -82,7 +90,16 @@ export function useGroupDetail(groupId: string) {
     user: User;
     cents: number;
     received: boolean;
+    /** The currency of the balance the action sat beside. */
+    currency: string;
   } | null>(null);
+
+  // The group's balances one currency at a time, its own first. Every view of
+  // them — the panel, the archive check, the members list — reads these, so
+  // a balance in a second currency is never left out of one of them.
+  const balanceSections = groupDetailAPI.balances
+    ? groupBalanceSections(groupDetailAPI.balances, groupDetailAPI.group?.currency ?? "USD")
+    : undefined;
 
   // Lookup map so panels can resolve a member's User from a bare user id.
   const userById = new Map(
@@ -108,6 +125,7 @@ export function useGroupDetail(groupId: string) {
   const submitPeople = () => {
     setPeopleError("");
     setInviteOffer(null);
+    setOfferError("");
     const payload = contactPayload(contact);
     // A number that cannot exist in the selected country never leaves the
     // form; the server's generic denial is reserved for real lookups.
@@ -124,12 +142,8 @@ export function useGroupDetail(groupId: string) {
           setAddingPeople(false);
         },
         onError: (mutationError) => {
-          // §33c: the not-on-platform refusal becomes the invite offer.
-          if (
-            mutationError instanceof ConnectError &&
-            mutationError.code === Code.FailedPrecondition &&
-            (payload.email !== "" || payload.phone !== "")
-          ) {
+          // §33c: the not-on-HaalKhata refusal becomes the invite-link offer.
+          if (isNotOnHaalKhata(mutationError, payload)) {
             setInviteOffer(payload);
             return;
           }
@@ -139,30 +153,32 @@ export function useGroupDetail(groupId: string) {
     );
   };
 
-  const [signUpShare, setSignUpShare] = useState<{ token: string; contact: string } | null>(
-    null,
-  );
+  const [groupShareToken, setGroupShareToken] = useState("");
+  // When the shared link stops working, for the dialog to say.
+  const [groupShareExpiresAt, setGroupShareExpiresAt] = useState("");
 
   /**
-   * Sends the sign-up invite the §33c offer promised, then opens the share
-   * dialog (QR code, copy, share sheet) with its claim link. The add-people
-   * sheet closes first — two native modals cannot stack.
+   * Answers the §33c offer: fetches the group's join link, then closes the
+   * add-people sheet and opens the share dialog with it — two native modals
+   * cannot stack. Whoever signs up through the link joins the group as
+   * themselves; nothing is created for the typed contact. A failure stays in
+   * the sheet, in the offer, under the button that caused it, and the offer
+   * stays up to try again.
    */
-  const sendSignUpInvite = useMutation({
-    mutationFn: async (offer: { email: string; phone: string }) => {
-      const { token } = await socialClient.inviteContactToSignUp(offer);
-      return { token, contact: offer.email || offer.phone };
+  const shareLinkForOffer = useMutation({
+    mutationFn: async () => {
+      const { token, expiresAt } = await socialClient.createGroupInviteLink({ groupId });
+      return { token, expiresAt };
     },
-    onSuccess: (share) => {
+    onSuccess: (link) => {
       setInviteOffer(null);
       setContact(EMPTY_CONTACT);
       setAddingPeople(false);
-      setSignUpShare(share);
+      setGroupShareToken(link.token);
+      setGroupShareExpiresAt(link.expiresAt);
     },
-    onError: (mutationError) => setPeopleError(errorMessage(mutationError)),
+    onError: (mutationError) => setOfferError(errorMessage(mutationError)),
   });
-
-  const [groupShareToken, setGroupShareToken] = useState("");
 
   /**
    * Fetches the group's one join link (minted on first ask) and opens the
@@ -171,10 +187,13 @@ export function useGroupDetail(groupId: string) {
    */
   const shareGroupLink = useMutation({
     mutationFn: async () => {
-      const { token } = await socialClient.createGroupInviteLink({ groupId });
-      return token;
+      const { token, expiresAt } = await socialClient.createGroupInviteLink({ groupId });
+      return { token, expiresAt };
     },
-    onSuccess: (token) => setGroupShareToken(token),
+    onSuccess: (link) => {
+      setGroupShareToken(link.token);
+      setGroupShareExpiresAt(link.expiresAt);
+    },
     // Shown under the strip the button sits in. It used to go to the
     // add-people form's error, which is only on screen inside a sheet that
     // is closed when this runs.
@@ -193,26 +212,6 @@ export function useGroupDetail(groupId: string) {
     },
     onError: (mutationError) =>
       setMemberFeedback({ userId: null, tone: "error", message: errorMessage(mutationError) }),
-  });
-
-  /** Shares an Invited member's personal sign-up link. */
-  const remind = useMutation({
-    mutationFn: async (person: User) => {
-      const { token } = await socialClient.getFriendInviteLink({ userId: person.id });
-      return shareInvite(
-        token,
-        groupDetailAPI.me?.name ?? "A member",
-        groupDetailAPI.group?.name ?? "",
-      );
-    },
-    onSuccess: (outcome, person) => {
-      if (outcome !== "shared") return;
-      const message = "Invite link shared ✓";
-      setLinkNotice(message);
-      setMemberFeedback({ userId: person.id, tone: "success", message });
-    },
-    onError: (mutationError, person) =>
-      setMemberFeedback({ userId: person.id, tone: "error", message: errorMessage(mutationError) }),
   });
 
   /**
@@ -282,9 +281,8 @@ export function useGroupDetail(groupId: string) {
 
   const archivePrompt = pendingGroupStatus === null ? null : groupArchivePrompt({
     groupName: groupDetailAPI.group?.name ?? "this group",
-    currency: groupDetailAPI.group?.currency ?? "USD",
     status: pendingGroupStatus,
-    balances: groupDetailAPI.balances?.nets,
+    balances: balanceSections,
   });
 
   /**
@@ -341,7 +339,11 @@ export function useGroupDetail(groupId: string) {
     tab: activeTab,
     setTab: setActiveTab,
     addingPeople,
-    setAddingPeople,
+    /** Opens or closes the add-people sheet; a failed share from its offer is not kept for next time. */
+    setAddingPeople: (open: boolean) => {
+      setOfferError("");
+      setAddingPeople(open);
+    },
     reportingGroup,
     setReportingGroup,
     viewingMembers,
@@ -374,6 +376,7 @@ export function useGroupDetail(groupId: string) {
     sharingInviteLink: shareGroupLink.isPending,
     /** Token behind the open share dialog; empty while it is closed. */
     groupShareToken,
+    groupShareExpiresAt,
     closeGroupShare: () => setGroupShareToken(""),
     /** Opens the OS share sheet with the link's message; for the dialog. */
     shareLinkToSheet: () =>
@@ -387,11 +390,6 @@ export function useGroupDetail(groupId: string) {
       resetLink.mutate();
     },
     resettingInviteLink: resetLink.isPending,
-    remindMember: (person: User) => {
-      setMemberFeedback(null);
-      remind.mutate(person);
-    },
-    remindingUserId: remind.isPending ? remind.variables?.id : undefined,
     requestFriendship,
     requestedIds,
     requestingUserId: groupDetailAPI.addFriend.isPending
@@ -407,17 +405,16 @@ export function useGroupDetail(groupId: string) {
     setContact,
     peopleError,
     inviteOffer,
-    sendSignUpInvite: () => {
-      if (inviteOffer) sendSignUpInvite.mutate(inviteOffer);
+    shareLinkForOffer: () => {
+      setOfferError("");
+      shareLinkForOffer.mutate();
     },
-    sendingSignUpInvite: sendSignUpInvite.isPending,
-    /** The open sign-up share dialog's link and contact; null while closed. */
-    signUpShare,
-    closeSignUpShare: () => setSignUpShare(null),
-    /** Opens the OS share sheet with the link's message; for the dialog. */
-    signUpShareToSheet: () =>
-      shareInvite(signUpShare?.token ?? "", groupDetailAPI.me?.name ?? "A member", ""),
-    dismissInviteOffer: () => setInviteOffer(null),
+    sharingLinkForOffer: shareLinkForOffer.isPending,
+    offerError,
+    dismissInviteOffer: () => {
+      setOfferError("");
+      setInviteOffer(null);
+    },
     submitPeople,
     canAddPeople: pickedIds.length > 0 || !contactIsEmpty(contact),
     // The persisted group mode, not view state: everyone in the group sees
@@ -431,8 +428,12 @@ export function useGroupDetail(groupId: string) {
     simplifyError: groupDetailAPI.setSimplify.isError
       ? errorMessage(groupDetailAPI.setSimplify.error)
       : "",
+    balanceSections,
     settleWith,
     setSettleWith,
     userById,
   };
 }
+
+/** Everything the group screen and its sheets read from {@link useGroupDetail}. */
+export type GroupDetailController = ReturnType<typeof useGroupDetail>;

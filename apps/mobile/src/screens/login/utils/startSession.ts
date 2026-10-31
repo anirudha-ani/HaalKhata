@@ -2,7 +2,6 @@
 
 import { clearMobileQueryCache } from "@/lib/api/queryCache";
 import { setSessionToken } from "@/lib/api/session";
-import { consumePendingInvite } from "@/lib/invite/consumePendingInvite";
 import { markDeviceSetupDue } from "@/lib/onboarding/deviceSetup";
 import { clearPushTraces } from "@/lib/push/pushStore";
 
@@ -12,16 +11,16 @@ import { clearPushTraces } from "@/lib/push/pushStore";
  * in the push state (its banners, its badge, and the record of a recent
  * registration, so this session registers the phone straight away even if
  * the last one was signed out by the server), notes that someone just signed
- * in on this phone (so the first-run flow offers its device steps once),
- * stores the token, and resumes a pending invitation if there is one.
+ * in on this phone (so the first-run flow offers its device steps once), and
+ * stores the token. Where to go next is not decided here: the welcome screen
+ * leaves for a pending invitation or Home as soon as a session exists
+ * (useLeaveWhenSignedIn), whether it was started here or was already there.
  *
  * @param token - The bearer token the server returned.
- * @returns Where to go next: the invitation, or Home.
  */
-export async function startSession(token: string): Promise<string> {
+export async function startSession(token: string): Promise<void> {
   await clearMobileQueryCache();
   await clearPushTraces();
   await markDeviceSetupDue();
   await setSessionToken(token);
-  return consumePendingInvite();
 }

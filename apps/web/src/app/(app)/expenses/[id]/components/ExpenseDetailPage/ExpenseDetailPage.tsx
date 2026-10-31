@@ -3,7 +3,9 @@
 
 import { SafetyActions } from "@/components/safety/SafetyActions/SafetyActions";
 import Link from "next/link";
-import { Check, Lock, Pencil, Send, Trash2 } from "lucide-react";
+import { Check, ChevronUp, Lock, Pencil, Radio, Send, Trash2 } from "lucide-react";
+import { ErrorAlert } from "@/components/ui/ErrorAlert/ErrorAlert";
+import { SHOW_EARLIER_COMMENTS_LABEL } from "@haalkhata/shared/api/paging";
 import { Avatar } from "@/components/ui/Avatar/Avatar";
 import { AvatarStack } from "@/components/ui/AvatarStack/AvatarStack";
 import { PersonLink } from "@/components/people/PersonLink/PersonLink";
@@ -12,6 +14,7 @@ import { Modal } from "@/components/ui/Modal/Modal";
 import { Money } from "@/components/ui/Money/Money";
 import { Spinner } from "@/components/ui/Spinner/Spinner";
 import { errorMessage } from "@/lib/api/connect";
+import { useRevealWhenShown } from "@/lib/hooks/useRevealWhenShown";
 import { useHydrated } from "@/lib/hooks/useHydrated";
 import { formatMoney } from "@haalkhata/shared/money/money";
 import { localDateTime } from "@haalkhata/shared/time/localTime";
@@ -35,6 +38,8 @@ import { ARCHIVED_GROUP_HINT, GROUP_ARCHIVE_ACTIONS } from "@haalkhata/shared/gr
 export function ExpenseDetailPage({ expenseId }: { expenseId: string }) {
   const expenseDetail = useExpenseDetail(expenseId);
   const hydrated = useHydrated();
+  // A failed page is said above the button that retries it, pushing it down.
+  const earlierRef = useRevealWhenShown<HTMLButtonElement>(expenseDetail.earlierCommentsError !== "");
 
   if (!hydrated || expenseDetail.isLoading) return <Spinner label="Loading expense…" />;
   const expense = expenseDetail.detail?.expense;
@@ -74,10 +79,19 @@ export function ExpenseDetailPage({ expenseId }: { expenseId: string }) {
   const isParticipant =
     isCreator ||
     expense.payers.some((payer) => payer.userId === meId) ||
-    expense.splits.some((split) => split.userId === meId);
+    expense.splits.some((split) => split.userId === meId) ||
+    (expenseDetail.detail?.liveSplit?.peopleIds.includes(meId ?? "") ?? false);
   const hasLaterSettlement = expenseDetail.detail?.hasLaterSettlement === true;
   const isDeleted = expense.deletedAt !== "";
   const isArchived = expenseDetail.detail?.groupStatus === GroupStatus.ARCHIVED;
+  // Somebody on this group expense has left the group: the server says which
+  // change it would refuse and why, so the page says it in place of the
+  // button rather than offering one that fails. A refused delete always
+  // comes with a refused edit, so the edit's reason is the one to show.
+  const editRefusal = expenseDetail.detail?.editRefusal ?? "";
+  const canEdit = editRefusal === "";
+  const liveSplit = expenseDetail.detail?.liveSplit;
+  const canDelete = isCreator && (expenseDetail.detail?.deleteRefusal ?? "") === "";
   const deletion = expenseDetail.deletion;
   // Same wording as the list rows, from the same function — the list's
   // tooltip is invisible on phones, so this page is where the full sentence
@@ -159,15 +173,37 @@ export function ExpenseDetailPage({ expenseId }: { expenseId: string }) {
         </div>
       ) : null}
 
-      {isParticipant && !isDeleted && !isArchived ? (
-        <div className="flex gap-2">
-          <Link
-            href={`/expenses/new?edit=${expense.id}`}
-            className="flex items-center gap-1.5 rounded-lg border border-line bg-card px-3 py-2 text-xs font-semibold text-ink-soft hover:border-brand-200"
-          >
-            <Pencil className="h-3.5 w-3.5" /> Edit
-          </Link>
-          {isCreator ? (
+      {liveSplit ? (
+        <Link
+          href={`/expenses/${expense.id}/live`}
+          className="flex items-center gap-2 rounded-2xl border border-brand-200 bg-brand-50 px-4 py-3 text-sm font-semibold text-brand-700"
+        >
+          <Radio className="h-4 w-4 shrink-0" />
+          <span className="min-w-0 flex-1">Everyone is splitting this live. Open it to claim what you had.</span>
+        </Link>
+      ) : null}
+
+      {isParticipant && !isDeleted && !isArchived && (canEdit || canDelete) ? (
+        <div className="flex flex-wrap gap-2">
+          {canEdit ? (
+            <Link
+              href={`/expenses/new?edit=${expense.id}`}
+              className="flex items-center gap-1.5 rounded-lg border border-line bg-card px-3 py-2 text-xs font-semibold text-ink-soft hover:border-brand-200"
+            >
+              <Pencil className="h-3.5 w-3.5" /> Edit
+            </Link>
+          ) : null}
+          {canEdit && !liveSplit && expense.items.length > 0 ? (
+            <button
+              type="button"
+              disabled={expenseDetail.isStartingLive}
+              onClick={expenseDetail.startLive}
+              className="flex items-center gap-1.5 rounded-lg border border-line bg-card px-3 py-2 text-xs font-semibold text-ink-soft hover:border-brand-200 disabled:opacity-50"
+            >
+              <Radio className="h-3.5 w-3.5" /> Split live
+            </button>
+          ) : null}
+          {canDelete ? (
             <button
               type="button"
               onClick={() => expenseDetail.setConfirmingDelete(true)}
@@ -179,7 +215,14 @@ export function ExpenseDetailPage({ expenseId }: { expenseId: string }) {
         </div>
       ) : null}
 
-      {isParticipant && !isDeleted && !isArchived && hasLaterSettlement ? (
+      {isParticipant && !isDeleted && !isArchived && editRefusal ? (
+        <p className="flex items-start gap-2 rounded-2xl border border-line bg-card px-4 py-3 text-sm text-ink-soft">
+          <Lock className="mt-0.5 h-4 w-4 shrink-0" />
+          <span>{editRefusal}</span>
+        </p>
+      ) : null}
+
+      {isParticipant && !isDeleted && !isArchived && hasLaterSettlement && (canEdit || canDelete) ? (
         <p className="flex items-start gap-2 rounded-2xl border border-line bg-card px-4 py-3 text-sm text-ink-soft">
           <Lock className="mt-0.5 h-4 w-4 shrink-0" />
           <span>
@@ -360,7 +403,24 @@ export function ExpenseDetailPage({ expenseId }: { expenseId: string }) {
       {/* Comments */}
       <section className="space-y-3">
         <h2 className="text-sm font-semibold tracking-wide text-ink-soft uppercase">Comments</h2>
-        {(expenseDetail.detail?.comments ?? []).map((comment) => (
+        {/* Older comments are read on request, above the ones shown, which
+            is where the person is looking when they ask for them. */}
+        {expenseDetail.earlierCommentsError ? (
+          <ErrorAlert message={`Couldn't load earlier comments: ${expenseDetail.earlierCommentsError}`} />
+        ) : null}
+        {expenseDetail.hasEarlierComments ? (
+          <button
+            ref={earlierRef}
+            type="button"
+            onClick={expenseDetail.showEarlierComments}
+            disabled={expenseDetail.isLoadingEarlierComments}
+            className="flex w-full scroll-my-5 items-center justify-center gap-1.5 rounded-xl border border-line bg-card py-2.5 text-sm font-semibold text-ink-soft hover:border-brand-200 hover:text-brand-600 disabled:opacity-50"
+          >
+            <ChevronUp className="h-4 w-4" aria-hidden="true" />
+            {expenseDetail.isLoadingEarlierComments ? "Loading…" : SHOW_EARLIER_COMMENTS_LABEL}
+          </button>
+        ) : null}
+        {expenseDetail.comments.map((comment) => (
           <div key={comment.id} className="flex gap-3 rounded-xl border border-line bg-card p-3">
             {comment.author ? (
               <PersonLink userId={comment.author.id} meId={meId}>

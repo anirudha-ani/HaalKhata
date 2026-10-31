@@ -2,7 +2,7 @@
 /** Activity row: one feed event as a linked row with its type tile, sentence, context line and amount. */
 
 import Link from "next/link";
-import type { ActivityEvent } from "@haalkhata/protogen/social/v1/social_pb";
+import type { ActivityEvent } from "@haalkhata/shared/api/plainMessages";
 import { Avatar } from "@/components/ui/Avatar/Avatar";
 import { formatMoney } from "@haalkhata/shared/money/money";
 import { safeActivityPath } from "@haalkhata/shared/navigation/activityPath";

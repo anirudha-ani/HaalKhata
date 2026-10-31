@@ -16,7 +16,7 @@ vi.mock("@/server/common/ledger/ledgerLocks", () => ({
 import { queryOne } from "@/server/common/db/db";
 import { scopeHasSettlements } from "./settlements.repo";
 
-const EVENT_ORDER = "42";
+const EVENT_ORDER = 42;
 const transactionClient = {} as PoolClient;
 
 beforeEach(() => {

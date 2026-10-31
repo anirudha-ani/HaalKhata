@@ -1,0 +1,9 @@
+# The default rules, less one value. Tests sign sessions with a made-up key
+# that has never signed anything real, and the scan reads it as a leaked secret
+# in every new test that sets it. Only that exact text is let through.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "The session key the test suite signs with"
+regexes = ['''^test-secret-key-for-vitest-0123456789abcdef$''']

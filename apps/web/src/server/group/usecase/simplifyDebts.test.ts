@@ -41,11 +41,8 @@ vi.mock("@/server/social/repo/friendships.repo", () => ({
 }));
 vi.mock("@/server/social/repo/activity.repo", () => ({ insertActivity: vi.fn() }));
 vi.mock("@/server/social/repo/notifications.repo", () => ({ insertNotifications: vi.fn() }));
-vi.mock("@/server/auth/usecase/account/auth.usecase", () => ({
-  findOrCreateUserByEmail: vi.fn(),
-  findOrCreateUserByPhone: vi.fn(),
-}));
 vi.mock("@/server/expense/usecase/balance.usecase", () => ({
+  memberDebtsInGroup: vi.fn(),
   userNetInGroup: vi.fn(),
   userNetInGroups: vi.fn(),
   groupIsSettled: vi.fn(),
@@ -81,8 +78,9 @@ import {
 import { findUserByEmail, findUserById, findUsersByIds } from "@/server/auth/repo/users.repo";
 import { listFriendIds } from "@/server/social/repo/friendships.repo";
 import { insertActivity } from "@/server/social/repo/activity.repo";
-import { groupIsSettled, userNetInGroup } from "@/server/expense/usecase/balance.usecase";
+import { groupIsSettled, memberDebtsInGroup, userNetInGroup } from "@/server/expense/usecase/balance.usecase";
 import { lockGroupLedgers } from "@/server/common/ledger/ledgerLocks";
+import { DEFAULT_READ_MAX_BYTES } from "@/server/api/connect/connect.constants";
 import {
   MAX_GROUP_MEMBER_IDS_PER_REQUEST,
   MAX_GROUP_NAME_LENGTH,
@@ -92,6 +90,8 @@ const MEMBER = "user-member";
 const OUTSIDER = "user-outsider";
 const TARGET = "user-target";
 const TRIP = "group-trip";
+/** How long refusing a hostile email may take; the old pattern took seconds at this size. */
+const HOSTILE_EMAIL_BUDGET_MS = 100;
 
 /** The persisted mode the mocked repo reads and writes. */
 let storedSimplify = false;
@@ -152,46 +152,59 @@ describe("group membership authorization", () => {
     expect(addMember).not.toHaveBeenCalled();
   });
 
-  it("refuses a contact with no claimed account, as the invite offer (§33c)", async () => {
+  it("refuses a contact with no account, pointing at the group's link (§33c)", async () => {
     vi.mocked(findUserByEmail).mockResolvedValue(undefined);
 
     await expect(
       addMembers(MEMBER, { groupId: TRIP, userIds: [], email: "new-person@example.com" }),
     ).rejects.toMatchObject({
       code: "failed_precondition",
-      message: expect.stringContaining("not on HaalKhata yet"),
+      message: expect.stringContaining("share this group's invite link"),
     });
     expect(addMember).not.toHaveBeenCalled();
   });
 
-  it("refuses enrolling an Invited (unregistered) friend by id (§33c)", async () => {
-    const invited = {
-      id: "invited-1",
-      name: "New Person",
+  it("refuses enrolling a Deleted member left in a friend's history (§33c)", async () => {
+    const standIn = {
+      id: "stand-in-1",
+      name: "Deleted member",
       google_sub: null,
       password_hash: null,
+      deleted_at: "2026-10-01T00:00:00Z",
     } as UserRow;
-    vi.mocked(listFriendIds).mockResolvedValue(["invited-1"]);
-    vi.mocked(findUsersByIds).mockResolvedValue([invited]);
+    vi.mocked(listFriendIds).mockResolvedValue(["stand-in-1"]);
+    vi.mocked(findUsersByIds).mockResolvedValue([standIn]);
 
     await expect(
-      addMembers(MEMBER, { groupId: TRIP, userIds: ["invited-1"], email: "" }),
+      addMembers(MEMBER, { groupId: TRIP, userIds: ["stand-in-1"], email: "" }),
     ).rejects.toMatchObject({
       code: "failed_precondition",
-      message: expect.stringContaining("New Person hasn't joined"),
+      message: expect.stringContaining("Deleted member can't be added to a group"),
     });
     expect(addMember).not.toHaveBeenCalled();
   });
 
-  it("lets a zero-balance non-owner leave a group", async () => {
+  it("lets a non-owner no debt names leave a group", async () => {
     vi.mocked(memberRole).mockResolvedValue("member");
-    vi.mocked(userNetInGroup).mockResolvedValue(0);
+    vi.mocked(memberDebtsInGroup).mockResolvedValue([]);
 
     await removeMemberFromGroup(MEMBER, { groupId: TRIP, userId: MEMBER });
 
     expect(lockGroupLedgers).toHaveBeenCalledWith(transactionClient, [TRIP]);
-    expect(userNetInGroup).toHaveBeenCalledWith(MEMBER, TRIP, transactionClient);
+    expect(memberDebtsInGroup).toHaveBeenCalledWith(MEMBER, TRIP, transactionClient);
     expect(removeMember).toHaveBeenCalledWith(TRIP, MEMBER, transactionClient);
+  });
+
+  it("keeps a member in while a debt still names them, whatever their total", async () => {
+    vi.mocked(memberRole).mockResolvedValue("member");
+    vi.mocked(memberDebtsInGroup).mockResolvedValue([
+      { currency: "USD", fromUserId: "user-ben", toUserId: MEMBER, amountCents: 5000 },
+    ]);
+
+    await expect(removeMemberFromGroup(MEMBER, { groupId: TRIP, userId: MEMBER })).rejects.toThrow(
+      /outstanding balance/,
+    );
+    expect(removeMember).not.toHaveBeenCalled();
   });
 
   it("still prevents the owner from leaving without handing the group on", async () => {
@@ -275,6 +288,19 @@ describe("group persisted input bounds", () => {
     expect(addMember).not.toHaveBeenCalled();
   });
 
+  it("refuses an email field the size of a whole request at once, before looking anybody up", async () => {
+    // Shaped to make a backtracking email pattern try every split of the dots.
+    const hostile = `a@${".".repeat(DEFAULT_READ_MAX_BYTES)}@`;
+    const start = performance.now();
+    await expect(
+      addMembers(MEMBER, { groupId: TRIP, userIds: [], email: hostile }),
+    ).rejects.toMatchObject({ code: "invalid_argument" });
+
+    expect(performance.now() - start).toBeLessThan(HOSTILE_EMAIL_BUDGET_MS);
+    expect(findUserByEmail).not.toHaveBeenCalled();
+    expect(addMember).not.toHaveBeenCalled();
+  });
+
   it("rejects an oversized group name before insertion", async () => {
     await expect(
       createGroup(MEMBER, {
@@ -341,7 +367,7 @@ describe("setStatus", () => {
   });
 
   it("rejects archiving when anyone in the group still has an outstanding balance", async () => {
-    vi.mocked(userNetInGroup).mockResolvedValue(0);
+    vi.mocked(userNetInGroup).mockResolvedValue(new Map());
     vi.mocked(groupIsSettled).mockResolvedValue(false);
     await expect(setStatus(MEMBER, { groupId: TRIP, status: GroupStatus.ARCHIVED })).rejects.toMatchObject({
       code: "failed_precondition",

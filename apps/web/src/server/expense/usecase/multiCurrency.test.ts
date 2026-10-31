@@ -7,8 +7,8 @@
  */
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { ExpenseRow, PayerRow, SplitRow } from "@/server/expense/repo/expenses.repo";
-import type { SettlementRow } from "@/server/expense/repo/settlements.repo";
+import type { ListedExpenseRow, PayerRow, SplitRow } from "@/server/expense/repo/expenses.repo";
+import type { ListedSettlementRow } from "@/server/expense/repo/settlements.repo";
 import type { UserRow } from "@/server/auth/repo/users.repo";
 
 // The reads run inside a database snapshot. Every statement is mocked here,
@@ -20,14 +20,15 @@ vi.mock("@/server/common/db/db", async (importOriginal) => ({
 }));
 vi.mock("@/server/expense/repo/expenses.repo", () => ({
   listExpensesBetween: vi.fn(),
-  listExpensesByGroup: vi.fn(),
   listExpensesByGroups: vi.fn(),
   listExpensesInvolvingUser: vi.fn(),
   listOneOffExpensesBetween: vi.fn(),
+  listOneOffExpensesWithAnyOf: vi.fn(),
   loadExpenseChildren: vi.fn(),
 }));
 vi.mock("@/server/expense/repo/settlements.repo", () => ({
   listOneOffSettlementsBetween: vi.fn(),
+  listOneOffSettlementsWithAnyOf: vi.fn(),
   listSettlementsBetween: vi.fn(),
   listSettlementsByGroup: vi.fn(),
   listSettlementsByGroups: vi.fn(),
@@ -54,17 +55,19 @@ import {
   getFriendLedger,
   getOverallBalances,
   netWithUser,
-  oneOffNetsBetween,
+  oneOffNetsWith,
   owedByScope,
 } from "./balance.usecase";
 import {
   listExpensesBetween,
   listExpensesInvolvingUser,
   listOneOffExpensesBetween,
+  listOneOffExpensesWithAnyOf,
   loadExpenseChildren,
 } from "@/server/expense/repo/expenses.repo";
 import {
   listOneOffSettlementsBetween,
+  listOneOffSettlementsWithAnyOf,
   listSettlementsBetween,
   listSettlementsInvolvingUser,
 } from "@/server/expense/repo/settlements.repo";
@@ -93,7 +96,7 @@ function expenseRow(
   currency: string,
   amountCents: number,
   createdAt: string,
-): ExpenseRow {
+): ListedExpenseRow {
   return {
     id: expenseId,
     group_id: null,
@@ -108,9 +111,12 @@ function expenseRow(
     tip_cents: 0,
     created_by: BOBBY,
     created_at: createdAt,
-    ledger_event_order: "1",
+    created_at_exact: createdAt.replace("Z", ".000000Z"),
+    ledger_event_order: 1,
     deleted_at: null,
     deleted_by: null,
+    version: 1,
+    updated_by: null,
   };
 }
 
@@ -126,7 +132,7 @@ const splitsByExpense = new Map<string, SplitRow[]>([
   ["expense-euros", [{ expense_id: "expense-euros", user_id: BOBBY, owed_cents: 500 }]],
 ]);
 /** Settlement rows "stored" so far; tests append to simulate payments. */
-let settlementRows: SettlementRow[] = [];
+let settlementRows: ListedSettlementRow[] = [];
 
 /**
  * Builds a users-table row for the scenario's people.
@@ -161,6 +167,7 @@ beforeEach(() => {
   vi.mocked(listExpensesInvolvingUser).mockResolvedValue([dollars, euros]);
   vi.mocked(listExpensesBetween).mockResolvedValue([dollars, euros]);
   vi.mocked(listOneOffExpensesBetween).mockResolvedValue([dollars, euros]);
+  vi.mocked(listOneOffExpensesWithAnyOf).mockResolvedValue([dollars, euros]);
   vi.mocked(loadExpenseChildren).mockImplementation(async () => ({
     payers: payersByExpense,
     splits: splitsByExpense,
@@ -169,6 +176,7 @@ beforeEach(() => {
   vi.mocked(listSettlementsInvolvingUser).mockImplementation(async () => settlementRows);
   vi.mocked(listSettlementsBetween).mockImplementation(async () => settlementRows);
   vi.mocked(listOneOffSettlementsBetween).mockImplementation(async () => settlementRows);
+  vi.mocked(listOneOffSettlementsWithAnyOf).mockImplementation(async () => settlementRows);
   // Everyone has one payment method, named after its owner, so a test can
   // tell whose methods a ledger carried.
   vi.mocked(listPaymentMethodsByUser).mockImplementation(async (ownerId: string) => [
@@ -190,7 +198,7 @@ beforeEach(() => {
 
 describe("balances are kept per currency", () => {
   it("the one-off slate is one balance per currency", async () => {
-    expect(await oneOffNetsBetween(ALICE, BOBBY)).toEqual(
+    expect((await oneOffNetsWith(ALICE, [BOBBY])).get(BOBBY)).toEqual(
       new Map([
         ["USD", -1000],
         ["EUR", 500],
@@ -314,26 +322,24 @@ describe("balances are kept per currency", () => {
     expect(listPaymentMethodsByUser).not.toHaveBeenCalled();
   });
 
-  it("refuses, by name, an aggregate the int32 wire field cannot carry", async () => {
-    // Two rows at the per-row cap are each valid; their sum is not
-    // representable. The encoder would throw an opaque internal error;
-    // instead the caller gets a precondition failure that says which number.
+  it("adds up a balance far past the old 32-bit ceiling, to the cent", async () => {
+    // Two expenses at the per-amount ceiling: 200,000,000,000.00 owed, where
+    // 21,474,836.47 was once the most any balance could show.
     const huge = [
-      expenseRow("expense-huge-1", "USD", 2_000_000_000, "2026-08-03T10:00:00Z"),
-      expenseRow("expense-huge-2", "USD", 2_000_000_000, "2026-08-04T10:00:00Z"),
+      expenseRow("expense-huge-1", "USD", 10_000_000_000_000, "2026-08-03T10:00:00Z"),
+      expenseRow("expense-huge-2", "USD", 10_000_000_000_000, "2026-08-04T10:00:00Z"),
     ];
     for (const expense of huge) {
       payersByExpense.set(expense.id, [
-        { expense_id: expense.id, user_id: BOBBY, amount_cents: 2_000_000_000 },
+        { expense_id: expense.id, user_id: BOBBY, amount_cents: 10_000_000_000_000 },
       ]);
       splitsByExpense.set(expense.id, [
-        { expense_id: expense.id, user_id: ALICE, owed_cents: 2_000_000_000 },
+        { expense_id: expense.id, user_id: ALICE, owed_cents: 10_000_000_000_000 },
       ]);
     }
     vi.mocked(listExpensesInvolvingUser).mockResolvedValue(huge);
-    await expect(getOverallBalances(ALICE)).rejects.toMatchObject({
-      code: "failed_precondition",
-    });
+    const overall = await getOverallBalances(ALICE);
+    expect(overall.totals.find((total) => total.currency === "USD")?.youOweCents).toBe(20_000_000_000_000);
     for (const expense of huge) {
       payersByExpense.delete(expense.id);
       splitsByExpense.delete(expense.id);
@@ -352,7 +358,8 @@ describe("balances are kept per currency", () => {
       method_label: "",
       note: "",
       created_at: "2026-08-03T00:00:00Z",
-      ledger_event_order: "3",
+      created_at_exact: "2026-08-03T00:00:00.000000Z",
+      ledger_event_order: 3,
       deleted_at: null,
       recorded_by: ALICE,
       deleted_by: null,

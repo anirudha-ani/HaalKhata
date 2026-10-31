@@ -42,11 +42,15 @@ describe("archive eligibility", () => {
   });
 
   it("checks other members even when the viewer is settled", () => {
-    expect(allBalancesSettled([{ netCents: 0 }, { netCents: 100 }, { netCents: -100 }])).toBe(false);
+    expect(allBalancesSettled([{ nets: [{ netCents: 0 }, { netCents: 100 }, { netCents: -100 }] }])).toBe(false);
+  });
+
+  it("checks every currency the group holds", () => {
+    expect(allBalancesSettled([{ nets: [{ netCents: 0 }] }, { nets: [{ netCents: 100 }, { netCents: -100 }] }])).toBe(false);
   });
 
   it("allows an empty or completely settled group", () => {
     expect(allBalancesSettled([])).toBe(true);
-    expect(allBalancesSettled([{ netCents: 0 }, { netCents: 0 }])).toBe(true);
+    expect(allBalancesSettled([{ nets: [{ netCents: 0 }, { netCents: 0 }] }])).toBe(true);
   });
 });

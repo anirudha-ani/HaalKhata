@@ -2,7 +2,6 @@
 
 import { snapshot } from "@/server/common/db/db";
 import { UsecaseError } from "@/server/common/errors";
-import { toInt32Cents } from "@/server/common/money/money";
 import { assembleCurrencyInsights } from "@/server/personalanalytics/domain/currencyInsights";
 import { insightWindow } from "@/server/personalanalytics/domain/insightWindow";
 import {
@@ -82,8 +81,8 @@ export async function getInsights(
       categorySpendingOf(cells),
       paymentRows.map((paymentRow) => ({
         currency: paymentRow.currency,
-        paidCents: Number(paymentRow.paid_cents),
-        receivedCents: Number(paymentRow.received_cents),
+        paidCents: paymentRow.paid_cents,
+        receivedCents: paymentRow.received_cents,
       })),
     );
 
@@ -102,21 +101,17 @@ export async function getInsights(
         receiptScanCount: journey.receipt_scan_count,
       },
       months: window.months,
-      // Every stored amount fits an int32, but a sum of them need not; each
-      // total is checked on its way out rather than crashing the encoder.
       currencies: currencies.map((block) => ({
         currency: block.currency,
-        shareCents: toInt32Cents(block.shareCents, "your spending"),
-        paidCents: toInt32Cents(block.paidCents, "what you paid"),
-        monthlyShareCents: block.monthlyShareCents.map((cents) =>
-          toInt32Cents(cents, "your spending"),
-        ),
+        shareCents: block.shareCents,
+        paidCents: block.paidCents,
+        monthlyShareCents: block.monthlyShareCents,
         categories: block.categories.map((category) => ({
           category: category.category,
-          shareCents: toInt32Cents(category.shareCents, "your spending"),
+          shareCents: category.shareCents,
         })),
-        settledOutCents: toInt32Cents(block.settledOutCents, "what you paid back"),
-        settledInCents: toInt32Cents(block.settledInCents, "what you were paid back"),
+        settledOutCents: block.settledOutCents,
+        settledInCents: block.settledInCents,
         splitTypes: splitTypeUseOf(cellsIn(block.currency)),
         companions: companionRows
           .filter((companionRow) => companionRow.currency === block.currency)

@@ -23,22 +23,16 @@ vi.mock("@/server/social/repo/friendships.repo", () => ({
   listOutgoingFriendRequests: vi.fn(),
 }));
 vi.mock("@/server/auth/repo/users.repo", () => ({
+  findUserByEmail: vi.fn(),
   findUserById: vi.fn(),
+  findUserByPhone: vi.fn(),
   findUsersByIds: vi.fn(),
 }));
-vi.mock("@/server/auth/usecase/account/auth.usecase", () => ({
-  findOrCreateUserByEmail: vi.fn(),
-  findOrCreateUserByPhone: vi.fn(),
-}));
-vi.mock("@/server/auth/repo/merge/accountMerge.repo", () => ({ mergeAccounts: vi.fn() }));
 vi.mock("@/server/social/repo/inviteLinks.repo", () => ({
-  findActiveFriendLink: vi.fn(),
   findActiveGroupLink: vi.fn(),
-  findActiveLinkByToken: vi.fn(),
+  findLinkByToken: vi.fn(),
   findActiveProfileLink: vi.fn(),
   insertInviteLink: vi.fn(),
-  revokeFriendLinkForPair: vi.fn(),
-  revokeFriendLinksFor: vi.fn(),
   revokeGroupLinks: vi.fn(),
   revokeProfileLinks: vi.fn(),
 }));
@@ -65,13 +59,14 @@ vi.mock("@/server/social/repo/notifications.repo", () => ({
 vi.mock("@/server/expense/usecase/balance.usecase", () => ({
   getOverallBalances: vi.fn(),
   netWithUser: vi.fn(),
+  oneOffNetsWith: vi.fn(),
 }));
 vi.mock("@/server/common/ledger/ledgerLocks", () => ({
   lockFriendRequestInboxes: vi.fn(),
   lockGroupLedgers: vi.fn(),
   lockParticipantLedgers: vi.fn(),
   lockReminder: vi.fn(),
-  withLedgerTransaction: vi.fn(),
+  withLedgerTransaction: vi.fn((operation: (client: PoolClient) => Promise<unknown>) => operation(transactionClient)),
 }));
 vi.mock("@/server/common/db/db", () => ({
   transaction: vi.fn((operation: (client: PoolClient) => Promise<unknown>) =>
@@ -82,8 +77,7 @@ vi.mock("@/server/common/db/db", () => ({
 
 import { findUserById } from "@/server/auth/repo/users.repo";
 import { deleteFriendship, friendshipExists } from "@/server/social/repo/friendships.repo";
-import { revokeFriendLinkForPair } from "@/server/social/repo/inviteLinks.repo";
-import { netWithUser } from "@/server/expense/usecase/balance.usecase";
+import { netWithUser, oneOffNetsWith } from "@/server/expense/usecase/balance.usecase";
 import {
   lockFriendRequestInboxes,
   lockParticipantLedgers,
@@ -105,7 +99,6 @@ const friendRow: UserRow = {
   phone_verified_at: null,
   google_sub: "google-rifat",
   onboarded_at: "2026-09-01T00:00:00Z",
-  merged_into: null,
   token_version: 0,
   created_at: "2026-09-01T00:00:00Z",
 };
@@ -115,6 +108,7 @@ beforeEach(() => {
   vi.mocked(findUserById).mockResolvedValue(friendRow);
   vi.mocked(friendshipExists).mockResolvedValue(true);
   vi.mocked(netWithUser).mockResolvedValue(new Map());
+  vi.mocked(oneOffNetsWith).mockResolvedValue(new Map());
 });
 
 describe("removeFriend", () => {
@@ -148,35 +142,50 @@ describe("removeFriend", () => {
       message: expect.stringContaining("Settle up first"),
     });
     expect(deleteFriendship).not.toHaveBeenCalled();
-    expect(revokeFriendLinkForPair).not.toHaveBeenCalled();
   });
 
-  it("checks the balance only under both lock families", async () => {
-    // The zero read is only trustworthy while one-off writers are held out;
-    // locks taken after the check would guard nothing.
+  it("reads the whole balance first, then the one-off ledger again under both lock families, on the transaction's connection", async () => {
+    // The whole balance is read on a connection of its own before the
+    // transaction takes one: reading it inside would hold two at once. The
+    // one-off ledger — what a racing one-off expense would change — is read
+    // again once its writers are held out; locks taken after the check would
+    // guard nothing. Ledgers before inboxes is the order a one-off expense
+    // takes them in: the reverse let each hold one kind while waiting for
+    // the other, and deadlock.
     const order: string[] = [];
-    vi.mocked(lockFriendRequestInboxes).mockImplementation(async () => {
-      order.push("inboxes");
+    vi.mocked(netWithUser).mockImplementation(async () => {
+      order.push("whole balance");
+      return new Map();
     });
     vi.mocked(lockParticipantLedgers).mockImplementation(async () => {
       order.push("ledgers");
     });
-    vi.mocked(netWithUser).mockImplementation(async () => {
-      order.push("net");
+    vi.mocked(lockFriendRequestInboxes).mockImplementation(async () => {
+      order.push("inboxes");
+    });
+    vi.mocked(oneOffNetsWith).mockImplementation(async () => {
+      order.push("one-off");
       return new Map();
     });
 
     await removeFriend(CALLER, FRIEND);
 
-    expect(order).toEqual(["inboxes", "ledgers", "net"]);
+    expect(order).toEqual(["whole balance", "ledgers", "inboxes", "one-off"]);
+    expect(oneOffNetsWith).toHaveBeenCalledWith(CALLER, [FRIEND], transactionClient);
   });
 
-  it("deletes the friendship and revokes the pair's claim link when settled", async () => {
+  it("refuses when a one-off balance appeared while it waited for the locks", async () => {
+    vi.mocked(oneOffNetsWith).mockResolvedValue(new Map([[FRIEND, new Map([["USD", -300]])]]));
+
+    await expect(removeFriend(CALLER, FRIEND)).rejects.toMatchObject({ code: "failed_precondition" });
+    expect(deleteFriendship).not.toHaveBeenCalled();
+  });
+
+  it("deletes the friendship when settled", async () => {
     vi.mocked(netWithUser).mockResolvedValue(new Map([["USD", 0]]));
 
     await removeFriend(CALLER, FRIEND);
 
     expect(deleteFriendship).toHaveBeenCalledWith(CALLER, FRIEND, transactionClient);
-    expect(revokeFriendLinkForPair).toHaveBeenCalledWith(CALLER, FRIEND, transactionClient);
   });
 });

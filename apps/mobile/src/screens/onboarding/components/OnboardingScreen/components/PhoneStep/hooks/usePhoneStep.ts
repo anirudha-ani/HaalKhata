@@ -1,8 +1,7 @@
-/** The phone step's three stages (number, code, merge) and the discoverability switch that rides along. */
+/** The phone step's two stages (number, code) and the discoverability switch that rides along. */
 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useRef, useState } from "react";
-import type { MergePreview } from "@haalkhata/protogen/auth/v1/auth_pb";
 import type { User } from "@haalkhata/protogen/common/v1/common_pb";
 import { queryKeys } from "@haalkhata/shared/api/queryKeys";
 import { isDiscoverable, onboardingDiscoveryChange } from "@haalkhata/shared/contacts/discovery";
@@ -14,15 +13,14 @@ import { errorFeedback, successFeedback } from "@/lib/motion/haptics";
 import { CODE_STEP } from "../../../../../constants/onboardingCopy";
 
 /** Where the phone step is. */
-export type PhoneStage = "number" | "code" | "merge";
+export type PhoneStage = "number" | "code";
 
 /**
  * Drives the phone step.
  *
- * Claiming a number can turn up an unclaimed invitation holding it, in which
- * case nothing is written until the person confirms what they would absorb.
- * The number is held as a region plus a national number, matching the two
- * controls that edit it.
+ * The number is written once an SMS code proves it is the person's. It is
+ * held as a region plus a national number, matching the two controls that
+ * edit it.
  *
  * The "let people find me from their contacts" switch sits here, beside the
  * number it is mostly about. It starts where the account stands (on by
@@ -45,8 +43,6 @@ export function usePhoneStep(user: User, onDone: (verified: boolean) => void) {
   const [rejections, setRejections] = useState(0);
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
-  const [preview, setPreview] = useState<MergePreview | undefined>();
-  const [mergeToken, setMergeToken] = useState("");
   // Whether a code check is running, known the moment one starts. The
   // mutation's own isPending only changes on the next render, and two
   // changes to the code can land before it (a suggestion inserted twice).
@@ -90,13 +86,7 @@ export function usePhoneStep(user: User, onDone: (verified: boolean) => void) {
 
   const verify = useMutation({
     mutationFn: (entered: string) => authClient.setPhone({ phone: sentTo, verificationCode: entered }),
-    onSuccess: (result) => {
-      if (result.pendingMerge) {
-        setPreview(result.pendingMerge);
-        setMergeToken(result.mergeToken);
-        setStage("merge");
-        return;
-      }
+    onSuccess: () => {
       successFeedback();
       finish.mutate(true);
     },
@@ -129,16 +119,6 @@ export function usePhoneStep(user: User, onDone: (verified: boolean) => void) {
     verify.mutate(entered);
   };
 
-  const confirmMerge = useMutation({
-    mutationFn: () => authClient.confirmPhoneMerge({ mergeToken }),
-    onSuccess: (profile) => {
-      queryClient.setQueryData(queryKeys.me, profile);
-      successFeedback();
-      finish.mutate(true);
-    },
-    onError: (failure) => setError(errorMessage(failure)),
-  });
-
   return {
     stage,
     region,
@@ -166,9 +146,8 @@ export function usePhoneStep(user: User, onDone: (verified: boolean) => void) {
     rejections,
     notice,
     error,
-    preview,
     resendIn: codeField.resendIn,
-    busy: sendCode.isPending || verify.isPending || confirmMerge.isPending || finish.isPending,
+    busy: sendCode.isPending || verify.isPending || finish.isPending,
     /** True while a code is being checked: the Verify button's spinner. */
     isVerifying: verify.isPending,
     /** True while a code is being sent: the resend button's spinner on the code stage. */
@@ -206,21 +185,6 @@ export function usePhoneStep(user: User, onDone: (verified: boolean) => void) {
       codeField.clear();
       setError("");
       setNotice("");
-    },
-    confirmMerge: () => {
-      setError("");
-      confirmMerge.mutate();
-    },
-    /**
-     * Leaves both accounts untouched. Only the digits are cleared: the
-     * country was almost certainly right, the number belonged to somebody else.
-     */
-    declineMerge: () => {
-      setPreview(undefined);
-      setMergeToken("");
-      setNationalNumber("");
-      setStage("number");
-      setError("");
     },
     /** Leaves without a number, still saving the switch. */
     skip: () => {

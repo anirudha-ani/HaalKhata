@@ -180,8 +180,8 @@ and the offsets share a parent in `net_settlements` (`currency`, `cash_cents`,
 The trigger runs for every insert, update and delete on `settlements`,
 whatever code issues it, so a unit that does not cancel out cannot be
 committed by a bug, a script or a hand-typed statement. It is deferred, so
-multi-statement work on a whole unit (recording it, removing it, an account
-merge repointing its rows) is judged once, at commit.
+multi-statement work on a whole unit (recording it, removing it, account
+deletion repointing its rows) is judged once, at commit.
 
 **It is removed as one unit.** `DeleteSettlement` on any row of a unit — the
 payment or a cancelled balance, by either person — removes every row of it,
@@ -203,12 +203,14 @@ owed again.
 Recording and deleting money runs under transaction-scoped advisory locks
 (see [conventions.md § Advisory Ledger Locks](../common/conventions.md#advisory-ledger-locks)):
 
+Both money creates claim their `operation_id` before the first lock (see Idempotency).
+
 | Operation | Locks (in order) |
 | --- | --- |
 | CreateExpense (group) | group ledger; membership re-checked under the lock |
 | CreateExpense (one-off) | one participant-ledger lock per participant |
 | UpdateExpense / DeleteExpense | expense lock → participant or group locks |
-| RecordSettlement | settlement pair lock → group locks (the explicit group, or **every** group either person belongs to for cross-scope) |
+| RecordSettlement | settlement pair lock → group locks (the explicit group, or for cross-scope the active groups the two people **share**, read again under the locks and retried if one was added) |
 | DeleteSettlement | pair lock → its group's lock (for a net settlement: every group the unit touches) |
 
 The over-settle guard is a read followed by writes; without the locks two
@@ -270,8 +272,8 @@ transaction**:
 | DeleteSettlement | `settlement_deleted` | The two people on it |
 
 One-off expense creation also **auto-befriends** the caller with every other
-participant (ledger locks first, then friendship inbox locks — the one global
-order).
+participant, in one batch (`insertFriendships`: ledger locks first, then every
+friendship inbox lock at once — the one global order).
 
 ## Vocabularies & Limits
 
@@ -281,10 +283,11 @@ order).
 | `category` | the shared `CATEGORIES` list + legacy `lodging`, `other`; anything else → `general` |
 | Settlement `method` | `venmo` \| `zelle` \| `cashapp` \| `paypal` \| `cash` \| `bank` \| `other`; unknown → `cash` |
 | Participants / payers / items / split specs | ≤ 100 each; ≤ 100 assignees per item |
-| Amount per expense/settlement | ≤ 2,000,000,000 cents |
+| Amount per expense, payer, share, item, tax, tip or settlement | ≤ 10,000,000,000,000 minor units (`MAX_MONEY_CENTS`: 100,000,000,000.00 in a two-decimal currency) |
+| Everything one person is on, per currency | live expenses they pay or owe a share of add up to ≤ 10^15 minor units (`MAX_PERSON_VOLUME_CENTS`); a create or edit past it is a `FailedPrecondition` naming them, and an edit that lowers their total is always allowed |
 | Text | description ≤ shared limit, notes, item names, comment, settlement note — all bounded by shared limits |
 | `expense_date` | `YYYY-MM-DD`, must be a **real** calendar day; empty → server's UTC today (a backstop — the forms always send the user's local today) |
-| List caps | expenses ≤ 500 rows, friend ledger ≤ 300 lines (display only — `truncated: true`; balances always read everything) |
+| Page sizes | expenses: default 50, at most 200; statement lines: default 50, at most 200; comments: default 30, at most 100. `limit: 0` is an app from before paging: one page of ≤ 500 expenses / ≤ 300 lines / every comment, with `truncated` |
 
 ---
 
@@ -301,6 +304,34 @@ order).
 9. [GetGroupBalances](#9-getgroupbalances)
 10. [GetOverallBalances](#10-getoverallbalances)
 11. [GetFriendLedger](#11-getfriendledger)
+12. [ListFriendLedgerEntries](#12-listfriendledgerentries)
+13. [ListComments](#13-listcomments)
+
+### Paging
+
+Every list is paged by **keyset**: a page ends at its last row, and the
+next is every row strictly after it in the list's order, so rows added
+while someone pages cannot shift the window, and nothing is listed twice or
+skipped. Each order is total — an expense list by date, then the moment it
+was written **to the microsecond** (read with `to_char`, since a JavaScript
+`Date` keeps milliseconds), then id; a statement by day, moment, a rank on
+one moment (expense, then cancelled balances, then the payment), then id
+compared byte by byte (`COLLATE "C"`, the order JavaScript keeps when it
+merges expenses with payments). A cursor is opaque; one the server did not
+make, or made for another list, is refused (`invalid_argument`) rather than
+read as "from the top", which would list rows twice.
+
+The statement's running balance needs every older line, so its first page
+(`GetFriendLedger`) reads the whole history and hands the next page a
+**signed** cursor carrying the balance where it stopped, bound to the reader
+and the friend, plus a fingerprint of the pair's history (`pairHistoryDigest`
+in `ledger.repo.ts`: each shared expense's currency, date, moment, deleted
+flag, payers and splits, and each payment). A later page reads only its own
+rows, after checking the fingerprint: if any line was added, edited, moved
+or removed since the first page, it refuses with `failed_precondition`
+instead of continuing from balances that no longer hold — a figure that
+never existed. Clients answer by reading every loaded page again from the
+top and say so beside Show more.
 
 ---
 
@@ -347,7 +378,7 @@ order).
 | --- | --- | --- |
 | group_id | string | Empty = one-off. |
 | description | string | Required. |
-| amount_cents | int32 | The stated total; for `itemized` it must equal items+tax+tip. |
+| amount_cents | int64 | The stated total; for `itemized` it must equal items+tax+tip. |
 | currency | string | Ignored for group expenses (the group's wins); empty one-off = caller's default. |
 | category | string | Unknown → `general`. |
 | expense_date | string | `YYYY-MM-DD`; empty → today (UTC). |
@@ -356,7 +387,7 @@ order).
 | payers | repeated Payer | `{user_id, amount_cents}`; must sum to the total. |
 | split_specs | repeated SplitSpec | Per-participant input; only the field matching `split_type` is read. |
 | items | repeated ExpenseItem | `itemized` only; ids may be empty. |
-| tax_cents / tip_cents | int32 | `itemized` only. |
+| tax_cents / tip_cents | int64 | `itemized` only. |
 | operation_id | string | **Required.** Client UUID naming this attempt; same id on every retry. |
 
 **Sample Request (JSON):**
@@ -402,6 +433,15 @@ created.
 - **Who:** anyone on the expense (see [Authorization](#authorization)).
 - **Cannot move scopes:** a changed `group_id` is refused — "delete it and
   create it in the right group". A debt cannot silently jump ledgers.
+- **Cannot change currency:** the expense keeps the currency it was saved
+  in, group expenses included. An `expense.currency` naming another is
+  refused with `FailedPrecondition` ("This expense is in BDT and its
+  currency can't be changed…") and nothing changes: its amounts were typed in
+  that other currency's units, so relabelling would turn BDT 5,000 into
+  USD 5,000 and keeping them would turn ¥3,500 into ¥350,000. An empty
+  `currency` keeps the saved one. Both apps' forms work in the saved
+  currency when editing (`expenseFormCurrency`); the refusal answers app
+  versions from before they did, and hand-made requests.
 - **Checked twice by design:** existence/edit-rights/scope are verified once
   before the expensive validation (fail fast, no locks) and again on the
   locked client (everything checked can change in between).
@@ -436,7 +476,12 @@ created.
 
 - **Rate-limited** 60/min. Scope: `group_id` (member-only), `with_user_id`
   (one-offs shared with that user), or neither (everything involving the
-  caller).
+  caller) — narrowed by `part` to the caller's one-off expenses, or to one
+  group's expenses the caller is on. The narrowing is the server's, so a
+  filtered list pages through every match; `part` with a group or a person
+  is refused.
+- **Paged** newest first (see [Paging](#paging)); `next_cursor` is empty on
+  the last page.
 - **Deleted rows are listed** (struck through by clients) — a payment made
   against a since-deleted expense keeps the row that explains it. Balance
   math reads its own deleted-excluded queries.
@@ -452,8 +497,9 @@ created.
     "was a payment typed in?".
   - Viewer-relative, which is why it is a side list, not a field on Expense.
   - Deleted expenses are never "settled": nothing was pending from them.
-- **Truncation:** ≥ 500 rows → newest 500 + `truncated: true`. Balances and
-  settledness still read the whole ledger; only the display list is cut.
+- **`limit: 0`** (an app from before paging): newest 500 + `truncated: true`
+  when there are more. Balances and settledness read the whole ledger
+  either way; only the display list is paged.
 - `users` carries the public projection of everyone referenced (creators,
   payers, owers) so clients can render names without extra calls.
 
@@ -463,6 +509,10 @@ created.
 | --- | --- | --- |
 | group_id | string | Exactly one of these, or both empty = all of the caller's expenses. |
 | with_user_id | string | One-off expenses shared with this user. |
+| cursor | string | The previous page's `next_cursor`; empty for the newest page. |
+| limit | int32 | Page size, clamped to 200; 0 = the pre-paging single page. |
+| part | ExpenseListPart | With both above empty: `UNSPECIFIED` (everything), `ONE_OFF`, or `GROUP`. |
+| part_group_id | string | The group, exactly when `part` is `GROUP`. |
 
 #### Response
 
@@ -470,10 +520,11 @@ created.
 
 | Field | Type | Description |
 | --- | --- | --- |
-| expenses | repeated Expense | Newest first, capped for display. |
-| users | repeated User | Everyone referenced. |
+| expenses | repeated Expense | The page, newest first. |
+| users | repeated User | Everyone the page references. |
 | settled_expense_ids | repeated string | See notes. |
-| truncated | bool | True when older rows were cut. |
+| truncated | bool | Deprecated: with `limit: 0` only, true when older rows were left off. |
+| next_cursor | string | Where the next page starts; empty on the last. |
 
 ---
 
@@ -502,12 +553,17 @@ created.
   payment might have been for it. Same answer for every viewer.
 - Comments and history actors resolve through one batched user lookup;
   authors who no longer resolve are omitted rather than invented.
+- **Comments are paged:** with `comment_limit` the response carries the
+  newest that many, oldest first, and `comments_next_cursor` for the older
+  ones ([ListComments](#13-listcomments)). Without it (an app from before
+  paging) it carries every comment.
 
 #### Request
 
 | Field | Type | Description |
 | --- | --- | --- |
 | expense_id | string | |
+| comment_limit | int32 | Newest comments to include, clamped to 100; 0 = all. |
 
 #### Response
 
@@ -517,6 +573,7 @@ created.
 | --- | --- | --- |
 | expense | Expense | Including `deleted_at` when soft-deleted. |
 | comments | repeated Comment | Oldest first, with public-projection authors. |
+| comments_next_cursor | string | With `comment_limit`: where the older comments start; empty when none. |
 | users | repeated User | Everyone referenced by the expense. |
 | history | repeated ExpenseEvent | `{actor, type, created_at}`, oldest first. |
 | settled_for_viewer | bool | See notes. |
@@ -610,16 +667,29 @@ created.
   to be read for someone the debt check turns away. A net settlement's cancelling rows carry no name, since they
   moved no money by any method. The friend statement reads "You paid via
   bKash" when a name was kept.
+- **Rate-limited:** 20/min per account.
 - **Validation (pre-lock):** not yourself; amount positive and bounded; note
-  bounded; recipient exists; for a group — both people members, currency
-  must be the group's.
+  bounded; recipient exists; for a group — both people members. For a
+  payment that names no group, a payer who owes the recipient nothing
+  anywhere is refused here, on a snapshot read, before any lock is taken (a
+  retry of an operation already recorded passes through, to be replayed).
+  The currency
+  defaults to the group's; another is accepted only to pay down a balance
+  the group already holds in it (an old payment in that currency), which is
+  checked under the lock — otherwise "this group settles in USD, not EUR".
 - **Under the pair lock (+ group locks), re-validated:**
   - Group payment: membership re-checked; a **cancelling loop** refuses
     (see [Debt Routing](#debt-routing-simplify-debts)); the payer must owe
-    the creditor along the group's routed graph, and the amount must not
-    exceed it (both numbers named in the error).
-  - Cross-scope payment: every shared group is locked first, then scopes
-    where the payer owes are re-read server-side (a stale client selection
+    the creditor along the group's routed graph **in the payment's
+    currency**, and the amount must not exceed it (both numbers named in the
+    error).
+  - Cross-scope payment: the active groups the two people share are locked
+    first, the only groups a payment between them can touch (never every
+    group either belongs to). A group joins that set only through a roster
+    or status change, which takes its lock, so the set is read again under
+    the locks; if it grew, the transaction starts again with the new group
+    locked (three tries, then "your groups with this person changed"). Then
+    scopes where the payer owes are re-read server-side (a stale client selection
     cannot double-record); explicitly selected foreign-currency scopes are
     refused by name; the amount must not exceed the sum of the selected
     same-currency debts. `allocateSettlement` then stores **one row per
@@ -645,8 +715,8 @@ created.
 | --- | --- | --- |
 | group_id | string | Explicit scope; empty = cross-scope allocation. |
 | to_user_id | string | The other person, whichever way the money moved. |
-| amount_cents | int32 | > 0, ≤ 2e9. |
-| currency | string | Group payments: must be the group's. Cross-scope: which currency's balances this pays down; empty = caller's default. |
+| amount_cents | int64 | > 0, ≤ 10^13. |
+| currency | string | Group payments: the group's (the default), or a currency the group still holds a balance in between the two. Cross-scope: which currency's balances this pays down; empty = caller's default. |
 | method | string | `venmo` \| `zelle` \| `cashapp` \| `paypal` \| `cash` \| `bank` \| `other`. |
 | note | string | Optional, bounded. |
 | received | bool | True = they paid you. |
@@ -734,8 +804,15 @@ per scope; callers only use the response to confirm the recording):
   (every member listed, settled ones at zero), the raw pairwise debts, and
   the min-cash-flow simplification — clients render whichever the group's
   mode calls for, and the settle dialog can show both.
-- Every aggregate is int32-checked (`FailedPrecondition` names which number
-  overflowed).
+- **Per currency.** A group's rows are in its currency, but until
+  30 August 2026 a cross-scope payment was stamped with the payment's
+  currency in every scope it touched, so a group can hold a payment in
+  another one. That is a balance of its own, never netted against the
+  group's: `by_currency` lists the group's currency first
+  (every member, even at zero) and any other after it, alphabetically, while
+  it holds anything. The top-level fields repeat the group's currency for
+  older clients. Both apps read it through `groupBalanceSections`
+  (`@haalkhata/shared/group/currencyBalances`).
 
 #### Request
 
@@ -750,8 +827,9 @@ per scope; callers only use the response to confirm the recording):
 | Field | Type | Description |
 | --- | --- | --- |
 | nets | repeated NetBalance | Sorted by user id; > 0 = owed. In the group's currency. |
-| debts | repeated Debt | Raw pairwise: expenses minus settlements. |
+| debts | repeated Debt | Raw pairwise: expenses minus settlements, in the group's currency. |
 | simplified | repeated Debt | Min-cash-flow over the same nets. |
+| by_currency | repeated GroupCurrencyBalances | `{ currency, nets, debts, simplified }` per currency the group holds money in, the group's own first. |
 
 ---
 
@@ -793,7 +871,7 @@ per scope; callers only use the response to confirm the recording):
 
 | Field | Type | Description |
 | --- | --- | --- |
-| you_owe_cents / owed_to_you_cents | int32 | Legacy: default currency only. |
+| you_owe_cents / owed_to_you_cents | int64 | Legacy: default currency only. |
 | totals | repeated CurrencyTotals | `{currency, you_owe_cents, owed_to_you_cents}` per currency. |
 | counterparties | repeated CounterpartyBalance | Per-person breakdown with per-currency `balances`. |
 
@@ -829,8 +907,11 @@ per scope; callers only use the response to confirm the recording):
 - **No existence oracle:** an unknown id and an existing account with no
   friendship, mutual group, or shared history return the identical
   `NotFound` "friend ledger not found".
-- Truncation: newest 300 lines + `truncated: true`; nets and group balances
-  are computed over everything regardless.
+- **Paged:** with `limit`, `entries` is the newest page and `next_cursor`
+  leads to [ListFriendLedgerEntries](#12-listfriendledgerentries) (see
+  [Paging](#paging)). `limit: 0` (an app from before paging) returns the
+  newest 300 lines + `truncated: true` when there are more. Nets and group
+  balances are computed over everything either way.
 - **`settle_positions` is what a settle dialog works from** — not the
   statement, but the position the settlement write will recompute, with its
   `digest`. One per currency with anything outstanding; scopes are signed
@@ -857,6 +938,7 @@ per scope; callers only use the response to confirm the recording):
 | Field | Type | Description |
 | --- | --- | --- |
 | user_id | string | The other person. |
+| limit | int32 | Lines on the page, clamped to 200; 0 = the pre-paging 300. |
 
 #### Response
 
@@ -865,13 +947,14 @@ per scope; callers only use the response to confirm the recording):
 | Field | Type | Description |
 | --- | --- | --- |
 | friend | User | Public projection. |
-| net_cents / currency | int32 / string | Legacy: net in the caller's default currency. |
+| net_cents / currency | int64 / string | Legacy: net in the caller's default currency. |
 | nets | repeated CurrencyAmount | Whole picture per currency; > 0 = they owe you. |
 | entries | repeated FriendLedgerEntry | Newest first; `balance_after_cents` accumulated oldest-first so the top entry carries the current net (per currency). |
 | group_balances | repeated FriendGroupBalance | Per-scope routed balances (`""` group = one-off slate, one entry per currency). |
 | is_friend | bool | Whether an explicit friendship exists (the page also works for mutual group members and historical counterparties). |
 | mutual_groups | repeated MutualGroup | Every shared group, settled ones included. |
-| truncated | bool | True when older lines were cut. |
+| truncated | bool | Deprecated: with `limit: 0` only, true when older lines were left off. |
+| next_cursor | string | Signed; leads to the older lines. Empty on the last page. |
 | settle_positions | repeated SettlePosition | Per currency: `net_cents` (> 0 = they owe you), `scopes` (`group_id`, `group_name`, `net_cents`, `simplified`), and the `digest` a net settlement must send back. |
 | payee_methods | repeated payment.v1.PaymentMethod | The friend's payment methods, oldest first. Empty unless the caller owes them. |
 | read_at | string | The server's clock when this was read (ISO 8601). |
@@ -884,12 +967,83 @@ per scope; callers only use the response to confirm the recording):
 | kind | string | `expense` \| `settlement`. |
 | id / date / description | | `date` is the calendar day (expense's chosen day; settlement's UTC day). |
 | group_id / group_name | string | Empty = one-off. |
-| total_cents | int32 | The whole expense, or the amount that changed hands. |
-| delta_cents | int32 | What this line did to the balance; 0 for deleted lines. |
-| balance_after_cents | int32 | Running balance in this line's currency. |
+| total_cents | int64 | The whole expense, or the amount that changed hands. |
+| delta_cents | int64 | What this line did to the balance; 0 for deleted lines. |
+| balance_after_cents | int64 | Running balance in this line's currency. |
 | created_at | string | Full timestamp for settlements (client localizes); empty for expenses. |
 | deleted | bool | Struck-through line. |
 | recorded_by_name | string | Settlements only: who asserted the payment. |
 | currency | string | The column this line's running balance continues. |
 | net_settlement_id | string | The unit this line belongs to; empty for anything that is not part of a net settlement. |
 | offset | bool | True for a balance that was cancelled (no money moved); false for the payment itself. |
+
+---
+
+### 12. ListFriendLedgerEntries
+
+**Method:** `ListFriendLedgerEntries`
+**Route:** `POST /api/connect/expense.v1.ExpenseService/ListFriendLedgerEntries`
+
+#### Notes
+
+- **Rate-limited** 120/min: each page fingerprints the pair's history.
+- The next older page of the statement, from the `next_cursor` of
+  `GetFriendLedger` or of the previous page. Lines and `balance_after_cents`
+  are exactly what one read of the whole statement shows: the running
+  balance continues from the cursor (see [Paging](#paging)), and an
+  integration test reads the statement at page sizes 1–50 against the single
+  read, net settlements, two currencies, deleted and zero-change rows
+  included.
+- Expenses and payments are read as two keyset streams and merged in the
+  statement's order; an expense that moved nothing between the pair makes
+  no line, so the read continues past it.
+- A payment line's `removal_refusal` considers the whole net settlement it
+  belongs to, even when the rest of it sits on another page.
+- **Refusals:** `invalid_argument` for a cursor that is forged, malformed, or
+  for another reader or friend; `failed_precondition` when a line changed
+  since the first page was read (clients reload from the top);
+  `not_found` when the person no longer exists.
+
+#### Request
+
+| Field | Type | Description |
+| --- | --- | --- |
+| user_id | string | The other person. |
+| cursor | string | The previous page's `next_cursor`. |
+| limit | int32 | Lines on the page; default 50, clamped to 200. |
+
+#### Response
+
+| Field | Type | Description |
+| --- | --- | --- |
+| entries | repeated FriendLedgerEntry | Newest first, as in `GetFriendLedger`. |
+| next_cursor | string | Empty at the oldest line. |
+
+---
+
+### 13. ListComments
+
+**Method:** `ListComments`
+**Route:** `POST /api/connect/expense.v1.ExpenseService/ListComments`
+
+#### Notes
+
+- Access as for `GetExpense`. Comments across a block either way are left
+  out, as there.
+- Pages back in time from `GetExpense.comments_next_cursor`; each page reads
+  oldest first, so a client shows the last page it loaded at the top.
+
+#### Request
+
+| Field | Type | Description |
+| --- | --- | --- |
+| expense_id | string | |
+| cursor | string | `comments_next_cursor`, or the previous page's `next_cursor`. |
+| limit | int32 | Default 30, clamped to 100. |
+
+#### Response
+
+| Field | Type | Description |
+| --- | --- | --- |
+| comments | repeated Comment | Oldest first. |
+| next_cursor | string | Where older comments start; empty at the first comment. |

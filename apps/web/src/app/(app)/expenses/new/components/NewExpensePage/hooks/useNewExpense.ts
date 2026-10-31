@@ -18,9 +18,11 @@ import {
   toggleExpensePerson,
 } from "@haalkhata/shared/expense/participants";
 import { nextDraftKey } from "@haalkhata/shared/expense/draftKey";
+import { adoptDraftLines, draftExpenseState } from "@haalkhata/shared/expense/merge/editDraft";
 import {
   buildItemsPayload,
   buildSplitSpecs,
+  canStartLiveSplit,
   checkItemized,
   checkPayers,
   checkSplit,
@@ -29,10 +31,12 @@ import {
   previewItemizedShares,
   previewSplitShares,
   shareEveryItemWith,
+  unclaimedUnlessPicked,
   type DraftLineItem,
   type FormSplitType,
 } from "@haalkhata/shared/expense/form/splitForm";
-import type { ExpenseFormInitial } from "../../../utils/initialValues";
+import { buildInitialValues, type ExpenseFormInitial } from "../../../utils/initialValues";
+import { useExpenseEditSync, type TakenChanges } from "./useExpenseEditSync";
 import type { useNewExpenseAPI } from "./useNewExpenseAPI";
 import { omitKey } from "../utils/omitKey";
 
@@ -93,7 +97,11 @@ export function useNewExpense(
   const [isPreparing, setIsPreparing] = useState(false);
   // One id per attempt at saving: a retry after a lost response sends the
   // same one and gets the expense the first attempt stored, not a second.
-  const operationIdRef = useRef(newOperationId());
+  const [firstOperationId] = useState(newOperationId);
+  const operationIdRef = useRef(firstOperationId);
+  // What the last attempt at saving an edit sent: the same again is a retry
+  // and keeps its id; anything else is a new attempt and gets a new one.
+  const lastEditAttempt = useRef("");
 
   const selectedGroup = expenseAPI.groups.find(
     (groupSummary) => groupSummary.group?.id === groupId,
@@ -284,16 +292,6 @@ export function useNewExpense(
   useEffect(() => () => URL.revokeObjectURL(receiptUrl), [receiptUrl]);
 
   /**
-   * Whether the browser can actually paint this file in an `<img>`. HEIC is
-   * accepted and transcoded server-side, but Chrome and Firefox cannot decode
-   * it, so rendering the object URL would show a broken-image icon for a file
-   * that is perfectly fine. Once parsed, `receiptUrl` (the server's JPEG)
-   * takes over and this no longer matters.
-   */
-  const isPreviewRenderable =
-    file !== null && !/^image\/hei[cf]$/i.test(file.type) && !/\.hei[cf]$/i.test(file.name);
-
-  /**
    * Sends the chosen photo to the AI parser and pours the result into this
    * form: merchant becomes the description, and the extracted lines become
    * the itemized draft with the split switched to match.
@@ -310,10 +308,7 @@ export function useNewExpense(
         // viewable at all, and it is the image the numbers came from.
         if (result.normalizedImage.length > 0) {
           const blob = new Blob([result.normalizedImage as BlobPart], { type: "image/jpeg" });
-          setReceiptUrl((previousUrl) => {
-            URL.revokeObjectURL(previousUrl);
-            return URL.createObjectURL(blob);
-          });
+          setReceiptUrl(URL.createObjectURL(blob));
         }
         const receipt = result.receipt;
         if (!receipt) return;
@@ -352,11 +347,12 @@ export function useNewExpense(
    * Stores a newly chosen receipt photo and clears anything a previous scan
    * produced, so a second photo cannot leave the first one's items behind.
    *
-   * The photo is shrunk to upload size first ({@link prepareReceiptImage}).
-   * A phone shot is 3–12 MB, all of which would otherwise cross a mobile
-   * connection for the server to discard — and over 8 MB is rejected outright
-   * after the wait. `isPreparing` covers the decode, which is a visible pause
-   * on a 12-megapixel image and would otherwise look like a dead tap.
+   * The photo is prepared to the upload standard first
+   * ({@link prepareReceiptImage}): converted to JPEG, turned upright and
+   * shrunk, here on the device, since the server only checks it. A photo the
+   * browser cannot read is refused here, beside the control, with words to
+   * act on. `isPreparing` covers the decode, which is a visible pause on a
+   * large photo and would otherwise look like a dead tap.
    *
    * @param picked - The image file chosen or captured by the user.
    */
@@ -364,18 +360,14 @@ export function useNewExpense(
     if (expenseAPI.parse.isPending || receiptConsent.busy || receiptConsent.prompt) return;
     setProvider("");
     setError("");
-    setReceiptUrl((previousUrl) => {
-      URL.revokeObjectURL(previousUrl);
-      return "";
-    });
+    setReceiptUrl("");
     setIsPreparing(true);
     try {
       const prepared = await prepareReceiptImage(picked);
       setFile(prepared);
-      setPreviewUrl((previousUrl) => {
-        URL.revokeObjectURL(previousUrl);
-        return URL.createObjectURL(prepared);
-      });
+      setPreviewUrl(URL.createObjectURL(prepared));
+    } catch (prepareError) {
+      setError(errorMessage(prepareError));
     } finally {
       setIsPreparing(false);
     }
@@ -402,7 +394,7 @@ export function useNewExpense(
     .map((person) => person.id);
 
   const splitCheck = isItemized
-    ? checkItemized(items, currency)
+    ? checkItemized(items, currency, expenseAPI.editing?.liveSplit !== undefined)
     : checkSplit({ splitType, totalCents, participantIds, inputs: splitInputs, currency });
   // Live "what each person owes" figures for the summary, from the same
   // allocator the server runs, so the preview is exactly what gets saved.
@@ -410,6 +402,62 @@ export function useNewExpense(
     ? previewItemizedShares(items, taxCents, tipCents, currency)
     : previewSplitShares({ splitType, totalCents, participantIds, inputs: splitInputs, currency });
   const payerCheck = checkPayers(totalCents, multiPayer, payerAmounts, currency);
+
+  /**
+   * Puts what somebody else saved into the form, leaving everything this
+   * person has touched as it is.
+   *
+   * @param taken - The parts to take, and their values.
+   */
+  const takeIn = ({ parts, merged, latest }: TakenChanges) => {
+    const saved = buildInitialValues({ initialGroupId: "", initialFriendId: "" }, expenseAPI.me?.id ?? "", latest);
+    if (parts.has("description")) setDescription(merged.description);
+    if (parts.has("category")) setCategory(merged.category);
+    if (parts.has("expenseDate")) setDate(merged.expenseDate);
+    if (parts.has("notes")) setNotes(merged.notes);
+    if (parts.has("taxCents")) setTaxInput(centsToInput(merged.taxCents, currency));
+    if (parts.has("tipCents")) setTipInput(centsToInput(merged.tipCents, currency));
+    if (parts.has("line") || parts.has("share")) {
+      setItems((current) => adoptDraftLines(current, merged.lines, currency));
+      // A line can name somebody a hand-picked cast does not have yet.
+      if (!groupId) {
+        const onLines = merged.lines.flatMap((line) => Object.keys(line.shares));
+        setPersonIds((current) => [...new Set([...(current ?? []), ...onLines])]);
+      }
+    }
+    if (parts.has("money")) {
+      setAmount(saved.amount);
+      setSplitType(saved.splitType);
+      setSplitInputs(saved.splitInputs);
+      setCheckedOverride(saved.checked);
+      setItems(saved.items);
+      setTaxInput(saved.taxInput);
+      setTipInput(saved.tipInput);
+      if (!groupId) setPersonIds(saved.friendIds);
+    }
+    if (parts.has("payers")) {
+      setMultiPayer(saved.multiPayer);
+      setSinglePayerId(saved.singlePayerId);
+      setPayerAmounts(saved.payerAmounts);
+    }
+  };
+
+  const editSync = useExpenseEditSync({
+    opened: expenseAPI.editing?.expense,
+    savedVersion: expenseAPI.savedVersion,
+    versionCheckedAt: expenseAPI.versionCheckedAt,
+    myId: expenseAPI.me?.id ?? "",
+    isSaving: expenseAPI.update.isPending,
+    currency,
+    readLatest: expenseAPI.readLatest,
+    readForm: () =>
+      draftExpenseState({
+        description, category, date, notes, splitType, totalCents, previewShares,
+        multiPayer, singlePayerId, payerAmounts, items, taxCents, tipCents, currency,
+      }),
+    takeIn,
+  });
+
   // A group, or at least one other person — mirrors exactly what the picker
   // shows, so the button never disables for a reason that isn't on screen.
   const hasParticipants = groupId !== "" || friendIds.length > 0;
@@ -419,27 +467,31 @@ export function useNewExpense(
     totalCents !== null &&
     totalCents > 0 &&
     splitCheck.ok &&
-    payerCheck.ok;
+    payerCheck.ok &&
+    editSync.conflicts.length === 0;
 
   const preserveSplitType = canPreserveSplitType(savedSplit, {
     groupId, currency, splitType, amountCents: totalCents ?? 0,
     splits: participantIds.map((userId) => ({ userId, owedCents: parseMoneyInput(splitInputs[userId] ?? "", currency) ?? -1 })),
   });
 
-  /** Builds the request from the current fields and fires create or update. */
-  const submit = () => {
-    if (!canSubmit || totalCents === null) return;
-    setError("");
+  /**
+   * Builds the request from the current fields.
+   *
+   * @param total - The expense's total.
+   * @param lines - The lines to save.
+   * @returns The create request, which an edit carries too.
+   */
+  const buildRequest = (total: number, lines: DraftLineItem[]) => {
     const payers = multiPayer
       ? Object.entries(payerAmounts)
           .map(([userId, value]) => ({ userId, amountCents: parseMoneyInput(value, currency) ?? 0 }))
           .filter((payer) => payer.amountCents > 0)
-      : [{ userId: singlePayerId, amountCents: totalCents }];
-
-    const request = {
+      : [{ userId: singlePayerId, amountCents: total }];
+    return {
       groupId,
       description: description.trim(),
-      amountCents: totalCents,
+      amountCents: total,
       currency,
       category,
       expenseDate: date,
@@ -448,18 +500,53 @@ export function useNewExpense(
       payers,
       splitSpecs: buildSplitSpecs({
         splitType,
-        totalCents,
+        totalCents: total,
         participantIds,
         inputs: splitInputs,
         currency,
       }),
-      items: isItemized ? buildItemsPayload(items, currency) : [],
+      items: isItemized ? buildItemsPayload(lines, currency) : [],
       taxCents: isItemized ? taxCents : 0,
       tipCents: isItemized ? tipCents : 0,
       // Names this attempt: a retry after a lost response sends the same id
       // and gets the expense the first attempt stored, not a second one.
       operationId: operationIdRef.current,
     };
+  };
+
+  // A live split needs a name and priced lines. Who had what is what it is
+  // there to settle, so nobody has to be ticked yet, and nobody else needs to
+  // be on the form: they join through the link.
+  const canStartLive =
+    !editExpenseId &&
+    isItemized &&
+    payerCheck.ok &&
+    description.trim() !== "" &&
+    totalCents !== null &&
+    canStartLiveSplit(items, currency);
+
+  /** Saves the bill and opens it to the table. */
+  const startLive = () => {
+    if (!canStartLive || totalCents === null) return;
+    setError("");
+    const peopleIds = people.map((person) => person.id);
+    expenseAPI.create.mutate(
+      { ...buildRequest(totalCents, unclaimedUnlessPicked(items, peopleIds)), startLiveSplit: true },
+      {
+        onSuccess: (saved) => {
+          operationIdRef.current = newOperationId();
+          router.push(`/expenses/${saved.id}/live`);
+        },
+        onError: (mutationError) => setError(errorMessage(mutationError)),
+      },
+    );
+  };
+
+  /** Builds the request from the current fields and fires create or update. */
+  const submit = () => {
+    if (!canSubmit || totalCents === null) return;
+    setError("");
+    const request = buildRequest(totalCents, items);
 
     // Land on the thing you just made, not on the list you started from.
     // Both RPCs return the saved Expense, so the id is already here — and
@@ -467,15 +554,38 @@ export function useNewExpense(
     // more than a group page where the new row is one line among many.
     const onSuccess = (saved: { id: string }) => {
       operationIdRef.current = newOperationId();
+      lastEditAttempt.current = "";
       router.push(`/expenses/${saved.id}`);
     };
-    const onError = (mutationError: unknown) => setError(errorMessage(mutationError));
     if (editExpenseId) {
+      const attempt = JSON.stringify([{ ...request, operationId: "" }, preserveSplitType, editSync.base?.version]);
+      if (lastEditAttempt.current !== "" && lastEditAttempt.current !== attempt) {
+        operationIdRef.current = newOperationId();
+      }
+      lastEditAttempt.current = attempt;
       expenseAPI.update.mutate(
-        { expenseId: editExpenseId, expense: request, preserveSplitType },
-        { onSuccess, onError },
+        {
+          expenseId: editExpenseId,
+          expense: { ...request, operationId: operationIdRef.current },
+          preserveSplitType,
+          base: editSync.base,
+        },
+        {
+          onSuccess,
+          // Somebody else changed the same thing: the form shows that and
+          // asks, so it is not an error. Anything else is.
+          onError: (mutationError) => {
+            editSync.answerRefusedSave(mutationError).then(
+              (shown) => {
+                if (!shown) setError(errorMessage(mutationError));
+              },
+              (readError) => setError(errorMessage(readError)),
+            );
+          },
+        },
       );
     } else {
+      const onError = (mutationError: unknown) => setError(errorMessage(mutationError));
       expenseAPI.create.mutate(request, { onSuccess, onError });
     }
   };
@@ -538,15 +648,21 @@ export function useNewExpense(
     error,
     dismissError,
     submit,
+    canStartLive,
+    startLive,
+    // Somebody else editing at the same time.
+    editNote: editSync.note,
+    editConflicts: editSync.conflicts,
+    editChangedBy: editSync.changedBy,
+    keepMyEdit: editSync.keepMine,
+    takeSavedEdit: editSync.takeSaved,
     isSaving: expenseAPI.create.isPending || expenseAPI.update.isPending,
     // Receipt scanning.
     receiptConsent,
     isReceiptBusy: expenseAPI.parse.isPending || receiptConsent.busy,
     file,
-    fileName: file?.name ?? "",
     previewUrl,
     receiptUrl,
-    isPreviewRenderable,
     pickFile,
     isPreparing,
     parseNow: () => { void receiptConsent.request(); },

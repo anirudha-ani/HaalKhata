@@ -5,7 +5,10 @@ import { CATEGORIES } from "@haalkhata/shared/money/money.constants";
 import { centsToInput } from "@haalkhata/shared/money/money";
 import { PeoplePicker } from "@/components/people/PeoplePicker/PeoplePicker";
 import { SplitSummary } from "@/components/expense/SplitSummary/SplitSummary";
+import { Radio } from "lucide-react";
+import { LIVE_SPLIT_START_HINT } from "@haalkhata/shared/expense/live/live.constants";
 import { ErrorPopup } from "@/components/ui/ErrorPopup/ErrorPopup";
+import { EditSyncPanel } from "../EditSyncPanel/EditSyncPanel";
 import { itemizedWarnings } from "@haalkhata/shared/expense/form/itemizedWarnings";
 import { parseMoneyInput } from "@haalkhata/shared/money/money";
 import type { ExpenseFormInitial } from "../../../../utils/initialValues";
@@ -161,6 +164,8 @@ export function ExpenseForm({
         onChange={(event) => form.setNotes(event.target.value)}
       />
 
+      <EditSyncPanel form={form} />
+
       <button
         type="button"
         onClick={form.submit}
@@ -169,6 +174,22 @@ export function ExpenseForm({
       >
         {form.isSaving ? "Saving…" : form.isEdit ? "Save changes" : "Add expense"}
       </button>
+
+      {/* The other way to finish a receipt: everyone at the table says what
+          they had, instead of one person ticking it all in. */}
+      {!form.isEdit && form.isItemized ? (
+        <div className="space-y-1.5">
+          <button
+            type="button"
+            onClick={form.startLive}
+            disabled={!form.canStartLive || form.isSaving}
+            className="flex min-h-12 w-full items-center justify-center gap-2 rounded-xl border border-brand-600 py-3 font-semibold text-brand-600 transition-colors hover:bg-brand-50 disabled:opacity-40"
+          >
+            <Radio className="h-4 w-4" /> Split live with the table
+          </button>
+          <p className="text-center text-xs text-ink-soft">{LIVE_SPLIT_START_HINT}</p>
+        </div>
+      ) : null}
     </>
   );
 

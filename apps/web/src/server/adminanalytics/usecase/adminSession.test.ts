@@ -64,9 +64,9 @@ afterEach(() => {
 
 describe("beginAdminSignIn", () => {
   it("issues the same kind of single-use nonce the app's sign-in does", async () => {
-    vi.mocked(beginGoogleSignIn).mockResolvedValue({ nonce: "nonce-value" });
+    vi.mocked(beginGoogleSignIn).mockResolvedValue({ nonce: "nonce-value", lifetimeSeconds: 600 });
 
-    await expect(beginAdminSignIn()).resolves.toEqual({ nonce: "nonce-value" });
+    await expect(beginAdminSignIn()).resolves.toEqual({ nonce: "nonce-value", lifetimeSeconds: 600 });
   });
 });
 

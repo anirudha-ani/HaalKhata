@@ -1,7 +1,7 @@
-/** Tests for trusted-proxy and direct-socket client-IP resolution. */
+/** Tests for trusted-proxy and direct-socket client-IP resolution, and the network a rate limit counts. */
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { clientIp, DIRECT_CLIENT_IP_HEADER } from "./clientIp";
+import { addressNetwork, clientIp, clientNetwork, DIRECT_CLIENT_IP_HEADER } from "./clientIp";
 
 afterEach(() => vi.unstubAllEnvs());
 
@@ -35,5 +35,37 @@ describe("clientIp", () => {
     });
 
     expect(clientIp(headers)).toBe("10.0.0.3");
+  });
+});
+
+describe("addressNetwork", () => {
+  it("keeps an IPv4 address as it is", () => {
+    expect(addressNetwork("203.0.113.50")).toBe("203.0.113.50");
+  });
+
+  it("counts every address of an IPv6 /64 as one, however it is written", () => {
+    const sameConnection = [
+      "2001:db8:1:2::1",
+      "2001:0db8:0001:0002:ffff:ffff:ffff:ffff",
+      "2001:DB8:1:2:a:b:c:d",
+      "2001:db8:1:2:0:0:0:9%eth0",
+    ];
+    expect(new Set(sameConnection.map(addressNetwork))).toEqual(new Set(["2001:db8:1:2::/64"]));
+    expect(addressNetwork("2001:db8:1:3::1")).toBe("2001:db8:1:3::/64");
+    expect(addressNetwork("::1")).toBe("0:0:0:0::/64");
+  });
+
+  it("counts an IPv4 address written as IPv6 as the IPv4 address", () => {
+    expect(addressNetwork("::ffff:192.0.2.7")).toBe("192.0.2.7");
+    expect(addressNetwork("::ffff:c000:207")).toBe("192.0.2.7");
+  });
+
+  it("leaves anything that is not an address alone", () => {
+    expect(addressNetwork("unknown")).toBe("unknown");
+  });
+
+  it("is what a request's caller counts as", () => {
+    vi.stubEnv("TRUST_PROXY_HEADERS", "true");
+    expect(clientNetwork(new Headers({ "x-forwarded-for": "2001:db8:1:2:dead:beef:0:1" }))).toBe("2001:db8:1:2::/64");
   });
 });

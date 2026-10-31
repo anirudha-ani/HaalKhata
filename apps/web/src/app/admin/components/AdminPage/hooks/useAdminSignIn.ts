@@ -1,12 +1,13 @@
 "use client";
 /** Loads Google Identity Services and trades its ID token for an admin session. */
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { adminAnalyticsClient } from "@/lib/api/adminConnect";
 import { errorMessage } from "@/lib/api/connect";
 import { GOOGLE_BUTTON_OPTIONS } from "@/lib/googleIdentity/googleIdentity.constants";
 import { loadGoogleScript } from "@/lib/googleIdentity/loadGoogleScript";
+import { useNonceRenewal, type HeldNonce } from "@/lib/hooks/useNonceRenewal";
 
 /**
  * Renders Google's sign-in button and exchanges the ID token it produces for
@@ -23,6 +24,10 @@ import { loadGoogleScript } from "@/lib/googleIdentity/loadGoogleScript";
  * spent button is taken down as soon as that starts, so it can never be
  * pressed again; if the fresh nonce cannot be had, the card says why and
  * offers `retry` instead of leaving a button that could only fail.
+ *
+ * An unspent nonce runs out too, so it is renewed at half its life while
+ * the page is in view; that button is still good, and stays on screen until
+ * the fresh one replaces it.
  *
  * @param options - Hook options.
  * @param options.googleClientId - The OAuth client id to render the button
@@ -46,23 +51,35 @@ export function useAdminSignIn({
   const [error, setError] = useState("");
   const [setupFailed, setSetupFailed] = useState(false);
   const [attempt, setAttempt] = useState(0);
+  const [heldNonce, setHeldNonce] = useState<HeldNonce | null>(null);
+  // Whether the button on screen carries a nonce a refused sign-in spent.
+  const nonceSpent = useRef(false);
   const isConfigured = googleClientId.length > 0;
+
+  /** Arms the button again with a fresh nonce. */
+  const renewNonce = useCallback(() => {
+    setHeldNonce(null);
+    setAttempt((previous) => previous + 1);
+  }, []);
+  useNonceRenewal(heldNonce, renewNonce);
 
   const { mutate, isPending } = useMutation({
     mutationFn: (idToken: string) => adminAnalyticsClient.signIn({ idToken }),
     onSuccess: onSignedIn,
     onError: (mutationError) => {
       setError(errorMessage(mutationError));
-      setAttempt((previous) => previous + 1);
+      nonceSpent.current = true;
+      renewNonce();
     },
   });
 
   useEffect(() => {
     if (!isConfigured || !buttonElement) return;
     let cancelled = false;
-    // A button from an earlier setup holds a nonce that is spent or about to
-    // be replaced; it goes before anything else happens.
-    buttonElement.replaceChildren();
+    // A button holding a spent nonce goes before anything else happens; one
+    // being renewed is still good and stays until the fresh one replaces it.
+    if (nonceSpent.current) buttonElement.replaceChildren();
+    nonceSpent.current = false;
 
     Promise.all([loadGoogleScript(), adminAnalyticsClient.beginSignIn({})])
       .then(([google, challenge]) => {
@@ -75,7 +92,9 @@ export function useAdminSignIn({
             mutate(response.credential);
           },
         });
+        buttonElement.replaceChildren();
         google.accounts.id.renderButton(buttonElement, GOOGLE_BUTTON_OPTIONS);
+        setHeldNonce({ receivedAt: Date.now(), lifetimeSeconds: challenge.lifetimeSeconds });
       })
       .catch((setupError) => {
         if (cancelled) return;

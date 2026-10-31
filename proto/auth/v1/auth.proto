@@ -22,18 +22,29 @@ service AuthService {
   rpc BeginAppleSignIn(BeginAppleSignInRequest) returns (AppleSignInChallenge);
   rpc LogInWithApple(LogInWithAppleRequest) returns (AuthResponse);
   rpc CompleteAppleSignIn(CompleteAppleSignInRequest) returns (AuthResponse);
+  // Signs out the device or browser making the call, and no other.
   rpc LogOut(google.protobuf.Empty) returns (google.protobuf.Empty);
+  // Everywhere this account is signed in.
+  rpc ListSessions(google.protobuf.Empty) returns (ListSessionsResponse);
+  // Signs one other device or browser out. Its next request is refused.
+  rpc EndSession(EndSessionRequest) returns (google.protobuf.Empty);
+  // Signs out every device and browser but the one making the call.
+  rpc EndOtherSessions(google.protobuf.Empty) returns (google.protobuf.Empty);
   // Permanently erases the authenticated account; shared cents are anonymized.
   rpc DeleteAccount(DeleteAccountRequest) returns (google.protobuf.Empty);
   rpc GetMe(google.protobuf.Empty) returns (common.v1.User);
   rpc UpdateProfile(UpdateProfileRequest) returns (common.v1.User);
 
-  // Phone is set through its own pair of RPCs rather than a field on
-  // UpdateProfile: the number may collide with a row someone was invited into,
-  // in which case the answer is a merge preview rather than an updated user,
-  // and UpdateProfile cannot return two shapes.
+  // Phone is set through its own RPC rather than a field on UpdateProfile:
+  // it takes two calls (send the SMS code, then check it), and a verified
+  // number another account holds moves to the caller with both told.
   rpc SetPhone(SetPhoneRequest) returns (SetPhoneResponse);
-  rpc ConfirmPhoneMerge(ConfirmPhoneMergeRequest) returns (common.v1.User);
+  // Retired: it merged a placeholder made for somebody who had not signed
+  // up, and no such row exists any more. SetPhone never offers a merge;
+  // this is always refused with FAILED_PRECONDITION.
+  rpc ConfirmPhoneMerge(ConfirmPhoneMergeRequest) returns (common.v1.User) {
+    option deprecated = true;
+  }
 
   // Detaches the caller's phone number — the release valve for a lost or
   // recycled number. Refused when the phone is the account's only
@@ -81,6 +92,10 @@ message GoogleSignInChallenge {
   // Server-issued, short-lived value that the client asks Google to copy into
   // the ID token. The server accepts it exactly once before creating a session.
   string nonce = 1;
+  // How long, from when it was issued, the nonce is accepted. A page that
+  // stays open renews it well before then, so a click always carries one
+  // with room left for Google's own steps.
+  int32 lifetime_seconds = 2;
 }
 
 message LogInWithGoogleRequest {
@@ -139,27 +154,22 @@ message SetPhoneResponse {
   // True on the first call after the verification provider accepted the SMS
   // request. The client should ask for the code and call SetPhone again.
   bool verification_sent = 4;
-  // Set when the number was free and simply written to the caller's account.
+  // Set once the code checks out and the number is on the caller's account.
   common.v1.User user = 1;
-  // Set instead when an unclaimed row created by an invite already holds this
-  // number. Nothing has changed yet — the caller confirms with merge_token.
-  MergePreview pending_merge = 2;
-  // Short-lived signed token naming the row that would be absorbed. Empty
-  // unless pending_merge is set.
-  string merge_token = 3;
+  // Retired with ConfirmPhoneMerge; never set.
+  MergePreview pending_merge = 2 [deprecated = true];
+  // Retired with ConfirmPhoneMerge; always empty.
+  string merge_token = 3 [deprecated = true];
 }
 
-// What a caller would take on by merging, shown after SMS verification but
-// before anything is written. Possession proves control today; this preview is
-// the additional defense against absorbing history created for a previous
-// holder of a recycled number.
+// Shape of the retired SetPhoneResponse.pending_merge.
 message MergePreview {
   // How many undeleted expenses the absorbed row appears in.
   int32 expense_count = 1;
   // The absorbed row's net position in the caller's default currency only,
   // kept for older clients: positive means it is owed. `nets` is the whole
   // picture.
-  int32 net_cents = 2;
+  int64 net_cents = 2;
   // Display names of the people it shares expenses with — the actual check,
   // since someone who does not recognize them should back out.
   repeated string counterparty_names = 3;
@@ -169,8 +179,8 @@ message MergePreview {
   repeated common.v1.CurrencyAmount nets = 5;
 }
 
+// Request of the retired ConfirmPhoneMerge.
 message ConfirmPhoneMergeRequest {
-  // The merge_token handed back by SetPhone.
   string merge_token = 1;
 }
 
@@ -189,4 +199,27 @@ message SetContactDiscoveryRequest {
   // True lets people who have the caller's number or email in their
   // contacts find them; false keeps them hidden.
   bool discoverable = 1;
+}
+
+// One sign-in, on a browser or a phone. Only what a person needs to recognise
+// their own device: no address, no location, and no record of what it did.
+message Session {
+  string id = 1;
+  // "Chrome on Mac", "iPhone 15 Pro".
+  string device = 2;
+  // True for the phone app, false for a browser.
+  bool is_app = 3;
+  string signed_in_at = 4;
+  // Noted at most once a day, when the session renews.
+  string last_used_at = 5;
+  // True for the session making this call.
+  bool current = 6;
+}
+
+message ListSessionsResponse {
+  repeated Session sessions = 1;
+}
+
+message EndSessionRequest {
+  string session_id = 1;
 }

@@ -17,10 +17,11 @@
 
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { Client } from "pg";
+import { testDatabaseName } from "@/server/common/testing/testDatabase";
 
 const ADMIN_URL =
   process.env.MERGE_TEST_ADMIN_URL ?? "postgres://haalkhata:change-me@127.0.0.1:5432/postgres";
-const TEST_DATABASE = "haalkhata_simplify_test";
+const TEST_DATABASE = testDatabaseName("haalkhata_simplify_test");
 const TEST_URL = ADMIN_URL.replace(/\/[^/]*$/, `/${TEST_DATABASE}`);
 
 const ALICE = "alice-1";
@@ -198,7 +199,7 @@ describe.skipIf(!reachable)("simplified-edge settlement against Postgres", () =>
 
   it("one payment settles the whole chain", async () => {
     for (const member of [ALICE, BOBBY, CARA]) {
-      expect(await userNetInGroup(member, TRIP)).toBe(0);
+      expect(await userNetInGroup(member, TRIP)).toEqual(new Map());
     }
     expect(await netWithUser(ALICE, CARA)).toEqual(new Map());
     expect(await netWithUser(BOBBY, ALICE)).toEqual(new Map());

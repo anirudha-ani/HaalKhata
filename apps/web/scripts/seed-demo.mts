@@ -12,6 +12,7 @@ import type { User } from "@haalkhata/protogen/common/v1/common_pb";
 import { ExpenseService } from "@haalkhata/protogen/expense/v1/expense_pb";
 import { GroupService } from "@haalkhata/protogen/group/v1/group_pb";
 import { SocialService } from "@haalkhata/protogen/social/v1/social_pb";
+import { plainClient } from "@haalkhata/shared/api/plainClient";
 import { BEARER_TRANSPORT, SESSION_TRANSPORT_HEADER } from "@haalkhata/shared/auth/sessionRenewal";
 import { readSecret } from "../src/server/common/secrets/secrets";
 
@@ -90,10 +91,10 @@ function makeClients(token = "") {
     }],
   });
   return {
-    auth: createClient(AuthService, transport),
-    expense: createClient(ExpenseService, transport),
-    group: createClient(GroupService, transport),
-    social: createClient(SocialService, transport),
+    auth: plainClient(AuthService, createClient(AuthService, transport)),
+    expense: plainClient(ExpenseService, createClient(ExpenseService, transport)),
+    group: plainClient(GroupService, createClient(GroupService, transport)),
+    social: plainClient(SocialService, createClient(SocialService, transport)),
   };
 }
 
@@ -126,13 +127,14 @@ async function main(): Promise<void> {
 
   // Load environment-dependent server helpers only after the root .env and cwd are ready.
   const { findUserByEmail } = await import("../src/server/auth/repo/users.repo");
-  const { createToken } = await import("../src/server/auth/usecase/session/session");
+  const { startSession } = await import("../src/server/auth/usecase/session/sessions.usecase");
+  const seedDevice = { label: "Demo seed", isApp: false };
   const { listSettlementsInvolvingUser } = await import("../src/server/expense/repo/settlements.repo");
   const ownerRow = await findUserByEmail(email);
   if (!ownerRow || (!ownerRow.password_hash && !ownerRow.google_sub)) throw new Error("Create a local account before seeding it.");
   const owner: DemoPerson = {
     user: { id: ownerRow.id, name: ownerRow.name, defaultCurrency: ownerRow.default_currency },
-    clients: makeClients(createToken(ownerRow.id, ownerRow.token_version)),
+    clients: makeClients(await startSession(ownerRow, seedDevice)),
   };
   await owner.clients.auth.getMe({}); // Confirms the API and this command use the same database/signing key.
   const people: Record<string, DemoPerson> = { owner };
@@ -148,7 +150,7 @@ async function main(): Promise<void> {
     if (!demoRow) throw new Error(`Could not create ${fixture.name}.`);
     const person: DemoPerson = {
       user: { id: demoRow.id, name: demoRow.name, defaultCurrency: demoRow.default_currency },
-      clients: makeClients(createToken(demoRow.id, demoRow.token_version)),
+      clients: makeClients(await startSession(demoRow, seedDevice)),
     };
     people[fixture.slug] = person;
     await person.clients.auth.completeOnboarding({});

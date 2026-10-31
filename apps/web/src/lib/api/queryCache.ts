@@ -1,6 +1,7 @@
 /** Account-bound TanStack Query cache reset and legacy-storage cleanup. */
 
 import type { QueryClient } from "@tanstack/react-query";
+import { forgetAllSettleAttempts } from "@haalkhata/shared/expense/settleAttempt";
 
 /** Former localStorage key, retained only so upgrades erase historical PII. */
 export const LEGACY_QUERY_CACHE_STORAGE_KEY = "haalkhata-query-cache";
@@ -26,5 +27,6 @@ export function clearLegacyPersistedQueryCache(): void {
  */
 export function clearAccountQueryCache(queryClient: QueryClient): void {
   queryClient.clear();
+  forgetAllSettleAttempts();
   clearLegacyPersistedQueryCache();
 }

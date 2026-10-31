@@ -1,9 +1,12 @@
 /** TanStack Query bindings for group detail: me, group, friends, expenses, balances, add/remove members. */
 
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { authClient, expenseClient, groupClient, socialClient } from "@/lib/api/connect";
+import { useMemo } from "react";
+import { authClient, errorMessage, expenseClient, groupClient, socialClient } from "@/lib/api/connect";
 import type { GroupStatus } from "@haalkhata/shared/group/status";
+import { EXPENSE_PAGE_SIZE } from "@haalkhata/shared/api/paging";
 import { MONEY_KEYS, queryKeys } from "@haalkhata/shared/api/queryKeys";
+import { mergeExpensePages } from "@haalkhata/shared/expense/pages";
 import { usePullToRefresh } from "@/lib/hooks/usePullToRefresh";
 
 /**
@@ -13,7 +16,9 @@ import { usePullToRefresh } from "@/lib/hooks/usePullToRefresh";
  * refreshes the group, the group list and the friends list on success).
  *
  * @param groupId - Identifier of the group being viewed.
- * @returns An object with `me`, `group`, `groupError`, `friends`, `expenses`,
+ * @returns An object with `me`, `group`, `groupError`, `friends`, `expenses`
+ *   (every loaded page joined) with `hasMoreExpenses`/`isLoadingMoreExpenses`/
+ *   `loadMoreExpenses` and the `loadMoreExpensesError` beside that control,
  *   `balances`, an `isLoading` flag covering the group and expense queries,
  *   `refresh`/`isRefreshing` for pull-to-refresh, and the `addMembers`,
  *   `removeMember`, `transferOwnership` and `addFriend` mutations.
@@ -26,10 +31,19 @@ export function useGroupDetailAPI(groupId: string) {
     queryKey: queryKeys.group(groupId),
     queryFn: () => groupClient.getGroup({ groupId }),
   });
-  const expenses = useQuery({
+  // A page at a time, keyset like the feed below: newest first, driven by
+  // next_cursor.
+  const expenses = useInfiniteQuery({
     queryKey: queryKeys.expenses({ groupId }),
-    queryFn: () => expenseClient.listExpenses({ groupId, withUserId: "" }),
+    initialPageParam: "",
+    queryFn: ({ pageParam }) =>
+      expenseClient.listExpenses({ groupId, withUserId: "", cursor: pageParam, limit: EXPENSE_PAGE_SIZE }),
+    getNextPageParam: (lastPage) => lastPage.nextCursor || undefined,
   });
+  const mergedExpenses = useMemo(() => mergeExpensePages(expenses.data?.pages ?? []), [expenses.data]);
+  // A failed next page is said beside Show more, with the loaded rows left
+  // in place; only a failed first read takes the tab.
+  const expensesPageFailure = expenses.isFetchNextPageError ? expenses.error : null;
   const balances = useQuery({
     queryKey: queryKeys.groupBalances(groupId),
     queryFn: () => expenseClient.getGroupBalances({ groupId }),
@@ -50,6 +64,9 @@ export function useGroupDetailAPI(groupId: string) {
       socialClient.listActivity({ groupId, cursor: pageParam, month: "" }),
     getNextPageParam: (lastPage) => lastPage.nextCursor || undefined,
   });
+  // A failed next page of the feed is said beside Show me more, with the
+  // events already loaded left in place; only a failed first read takes the tab.
+  const activityPageFailure = activity.isFetchNextPageError ? activity.error : null;
 
   /**
    * Adds people by id plus an optional email/phone that must resolve to an
@@ -93,12 +110,13 @@ export function useGroupDetailAPI(groupId: string) {
 
   /**
    * Sends a friend request to another member. The recipient must accept
-   * before a friendship exists, so nothing here is invalidated — the server
-   * deliberately does not expose outgoing-request state.
+   * before a friendship exists, so all that changes is the Friends tab's
+   * list of requests waiting for an answer.
    */
   const addFriend = useMutation({
     mutationFn: (userId: string) =>
       socialClient.addFriend({ email: "", phone: "", name: "", userId }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.friends, exact: true }),
   });
 
   /** Archives or restores the group and refreshes lists and open group views. */
@@ -138,11 +156,16 @@ export function useGroupDetailAPI(groupId: string) {
     me: currentUser.data,
     group: group.data,
     groupError: group.error,
-    expensesError: expenses.error,
+    expensesError: expensesPageFailure ? null : expenses.error,
     balancesError: balances.error,
-    activityError: activity.error,
+    activityError: activityPageFailure ? null : activity.error,
     friends: (friends.data?.friends ?? []).flatMap((friend) => (friend.user ? [friend.user] : [])),
-    expenses: expenses.data,
+    expenses: mergedExpenses,
+    hasMoreExpenses: expenses.hasNextPage,
+    isLoadingMoreExpenses: expenses.isFetchingNextPage,
+    loadMoreExpenses: () => void expenses.fetchNextPage(),
+    /** Why the last next page of expenses did not load; "" when it did. */
+    loadMoreExpensesError: expensesPageFailure ? errorMessage(expensesPageFailure) : "",
     balances: balances.isError ? undefined : balances.data,
     reloadBalances: () => void balances.refetch(),
     isLoading: group.isLoading || expenses.isLoading,
@@ -159,5 +182,7 @@ export function useGroupDetailAPI(groupId: string) {
     activityHasMore: activity.hasNextPage,
     activityLoadingMore: activity.isFetchingNextPage,
     loadMoreActivity: () => void activity.fetchNextPage(),
+    /** Why the feed's last next page did not load; "" when it did. */
+    loadMoreActivityError: activityPageFailure ? errorMessage(activityPageFailure) : "",
   };
 }

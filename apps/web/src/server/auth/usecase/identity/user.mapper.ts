@@ -4,7 +4,9 @@ import { ContactDiscovery } from "@haalkhata/protogen/common/v1/common_pb";
 import type { UserRow } from "@/server/auth/repo/users.repo";
 
 /**
- * Recognizes every production identity provider when distinguishing shadow invitations.
+ * Whether a row is somebody who can sign in. False only for the Deleted
+ * member a deleted account leaves in shared history: chk_users_can_sign_in
+ * refuses any other row without a credential.
  * @param user Account identity columns.
  * @returns True for a password, Google, or Apple account.
  */
@@ -29,8 +31,6 @@ export function toPublicUser(userRow: UserRow) {
     avatarColor: userRow.avatar_color,
     avatarUrl: userRow.avatar_url ?? "",
     defaultCurrency: userRow.default_currency,
-    // A Google account has no password, so password_hash alone would read
-    // every one of them as an unclaimed invite.
     registered: isRegisteredUser(userRow),
     deleted: Boolean(userRow.deleted_at),
     phone: "",

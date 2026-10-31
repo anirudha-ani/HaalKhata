@@ -1,7 +1,8 @@
 "use client";
 /** Hands an invite link to the OS share sheet, falling back to the clipboard. */
 
-import { inviteShareMessage, inviteUrl, profileShareMessage } from "@haalkhata/shared/invite/invite";
+import { inviteShareMessage, liveSplitShareMessage, profileShareMessage } from "@haalkhata/shared/invite/invite";
+import { shareableInviteUrl } from "./inviteLink";
 
 /** How the link left the device, for the confirmation the UI shows. */
 export type ShareOutcome = "shared" | "copied";
@@ -23,7 +24,7 @@ export async function shareInvite(
   inviterName: string,
   groupName: string,
 ): Promise<ShareOutcome> {
-  const linkUrl = inviteUrl(token);
+  const linkUrl = shareableInviteUrl(token);
   const text = inviteShareMessage(inviterName, groupName);
   if (typeof navigator !== "undefined" && typeof navigator.share === "function") {
     await navigator.share({ title: "HaalKhata", text, url: linkUrl });
@@ -41,8 +42,27 @@ export async function shareInvite(
  * @returns How the link left, so the button can confirm honestly.
  */
 export async function shareProfileInvite(token: string, name: string): Promise<ShareOutcome> {
-  const linkUrl = inviteUrl(token);
+  const linkUrl = shareableInviteUrl(token);
   const text = profileShareMessage(name);
+  if (typeof navigator !== "undefined" && typeof navigator.share === "function") {
+    await navigator.share({ title: "HaalKhata", text, url: linkUrl });
+    return "shared";
+  }
+  await navigator.clipboard.writeText(`${text} ${linkUrl}`);
+  return "copied";
+}
+
+/**
+ * Shares a live split's link, with its wording.
+ *
+ * @param token - The link's token.
+ * @param inviterName - Whoever is sharing.
+ * @param description - The expense being split.
+ * @returns How the link left, so the button can confirm honestly.
+ */
+export async function shareLiveSplit(token: string, inviterName: string, description: string): Promise<ShareOutcome> {
+  const linkUrl = shareableInviteUrl(token);
+  const text = liveSplitShareMessage(inviterName, description);
   if (typeof navigator !== "undefined" && typeof navigator.share === "function") {
     await navigator.share({ title: "HaalKhata", text, url: linkUrl });
     return "shared";

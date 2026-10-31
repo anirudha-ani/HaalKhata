@@ -1,30 +1,27 @@
 /** Unit tests for the all-expenses page's scope filter and empty message. */
 
 import { describe, expect, it } from "vitest";
+import { ExpenseListPart } from "@haalkhata/protogen/expense/v1/expense_pb";
 import {
   FIXED_SCOPE_OPTIONS,
   isGroupScope,
-  matchesScopeFilter,
   noExpensesMessage,
+  scopeFilterRequest,
   scopePickerGroups,
 } from "./scopeFilter";
 
-describe("matchesScopeFilter", () => {
-  it("shows everything under 'all'", () => {
-    expect(matchesScopeFilter("", "all")).toBe(true);
-    expect(matchesScopeFilter("grp-1", "all")).toBe(true);
+describe("scopeFilterRequest", () => {
+  it("reads the whole list under 'all'", () => {
+    expect(scopeFilterRequest("all")).toEqual({ part: ExpenseListPart.UNSPECIFIED, partGroupId: "" });
   });
 
-  it("keeps only group-less expenses under 'oneoff'", () => {
+  it("asks the server for group-less expenses under 'oneoff'", () => {
     // The page's reason to exist: one-off expenses had no view of their own.
-    expect(matchesScopeFilter("", "oneoff")).toBe(true);
-    expect(matchesScopeFilter("grp-1", "oneoff")).toBe(false);
+    expect(scopeFilterRequest("oneoff")).toEqual({ part: ExpenseListPart.ONE_OFF, partGroupId: "" });
   });
 
-  it("keeps only the named group's expenses under a group id", () => {
-    expect(matchesScopeFilter("grp-1", "grp-1")).toBe(true);
-    expect(matchesScopeFilter("grp-2", "grp-1")).toBe(false);
-    expect(matchesScopeFilter("", "grp-1")).toBe(false);
+  it("asks for the named group's under a group id", () => {
+    expect(scopeFilterRequest("grp-1")).toEqual({ part: ExpenseListPart.GROUP, partGroupId: "grp-1" });
   });
 });
 
@@ -58,6 +55,17 @@ describe("noExpensesMessage", () => {
 
   it("survives a group id with no resolvable name", () => {
     expect(noExpensesMessage("", "grp-gone", "")).toBe("No expenses in that group.");
+  });
+
+  it("says a search read only what is loaded while older pages remain", () => {
+    expect(noExpensesMessage("chai", "all", "", true)).toBe(
+      "None of the expenses loaded so far match “chai”. Show more to search further back.",
+    );
+    expect(noExpensesMessage("chai", "oneoff", "", true)).toBe(
+      "None of the expenses loaded so far match “chai” outside your groups. Show more to search further back.",
+    );
+    // A scope is applied by the server: nothing loaded means nothing there.
+    expect(noExpensesMessage("", "oneoff", "", true)).toBe("No expenses outside your groups.");
   });
 });
 

@@ -71,17 +71,17 @@ message CurrencyInsights {
   string currency = 1;
   // The caller's share of the window's expenses: what they actually spent,
   // whoever paid at the counter.
-  int32 share_cents = 2;
+  int64 share_cents = 2;
   // What the caller paid up front, their own share included.
-  int32 paid_cents = 3;
+  int64 paid_cents = 3;
   // share_cents per month of GetInsightsResponse.months.
-  repeated int32 monthly_share_cents = 4;
+  repeated int64 monthly_share_cents = 4;
   // share_cents by expense category, largest first.
   repeated CategorySpending categories = 5;
   // Payments the caller made to settle up during the window.
-  int32 settled_out_cents = 6;
+  int64 settled_out_cents = 6;
   // Payments the caller received during the window.
-  int32 settled_in_cents = 7;
+  int64 settled_in_cents = 7;
   // How the window's expenses in this currency were split, most used first.
   repeated SplitTypeCount split_types = 8;
   // The people the caller shared the most expenses in this currency with,
@@ -94,7 +94,7 @@ message CurrencyInsights {
 message CategorySpending {
   // An expense category key, e.g. "food"; see the shared CATEGORIES list.
   string category = 1;
-  int32 share_cents = 2;
+  int64 share_cents = 2;
 }
 
 message SplitTypeCount {

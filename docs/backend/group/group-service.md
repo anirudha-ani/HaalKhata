@@ -10,7 +10,7 @@ The Group Service is essential for:
 - **Membership:** who may be put on a group expense, and who hears the
   group's feed events.
 - **Consent boundaries:** who may add people, who may remove them, and the
-  zero-balance gate that keeps removal from erasing debt.
+  removal gate that keeps removal from erasing debt.
 - **Debt routing:** the per-group simplify-debts switch that changes which
   payments the whole system proposes and accepts.
 
@@ -28,29 +28,46 @@ SQL in [groups.repo.ts](../../../apps/web/src/server/group/repo/groups.repo.ts).
 | Read (`GetGroup`, `ListGroups`, feed, balances) | members only | |
 | Add members | **any member** | A group is a shared ledger; whoever notices somebody is missing from the dinner is rarely the person who happened to create the group. |
 | Remove somebody else | owner only | The destructive direction — and still gated on a settled balance. |
-| Remove yourself | any non-owner member | Membership is consensual only if the person a co-member enrolled can walk out again. Same zero-balance gate. |
+| Remove yourself | any non-owner member | Membership is consensual only if the person a co-member enrolled can walk out again. Same removal gate. |
 | Transfer ownership | owner only | Also how an owner leaves: hand the role on, become an ordinary member, then leave like anyone else. |
 | Archive / unarchive | **any member** | Archiving requires every participant to be settled in every currency; unarchiving restores money writes. |
 | Flip simplify-debts | **any member** | Same trust level as adding people: a routing mode over fully derived balances — rewrites nothing, always reversible. |
 
-**Who may be added (§33c): registered, connected people only.** A group
-seat belongs to somebody who can actually open the app. A bare user id is
-not authorization (a stranger's id would be enough to enrol them and start
-attributing debts to them), and an email/phone with **no claimed account**
+**Who may be added (§33c): connected people who signed up.** A group seat
+belongs to somebody who can actually open the app. A bare user id is not
+authorization (a stranger's id would be enough to enrol them and start
+attributing debts to them), and an email/phone that belongs to **nobody**
 refuses with a distinct `failed_precondition` ("they're not on HaalKhata
-yet — invite them to sign up first") that the clients render as the offer
-to send a sign-up invite (`social.InviteContactToSignUp`). Unregistered
-*friends* are refused by the same gate, by name, inside `enrollMembers` —
-where CreateGroup and AddMembers converge — so an Invited person can never
-hold a seat; once they sign up they are already the inviter's friend and
-addable like anyone. A registered stranger's consent path is the group's
-join link. The connected set includes co-members, not just friends,
+yet — share this group's invite link so they can join") that the clients
+answer with the group's own join link (`NOT_ON_HAALKHATA_COPY.group`).
+Nothing is created for that person; they sign up through the link as
+themselves. A Deleted member (the stand-in account deletion leaves) is
+refused by name inside `enrollMembers` — where CreateGroup and AddMembers
+converge — so it never takes a new seat. A stranger's consent path, whether
+or not they have signed up yet, is the group's join link. The connected set includes co-members, not just friends,
 because two people who met in somebody else's group have no friendship row
 yet would still be offered to each other in the picker.
 
-**The zero-balance removal gate:** a member can only be removed (or leave)
-when their net in the group is exactly zero. Removing someone who owes—or is
-owed—would orphan derived debt.
+**The removal gate:** a member can only be removed (or leave) once **no
+debt in the group names them**, in any currency, along the group's own
+routing (`memberDebtsInGroup`). Removing someone who owes—or is owed—would
+orphan the debt: a group payment needs both people to be members, so nobody
+could pay it, and the group could never be archived.
+
+- A zero total is not enough. In a group that does not simplify debts,
+  someone can owe one person and be owed by another
+  (`pairwiseLeave.integration.test.ts`). Turning Simplify debts on routes
+  those around them and frees them to leave.
+- Nor is one currency. A group can hold a payment in a currency other than
+  its own (written before 30 August 2026, when a cross-scope payment took
+  the payment's currency into every scope), and a dollar owed with a euro
+  paid back is two open balances
+  (`mixedCurrencyGroup.integration.test.ts`).
+- A person-to-person loop that cancels out holds nobody in: it is not debt,
+  and a payment along it is refused anyway.
+
+Clients explain the refusal before sending it, with every amount and, for an
+even total, every debt by name (`memberRemovalBlock`, `memberDebts`).
 
 ## Consistency
 
@@ -81,7 +98,7 @@ three times is noise.
 | --- | --- | --- |
 | Group `type` | `trip` \| `home` \| `couple` \| `other` | unrecognized → `other` |
 | Member `role` | `owner` \| `member` | exactly one owner per group |
-| Limits | name ≤ shared `MAX_GROUP_NAME_LENGTH`; ≤ **100** member identifiers per create/add request | |
+| Limits | name ≤ shared `MAX_GROUP_NAME_LENGTH`; ≤ **100** member identifiers per create/add request; nobody in more than **200** groups (archived ones count, deleted ones do not) | |
 
 ---
 
@@ -105,10 +122,14 @@ three times is noise.
 
 #### Notes
 
+- **Rate-limited:** 10/min per account.
 - **Validation:** name required (trimmed, bounded); type coerced to `other`
   when unrecognized; currency falls back to the creator's default currency,
   then `"USD"`, and is validated against the ISO 4217 catalog (§36). ≤ 100
-  member ids.
+  member ids. Neither the creator nor anyone enrolled may already be in 200
+  groups (`FailedPrecondition`, naming who); the same cap applies to
+  AddMembers and to joining by link. A payment between two people locks
+  the groups they share, so the cap bounds what one payment can lock.
 - **The currency is declared here and frozen.** No endpoint (or SQL path)
   changes a group's currency after creation: every expense, settlement, and
   derived balance in the group is denominated in it, so changing it would
@@ -121,7 +142,11 @@ three times is noise.
   so a group appearing in their list is explained by their feed. There is no
   separate "added" event at creation — the two are the same act.
 - Enrolment also befriends the creator with each added person (one-off
-  expenses between them become possible immediately).
+  expenses between them become possible immediately). The whole batch —
+  memberships, friendships, the inbox locks they need, and pending requests
+  cleared — takes the same few statements for a hundred people as for one
+  (`insertMembers`, `insertFriendships`), so AddMembers holds the group's
+  lock no longer for a crowd.
 - **Not idempotent** (no `operation_id`): a retried create makes a second
   group. The clients disable the button; an empty duplicate group is an
   annoyance, not a money error.
@@ -175,8 +200,9 @@ three times is noise.
 - The nets are computed by one batched SQL sum across all groups
   (`userNetInGroups`) rather than one ledger walk per group — nets are
   routing-independent, so the sum agrees with the ledger math.
-- `your_net_cents` is int32-checked (`FailedPrecondition` when a balance
-  exceeds what the wire can carry).
+- `your_net_cents` is the group's own currency only;
+  `your_balances` has every currency the caller holds a balance in there,
+  the group's first, and both apps read it (`yourGroupBuckets`).
 
 #### Request
 
@@ -188,7 +214,7 @@ three times is noise.
 
 | Field | Type | Description |
 | --- | --- | --- |
-| groups | repeated GroupSummary | `{ group, member_count, your_net_cents }`; net > 0 = the caller is owed in that group (in the group's currency). |
+| groups | repeated GroupSummary | `{ group, member_count, your_net_cents, your_balances }`; net > 0 = the caller is owed in that group. `your_net_cents` is in the group's currency; `your_balances` is one amount per currency, only non-zero ones. |
 
 ---
 
@@ -225,12 +251,12 @@ three times is noise.
 - **Identifiers:** ids of connected people, plus at most one of
   `email`/`phone` naming an existing connected account (both set →
   `InvalidArgument`). The legacy `name` field is accepted and ignored —
-  shadow users are no longer created here.
-- **No existence oracle:** an email/phone that resolves to nobody — or to
-  somebody the caller isn't connected with — gets the same generic denial
-  ("you can only add people you already share a friendship or a group
-  with"), so the field cannot be used to probe which addresses have
-  accounts.
+  nothing is created here for anyone.
+- **One deliberate oracle:** an email/phone that resolves to nobody is
+  refused with `FailedPrecondition` (see above), so the client can offer
+  the join link. One that resolves to somebody the caller isn't connected
+  with gets the generic denial ("you can only add people you already share
+  a friendship or a group with") and reveals nothing about who they are.
 - **Skip, don't fail:** people already in the group are skipped so one stale
   checkbox cannot lose the other additions; only when *everybody* picked was
   already in does the call fail (`"they're already in this group"` /

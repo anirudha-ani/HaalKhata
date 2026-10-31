@@ -107,3 +107,33 @@ it("takes a spent button down after a refusal, and offers to try again when no f
   expect(container.textContent).toContain("Continue with Google");
   expect(container.querySelector('[role="alert"]')).toBeNull();
 });
+
+it("renews an unspent nonce at half its life, keeping the good button on screen meanwhile", async () => {
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
+  const initialize = vi.fn();
+  const renderButton = vi.fn((parent: HTMLElement) => {
+    parent.textContent = "Continue with Google";
+  });
+  window.google = { accounts: { id: { initialize, renderButton } } };
+  let finishRenewal: (challenge: never) => void = () => undefined;
+  vi.mocked(adminAnalyticsClient.beginSignIn)
+    .mockResolvedValueOnce({ nonce: "first-nonce", lifetimeSeconds: 600 } as never)
+    .mockReturnValueOnce(new Promise((resolve) => (finishRenewal = resolve)) as never);
+  try {
+    await render();
+    expect(initialize).toHaveBeenLastCalledWith(expect.objectContaining({ nonce: "first-nonce" }));
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(300_000);
+    });
+    // The fresh nonce is on its way; the button on screen is still good.
+    expect(adminAnalyticsClient.beginSignIn).toHaveBeenCalledTimes(2);
+    expect(container.textContent).toContain("Continue with Google");
+
+    await act(async () => finishRenewal({ nonce: "second-nonce", lifetimeSeconds: 600 } as never));
+    expect(initialize).toHaveBeenLastCalledWith(expect.objectContaining({ nonce: "second-nonce" }));
+    expect(container.querySelector('[role="alert"]')).toBeNull();
+  } finally {
+    vi.useRealTimers();
+  }
+});

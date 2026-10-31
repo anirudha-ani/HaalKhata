@@ -1,6 +1,7 @@
 /**
- * Receipt-parsing business logic: provider selection, image normalization,
- * and untrusted provider output normalized to integer currency minor units.
+ * Receipt-parsing business logic: provider selection, the upload checks (the
+ * photo arrives prepared by the app and is only checked, in `image/`), and
+ * untrusted provider output normalized to integer currency minor units.
  *
  * There is deliberately no provider-specific SDK here. OpenRouter fronts every
  * model worth using for this — Claude and Gemini included — behind one
@@ -14,9 +15,11 @@
  */
 
 import { currencyInfo, minorUnitDigits } from "@haalkhata/shared/money/money.constants";
-import heicDecode from "heic-decode";
-import sharp from "sharp";
-import { invalid, unavailable, UsecaseError } from "@/server/common/errors";
+import {
+  MAX_RECEIPT_IMAGE_BYTES,
+  RECEIPT_IMAGE_MEDIA_TYPE,
+} from "@haalkhata/shared/receipt/receipt.constants";
+import { invalid, unavailable } from "@/server/common/errors";
 import { isRealCalendarDate } from "@/server/common/validation/validation";
 import { logError, logEvent } from "@/server/common/logger";
 import {
@@ -25,14 +28,6 @@ import {
 } from "@/server/receipt/repo/receiptScans.repo";
 import {
   COMPATIBLE_AI,
-  HEIF_BRANDS,
-  IMAGE_MEDIA_TYPES,
-  IMAGE_SIGNATURES,
-  JPEG_QUALITY,
-  MAX_CONCURRENT_HEIC_DECODES,
-  MAX_IMAGE_BYTES,
-  MAX_IMAGE_EDGE_PIXELS,
-  MAX_IMAGE_PIXELS,
   MAX_PARSED_ITEMS,
   MAX_PARSED_MONEY_CENTS,
   MAX_PARSED_NAME_LENGTH,
@@ -41,14 +36,9 @@ import {
   PROMPT,
   PROVIDER_TIMEOUT_MS,
   RECEIPT_JSON_SCHEMA,
-  type ImageMediaType,
 } from "@/server/receipt/receipt.constants";
-
-/** Number of HEIC decodes currently holding a process-local memory slot. */
-let activeHeicDecodes = 0;
-
-/** FIFO waiters for the bounded HEIC decode slot. */
-const heicDecodeWaiters: Array<() => void> = [];
+import { acceptPreparedJpeg } from "./image/preparedJpeg";
+import { scanStoppedError } from "./scanLanes/scanLanes";
 
 /** A receipt extracted from an image, with all money amounts in the currency's integer minor units. */
 export interface ParsedReceiptData {
@@ -73,8 +63,11 @@ interface Provider {
   name: string;
   /** Whether the provider's configuration (API keys, URLs) is present. */
   available(): boolean;
-  /** Extracts a receipt from a base64-encoded image of the given media type. */
-  parse(imageBase64: string, mediaType: ImageMediaType, currency: string): Promise<ParsedReceiptData>;
+  /**
+   * Extracts a receipt from a base64-encoded prepared JPEG, giving up when
+   * `signal` aborts (the scan stopped).
+   */
+  parse(imageBase64: string, currency: string, signal: AbortSignal): Promise<ParsedReceiptData>;
 }
 
 /** One normalized line item in a parsed receipt. */
@@ -279,6 +272,10 @@ function safeJsonParse(text: string, providerName: string): unknown {
 export async function readProviderResponse(response: Response): Promise<string> {
   const declaredLength = Number(response.headers.get("content-length"));
   if (Number.isFinite(declaredLength) && declaredLength > MAX_PROVIDER_RESPONSE_BYTES) {
+    // Cancelled, not just abandoned: a body neither read nor cancelled keeps
+    // its connection until garbage collection gets to it. A
+    // cancel that fails changes nothing for the caller, who is told the size.
+    await response.body?.cancel().catch(() => undefined);
     throw new Error(`provider response exceeds ${MAX_PROVIDER_RESPONSE_BYTES} bytes`);
   }
   if (!response.body) {
@@ -355,10 +352,14 @@ function extractJsonObject(text: string): string {
 const compatibleProvider: Provider = {
   name: "compatible",
   available: () => Boolean(COMPATIBLE_AI.baseUrl && COMPATIBLE_AI.model),
-  async parse(imageBase64, mediaType, currency) {
+  async parse(imageBase64, currency, signal) {
     const response = await fetch(`${COMPATIBLE_AI.baseUrl}/chat/completions`, {
       method: "POST",
-      signal: AbortSignal.timeout(PROVIDER_TIMEOUT_MS),
+      // The scan's own signal hangs up when the person leaves, so the lane
+      // frees at once. The provider may still finish and bill a request it
+      // has started (OpenRouter does for unstreamed ones); hanging up only
+      // stops this server waiting for it.
+      signal: AbortSignal.any([signal, AbortSignal.timeout(PROVIDER_TIMEOUT_MS)]),
       headers: {
         "content-type": "application/json",
         ...(COMPATIBLE_AI.apiKey
@@ -382,7 +383,7 @@ const compatibleProvider: Provider = {
           {
             role: "user",
             content: [
-              { type: "image_url", image_url: { url: `data:${mediaType};base64,${imageBase64}` } },
+              { type: "image_url", image_url: { url: `data:${RECEIPT_IMAGE_MEDIA_TYPE};base64,${imageBase64}` } },
               { type: "text", text: `${PROMPT}\nRespond with ONLY the JSON object.` },
             ],
           },
@@ -414,7 +415,7 @@ const compatibleProvider: Provider = {
 const mockProvider: Provider = {
   name: "mock",
   available: () => true,
-  async parse(_imageBase64, _mediaType, currency) {
+  async parse(_imageBase64, currency) {
     return normalizeProviderOutput({
       merchant: "Demo Diner",
       date: new Date().toISOString().slice(0, 10),
@@ -472,229 +473,38 @@ function providerChain(): { chain: Provider[]; unconfigured: string[] } {
   return { chain: wantsMock ? [mockProvider] : [], unconfigured };
 }
 
-/**
- * Identifies the image format from its magic bytes, ignoring whatever the
- * client claimed.
- *
- * The declared type cannot be trusted: browsers have no MIME mapping for HEIC
- * and report an empty string for it, so a perfectly valid iPhone photo arrives
- * labelled `""`. Sniffing the bytes is both more permissive (it accepts files
- * the browser could not name) and stricter (a `.png` full of script is
- * recognised for what it is), so it replaces the declared-type check entirely.
- *
- * @param currency - Expense currency when the receipt is ambiguous.
- * @param image - Raw uploaded bytes.
- * @returns The detected media type, or null when the bytes are not a supported image.
- */
-function detectImageFormat(image: Uint8Array): ImageMediaType | null {
-  for (const mediaType of IMAGE_MEDIA_TYPES) {
-    const matches = IMAGE_SIGNATURES[mediaType].some((signature) =>
-      signature.fragments.every((fragment) =>
-        fragment.bytes.every((byte, index) => image[fragment.offset + index] === byte),
-      ),
-    );
-    if (!matches) continue;
-    // HEIF containers also hold video and image sequences; the brand at offset
-    // 8 distinguishes still photos, which are the only ones worth transcoding.
-    if (mediaType === "image/heic" || mediaType === "image/heif") {
-      const brand = Buffer.from(image.slice(8, 12)).toString("latin1");
-      if (!HEIF_BRANDS.includes(brand)) return null;
-    }
-    return mediaType;
-  }
-  return null;
-}
-
-/**
- * Runs a memory-heavy HEIC operation within the process-local concurrency cap.
- *
- * @param operation - Decode operation to run once a slot is available.
- * @returns The operation's result.
- */
-async function withHeicDecodeSlot<Result>(operation: () => Promise<Result>): Promise<Result> {
-  if (activeHeicDecodes < MAX_CONCURRENT_HEIC_DECODES) {
-    activeHeicDecodes++;
-  } else {
-    await new Promise<void>((resolve) => heicDecodeWaiters.push(resolve));
-  }
-  try {
-    return await operation();
-  } finally {
-    const nextWaiter = heicDecodeWaiters.shift();
-    if (nextWaiter) nextWaiter();
-    else activeHeicDecodes--;
-  }
-}
-
-/** Raw primary HEIC image ready for Sharp's raw-pixel input. */
-interface DecodedHeicImage {
-  /** Four-channel pixel bytes. */
-  data: Buffer;
-  /** Pixel width. */
-  width: number;
-  /** Pixel height. */
-  height: number;
-}
-
-/**
- * Validates dimensions without multiplying attacker-controlled values first.
- *
- * @param width - Decoded image width.
- * @param height - Decoded image height.
- * @throws UsecaseError (invalid_argument) when dimensions are invalid or exceed the pixel ceiling.
- */
-function assertSafeDimensions(width: number, height: number): void {
-  if (
-    !Number.isSafeInteger(width) ||
-    !Number.isSafeInteger(height) ||
-    width <= 0 ||
-    height <= 0 ||
-    width > Math.floor(MAX_IMAGE_PIXELS / height)
-  ) {
-    // Our own limit, so its wording is ours to show; decoder failures are not.
-    invalid(`image dimensions exceed the ${MAX_IMAGE_PIXELS}-pixel limit`);
-  }
-}
-
-/**
- * Reads HEIC/HEIF metadata first, then decodes only when the primary image is
- * within the pixel limit. This is the critical ordering: the one-shot decoder
- * allocates width × height × 4 before returning dimensions to its caller.
- *
- * This does NOT go through sharp. sharp bundles libheif 1.23, whose security
- * limits cap an `iref` box at 16 references — and real iPhone photos carry ~48
- * (HDR gain map, depth map, thumbnails), so every one of them fails to decode
- * with "Security limit exceeded". libheif does not expose that limit through
- * libvips, so there is no option to relax.
- *
- * heic-decode uses the same alternate libheif build as heic-convert and
- * decodes the same files at full resolution. ffmpeg also decodes them, but
- * returns a half-size preview image rather than the primary one — worse for
- * small receipt print, and a system dependency besides.
- *
- * @param image - Raw HEIC/HEIF bytes.
- * @returns Decoded four-channel pixels, with orientation already applied.
- */
-async function decodeHeic(image: Uint8Array): Promise<DecodedHeicImage> {
-  const images = await heicDecode.all({ buffer: image });
-  try {
-    const primaryImage = images[0];
-    if (!primaryImage) throw new Error("HEIF image not found");
-    assertSafeDimensions(primaryImage.width, primaryImage.height);
-    const decoded = await primaryImage.decode();
-    return {
-      data: Buffer.from(decoded.data.buffer, decoded.data.byteOffset, decoded.data.byteLength),
-      width: decoded.width,
-      height: decoded.height,
-    };
-  } finally {
-    images.dispose();
-  }
-}
-
-/**
- * Transcodes any accepted upload into the JPEG the vision providers actually
- * take, and returns it base64-encoded.
- *
- * Three things happen here, all of which matter for receipts:
- *  - **HEIC becomes JPEG.** iPhones shoot HEIC by default and no vision API
- *    accepts it, so without this every default iPhone photo fails.
- *  - **EXIF rotation is applied.** Phone cameras record orientation as metadata
- *    rather than rotating pixels; providers read pixels, so a sideways receipt
- *    would otherwise be transcribed sideways. (HEIC arrives already oriented
- *    from the decoder, so this is a no-op for that path.)
- *  - **The long edge is capped.** Anything beyond what the model uses is
- *    downsampled on their side anyway, so sending it only costs upload time.
- *
- * Every format goes through the sharp stage, not just HEIC — the orientation
- * fix and size cap are worth just as much on a JPEG straight off a phone.
- *
- * @param currency - Expense currency when the receipt is ambiguous.
- * @param image - Raw uploaded bytes, already validated.
- * @param format - Format detected from the bytes by {@link detectImageFormat}.
- * @returns The JPEG bytes, which are both sent to the provider (base64) and
- *   handed back to the client so it can show what the model actually read.
- * @throws UsecaseError (invalid_argument) when the bytes cannot be decoded as an image.
- */
-async function normalizeToJpeg(image: Uint8Array, format: ImageMediaType): Promise<Buffer> {
-  try {
-    const isHeic = format === "image/heic" || format === "image/heif";
-    const transcode = async (): Promise<Buffer> => {
-      const decodedHeic = isHeic ? await decodeHeic(image) : null;
-      const decoded = decodedHeic?.data ?? Buffer.from(image);
-      return sharp(decoded, {
-        limitInputPixels: MAX_IMAGE_PIXELS,
-        ...(decodedHeic
-          ? {
-              raw: {
-                width: decodedHeic.width,
-                height: decodedHeic.height,
-                channels: 4 as const,
-              },
-            }
-          : {}),
-      })
-        .rotate() // no argument = apply the EXIF orientation tag
-        .resize({
-          width: MAX_IMAGE_EDGE_PIXELS,
-          height: MAX_IMAGE_EDGE_PIXELS,
-          fit: "inside",
-          withoutEnlargement: true,
-        })
-        .jpeg({ quality: JPEG_QUALITY })
-        .toBuffer();
-    };
-    // Hold the slot through Sharp's consumption of the raw RGBA buffer; a
-    // decode-only lock would let the next upload allocate while this one was
-    // still being compressed.
-    return isHeic ? await withHeicDecodeSlot(transcode) : await transcode();
-  } catch (error) {
-    // Our own limits are already worded for the user; only a decoder's
-    // failure is rewritten. The decoder's words name a native library and
-    // its internals, so they go to the log and the user gets what to do.
-    if (error instanceof UsecaseError) throw error;
-    logEvent("warn", "receipt image could not be decoded", {
-      detail: error instanceof Error ? error.message : String(error),
-    });
-    invalid("could not read that image. Try a clear JPEG, PNG or WebP photo");
-  }
-}
-
 /** A receipt request that passed every check and is ready for the providers. */
 interface PreparedReceipt {
   /** The providers to ask, in order. */
   chain: Provider[];
-  /** The photo as the providers will see it. */
+  /** The photo as the providers will see it: the upload without its metadata. */
   normalizedImage: Buffer;
   /** Selected expense currency, upper case. */
   currency: string;
 }
 
 /**
- * Checks a receipt request and readies the photo, before any provider is
- * asked: the currency, the bytes, the format, that some provider is
- * configured, and that the image decodes.
+ * Checks a receipt request before any provider is asked: the currency, the
+ * bytes, that the photo was prepared to the standard on the device, and that
+ * some provider is configured.
  *
- * The format is detected from the bytes; the request's `media_type` field is
- * ignored because browsers report an empty string for HEIC.
+ * The photo is checked from its own bytes; the request's `media_type` field
+ * is ignored. It is never decoded here: both apps convert, rotate and shrink
+ * it before upload, and anything else is refused.
  *
  * @param image - Raw image bytes uploaded by the client.
  * @param currency - Selected expense currency, used when the image is ambiguous.
  * @returns What the providers need.
  * @throws UsecaseError "invalid_argument" when the currency is unsupported,
- *   the image is empty, too large, not a supported image or cannot be
- *   decoded, or when no provider is configured.
+ *   the image is empty, too large or not a prepared photo, or when no
+ *   provider is configured.
  */
-async function prepareReceipt(image: Uint8Array, currency: string): Promise<PreparedReceipt> {
+function prepareReceipt(image: Uint8Array, currency: string): PreparedReceipt {
   currency = currency.trim().toUpperCase() || "USD";
   if (!currencyInfo(currency)) invalid("unsupported receipt currency");
   if (image.length === 0) invalid("no image provided");
-  if (image.length > MAX_IMAGE_BYTES) invalid("image is too large (max 8 MB)");
-  // The client's declared media type is advisory only — see detectImageFormat.
-  const format = detectImageFormat(image);
-  if (format === null) {
-    invalid("that file isn't a supported image. Use JPEG, PNG, WebP, GIF or HEIC");
-  }
+  if (image.length > MAX_RECEIPT_IMAGE_BYTES) invalid("image is too large (max 8 MB)");
+  const photo = acceptPreparedJpeg(image);
 
   const { chain, unconfigured } = providerChain();
   if (chain.length === 0) {
@@ -713,22 +523,28 @@ async function prepareReceipt(image: Uint8Array, currency: string): Promise<Prep
     });
   }
 
-  return { chain, normalizedImage: await normalizeToJpeg(image, format), currency };
+  return { chain, normalizedImage: Buffer.from(photo.buffer, photo.byteOffset, photo.length), currency };
 }
 
 /**
  * Asks each configured provider in order until one returns at least one
  * line item.
  *
+ * A stopped scan asks no further provider: its reason is thrown as soon as
+ * the signal aborts, before or during a provider's call.
+ *
  * @param prepared - A request that passed {@link prepareReceipt}.
+ * @param signal - Aborts when the scan stops.
  * @returns The normalized receipt, the name of the provider that produced it,
  *   and the JPEG that provider was shown.
  * @throws UsecaseError "invalid_argument" when a provider read the photo and
  *   found no line items. UsecaseError "unavailable" when no provider produced
- *   an answer at all (HTTP error, timeout, malformed response).
+ *   an answer at all (HTTP error, timeout, malformed response). The stop
+ *   reason when the scan stopped.
  */
 async function readReceipt(
   prepared: PreparedReceipt,
+  signal: AbortSignal,
 ): Promise<{ receipt: ParsedReceiptData; provider: string; normalizedImage: Uint8Array }> {
   const { chain, normalizedImage, currency } = prepared;
   const imageBase64 = normalizedImage.toString("base64");
@@ -738,8 +554,9 @@ async function readReceipt(
   // a clearer photo would blame the user for an outage.
   let readButEmpty = false;
   for (const provider of chain) {
+    if (signal.aborted) throw scanStoppedError(signal);
     try {
-      const receipt = await provider.parse(imageBase64, "image/jpeg", currency);
+      const receipt = await provider.parse(imageBase64, currency, signal);
       if (receipt.items.length === 0) {
         readButEmpty = true;
         errors.push(`${provider.name}: no line items detected`);
@@ -747,6 +564,7 @@ async function readReceipt(
       }
       return { receipt, provider: provider.name, normalizedImage };
     } catch (error) {
+      if (signal.aborted) throw scanStoppedError(signal);
       errors.push(`${provider.name}: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
@@ -793,11 +611,13 @@ async function recordScan(userId: string, outcome: ReceiptScanOutcome): Promise<
  * answered with its reason and not counted: it says nothing about how often
  * scanning works, and counting it would read as an outage on the admin
  * page. For the same reason, call this only once the person has allowed
- * scanning.
+ * scanning, and a scan that stopped because the person left or started
+ * another is not counted either.
  *
  * @param userId - The authenticated person who uploaded the image.
  * @param image - Raw image bytes uploaded by the client.
  * @param currency - Expense currency for receipts that do not print one.
+ * @param signal - Aborts when the scan stops (its lane's signal); never, by default.
  * @returns The normalized receipt, the name of the provider that produced it,
  *   and the JPEG that provider was shown, for the client to display alongside
  *   the extracted values.
@@ -808,14 +628,15 @@ export async function scanReceipt(
   userId: string,
   image: Uint8Array,
   currency = "USD",
+  signal: AbortSignal = new AbortController().signal,
 ): Promise<{ receipt: ParsedReceiptData; provider: string; normalizedImage: Uint8Array }> {
-  const prepared = await prepareReceipt(image, currency);
+  const prepared = prepareReceipt(image, currency);
   try {
-    const parsed = await readReceipt(prepared);
+    const parsed = await readReceipt(prepared, signal);
     void recordScan(userId, "parsed");
     return parsed;
   } catch (error) {
-    void recordScan(userId, "failed");
+    if (!signal.aborted) void recordScan(userId, "failed");
     throw error;
   }
 }

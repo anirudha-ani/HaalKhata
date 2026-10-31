@@ -224,11 +224,9 @@ async function lockAuthor(reportId: string, client: PoolClient) {
  * error: the page asked for the state the account is already in.
  *
  * @param reportId - The report the operator acted through.
- * @throws UsecaseError "failed_precondition" when the account was merged
- *   into another or its person deleted it: the row the report names no
- *   longer signs anyone in, so suspending it would look like it worked and
- *   stop nobody. The message says which, so the operator does not go
- *   looking for a surviving account that was never there.
+ * @throws UsecaseError "failed_precondition" when the person deleted their
+ *   account: the row the report names no longer signs anyone in, so
+ *   suspending it would look like it worked and stop nobody.
  */
 export async function suspendAuthor(reportId: string): Promise<void> {
   assertReportId(reportId);
@@ -237,9 +235,7 @@ export async function suspendAuthor(reportId: string): Promise<void> {
     if (!standing.active) {
       throw new UsecaseError(
         "failed_precondition",
-        standing.deleted
-          ? "the person who wrote this deleted their account, so there is no one to suspend through this report"
-          : "this account was merged into another, so there is no one to suspend through this report",
+        "the person who wrote this deleted their account, so there is no one to suspend through this report",
       );
     }
     if (!standing.suspended) await suspendAccount(authorId, client);

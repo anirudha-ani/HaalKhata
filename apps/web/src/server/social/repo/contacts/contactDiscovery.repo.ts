@@ -4,10 +4,9 @@
  * identifiers each account has checked.
  *
  * Findable is the default: `contact_discovery` NULL (never answered) and TRUE
- * both match, and only an explicit FALSE hides an account. Because an
- * unclaimed invitation row is NULL too, every match also requires an account
- * someone signed up for (a password, Google or Apple), so a number or email
- * an inviter typed never shows up as "on HaalKhata".
+ * both match, and only an explicit FALSE hides an account. Every live row is
+ * somebody who signed up (chk_users_can_sign_in), and the stand-in a deleted
+ * account leaves is excluded, so a match is always a person.
  *
  * Nothing here writes an identifier. The phones and emails a lookup carries
  * exist only as query parameters; the quota table stores a number.
@@ -72,9 +71,7 @@ export async function findDiscoverableAccounts(
       WHERE ((usr.phone = ANY($2::text[]) AND usr.phone_verified_at IS NOT NULL)
              OR lower(usr.email) = ANY($3::text[]))
         AND usr.contact_discovery IS NOT FALSE
-        AND (usr.password_hash IS NOT NULL OR usr.google_sub IS NOT NULL OR usr.apple_sub IS NOT NULL)
         AND usr.id <> $1
-        AND usr.merged_into IS NULL
         AND usr.deleted_at IS NULL
         AND usr.suspended_at IS NULL
         AND NOT EXISTS (
@@ -163,8 +160,6 @@ export async function findRequestableAccounts(
       WHERE usr.id = ANY($2::text[])
         AND usr.id <> $1
         AND usr.contact_discovery IS NOT FALSE
-        AND (usr.password_hash IS NOT NULL OR usr.google_sub IS NOT NULL OR usr.apple_sub IS NOT NULL)
-        AND usr.merged_into IS NULL
         AND usr.deleted_at IS NULL
         AND usr.suspended_at IS NULL
         AND NOT EXISTS (

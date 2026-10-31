@@ -12,6 +12,8 @@ export interface DraftItem extends DraftLineItem {
 
 /** A line as the API speaks it: a parsed receipt item or a stored expense item. */
 export interface ItemLine {
+  /** The saved line this is; absent on a freshly parsed receipt. */
+  id?: string;
   name: string;
   quantity: number;
   totalCents: number;
@@ -74,10 +76,11 @@ export function unassignedCount(items: DraftItem[]): number {
  *
  * @param items - The draft's line items.
  * @param currency - Currency used to validate every individual line.
+ * @param allowUnclaimed - A line may have nobody on it: a live split is running on this bill.
  * @returns `ok` with an empty message, or the first problem to fix.
  */
-export function draftCompleteness(items: DraftItem[], currency: string) {
-  return checkItemized(items, currency);
+export function draftCompleteness(items: DraftItem[], currency: string, allowUnclaimed = false) {
+  return checkItemized(items, currency, allowUnclaimed);
 }
 
 /**
@@ -92,6 +95,7 @@ export function draftCompleteness(items: DraftItem[], currency: string) {
 export function draftItemsFromLines(lines: readonly ItemLine[], currency: string): DraftItem[] {
   return lines.map((line) => ({
     key: nextDraftKey(),
+    id: line.id || undefined,
     name: line.name,
     quantity: line.quantity,
     total: centsToInput(line.totalCents, currency),

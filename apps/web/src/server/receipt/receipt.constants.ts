@@ -1,48 +1,102 @@
-/** Receipt domain constants: accepted image types, size limit, extraction schema + prompt. */
+/** Receipt domain constants: the upload check's JPEG markers, provider limits, extraction schema + prompt. */
 import { readSecret } from "@/server/common/secrets/secrets";
 
 /**
- * Image formats accepted from clients. HEIC/HEIF are included because that is
- * what iPhones shoot by default — no vision API accepts them, so they are
- * transcoded to JPEG server-side before any provider sees them.
+ * JPEG markers the upload check reads (the byte after each 0xFF). Only the
+ * headers before the first scan are walked; the scan data is never decoded.
  */
-export const IMAGE_MEDIA_TYPES = [
-  "image/jpeg",
-  "image/png",
-  "image/webp",
-  "image/gif",
-  "image/heic",
-  "image/heif",
-] as const;
-export type ImageMediaType = (typeof IMAGE_MEDIA_TYPES)[number];
-
-/** Upper bound on uploaded image size (8 MB). */
-export const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
+export const JPEG_MARKER = {
+  /** Start of image: the first two bytes of every JPEG. */
+  startOfImage: 0xd8,
+  /** End of image: the last two bytes of a whole file. */
+  endOfImage: 0xd9,
+  /** Start of scan: compressed pixel data follows. */
+  startOfScan: 0xda,
+  /** Padding allowed before any marker. */
+  fill: 0xff,
+} as const;
 
 /**
- * Maximum decoded pixel count (40 MP). Compressed byte size does not bound
- * decoded memory: at four channels this ceiling is already about 160 MB.
+ * Frame headers (SOF0–SOF15), which carry the image's size. 0xC4, 0xC8 and
+ * 0xCC share the range but are tables, not frames.
  */
-export const MAX_IMAGE_PIXELS = 40_000_000;
+export const JPEG_FRAME_MARKERS: ReadonlySet<number> = new Set([
+  0xc0, 0xc1, 0xc2, 0xc3, 0xc5, 0xc6, 0xc7, 0xc9, 0xca, 0xcb, 0xcd, 0xce, 0xcf,
+]);
+
+/** Markers that stand alone, with no length or payload after them. */
+export const JPEG_STANDALONE_MARKERS: ReadonlySet<number> = new Set([
+  0x01, 0xd0, 0xd1, 0xd2, 0xd3, 0xd4, 0xd5, 0xd6, 0xd7,
+]);
 
 /**
- * HEIC decoding is memory-heavy and mostly synchronous. One conversion per
- * server process prevents concurrent uploads from multiplying peak RGBA use.
+ * Segments removed before a photo is forwarded: EXIF and XMP (APP1, which can
+ * carry where the photo was taken), the other application segments, and
+ * comments. Kept: APP0 (JFIF) and APP2 (the colour profile), which say how
+ * to show the pixels and nothing about who took them.
  */
-export const MAX_CONCURRENT_HEIC_DECODES = 1;
+export const JPEG_METADATA_MARKERS: ReadonlySet<number> = new Set([
+  0xe1, 0xe3, 0xe4, 0xe5, 0xe6, 0xe7, 0xe8, 0xe9, 0xea, 0xeb, 0xec, 0xed, 0xee, 0xef, 0xfe,
+]);
 
 /**
- * Longest edge, in pixels, sent to the vision provider. 2576px is the ceiling
- * the current high-resolution models actually use; anything larger is
- * downsampled on their side, so sending it only costs upload time.
+ * The refusal for any upload that is not a prepared photo. Both apps always
+ * prepare one, so a person only sees this from a page or app version older
+ * than the standard.
  */
-export const MAX_IMAGE_EDGE_PIXELS = 2576;
-
-/** JPEG quality for the transcode. High enough to keep small receipt print legible. */
-export const JPEG_QUALITY = 88;
+export const NOT_PREPARED_MESSAGE =
+  "that photo wasn't prepared for upload. Reload the page or update the app, then try again";
 
 /** Request timeout for the vision provider, in milliseconds. */
 export const PROVIDER_TIMEOUT_MS = 90_000;
+
+/**
+ * Receipt scans one server process runs at once. A scan spends almost all
+ * its time waiting for the provider: the apps prepare the photo, so the
+ * server only checks its headers and forwards it, holding the photo (at most
+ * MAX_RECEIPT_IMAGE_BYTES) and its base64 copy until the answer comes back.
+ */
+export const RECEIPT_SCAN_LANES = 6;
+
+/**
+ * Scans that may wait for a lane when every lane is taken; one more is told
+ * scanning is busy. A waiting scan already holds its uploaded photo, so the
+ * line is short.
+ */
+export const RECEIPT_SCAN_LINE_LENGTH = 8;
+
+/**
+ * Longest a scan waits in line for a lane before being told scanning is
+ * busy. With PROVIDER_TIMEOUT_MS it stays inside the apps' own limit on a
+ * scan (RECEIPT_TIMEOUT_MS, 120 s), so the server always answers first.
+ */
+export const RECEIPT_SCAN_LINE_WAIT_MS = 20_000;
+
+/**
+ * Receipt scans one person may start in a rolling minute. Spent only when a
+ * scan gets a lane: one turned away as busy, or that gave up waiting, costs
+ * nothing.
+ */
+export const RECEIPT_SCANS_PER_MINUTE = 5;
+
+/** Rate-limit key prefix for a person's receipt scans. */
+export const RECEIPT_SCAN_RATE_KEY = "receipt-scan:";
+
+/** Told to someone whose scan found every lane taken and the line full, or waited too long. */
+export const RECEIPT_SCAN_BUSY_MESSAGE = "lots of receipts are being read right now — try again in a minute";
+
+/** Told to someone who has started as many scans as a minute allows. */
+export const RECEIPT_SCAN_RATE_MESSAGE = `you've scanned ${RECEIPT_SCANS_PER_MINUTE} receipts in the last minute — try again in a moment`;
+
+/**
+ * Told on the scan a person's newer scan replaced. One person runs one scan
+ * at a time, and the newest is the one they are waiting for — an older one
+ * is usually from a screen they left or a connection that dropped.
+ */
+export const RECEIPT_SCAN_REPLACED_MESSAGE = "you started another receipt scan, so this one was stopped";
+
+/** What a scan that stopped because its request went away answers, should anyone still be listening. */
+export const RECEIPT_SCAN_STOPPED_MESSAGE = "the receipt scan was stopped";
 
 /** Maximum bytes read from a provider response before aborting it. */
 export const MAX_PROVIDER_RESPONSE_BYTES = 1024 * 1024;
@@ -56,8 +110,8 @@ export const MAX_PARSED_NAME_LENGTH = 200;
 /** Maximum line-item quantity accepted from a model. */
 export const MAX_PARSED_QUANTITY = 10_000;
 
-/** Maximum cents value accepted from a model, within signed int32 storage. */
-export const MAX_PARSED_MONEY_CENTS = 2_000_000_000;
+/** Maximum cents value accepted from a model: the most one expense can be (MAX_MONEY_CENTS). */
+export const MAX_PARSED_MONEY_CENTS = 10_000_000_000_000;
 
 /**
  * Configuration for the `compatible` provider — any endpoint speaking the
@@ -83,53 +137,6 @@ export const COMPATIBLE_AI = {
    */
   zeroDataRetention: process.env.COMPATIBLE_AI_ZDR === "true",
 } as const;
-
-/** One required byte fragment at a fixed offset within the file. */
-interface ImageSignatureFragment {
-  /** Byte offset the pattern starts at. */
-  offset: number;
-  /** Expected bytes at that offset. */
-  bytes: number[];
-}
-
-/** One accepted signature, composed of fragments that must all match. */
-interface ImageSignature {
-  /** Required fragments for this signature alternative. */
-  fragments: ImageSignatureFragment[];
-}
-
-/**
- * Magic-byte signatures per accepted format. The server detects the type from
- * these bytes instead of trusting the client declaration (defense against a
- * mislabeled or malicious upload). A format may list several alternatives;
- * matching any one is enough.
- *
- * HEIC/HEIF are ISO base media files: the `ftyp` box sits at offset 4 and the
- * brand that follows it at offset 8 varies by encoder. Hence the offset field
- * — a from-byte-zero comparison cannot express this.
- */
-export const IMAGE_SIGNATURES: Record<ImageMediaType, ImageSignature[]> = {
-  "image/jpeg": [{ fragments: [{ offset: 0, bytes: [0xff, 0xd8, 0xff] }] }],
-  "image/png": [{ fragments: [{ offset: 0, bytes: [0x89, 0x50, 0x4e, 0x47] }] }],
-  "image/webp": [
-    {
-      fragments: [
-        { offset: 0, bytes: [0x52, 0x49, 0x46, 0x46] }, // "RIFF"
-        { offset: 8, bytes: [0x57, 0x45, 0x42, 0x50] }, // "WEBP"
-      ],
-    },
-  ],
-  "image/gif": [{ fragments: [{ offset: 0, bytes: [0x47, 0x49, 0x46] }] }], // "GIF"
-  // "ftyp" at offset 4; brand at offset 8 differs between capture devices and
-  // converters, so accept the HEIF family rather than a single brand.
-  "image/heic": [{ fragments: [{ offset: 4, bytes: [0x66, 0x74, 0x79, 0x70] }] }],
-  "image/heif": [{ fragments: [{ offset: 4, bytes: [0x66, 0x74, 0x79, 0x70] }] }],
-};
-
-/** HEIF brands (offset 8) treated as still images we can transcode. */
-export const HEIF_BRANDS = [
-  "heic", "heix", "hevc", "hevx", "heim", "heis", "hevm", "hevs", "mif1", "msf1",
-];
 
 /** JSON schema the cloud provider's structured output must conform to. */
 export const RECEIPT_JSON_SCHEMA = {

@@ -4,11 +4,12 @@ import { randomUUID } from "node:crypto";
 import { Client } from "pg";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { GroupStatus } from "@haalkhata/protogen/group/v1/group_pb";
-import type { CreateExpenseRequest } from "@haalkhata/protogen/expense/v1/expense_pb";
+import type { ExpenseInput } from "@/server/expense/usecase/expense.usecase";
 import { GROUP_LEDGER_LOCK_PREFIX } from "@/server/common/ledger/ledgerLocks.constants";
+import { testDatabaseName } from "@/server/common/testing/testDatabase";
 
 const ADMIN_URL = process.env.MERGE_TEST_ADMIN_URL ?? "postgres://haalkhata:change-me@127.0.0.1:5432/postgres";
-const TEST_DATABASE = "haalkhata_group_archive_test";
+const TEST_DATABASE = testDatabaseName("haalkhata_group_archive_test");
 const TEST_URL = ADMIN_URL.replace(/\/[^/]*$/, `/${TEST_DATABASE}`);
 const OWNER = "archive-owner";
 const MEMBER = "archive-member";
@@ -47,14 +48,14 @@ describe.skipIf(!reachable)("group archive against Postgres", () => {
    *
    * @returns A valid request with a stable operation id for replay checks.
    */
-  function expenseRequest(): CreateExpenseRequest {
+  function expenseRequest(): ExpenseInput {
     return {
       groupId, description: "Own lunch", amountCents: 1000, currency: "USD",
       category: "food", expenseDate: "2026-10-12", splitType: "exact", notes: "",
       payers: [{ userId: OWNER, amountCents: 1000 }],
       splitSpecs: [{ userId: OWNER, amountCents: 1000, percentBp: 0, shares: 0 }],
       items: [], taxCents: 0, tipCents: 0, operationId: randomUUID(),
-    } as unknown as CreateExpenseRequest;
+    } as unknown as ExpenseInput;
   }
 
   /**

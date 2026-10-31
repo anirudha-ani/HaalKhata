@@ -11,6 +11,26 @@ import {
 } from "@/server/receipt/receipt.constants";
 import { normalizeProviderOutput, readProviderResponse } from "./receipt.usecase";
 
+/**
+ * A provider body that keeps sending until it is cancelled, and records
+ * whether it was: an oversized reply left neither read nor cancelled holds
+ * its connection until garbage collection.
+ *
+ * @returns The body and a check of whether it was cancelled.
+ */
+function endlessTrackedBody() {
+  let cancelled = false;
+  const body = new ReadableStream<Uint8Array>({
+    pull(controller) {
+      controller.enqueue(new Uint8Array(64 * 1024));
+    },
+    cancel() {
+      cancelled = true;
+    },
+  });
+  return { body, wasCancelled: () => cancelled };
+}
+
 describe("receipt provider output limits", () => {
   it("caps model-controlled array and string sizes", () => {
     const receipt = normalizeProviderOutput({
@@ -72,6 +92,23 @@ describe("receipt provider output limits", () => {
     const response = new Response(new Uint8Array(MAX_PROVIDER_RESPONSE_BYTES + 1));
 
     await expect(readProviderResponse(response)).rejects.toThrow(/response exceeds/);
+  });
+
+  it("cancels the body of a reply refused for its declared size, freeing the connection", async () => {
+    const tracked = endlessTrackedBody();
+    const response = new Response(tracked.body, {
+      headers: { "content-length": String(MAX_PROVIDER_RESPONSE_BYTES + 1) },
+    });
+
+    await expect(readProviderResponse(response)).rejects.toThrow(/response exceeds/);
+    expect(tracked.wasCancelled()).toBe(true);
+  });
+
+  it("cancels the body of a reply that streams past the cap", async () => {
+    const tracked = endlessTrackedBody();
+
+    await expect(readProviderResponse(new Response(tracked.body))).rejects.toThrow(/response exceeds/);
+    expect(tracked.wasCancelled()).toBe(true);
   });
 
   it("keeps the structured-output schema to keywords the vision provider accepts", () => {

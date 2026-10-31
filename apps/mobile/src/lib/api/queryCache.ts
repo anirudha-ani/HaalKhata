@@ -2,6 +2,7 @@
 
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { QueryClient } from "@tanstack/react-query";
+import { forgetAllSettleAttempts } from "@haalkhata/shared/expense/settleAttempt";
 import { QUERY_CACHE_STORAGE_KEY } from "./api.constants";
 
 /**
@@ -29,5 +30,6 @@ export const mobileQueryClient = new QueryClient({
  */
 export async function clearMobileQueryCache(): Promise<void> {
   mobileQueryClient.clear();
+  forgetAllSettleAttempts();
   await AsyncStorage.removeItem(QUERY_CACHE_STORAGE_KEY);
 }

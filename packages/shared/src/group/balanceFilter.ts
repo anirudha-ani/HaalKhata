@@ -28,18 +28,20 @@ export const GROUP_BALANCE_FILTERS: readonly GroupBalanceFilterOption[] = [
  *
  * Strictly greater/less than zero, so a settled group falls under neither.
  * Using >= or <= anywhere here would put every settled group in both lists —
- * on exactly the rows the filter exists to hide.
+ * on exactly the rows the filter exists to hide. A group holding two
+ * currencies that point opposite ways (owed dollars, owing euros) answers
+ * both questions, so it is under both.
  *
- * @param netCents - The viewer's net position in the group; positive means owed to them.
+ * @param buckets - The viewer's net in the group per currency; positive means owed to them.
  * @param filter - Which filter button is active.
  * @returns True when the group should be listed.
  */
 export function matchesBalanceFilter(
-  netCents: number,
+  buckets: readonly { cents: number }[],
   filter: GroupBalanceFilterOption["value"],
 ): boolean {
-  if (filter === "owed") return netCents > 0;
-  if (filter === "owe") return netCents < 0;
+  if (filter === "owed") return buckets.some((bucket) => bucket.cents > 0);
+  if (filter === "owe") return buckets.some((bucket) => bucket.cents < 0);
   return true;
 }
 

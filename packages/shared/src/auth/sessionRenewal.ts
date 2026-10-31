@@ -1,11 +1,10 @@
 /** The response header that carries a renewed bearer token to the mobile transport. */
 
 /**
- * Set by the server on any authenticated RPC once the caller's session has
- * used up more than half its lifetime. Browsers get the same renewal as a
- * fresh cookie instead; the mobile interceptor reads this header and replaces
- * the stored token, so an app in regular use is never signed out by the
- * absolute token lifetime.
+ * Set by the server on any authenticated RPC once the caller's session is a
+ * day old. Browsers get the same renewal as a fresh cookie instead; the mobile
+ * interceptor reads this header and replaces the stored token, so the
+ * session's lifetime counts from the last time the app was opened.
  */
 export const SESSION_RENEWAL_HEADER = "x-haalkhata-session";
 
@@ -16,6 +15,9 @@ export const SESSION_RENEWAL_HEADER = "x-haalkhata-session";
  * never gets bearer material in a JSON body.
  */
 export const SESSION_TRANSPORT_HEADER = "x-haalkhata-session-transport";
+
+/** Request header the phone app names its model in, for a person's list of sign-ins. */
+export const SESSION_DEVICE_HEADER = "x-haalkhata-device";
 
 /** The value of {@link SESSION_TRANSPORT_HEADER} for a bearer-token client. */
 export const BEARER_TRANSPORT = "bearer";

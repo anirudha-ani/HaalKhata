@@ -1,6 +1,8 @@
 /** @vitest-environment jsdom */
 /** Native expense workflow regression tests using the real controller and shared money logic. */
 import { create } from "@bufbuild/protobuf";
+import { createPlain } from "@haalkhata/shared/api/wireNumbers";
+import type { Expense } from "@haalkhata/shared/api/plainMessages";
 import { UserSchema } from "@haalkhata/protogen/common/v1/common_pb";
 import { ExpenseSchema, GetExpenseResponseSchema } from "@haalkhata/protogen/expense/v1/expense_pb";
 import { computeSplits } from "@haalkhata/shared/expense/splits";
@@ -11,8 +13,8 @@ import { buildInitialValues } from "../../../utils/initialValues";
 import { useNewExpense } from "./useNewExpense";
 import type { useNewExpenseAPI } from "./useNewExpenseAPI";
 
-const stubs = vi.hoisted(() => ({ create: vi.fn(), update: vi.fn(), replace: vi.fn(), cameraPermission: vi.fn(), camera: vi.fn(), library: vi.fn(), parse: vi.fn() }));
-vi.mock("expo-router", () => ({ useRouter: () => ({ replace: stubs.replace }) }));
+const stubs = vi.hoisted(() => ({ create: vi.fn(), update: vi.fn(), replace: vi.fn(), dismissTo: vi.fn(), cameraPermission: vi.fn(), camera: vi.fn(), library: vi.fn(), parse: vi.fn() }));
+vi.mock("expo-router", () => ({ useRouter: () => ({ replace: stubs.replace, dismissTo: stubs.dismissTo }) }));
 vi.mock("expo-image-picker", () => ({ requestCameraPermissionsAsync: stubs.cameraPermission, launchCameraAsync: stubs.camera, launchImageLibraryAsync: stubs.library }));
 vi.mock("@/lib/api/connect", () => ({ errorMessage: (error: Error) => error.message }));
 vi.mock("@/lib/api/operationId", () => ({ newOperationId: () => crypto.randomUUID() }));
@@ -26,11 +28,11 @@ let root: Root;
 let container: HTMLDivElement;
 
 /** @param saved Existing expense, when editing. @returns Harness running the actual native hook. */
-function Harness({ saved }: { saved?: ReturnType<typeof create<typeof ExpenseSchema>> }) {
+function Harness({ saved }: { saved?: Expense }) {
   const initial = buildInitialValues({ initialGroupId: "", initialFriendId: friend.id }, alice.id, saved);
   const expenseAPI = {
     me: alice, groups: [], friends: [{ user: friend }],
-    editing: saved ? create(GetExpenseResponseSchema, { expense: saved, users: [alice, friend] }) : undefined,
+    editing: saved ? createPlain(GetExpenseResponseSchema, { expense: saved, users: [alice, friend] }) : undefined,
     create: { mutate: stubs.create, isPending: false }, update: { mutate: stubs.update, isPending: false }, parse: { mutate: stubs.parse, isPending: false },
   } as unknown as ReturnType<typeof useNewExpenseAPI>;
   const value = useNewExpense(expenseAPI, initial, saved?.id ?? "");
@@ -70,7 +72,7 @@ it("keeps the operation id when retrying a failed request and retains the draft"
 });
 
 it.each(["percent", "shares"])("edits a saved %s expense without changing currency or allocations", async (splitType) => {
-  const saved = create(ExpenseSchema, { id: "saved", description: "Yen dinner", amountCents: 1001, currency: "JPY", splitType,
+  const saved = createPlain(ExpenseSchema, { id: "saved", description: "Yen dinner", amountCents: 1001, currency: "JPY", splitType,
     payers: [{ userId: "alice", amountCents: 1001 }], splits: [{ userId: "alice", owedCents: 333 }, { userId: "friend", owedCents: 668 }] });
   await act(async () => root.render(createElement(Harness, { saved })));
   expect(controller.currency).toBe("JPY"); expect(controller.totalCents).toBe(1001);
@@ -90,6 +92,25 @@ it("keeps manual entry available when camera permission is denied", async () => 
   expect(controller.error).toContain("Camera access is disabled"); expect(stubs.camera).not.toHaveBeenCalled();
   act(() => { controller.setDescription("Manual meal"); controller.setAmount("12"); });
   expect(controller.canSubmit).toBe(true); expect(controller.photo).toBeNull();
+});
+
+it("lands on the expense it just made", async () => {
+  await act(async () => root.render(createElement(Harness)));
+  act(() => { controller.setDescription("Dinner"); controller.setAmount("10"); });
+  act(() => controller.submit());
+  act(() => stubs.create.mock.calls[0][1].onSuccess({ id: "made" }));
+  expect(stubs.replace).toHaveBeenCalledWith("/expenses/made");
+});
+
+it("goes back to the bill an edit was opened from", async () => {
+  const saved = createPlain(ExpenseSchema, { id: "saved", description: "Dinner", amountCents: 1000, currency: "USD", splitType: "equal",
+    payers: [{ userId: "alice", amountCents: 1000 }], splits: [{ userId: "alice", owedCents: 500 }, { userId: "friend", owedCents: 500 }] });
+  await act(async () => root.render(createElement(Harness, { saved })));
+  act(() => controller.setDescription("Supper"));
+  act(() => controller.submit());
+  act(() => stubs.update.mock.calls[0][1].onSuccess({ id: "saved" }));
+  expect(stubs.dismissTo).toHaveBeenCalledWith("/expenses/saved");
+  expect(stubs.replace).not.toHaveBeenCalled();
 });
 
 it("preserves manual itemized edits when the photo picker is cancelled", async () => {
@@ -129,7 +150,7 @@ it.each(["JPY", "USD"])("imports a %s receipt only when its currency matches the
 
 
 it.each(["person", "group"])("clears the saved-split notice when changing the %s clears inputs", async (change) => {
-  const saved = create(ExpenseSchema, { id: "saved", description: "Dinner", amountCents: 1000, currency: "USD", splitType: "shares",
+  const saved = createPlain(ExpenseSchema, { id: "saved", description: "Dinner", amountCents: 1000, currency: "USD", splitType: "shares",
     payers: [{ userId: "alice", amountCents: 1000 }], splits: [{ userId: "alice", owedCents: 500 }, { userId: "friend", owedCents: 500 }] });
   await act(async () => root.render(createElement(Harness, { saved })));
   expect(controller.splitNotice).toBeTruthy();

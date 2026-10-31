@@ -6,9 +6,9 @@ import { isRegisteredUser } from "@/server/auth/usecase/identity/user.mapper";
 import type { PoolClient } from "pg";
 import { GroupStatus } from "@haalkhata/protogen/group/v1/group_pb";
 import {
-  addMember,
   findGroupById,
   insertGroup,
+  insertMembers,
   isMember,
   listCoMemberIds,
   listGroupsByUser,
@@ -27,13 +27,19 @@ import {
   findUserByPhone,
   findUsersByIds,
 } from "@/server/auth/repo/users.repo";
-import { EMAIL_PATTERN, normalizePhone, PHONE_FORMAT_HINT } from "@/server/auth/auth.constants";
-import { insertFriendship, listFriendIds } from "@/server/social/repo/friendships.repo";
+import { normalizePhone, PHONE_FORMAT_HINT } from "@/server/auth/auth.constants";
+import { isEmailAddress } from "@haalkhata/shared/email/email";
+import { insertFriendships, listFriendIds } from "@/server/social/repo/friendships.repo";
+import { assertRoomForAnotherGroup } from "./groupLimit";
 import { insertActivity } from "@/server/social/repo/activity.repo";
 import { insertNotifications } from "@/server/social/repo/notifications.repo";
-import { groupIsSettled, userNetInGroup, userNetInGroups } from "@/server/expense/usecase/balance.usecase";
+import {
+  currencyAmounts,
+  groupIsSettled,
+  memberDebtsInGroup,
+  userNetInGroups,
+} from "@/server/expense/usecase/balance.usecase";
 import { denied, invalid, notFound, UsecaseError } from "@/server/common/errors";
-import { toInt32Cents } from "@/server/common/money/money";
 import { normalizeCurrencyCode } from "@/server/common/validation/validation";
 import {
   GROUP_TYPES,
@@ -41,6 +47,7 @@ import {
   MAX_GROUP_MEMBER_IDS_PER_REQUEST,
   MAX_GROUP_NAME_LENGTH,
   MEMBER_ROLE,
+  NOT_ON_HAALKHATA_GROUP_MESSAGE,
   OWNER_ROLE,
 } from "@/server/group/group.constants";
 import { lockGroupLedgers, withLedgerTransaction } from "@/server/common/ledger/ledgerLocks";
@@ -183,50 +190,40 @@ async function enrollMembers(
   const existingIds = new Set((await listMembers(groupId, client)).map((member) => member.id));
   const newIds = requestedIds.filter((userId) => !existingIds.has(userId));
   const usersById = new Map(
-    (await findUsersByIds(newIds)).map((userRow) => [userRow.id, userRow] as const),
+    (await findUsersByIds(newIds, client)).map((userRow) => [userRow.id, userRow] as const),
   );
-
-  // Every enrolment rides the caller's transaction, so a batch is all or
-  // nothing — a failure on the third person cannot leave two enrolled with
-  // no feed line explaining how they got there.
-  const added: UserRow[] = [];
-  for (const userId of newIds) {
-    const user = usersById.get(userId);
-    // An id with no row is a client sending something stale, not an attack —
-    // the authorization check above already passed, so just skip it.
-    if (!user) continue;
-    // §33c: a seat belongs only to somebody who can open the app. Invited
-    // friends look pickable on stale clients, so the gate lives here, where
-    // CreateGroup and AddMembers converge.
-    if (!isRegisteredUser(user)) {
-      throw new UsecaseError(
-        "failed_precondition",
-        `${user.name} hasn't joined HaalKhata yet — invite them to sign up first`,
-      );
-    }
-    await addMember(groupId, userId, MEMBER_ROLE, client);
-    await insertFriendship(callerId, userId, client);
-    added.push(user);
+  // An id with no row is a client sending something stale, not an attack —
+  // the authorization check above already passed, so just skip it.
+  const added = newIds.flatMap((userId) => usersById.get(userId) ?? []);
+  // §33c: a seat belongs only to somebody who can open the app, which a
+  // Deleted member left in a friend's history cannot. The gate lives here,
+  // where CreateGroup and AddMembers converge.
+  const unregistered = added.find((user) => !isRegisteredUser(user));
+  if (unregistered) {
+    throw new UsecaseError("failed_precondition", `${unregistered.name} can't be added to a group`);
   }
+
+  await assertRoomForAnotherGroup(added, callerId, client);
+
+  // The whole batch in a fixed number of statements on the caller's
+  // transaction, so it is all or nothing and holds the group's lock no
+  // longer for a hundred people than for one.
+  const addedIds = added.map((user) => user.id);
+  await insertMembers(groupId, addedIds, MEMBER_ROLE, client);
+  await insertFriendships(callerId, addedIds, client);
   return added;
 }
 
-/** The §33c refusal the clients render as "send them a sign-up invite?". */
-const NOT_ON_PLATFORM_MESSAGE =
-  "they're not on HaalKhata yet — invite them to sign up first";
-
 /**
- * Resolves an optional email/phone to a REGISTERED account (§33c). A group
- * seat belongs only to somebody who can actually open the app: an identifier
- * with no claimed account refuses with a distinct failed_precondition, which
- * the clients render as the offer to send a sign-up invite
- * (social.InviteContactToSignUp). Once claimed, the person is already the
- * inviter's friend and addable like anyone.
+ * Resolves an optional email/phone to an account (§33c). Nothing is created
+ * for somebody who has not signed up: an identifier with no account refuses
+ * with a distinct failed_precondition, which the clients answer with the
+ * group's own invite link. Whoever joins through it signs up as themselves.
  *
  * @param input - The raw email and phone fields. The legacy name field is
  *   accepted for wire compatibility but ignored. Empty contact fields mean
  *   nobody was invited.
- * @returns The invited user row, or undefined when neither field was given.
+ * @returns The account, or undefined when neither field was given.
  * @throws UsecaseError (invalid_argument) when both fields are populated or
  *   the given identifier is malformed.
  */
@@ -241,15 +238,13 @@ async function resolveInvitee(input: {
     invalid("enter either an email address or a phone number, not both");
   }
   if (email === "" && phone === "") return undefined;
-  if (email !== "" && !EMAIL_PATTERN.test(email)) {
+  if (email !== "" && !isEmailAddress(email)) {
     invalid("please enter a valid email address");
   }
   const invitee = email !== ""
     ? await findUserByEmail(email)
     : await findUserByPhone(assertPhoneShape(phone));
-  if (!invitee || isUnregistered(invitee)) {
-    throw new UsecaseError("failed_precondition", NOT_ON_PLATFORM_MESSAGE);
-  }
+  if (!invitee) throw new UsecaseError("failed_precondition", NOT_ON_HAALKHATA_GROUP_MESSAGE);
   return invitee;
 }
 
@@ -263,16 +258,6 @@ function assertPhoneShape(phone: string): string {
   const normalized = normalizePhone(phone);
   if (!normalized) invalid(PHONE_FORMAT_HINT);
   return normalized;
-}
-
-/**
- * Whether a row has no way to sign in — an invitation, not a member-to-be.
- *
- * @param user - Row to classify.
- * @returns True when neither credential is set.
- */
-function isUnregistered(user: UserRow): boolean {
-  return !isRegisteredUser(user);
 }
 
 /**
@@ -312,6 +297,7 @@ export async function createGroup(
   // event announcing it commit together: a group that exists with half its
   // members and no announcement is what a retry would then create twice.
   const group = await withLedgerTransaction(async (client) => {
+    await assertRoomForAnotherGroup([actor], userId, client);
     const created = await insertGroup({ name, type, currency, createdBy: userId }, client);
     const added = await enrollMembers(userId, created.id, input.memberIds ?? [], client);
     // Everyone enrolled at creation sees the event, so a group appearing in
@@ -351,11 +337,15 @@ export async function listGroups(userId: string) {
     listMembersByGroupIds(groupIds),
     userNetInGroups(userId, groupIds),
   ]);
-  return groups.map((group) => ({
-    group: toGroup(group, membersByGroup.get(group.id) ?? []),
-    memberCount: (membersByGroup.get(group.id) ?? []).length,
-    yourNetCents: toInt32Cents(netByGroup.get(group.id) ?? 0, "your balance in a group"),
-  }));
+  return groups.map((group) => {
+    const nets = netByGroup.get(group.id) ?? new Map<string, number>();
+    return {
+      group: toGroup(group, membersByGroup.get(group.id) ?? []),
+      memberCount: (membersByGroup.get(group.id) ?? []).length,
+      yourNetCents: nets.get(group.currency) ?? 0,
+      yourBalances: currencyAmounts(nets, group.currency),
+    };
+  });
 }
 
 /**
@@ -486,6 +476,10 @@ export async function addMembers(
   // batch, the friendships it implies, and the announcement commit together.
   const added = await withLedgerTransaction(async (client) => {
     await lockGroupLedgers(client, [input.groupId]);
+    // Again under the lock: the check above ran before this request waited
+    // for it, and a removal that held the lock meanwhile must not be undone
+    // by an add the removed member already had in flight.
+    await assertGroupMember(input.groupId, userId, client);
     const enrolled = await enrollMembers(userId, input.groupId, candidateIds, client);
     if (enrolled.length === 0) {
       // Nothing happened, and silently reporting success would leave the modal
@@ -662,8 +656,8 @@ export async function setSimplifyDebts(
 }
 
 /**
- * Removes a member from a group, but only when that member's net balance in
- * the group is settled (exactly zero).
+ * Removes a member from a group, but only when no debt in the group still
+ * names them — in any currency, along the group's own routing.
  *
  * @param userId - Id of the authenticated caller requesting the removal.
  * @param input - The group id and the id of the member to remove.
@@ -687,7 +681,11 @@ export async function removeMemberFromGroup(
     } else {
       await assertGroupOwner(input.groupId, userId, client);
     }
-    if ((await userNetInGroup(input.userId, input.groupId, client)) !== 0) {
+    // No debt in the group may still name them, in any currency: a dollar
+    // owed and a euro paid back are two open balances, and in a
+    // group that does not simplify, a zero total can be one person owed and
+    // another owing — neither payable once they are gone.
+    if ((await memberDebtsInGroup(input.userId, input.groupId, client)).length > 0) {
       // Worded for whoever is reading it: someone leaving is not "a member"
       // being removed. Clients explain this before asking, with the amount;
       // this is what a stale client, or a race with a new expense, shows.

@@ -1,6 +1,12 @@
-/** Typed Connect clients for the browser. Import from client components only. The admin page's are in adminConnect.ts. */
+/**
+ * Typed Connect clients for the browser. Import from client components only.
+ * Each is wrapped by plainClient, so money arrives and leaves as plain
+ * numbers. The admin page's are in adminConnect.ts.
+ */
 
 import { API_TIMEOUT_MS } from "@haalkhata/shared/api/timeouts";
+import { isNetworkFailure, NO_CONNECTION_MESSAGE } from "@haalkhata/shared/api/networkFailure";
+import { plainClient } from "@haalkhata/shared/api/plainClient";
 import { SafetyService } from "@haalkhata/protogen/safety/v1/safety_pb";
 import { createClient } from "@connectrpc/connect";
 import { createConnectTransport } from "@connectrpc/connect-web";
@@ -13,26 +19,31 @@ import { SocialService } from "@haalkhata/protogen/social/v1/social_pb";
 import { PaymentMethodService } from "@haalkhata/protogen/payment/v1/payment_pb";
 import { PushService } from "@haalkhata/protogen/push/v1/push_pb";
 import { PersonalAnalyticsService } from "@haalkhata/protogen/personalanalytics/v1/personalanalytics_pb";
+import { sessionWatch } from "./sessionWatch";
 
 /** Connect-Web transport that routes every RPC through the app's `/api/connect` proxy. */
-export const transport = createConnectTransport({ baseUrl: "/api/connect", defaultTimeoutMs: API_TIMEOUT_MS });
+export const transport = createConnectTransport({
+  baseUrl: "/api/connect",
+  defaultTimeoutMs: API_TIMEOUT_MS,
+  interceptors: [sessionWatch],
+});
 
 /** Typed client for authentication RPCs (sign up, log in, session, log out). */
-export const authClient = createClient(AuthService, transport);
+export const authClient = plainClient(AuthService, createClient(AuthService, transport));
 /** Typed client for group management RPCs (create, list, members, balances). */
-export const groupClient = createClient(GroupService, transport);
+export const groupClient = plainClient(GroupService, createClient(GroupService, transport));
 /** Typed client for expense and settlement RPCs. */
-export const expenseClient = createClient(ExpenseService, transport);
+export const expenseClient = plainClient(ExpenseService, createClient(ExpenseService, transport));
 /** Typed client for receipt scanning/upload RPCs. */
-export const receiptClient = createClient(ReceiptService, transport);
+export const receiptClient = plainClient(ReceiptService, createClient(ReceiptService, transport));
 /** Typed client for social RPCs (friends, activity, notifications). */
-export const socialClient = createClient(SocialService, transport);
+export const socialClient = plainClient(SocialService, createClient(SocialService, transport));
 /** Typed client for the caller's own payment methods (list, add, edit, remove, star). */
-export const paymentClient = createClient(PaymentMethodService, transport);
+export const paymentClient = plainClient(PaymentMethodService, createClient(PaymentMethodService, transport));
 /** Typed client for the phones that receive push notifications and which kinds they receive. */
-export const pushClient = createClient(PushService, transport);
+export const pushClient = plainClient(PushService, createClient(PushService, transport));
 /** Typed client for the signed-in person's own insights. */
-export const personalAnalyticsClient = createClient(PersonalAnalyticsService, transport);
+export const personalAnalyticsClient = plainClient(PersonalAnalyticsService, createClient(PersonalAnalyticsService, transport));
 
 /**
  * Extracts a human-readable message from a ConnectError (or any thrown value).
@@ -42,6 +53,7 @@ export const personalAnalyticsClient = createClient(PersonalAnalyticsService, tr
  *   or a generic fallback when the value is not an `Error`.
  */
 export function errorMessage(error: unknown): string {
+  if (isNetworkFailure(error)) return NO_CONNECTION_MESSAGE;
   if (error instanceof ConnectError) {
     // ConnectError.rawMessage is the human text without the [code] prefix;
     // .message is '[invalid_argument] ...' which we don't want to show users.
@@ -52,7 +64,7 @@ export function errorMessage(error: unknown): string {
 }
 
 /** Typed client for private reports and caller-owned blocks. */
-export const safetyClient = createClient(SafetyService, transport);
+export const safetyClient = plainClient(SafetyService, createClient(SafetyService, transport));
 
 /**
  * Whether the server refused what was sent (a wrong code, a bad field)

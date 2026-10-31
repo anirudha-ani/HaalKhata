@@ -1,6 +1,6 @@
 /** State of the Home prompt to add a payment method: whether there is something to prompt about, its dismissal, and the add sheet. */
 
-import type { CounterpartyBalance } from "@haalkhata/protogen/common/v1/common_pb";
+import type { CounterpartyBalance } from "@haalkhata/shared/api/plainMessages";
 import { useState } from "react";
 import { usePaymentMethodsAPI } from "@/components/payment/hooks/usePaymentMethodsAPI";
 import { MAX_PAYMENT_METHODS_PER_USER } from "@haalkhata/shared/payment/payment.constants";

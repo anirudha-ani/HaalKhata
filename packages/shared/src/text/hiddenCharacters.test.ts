@@ -55,4 +55,42 @@ describe("stripHiddenCharacters", () => {
   test("characters outside the basic plane survive whole", () => {
     expect(stripHiddenCharacters("pay \u{1F600}​ here", true)).toBe("pay \u{1F600} here");
   });
+
+  test("variation selectors between ordinary letters go, so they cannot hide a word", () => {
+    expect(stripHiddenCharacters("P\uFE0FIN", true)).toBe("PIN");
+    expect(stripHiddenCharacters(`P${String.fromCodePoint(0xe0100)}IN`, true)).toBe("PIN");
+    expect(stripHiddenCharacters("P\u180BIN", true)).toBe("PIN");
+  });
+
+  test("the marks that draw nothing go too", () => {
+    expect(stripHiddenCharacters("P\u034FIN", true)).toBe("PIN");
+    expect(stripHiddenCharacters("P\u17B4IN", true)).toBe("PIN");
+    expect(stripHiddenCharacters("P\u17B5IN", false)).toBe("PIN");
+  });
+
+  test("text made only of them is blank", () => {
+    expect(stripHiddenCharacters("\uFE0F\u034F\u17B4", true)).toBe("");
+  });
+
+  test("an emoji keeps what makes it the emoji it is", () => {
+    expect(stripHiddenCharacters("Bills \u2764\uFE0F", true)).toBe("Bills \u2764\uFE0F");
+  });
+
+  test("a rainbow flag survives: a selector and then a joiner", () => {
+    const flag = "\u{1F3F3}\uFE0F\u200D\u{1F308}";
+    expect(stripHiddenCharacters(flag, true)).toBe(flag);
+  });
+
+  test("a family emoji keeps its joiners", () => {
+    const family = "\u{1F468}\u200D\u{1F469}\u200D\u{1F467}";
+    expect(stripHiddenCharacters(family, true)).toBe(family);
+  });
+
+  test("a Chinese character keeps the selector that picks its form", () => {
+    expect(stripHiddenCharacters(`\u845B${String.fromCodePoint(0xe0100)}`, true)).toBe(`\u845B${String.fromCodePoint(0xe0100)}`);
+  });
+
+  test("an identifier loses them even after an emoji", () => {
+    expect(stripHiddenCharacters("\u2764\uFE0F", false)).toBe("\u2764");
+  });
 });

@@ -61,3 +61,20 @@ describe("namesSecret", () => {
     expect(namesSecret(label)).toBe(false);
   });
 });
+
+describe("namesSecret reads letters that only look different", () => {
+  test.each([
+    ["Greek capitals", "ΡΙΝ"],
+    ["a Cyrillic letter", "РIN"],
+    ["a digit for a letter", "P1N"],
+    ["Cyrillic in a phrase", "Сard number"],
+    ["a zero for an o", "0TP"],
+    ["spaced lookalikes", "Р І Ν"],
+  ])("%s", (_case, label) => {
+    expect(namesSecret(label)).toBe(true);
+  });
+
+  test.each(["Opinion", "Account 1", "Branch 305", "Банк", "Название", "IBAN", "Reference 5"])("leaves %s alone", (label) => {
+    expect(namesSecret(label)).toBe(false);
+  });
+});

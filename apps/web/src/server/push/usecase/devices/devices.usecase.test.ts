@@ -56,6 +56,7 @@ const STORED: PushDeviceRow = {
   label: "iPhone 17",
   app_version: "1.1.0",
   token_version: 3,
+  session_id: null,
   created_at: "2026-10-16T00:00:00.000Z",
   last_seen_at: "2026-10-16T00:00:00.000Z",
   last_sent_at: null,
@@ -88,7 +89,7 @@ beforeEach(() => {
 
 describe("registerDevice", () => {
   it("stores the phone under the caller's current session version and trims the list", async () => {
-    const device = await registerDevice("user-a", 3, VALID);
+    const device = await registerDevice("user-a", { id: "session-1", version: 3 }, VALID);
     expect(repo.upsertPushDevice).toHaveBeenCalledWith(
       expect.objectContaining({ userId: "user-a", tokenVersion: 3, expoToken: VALID.expoPushToken }),
       expect.anything(),
@@ -104,36 +105,36 @@ describe("registerDevice", () => {
     ["an unknown platform", { platform: "web" }],
     ["a label that is far too long", { label: "x".repeat(10_000) }],
   ])("refuses %s", async (_case, override) => {
-    await expect(registerDevice("user-a", 3, { ...VALID, ...override })).rejects.toMatchObject({ code: "invalid_argument" });
+    await expect(registerDevice("user-a", { id: "session-1", version: 3 }, { ...VALID, ...override })).rejects.toMatchObject({ code: "invalid_argument" });
     expect(repo.upsertPushDevice).not.toHaveBeenCalled();
   });
 
   it("removes invisible characters from the label", async () => {
-    await registerDevice("user-a", 3, { ...VALID, label: "i​Phone\u0007 17" });
+    await registerDevice("user-a", { id: "session-1", version: 3 }, { ...VALID, label: "i​Phone\u0007 17" });
     expect(repo.upsertPushDevice).toHaveBeenCalledWith(expect.objectContaining({ label: "iPhone 17" }), expect.anything());
   });
 
   it("refuses a session that was signed out between authentication and the write", async () => {
     repo.upsertPushDevice.mockResolvedValue(undefined);
-    await expect(registerDevice("user-a", 3, VALID)).rejects.toMatchObject({ code: "unauthenticated" });
+    await expect(registerDevice("user-a", { id: "session-1", version: 3 }, VALID)).rejects.toMatchObject({ code: "unauthenticated" });
     expect(repo.evictOldestPushDevices).not.toHaveBeenCalled();
   });
 
   it("keeps a removed phone off: a background registration is refused and writes nothing", async () => {
     repo.isPushInstallationKeptOff.mockResolvedValue(true);
-    await expect(registerDevice("user-a", 3, VALID)).rejects.toMatchObject({ code: "failed_precondition" });
+    await expect(registerDevice("user-a", { id: "session-1", version: 3 }, VALID)).rejects.toMatchObject({ code: "failed_precondition" });
     expect(repo.upsertPushDevice).not.toHaveBeenCalled();
   });
 
   it("lets the person turn a removed phone back on from the phone", async () => {
     repo.isPushInstallationKeptOff.mockResolvedValue(true);
-    await registerDevice("user-a", 3, { ...VALID, turnOn: true });
+    await registerDevice("user-a", { id: "session-1", version: 3 }, { ...VALID, turnOn: true });
     expect(repo.clearPushInstallationKeptOff).toHaveBeenCalledWith("user-a", VALID.installationId, expect.anything());
     expect(repo.upsertPushDevice).toHaveBeenCalled();
   });
 
   it("refuses a request without a session version", async () => {
-    await expect(registerDevice("user-a", Number.NaN, VALID)).rejects.toMatchObject({ code: "unauthenticated" });
+    await expect(registerDevice("user-a", { id: "session-1", version: Number.NaN }, VALID)).rejects.toMatchObject({ code: "unauthenticated" });
     expect(repo.upsertPushDevice).not.toHaveBeenCalled();
   });
 });

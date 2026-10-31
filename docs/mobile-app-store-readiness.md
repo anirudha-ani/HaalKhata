@@ -238,7 +238,7 @@ bundling and simulator compilation do not establish provider/account behavior.
 | Google sign-in | Correct iOS audience, fresh nonce, returning login, cancellation and browser errors. |
 | Sessions | Kill/reopen, normal renewal, sign out everywhere, expired/revoked session, another user after sign-out sees no old data. |
 | Welcome | Story pages swipe by hand only; Apple and Google equal size and docked in reach; iPad two columns; Reduce Motion stills the scenes ([checklist](mobile-onboarding.md#verify)). |
-| Onboarding | Every step for a new account, only the device steps on a first sign-in, nothing after an update; skip optional profile, phone and payment; SMS success/failure and AutoFill; existing-number merge confirmation; one Continue before each iOS prompt and either answer moves on ([checklist](mobile-onboarding.md#verify)). |
+| Onboarding | Every step for a new account, only the device steps on a first sign-in, nothing after an update; skip optional profile, phone and payment; SMS success/failure and AutoFill; a number another account holds moves over with both told; one Continue before each iOS prompt and either answer moves on ([checklist](mobile-onboarding.md#verify)). |
 | Invitations | Tap a real HTTPS group/profile link from Messages/Mail in cold and warm launches; signed-out flow resumes its pending invite. |
 | Money | Every split type, unequal cents/rounding, multiple payers, USD/EUR separately, create/edit/delete, paid/received settlements, duplicate-tap/retry behavior. |
 | Notifications | No prompt at launch; onboarding's notifications step (or, for an account signed in before it, the explainer after the first saved expense, payment or group) has one Continue button; Don't Allow leads to "Off in iOS Settings" and Open Settings. Another account's expense, comment, payment, reminder, friend request and group change each arrive and open the right screen cold and warm; the actor gets none. Badge equals the bell and clears in Activity. A switch turned off stops that kind. Sign out, Sign out everywhere and a second account on the same phone stop and clear the first account's pushes. Send a test works and reports a removed phone. See [local push notifications](local-push-notifications.md). |
@@ -330,4 +330,4 @@ EAS Update/OTA delivery is not configured by this change.
 The bundle/native verification used non-secret verification settings, not real
 OAuth/signing credentials. A signed physical-device IPA, live Apple/Google
 login/revocation, production deployment, upload, and App Review are not claimed
-by these local results. See [the exact dependency mitigations](build-security-patches.md).
+by these local results. See [how build-tool dependency advisories are handled](build-security-patches.md).

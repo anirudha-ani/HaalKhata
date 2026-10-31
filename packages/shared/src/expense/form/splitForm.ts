@@ -14,6 +14,8 @@ export type FormSplitType = "equal" | "exact" | "percent" | "shares" | "itemized
 export interface DraftLineItem {
   /** Stable React key; not sent to the server. */
   key: string;
+  /** The saved line this row edits; absent on a line not saved yet. */
+  id?: string;
   /** Item name as typed; blank falls back to "Item" on submit. */
   name: string;
   /** Raw money input for the item's own total (e.g. "12.50"). */
@@ -194,9 +196,10 @@ export function itemizedTotals(
  *
  * @param items - The draft line items.
  * @param currency - ISO 4217 code the item amounts are typed in.
+ * @param allowUnclaimed - A line may have nobody on it: a live split is running on this bill.
  * @returns Whether the draft is valid, with a message when it is not.
  */
-export function checkItemized(items: DraftLineItem[], currency: string): SplitCheck {
+export function checkItemized(items: DraftLineItem[], currency: string, allowUnclaimed = false): SplitCheck {
   if (items.length === 0) return { ok: false, message: "add at least one item" };
 
   const unpriced = items.filter(
@@ -212,7 +215,7 @@ export function checkItemized(items: DraftLineItem[], currency: string): SplitCh
   const unassigned = items.filter(
     (item) => Object.values(item.assignees).filter((weight) => weight > 0).length === 0,
   ).length;
-  if (unassigned > 0) {
+  if (unassigned > 0 && !allowUnclaimed) {
     return {
       ok: false,
       message: `${unassigned} item${unassigned === 1 ? " is" : "s are"} unassigned`,
@@ -297,6 +300,36 @@ export function shareEveryItemWith(
 }
 
 /**
+ * Whether an itemized draft can open a live split: lines with prices are all
+ * it needs, since who had what is what the split is there to settle.
+ *
+ * @param items - The draft line items.
+ * @param currency - ISO 4217 code the amounts are typed in.
+ * @returns True when every line has a price and there is at least one.
+ */
+export function canStartLiveSplit(items: readonly DraftLineItem[], currency: string): boolean {
+  return items.length > 0 && items.every((item) => (parseMoneyInput(item.total, currency) ?? 0) > 0);
+}
+
+/**
+ * Prepares a draft for a live split. A scanned or added line starts out shared
+ * by everyone on the form, which is the form's default rather than anybody's
+ * choice, so such a line opens with nobody on it for people to claim. A line
+ * somebody has narrowed down by hand keeps what they chose.
+ *
+ * @param items - The draft line items.
+ * @param peopleIds - Everyone on the form.
+ * @returns The lines to start the split with.
+ */
+export function unclaimedUnlessPicked<Item extends DraftLineItem>(items: readonly Item[], peopleIds: readonly string[]): Item[] {
+  return items.map((item) => {
+    const onLine = Object.entries(item.assignees).filter(([, weight]) => weight > 0).map(([userId]) => userId);
+    const everyone = onLine.length === 0 || peopleIds.every((userId) => onLine.includes(userId));
+    return everyone ? { ...item, assignees: {} } : item;
+  });
+}
+
+/**
  * Builds the ExpenseItem payload for the API from an itemized draft, dropping
  * assignees whose weight is zero and defaulting a blank name to "Item".
  *
@@ -306,7 +339,7 @@ export function shareEveryItemWith(
  */
 export function buildItemsPayload(items: DraftLineItem[], currency: string) {
   return items.map((item) => ({
-    id: "",
+    id: item.id ?? "",
     name: item.name.trim() || "Item",
     quantity: Math.max(1, item.quantity ?? 1),
     totalCents: parseMoneyInput(item.total, currency) ?? 0,

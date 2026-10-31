@@ -72,4 +72,17 @@ describe("groupHighlights", () => {
     groupHighlights(original);
     expect(names(original)).toEqual(["a", "b"]);
   });
+
+  it("places a group holding two currencies by the larger of them", () => {
+    // $10 owed, €90 owed back: the €90 is what needs attention.
+    const mixed = {
+      name: "Goa trip",
+      yourNetCents: -1000,
+      yourBalances: [
+        { currency: "USD", cents: -1000 },
+        { currency: "EUR", cents: 9000 },
+      ],
+    };
+    expect(names(groupHighlights([summary("Flat", 5000), mixed]))).toEqual(["Goa trip", "Flat"]);
+  });
 });

@@ -8,7 +8,7 @@ import { Text } from "@/components/ui/Text";
 import QRCode from "react-native-qrcode-svg";
 import { Button } from "@/components/ui/Button";
 import { Sheet } from "@/components/ui/Sheet/Sheet";
-import { inviteUrl } from "@haalkhata/shared/invite/invite";
+import { shareableInviteUrl } from "@/lib/invite/inviteLink";
 import { colors, radii, spacing } from "@/lib/theme/theme";
 import { COPIED_BADGE_MS } from "./modals.constants";
 
@@ -39,7 +39,7 @@ export function InviteShareSheet({
   share: () => Promise<unknown>;
   onClose: () => void;
 }) {
-  const linkUrl = inviteUrl(token);
+  const linkUrl = shareableInviteUrl(token);
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {

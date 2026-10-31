@@ -20,30 +20,19 @@ import { displayNameSql } from "@/server/adminanalytics/repo/displayName";
 import { PAYMENT_KEY } from "@/server/common/ledger/paymentKey";
 
 /**
- * A row that stands for a person: not a tombstone left by an account merge,
- * and not the identity-free stand-in that keeps a deleted account's share of
- * a shared ledger. Written for a `users usr` alias.
+ * Someone who has signed up: every row but the identity-free stand-in that
+ * keeps a deleted account's share of a shared ledger (chk_users_can_sign_in
+ * leaves no other kind). Written for a `users usr` alias.
  */
-const PERSON = `usr.merged_into IS NULL AND usr.deleted_at IS NULL`;
-
-/** How someone proves who they are; a placeholder row has none of these. */
-const SIGN_IN = `(usr.google_sub IS NOT NULL OR usr.apple_sub IS NOT NULL OR usr.password_hash IS NOT NULL)`;
+const REGISTERED = `usr.deleted_at IS NULL`;
 
 /**
- * Someone who has signed in, as opposed to a placeholder row created when a
- * member invited them. Written for a `users usr` alias.
- */
-const REGISTERED = `${PERSON} AND ${SIGN_IN}`;
-
-/** A placeholder for someone a member invited who has never signed in. */
-const INVITED = `${PERSON} AND NOT ${SIGN_IN}`;
-
-/**
- * When someone joined: the moment they finished signing up. An invited
- * person's row is created when a friend first types their name, which can
- * be months before they arrive; onboarded_at is when they did. Falls back
- * to created_at for the rare account still mid-onboarding. Accounts older
- * than onboarding itself read created_at too (migration 1792959311422).
+ * When someone joined: the moment they finished signing up. An account that
+ * claimed an invitation before invitations were retired has a row created
+ * when a friend first typed their name, which can be months before they
+ * arrived; onboarded_at is when they did. Falls back to created_at for the
+ * rare account still mid-onboarding. Accounts older than onboarding itself
+ * read created_at too (migration 1792959311422).
  */
 const JOINED_AT = `COALESCE(usr.onboarded_at, usr.created_at)`;
 
@@ -64,7 +53,6 @@ const PAYMENTS = `
 /** Product-wide totals. */
 export interface UsageTotalsRow {
   registered_user_count: number;
-  invited_user_count: number;
   weekly_active_user_count: number;
   monthly_active_user_count: number;
   group_count: number;
@@ -101,7 +89,6 @@ export async function findUsageTotals(
 ): Promise<UsageTotalsRow> {
   const totals = await queryOne<UsageTotalsRow>(
     `SELECT people.registered_user_count,
-            people.invited_user_count,
             active.weekly_active_user_count,
             active.monthly_active_user_count,
             (SELECT COUNT(*)::int FROM groups) AS group_count,
@@ -115,8 +102,7 @@ export async function findUsageTotals(
             methods.payment_method_count,
             methods.payment_method_user_count
        FROM (
-         SELECT (COUNT(*) FILTER (WHERE ${REGISTERED}))::int AS registered_user_count,
-                (COUNT(*) FILTER (WHERE ${INVITED}))::int AS invited_user_count
+         SELECT (COUNT(*) FILTER (WHERE ${REGISTERED}))::int AS registered_user_count
            FROM users usr
        ) people,
        (

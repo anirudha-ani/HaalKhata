@@ -122,14 +122,14 @@ setup order; in development the page is at `/admin`.
 
 ### Phone verification (optional)
 
-Verified phone numbers let people invited by phone claim their history when
-they sign up. Create a Twilio Verify Service and set its **Code length** to
+Verified phone numbers let people be found from their friends' contacts,
+and let a number follow whoever proves they hold it. Create a Twilio Verify Service and set its **Code length** to
 **8** in the service's settings. Twilio starts every service at 6, and both
 apps and the server take only 8-digit codes, so a service left at its
 default texts codes nobody can enter. Then create a restricted API key
 with Verify permissions and set `TWILIO_API_KEY_SID`, `TWILIO_VERIFY_SERVICE_SID`
 and `TWILIO_API_KEY_SECRET` (the last one as a secret file in production).
-Missing configuration fails closed: no phone number is ever written or merged
+Missing configuration fails closed: no phone number is ever written or moved
 without an approved code check, and phone features simply stay unavailable.
 
 At start-up the server reads the service's code length and logs

@@ -3,6 +3,7 @@
 
 import { useCallback, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Code, ConnectError } from "@connectrpc/connect";
 import type { User } from "@haalkhata/protogen/common/v1/common_pb";
 import type { OutgoingFriendRequest } from "@haalkhata/protogen/social/v1/social_pb";
 import {
@@ -15,7 +16,7 @@ import {
 import { totalsByCurrency } from "@haalkhata/shared/money/balances";
 import { matchesTerms, searchTerms } from "@haalkhata/shared/search/filter";
 import { authClient, errorMessage, socialClient } from "@/lib/api/connect";
-import { shareInvite } from "@/lib/invite/share";
+import { shareProfileInvite } from "@/lib/invite/share";
 import { queryKeys } from "@haalkhata/shared/api/queryKeys";
 import type { FriendsTab } from "../../../constants/friendsTabs";
 import { bucketsOf } from "../utils/bucketsOf";
@@ -26,18 +27,21 @@ import { bucketsOf } from "../utils/bucketsOf";
  * the settle-up modal target.
  *
  * The add form is an explicit email-or-phone choice; the phone side carries
- * its country and is validated client-side before anything is sent.
+ * its country and is validated client-side before anything is sent. An
+ * email or phone that belongs to nobody on HaalKhata is refused, and the
+ * form offers the caller's own invite link instead: nothing is made for a
+ * person until they sign up as themselves.
  *
  * @returns An object exposing `me` (the signed-in user), `friends` (every
- *   counterparty balance) with `friendsError` when that query failed, split
- *   into `registeredFriends` and `invitedFriends`, `incomingRequests`
- *   awaiting the user and `outgoingRequests` the user is waiting on, the
- *   selected `tab` with `setTab`, `visibleFriends` (registered friends
- *   matching `query`), the
- *   `query`/`setQuery` search state, `isLoading`/`isAdding` flags, the
- *   `identifier` form state with `setIdentifier` and `submitAdd`, the last
- *   add-friend `error` message, and `settleWith`/`setSettleWith` controlling
- *   the settle-up modal.
+ *   counterparty balance) with `friendsError` when that query failed,
+ *   `incomingRequests` awaiting the user and `outgoingRequests` the user is
+ *   waiting on, the selected `tab` with `setTab`, `visibleFriends` (friends
+ *   matching `query`), the `query`/`setQuery` search state,
+ *   `isLoading`/`isAdding` flags, the `contact` form state with `setContact`
+ *   and `submitAdd`, `notOnHaalKhata` with `shareInviteLink` for the offer
+ *   that replaces a refused add, `profileShareToken` for the share dialog it
+ *   opens, the last `error` message, and `settleWith`/`setSettleWith`
+ *   controlling the settle-up modal.
  */
 export function useFriends() {
   const queryClient = useQueryClient();
@@ -51,6 +55,10 @@ export function useFriends() {
     cents: number;
   } | null>(null);
   const [showAdd, setShowAdd] = useState(false);
+  // Set when the typed email or phone belongs to nobody on HaalKhata, so the
+  // dialog offers the caller's invite link instead of a dead error.
+  const [notOnHaalKhata, setNotOnHaalKhata] = useState(false);
+  const [profileShareToken, setProfileShareToken] = useState("");
   const [activeTab, setActiveTab] = useState<FriendsTab>("friends");
 
   const currentUser = useQuery({ queryKey: queryKeys.me, queryFn: () => authClient.getMe({}) });
@@ -59,35 +67,41 @@ export function useFriends() {
     queryFn: () => socialClient.listFriends({}),
   });
 
-  /** Sends a friend request without revealing whether the identifier matched. */
+  /**
+   * Sends a friend request. An email or phone nobody on HaalKhata has comes
+   * back as failed_precondition, which becomes the invite-link offer.
+   */
   const addFriend = useMutation({
     mutationFn: (payload: { email: string; phone: string }) =>
       socialClient.addFriend({ ...payload, name: "" }),
     onSuccess: () => {
       setContact(EMPTY_CONTACT);
       setShowAdd(false);
-      setNotice("If an account matches, they’ll receive a friend request.");
+      setNotice("Friend request sent — they’ll show up here once they accept.");
       queryClient.invalidateQueries({ queryKey: queryKeys.friends });
     },
-    onError: (mutationError) => setError(errorMessage(mutationError)),
+    onError: (mutationError) => {
+      if (mutationError instanceof ConnectError && mutationError.code === Code.FailedPrecondition) {
+        setNotOnHaalKhata(true);
+        return;
+      }
+      setError(errorMessage(mutationError));
+    },
   });
 
   /**
-   * Fetches an Invited friend's sign-up link and opens the share dialog
-   * (QR code, copy, share sheet) — visible feedback wherever the button
-   * is, instead of a silent clipboard write. The link claims their invited
-   * identity, so friendships and any group seats come with them.
+   * Fetches the caller's own profile link and opens the share dialog (QR
+   * code, copy, share sheet) in place of the add dialog. Whoever opens the
+   * link signs up and sends the caller a friend request to confirm.
    */
-  const [remindShare, setRemindShare] = useState<{ token: string; personName: string } | null>(
-    null,
-  );
-
-  const remind = useMutation({
-    mutationFn: async (person: User) => {
-      const { token } = await socialClient.getFriendInviteLink({ userId: person.id });
-      return { token, personName: person.name };
+  const shareInviteLink = useMutation({
+    mutationFn: async () => (await socialClient.getProfileInviteLink({})).token,
+    onSuccess: (token) => {
+      setNotOnHaalKhata(false);
+      setContact(EMPTY_CONTACT);
+      setShowAdd(false);
+      setProfileShareToken(token);
     },
-    onSuccess: (share) => setRemindShare(share),
     onError: (mutationError) => setError(errorMessage(mutationError)),
   });
 
@@ -118,26 +132,15 @@ export function useFriends() {
   /** Closes the error popup; the next action clears it anyway, this serves the dismiss button. */
   const dismissError = useCallback(() => setError(""), []);
 
-  const allFriends = friends.data?.friends ?? [];
-  // The Friends tab holds people who can carry a balance; Invited people
-  // (no account yet, so no expenses) get a tab of their own rather than
-  // sitting between them with a pill.
-  const registeredFriends = useMemo(
-    () => (friends.data?.friends ?? []).filter((friend) => friend.user?.registered),
-    [friends.data],
-  );
-  const invitedFriends = useMemo(
-    () => (friends.data?.friends ?? []).filter((friend) => friend.user && !friend.user.registered),
-    [friends.data],
-  );
+  const allFriends = useMemo(() => friends.data?.friends ?? [], [friends.data]);
   // Filtering keeps the server's order (people you have expenses with first,
   // then the rest alphabetically) rather than re-ranking by match quality.
   // Names only: a friend's email and phone are private and arrive empty.
   const visibleFriends = useMemo(() => {
     const terms = searchTerms(query);
-    if (terms.length === 0) return registeredFriends;
-    return registeredFriends.filter((friend) => matchesTerms(terms, friend.user?.name));
-  }, [registeredFriends, query]);
+    if (terms.length === 0) return allFriends;
+    return allFriends.filter((friend) => matchesTerms(terms, friend.user?.name));
+  }, [allFriends, query]);
 
   // Headline totals, so the page answers "where do I stand overall?" before
   // any individual row is read — per currency, never summed across them.
@@ -163,8 +166,6 @@ export function useFriends() {
     // rate limit with the overall balances, and a refused call must not
     // render as "no friends yet".
     friendsError: friends.error,
-    registeredFriends,
-    invitedFriends,
     incomingRequests: friends.data?.incomingRequests ?? [],
     outgoingRequests: friends.data?.outgoingRequests ?? [],
     tab: activeTab,
@@ -174,10 +175,17 @@ export function useFriends() {
     query,
     setQuery,
     showAdd,
-    setShowAdd,
+    setShowAdd: (open: boolean) => {
+      setNotOnHaalKhata(false);
+      setShowAdd(open);
+    },
     isLoading: friends.isLoading,
     contact,
-    setContact,
+    // An edit makes the offer about a contact that is no longer typed.
+    setContact: (next: ContactDraft) => {
+      setNotOnHaalKhata(false);
+      setContact(next);
+    },
     canSubmitAdd: !contactIsEmpty(contact),
     error,
     dismissError,
@@ -185,6 +193,7 @@ export function useFriends() {
     submitAdd: () => {
       setError("");
       setNotice("");
+      setNotOnHaalKhata(false);
       const payload = contactPayload(contact);
       // A number that cannot exist in the selected country never leaves the
       // form; the privacy-preserving empty response is only for real lookups.
@@ -212,18 +221,18 @@ export function useFriends() {
     cancellingKey: cancelRequest.isPending
       ? cancelRequest.variables?.userId || cancelRequest.variables?.identifier
       : undefined,
-    remindFriend: (person: User) => {
+    notOnHaalKhata,
+    shareInviteLink: () => {
       setError("");
-      setNotice("");
-      remind.mutate(person);
+      shareInviteLink.mutate();
     },
-    remindingUserId: remind.isPending ? remind.variables?.id : undefined,
-    /** The open remind dialog's link and person; null while closed. */
-    remindShare,
-    closeRemindShare: () => setRemindShare(null),
+    sharingInviteLink: shareInviteLink.isPending,
+    /** The open share dialog's profile-link token; "" while closed. */
+    profileShareToken,
+    closeProfileShare: () => setProfileShareToken(""),
     /** Opens the OS share sheet with the link's message; for the dialog. */
-    remindShareToSheet: () =>
-      shareInvite(remindShare?.token ?? "", currentUser.data?.name ?? "A friend", ""),
+    profileShareToSheet: () =>
+      shareProfileInvite(profileShareToken, currentUser.data?.name ?? "A friend"),
     settleWith,
     setSettleWith,
   };

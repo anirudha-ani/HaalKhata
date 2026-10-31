@@ -6,6 +6,7 @@ import path from "node:path";
 import { readSecret } from "@/server/common/secrets/secrets";
 import {
   DATA_DIRECTORY,
+  LEGACY_SESSION_TOKEN_FORMAT,
   MIN_SESSION_SECRET_BYTES,
   SESSION_SECRET_BASE64_PATTERN,
   SESSION_SECRET_HEX_PATTERN,
@@ -101,8 +102,10 @@ function secret(): Buffer {
  * The previous signing key, kept for verification only while a rotation is
  * in flight. Set SESSION_SECRET_PREVIOUS (or _FILE) to the old key when
  * changing SESSION_SECRET and tokens issued under it stay valid until they
- * expire; unset it afterwards. Incident rotation leaves it unset, which
- * invalidates every session at once as before.
+ * expire. A session moves to the new key the next time its owner opens the
+ * app, and people can go months between bills, so unsetting it sooner than
+ * the session lifetime signs out everyone who has not been back. Incident
+ * rotation leaves it unset, which invalidates every session at once as before.
  *
  * @returns The decoded previous key, or null when none is configured.
  */
@@ -118,7 +121,7 @@ function previousSecret(): Buffer | null {
  * "rate-limit", into a keyed fingerprint that lets a limiter key on a phone
  * number without holding the number itself.
  */
-export type TokenPurpose = "session" | "phone-merge" | "rate-limit" | "phone-code-log";
+export type TokenPurpose = "session" | "ledger-cursor" | "rate-limit" | "phone-code-log";
 
 /**
  * Signs a purpose-bound payload. The NUL separator cannot appear in any token
@@ -174,62 +177,84 @@ export function verifyPayloadSignature(
   return valid;
 }
 
+/** What a session token says, signature aside. */
+interface TokenFields {
+  format: string;
+  userId: string;
+  version: number;
+  /** The sign-in it belongs to; "" in the format that named none. */
+  sessionId: string;
+  expiresAt: number;
+}
+
 /**
- * Issues a signed bearer token for a user. The user's current token_version is
- * embedded so the token can be invalidated by bumping the version.
+ * Reads a token's fields in either format, without verifying anything.
+ *
+ * @param token - Session token.
+ * @returns Its fields, or null when it has neither format's shape.
+ */
+function readToken(token: string): TokenFields | null {
+  const fields = token.split(".");
+  const format = fields[0];
+  if (format === SESSION_TOKEN_FORMAT && fields.length === 6) {
+    return { format, userId: fields[1], version: Number(fields[2]), sessionId: fields[3], expiresAt: Number(fields[4]) };
+  }
+  if (format === LEGACY_SESSION_TOKEN_FORMAT && fields.length === 5) {
+    return { format, userId: fields[1], version: Number(fields[2]), sessionId: "", expiresAt: Number(fields[3]) };
+  }
+  return null;
+}
+
+/**
+ * Issues a signed bearer token for one sign-in. The user's current
+ * token_version is embedded too, so suspending an account ends every session
+ * at once.
  *
  * @param userId - Id of the user the token authenticates.
  * @param tokenVersion - Current token_version of the user, baked into the payload.
- * @returns Token of the form "v2.userId.version.expiry.signature", valid for
- *   TOKEN_LIFETIME_SECONDS.
+ * @param sessionId - The sign-in's row in user_sessions.
+ * @returns Token of the form "v3.userId.version.sessionId.expiry.signature",
+ *   valid for TOKEN_LIFETIME_SECONDS.
  */
-export function createToken(userId: string, tokenVersion: number): string {
+export function createToken(userId: string, tokenVersion: number, sessionId: string): string {
   const expiresAtSeconds = Math.floor(Date.now() / 1000) + TOKEN_LIFETIME_SECONDS;
-  const payload = `${SESSION_TOKEN_FORMAT}.${userId}.${tokenVersion}.${expiresAtSeconds}`;
+  const payload = `${SESSION_TOKEN_FORMAT}.${userId}.${tokenVersion}.${sessionId}.${expiresAtSeconds}`;
   return `${payload}.${signPayload("session", payload)}`;
 }
 
 /**
- * Returns the user id and embedded token version for a structurally valid,
- * unexpired, correctly-signed token, without consulting the database. Callers
- * must then verify the embedded version still matches the user's current row.
+ * Returns the user id for a structurally valid, unexpired, correctly-signed
+ * token, without consulting the database. Callers must then check the session
+ * is still live ({@link sessionIsLive}).
  *
- * @param token - Bearer token of the form "v2.userId.version.expiry.signature".
- * @returns The embedded user id and token version, or null when the signature
- *   or expiry check fails.
+ * @param token - Session token in either format.
+ * @returns The embedded user id, or null when the signature or expiry check fails.
  */
 export function verifyToken(token: string): string | null {
   const lastDot = token.lastIndexOf(".");
   if (lastDot <= 0) return null;
-  const payload = token.slice(0, lastDot);
-  if (!verifyPayloadSignature("session", payload, token.slice(lastDot + 1))) return null;
-  const fields = payload.split(".");
-  if (fields.length !== 4) return null;
-  const [format, userId, versionText, expiresAtText] = fields;
-  const version = Number(versionText);
-  const expiresAt = Number(expiresAtText);
+  if (!verifyPayloadSignature("session", token.slice(0, lastDot), token.slice(lastDot + 1))) return null;
+  const fields = readToken(token);
   if (
-    format !== SESSION_TOKEN_FORMAT ||
-    !userId ||
-    !Number.isSafeInteger(version) ||
-    version < 0 ||
-    !Number.isSafeInteger(expiresAt) ||
-    expiresAt <= Date.now() / 1000
+    !fields ||
+    !fields.userId ||
+    !Number.isSafeInteger(fields.version) ||
+    fields.version < 0 ||
+    !Number.isSafeInteger(fields.expiresAt) ||
+    fields.expiresAt <= Date.now() / 1000
   ) return null;
-  return userId;
+  return fields.userId;
 }
 
 /**
  * Extracts the embedded token_version from a token string (without verifying
  * the signature). Used after verifyToken to compare against the DB row.
  *
- * @param token - Bearer token of the form "v2.userId.version.expiry.signature".
+ * @param token - Session token in either format.
  * @returns The embedded version number, or NaN when the token is malformed.
  */
 export function tokenVersion(token: string): number {
-  const fields = token.split(".");
-  if (fields.length !== 5 || fields[0] !== SESSION_TOKEN_FORMAT) return Number.NaN;
-  const version = Number(fields[2]);
+  const version = readToken(token)?.version ?? Number.NaN;
   return Number.isSafeInteger(version) && version >= 0 ? version : Number.NaN;
 }
 
@@ -238,12 +263,56 @@ export function tokenVersion(token: string): number {
  * verifying the signature. Used after verifyToken to decide whether the
  * session is old enough to renew.
  *
- * @param token - Bearer token of the form "v2.userId.version.expiry.signature".
+ * @param token - Session token in either format.
  * @returns The expiry in Unix seconds, or NaN when the token is malformed.
  */
 export function tokenExpiresAt(token: string): number {
-  const fields = token.split(".");
-  if (fields.length !== 5 || fields[0] !== SESSION_TOKEN_FORMAT) return Number.NaN;
-  const expiresAt = Number(fields[3]);
+  const expiresAt = readToken(token)?.expiresAt ?? Number.NaN;
   return Number.isSafeInteger(expiresAt) ? expiresAt : Number.NaN;
+}
+
+/**
+ * Whether a token is from before each sign-in had a row of its own.
+ *
+ * @param token - Session token.
+ * @returns True for that older format.
+ */
+export function isLegacyToken(token: string): boolean {
+  return readToken(token)?.format === LEGACY_SESSION_TOKEN_FORMAT;
+}
+
+/**
+ * The sign-in a token belongs to. An older token names none, so its id comes
+ * from the token itself: a page load sends several requests at once with the
+ * same token, and each must arrive at the same row rather than make its own.
+ *
+ * @param token - Session token.
+ * @returns The session's id.
+ */
+export function tokenSessionId(token: string): string {
+  const named = readToken(token)?.sessionId;
+  return named || `legacy-${crypto.createHash("sha256").update(token).digest("hex").slice(0, 40)}`;
+}
+
+/** What a session's row and its owner say about it; see sessions.repo. */
+export interface SessionStanding {
+  token_version: number;
+  /** The account signed its older tokens out. */
+  legacy_sessions_ended: boolean;
+  session_found: boolean;
+  session_ended: boolean;
+}
+
+/**
+ * Whether a verified token's session is still live. The one rule, so the page
+ * guard and the API guard cannot disagree. An older token with no row yet is
+ * live, and gets its row on first use, unless its row says it was signed out.
+ *
+ * @param token - A verified session token.
+ * @param standing - What the database says.
+ * @returns True when the session may be used.
+ */
+export function sessionIsLive(token: string, standing: SessionStanding): boolean {
+  if (standing.token_version !== tokenVersion(token) || standing.session_ended) return false;
+  return isLegacyToken(token) ? !standing.legacy_sessions_ended : standing.session_found;
 }

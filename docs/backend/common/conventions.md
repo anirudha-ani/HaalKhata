@@ -38,24 +38,46 @@ Two credential transports, one token format:
 
 **Token format:** `v2.<userId>.<tokenVersion>.<expiryUnixSeconds>.<signature>`
 — an HMAC-SHA256 over a purpose-bound payload (`"session\0" + payload`), so a
-session token can never validate as a phone-merge token or vice versa even
-though they share the root secret.
+session token can never validate as any other value signed with the same
+root secret (rate-limit keys, log fingerprints) or vice versa.
 
-- **Lifetime:** 7 days absolute (`TOKEN_LIFETIME_SECONDS`).
-- **Sliding renewal:** any authenticated RPC on a token past half its lifetime
+- **Lifetime:** 400 days absolute (`TOKEN_LIFETIME_SECONDS`), the most a browser
+  keeps a cookie. People open a bill splitter when there is a bill, which can be
+  months apart, so a session is meant to survive long gaps. There is no idle
+  timeout and no cap on how long a session can be renewed.
+- **Sliding renewal:** any authenticated RPC on a token more than a day old
   re-issues it — as a fresh cookie for cookie callers, or in the session-renewal
-  response header for bearer callers. Someone who opens the app at least weekly
-  is never signed out; an abandoned token still dies on schedule. `LogOut` is
-  exempt (renewal would race the cookie clear).
-- **Revocation:** the token embeds the user's `token_version`; `requireUser`
-  compares it against the row on every request. `LogOut` bumps the version,
-  revoking every outstanding token at once.
+  response header for bearer callers. The 400 days count from the last time the
+  app was opened. `LogOut` is exempt (renewal would race the cookie clear).
+- **Sessions:** each sign-in has a row in `user_sessions`, and the token names
+  it. `requireUser` and the page guard read the row on every request through one
+  rule (`sessionIsLive`), so signing a device out takes effect on its next call.
+  `LogOut` ends the caller's session and nothing else; `EndSession` and
+  `EndOtherSessions` end others from settings. Ending a session removes its
+  phone's `push_devices` row in the same transaction.
+- **Older tokens:** a `v2` token names no session. It stays valid, gets a row
+  whose id comes from a hash of the token, so a page load's parallel requests all
+  reach one row, and is swapped for a `v3` token on first use. The ended row stays
+  until it expires, or the same token could be adopted back to life.
+  `users.legacy_sessions_ended` is how `EndOtherSessions` reaches ones never used
+  since; bumping `token_version` would also refuse this device's own requests in
+  flight and sign it out.
+- **Revocation:** the token also embeds the user's `token_version`, compared
+  against the row on every request. Suspending an account bumps it, ending every
+  session at once.
+- **What a session keeps:** a device name ("Chrome on Mac", a phone's model) and
+  `last_used_at`, written only when the session renews, at most once a day. The
+  browser's User-Agent is read and thrown away. Nothing but the person's own
+  settings reads these: no usage figure may.
 - **Key material:** `SESSION_SECRET` (hex or Base64 decoded, ≥32 bytes enforced
   in production; dev generates and persists one under `data/.secret`).
   `SESSION_SECRET_PREVIOUS` may hold the prior key during a planned rotation —
   verification checks both keys (all of them, in constant time, so timing does
-  not reveal which matched); issuance uses only the current one. Incident
-  rotation leaves it unset, invalidating every session at once.
+  not reveal which matched); issuance uses only the current one. A session moves
+  to the new key the next time its owner opens the app, so keep the old key for
+  the full 400 days to sign nobody out; removing it sooner signs out everyone who
+  has not been back since. Incident rotation leaves it unset, invalidating every
+  session at once.
 - **Bearer secrecy rule:** a browser never receives bearer material. Auth
   responses return `token: ""` to cookie clients — an HttpOnly cookie exists
   precisely so script cannot read the session, and echoing the token in JSON
@@ -105,7 +127,7 @@ Usecases throw `UsecaseError` (via `invalid` / `notFound` / `denied` / `unavaila
 | `permission_denied` | `PermissionDenied` | Authenticated but not allowed |
 | `not_found` | `NotFound` | Entity missing (also used to avoid existence oracles) |
 | `already_exists` | `AlreadyExists` | Registered account already holds an identifier |
-| `failed_precondition` | `FailedPrecondition` | e.g. an aggregate exceeds the int32 wire field |
+| `failed_precondition` | `FailedPrecondition` | e.g. an expense would take someone past what their expenses may add up to |
 | `unavailable` | `Unavailable` | A dependency (SMS provider, receipt vision provider, in-flight duplicate) is temporarily unusable |
 
 Anything else (a pg error, a bug) is logged server-side with a random request
@@ -114,42 +136,96 @@ id and the RPC name; the client receives only
 provider messages never reach a client. Rate-limit rejections use
 `ResourceExhausted` and are thrown by handlers directly.
 
+That covers only what runs **inside** `runUsecase`, so a handler does all its
+work there, the session check (`requireUser` / `requireRateLimitedUser`)
+included: it reads the database. Connect still hides an error thrown outside
+it (the client sees a bare `internal error`), but nothing is logged and there
+is no request id to look up. `api/connect/sessionCheckFailure.test.ts` calls
+the RPCs over HTTP with that read failing and checks for both.
+
 `UsecaseError` messages are written to be shown to the user verbatim — that is
 the contract: if a message is not safe to show, it must not be a
 `UsecaseError`.
 
+## Before the Handler
+
+Connect reads, decompresses and decodes a request body before any of the
+app's code runs, so everything that bounds what an anonymous request can
+cost has to sit in front of that:
+
+- **Request caps** (`readMaxBytes`, checked after decompression): 64 KiB by
+  default; 512 KiB for social (a 1,000-contact lookup is about 257 KB),
+  1 MiB for expenses (100 items × 100 assignments is about 0.5 MB), 12 MiB
+  for receipts (an 8 MiB photo plus encoding overhead). The numbers and
+  their arithmetic are in `api/connect/connect.constants.ts`;
+  `mount/requestCaps.test.ts` builds each service's largest legitimate
+  request and checks it fits.
+- **Unknown fields are dropped** while decoding
+  (`binaryOptions.readUnknownFields: false`). The app never reads them, and
+  kept, a few megabytes of them cost about a gigabyte of objects.
+- **Request gates** run once the headers are in, before the body is read.
+  The default asks for a validly signed, unexpired session token (no
+  database read; `requireUser` still checks revocation in the handler).
+  Auth and social let their anonymous calls through and pace them per
+  address there; the admin services check host and origin.
+  `mount/requestLimits.test.ts` drives all of this over HTTP, including a
+  12 MiB body brotli-compressed to a few bytes.
+- **Body deadlines**: a body has 15 s to arrive in full (60 s for a receipt
+  photo) before the connection is dropped (`mount/bodyDeadline.ts`); Caddy
+  gives a whole request 60 s at the edge.
+- **Memory ceiling**: in production the web container is capped at 640 MB
+  with Node's heap at 384 MB, so a runaway allocation restarts web instead of
+  starving Postgres on the same droplet.
+
 ## Rate Limiting
 
-An in-memory sliding-window limiter (`rateLimitCheck(key, max, windowMs)`),
+In-memory sliding-window limiters (`common/rateLimit/rateLimit.ts`),
 1-minute window by default. **Per process** — a multi-replica deploy needs a
-shared store; today's deployment is single-instance. The exception is the
-SMS anti-abuse ceilings, which live in Postgres (`phone_send_events`) and
-therefore survive restarts and span replicas — a harassment ceiling that
-forgets on deploy is not a ceiling. Hard-capped at 10,000
-tracked keys with LRU eviction so it cannot be a memory-exhaustion vector.
+shared store; today's deployment is single-instance. The exceptions guard
+secrets and harassment and live in Postgres, so they survive restarts and
+span replicas: the SMS ceilings (`phone_send_events`), the 5 guesses per
+phone code, and the daily contact-lookup budget.
+
+There are **three tables, each with its own cap**, so a flood in one can
+never reset counters in another:
+
+- `addressRateLimits` — callers not signed in, keyed by **network**
+  (`clientNetwork()`: an IPv4 address, or the /64 of an IPv6 one; anyone can
+  rotate through the 2^64 addresses of a /64). 10,000 buckets.
+- `accountRateLimits` — signed-in callers, keyed by account. Only an
+  account Google or Apple vouched for can make one. 100,000 buckets.
+- `adminRateLimits` — the admin page. 1,000 buckets.
+
+A full table makes room by sweeping out expired buckets (at most once a
+second), else by dropping the least recently used bucket that is not
+refusing anyone. A refusing bucket is never dropped, so being told to wait
+cannot be undone by flooding the table; if the oldest 64 are all refusing,
+the newcomer is let through untracked rather than shutting every new caller
+out.
 
 | Bucket | Key | Limit |
 | --- | --- | --- |
-| Sign-in/up, Google begin+finish | `auth:<client-ip>` | 10/min |
+| Sign-in/up, Google begin+finish (checked in the auth request gate, before the body is read) | `auth:<client network>` | 10/min |
 | SetPhone (SMS send) | `phone:send:<userId>` | 3/min |
-| SetPhone (code check) | `phone:check:<userId>` | 5/min |
-| ConfirmPhoneMerge, RemovePhone | `phone:merge:<userId>` | 5/min |
+| SetPhone (code check) | `phone:check:<userId>` | 5/min, plus 5 guesses per code, **durable** |
+| RemovePhone | `phone:remove:<userId>` | 5/min |
 | SMS sends per destination number | keyed HMAC, **durable** (`phone_send_events`) | 3/hour, 8/day |
-| SMS sends per client IP | **durable** (`phone_send_events`) | 20/hour |
+| SMS sends per client network | **durable** (`phone_send_events`) | 20/hour |
 | `AddFriend` | per account | 10/min |
 | `AcceptInviteLink` | per account | 10/min |
-| `PreviewInviteLink` | per client IP (unauthenticated) | 30/min |
+| `PreviewInviteLink` | per client network (unauthenticated) | 30/min |
 | `AddMembers` | per account | 15/min |
 | `CreateExpense` | per account | 30/min |
 | `SendReminder` | per account | 10/min |
 | `FindContacts` | per account | 5/min, plus 5,000 identifiers per UTC day, **durable** (`contact_lookup_usage`) |
 | `SendFriendRequests` | per account | 3/min |
 | Payment method writes (create, update, delete, set-preferred) | per account, one shared bucket | 30/min |
-| `ParseReceipt` | per account | 5/min (+ max 2 concurrent per process) |
+| `ParseReceipt` | per account | 5/min, spent only once a scan has a lane (6 lanes per process, a line of 8, one scan per person) |
 | Ledger reads (`ListExpenses`, `ListGroups`, `GetFriendLedger`, `GetGroupBalances`, `GetOverallBalances`/`ListFriends`) | per account | 60/min each |
+| Older statement pages (`ListFriendLedgerEntries`) | per account | 120/min: each fingerprints the pair's history; someone scrolling a long statement reads several |
 | `GetInsights` | per account | 30/min |
-| Admin sign-in nonce (`BeginSignIn`) | `admin-nonce:<client-ip>` | 30/min: each page load and each refused sign-in asks for a fresh one |
-| Admin sign-in (`SignIn`) | `admin-auth:<client-ip>` | 5/min |
+| Admin sign-in nonce (`BeginSignIn`) | `admin-nonce:<client network>` | 30/min: each page load and each refused sign-in asks for a fresh one |
+| Admin sign-in (`SignIn`) | `admin-auth:<client network>` | 5/min |
 | `GetUsageOverview` | one bucket for every admin session | 30/min |
 | `GetUsageTrend` | one bucket for every admin session | 60/min |
 | `ListReports` | one bucket for every admin session | 30/min |
@@ -166,7 +242,10 @@ number never sits in process state that doesn't need it.
 Client IP comes from `clientIp()`: proxy headers (`X-Forwarded-For`,
 `X-Real-IP`) are trusted **only** when `TRUST_PROXY_HEADERS=true` (a deployment
 assertion that the front proxy overwrites them); otherwise the mount-injected
-socket address is used, and anything non-IP resolves to `"unknown"`.
+socket address is used, and anything non-IP resolves to `"unknown"`. Limits
+count `clientNetwork()`, never the raw address: an IPv6 address counts as its
+/64, and an IPv4 address written as IPv6 (`::ffff:192.0.2.7`) as the IPv4
+address.
 
 ## Idempotent Operations (`operation_id`)
 
@@ -182,7 +261,7 @@ practice:
 | Retry after success, same payload | The first result is **replayed** (same expense/settlement returned; nothing new stored) |
 | Same id, **different payload** | `InvalidArgument`: "operation_id was already used for a different request" |
 | Retry while the first is still in flight | Blocks on the first claim's insert; then replays it, or gets `Unavailable` "still being processed — try again" |
-| Reused after 24 h (`OPERATION_RETENTION_HOURS`) | The claim has been pruned; the id runs again as new |
+| Reused after 24 h (`OPERATION_RETENTION_HOURS`) | The claim has expired; the id runs again as new, taking its old row over |
 
 Mechanics: the `operations` table is keyed `(user_id, rpc, operation_id)` with
 a SHA-256 **fingerprint** of the canonical-JSON payload (object keys sorted at
@@ -193,6 +272,16 @@ can never outlive a rolled-back mutation. Ids are 1–64 chars of
 callers; the transport boundary (`assertOperationId`) rejects it on external
 requests. Updates and deletes carry no `operation_id`: they name the row they
 change and are idempotent by nature.
+
+A money write claims its id **first, before any ledger lock**, so a retry is
+answered without waiting on a ledger, and the claim touches no row but its
+own. Claims past retention are removed by a background sweep
+(`common/ledger/operationsSweep.ts`, started in `instrumentation.ts`): every
+10 minutes, 500 per autocommit statement, skipping rows another transaction
+holds. Never clear them inside a money transaction. A write that did held
+the old claims locked until it committed, so every other money write that
+reached them queued behind it, and an expense (claim, then ledger locks) and
+a payment (ledger locks, then claim) sharing a person deadlocked.
 
 ## Advisory Ledger Locks
 
@@ -213,9 +302,16 @@ commit/rollback. Six lock classes (`common/ledger/ledgerLocks.ts`):
 
 Deadlock avoidance rests on two rules:
 
-1. **Within a class, keys are acquired sorted** (`acquireKeys` dedups and
-   sorts lexically) — two transactions locking the same set always take it in
-   the same order.
+1. **Within a class, keys are acquired sorted, all at once.** `acquireKeys`
+   dedups the keys and takes them in one statement, `ORDER BY lock_key
+   COLLATE "C"` (Postgres calls the lock function after the sort, row by
+   row), so two transactions locking overlapping sets take the shared keys in
+   the same order, and a hundred locks cost one round trip.
+   `ledgerLocks.integration.test.ts` checks the order on a real server. Take
+   everything a request needs from one class in **one call**: two calls — say
+   one per person in a loop — are two sorted sets, and two requests walking
+   the same people in different orders can each hold a lock the other wants
+   — the deadlock group enrolment used to have.
 2. **Across classes, one global order:** expense lock → participant locks →
    group locks → friend-request-inbox locks. Every path takes them in that
    order; the constants file is the single spelling of each prefix, because
@@ -223,13 +319,26 @@ Deadlock avoidance rests on two rules:
    nothing. The payment-methods lock is always taken alone, so it has no
    place in the order.
 
+**Lock only what the change can touch.** A payment between two people locks
+the active groups they share, never every group either is in (one account
+could make that thousands). Nobody can be in more than 200 groups, deleted
+ones aside, so one payment locks at most that many.
+
+**Time limits.** `withLedgerTransaction` sets `lock_timeout` (5 s) and
+`statement_timeout` (15 s) with `SET LOCAL`, so they end with the
+transaction. Ledger locks are held for milliseconds; a wait that long means
+something is stuck, and giving up frees one of the pool's connections. Either
+limit, or a deadlock Postgres breaks by cancelling the transaction (`40P01`),
+rolls the transaction back and answers `Unavailable`: "nothing was saved,
+try again in a moment".
+
 One-off mutations lock **per participant, not per pair**: a pair set is
 quadratic in the cast (a 100-participant expense would need 4,950 locks —
 more than Postgres's shared lock table holds), while per-participant locks
 are a superset of the pair exclusion and grow linearly.
 
-`withLedgerTransaction` is an alias of `transaction`; it exists as the named
-seam tests mock to intercept ledger transactions.
+`withLedgerTransaction` is `transaction` with these limits; it is also the
+named seam tests mock to intercept ledger transactions.
 
 ## Money Rules
 
@@ -240,11 +349,23 @@ seam tests mock to intercept ledger transactions.
   number *per currency*; nothing in the system converts, sums across
   currencies, or invents an exchange rate. Zero buckets are expressed by
   absence.
-- **Bounds.** A single stored amount is capped at 2,000,000,000 cents
-  (`MAX_MONEY_CENTS`, below int32). Aggregates (sums of rows) can exceed
-  int32, so every aggregate crossing the wire goes through `toInt32Cents`,
-  which turns an unrepresentable sum into a named `FailedPrecondition` instead
-  of an opaque encoder crash.
+- **64-bit on the wire and in the database, plain numbers in the code.**
+  Money fields are `int64` in proto and `BIGINT` in Postgres. protobuf-es
+  represents int64 as `bigint`, so the conversion happens once, at the
+  boundary: every service is registered through `plainService`
+  (`api/connect/wire/`) and every client is made by `plainClient`
+  (`@haalkhata/shared/api`), both walking the message schema with
+  `wireNumbers`. Handlers, usecases, screens and the shared money helpers
+  only ever see numbers; a screen naming a money-bearing message imports it
+  from `@haalkhata/shared/api/plainMessages`. pg reads `BIGINT` as an exact
+  number (`common/db/int8.ts`). A value past 2^53 is refused at each of
+  these points, never rounded.
+- **Bounds.** One stored amount is at most 10^13 minor units
+  (`MAX_MONEY_CENTS`, held by the database CHECKs too). Everything one person
+  is on in one currency adds up to at most 10^15 (`MAX_PERSON_VOLUME_CENTS`),
+  checked when an expense is created or edited, so every figure shown for
+  them stays at least nine times below 2^53: sums never need a check of their
+  own.
 - **Currency codes** are validated against the product's currency catalog
   (§36): the full ISO 4217 list minus non-transactional codes (metals, fund
   and bond units, the test/none codes), the same catalog both clients'
@@ -276,6 +397,28 @@ seam tests mock to intercept ledger transactions.
 - `isUniqueViolation(error)` is the one spelling of "SQLSTATE 23505" — the
   signal that a concurrent writer won an insert race the caller recovers from
   by re-reading (used in sign-up/sign-in/invite/phone TOCTOU paths).
+- **One connection per request at a time.** A transaction or snapshot
+  holds its connection until it ends, so everything inside it runs on its
+  client. A pool query, snapshot or transaction started inside one would
+  wait for a second connection while holding the first: a burst of such
+  requests holds the whole pool (20) while each waits for one more, and they
+  all fail after the 5 s connection wait, with every other request in the
+  app. `common/db/connectionHold.ts` notices it — an `AsyncLocalStorage`
+  marks the work inside a transaction — and refuses it outside production
+  (`SecondConnectionError`), logging it in production; every
+  real-Postgres test runs with it on. A read that needs its own instant
+  (a balance's snapshot) runs before the transaction, never inside it.
+  `poolSaturation.integration.test.ts` sends 60 friend removals and
+  reminders at once against the real pool.
+- **A person's expenses are a set, found by person.** "Is this person on
+  the expense?" is `expenseInvolvesSql` (`expense/repo/expenseInvolvement.ts`):
+  the expense ids from their payer and share rows, through `idx_payers_user`
+  and `idx_splits_user`, kept with `expense.id IN (…)`. Asked per expense —
+  `EXISTS (… UNION …)` — Postgres cannot use those indexes and checks every
+  expense in the app: about 900 ms for one person at 200,000 expenses, against
+  1–3 ms, and a payment ran it under its locks. Two people are two such
+  conditions. `expenseInvolvement.integration.test.ts` fails a query that
+  reads the expenses more than about once over.
 
 ## Privacy Projections
 
@@ -294,12 +437,18 @@ a user. They reach somebody else in exactly one place,
 (see [payment-service.md](../payment/payment-service.md)). The retired
 `payment_handles` field is always empty.
 
-`registered` means "has a password **or** a Google account" — either
-credential counts, or every Google account would read as an unclaimed invite.
+`registered` means "has a password **or** a Google or Apple account" — any
+credential counts. Every live account has one (`chk_users_can_sign_in`), so
+it is false only on a Deleted member, the stand-in account deletion leaves.
 
-**No existence oracles.** Endpoints that look up accounts by contact info
-(`AddFriend`, `AddMembers`' email/phone, `GetFriendLedger` for strangers)
-return the same response/denial whether or not an account exists.
+**Existence oracles are narrow and deliberate.** `AddFriend` and
+`AddMembers`' email/phone refuse an identifier that belongs to nobody with
+`FailedPrecondition`, so the clients can offer an invite link instead of a
+dead end, and nothing is created for that person — a known trade, behind the
+per-account rate limit. Beyond that one answer, `AddFriend` says nothing
+about the account it found (self, already a friend, pending and blocked all
+succeed quietly), and `GetFriendLedger` for strangers returns the same
+denial whether or not an account exists.
 
 ## Secrets
 

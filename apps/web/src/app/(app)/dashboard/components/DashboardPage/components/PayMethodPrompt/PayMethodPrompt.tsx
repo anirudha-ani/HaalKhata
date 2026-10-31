@@ -2,7 +2,7 @@
 /** Home prompt shown when people owe you in a currency you have no payment method for. */
 
 import Link from "next/link";
-import type { CounterpartyBalance } from "@haalkhata/protogen/common/v1/common_pb";
+import type { CounterpartyBalance } from "@haalkhata/shared/api/plainMessages";
 import { PaymentMethodModal } from "@/components/payment/PaymentMethodModal/PaymentMethodModal";
 import { formatMoney } from "@haalkhata/shared/money/money";
 import { methodCapLine } from "@haalkhata/shared/payment/copy";

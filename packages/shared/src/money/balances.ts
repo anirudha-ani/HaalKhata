@@ -1,5 +1,8 @@
 /** Per-currency balance helpers — a position is one amount per currency, never a sum across them. */
 
+import { formatMoney } from "./money";
+import { listInWords } from "../text/listInWords";
+
 /** One amount in one currency, as the API's CurrencyAmount carries it. */
 export interface CurrencyBucket {
   /** ISO 4217 code. */
@@ -92,6 +95,17 @@ export function outstandingBuckets(
   defaultCurrency: string,
 ): CurrencyBucket[] {
   return balances.filter((bucket) => bucket.cents !== 0).sort(compareCurrencies(defaultCurrency));
+}
+
+/**
+ * Names amounts in a sentence, sign dropped: "$12.00", "$12.00 and €5.00",
+ * "$12.00, €5.00 and £3.00". Each in its own currency; nothing is added up.
+ *
+ * @param buckets - The amounts, in the order to say them.
+ * @returns The amounts joined as English does; "" for none.
+ */
+export function amountsInWords(buckets: readonly CurrencyBucket[]): string {
+  return listInWords(buckets.map((bucket) => formatMoney(Math.abs(bucket.cents), bucket.currency)));
 }
 
 /**

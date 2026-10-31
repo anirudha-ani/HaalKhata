@@ -1,25 +1,71 @@
-/** Auth domain constants: token lifetime, avatar palette, data directory, email/phone checks. */
+/** Auth domain constants: token lifetime, avatar palette, data directory, phone checks. */
 
 import path from "node:path";
 import { parsePhoneNumberFromString } from "libphonenumber-js";
 import { MAX_USER_NAME_LENGTH } from "@haalkhata/shared/text/limits";
 
 /**
- * Absolute lifetime of an issued browser or mobile session token (seven days).
- * Sign-out can revoke it sooner through the user's token version.
+ * Absolute lifetime of an issued browser or mobile session token: 400 days,
+ * the most a browser keeps a cookie. People open a bill splitter when there is
+ * a bill, which can be months apart, and being asked to sign in again is what
+ * stops them coming back. Signing out revokes it at once, through the user's
+ * token version.
  */
-export const TOKEN_LIFETIME_SECONDS = 60 * 60 * 24 * 7;
+export const TOKEN_LIFETIME_SECONDS = 60 * 60 * 24 * 400;
 
 /**
  * Remaining lifetime below which an authenticated request re-issues the
- * session. Half the lifetime: a person who opens the app at least weekly
- * stays signed in indefinitely, while a token that stops being used still
- * dies on schedule.
+ * session: at most once a day. Renewing only past half the lifetime would let
+ * somebody who dropped in on day 100 and again on day 300 run out on day 400,
+ * though they had used it 100 days earlier. This way the 400 days count from
+ * the last time they opened the app.
  */
-export const TOKEN_RENEWAL_THRESHOLD_SECONDS = TOKEN_LIFETIME_SECONDS / 2;
+export const TOKEN_RENEWAL_THRESHOLD_SECONDS = TOKEN_LIFETIME_SECONDS - 60 * 60 * 24;
 
-/** Signed-session payload version; changing it deliberately invalidates legacy tokens. */
-export const SESSION_TOKEN_FORMAT = "v2";
+/** Signed-session payload version. */
+export const SESSION_TOKEN_FORMAT = "v3";
+
+/**
+ * The format before each sign-in had a row of its own. Still accepted, so
+ * nobody is signed out by the change: such a token is given a row and swapped
+ * for a current one the first time it is used.
+ */
+export const LEGACY_SESSION_TOKEN_FORMAT = "v2";
+
+/** The most sign-ins the account page lists, newest first. */
+export const MAX_LISTED_SESSIONS = 50;
+
+/** The longest device name kept; the sessions table's limit. */
+export const MAX_SESSION_DEVICE_LENGTH = 80;
+
+/** What a browser is called when its description says nothing recognisable. */
+export const UNNAMED_BROWSER_DEVICE = "A browser";
+
+/** How much of a browser's description is read; the rest cannot change the answer. */
+export const MAX_USER_AGENT_READ_LENGTH = 512;
+
+/** Browsers, most specific first: nearly every one of them also says Chrome or Safari. */
+export const BROWSER_MARKERS: readonly (readonly [marker: string, name: string])[] = [
+  ["Edg", "Edge"],
+  ["OPR/", "Opera"],
+  ["SamsungBrowser", "Samsung Internet"],
+  ["Firefox/", "Firefox"],
+  ["FxiOS", "Firefox"],
+  ["CriOS", "Chrome"],
+  ["Chrome/", "Chrome"],
+  ["Safari/", "Safari"],
+];
+
+/** Operating systems, most specific first: an iPhone also says "like Mac OS X", Android also says Linux. */
+export const SYSTEM_MARKERS: readonly (readonly [marker: string, name: string])[] = [
+  ["iPhone", "iPhone"],
+  ["iPad", "iPad"],
+  ["Android", "Android"],
+  ["CrOS", "Chromebook"],
+  ["Windows", "Windows"],
+  ["Macintosh", "Mac"],
+  ["Linux", "Linux"],
+];
 
 /** Minimum decoded HMAC key length accepted in production. */
 export const MIN_SESSION_SECRET_BYTES = 32;
@@ -29,15 +75,6 @@ export const SESSION_SECRET_HEX_PATTERN = /^(?:[0-9a-fA-F]{2})+$/;
 
 /** Canonical padded or unpadded standard Base64 key material. */
 export const SESSION_SECRET_BASE64_PATTERN = /^[A-Za-z0-9+/]+={0,2}$/;
-
-/**
- * How long a pending account-merge confirmation stays valid, in seconds.
- *
- * Short on purpose: the token authorizes absorbing another row, and it is
- * meant to be confirmed on the screen that issued it. Ten minutes covers
- * someone reading the preview carefully and leaves nothing usable afterwards.
- */
-export const MERGE_TOKEN_LIFETIME_SECONDS = 60 * 10;
 
 /** Fixed set of avatar background colors; one is picked deterministically per email. */
 export const AVATAR_PALETTE = [
@@ -49,11 +86,25 @@ export const AVATAR_PALETTE = [
 export const DATA_DIRECTORY =
   process.env.HAALKHATA_DATA_DIR ?? path.join(process.cwd(), "data");
 
-/** Loose sanity check for email addresses: something@something.tld, no whitespace. */
-export const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
 /** Max login/signup attempts per key (IP or email) per 60s window. */
 export const AUTH_RATE_LIMIT = 10;
+
+/**
+ * The auth calls made before there is a session: signing in and up, and the
+ * retired phone-merge confirmation, which only refuses. Their request gate
+ * paces them per address instead of asking for a session.
+ */
+export const ANONYMOUS_AUTH_RPCS: ReadonlySet<string> = new Set([
+  "GetSignInOptions",
+  "SignUp",
+  "LogIn",
+  "BeginGoogleSignIn",
+  "LogInWithGoogle",
+  "BeginAppleSignIn",
+  "LogInWithApple",
+  "CompleteAppleSignIn",
+  "ConfirmPhoneMerge",
+]);
 
 /** Neutral fallback when an external provider supplies no publishable name. */
 export const PROVIDER_NAME_FALLBACK = "Member";
@@ -68,13 +119,14 @@ export const PROVIDER_NAME_FALLBACK = "Member";
 export const PHONE_SEND_RATE_LIMIT = 3;
 /** Per-account, per-minute pacing for code checks. */
 export const PHONE_CHECK_RATE_LIMIT = 5;
-/** Per-account, per-minute pacing for merge confirmations and phone removal. */
-export const PHONE_MERGE_RATE_LIMIT = 5;
+/** Answer to the retired ConfirmPhoneMerge, for app versions that still call it. */
+export const RETIRED_PHONE_MERGE_MESSAGE =
+  "there is nothing to merge — update HaalKhata and verify your number again";
 
-/**
- * Seconds an SMS verification stays answerable after the send. Matches the
- * merge-token lifetime deliberately: both are one sitting at one screen.
- */
+/** Per-account, per-minute pacing for phone removal. */
+export const PHONE_REMOVAL_RATE_LIMIT = 5;
+
+/** Seconds an SMS verification stays answerable after the send: one sitting at one screen. */
 export const PHONE_VERIFICATION_LIFETIME_SECONDS = 60 * 10;
 
 /**
@@ -94,14 +146,6 @@ export const MAX_PHONE_CODE_CHECKS = 5;
  * already there.
  */
 export const PROVIDER_CLOCK_SLACK_SECONDS = 5;
-
-/**
- * Most counterparty names a merge preview lists. The preview is the
- * recycled-number defense, but it is also a disclosure to whoever holds the
- * number today — a dozen names decide "is this my history?" as well as a
- * hundred would.
- */
-export const MAX_PREVIEW_COUNTERPARTY_NAMES = 12;
 
 /** One hour, for the longer rate-limit windows. */
 export const HOUR_MS = 60 * 60 * 1000;
@@ -196,8 +240,19 @@ export const GOOGLE_SIGN_IN_NONCE_BYTES = 32;
 /** Base64url shape of a nonce produced from {@link GOOGLE_SIGN_IN_NONCE_BYTES}. */
 export const GOOGLE_SIGN_IN_NONCE_PATTERN = /^[A-Za-z0-9_-]{43}$/;
 
-/** Seconds before an unused Google authentication nonce is rejected. */
-export const GOOGLE_SIGN_IN_NONCE_LIFETIME_SECONDS = 60 * 5;
+/**
+ * Seconds before an unused Google authentication nonce is rejected. Ten
+ * minutes, and a page renews its nonce at half that, so a click always has
+ * at least five minutes for Google's own steps — choosing an account,
+ * approving a two-step prompt on another device — before the nonce runs out.
+ */
+export const GOOGLE_SIGN_IN_NONCE_LIFETIME_SECONDS = 60 * 10;
+
+/**
+ * Said when a Google sign-in loses a race it cannot settle: the account a
+ * concurrent sign-in created is gone again by the time it is read back.
+ */
+export const GOOGLE_SIGN_IN_INTERRUPTED_MESSAGE = "signing in was interrupted, please try again";
 
 /**
  * Whether email/phone + password sign-in is accepted. Production uses Google

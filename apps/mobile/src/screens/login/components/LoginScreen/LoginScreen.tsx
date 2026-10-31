@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Image, ScrollView, StyleSheet, View } from "react-native";
 import Animated from "react-native-reanimated";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { Spinner } from "@/components/ui/Spinner";
 import { Text } from "@/components/ui/Text";
 import { dropIn } from "@/lib/motion/entrances";
 import { useReduceMotion } from "@/lib/motion/hooks/useReduceMotion";
@@ -20,6 +21,7 @@ import {
 import { DevPasswordButton } from "./components/DevPasswordButton/DevPasswordButton";
 import { SignInPanel } from "./components/SignInPanel/SignInPanel";
 import { WelcomeStory } from "./components/WelcomeStory/WelcomeStory";
+import { useLeaveWhenSignedIn } from "./hooks/useLeaveWhenSignedIn";
 
 /**
  * The first screen a signed-out person sees, playing the part the web's
@@ -31,9 +33,14 @@ import { WelcomeStory } from "./components/WelcomeStory/WelcomeStory";
  * window wide enough for it, the story and a sign-in card sit side by side;
  * a narrow Split View window gets the phone layout.
  *
- * @returns The welcome screen.
+ * Somebody signed in is never shown it: once a session exists, from a
+ * sign-in here or from before they arrived, a spinner stands in while the
+ * screen leaves for a waiting invitation or Home.
+ *
+ * @returns The welcome screen, or a spinner while it leaves.
  */
 export function LoginScreen() {
+  const leaving = useLeaveWhenSignedIn();
   const { isTablet, fontScale } = useResponsiveLayout();
   const reduceMotion = useReduceMotion();
   // The space between the brand and the docked panel, measured, so the
@@ -47,6 +54,14 @@ export function LoginScreen() {
     ILLUSTRATION_MAX_HEIGHT,
     Math.max(ILLUSTRATION_MIN_HEIGHT, storyViewport - STORY_WORDS_HEIGHT * Math.max(1, fontScale)),
   );
+
+  if (leaving) {
+    return (
+      <SafeAreaView style={[styles.safeArea, styles.leaving]}>
+        <Spinner />
+      </SafeAreaView>
+    );
+  }
 
   const brand = (
     <Animated.View entering={dropIn(0, reduceMotion)} style={styles.brand}>
@@ -100,6 +115,7 @@ const styles = StyleSheet.create({
   brandIcon: { borderRadius: radii.md, height: 40, width: 40 },
   brandTagline: { color: colors.inkSoft, fontSize: 9, fontWeight: "700", letterSpacing: 1.6, marginTop: 2 },
   flexOne: { flex: 1 },
+  leaving: { justifyContent: "center" },
   phoneHeader: { paddingHorizontal: spacing.xl, paddingVertical: spacing.sm },
   phoneScroll: { flexGrow: 1, justifyContent: "center", paddingBottom: spacing.lg },
   safeArea: { backgroundColor: colors.paper, flex: 1 },

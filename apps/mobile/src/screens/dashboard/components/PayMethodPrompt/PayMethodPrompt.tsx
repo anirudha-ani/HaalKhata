@@ -1,6 +1,6 @@
 /** Home prompt shown when people owe you in a currency you have no payment method for. */
 
-import type { CounterpartyBalance } from "@haalkhata/protogen/common/v1/common_pb";
+import type { CounterpartyBalance } from "@haalkhata/shared/api/plainMessages";
 import { useRouter } from "expo-router";
 import { Pressable, StyleSheet, View } from "react-native";
 import { Text } from "@/components/ui/Text";

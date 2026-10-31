@@ -9,7 +9,15 @@ import { Spinner } from "@/components/ui/Spinner";
 import { errorMessage } from "@/lib/api/connect";
 import { useJoinAPI } from "./hooks/useJoinAPI";
 import { FOCUSED_CONTENT_MAX_WIDTH } from "@/lib/layout/constants/layout";
-import { inviteCopy, INVITE_SIGN_IN_HINT } from "@haalkhata/shared/invite/inviteCopy";
+import {
+  inviteCopy,
+  INVITE_EXPIRED_BODY,
+  INVITE_EXPIRED_TITLE,
+  INVITE_INACTIVE_TITLE,
+  INVITE_SIGN_IN_HINT,
+  LIVE_SPLIT_ENDED_BODY,
+  LIVE_SPLIT_ENDED_TITLE,
+} from "@haalkhata/shared/invite/inviteCopy";
 import { colors, radii, spacing } from "@/lib/theme/theme";
 
 /**
@@ -22,7 +30,7 @@ import { colors, radii, spacing } from "@/lib/theme/theme";
  */
 export function JoinScreen({ token }: { token: string }) {
   const router = useRouter();
-  const { preview, viewer, accept, requestSent, signIn } = useJoinAPI(token);
+  const { preview, viewer, viewerStatus, accept, requestSent, signIn, expired, liveSplitEnded } = useJoinAPI(token);
   const copy = preview.data ? inviteCopy(preview.data) : null;
 
   return (
@@ -33,8 +41,12 @@ export function JoinScreen({ token }: { token: string }) {
           <Spinner />
         ) : preview.isError ? (
           <>
-            <Text style={styles.title}>This invite link isn&apos;t active</Text>
-            <Text style={styles.body}>{errorMessage(preview.error)}</Text>
+            <Text style={styles.title}>
+              {liveSplitEnded ? LIVE_SPLIT_ENDED_TITLE : expired ? INVITE_EXPIRED_TITLE : INVITE_INACTIVE_TITLE}
+            </Text>
+            <Text style={styles.body}>
+              {liveSplitEnded ? LIVE_SPLIT_ENDED_BODY : expired ? INVITE_EXPIRED_BODY : errorMessage(preview.error)}
+            </Text>
             <Button label="Open HaalKhata" onPress={() => router.replace("/")} />
           </>
         ) : preview.data ? (
@@ -45,7 +57,7 @@ export function JoinScreen({ token }: { token: string }) {
             <Text style={styles.body}>
               {copy?.description}
             </Text>
-            {viewer.data ? (
+            {viewerStatus === "signedIn" ? (
               requestSent ? (
                 <Text style={styles.requested}>
                   {copy?.requestSent}
@@ -62,8 +74,20 @@ export function JoinScreen({ token }: { token: string }) {
                 ) : null}
               </>
               )
-            ) : viewer.isLoading ? (
+            ) : viewerStatus === "checking" ? (
               <Spinner />
+            ) : viewerStatus === "failed" ? (
+              // Signed in, but who as could not be read: offering a sign-in
+              // here would send a signed-in person to sign in again.
+              <>
+                <Text accessibilityRole="alert" style={styles.error}>{errorMessage(viewer.error)}</Text>
+                <Button
+                  busy={viewer.isFetching}
+                  label="Try again"
+                  onPress={() => void viewer.refetch()}
+                  variant="outline"
+                />
+              </>
             ) : (
               <>
                 <Button busy={signIn.isPending} label="Sign in to accept" onPress={() => signIn.mutate()} />
@@ -73,7 +97,7 @@ export function JoinScreen({ token }: { token: string }) {
                 </Text>
               </>
             )}
-            {viewer.data ? (
+            {viewerStatus === "signedIn" && viewer.data ? (
               <>
                 <Text style={styles.hint}>Signed in as {viewer.data.name}.</Text>
                 <Button label="Not now" variant="outline" onPress={() => router.replace("/dashboard")} />

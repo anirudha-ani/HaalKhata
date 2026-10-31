@@ -12,9 +12,5 @@ export const PICKER_OPTIONS: ImagePickerOptions = {
   quality: 1,
 };
 
-/** Maximum longest edge sent to the server; preserves text without uploading full camera resolution. */
-export const MAX_RECEIPT_EDGE = 2576;
-/** Server upload ceiling; enforced before allocating RPC bytes. */
-export const MAX_RECEIPT_UPLOAD_BYTES = 8 * 1024 * 1024;
 /** Explicit native JPEG compression; picker quality does not guarantee a MIME type. */
 export const RECEIPT_JPEG_QUALITY = 0.8;

@@ -92,7 +92,7 @@ export async function listReportedContent(
             END AS item_names,
             ${displayNameSql()} AS author_name,
             COALESCE(usr.suspended_at IS NOT NULL, false) AS author_suspended,
-            COALESCE(usr.merged_into IS NULL AND usr.deleted_at IS NULL, false) AS author_active,
+            COALESCE(usr.deleted_at IS NULL, false) AS author_active,
             COALESCE(usr.deleted_at IS NOT NULL, false) AS author_deleted,
             CASE WHEN grp.author_id IS NULL THEN 1
               ELSE (COUNT(*) OVER (PARTITION BY grp.author_id))::int
@@ -120,10 +120,10 @@ export interface SuspendedAccountRow {
  * Lists the accounts suspended right now, each with the newest report about
  * them, open or closed, to resume through.
  *
- * Only rows that stand for a person: a merge tombstone or the stand-in a
- * deleted account leaves keeps the suspended_at it had (nothing clears it),
- * but nobody signs in through it, so listing it with a Resume button would
- * offer to lift a suspension from no one.
+ * Only rows that stand for a person: the stand-in a deleted account leaves
+ * keeps the suspended_at it had (nothing clears it), but nobody signs in
+ * through it, so listing it with a Resume button would offer to lift a
+ * suspension from no one.
  *
  * @param limit - Most accounts to return.
  * @param client - The snapshot's client.
@@ -142,7 +142,7 @@ export async function listSuspendedAccounts(
               LIMIT 1) AS report_id
        FROM users usr
       WHERE usr.suspended_at IS NOT NULL
-        AND usr.merged_into IS NULL AND usr.deleted_at IS NULL
+        AND usr.deleted_at IS NULL
       ORDER BY usr.suspended_at DESC, usr.id
       LIMIT $1`,
     [limit],
@@ -237,15 +237,12 @@ export async function lockReport(
 /** Whether an account can be suspended or resumed, and whether it is now. */
 export interface AccountStandingRow {
   suspended: boolean;
-  /** False for a merge tombstone or the stand-in a deleted account leaves. */
-  active: boolean;
   /**
-   * True when the person deleted their account. Deleting an account removes
-   * the reports about it, so a report reaches a deleted person only through
-   * the stand-in their content now belongs to, or through a merge tombstone
-   * the deletion erased; both carry deleted_at.
+   * False for the stand-in a deleted account leaves. Deleting an account
+   * removes the reports about it, so a report reaches a deleted person only
+   * through the stand-in their content now belongs to.
    */
-  deleted: boolean;
+  active: boolean;
 }
 
 /**
@@ -262,8 +259,7 @@ export async function lockAccountStanding(
 ): Promise<AccountStandingRow | undefined> {
   return queryOne<AccountStandingRow>(
     `SELECT suspended_at IS NOT NULL AS suspended,
-            (merged_into IS NULL AND deleted_at IS NULL) AS active,
-            deleted_at IS NOT NULL AS deleted
+            deleted_at IS NULL AS active
        FROM users
       WHERE id = $1
       FOR UPDATE`,

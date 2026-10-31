@@ -4,13 +4,14 @@
  * here; the logic is in the usecases.
  */
 
-import { Code, ConnectError, type HandlerContext, type ServiceImpl } from "@connectrpc/connect";
+import { Code, ConnectError, type HandlerContext } from "@connectrpc/connect";
+import type { PlainServiceImpl } from "@/server/api/connect/wire/plainService";
 import type { AdminAnalyticsService } from "@haalkhata/protogen/adminanalytics/v1/adminanalytics_pb";
-import { adminSessionToken, requireAdminPageRequest } from "@/server/api/connect/adminRequest";
+import { adminSessionToken, requireAdminPageRequest } from "@/server/api/connect/admin/adminRequest";
 import { sessionCookieAttributes } from "@/server/api/connect/connect.constants";
 import { runUsecase } from "@/server/api/connect/context";
-import { clientIp } from "@/server/auth/request/clientIp";
-import { rateLimitCheck } from "@/server/common/rateLimit/rateLimit";
+import { clientNetwork } from "@/server/auth/request/clientIp";
+import { adminRateLimits } from "@/server/common/rateLimit/rateLimit";
 import {
   ADMIN_AUTH_RATE_LIMIT,
   ADMIN_NONCE_RATE_LIMIT,
@@ -37,13 +38,13 @@ function enforceAdminAuthRateLimit(
   bucket: "admin-nonce" | "admin-auth",
   limit: number,
 ): void {
-  if (!rateLimitCheck(`${bucket}:${clientIp(handlerContext.requestHeader)}`, limit)) {
+  if (!adminRateLimits.check(`${bucket}:${clientNetwork(handlerContext.requestHeader)}`, limit)) {
     throw new ConnectError("too many attempts, please try again later", Code.ResourceExhausted);
   }
 }
 
 /** AdminAnalyticsService implementation. Every method starts by confirming the surface and the origin. */
-export const adminAnalyticsHandler: ServiceImpl<typeof AdminAnalyticsService> = {
+export const adminAnalyticsHandler: PlainServiceImpl<typeof AdminAnalyticsService> = {
   /** Issues the nonce for an admin sign-in. */
   async beginSignIn(_request, handlerContext) {
     requireAdminPageRequest(handlerContext);
@@ -94,7 +95,7 @@ export const adminAnalyticsHandler: ServiceImpl<typeof AdminAnalyticsService> = 
     requireAdminPageRequest(handlerContext);
     return runUsecase(async () => {
       await adminSession.requireAdminSession(adminSessionToken(handlerContext));
-      if (!rateLimitCheck("admin-usage-overview", ADMIN_READ_RATE_LIMIT)) {
+      if (!adminRateLimits.check("admin-usage-overview", ADMIN_READ_RATE_LIMIT)) {
         throw new ConnectError("too many requests, please try again later", Code.ResourceExhausted);
       }
       return getUsageOverview();
@@ -106,7 +107,7 @@ export const adminAnalyticsHandler: ServiceImpl<typeof AdminAnalyticsService> = 
     requireAdminPageRequest(handlerContext);
     return runUsecase(async () => {
       await adminSession.requireAdminSession(adminSessionToken(handlerContext));
-      if (!rateLimitCheck("admin-usage-trend", ADMIN_TREND_RATE_LIMIT)) {
+      if (!adminRateLimits.check("admin-usage-trend", ADMIN_TREND_RATE_LIMIT)) {
         throw new ConnectError("too many requests, please try again later", Code.ResourceExhausted);
       }
       return getUsageTrend({ unit: request.unit, endOn: request.endOn });

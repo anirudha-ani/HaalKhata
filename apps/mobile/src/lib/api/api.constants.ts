@@ -10,6 +10,12 @@ export const TOKEN_STORAGE_KEY = "haalkhata-session-token";
 /** AsyncStorage key for the persisted TanStack Query cache. */
 export const QUERY_CACHE_STORAGE_KEY = "haalkhata-query-cache";
 
+/** Keychain entry holding the date of the install the stored session belongs to. */
+export const INSTALL_MARKER_STORAGE_KEY = "haalkhata.installDate";
+
+/** How far two readings of one install's date may differ. */
+export const INSTALL_DATE_DRIFT_MS = 60_000;
+
 /** SecureStore key for a session token whose sign-out has not reached the server yet. */
 export const UNFINISHED_SIGN_OUT_STORAGE_KEY = "haalkhata-unfinished-sign-out";
 

@@ -3,8 +3,8 @@
  * Postgres.
  *
  * Two properties here cannot be shown with mocks. One is that the counts are
- * right: registered people apart from invited placeholders and merge
- * tombstones, deleted expenses still counted as added, each person credited
+ * right: registered people apart from a deleted account's stand-in, deleted
+ * expenses still counted as added, each person credited
  * with what they did. The other is the promise the admin page is built on:
  * that the overview carries names and counts and nothing else. The suite
  * seeds people with emails, phone numbers, pictures, amounts, descriptions,
@@ -17,6 +17,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { Client } from "pg";
 import { TrendUnit } from "@haalkhata/protogen/adminanalytics/v1/adminanalytics_pb";
+import { testDatabaseName } from "@/server/common/testing/testDatabase";
 
 /** The counts of one trend period, as the usecase returns them. */
 interface TrendPeriodShape {
@@ -28,7 +29,7 @@ interface TrendPeriodShape {
 
 const ADMIN_URL =
   process.env.MERGE_TEST_ADMIN_URL ?? "postgres://haalkhata:change-me@127.0.0.1:5432/postgres";
-const TEST_DATABASE = "haalkhata_usage_test";
+const TEST_DATABASE = testDatabaseName("haalkhata_usage_test");
 const TEST_URL = ADMIN_URL.replace(/\/[^/]*$/, `/${TEST_DATABASE}`);
 
 const EMAIL_AS_NAME = "user-emailname-3b1c";
@@ -37,27 +38,21 @@ const LOCAL_PART_AS_NAME = "user-localpart-4f6a";
 const ANIKA = "user-anika-7f3a";
 const RIFAT = "user-rifat-91bc";
 const LATECOMER = "user-latecomer-2d4e";
-const INVITED = "user-invited-55aa";
-const TOMBSTONE = "user-tombstone-0c0c";
 
 /** Everything seeded that the overview must never contain. */
 const PRIVATE_VALUES = [
   ANIKA,
   RIFAT,
   LATECOMER,
-  INVITED,
-  TOMBSTONE,
   "anika.private@example.com",
   "rifat.private@example.com",
   "latecomer.private@example.com",
-  "invited.private@example.com",
   "+14155550101",
   "https://lh3.googleusercontent.com/secret-picture",
   "google-sub-anika",
   "Secret Dinner Description",
   "Hidden Group Name",
   "Private comment body",
-  "Invited Placeholder",
   "987654",
   "typed.my.email@example.com",
   "+1 (415) 555-0199",
@@ -86,8 +81,7 @@ async function databaseReachable(): Promise<boolean> {
 }
 
 /**
- * Seeds three people who signed in, one invited placeholder, one merge
- * tombstone, and a spread of what they did.
+ * Seeds three people who signed in and a spread of what they did.
  *
  * @param database - Connected client on the test database.
  */
@@ -102,15 +96,8 @@ async function seed(database: Client): Promise<void> {
        ($2, 'rifat.private@example.com', NULL, 'Rifat Khan', '#1d4ed8', NULL, NULL, 'salt:hash',
         now() - interval '10 days', now() - interval '10 days'),
        ($3, 'latecomer.private@example.com', NULL, 'Late Comer', '#7c3aed', NULL, 'google-sub-late', NULL,
-        now() - interval '1 hour', now() - interval '1 hour'),
-       ($4, 'invited.private@example.com', NULL, 'Invited Placeholder', '#857a68', NULL, NULL, NULL,
-        NULL, now() - interval '3 days')`,
-    [ANIKA, RIFAT, LATECOMER, INVITED],
-  );
-  await database.query(
-    `INSERT INTO users (id, email, name, avatar_color, google_sub, merged_into, created_at)
-     VALUES ($1, NULL, 'Merged Away', '#857a68', NULL, $2, now() - interval '5 days')`,
-    [TOMBSTONE, ANIKA],
+        now() - interval '1 hour', now() - interval '1 hour')`,
+    [ANIKA, RIFAT, LATECOMER],
   );
 
   // Three people whose display name is itself a way to reach them. They
@@ -251,12 +238,13 @@ describe.skipIf(!reachable)("usage overview against Postgres", () => {
     await admin.end();
   });
 
-  it("counts people who signed in apart from placeholders and merge tombstones", async () => {
+  it("counts everyone who signed in", async () => {
     const { totals } = await getUsageOverview();
 
     // Anika, Rifat, the latecomer, and the three whose names are withheld.
     expect(totals.registeredUserCount).toBe(6);
-    expect(totals.invitedUserCount).toBe(1);
+    // Retired: nobody exists before signing up.
+    expect(totals).not.toHaveProperty("invitedUserCount");
   });
 
   it("counts an Apple sign-in as registered and a deleted account's stand-in as nobody", async () => {
@@ -271,7 +259,6 @@ describe.skipIf(!reachable)("usage overview against Postgres", () => {
     try {
       const { totals, users } = await getUsageOverview();
       expect(totals.registeredUserCount).toBe(7);
-      expect(totals.invitedUserCount).toBe(1);
       expect(users.map((person) => person.name)).toContain("Apple Person");
       expect(users.map((person) => person.name)).not.toContain("Deleted member");
     } finally {
@@ -341,7 +328,7 @@ describe.skipIf(!reachable)("usage overview against Postgres", () => {
     });
   });
 
-  it("dates someone from when they joined, not from when a friend first invited them", async () => {
+  it("dates someone from when they joined, not from when their row was made", async () => {
     const { users } = await getUsageOverview();
     // Read back from the row rather than recomputed from the clock, so the
     // check cannot straddle a midnight between the seed and the assertion.
@@ -516,7 +503,6 @@ describe.skipIf(!reachable)("usage overview against Postgres", () => {
     }
     // The three people who signed in are named; that is the whole of it.
     expect(overview).toContain("Anika Rahman");
-    expect(overview).not.toContain("Merged Away");
     expect(overview).not.toMatch(/@/);
   });
 

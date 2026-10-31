@@ -1,10 +1,9 @@
 "use client";
-/** First-run flow state: profile fields, the phone claim and its merge confirmation, then the payment step. */
+/** First-run flow state: profile fields, the phone and its SMS code, then the payment step. */
 
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { queryKeys } from "@haalkhata/shared/api/queryKeys";
-import type { MergePreview } from "@haalkhata/protogen/auth/v1/auth_pb";
 import { authClient, errorMessage, isRefusal } from "@/lib/api/connect";
 import { useVerificationCode } from "@/lib/hooks/useVerificationCode";
 import { composeE164, DEFAULT_PHONE_REGION, isValidPhone, splitE164 } from "@haalkhata/shared/phone/phone";
@@ -18,10 +17,10 @@ import {
 /**
  * Drives the onboarding screen.
  *
- * Phone is deliberately a separate step from the rest of the profile: claiming
- * a number can turn up an unclaimed invitation holding it, in which case
- * nothing is written until the user confirms what they would absorb. The other
- * fields go through the existing UpdateProfile and cannot fail that way.
+ * Phone is deliberately a separate step from the rest of the profile: a new
+ * number is written only once an SMS code proves it, so it can stop on the
+ * code. The other fields go through the existing UpdateProfile and cannot
+ * stop that way.
  *
  * The phone is held as a region plus a national number rather than one string,
  * matching the two controls that edit it; `save` joins them into the E.164 the
@@ -31,14 +30,13 @@ import {
  * contacts" switch, saved with the rest on Continue.
  *
  * The flow has two steps. The profile step (name, phone, currency) ends,
- * however it ends, on the payment step: saved, verified, merged or skipped.
+ * however it ends, on the payment step: saved, verified or skipped.
  * Only the payment step leaves onboarding, so everyone is asked once how
  * they want to be paid, and nobody is asked before their currency is known.
  *
- * @returns The step, field values with setters, the code field, the pending
- *   merge preview when one is waiting, actions for saving / verifying /
- *   sending the code again / confirming / skipping / finishing, and the busy
- *   flag.
+ * @returns The step, field values with setters, the code field, actions for
+ *   saving / verifying / sending the code again / skipping / finishing, and
+ *   the busy flag.
  */
 export function useOnboarding() {
   const queryClient = useQueryClient();
@@ -53,8 +51,6 @@ export function useOnboarding() {
   const [region, setRegion] = useState<string>(DEFAULT_PHONE_REGION);
   const [nationalNumber, setNationalNumber] = useState("");
   const [error, setError] = useState("");
-  const [pendingMerge, setPendingMerge] = useState<MergePreview | undefined>();
-  const [mergeToken, setMergeToken] = useState("");
   const [verificationPhone, setVerificationPhone] = useState("");
   const codeField = useVerificationCode();
   // Starts on: being findable is the default, and the switch's own words say
@@ -141,14 +137,9 @@ export function useOnboarding() {
   const verifyPhone = useMutation({
     mutationFn: () =>
       authClient.setPhone({ phone: verificationPhone, verificationCode: codeField.code }),
-    onSuccess: async (result) => {
+    onSuccess: async () => {
       setVerificationPhone("");
       codeField.clear();
-      if (result.pendingMerge) {
-        setPendingMerge(result.pendingMerge);
-        setMergeToken(result.mergeToken);
-        return;
-      }
       await queryClient.invalidateQueries({ queryKey: queryKeys.me });
       toPaymentStep();
     },
@@ -169,28 +160,6 @@ export function useOnboarding() {
     onSuccess: () => codeField.markResent(),
     onError: (mutationError) => setError(errorMessage(mutationError)),
   });
-
-  const confirmMerge = useMutation({
-    mutationFn: async () => {
-      setError("");
-      await authClient.confirmPhoneMerge({ mergeToken });
-      setPendingMerge(undefined);
-      toPaymentStep();
-    },
-    onError: (mutationError) => setError(errorMessage(mutationError)),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.me }),
-  });
-
-  /** Backs out of a merge, leaving both accounts untouched and the number unset. */
-  const declineMerge = () => {
-    setPendingMerge(undefined);
-    setMergeToken("");
-    // Only the number is cleared. The country stays selected, because it was
-    // almost certainly right — it is the digits after it that belonged to
-    // somebody else.
-    setNationalNumber("");
-    setError("");
-  };
 
   const complete = useMutation({
     mutationFn: finish,
@@ -213,7 +182,6 @@ export function useOnboarding() {
     findable,
     setFindable,
     error,
-    pendingMerge,
     verificationPhone,
     verificationCode: codeField.code,
     /** True once the field holds a whole code. */
@@ -237,8 +205,6 @@ export function useOnboarding() {
       codeField.clear();
       setError("");
     },
-    confirmMerge: () => confirmMerge.mutate(),
-    declineMerge,
     save: () => save.mutate(),
     /** Leaves the profile step without saving it; the payment step still follows. */
     skip: toPaymentStep,
@@ -255,7 +221,6 @@ export function useOnboarding() {
       save.isPending ||
       verifyPhone.isPending ||
       resendCode.isPending ||
-      confirmMerge.isPending ||
       complete.isPending,
   };
 }

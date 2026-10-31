@@ -3,11 +3,10 @@
 
 import Link from "next/link";
 import { Plus } from "lucide-react";
-import { ExpenseList } from "@/components/expenses/ExpenseList/ExpenseList";
 import { SearchField } from "@/components/ui/SearchField/SearchField";
 import { Spinner } from "@/components/ui/Spinner/Spinner";
 import { useHydrated } from "@/lib/hooks/useHydrated";
-import { noExpensesMessage } from "@haalkhata/shared/expense/scopeFilter";
+import { ExpensesResults } from "./components/ExpensesResults/ExpensesResults";
 import { ScopeFilter } from "./components/ScopeFilter/ScopeFilter";
 import { useExpensesList } from "./hooks/useExpensesList";
 
@@ -20,12 +19,16 @@ import { useExpensesList } from "./hooks/useExpensesList";
  * one-off expenses do I have?" had no answer. The One-off chip is that
  * answer; filtering by one group comes along for free from the same filter.
  *
- * @returns The expenses page content, or a spinner while the list loads.
+ * The list arrives a page at a time, newest first, with Show more under it.
+ * The header and the filters stay put while a scope's first page loads, so
+ * switching chips swaps only the rows.
+ *
+ * @returns The expenses page content, or a spinner before hydration.
  */
 export function ExpensesPage() {
   const listState = useExpensesList();
   const hydrated = useHydrated();
-  if (!hydrated || listState.isLoading) return <Spinner label="Loading expenses…" />;
+  if (!hydrated) return <Spinner label="Loading expenses…" />;
 
   const filteredGroupName = listState.groupNameById.get(listState.scope) ?? "";
 
@@ -48,11 +51,12 @@ export function ExpensesPage() {
           onChange={listState.setQuery}
           placeholder="Search by description, category, or group"
         />
-        {/* The count accounts for every active control, or it would read as
-            unfiltered while rows are being hidden. */}
-        {listState.query || listState.scope !== "all" ? (
+        {/* The search narrows the rows loaded so far, so the count is stated
+            against those, and says so while older ones remain. */}
+        {listState.query && !listState.isLoading ? (
           <span className="shrink-0 text-sm text-ink-soft tabular-nums">
             {listState.visibleExpenses.length} of {listState.expenses.length}
+            {listState.hasMore ? " loaded" : ""}
           </span>
         ) : null}
       </div>
@@ -65,28 +69,7 @@ export function ExpensesPage() {
         )}
       />
 
-      {/* The list is bounded; the balances are not. Say so rather than let
-          an old row's absence read as its deletion. */}
-      {listState.truncated ? (
-        <p className="text-xs text-ink-soft">
-          Showing your most recent expenses — older ones still count toward every balance.
-        </p>
-      ) : null}
-
-      {listState.visibleExpenses.length === 0 ? (
-        <p className="rounded-2xl border border-line bg-card px-4 py-6 text-center text-sm text-ink-soft">
-          {noExpensesMessage(listState.query, listState.scope, filteredGroupName)}
-        </p>
-      ) : (
-        <ExpenseList
-          expenses={listState.visibleExpenses}
-          meId={listState.me?.id}
-          userById={listState.userById}
-          emptyHint=""
-          groupNameById={listState.groupNameById}
-          settledIds={listState.settledIds}
-        />
-      )}
+      <ExpensesResults listState={listState} filteredGroupName={filteredGroupName} />
     </div>
   );
 }

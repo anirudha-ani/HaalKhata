@@ -4,7 +4,7 @@
 import { create } from "@bufbuild/protobuf";
 import { ReportQueueSchema } from "@haalkhata/protogen/adminmoderation/v1/adminmoderation_pb";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, createElement } from "react";
+import { act, createElement, useEffect } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { adminModerationClient } from "@/lib/api/adminConnect";
@@ -41,7 +41,10 @@ let latest: ReturnType<typeof useReportQueue>;
  * @returns Nothing.
  */
 function Harness({ report }: { report: (state: ReturnType<typeof useReportQueue>) => void }) {
-  report(useReportQueue(useAdminModerationAPI()));
+  const state = useReportQueue(useAdminModerationAPI());
+  useEffect(() => {
+    report(state);
+  });
   return null;
 }
 

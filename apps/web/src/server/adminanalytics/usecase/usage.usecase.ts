@@ -42,7 +42,6 @@ export async function getUsageOverview() {
       generatedAt: generatedAt.toISOString(),
       totals: {
         registeredUserCount: totals.registered_user_count,
-        invitedUserCount: totals.invited_user_count,
         weeklyActiveUserCount: totals.weekly_active_user_count,
         monthlyActiveUserCount: totals.monthly_active_user_count,
         groupCount: totals.group_count,

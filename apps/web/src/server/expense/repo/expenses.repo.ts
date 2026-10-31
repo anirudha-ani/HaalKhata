@@ -1,6 +1,10 @@
 /** All SQL for expenses and their child tables (payers, splits, items, assignments). */
 
 import { execute, newId, query, queryOne, transaction } from "@/server/common/db/db";
+import { exactTimeSql } from "@/server/common/pagination/pagination";
+import { expenseInvolvesSql } from "./expenseInvolvement";
+import { LEDGER_LINE_RANK } from "@/server/expense/expense.constants";
+import type { LedgerLineKey } from "@/server/expense/domain/ledgerOrder";
 import type { PoolClient } from "pg";
 
 /** One row of the expenses table (column names mirror SQL). */
@@ -24,9 +28,13 @@ export interface ExpenseRow {
   created_by: string;
   created_at: string;
   /** Monotonic order shared with settlements for mutation-safety checks. */
-  ledger_event_order: string;
+  ledger_event_order: number;
   /** Soft-delete timestamp; NULL ⇒ the expense is active. */
   deleted_at: string | null;
+  /** Goes up with every saved change. */
+  version: number;
+  /** Who saved the latest change; NULL until the first edit. */
+  updated_by: string | null;
   /** The authenticated user who deleted it; NULL while it is active. */
   deleted_by: string | null;
 }
@@ -78,6 +86,8 @@ export interface ExpenseWrite {
   payers: { userId: string; amountCents: number }[];
   splits: { userId: string; owedCents: number }[];
   items: {
+    /** The saved line this is, so it keeps its identity across edits; absent on a new line. */
+    id?: string;
     name: string;
     quantity: number;
     totalCents: number;
@@ -152,18 +162,20 @@ async function insertChildren(
   }
 
   // Items + assignments: items are multi-row, then assignments reference the
-  // freshly generated item ids.
-  const itemRows = input.items.map((item) => ({
-    id: newId(),
+  // item ids. A saved line keeps its id, which is how two people editing at
+  // once can tell they are talking about the same line.
+  const itemRows = input.items.map((item, position) => ({
+    id: item.id || newId(),
     expenseId,
     name: item.name,
     quantity: item.quantity,
     totalCents: item.totalCents,
+    position,
   }));
   if (itemRows.length > 0) {
-    const itemsValues = multiRowValues(itemRows, ["id", "expenseId", "name", "quantity", "totalCents"] as const);
+    const itemsValues = multiRowValues(itemRows, ["id", "expenseId", "name", "quantity", "totalCents", "position"] as const);
     await client.query(
-      `INSERT INTO expense_items (id, expense_id, name, quantity, total_cents) VALUES ${itemsValues!.clause}`,
+      `INSERT INTO expense_items (id, expense_id, name, quantity, total_cents, position) VALUES ${itemsValues!.clause}`,
       itemsValues!.params,
     );
 
@@ -227,11 +239,13 @@ export async function insertExpense(input: ExpenseWrite, client?: PoolClient): P
  *
  * @param expenseId - Id of the expense to overwrite.
  * @param input - Validated replacement expense.
+ * @param updatedBy - Who is saving this change.
  * @param client - Optional transaction client holding the expense scope lock.
  */
 export async function replaceExpense(
   expenseId: string,
   input: ExpenseWrite,
+  updatedBy: string,
   client?: PoolClient,
 ): Promise<void> {
   const persist = async (transactionClient: PoolClient) => {
@@ -239,7 +253,7 @@ export async function replaceExpense(
       `UPDATE expenses SET
          group_id = $1, description = $2, amount_cents = $3, currency = $4,
          category = $5, expense_date = $6, split_type = $7, notes = $8,
-         tax_cents = $9, tip_cents = $10
+         tax_cents = $9, tip_cents = $10, updated_by = $12, version = version + 1
        WHERE id = $11`,
       [
         input.groupId,
@@ -253,6 +267,7 @@ export async function replaceExpense(
         input.taxCents,
         input.tipCents,
         expenseId,
+        updatedBy,
       ],
     );
     await transactionClient.query(
@@ -304,26 +319,87 @@ export async function findExpenseById(
 }
 
 /**
- * Lists a group's expenses, newest first.
- *
- * Deleted rows are excluded by default, which is what every balance
- * computation wants; display reads pass `includeDeleted` so a deleted
- * expense stays visible, marked, in the group's history.
- *
- * @param groupId - Id of the group whose expenses to list.
- * @param client - Optional transaction client holding the group-ledger lock.
- * @param includeDeleted - Whether soft-deleted rows are returned too.
- * @returns Expense rows ordered by expense date, then creation time, descending.
+ * Where an expense sits in a list, newest first: by its date, then when it
+ * was written (to the microsecond), then its id, so no two share a place.
  */
-export async function listExpensesByGroup(
-  groupId: string,
+export interface ExpenseListKey {
+  /** The expense's calendar day, "YYYY-MM-DD". */
+  expenseDate: string;
+  /** When it was written, from {@link exactTimeSql}. */
+  createdAt: string;
+  /** Its id, settling expenses written in the same microsecond. */
+  id: string;
+}
+
+/** Which expenses a list shows. */
+export type ExpenseListScope =
+  | { kind: "group"; groupId: string }
+  | { kind: "withUser"; userId: string; otherUserId: string }
+  | { kind: "user"; userId: string }
+  /** The user's own expenses outside any group. */
+  | { kind: "userOneOff"; userId: string }
+  /** The user's own expenses in one group. */
+  | { kind: "userInGroup"; userId: string; groupId: string };
+
+/** An expense row with its creation time to the microsecond, for its cursor. */
+export type ListedExpenseRow = ExpenseRow & { created_at_exact: string };
+
+/**
+ * One page of an expense list, newest first: a group's expenses, the
+ * one-off expenses two people share, or every expense a user is on. Deleted
+ * rows are listed too, marked, so a payment made against one keeps the row
+ * that explains it; balances read their own, deleted-excluded queries.
+ *
+ * @param scope - Which expenses the list shows.
+ * @param after - The last expense of the previous page; null for the first.
+ * @param limit - Most rows to return.
+ * @param client - Snapshot client; omitted, the pool.
+ * @returns The rows, newest first, each with its exact creation time.
+ */
+export async function listExpensePage(
+  scope: ExpenseListScope,
+  after: ExpenseListKey | null,
+  limit: number,
   client?: PoolClient,
-  includeDeleted = false,
-): Promise<ExpenseRow[]> {
-  return query<ExpenseRow>(
-    `SELECT * FROM expenses WHERE group_id = $1 AND ($2::boolean OR deleted_at IS NULL)
-     ORDER BY expense_date DESC, created_at DESC`,
-    [groupId, includeDeleted],
+): Promise<ListedExpenseRow[]> {
+  const values: unknown[] = [];
+  const placeholderFor = (value: unknown) => {
+    values.push(value);
+    return `$${values.length}`;
+  };
+  const conditions: string[] = [];
+  if (scope.kind === "group") {
+    conditions.push(`expense.group_id = ${placeholderFor(scope.groupId)}`);
+  } else if (scope.kind === "withUser") {
+    conditions.push(
+      "expense.group_id IS NULL",
+      expenseInvolvesSql(`= ${placeholderFor(scope.userId)}`),
+      expenseInvolvesSql(`= ${placeholderFor(scope.otherUserId)}`),
+    );
+  } else if (scope.kind === "userOneOff") {
+    conditions.push("expense.group_id IS NULL", expenseInvolvesSql(`= ${placeholderFor(scope.userId)}`));
+  } else if (scope.kind === "userInGroup") {
+    conditions.push(
+      `expense.group_id = ${placeholderFor(scope.groupId)}`,
+      expenseInvolvesSql(`= ${placeholderFor(scope.userId)}`),
+    );
+  } else {
+    conditions.push(expenseInvolvesSql(`= ${placeholderFor(scope.userId)}`));
+  }
+  if (after) {
+    conditions.push(
+      `(expense.expense_date COLLATE "C", expense.created_at, expense.id)
+         < (${placeholderFor(after.expenseDate)}::text COLLATE "C", ${placeholderFor(after.createdAt)}::timestamptz, ${placeholderFor(after.id)})`,
+    );
+  }
+  const limitPlaceholder = placeholderFor(limit);
+  return query<ListedExpenseRow>(
+    `SELECT expense.*, ${exactTimeSql("expense.created_at")} AS created_at_exact
+       FROM expenses expense
+      WHERE ${conditions.join("\n        AND ")}
+      ORDER BY expense.expense_date COLLATE "C" DESC, expense.created_at DESC, expense.id DESC
+      LIMIT ${limitPlaceholder}`,
+    values,
     client,
   );
 }
@@ -343,29 +419,77 @@ export async function listExpensesByGroups(groupIds: readonly string[], client?:
 }
 
 /**
+ * One person's live expenses in a group, in one currency: all a pairwise
+ * ledger needs to say who they owe, since a debt only comes from an expense
+ * both people are on.
+ *
+ * @param groupId - The group.
+ * @param userId - The person.
+ * @param currency - The currency.
+ * @param client - Snapshot or transaction client; omitted, the pool.
+ * @returns Their expense rows.
+ */
+export async function listGroupExpensesInvolving(
+  groupId: string,
+  userId: string,
+  currency: string,
+  client?: PoolClient,
+): Promise<ExpenseRow[]> {
+  return query<ExpenseRow>(
+    `SELECT expense.* FROM expenses expense
+      WHERE expense.group_id = $1 AND expense.currency = $3 AND expense.deleted_at IS NULL
+        AND ${expenseInvolvesSql("= $2")}`,
+    [groupId, userId, currency],
+    client,
+  );
+}
+
+/**
  * One-off (non-group) expenses where both users participate (payer or ower).
  *
  * @param firstUserId - One of the two participants.
  * @param secondUserId - The other participant.
  * @param client - Optional transaction client holding the pair's ledger lock.
- * @param includeDeleted - Whether soft-deleted rows are returned too (display only).
- * @returns One-off expense rows involving both users, newest first.
+ * @returns Live one-off expense rows involving both users, newest first.
  */
 export async function listOneOffExpensesBetween(
   firstUserId: string,
   secondUserId: string,
   client?: PoolClient,
-  includeDeleted = false,
 ): Promise<ExpenseRow[]> {
   return query<ExpenseRow>(
-    `SELECT DISTINCT expense.* FROM expenses expense
-     WHERE expense.group_id IS NULL AND ($3::boolean OR expense.deleted_at IS NULL)
-       AND EXISTS (SELECT 1 FROM expense_splits split WHERE split.expense_id = expense.id AND split.user_id = $1
-                   UNION SELECT 1 FROM expense_payers payer WHERE payer.expense_id = expense.id AND payer.user_id = $1)
-       AND EXISTS (SELECT 1 FROM expense_splits split WHERE split.expense_id = expense.id AND split.user_id = $2
-                   UNION SELECT 1 FROM expense_payers payer WHERE payer.expense_id = expense.id AND payer.user_id = $2)
+    `SELECT expense.* FROM expenses expense
+     WHERE expense.group_id IS NULL AND expense.deleted_at IS NULL
+       AND ${expenseInvolvesSql("= $1")}
+       AND ${expenseInvolvesSql("= $2")}
      ORDER BY expense.expense_date DESC, expense.created_at DESC`,
-    [firstUserId, secondUserId, includeDeleted],
+    [firstUserId, secondUserId],
+    client,
+  );
+}
+
+/**
+ * Live one-off (non-group) expenses the user shares with any of the given
+ * people, for working out every one of those pair balances from one read
+ * instead of one read per person.
+ *
+ * @param userId - The person every expense must include.
+ * @param otherUserIds - People at least one of whom each expense must include too.
+ * @param client - Snapshot or transaction client; omitted, the pool.
+ * @returns The expenses; no query is sent for an empty list of people.
+ */
+export async function listOneOffExpensesWithAnyOf(
+  userId: string,
+  otherUserIds: readonly string[],
+  client?: PoolClient,
+): Promise<ExpenseRow[]> {
+  if (otherUserIds.length === 0) return [];
+  return query<ExpenseRow>(
+    `SELECT expense.* FROM expenses expense
+     WHERE expense.group_id IS NULL AND expense.deleted_at IS NULL
+       AND ${expenseInvolvesSql("= $1")}
+       AND ${expenseInvolvesSql("= ANY($2::text[])")}`,
+    [userId, [...new Set(otherUserIds)]],
     client,
   );
 }
@@ -388,14 +512,13 @@ export async function listExpensesBetween(
   secondUserId: string,
   includeDeleted = false,
   client?: PoolClient,
-): Promise<ExpenseRow[]> {
-  return query<ExpenseRow>(
-    `SELECT DISTINCT expense.* FROM expenses expense
+): Promise<ListedExpenseRow[]> {
+  return query<ListedExpenseRow>(
+    `SELECT expense.*, ${exactTimeSql("expense.created_at")} AS created_at_exact
+       FROM expenses expense
      WHERE ($3::boolean OR expense.deleted_at IS NULL)
-       AND EXISTS (SELECT 1 FROM expense_splits split WHERE split.expense_id = expense.id AND split.user_id = $1
-                   UNION SELECT 1 FROM expense_payers payer WHERE payer.expense_id = expense.id AND payer.user_id = $1)
-       AND EXISTS (SELECT 1 FROM expense_splits split WHERE split.expense_id = expense.id AND split.user_id = $2
-                   UNION SELECT 1 FROM expense_payers payer WHERE payer.expense_id = expense.id AND payer.user_id = $2)
+       AND ${expenseInvolvesSql("= $1")}
+       AND ${expenseInvolvesSql("= $2")}
      ORDER BY expense.expense_date DESC, expense.created_at DESC`,
     [firstUserId, secondUserId, includeDeleted],
     client,
@@ -403,29 +526,67 @@ export async function listExpensesBetween(
 }
 
 /**
- * Every expense the user pays for or owes on (groups + one-off).
+ * One page of the expenses two people share (group and one-off, deleted
+ * ones included), going back in time from `before` in the friend
+ * statement's order: day, moment written, rank, id. The same order
+ * {@link compareLedgerLineKeys} keeps in memory, ids compared by code point.
+ *
+ * @param firstUserId - One of the two people.
+ * @param secondUserId - The other.
+ * @param before - The oldest line already shown; null starts at the newest.
+ * @param limit - Most rows to return.
+ * @param client - Snapshot client.
+ * @returns The rows, newest first, each with its exact creation time.
+ */
+export async function listExpensesBetweenPage(
+  firstUserId: string,
+  secondUserId: string,
+  before: LedgerLineKey | null,
+  limit: number,
+  client: PoolClient,
+): Promise<ListedExpenseRow[]> {
+  return query<ListedExpenseRow>(
+    `SELECT expense.*, ${exactTimeSql("expense.created_at")} AS created_at_exact
+       FROM expenses expense
+      WHERE ${expenseInvolvesSql("= $1")}
+        AND ${expenseInvolvesSql("= $2")}
+        AND ($3::text IS NULL
+             OR (expense.expense_date COLLATE "C", expense.created_at, $7::int, expense.id COLLATE "C")
+                < ($3::text COLLATE "C", $4::timestamptz, $5::int, $6::text COLLATE "C"))
+      ORDER BY expense.expense_date COLLATE "C" DESC, expense.created_at DESC, expense.id COLLATE "C" DESC
+      LIMIT $8`,
+    [
+      firstUserId,
+      secondUserId,
+      before?.day ?? null,
+      before?.at ?? null,
+      before?.rank ?? null,
+      before?.id ?? null,
+      LEDGER_LINE_RANK.expense,
+      limit,
+    ],
+    client,
+  );
+}
+
+/**
+ * Every live expense the user pays for or owes on (groups + one-off), which
+ * the balance math needs whole. A screen pages with {@link listExpensePage}.
  *
  * @param userId - Id of the user whose expenses to list.
- * @param includeDeleted - Whether soft-deleted rows are returned too (display only).
- * @param limit - Most rows to return (display only); omitted, every row —
- *   which the balance math needs and a screen does not.
  * @param client - Snapshot or transaction client; omitted, the pool.
  * @returns Expense rows involving the user, newest first.
  */
 export async function listExpensesInvolvingUser(
   userId: string,
-  includeDeleted = false,
-  limit?: number,
   client?: PoolClient,
 ): Promise<ExpenseRow[]> {
   return query<ExpenseRow>(
-    `SELECT DISTINCT expense.* FROM expenses expense
-     WHERE ($2::boolean OR expense.deleted_at IS NULL)
-       AND EXISTS (SELECT 1 FROM expense_splits split WHERE split.expense_id = expense.id AND split.user_id = $1
-                   UNION SELECT 1 FROM expense_payers payer WHERE payer.expense_id = expense.id AND payer.user_id = $1)
-     ORDER BY expense.expense_date DESC, expense.created_at DESC
-     LIMIT $3`,
-    [userId, includeDeleted, limit ?? null],
+    `SELECT expense.* FROM expenses expense
+     WHERE expense.deleted_at IS NULL
+       AND ${expenseInvolvesSql("= $1")}
+     ORDER BY expense.expense_date DESC, expense.created_at DESC`,
+    [userId],
     client,
   );
 }
@@ -471,7 +632,7 @@ export async function loadExpenseChildren(
     );
   const loadItems = () =>
     includeItems ? query<ItemRow>(
-      `SELECT * FROM expense_items WHERE expense_id = ANY($1::text[])`,
+      `SELECT * FROM expense_items WHERE expense_id = ANY($1::text[]) ORDER BY position, id`,
       [expenseIds],
       client,
     ) : Promise.resolve([] as ItemRow[]);

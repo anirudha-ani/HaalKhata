@@ -1,8 +1,11 @@
 /** Expense form queries (me, groups, friends, expense being edited) + create/update/parse mutations. */
 
 import { RECEIPT_TIMEOUT_MS } from "@haalkhata/shared/api/timeouts";
+import { COMMENT_PAGE_SIZE } from "@haalkhata/shared/api/paging";
 import type { MessageInitShape } from "@bufbuild/protobuf";
+import type { PlainNumbers } from "@haalkhata/shared/api/wireNumbers";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useRef } from "react";
 import type { CreateExpenseRequestSchema } from "@haalkhata/protogen/expense/v1/expense_pb";
 import {
   authClient,
@@ -14,11 +17,12 @@ import {
 import { GroupStatus } from "@haalkhata/shared/group/status";
 import { groupsByStatus } from "@haalkhata/shared/group/archiving";
 import { MONEY_KEYS, queryKeys } from "@haalkhata/shared/api/queryKeys";
+import { EXPENSE_EDIT_CHECK_INTERVAL_MS } from "@haalkhata/shared/expense/merge/merge.constants";
 import { base64ToBytes } from "@/lib/encoding/encoding";
 import { offerPushExplainer } from "@/lib/push/pushStore";
 
-/** Plain-object init shape of a CreateExpenseRequest proto message. */
-export type CreateExpenseInput = MessageInitShape<typeof CreateExpenseRequestSchema>;
+/** Plain-object init shape of a CreateExpenseRequest proto message, with its money as plain numbers. */
+export type CreateExpenseInput = PlainNumbers<MessageInitShape<typeof CreateExpenseRequestSchema>>;
 
 /** A photo picked for scanning: its base64 payload and media type. */
 export interface ReceiptPhotoInput {
@@ -55,9 +59,30 @@ export function useNewExpenseAPI(editExpenseId: string) {
   });
   const editingQuery = useQuery({
     queryKey: queryKeys.expense(editExpenseId),
-    queryFn: () => expenseClient.getExpense({ expenseId: editExpenseId }),
+    // The same request as the expense's own screen, which shares this key.
+    queryFn: () => expenseClient.getExpense({ expenseId: editExpenseId, commentLimit: COMMENT_PAGE_SIZE }),
     enabled: editExpenseId !== "",
   });
+  // Asked again on a timer while the app is in front, so somebody else's
+  // save reaches a form that is open here.
+  const versionQuery = useQuery({
+    queryKey: queryKeys.expenseVersion(editExpenseId),
+    queryFn: () => expenseClient.getExpenseVersion({ expenseId: editExpenseId }),
+    enabled: editExpenseId !== "",
+    refetchInterval: EXPENSE_EDIT_CHECK_INTERVAL_MS,
+  });
+
+  /**
+   * Reads the expense as it is saved now, into the same cache entry.
+   *
+   * @returns The getExpense response.
+   */
+  const readLatest = () =>
+    queryClient.fetchQuery({
+      queryKey: queryKeys.expense(editExpenseId),
+      queryFn: () => expenseClient.getExpense({ expenseId: editExpenseId, commentLimit: COMMENT_PAGE_SIZE }),
+      staleTime: 0,
+    });
 
   /** Invalidates every balance/expense-affecting query after a write. */
   const invalidateMoney = () => {
@@ -76,10 +101,21 @@ export function useNewExpenseAPI(editExpenseId: string) {
     },
   });
   const update = useMutation({
-    mutationFn: (input: { expenseId: string; expense: CreateExpenseInput; preserveSplitType?: boolean }) =>
-      expenseClient.updateExpense(input),
+    mutationFn: (input: Parameters<typeof expenseClient.updateExpense>[0]) => expenseClient.updateExpense(input),
     onSuccess: invalidateMoney,
   });
+
+  // A scan answers this screen only. Leaving it, or starting another scan,
+  // hangs up on the one in flight: the server stops it and gives its lane
+  // to someone else rather than finishing a reply nobody will read.
+  const scanInFlight = useRef<AbortController | null>(null);
+  useEffect(() => () => scanInFlight.current?.abort(), []);
+  /** Hangs up on any scan in flight and returns the controller for a new one. */
+  const startScan = () => {
+    scanInFlight.current?.abort();
+    scanInFlight.current = new AbortController();
+    return scanInFlight.current;
+  };
 
   /**
    * Sends a receipt photo to the AI parser and yields the structured draft.
@@ -93,7 +129,7 @@ export function useNewExpenseAPI(editExpenseId: string) {
         mediaType: photo.mediaType,
         consentVersion: photo.consentVersion,
         currency: photo.currency,
-      }, { timeoutMs: RECEIPT_TIMEOUT_MS }),
+      }, { timeoutMs: RECEIPT_TIMEOUT_MS, signal: startScan().signal }),
   });
 
   return {
@@ -112,6 +148,9 @@ export function useNewExpenseAPI(editExpenseId: string) {
       (editExpenseId !== "" && editingQuery.isLoading),
     create,
     update,
+    savedVersion: versionQuery.data?.version,
+    versionCheckedAt: versionQuery.dataUpdatedAt,
+    readLatest,
     parse,
   };
 }

@@ -15,6 +15,8 @@ import { errorMessage } from "@/lib/api/connect";
 import { useHydrated } from "@/lib/hooks/useHydrated";
 import { scopeLabel } from "@haalkhata/shared/expense/settlePosition";
 import { outstandingBuckets } from "@haalkhata/shared/money/balances";
+import { LoadMoreFooter } from "@/components/ui/LoadMoreFooter/LoadMoreFooter";
+import { SHOW_OLDER_LINES_LABEL, statementEndLine } from "@haalkhata/shared/api/paging";
 import { LedgerStatement } from "./components/LedgerStatement/LedgerStatement";
 import { useFriendLedger } from "./hooks/useFriendLedger";
 
@@ -60,7 +62,6 @@ export function FriendDetailPage({
     friend,
     netCents,
     currency,
-    entries,
     groupBalances,
     isFriend = true,
     mutualGroups = [],
@@ -92,9 +93,9 @@ export function FriendDetailPage({
   const owedByYou = nets.filter((bucket) => bucket.cents < 0);
   // Their email and phone are private — the server sends them empty for
   // anyone but yourself — so the only things worth a line under the name are
-  // whether they have signed in yet and whether you have blocked them.
+  // whether they deleted their account and whether you have blocked them.
   const nameNote = [
-    friend.registered ? "" : PERSON_MENU_COPY.invited,
+    friend.deleted ? PERSON_MENU_COPY.deleted : "",
     view.isBlocked ? PERSON_MENU_COPY.blocked : "",
   ]
     .filter(Boolean)
@@ -361,7 +362,7 @@ export function FriendDetailPage({
       <section className="space-y-2">
         <h2 className="text-sm font-semibold tracking-wide text-ink-soft uppercase">History</h2>
 
-        {entries.length === 0 ? (
+        {view.entries.length === 0 ? (
           <div className="rounded-2xl border border-line bg-card px-4 py-10 text-center">
             <Check className="mx-auto h-8 w-8 text-pos-600" />
             <p className="mt-2 font-semibold">Nothing shared yet</p>
@@ -371,7 +372,7 @@ export function FriendDetailPage({
           </div>
         ) : (
           <LedgerStatement
-            entries={entries}
+            entries={view.entries}
             currency={currency}
             confirmingSettlementId={view.confirmingSettlementId}
             removingSettlementId={view.removingSettlementId}
@@ -379,11 +380,17 @@ export function FriendDetailPage({
             onRemoveSettlement={view.removeSettlement}
           />
         )}
-        {entries.length > 0 ? (
+        <LoadMoreFooter
+          hasMore={view.hasMoreEntries}
+          isLoadingMore={view.isLoadingMoreEntries}
+          onLoadMore={view.loadMoreEntries}
+          error={view.loadMoreError}
+          notice={view.statementNotice}
+          endLabel={view.entries.length > 0 ? statementEndLine(friend.name.split(" ")[0]) : ""}
+          label={SHOW_OLDER_LINES_LABEL}
+        />
+        {view.entries.length > 0 ? (
           <p className="text-xs text-ink-soft">
-            {view.ledger.truncated
-              ? "Showing the most recent lines — older ones still count toward every balance. "
-              : ""}
             &ldquo;Change&rdquo; is what each line did to your balance; positive means it went in
             your favour.{" "}
             {groupBalances.some((balance) => balance.simplified)

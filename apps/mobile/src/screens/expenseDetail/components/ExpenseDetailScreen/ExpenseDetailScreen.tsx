@@ -3,7 +3,7 @@
 import { ErrorState } from "@/components/ui/ErrorState";
 import { SafetyActions } from "@/components/safety/SafetyActions";
 import { useRouter } from "expo-router";
-import { Check, Lock, Pencil, Send, Trash2 } from "lucide-react-native";
+import { Check, Lock, Pencil, Radio, Send, Trash2 } from "lucide-react-native";
 import { Pressable, StyleSheet, TextInput, View } from "react-native";
 import { Text } from "@/components/ui/Text";
 import { PersonLink } from "@/components/people/PersonLink";
@@ -13,6 +13,8 @@ import { Avatar } from "@/components/ui/Avatar";
 import { Button } from "@/components/ui/Button";
 import { Money } from "@/components/ui/Money";
 import { Sheet } from "@/components/ui/Sheet/Sheet";
+import { ShowMoreFooter } from "@/components/ui/ShowMoreFooter/ShowMoreFooter";
+import { SHOW_EARLIER_COMMENTS_LABEL } from "@haalkhata/shared/api/paging";
 import { Spinner } from "@/components/ui/Spinner";
 import { errorMessage } from "@/lib/api/connect";
 import { settledStatus } from "@haalkhata/shared/expense/settledStatus";
@@ -91,10 +93,19 @@ export function ExpenseDetailScreen({ expenseId }: { expenseId: string }) {
   const isParticipant =
     isCreator ||
     expense.payers.some((payer) => payer.userId === meId) ||
-    expense.splits.some((split) => split.userId === meId);
+    expense.splits.some((split) => split.userId === meId) ||
+    (expenseDetail.detail?.liveSplit?.peopleIds.includes(meId ?? "") ?? false);
   const hasLaterSettlement = expenseDetail.detail?.hasLaterSettlement === true;
   const isDeleted = expense.deletedAt !== "";
   const isArchived = expenseDetail.detail?.groupStatus === GroupStatus.ARCHIVED;
+  // Somebody on this group expense has left the group: the server says which
+  // change it would refuse and why, so the screen says it in place of the
+  // button rather than offering one that fails. A refused delete always
+  // comes with a refused edit, so the edit's reason is the one to show.
+  const editRefusal = expenseDetail.detail?.editRefusal ?? "";
+  const canEdit = editRefusal === "";
+  const liveSplit = expenseDetail.detail?.liveSplit;
+  const canDelete = isCreator && (expenseDetail.detail?.deleteRefusal ?? "") === "";
   const deletion = expenseDetail.deletion;
   // Same wording as the list rows, from the same function — the list only
   // has room for the short label, so this screen is where the full sentence
@@ -172,16 +183,39 @@ export function ExpenseDetailScreen({ expenseId }: { expenseId: string }) {
         </View>
       ) : null}
 
-      {isParticipant && !isDeleted && !isArchived ? (
+      {liveSplit ? (
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => router.push(`/expenses/${expense.id}/live`)}
+          style={styles.liveBanner}
+        >
+          <Radio color={colors.brand700} size={16} />
+          <Text style={styles.liveBannerText}>Everyone is splitting this live. Open it to claim what you had.</Text>
+        </Pressable>
+      ) : null}
+
+      {isParticipant && !isDeleted && !isArchived && (canEdit || canDelete) ? (
         <View style={styles.actions}>
-          <Button
-            compact
-            icon={<Pencil color={colors.inkSoft} size={14} />}
-            label="Edit"
-            onPress={() => router.push(`/expenses/new?edit=${expense.id}`)}
-            variant="outline"
-          />
-          {isCreator ? (
+          {canEdit ? (
+            <Button
+              compact
+              icon={<Pencil color={colors.inkSoft} size={14} />}
+              label="Edit"
+              onPress={() => router.push(`/expenses/new?edit=${expense.id}`)}
+              variant="outline"
+            />
+          ) : null}
+          {canEdit && !liveSplit && expense.items.length > 0 ? (
+            <Button
+              busy={expenseDetail.isStartingLive}
+              compact
+              icon={<Radio color={colors.inkSoft} size={14} />}
+              label="Split live"
+              onPress={expenseDetail.startLive}
+              variant="outline"
+            />
+          ) : null}
+          {canDelete ? (
             <Button
               compact
               icon={<Trash2 color={colors.inkSoft} size={14} />}
@@ -193,7 +227,14 @@ export function ExpenseDetailScreen({ expenseId }: { expenseId: string }) {
         </View>
       ) : null}
 
-      {isParticipant && !isDeleted && !isArchived && hasLaterSettlement ? (
+      {isParticipant && !isDeleted && !isArchived && editRefusal ? (
+        <View style={styles.settlementNoteCard}>
+          <Lock color={colors.inkSoft} size={16} />
+          <Text style={styles.settlementNoteText}>{editRefusal}</Text>
+        </View>
+      ) : null}
+
+      {isParticipant && !isDeleted && !isArchived && hasLaterSettlement && (canEdit || canDelete) ? (
         <View style={styles.settlementNoteCard}>
           <Lock color={colors.inkSoft} size={16} />
           <Text style={styles.settlementNoteText}>
@@ -343,7 +384,17 @@ export function ExpenseDetailScreen({ expenseId }: { expenseId: string }) {
       {/* Comments */}
       <View style={styles.commentsSection}>
         <Text style={styles.cardTitle}>COMMENTS</Text>
-        {(expenseDetail.detail?.comments ?? []).map((comment) => (
+        {/* Older comments sit above the thread, so the control that reads
+            them, and why a page did not load, sit above it too. */}
+        <ShowMoreFooter
+          direction="earlier"
+          error={expenseDetail.earlierCommentsError}
+          hasMore={expenseDetail.hasEarlierComments}
+          isLoadingMore={expenseDetail.isLoadingEarlierComments}
+          label={SHOW_EARLIER_COMMENTS_LABEL}
+          onShowMore={expenseDetail.showEarlierComments}
+        />
+        {expenseDetail.comments.map((comment) => (
           <View key={comment.id} style={styles.commentCard}>
             {comment.author ? (
               <PersonLink meId={meId} userId={comment.author.id}>
@@ -432,6 +483,21 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     flexWrap: "wrap",
     gap: spacing.sm,
+  },
+  liveBanner: {
+    alignItems: "center",
+    backgroundColor: colors.brand50,
+    borderRadius: radii.lg,
+    flexDirection: "row",
+    gap: spacing.sm,
+    padding: spacing.md,
+  },
+  liveBannerText: {
+    color: colors.brand700,
+    flex: 1,
+    fontSize: 14,
+    fontWeight: "600",
+    lineHeight: 20,
   },
   amount: {
     color: colors.ink,

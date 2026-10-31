@@ -48,17 +48,6 @@ export const CODE_STEP = {
   inputLabel: "Verification code",
 } as const;
 
-/** The phone step, when the number turned up an invitation someone else made. */
-export const MERGE_STEP = {
-  title: "Is this you?",
-  body: "Someone already added this number to shared expenses.",
-  hint:
-    "If you recognize these people, this history is yours and moves onto your account. " +
-    "If you don't, the number was probably reassigned. Go back and leave it off.",
-  confirm: "Yes, that's me",
-  decline: "That's not me",
-} as const;
-
 /** The payment step. */
 export const PAYMENT_STEP = {
   title: "How do you want to be paid?",

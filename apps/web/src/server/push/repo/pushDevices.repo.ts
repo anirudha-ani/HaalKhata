@@ -14,6 +14,8 @@ export interface PushDeviceRow {
   app_version: string;
   /** users.token_version when the phone registered. */
   token_version: number;
+  /** The sign-in it registered under; null when not registered since sessions had rows. */
+  session_id: string | null;
   created_at: string;
   last_seen_at: string;
   last_sent_at: string | null;
@@ -21,11 +23,11 @@ export interface PushDeviceRow {
 
 /**
  * The condition a device must meet to be sent to: registered under the
- * owner's current session version, owner neither deleted, merged away nor
- * suspended. Expects push_devices as `device` and users as `owner`.
+ * owner's current session version, owner neither deleted nor suspended.
+ * Expects push_devices as `device` and users as `owner`.
  */
 const LIVE_DEVICE_CONDITION = `device.token_version = owner.token_version
-  AND owner.deleted_at IS NULL AND owner.suspended_at IS NULL AND owner.merged_into IS NULL`;
+  AND owner.deleted_at IS NULL AND owner.suspended_at IS NULL`;
 
 /**
  * Records a phone for a user, or refreshes it. One row per installation: a
@@ -33,11 +35,11 @@ const LIVE_DEVICE_CONDITION = `device.token_version = owner.token_version
  * Any other row still holding the same token is removed first, so the unique
  * token can move from a reinstalled app's old installation.
  *
- * The row is written only while the owner's token version still equals the
- * session's: a sign-out that committed first leaves nothing written, and one
- * that commits after leaves a row bound to the version it just retired.
+ * The row is written only while the session is live: a sign-out that committed
+ * first leaves nothing written, and one that commits after finds the row by
+ * its session and removes it.
  *
- * @param input - Owner, the version of the session registering, and the
+ * @param input - Owner, the session registering and its version, and the
  *   phone's installation id, token, platform, label and app version.
  * @param client - The registration's transaction.
  * @returns The stored row, or undefined when the session's version is no
@@ -47,6 +49,7 @@ export async function upsertPushDevice(
   input: {
     userId: string;
     tokenVersion: number;
+    sessionId: string;
     installationId: string;
     expoToken: string;
     platform: string;
@@ -62,9 +65,10 @@ export async function upsertPushDevice(
   );
   return queryOne<PushDeviceRow>(
     `INSERT INTO push_devices
-       (id, user_id, installation_id, expo_token, platform, label, app_version, token_version)
-     SELECT $1, $2, $3, $4, $5, $6, $7, $8
+       (id, user_id, installation_id, expo_token, platform, label, app_version, token_version, session_id)
+     SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9
       WHERE EXISTS (SELECT 1 FROM users WHERE id = $2 AND token_version = $8)
+        AND EXISTS (SELECT 1 FROM user_sessions WHERE id = $9 AND user_id = $2 AND ended_at IS NULL)
      ON CONFLICT (installation_id) DO UPDATE
        SET user_id = EXCLUDED.user_id,
            expo_token = EXCLUDED.expo_token,
@@ -72,6 +76,7 @@ export async function upsertPushDevice(
            label = EXCLUDED.label,
            app_version = EXCLUDED.app_version,
            token_version = EXCLUDED.token_version,
+           session_id = EXCLUDED.session_id,
            last_seen_at = now()
      RETURNING *`,
     [
@@ -83,7 +88,34 @@ export async function upsertPushDevice(
       input.label,
       input.appVersion,
       input.tokenVersion,
+      input.sessionId,
     ],
+    client,
+  );
+}
+
+/**
+ * Stops pushes to the phones of sessions that have ended. A phone that has not
+ * registered since sessions had rows cannot be told apart from another of the
+ * person's, so a phone's own session ending takes those too: the app
+ * registers again when it next opens, and a signed-out phone must not be left
+ * receiving the account's pushes.
+ *
+ * @param userId - Whose phones.
+ * @param sessionIds - The sessions that ended.
+ * @param includeUnbound - Whether to take phones bound to no session as well.
+ * @param client - The transaction ending them.
+ */
+export async function removePushDevicesOfSessions(
+  userId: string,
+  sessionIds: readonly string[],
+  includeUnbound: boolean,
+  client: PoolClient,
+): Promise<void> {
+  await execute(
+    `DELETE FROM push_devices
+      WHERE user_id = $1 AND (session_id = ANY($2::text[]) OR ($3 AND session_id IS NULL))`,
+    [userId, [...sessionIds], includeUnbound],
     client,
   );
 }

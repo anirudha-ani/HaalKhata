@@ -1,7 +1,7 @@
 /** All SQL for the operations table (idempotency keys for retried financial mutations). */
 
 import type { PoolClient } from "pg";
-import { execute, queryOne } from "@/server/common/db/db";
+import { execute, query, queryOne } from "@/server/common/db/db";
 import { OPERATION_RETENTION_HOURS } from "./operations.constants";
 
 /** The stored half of a claim: what the first request looked like and produced. */
@@ -27,38 +27,40 @@ export interface OperationKey {
  * alongside the original; it either finds the committed row or finds
  * nothing and claims for itself.
  *
- * Also prunes claims past retention, so the table never grows without
- * bound; the index on created_at keeps that cheap.
+ * A row for the same id older than retention is taken over in place, so a
+ * reused id runs again after {@link OPERATION_RETENTION_HOURS} whether or not
+ * the sweep has removed it. The statement touches no row but this id's own:
+ * clearing out other expired claims is the sweep's job, outside every money
+ * transaction ({@link pruneExpiredOperations}), so a claim never waits on, or
+ * holds up, an unrelated write.
  *
  * @param operation - The operation being claimed.
  * @param requestFingerprint - Digest of the request payload, minus the id.
  * @param client - The transaction the business row is written in.
  * @returns True when this transaction now owns the claim; false when a
- *   committed row already holds it.
+ *   committed row within retention already holds it.
  */
 export async function claimOperation(
   operation: OperationKey,
   requestFingerprint: string,
   client: PoolClient,
 ): Promise<boolean> {
-  await execute(
-    `DELETE FROM operations WHERE created_at < now() - ($1 || ' hours')::interval`,
-    [String(OPERATION_RETENTION_HOURS)],
-    client,
-  );
   const claimed = await queryOne<{ operation_id: string }>(
     `INSERT INTO operations (user_id, rpc, operation_id, request_fingerprint)
      VALUES ($1, $2, $3, $4)
-     ON CONFLICT DO NOTHING
+     ON CONFLICT (user_id, rpc, operation_id) DO UPDATE
+        SET request_fingerprint = EXCLUDED.request_fingerprint, result_id = NULL, created_at = now()
+      WHERE operations.created_at < now() - ($5 || ' hours')::interval
      RETURNING operation_id`,
-    [operation.userId, operation.rpc, operation.operationId, requestFingerprint],
+    [operation.userId, operation.rpc, operation.operationId, requestFingerprint, String(OPERATION_RETENTION_HOURS)],
     client,
   );
   return claimed !== undefined;
 }
 
 /**
- * Reads the committed claim for an operation, for replaying its result.
+ * Reads the committed claim for an operation, for replaying its result. A
+ * claim past retention counts as absent, as it does when claiming.
  *
  * @param operation - The operation to look up.
  * @param client - Transaction client.
@@ -70,8 +72,9 @@ export async function findOperation(
 ): Promise<OperationRow | undefined> {
   return queryOne<OperationRow>(
     `SELECT request_fingerprint, result_id FROM operations
-      WHERE user_id = $1 AND rpc = $2 AND operation_id = $3`,
-    [operation.userId, operation.rpc, operation.operationId],
+      WHERE user_id = $1 AND rpc = $2 AND operation_id = $3
+        AND created_at >= now() - ($4 || ' hours')::interval`,
+    [operation.userId, operation.rpc, operation.operationId, String(OPERATION_RETENTION_HOURS)],
     client,
   );
 }
@@ -95,4 +98,28 @@ export async function completeOperation(
     [operation.userId, operation.rpc, operation.operationId, resultId],
     client,
   );
+}
+
+/**
+ * Removes up to `batchSize` claims past retention, oldest first, in one
+ * autocommit statement on the pool — never inside a money transaction.
+ * Rows another transaction has locked are skipped rather than waited for,
+ * so two sweeps, or a sweep and a write, never queue behind each other.
+ *
+ * @param batchSize - Most rows to remove in this statement.
+ * @returns How many rows were removed.
+ */
+export async function pruneExpiredOperations(batchSize: number): Promise<number> {
+  const removed = await query<{ operation_id: string }>(
+    `DELETE FROM operations
+      WHERE (user_id, rpc, operation_id) IN (
+        SELECT user_id, rpc, operation_id FROM operations
+         WHERE created_at < now() - ($1 || ' hours')::interval
+         ORDER BY created_at
+         LIMIT $2
+           FOR UPDATE SKIP LOCKED)
+     RETURNING operation_id`,
+    [String(OPERATION_RETENTION_HOURS), batchSize],
+  );
+  return removed.length;
 }

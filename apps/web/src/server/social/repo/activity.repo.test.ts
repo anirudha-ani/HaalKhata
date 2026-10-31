@@ -53,4 +53,26 @@ describe("activity cursor validation", () => {
     expect(statement).not.toContain("(created_at, id) <");
     expect(values).toEqual([VIEWER_ID, 26]);
   });
+
+  it("binds a cursor to the microsecond, as the repository now writes it", async () => {
+    const microsecondTime = "2026-08-28T08:15:30.123456Z";
+    await listActivityPage(
+      { userId: VIEWER_ID },
+      { limit: 25, cursor: `${microsecondTime}|${ACTIVITY_ID}`, month: "" },
+    );
+
+    const [statement, values] = vi.mocked(query).mock.calls[0];
+    expect(statement).toContain("(created_at, id) < ($2, $3)");
+    expect(values).toEqual([VIEWER_ID, microsecondTime, ACTIVITY_ID, 26]);
+  });
+
+  it("rejects a microsecond cursor that is not a real date", async () => {
+    await listActivityPage(
+      { userId: VIEWER_ID },
+      { limit: 25, cursor: `2026-02-30T08:15:30.123456Z|${ACTIVITY_ID}`, month: "" },
+    );
+
+    const [statement] = vi.mocked(query).mock.calls[0];
+    expect(statement).not.toContain("(created_at, id) <");
+  });
 });

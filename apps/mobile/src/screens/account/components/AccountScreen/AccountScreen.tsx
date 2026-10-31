@@ -2,6 +2,7 @@
 
 import { NotificationSettings } from "@/components/account/NotificationSettings/NotificationSettings";
 import { ReceiptPermission } from "@/components/account/ReceiptPermission/ReceiptPermission";
+import { SignedInDevices } from "@/components/account/SignedInDevices/SignedInDevices";
 import { ContactDiscoverySetting } from "@/components/account/ContactDiscoverySetting/ContactDiscoverySetting";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { BlockedPeople } from "@/components/safety/BlockedPeople";
@@ -12,7 +13,6 @@ import { Check, LogOut, Share2 } from "lucide-react-native";
 import { Pressable, StyleSheet, TextInput, View } from "react-native";
 import { Text } from "@/components/ui/Text";
 import { DeleteAccount } from "@/components/account/DeleteAccount";
-import { MergePreview } from "@/components/account/MergePreview";
 import { DetailHeader } from "@/components/shell/DetailHeader/DetailHeader";
 import { useResponsiveLayout } from "@/lib/layout/hooks/useResponsiveLayout";
 import { Screen } from "@/components/shell/Screen/Screen";
@@ -52,7 +52,7 @@ export function AccountScreen() {
 /**
  * Renders the profile summary card, the editable profile form (display
  * name, phone number, default currency), the payment methods section, the
- * sign-out button, and the phone verification and merge sheets.
+ * sign-out button, and the phone verification sheet.
  *
  * @param props - Component props.
  * @param props.me - The signed-in user whose profile is shown and edited.
@@ -61,7 +61,7 @@ export function AccountScreen() {
 function ProfileForm({ me: currentUser }: { me: User }) {
   const form = useProfileForm(currentUser);
   const { isExpanded } = useResponsiveLayout();
-  useErrorToast(form.verificationPhone || form.pendingMerge ? "" : form.error);
+  useErrorToast(form.verificationPhone ? "" : form.error);
 
   return (
     <View style={styles.container}>
@@ -205,6 +205,10 @@ function ProfileForm({ me: currentUser }: { me: User }) {
       </View>
 
       <View style={styles.formCard}>
+        <SignedInDevices />
+      </View>
+
+      <View style={styles.formCard}>
         <Text accessibilityRole="header" style={styles.sectionTitle}>{ACCOUNT_SETTINGS_COPY.access}</Text>
         <View style={[styles.accountActions, isExpanded ? styles.accountActionsExpanded : null]}>
           <View style={isExpanded ? styles.accountAction : undefined}>
@@ -267,37 +271,6 @@ function ProfileForm({ me: currentUser }: { me: User }) {
               />
               <Text style={styles.fieldHint}>{form.codeHint}</Text>
             </View>
-          </View>
-        </Sheet>
-      ) : null}
-
-      {/* A number can already belong to an invitation someone made. Nothing
-          is written until this is answered, so it is a decision, not a
-          notice. */}
-      {form.pendingMerge ? (
-        <Sheet
-          footer={
-            <View style={styles.sheetBody}>
-              {form.error ? <Text accessibilityRole="alert" style={styles.error}>{form.error}</Text> : null}
-              <Button busy={form.isSaving} label="Yes, that's me" onPress={form.confirmMerge} />
-              <Button
-                disabled={form.isSaving}
-                label="That's not me"
-                onPress={form.declineMerge}
-                variant="outline"
-              />
-            </View>
-          }
-          onClose={form.declineMerge}
-          title="Is this you?"
-        >
-          <View style={styles.sheetBody}>
-            <Text style={styles.sheetText}>Someone already added this number to shared expenses.</Text>
-            <MergePreview currency={form.currency} preview={form.pendingMerge} />
-            <Text style={styles.fieldHint}>
-              If you recognize these people, this history is yours and will move onto your
-              account. If you don&apos;t, the number was probably reassigned — leave it off.
-            </Text>
           </View>
         </Sheet>
       ) : null}

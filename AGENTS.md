@@ -20,17 +20,24 @@ buf.yaml / buf.gen.yaml      codegen → packages/protogen (regenerated, gitigno
 packages/protogen/           @haalkhata/protogen — generated TS (do NOT edit, do NOT commit)
 packages/shared/             @haalkhata/shared — hand-written TS used by BOTH apps
   src/api/queryKeys.ts         query-key registry + MONEY_KEYS invalidation set
+  src/api/wireNumbers.ts       the API's int64 money ⇄ plain numbers, by schema;
+                               plainClient.ts wraps both apps' Connect clients,
+                               plainMessages.ts names the plain message types
   src/money/                   money.ts, money.constants.ts (+ colocated tests)
   src/expense/form/            shared form validation, payloads, previews and warnings
   src/expense/                 allocate.ts + splits.ts — cent-exact split math,
                                run by the SERVER usecase and by the client for
-                               its live per-person preview (one implementation)
+                               its live per-person preview (one implementation);
+                               merge/ (editing together) and live/ (live splits)
   src/payment/                 payment methods: detail kinds, starting points,
                                the validator (server + both forms), the form's
                                reducer, payer ordering and formatting
   src/analytics/               chart.ts (axis ceilings, bar lengths, tick text)
                                and insights.ts (wording, ranges, tail folding)
                                for the Insights dashboard on both apps
+  src/email/                   the one email check (isEmailAddress, canonicalEmail)
+  src/receipt/                 the receipt photo standard both apps prepare to
+                               and the server checks
   src/greeting.ts              time-of-day greeting
 apps/web/                    Next.js app
   src/server/<domain>/       per-domain fan-out mirroring /proto:
@@ -38,10 +45,15 @@ apps/web/                    Next.js app
     usecase/                   ALL business logic. No SQL, no transport types.
     handler.ts                 thin Connect handler. No SQL, no business logic.
     <domain>.constants.ts      constants for this domain
-  src/server/common/         shared infra: db/, ledger/, money/, secrets/,
+  src/server/common/         shared infra: db/, ledger/, secrets/,
                              rateLimit/, validation/, readiness/
-  src/server/api/connect/    context.ts (auth/cookies/error map), routes.ts, csrf.ts,
-                             adminRequest.ts (the admin services' host/origin checks)
+  src/server/api/connect/    routes.ts (each service, with its request cap and gate),
+                             context.ts (requireUser, session cookies, runUsecase),
+                             wire/ (plainService: handlers in plain numbers),
+                             connect.constants.ts; mount/ (what runs before a
+                             handler: mount options, CSRF, body deadline), session/
+                             (credentials), rateLimit/ (per-RPC limits), admin/ (the
+                             admin services' host/origin checks)
   src/config/                securityHeaders.ts (CSP) and adminSurface.ts (which
                              hostname reaches the admin page and its APIs)
   src/pages/api/connect/     [[...connect]].ts — mount point only
@@ -72,7 +84,7 @@ apps/mobile/                 Expo (React Native) app — @haalkhata/mobile
   split math is in `@haalkhata/shared/expense/` (the client previews with it).
 - `repo`: SQL only. No business decisions.
 - Within a crowded domain/layer, group by capability (for example
-  `auth/usecase/apple/`, `deletion/`, `merge/`, `phone/`, `session/`). Keep
+  `auth/usecase/apple/`, `deletion/`, `phone/`, `session/`). Keep
   tests beside the implementation. Shared infrastructure uses concern
   folders under `common/`; do not flatten it back into one directory.
 - UI must NOT import `@/server/*/repo/**` or `@/server/common/db/**` — go
@@ -82,8 +94,13 @@ apps/mobile/                 Expo (React Native) app — @haalkhata/mobile
 
 ## Conventions (mandated, enforced)
 
-- **Integer cents everywhere.** No floats for money. `int32` cents in proto,
-  `INTEGER` columns in Postgres, `allocate()` in `@haalkhata/shared/expense/allocate.ts`.
+- **Integer cents everywhere.** No floats for money. `int64` cents in proto,
+  `BIGINT` columns in Postgres, `allocate()` in `@haalkhata/shared/expense/allocate.ts`.
+  The code itself only sees plain numbers: every service registers through
+  `plainService` and every client is made with `plainClient`, which convert
+  protobuf-es's `bigint` at the boundary. Import a money-bearing message type
+  from `@haalkhata/shared/api/plainMessages`, never from protogen, in UI and
+  shared code.
 - **Server-recomputed splits.** Never trust client-supplied split amounts;
   recompute from the raw spec in the usecase.
 - **Transactions where they matter.** `insertExpense` / `replaceExpense` /
@@ -167,7 +184,7 @@ service BudgetService {
 message Budget {
   string id = 1;
   string name = 2;
-  int32 limit_cents = 3;
+  int64 limit_cents = 3;
   // …
 }
 // … request/response messages
@@ -216,8 +233,9 @@ Allowlists, limits, patterns for the domain — e.g. `BUDGET_TYPES`,
 
 ### 6. Handler: `src/server/budgets/handler.ts`
 
-Thin `ServiceImpl<typeof BudgetService>`. Each method:
-`runUsecase(async () => budget.createBudget(await requireUser(context), request), context)`.
+Thin `PlainServiceImpl<typeof BudgetService>` (from
+`api/connect/wire/plainService`: requests and responses in plain numbers).
+Each method: `runUsecase(async () => budget.createBudget(await requireUser(context), request), context)`.
 No SQL, no business logic. `requireUser` is async (awaits a token-version
 DB read) — always `await` it. Pass `context` to `runUsecase` so unexpected
 errors get logged with the RPC name.
@@ -227,8 +245,9 @@ errors get logged with the RPC name.
 ```ts
 import { BudgetService } from "@haalkhata/protogen/budgets/v1/budgets_pb";
 import { budgetHandler } from "@/server/budgets/handler";
+import { plainService } from "./wire/plainService";
 // …
-router.service(BudgetService, budgetHandler);
+router.service(BudgetService, plainService(BudgetService, budgetHandler));
 ```
 
 ### 8. UI: `src/app/<route>/`
@@ -296,19 +315,25 @@ with colocated tests. Mobile-specific rules:
   interceptor. Google sign-in uses `expo-auth-session`'s Google provider with
   the platform's native client id (`EXPO_PUBLIC_GOOGLE_{ANDROID,IOS}_CLIENT_ID`
   at build time; the server accepts them through `GOOGLE_MOBILE_CLIENT_IDS`)
-  and the same server-issued nonce as the web. Sessions renew themselves: once a token is past half its
-  seven-day life, any authenticated RPC returns a fresh one (a cookie for
+  and the same server-issued nonce as the web. Sessions renew themselves: once a token is a day
+  old, any authenticated RPC returns a fresh one (a cookie for
   the browser, the `x-haalkhata-session` header for mobile, which the
   interceptor stores). `Code.Unauthenticated` clears the session; the `(app)/_layout`
   gate redirects to /login. The server's CSRF guard exempts bearer clients.
+  Save anything session-bearing with `THIS_DEVICE_ONLY` (`src/lib/api/thisInstall.ts`):
+  it stays out of backups and phone transfers. The iOS Keychain outlives the app,
+  so `settleThisInstall` compares the install date kept beside the token before
+  the token is read. A different date means the app was deleted: that token is
+  not restored, and goes through the unfinished sign-out so the server ends it
+  too. An app update keeps the date, so updating never signs anybody out.
 - **Design tokens** come from `src/lib/theme/theme.ts` (the web's globals.css
   palette). No inline hex colors in screens.
 - **Motion and haptics go through `src/lib/motion/`.** Springs and durations
   are tokens in `motion.constants.ts`; entrances and step transitions are the
   prebuilt builders in `entrances.ts`; follow Reduce Motion with
   `useReduceMotion` (a fade, never a jump) and animate on the UI thread.
-  Haptics mark outcomes only (`haptics.ts`). Vitest aliases Reanimated and
-  expo-haptics to stand-ins in `src/lib/testing/`.
+  Haptics mark outcomes only (`haptics.ts`). Vitest aliases Reanimated,
+  expo-haptics and expo-application to stand-ins in `src/lib/testing/`.
 - **Onboarding asks once, after saying why.** The screen before an iOS
   permission alert has one button, Continue; the alert is where people say
   no (App Review 5.1.1(iv)). Device steps (contacts, notifications) run after
@@ -339,6 +364,10 @@ with colocated tests. Mobile-specific rules:
 - **Don't trust client split amounts** — recompute in the usecase.
 - **Don't add a `for` loop of `INSERT`s** — use the `multiRowValues` helper
   in `expenses.repo.ts` for bulk inserts.
+- **Find a person's expenses with `expenseInvolvesSql`** (in
+  `expense/repo/expenseInvolvement.ts`), never an `EXISTS (… UNION …)`
+  checked against each expense: that form cannot use the per-person indexes
+  and reads every expense in the app for one person's list.
 - **Don't run migrations inside `query()`** — migrations run once at mount
   time via `ensureMigrated()`; the query hot path is just `pool().query()`.
 - **Don't commit `packages/protogen/src/`** — it's gitignored and
@@ -356,14 +385,92 @@ with colocated tests. Mobile-specific rules:
   exact URL comparisons; Compose and direct deployments use different hosts.
 - **Don't read a secret from `process.env`** — go through `readSecret()` in
   `common/secrets/secrets.ts`, which honours the Docker `<NAME>_FILE` convention
-  production relies on. Without `DATABASE_URL` the pool assembles its URL
-  from `POSTGRES_PASSWORD(_FILE)` and the `POSTGRES_*` parts.
+  production relies on. That includes the full database URL, which carries
+  the password: `DATABASE_URL_FILE` wins over `DATABASE_URL`. Without either
+  the pool assembles its URL from `POSTGRES_PASSWORD(_FILE)` and the
+  `POSTGRES_*` parts.
+- **A request is capped and gated before it is read.** Connect reads,
+  unzips and decodes a body before any of the app's code runs, so the mount
+  (`api/connect/mount/mountOptions.ts`) caps every request at 64 KiB after
+  decompression, drops fields no message defines, and runs a request gate
+  that refuses a call without a validly signed session before reading its
+  body. A service whose legitimate requests are bigger gets its own cap in
+  `routes.ts`, with the arithmetic in `connect.constants.ts` and a case in
+  `mount/requestCaps.test.ts`. A call that works without a session is listed
+  in its service's `ANONYMOUS_*_RPCS` and its service gets its own gate
+  (auth and social do; the admin services' gate is `requireAdminPageRequest`);
+  `mount/requestGates.test.ts` fails when a handler that never asks for a
+  session is not listed, so a new anonymous call is never silently refused.
+- **A receipt photo is prepared on the device; the server never decodes
+  one.** Both apps turn any photo, HEIC and 200 MP camera JPEGs included,
+  into the standard in `@haalkhata/shared/receipt/receipt.constants` (a JPEG,
+  upright, at most 2576 px, no metadata): the web in the browser, with libheif
+  in a Web Worker for a HEIC the browser cannot open; mobile with
+  `expo-image-manipulator`. `receipt/usecase/image/preparedJpeg.ts` checks
+  the standard from the JPEG's headers, refuses anything else, strips EXIF
+  and forwards the bytes. A file's size says nothing about what it unpacks
+  to (a 20 KB HEIC can need 600 MB), which is why no upload is decoded here.
+  Never add an image decoder to the server; change the standard in shared
+  and both apps instead. Scans run in lanes (`receipt/usecase/scanLanes`):
+  6 at once per process, then a short line, one per person, and a scan
+  stops when its request goes away. The 5-a-minute allowance is spent only
+  once a scan has a lane, so being told "busy" costs nothing.
+- **There is one email check.** Whether text is an email address is
+  `isEmailAddress` (or `canonicalEmail`, which also trims and lower-cases)
+  in `@haalkhata/shared/email/email`; the server, the contacts lookup and the
+  payment-method form all call it. It measures the standard's lengths (254,
+  and 64 before the `@`) before it reads the shape, and the shape is loose,
+  something@something.something, because Google or Apple verified every
+  address that has an account. Never write another email pattern: one whose
+  parts can match the same characters takes seconds to refuse a long field,
+  and the server answers nobody while it does.
+- **An edit is a merge, not a replacement.** Several people can edit one
+  expense at once. A form sends what it opened (`base`) with what it wants,
+  and `mergeExpenseEdit` in `@haalkhata/shared/expense/merge` applies this
+  person's changes to the expense as it stands, part by part: each text field,
+  tax, tip, who paid, a receipt line's details, and each person's portion of a
+  line; on an expense that is not itemized the amount and split are one part.
+  Only a part two people changed to different values stops the save, as
+  `Code.Aborted` with nothing written, and the apps read the latest and offer
+  Keep mine or Use theirs. Receipt lines keep their ids across edits, which is
+  what makes a line the same line. Compare money with `sameMoney`, never by
+  cents: an equal split gives its odd cent to whoever the form listed first. A
+  form asks `GetExpenseVersion` every 10 s and folds in what it can
+  (`useExpenseEditSync`, one per app, over the shared `catchUpForm`).
+- **A live split is an ordinary expense with the door open.** One itemized
+  expense, 30 minutes (`LIVE_SPLIT_MINUTES`), and it adds no rule the bill would
+  not have anyway: any number of people can have paid, the normal form still
+  edits it, and nobody has to settle. People come in through a `live` invite
+  link (accounts only, as ever; on a group's bill joining joins the group, which
+  the join page says first; on a one-off it befriends them with whoever started
+  it and whoever paid). Every tap is a merged `UpdateExpense` through `liveEdits`
+  in shared, sent one at a time. While one runs, what each person paid follows
+  the total (`fitPayers`), so nothing is refused for not adding up, and somebody
+  who starts paying is befriended with everyone on a one-off, or they could
+  never settle. Lines may have nobody on them only while one runs, and such a
+  line counts against whoever paid, by what each paid (`unclaimedOnPayers`), so
+  the ledger is exact at every moment and the end moves no money:
+  `closeLiveSplit` writes those lines to the payers and announces the result
+  once. Nothing is announced before that, so nobody's phone buzzes per tick.
+  `live_split_people` is what lets somebody with no share yet read and edit, and
+  is deleted when it ends. A split rereads `GetExpense` on every tap on every
+  phone, so nothing that reads a group's history belongs in it: who a person
+  still owes is `ListOwedPeople`, keyed on their own debt (`billDebts`). See
+  `docs/live-split.md`.
+- **An expense never changes currency.** `updateExpense` keeps the saved
+  currency, group expenses included, and refuses an edit naming another;
+  the forms work in it when editing (`expenseFormCurrency` puts the saved
+  currency first). Converting is never the server's job.
 - **Money is per currency.** Balance maps are keyed by currency
   (`CurrencyCents` in `balance.usecase.ts`), responses carry `CurrencyAmount`
   buckets, and the legacy scalar fields are only the caller's default-currency
-  bucket. Never add cents across currencies, and pass every aggregate through
-  `toInt32Cents()` before it reaches a proto `int32` — an overflow is a
-  `failed_precondition`, not an encoder crash.
+  bucket. Never add cents across currencies.
+- **Every figure stays below 2^53.** One amount is at most `MAX_MONEY_CENTS`
+  (10^13, also a database CHECK), and `assertRoomInLedgers` refuses an
+  expense that takes anyone's expenses in one currency past
+  `MAX_PERSON_VOLUME_CENTS` (10^15). That is what keeps every balance and
+  total exact as a JavaScript number, so a new write path that stores an
+  expense must call it too; a new aggregate needs no check of its own.
 - **Side effects go in the transaction.** Activity, notification and
   friendship rows are written on the same `client` as the ledger change that
   announces them; repo insert functions take an optional `client` for that.
@@ -372,6 +479,33 @@ with colocated tests. Mobile-specific rules:
   handler); the usecase claims it with `beginOperation` inside the ledger
   transaction and `finishOperation` before commit, so a retry replays the
   stored result. Clients mint one per submit (`newOperationId()`).
+  `UpdateExpense` and `AddComment` use the same claim, so a retry neither
+  saves nor announces twice, and accept none from an older app. Claim
+  first, before any ledger lock, and never touch another claim in a money
+  write: claims past 24 hours are cleared by the background sweep
+  (`common/ledger/operationsSweep.ts`), because a write that cleared them
+  itself queued every other money write behind it and deadlocked with
+  a payment.
+- **A payment with no answer is not a failed payment.** When the reply to
+  `RecordSettlement` is lost, only the exact request can say what happened, so
+  `useSettleAttempt` (one per app, over the shared `settleAttempt`) fixes the
+  request when it is sent, sends that again until the server answers, and keeps
+  the attempt when the dialog closes, so reopening finishes it rather than
+  starting a second payment. Nothing else can be recorded with that person
+  meanwhile. Only a refusal the server actually gave means nothing was saved: a
+  rate limit or a network error does not. A new operation id means a new
+  payment, so mint one only for one. Attempts stop being sent at 23 hours because
+  the server forgets a claim at 24. They live in memory, like every figure.
+- **A payment locks only what it can touch, and never waits for long.**
+  Recording a payment between two people locks the active groups they share
+  (`sharedActiveGroups`), never every group either is in, reads that set
+  again under the locks and starts over if it grew; a payment to somebody
+  owed nothing is refused before any lock. Nobody can be in more than 200
+  groups (`MAX_GROUPS_PER_PERSON`, checked in `group/usecase/groupLimit.ts`
+  wherever someone joins). `withLedgerTransaction` gives every ledger
+  transaction a 5 s lock and 15 s statement limit and answers either, or a
+  deadlock Postgres broke, as busy with nothing saved. A new ledger path takes the fewest locks the
+  change needs, through `withLedgerTransaction`.
 - **A balance is read at one instant.** It is assembled from several
   statements, and a settlement committing between two of them yields a
   position that never existed. Every read that returns a figure
@@ -379,6 +513,9 @@ with colocated tests. Mobile-specific rules:
   `listExpenses`, `getExpense`) runs inside `snapshot()` from `common/db/db.ts`
   and passes its `client` to every statement, one at a time — one sent to
   the pool reads outside the snapshot and holds a second connection.
+  Never open a snapshot or transaction, or send a pool query, inside
+  another transaction: read the balance first, then open the transaction.
+  `connectionHold.ts` refuses it outside production and logs it in it.
 - **A net settlement is one unit.** Its cash and `offset` rows share a
   `net_settlements` parent and a deferred constraint trigger refuses a unit
   that does not cancel out or is only partly removed. Never insert, update
@@ -386,6 +523,17 @@ with colocated tests. Mobile-specific rules:
   `softDeleteNetSettlement`. A net settlement must carry the
   `position_digest` the person was shown; the write recomputes it under the
   locks and refuses a ledger that has moved.
+- **Nobody exists before signing up.** AddFriend and AddMembers find only
+  accounts; an email or phone with none is refused (`failed_precondition`)
+  and the clients offer the caller's profile link or the group's join link.
+  Never create a row for a stranger, and never add a path that claims or
+  merges one row into another (sign-up, phone verification or a link).
+  `chk_users_can_sign_in` refuses a live row with no password, Google or
+  Apple credential; the only credential-less rows are the "Deleted member"
+  stand-ins account deletion leaves. Invite links are `group`, `profile` or
+  `live`; a group link works for 7 days (`GROUP_INVITE_LINK_LIFETIME_DAYS` in shared)
+  and then answers `FailedPrecondition`, which both join pages show as
+  expired, with what to do.
 - **A person's payment methods reach only someone who owes them.** They are
   not on `User`. The one read of another person's methods is
   `listPayeeMethods`, called from `getFriendLedger` when the caller owes in
@@ -413,8 +561,33 @@ with colocated tests. Mobile-specific rules:
   `packages/shared/src/notifications/categories.ts` and the DB CHECK; until
   it has one it is never pushed. A push carries only `notificationId`,
   `link` and `recipientId` as data. See `docs/backend/push/push-service.md`.
+- **A session is meant to survive months of absence.** People open a bill
+  splitter when there is a bill, so a session lasts 400 days from the last time
+  the app was opened (`TOKEN_LIFETIME_SECONDS`, the most a browser keeps a
+  cookie). Do not add an idle timeout, a cap on renewal, or a rule that automatic
+  polling does not count as use. Because a session lasts this long, signing out
+  must really end it, which only the server can do (the cookie is `HttpOnly`):
+  the web takes the data off the screen at once through `SignOutGate`, keeps
+  asking until the server answers, and says so if it cannot. A refused session
+  anywhere inside the app goes the same way (`sessionWatch`), and every other
+  tab follows. Rotating `SESSION_SECRET` needs the old key kept for the same 400
+  days, or everyone who has not been back is signed out.
+- **A session is one device.** Each sign-in has a `user_sessions` row and its
+  token names it, so `LogOut` ends this device and nothing else, and settings can
+  list and end the others (`EndSession`, `EndOtherSessions`). Whether a session is
+  live is one rule, `sessionIsLive`, read by `requireUser` and the page guard
+  alike. Ending a session must also remove its phone from `push_devices`, in the
+  same transaction: go through `sessions.usecase`, never a bare `UPDATE`. The
+  device name is all that is kept of a browser's User-Agent, and `last_used_at`
+  moves at most once a day, when the session renews. Both exist so a person can
+  recognise their own devices: no admin figure or usage query may read them.
 - **Limiters are process-local** (`rateLimit.ts`, `phoneRateLimit.ts`): fine
-  for one container, wrong for two replicas — see `docs/plan.txt` §28.
+  for one container, wrong for two replicas — see `docs/plan.txt` §28. Use
+  the right table: `addressRateLimits` for a caller not signed in, keyed by
+  `clientNetwork()` (never the raw address: an IPv6 caller has a whole /64),
+  `accountRateLimits` for a signed-in one, `adminRateLimits` for the admin
+  page. Anonymous callers can flood their table; they cannot touch the
+  others. A limit that guards a secret belongs in Postgres.
 - **The admin surface is a hostname, and it is checked three times.**
   `requestSurface()` in `config/adminSurface.ts` decides whether a request
   is on the app or the admin page, and the page proxy, the Connect mount and
@@ -422,7 +595,7 @@ with colocated tests. Mobile-specific rules:
   `AdminAnalyticsService` and `AdminModerationService` exist; everywhere
   else none of them does. A new admin service goes in `ADMIN_RPC_PREFIXES`
   and starts every method with `requireAdminPageRequest` and the admin
-  session (`api/connect/adminRequest.ts`). A new page or
+  session (`api/connect/admin/adminRequest.ts`). A new page or
   service lands on the app surface by default and needs nothing. Do not add
   a second mount of `routes`, an exception to the gate, or a redirect where
   it answers 404. Do not rewrite to the admin page from the proxy either:

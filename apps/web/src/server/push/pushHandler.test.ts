@@ -17,9 +17,10 @@ const mocks = vi.hoisted(() => ({
 vi.mock("@/server/api/connect/context", () => ({
   requireUser: mocks.requireUser,
   runUsecase: vi.fn((operation: () => Promise<unknown>) => operation()),
+  currentSessionId: () => "session-1",
   sessionTokenVersion: () => 7,
 }));
-vi.mock("@/server/api/connect/rpcRateLimit", () => ({
+vi.mock("@/server/api/connect/rateLimit/rpcRateLimit", () => ({
   requireRateLimitedUser: mocks.requireRateLimitedUser,
   RPC_RATE_LIMITS: { registerDevice: 10, sendTestPush: 3, updatePushPreferences: 30 },
 }));
@@ -45,11 +46,11 @@ beforeEach(() => {
 });
 
 describe("pushHandler", () => {
-  it("rate-limits registration and binds it to the session's token version", async () => {
+  it("rate-limits registration and binds it to the session", async () => {
     const request = { expoPushToken: "t", installationId: "i", platform: "ios", label: "", appVersion: "" };
     await pushHandler.registerDevice(request as never, context);
     expect(mocks.requireRateLimitedUser).toHaveBeenCalledWith(context, "register-device", 10);
-    expect(mocks.registerDevice).toHaveBeenCalledWith("user-a", 7, request);
+    expect(mocks.registerDevice).toHaveBeenCalledWith("user-a", { id: "session-1", version: 7 }, request);
   });
 
   it("rate-limits test pushes", async () => {

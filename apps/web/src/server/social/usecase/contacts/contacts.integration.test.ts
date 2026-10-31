@@ -9,10 +9,11 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { Client } from "pg";
 import { ContactDiscovery } from "@haalkhata/protogen/common/v1/common_pb";
 import { ContactRelation } from "@haalkhata/protogen/social/v1/social_pb";
+import { testDatabaseName } from "@/server/common/testing/testDatabase";
 
 const ADMIN_URL =
   process.env.MERGE_TEST_ADMIN_URL ?? "postgres://haalkhata:change-me@127.0.0.1:5432/postgres";
-const TEST_DATABASE = "haalkhata_contacts_usecase_test";
+const TEST_DATABASE = testDatabaseName("haalkhata_contacts_usecase_test");
 const TEST_URL = ADMIN_URL.replace(/\/[^/]*$/, `/${TEST_DATABASE}`);
 const ALICE_PHONE = "+8801712345678";
 const STRANGER_PHONE = "+8801812345678";
@@ -62,9 +63,7 @@ describe.skipIf(!reachable)("contacts usecases against Postgres", () => {
         ('alice',  'Alice',    NULL,                 $1,   now(), '#c73e2e', 'sub-alice',  TRUE),
         ('bob',    'Bob',      'bob@example.com',    NULL, NULL,  '#c73e2e', 'sub-bob',    TRUE),
         ('carol',  'Carol',    'carol@example.com',  NULL, NULL,  '#c73e2e', 'sub-carol',  FALSE),
-        ('dora',   'Dora',     'dora@example.com',   NULL, NULL,  '#c73e2e', NULL,         TRUE),
-        ('erin',   'Erin',     'erin@example.com',   NULL, NULL,  '#c73e2e', 'sub-erin',   NULL),
-        ('fred',   'Fred',     'fred@example.com',   NULL, NULL,  '#c73e2e', NULL,         NULL)`,
+        ('erin',   'Erin',     'erin@example.com',   NULL, NULL,  '#c73e2e', 'sub-erin',   NULL)`,
       [ALICE_PHONE],
     );
   }, 60_000);
@@ -93,15 +92,15 @@ describe.skipIf(!reachable)("contacts usecases against Postgres", () => {
       ],
     });
 
-    // Erin never answered, which is findable by default. Carol said no. Dora
-    // and Fred are invitations nobody signed up for, whatever their column says.
+    // Erin never answered, which is findable by default. Carol said no. Dora,
+    // Fred and nobody have no account at all.
     expect(result.contacts.map((contact) => [contact.identifier, contact.user.id, contact.relation])).toEqual([
       [ALICE_PHONE, "alice", ContactRelation.NONE],
       ["bob@example.com", "bob", ContactRelation.NONE],
       ["erin@example.com", "erin", ContactRelation.NONE],
     ]);
     expect(result.remainingToday).toBe(5000 - 8);
-    // Unlike AddFriend, a lookup never creates an Invited row for an unknown number.
+    // A lookup never creates anything for an unknown number.
     expect((await database.query(`SELECT COUNT(*)::int AS total FROM users`)).rows[0].total).toBe(usersBefore);
     expect(
       (await database.query(`SELECT COUNT(*)::int AS total FROM users WHERE phone = $1`, [STRANGER_PHONE])).rows[0].total,
@@ -112,6 +111,7 @@ describe.skipIf(!reachable)("contacts usecases against Postgres", () => {
   });
 
   it("sends requests with notifications to findable accounts only", async () => {
+    // Dora and Fred name no account; nothing is sent or made for them.
     await sendFriendRequests("caller", ["alice", "bob", "carol", "dora", "fred"]);
 
     const requests = await database.query(

@@ -7,8 +7,8 @@
  */
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { ExpenseRow, PayerRow, SplitRow } from "@/server/expense/repo/expenses.repo";
-import type { SettlementRow } from "@/server/expense/repo/settlements.repo";
+import type { ListedExpenseRow, PayerRow, SplitRow } from "@/server/expense/repo/expenses.repo";
+import type { ListedSettlementRow } from "@/server/expense/repo/settlements.repo";
 import type { UserRow } from "@/server/auth/repo/users.repo";
 import type { GroupRow } from "@/server/group/repo/groups.repo";
 
@@ -21,7 +21,6 @@ vi.mock("@/server/common/db/db", async (importOriginal) => ({
 }));
 vi.mock("@/server/expense/repo/expenses.repo", () => ({
   listExpensesBetween: vi.fn(),
-  listExpensesByGroup: vi.fn(),
   listExpensesByGroups: vi.fn(),
   listExpensesInvolvingUser: vi.fn(),
   listOneOffExpensesBetween: vi.fn(),
@@ -54,15 +53,14 @@ vi.mock("@/server/payment/repo/paymentMethods.repo", () => ({
 import {
   amountOwed,
   getFriendLedger,
+  getGroupBalances,
   getOverallBalances,
   groupCancelsOut,
   netWithUser,
   owedByScope,
-  userNetInGroup,
 } from "./balance.usecase";
 import {
   listExpensesBetween,
-  listExpensesByGroup,
   listExpensesByGroups,
   listExpensesInvolvingUser,
   listOneOffExpensesBetween,
@@ -75,7 +73,7 @@ import {
   listSettlementsByGroups,
   listSettlementsInvolvingUser,
 } from "@/server/expense/repo/settlements.repo";
-import { findGroupsByIds, findGroupById, listGroupsByUser, listMembers } from "@/server/group/repo/groups.repo";
+import { findGroupsByIds, findGroupById, isMember, listGroupsByUser, listMembers } from "@/server/group/repo/groups.repo";
 import { findUserById, findUsersByIds } from "@/server/auth/repo/users.repo";
 import { listFriendIds } from "@/server/social/repo/friendships.repo";
 
@@ -88,7 +86,7 @@ const TRIP = "group-trip";
 /** Whether the trip group simplifies debts in the scenario being run. */
 let simplify = true;
 /** The settlement rows "stored" so far; tests append to simulate payments. */
-let settlementRows: SettlementRow[] = [];
+let settlementRows: ListedSettlementRow[] = [];
 
 /**
  * Builds the trip group's row with the scenario's current simplify mode.
@@ -115,7 +113,7 @@ function tripRow(): GroupRow {
  * @param description - Display description.
  * @returns An expenses-table row inside the trip group.
  */
-function expenseRow(expenseId: string, description: string): ExpenseRow {
+function expenseRow(expenseId: string, description: string): ListedExpenseRow {
   return {
     id: expenseId,
     group_id: TRIP,
@@ -130,9 +128,12 @@ function expenseRow(expenseId: string, description: string): ExpenseRow {
     tip_cents: 0,
     created_by: BOBBY,
     created_at: "2026-08-01T10:00:00Z",
-    ledger_event_order: "1",
+    created_at_exact: "2026-08-01T10:00:00.000000Z",
+    ledger_event_order: 1,
     deleted_at: null,
     deleted_by: null,
+    version: 1,
+    updated_by: null,
   };
 }
 
@@ -155,7 +156,7 @@ const splitsByExpense = new Map<string, SplitRow[]>([
  * @param expense - The expense row to inspect.
  * @returns The distinct user ids on the expense.
  */
-function participants(expense: ExpenseRow): Set<string> {
+function participants(expense: ListedExpenseRow): Set<string> {
   return new Set([
     ...(payersByExpense.get(expense.id) ?? []).map((payer) => payer.user_id),
     ...(splitsByExpense.get(expense.id) ?? []).map((split) => split.user_id),
@@ -193,6 +194,7 @@ beforeEach(() => {
 
   vi.mocked(findGroupById).mockImplementation(async () => tripRow());
   vi.mocked(listGroupsByUser).mockImplementation(async () => [tripRow()]);
+  vi.mocked(isMember).mockResolvedValue(true);
   vi.mocked(listMembers).mockResolvedValue([]);
   vi.mocked(findUserById).mockImplementation(async (userId: string) => userRow(userId));
   vi.mocked(findUsersByIds).mockImplementation(async (userIds: string[]) =>
@@ -200,7 +202,6 @@ beforeEach(() => {
   );
   vi.mocked(listFriendIds).mockResolvedValue([]);
 
-  vi.mocked(listExpensesByGroup).mockResolvedValue([groceries, dinner]);
   vi.mocked(listExpensesInvolvingUser).mockImplementation(async (userId: string) =>
     [groceries, dinner].filter((expense) => participants(expense).has(userId)),
   );
@@ -233,6 +234,19 @@ beforeEach(() => {
 });
 
 /**
+ * Each person's net in the trip, as the group's page works it out from the
+ * group's whole ledger.
+ *
+ * @returns Person id → net cents in dollars; > 0 ⇒ they are owed.
+ */
+async function tripNets(): Promise<Map<string, number>> {
+  return new Map((await getGroupBalances(ALICE, TRIP)).nets.map((memberNet) => [memberNet.userId, memberNet.netCents]));
+}
+
+/** Everyone in the trip at zero. */
+const SETTLED_TRIP = new Map([[ALICE, 0], [BOBBY, 0], [CARA, 0]]);
+
+/**
  * Appends a stored settlement inside the trip group.
  *
  * @param fromUser - Who paid.
@@ -251,7 +265,8 @@ function recordTripSettlement(fromUser: string, toUser: string, amountCents: num
     method_label: "",
     note: "",
     created_at: "2026-08-02T00:00:00Z",
-    ledger_event_order: "2",
+    created_at_exact: "2026-08-02T00:00:00.000000Z",
+    ledger_event_order: 2,
     deleted_at: null,
     recorded_by: fromUser,
     deleted_by: null,
@@ -263,16 +278,16 @@ describe("the settlement guards route with the group's mode", () => {
   it("simplified: the rerouted edge is owed, the pairwise one is not", async () => {
     // Alice's debt to Bob was rerouted into paying Cara directly; letting her
     // also pay Bob would let the same 1000 leave her twice.
-    expect(await amountOwed(ALICE, CARA, TRIP)).toBe(1000);
-    expect(await amountOwed(ALICE, BOBBY, TRIP)).toBe(0);
-    expect(await amountOwed(BOBBY, CARA, TRIP)).toBe(0);
+    expect(await amountOwed(ALICE, CARA, TRIP, "USD")).toBe(1000);
+    expect(await amountOwed(ALICE, BOBBY, TRIP, "USD")).toBe(0);
+    expect(await amountOwed(BOBBY, CARA, TRIP, "USD")).toBe(0);
   });
 
   it("pairwise: exactly the reverse", async () => {
     simplify = false;
-    expect(await amountOwed(ALICE, BOBBY, TRIP)).toBe(1000);
-    expect(await amountOwed(BOBBY, CARA, TRIP)).toBe(1000);
-    expect(await amountOwed(ALICE, CARA, TRIP)).toBe(0);
+    expect(await amountOwed(ALICE, BOBBY, TRIP, "USD")).toBe(1000);
+    expect(await amountOwed(BOBBY, CARA, TRIP, "USD")).toBe(1000);
+    expect(await amountOwed(ALICE, CARA, TRIP, "USD")).toBe(0);
   });
 
   it("owedByScope offers the simplified edge and only that", async () => {
@@ -368,10 +383,10 @@ describe("after paying along the simplified edge", () => {
   beforeEach(() => recordTripSettlement(ALICE, CARA, 1000));
 
   it("every guard, ledger and net reads settled", async () => {
-    expect(await amountOwed(ALICE, CARA, TRIP)).toBe(0);
+    expect(await amountOwed(ALICE, CARA, TRIP, "USD")).toBe(0);
     expect(await owedByScope(ALICE, CARA)).toEqual([]);
+    expect(await tripNets()).toEqual(SETTLED_TRIP);
     for (const member of [ALICE, BOBBY, CARA]) {
-      expect(await userNetInGroup(member, TRIP)).toBe(0);
       expect((await getOverallBalances(member)).counterparties).toEqual([]);
     }
   });
@@ -381,15 +396,13 @@ describe("after paying along the simplified edge", () => {
     // Pairwise the three debts are all real — Alice→Bob and Bob→Cara from the
     // expenses, Cara→Alice from the payment — and they cancel around the
     // loop. This is the state the balances panel explains to the user.
-    expect(await amountOwed(ALICE, BOBBY, TRIP)).toBe(1000);
-    expect(await amountOwed(BOBBY, CARA, TRIP)).toBe(1000);
-    expect(await amountOwed(CARA, ALICE, TRIP)).toBe(1000);
+    expect(await amountOwed(ALICE, BOBBY, TRIP, "USD")).toBe(1000);
+    expect(await amountOwed(BOBBY, CARA, TRIP, "USD")).toBe(1000);
+    expect(await amountOwed(CARA, ALICE, TRIP, "USD")).toBe(1000);
     // M-01: visible, but not payable — nobody owes anybody overall, so no
     // scope offers an edge of the loop to a cross-scope payment.
-    expect(await groupCancelsOut(TRIP)).toBe(true);
+    expect(await groupCancelsOut(TRIP, "USD")).toBe(true);
     expect(await owedByScope(ALICE, BOBBY)).toEqual([]);
-    for (const member of [ALICE, BOBBY, CARA]) {
-      expect(await userNetInGroup(member, TRIP)).toBe(0);
-    }
+    expect(await tripNets()).toEqual(SETTLED_TRIP);
   });
 });

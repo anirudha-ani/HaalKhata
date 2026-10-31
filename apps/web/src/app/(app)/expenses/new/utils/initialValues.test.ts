@@ -1,7 +1,7 @@
 /** Unit tests for the expense form's initial state, focused on the edit path. */
 
 import { describe, expect, it } from "vitest";
-import type { Expense } from "@haalkhata/protogen/expense/v1/expense_pb";
+import type { Expense } from "@haalkhata/shared/api/plainMessages";
 import { buildInitialValues } from "./initialValues";
 import { buildItemsPayload } from "@haalkhata/shared/expense/form/splitForm";
 
@@ -142,9 +142,9 @@ describe("round trip — opening an edit and saving it unchanged", () => {
 
     expect(buildItemsPayload(initial.items, "USD")).toEqual(
       expense.items.map((item) => ({
-        // Ids are dropped on the way out: UpdateExpense replaces the receipt
-        // wholesale rather than diffing rows.
-        id: "",
+        // Ids go back unchanged: they are how UpdateExpense merges two
+        // people's edits to one receipt line by line.
+        id: item.id,
         name: item.name,
         quantity: item.quantity,
         totalCents: item.totalCents,

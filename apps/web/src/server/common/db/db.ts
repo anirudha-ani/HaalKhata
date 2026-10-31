@@ -11,6 +11,8 @@ import {
   PLAINTEXT_DATABASE_HOSTS,
   WEAK_DATABASE_PASSWORDS,
 } from "@/server/common/db/db.constants";
+import { refuseSecondConnection, whileHoldingConnection } from "@/server/common/db/connectionHold";
+import { parseExactInt8 } from "@/server/common/db/int8";
 import { logError } from "@/server/common/logger";
 import { readSecret } from "@/server/common/secrets/secrets";
 
@@ -29,17 +31,28 @@ types.setTypeParser(types.builtins.TIMESTAMPTZ, (value) => new Date(value).toISO
 types.setTypeParser(types.builtins.TIMESTAMP, (value) => value);
 types.setTypeParser(types.builtins.DATE, (value) => value);
 
+// 64-bit integers — money columns, their sums, ledger sequence numbers — as
+// plain numbers, exact because every one the app keeps stays far below 2^53
+// (see parseExactInt8); pg would otherwise hand back strings.
+types.setTypeParser(types.builtins.INT8, parseExactInt8);
+
 /**
- * Resolves the Postgres connection string: DATABASE_URL when set; otherwise
- * assembled from the parts, with the password read through the `_FILE`
- * convention (POSTGRES_PASSWORD_FILE — the same secret the postgres image
- * initializes with) and URL-encoded, so no credential has to be exported
- * into the environment and no reserved character can break the URL.
+ * Resolves the Postgres connection string: the full URL when one is given;
+ * otherwise assembled from the parts, with the password read through the
+ * `_FILE` convention (POSTGRES_PASSWORD_FILE — the same secret the postgres
+ * image initializes with) and URL-encoded, so no credential has to be
+ * exported into the environment and no reserved character can break the URL.
+ *
+ * The full URL carries the password, so it is a secret like any other:
+ * DATABASE_URL_FILE first, then DATABASE_URL for development and tests. A
+ * DATABASE_URL_FILE that cannot be read is an error, never a reason to fall
+ * back to the parts and connect somewhere else.
  *
  * @returns The connection string to open the pool with.
  */
-function databaseUrl(): string {
-  if (process.env.DATABASE_URL) return process.env.DATABASE_URL;
+export function databaseUrl(): string {
+  const directUrl = readSecret("DATABASE_URL");
+  if (directUrl) return directUrl;
   const password = readSecret("POSTGRES_PASSWORD");
   if (!password) return DEFAULT_DATABASE_URL;
   const user = process.env.POSTGRES_USER ?? "haalkhata";
@@ -203,6 +216,7 @@ export async function query<ResultRow extends QueryResultRow>(
   params: unknown[] = [],
   client?: PoolClient,
 ): Promise<ResultRow[]> {
+  if (!client) refuseSecondConnection("a pool query");
   const executor = client ?? pool();
   const { rows } = await executor.query<ResultRow>(text, params as never[]);
   return rows;
@@ -241,7 +255,10 @@ export async function execute(
 
 /**
  * Runs operation inside BEGIN/COMMIT, rolling back if it throws; the supplied
- * client must be used for every statement inside the transaction.
+ * client must be used for every statement inside the transaction. A pool
+ * query, snapshot or transaction started inside it would take a second
+ * connection while this one is held, which is refused outside production
+ * (see connectionHold.ts).
  *
  * @param operation - Callback that performs all transactional statements on the supplied client.
  * @returns Whatever operation resolves to, once the transaction has committed.
@@ -249,12 +266,13 @@ export async function execute(
 export async function transaction<TransactionResult>(
   operation: (client: PoolClient) => Promise<TransactionResult>,
 ): Promise<TransactionResult> {
+  refuseSecondConnection("a transaction");
   const client = await pool().connect();
   let releaseError: Error | undefined;
   let transactionFailed = false;
   try {
     await client.query("BEGIN");
-    const result = await operation(client);
+    const result = await whileHoldingConnection(() => operation(client));
     await client.query("COMMIT");
     return result;
   } catch (error) {
