@@ -258,6 +258,13 @@ describe.skipIf(!reachable)("operation claims never make money writes wait on ea
     expect(await saraPayments()).toBe(before);
   });
 
+  it("marks a reused id with other contents apart from a refusal: it says an earlier attempt was saved", async () => {
+    const operationId = randomUUID();
+    await saraPaysTomas(100, operationId);
+
+    await expect(saraPaysTomas(200, operationId)).rejects.toMatchObject({ code: "already_exists" });
+  });
+
   it("runs a reused id again once its claim is a day old, swept or not", async () => {
     const operationId = randomUUID();
     const first = await usecase.createExpense(RAHIM, taxi(operationId));

@@ -1,13 +1,12 @@
 "use client";
 /** Modal for settling up: shows exactly which balances a payment settles, takes the amount and how the money moved, shows where to send it, then records it. */
 
-import { useRef, useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import type { User } from "@haalkhata/protogen/common/v1/common_pb";
 import { errorMessage, expenseClient } from "@/lib/api/connect";
-import { newOperationId } from "@/lib/operations/operationId";
-import { centsToInput, parseMoneyInput } from "@haalkhata/shared/money/money";
-import { MONEY_KEYS, queryKeys } from "@haalkhata/shared/api/queryKeys";
+import { centsToInput, formatMoney, parseMoneyInput } from "@haalkhata/shared/money/money";
+import { queryKeys } from "@haalkhata/shared/api/queryKeys";
 import { SETTLE_DIALOG_LEDGER_LIMIT } from "@haalkhata/shared/api/paging";
 import { ownMethodsFailedLine } from "@haalkhata/shared/payment/copy";
 import { CASH_CHOICE } from "@haalkhata/shared/payment/payeeMethods";
@@ -22,6 +21,7 @@ import {
 import { PayMethodChips } from "./components/PayMethodChips/PayMethodChips";
 import { PayeeMethodDetails } from "./components/PayeeMethodDetails/PayeeMethodDetails";
 import { usePayMethods } from "./hooks/usePayMethods";
+import { useSettleAttempt } from "./hooks/useSettleAttempt";
 
 /**
  * Renders the settle-up modal: who is paying whom, exactly which balances
@@ -93,7 +93,6 @@ export function SettleUpModal({
   /** Called when the modal is dismissed or the settlement is recorded. */
   onClose: () => void;
 }) {
-  const queryClient = useQueryClient();
   // Once the payer types an amount, it outranks our arithmetic; until then
   // the shown amount is what is being settled (see `amount` below).
   const [typedAmount, setTypedAmount] = useState("");
@@ -101,9 +100,7 @@ export function SettleUpModal({
   const [chosenCurrency, setChosenCurrency] = useState(initialCurrency);
   const [note, setNote] = useState("");
   const [error, setError] = useState("");
-  // One id per attempt at recording: a retry after a lost response sends
-  // the same one and gets the first recording back, never a second.
-  const operationIdRef = useRef(newOperationId());
+  const settlement = useSettleAttempt(other.id, onClose);
 
   // The pair's position, computed by the code that records settlements, so
   // this modal and the write it sends can never disagree about what is owed.
@@ -139,42 +136,6 @@ export function SettleUpModal({
     ? typedAmount
     : centsToInput(loaded ? payableCents : Math.max(suggestedCents, 0), currency);
 
-  const mutation = useMutation({
-    mutationFn: (amountCents: number) =>
-      expenseClient.recordSettlement({
-        groupId: "",
-        toUserId: other.id,
-        amountCents,
-        currency,
-        method: payMethods.settlementKey,
-        // The server keeps the method's name with the payment, so the
-        // history can say how the money moved.
-        paymentMethodId: payMethods.method?.id ?? "",
-        note,
-        received,
-        // One balance: the server records the payment in that scope alone.
-        // Everything: it names none, and the server settles the pair's net,
-        // cancelling whatever points the other way.
-        scopeGroupIds: reading.everything ? [] : [scopeId ?? ""],
-        netAcrossScopes: reading.everything,
-        // What was on screen; the server refuses if it no longer holds.
-        positionDigest: reading.digest,
-        operationId: operationIdRef.current,
-      }),
-    onSuccess: () => {
-      operationIdRef.current = newOperationId();
-      for (const moneyKey of MONEY_KEYS) queryClient.invalidateQueries({ queryKey: moneyKey });
-      onClose();
-    },
-    onError: (mutationError) => {
-      setError(errorMessage(mutationError));
-      // A refusal usually means the balances are not what this dialog is
-      // showing any more; reload them so the next attempt is against the
-      // real ones, and so the person can see what changed.
-      queryClient.invalidateQueries({ queryKey: queryKeys.friendLedger(other.id) });
-    },
-  });
-
   const amountCents = parseMoneyInput(amount, currency) ?? 0;
   // Said only when there is a payment to make: with nothing owed the
   // methods are not sent at all, and "has not added one" would be untrue.
@@ -205,7 +166,29 @@ export function SettleUpModal({
       setError(settleOverLimitMessage(reading, currency, firstName));
       return;
     }
-    mutation.mutate(cents);
+    setError("");
+    settlement.submit(
+      {
+        groupId: "",
+        toUserId: other.id,
+        amountCents: cents,
+        currency,
+        method: payMethods.settlementKey,
+        // The server keeps the method's name with the payment, so the
+        // history can say how the money moved.
+        paymentMethodId: payMethods.method?.id ?? "",
+        note,
+        received,
+        // One balance: the server records the payment in that scope alone.
+        // Everything: it names none, and the server settles the pair's net,
+        // cancelling whatever points the other way.
+        scopeGroupIds: reading.everything ? [] : [scopeId ?? ""],
+        netAcrossScopes: reading.everything,
+        // What was on screen; the server refuses if it no longer holds.
+        positionDigest: reading.digest,
+      },
+      formatMoney(cents, currency),
+    );
   };
 
   return (
@@ -416,16 +399,29 @@ export function SettleUpModal({
           className="w-full rounded-xl border border-line bg-card px-3 py-2.5 text-sm focus:border-brand-500 focus:outline-none"
         />
 
-        {error ? <p className="text-sm text-brand-600">{error}</p> : null}
+        {error || settlement.failure ? (
+          <p role="alert" className="text-sm text-brand-600">{error || settlement.failure}</p>
+        ) : null}
+        {settlement.notice ? <p role="status" className="text-sm font-medium text-pos-700">{settlement.notice}</p> : null}
+        {settlement.status ? (
+          <div role="status" className="space-y-1 rounded-xl border border-brand-200 bg-brand-50 px-3 py-2.5 text-sm">
+            <p className="font-medium text-brand-700">{settlement.status}</p>
+            {settlement.phase === "unsure" ? (
+              <button type="button" onClick={settlement.checkAgain} className="font-semibold text-brand-700 underline">
+                Check again
+              </button>
+            ) : null}
+          </div>
+        ) : null}
 
         <div className="space-y-1.5">
           <button
             type="button"
             onClick={submit}
-            disabled={mutation.isPending || !loaded || reading.rows.length === 0}
+            disabled={settlement.busy || !loaded || reading.rows.length === 0}
             className="w-full rounded-xl bg-pos-600 py-3 font-semibold text-white transition-colors hover:bg-pos-700 disabled:opacity-50"
           >
-            {mutation.isPending ? "Recording…" : "Record payment"}
+            {settlement.phase === "sending" ? "Recording…" : "Record payment"}
           </button>
           {/* Said plainly: this app is a ledger, not a payment processor. The
               received direction is a log of money that already arrived, so

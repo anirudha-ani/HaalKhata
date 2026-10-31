@@ -102,7 +102,7 @@ export async function beginOperation(
     throw new UsecaseError("unavailable", "that request is still being processed — try again");
   }
   if (existing.request_fingerprint !== fingerprint) {
-    invalid("operation_id was already used for a different request");
+    throw new UsecaseError("already_exists", "operation_id was already used for a different request");
   }
   if (existing.result_id === null) {
     throw new UsecaseError("unavailable", "that request is still being processed — try again");

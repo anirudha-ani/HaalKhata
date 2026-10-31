@@ -480,6 +480,16 @@ with colocated tests. Mobile-specific rules:
   (`common/ledger/operationsSweep.ts`), because a write that cleared them
   itself queued every other money write behind it and deadlocked with
   a payment.
+- **A payment with no answer is not a failed payment.** When the reply to
+  `RecordSettlement` is lost, only the exact request can say what happened, so
+  `useSettleAttempt` (one per app, over the shared `settleAttempt`) fixes the
+  request when it is sent, sends that again until the server answers, and keeps
+  the attempt when the dialog closes, so reopening finishes it rather than
+  starting a second payment. Nothing else can be recorded with that person
+  meanwhile. Only a refusal the server actually gave means nothing was saved: a
+  rate limit or a network error does not. A new operation id means a new
+  payment, so mint one only for one. Attempts stop being sent at 23 hours because
+  the server forgets a claim at 24. They live in memory, like every figure.
 - **A payment locks only what it can touch, and never waits for long.**
   Recording a payment between two people locks the active groups they share
   (`sharedActiveGroups`), never every group either is in, reads that set

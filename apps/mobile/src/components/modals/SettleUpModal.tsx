@@ -1,8 +1,8 @@
 /** Bottom sheet for settling up: shows exactly which balances a payment settles, takes the amount and how the money moved, shows where to send it, then records it. */
 
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import type { User } from "@haalkhata/protogen/common/v1/common_pb";
-import { useRef, useState } from "react";
+import { useState } from "react";
 import { StyleSheet, View } from "react-native";
 import { Text } from "@/components/ui/Text";
 import { Avatar } from "@/components/ui/Avatar";
@@ -12,11 +12,10 @@ import { Money } from "@/components/ui/Money";
 import { Sheet } from "@/components/ui/Sheet/Sheet";
 import { TextField } from "@/components/ui/TextField";
 import { errorMessage, expenseClient } from "@/lib/api/connect";
-import { newOperationId } from "@/lib/api/operationId";
-import { errorFeedback, successFeedback } from "@/lib/motion/haptics";
-import { MONEY_KEYS, queryKeys } from "@haalkhata/shared/api/queryKeys";
+import { successFeedback } from "@/lib/motion/haptics";
+import { queryKeys } from "@haalkhata/shared/api/queryKeys";
 import { SETTLE_DIALOG_LEDGER_LIMIT } from "@haalkhata/shared/api/paging";
-import { centsToInput, parseMoneyInput } from "@haalkhata/shared/money/money";
+import { centsToInput, formatMoney, parseMoneyInput } from "@haalkhata/shared/money/money";
 import { ownMethodsFailedLine } from "@haalkhata/shared/payment/copy";
 import { CASH_CHOICE } from "@haalkhata/shared/payment/payeeMethods";
 import { MAX_SETTLEMENT_NOTE_LENGTH } from "@haalkhata/shared/text/limits";
@@ -26,6 +25,7 @@ import {
 } from "@haalkhata/shared/expense/settlePosition";
 import { colors, radii, spacing } from "@/lib/theme/theme";
 import { usePayMethods } from "./hooks/usePayMethods";
+import { useSettleAttempt } from "./hooks/useSettleAttempt";
 import { PayeeMethodDetails } from "./PayeeMethodDetails";
 import { PayMethodChips } from "./PayMethodChips";
 import { offerPushExplainer } from "@/lib/push/pushStore";
@@ -100,7 +100,6 @@ export function SettleUpModal({
   /** Called when the sheet is dismissed or the settlement is recorded. */
   onClose: () => void;
 }) {
-  const queryClient = useQueryClient();
   // Once the payer types an amount, it outranks our arithmetic; until then
   // the shown amount is what is being settled (see `amount` below).
   const [typedAmount, setTypedAmount] = useState("");
@@ -108,10 +107,11 @@ export function SettleUpModal({
   const [chosenCurrency, setChosenCurrency] = useState(initialCurrency);
   const [note, setNote] = useState("");
   const [error, setError] = useState("");
-  // One id per attempt at recording: a retry after a lost response sends
-  // the same one and gets the first recording back, never a second.
-  const operationIdRef = useRef("");
-  if (operationIdRef.current === "") operationIdRef.current = newOperationId();
+  const settlement = useSettleAttempt(other.id, () => {
+    successFeedback();
+    onClose();
+    void offerPushExplainer();
+  });
 
   // The pair's position, computed by the code that records settlements, so
   // this sheet and the write it sends can never disagree about what is owed.
@@ -148,45 +148,6 @@ export function SettleUpModal({
     ? typedAmount
     : centsToInput(loaded ? payableCents : Math.max(suggestedCents, 0), currency);
 
-  const mutation = useMutation({
-    mutationFn: (amountCents: number) =>
-      expenseClient.recordSettlement({
-        groupId: "",
-        toUserId: other.id,
-        amountCents,
-        currency,
-        method: payMethods.settlementKey,
-        // The server keeps the method's name with the payment, so the
-        // history can say how the money moved.
-        paymentMethodId: payMethods.method?.id ?? "",
-        note,
-        received,
-        // One balance: the server records the payment in that scope alone.
-        // Everything: it names none, and the server settles the pair's net,
-        // cancelling whatever points the other way.
-        scopeGroupIds: reading.everything ? [] : [scopeId ?? ""],
-        netAcrossScopes: reading.everything,
-        // What was on screen; the server refuses if it no longer holds.
-        positionDigest: reading.digest,
-        operationId: operationIdRef.current,
-      }),
-    onSuccess: () => {
-      successFeedback();
-      operationIdRef.current = newOperationId();
-      for (const moneyKey of MONEY_KEYS) queryClient.invalidateQueries({ queryKey: moneyKey });
-      onClose();
-      void offerPushExplainer();
-    },
-    onError: (mutationError) => {
-      errorFeedback();
-      setError(errorMessage(mutationError));
-      // A refusal usually means the balances are not what this sheet is
-      // showing any more; reload them so the next attempt is against the
-      // real ones, and so the person can see what changed.
-      queryClient.invalidateQueries({ queryKey: queryKeys.friendLedger(other.id) });
-    },
-  });
-
   const amountCents = parseMoneyInput(amount, currency) ?? 0;
   // Said only when there is a payment to make: with nothing owed the
   // methods are not sent at all, and "has not added one" would be untrue.
@@ -217,17 +178,44 @@ export function SettleUpModal({
       setError(settleOverLimitMessage(reading, currency, firstName));
       return;
     }
-    mutation.mutate(cents);
+    setError("");
+    settlement.submit(
+      {
+        groupId: "",
+        toUserId: other.id,
+        amountCents: cents,
+        currency,
+        method: payMethods.settlementKey,
+        // The server keeps the method's name with the payment, so the
+        // history can say how the money moved.
+        paymentMethodId: payMethods.method?.id ?? "",
+        note,
+        received,
+        // One balance: the server records the payment in that scope alone.
+        // Everything: it names none, and the server settles the pair's net,
+        // cancelling whatever points the other way.
+        scopeGroupIds: reading.everything ? [] : [scopeId ?? ""],
+        netAcrossScopes: reading.everything,
+        // What was on screen; the server refuses if it no longer holds.
+        positionDigest: reading.digest,
+      },
+      formatMoney(cents, currency),
+    );
   };
 
   return (
     <Sheet
       footer={
         <View style={styles.submitBlock}>
-          {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
+          {error || settlement.failure ? (
+            <Text accessibilityRole="alert" style={styles.error}>{error || settlement.failure}</Text>
+          ) : null}
+          {settlement.notice ? <Text accessibilityLiveRegion="polite" style={styles.recorded}>{settlement.notice}</Text> : null}
+          {settlement.status ? <Text accessibilityLiveRegion="polite" style={styles.status}>{settlement.status}</Text> : null}
+          {settlement.phase === "unsure" ? <Button label="Check again" onPress={settlement.checkAgain} variant="outline" /> : null}
           <Button
-            busy={mutation.isPending}
-            disabled={!loaded || reading.rows.length === 0}
+            busy={settlement.phase === "sending"}
+            disabled={settlement.busy || !loaded || reading.rows.length === 0}
             label="Record payment"
             onPress={submit}
             variant="positive"
@@ -471,6 +459,17 @@ const styles = StyleSheet.create({
   },
   body: {
     gap: spacing.lg,
+  },
+  recorded: {
+    color: colors.pos700,
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  status: {
+    color: colors.brand700,
+    fontSize: 14,
+    fontWeight: "500",
+    lineHeight: 20,
   },
   error: {
     color: colors.brand600,

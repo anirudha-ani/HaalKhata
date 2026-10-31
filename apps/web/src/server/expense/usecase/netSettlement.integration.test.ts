@@ -481,6 +481,18 @@ describe.skipIf(!reachable)("net settlement against Postgres", () => {
     expect(await scopesBetween(PAYER, OWED)).toEqual({ firstOwes: [], secondOwes: ["grp-lisbon EUR 7599"] });
   });
 
+  it("answers a part payment sent again unchanged with the first, though the balances it named have moved", async () => {
+    await insertDebt(database, { id: "exp-part", groupId: null, amountCents: 5000, currency: "USD", paidBy: OWED, owedBy: PAYER });
+    const request = await netRequest(100, { operationId: "1b4e28ba-2fa1-41d2-883f-0016d3cca427" });
+    const first = await recordSettlement(PAYER, request);
+    const shownAfter = await digestShown(PAYER, OWED);
+
+    await expect(recordSettlement(PAYER, request)).resolves.toMatchObject({ id: first.id });
+
+    expect(await digestShown(PAYER, OWED)).toBe(shownAfter);
+    expect(shownAfter).not.toBe(request.positionDigest);
+  });
+
   it("is an ordinary payment, with no parent, when nothing points the other way", async () => {
     await insertDebt(database, { id: "exp-museum", groupId: null, amountCents: 4000, currency: "USD", paidBy: OWED, owedBy: PAYER });
     const parentsBefore = await countRows("net_settlements");
