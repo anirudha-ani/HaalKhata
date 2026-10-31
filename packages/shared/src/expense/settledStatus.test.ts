@@ -1,7 +1,7 @@
 /** Unit tests for the nothing-pending wording on expense rows. */
 
 import { describe, expect, it } from "vitest";
-import { settledStatus } from "./settledStatus";
+import { evenExpenseLabel, settledStatus } from "./settledStatus";
 
 describe("settledStatus", () => {
   it("speaks in the viewer's direction", () => {
@@ -42,5 +42,15 @@ describe("settledStatus", () => {
 
   it("survives missing names rather than printing an empty gap", () => {
     expect(settledStatus(false, false, []).explanation).toContain("You and the others");
+  });
+});
+
+describe("evenExpenseLabel", () => {
+  it("says a bill nobody else is on is just you", () => {
+    expect(evenExpenseLabel({ payers: [{ userId: "me" }], splits: [{ userId: "me" }] }, "me")).toBe("just you");
+  });
+
+  it("keeps the usual words when anybody else is on it", () => {
+    expect(evenExpenseLabel({ payers: [{ userId: "me" }], splits: [{ userId: "me" }, { userId: "ana" }] }, "me")).toBe("not involved / even");
   });
 });

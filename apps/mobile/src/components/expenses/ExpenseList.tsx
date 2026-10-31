@@ -9,7 +9,7 @@ import { Text } from "@/components/ui/Text";
 import { useResponsiveLayout } from "@/lib/layout/hooks/useResponsiveLayout";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Money } from "@/components/ui/Money";
-import { settledStatus } from "@haalkhata/shared/expense/settledStatus";
+import { evenExpenseLabel, settledStatus } from "@haalkhata/shared/expense/settledStatus";
 import { formatMoney } from "@haalkhata/shared/money/money";
 import { colors, radii, spacing } from "@/lib/theme/theme";
 import { CATEGORY_EMOJI } from "./categoryEmoji";
@@ -156,7 +156,7 @@ export function ExpenseList({
               {deleted ? (
                 <Text style={styles.netNone}>no longer counts</Text>
               ) : myNet === 0 ? (
-                <Text style={styles.netNone}>not involved / even</Text>
+                <Text style={styles.netNone}>{evenExpenseLabel(expense, meId)}</Text>
               ) : status ? (
                 <>
                   {/* The state, not a verdict on the expense: "settled" here

@@ -72,6 +72,11 @@ describe("settledExpenseIds", () => {
     expect(settledExpenseIds(expenses, VIEWER, new Map(), bothSettled)).toEqual(["dinner"]);
   });
 
+  it("never calls a bill with only the viewer on it settled", () => {
+    const expenses = [{ id: "mine", groupId: "", currency: "USD", participantIds: [VIEWER] }];
+    expect(settledExpenseIds(expenses, VIEWER, new Map(), new Map())).toEqual([]);
+  });
+
   it("treats a missing net as zero, not as pending", () => {
     // A counterparty absent from the net map has no ledger with the viewer at
     // all — nothing pending is exactly what that means.

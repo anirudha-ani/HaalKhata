@@ -9,7 +9,7 @@ import { EmptyState } from "@/components/ui/EmptyState/EmptyState";
 import { Money } from "@/components/ui/Money/Money";
 import { formatMoney } from "@haalkhata/shared/money/money";
 import { CATEGORY_EMOJI } from "./constants/categoryEmoji";
-import { settledStatus } from "@haalkhata/shared/expense/settledStatus";
+import { evenExpenseLabel, settledStatus } from "@haalkhata/shared/expense/settledStatus";
 
 /**
  * Group-agnostic expense list with a "your share" lens per row: each expense
@@ -138,7 +138,7 @@ export function ExpenseList({
                 {deleted ? (
                   <span className="text-xs text-ink-soft">no longer counts</span>
                 ) : myNet === 0 ? (
-                  <span className="text-xs text-ink-soft">not involved / even</span>
+                  <span className="text-xs text-ink-soft">{evenExpenseLabel(expense, meId)}</span>
                 ) : status ? (
                   <>
                     {/* The state, not a verdict on the expense: "settled"

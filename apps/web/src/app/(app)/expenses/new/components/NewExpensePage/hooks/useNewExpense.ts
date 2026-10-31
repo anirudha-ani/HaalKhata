@@ -473,11 +473,7 @@ export function useNewExpense(
     addPeople,
   });
 
-  // A group, or at least one other person — mirrors exactly what the picker
-  // shows, so the button never disables for a reason that isn't on screen.
-  const hasParticipants = groupId !== "" || friendIds.length > 0;
   const canSubmit =
-    hasParticipants &&
     description.trim() !== "" &&
     totalCents !== null &&
     totalCents > 0 &&

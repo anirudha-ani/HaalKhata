@@ -73,15 +73,15 @@ export function settledExpenseIds(
   oneOffNetByPair: ReadonlyMap<string, number>,
 ): string[] {
   return expenses
-    .filter((expense) =>
-      expense.groupId
-        ? (viewerNetByGroupScope.get(groupScopeKey(expense.groupId, expense.currency)) ?? 0) === 0
-        : expense.participantIds
-            .filter((participantId) => participantId !== viewerId)
-            .every(
-              (participantId) =>
-                (oneOffNetByPair.get(oneOffPairKey(participantId, expense.currency)) ?? 0) === 0,
-            ),
-    )
+    .filter((expense) => {
+      if (expense.groupId) {
+        return (viewerNetByGroupScope.get(groupScopeKey(expense.groupId, expense.currency)) ?? 0) === 0;
+      }
+      const otherIds = expense.participantIds.filter((participantId) => participantId !== viewerId);
+      // A bill with only you on it was never shared, so nothing about it is settled.
+      return otherIds.length > 0 && otherIds.every(
+        (participantId) => (oneOffNetByPair.get(oneOffPairKey(participantId, expense.currency)) ?? 0) === 0,
+      );
+    })
     .map((expense) => expense.id);
 }

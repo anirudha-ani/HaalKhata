@@ -61,6 +61,14 @@ it.each(["equal", "exact", "percent", "shares"] as const)("submits valid %s inpu
   expect(computeSplits(payload.splitType, payload.amountCents, payload.splitSpecs).reduce((total, split) => total + split.owedCents, 0)).toBe(1001);
 });
 
+it("saves a bill with only the person adding it", async () => {
+  await act(async () => root.render(createElement(Harness)));
+  act(() => controller.togglePerson("friend"));
+  act(() => { controller.setDescription("Lunch"); controller.setAmount("12.00"); });
+  expect(controller.friendIds).toEqual([]);
+  expect(controller.canSubmit).toBe(true);
+});
+
 it("keeps the operation id when retrying a failed request and retains the draft", async () => {
   await act(async () => root.render(createElement(Harness)));
   act(() => { controller.setDescription("Retry dinner"); controller.setAmount("10"); });
