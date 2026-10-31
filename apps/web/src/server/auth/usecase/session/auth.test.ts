@@ -6,7 +6,7 @@ import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 // touch the filesystem (the dev fallback writes data/.secret).
 process.env.SESSION_SECRET = "test-secret-key-for-vitest-0123456789abcdef";
 
-import { createToken, decodeSessionSecret, signPayload, tokenExpiresAt, tokenVersion, verifyToken } from "@/server/auth/usecase/session/session";
+import { createToken, decodeSessionSecret, isLegacyToken, sessionIsLive, signPayload, tokenExpiresAt, tokenSessionId, tokenVersion, verifyToken } from "@/server/auth/usecase/session/session";
 import { TOKEN_LIFETIME_SECONDS } from "@/server/auth/auth.constants";
 import { normalizePhone } from "@/server/auth/auth.constants";
 
@@ -20,29 +20,52 @@ describe("auth tokens", () => {
   });
 
   it("createToken → verifyToken round-trips the user id", () => {
-    const token = createToken("user-123", 0);
+    const token = createToken("user-123", 0, "session-1");
     expect(verifyToken(token)).toBe("user-123");
   });
 
   it("embeds and exposes the token version", () => {
-    const token = createToken("user-456", 7);
+    const token = createToken("user-456", 7, "session-1");
     expect(tokenVersion(token)).toBe(7);
   });
 
   it("exposes the embedded expiry for renewal decisions", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-08-28T00:00:00.000Z"));
-    const token = createToken("user-456", 0);
+    const token = createToken("user-456", 0, "session-1");
     expect(tokenExpiresAt(token)).toBe(
       Math.floor(Date.UTC(2026, 7, 28) / 1000) + TOKEN_LIFETIME_SECONDS,
     );
     expect(tokenExpiresAt("not-a-token")).toBeNaN();
   });
 
+  it("names the sign-in it belongs to", () => {
+    expect(tokenSessionId(createToken("user-1", 0, "session-7"))).toBe("session-7");
+  });
+
+  it("still accepts a token from before sign-ins had rows", () => {
+    const expiresAt = Math.floor(Date.now() / 1000) + 3600;
+    const payload = `v2.user-old.4.${expiresAt}`;
+    const legacy = `${payload}.${signPayload("session", payload)}`;
+
+    expect(verifyToken(legacy)).toBe("user-old");
+    expect(isLegacyToken(legacy)).toBe(true);
+    expect(tokenVersion(legacy)).toBe(4);
+    expect(tokenExpiresAt(legacy)).toBe(expiresAt);
+  });
+
+  it("gives an older token the same session every time, so a page load makes one row", () => {
+    const payload = `v2.user-old.4.${Math.floor(Date.now() / 1000) + 3600}`;
+    const legacy = `${payload}.${signPayload("session", payload)}`;
+
+    expect(tokenSessionId(legacy)).toBe(tokenSessionId(legacy));
+    expect(tokenSessionId(legacy)).toMatch(/^legacy-/);
+  });
+
   it("lasts 400 days, so somebody who rarely opens the app stays signed in", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-08-28T00:00:00.000Z"));
-    const token = createToken("user-456", 0);
+    const token = createToken("user-456", 0, "session-1");
 
     vi.setSystemTime(new Date(Date.UTC(2026, 7, 28 + 399)));
     expect(verifyToken(token)).toBe("user-456");
@@ -52,7 +75,7 @@ describe("auth tokens", () => {
   });
 
   it("rejects a token with a tampered payload", () => {
-    const token = createToken("user-789", 0);
+    const token = createToken("user-789", 0, "session-1");
     // Flip the last character of the signature to break it.
     const lastChar = token[token.length - 1];
     const flipped = lastChar === "a" ? "b" : "a";
@@ -61,7 +84,7 @@ describe("auth tokens", () => {
   });
 
   it("rejects a token with a tampered user id", () => {
-    const token = createToken("user-789", 0);
+    const token = createToken("user-789", 0, "session-1");
     // Replace the user id segment without re-signing.
     const segments = token.split(".");
     segments[0] = "attacker";
@@ -159,5 +182,39 @@ describe("normalizePhone", () => {
     expect(normalizePhone("not-a-number")).toBeNull();
     expect(normalizePhone("+999999999999")).toBeNull(); // invalid country/length
     expect(normalizePhone("617-555")).toBeNull(); // too short for the default region
+  });
+});
+
+describe("whether a session is live", () => {
+  const live = { token_version: 3, legacy_sessions_ended: false, session_found: true, session_ended: false };
+  const token = createToken("user-1", 3, "session-1");
+  const payload = `v2.user-1.3.${Math.floor(Date.now() / 1000) + 3600}`;
+  const legacy = `${payload}.${signPayload("session", payload)}`;
+
+  it("is when its row is there and has not ended", () => {
+    expect(sessionIsLive(token, live)).toBe(true);
+  });
+
+  it("is not once it has been signed out", () => {
+    expect(sessionIsLive(token, { ...live, session_ended: true })).toBe(false);
+  });
+
+  it("is not without a row, unless the token is from before rows", () => {
+    expect(sessionIsLive(token, { ...live, session_found: false })).toBe(false);
+    expect(sessionIsLive(legacy, { ...live, session_found: false })).toBe(true);
+  });
+
+  it("is not when the account's version has moved on", () => {
+    expect(sessionIsLive(token, { ...live, token_version: 4 })).toBe(false);
+    expect(sessionIsLive(legacy, { ...live, token_version: 4 })).toBe(false);
+  });
+
+  it("keeps an older token that was signed out, signed out", () => {
+    expect(sessionIsLive(legacy, { ...live, session_ended: true })).toBe(false);
+  });
+
+  it("stops older tokens once the account signed everything else out", () => {
+    expect(sessionIsLive(legacy, { ...live, session_found: false, legacy_sessions_ended: true })).toBe(false);
+    expect(sessionIsLive(token, { ...live, legacy_sessions_ended: true })).toBe(true);
   });
 });

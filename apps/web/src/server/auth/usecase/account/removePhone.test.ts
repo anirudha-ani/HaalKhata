@@ -9,12 +9,10 @@ const { setUserPhoneMock, findUserByIdMock } = vi.hoisted(() => {
 });
 
 vi.mock("@/server/auth/repo/users.repo", () => ({
-  bumpTokenVersion: vi.fn(),
   findUserByEmail: vi.fn(),
   findUserByGoogleSub: vi.fn(),
   findUserById: findUserByIdMock,
   findUserByPhone: vi.fn(),
-  findUserTokenVersion: vi.fn(),
   insertUser: vi.fn(),
   linkGoogleAccount: vi.fn(),
   markOnboarded: vi.fn(),

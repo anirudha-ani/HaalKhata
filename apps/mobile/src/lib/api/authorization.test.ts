@@ -1,11 +1,12 @@
 /** Transport-level account isolation under delayed authentication responses. */
 import { Code, ConnectError, type Interceptor } from "@connectrpc/connect";
 import { beforeEach, expect, it, vi } from "vitest";
-import { SESSION_RENEWAL_HEADER, SESSION_TRANSPORT_HEADER } from "@haalkhata/shared/auth/sessionRenewal";
+import { SESSION_RENEWAL_HEADER, SESSION_DEVICE_HEADER, SESSION_TRANSPORT_HEADER } from "@haalkhata/shared/auth/sessionRenewal";
 
 const storage = vi.hoisted(() => ({ getItemAsync: vi.fn(), setItemAsync: vi.fn(), deleteItemAsync: vi.fn() }));
 const cache = vi.hoisted(() => ({ clearMobileQueryCache: vi.fn() }));
 vi.mock("expo-secure-store", () => storage);
+vi.mock("expo-device", () => ({ modelName: "iPhone 15 Pro" }));
 vi.mock("./api.constants", () => ({ TOKEN_STORAGE_KEY: "test-session" }));
 vi.mock("./queryCache", () => cache);
 
@@ -78,6 +79,7 @@ it("attaches bearer headers and persists a current-session renewal", async () =>
   await authorization(async () => response("renewed"))(outgoing);
   expect(outgoing.header.get("Authorization")).toBe("Bearer current");
   expect(outgoing.header.get(SESSION_TRANSPORT_HEADER)).toBe("bearer");
+  expect(outgoing.header.get(SESSION_DEVICE_HEADER)).toBe("iPhone 15 Pro");
   expect(session.sessionToken()).toBe("renewed");
 });
 

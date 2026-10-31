@@ -22,7 +22,14 @@ service AuthService {
   rpc BeginAppleSignIn(BeginAppleSignInRequest) returns (AppleSignInChallenge);
   rpc LogInWithApple(LogInWithAppleRequest) returns (AuthResponse);
   rpc CompleteAppleSignIn(CompleteAppleSignInRequest) returns (AuthResponse);
+  // Signs out the device or browser making the call, and no other.
   rpc LogOut(google.protobuf.Empty) returns (google.protobuf.Empty);
+  // Everywhere this account is signed in.
+  rpc ListSessions(google.protobuf.Empty) returns (ListSessionsResponse);
+  // Signs one other device or browser out. Its next request is refused.
+  rpc EndSession(EndSessionRequest) returns (google.protobuf.Empty);
+  // Signs out every device and browser but the one making the call.
+  rpc EndOtherSessions(google.protobuf.Empty) returns (google.protobuf.Empty);
   // Permanently erases the authenticated account; shared cents are anonymized.
   rpc DeleteAccount(DeleteAccountRequest) returns (google.protobuf.Empty);
   rpc GetMe(google.protobuf.Empty) returns (common.v1.User);
@@ -192,4 +199,27 @@ message SetContactDiscoveryRequest {
   // True lets people who have the caller's number or email in their
   // contacts find them; false keeps them hidden.
   bool discoverable = 1;
+}
+
+// One sign-in, on a browser or a phone. Only what a person needs to recognise
+// their own device: no address, no location, and no record of what it did.
+message Session {
+  string id = 1;
+  // "Chrome on Mac", "iPhone 15 Pro".
+  string device = 2;
+  // True for the phone app, false for a browser.
+  bool is_app = 3;
+  string signed_in_at = 4;
+  // Noted at most once a day, when the session renews.
+  string last_used_at = 5;
+  // True for the session making this call.
+  bool current = 6;
+}
+
+message ListSessionsResponse {
+  repeated Session sessions = 1;
+}
+
+message EndSessionRequest {
+  string session_id = 1;
 }

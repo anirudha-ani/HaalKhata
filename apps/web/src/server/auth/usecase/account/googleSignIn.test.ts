@@ -23,8 +23,11 @@ vi.mock("google-auth-library", () => ({
   },
 }));
 
+vi.mock("../session/sessions.usecase", () => ({
+  startSession: vi.fn(async (user: { id: string }) => `session-of.${user.id}.`),
+}));
+
 vi.mock("@/server/auth/repo/users.repo", () => ({
-  bumpTokenVersion: vi.fn(),
   findUserByEmail: vi.fn(),
   findUserByGoogleSub: vi.fn(),
   findUserById: vi.fn(),

@@ -104,6 +104,7 @@ describe.skipIf(!reachable)("a Google sign-in racing the deletion of the account
   }, 60_000);
 
   beforeEach(async () => {
+    await database.query("DELETE FROM user_sessions");
     await database.query("DELETE FROM users");
     await database.query(
       "INSERT INTO users (id, email, name, avatar_color, password_hash) VALUES ($1, $2, 'Ana', '#336699', 'salt:hash')",

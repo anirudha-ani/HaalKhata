@@ -2,7 +2,7 @@
 
 import type { PlainServiceImpl } from "@/server/api/connect/wire/plainService";
 import type { PushService } from "@haalkhata/protogen/push/v1/push_pb";
-import { requireUser, runUsecase, sessionTokenVersion } from "@/server/api/connect/context";
+import { currentSessionId, requireUser, runUsecase, sessionTokenVersion } from "@/server/api/connect/context";
 import { requireRateLimitedUser, RPC_RATE_LIMITS } from "@/server/api/connect/rateLimit/rpcRateLimit";
 import * as devices from "@/server/push/usecase/devices/devices.usecase";
 import * as preferences from "@/server/push/usecase/preferences/preferences.usecase";
@@ -15,7 +15,7 @@ export const pushHandler: PlainServiceImpl<typeof PushService> = {
       async () =>
         devices.registerDevice(
           await requireRateLimitedUser(context, "register-device", RPC_RATE_LIMITS.registerDevice),
-          sessionTokenVersion(context),
+          { id: currentSessionId(context), version: sessionTokenVersion(context) },
           request,
         ),
       context,

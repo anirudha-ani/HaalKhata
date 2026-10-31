@@ -16,5 +16,8 @@ export const SESSION_RENEWAL_HEADER = "x-haalkhata-session";
  */
 export const SESSION_TRANSPORT_HEADER = "x-haalkhata-session-transport";
 
+/** Request header the phone app names its model in, for a person's list of sign-ins. */
+export const SESSION_DEVICE_HEADER = "x-haalkhata-device";
+
 /** The value of {@link SESSION_TRANSPORT_HEADER} for a bearer-token client. */
 export const BEARER_TRANSPORT = "bearer";

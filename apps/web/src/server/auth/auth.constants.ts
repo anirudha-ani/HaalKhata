@@ -22,8 +22,50 @@ export const TOKEN_LIFETIME_SECONDS = 60 * 60 * 24 * 400;
  */
 export const TOKEN_RENEWAL_THRESHOLD_SECONDS = TOKEN_LIFETIME_SECONDS - 60 * 60 * 24;
 
-/** Signed-session payload version; changing it deliberately invalidates legacy tokens. */
-export const SESSION_TOKEN_FORMAT = "v2";
+/** Signed-session payload version. */
+export const SESSION_TOKEN_FORMAT = "v3";
+
+/**
+ * The format before each sign-in had a row of its own. Still accepted, so
+ * nobody is signed out by the change: such a token is given a row and swapped
+ * for a current one the first time it is used.
+ */
+export const LEGACY_SESSION_TOKEN_FORMAT = "v2";
+
+/** The most sign-ins the account page lists, newest first. */
+export const MAX_LISTED_SESSIONS = 50;
+
+/** The longest device name kept; the sessions table's limit. */
+export const MAX_SESSION_DEVICE_LENGTH = 80;
+
+/** What a browser is called when its description says nothing recognisable. */
+export const UNNAMED_BROWSER_DEVICE = "A browser";
+
+/** How much of a browser's description is read; the rest cannot change the answer. */
+export const MAX_USER_AGENT_READ_LENGTH = 512;
+
+/** Browsers, most specific first: nearly every one of them also says Chrome or Safari. */
+export const BROWSER_MARKERS: readonly (readonly [marker: string, name: string])[] = [
+  ["Edg", "Edge"],
+  ["OPR/", "Opera"],
+  ["SamsungBrowser", "Samsung Internet"],
+  ["Firefox/", "Firefox"],
+  ["FxiOS", "Firefox"],
+  ["CriOS", "Chrome"],
+  ["Chrome/", "Chrome"],
+  ["Safari/", "Safari"],
+];
+
+/** Operating systems, most specific first: an iPhone also says "like Mac OS X", Android also says Linux. */
+export const SYSTEM_MARKERS: readonly (readonly [marker: string, name: string])[] = [
+  ["iPhone", "iPhone"],
+  ["iPad", "iPad"],
+  ["Android", "Android"],
+  ["CrOS", "Chromebook"],
+  ["Windows", "Windows"],
+  ["Macintosh", "Mac"],
+  ["Linux", "Linux"],
+];
 
 /** Minimum decoded HMAC key length accepted in production. */
 export const MIN_SESSION_SECRET_BYTES = 32;

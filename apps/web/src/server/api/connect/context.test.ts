@@ -9,11 +9,15 @@ import { SESSION_RENEWAL_HEADER } from "@haalkhata/shared/auth/sessionRenewal";
 process.env.SESSION_SECRET = "test-secret-key-for-vitest-0123456789abcdef";
 
 vi.mock("@/server/common/logger", () => ({ logError: vi.fn() }));
-vi.mock("@/server/auth/repo/users.repo", () => ({ findUserTokenVersion: vi.fn() }));
+vi.mock("@/server/auth/repo/sessions.repo", () => ({
+  findSessionStanding: vi.fn(),
+  insertSession: vi.fn(),
+  touchSession: vi.fn(),
+}));
 
 import { UsecaseError } from "@/server/common/errors";
 import { logError } from "@/server/common/logger";
-import { findUserTokenVersion } from "@/server/auth/repo/users.repo";
+import { findSessionStanding } from "@/server/auth/repo/sessions.repo";
 import { TOKEN_LIFETIME_SECONDS } from "@/server/auth/auth.constants";
 import { createToken, tokenExpiresAt, verifyToken } from "@/server/auth/usecase/session/session";
 import { SESSION_COOKIE } from "./connect.constants";
@@ -48,9 +52,14 @@ describe("requireUser session renewal", () => {
   function agedToken(daysUsed: number): string {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-08-01T00:00:00.000Z"));
-    const token = createToken("user-1", 3);
+    const token = createToken("user-1", 3, "session-1");
     vi.setSystemTime(new Date(Date.UTC(2026, 7, 1 + daysUsed)));
-    vi.mocked(findUserTokenVersion).mockResolvedValue(3);
+    vi.mocked(findSessionStanding).mockResolvedValue({
+      token_version: 3,
+      legacy_sessions_ended: false,
+      session_found: true,
+      session_ended: false,
+    });
     return token;
   }
 
@@ -74,7 +83,7 @@ describe("requireUser session renewal", () => {
     await requireUser(context);
 
     const setCookie = context.responseHeader.get("set-cookie") ?? "";
-    expect(setCookie).toContain(`${SESSION_COOKIE}=v2.user-1.3.`);
+    expect(setCookie).toContain(`${SESSION_COOKIE}=v3.user-1.3.session-1.`);
     expect(setCookie).not.toContain(token);
     expect(context.responseHeader.get(SESSION_RENEWAL_HEADER)).toBeNull();
   });

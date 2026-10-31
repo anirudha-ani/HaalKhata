@@ -6,17 +6,21 @@ import type { AuthService } from "@haalkhata/protogen/auth/v1/auth_pb";
 import * as auth from "@/server/auth/usecase/account/auth.usecase";
 import * as phoneNumber from "@/server/auth/usecase/phone/setPhone.usecase";
 import * as appleSignIn from "@/server/auth/usecase/apple/appleSignIn.usecase";
+import * as sessions from "@/server/auth/usecase/session/sessions.usecase";
 import { getSignInOptions } from "@/server/auth/usecase/apple/signInOptions.usecase";
 import { deleteAccount } from "@/server/auth/usecase/deletion/accountDeletion.usecase";
 import { setContactDiscovery } from "@/server/auth/usecase/account/contactDiscovery.usecase";
 import {
   clearSessionCookie,
+  currentSessionId,
   requireSignedSession,
   requireUser,
   runUsecase,
   setSessionCookie,
 } from "@/server/api/connect/context";
+import { requireRateLimitedUser, RPC_RATE_LIMITS } from "@/server/api/connect/rateLimit/rpcRateLimit";
 import { wantsBearerToken } from "@/server/api/connect/session/credentials";
+import { describeDevice } from "@/server/api/connect/session/device";
 import { accountRateLimits, addressRateLimits } from "@/server/common/rateLimit/rateLimit";
 import {
   ANONYMOUS_AUTH_RPCS,
@@ -119,20 +123,20 @@ export const authHandler: PlainServiceImpl<typeof AuthService> = {
   },
   /** Verifies native Apple proof and delivers the appropriate session credential. */
   async logInWithApple(request, handlerContext) {
-    return deliverSession(handlerContext, await runUsecase(() => appleSignIn.logInWithApple(request), handlerContext));
+    return deliverSession(handlerContext, await runUsecase(() => appleSignIn.logInWithApple(request, describeDevice(handlerContext.requestHeader)), handlerContext));
   },
   /** Redeems a browser callback using the initiating client's private verifier. */
   async completeAppleSignIn(request, handlerContext) {
-    return deliverSession(handlerContext, await runUsecase(() => appleSignIn.completeAppleSignIn(request), handlerContext));
+    return deliverSession(handlerContext, await runUsecase(() => appleSignIn.completeAppleSignIn(request, describeDevice(handlerContext.requestHeader)), handlerContext));
   },
   /** Creates (or claims) an account, then starts a session the way the client carries it. */
   async signUp(request, handlerContext) {
-    return deliverSession(handlerContext, await runUsecase(() => auth.signUp(request), handlerContext));
+    return deliverSession(handlerContext, await runUsecase(() => auth.signUp(request, describeDevice(handlerContext.requestHeader)), handlerContext));
   },
 
   /** Verifies credentials, then starts a session the way the client carries it. */
   async logIn(request, handlerContext) {
-    return deliverSession(handlerContext, await runUsecase(() => auth.logIn(request), handlerContext));
+    return deliverSession(handlerContext, await runUsecase(() => auth.logIn(request, describeDevice(handlerContext.requestHeader)), handlerContext));
   },
 
   /** Creates a short-lived, single-use nonce for a Google ID-token request. */
@@ -144,7 +148,7 @@ export const authHandler: PlainServiceImpl<typeof AuthService> = {
   async logInWithGoogle(request, handlerContext) {
     return deliverSession(
       handlerContext,
-      await runUsecase(() => auth.logInWithGoogle(request.idToken), handlerContext),
+      await runUsecase(() => auth.logInWithGoogle(request.idToken, describeDevice(handlerContext.requestHeader)), handlerContext),
     );
   },
 
@@ -153,7 +157,49 @@ export const authHandler: PlainServiceImpl<typeof AuthService> = {
     // First: a session revoked elsewhere is refused below, and that refusal
     // must still take its dead cookie with it.
     clearSessionCookie(handlerContext);
-    await runUsecase(async () => auth.logOut(await requireUser(handlerContext)), handlerContext);
+    await runUsecase(
+      async () => sessions.endCurrentSession(await requireUser(handlerContext), currentSessionId(handlerContext)),
+      handlerContext,
+    );
+    return {};
+  },
+
+  /** Everywhere the caller is signed in. */
+  async listSessions(_request, handlerContext) {
+    return runUsecase(
+      async () =>
+        sessions.listSessions(
+          await requireRateLimitedUser(handlerContext, "list-sessions", RPC_RATE_LIMITS.listSessions),
+          currentSessionId(handlerContext),
+        ),
+      handlerContext,
+    );
+  },
+
+  /** Signs one other device or browser out. */
+  async endSession(request, handlerContext) {
+    await runUsecase(
+      async () =>
+        sessions.endSession(
+          await requireRateLimitedUser(handlerContext, "end-session", RPC_RATE_LIMITS.endSession),
+          request.sessionId,
+          currentSessionId(handlerContext),
+        ),
+      handlerContext,
+    );
+    return {};
+  },
+
+  /** Signs out every device and browser but this one. */
+  async endOtherSessions(_request, handlerContext) {
+    await runUsecase(
+      async () =>
+        sessions.endOtherSessions(
+          await requireRateLimitedUser(handlerContext, "end-other-sessions", RPC_RATE_LIMITS.endOtherSessions),
+          currentSessionId(handlerContext),
+        ),
+      handlerContext,
+    );
     return {};
   },
 

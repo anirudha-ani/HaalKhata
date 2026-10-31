@@ -118,7 +118,7 @@ describe("request gates", () => {
   });
 
   it("refuse a call that needs a session when there is none, or only a forged one", () => {
-    const signed = createToken("user-gated", 0);
+    const signed = createToken("user-gated", 0, "session-gated");
     const forged = `${signed.slice(0, -4)}AAAA`;
 
     expect(() => requireSignedSession(contextFor("ListExpenses"))).toThrow(/sign in to continue/);

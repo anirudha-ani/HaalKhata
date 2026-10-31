@@ -51,6 +51,8 @@ export const queryKeys = {
    * @returns The query key tuple for that expense.
    */
   expense: (expenseId: string) => ["expense", expenseId] as const,
+  /** Everywhere the account is signed in. */
+  sessions: ["sessions"] as const,
   /**
    * Who the caller still owes in an expense's scope. Under the balances
    * prefix, so a payment refreshes it and a tap on the bill does not.

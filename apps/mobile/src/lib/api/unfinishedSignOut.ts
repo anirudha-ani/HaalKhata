@@ -1,9 +1,9 @@
 /**
  * A sign-out that could not reach the server, finished the next time it can.
  *
- * Signing out on the phone ends the session on the server (LogOut bumps the
- * account's token version, which also stops every phone's pushes). Offline,
- * that call fails: the phone forgets its token, but the server still treats
+ * Signing out on the phone ends this phone's session on the server, which also
+ * stops its pushes. Offline, that call fails: the phone forgets its token, but
+ * the server still treats
  * the session, and this phone's push registration, as live, so the signed-out
  * account's notifications keep arriving on the lock screen. The old token is
  * kept here, in the Keychain beside where the session lived, until LogOut

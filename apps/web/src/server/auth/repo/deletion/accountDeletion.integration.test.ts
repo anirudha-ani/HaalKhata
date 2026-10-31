@@ -86,11 +86,16 @@ describe.skipIf(!await databaseReachable())("permanent account deletion against 
     const infrastructure = await import("@/server/common/db/db"); await infrastructure.ensureMigrated();
     database = new Client({ connectionString: TEST_URL }); await database.connect(); await seed(database);
     const auth = await import("../../usecase/account/auth.usecase");
-    sessionUser = auth.sessionUser; originalToken = (await import("@/server/auth/usecase/session/session")).createToken(ACCOUNT_ID, 0);
+    sessionUser = auth.sessionUser; originalToken = await (await import("@/server/auth/usecase/session/sessions.usecase")).startSession({ id: ACCOUNT_ID, token_version: 0 }, { label: "Test", isApp: false });
     deletion = (await import("../../usecase/deletion/accountDeletion.usecase")).deleteAccount;
     before = await ledgerSnapshot(database);
     await deletion(ACCOUNT_ID, "DELETE");
   }, 60_000);
+
+  it("leaves no record of where the account was signed in", async () => {
+    const { rowCount } = await database.query("SELECT 1 FROM user_sessions WHERE user_id = $1", [ACCOUNT_ID]);
+    expect(rowCount).toBe(0);
+  });
 
   afterAll(async () => {
     await database?.end();

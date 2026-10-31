@@ -33,7 +33,6 @@ const {
 });
 
 vi.mock("@/server/auth/repo/users.repo", () => ({
-  bumpTokenVersion: vi.fn(),
   findUserByEmail: vi.fn(),
   findUserByGoogleSub: vi.fn(),
   findUserById: vi.fn(),

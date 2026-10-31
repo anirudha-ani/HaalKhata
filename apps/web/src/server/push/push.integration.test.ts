@@ -75,7 +75,8 @@ describe.skipIf(!reachable)("push notifications against Postgres", () => {
   let claimDuePushes: typeof import("@/server/push/repo/pushOutbox.repo").claimDuePushes;
   let insertNotifications: typeof import("@/server/social/repo/notifications.repo").insertNotifications;
   let transaction: typeof import("@/server/common/db/db").transaction;
-  let logOut: typeof import("@/server/auth/usecase/account/auth.usecase").logOut;
+  let sessionCount = 0;
+  let endCurrentSession: typeof import("@/server/auth/usecase/session/sessions.usecase").endCurrentSession;
 
   beforeAll(async () => {
     const admin = new Client({ connectionString: ADMIN_URL });
@@ -99,7 +100,7 @@ describe.skipIf(!reachable)("push notifications against Postgres", () => {
     ({ drainPushOutbox } = await import("@/server/push/usecase/dispatch/dispatch.usecase"));
     ({ claimDuePushes } = await import("@/server/push/repo/pushOutbox.repo"));
     ({ insertNotifications } = await import("@/server/social/repo/notifications.repo"));
-    ({ logOut } = await import("@/server/auth/usecase/account/auth.usecase"));
+    ({ endCurrentSession } = await import("@/server/auth/usecase/session/sessions.usecase"));
 
     database = new Client({ connectionString: TEST_URL });
     await database.connect();
@@ -162,10 +163,26 @@ describe.skipIf(!reachable)("push notifications against Postgres", () => {
     } as never);
   }
 
-  /** Registers Boba's phone under Boba's current session version. */
+  /**
+   * Signs somebody in on a phone.
+   *
+   * @param userId - Who.
+   * @returns The session, as a registration names it.
+   */
+  async function signedInPhone(userId: string) {
+    const { rows } = await database.query(`SELECT token_version FROM users WHERE id = $1`, [userId]);
+    const sessionId = `session-${userId}-${(sessionCount += 1)}`;
+    await database.query(
+      `INSERT INTO user_sessions (id, user_id, device, is_app, token_version, expires_at)
+       VALUES ($1, $2, 'iPhone 17', true, $3, now() + interval '1 day')`,
+      [sessionId, userId, rows[0].token_version],
+    );
+    return { id: sessionId, version: rows[0].token_version as number };
+  }
+
+  /** Registers Boba's phone under a session of Boba's. */
   async function bobaRegistersPhone() {
-    const { rows } = await database.query(`SELECT token_version FROM users WHERE id = $1`, [BOBA_ID]);
-    return registerDevice(BOBA_ID, rows[0].token_version, {
+    return registerDevice(BOBA_ID, await signedInPhone(BOBA_ID), {
       expoPushToken: BOBA_TOKEN,
       installationId: "install-boba-phone",
       platform: "ios",
@@ -226,8 +243,7 @@ describe.skipIf(!reachable)("push notifications against Postgres", () => {
 
   it("retries only the phone that failed, and a stale dead report keeps a re-registered phone", async () => {
     const phone = await bobaRegistersPhone();
-    const { rows } = await database.query(`SELECT token_version FROM users WHERE id = $1`, [BOBA_ID]);
-    await registerDevice(BOBA_ID, rows[0].token_version, {
+    await registerDevice(BOBA_ID, await signedInPhone(BOBA_ID), {
       expoPushToken: "ExponentPushToken[bobaipadbobaipadbobaip]",
       installationId: "install-boba-ipad",
       platform: "ios",
@@ -256,7 +272,7 @@ describe.skipIf(!reachable)("push notifications against Postgres", () => {
 
     // The phone reinstalls and registers a new token under the same row; the
     // old token's late "not registered" must not remove it.
-    await registerDevice(BOBA_ID, rows[0].token_version, {
+    await registerDevice(BOBA_ID, await signedInPhone(BOBA_ID), {
       expoPushToken: "ExponentPushToken[bobanewtokenbobanewtok]",
       installationId: "install-boba-phone",
       platform: "ios",
@@ -284,9 +300,27 @@ describe.skipIf(!reachable)("push notifications against Postgres", () => {
     await setSimplifyDebts(ANI_ID, { groupId: GROUP, simplify: false });
   });
 
-  it("stops pushing to a phone once its owner signs out everywhere", async () => {
-    const device = await bobaRegistersPhone();
-    await logOut(BOBA_ID);
+  it("stops pushing to a phone once it signs out, and leaves the owner's other phone alone", async () => {
+    const session = await signedInPhone(BOBA_ID);
+    const device = await registerDevice(BOBA_ID, session, {
+      expoPushToken: BOBA_TOKEN,
+      installationId: "install-boba-phone",
+      platform: "ios",
+      label: "iPhone 17",
+      appVersion: "1.1.0",
+    });
+    const otherPhone = await registerDevice(BOBA_ID, await signedInPhone(BOBA_ID), {
+      expoPushToken: "ExponentPushToken[bobaipadbobaipadbobaip]",
+      installationId: "install-boba-ipad",
+      platform: "ios",
+      label: "iPad",
+      appVersion: "1.1.0",
+    });
+
+    await endCurrentSession(BOBA_ID, session.id);
+
+    expect((await database.query(`SELECT 1 FROM push_devices WHERE id = $1`, [otherPhone.id])).rowCount).toBe(1);
+    await database.query(`DELETE FROM push_devices WHERE id = $1`, [otherPhone.id]);
     await aniAddsDinner();
     const provider = recordingProvider();
     const report = await drainPushOutbox(provider);
@@ -296,11 +330,10 @@ describe.skipIf(!reachable)("push notifications against Postgres", () => {
   });
 
   it("registers nothing for a session signed out between its authentication and the write", async () => {
-    const { rows } = await database.query(`SELECT token_version FROM users WHERE id = $1`, [CHAD_ID]);
-    const sessionVersion = rows[0].token_version;
-    await database.query(`UPDATE users SET token_version = token_version + 1 WHERE id = $1`, [CHAD_ID]);
+    const session = await signedInPhone(CHAD_ID);
+    await endCurrentSession(CHAD_ID, session.id);
     await expect(
-      registerDevice(CHAD_ID, sessionVersion, {
+      registerDevice(CHAD_ID, session, {
         expoPushToken: "ExponentPushToken[chadchadchadchadchadch]",
         installationId: "install-chad-phone",
         platform: "ios",
@@ -319,8 +352,7 @@ describe.skipIf(!reachable)("push notifications against Postgres", () => {
     await expect(bobaRegistersPhone()).rejects.toMatchObject({ code: "failed_precondition" });
     expect((await database.query(`SELECT 1 FROM push_devices`)).rowCount).toBe(0);
 
-    const { rows } = await database.query(`SELECT token_version FROM users WHERE id = $1`, [BOBA_ID]);
-    const again = await registerDevice(BOBA_ID, rows[0].token_version, {
+    const again = await registerDevice(BOBA_ID, await signedInPhone(BOBA_ID), {
       expoPushToken: BOBA_TOKEN,
       installationId: "install-boba-phone",
       platform: "ios",

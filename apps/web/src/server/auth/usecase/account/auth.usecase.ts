@@ -3,11 +3,13 @@
 import { assertSafeText } from "@/server/safety/usecase/contentFilter";
 import { providerDisplayName } from "../identity/providerDisplayName";
 import crypto from "node:crypto";
-import { createToken, verifyToken, tokenVersion } from "../session/session";
+import { findSessionStanding } from "@/server/auth/repo/sessions.repo";
+import { UNKNOWN_DEVICE, type DeviceDescription } from "../session/deviceLabel";
+import { sessionIsLive, tokenSessionId, verifyToken } from "../session/session";
+import { startSession } from "../session/sessions.usecase";
 import { promisify } from "node:util";
 import { OAuth2Client } from "google-auth-library";
 import {
-  bumpTokenVersion,
   findUserByEmail,
   findUserByGoogleSub,
   findUserById,
@@ -157,16 +159,20 @@ function requirePasswordAuthEnabled(): void {
  * (and can be added later via updateProfile once that supports it).
  *
  * @param input - Signup form values: email OR phone (E.164), display name, and plaintext password.
+ * @param device - What they signed up on.
  * @returns The created user in proto shape plus a fresh session token.
  * @throws UsecaseError "invalid_argument" for a bad email/phone, empty name, or short password.
  * @throws UsecaseError "already_exists" when an account already uses that email/phone.
  */
-export async function signUp(input: {
-  email: string;
-  phone: string;
-  name: string;
-  password: string;
-}) {
+export async function signUp(
+  input: {
+    email: string;
+    phone: string;
+    name: string;
+    password: string;
+  },
+  device: DeviceDescription = UNKNOWN_DEVICE,
+) {
   requirePasswordAuthEnabled();
   const name = requireName(input.name);
   validatePassword(input.password);
@@ -197,7 +203,7 @@ export async function signUp(input: {
     passwordHash: await hashPassword(input.password),
     phone: phone ?? null,
   });
-  return { user: toPrivateUser(user), token: createToken(user.id, user.token_version) };
+  return { user: toPrivateUser(user), token: await startSession(user, device) };
 }
 
 /**
@@ -205,11 +211,15 @@ export async function signUp(input: {
  * `email` or `phone` must be set; the account is looked up by whichever is.
  *
  * @param input - Login form values: email OR phone, and plaintext password.
+ * @param device - What they signed in on.
  * @returns The authenticated user in proto shape plus a fresh session token.
  * @throws UsecaseError "unauthenticated" when the identifier is unknown, the account has
  *   no password, or the password does not match.
  */
-export async function logIn(input: { email: string; phone: string; password: string }) {
+export async function logIn(
+  input: { email: string; phone: string; password: string },
+  device: DeviceDescription = UNKNOWN_DEVICE,
+) {
   requirePasswordAuthEnabled();
   const email = input.email.trim().toLowerCase();
   const phone = normalizePhone(input.phone);
@@ -222,7 +232,7 @@ export async function logIn(input: { email: string; phone: string; password: str
   if (!(await verifyPassword(input.password, user.password_hash))) {
     throw new UsecaseError("unauthenticated", "invalid email/phone or password");
   }
-  return { user: toPrivateUser(user), token: createToken(user.id, user.token_version) };
+  return { user: toPrivateUser(user), token: await startSession(user, device) };
 }
 
 // --- google sign-in --------------------------------------------------------
@@ -397,10 +407,11 @@ export async function verifyGoogleSignIn(
  * is someone new.
  *
  * @param idToken - Raw JWT credential produced by Google Identity Services.
+ * @param device - What they signed in on.
  * @returns The signed-in user in proto shape plus a fresh session token.
  * @throws UsecaseError "unauthenticated" when the token fails verification.
  */
-export async function logInWithGoogle(idToken: string) {
+export async function logInWithGoogle(idToken: string, device: DeviceDescription = UNKNOWN_DEVICE) {
   const claims = await verifyGoogleSignIn(idToken);
 
   let user = await findUserByGoogleSub(claims.googleSub);
@@ -423,7 +434,7 @@ export async function logInWithGoogle(idToken: string) {
     user = { ...user, avatar_url: claims.picture };
   }
 
-  return { user: toPrivateUser(user), token: createToken(user.id, user.token_version) };
+  return { user: toPrivateUser(user), token: await startSession(user, device) };
 }
 
 /**
@@ -471,15 +482,6 @@ export async function getMe(userId: string) {
 }
 
 /**
- * Revokes the caller's outstanding bearer tokens by bumping token_version.
- *
- * @param userId - Id of the authenticated caller signing out.
- */
-export async function logOut(userId: string): Promise<void> {
-  await bumpTokenVersion(userId);
-}
-
-/**
  * Updates the calling user's display name and default currency.
  *
  * Payment handles used to ride along on this request. They are now payment
@@ -518,9 +520,10 @@ export async function updateProfile(
  * Resolves a raw session token to the user it belongs to, for server
  * components that guard routes.
  *
- * Unlike bare {@link verifyToken}, this checks the embedded token_version
- * against the row and rejects suspended accounts — so a signed-out-everywhere
- * cookie stops rendering the app shell before every RPC inside it fails.
+ * Unlike bare {@link verifyToken}, this checks the session is live, by the
+ * same rule as the API, and rejects suspended accounts — so a cookie for a
+ * signed-out device stops rendering the app shell before every RPC inside it
+ * fails.
  *
  * @param token - Raw session token from the cookie.
  * @returns The user in proto shape, or null when the token is not usable.
@@ -528,10 +531,10 @@ export async function updateProfile(
 export async function sessionUser(token: string) {
   const userId = verifyToken(token);
   if (!userId) return null;
+  const standing = await findSessionStanding(userId, tokenSessionId(token));
+  if (!standing || !sessionIsLive(token, standing)) return null;
   const user = await findUserById(userId);
-  if (!user || user.suspended_at) return null;
-  if (user.token_version !== tokenVersion(token)) return null;
-  return toPrivateUser(user);
+  return user ? toPrivateUser(user) : null;
 }
 
 /**

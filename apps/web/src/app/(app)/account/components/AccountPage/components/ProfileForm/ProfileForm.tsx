@@ -3,6 +3,7 @@
 
 import { NotificationSettings } from "@/components/account/NotificationSettings/NotificationSettings";
 import { ReceiptPermission } from "@/components/account/ReceiptPermission/ReceiptPermission";
+import { SignedInDevices } from "@/components/account/SignedInDevices/SignedInDevices";
 import { ContactDiscoverySetting } from "@/components/account/ContactDiscoverySetting/ContactDiscoverySetting";
 import { BlockedPeople } from "@/components/safety/BlockedPeople/BlockedPeople";
 import { LegalLinks } from "@/components/legal/LegalLinks/LegalLinks";
@@ -193,6 +194,8 @@ export function ProfileForm({ me: currentUser }: { me: User }) {
           </section>
         </div>
       </div>
+
+      <SignedInDevices />
 
       <section className="space-y-4 rounded-2xl border border-line bg-card p-5">
         <h2 className="text-lg font-semibold">{ACCOUNT_SETTINGS_COPY.access}</h2>

@@ -74,6 +74,7 @@ export async function eraseAccountData(input: { userId: string; anonymousId: str
   await execute("DELETE FROM apple_sign_in_challenges WHERE user_id = $1", [input.userId], client);
   await execute("DELETE FROM apple_credentials WHERE user_id = $1", [input.userId], client);
   await execute("DELETE FROM push_devices WHERE user_id = $1", [input.userId], client);
+  await execute("DELETE FROM user_sessions WHERE user_id = $1", [input.userId], client);
   await execute("DELETE FROM push_preferences WHERE user_id = $1", [input.userId], client);
   await execute("DELETE FROM push_kept_off WHERE user_id = $1", [input.userId], client);
   await execute("DELETE FROM payment_handles WHERE user_id = $1", [input.userId], client);

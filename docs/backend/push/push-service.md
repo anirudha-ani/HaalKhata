@@ -124,7 +124,7 @@ never calls Expo, so an Expo outage does not take the app down.
 
 | Table | What it holds |
 | --- | --- |
-| `push_devices` | One row per installation: token, platform, label, `token_version`, last seen and last sent |
+| `push_devices` | One row per installation: token, platform, label, `token_version`, `session_id`, last seen and last sent. Ending that session removes the row |
 | `push_preferences` | One row per person who changed a switch |
 | `push_outbox` | Committed bell rows not yet handed to Expo, with the phones already reached |
 | `push_tickets` | Accepted sends whose receipt is unread, with the token each went to |

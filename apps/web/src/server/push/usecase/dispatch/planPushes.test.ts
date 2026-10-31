@@ -50,6 +50,7 @@ function phone(identifier: string, owner = "user-b"): PushDeviceRow {
     label: "iPhone",
     app_version: "1.1.0",
     token_version: 0,
+    session_id: null,
     created_at: "2026-10-01T00:00:00.000Z",
     last_seen_at: "2026-10-16T00:00:00.000Z",
     last_sent_at: null,

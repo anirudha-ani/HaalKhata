@@ -2,6 +2,7 @@
 
 import { NotificationSettings } from "@/components/account/NotificationSettings/NotificationSettings";
 import { ReceiptPermission } from "@/components/account/ReceiptPermission/ReceiptPermission";
+import { SignedInDevices } from "@/components/account/SignedInDevices/SignedInDevices";
 import { ContactDiscoverySetting } from "@/components/account/ContactDiscoverySetting/ContactDiscoverySetting";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { BlockedPeople } from "@/components/safety/BlockedPeople";
@@ -201,6 +202,10 @@ function ProfileForm({ me: currentUser }: { me: User }) {
             <LegalLinks layout="rows" />
           </View>
         </View>
+      </View>
+
+      <View style={styles.formCard}>
+        <SignedInDevices />
       </View>
 
       <View style={styles.formCard}>

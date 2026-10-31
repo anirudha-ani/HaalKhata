@@ -556,6 +556,15 @@ with colocated tests. Mobile-specific rules:
   anywhere inside the app goes the same way (`sessionWatch`), and every other
   tab follows. Rotating `SESSION_SECRET` needs the old key kept for the same 400
   days, or everyone who has not been back is signed out.
+- **A session is one device.** Each sign-in has a `user_sessions` row and its
+  token names it, so `LogOut` ends this device and nothing else, and settings can
+  list and end the others (`EndSession`, `EndOtherSessions`). Whether a session is
+  live is one rule, `sessionIsLive`, read by `requireUser` and the page guard
+  alike. Ending a session must also remove its phone from `push_devices`, in the
+  same transaction: go through `sessions.usecase`, never a bare `UPDATE`. The
+  device name is all that is kept of a browser's User-Agent, and `last_used_at`
+  moves at most once a day, when the session renews. Both exist so a person can
+  recognise their own devices: no admin figure or usage query may read them.
 - **Limiters are process-local** (`rateLimit.ts`, `phoneRateLimit.ts`): fine
   for one container, wrong for two replicas — see `docs/plan.txt` §28. Use
   the right table: `addressRateLimits` for a caller not signed in, keyed by

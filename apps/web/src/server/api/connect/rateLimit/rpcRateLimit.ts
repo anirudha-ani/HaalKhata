@@ -33,7 +33,11 @@ export const RPC_RATE_LIMITS = {
   // with a few tabs open stays well inside this.
   getExpenseVersion: 120,
   getOverallBalances: 60,
+  endOtherSessions: 10,
+  // Signing several old devices out in a row stays well inside this.
+  endSession: 30,
   listExpenses: 60,
+  listSessions: 60,
   // Each older page of a statement fingerprints the pair's whole history
   // before reading its own rows; someone scrolling a long one reads a few.
   listFriendLedgerEntries: 120,

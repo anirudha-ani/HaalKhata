@@ -21,9 +21,9 @@ vi.hoisted(() => {
 
 const DATABASE_FAILURE = "connect ECONNREFUSED internal-db:5432";
 
-vi.mock("@/server/auth/repo/users.repo", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@/server/auth/repo/users.repo")>()),
-  findUserTokenVersion: vi.fn(async () => {
+vi.mock("@/server/auth/repo/sessions.repo", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/server/auth/repo/sessions.repo")>()),
+  findSessionStanding: vi.fn(async () => {
     throw new Error(DATABASE_FAILURE);
   }),
 }));
@@ -48,7 +48,7 @@ describe("an RPC whose session check fails unexpectedly", () => {
     server = http.createServer(connectNodeAdapter({ routes }));
     await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
     const { port } = server.address() as AddressInfo;
-    const token = createToken("user-signed-in", 0);
+    const token = createToken("user-signed-in", 0, "session-signed-in");
     /** Sends the session the way the mobile app does. */
     const bearer: Interceptor = (next) => (request) => {
       request.header.set("authorization", `Bearer ${token}`);

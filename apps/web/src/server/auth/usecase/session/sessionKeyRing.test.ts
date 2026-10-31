@@ -34,12 +34,12 @@ afterAll(() => {
 describe("session key ring", () => {
   it("keeps sessions valid across a planned rotation, and drops them once the old key is retired", async () => {
     const before = await authUnder(OLD_KEY, undefined);
-    const token = before.createToken("user-1", 0);
+    const token = before.createToken("user-1", 0, "session-1");
 
     // Rotation in flight: new key signs, old key still verifies.
     const during = await authUnder(NEW_KEY, OLD_KEY);
     expect(during.verifyToken(token)).toBe("user-1");
-    const fresh = during.createToken("user-1", 0);
+    const fresh = during.createToken("user-1", 0, "session-1");
     expect(fresh).not.toBe(token);
     expect(during.verifyToken(fresh)).toBe("user-1");
 

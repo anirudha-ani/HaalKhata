@@ -13,7 +13,7 @@ vi.mock("../../repo/apple/appleSignIn.repo", () => ({ insertAppleChallenge: vi.f
 vi.mock("./apple.provider", () => ({ assertAppleSignInConfigured: vi.fn(), verifyAppleIdentity: vi.fn(), exchangeAppleCode: vi.fn(), encryptAppleToken: vi.fn() }));
 vi.mock("../../repo/users.repo", () => ({ findUserById: vi.fn(), insertUser: vi.fn() }));
 vi.mock("../account/auth.usecase", () => ({ avatarColorFor: () => "#c73e2e" }));
-vi.mock("../session/session", () => ({ createToken: () => "local-session" }));
+vi.mock("../session/sessions.usecase", () => ({ startSession: async () => "local-session" }));
 
 beforeEach(() => { vi.clearAllMocks(); });
 afterEach(() => { vi.unstubAllEnvs(); });

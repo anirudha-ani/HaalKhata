@@ -49,9 +49,26 @@ root secret (rate-limit keys, log fingerprints) or vice versa.
   re-issues it — as a fresh cookie for cookie callers, or in the session-renewal
   response header for bearer callers. The 400 days count from the last time the
   app was opened. `LogOut` is exempt (renewal would race the cookie clear).
-- **Revocation:** the token embeds the user's `token_version`; `requireUser`
-  compares it against the row on every request. `LogOut` bumps the version,
-  revoking every outstanding token at once.
+- **Sessions:** each sign-in has a row in `user_sessions`, and the token names
+  it. `requireUser` and the page guard read the row on every request through one
+  rule (`sessionIsLive`), so signing a device out takes effect on its next call.
+  `LogOut` ends the caller's session and nothing else; `EndSession` and
+  `EndOtherSessions` end others from settings. Ending a session removes its
+  phone's `push_devices` row in the same transaction.
+- **Older tokens:** a `v2` token names no session. It stays valid, gets a row
+  whose id comes from a hash of the token, so a page load's parallel requests all
+  reach one row, and is swapped for a `v3` token on first use. The ended row stays
+  until it expires, or the same token could be adopted back to life.
+  `users.legacy_sessions_ended` is how `EndOtherSessions` reaches ones never used
+  since; bumping `token_version` would also refuse this device's own requests in
+  flight and sign it out.
+- **Revocation:** the token also embeds the user's `token_version`, compared
+  against the row on every request. Suspending an account bumps it, ending every
+  session at once.
+- **What a session keeps:** a device name ("Chrome on Mac", a phone's model) and
+  `last_used_at`, written only when the session renews, at most once a day. The
+  browser's User-Agent is read and thrown away. Nothing but the person's own
+  settings reads these: no usage figure may.
 - **Key material:** `SESSION_SECRET` (hex or Base64 decoded, ≥32 bytes enforced
   in production; dev generates and persists one under `data/.secret`).
   `SESSION_SECRET_PREVIOUS` may hold the prior key during a planned rotation —

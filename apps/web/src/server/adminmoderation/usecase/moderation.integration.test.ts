@@ -321,13 +321,14 @@ describe.skipIf(!(await databaseReachable()))("moderation against Postgres", () 
   });
 
   it("suspends through a closed report, ends every session, and does it once", async () => {
-    const session = await import("@/server/auth/usecase/session/session");
+    const { startSession } = await import("@/server/auth/usecase/session/sessions.usecase");
     const authentication = await import("@/server/auth/usecase/account/auth.usecase");
+    const tokenAt = (version: number) => startSession({ id: AUTHOR, token_version: version }, { label: "Test", isApp: false });
     const tokenVersion = async () =>
       (await database.query("SELECT token_version FROM users WHERE id = $1", [AUTHOR])).rows[0]
         .token_version as number;
     const before = await tokenVersion();
-    const liveToken = session.createToken(AUTHOR, before);
+    const liveToken = await tokenAt(before);
     expect(await authentication.sessionUser(liveToken)).not.toBeNull();
 
     await moderation.suspendAuthor(REPORTS.profile);
@@ -335,7 +336,7 @@ describe.skipIf(!(await databaseReachable()))("moderation against Postgres", () 
 
     expect(await tokenVersion()).toBe(before + 1);
     expect(await authentication.sessionUser(liveToken)).toBeNull();
-    expect(await authentication.sessionUser(session.createToken(AUTHOR, before + 1))).toBeNull();
+    expect(await authentication.sessionUser(await tokenAt(before + 1))).toBeNull();
     const queue = await moderation.listReports();
     expect(queue.suspended).toEqual([
       { name: "Member", suspendedAt: expect.any(String), reportId: REPORTS.profile },
@@ -343,8 +344,9 @@ describe.skipIf(!(await databaseReachable()))("moderation against Postgres", () 
   });
 
   it("resumes, and the sessions the suspension ended stay ended", async () => {
-    const session = await import("@/server/auth/usecase/session/session");
+    const { startSession } = await import("@/server/auth/usecase/session/sessions.usecase");
     const authentication = await import("@/server/auth/usecase/account/auth.usecase");
+    const tokenAt = (version: number) => startSession({ id: AUTHOR, token_version: version }, { label: "Test", isApp: false });
     const suspendedVersion = (
       await database.query("SELECT token_version FROM users WHERE id = $1", [AUTHOR])
     ).rows[0].token_version as number;
@@ -357,8 +359,8 @@ describe.skipIf(!(await databaseReachable()))("moderation against Postgres", () 
       [AUTHOR],
     );
     expect(rows).toEqual([{ suspended_at: null, token_version: suspendedVersion + 1 }]);
-    expect(await authentication.sessionUser(session.createToken(AUTHOR, suspendedVersion))).toBeNull();
-    expect(await authentication.sessionUser(session.createToken(AUTHOR, suspendedVersion + 1))).not.toBeNull();
+    expect(await authentication.sessionUser(await tokenAt(suspendedVersion))).toBeNull();
+    expect(await authentication.sessionUser(await tokenAt(suspendedVersion + 1))).not.toBeNull();
     expect((await moderation.listReports()).suspended).toEqual([]);
   });
 
