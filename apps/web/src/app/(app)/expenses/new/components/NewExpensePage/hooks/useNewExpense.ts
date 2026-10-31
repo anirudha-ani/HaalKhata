@@ -402,7 +402,7 @@ export function useNewExpense(
     .map((person) => person.id);
 
   const splitCheck = isItemized
-    ? checkItemized(items, currency)
+    ? checkItemized(items, currency, expenseAPI.editing?.liveSplit !== undefined)
     : checkSplit({ splitType, totalCents, participantIds, inputs: splitInputs, currency });
   // Live "what each person owes" figures for the summary, from the same
   // allocator the server runs, so the preview is exactly what gets saved.
@@ -522,13 +522,13 @@ export function useNewExpense(
     };
   };
 
-  // A live split needs a name, priced lines and one person who paid. Who had
-  // what is what it is there to settle, so nobody has to be ticked yet, and
-  // nobody else needs to be on the form: they join through the link.
+  // A live split needs a name and priced lines. Who had what is what it is
+  // there to settle, so nobody has to be ticked yet, and nobody else needs to
+  // be on the form: they join through the link.
   const canStartLive =
     !editExpenseId &&
     isItemized &&
-    !multiPayer &&
+    payerCheck.ok &&
     description.trim() !== "" &&
     totalCents !== null &&
     canStartLiveSplit(items, currency);

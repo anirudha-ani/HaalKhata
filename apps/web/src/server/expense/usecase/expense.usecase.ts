@@ -58,8 +58,9 @@ import { insertNotificationRows, insertNotifications } from "@/server/social/rep
 import {
   computeItemizedSplits,
   computeSplits,
+  computeUnclaimedSplits,
+  payerWeights,
   SplitError,
-  unclaimedOnPayers,
 } from "@haalkhata/shared/expense/splits";
 import {
   assignUnclaimedLines,
@@ -88,6 +89,7 @@ import {
   owedByScope,
   pairScopeDebts,
   sharedActiveGroups,
+  memberDebtsInGroup,
   userNetInGroup,
   userNetInGroups,
 } from "./balance.usecase";
@@ -336,11 +338,9 @@ function computeExpenseAmounts(
           weight: assignment.weight > 0 ? assignment.weight : 1,
         })),
       }));
-      const computed = computeItemizedSplits(
-        allowUnclaimed ? unclaimedOnPayers(items, request.payers.map((payer) => payer.userId)) : items,
-        taxCents,
-        tipCents,
-      );
+      const computed = allowUnclaimed
+        ? computeUnclaimedSplits(items, taxCents, tipCents, request.payers)
+        : computeItemizedSplits(items, taxCents, tipCents);
       splits = computed.splits;
       amountCents = computed.totalCents;
       if (amountCents > MAX_MONEY_CENTS) refuseTooLarge(currency);
@@ -1224,6 +1224,7 @@ export async function updateExpense(
     );
     write.createdBy = current.created_by;
     await replaceExpense(expenseId, write, userId, client);
+    if (session && !current.group_id) await connectPayersToBill(write, stored, client);
     if (session) await markLiveSplitChanged(session.split.id, client);
     else await recordExpenseActivity(userId, expenseId, write, "updated", client, stored);
     await finishOperation(operation, expenseId, client);
@@ -1232,13 +1233,65 @@ export async function updateExpense(
 }
 
 /**
+ * Everyone a person still owes in an expense's scope and currency, by the
+ * balance. A group's debts are read along its route, so only an itemized bill
+ * pays for that read: those are the ones with somebody to settle with on
+ * screen.
+ *
+ * @param userId - The reader.
+ * @param expense - The expense.
+ * @param participantIds - Who is on it.
+ * @param oneOffNetByPair - The reader's one-off nets, read already for a one-off expense.
+ * @param client - The read's snapshot.
+ * @returns The people.
+ */
+async function peopleOwedByViewer(
+  userId: string,
+  expense: ExpenseRow,
+  participantIds: readonly string[],
+  oneOffNetByPair: ReadonlyMap<string, number>,
+  client: PoolClient,
+): Promise<string[]> {
+  if (expense.split_type !== "itemized") return [];
+  if (!expense.group_id) {
+    return participantIds.filter(
+      (participantId) => (oneOffNetByPair.get(oneOffPairKey(participantId, expense.currency)) ?? 0) < 0,
+    );
+  }
+  const debts = await memberDebtsInGroup(userId, expense.group_id, client);
+  return debts
+    .filter((debt) => debt.fromUserId === userId && debt.currency === expense.currency)
+    .map((debt) => debt.toUserId);
+}
+
+/**
+ * Befriends whoever paid with everyone on a one-off bill, once a live split
+ * has changed who that is. People who met over the bill owe each other from
+ * the moment somebody adds their card, and a friendship is what lets them
+ * settle it, then or whenever they get to it. Taps that bring in nobody new
+ * cost nothing here.
+ *
+ * @param write - The expense as saved.
+ * @param stored - The expense as it was.
+ * @param client - The transaction, holding these people's ledger locks.
+ */
+async function connectPayersToBill(write: ExpenseWrite, stored: ExpenseWrite, client: PoolClient): Promise<void> {
+  const involvedBefore = new Set(involvedUserIds(stored));
+  const paidBefore = new Set(stored.payers.map((payer) => payer.userId));
+  const involved = involvedUserIds(write);
+  const payerIds = write.payers.map((payer) => payer.userId);
+  if (involved.every((userId) => involvedBefore.has(userId)) && payerIds.every((userId) => paidBefore.has(userId))) return;
+  for (const payerId of payerIds) await insertFriendships(payerId, involved, client);
+}
+
+/**
  * Applies what this person changed to the expense as it stands now.
  *
  * @param base - The expense as their form opened it.
  * @param mine - Their edit, validated.
  * @param stored - The expense as saved, read under its lock.
- * @param allowUnclaimed - Whether a line may end up with nobody on it: a live
- *   split is running.
+ * @param live - Whether a live split is running: a line may end up with
+ *   nobody on it, and what each person paid follows the total.
  * @returns The write to save.
  * @throws UsecaseError (aborted) when somebody else changed the same thing.
  */
@@ -1246,13 +1299,13 @@ function mergedWrite(
   base: ExpenseStateSource,
   mine: ExpenseWrite,
   stored: ExpenseWrite,
-  allowUnclaimed: boolean,
+  live: boolean,
 ): ExpenseWrite {
   const { merged, conflicts } = mergeExpenseEdit(
     expenseStateOf(base),
     expenseStateOf(mine),
     expenseStateOf(stored),
-    { allowUnclaimed },
+    { live },
   );
   if (conflicts.length > 0) throw new UsecaseError("aborted", EDIT_CONFLICT_MESSAGE);
   return writeFromState(mine, merged);
@@ -1268,7 +1321,12 @@ function mergedWrite(
  * @param client - The transaction.
  */
 export async function closeLiveSplit(split: LiveSplitRow, client: PoolClient): Promise<void> {
-  await assignUnclaimedLines(split.expense_id, client);
+  const payers = (await loadExpenseChildren([split.expense_id], client)).payers.get(split.expense_id) ?? [];
+  await assignUnclaimedLines(
+    split.expense_id,
+    payerWeights(payers.map((payer) => ({ userId: payer.user_id, amountCents: payer.amount_cents }))),
+    client,
+  );
   await markLiveSplitFinished(split.id, client);
   await revokeLiveSplitLink(split.id, client);
   await bumpExpenseVersion(split.expense_id, client);
@@ -1548,7 +1606,7 @@ export async function getExpense(userId: string, expenseId: string, commentLimit
   // and whether a payment came after it — are read at one instant, so an
   // edit or a payment committing mid-read cannot pair one version's amount
   // with another's shares.
-  const { expenseRow, children, settledForViewer, hasLaterSettlement, groupStatus, refusals } = await snapshot(
+  const { expenseRow, children, settledForViewer, owedUserIds, hasLaterSettlement, groupStatus, refusals } = await snapshot(
     async (client) => {
       // Expenses are never hard-deleted, so the row checked above is still there.
       const current = (await findExpenseById(expenseId, client)) ?? found;
@@ -1572,6 +1630,7 @@ export async function getExpense(userId: string, expenseId: string, commentLimit
           }
         }
       }
+      const owedUserIds = await peopleOwedByViewer(userId, current, participantIds, oneOffNetByPair, client);
       const settled =
         settledExpenseIds(
           [
@@ -1613,6 +1672,7 @@ export async function getExpense(userId: string, expenseId: string, commentLimit
         expenseRow: current,
         children: currentChildren,
         settledForViewer: settled,
+        owedUserIds,
         hasLaterSettlement: laterSettlement,
         groupStatus: scopeGroup ? GROUP_STATUS_PROTO[scopeGroup.status] : GroupStatus.UNSPECIFIED,
         refusals: changeRefusals,
@@ -1655,6 +1715,7 @@ export async function getExpense(userId: string, expenseId: string, commentLimit
 
   return {
     settledForViewer,
+    owedUserIds,
     hasLaterSettlement,
     groupStatus,
     editRefusal: refusals.editRefusal,

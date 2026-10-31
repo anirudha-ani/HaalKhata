@@ -114,6 +114,7 @@ export function useNewExpense(
   const itemDraft = useItemDraft(
     { items: initial.items, tax: initial.tax, tip: initial.tip },
     currency,
+    expenseAPI.editing?.liveSplit !== undefined,
   );
 
   /**
@@ -409,13 +410,13 @@ export function useNewExpense(
     };
   };
 
-  // A live split needs a name, priced lines and one person who paid. Who had
-  // what is what it is there to settle, so nobody has to be ticked yet, and
-  // nobody else needs to be on the form: they join through the link.
+  // A live split needs a name and priced lines. Who had what is what it is
+  // there to settle, so nobody has to be ticked yet, and nobody else needs to
+  // be on the form: they join through the link.
   const canStartLive =
     !editExpenseId &&
     isItemized &&
-    !multiPayer &&
+    payerCheck.ok &&
     description.trim() !== "" &&
     totalCents !== null &&
     canStartLiveSplit(itemDraft.items ?? [], currency);

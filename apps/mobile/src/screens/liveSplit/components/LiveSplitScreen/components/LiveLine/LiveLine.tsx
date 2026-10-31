@@ -74,7 +74,7 @@ export function LiveLine({ line, live }: { line: LineState; live: LiveSplitContr
             <Chip
               disabled={!live.isOpen || line.id === ""}
               key={userId}
-              label={userId === live.meId ? "You" : (live.people.get(userId)?.name.split(" ")[0] ?? "Someone")}
+              label={live.nameOf(userId)}
               onPress={() => live.apply(setOnLine(line.id, userId, !isOn))}
               selected={isOn}
             />

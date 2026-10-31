@@ -76,10 +76,11 @@ export function unassignedCount(items: DraftItem[]): number {
  *
  * @param items - The draft's line items.
  * @param currency - Currency used to validate every individual line.
+ * @param allowUnclaimed - A line may have nobody on it: a live split is running on this bill.
  * @returns `ok` with an empty message, or the first problem to fix.
  */
-export function draftCompleteness(items: DraftItem[], currency: string) {
-  return checkItemized(items, currency);
+export function draftCompleteness(items: DraftItem[], currency: string, allowUnclaimed = false) {
+  return checkItemized(items, currency, allowUnclaimed);
 }
 
 /**

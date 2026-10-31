@@ -106,7 +106,6 @@ export function LiveLine({ line, live }: { line: LineState; live: LiveSplitContr
       <div className="flex flex-wrap items-center gap-1.5">
         {live.castIds.map((userId) => {
           const isOn = (line.shares[userId] ?? 0) > 0;
-          const person = userId === live.meId ? "You" : (live.people.get(userId)?.name.split(" ")[0] ?? "Someone");
           return (
             <button
               key={userId}
@@ -118,7 +117,7 @@ export function LiveLine({ line, live }: { line: LineState; live: LiveSplitContr
                 isOn ? "border-brand-600 bg-brand-600 text-white" : "border-line bg-card text-ink-soft hover:border-brand-200"
               }`}
             >
-              {person}
+              {live.nameOf(userId)}
             </button>
           );
         })}

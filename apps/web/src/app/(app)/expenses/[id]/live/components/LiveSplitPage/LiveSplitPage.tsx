@@ -15,6 +15,7 @@ import { shareLiveSplit } from "@/lib/invite/share";
 import { AddLineForm } from "./components/AddLineForm/AddLineForm";
 import { LiveExtras } from "./components/LiveExtras/LiveExtras";
 import { LiveLine } from "./components/LiveLine/LiveLine";
+import { LivePayers } from "./components/LivePayers/LivePayers";
 import { LiveTotals } from "./components/LiveTotals/LiveTotals";
 import { PEOPLE_AVATAR_SLOTS } from "./constants/liveSplitPage";
 import { useLiveSplit } from "./hooks/useLiveSplit";
@@ -30,7 +31,7 @@ import { useLiveSplit } from "./hooks/useLiveSplit";
  */
 export function LiveSplitPage({ expenseId }: { expenseId: string }) {
   const live = useLiveSplit(expenseId);
-  const { expense, state, liveSplit, summary } = live;
+  const { expense, state, liveSplit } = live;
 
   if (live.isLoading) return <Spinner label="Loading the bill…" />;
   if (live.accessEnded) {
@@ -43,7 +44,7 @@ export function LiveSplitPage({ expenseId }: { expenseId: string }) {
   }
   if (!expense || !state) return <ErrorAlert message="This bill could not be loaded." />;
 
-  const payer = live.people.get(summary?.payerId ?? "");
+  const settlingWith = live.people.get(live.settlingWith);
   const present = live.castIds.flatMap((userId) => {
     const person = live.people.get(userId);
     return person ? [person] : [];
@@ -95,6 +96,7 @@ export function LiveSplitPage({ expenseId }: { expenseId: string }) {
       </section>
 
       <LiveTotals live={live} />
+      <LivePayers live={live} />
 
       <section className="rounded-2xl border border-line bg-card px-4 py-1">
         <ul className="divide-y divide-line">
@@ -120,13 +122,13 @@ export function LiveSplitPage({ expenseId }: { expenseId: string }) {
           token={liveSplit.token}
         />
       ) : null}
-      {live.settling && payer ? (
+      {settlingWith ? (
         <SettleUpModal
           currency={expense.currency}
           onClose={live.closeSettle}
           scopeId={expense.groupId}
-          suggestedCents={summary?.myShareCents ?? 0}
-          to={payer}
+          suggestedCents={live.owedTo(settlingWith.id)}
+          to={settlingWith}
         />
       ) : null}
       <ErrorPopup message={live.error} onDismiss={live.dismissError} />

@@ -4,14 +4,17 @@ import { describe, expect, it } from "vitest";
 import type { ExpenseState } from "../merge/expenseState";
 import {
   addLine,
+  checkPaidAmount,
   lineShareCents,
   liveEditRequest,
   liveSummary,
+  livePayers,
   liveTimeLeft,
   liveTotal,
   removeLine,
   setLineDetails,
   setOnLine,
+  setPaid,
   setTaxAndTip,
   withSavedEdit,
 } from "./liveEdits";
@@ -93,15 +96,88 @@ describe("fixing the receipt", () => {
   });
 });
 
+describe("several people paying", () => {
+  it("lets somebody add their own card, and that alone puts nobody in debt", () => {
+    const carded = setPaid(TOMAS, 1200)(bill);
+
+    expect(carded.payers).toEqual({ [SARA]: 1600, [TOMAS]: 1200 });
+    expect(carded.owed).toEqual({ [SARA]: 1600, [TOMAS]: 1200 });
+    expect(livePayers(carded, TOMAS).map((payer) => payer.owedCents)).toEqual([0, 0]);
+  });
+
+  it("keeps everyone's proportions when the bill grows", () => {
+    const grown = setTaxAndTip({ taxCents: 0, tipCents: 700 })(setPaid(TOMAS, 1400)(bill));
+
+    expect(grown.amountCents).toBe(3500);
+    expect(grown.payers).toEqual({ [SARA]: 1750, [TOMAS]: 1750 });
+  });
+
+  it("still adds up when the bill shrinks below what somebody typed", () => {
+    const shrunk = removeLine("pizza")(setPaid(TOMAS, 2000)(bill));
+
+    expect(shrunk.amountCents).toBe(800);
+    expect(Object.values(shrunk.payers).reduce((running, cents) => running + cents, 0)).toBe(800);
+  });
+
+  it("lets somebody take over the whole bill when it was never who it said", () => {
+    expect(setPaid(TOMAS, 2800)(bill).payers).toEqual({ [TOMAS]: 2800 });
+  });
+
+  it("holds to the bill if it shrank after somebody typed", () => {
+    expect(setPaid(TOMAS, 9999)(bill).payers).toEqual({ [TOMAS]: 2800 });
+  });
+
+  it("takes a payer off, and whoever is left covers it", () => {
+    expect(setPaid(TOMAS, 0)(setPaid(TOMAS, 1200)(bill)).payers).toEqual({ [SARA]: 2800 });
+  });
+
+  it("keeps the last payer: somebody has to have paid", () => {
+    expect(setPaid(SARA, 0)(bill).payers).toEqual({ [SARA]: 2800 });
+  });
+
+  it("gives a line's unclaimed part to those who paid, and a claim sends the debt to them", () => {
+    const claimed = setOnLine("beer", PRIYA, true)(setPaid(TOMAS, 1200)(bill));
+    const rows = livePayers(claimed, PRIYA);
+
+    expect(rows.map((payer) => payer.userId)).toEqual([SARA, TOMAS]);
+    expect(rows.map((payer) => payer.owedCents)).toEqual([457, 343]);
+  });
+
+  it("does not offer somebody a debt to themselves", () => {
+    const claimed = setOnLine("pizza", TOMAS, true)(setPaid(TOMAS, 1200)(bill));
+
+    expect(livePayers(claimed, TOMAS).find((payer) => payer.userId === TOMAS)?.owedCents).toBe(0);
+    expect(livePayers(claimed, TOMAS).find((payer) => payer.userId === SARA)?.owedCents).toBe(1143);
+  });
+});
+
+describe("what somebody says they paid", () => {
+  it("takes an amount within the bill", () => {
+    expect(checkPaidAmount("12.00", bill, "USD")).toEqual({ cents: 1200, message: "" });
+  });
+
+  it("says nothing yet about an empty field", () => {
+    expect(checkPaidAmount("  ", bill, "USD")).toEqual({ cents: 0, message: "" });
+  });
+
+  it("says when it is more than the bill", () => {
+    expect(checkPaidAmount("30.00", bill, "USD").message).toContain("$28.00");
+  });
+
+  it("says when it is not an amount", () => {
+    expect(checkPaidAmount("lots", bill, "USD").message).toBe("Enter how much was paid.");
+  });
+});
+
 describe("what it comes to", () => {
   it("says what this person owes and what nobody has claimed", () => {
     const claimed = setOnLine("pizza", TOMAS, true)(bill);
 
-    expect(liveSummary(claimed, TOMAS)).toEqual({ payerId: SARA, myShareCents: 2000, unclaimedCents: 800, unclaimedLines: 1 });
+    expect(liveSummary(claimed, TOMAS)).toEqual({ myShareCents: 2000, myPaidCents: 0, unclaimedCents: 800, unclaimedLines: 1 });
   });
 
-  it("names nobody as the payer when several people paid", () => {
-    expect(liveSummary({ ...bill, payers: { [SARA]: 1400, [TOMAS]: 1400 } }, SARA).payerId).toBe("");
+  it("says what this person paid", () => {
+    expect(liveSummary(setPaid(TOMAS, 1200)(bill), TOMAS).myPaidCents).toBe(1200);
   });
 
   it("gives this person's part of a shared line, by the same rounding as the bill", () => {
@@ -144,43 +220,69 @@ describe("the request that saves it", () => {
 });
 
 describe("the headline figure", () => {
+  const owing = { settledForViewer: false, owedUserIds: ["sara"] };
+  const paidEveryone = { settledForViewer: true, owedUserIds: [] };
+
   /** A $37 bill Sara paid, with $8 of it Tomas's. */
   const bill = { amountCents: 3700, payers: { sara: 3700 }, owed: { sara: 2900, tomas: 800 }, lines: [] } as unknown as ExpenseState;
 
   it("gives somebody their share of the bill, and a way to settle", () => {
-    expect(liveTotal(bill, "tomas", false)).toEqual({ label: "Your share", cents: 800, owing: true });
+    expect(liveTotal(bill, "tomas", owing)).toEqual({ label: "Your share", cents: 800, owing: true });
   });
 
   it("tells somebody who has paid that it is done", () => {
-    expect(liveTotal(bill, "tomas", true)).toEqual({ label: "Your share, settled", cents: 800, owing: false });
+    expect(liveTotal(bill, "tomas", paidEveryone)).toEqual({ label: "Your share, settled", cents: 800, owing: false });
+  });
+
+  it("does not let somebody else's debt to this person hide that they have paid", () => {
+    const owedByPriya = { settledForViewer: false, owedUserIds: [] };
+
+    expect(liveTotal(bill, "tomas", owedByPriya).label).toBe("Your share, settled");
   });
 
   it("does not call an empty share settled", () => {
-    expect(liveTotal({ ...bill, owed: { sara: 3700 } }, "tomas", true)).toEqual({ label: "Your share", cents: 0, owing: true });
+    expect(liveTotal({ ...bill, owed: { sara: 3700 } }, "tomas", paidEveryone)).toEqual({ label: "Your share", cents: 0, owing: false });
   });
 
   it("gives whoever paid a figure that stays true as people pay them back", () => {
-    expect(liveTotal(bill, "sara", false)).toEqual({ label: "Others' shares", cents: 800, owing: false });
-    expect(liveTotal(bill, "sara", true)).toEqual({ label: "Everyone has settled", cents: 800, owing: false });
+    expect(liveTotal(bill, "sara", { settledForViewer: false, owedUserIds: [] })).toEqual({ label: "You covered for others", cents: 800, owing: false });
+    expect(liveTotal(bill, "sara", paidEveryone)).toEqual({ label: "Everyone has settled", cents: 800, owing: false });
   });
 
-  it("says nothing about settling while whoever paid has it all to themselves", () => {
-    expect(liveTotal({ ...bill, owed: { sara: 3700 } }, "sara", true).label).toBe("Others' shares");
+  it("gives whoever paid their share until somebody else has some of it", () => {
+    expect(liveTotal({ ...bill, owed: { sara: 3700 } }, "sara", paidEveryone)).toEqual({ label: "Your share", cents: 3700, owing: false });
+  });
+
+  it("counts only what a second payer put in beyond their own share", () => {
+    const twoCards = { ...bill, payers: { sara: 2700, tomas: 1000 }, owed: { sara: 2900, tomas: 800 } };
+
+    expect(liveTotal(twoCards, "tomas", owing)).toEqual({ label: "You covered for others", cents: 200, owing: false });
+  });
+
+  it("gives somebody who paid less than their share that share", () => {
+    const twoCards = { ...bill, payers: { sara: 3500, tomas: 200 }, owed: { sara: 2900, tomas: 800 } };
+
+    expect(liveTotal(twoCards, "tomas", owing)).toEqual({ label: "Your share", cents: 800, owing: true });
   });
 });
 
 describe("what a device holds after a tap saves", () => {
-  const held = { expense: { version: 4 }, settledForViewer: true };
+  const payers = [{ userId: "sara" }];
+  const held = { expense: { version: 4, payers }, settledForViewer: true, owedUserIds: [] };
 
   it("no longer takes it as settled: a tap can leave somebody owing", () => {
-    expect(withSavedEdit(held, { version: 5 })).toEqual({ expense: { version: 5 }, settledForViewer: false });
+    expect(withSavedEdit(held, { version: 5, payers })).toEqual({
+      expense: { version: 5, payers },
+      settledForViewer: false,
+      owedUserIds: ["sara"],
+    });
   });
 
   it("keeps a newer copy that arrived first", () => {
-    expect(withSavedEdit(held, { version: 3 })).toBe(held);
+    expect(withSavedEdit(held, { version: 3, payers })).toBe(held);
   });
 
   it("holds nothing if it held nothing", () => {
-    expect(withSavedEdit(undefined, { version: 5 })).toBeUndefined();
+    expect(withSavedEdit(undefined, { version: 5, payers })).toBeUndefined();
   });
 });

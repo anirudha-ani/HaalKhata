@@ -3,7 +3,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { LIVE_SPLIT_CLOCK_INTERVAL_MS } from "@haalkhata/shared/expense/live/live.constants";
-import { liveSummary, liveTimeLeft, type LiveEdit } from "@haalkhata/shared/expense/live/liveEdits";
+import { livePayers, liveSummary, liveTimeLeft, type LiveEdit } from "@haalkhata/shared/expense/live/liveEdits";
 import { expenseStateOf } from "@haalkhata/shared/expense/merge/expenseState";
 import { errorMessage } from "@/lib/api/connect";
 import { useLiveSplitAPI } from "./useLiveSplitAPI";
@@ -23,7 +23,7 @@ export function useLiveSplit(expenseId: string) {
   const [pending, setPending] = useState<LiveEdit[]>([]);
   const [error, setError] = useState("");
   const [clock, setClock] = useState(() => Date.now());
-  const [settling, setSettling] = useState(false);
+  const [settlingWith, setSettlingWith] = useState("");
   const [sharing, setSharing] = useState(false);
   const queue = useRef(Promise.resolve());
 
@@ -83,8 +83,11 @@ export function useLiveSplit(expenseId: string) {
     meId,
     isHost: liveSplit?.hostId === meId,
     summary: state ? liveSummary(state, meId) : null,
-    /** Nothing is pending for this person from this bill's balance: what they owed has been paid. */
-    isSettled: liveAPI.detail?.settledForViewer ?? false,
+    /** Where this person stands by the balance. */
+    standing: {
+      settledForViewer: liveAPI.detail?.settledForViewer ?? false,
+      owedUserIds: liveAPI.detail?.owedUserIds ?? [],
+    },
     isLoading: liveAPI.isLoading,
     accessEnded: liveAPI.accessEnded,
     readError: liveAPI.readError,
@@ -93,12 +96,28 @@ export function useLiveSplit(expenseId: string) {
     apply,
     finish: () => liveAPI.finish.mutate(undefined, { onError: (failure) => setError(errorMessage(failure)) }),
     isFinishing: liveAPI.finish.isPending,
-    settling,
-    openSettle: () => {
+    /** Who the settle dialog is open for; "" when it is closed. */
+    settlingWith,
+    openSettle: (payerId: string) => {
       liveAPI.markBalancesStale();
-      setSettling(true);
+      setSettlingWith(payerId);
     },
-    closeSettle: () => setSettling(false),
+    closeSettle: () => setSettlingWith(""),
+    /**
+     * What this person owes somebody for this bill.
+     *
+     * @param payerId - Who paid.
+     * @returns The cents.
+     */
+    owedTo: (payerId: string) =>
+      (state ? livePayers(state, meId) : []).find((payer) => payer.userId === payerId)?.owedCents ?? 0,
+    /**
+     * What to call somebody here.
+     *
+     * @param userId - Who.
+     * @returns "You", or their first name.
+     */
+    nameOf: (userId: string) => (userId === meId ? "You" : (people.get(userId)?.name.split(" ")[0] ?? "Someone")),
     sharing,
     setSharing,
     myName: liveAPI.me?.name ?? "A friend",

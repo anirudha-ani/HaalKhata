@@ -18,12 +18,14 @@ import { previewItemizedShares } from "@haalkhata/shared/expense/form/splitForm"
  * @param initial - Starting lines (null while a receipt has not been parsed
  *   yet), and the raw tax and tip inputs.
  * @param currency - ISO 4217 code the amounts are typed in.
+ * @param allowUnclaimed - A line may have nobody on it: a live split is running on this bill.
  * @returns The draft state, its editing helpers, and the derived totals,
  *   per-person preview, warnings, unassigned count, and completeness check.
  */
 export function useItemDraft(
   initial: { items: DraftItem[] | null; tax: string; tip: string },
   currency: string,
+  allowUnclaimed = false,
 ) {
   const [items, setItems] = useState<DraftItem[] | null>(initial.items);
   const [taxInput, setTaxInput] = useState(initial.tax);
@@ -180,7 +182,7 @@ export function useItemDraft(
     },
     ...totals,
     unassignedCount: unassignedCount(items ?? []),
-    completeness: draftCompleteness(items ?? [], currency),
+    completeness: draftCompleteness(items ?? [], currency, allowUnclaimed),
     /** What each person currently owes, keyed by user id, in cents. */
     previewShares: previewItemizedShares(items ?? [], totals.taxCents, totals.tipCents, currency),
     /** What still stops the bill adding up, as short sentences. */

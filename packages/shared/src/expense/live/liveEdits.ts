@@ -1,29 +1,20 @@
 /** One tap on a live split, as a change to the expense, and the request that saves it. */
 
+import { formatMoney, parseMoneyInput } from "../../money/money";
 import { allocate } from "../allocate";
-import { withComputedShares, type ExpenseState, type LineState } from "../merge/expenseState";
+import { expenseDebts } from "../debts";
+import { fitPayers, withFittedPayers, type ExpenseState, type LineState } from "../merge/expenseState";
 import {
+  LIVE_COVERED_LABEL,
   LIVE_EVERYONE_SETTLED_LABEL,
   LIVE_MY_SHARE_LABEL,
-  LIVE_OTHERS_SHARES_LABEL,
+  LIVE_PAID_AMOUNT_MESSAGE,
   LIVE_SHARE_SETTLED_LABEL,
+  paidTooMuchMessage,
 } from "./live.constants";
 
 /** A change somebody makes to a live split. Applied to the latest expense, so it survives others' changes arriving first. */
 export type LiveEdit = (state: ExpenseState) => ExpenseState;
-
-/**
- * Works the bill out again after a change to its lines, tax or tip: the total,
- * everybody's share, and what the one payer covered.
- *
- * @param state - The changed state.
- * @returns The same state with its figures right.
- */
-function recomputed(state: ExpenseState): ExpenseState {
-  const computed = withComputedShares(state);
-  const payerIds = Object.keys(computed.payers);
-  return payerIds.length === 1 ? { ...computed, payers: { [payerIds[0]]: computed.amountCents } } : computed;
-}
 
 /**
  * Applies a change to one line.
@@ -34,7 +25,7 @@ function recomputed(state: ExpenseState): ExpenseState {
  * @returns The new state.
  */
 function changeLine(state: ExpenseState, lineId: string, change: (line: LineState) => LineState): ExpenseState {
-  return recomputed({ ...state, lines: state.lines.map((line) => (line.id === lineId ? change(line) : line)) });
+  return withFittedPayers({ ...state, lines: state.lines.map((line) => (line.id === lineId ? change(line) : line)) });
 }
 
 /**
@@ -74,7 +65,7 @@ export function setLineDetails(lineId: string, details: { name: string; totalCen
  * @returns The edit.
  */
 export function addLine(details: { name: string; totalCents: number }): LiveEdit {
-  return (state) => recomputed({ ...state, lines: [...state.lines, { id: "", quantity: 1, shares: {}, ...details }] });
+  return (state) => withFittedPayers({ ...state, lines: [...state.lines, { id: "", quantity: 1, shares: {}, ...details }] });
 }
 
 /**
@@ -84,7 +75,7 @@ export function addLine(details: { name: string; totalCents: number }): LiveEdit
  * @returns The edit.
  */
 export function removeLine(lineId: string): LiveEdit {
-  return (state) => recomputed({ ...state, lines: state.lines.filter((line) => line.id !== lineId) });
+  return (state) => withFittedPayers({ ...state, lines: state.lines.filter((line) => line.id !== lineId) });
 }
 
 /**
@@ -94,7 +85,88 @@ export function removeLine(lineId: string): LiveEdit {
  * @returns The edit.
  */
 export function setTaxAndTip(amounts: { taxCents: number; tipCents: number }): LiveEdit {
-  return (state) => recomputed({ ...state, ...amounts });
+  return (state) => withFittedPayers({ ...state, ...amounts });
+}
+
+/**
+ * Says what somebody paid, adding them if they had not paid before: a second
+ * card, or the whole bill if it was never who it said. Everybody else who paid
+ * shares what is left, in proportion, so the bill always adds up and nobody
+ * has to sort out anyone else's figure first. Whoever is left with nothing
+ * stops being a payer. Clamped to the bill, which may have shrunk since they
+ * typed.
+ *
+ * @param userId - Who paid.
+ * @param paidCents - How much; 0 takes them off.
+ * @returns The edit.
+ */
+export function setPaid(userId: string, paidCents: number): LiveEdit {
+  return (state) => {
+    const others = Object.fromEntries(Object.entries(state.payers).filter(([payerId]) => payerId !== userId));
+    // Somebody has to have paid: the last person who did covers the bill.
+    if (Object.keys(others).length === 0) return withFittedPayers({ ...state, payers: { [userId]: state.amountCents } });
+    const mine = Math.min(paidCents, state.amountCents);
+    return withFittedPayers({
+      ...state,
+      payers: { ...fitPayers(others, state.amountCents - mine), ...(mine > 0 ? { [userId]: mine } : {}) },
+    });
+  };
+}
+
+/** A check of what somebody typed for what they paid. */
+export interface PaidCheck {
+  /** The amount; 0 when it cannot be saved. */
+  cents: number;
+  /** Why not, for beside the field; "" when there is nothing to say yet. */
+  message: string;
+}
+
+/**
+ * Checks what somebody typed for what they paid.
+ *
+ * @param text - What they typed.
+ * @param state - The bill.
+ * @param currency - ISO 4217 code it is typed in.
+ * @returns The amount, or why it will not do.
+ */
+export function checkPaidAmount(text: string, state: ExpenseState, currency: string): PaidCheck {
+  if (text.trim() === "") return { cents: 0, message: "" };
+  const cents = parseMoneyInput(text, currency) ?? 0;
+  if (cents <= 0) return { cents: 0, message: LIVE_PAID_AMOUNT_MESSAGE };
+  if (cents > state.amountCents) return { cents: 0, message: paidTooMuchMessage(formatMoney(state.amountCents, currency)) };
+  return { cents, message: "" };
+}
+
+/** Somebody who paid, as one person looking at the bill sees them. */
+export interface LivePayer {
+  userId: string;
+  /** What they paid. */
+  paidCents: number;
+  /** What the person looking owes them for this bill, by the rule the ledger uses. */
+  owedCents: number;
+}
+
+/**
+ * Who paid, most first, and what one person owes each of them. With several
+ * payers a debt runs to particular people, which is why Settle sits beside
+ * each payer.
+ *
+ * @param state - The bill.
+ * @param userId - Who is looking.
+ * @returns One row per payer.
+ */
+export function livePayers(state: ExpenseState, userId: string): LivePayer[] {
+  const debts = expenseDebts(
+    Object.entries(state.payers).map(([payerId, amountCents]) => ({ userId: payerId, amountCents })),
+    Object.entries(state.owed).map(([owerId, amountCents]) => ({ userId: owerId, amountCents })),
+  );
+  return Object.entries(state.payers)
+    .sort(([firstId, firstCents], [secondId, secondCents]) => secondCents - firstCents || firstId.localeCompare(secondId))
+    .map(([payerId, paidCents]) => ({
+      userId: payerId,
+      paidCents,
+      owedCents: debts.find((debt) => debt.from === userId && debt.to === payerId)?.amountCents ?? 0,
+    }));
 }
 
 /**
@@ -132,10 +204,10 @@ export function liveEditRequest(expense: { groupId: string; currency: string }, 
 
 /** What a live split comes to at the moment, for one person. */
 export interface LiveSummary {
-  /** Who paid; "" when several people did. */
-  payerId: string;
-  /** What this person owes for the bill, tax and tip included. */
+  /** What this person's part of the bill comes to, tax and tip included. */
   myShareCents: number;
+  /** What this person paid towards it. */
+  myPaidCents: number;
   /** What the lines nobody has claimed add up to, before tax and tip. */
   unclaimedCents: number;
   /** How many lines nobody has claimed. */
@@ -150,14 +222,21 @@ export interface LiveSummary {
  * @returns What it comes to for them.
  */
 export function liveSummary(state: ExpenseState, userId: string): LiveSummary {
-  const payerIds = Object.keys(state.payers);
   const unclaimed = state.lines.filter((line) => Object.keys(line.shares).length === 0);
   return {
-    payerId: payerIds.length === 1 ? payerIds[0] : "",
     myShareCents: state.owed[userId] ?? 0,
+    myPaidCents: state.payers[userId] ?? 0,
     unclaimedCents: unclaimed.reduce((running, line) => running + line.totalCents, 0),
     unclaimedLines: unclaimed.length,
   };
+}
+
+/** Where one person stands, by the balance: what a bill alone cannot say, since it does not know who has paid. */
+export interface LiveStanding {
+  /** Nothing is pending between them and anybody on the expense, either way. */
+  settledForViewer: boolean;
+  /** Everyone they still owe in the expense's scope. */
+  owedUserIds: readonly string[];
 }
 
 /** The headline figure of a live split, for one person. */
@@ -166,50 +245,60 @@ export interface LiveTotal {
   label: string;
   /** The figure. */
   cents: number;
-  /** Whether this person may still have something to pay, which is what Settle is for. */
+  /** Whether it is a share still to pay rather than money this person is out of pocket or has dealt with. */
   owing: boolean;
 }
 
 /**
- * Works out the headline figure for one person. "Settled" comes from the
- * server's reading of the balance, because the bill alone cannot say who has
- * paid; see {@link withSavedEdit} for why it can go out of date.
+ * Works out the headline figure for one person. Whoever covered more than
+ * their share has it settled once nobody on the bill owes them; anybody else,
+ * once they owe nobody.
  *
  * @param state - The expense.
  * @param userId - Who is looking.
- * @param isSettled - Whether this person's balance in the expense's scope is even.
+ * @param standing - Where they stand; see {@link withSavedEdit} for why it can go out of date.
  * @returns The figure and what it means.
  */
-export function liveTotal(state: ExpenseState, userId: string, isSettled: boolean): LiveTotal {
-  const { payerId, myShareCents } = liveSummary(state, userId);
-  if (payerId === userId) {
-    const othersCents = state.amountCents - myShareCents;
+export function liveTotal(state: ExpenseState, userId: string, standing: LiveStanding): LiveTotal {
+  const { myPaidCents, myShareCents } = liveSummary(state, userId);
+  const coveredCents = myPaidCents - myShareCents;
+  if (coveredCents > 0) {
     return {
-      label: isSettled && othersCents > 0 ? LIVE_EVERYONE_SETTLED_LABEL : LIVE_OTHERS_SHARES_LABEL,
-      cents: othersCents,
+      label: standing.settledForViewer ? LIVE_EVERYONE_SETTLED_LABEL : LIVE_COVERED_LABEL,
+      cents: coveredCents,
       owing: false,
     };
   }
-  const paidUp = isSettled && myShareCents > 0;
-  return { label: paidUp ? LIVE_SHARE_SETTLED_LABEL : LIVE_MY_SHARE_LABEL, cents: myShareCents, owing: !paidUp };
+  const paidUp = standing.owedUserIds.length === 0;
+  const stillToPay = myPaidCents < myShareCents;
+  return {
+    label: stillToPay && paidUp ? LIVE_SHARE_SETTLED_LABEL : LIVE_MY_SHARE_LABEL,
+    cents: myShareCents,
+    owing: stillToPay && !paidUp,
+  };
 }
 
 /**
  * What a device holds once one of its taps has saved. The answer the server
  * saved comes back as an expense alone, and a tap can change what somebody
- * owes, so "settled" no longer stands until the next full read says so:
+ * owes, so where they stood no longer holds until the next full read says so:
  * somebody with nothing owed who claims a line owes money from that moment.
  *
  * @param current - What the device holds.
  * @param saved - The expense as saved.
  * @returns What it should hold, unchanged when it has already seen something newer.
  */
-export function withSavedEdit<Saved extends { version: number }, Detail extends { expense?: Saved; settledForViewer: boolean }>(
-  current: Detail | undefined,
-  saved: Saved,
-): Detail | undefined {
+export function withSavedEdit<
+  Saved extends { version: number; payers: readonly { userId: string }[] },
+  Detail extends LiveStanding & { expense?: Saved },
+>(current: Detail | undefined, saved: Saved): Detail | undefined {
   if (!current?.expense || saved.version < current.expense.version) return current;
-  return { ...current, expense: saved, settledForViewer: false };
+  return {
+    ...current,
+    expense: saved,
+    settledForViewer: false,
+    owedUserIds: saved.payers.map((payer) => payer.userId),
+  };
 }
 
 /**

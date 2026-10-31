@@ -7,6 +7,7 @@ import {
   sameMoney,
   samePayers,
   withComputedShares,
+  withFittedPayers,
   type ExpenseState,
   type LineState,
 } from "./expenseState";
@@ -52,8 +53,12 @@ export interface ExpenseMerge {
 
 /** How a merge should treat the expense it is for. */
 export interface MergeOptions {
-  /** A line may stay unclaimed: true while a live split runs, when lines start with nobody on them. */
-  allowUnclaimed?: boolean;
+  /**
+   * A live split is running. Lines start with nobody on them, so a line may
+   * stay unclaimed, and the total moves with every correction, so what each
+   * person paid follows it instead of asking anybody to retype it.
+   */
+  live?: boolean;
 }
 
 /**
@@ -73,7 +78,7 @@ export interface MergeOptions {
  * @param base - The expense as this person opened it.
  * @param mine - The expense as this person wants it.
  * @param theirs - The expense as it is saved now.
- * @param options - How to treat unclaimed lines.
+ * @param options - Whether a live split is running.
  * @returns The merged expense, any conflicts, and what somebody else changed.
  */
 export function mergeExpenseEdit(
@@ -130,7 +135,7 @@ export function mergeExpenseEdit(
   }
   if (minePaidDifferently) merged.payers = mine.payers;
 
-  if (!options.allowUnclaimed) {
+  if (!options.live) {
     for (const line of merged.lines) {
       if (Object.keys(line.shares).length > 0 || !itemized) continue;
       // Each person took somebody off, and between them took everybody off.
@@ -141,13 +146,13 @@ export function mergeExpenseEdit(
   // Lines nobody has claimed sit with whoever paid, so a new payer moves money too.
   if (itemized && (!sameMoney(merged, theirs) || !samePayers(merged, theirs))) {
     try {
-      merged = withComputedShares(merged);
+      merged = options.live ? withFittedPayers(merged) : withComputedShares(merged);
     } catch (error) {
       if (!(error instanceof SplitError)) throw error;
       conflicts.push({ edit: { part: "money" }, lineName: "", mine: mine.amountCents, theirs: theirs.amountCents });
     }
   }
-  merged.payers = payersFor(merged, conflicts);
+  if (!options.live) merged.payers = payersFor(merged, conflicts);
   return { merged, conflicts, theirChanges };
 }
 

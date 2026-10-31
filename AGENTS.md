@@ -432,17 +432,22 @@ with colocated tests. Mobile-specific rules:
   form asks `GetExpenseVersion` every 10 s and folds in what it can
   (`useExpenseEditSync`, one per app, over the shared `catchUpForm`).
 - **A live split is an ordinary expense with the door open.** One itemized
-  expense, one payer, 30 minutes (`LIVE_SPLIT_MINUTES`). People come in through
-  a `live` invite link (accounts only, as ever; on a group's bill joining joins
-  the group, which the join page says first; on a one-off it befriends them
-  with whoever started it and whoever paid). Every tap is a merged
-  `UpdateExpense` through `liveEdits` in shared, sent one at a time. Lines may
-  have nobody on them only while one runs, and such a line counts against whoever
-  paid (`unclaimedOnPayers`), so the ledger is exact at every moment and the
-  end moves no money: `closeLiveSplit` writes those lines to the payer and
-  announces the result once. Nothing is announced before that, so nobody's
-  phone buzzes per tick. `live_split_people` is what lets somebody with no
-  share yet read and edit, and is deleted when it ends. See `docs/live-split.md`.
+  expense, 30 minutes (`LIVE_SPLIT_MINUTES`), and it adds no rule the bill would
+  not have anyway: any number of people can have paid, the normal form still
+  edits it, and nobody has to settle. People come in through a `live` invite
+  link (accounts only, as ever; on a group's bill joining joins the group, which
+  the join page says first; on a one-off it befriends them with whoever started
+  it and whoever paid). Every tap is a merged `UpdateExpense` through `liveEdits`
+  in shared, sent one at a time. While one runs, what each person paid follows
+  the total (`fitPayers`), so nothing is refused for not adding up, and somebody
+  who starts paying is befriended with everyone on a one-off, or they could
+  never settle. Lines may have nobody on them only while one runs, and such a
+  line counts against whoever paid, by what each paid (`unclaimedOnPayers`), so
+  the ledger is exact at every moment and the end moves no money:
+  `closeLiveSplit` writes those lines to the payers and announces the result
+  once. Nothing is announced before that, so nobody's phone buzzes per tick.
+  `live_split_people` is what lets somebody with no share yet read and edit, and
+  is deleted when it ends. See `docs/live-split.md`.
 - **An expense never changes currency.** `updateExpense` keeps the saved
   currency, group expenses included, and refuses an edit naming another;
   the forms work in it when editing (`expenseFormCurrency` puts the saved

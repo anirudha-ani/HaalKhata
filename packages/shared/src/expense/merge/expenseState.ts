@@ -1,6 +1,7 @@
 /** An expense reduced to what people can change on it, in one shape for the server's rows, its messages and an open form. */
 
-import { computeItemizedSplits, unclaimedOnPayers, type ItemInput } from "../splits";
+import { allocate } from "../allocate";
+import { computeUnclaimedSplits, type ItemInput } from "../splits";
 
 /** One line of a receipt. */
 export interface LineState {
@@ -185,22 +186,17 @@ export function sameExpense(first: ExpenseState, second: ExpenseState): boolean 
 /**
  * Turns lines into the items the split math reads. Everybody's portions go in
  * by person id, so the cent a line's rounding hands out lands on the same
- * person whoever's phone added them to it. A line nobody has claimed yet is
- * shared by whoever paid: the bill was theirs until somebody says otherwise.
+ * person whoever's phone added them to it.
  *
  * @param lines - The lines.
- * @param payerIds - Who paid.
  * @returns The items to compute shares from.
  */
-export function linesToItems(lines: readonly LineState[], payerIds: readonly string[]): ItemInput[] {
-  return unclaimedOnPayers(
-    lines.map((line) => ({
-      name: line.name,
-      totalCents: line.totalCents,
-      assignments: Object.keys(line.shares).sort().map((userId) => ({ userId, weight: line.shares[userId] })),
-    })),
-    payerIds,
-  );
+export function linesToItems(lines: readonly LineState[]): ItemInput[] {
+  return lines.map((line) => ({
+    name: line.name,
+    totalCents: line.totalCents,
+    assignments: Object.keys(line.shares).sort().map((userId) => ({ userId, weight: line.shares[userId] })),
+  }));
 }
 
 /**
@@ -213,14 +209,45 @@ export function linesToItems(lines: readonly LineState[], payerIds: readonly str
  * @throws SplitError when the lines cannot make a bill (none left, or nothing to pay).
  */
 export function withComputedShares(state: ExpenseState): ExpenseState {
-  const { splits, totalCents } = computeItemizedSplits(
-    linesToItems(state.lines, Object.keys(state.payers)),
+  const { splits, totalCents } = computeUnclaimedSplits(
+    linesToItems(state.lines),
     state.taxCents,
     state.tipCents,
+    Object.entries(state.payers).map(([userId, amountCents]) => ({ userId, amountCents })),
   );
   return {
     ...state,
     amountCents: totalCents,
     owed: Object.fromEntries(splits.map((split) => [split.userId, split.owedCents])),
   };
+}
+
+/**
+ * Fits what each person paid to a total, keeping their proportions. Somebody
+ * who paid drops off when nothing is left for them.
+ *
+ * @param payers - What each person paid, in cents.
+ * @param totalCents - What it should add up to.
+ * @returns What each person paid now, adding up to exactly the total.
+ */
+export function fitPayers(payers: Record<string, number>, totalCents: number): Record<string, number> {
+  const payerIds = Object.keys(payers).sort();
+  const fitted = allocate(totalCents, payerIds.map((payerId) => payers[payerId]));
+  return Object.fromEntries(
+    payerIds.flatMap((payerId, position) => (fitted[position] > 0 ? [[payerId, fitted[position]]] : [])),
+  );
+}
+
+/**
+ * Works out an itemized state again where a total can move and nobody is
+ * asked to retype anything: a live split. What each person paid follows the
+ * total first, because lines nobody has claimed follow what each person paid.
+ *
+ * @param state - The itemized state.
+ * @returns The same state with its total, who paid and shares right.
+ * @throws SplitError when the lines cannot make a bill (none left, or nothing to pay).
+ */
+export function withFittedPayers(state: ExpenseState): ExpenseState {
+  const { amountCents } = withComputedShares(state);
+  return withComputedShares({ ...state, payers: fitPayers(state.payers, amountCents) });
 }

@@ -93,7 +93,8 @@ export function ExpenseDetailScreen({ expenseId }: { expenseId: string }) {
   const isParticipant =
     isCreator ||
     expense.payers.some((payer) => payer.userId === meId) ||
-    expense.splits.some((split) => split.userId === meId);
+    expense.splits.some((split) => split.userId === meId) ||
+    (expenseDetail.detail?.liveSplit?.peopleIds.includes(meId ?? "") ?? false);
   const hasLaterSettlement = expenseDetail.detail?.hasLaterSettlement === true;
   const isDeleted = expense.deletedAt !== "";
   const isArchived = expenseDetail.detail?.groupStatus === GroupStatus.ARCHIVED;
@@ -195,9 +196,7 @@ export function ExpenseDetailScreen({ expenseId }: { expenseId: string }) {
 
       {isParticipant && !isDeleted && !isArchived && (canEdit || canDelete) ? (
         <View style={styles.actions}>
-          {/* Lines can have nobody on them while it runs, which the form
-              cannot save: changes go through the live split until it ends. */}
-          {canEdit && !liveSplit ? (
+          {canEdit ? (
             <Button
               compact
               icon={<Pencil color={colors.inkSoft} size={14} />}
@@ -206,7 +205,7 @@ export function ExpenseDetailScreen({ expenseId }: { expenseId: string }) {
               variant="outline"
             />
           ) : null}
-          {canEdit && !liveSplit && expense.items.length > 0 && expense.payers.length === 1 ? (
+          {canEdit && !liveSplit && expense.items.length > 0 ? (
             <Button
               busy={expenseDetail.isStartingLive}
               compact

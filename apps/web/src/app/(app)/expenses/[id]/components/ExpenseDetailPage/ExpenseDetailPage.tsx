@@ -79,7 +79,8 @@ export function ExpenseDetailPage({ expenseId }: { expenseId: string }) {
   const isParticipant =
     isCreator ||
     expense.payers.some((payer) => payer.userId === meId) ||
-    expense.splits.some((split) => split.userId === meId);
+    expense.splits.some((split) => split.userId === meId) ||
+    (expenseDetail.detail?.liveSplit?.peopleIds.includes(meId ?? "") ?? false);
   const hasLaterSettlement = expenseDetail.detail?.hasLaterSettlement === true;
   const isDeleted = expense.deletedAt !== "";
   const isArchived = expenseDetail.detail?.groupStatus === GroupStatus.ARCHIVED;
@@ -184,9 +185,7 @@ export function ExpenseDetailPage({ expenseId }: { expenseId: string }) {
 
       {isParticipant && !isDeleted && !isArchived && (canEdit || canDelete) ? (
         <div className="flex flex-wrap gap-2">
-          {/* Lines can have nobody on them while it runs, which the form
-              cannot save: changes go through the live split until it ends. */}
-          {canEdit && !liveSplit ? (
+          {canEdit ? (
             <Link
               href={`/expenses/new?edit=${expense.id}`}
               className="flex items-center gap-1.5 rounded-lg border border-line bg-card px-3 py-2 text-xs font-semibold text-ink-soft hover:border-brand-200"
@@ -194,7 +193,7 @@ export function ExpenseDetailPage({ expenseId }: { expenseId: string }) {
               <Pencil className="h-3.5 w-3.5" /> Edit
             </Link>
           ) : null}
-          {canEdit && !liveSplit && expense.items.length > 0 && expense.payers.length === 1 ? (
+          {canEdit && !liveSplit && expense.items.length > 0 ? (
             <button
               type="button"
               disabled={expenseDetail.isStartingLive}

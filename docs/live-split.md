@@ -5,11 +5,16 @@ minutes. Everyone joins through a link, claims what they had and fixes the bill
 together. Nobody's phone buzzes while that happens. When it ends, everyone on the
 expense hears what they owe, once.
 
+It is an ordinary bill with a way to join on the spot, so it asks nothing a bill
+would not. Any number of people can have paid, the normal Edit form works
+throughout, and nobody has to settle: the bill stays in everyone's balances for
+as long as they like.
+
 ## What people see
 
 1. On the expense form, in Itemized, **Split live with the table** saves the bill
-   and opens it. An itemized expense with one payer has **Split live** on its own
-   page too.
+   and opens it. Any itemized expense has **Split live** on its own page too, so
+   anyone on the bill can open it again after it ends.
 2. **Invite** shows the link, a QR code and the share sheet.
 3. The link opens the join page, which names the bill and its total. Joining needs
    an account: anyone new signs up and comes back here. On a group's bill the page
@@ -17,22 +22,38 @@ expense hears what they owe, once.
 4. Each line has a chip per person. Tapping one puts them on the line or takes
    them off, for yourself or anyone else. Two people on a line share it. Anyone can
    correct a line, add one, remove one, or set the tax and tip.
-5. The screen shows your share of the bill, with Settle beside it, and what
-   nobody has claimed. Once you have paid it says your share is settled. Whoever paid
-   sees everyone else's shares.
-6. It ends after 30 minutes, or when whoever started it taps **Finish now**.
+5. **Paid by** lists who paid. If you put a card down too, tap your name under
+   **Also paid** and enter what it was: the others' amounts adjust so the bill still
+   adds up. Enter the whole bill and you take it over, which is also how to fix a
+   bill that named the wrong person. Anyone can do this for anyone.
+6. The screen shows your share of the bill and what nobody has claimed. **Settle**
+   sits beside each person you owe, for now or for later. Once you have paid it says
+   your share is settled. Whoever paid more than their share sees what they covered
+   for others.
+7. **Edit** on the expense's page opens the normal form at any time, for anything
+   the live screen does not do: a friend who is not at the table, unequal portions,
+   the date or the notes.
+8. It ends after 30 minutes, or when whoever started it taps **Finish now**.
 
 ## The rules, and why
 
 - **The ledger is right at every moment.** Each tap is an ordinary saved edit. A
-  line nobody has claimed counts against whoever paid, so before anyone claims
-  anything nobody owes anybody.
-- **One payer.** Unclaimed lines have to belong to somebody, and a total that moves
-  as lines change cannot keep several people's typed amounts adding up.
+  line nobody has claimed counts against whoever paid, in proportion to what each
+  paid, so before anyone claims anything nobody owes anybody, not even by a cent.
+- **Nothing is refused for not adding up.** A total moves as lines change, so what
+  each person paid moves with it, keeping their proportions. If a card's real
+  figure differs, change it in **Paid by**. Outside a live split several people's
+  typed amounts stay theirs to change, and a save that breaks them says so.
+- **Adding your card connects you.** On a one-off bill, whoever starts paying
+  becomes friends with everyone on it, because a debt now runs between them and a
+  friendship is what lets them settle it.
+- **A debt runs to particular people.** With several payers each person owes
+  whichever payers the ledger's rule names, which is why Settle sits beside each
+  payer instead of under the total.
 - **One announcement.** Nothing reaches the feed or anyone's bell while it runs.
   At the end the result goes out once: as a new expense if the split created it,
   as an edit if it changed one, and not at all if nothing changed.
-- **The end moves no money.** Lines nobody claimed are written to whoever paid,
+- **The end moves no money.** Lines nobody claimed are written to those who paid,
   leaving an ordinary expense that the normal form can edit.
 - **Who is in it is not kept.** `live_split_people` gives somebody with no share yet
   access while it runs, and is deleted when it ends. Anyone who claimed nothing

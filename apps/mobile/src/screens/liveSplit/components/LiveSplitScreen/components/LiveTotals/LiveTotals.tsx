@@ -1,18 +1,17 @@
-/** What the bill comes to for this person, and the way to pay it. */
+/** What the bill comes to for this person. */
 
 import { StyleSheet, View } from "react-native";
 import { unclaimedStaysWith } from "@haalkhata/shared/expense/live/live.constants";
 import { liveTotal } from "@haalkhata/shared/expense/live/liveEdits";
 import { formatMoney } from "@haalkhata/shared/money/money";
-import { Button } from "@/components/ui/Button";
 import { Text } from "@/components/ui/Text";
 import { colors, fonts, radii, spacing } from "@/lib/theme/theme";
 import type { LiveSplitController } from "../../hooks/useLiveSplit";
 
 /**
- * Says what this person owes, with Settle beside it, and what nobody has
- * claimed yet. Whoever paid sees what is owed to them instead, and somebody
- * who has paid up sees that it is done.
+ * Says what this bill comes to for this person and what nobody has claimed
+ * yet. Whoever paid more than their share sees what they covered instead, and
+ * somebody who has paid up sees that it is done.
  *
  * @param props - The screen's controller.
  * @returns The panel.
@@ -20,9 +19,8 @@ import type { LiveSplitController } from "../../hooks/useLiveSplit";
 export function LiveTotals({ live }: { live: LiveSplitController }) {
   const { summary, expense, state } = live;
   if (!summary || !expense || !state) return null;
-  const payer = live.people.get(summary.payerId);
-  const payerName = summary.payerId === live.meId ? "you" : (payer?.name.split(" ")[0] ?? "whoever paid");
-  const total = liveTotal(state, live.meId, live.isSettled);
+  const payerNames = Object.keys(state.payers).map((userId) => (userId === live.meId ? "you" : live.nameOf(userId)));
+  const total = liveTotal(state, live.meId, live.standing);
 
   return (
     <View style={styles.panel}>
@@ -33,11 +31,10 @@ export function LiveTotals({ live }: { live: LiveSplitController }) {
             {formatMoney(total.cents, expense.currency)}
           </Text>
         </View>
-        {total.owing && payer && total.cents > 0 ? <Button label="Settle" onPress={live.openSettle} variant="positive" /> : null}
       </View>
       {summary.unclaimedLines > 0 ? (
         <Text style={styles.label}>
-          {formatMoney(summary.unclaimedCents, expense.currency)} not claimed yet. {unclaimedStaysWith(payerName)}
+          {formatMoney(summary.unclaimedCents, expense.currency)} not claimed yet. {unclaimedStaysWith(payerNames)}
         </Text>
       ) : null}
     </View>

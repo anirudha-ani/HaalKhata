@@ -196,9 +196,10 @@ export function itemizedTotals(
  *
  * @param items - The draft line items.
  * @param currency - ISO 4217 code the item amounts are typed in.
+ * @param allowUnclaimed - A line may have nobody on it: a live split is running on this bill.
  * @returns Whether the draft is valid, with a message when it is not.
  */
-export function checkItemized(items: DraftLineItem[], currency: string): SplitCheck {
+export function checkItemized(items: DraftLineItem[], currency: string, allowUnclaimed = false): SplitCheck {
   if (items.length === 0) return { ok: false, message: "add at least one item" };
 
   const unpriced = items.filter(
@@ -214,7 +215,7 @@ export function checkItemized(items: DraftLineItem[], currency: string): SplitCh
   const unassigned = items.filter(
     (item) => Object.values(item.assignees).filter((weight) => weight > 0).length === 0,
   ).length;
-  if (unassigned > 0) {
+  if (unassigned > 0 && !allowUnclaimed) {
     return {
       ok: false,
       message: `${unassigned} item${unassigned === 1 ? " is" : "s are"} unassigned`,

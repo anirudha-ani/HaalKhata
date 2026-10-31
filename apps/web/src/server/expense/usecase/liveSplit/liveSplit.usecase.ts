@@ -3,8 +3,9 @@
  * minutes through a link. People join, claim what they had and fix the
  * receipt together, through the same merged edits as any other change, so
  * the ledger is exact at every moment; lines nobody has claimed count against
- * whoever paid. Nobody's phone buzzes per tick: the end announces the result
- * once, to everyone on the expense.
+ * whoever paid, by what each paid. Nobody's phone buzzes per tick: the end
+ * announces the result once, to everyone on the expense, and leaves an
+ * ordinary bill that they can settle whenever they like.
  */
 
 import type { UserRow } from "@/server/auth/repo/users.repo";
@@ -70,7 +71,6 @@ export async function startLiveSplit(userId: string, expenseId: string) {
     if (expense.group_id) await assertGroupActive(expense.group_id, client);
     assertCanSplitLive({
       splitType: expense.split_type,
-      payers: children.payers.get(expenseId) ?? [],
       items: children.items.get(expenseId) ?? [],
     });
     const running = await findRunningLiveSplit(expenseId, client);

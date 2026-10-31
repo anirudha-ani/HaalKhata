@@ -2,7 +2,8 @@
 
 import { describe, expect, it } from "vitest";
 import { allocate } from "./allocate";
-import { SplitError, computeItemizedSplits, computeSplits, itemShareCents, unclaimedOnPayers } from "./splits";
+import { MAX_ASSIGNMENT_WEIGHT } from "./live/live.constants";
+import { SplitError, computeItemizedSplits, computeSplits, itemShareCents, payerWeights, unclaimedOnPayers } from "./splits";
 
 const sumOwedCents = (splits: { owedCents: number }[]) =>
   splits.reduce((runningTotal, split) => runningTotal + split.owedCents, 0);
@@ -234,15 +235,22 @@ describe("unclaimedOnPayers", () => {
     const claimed = { name: "Beer", totalCents: 800, assignments: [{ userId: "tomas", weight: 2 }] };
     const open = { name: "Pizza", totalCents: 2000, assignments: [] };
 
-    expect(unclaimedOnPayers([claimed, open], ["sara"])).toEqual([
+    expect(unclaimedOnPayers([claimed, open], [{ userId: "sara", amountCents: 3700 }])).toEqual([
       claimed,
       { ...open, assignments: [{ userId: "sara", weight: 1 }] },
     ]);
   });
 
-  it("shares it equally between several payers", () => {
-    const [line] = unclaimedOnPayers([{ name: "Pizza", totalCents: 2000, assignments: [] }], ["tomas", "sara"]);
+  it("shares it by what each person paid, so a second card creates no debt", () => {
+    const payers = [{ userId: "tomas", amountCents: 4000 }, { userId: "sara", amountCents: 6000 }];
+    const [line] = unclaimedOnPayers([{ name: "Pizza", totalCents: 2000, assignments: [] }], payers);
 
-    expect(line.assignments).toEqual([{ userId: "sara", weight: 1 }, { userId: "tomas", weight: 1 }]);
+    expect(line.assignments).toEqual([{ userId: "sara", weight: 3 }, { userId: "tomas", weight: 2 }]);
+  });
+
+  it("keeps portions small enough to save, even for an enormous unround bill", () => {
+    const weights = payerWeights([{ userId: "sara", amountCents: 9_999_999_999_991 }, { userId: "tomas", amountCents: 3 }]);
+
+    expect(weights.every((portion) => portion.weight >= 1 && portion.weight <= MAX_ASSIGNMENT_WEIGHT)).toBe(true);
   });
 });

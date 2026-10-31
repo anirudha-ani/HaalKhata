@@ -1,7 +1,7 @@
 /** What the expense code needs to know of a live split: whether one is open, and how to open one inside an expense's own transaction. */
 
 import type { PoolClient } from "pg";
-import { LIVE_SPLIT_LINES_MESSAGE, LIVE_SPLIT_MINUTES, LIVE_SPLIT_ONE_PAYER_MESSAGE } from "@haalkhata/shared/expense/live/live.constants";
+import { LIVE_SPLIT_LINES_MESSAGE, LIVE_SPLIT_MINUTES } from "@haalkhata/shared/expense/live/live.constants";
 import { invalid } from "@/server/common/errors";
 import {
   findRunningLiveSplit,
@@ -34,16 +34,13 @@ export async function liveSessionOf(expenseId: string, client?: PoolClient): Pro
 }
 
 /**
- * Refuses an expense a live split cannot run on. It needs lines to claim, and
- * one payer: unclaimed lines stay with whoever paid, and several people's
- * typed amounts could not follow a total that moves as lines change.
+ * Refuses an expense a live split cannot run on: it needs lines to claim.
  *
- * @param expense - The expense's split, payers and lines.
+ * @param expense - The expense's split and lines.
  * @throws UsecaseError (invalid_argument) saying why.
  */
-export function assertCanSplitLive(expense: { splitType: string; payers: readonly unknown[]; items: readonly unknown[] }): void {
+export function assertCanSplitLive(expense: { splitType: string; items: readonly unknown[] }): void {
   if (expense.splitType !== "itemized" || expense.items.length === 0) invalid(LIVE_SPLIT_LINES_MESSAGE);
-  if (expense.payers.length !== 1) invalid(LIVE_SPLIT_ONE_PAYER_MESSAGE);
 }
 
 /**

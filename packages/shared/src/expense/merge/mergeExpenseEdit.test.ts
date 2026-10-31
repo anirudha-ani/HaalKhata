@@ -342,7 +342,7 @@ describe("money that must still reconcile", () => {
       shared,
       withLine(shared, "pizza", { shares: { [TOMAS]: 1 } }),
       withLine(shared, "pizza", { shares: { [PRIYA]: 1 } }),
-      { allowUnclaimed: true },
+      { live: true },
     );
 
     expect(outcome.conflicts).toEqual([]);
@@ -352,9 +352,27 @@ describe("money that must still reconcile", () => {
 
   it("moves unclaimed lines to a new payer", () => {
     const open = withLine(dinner, "pizza", { shares: {} });
-    const outcome = mergeExpenseEdit(open, { ...open, payers: { [TOMAS]: 2800 } }, open, { allowUnclaimed: true });
+    const outcome = mergeExpenseEdit(open, { ...open, payers: { [TOMAS]: 2800 } }, open, { live: true });
 
     expect(outcome.merged.owed).toEqual({ [TOMAS]: 2000, [PRIYA]: 800 });
+  });
+
+  it("while a live split runs, a price fix and a second card both land", () => {
+    const open = withLine(dinner, "pizza", { shares: {} });
+    const repriced = withLine(open, "pizza", { totalCents: 3000 });
+    const secondCard = { ...open, payers: { [SARA]: 2000, [TOMAS]: 800 } };
+    const outcome = mergeExpenseEdit(open, repriced, secondCard, { live: true });
+
+    expect(outcome.conflicts).toEqual([]);
+    expect(outcome.merged.amountCents).toBe(3800);
+    expect(outcome.merged.payers).toEqual({ [SARA]: 2714, [TOMAS]: 1086 });
+  });
+
+  it("outside a live split, several people's typed amounts stay theirs to change", () => {
+    const twoCards = { ...dinner, payers: { [SARA]: 2000, [TOMAS]: 800 } };
+    const repriced = withLine(twoCards, "pizza", { totalCents: 3000 });
+
+    expect(mergeExpenseEdit(twoCards, repriced, twoCards).conflicts.map((conflict) => conflict.edit.part)).toContain("payers");
   });
 });
 

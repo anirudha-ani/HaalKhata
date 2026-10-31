@@ -300,6 +300,11 @@ message GetExpenseResponse {
   string comments_next_cursor = 10;
   // The live split running on this expense; unset when there is none.
   LiveSplit live_split = 11;
+  // Everyone the CALLER still owes in this expense's scope and currency, by
+  // the balance rather than by this bill: paying one of several payers takes
+  // that person off, which settled_for_viewer, one answer for everybody on
+  // the expense, cannot say.
+  repeated string owed_user_ids = 12;
 }
 
 // One recorded change to an expense, for the detail view's history line.

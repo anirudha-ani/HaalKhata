@@ -166,21 +166,27 @@ export async function listDueLiveSplitExpenses(limit: number): Promise<string[]>
 
 /**
  * Puts every line nobody claimed on whoever paid, as real assignments. The
- * shares do not move: unclaimed lines already counted against them. It is
- * what makes the expense an ordinary one again once the split is over.
+ * shares do not move: unclaimed lines already counted against them, with the
+ * same portions. It is what makes the expense an ordinary one again once the
+ * split is over.
  *
  * @param expenseId - The expense.
+ * @param portions - Each payer's portion of such a line.
  * @param client - The transaction finishing the split.
  */
-export async function assignUnclaimedLines(expenseId: string, client: PoolClient): Promise<void> {
+export async function assignUnclaimedLines(
+  expenseId: string,
+  portions: readonly { userId: string; weight: number }[],
+  client: PoolClient,
+): Promise<void> {
   await execute(
     `INSERT INTO expense_item_assignments (item_id, user_id, weight)
-     SELECT item.id, payer.user_id, 1
+     SELECT item.id, portion.user_id, portion.weight
        FROM expense_items item
-       JOIN expense_payers payer ON payer.expense_id = item.expense_id
+      CROSS JOIN unnest($2::text[], $3::int[]) AS portion(user_id, weight)
       WHERE item.expense_id = $1
         AND NOT EXISTS (SELECT 1 FROM expense_item_assignments assigned WHERE assigned.item_id = item.id)`,
-    [expenseId],
+    [expenseId, portions.map((portion) => portion.userId), portions.map((portion) => portion.weight)],
     client,
   );
 }
