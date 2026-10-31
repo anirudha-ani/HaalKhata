@@ -1,11 +1,13 @@
 /** Thin ExpenseService Connect handlers; logic lives in the expense/balance usecases. */
 
-import { Code, ConnectError, type ServiceImpl } from "@connectrpc/connect";
+import { Code, ConnectError } from "@connectrpc/connect";
+import type { PlainServiceImpl } from "@/server/api/connect/wire/plainService";
 import type { ExpenseService } from "@haalkhata/protogen/expense/v1/expense_pb";
 import * as expenses from "@/server/expense/usecase/expense.usecase";
 import * as balances from "@/server/expense/usecase/balance.usecase";
+import * as liveSplits from "@/server/expense/usecase/liveSplit/liveSplit.usecase";
 import { requireUser, runUsecase } from "@/server/api/connect/context";
-import { requireRateLimitedUser, RPC_RATE_LIMITS } from "@/server/api/connect/rpcRateLimit";
+import { requireRateLimitedUser, RPC_RATE_LIMITS } from "@/server/api/connect/rateLimit/rpcRateLimit";
 import { assertOperationId } from "@/server/common/ledger/operations";
 
 /**
@@ -13,7 +15,7 @@ import { assertOperationId } from "@/server/common/ledger/operations";
  * authenticated user and delegates to a usecase via `runUsecase`, which maps
  * UsecaseError codes onto ConnectError codes.
  */
-export const expenseHandler: ServiceImpl<typeof ExpenseService> = {
+export const expenseHandler: PlainServiceImpl<typeof ExpenseService> = {
   /** Every external create names its attempt, so a retry cannot store two. */
   async createExpense(request, context) {
     return runUsecase(async () => {
@@ -25,14 +27,21 @@ export const expenseHandler: ServiceImpl<typeof ExpenseService> = {
     }, context);
   },
 
+  /** An edit names its attempt, so a retry neither saves nor announces it twice; older apps send none. */
   async updateExpense(request, context) {
     if (!request.expense) {
       throw new ConnectError("expense payload is required", Code.InvalidArgument);
     }
-    return runUsecase(
-      async () => expenses.updateExpense(await requireUser(context), request.expenseId, request.expense!, request.preserveSplitType),
-      context,
-    );
+    return runUsecase(async () => {
+      if (request.expense!.operationId) assertOperationId(request.expense!.operationId);
+      return expenses.updateExpense(
+        await requireRateLimitedUser(context, "update-expense", RPC_RATE_LIMITS.updateExpense),
+        request.expenseId,
+        request.expense!,
+        request.preserveSplitType,
+        request.base,
+      );
+    }, context);
   },
 
   async listExpenses(request, context) {
@@ -43,14 +52,62 @@ export const expenseHandler: ServiceImpl<typeof ExpenseService> = {
           {
             groupId: request.groupId || undefined,
             withUserId: request.withUserId || undefined,
+            part: request.part,
+            partGroupId: request.partGroupId || undefined,
           },
+          { cursor: request.cursor, limit: request.limit },
         ),
       context,
     );
   },
 
   async getExpense(request, context) {
-    return runUsecase(async () => expenses.getExpense(await requireUser(context), request.expenseId), context);
+    return runUsecase(
+      async () => expenses.getExpense(await requireUser(context), request.expenseId, request.commentLimit),
+      context,
+    );
+  },
+
+  /** Whether anyone has saved a change: what an open edit form asks on a timer. */
+  async getExpenseVersion(request, context) {
+    return runUsecase(
+      async () =>
+        expenses.getExpenseVersion(
+          await requireRateLimitedUser(context, "get-expense-version", RPC_RATE_LIMITS.getExpenseVersion),
+          request.expenseId,
+        ),
+      context,
+    );
+  },
+
+  /** Opens an expense to everyone at the table, or returns the split already running. */
+  async startLiveSplit(request, context) {
+    return runUsecase(
+      async () =>
+        liveSplits.startLiveSplit(
+          await requireRateLimitedUser(context, "start-live-split", RPC_RATE_LIMITS.startLiveSplit),
+          request.expenseId,
+        ),
+      context,
+    );
+  },
+
+  /** Ends a live split before its time. */
+  async finishLiveSplit(request, context) {
+    await runUsecase(async () => liveSplits.finishLiveSplit(await requireUser(context), request.expenseId), context);
+    return {};
+  },
+
+  /** Older comments on an expense, a page at a time. */
+  async listComments(request, context) {
+    return runUsecase(
+      async () =>
+        expenses.listComments(await requireUser(context), request.expenseId, {
+          cursor: request.cursor,
+          limit: request.limit,
+        }),
+      context,
+    );
   },
 
   async deleteExpense(request, context) {
@@ -67,18 +124,27 @@ export const expenseHandler: ServiceImpl<typeof ExpenseService> = {
     return {};
   },
 
+  /** A comment names its attempt, so a retry stores one and tells everyone once; older apps send none. */
   async addComment(request, context) {
-    return runUsecase(
-      async () => expenses.addComment(await requireUser(context), request.expenseId, request.body),
-      context,
-    );
+    return runUsecase(async () => {
+      if (request.operationId) assertOperationId(request.operationId);
+      return expenses.addComment(
+        await requireRateLimitedUser(context, "add-comment", RPC_RATE_LIMITS.addComment),
+        request.expenseId,
+        request.body,
+        request.operationId,
+      );
+    }, context);
   },
 
   /** Every external recording names its attempt, so a retry cannot store two. */
   async recordSettlement(request, context) {
     return runUsecase(async () => {
       assertOperationId(request.operationId);
-      return expenses.recordSettlement(await requireUser(context), request);
+      return expenses.recordSettlement(
+        await requireRateLimitedUser(context, "record-settlement", RPC_RATE_LIMITS.recordSettlement),
+        request,
+      );
     }, context);
   },
 
@@ -121,6 +187,24 @@ export const expenseHandler: ServiceImpl<typeof ExpenseService> = {
             RPC_RATE_LIMITS.getFriendLedger,
           ),
           request.userId,
+          request.limit,
+        ),
+      context,
+    );
+  },
+
+  /** Older lines of a friend statement, from the previous page's cursor. */
+  async listFriendLedgerEntries(request, context) {
+    return runUsecase(
+      async () =>
+        balances.listFriendLedgerEntries(
+          await requireRateLimitedUser(
+            context,
+            "list-friend-ledger-entries",
+            RPC_RATE_LIMITS.listFriendLedgerEntries,
+          ),
+          request.userId,
+          { cursor: request.cursor, limit: request.limit },
         ),
       context,
     );

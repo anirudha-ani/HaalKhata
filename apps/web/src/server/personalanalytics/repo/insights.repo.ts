@@ -107,7 +107,7 @@ export async function findJourney(
               SELECT pay.expense_id FROM expense_payers pay WHERE pay.user_id = usr.id
             )
        ) ledger
-      WHERE usr.id = $1 AND usr.merged_into IS NULL`,
+      WHERE usr.id = $1`,
     [userId],
     client,
   );
@@ -177,9 +177,9 @@ export interface WindowInsightsRow {
  * with their name and picture at the top is exactly that.
  *
  * So is a row that stands for nobody: the anonymous stand-in a deleted
- * account's share of a shared ledger now belongs to ("Deleted member"),
- * and a merge tombstone. Neither is someone to split with, and the link on
- * their avatar would lead to a friend page about no one.
+ * account's share of a shared ledger now belongs to ("Deleted member"). It
+ * is not someone to split with, and the link on its avatar would lead to a
+ * friend page about no one.
  *
  * Both halves read `mine`, which is materialized once for the statement;
  * two statements would each walk the history. They come back as two JSON
@@ -218,7 +218,7 @@ export async function listWindowInsights(
        SELECT others.currency, usr.id, usr.name, usr.avatar_color, usr.avatar_url,
               COUNT(*)::int AS shared_expense_count
          FROM others JOIN users usr ON usr.id = others.user_id
-        WHERE usr.deleted_at IS NULL AND usr.merged_into IS NULL
+        WHERE usr.deleted_at IS NULL
           AND NOT EXISTS (
           SELECT 1 FROM user_blocks blk
            WHERE (blk.blocker_id = $1 AND blk.blocked_id = usr.id)
@@ -274,8 +274,8 @@ export async function listWindowInsights(
 /** What a person paid and was paid in one currency. */
 export interface PaymentTotalsRow {
   currency: string;
-  paid_cents: string;
-  received_cents: string;
+  paid_cents: number;
+  received_cents: number;
 }
 
 /**

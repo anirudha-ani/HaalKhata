@@ -86,7 +86,7 @@ export async function lockAppleIdentity(email: string, client: PoolClient): Prom
  * @returns Matching active account, with provider identity taking precedence.
  */
 export async function findAppleUser(subject: string, email: string, client: PoolClient) {
-  return queryOne<UserRow>(`SELECT * FROM users WHERE merged_into IS NULL AND deleted_at IS NULL AND (apple_sub = $1 OR lower(email) = $2)
+  return queryOne<UserRow>(`SELECT * FROM users WHERE deleted_at IS NULL AND (apple_sub = $1 OR lower(email) = $2)
     ORDER BY (apple_sub = $1) DESC NULLS LAST LIMIT 1 FOR UPDATE`, [subject, email], client);
 }
 
@@ -94,15 +94,13 @@ export async function findAppleUser(subject: string, email: string, client: Pool
  * Links a verified Apple identity and stores encrypted authorization credentials.
  * @param userId Local account.
  * @param subject Verified Apple subject.
- * @param name Optional replacement for a shadow display name.
  * @param clientId Original OAuth audience.
  * @param ciphertext Encrypted refresh token.
  * @param client Current transaction.
  */
-export async function saveAppleIdentity(userId: string, subject: string, name: string,
+export async function saveAppleIdentity(userId: string, subject: string,
   clientId: string, ciphertext: string, client: PoolClient): Promise<void> {
-  await execute("UPDATE users SET apple_sub = $2, name = COALESCE(NULLIF($3, ''), name) WHERE id = $1",
-    [userId, subject, name], client);
+  await execute("UPDATE users SET apple_sub = $2 WHERE id = $1", [userId, subject], client);
   await execute(`INSERT INTO apple_credentials (user_id, client_id, refresh_token_ciphertext) VALUES ($1, $2, $3)
     ON CONFLICT (user_id, client_id) DO UPDATE SET refresh_token_ciphertext = EXCLUDED.refresh_token_ciphertext`,
   [userId, clientId, ciphertext], client);

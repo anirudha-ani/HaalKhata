@@ -1,6 +1,8 @@
 /** Wording for the member actions that ask first, and for the one the ledger can refuse — shared so both clients say the same thing. */
 
+import { amountsInWords, type CurrencyBucket } from "../money/balances";
 import { formatMoney } from "../money/money";
+import { listInWords } from "../text/listInWords";
 
 /**
  * The member actions that wait for a second, deliberate tap: taking someone
@@ -85,44 +87,115 @@ export interface MemberRemovalBlock {
   detail: string;
 }
 
+/** One debt naming a member, ready to be said: who the other person is, and how much. */
+export interface MemberDebtInWords {
+  /** ISO 4217 code of the debt. */
+  currency: string;
+  /** Signed cents: > 0 means the other person owes the member. */
+  cents: number;
+  /** The other person's display name. */
+  counterpartName: string;
+  /** Whether the other person is the one reading, who is then "you". */
+  counterpartIsViewer?: boolean;
+}
+
 /**
  * Explains why somebody cannot leave or be removed while their balance in the
  * group is unsettled.
  *
  * The server refuses a removal unless the member's net in the group is
- * exactly zero, and a client holding the group's balances knows that before
- * it asks. Saying so up front, with the amount, replaces sending a request
- * that can only fail and then reporting the failure.
+ * exactly zero in every currency, and a client holding the group's balances
+ * knows that before it asks. Saying so up front, with the amounts, replaces
+ * sending a request that can only fail and then reporting the failure.
+ *
+ * A group can hold two currencies (a payment recorded in another before
+ * group payments were kept to the group's own), and a dollar owed with a
+ * euro paid back is two balances to settle, not one that cancels.
+ *
+ * A total of zero is not always settled either: in a group that does not
+ * simplify debts, someone can owe one person and be owed by another. Then
+ * each debt is named, with the way out that needs no payment:
+ * Simplify debts routes them around the member.
  *
  * @param personName - Display name of the member.
  * @param isSelf - Whether that member is the person asking, i.e. leaving.
- * @param netCents - The member's net in the group; > 0 means they are owed
- *   money, < 0 means they owe it.
- * @param currency - The group's ISO 4217 currency code.
- * @returns The refusal in words, or null when the balance is settled and the
+ * @param buckets - The member's net in the group per currency; > 0 means
+ *   they are owed money, < 0 means they owe it.
+ * @param debts - The debts still naming them (see `memberDebts`), each with
+ *   the other person's name, and whether that person is the one reading;
+ *   > 0 means that person owes the member.
+ * @returns The refusal in words, or null when nothing names them and the
  *   removal can go ahead.
  */
 export function memberRemovalBlock(
   personName: string,
   isSelf: boolean,
-  netCents: number,
-  currency: string,
+  buckets: readonly CurrencyBucket[],
+  debts: readonly MemberDebtInWords[] = [],
 ): MemberRemovalBlock | null {
-  if (netCents === 0) return null;
-  const amount = formatMoney(Math.abs(netCents), currency);
-  const owes = netCents < 0;
+  const owes = amountsInWords(buckets.filter((bucket) => bucket.cents < 0));
+  const owed = amountsInWords(buckets.filter((bucket) => bucket.cents > 0));
+  if (!owes && !owed) return debtsBlock(personName, isSelf, debts);
   if (isSelf) {
     return {
       title: "You can't leave this group yet",
-      detail: owes
-        ? `You owe ${amount} here. Settle up first, then you can leave.`
-        : `You are owed ${amount} here. Once that is settled you can leave.`,
+      detail:
+        owes && owed
+          ? `You owe ${owes} and are owed ${owed} here. Both have to be settled before you can leave.`
+          : owes
+            ? `You owe ${owes} here. Settle up first, then you can leave.`
+            : `You are owed ${owed} here. Once that is settled you can leave.`,
     };
   }
   return {
     title: `${personName} can't be removed yet`,
-    detail: owes
-      ? `They owe ${amount} in this group. That has to be settled first.`
-      : `They are owed ${amount} in this group. That has to be settled first.`,
+    detail:
+      owes && owed
+        ? `They owe ${owes} and are owed ${owed} in this group. Both have to be settled first.`
+        : owes
+          ? `They owe ${owes} in this group. That has to be settled first.`
+          : `They are owed ${owed} in this group. That has to be settled first.`,
+  };
+}
+
+/**
+ * The refusal for a member whose total is zero but whom debts still name:
+ * each debt in words, then why and the way out.
+ *
+ * @param personName - Display name of the member.
+ * @param isSelf - Whether that member is the person asking.
+ * @param debts - The debts naming them; > 0 means the other person owes them.
+ * @returns The refusal, or null when there are none.
+ */
+function debtsBlock(
+  personName: string,
+  isSelf: boolean,
+  debts: readonly MemberDebtInWords[],
+): MemberRemovalBlock | null {
+  if (debts.length === 0) return null;
+  const subject = isSelf ? "you" : "they";
+  const object = isSelf ? "you" : "them";
+  const said = listInWords(
+    debts.map((debt) => {
+      const amount = formatMoney(Math.abs(debt.cents), debt.currency);
+      // The reader is "you" — an owner removing someone they owe or are owed by.
+      if (debt.counterpartIsViewer) {
+        return debt.cents > 0 ? `you owe ${object} ${amount}` : `${subject} owe you ${amount}`;
+      }
+      return debt.cents > 0
+        ? `${debt.counterpartName} owes ${object} ${amount}`
+        : `${subject} owe ${debt.counterpartName} ${amount}`;
+    }),
+  );
+  const sentence = `${said.charAt(0).toUpperCase()}${said.slice(1)}`;
+  if (isSelf) {
+    return {
+      title: "You can't leave this group yet",
+      detail: `${sentence} here. Your total is even, but each has to be settled before you can leave — or turn on Simplify debts so they are paid around you.`,
+    };
+  }
+  return {
+    title: `${personName} can't be removed yet`,
+    detail: `${sentence} in this group. Their total is even, but each has to be settled first — or turn on Simplify debts so they are paid around them.`,
   };
 }

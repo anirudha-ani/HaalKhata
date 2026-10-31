@@ -47,7 +47,6 @@ function user(userId: string, overrides: Partial<UserRow> = {}): UserRow {
     phone_verified_at: null,
     google_sub: `google-${userId}`,
     onboarded_at: null,
-    merged_into: null,
     token_version: 1,
     created_at: "2026-10-01T00:00:00Z",
     contact_discovery: true,

@@ -1,7 +1,7 @@
 /** Activity feed: searchable, filterable, day-grouped events with keyset pagination. */
 
 import { Bell } from "lucide-react-native";
-import { ScrollView, StyleSheet, View } from "react-native";
+import { StyleSheet, View } from "react-native";
 import { Text } from "@/components/ui/Text";
 import { ActivityList } from "@/components/activity/ActivityList";
 import { useResponsiveLayout } from "@/lib/layout/hooks/useResponsiveLayout";
@@ -10,10 +10,10 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { ErrorAlert } from "@/components/ui/ErrorAlert";
 import { SearchField } from "@/components/ui/SearchField";
 import { ACTIVITY_FILTERS } from "@haalkhata/shared/activity/filters";
-import { monthLabel } from "@haalkhata/shared/activity/format";
 import { colors, radii, spacing } from "@/lib/theme/theme";
 import type { useActivity } from "../../hooks/useActivity";
 import { FeedFooter } from "./components/FeedFooter/FeedFooter";
+import { MonthPicker } from "./components/MonthPicker/MonthPicker";
 
 /**
  * Renders the activity feed: search, type filters, a month window, and the
@@ -62,11 +62,20 @@ export function ActivityFeed({
   return (
     <View style={[styles.workspace, isExpanded ? styles.workspaceExpanded : null]}>
       <View style={[styles.filters, isExpanded ? styles.filtersExpanded : null]}>
-        <SearchField
-          onChange={activity.setQuery}
-          placeholder="Search activity"
-          value={activity.query}
-        />
+        {/* The month window: only months that actually hold activity are
+            offered, so nothing here leads to an empty screen. */}
+        <View style={styles.searchRow}>
+          <View style={styles.search}>
+            <SearchField
+              onChange={activity.setQuery}
+              placeholder="Search activity"
+              value={activity.query}
+            />
+          </View>
+          {activity.months.length > 0 ? (
+            <MonthPicker month={activity.month} months={activity.months} onChange={activity.setMonth} />
+          ) : null}
+        </View>
 
         {/* Filter state has to stay visible while it hides rows, so the
             active chip is styled, not just remembered. */}
@@ -87,32 +96,6 @@ export function ActivityFeed({
             </Text>
           ) : null}
         </View>
-
-        {/* The month window: only months that actually hold activity are
-            offered, so nothing here leads to an empty screen. */}
-        {activity.months.length > 0 ? (
-          <ScrollView
-            contentContainerStyle={styles.months}
-            horizontal
-            keyboardShouldPersistTaps="handled"
-            showsHorizontalScrollIndicator={false}
-            style={styles.monthScroller}
-          >
-            <Chip
-              label="All time"
-              onPress={() => activity.setMonth("")}
-              selected={activity.month === ""}
-            />
-            {activity.months.map((monthKey) => (
-              <Chip
-                key={monthKey}
-                label={monthLabel(monthKey)}
-                onPress={() => activity.setMonth(monthKey)}
-                selected={activity.month === monthKey}
-              />
-            ))}
-          </ScrollView>
-        ) : null}
       </View>
 
       <View style={[styles.results, isExpanded ? styles.resultsExpanded : null]}>
@@ -170,20 +153,20 @@ const styles = StyleSheet.create({
     flex: 2,
     minWidth: 0,
   },
-  months: {
-    alignItems: "flex-start",
-    flexDirection: "row",
-    gap: spacing.sm,
-  },
-  monthScroller: {
-    flexGrow: 0,
-  },
   results: {
     gap: spacing.xl,
     minWidth: 0,
   },
   resultsExpanded: {
     flex: 3,
+  },
+  search: {
+    flex: 1,
+    minWidth: 0,
+  },
+  searchRow: {
+    flexDirection: "row",
+    gap: spacing.sm,
   },
   workspace: {
     gap: spacing.xl,

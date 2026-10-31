@@ -50,32 +50,47 @@ to `COMPATIBLE_AI_MODEL`, not code.
 
 ## Image Pipeline
 
-1. **Size gates:** non-empty, ≤ 8 MB compressed, ≤ 40 MP decoded (checked
-   *without* multiplying attacker-controlled dimensions first — width is
-   bounded by `MAX_PIXELS / height`).
-2. **Format detection from magic bytes** — the client's `media_type` is
-   advisory and ignored. Browsers report an empty string for HEIC, so a
-   perfectly valid iPhone photo arrives unlabeled; sniffing is both more
-   permissive (accepts what the browser could not name) and stricter (a
-   `.png` full of script is recognized for what it is). Accepted: JPEG, PNG,
-   WebP, GIF, HEIC/HEIF (still-image brands only — HEIF containers also
-   hold video, and only stills are worth transcoding).
-3. **HEIC decode** via `heic-decode`, *not* sharp: sharp's bundled libheif
-   caps `iref` boxes at 16 references and real iPhone photos carry ~48 (HDR
-   gain map, depth map, thumbnails), so every one of them would fail.
-   Metadata is read **before** pixel decode (the decoder otherwise allocates
-   width×height×4 before reporting dimensions), and decodes are limited to
-   **one at a time per process** — the slot is held through Sharp's
-   consumption of the raw RGBA buffer, so a second upload cannot allocate
-   while the first is still compressing.
-4. **Normalization to JPEG** (every format, not just HEIC): EXIF rotation is
-   applied (providers read pixels; a sideways receipt would be transcribed
-   sideways), the long edge is capped at 2576 px (larger is downsampled
-   provider-side anyway), quality 88 (small receipt print must stay
-   legible).
-5. The resulting JPEG is what the provider sees **and** what the response
-   returns (`normalized_image`) — browsers cannot render the original HEIC,
-   and showing the user exactly what the model read is the honest preview.
+The photo is prepared on the device and only checked on the server. The
+standard lives in `@haalkhata/shared/receipt/receipt.constants`, read by
+both apps and the server: a JPEG at most 2576 px on its longer side, with
+its rotation applied to the pixels and no metadata, at most 8 MB.
+
+**On the device.**
+
+- **Web** (`apps/web/src/lib/image/receiptImage.ts`): every photo is
+  re-encoded, even a small one, because that is what applies its rotation
+  and leaves its metadata behind. The browser decodes it (`createImageBitmap`
+  with `imageOrientation: "from-image"`) and a canvas draws it upright at
+  upload size on white, then encodes a JPEG at quality 0.85. Chrome turns
+  a JPEG upright even when asked not to and Safari before 16.4 never does,
+  so the decoded size is compared with the size stored in the file
+  (`remainingTurn`) and the EXIF turn is made only when the browser did not.
+  A HEIC opens natively in Safari 17+; in Chrome, Firefox and Edge it is
+  decoded by libheif (WebAssembly) in a Web Worker
+  (`heicToJpeg.worker.ts`), loaded only when somebody picks a HEIC and
+  stopped after the one photo. A 48 MP iPhone photo takes about three
+  seconds on a laptop. A photo the browser cannot read is refused beside the
+  control, before any upload.
+- **Mobile** (`prepareReceiptPhoto.ts`): `expo-image-manipulator` decodes
+  natively (HEIC included), shrinks to the standard and saves a JPEG. The
+  render is measured again and shrunk a second time if the picker reported
+  the size before rotation.
+
+**On the server** (`usecase/image/preparedJpeg.ts`). No image is decoded:
+
+1. **Size gates:** non-empty and ≤ 8 MB.
+2. **The standard, from the headers alone:** the bytes must be one whole
+   JPEG (start and end markers, segments that add up, exactly one frame
+   header before the first scan), at most 2576 px on each side. Anything
+   else, such as a HEIC, a PNG or a full-size camera JPEG sent straight to
+   the API, is refused as "not prepared for upload". The walk stops at the
+   first scan, so its cost does not depend on what the photo shows.
+3. **Metadata removed:** APP1 (EXIF, XMP), the other application segments
+   and comments are dropped; APP0 (JFIF) and APP2 (the colour profile) are
+   kept, and everything from the first scan on is forwarded byte for byte.
+4. The resulting JPEG is what the provider sees **and** what the response
+   returns (`normalized_image`), so the person sees exactly what the model
+   read.
 
 ## Untrusted-Output Normalization
 
@@ -104,9 +119,10 @@ promised:
 
 | Guard | Value |
 | --- | --- |
-| Rate limit | 5/min per account |
-| Concurrency | 2 parses per process (handler gate, `ResourceExhausted` when busy); 1 HEIC decode per process |
-| Upload | 8 MB bytes, 40 MP pixels |
+| Rate limit | 5 scans a minute per account, spent only when a scan gets a lane |
+| Concurrency | 6 lanes per process, then a line of 8 that waits up to 20 s; one scan per person at a time |
+| Upload | A prepared JPEG: 8 MB, 2576 px on its longer side |
+| Memory | No image is decoded on the server; a scan costs its request body |
 | Provider | 90 s timeout, 1 MiB response cap |
 
 ---
@@ -143,6 +159,30 @@ promised:
     response): `Unavailable` "receipt scanning is unavailable right now.
     Please try again in a few minutes". Asking for a clearer photo here
     would blame the user for an outage.
+- **Who scans now** (`usecase/scanLanes/scanLanes.ts`, in
+  `parseReceiptWithConsent`, in this order):
+  1. Permission, as above.
+  2. The person's 5 scans a minute, checked but not spent: somebody out of
+     scans gets `ResourceExhausted` "you've scanned 5 receipts in the last
+     minute — try again in a moment" at once, without waiting in line.
+  3. A lane. A process runs 6 scans at once (`RECEIPT_SCAN_LANES`): a scan
+     spends nearly all its time waiting for the provider, since both apps
+     prepare the photo. With every lane taken, up to 8 scans wait in line,
+     first come first served, for at most 20 s; a scan that finds the line
+     full, or waits that long, gets `ResourceExhausted` "lots of receipts
+     are being read right now — try again in a minute". 20 s plus the
+     provider's 90 s stays inside the apps' own 120 s limit on a scan.
+  4. Only now is one of the person's scans for the minute spent: a scan
+     turned away as busy, or that gave up waiting, costs nothing.
+- **One scan per person, and it stops when they leave.** A person's newer
+  scan stops their earlier one, running or waiting, which answers
+  `Aborted` "you started another receipt scan, so this one was stopped".
+  When the request goes away — the app closed, the person left the form
+  (both apps hang up on a scan when its form unmounts) — the scan stops at
+  once: it leaves the line, or hangs up on the provider, and its lane goes
+  to the next. A stopped scan asks no further provider and is not counted.
+  Hanging up frees the lane; it does not stop the provider billing a
+  request it has started (OpenRouter bills an unstreamed request in full).
 - No `operation_id`: parsing stores nothing about the receipt, so a retry
   costs money but can never duplicate data.
 - **Each attempt is counted, and that is all.** `scanReceipt` wraps the parse
@@ -190,10 +230,10 @@ promised:
 | date | string | `YYYY-MM-DD` or `""` when unreadable. |
 | currency | string | ISO 4217 guess; defaults `"USD"`. |
 | items | repeated ParsedReceiptItem | `{name, quantity, unit_price_cents, total_cents}`; ≤ 100 rows; modifiers folded into their items. |
-| subtotal_cents | int32 | Derived from items when the receipt's own is unreadable. |
-| tax_cents | int32 | All taxes combined; 0 when absent. |
-| tip_cents | int32 | Tip/service charge; 0 when absent. |
-| total_cents | int32 | Derived from subtotal+tax+tip when unreadable. |
+| subtotal_cents | int64 | Derived from items when the receipt's own is unreadable. |
+| tax_cents | int64 | All taxes combined; 0 when absent. |
+| tip_cents | int64 | Tip/service charge; 0 when absent. |
+| total_cents | int64 | Derived from subtotal+tax+tip when unreadable. |
 
 **Sample Response (JSON):**
 
@@ -252,6 +292,6 @@ Withdrawal stops subsequent processing; it cannot recall an already-sent request
 Account deletion cascades to the permission row. Existing accounts are not opted in
 by migration, and old per-photo checkbox choices are not converted into permission.
 
-Native uploads first normalize camera/library images, including HEIC, to JPEG
-with a 2,576-pixel long edge and an 8 MB byte bound. The server still independently
-sniffs bytes, enforces its own bounds and normalizes the exact image sent to AI.
+Both apps prepare camera and library photos, HEIC included, to the standard
+before upload (see Image Pipeline). The server checks that standard from the
+photo's own headers, removes its metadata and sends exactly that JPEG to AI.

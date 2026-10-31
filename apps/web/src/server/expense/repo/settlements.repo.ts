@@ -3,6 +3,9 @@
 import type { PoolClient } from "pg";
 import { execute, newId, query, queryOne } from "@/server/common/db/db";
 import { lockParticipantLedgers, withLedgerTransaction } from "@/server/common/ledger/ledgerLocks";
+import { exactTimeSql, utcDaySql } from "@/server/common/pagination/pagination";
+import { LEDGER_LINE_RANK, OFFSET_SETTLEMENT_METHOD } from "@/server/expense/expense.constants";
+import type { LedgerLineKey } from "@/server/expense/domain/ledgerOrder";
 
 /** One row of the settlements table (column names mirror SQL). */
 export interface SettlementRow {
@@ -25,7 +28,7 @@ export interface SettlementRow {
   note: string;
   created_at: string;
   /** Monotonic order shared with expenses for mutation-safety checks. */
-  ledger_event_order: string;
+  ledger_event_order: number;
   /** When the payment was removed; null while it counts. */
   deleted_at: string | null;
   /**
@@ -48,10 +51,11 @@ export interface SettlementRow {
  * Serializes all settlement writes between one pair of users.
  *
  * Runs `operation` inside a transaction that first takes a Postgres advisory
- * lock keyed on the ordered pair. Every settlement writer must go through
- * this: the over-settle guard is a read followed by an insert, and without
- * the lock two concurrent recordings both read the same outstanding debt,
- * both pass, and both insert — the pair ends up double-settled.
+ * lock keyed on the ordered pair. Every settlement writer must take this
+ * lock — here, or with {@link lockSettlementPair} in its own ledger
+ * transaction: the over-settle guard is a read followed by an insert, and
+ * without the lock two concurrent recordings both read the same outstanding
+ * debt, both pass, and both insert — the pair ends up double-settled.
  *
  * Every validation read and insert inside `operation` must use the provided
  * client. Borrowing from the shared pool while this transaction holds one
@@ -69,9 +73,23 @@ export async function withSettlementPairLock<Outcome>(
   operation: (client: PoolClient) => Promise<Outcome>,
 ): Promise<Outcome> {
   return withLedgerTransaction(async (client) => {
-    await lockParticipantLedgers(client, [firstUserId, secondUserId]);
+    await lockSettlementPair(client, firstUserId, secondUserId);
     return operation(client);
   });
+}
+
+/**
+ * Takes the pair's lock inside a ledger transaction the caller already
+ * opened — the lock {@link withSettlementPairLock} takes first. Recording a
+ * payment uses it to claim its operation id before any lock, as every money
+ * write does, so a retry is answered without waiting for the pair.
+ *
+ * @param client - The ledger transaction (from withLedgerTransaction).
+ * @param firstUserId - One side of the pair, in either order.
+ * @param secondUserId - The other side.
+ */
+export async function lockSettlementPair(client: PoolClient, firstUserId: string, secondUserId: string): Promise<void> {
+  await lockParticipantLedgers(client, [firstUserId, secondUserId]);
 }
 
 /**
@@ -96,7 +114,7 @@ export async function withSettlementPairLock<Outcome>(
 export async function scopeHasSettlements(
   groupId: string | null,
   participantIds: string[],
-  expenseEventOrder: string,
+  expenseEventOrder: number,
   client?: PoolClient,
   groupParticipantsOnly = false,
 ): Promise<boolean> {
@@ -328,13 +346,83 @@ export async function listSettlementsBetween(
   secondUserId: string,
   includeDeleted = false,
   client?: PoolClient,
-): Promise<SettlementRow[]> {
-  return query<SettlementRow>(
-    `SELECT * FROM settlements
+): Promise<ListedSettlementRow[]> {
+  return query<ListedSettlementRow>(
+    `SELECT *, ${exactTimeSql("created_at")} AS created_at_exact FROM settlements
      WHERE ((from_user = $1 AND to_user = $2) OR (from_user = $2 AND to_user = $1))
        AND ($3::boolean OR deleted_at IS NULL)
      ORDER BY created_at ASC`,
     [firstUserId, secondUserId, includeDeleted],
+    client,
+  );
+}
+
+/** A settlement row with its creation time to the microsecond, for statement order. */
+export type ListedSettlementRow = SettlementRow & { created_at_exact: string };
+
+/**
+ * One page of the payments between two people (deleted ones included, every
+ * scope), going back in time from `before` in the friend statement's order:
+ * UTC day, moment written, rank (a cancelled balance before its payment),
+ * id. The same order {@link compareLedgerLineKeys} keeps in memory.
+ *
+ * @param firstUserId - One of the two people.
+ * @param secondUserId - The other.
+ * @param before - The oldest line already shown; null starts at the newest.
+ * @param limit - Most rows to return.
+ * @param client - Snapshot client.
+ * @returns The rows, newest first, each with its exact creation time.
+ */
+export async function listSettlementsBetweenPage(
+  firstUserId: string,
+  secondUserId: string,
+  before: LedgerLineKey | null,
+  limit: number,
+  client: PoolClient,
+): Promise<ListedSettlementRow[]> {
+  return query<ListedSettlementRow>(
+    `SELECT *, ${exactTimeSql("created_at")} AS created_at_exact
+       FROM settlements
+      WHERE ((from_user = $1 AND to_user = $2) OR (from_user = $2 AND to_user = $1))
+        AND ($3::text IS NULL
+             OR (${utcDaySql("created_at")}, created_at,
+                 CASE WHEN method = $7 THEN $8::int ELSE $9::int END, id COLLATE "C")
+                < ($3::text COLLATE "C", $4::timestamptz, $5::int, $6::text COLLATE "C"))
+      ORDER BY ${utcDaySql("created_at")} DESC, created_at DESC,
+               CASE WHEN method = $7 THEN $8::int ELSE $9::int END DESC, id COLLATE "C" DESC
+      LIMIT $10`,
+    [
+      firstUserId,
+      secondUserId,
+      before?.day ?? null,
+      before?.at ?? null,
+      before?.rank ?? null,
+      before?.id ?? null,
+      OFFSET_SETTLEMENT_METHOD,
+      LEDGER_LINE_RANK.offset,
+      LEDGER_LINE_RANK.payment,
+      limit,
+    ],
+    client,
+  );
+}
+
+/**
+ * Every row of the given net settlements, so a page holding one line of a
+ * unit can still tell what removing the whole unit would do.
+ *
+ * @param netSettlementIds - The units.
+ * @param client - Snapshot client.
+ * @returns Their rows; no query is sent for an empty list.
+ */
+export async function listSettlementsByNetSettlements(
+  netSettlementIds: readonly string[],
+  client: PoolClient,
+): Promise<SettlementRow[]> {
+  if (netSettlementIds.length === 0) return [];
+  return query<SettlementRow>(
+    "SELECT * FROM settlements WHERE net_settlement_id = ANY($1::text[])",
+    [[...new Set(netSettlementIds)]],
     client,
   );
 }
@@ -360,6 +448,32 @@ export async function listOneOffSettlementsBetween(
        AND ((from_user = $1 AND to_user = $2) OR (from_user = $2 AND to_user = $1))
      ORDER BY created_at ASC`,
     [firstUserId, secondUserId],
+    client,
+  );
+}
+
+/**
+ * Lists the live one-off settlements between the user and any of the given
+ * people, either direction, oldest first: the settlement side of every one
+ * of those pairs' one-off ledgers, from one read.
+ *
+ * @param userId - The person on every settlement.
+ * @param otherUserIds - The people on the other side.
+ * @param client - Snapshot or transaction client; omitted, the pool.
+ * @returns The settlement rows; no query is sent for an empty list of people.
+ */
+export async function listOneOffSettlementsWithAnyOf(
+  userId: string,
+  otherUserIds: readonly string[],
+  client?: PoolClient,
+): Promise<SettlementRow[]> {
+  if (otherUserIds.length === 0) return [];
+  return query<SettlementRow>(
+    `SELECT * FROM settlements
+     WHERE group_id IS NULL AND deleted_at IS NULL
+       AND ((from_user = $1 AND to_user = ANY($2::text[])) OR (to_user = $1 AND from_user = ANY($2::text[])))
+     ORDER BY created_at ASC`,
+    [userId, [...new Set(otherUserIds)]],
     client,
   );
 }

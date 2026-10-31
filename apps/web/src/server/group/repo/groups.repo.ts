@@ -61,6 +61,30 @@ export async function insertGroup(
 }
 
 /**
+ * Counts the groups each person is in, deleted groups left out.
+ *
+ * @param userIds - The people to count for.
+ * @param client - Transaction client holding the lock of the group they are joining.
+ * @returns Groups per person; somebody in none is absent.
+ */
+export async function countGroupMemberships(
+  userIds: string[],
+  client?: PoolClient,
+): Promise<Map<string, number>> {
+  if (userIds.length === 0) return new Map();
+  const rows = await query<{ user_id: string; total: number }>(
+    `SELECT group_members.user_id, count(*)::int AS total
+       FROM group_members
+       JOIN groups ON groups.id = group_members.group_id
+      WHERE group_members.user_id = ANY($1::text[]) AND groups.status <> 'deleted'
+      GROUP BY group_members.user_id`,
+    [userIds],
+    client,
+  );
+  return new Map(rows.map((membership) => [membership.user_id, membership.total]));
+}
+
+/**
  * Looks up a single group by primary key.
  *
  * @param groupId - Id of the group to fetch.
@@ -191,16 +215,44 @@ export async function listMembersByGroupIds(groupIds: string[]): Promise<Map<str
  * other, and the friends list shows them once they share an expense.
  *
  * @param userId - Id of the user whose co-members to look up.
+ * @param client - Transaction client, so a read under a lock stays on its connection.
  * @returns Distinct user ids sharing a group with them, excluding themselves.
  */
-export async function listCoMemberIds(userId: string): Promise<string[]> {
+export async function listCoMemberIds(userId: string, client?: PoolClient): Promise<string[]> {
   const coMemberRows = await query<{ user_id: string }>(
     `SELECT DISTINCT theirs.user_id FROM group_members AS mine
      JOIN group_members AS theirs ON theirs.group_id = mine.group_id
      WHERE mine.user_id = $1 AND theirs.user_id <> $1`,
     [userId],
+    client,
   );
   return coMemberRows.map((coMemberRow) => coMemberRow.user_id);
+}
+
+/**
+ * Adds several users to a group in one statement, with the same role; a
+ * no-op for anyone already a member.
+ *
+ * @param groupId - Id of the group to add the users to.
+ * @param userIds - Ids of the users being added.
+ * @param role - Membership role to record for each of them.
+ * @param client - Transaction client when the enrolment must commit with the
+ *   rest of a batch and the feed event announcing it.
+ */
+export async function insertMembers(
+  groupId: string,
+  userIds: string[],
+  role: string,
+  client?: PoolClient,
+): Promise<void> {
+  if (userIds.length === 0) return;
+  await execute(
+    `INSERT INTO group_members (group_id, user_id, role)
+     SELECT $1, member_id, $3 FROM unnest($2::text[]) AS member_id
+     ON CONFLICT DO NOTHING`,
+    [groupId, userIds, role],
+    client,
+  );
 }
 
 /**
@@ -209,8 +261,8 @@ export async function listCoMemberIds(userId: string): Promise<string[]> {
  * @param groupId - Id of the group to add the user to.
  * @param userId - Id of the user being added.
  * @param role - Membership role to record (defaults to "member").
- * @param client - Transaction client when the enrolment must commit with the
- *   rest of a batch and the feed event announcing it.
+ * @param client - Transaction client when the membership must commit with
+ *   the change that implies it.
  */
 export async function addMember(
   groupId: string,
@@ -218,12 +270,7 @@ export async function addMember(
   role = "member",
   client?: PoolClient,
 ): Promise<void> {
-  await execute(
-    `INSERT INTO group_members (group_id, user_id, role) VALUES ($1, $2, $3)
-     ON CONFLICT DO NOTHING`,
-    [groupId, userId, role],
-    client,
-  );
+  await insertMembers(groupId, [userId], role, client);
 }
 
 /**

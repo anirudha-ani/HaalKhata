@@ -91,6 +91,10 @@ describe("appPaymentLink, when the amount must stay out of the link", () => {
     );
   });
 
+  test.each([".", "..", "...", "jordan.lee", "jordan-lee"])("offers no PayPal link for the handle %s", (handle) => {
+    expect(appPaymentLink(request({ preset: "paypal", handle, methodCurrency: "" }))?.url ?? "").toBe("");
+  });
+
   test("paypal is not handed a currency it does not send", () => {
     const link = appPaymentLink(
       request({ preset: "paypal", handle: "anipaul", methodCurrency: "", currency: "BDT" }),

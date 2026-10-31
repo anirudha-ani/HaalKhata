@@ -40,10 +40,10 @@ function sessionTokenHash(token: string): string {
  * store the app's sign-in uses: a nonce is a nonce, and the two flows part
  * ways only after the identity is proven.
  *
- * @returns The raw nonce to pass to Google.
+ * @returns The raw nonce to pass to Google, and how many seconds it is accepted for.
  * @throws UsecaseError "invalid_argument" when Google sign-in is not configured.
  */
-export async function beginAdminSignIn(): Promise<{ nonce: string }> {
+export async function beginAdminSignIn(): Promise<{ nonce: string; lifetimeSeconds: number }> {
   return beginGoogleSignIn();
 }
 

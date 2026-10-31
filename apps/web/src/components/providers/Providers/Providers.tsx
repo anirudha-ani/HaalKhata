@@ -31,6 +31,10 @@ export function Providers({
             retry: 1,
             refetchOnWindowFocus: true,
           },
+          // A write made offline fails there and then, where it can be said.
+          // By default it would wait, and fire when the connection came back,
+          // long after the dialog it came from was closed and given up on.
+          mutations: { networkMode: "always" },
         },
       }),
   );

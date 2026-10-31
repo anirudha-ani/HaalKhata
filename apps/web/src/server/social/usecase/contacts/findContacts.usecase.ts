@@ -10,7 +10,8 @@
 import { ContactRelation } from "@haalkhata/protogen/social/v1/social_pb";
 import { transaction } from "@/server/common/db/db";
 import { exhausted, invalid } from "@/server/common/errors";
-import { EMAIL_PATTERN, normalizePhone } from "@/server/auth/auth.constants";
+import { normalizePhone } from "@/server/auth/auth.constants";
+import { canonicalEmail } from "@haalkhata/shared/email/email";
 import { isRegisteredUser, toFriendRequestUser } from "@/server/auth/usecase/identity/user.mapper";
 import {
   claimLookupQuota,
@@ -77,18 +78,6 @@ function canonicalPhone(value: string): string | null {
   const trimmed = value.trim();
   if (!trimmed.startsWith("+")) return null;
   return normalizePhone(trimmed);
-}
-
-/**
- * Canonical form of an email address: trimmed and lower-cased, matching how
- * the users table compares addresses.
- *
- * @param value - An email from the address book.
- * @returns The canonical address, or null when it is not an address.
- */
-function canonicalEmail(value: string): string | null {
-  const lowered = value.trim().toLowerCase();
-  return EMAIL_PATTERN.test(lowered) ? lowered : null;
 }
 
 /**

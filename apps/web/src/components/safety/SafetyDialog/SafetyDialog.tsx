@@ -52,6 +52,7 @@ export function SafetyDialog({
 
   /** Sends only the confirmed action; a failure stays in mutation state for the dialog to show. */
   const submit = async () => {
+    if (busy) return;
     try {
       if (mode === "report") await safety.report.mutateAsync({ targetKind, targetId, reason });
       else if (userId) await safety.block.mutateAsync(userId);

@@ -4,9 +4,10 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { Client } from "pg";
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
+import { testDatabaseName } from "@/server/common/testing/testDatabase";
 
 const ADMIN_URL = process.env.MERGE_TEST_ADMIN_URL ?? "postgres://haalkhata:change-me@127.0.0.1:5432/postgres";
-const TEST_DATABASE = "haalkhata_safety_test";
+const TEST_DATABASE = testDatabaseName("haalkhata_safety_test");
 const TEST_URL = ADMIN_URL.replace(/\/[^/]*$/, `/${TEST_DATABASE}`);
 const MODERATION_CONTAINER = process.env.MODERATION_TEST_CONTAINER;
 
@@ -92,12 +93,12 @@ describe.skipIf(!await databaseReachable())("safety against Postgres", () => {
     expect((await database.query("SELECT * FROM comments")).rows).toEqual([]);
     expect((await database.query("SELECT status FROM content_reports WHERE id = $1", [reportId])).rows[0].status).toBe("removed");
     moderate("suspend", reportId);
-    const users = await import("@/server/auth/repo/users.repo");
-    expect(await users.findUserTokenVersion("author")).toBeUndefined();
+    const sessions = await import("@/server/auth/repo/sessions.repo");
+    expect(await sessions.findSessionStanding("author", "")).toBeUndefined();
     const authentication = await import("@/server/auth/usecase/account/auth.usecase");
     const session = await import("@/server/auth/usecase/session/session");
-    expect(await authentication.sessionUser(session.createToken("author", 1))).toBeNull();
-    moderate("resume", reportId); expect(await users.findUserTokenVersion("author")).toBe(2);
+    expect(await authentication.sessionUser(session.createToken("author", 1, "session-1"))).toBeNull();
+    moderate("resume", reportId); expect((await sessions.findSessionStanding("author", ""))?.token_version).toBe(2);
     expect((await database.query("SELECT SUM(owed_cents)::int AS cents FROM expense_splits")).rows[0].cents).toBe(1000);
   });
 });

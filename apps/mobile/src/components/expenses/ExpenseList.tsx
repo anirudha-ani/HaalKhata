@@ -1,7 +1,7 @@
 /** Expense list rows: category, payer summary, and your lent/borrowed net per expense. */
 
+import type { Expense } from "@haalkhata/shared/api/plainMessages";
 import type { User } from "@haalkhata/protogen/common/v1/common_pb";
-import type { Expense } from "@haalkhata/protogen/expense/v1/expense_pb";
 import { useRouter } from "expo-router";
 import { Check, ReceiptText } from "lucide-react-native";
 import { Pressable, StyleSheet, View } from "react-native";
@@ -9,7 +9,7 @@ import { Text } from "@/components/ui/Text";
 import { useResponsiveLayout } from "@/lib/layout/hooks/useResponsiveLayout";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Money } from "@/components/ui/Money";
-import { settledStatus } from "@haalkhata/shared/expense/settledStatus";
+import { evenExpenseLabel, settledStatus } from "@haalkhata/shared/expense/settledStatus";
 import { formatMoney } from "@haalkhata/shared/money/money";
 import { colors, radii, spacing } from "@/lib/theme/theme";
 import { CATEGORY_EMOJI } from "./categoryEmoji";
@@ -156,7 +156,7 @@ export function ExpenseList({
               {deleted ? (
                 <Text style={styles.netNone}>no longer counts</Text>
               ) : myNet === 0 ? (
-                <Text style={styles.netNone}>not involved / even</Text>
+                <Text style={styles.netNone}>{evenExpenseLabel(expense, meId)}</Text>
               ) : status ? (
                 <>
                   {/* The state, not a verdict on the expense: "settled" here

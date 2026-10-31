@@ -2,26 +2,45 @@
 
 import type { PoolClient } from "pg";
 import { transaction } from "@/server/common/db/db";
+import { unavailable } from "@/server/common/errors";
 import {
   EXPENSE_LEDGER_LOCK_PREFIX,
   FRIEND_REQUEST_INBOX_LOCK_PREFIX,
   GROUP_LEDGER_LOCK_PREFIX,
+  LEDGER_BUSY_MESSAGE,
+  LEDGER_LOCK_TIMEOUT_MS,
+  LEDGER_STATEMENT_TIMEOUT_MS,
+  LEDGER_BUSY_ERROR_CODES,
   PARTICIPANT_LEDGER_LOCK_PREFIX,
   PAYMENT_METHODS_LOCK_PREFIX,
   REMINDER_LOCK_PREFIX,
 } from "@/server/common/ledger/ledgerLocks.constants";
 
 /**
- * Acquires advisory locks for already-normalized keys in lexical order.
+ * Acquires advisory locks for already-normalized keys in lexical order, in
+ * one statement: a request that locks a hundred people waits on one round
+ * trip, not a hundred.
+ *
+ * The order is what keeps two requests from waiting on each other, so it
+ * is the sort's: PostgreSQL calls a volatile function in the select list
+ * after ORDER BY has sorted the rows, one row at a time. `COLLATE "C"`
+ * sorts by bytes, which for these ASCII keys is the order JavaScript's sort
+ * gave them when each lock was its own statement, so a release still
+ * locking that way agrees with this one during a deploy.
  *
  * @param client - Transaction client that must retain the locks through commit.
  * @param lockKeys - Distinct lock names; duplicates are removed defensively.
  * @returns A promise that resolves after every lock is held.
  */
 async function acquireKeys(client: PoolClient, lockKeys: string[]): Promise<void> {
-  for (const lockKey of [...new Set(lockKeys)].sort()) {
-    await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", [lockKey]);
-  }
+  const distinctKeys = [...new Set(lockKeys)];
+  if (distinctKeys.length === 0) return;
+  await client.query(
+    `SELECT pg_advisory_xact_lock(hashtextextended(lock_key, 0))
+       FROM unnest($1::text[]) AS lock_key
+      ORDER BY lock_key COLLATE "C"`,
+    [distinctKeys],
+  );
 }
 
 /**
@@ -96,8 +115,10 @@ export async function lockReminder(
 /**
  * Serializes pending-request and friendship changes for a deterministic set
  * of inboxes, preventing accept/send races from recreating stale requests.
- * Account merges take these same locks, in the same sorted order, before
- * their row locks on users — the one order every path takes them in.
+ * A path that also needs ledger locks (group or participant) takes those
+ * first and these second — a one-off expense befriending its participants,
+ * a group enrolment, a friend removal — so no two paths can each hold one
+ * kind while waiting for the other.
  *
  * @param client - Existing transaction client.
  * @param userIds - Inbox owner ids to lock, in any order.
@@ -127,15 +148,46 @@ export async function lockPaymentMethods(client: PoolClient, userId: string): Pr
 }
 
 /**
+ * Whether an error is Postgres giving up on a ledger change: a lock wait or
+ * a statement past the ledger's time limits, or a deadlock it broke.
+ *
+ * @param error - Anything thrown inside a ledger transaction.
+ * @returns True for a lock timeout, a statement timeout or a deadlock.
+ */
+function isLedgerBusy(error: unknown): boolean {
+  const code = (error as { code?: unknown } | null)?.code;
+  return typeof code === "string" && LEDGER_BUSY_ERROR_CODES.has(code);
+}
+
+/**
  * Runs a ledger mutation in one transaction. Callers acquire participant
  * locks before group locks if both are needed; every lock is released by
  * commit/rollback.
  *
+ * The transaction waits at most {@link LEDGER_LOCK_TIMEOUT_MS} for any lock
+ * and runs no statement longer than {@link LEDGER_STATEMENT_TIMEOUT_MS}
+ * (`SET LOCAL`, so the pooled connection is back to normal after it). Either
+ * limit, or a deadlock Postgres breaks by cancelling this transaction, rolls
+ * everything back and tells the person nothing was saved.
+ *
  * @param operation - Lock acquisition, validation, and writes on one client.
  * @returns The operation's committed result.
+ * @throws UsecaseError (unavailable) when a lock or statement ran out of
+ *   time, or the transaction was chosen to end a deadlock.
  */
 export async function withLedgerTransaction<Outcome>(
   operation: (client: PoolClient) => Promise<Outcome>,
 ): Promise<Outcome> {
-  return transaction(operation);
+  return transaction(async (client) => {
+    await client.query("SELECT set_config('lock_timeout', $1, true), set_config('statement_timeout', $2, true)", [
+      `${LEDGER_LOCK_TIMEOUT_MS}ms`,
+      `${LEDGER_STATEMENT_TIMEOUT_MS}ms`,
+    ]);
+    try {
+      return await operation(client);
+    } catch (error) {
+      if (isLedgerBusy(error)) unavailable(LEDGER_BUSY_MESSAGE);
+      throw error;
+    }
+  });
 }

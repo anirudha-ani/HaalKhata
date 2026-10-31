@@ -13,3 +13,18 @@ lint:
 breaking:
   use:
     - FILE
+  # Money moved from int32 to int64 fields, the one type change these files
+  # allow. Both apps speak Connect's JSON, where an int64 travels as a
+  # string that an older app's int32 field still reads, and one past 32 bits
+  # is refused rather than misread (apps/web/src/server/api/connect/wire/
+  # olderClients.test.ts). Once main carries the int64 fields this list has
+  # nothing left to excuse and can go, so a later type change is caught again.
+  ignore_only:
+    FIELD_SAME_TYPE:
+      - proto/auth/v1/auth.proto
+      - proto/common/v1/common.proto
+      - proto/expense/v1/expense.proto
+      - proto/group/v1/group.proto
+      - proto/personalanalytics/v1/personalanalytics.proto
+      - proto/receipt/v1/receipt.proto
+      - proto/social/v1/social.proto

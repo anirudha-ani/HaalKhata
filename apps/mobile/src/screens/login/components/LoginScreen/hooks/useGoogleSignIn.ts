@@ -2,7 +2,6 @@
 
 import { useMutation } from "@tanstack/react-query";
 import * as Google from "expo-auth-session/providers/google";
-import { useRouter } from "expo-router";
 import * as WebBrowser from "expo-web-browser";
 import { useEffect, useMemo, useState } from "react";
 import { authClient, errorMessage } from "@/lib/api/connect";
@@ -32,7 +31,6 @@ WebBrowser.maybeCompleteAuthSession();
  *   last `error`, and `signIn` to start one.
  */
 export function useGoogleSignIn() {
-  const router = useRouter();
   const [nonce, setNonce] = useState("");
   const [armed, setArmed] = useState(false);
   const [prompting, setPrompting] = useState(false);
@@ -63,7 +61,7 @@ export function useGoogleSignIn() {
   const exchange = useMutation({
     mutationFn: (idToken: string) => authClient.logInWithGoogle({ idToken }),
     onSuccess: async (result) => {
-      router.replace(await startSession(result.token));
+      await startSession(result.token);
     },
     onError: (mutationError) => setError(errorMessage(mutationError)),
   });

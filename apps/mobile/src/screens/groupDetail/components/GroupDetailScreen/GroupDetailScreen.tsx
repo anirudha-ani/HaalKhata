@@ -7,12 +7,10 @@ import {
   Archive,
   ArchiveRestore,
   Bell,
-  ChevronDown,
   ChevronRight,
   Flag,
   Link2,
   Plus,
-  Send,
   UserPlus,
 } from "lucide-react-native";
 import { Pressable, StyleSheet, View } from "react-native";
@@ -21,7 +19,6 @@ import { ActivityList } from "@/components/activity/ActivityList";
 import { InviteShareSheet } from "@/components/modals/InviteShareSheet";
 import { SettleUpModal } from "@/components/modals/SettleUpModal";
 import { SafetyDialog } from "@/components/safety/SafetyDialog/SafetyDialog";
-import { PersonChecklist } from "@/components/people/PersonChecklist";
 import { PersonLink } from "@/components/people/PersonLink";
 import { DetailHeader } from "@/components/shell/DetailHeader/DetailHeader";
 import { useResponsiveLayout } from "@/lib/layout/hooks/useResponsiveLayout";
@@ -31,15 +28,17 @@ import { Screen } from "@/components/shell/Screen/Screen";
 import { Avatar } from "@/components/ui/Avatar";
 import { AvatarStack } from "@/components/ui/AvatarStack/AvatarStack";
 import { Button } from "@/components/ui/Button";
-import { EmailOrPhoneField } from "@/components/ui/EmailOrPhoneField";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { OverflowMenu } from "@/components/ui/OverflowMenu/OverflowMenu";
 import { Segmented } from "@/components/ui/Segmented";
 import { Sheet } from "@/components/ui/Sheet/Sheet";
+import { ShowMoreFooter } from "@/components/ui/ShowMoreFooter/ShowMoreFooter";
+import { LIST_END_LINE } from "@haalkhata/shared/api/paging";
 import { Spinner } from "@/components/ui/Spinner";
 import { errorMessage } from "@/lib/api/connect";
 import { colors, radii, spacing } from "@/lib/theme/theme";
 import { memberActionPrompt, memberRemovalBlock } from "@haalkhata/shared/group/memberActions";
+import { memberBuckets, memberDebts } from "@haalkhata/shared/group/currencyBalances";
 import { OWNER_ROLE } from "@haalkhata/shared/group/roles";
 import {
   ARCHIVED_GROUP_HINT,
@@ -51,9 +50,11 @@ import { groupEmoji, groupTypeLabel } from "@haalkhata/shared/group/groupTypes";
 import { MEMBERS_STRIP_AVATAR_SLOTS } from "../../constants/membersStrip";
 import { TABS } from "../../constants/tabs";
 import { BalancesPanel } from "./components/BalancesPanel/BalancesPanel";
+import { AddPeopleSheet } from "./components/AddPeopleSheet/AddPeopleSheet";
 import { ArchiveGroupSheet } from "./components/ArchiveGroupSheet/ArchiveGroupSheet";
 import { ExpenseList } from "@/components/expenses/ExpenseList";
 import { useGroupDetail } from "./hooks/useGroupDetail";
+import { groupInviteExplainer } from "@haalkhata/shared/invite/inviteCopy";
 
 /**
  * Renders a single group's screen: the header naming the group (emoji, name,
@@ -254,22 +255,30 @@ export function GroupDetailScreen({
       {(groupDetail.tab === "expenses" && groupDetail.expensesError) || (groupDetail.tab === "balances" && groupDetail.balancesError) || (groupDetail.tab === "activity" && groupDetail.activityError) ? (
         <ErrorState error={groupDetail.tab === "expenses" ? groupDetail.expensesError : groupDetail.tab === "balances" ? groupDetail.balancesError : groupDetail.activityError} retry={groupDetail.refresh} />
       ) : groupDetail.tab === "expenses" ? (
-        <ExpenseList
-          emptyHint="Add the first expense or scan a receipt to get this ledger going."
-          expenses={groupDetail.expenses?.expenses ?? []}
-          meId={groupDetail.me?.id}
-          settledIds={new Set(groupDetail.expenses?.settledExpenseIds ?? [])}
-          userById={groupDetail.userById}
-        />
+        <>
+          <ExpenseList
+            emptyHint="Add the first expense or scan a receipt to get this ledger going."
+            expenses={groupDetail.expenses.expenses}
+            meId={groupDetail.me?.id}
+            settledIds={groupDetail.expenses.settledIds}
+            userById={groupDetail.userById}
+          />
+          <ShowMoreFooter
+            endLine={groupDetail.expenses.expenses.length > 0 ? LIST_END_LINE : ""}
+            error={groupDetail.loadMoreExpensesError}
+            hasMore={groupDetail.hasMoreExpenses}
+            isLoadingMore={groupDetail.isLoadingMoreExpenses}
+            onShowMore={groupDetail.loadMoreExpenses}
+          />
+        </>
       ) : groupDetail.tab === "balances" ? (
         <BalancesPanel
-          balances={groupDetail.balances}
+          sections={groupDetail.balanceSections}
           error={groupDetail.balancesError ? errorMessage(groupDetail.balancesError) : ""}
           onRetry={groupDetail.reloadBalances}
-          currency={groupDetail.group.currency}
           meId={groupDetail.me?.id}
-          onSettle={(user, cents, received) =>
-            groupDetail.setSettleWith({ user, cents, received })
+          onSettle={(user, cents, received, currency) =>
+            groupDetail.setSettleWith({ user, cents, received, currency })
           }
           onToggleSimplified={groupDetail.setSimplified}
           simplified={groupDetail.simplified}
@@ -288,15 +297,13 @@ export function GroupDetailScreen({
       ) : (
         <>
           <ActivityList events={groupDetail.activityEvents} now={new Date()} />
-          {groupDetail.activityHasMore ? (
-            <Button
-              busy={groupDetail.activityLoadingMore}
-              icon={<ChevronDown color={colors.inkSoft} size={16} />}
-              label="Show me more"
-              onPress={groupDetail.loadMoreActivity}
-              variant="outline"
-            />
-          ) : null}
+          <ShowMoreFooter
+            endLine={LIST_END_LINE}
+            error={groupDetail.loadMoreActivityError}
+            hasMore={groupDetail.activityHasMore}
+            isLoadingMore={groupDetail.activityLoadingMore}
+            onShowMore={groupDetail.loadMoreActivity}
+          />
         </>
       )}
 
@@ -354,9 +361,16 @@ export function GroupDetailScreen({
                   ? memberRemovalBlock(
                       person.name,
                       isMe,
-                      groupDetail.balances?.nets.find((position) => position.userId === person.id)
-                        ?.netCents ?? 0,
-                      groupDetail.group?.currency ?? "",
+                      memberBuckets(groupDetail.balanceSections ?? [], person.id),
+                      memberDebts(groupDetail.balanceSections ?? [], person.id, groupDetail.simplified).map(
+                        (debt) => ({
+                          currency: debt.currency,
+                          cents: debt.cents,
+                          // One who has left the group is no longer a member to look up.
+                          counterpartName: groupDetail.userById.get(debt.counterpartId)?.name ?? "a former member",
+                          counterpartIsViewer: debt.counterpartId === groupDetail.me?.id,
+                        }),
+                      ),
                     )
                   : null;
               const prompt =
@@ -378,9 +392,6 @@ export function GroupDetailScreen({
                         {person.name}
                         {isMe ? <Text style={styles.memberTag}> · you</Text> : null}
                         {isOwner ? <Text style={styles.memberTag}> · owner</Text> : null}
-                        {!person.registered ? (
-                          <Text style={styles.memberTag}> · invited</Text>
-                        ) : null}
                       </Text>
                     </PersonLink>
                     {!isMe && !person.deleted ? <SafetyActions targetKind="user" targetId={person.id} userId={person.id} /> : null}
@@ -396,16 +407,9 @@ export function GroupDetailScreen({
                       )
                     ) : (
                       <View style={styles.memberActions}>
-                        {!person.registered ? (
-                          <Button
-                            busy={groupDetail.remindingUserId === person.id}
-                            compact
-                            icon={<Send color={colors.inkSoft} size={14} />}
-                            label="Remind"
-                            onPress={() => groupDetail.remindMember(person)}
-                            variant="outline"
-                          />
-                        ) : isFriend ? (
+                        {/* A Deleted member keeps its seat for the money it
+                            holds, but there is nobody to befriend. */}
+                        {!person.registered ? null : isFriend ? (
                           <Button
                             compact
                             icon={<ChevronRight color={colors.inkSoft} size={14} />}
@@ -548,98 +552,12 @@ export function GroupDetailScreen({
       ) : null}
 
       {groupDetail.addingPeople ? (
-        <Sheet
-          footer={
-            <View style={styles.addForm}>
-              {!groupDetail.inviteOffer && groupDetail.peopleError ? (
-                <Text accessibilityRole="alert" style={styles.addError}>{groupDetail.peopleError}</Text>
-              ) : null}
-              <Button
-                busy={groupDetail.addMembers.isPending}
-                disabled={!groupDetail.canAddPeople}
-                label="Add to group"
-                onPress={groupDetail.submitPeople}
-              />
-            </View>
-          }
-          onClose={() => groupDetail.setAddingPeople(false)}
-          title={`Add people to ${groupDetail.group.name}`}
-        >
-          {/* People you already know come first; typing an address is the
-              fallback for somebody you are connected with but who is not on
-              that list. It never creates an account — the server enrols only
-              people the caller already shares a friendship or a group with. */}
-          <View style={styles.addForm}>
-            {groupDetail.candidates.length > 0 ? (
-              <>
-                <Text style={styles.addLabel}>
-                  Your people
-                  {groupDetail.pickedIds.length > 0
-                    ? ` · ${groupDetail.pickedIds.length} selected`
-                    : ""}
-                </Text>
-                <PersonChecklist
-                  disabledIds={
-                    new Set(
-                      groupDetail.candidates
-                        .filter((candidate) => !candidate.registered)
-                        .map((candidate) => candidate.id),
-                    )
-                  }
-                  disabledHint="invited — can add once they join"
-                  onToggle={groupDetail.togglePicked}
-                  people={groupDetail.candidates}
-                  selectedIds={groupDetail.pickedIds}
-                />
-              </>
-            ) : (
-              <Text style={styles.addHint}>
-                Everyone on your friends list is already here. Know somebody from another group?
-                Add them below.
-              </Text>
-            )}
-
-            <Text style={styles.addLabel}>Not on the list?</Text>
-            <EmailOrPhoneField
-              contact={groupDetail.contact}
-              onContactChange={groupDetail.setContact}
-              emailPlaceholder="Email address"
-              emailLabel="Email of somebody already connected with you"
-              phoneLabel="Phone of somebody already connected with you"
-            />
-            <Text style={styles.addHint}>
-              Works for anyone already connected with you on HaalKhata — a friend, or someone you
-              share another group with. New here? Send them a friend request from Friends first;
-              once they accept, you can add them.
-            </Text>
-
-            {groupDetail.inviteOffer ? (
-              <View style={styles.inviteOffer}>
-                <Text style={styles.addHint}>
-                  They&apos;re not on HaalKhata yet. Send them a sign-up invite?
-                  Once they join, you can add them here.
-                </Text>
-                <Button
-                  busy={groupDetail.sendingSignUpInvite}
-                  compact
-                  label="Send sign-up invite"
-                  onPress={groupDetail.sendSignUpInvite}
-                />
-                <Button
-                  compact
-                  label="Cancel"
-                  onPress={groupDetail.dismissInviteOffer}
-                  variant="outline"
-                />
-              </View>
-            ) : null}
-          </View>
-        </Sheet>
+        <AddPeopleSheet groupDetail={groupDetail} groupName={groupDetail.group.name} />
       ) : null}
 
       {groupDetail.groupShareToken ? (
         <InviteShareSheet
-          explainer={`Anyone who scans this or opens the link can join ${groupDetail.group.name}. They'll see who invited them before accepting.`}
+          explainer={groupInviteExplainer(groupDetail.group.name, groupDetail.groupShareExpiresAt)}
           onClose={groupDetail.closeGroupShare}
           share={groupDetail.shareLinkToSheet}
           title="Group invite link"
@@ -647,19 +565,9 @@ export function GroupDetailScreen({
         />
       ) : null}
 
-      {groupDetail.signUpShare ? (
-        <InviteShareSheet
-          explainer={`This link signs ${groupDetail.signUpShare.contact} up and connects you as friends. Once they join, you can add them to ${groupDetail.group.name}.`}
-          onClose={groupDetail.closeSignUpShare}
-          share={groupDetail.signUpShareToSheet}
-          title="Sign-up invite"
-          token={groupDetail.signUpShare.token}
-        />
-      ) : null}
-
       {groupDetail.settleWith ? (
         <SettleUpModal
-          currency={groupDetail.group.currency}
+          currency={groupDetail.settleWith.currency}
           onClose={() => groupDetail.setSettleWith(null)}
           received={groupDetail.settleWith.received}
           // On the group's screen, so it settles this group's balance alone.
@@ -679,19 +587,6 @@ const styles = StyleSheet.create({
   addExpenseExpanded: {
     alignSelf: "flex-start",
   },
-  addError: {
-    color: colors.brand600,
-    fontSize: 14,
-  },
-  addForm: {
-    gap: spacing.lg,
-  },
-  addHint: {
-    color: colors.inkSoft,
-    fontSize: 13,
-    lineHeight: 18,
-    marginTop: -spacing.sm,
-  },
   archivedHint: {
     backgroundColor: colors.card,
     borderColor: colors.line,
@@ -705,12 +600,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     lineHeight: 20,
   },
-  addLabel: {
-    color: colors.ink,
-    fontSize: 14,
-    fontWeight: "500",
-    marginBottom: -spacing.sm,
-  },
   groupEmoji: {
     fontSize: 20,
   },
@@ -721,9 +610,6 @@ const styles = StyleSheet.create({
     height: 36,
     justifyContent: "center",
     width: 36,
-  },
-  inviteOffer: {
-    gap: spacing.sm,
   },
   linkError: {
     color: colors.brand600,

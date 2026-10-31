@@ -56,3 +56,19 @@ export function settledStatus(
     explanation: `${scopePhrase} — nothing from this expense is pending.`,
   };
 }
+
+/**
+ * What a row says about a bill the viewer has nothing owing on.
+ *
+ * @param expense - Who paid and who is on it.
+ * @param viewerId - Who is looking.
+ * @returns "just you" for a bill nobody else is on, otherwise the usual words.
+ */
+export function evenExpenseLabel(
+  expense: { payers: readonly { userId: string }[]; splits: readonly { userId: string }[] },
+  viewerId: string | undefined,
+): string {
+  const people = [...expense.payers, ...expense.splits];
+  const onlyViewer = people.length > 0 && people.every((person) => person.userId === viewerId);
+  return onlyViewer ? "just you" : "not involved / even";
+}

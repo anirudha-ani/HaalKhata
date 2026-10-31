@@ -10,10 +10,8 @@
  * answered on this phone is left out rather than shown with nothing to do.
  */
 
-import { safeActivityPath } from "@haalkhata/shared/navigation/activityPath";
 import type { ContactsAccess } from "@/lib/contacts/contactsAccess";
 import type { PushPermission } from "@/lib/push/push";
-import { DEFAULT_DESTINATION } from "./onboarding.constants";
 
 /** One screen of the flow. */
 export type OnboardingStepId = "profile" | "phone" | "payment" | "friends" | "notifications" | "done";
@@ -65,19 +63,6 @@ export function planOnboardingSteps(situation: OnboardingSituation): OnboardingS
   if (situation.pushPermission === "undetermined") steps.push("notifications");
   if (steps.length > 0) steps.push("done");
   return steps;
-}
-
-/**
- * Where to go once the flow ends: the screen the person was headed for when
- * the flow interrupted them (a group from an invitation, say), if it is one
- * the app may open, or Home.
- *
- * @param candidate - The `next` parameter the flow was opened with; untrusted.
- * @returns A safe in-app path.
- */
-export function onboardingDestination(candidate: unknown): string {
-  if (typeof candidate !== "string" || candidate === "") return DEFAULT_DESTINATION;
-  return safeActivityPath(candidate) === candidate ? candidate : DEFAULT_DESTINATION;
 }
 
 /**

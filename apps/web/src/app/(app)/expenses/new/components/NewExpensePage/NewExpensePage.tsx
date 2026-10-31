@@ -1,9 +1,11 @@
 "use client";
 /** New/edit expense orchestrator: loads data, mounts ExpenseForm. */
 
+import { ErrorAlert } from "@/components/ui/ErrorAlert/ErrorAlert";
 import { Spinner } from "@/components/ui/Spinner/Spinner";
 import Link from "next/link";
 import { ARCHIVED_GROUP_HINT, GROUP_ARCHIVE_ACTIONS } from "@haalkhata/shared/group/archiving";
+import { errorMessage } from "@/lib/api/connect";
 import { useHydrated } from "@/lib/hooks/useHydrated";
 import { buildInitialValues } from "../../utils/initialValues";
 import { ExpenseForm } from "./components/ExpenseForm/ExpenseForm";
@@ -20,6 +22,7 @@ export function NewExpensePage({
   initialGroupId,
   initialFriendId,
   editExpenseId,
+  openInvite,
 }: {
   /** Group id from the ?group= search param, preselecting the group context ("" = none). */
   initialGroupId: string;
@@ -27,11 +30,20 @@ export function NewExpensePage({
   initialFriendId: string;
   /** Expense id from the ?edit= search param, or "" when creating a new expense. */
   editExpenseId: string;
+  /** Whether a live split was just started, so its invite opens by itself. */
+  openInvite: boolean;
 }) {
   const expenseAPI = useNewExpenseAPI(editExpenseId);
   const hydrated = useHydrated();
 
-  if (!hydrated || expenseAPI.isLoading || !expenseAPI.me) return <Spinner />;
+  if (!hydrated) return <Spinner />;
+  // Never the form: without the saved expense it would open blank, still
+  // titled "Edit expense", and saving it would replace what is really there.
+  if (expenseAPI.loadError) {
+    const what = editExpenseId ? "This expense" : "The form";
+    return <ErrorAlert message={`${what} could not be loaded: ${errorMessage(expenseAPI.loadError)}`} onRetry={expenseAPI.retry} />;
+  }
+  if (expenseAPI.isLoading || !expenseAPI.me) return <Spinner />;
 
   const requestedGroupId = editExpenseId
     ? expenseAPI.editing?.expense?.groupId ?? ""
@@ -59,6 +71,7 @@ export function NewExpensePage({
       api={expenseAPI}
       initial={initial}
       editExpenseId={editExpenseId}
+      openInvite={openInvite}
     />
   );
 }

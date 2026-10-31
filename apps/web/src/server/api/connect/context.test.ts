@@ -9,12 +9,17 @@ import { SESSION_RENEWAL_HEADER } from "@haalkhata/shared/auth/sessionRenewal";
 process.env.SESSION_SECRET = "test-secret-key-for-vitest-0123456789abcdef";
 
 vi.mock("@/server/common/logger", () => ({ logError: vi.fn() }));
-vi.mock("@/server/auth/repo/users.repo", () => ({ findUserTokenVersion: vi.fn() }));
+vi.mock("@/server/auth/repo/sessions.repo", () => ({
+  findSessionStanding: vi.fn(),
+  insertSession: vi.fn(),
+  touchSession: vi.fn(),
+}));
 
 import { UsecaseError } from "@/server/common/errors";
 import { logError } from "@/server/common/logger";
-import { findUserTokenVersion } from "@/server/auth/repo/users.repo";
-import { createToken, verifyToken } from "@/server/auth/usecase/session/session";
+import { findSessionStanding } from "@/server/auth/repo/sessions.repo";
+import { TOKEN_LIFETIME_SECONDS } from "@/server/auth/auth.constants";
+import { createToken, tokenExpiresAt, verifyToken } from "@/server/auth/usecase/session/session";
 import { SESSION_COOKIE } from "./connect.constants";
 import { requireUser, runUsecase } from "./context";
 
@@ -41,15 +46,20 @@ describe("requireUser session renewal", () => {
   /**
    * Issues a token at one moment and advances the clock by a number of days.
    *
-   * @param daysUsed - How much of the seven-day lifetime has elapsed.
+   * @param daysUsed - How many days ago it was issued.
    * @returns The token as the client would still be presenting it.
    */
   function agedToken(daysUsed: number): string {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-08-01T00:00:00.000Z"));
-    const token = createToken("user-1", 3);
-    vi.setSystemTime(new Date(`2026-08-0${1 + daysUsed}T00:00:00.000Z`));
-    vi.mocked(findUserTokenVersion).mockResolvedValue(3);
+    const token = createToken("user-1", 3, "session-1");
+    vi.setSystemTime(new Date(Date.UTC(2026, 7, 1 + daysUsed)));
+    vi.mocked(findSessionStanding).mockResolvedValue({
+      token_version: 3,
+      legacy_sessions_ended: false,
+      session_found: true,
+      session_ended: false,
+    });
     return token;
   }
 
@@ -73,7 +83,7 @@ describe("requireUser session renewal", () => {
     await requireUser(context);
 
     const setCookie = context.responseHeader.get("set-cookie") ?? "";
-    expect(setCookie).toContain(`${SESSION_COOKIE}=v2.user-1.3.`);
+    expect(setCookie).toContain(`${SESSION_COOKIE}=v3.user-1.3.session-1.`);
     expect(setCookie).not.toContain(token);
     expect(context.responseHeader.get(SESSION_RENEWAL_HEADER)).toBeNull();
   });
@@ -86,6 +96,32 @@ describe("requireUser session renewal", () => {
 
     expect(context.responseHeader.get(SESSION_RENEWAL_HEADER)).toBeNull();
     expect(context.responseHeader.get("set-cookie")).toBeNull();
+  });
+
+  it("gives somebody back the whole lifetime the next time they open the app, even months later", async () => {
+    const context = contextWith({ authorization: `Bearer ${agedToken(300)}` });
+
+    await requireUser(context);
+
+    const renewed = context.responseHeader.get(SESSION_RENEWAL_HEADER)!;
+    expect(tokenExpiresAt(renewed) - Date.now() / 1000).toBe(TOKEN_LIFETIME_SECONDS);
+  });
+
+  it("moves a session from the old seven-day life onto the new one at once", async () => {
+    // A token with six days left is what somebody signed in before this change holds.
+    const context = contextWith({ authorization: `Bearer ${agedToken(394)}` });
+
+    await requireUser(context);
+
+    expect(context.responseHeader.get(SESSION_RENEWAL_HEADER)).not.toBeNull();
+  });
+
+  it("does not renew a session again the same day", async () => {
+    const context = contextWith({ authorization: `Bearer ${agedToken(0)}` });
+
+    await requireUser(context);
+
+    expect(context.responseHeader.get(SESSION_RENEWAL_HEADER)).toBeNull();
   });
 
   it("never renews on the way out of LogOut", async () => {

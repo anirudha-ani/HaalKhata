@@ -7,13 +7,13 @@ import { NewExpensePage } from "./components/NewExpensePage/NewExpensePage";
  *
  * @param props - Route props.
  * @param props.searchParams - Promise resolving to the optional `group`,
- *   `friend`, and `edit` search params.
+ *   `friend`, `edit` and `invite` search params.
  * @returns The /expenses/new page.
  */
 export default async function NewExpense({
   searchParams,
 }: {
-  searchParams: Promise<{ group?: string; friend?: string; edit?: string }>;
+  searchParams: Promise<{ group?: string; friend?: string; edit?: string; invite?: string }>;
 }) {
   const params = await searchParams;
   return (
@@ -21,6 +21,7 @@ export default async function NewExpense({
       initialGroupId={params.group ?? ""}
       initialFriendId={params.friend ?? ""}
       editExpenseId={params.edit ?? ""}
+      openInvite={params.invite === "1"}
     />
   );
 }

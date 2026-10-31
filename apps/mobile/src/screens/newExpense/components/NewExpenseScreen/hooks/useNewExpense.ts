@@ -18,17 +18,26 @@ import {
   toggleExpensePerson,
 } from "@haalkhata/shared/expense/participants";
 import { draftItemsFromLines } from "@/lib/expense/itemDraft";
-import { buildItemsPayload as itemsPayload } from "@haalkhata/shared/expense/form/splitForm";
+import {
+  buildItemsPayload as itemsPayload,
+  liveDraft,
+  withNewcomersTicked,
+  previewSplitShares,
+  unclaimedUnlessPicked,
+  type DraftLineItem,
+} from "@haalkhata/shared/expense/form/splitForm";
+import { draftExpenseState } from "@haalkhata/shared/expense/merge/editDraft";
 import { useItemDraft } from "@/lib/hooks/useItemDraft";
 import { prepareReceiptPhoto } from "../../../utils/prepareReceiptPhoto";
 import { PICKER_OPTIONS } from "../../../constants/imagePicker";
-import type { ExpenseFormInitial } from "../../../utils/initialValues";
+import { buildInitialValues, type ExpenseFormInitial } from "../../../utils/initialValues";
 import {
   buildSplitSpecs,
   checkPayers,
   checkSplit,
   type FormSplitType,
 } from "@haalkhata/shared/expense/form/splitForm";
+import { useExpenseEditSync, type TakenChanges } from "./useExpenseEditSync";
 import type { ReceiptPhotoInput, useNewExpenseAPI } from "./useNewExpenseAPI";
 
 /** A photo picked for scanning, plus its local URI for the preview. */
@@ -86,10 +95,14 @@ export function useNewExpense(
   const [isPickingPhoto, setIsPickingPhoto] = useState(false);
   const [photo, setPhoto] = useState<ReceiptPhoto | null>(null);
   const [provider, setProvider] = useState("");
+  const [sharingOnStart, setSharingOnStart] = useState(false);
   // One id per attempt at saving: a retry after a lost response sends the
   // same one and gets the expense the first attempt stored, not a second.
   const operationIdRef = useRef("");
   if (operationIdRef.current === "") operationIdRef.current = newOperationId();
+  // What the last attempt at saving an edit sent: the same again is a retry
+  // and keeps its id; anything else is a new attempt and gets a new one.
+  const lastEditAttempt = useRef("");
   const isItemized = splitType === "itemized";
 
   const selectedGroup = expenseAPI.groups.find(
@@ -103,6 +116,7 @@ export function useNewExpense(
   const itemDraft = useItemDraft(
     { items: initial.items, tax: initial.tax, tip: initial.tip },
     currency,
+    expenseAPI.editing?.liveSplit ? { multiPayer, singlePayerId, payerAmounts } : undefined,
   );
 
   /**
@@ -283,36 +297,116 @@ export function useNewExpense(
     ? itemDraft.completeness
     : checkSplit({ splitType, totalCents, participantIds, inputs: splitInputs, currency });
   const payerCheck = checkPayers(totalCents, multiPayer, payerAmounts, currency);
-  // A group, or at least one other person — mirrors exactly what the picker
-  // shows, so the button never disables for a reason that isn't on screen.
-  const hasParticipants = groupId !== "" || friendIds.length > 0;
+
+  /**
+   * Puts what somebody else saved into the form, leaving everything this
+   * person has touched as it is.
+   *
+   * @param taken - The parts to take, and their values.
+   */
+  const takeIn = ({ parts, merged, latest }: TakenChanges) => {
+    const saved = buildInitialValues({ initialGroupId: "", initialFriendId: "" }, expenseAPI.me?.id ?? "", latest);
+    if (parts.has("description")) setDescription(merged.description);
+    if (parts.has("category")) setCategory(merged.category);
+    if (parts.has("expenseDate")) setDate(merged.expenseDate);
+    if (parts.has("notes")) setNotes(merged.notes);
+    if (parts.has("taxCents")) itemDraft.setTax(centsToInput(merged.taxCents, currency));
+    if (parts.has("tipCents")) itemDraft.setTip(centsToInput(merged.tipCents, currency));
+    if (parts.has("line") || parts.has("share")) {
+      itemDraft.adoptLines(merged.lines);
+      // A line can name somebody a hand-picked cast does not have yet.
+      if (!groupId) {
+        const onLines = merged.lines.flatMap((line) => Object.keys(line.shares));
+        setPersonIds((current) => [...new Set([...(current ?? []), ...onLines])]);
+      }
+    }
+    if (parts.has("money")) {
+      setAmount(saved.amount);
+      setSplitType(saved.splitType);
+      setSplitInputs(saved.splitInputs);
+      setCheckedOverride(saved.checked);
+      itemDraft.replace(saved.items, saved.tax, saved.tip);
+      if (!groupId) setPersonIds(saved.friendIds);
+    }
+    if (parts.has("payers")) {
+      setMultiPayer(saved.multiPayer);
+      setSinglePayerId(saved.singlePayerId);
+      setPayerAmounts(saved.payerAmounts);
+    }
+  };
+
+  /**
+   * Brings onto the form whoever has joined since it opened. Nobody is added
+   * to a part of the bill somebody has already filled in by hand: they appear
+   * in the cast, and on an even split they are ticked like anyone else.
+   *
+   * @param userIds - Everyone on the saved expense.
+   */
+  const addPeople = (userIds: string[]) => {
+    const onForm = new Set(personIds);
+    const newcomers = userIds.filter((userId) => userId !== expenseAPI.me?.id && !onForm.has(userId));
+    if (newcomers.length === 0) return;
+    // A group's roster is its own read, which has not heard of them yet.
+    if (groupId) expenseAPI.refreshGroups();
+    if (groupId && personIds === null) return;
+    setPersonIds((current) => [...new Set([...(current ?? []), ...newcomers])]);
+    setCheckedOverride((current) => withNewcomersTicked(current, newcomers));
+  };
+
+  const editSync = useExpenseEditSync({
+    opened: expenseAPI.editing?.expense,
+    savedVersion: expenseAPI.savedVersion,
+    versionCheckedAt: expenseAPI.versionCheckedAt,
+    myId: expenseAPI.me?.id ?? "",
+    isSaving: expenseAPI.update.isPending,
+    currency,
+    readLatest: expenseAPI.readLatest,
+    readForm: () =>
+      draftExpenseState({
+        description, category, date, notes, splitType, totalCents,
+        previewShares: isItemized
+          ? itemDraft.previewShares
+          : previewSplitShares({ splitType, totalCents, participantIds, inputs: splitInputs, currency }),
+        multiPayer, singlePayerId, payerAmounts,
+        items: itemDraft.items ?? [],
+        taxCents: itemDraft.taxCents,
+        tipCents: itemDraft.tipCents,
+        currency,
+      }),
+    takeIn,
+    addPeople,
+  });
+
   const canSubmit =
-    hasParticipants &&
     description.trim() !== "" &&
     totalCents !== null &&
     totalCents > 0 &&
     splitCheck.ok &&
-    payerCheck.ok;
+    payerCheck.ok &&
+    editSync.conflicts.length === 0;
 
   const preserveSplitType = canPreserveSplitType(savedSplit, {
     groupId, currency, splitType, amountCents: totalCents ?? 0,
     splits: participantIds.map((userId) => ({ userId, owedCents: parseMoneyInput(splitInputs[userId] ?? "", currency) ?? -1 })),
   });
 
-  /** Builds the request from the current fields and fires create or update. */
-  const submit = () => {
-    if (!canSubmit || totalCents === null) return;
-    setError("");
+  /**
+   * Builds the request from the current fields.
+   *
+   * @param total - The expense's total.
+   * @param lines - The lines to save.
+   * @returns The create request, which an edit carries too.
+   */
+  const buildRequest = (total: number, lines: readonly DraftLineItem[]) => {
     const payers = multiPayer
       ? Object.entries(payerAmounts)
           .map(([userId, value]) => ({ userId, amountCents: parseMoneyInput(value, currency) ?? 0 }))
           .filter((payer) => payer.amountCents > 0)
-      : [{ userId: singlePayerId, amountCents: totalCents }];
-
-    const request = {
+      : [{ userId: singlePayerId, amountCents: total }];
+    return {
       groupId,
       description: description.trim(),
-      amountCents: totalCents,
+      amountCents: total,
       currency,
       category,
       expenseDate: date,
@@ -321,29 +415,103 @@ export function useNewExpense(
       payers,
       splitSpecs: buildSplitSpecs({
         splitType,
-        totalCents,
+        totalCents: total,
         participantIds,
         inputs: splitInputs,
         currency,
       }),
-      items: isItemized ? itemsPayload(itemDraft.items ?? [], currency) : [],
+      items: isItemized ? itemsPayload([...lines], currency) : [],
       taxCents: isItemized ? itemDraft.taxCents : 0,
       tipCents: isItemized ? itemDraft.tipCents : 0,
       operationId: operationIdRef.current,
     };
+  };
 
-    const onSuccess = () => {
+  /** Saves the bill as it stands and opens it to the table. */
+  const startLive = () => {
+    setError("");
+    if (editExpenseId) {
+      setSharingOnStart(true);
+      expenseAPI.startLive.mutate(undefined, {
+        onError: (mutationError) => setError(errorMessage(mutationError)),
+      });
+      return;
+    }
+    const draft = liveDraft({
+      description, isItemized, items: itemDraft.items ?? [], totalCents,
+      taxCents: itemDraft.taxCents, tipCents: itemDraft.tipCents, currency,
+    });
+    const request = buildRequest(draft.totalCents, unclaimedUnlessPicked(draft.lines, people.map((person) => person.id)));
+    // Half-typed amounts cannot be saved yet, so they start even and whoever
+    // is at the table finishes them. Nothing here is a reason to stop.
+    const unfinishedSplit = !isItemized && !splitCheck.ok;
+    expenseAPI.create.mutate(
+      {
+        ...request,
+        description: draft.description,
+        splitType: unfinishedSplit ? "equal" : request.splitType,
+        splitSpecs: unfinishedSplit
+          ? buildSplitSpecs({ splitType: "equal", totalCents: draft.totalCents, participantIds, inputs: splitInputs, currency })
+          : request.splitSpecs,
+        payers: payerCheck.ok ? request.payers : [{ userId: singlePayerId, amountCents: draft.totalCents }],
+        startLiveSplit: true,
+      },
+      {
+        onSuccess: (saved) => {
+          successFeedback();
+          operationIdRef.current = newOperationId();
+          router.replace(`/expenses/new?edit=${saved.id}&invite=1`);
+        },
+        onError: (mutationError) => setError(errorMessage(mutationError)),
+      },
+    );
+  };
+
+  /** Builds the request from the current fields and fires create or update. */
+  const submit = () => {
+    if (!canSubmit || totalCents === null) return;
+    setError("");
+    const request = buildRequest(totalCents, itemDraft.items ?? []);
+
+    // Land on the thing you just made, not on a list: seeing the split it
+    // landed on is the confirmation that matters. An edit goes back to the
+    // bill it was opened from rather than stacking a second copy on top.
+    const onSuccess = (saved: { id: string }) => {
       successFeedback();
       operationIdRef.current = newOperationId();
-      router.replace(groupId ? `/groups/${groupId}` : "/friends");
+      lastEditAttempt.current = "";
+      if (editExpenseId) router.dismissTo(`/expenses/${saved.id}`);
+      else router.replace(`/expenses/${saved.id}`);
     };
-    const onError = (mutationError: unknown) => setError(errorMessage(mutationError));
     if (editExpenseId) {
+      const attempt = JSON.stringify([{ ...request, operationId: "" }, preserveSplitType, editSync.base?.version]);
+      if (lastEditAttempt.current !== "" && lastEditAttempt.current !== attempt) {
+        operationIdRef.current = newOperationId();
+      }
+      lastEditAttempt.current = attempt;
       expenseAPI.update.mutate(
-        { expenseId: editExpenseId, expense: request, preserveSplitType },
-        { onSuccess, onError },
+        {
+          expenseId: editExpenseId,
+          expense: { ...request, operationId: operationIdRef.current },
+          preserveSplitType,
+          base: editSync.base,
+        },
+        {
+          onSuccess,
+          // Somebody else changed the same thing: the form shows that and
+          // asks, so it is not an error. Anything else is.
+          onError: (mutationError) => {
+            editSync.answerRefusedSave(mutationError).then(
+              (shown) => {
+                if (!shown) setError(errorMessage(mutationError));
+              },
+              (readError) => setError(errorMessage(readError)),
+            );
+          },
+        },
       );
     } else {
+      const onError = (mutationError: unknown) => setError(errorMessage(mutationError));
       expenseAPI.create.mutate(request, { onSuccess, onError });
     }
   };
@@ -359,7 +527,6 @@ export function useNewExpense(
     setGroupId: changeGroup,
     friendIds,
     togglePerson,
-    hasParticipants,
     description,
     setDescription,
     amount,
@@ -393,6 +560,17 @@ export function useNewExpense(
     canSubmit,
     error,
     submit,
+    startLive,
+    isStartingLive: expenseAPI.create.isPending || expenseAPI.startLive.isPending,
+    liveSplit: expenseAPI.editing?.liveSplit,
+    liveUsers: expenseAPI.editing?.users ?? [],
+    sharingOnStart,
+    // Somebody else editing at the same time.
+    editNote: editSync.note,
+    editConflicts: editSync.conflicts,
+    editChangedBy: editSync.changedBy,
+    keepMyEdit: editSync.keepMine,
+    takeSavedEdit: editSync.takeSaved,
     isSaving: expenseAPI.create.isPending || expenseAPI.update.isPending,
     // Receipt scanning.
     receiptConsent,

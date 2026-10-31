@@ -83,7 +83,7 @@ Record a payment with the method you actually used. Everyone adds their own ways
   <img src="docs/screenshots/invite-link.webp" alt="An invite landing page: a named friend invited you to a named group, with a Sign in to accept button" width="440">
 </p>
 
-Add a friend by email and they get a request to accept. Put someone in a group, or share a link to a group or to your own profile, and you are connected the moment they open it. Not on HaalKhata yet? Invite them by email or phone and they appear in your group as invited, ready to split the moment they sign up.
+Add a friend by email or phone and they get a request to accept. Put friends in a group, or share a link: a group's link adds whoever opens it to the group, and your own profile link sends you a friend request to confirm. Not on HaalKhata yet? Send them one of those links; they sign up as themselves and land in the group, or in your requests.
 
 ## Nothing slips by
 

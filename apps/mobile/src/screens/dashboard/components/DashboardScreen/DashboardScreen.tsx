@@ -28,6 +28,7 @@ import { localDate } from "@haalkhata/shared/time/localTime";
 import { getGreeting } from "@haalkhata/shared/greeting";
 import { colors, fonts, radii, spacing } from "@/lib/theme/theme";
 import { groupEmoji } from "@haalkhata/shared/group/groupTypes";
+import { groupPositionCaption, yourGroupBuckets } from "@haalkhata/shared/group/currencyBalances";
 import { PayMethodPrompt } from "../PayMethodPrompt/PayMethodPrompt";
 import { useDashboard } from "./hooks/useDashboard";
 
@@ -255,24 +256,24 @@ export function DashboardScreen() {
                         </Text>
                         <Text style={styles.personHint}>
                           {summary.memberCount} member{summary.memberCount === 1 ? "" : "s"}
-                          {summary.yourNetCents === 0
-                            ? " · settled up"
-                            : summary.yourNetCents > 0
-                              ? " · owed to you"
-                              : " · you owe"}
+                          {` · ${groupPositionCaption(yourGroupBuckets(summary))}`}
                         </Text>
                       </View>
-                      {/* The group's own currency, not yours — a group settles
-                          in one currency and showing your default here would
-                          label the number with money it was never counted in. */}
-                      {summary.yourNetCents === 0 ? null : (
-                        <Money
-                          cents={summary.yourNetCents}
-                          currency={summary.group.currency}
-                          signed
-                          style={styles.personAmount}
-                        />
-                      )}
+                      {/* Each amount in the currency it was counted in — the
+                          group's own, not yours, and a second one when the
+                          group still holds a payment recorded in another
+                          currency before group payments were kept to its own. */}
+                      <View style={styles.personAmounts}>
+                        {yourGroupBuckets(summary).map((bucket) => (
+                          <Money
+                            key={bucket.currency}
+                            cents={bucket.cents}
+                            currency={bucket.currency}
+                            signed
+                            style={styles.personAmount}
+                          />
+                        ))}
+                      </View>
                     </Pressable>
                   ) : null,
                 )}

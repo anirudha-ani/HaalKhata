@@ -13,6 +13,8 @@ import { Avatar } from "@/components/ui/Avatar";
 import { Button } from "@/components/ui/Button";
 import { Money } from "@/components/ui/Money";
 import { OverflowMenu } from "@/components/ui/OverflowMenu/OverflowMenu";
+import { ShowMoreFooter } from "@/components/ui/ShowMoreFooter/ShowMoreFooter";
+import { SHOW_OLDER_LINES_LABEL, statementEndLine } from "@haalkhata/shared/api/paging";
 import { Spinner } from "@/components/ui/Spinner";
 import { errorMessage } from "@/lib/api/connect";
 import { outstandingBuckets } from "@haalkhata/shared/money/balances";
@@ -79,11 +81,12 @@ export function FriendDetailScreen({
     friend,
     netCents,
     currency,
-    entries,
     groupBalances,
     isFriend = true,
     mutualGroups = [],
   } = view.ledger;
+  // Every loaded line, newest first; older pages arrive through Show more.
+  const entries = view.entries;
   // One net per currency, never a sum: a server predating `nets` sends only
   // the default-currency scalar, which reads the same way as one bucket.
   const nets = outstandingBuckets(
@@ -146,7 +149,7 @@ export function FriendDetailScreen({
           }
           subtitle={
             [
-              friend.registered ? "" : PERSON_MENU_COPY.invited,
+              friend.deleted ? PERSON_MENU_COPY.deleted : "",
               view.isBlocked ? PERSON_MENU_COPY.blocked : "",
             ]
               .filter(Boolean)
@@ -513,7 +516,14 @@ export function FriendDetailScreen({
                       the first arms the button, the second sends. A cancelled
                       balance has no remove of its own: it goes when the
                       payment it belongs to goes, and the second tap says so. */}
-                  {isSettlement && !entry.deleted && !entry.offset ? (
+                  {/* Said in place of Remove when the server would refuse it:
+                      one of you has left the group this payment is in. */}
+                  {isSettlement && !entry.deleted && !entry.offset && entry.removalRefusal ? (
+                    <View style={styles.entryAction}>
+                      <Text style={styles.removalRefusal}>{entry.removalRefusal}</Text>
+                    </View>
+                  ) : null}
+                  {isSettlement && !entry.deleted && !entry.offset && !entry.removalRefusal ? (
                     <View style={styles.entryAction}>
                       <Button
                         busy={removing}
@@ -543,10 +553,18 @@ export function FriendDetailScreen({
           </View>
         )}
         {entries.length > 0 ? (
+          <ShowMoreFooter
+            endLine={statementEndLine(firstName)}
+            error={view.loadMoreError}
+            hasMore={view.hasMoreLines}
+            isLoadingMore={view.isLoadingMoreLines}
+            label={SHOW_OLDER_LINES_LABEL}
+            notice={view.statementNotice}
+            onShowMore={() => void view.loadMoreLines()}
+          />
+        ) : null}
+        {entries.length > 0 ? (
           <Text style={styles.footnote}>
-            {view.ledger.truncated
-              ? "Showing the most recent lines — older ones still count toward every balance. "
-              : ""}
             &ldquo;Change&rdquo; is what each line did to your balance; positive means it went in
             your favour.{" "}
             {groupBalances.some((balance) => balance.simplified)
@@ -767,6 +785,11 @@ const styles = StyleSheet.create({
     color: colors.neg600,
     fontSize: 12,
     fontWeight: "500",
+  },
+  removalRefusal: {
+    color: colors.inkSoft,
+    fontSize: 12,
+    lineHeight: 17,
   },
   removeCancel: {
     color: colors.inkSoft,

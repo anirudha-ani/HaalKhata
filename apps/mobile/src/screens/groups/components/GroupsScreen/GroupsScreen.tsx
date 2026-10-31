@@ -22,6 +22,7 @@ import { GROUP_ARCHIVE_EMPTY, GROUP_ARCHIVE_VIEWS } from "@haalkhata/shared/grou
 import { CurrencyPicker } from "@/components/ui/CurrencyPicker";
 import { colors, fonts, radii, spacing } from "@/lib/theme/theme";
 import { GROUP_TYPES, groupEmoji } from "@haalkhata/shared/group/groupTypes";
+import { yourGroupBuckets } from "@haalkhata/shared/group/currencyBalances";
 import { useGroups } from "./hooks/useGroups";
 import { MAX_GROUP_NAME_LENGTH } from "@haalkhata/shared/text/limits";
 
@@ -143,20 +144,25 @@ export function GroupsScreen() {
                         {summary.memberCount} member{summary.memberCount === 1 ? "" : "s"}
                       </Text>
                     </View>
-                    {summary.yourNetCents === 0 ? (
+                    {/* One line per currency: a group can still hold a payment
+                        recorded in another currency before group payments
+                        were kept to its own, and that is a balance of its own. */}
+                    {yourGroupBuckets(summary).length === 0 ? (
                       <Text style={styles.cardSettled}>all settled up</Text>
                     ) : (
-                      <View style={styles.cardBalance}>
-                        <Text style={styles.cardBalanceLabel}>
-                          {summary.yourNetCents > 0 ? "you are owed " : "you owe "}
-                        </Text>
-                        <Money
-                          cents={summary.yourNetCents}
-                          currency={summary.group.currency}
-                          signed
-                          style={styles.cardBalanceAmount}
-                        />
-                      </View>
+                      yourGroupBuckets(summary).map((bucket) => (
+                        <View key={bucket.currency} style={styles.cardBalance}>
+                          <Text style={styles.cardBalanceLabel}>
+                            {bucket.cents > 0 ? "you are owed " : "you owe "}
+                          </Text>
+                          <Money
+                            cents={bucket.cents}
+                            currency={bucket.currency}
+                            signed
+                            style={styles.cardBalanceAmount}
+                          />
+                        </View>
+                      ))
                     )}
                   </Pressable>
                 ) : null,
@@ -233,7 +239,7 @@ export function GroupsScreen() {
                   </Text>
                 </Text>
                 <PersonChecklist
-                  disabledHint="invited — can add once they join"
+                  disabledHint="deleted their account"
                   disabledIds={
                     new Set(
                       groupsState.friends

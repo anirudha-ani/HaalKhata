@@ -1,7 +1,9 @@
 /** Pure helpers for the expense form — validation + request assembly. */
 
 import { centsToInput, parseMoneyInput } from "@haalkhata/shared/money/money";
-import { computeItemizedSplits, computeSplits } from "@haalkhata/shared/expense/splits";
+import { computeItemizedSplits, computeSplits, computeUnclaimedSplits } from "@haalkhata/shared/expense/splits";
+import { LIVE_SPLIT_DEFAULT_NAME } from "@haalkhata/shared/expense/live/live.constants";
+import { fitPayers } from "@haalkhata/shared/expense/merge/expenseState";
 
 /** Split modes the form supports. */
 export type FormSplitType = "equal" | "exact" | "percent" | "shares" | "itemized";
@@ -14,6 +16,8 @@ export type FormSplitType = "equal" | "exact" | "percent" | "shares" | "itemized
 export interface DraftLineItem {
   /** Stable React key; not sent to the server. */
   key: string;
+  /** The saved line this row edits; absent on a line not saved yet. */
+  id?: string;
   /** Item name as typed; blank falls back to "Item" on submit. */
   name: string;
   /** Raw money input for the item's own total (e.g. "12.50"). */
@@ -194,9 +198,10 @@ export function itemizedTotals(
  *
  * @param items - The draft line items.
  * @param currency - ISO 4217 code the item amounts are typed in.
+ * @param allowUnclaimed - A line may have nobody on it: a live split is running on this bill.
  * @returns Whether the draft is valid, with a message when it is not.
  */
-export function checkItemized(items: DraftLineItem[], currency: string): SplitCheck {
+export function checkItemized(items: DraftLineItem[], currency: string, allowUnclaimed = false): SplitCheck {
   if (items.length === 0) return { ok: false, message: "add at least one item" };
 
   const unpriced = items.filter(
@@ -212,7 +217,7 @@ export function checkItemized(items: DraftLineItem[], currency: string): SplitCh
   const unassigned = items.filter(
     (item) => Object.values(item.assignees).filter((weight) => weight > 0).length === 0,
   ).length;
-  if (unassigned > 0) {
+  if (unassigned > 0 && !allowUnclaimed) {
     return {
       ok: false,
       message: `${unassigned} item${unassigned === 1 ? " is" : "s are"} unassigned`,
@@ -297,6 +302,65 @@ export function shareEveryItemWith(
 }
 
 /**
+ * What a form has so far, as a bill that can be saved the moment somebody
+ * presses Split live. Nothing is required: it is saved as it stands so the
+ * table can finish it together. A line with no price waits, because a saved
+ * line needs one, and a bill with no name yet is called a receipt.
+ *
+ * @param form - The form's description, lines, amounts and currency.
+ * @returns The name, the total and the lines to save.
+ */
+export function liveDraft<Line extends DraftLineItem>(form: {
+  description: string;
+  isItemized: boolean;
+  items: readonly Line[];
+  totalCents: number | null;
+  taxCents: number;
+  tipCents: number;
+  currency: string;
+}): { description: string; totalCents: number; lines: Line[] } {
+  const description = form.description.trim() || LIVE_SPLIT_DEFAULT_NAME;
+  if (!form.isItemized) return { description, totalCents: Math.max(form.totalCents ?? 0, 0), lines: [] };
+  const lines = form.items.filter((item) => (parseMoneyInput(item.total, form.currency) ?? 0) > 0);
+  const totalCents = lines.length > 0 ? itemizedTotals(lines, form.taxCents, form.tipCents, form.currency).totalCents : 0;
+  return { description, totalCents, lines };
+}
+
+/**
+ * Ticks people who joined a live split while a form was open. A form opened on a
+ * saved bill holds a tick per person, so anybody new would otherwise come in
+ * unticked, and a save from that form would leave them out of an even split.
+ *
+ * @param checked - The form's ticks, or null when everyone counts as ticked.
+ * @param userIds - Who joined.
+ * @returns The ticks with theirs added.
+ */
+export function withNewcomersTicked(
+  checked: Record<string, boolean> | null,
+  userIds: readonly string[],
+): Record<string, boolean> | null {
+  return checked && { ...checked, ...Object.fromEntries(userIds.map((userId) => [userId, true])) };
+}
+
+/**
+ * Prepares a draft for a live split. A scanned or added line starts out shared
+ * by everyone on the form, which is the form's default rather than anybody's
+ * choice, so such a line opens with nobody on it for people to claim. A line
+ * somebody has narrowed down by hand keeps what they chose.
+ *
+ * @param items - The draft line items.
+ * @param peopleIds - Everyone on the form.
+ * @returns The lines to start the split with.
+ */
+export function unclaimedUnlessPicked<Item extends DraftLineItem>(items: readonly Item[], peopleIds: readonly string[]): Item[] {
+  return items.map((item) => {
+    const onLine = Object.entries(item.assignees).filter(([, weight]) => weight > 0).map(([userId]) => userId);
+    const everyone = onLine.length === 0 || peopleIds.every((userId) => onLine.includes(userId));
+    return everyone ? { ...item, assignees: {} } : item;
+  });
+}
+
+/**
  * Builds the ExpenseItem payload for the API from an itemized draft, dropping
  * assignees whose weight is zero and defaulting a blank name to "Item".
  *
@@ -306,7 +370,7 @@ export function shareEveryItemWith(
  */
 export function buildItemsPayload(items: DraftLineItem[], currency: string) {
   return items.map((item) => ({
-    id: "",
+    id: item.id ?? "",
     name: item.name.trim() || "Item",
     quantity: Math.max(1, item.quantity ?? 1),
     totalCents: parseMoneyInput(item.total, currency) ?? 0,
@@ -316,6 +380,33 @@ export function buildItemsPayload(items: DraftLineItem[], currency: string) {
   }));
 }
 
+/** Who paid, as an expense form holds it. */
+export interface DraftPayers {
+  /** Whether several people paid. */
+  multiPayer: boolean;
+  /** Who paid, when one person did. */
+  singlePayerId: string;
+  /** Raw paid amounts by person, when several did. */
+  payerAmounts: Record<string, string>;
+}
+
+/**
+ * What each person paid, as a form stands.
+ *
+ * @param draft - Who paid, as the form holds it.
+ * @param totalCents - The total, which one person paying covers.
+ * @param currency - ISO 4217 code the amounts are typed in.
+ * @returns Paid cents by user id, leaving out anyone who paid nothing.
+ */
+export function paidByDraft(draft: DraftPayers, totalCents: number, currency: string): Record<string, number> {
+  if (!draft.multiPayer) return { [draft.singlePayerId]: totalCents };
+  return Object.fromEntries(
+    Object.entries(draft.payerAmounts)
+      .map(([userId, value]) => [userId, parseMoneyInput(value, currency) ?? 0] as const)
+      .filter(([, cents]) => cents > 0),
+  );
+}
+
 /**
  * Computes what each person owes for an itemized draft, for the live preview
  * row under the grid.
@@ -323,12 +414,16 @@ export function buildItemsPayload(items: DraftLineItem[], currency: string) {
  * This calls the very same `computeItemizedSplits` the server uses, so the
  * previewed figures are the figures that will be saved — no second
  * implementation of cent-exact allocation to drift out of sync. An incomplete
- * draft (no items, nothing assigned yet) simply previews nothing.
+ * draft (no items, nothing assigned yet) simply previews nothing. While a live
+ * split runs a line may have nobody on it, so the preview does what a save
+ * does then: such a line sits with whoever paid, what each person paid follows
+ * the total, and tax and tip follow each person's lines.
  *
  * @param items - The draft line items.
  * @param taxCents - Tax in integer cents.
  * @param tipCents - Tip in integer cents.
  * @param currency - ISO 4217 code the item amounts are typed in.
+ * @param livePayers - Who paid, when a live split is running on this bill.
  * @returns Owed cents keyed by user id; empty while the draft is incomplete.
  */
 export function previewItemizedShares(
@@ -336,18 +431,32 @@ export function previewItemizedShares(
   taxCents: number,
   tipCents: number,
   currency: string,
+  livePayers?: DraftPayers,
 ): Record<string, number> {
   try {
-    const { splits } = computeItemizedSplits(
-      buildItemsPayload(items, currency),
-      taxCents,
-      tipCents,
-    );
+    const lines = buildItemsPayload(items, currency);
+    const { totalCents } = itemizedTotals(items, taxCents, tipCents, currency);
+    const { splits } = livePayers
+      ? computeUnclaimedSplits(lines, taxCents, tipCents, fittedPayers(livePayers, totalCents, currency))
+      : computeItemizedSplits(lines, taxCents, tipCents);
     return Object.fromEntries(splits.map((split) => [split.userId, split.owedCents]));
   } catch {
     // Draft not complete enough to allocate yet — checkItemized surfaces why.
     return {};
   }
+}
+
+/**
+ * What each person paid, following the bill's total as it stands.
+ *
+ * @param draft - Who paid, as the form holds it.
+ * @param totalCents - The bill's total.
+ * @param currency - ISO 4217 code the amounts are typed in.
+ * @returns Who paid and how much, adding up to the total.
+ */
+function fittedPayers(draft: DraftPayers, totalCents: number, currency: string) {
+  return Object.entries(fitPayers(paidByDraft(draft, totalCents, currency), totalCents))
+    .map(([userId, amountCents]) => ({ userId, amountCents }));
 }
 
 /**

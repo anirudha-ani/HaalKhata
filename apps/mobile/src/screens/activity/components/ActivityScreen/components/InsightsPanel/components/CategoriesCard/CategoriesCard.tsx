@@ -2,7 +2,7 @@
 
 import { StyleSheet, type StyleProp, type ViewStyle } from "react-native";
 import { Text } from "@/components/ui/Text";
-import type { CurrencyInsights } from "@haalkhata/protogen/personalanalytics/v1/personalanalytics_pb";
+import type { CurrencyInsights } from "@haalkhata/shared/api/plainMessages";
 import { BarList } from "@/components/charts/BarList";
 import { CATEGORY_EMOJI } from "@/components/expenses/categoryEmoji";
 import {

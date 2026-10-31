@@ -1,8 +1,10 @@
 /** Session-scoped bearer authentication, renewal and rejection handling. */
 
 import { Code, ConnectError, type Interceptor } from "@connectrpc/connect";
+import * as Device from "expo-device";
 import {
   BEARER_TRANSPORT,
+  SESSION_DEVICE_HEADER,
   SESSION_RENEWAL_HEADER,
   SESSION_TRANSPORT_HEADER,
 } from "@haalkhata/shared/auth/sessionRenewal";
@@ -11,8 +13,8 @@ import { clearSession, sessionRevision, sessionToken, setSessionToken } from "./
 
 /**
  * Attaches the bearer token to every RPC, stores the renewed token the server
- * hands back once a session is past half its lifetime (so regular use never
- * hits the absolute expiry), and signs the app out locally when the server
+ * hands back once a session is a day old (so its lifetime counts from the last
+ * time the app was opened), and signs the app out locally when the server
  * reports the token is no longer valid (revoked or expired), so the auth gate
  * returns the user to the login screen.
  */
@@ -30,6 +32,9 @@ export const authorization: Interceptor = (next) => async (request) => {
   // Says how this client carries its session: the sign-in RPCs return the
   // bearer token only to a client that asks, and set a cookie for the rest.
   request.header.set(SESSION_TRANSPORT_HEADER, BEARER_TRANSPORT);
+  // The model, not the name its owner gave it: enough to recognise the phone
+  // in their list of sign-ins, and nobody's personal name.
+  request.header.set(SESSION_DEVICE_HEADER, Device.modelName ?? "");
   try {
     const response = await next(request);
     const renewed = response.header.get(SESSION_RENEWAL_HEADER);

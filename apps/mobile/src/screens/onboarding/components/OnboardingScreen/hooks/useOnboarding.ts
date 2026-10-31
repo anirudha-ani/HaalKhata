@@ -1,6 +1,7 @@
 /** The first-run flow's controller: the planned steps, moving between them, and leaving. */
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { onboardingDestination } from "@haalkhata/shared/navigation/onboardingDestination";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { queryKeys } from "@haalkhata/shared/api/queryKeys";
@@ -10,7 +11,6 @@ import { DEVICE_SETUP_QUERY_KEY, ONBOARDING_PLAN_QUERY_KEY } from "@/lib/onboard
 import { finishDeviceSetup, markDeviceSetupDue, readOnboardingSituation } from "@/lib/onboarding/deviceSetup";
 import {
   ACCOUNT_STEPS,
-  onboardingDestination,
   onboardingProgress,
   planOnboardingSteps,
 } from "@/lib/onboarding/onboardingPlan";

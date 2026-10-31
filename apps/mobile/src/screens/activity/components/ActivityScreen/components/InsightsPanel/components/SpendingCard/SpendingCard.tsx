@@ -2,7 +2,7 @@
 
 import { StyleSheet, View, type StyleProp, type ViewStyle } from "react-native";
 import { Text } from "@/components/ui/Text";
-import type { CurrencyInsights } from "@haalkhata/protogen/personalanalytics/v1/personalanalytics_pb";
+import type { CurrencyInsights } from "@haalkhata/shared/api/plainMessages";
 import { ColumnChart } from "@/components/charts/ColumnChart";
 import { compactMoney } from "@haalkhata/shared/analytics/chart";
 import { averagePerMonth } from "@haalkhata/shared/analytics/insights";

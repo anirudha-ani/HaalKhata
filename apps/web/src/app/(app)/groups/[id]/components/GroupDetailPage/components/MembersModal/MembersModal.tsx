@@ -4,10 +4,9 @@
 import { SafetyActions } from "@/components/safety/SafetyActions/SafetyActions";
 import Link from "next/link";
 import { useState } from "react";
-import { useMutation } from "@tanstack/react-query";
-import { ChevronRight, Crown, LogOut, Send, UserMinus, UserPlus } from "lucide-react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { ChevronRight, Crown, LogOut, UserMinus, UserPlus } from "lucide-react";
 import type { Member } from "@haalkhata/protogen/group/v1/group_pb";
-import type { User } from "@haalkhata/protogen/common/v1/common_pb";
 import {
   memberActionPrompt,
   memberRemovalBlock,
@@ -15,6 +14,12 @@ import {
   type MemberFeedback,
 } from "@haalkhata/shared/group/memberActions";
 import { OWNER_ROLE } from "@haalkhata/shared/group/roles";
+import {
+  memberBuckets,
+  memberDebts,
+  type GroupCurrencySection,
+} from "@haalkhata/shared/group/currencyBalances";
+import { queryKeys } from "@haalkhata/shared/api/queryKeys";
 import { errorMessage, socialClient } from "@/lib/api/connect";
 import { Avatar } from "@/components/ui/Avatar/Avatar";
 import { PersonLink } from "@/components/people/PersonLink/PersonLink";
@@ -69,13 +74,11 @@ export function MembersModal({
   removingUserId,
   onTransfer,
   transferringUserId,
-  onRemind,
-  remindingUserId,
   onResetLink,
   resettingLink,
   feedback,
-  nets,
-  currency,
+  balances,
+  simplified,
   onViewBalances,
   onClose,
 }: {
@@ -93,20 +96,23 @@ export function MembersModal({
   onTransfer: (userId: string) => void;
   /** Id of the member being made owner, while that is in flight. */
   transferringUserId: string | undefined;
-  /** Shares an Invited member's personal sign-up link. */
-  onRemind: (person: User) => void;
-  /** Member whose remind-share is in flight, for the row's busy state. */
-  remindingUserId: string | undefined;
   /** Owner-only: turns the group's shared join link off. */
   onResetLink: () => void;
   /** Whether the link reset is in flight. */
   resettingLink: boolean;
   /** The last failure or confirmation from an action here, and the row it belongs under. */
   feedback: MemberFeedback | null;
-  /** Each member's net in the group (> 0 means they are owed); empty until balances load. */
-  nets: { userId: string; netCents: number }[];
-  /** The group's ISO 4217 currency code, for the amounts in a refusal. */
-  currency: string;
+  /**
+   * The group's balances per currency (each member's net, > 0 means they are
+   * owed, and the debts between people); empty until they load. A member
+   * leaves only once no debt names them in any currency.
+   */
+  balances: readonly GroupCurrencySection<
+    { userId: string; netCents: number },
+    { fromUserId: string; toUserId: string; amountCents: number }
+  >[];
+  /** The group's simplify-debts mode, which decides which debts name whom. */
+  simplified: boolean;
   /** Closes this list and shows the group's balances. */
   onViewBalances: () => void;
   /** Called when the modal is dismissed. */
@@ -121,15 +127,22 @@ export function MembersModal({
   const [requestedIds, setRequestedIds] = useState<Set<string>>(new Set());
   // The member action waiting on its confirmation, if any.
   const [pending, setPending] = useState<{ userId: string; action: MemberAction } | null>(null);
+  // Names for the other person on a debt; one who has left the group is no
+  // longer a member to look up.
+  const nameOf = new Map(
+    members.flatMap((member) => (member.user ? [[member.user.id, member.user.name] as const] : [])),
+  );
   const viewerIsOwner = members.some(
     (member) => member.user?.id === meId && member.role === OWNER_ROLE,
   );
 
+  const queryClient = useQueryClient();
   const addFriend = useMutation({
     mutationFn: (targetUserId: string) =>
       socialClient.addFriend({ email: "", phone: "", name: "", userId: targetUserId }),
     onSuccess: (_acknowledgement, targetUserId) => {
       setRequestedIds((existing) => new Set([...existing, targetUserId]));
+      queryClient.invalidateQueries({ queryKey: queryKeys.friends, exact: true });
     },
     onError: (mutationError, targetUserId) =>
       setRequestError({ userId: targetUserId, message: errorMessage(mutationError) }),
@@ -155,8 +168,13 @@ export function MembersModal({
               ? memberRemovalBlock(
                   person.name,
                   isMe,
-                  nets.find((position) => position.userId === person.id)?.netCents ?? 0,
-                  currency,
+                  memberBuckets(balances, person.id),
+                  memberDebts(balances, person.id, simplified).map((debt) => ({
+                    currency: debt.currency,
+                    cents: debt.cents,
+                    counterpartName: nameOf.get(debt.counterpartId) ?? "a former member",
+                    counterpartIsViewer: debt.counterpartId === meId,
+                  })),
                 )
               : null;
           const note: { tone: "error" | "success"; message: string } | null =
@@ -192,9 +210,9 @@ export function MembersModal({
                     {isOwner ? (
                       <span className="ml-1.5 text-xs font-normal text-ink-soft">owner</span>
                     ) : null}
-                    {!person.registered ? (
+                    {person.deleted ? (
                       <span className="ml-1.5 rounded-full bg-paper px-2 py-0.5 text-[11px] font-medium text-ink-soft">
-                        invited
+                        deleted account
                       </span>
                     ) : null}
                   </span>
@@ -232,17 +250,8 @@ export function MembersModal({
                 )
               ) : (
                 <div className={stacked ? "flex flex-wrap gap-2 sm:pl-10" : "contents"}>
-                  {!person.registered ? (
-                    <button
-                      type="button"
-                      disabled={remindingUserId === person.id}
-                      onClick={() => onRemind(person)}
-                      className={rowActionClass}
-                    >
-                      <Send className="h-3.5 w-3.5" />{" "}
-                      {remindingUserId === person.id ? "Sharing…" : "Remind"}
-                    </button>
-                  ) : isFriend ? (
+                  {/* A Deleted member is nobody to befriend or open a ledger with. */}
+                  {person.deleted ? null : isFriend ? (
                     <Link href={`/friends/${person.id}`} className={rowActionClass}>
                       Ledger <ChevronRight className="h-3.5 w-3.5" />
                     </Link>

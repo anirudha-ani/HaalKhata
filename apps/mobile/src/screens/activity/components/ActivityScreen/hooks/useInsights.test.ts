@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 /** A period that fails to load leaves the last one on screen, named as such, and asking again retries it. */
 
-import { create } from "@bufbuild/protobuf";
+import { createPlain } from "@haalkhata/shared/api/wireNumbers";
 import { GetInsightsResponseSchema } from "@haalkhata/protogen/personalanalytics/v1/personalanalytics_pb";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, createElement } from "react";
@@ -15,7 +15,7 @@ vi.mock("@/lib/api/connect", () => ({
   errorMessage: (error: Error) => error.message,
 }));
 
-const SIX_MONTHS = create(GetInsightsResponseSchema, {
+const SIX_MONTHS = createPlain(GetInsightsResponseSchema, {
   journey: { memberSince: "2026-01-04T10:00:00.000Z", expenseCount: 42 },
   months: ["2026-05", "2026-06", "2026-07", "2026-08", "2026-09", "2026-10"],
   currencies: [{ currency: "USD", shareCents: 12000 }],

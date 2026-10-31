@@ -45,8 +45,8 @@ Someone the caller blocked, or who blocked the caller, is left off the list,
 as the activity feed leaves out their lines in both directions; the
 expenses still count toward every figure. So is a row that stands for
 nobody: the anonymous "Deleted member" a deleted account's ledger share
-now belongs to, and a merge tombstone. Neither is someone to split with,
-and a link to their friend page would lead nowhere.
+now belongs to. It is not someone to split with, and a link to its friend
+page would lead nowhere.
 
 ## Two Figures, Not One
 
@@ -82,8 +82,6 @@ of it. The dashboard charts the first and states the second.
   How the expenses were split, with whom and where are counted inside each
   entry too: the dashboard shows one currency at a time, and a list that
   counted every currency would contradict the charts beside it.
-- Every money total passes through `toInt32Cents()` before it reaches the
-  wire, so an overflow is a `FailedPrecondition`, not an encoder crash.
 - Soft-deleted expenses and removed payments count nowhere. A net
   settlement's cancelling (`offset`) entries are not payments. The journey's
   payment count counts a payment once however many balances it settled
@@ -172,12 +170,12 @@ counted every currency together and now live in each `CurrencyInsights`.
 
 | Field | Type | Description |
 | --- | --- | --- |
-| member_since | string | RFC 3339 instant the caller finished signing up (not when a friend first invited them). |
+| member_since | string | RFC 3339 instant the caller finished signing up (not when their row was made, which for an account that claimed an invitation before invitations were retired can be much earlier). |
 | first_expense_date | string | Earliest `YYYY-MM-DD` of a live expense they are on; empty when none. |
 | expense_count | int32 | Live expenses they paid for or owe a share of. |
 | payment_count | int32 | Payments they made or received, each once however many balances it settled. |
 | group_count | int32 | Groups they belong to. |
-| friend_count | int32 | Their friends, invited ones included. |
+| friend_count | int32 | Their friends: accounts they have a friendship with. |
 | receipt_scan_count | int32 | Receipts they scanned that a provider could read. Counted from the day scan counting shipped. |
 
 **CurrencyInsights:**
@@ -185,12 +183,12 @@ counted every currency together and now live in each `CurrencyInsights`.
 | Field | Type | Description |
 | --- | --- | --- |
 | currency | string | ISO 4217 code. |
-| share_cents | int32 | The caller's share over the window. |
-| paid_cents | int32 | What they paid up front over the window. |
-| monthly_share_cents | repeated int32 | `share_cents` per month of `months`. |
+| share_cents | int64 | The caller's share over the window. |
+| paid_cents | int64 | What they paid up front over the window. |
+| monthly_share_cents | repeated int64 | `share_cents` per month of `months`. |
 | categories | repeated CategorySpending | `share_cents` by expense category, largest first. |
-| settled_out_cents | int32 | Payments they made during the window. |
-| settled_in_cents | int32 | Payments they received during the window. |
+| settled_out_cents | int64 | Payments they made during the window. |
+| settled_in_cents | int64 | Payments they received during the window. |
 | split_types | repeated SplitTypeCount | How the window's expenses in this currency were split, most used first. |
 | companions | repeated Companion | The five people the caller shared the most expenses in this currency with. |
 | groups | repeated GroupActivity | The five busiest places for this currency; an empty `group_id` is the row for expenses outside any group. |

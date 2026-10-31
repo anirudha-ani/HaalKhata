@@ -33,7 +33,7 @@ Rules this screen follows:
 | Step | Shown when | What it does |
 | --- | --- | --- |
 | Profile | Account not onboarded | Name (prefilled) with a live avatar preview, and default currency. Skippable. |
-| Phone | Account not onboarded, or a fresh sign-in with no verified number | Number, then a 6-box code that takes iOS one-time-code AutoFill, then the merge confirmation if an invitation holds the number. Carries **Let people find me from their contacts** (on by default), saved however the step ends. Skippable. |
+| Phone | Account not onboarded, or a fresh sign-in with no verified number | Number, then the SMS code, which takes iOS one-time-code AutoFill; a number another account holds moves to this one, with both told. Carries **Let people find me from their contacts** (on by default), saved however the step ends. Skippable. |
 | Payment | Account not onboarded | The Account screen's "Get paid" list. Leaving it marks onboarding complete on the server. |
 | Find friends | Contacts not yet refused on this phone | Explains what is read, then **Continue** shows the iOS prompt. Found people get **Add** or **Accept**, one at a time. A refusal moves on. |
 | Notifications | iOS has not asked yet | Previews two notifications, then **Continue** shows the iOS prompt. A yes connects the phone. |

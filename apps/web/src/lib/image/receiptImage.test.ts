@@ -1,87 +1,47 @@
-/** Unit tests for the pure parts of the pre-upload image shrink. */
+/** Unit tests for telling a HEIC apart before preparing a receipt photo. */
 
 import { describe, expect, it } from "vitest";
-import { isHeic, scaledSize, shouldResize } from "@/lib/image/receiptImage";
-import { MAX_UPLOAD_EDGE_PIXELS, SKIP_RESIZE_BELOW_BYTES } from "@/lib/image/image.constants";
+import { isHeic } from "@/lib/image/receiptImage";
 
 /**
- * Builds a File stand-in with a chosen size, which the browser File
- * constructor cannot fake without allocating that many bytes.
+ * Builds a File stand-in, which the browser File constructor would make
+ * this test allocate.
  *
  * @param name - File name.
  * @param type - MIME type.
- * @param size - Reported byte size.
  * @returns An object shaped like the parts of File these helpers read.
  */
-function fileLike(name: string, type: string, size: number): File {
-  return { name, type, size } as File;
+function fileLike(name: string, type: string): File {
+  return { name, type, size: 1 } as File;
 }
 
-describe("scaledSize", () => {
-  it("shrinks a phone photo to the longest edge we actually send", () => {
-    expect(scaledSize({ width: 4032, height: 3024 }, 2576)).toEqual({
-      width: 2576,
-      height: 1932,
-    });
-  });
-
-  it("scales by the longest edge whichever way the photo is turned", () => {
-    expect(scaledSize({ width: 3024, height: 4032 }, 2576)).toEqual({
-      width: 1932,
-      height: 2576,
-    });
-  });
-
-  it("leaves an image that already fits alone rather than re-encoding it", () => {
-    expect(scaledSize({ width: 1200, height: 900 }, 2576)).toBeNull();
-    expect(scaledSize({ width: 2576, height: 100 }, 2576)).toBeNull();
-  });
-
-  it("never enlarges", () => {
-    expect(scaledSize({ width: 200, height: 200 }, 2576)).toBeNull();
-  });
-
-  it("keeps a sliver of an image at least one pixel tall", () => {
-    // A 4000x3 panorama scaled by 2576/4000 rounds the height to 2, not 0 —
-    // a zero-height canvas throws on drawImage.
-    const target = scaledSize({ width: 4000, height: 3 }, 2576);
-    expect(target?.height).toBeGreaterThanOrEqual(1);
-  });
-
-  it("survives a degenerate zero-size image", () => {
-    expect(scaledSize({ width: 0, height: 0 }, 2576)).toBeNull();
-  });
-});
+/**
+ * The first bytes of a HEIF file with the given brand.
+ *
+ * @param brand - Four-letter brand at offset 8.
+ * @returns The header bytes.
+ */
+function heifHeader(brand: string): Uint8Array {
+  return Uint8Array.from([0, 0, 0, 0x18, 0x66, 0x74, 0x79, 0x70, ...[...brand].map((letter) => letter.charCodeAt(0))]);
+}
 
 describe("isHeic", () => {
   it("catches what an iPhone actually sends, by type or by extension", () => {
-    expect(isHeic(fileLike("IMG_1.HEIC", "", 1))).toBe(true);
-    expect(isHeic(fileLike("x", "image/heic", 1))).toBe(true);
-    expect(isHeic(fileLike("x", "image/heif", 1))).toBe(true);
+    const empty = new Uint8Array(0);
+    expect(isHeic(fileLike("IMG_1.HEIC", ""), empty)).toBe(true);
+    expect(isHeic(fileLike("x", "image/heic"), empty)).toBe(true);
+    expect(isHeic(fileLike("x", "image/heif"), empty)).toBe(true);
   });
 
-  it("does not catch ordinary photos", () => {
-    expect(isHeic(fileLike("a.jpg", "image/jpeg", 1))).toBe(false);
-    expect(isHeic(fileLike("a.png", "image/png", 1))).toBe(false);
-  });
-});
-
-describe("shouldResize", () => {
-  it("takes on a big JPEG", () => {
-    expect(shouldResize(fileLike("a.jpg", "image/jpeg", 6_000_000))).toBe(true);
+  it("catches a HEIC with no type and the wrong name from its bytes", () => {
+    expect(isHeic(fileLike("receipt.jpg", ""), heifHeader("heic"))).toBe(true);
+    expect(isHeic(fileLike("receipt", ""), heifHeader("mif1"))).toBe(true);
   });
 
-  it("leaves HEIC alone — no browser can decode it", () => {
-    expect(shouldResize(fileLike("a.heic", "image/heic", 6_000_000))).toBe(false);
-  });
-
-  it("leaves an already-small file alone", () => {
-    expect(shouldResize(fileLike("a.jpg", "image/jpeg", SKIP_RESIZE_BELOW_BYTES))).toBe(false);
-  });
-
-  it("uses an edge the server will not shrink further", () => {
-    // If this drifts above the server's own ceiling the upload carries pixels
-    // that get discarded on arrival, which is the whole thing being avoided.
-    expect(MAX_UPLOAD_EDGE_PIXELS).toBe(2576);
+  it("does not catch ordinary photos or other ISO media files", () => {
+    const jpeg = Uint8Array.from([0xff, 0xd8, 0xff, 0xe0, 0, 0x10, 0x4a, 0x46, 0x49, 0x46, 0, 1]);
+    expect(isHeic(fileLike("a.jpg", "image/jpeg"), jpeg)).toBe(false);
+    expect(isHeic(fileLike("a.png", "image/png"), new Uint8Array(0))).toBe(false);
+    expect(isHeic(fileLike("clip.mp4", "video/mp4"), heifHeader("isom"))).toBe(false);
   });
 });

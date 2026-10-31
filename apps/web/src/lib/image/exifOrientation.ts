@@ -1,4 +1,10 @@
-/** Reads the EXIF orientation tag out of a JPEG, so rotation never depends on browser support. */
+/**
+ * Reads a JPEG's EXIF orientation and stored size, so a receipt photo comes
+ * out upright on every browser: whether or not the browser turned it while
+ * decoding, which current ones do and Safari before 16.4 does not.
+ */
+
+import type { ImageSize } from "./imageSize";
 
 /** How an EXIF orientation tag maps onto a canvas transform. */
 export interface OrientationTransform {
@@ -36,12 +42,11 @@ export function orientationTransform(orientation: number): OrientationTransform 
 /**
  * Extracts the EXIF orientation tag (0x0112) from JPEG bytes.
  *
- * Done by hand rather than trusting `createImageBitmap`'s
- * `imageOrientation: "from-image"`, which Safari only supports from 16.4. On
- * an older iPhone that option is silently ignored, and because the canvas
- * re-encode drops the EXIF block, the server loses its chance to rotate too —
- * so the receipt would upload sideways with nothing left to say it was.
- * Reading the tag ourselves makes the result identical on every browser.
+ * Read by hand because the browser's own handling cannot be relied on either
+ * way: Safari before 16.4 ignores the tag, and Chrome applies it even when
+ * `createImageBitmap` is asked not to. The canvas re-encode drops the EXIF
+ * block, so a photo the page gets wrong is uploaded sideways with nothing
+ * left to say it was; {@link remainingTurn} decides what is still needed.
  *
  * @param bytes - The start of a JPEG file; 64 KB is plenty, the tag lives in
  *   the first APP1 segment.
@@ -100,4 +105,54 @@ function readTiffOrientation(view: DataView, tiffStart: number): number {
     }
   }
   return 1;
+}
+
+/**
+ * The size a JPEG stores its pixels at, before any EXIF turn, from its frame
+ * header (SOF0–SOF15; 0xC4, 0xC8 and 0xCC share the range but are tables).
+ *
+ * @param bytes - The start of a JPEG file.
+ * @returns The stored size, or null when the frame header is not in the bytes read.
+ */
+export function readJpegFrameSize(bytes: Uint8Array): ImageSize | null {
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  if (view.byteLength < 4 || view.getUint16(0) !== 0xffd8) return null;
+
+  let offset = 2;
+  while (offset + 4 <= view.byteLength) {
+    if (view.getUint8(offset) !== 0xff) return null;
+    const marker = view.getUint8(offset + 1);
+    if (marker === 0xda) return null;
+    const segmentLength = view.getUint16(offset + 2);
+    if (segmentLength < 2) return null;
+    const isFrame = marker >= 0xc0 && marker <= 0xcf && marker !== 0xc4 && marker !== 0xc8 && marker !== 0xcc;
+    if (isFrame) {
+      if (offset + 9 > view.byteLength) return null;
+      return { height: view.getUint16(offset + 5), width: view.getUint16(offset + 7) };
+    }
+    offset += 2 + segmentLength;
+  }
+  return null;
+}
+
+/**
+ * The turn a decoded photo still needs. A quarter turn shows in the decoded
+ * size: when the browser hands back the stored width and height unchanged,
+ * it ignored the tag and the turn is ours to make; when they come back
+ * swapped, it is done. A half turn or a mirror leaves the size alone, so it
+ * is taken as done, which every current browser does.
+ *
+ * @param turn - What the EXIF tag asks for.
+ * @param stored - The JPEG's stored size, or null when unknown.
+ * @param decoded - The size the browser decoded it at.
+ * @returns The transform still to apply.
+ */
+export function remainingTurn(
+  turn: OrientationTransform,
+  stored: ImageSize | null,
+  decoded: ImageSize,
+): OrientationTransform {
+  if (!turn.swapsAxes || !stored || stored.width === stored.height) return TRANSFORMS[1];
+  const browserIgnoredTag = decoded.width === stored.width && decoded.height === stored.height;
+  return browserIgnoredTag ? turn : TRANSFORMS[1];
 }

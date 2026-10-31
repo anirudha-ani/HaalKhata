@@ -54,9 +54,16 @@ export function groupsByStatus<Summary extends { group?: { status?: GroupStatus 
  * Determines whether loaded member balances permit offering an archive action.
  * The server rechecks the full ledger under its lock before committing.
  *
- * @param balances - Member nets, or undefined while loading or on error.
- * @returns True when balances are loaded and every member is settled.
+ * @param sections - Member nets per currency (see `groupBalanceSections`),
+ *   or undefined while loading or on error.
+ * @returns True when balances are loaded and every member is settled in
+ *   every currency.
  */
-export function allBalancesSettled(balances: readonly { netCents: number }[] | undefined): boolean {
-  return balances !== undefined && balances.every((balance) => balance.netCents === 0);
+export function allBalancesSettled(
+  sections: readonly { nets: readonly { netCents: number }[] }[] | undefined,
+): boolean {
+  return (
+    sections !== undefined &&
+    sections.every((section) => section.nets.every((balance) => balance.netCents === 0))
+  );
 }

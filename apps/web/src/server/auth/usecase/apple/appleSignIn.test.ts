@@ -13,7 +13,7 @@ vi.mock("../../repo/apple/appleSignIn.repo", () => ({ insertAppleChallenge: vi.f
 vi.mock("./apple.provider", () => ({ assertAppleSignInConfigured: vi.fn(), verifyAppleIdentity: vi.fn(), exchangeAppleCode: vi.fn(), encryptAppleToken: vi.fn() }));
 vi.mock("../../repo/users.repo", () => ({ findUserById: vi.fn(), insertUser: vi.fn() }));
 vi.mock("../account/auth.usecase", () => ({ avatarColorFor: () => "#c73e2e" }));
-vi.mock("../session/session", () => ({ createToken: () => "local-session" }));
+vi.mock("../session/sessions.usecase", () => ({ startSession: async () => "local-session" }));
 
 beforeEach(() => { vi.clearAllMocks(); });
 afterEach(() => { vi.unstubAllEnvs(); });
@@ -87,7 +87,7 @@ describe("Apple challenge binding", () => {
     const nonce = "n".repeat(43);
     const member = { id: "member-id", email: "member@example.com", name: "Member", avatar_color: "#c73e2e",
       avatar_url: null, default_currency: "USD", password_hash: null, phone: null, phone_verified_at: null,
-      google_sub: null, apple_sub: "subject", onboarded_at: null, merged_into: null, token_version: 0,
+      google_sub: null, apple_sub: "subject", onboarded_at: null, token_version: 0,
       created_at: "2026-10-05T00:00:00Z", payment_handles: [] };
     vi.mocked(provider.verifyAppleIdentity).mockResolvedValue({ subject: "subject", email: member.email, nonce });
     vi.mocked(provider.exchangeAppleCode).mockResolvedValue({ identityToken: "verified", refreshToken: "refresh" });
@@ -100,8 +100,10 @@ describe("Apple challenge binding", () => {
 
     const result = await logInWithApple({ idToken: "valid-token", authorizationCode: "valid-code", name: "kill yourself" });
 
-    expect(usersRepository.insertUser).toHaveBeenCalledWith(expect.objectContaining({ name: "Member" }), expect.anything());
-    expect(appleRepository.saveAppleIdentity).toHaveBeenCalledWith(member.id, "subject", "Member", "com.haalkhata.app", "ciphertext", expect.anything());
+    // Born with its Apple identity: chk_users_can_sign_in refuses a row nobody can sign in to.
+    expect(usersRepository.insertUser).toHaveBeenCalledWith(
+      expect.objectContaining({ name: "Member", appleSub: "subject" }), expect.anything());
+    expect(appleRepository.saveAppleIdentity).toHaveBeenCalledWith(member.id, "subject", "com.haalkhata.app", "ciphertext", expect.anything());
     expect(result.token).toBe("local-session");
   });
 });

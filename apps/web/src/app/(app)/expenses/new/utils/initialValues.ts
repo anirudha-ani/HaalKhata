@@ -1,7 +1,7 @@
 /** Pure assembly of the expense form's initial state (create + edit). */
 
 import { restoreExpenseSplit } from "@haalkhata/shared/expense/form/restoreSplit";
-import type { Expense } from "@haalkhata/protogen/expense/v1/expense_pb";
+import type { Expense } from "@haalkhata/shared/api/plainMessages";
 import { centsToInput, todayISO } from "@haalkhata/shared/money/money";
 import type { DraftLineItem, FormSplitType } from "@haalkhata/shared/expense/form/splitForm";
 import { nextDraftKey } from "@haalkhata/shared/expense/draftKey";
@@ -115,12 +115,14 @@ export function buildInitialValues(
     // it is. `key` is regenerated rather than reusing the server id: it exists
     // only to keep React's list stable while editing, and the two ids serve
     // different lifetimes — a row deleted and re-added should not resurrect an
-    // id the server still has.
+    // id the server still has. `id` says which saved line a row is, which is
+    // how two people's edits to one receipt merge line by line.
     //
     // `total` goes back through centsToInput because the editor works in the
     // money strings a person types, not cents.
     items: expense.items.map((item) => ({
       key: nextDraftKey(),
+      id: item.id,
       name: item.name,
       total: centsToInput(item.totalCents, expense.currency),
       quantity: item.quantity,

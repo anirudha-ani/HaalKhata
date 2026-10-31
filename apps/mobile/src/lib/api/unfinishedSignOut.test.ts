@@ -3,14 +3,16 @@
 import { Code, ConnectError } from "@connectrpc/connect";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const native = vi.hoisted(() => ({ storage: new Map<string, string>(), logOut: vi.fn() }));
+const native = vi.hoisted(() => ({ storage: new Map<string, string>(), logOut: vi.fn(), hydrateSession: vi.fn() }));
 
 vi.mock("expo-secure-store", () => ({
+  WHEN_UNLOCKED_THIS_DEVICE_ONLY: 9,
   getItemAsync: vi.fn(async (storageKey: string) => native.storage.get(storageKey) ?? null),
   setItemAsync: vi.fn(async (storageKey: string, value: string) => void native.storage.set(storageKey, value)),
   deleteItemAsync: vi.fn(async (storageKey: string) => void native.storage.delete(storageKey)),
 }));
 vi.mock("./connect", () => ({ authClient: { logOut: native.logOut } }));
+vi.mock("./session", () => ({ hydrateSession: native.hydrateSession }));
 // The real constants module reads the platform and build config at import.
 vi.mock("./api.constants", () => ({ UNFINISHED_SIGN_OUT_STORAGE_KEY: "haalkhata-unfinished-sign-out" }));
 
@@ -34,6 +36,15 @@ describe("finishUnfinishedSignOut", () => {
     await finishUnfinishedSignOut();
     expect(native.logOut).toHaveBeenCalledWith({}, { headers: { Authorization: "Bearer token-a" } });
     expect(native.storage.has(UNFINISHED_SIGN_OUT_STORAGE_KEY)).toBe(false);
+  });
+
+  it("ends a session an earlier install left, which hydration hands over", async () => {
+    native.hydrateSession.mockImplementationOnce(async () => {
+      await rememberUnfinishedSignOut("token-of-the-last-install");
+    });
+    native.logOut.mockResolvedValue({});
+    await finishUnfinishedSignOut();
+    expect(native.logOut).toHaveBeenCalledWith({}, { headers: { Authorization: "Bearer token-of-the-last-install" } });
   });
 
   it("forgets a session the server says has already ended", async () => {

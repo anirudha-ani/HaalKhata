@@ -10,6 +10,57 @@ import {
   MAX_SETTLEMENT_NOTE_LENGTH,
 } from "@haalkhata/shared/text/limits";
 
+/** The refusal for a one-off expense with somebody the caller is not connected to. */
+export const ONE_OFF_NOT_CONNECTED_MESSAGE =
+  "you can only split with people you already share a friendship or a group with";
+
+/**
+ * Why a change touching a former member's group balance is refused. Named by
+ * group because a payment is removed from a friend's page, where no group
+ * is on screen.
+ *
+ * @param groupName - The group they left.
+ * @param personName - The member who left; omitted when it is the reader.
+ * @param refused - What cannot happen, when "this can't be changed" is too broad.
+ * @returns The sentence shown beside the refused control.
+ */
+export function formerMemberRefusal(
+  groupName: string,
+  personName?: string,
+  refused = "this can't be changed",
+): string {
+  return personName === undefined
+    ? `You have left "${groupName}", so ${refused}: your balance there has to stay settled`
+    : `${personName} has left "${groupName}", so ${refused}: their balance there has to stay settled`;
+}
+
+/**
+ * Why an expense was refused for taking someone past
+ * {@link MAX_PERSON_VOLUME_CENTS} in one currency.
+ *
+ * @param ceiling - The ceiling, written in the expense's currency.
+ * @param personName - Who it would take past it; omitted when it is the caller.
+ * @returns The sentence shown beside the save button.
+ */
+export function volumeLimitRefusal(ceiling: string, personName?: string): string {
+  const whose = personName === undefined ? "the expenses you are on" : `the expenses ${personName} is on`;
+  return `This would take ${whose} past ${ceiling} in all, more than this app can add up exactly for one person`;
+}
+
+/**
+ * Why an edit naming another currency was refused. An expense keeps the
+ * currency it was saved in. Amounts sent with another currency were typed
+ * in that currency's units — ¥3,500 arrives as 350000 from a form that
+ * thought in dollars — so neither relabelling the expense nor keeping those
+ * amounts under its own currency would be right.
+ *
+ * @param savedCurrency - The expense's currency.
+ * @returns The sentence shown beside the save button.
+ */
+export function currencyChangeRefusal(savedCurrency: string): string {
+  return `This expense is in ${savedCurrency} and its currency can't be changed. If your app is out of date, update it (or reload the page) and try again.`;
+}
+
 /** Split types the API accepts; mirrors the split calculators in domain/splits. */
 export const SPLIT_TYPES = new Set(["equal", "exact", "percent", "shares", "itemized"]);
 
@@ -23,25 +74,81 @@ export const MAX_EXPENSE_PARTICIPANTS = 100;
 export const MAX_ITEM_ASSIGNMENTS = 100;
 
 /**
- * Largest monetary value accepted for one stored field or transaction.
- * This stays below PostgreSQL/protobuf signed-int32 limits and leaves a small
- * margin so downstream formatting and arithmetic never approach overflow.
+ * Largest amount accepted for one expense, payer, share, item, tax, tip or
+ * payment: 100,000,000,000.00 in a two-decimal currency (10^13 minor units),
+ * far past any real expense in any currency. The database CHECKs hold the
+ * same ceiling.
  */
-export const MAX_MONEY_CENTS = 2_000_000_000;
+export const MAX_MONEY_CENTS = 10_000_000_000_000;
 
 /**
- * Most lines a friend statement returns, newest first. The balances are
- * computed over the whole history regardless; this bounds only what is
- * shipped to a screen, and the response says when it applied.
+ * Why a net settlement cannot be recorded: what it would cancel is more than
+ * one row can hold. Each balance's own Settle pays it down separately.
+ */
+export const NET_SETTLEMENT_TOO_LARGE_MESSAGE =
+  "these balances are too large to settle together — settle one balance at a time";
+
+/** Why the same person cannot be listed twice among those who paid. */
+export const DUPLICATE_PAYER_MESSAGE = "each person can only be listed once among those who paid";
+
+/**
+ * Most that live expenses one person is on (as a payer or a share) may add
+ * up to in one currency: 10^15 minor units, a hundred expenses at the
+ * ceiling above. Every figure shown for a person — a balance in any scope, a
+ * debt, a running total, their insights — is at most twice this (the
+ * expenses plus the payments that settle them), which keeps it nine times
+ * below 2^53, where JavaScript numbers stop being exact. The check runs
+ * without locking anyone else's ledger, so a few writes landing at once can
+ * pass it together; that margin absorbs them.
+ */
+export const MAX_PERSON_VOLUME_CENTS = 1_000_000_000_000_000;
+
+/**
+ * Lines in the one page of a friend statement an app version from before
+ * paging asks for (limit 0), with `truncated` saying when more were left off.
  */
 export const LEDGER_DISPLAY_LIMIT = 300;
 
 /**
- * Most rows an expense list returns, newest first. Same shape as the
- * statement cap: settledness and every balance still read the whole
- * ledger, only the list itself is bounded.
+ * Where lines written on one day and moment fall in a friend statement,
+ * oldest first: an expense, then the balances a net settlement cancelled,
+ * then the payment itself. Part of the statement's order key, in memory and
+ * in the page queries alike.
+ */
+export const LEDGER_LINE_RANK = { expense: 0, offset: 1, payment: 2 } as const;
+
+/** Lines in a page of a friend statement when the client names no size. */
+export const LEDGER_PAGE_SIZE = 50;
+
+/** Most lines one page of a friend statement may hold. */
+export const MAX_LEDGER_PAGE_SIZE = 200;
+
+/**
+ * Why a later page of a friend statement was refused: a line was added,
+ * edited or removed since the first page was read, so the running balance
+ * that page would continue from no longer holds. Clients reload the
+ * statement from the top when they get it (failed_precondition).
+ */
+export const LEDGER_CHANGED_MESSAGE =
+  "this statement changed while you were reading it — reload it to see the current figures";
+
+/**
+ * Rows in the one page of an expense list an app version from before paging
+ * asks for (limit 0), with `truncated` saying when more were left off.
  */
 export const EXPENSE_LIST_DISPLAY_LIMIT = 500;
+
+/** Rows in a page of an expense list when the client names no size. */
+export const EXPENSE_PAGE_SIZE = 50;
+
+/** Most rows one page of an expense list may hold. */
+export const MAX_EXPENSE_PAGE_SIZE = 200;
+
+/** Comments in a page when the client names no size. */
+export const COMMENT_PAGE_SIZE = 30;
+
+/** Most comments one page may hold. */
+export const MAX_COMMENT_PAGE_SIZE = 100;
 
 /**
  * Text bounds on the expense write path. Defined once in the shared package
@@ -85,3 +192,17 @@ export const OFFSET_ACTIVITY_TYPE = "settlement_offset";
  * short enough to stay a preview and long enough to carry a whole short remark.
  */
 export const COMMENT_PREVIEW_LENGTH = 120;
+
+/**
+ * Tries a payment between two people gets when a group becomes shared
+ * between them while it is being recorded. Each try locks the groups they
+ * share at that moment; a roster change landing in between that often is
+ * not a race any more, and the person is asked to look again.
+ */
+export const SETTLEMENT_ATTEMPTS = 3;
+
+/** How often the background sweep looks for live splits past their end. */
+export const LIVE_SPLIT_SWEEP_INTERVAL_MS = 30_000;
+
+/** How many live splits one pass of the sweep finishes; the rest go on the next. */
+export const LIVE_SPLIT_SWEEP_BATCH_SIZE = 100;

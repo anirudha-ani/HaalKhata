@@ -2,7 +2,6 @@
 
 import { describe, expect, it } from "vitest";
 import {
-  onboardingDestination,
   onboardingProgress,
   planOnboardingSteps,
   type OnboardingSituation,
@@ -58,19 +57,6 @@ describe("planOnboardingSteps", () => {
     // Access already given still has friends to show.
     expect(planOnboardingSteps({ ...answered, contactsAccess: "limited" })).toEqual(["friends", "done"]);
     expect(planOnboardingSteps({ ...answered, contactsAccess: "denied", pushPermission: "unknown" })).toEqual([]);
-  });
-});
-
-describe("onboardingDestination", () => {
-  it("returns to an allowed screen the flow interrupted", () => {
-    expect(onboardingDestination("/groups/trip-1")).toBe("/groups/trip-1");
-    expect(onboardingDestination("/friends")).toBe("/friends");
-  });
-
-  it("falls back to Home for anything else", () => {
-    for (const candidate of [undefined, "", "/dashboard", "https://evil.example", "//evil", "/onboarding", 7, "/groups/../x"]) {
-      expect(onboardingDestination(candidate)).toBe("/dashboard");
-    }
   });
 });
 

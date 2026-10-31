@@ -24,8 +24,12 @@ import { MembersModal } from "./components/MembersModal/MembersModal";
 import { MembersStrip } from "./components/MembersStrip/MembersStrip";
 import { BalancesPanel } from "./components/BalancesPanel/BalancesPanel";
 import { ExpenseList } from "@/components/expenses/ExpenseList/ExpenseList";
+import { ErrorAlert } from "@/components/ui/ErrorAlert/ErrorAlert";
+import { LoadMoreFooter } from "@/components/ui/LoadMoreFooter/LoadMoreFooter";
+import { LIST_END_LINE } from "@haalkhata/shared/api/paging";
 import { TABS } from "../../constants/tabs";
 import { useGroupDetail } from "./hooks/useGroupDetail";
+import { groupInviteExplainer } from "@haalkhata/shared/invite/inviteCopy";
 
 /**
  * Renders a single group's page: header with the add-expense action and the
@@ -156,7 +160,7 @@ export function GroupDetailPage({
       {groupDetail.groupShareToken ? (
         <InviteShareModal
           title="Group invite link"
-          explainer={`Anyone who scans this or opens the link can join ${groupDetail.group.name}. They'll see who invited them before accepting.`}
+          explainer={groupInviteExplainer(groupDetail.group.name, groupDetail.groupShareExpiresAt)}
           token={groupDetail.groupShareToken}
           share={groupDetail.shareLinkToSheet}
           onClose={groupDetail.closeGroupShare}
@@ -180,27 +184,42 @@ export function GroupDetailPage({
       </div>
 
       {groupDetail.tab === "expenses" ? (
-        <ExpenseList
-          expenses={groupDetail.expenses?.expenses ?? []}
-          meId={groupDetail.me?.id}
-          userById={groupDetail.userById}
-          emptyHint="Add the first expense or scan a receipt to get this ledger going."
-          settledIds={new Set(groupDetail.expenses?.settledExpenseIds ?? [])}
-        />
+        groupDetail.expensesError ? (
+          <ErrorAlert
+            message={`Couldn't load this group's expenses: ${groupDetail.expensesError}`}
+            onRetry={groupDetail.reloadExpenses}
+          />
+        ) : (
+          <div className="space-y-3">
+            <ExpenseList
+              expenses={groupDetail.expenses.expenses}
+              meId={groupDetail.me?.id}
+              userById={groupDetail.userById}
+              emptyHint="Add the first expense or scan a receipt to get this ledger going."
+              settledIds={groupDetail.expenses.settledIds}
+            />
+            <LoadMoreFooter
+              hasMore={groupDetail.expensesHasMore}
+              isLoadingMore={groupDetail.expensesLoadingMore}
+              onLoadMore={groupDetail.loadMoreExpenses}
+              error={groupDetail.expensesLoadMoreError}
+              endLabel={groupDetail.expenses.expenses.length > 0 ? LIST_END_LINE : ""}
+            />
+          </div>
+        )
       ) : groupDetail.tab === "balances" ? (
         <BalancesPanel
-          balances={groupDetail.balances}
+          sections={groupDetail.balanceSections}
           error={groupDetail.balancesError ? errorMessage(groupDetail.balancesError) : ""}
           onRetry={groupDetail.reloadBalances}
-          currency={groupDetail.group.currency}
           meId={groupDetail.me?.id}
           userById={groupDetail.userById}
           simplified={groupDetail.simplified}
           simplifyPending={groupDetail.simplifyPending}
           simplifyError={groupDetail.simplifyError}
           onToggleSimplified={groupDetail.setSimplified}
-          onSettle={(user, cents, received) =>
-            groupDetail.setSettleWith({ user, cents, received })
+          onSettle={(user, cents, received, currency) =>
+            groupDetail.setSettleWith({ user, cents, received, currency })
           }
         />
       ) : (
@@ -210,6 +229,9 @@ export function GroupDetailPage({
           hasMore={groupDetail.activityHasMore}
           isLoadingMore={groupDetail.activityLoadingMore}
           onLoadMore={groupDetail.loadMoreActivity}
+          error={groupDetail.activityError}
+          onRetry={groupDetail.reloadActivity}
+          loadMoreError={groupDetail.activityLoadMoreError}
         />
       )}
 
@@ -222,13 +244,11 @@ export function GroupDetailPage({
           removingUserId={groupDetail.removingUserId}
           onTransfer={groupDetail.transferOwnership}
           transferringUserId={groupDetail.transferringUserId}
-          onRemind={groupDetail.remindMember}
-          remindingUserId={groupDetail.remindingUserId}
           onResetLink={groupDetail.resetInviteLink}
           resettingLink={groupDetail.resettingInviteLink}
           feedback={groupDetail.memberFeedback}
-          nets={groupDetail.balances?.nets ?? []}
-          currency={groupDetail.group.currency}
+          balances={groupDetail.balanceSections ?? []}
+          simplified={groupDetail.simplified}
           onViewBalances={() => {
             groupDetail.setViewingMembers(false);
             groupDetail.setTab("balances");
@@ -247,8 +267,7 @@ export function GroupDetailPage({
           onContactChange={groupDetail.setContact}
           error={groupDetail.peopleError}
           inviteOffer={groupDetail.inviteOffer}
-          onSendInvite={groupDetail.sendSignUpInvite}
-          sendingInvite={groupDetail.sendingSignUpInvite}
+          onShareLink={groupDetail.shareLinkFromOffer}
           onDismissInvite={groupDetail.dismissInviteOffer}
           canSubmit={groupDetail.canAddPeople}
           isPending={groupDetail.addMembers.isPending}
@@ -257,22 +276,12 @@ export function GroupDetailPage({
         />
       ) : null}
 
-      {groupDetail.signUpShare ? (
-        <InviteShareModal
-          title="Sign-up invite"
-          explainer={`This link signs ${groupDetail.signUpShare.contact} up and connects you as friends. Once they join, you can add them to ${groupDetail.group.name}.`}
-          token={groupDetail.signUpShare.token}
-          share={groupDetail.signUpShareToSheet}
-          onClose={groupDetail.closeSignUpShare}
-        />
-      ) : null}
-
       {groupDetail.settleWith ? (
         <SettleUpModal
           to={groupDetail.settleWith.user}
           suggestedCents={groupDetail.settleWith.cents}
           received={groupDetail.settleWith.received}
-          currency={groupDetail.group.currency}
+          currency={groupDetail.settleWith.currency}
           // On the group's page, so it settles this group's balance alone.
           scopeId={groupId}
           onClose={() => groupDetail.setSettleWith(null)}

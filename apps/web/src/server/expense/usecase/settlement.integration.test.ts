@@ -15,10 +15,11 @@
 
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { Client } from "pg";
+import { testDatabaseName } from "@/server/common/testing/testDatabase";
 
 const ADMIN_URL =
   process.env.MERGE_TEST_ADMIN_URL ?? "postgres://haalkhata:change-me@127.0.0.1:5432/postgres";
-const TEST_DATABASE = "haalkhata_settlement_test";
+const TEST_DATABASE = testDatabaseName("haalkhata_settlement_test");
 const TEST_URL = ADMIN_URL.replace(/\/[^/]*$/, `/${TEST_DATABASE}`);
 
 const DEBTOR = "debtor-1";
@@ -94,6 +95,7 @@ describe.skipIf(!reachable)("recordSettlement against Postgres", () => {
   ).removeMemberFromGroup;
   let userNetInGroup: typeof import("./balance.usecase").userNetInGroup;
   let userNetInGroups: typeof import("./balance.usecase").userNetInGroups;
+  let getGroupBalances: typeof import("./balance.usecase").getGroupBalances;
   let netWithUser: typeof import("./balance.usecase").netWithUser;
   let getFriendLedger: typeof import("./balance.usecase").getFriendLedger;
   let sendReminder: typeof import("@/server/social/usecase/social.usecase").sendReminder;
@@ -126,7 +128,7 @@ describe.skipIf(!reachable)("recordSettlement against Postgres", () => {
     } = await import("./expense.usecase"));
     ({ removeMemberFromGroup } = await import("@/server/group/usecase/group.usecase"));
     ({ sendReminder } = await import("@/server/social/usecase/social.usecase"));
-    ({ getFriendLedger, userNetInGroup, userNetInGroups, netWithUser } = await import(
+    ({ getFriendLedger, getGroupBalances, userNetInGroup, userNetInGroups, netWithUser } = await import(
       "./balance.usecase"
     ));
 
@@ -177,7 +179,7 @@ describe.skipIf(!reachable)("recordSettlement against Postgres", () => {
   it("moves every ledger the pair can see, together", async () => {
     // The other half of the incident: a friends-tab settlement used to leave
     // the group still demanding the money. One recording must zero both.
-    expect(await userNetInGroup(DEBTOR, "grp-1")).toBe(0);
+    expect(await userNetInGroup(DEBTOR, "grp-1")).toEqual(new Map());
     expect(await netWithUser(DEBTOR, CREDITOR)).toEqual(new Map());
   });
 
@@ -220,15 +222,15 @@ describe.skipIf(!reachable)("recordSettlement against Postgres", () => {
     // moves: they paid 5000 against a 5000 share; at a 4000 share they are
     // owed the 1000 they overpaid …
     await updateExpense(DEBTOR, "exp-1", campsite(8000));
-    expect(await userNetInGroup(DEBTOR, "grp-1")).toBe(1000);
+    expect(await userNetInGroup(DEBTOR, "grp-1")).toEqual(new Map([["USD", 1000]]));
     // … and at a 6000 share they owe the extra 1000 instead.
     await updateExpense(CREDITOR, "exp-1", campsite(12_000));
-    expect(await userNetInGroup(DEBTOR, "grp-1")).toBe(-1000);
+    expect(await userNetInGroup(DEBTOR, "grp-1")).toEqual(new Map([["USD", -1000]]));
 
     // Back to the recorded split, so the rest of the suite sees the settled
     // ledger it expects.
     await updateExpense(CREDITOR, "exp-1", campsite(10_000));
-    expect(await userNetInGroup(DEBTOR, "grp-1")).toBe(0);
+    expect(await userNetInGroup(DEBTOR, "grp-1")).toEqual(new Map());
     const { rows } = await database.query(
       `SELECT description, deleted_at FROM expenses WHERE id = 'exp-1'`,
     );
@@ -333,15 +335,15 @@ describe.skipIf(!reachable)("recordSettlement against Postgres", () => {
       tipCents: 0,
     } as never);
     await recordSettlement(...payment(DEBTOR, CREDITOR, 3000));
-    expect(await userNetInGroup(DEBTOR, "grp-1")).toBe(0);
+    expect(await userNetInGroup(DEBTOR, "grp-1")).toEqual(new Map());
 
     await deleteExpense(CREDITOR, snack.id);
 
     // Delete means owed-to-zero; the payment stays, so the debtor is now owed
     // the 3000 they paid for an expense that no longer counts.
-    expect(await userNetInGroup(DEBTOR, "grp-1")).toBe(3000);
+    expect(await userNetInGroup(DEBTOR, "grp-1")).toEqual(new Map([["USD", 3000]]));
     // … and every ledger surface still shows the row that explains why.
-    const listed = await listExpenses(DEBTOR, { groupId: "grp-1" });
+    const listed = await listExpenses(DEBTOR, { groupId: "grp-1" }, { cursor: "", limit: 0 });
     expect(listed.expenses.find((expense) => expense.id === snack.id)?.deletedAt).not.toBe("");
     expect(listed.settledExpenseIds).not.toContain(snack.id);
     const detail = await getExpense(DEBTOR, snack.id);
@@ -355,7 +357,7 @@ describe.skipIf(!reachable)("recordSettlement against Postgres", () => {
     // The creditor refunds the 3000, so the rest of the suite sees the
     // settled ledger it expects.
     await recordSettlement(...payment(CREDITOR, DEBTOR, 3000));
-    expect(await userNetInGroup(DEBTOR, "grp-1")).toBe(0);
+    expect(await userNetInGroup(DEBTOR, "grp-1")).toEqual(new Map());
   });
 
   it("brings the debt back when a mistaken payment is removed, keeping the line", async () => {
@@ -382,12 +384,12 @@ describe.skipIf(!reachable)("recordSettlement against Postgres", () => {
       method: "cash",
       note: "",
     });
-    expect(await userNetInGroup(DEBTOR, "grp-1")).toBe(0);
+    expect(await userNetInGroup(DEBTOR, "grp-1")).toEqual(new Map());
 
     // The recipient may remove it too; here the payer who mistyped it does.
     await deleteSettlement(DEBTOR, mistaken.id);
 
-    expect(await userNetInGroup(DEBTOR, "grp-1")).toBe(-2000);
+    expect(await userNetInGroup(DEBTOR, "grp-1")).toEqual(new Map([["USD", -2000]]));
     const ledgerLine = (await getFriendLedger(DEBTOR, CREDITOR)).entries.find(
       (entry) => entry.kind === "settlement" && entry.id === mistaken.id,
     );
@@ -404,7 +406,7 @@ describe.skipIf(!reachable)("recordSettlement against Postgres", () => {
       method: "cash",
       note: "",
     });
-    expect(await userNetInGroup(DEBTOR, "grp-1")).toBe(0);
+    expect(await userNetInGroup(DEBTOR, "grp-1")).toEqual(new Map());
     expect(fuel.id).toBeTruthy();
   });
 
@@ -505,13 +507,20 @@ describe.skipIf(!reachable)("recordSettlement against Postgres", () => {
     expect(await settlementCount()).toBe(before + 1);
   });
 
-  it("sums each group's net in one query, agreeing with the ledger walk", async () => {
-    // M-02: the group list used to rebuild every group's whole ledger in the
-    // process, one pool connection each. The SQL sum must land on the same
-    // number the full walk does, live rows only.
+  it("sums each group's net in one query, agreeing with the group page's walk of its ledger", async () => {
+    // The group list and the expense page add a person's net up in Postgres
+    // instead of loading the group's whole history. The sum must land on the
+    // number the group's page works out from that history, live rows only.
+    const walked = new Map(
+      (await getGroupBalances(CREDITOR, "grp-1")).byCurrency.flatMap(({ currency, nets }) =>
+        nets
+          .filter((memberNet) => memberNet.userId === DEBTOR && memberNet.netCents !== 0)
+          .map((memberNet) => [currency, memberNet.netCents] as const),
+      ),
+    );
     const batched = await userNetInGroups(DEBTOR, ["grp-1", "grp-missing"]);
-    expect(batched.get("grp-1")).toBe(await userNetInGroup(DEBTOR, "grp-1"));
-    expect(batched.get("grp-missing")).toBe(0);
+    expect(batched.get("grp-1")).toEqual(walked);
+    expect(batched.get("grp-missing")).toEqual(new Map());
   });
 
   it("delivers exactly one reminder under a concurrent burst at the cooldown boundary", async () => {

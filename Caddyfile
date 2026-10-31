@@ -9,6 +9,17 @@
 {
 	# Let's Encrypt expiry and problem notices. Use an address you read.
 	email {$ACME_EMAIL}
+
+	# A request body has a minute to arrive in full. Caddy passes bodies on as
+	# they arrive, so one trickled in a byte at a time would otherwise hold a
+	# connection to the app for as long as the sender likes. A receipt photo
+	# is the largest legitimate body; the app gives it 60 s and everything
+	# else 15 s (BODY_READ_TIMEOUT_MS), and clients give a receipt call 120 s.
+	servers {
+		timeouts {
+			read_body 60s
+		}
+	}
 }
 
 # Everything both sites share, written once. The proxy block below carries a
@@ -60,10 +71,18 @@
 	}
 }
 
-haalkhata.app, www.haalkhata.app {
+haalkhata.app {
 	# The app independently enforces a 12 MiB decoded Connect-message limit
 	# (receipt photos); this slightly larger wire cap leaves framing room.
 	import haalkhata 16MB
+}
+
+# One address only. Apple sends people back to the address above, the session
+# cookie belongs to one host, and the app claims links on that host alone. The
+# same app on www signs nobody in, and Safari hides the "www." that would explain
+# why, so www only ever leads here. The path comes along, so old links still work.
+www.haalkhata.app {
+	redir https://haalkhata.app{uri} permanent
 }
 
 # The operator's usage page. Same container as the app: it decides what to

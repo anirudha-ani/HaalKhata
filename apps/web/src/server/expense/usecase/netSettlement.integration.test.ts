@@ -18,15 +18,16 @@
 
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { Client } from "pg";
+import { testDatabaseName } from "@/server/common/testing/testDatabase";
+import { asSeparateRequest } from "@/server/common/db/connectionHold";
 
 const ADMIN_URL =
   process.env.MERGE_TEST_ADMIN_URL ?? "postgres://haalkhata:change-me@127.0.0.1:5432/postgres";
-const TEST_DATABASE = "haalkhata_net_settlement_test";
+const TEST_DATABASE = testDatabaseName("haalkhata_net_settlement_test");
 const TEST_URL = ADMIN_URL.replace(/\/[^/]*$/, `/${TEST_DATABASE}`);
 
 const PAYER = "user-ani";
 const OWED = "user-sam";
-const INVITED = "user-invited";
 const KEEPER = "user-keeper";
 
 /**
@@ -119,11 +120,6 @@ async function seed(database: Client): Promise<void> {
             ($3, 'kit@example.com', 'Kit', '#1c4fa0', now(), 'google-kit')`,
     [PAYER, OWED, KEEPER],
   );
-  // Invited, never signed in: the kind of row an account merge absorbs.
-  await database.query(
-    `INSERT INTO users (id, email, name, avatar_color) VALUES ($1, 'ivy@example.com', 'Ivy', '#6741d9')`,
-    [INVITED],
-  );
   await insertGroup(database, "grp-catskills", "USD", PAYER, OWED);
   await insertGroup(database, "grp-reunion", "USD", PAYER, OWED);
   await insertGroup(database, "grp-lisbon", "EUR", PAYER, OWED);
@@ -145,7 +141,6 @@ describe.skipIf(!reachable)("net settlement against Postgres", () => {
   let netWithUser: typeof import("./balance.usecase").netWithUser;
   let userNetInGroup: typeof import("./balance.usecase").userNetInGroup;
   let getFriendLedger: typeof import("./balance.usecase").getFriendLedger;
-  let mergeAccounts: typeof import("@/server/auth/repo/merge/accountMerge.repo").mergeAccounts;
   let snapshot: typeof import("@/server/common/db/db").snapshot;
   let closePool: () => Promise<void>;
 
@@ -230,7 +225,6 @@ describe.skipIf(!reachable)("net settlement against Postgres", () => {
     ({ getFriendLedger, netWithUser, owedByScope, userNetInGroup } = await import(
       "./balance.usecase"
     ));
-    ({ mergeAccounts } = await import("@/server/auth/repo/merge/accountMerge.repo"));
 
     database = new Client({ connectionString: TEST_URL });
     await database.connect();
@@ -306,8 +300,8 @@ describe.skipIf(!reachable)("net settlement against Postgres", () => {
       secondOwes: ["grp-lisbon EUR 7599"],
     });
     expect((await netWithUser(PAYER, OWED)).get("USD")).toBe(-669);
-    expect(await userNetInGroup(OWED, "grp-catskills")).toBe(0);
-    expect(await userNetInGroup(OWED, "grp-reunion")).toBe(0);
+    expect(await userNetInGroup(OWED, "grp-catskills")).toEqual(new Map());
+    expect(await userNetInGroup(OWED, "grp-reunion")).toEqual(new Map());
   });
 
   it("stores the cash and the cancellations as one unit under a parent that states their totals", async () => {
@@ -487,6 +481,41 @@ describe.skipIf(!reachable)("net settlement against Postgres", () => {
     expect(await scopesBetween(PAYER, OWED)).toEqual({ firstOwes: [], secondOwes: ["grp-lisbon EUR 7599"] });
   });
 
+  it("answers a part payment sent again unchanged with the first, though the balances it named have moved", async () => {
+    await insertDebt(database, { id: "exp-part", groupId: null, amountCents: 5000, currency: "USD", paidBy: OWED, owedBy: PAYER });
+    const request = await netRequest(100, { operationId: "1b4e28ba-2fa1-41d2-883f-0016d3cca427" });
+    const first = await recordSettlement(PAYER, request);
+    const shownAfter = await digestShown(PAYER, OWED);
+
+    await expect(recordSettlement(PAYER, request)).resolves.toMatchObject({ id: first.id });
+
+    expect(await digestShown(PAYER, OWED)).toBe(shownAfter);
+    expect(shownAfter).not.toBe(request.positionDigest);
+  });
+
+  it("refuses, with a way forward, a net whose cancelled side is more than one row can hold", async () => {
+    const largestRow = 10_000_000_000_000;
+    for (const index of [1, 2, 3]) {
+      await insertDebt(database, { id: `exp-huge-${index}`, groupId: null, amountCents: largestRow, currency: "USD", paidBy: OWED, owedBy: PAYER });
+    }
+    // In a group, so it is not netted against the one-off debts until a
+    // settlement cancels the two against each other.
+    for (const index of [4, 5]) {
+      await insertDebt(database, { id: `exp-huge-${index}`, groupId: "grp-reunion", amountCents: largestRow, currency: "USD", paidBy: PAYER, owedBy: OWED });
+    }
+    const before = await countRows("settlements");
+
+    await expect(recordSettlement(PAYER, await netRequest(100))).rejects.toMatchObject({
+      code: "invalid_argument",
+      message: expect.stringContaining("one balance at a time"),
+    });
+
+    expect(await countRows("settlements")).toBe(before);
+    await database.query("DELETE FROM expense_splits WHERE expense_id LIKE 'exp-huge-%'");
+    await database.query("DELETE FROM expense_payers WHERE expense_id LIKE 'exp-huge-%'");
+    await database.query("DELETE FROM expenses WHERE id LIKE 'exp-huge-%'");
+  });
+
   it("is an ordinary payment, with no parent, when nothing points the other way", async () => {
     await insertDebt(database, { id: "exp-museum", groupId: null, amountCents: 4000, currency: "USD", paidBy: OWED, owedBy: PAYER });
     const parentsBefore = await countRows("net_settlements");
@@ -496,12 +525,12 @@ describe.skipIf(!reachable)("net settlement against Postgres", () => {
     expect(storedRow).toEqual({ method: "venmo", net_settlement_id: null });
   });
 
-  it("survives an account merge whole: the unit moves to the surviving account and still cancels out", async () => {
-    // An invited person, never signed in, has a net settlement with Sam...
-    await insertGroup(database, "grp-picnic", "USD", OWED, INVITED);
-    await insertDebt(database, { id: "exp-tickets", groupId: null, amountCents: 5000, currency: "USD", paidBy: OWED, owedBy: INVITED });
-    await insertDebt(database, { id: "exp-basket", groupId: "grp-picnic", amountCents: 2000, currency: "USD", paidBy: INVITED, owedBy: OWED });
-    await recordSettlement(INVITED, {
+  it("is removed whole by the person who recorded it, and the debts come back", async () => {
+    // Kit owes Sam 50.00 directly while Sam owes Kit 20.00 in a group...
+    await insertGroup(database, "grp-picnic", "USD", OWED, KEEPER);
+    await insertDebt(database, { id: "exp-tickets", groupId: null, amountCents: 5000, currency: "USD", paidBy: OWED, owedBy: KEEPER });
+    await insertDebt(database, { id: "exp-basket", groupId: "grp-picnic", amountCents: 2000, currency: "USD", paidBy: KEEPER, owedBy: OWED });
+    await recordSettlement(KEEPER, {
       groupId: "",
       toUserId: OWED,
       amountCents: 3000,
@@ -509,16 +538,12 @@ describe.skipIf(!reachable)("net settlement against Postgres", () => {
       method: "cash",
       note: "",
       netAcrossScopes: true,
-      positionDigest: await digestShown(INVITED, OWED),
+      positionDigest: await digestShown(KEEPER, OWED),
     });
     const unitId = (
-      await database.query(`SELECT DISTINCT net_settlement_id FROM settlements WHERE from_user = $1 OR to_user = $1`, [INVITED])
+      await database.query(`SELECT DISTINCT net_settlement_id FROM settlements WHERE from_user = $1 OR to_user = $1`, [KEEPER])
     ).rows[0].net_settlement_id;
     expect(unitId).toBeTruthy();
-
-    // ...and is then absorbed into a real account. The merge repoints the
-    // rows one statement at a time; the integrity check runs at commit.
-    await mergeAccounts(KEEPER, INVITED, null, { adoptPhone: false });
 
     const rows = await database.query(
       `SELECT from_user, to_user, method, amount_cents FROM settlements
@@ -531,7 +556,7 @@ describe.skipIf(!reachable)("net settlement against Postgres", () => {
       { from_user: OWED, to_user: KEEPER, method: "offset", amount_cents: 2000 },
     ]);
     expect(await scopesBetween(KEEPER, OWED)).toEqual({ firstOwes: [], secondOwes: [] });
-    // And the survivor can still remove it, whole.
+    // ...and removing it takes the cash row and both offsets together.
     const cash = (
       await database.query(`SELECT id FROM settlements WHERE net_settlement_id = $1 AND method = 'cash'`, [unitId])
     ).rows[0].id;
@@ -566,8 +591,9 @@ describe.skipIf(!reachable)("net settlement against Postgres", () => {
     const seen = await snapshot(async (client) => {
       // The first statement fixes the instant this read sees.
       const keeperOwes = describeDebts(await owedByScope(KEEPER, OWED, client));
-      // The pair now settles on the net, on another connection, and it commits.
-      recordedId = (await settleKeeperOnNet()).id;
+      // The pair now settles on the net, as another request on another
+      // connection, and it commits.
+      recordedId = (await asSeparateRequest(settleKeeperOnNet)).id;
       // The second half of the same read. Taken from the ledger as it stands
       // now it would say Sam owes nothing, beside a first half that still
       // has the keeper owing 50.00: a position that never existed.
@@ -732,7 +758,7 @@ describe.skipIf(!reachable)("net settlement against Postgres", () => {
     };
     const readWhileEditing = async () => {
       while (editing) {
-        for (const expense of (await listExpenses(PAYER, {})).expenses) check(expense);
+        for (const expense of (await listExpenses(PAYER, {}, { cursor: "", limit: 0 })).expenses) check(expense);
         const detail = (await getExpense(PAYER, "exp-flip")).expense;
         check(detail);
       }

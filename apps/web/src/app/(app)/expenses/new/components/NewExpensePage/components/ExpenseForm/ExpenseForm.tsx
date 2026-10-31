@@ -5,7 +5,10 @@ import { CATEGORIES } from "@haalkhata/shared/money/money.constants";
 import { centsToInput } from "@haalkhata/shared/money/money";
 import { PeoplePicker } from "@/components/people/PeoplePicker/PeoplePicker";
 import { SplitSummary } from "@/components/expense/SplitSummary/SplitSummary";
+import { Radio } from "lucide-react";
+import { LiveBar } from "@/components/expense/LiveBar/LiveBar";
 import { ErrorPopup } from "@/components/ui/ErrorPopup/ErrorPopup";
+import { EditSyncPanel } from "../EditSyncPanel/EditSyncPanel";
 import { itemizedWarnings } from "@haalkhata/shared/expense/form/itemizedWarnings";
 import { parseMoneyInput } from "@haalkhata/shared/money/money";
 import type { ExpenseFormInitial } from "../../../../utils/initialValues";
@@ -33,6 +36,7 @@ export function ExpenseForm({
   api: expenseAPI,
   initial,
   editExpenseId,
+  openInvite,
 }: {
   /** Query/mutation bundle from useNewExpenseAPI, owned by the page orchestrator. */
   api: ReturnType<typeof useNewExpenseAPI>;
@@ -40,6 +44,8 @@ export function ExpenseForm({
   initial: ExpenseFormInitial;
   /** Id of the expense being edited, or "" when creating a new one. */
   editExpenseId: string;
+  /** Whether a live split was just started, so its invite opens by itself. */
+  openInvite: boolean;
 }) {
   const form = useNewExpense(expenseAPI, initial, editExpenseId);
   const currency = form.currency;
@@ -161,6 +167,8 @@ export function ExpenseForm({
         onChange={(event) => form.setNotes(event.target.value)}
       />
 
+      <EditSyncPanel form={form} />
+
       <button
         type="button"
         onClick={form.submit}
@@ -169,22 +177,48 @@ export function ExpenseForm({
       >
         {form.isSaving ? "Saving…" : form.isEdit ? "Save changes" : "Add expense"}
       </button>
+
     </>
   );
 
   return (
     <div className="mx-auto max-w-6xl space-y-6">
-      <h1 className="text-3xl font-bold">{form.isEdit ? "Edit expense" : "Add expense"}</h1>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h1 className="text-3xl font-bold">{form.isEdit ? "Edit expense" : "Add expense"}</h1>
+        {/* The other way to finish a bill: everyone at the table edits it
+            together. It saves what is here and hands out the invite. */}
+        {form.liveSplit ? null : (
+          <button
+            type="button"
+            onClick={form.startLive}
+            disabled={form.isSaving || form.isReceiptBusy || form.isStartingLive}
+            className="flex min-h-11 items-center gap-2 rounded-xl border border-brand-600 px-4 py-2 text-sm font-semibold text-brand-600 transition-colors hover:bg-brand-50 disabled:opacity-50"
+          >
+            <Radio className="h-4 w-4" /> Split live
+          </button>
+        )}
+      </div>
+
+      {form.liveSplit ? (
+        <LiveBar
+          expenseId={editExpenseId}
+          description={form.description}
+          liveSplit={form.liveSplit}
+          users={form.liveUsers}
+          meId={form.me?.id ?? ""}
+          startSharing={openInvite || form.sharingOnStart}
+        />
+      ) : null}
 
       {/* The phone track is minmax(0,1fr), not the implicit auto: an auto
           track grows to its content's max-content width, and the receipt
           scanner's labels alone pushed the page to 863px on a 390px phone. */}
       <div className="grid grid-cols-[minmax(0,1fr)] gap-6 lg:grid-cols-[minmax(0,26rem)_minmax(0,1fr)]">
         <div className="min-w-0 space-y-6 lg:sticky lg:top-6 lg:self-start">
-          {/* Editing cannot re-scan: an itemized expense is not editable here
-              at all (the page guards it), and re-parsing a photo over a saved
-              non-itemized expense would silently convert it. */}
-          {form.isEdit ? null : <ReceiptPanel form={form} />}
+          {/* Editing cannot re-scan: re-parsing a photo over a saved expense
+              would silently convert it. A live split is the exception, since
+              the receipt can arrive after the bill was opened to the table. */}
+          {form.isEdit && !form.liveSplit ? null : <ReceiptPanel form={form} />}
           <SplitSummary layout="panel" className="hidden lg:block" {...summaryProps} />
         </div>
         <div className="min-w-0 space-y-6">{fields}</div>

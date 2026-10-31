@@ -24,6 +24,7 @@ block and unblock share a 10/min per-account mutation bucket.
 
 Allowed target kinds: `comment`, `expense`, `group`, `user`. Reasons:
 `harassment`, `hate`, `sexual`, `spam`, `other`. The server rejects other values.
+The apps no longer offer `expense`, which stays valid for builds already installed.
 A report requires access to its expense, membership in its group, or an already
 visible person through a shared expense/group, friendship or pending request.
 For a comment, the parent expense authorization applies.

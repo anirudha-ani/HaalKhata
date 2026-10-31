@@ -27,7 +27,7 @@ Exactly who can reach the usage overview, checked the same way
   `config/adminSurface.ts` lists it beside AdminAnalyticsService and nothing
   else answers there.
 - Every RPC requires an `Origin` naming the admin host itself, with no
-  bearer exemption (`api/connect/adminRequest.ts`, shared by both admin
+  bearer exemption (`api/connect/admin/adminRequest.ts`, shared by both admin
   services).
 - Every RPC requires a live admin session from the admin cookie. The
   allowlist is checked again on each call. An app session or a bearer token
@@ -121,18 +121,17 @@ appear as these are handled.
   closed: the page's list of suspended accounts resumes through the newest
   one. Someone with no report left (every report about them was removed
   when the reporters deleted their accounts) is listed without a button;
-  resume them by hand, see [ops/README.md](../../../ops/README.md). An
-  account merged into another, or the stand-in a deleted account leaves,
-  keeps its `suspended_at` but is not listed: nobody signs in through it.
-- Suspending through a report about an account that was **merged into
-  another**, or whose person **deleted it**, is refused: that row no longer
-  signs anyone in, and suspending it would look like it worked and stop
-  nobody. The page says which of the two instead of offering the button,
-  so the operator does not look for a surviving account after a deletion.
-  Deleting an account removes the reports about it, so a report reaches a
-  deleted person only through the stand-in their content now belongs to, or
-  a merge tombstone the deletion erased; both carry `deleted_at`, which is
-  what `author.deleted` reads.
+  resume them by hand, see [ops/README.md](../../../ops/README.md). The
+  stand-in a deleted account leaves keeps its `suspended_at` but is not
+  listed: nobody signs in through it.
+- Suspending through a report about an account whose person **deleted it**
+  is refused: that row no longer signs anyone in, and suspending it would
+  look like it worked and stop nobody. The page says so instead of offering
+  the button. Deleting an account removes the reports about it, so a report
+  reaches a deleted person only through the stand-in their content now
+  belongs to, which carries `deleted_at` — what `author.deleted` reads, and
+  why `author.active` is false. (Accounts are no longer merged, so there is
+  no other way for an author to stop standing for a person.)
 - Each action writes one log line: the action, the report id and the kind
   of content. Never the words, a name or an address.
 
@@ -151,8 +150,8 @@ not make fails it.
 
 Two differences are deliberate and only make sense on a page: an action
 settles every open report about the same content (the script closes the one
-report it was given), and a suspension of a merged or deleted account is refused (the
-script applies it to the tombstone).
+report it was given), and a suspension of a deleted account's stand-in is
+refused (the script applies it to the row anyway).
 
 ## Rate Limits (this service)
 
@@ -239,7 +238,7 @@ Same request as `DismissReport`; the report may be open or closed.
 | --- | --- |
 | `InvalidArgument` | Not a UUID |
 | `NotFound` | No such report |
-| `FailedPrecondition` | The account the report names no longer exists, was merged into another, or was deleted by its person |
+| `FailedPrecondition` | The account the report names no longer exists, or was deleted by its person |
 
 ---
 

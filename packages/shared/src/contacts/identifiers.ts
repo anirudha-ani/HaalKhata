@@ -9,6 +9,7 @@ import {
   parsePhoneNumberFromString,
   type CountryCode,
 } from "libphonenumber-js";
+import { canonicalEmail } from "../email/email";
 import { DEFAULT_PHONE_REGION, splitE164 } from "../phone/phone";
 import { CONTACT_LOOKUP_CHUNK_SIZE, MAX_ADDRESS_BOOK_FIELD_LENGTH } from "./contacts.constants";
 
@@ -49,9 +50,6 @@ export interface ContactLookupChunk {
   /** Lower-cased emails for this call. */
   emails: string[];
 }
-
-/** Loose address shape, the same check the server applies. */
-const EMAIL_SHAPE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 /**
  * The region named by a BCP 47 locale tag, such as "BD" in "bn-BD".
@@ -108,8 +106,7 @@ export function contactPhone(phone: AddressBookPhone, fallbackRegion: CountryCod
  */
 export function contactEmail(email: string): string | null {
   if (email.length > MAX_ADDRESS_BOOK_FIELD_LENGTH) return null;
-  const lowered = email.trim().toLowerCase();
-  return EMAIL_SHAPE.test(lowered) ? lowered : null;
+  return canonicalEmail(email);
 }
 
 /**

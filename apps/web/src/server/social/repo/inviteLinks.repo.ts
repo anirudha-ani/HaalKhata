@@ -1,40 +1,50 @@
-/** All SQL for the invite_links table (shareable friend-reminder and group-join links). */
+/** All SQL for the invite_links table (shareable group-join and profile links). */
 
 import type { PoolClient } from "pg";
 import { execute, queryOne } from "@/server/common/db/db";
 
-/** One stored link, exactly as the table holds it. */
+/** One stored link, exactly as the table holds it, and whether it has run out or been turned off. */
 export interface InviteLinkRow {
   token: string;
-  /** 'friend' (reminds an Invited person), 'group' (join link), or 'profile' ("add me"). */
-  kind: "friend" | "group" | "profile";
+  /** 'group' (join link), 'profile' ("add me") or 'live' (join a live split). */
+  kind: "group" | "profile" | "live";
   inviter_id: string;
   group_id: string | null;
-  invited_user_id: string | null;
+  /** The live split a 'live' link joins; null for any other. */
+  live_split_id: string | null;
+  /** When a group or live link stops working (ISO 8601); null for a profile link. */
+  expires_at: string | null;
+  /**
+   * Whether it reached its date while it was still on, by the database's
+   * clock: past it now, or replaced by a new link once it had run out.
+   */
+  expired: boolean;
+  /** Whether it has been turned off, by its owner or by being replaced. */
+  revoked: boolean;
 }
 
-const LINK_COLUMNS = "token, kind, inviter_id, group_id, invited_user_id";
+const LINK_COLUMNS = `token, kind, inviter_id, group_id, live_split_id, expires_at,
+  (expires_at IS NOT NULL AND expires_at <= COALESCE(revoked_at, now())) AS expired,
+  (revoked_at IS NOT NULL) AS revoked`;
 
 /**
- * Looks an ACTIVE link up by its bearer token. Revoked links are invisible
- * here on purpose — to every caller a revoked token and a made-up one are
- * the same thing.
+ * Looks a link up by its bearer token, revoked or not, so the person holding
+ * it can be told it expired rather than that it never worked. The usecase
+ * treats a link turned off before its date like a made-up token.
  *
  * @param token - The token from the shared URL.
- * @returns The live link, or undefined.
+ * @returns The link, or undefined.
  */
-export async function findActiveLinkByToken(token: string): Promise<InviteLinkRow | undefined> {
-  return queryOne<InviteLinkRow>(
-    `SELECT ${LINK_COLUMNS} FROM invite_links WHERE token = $1 AND revoked_at IS NULL`,
-    [token],
-  );
+export async function findLinkByToken(token: string): Promise<InviteLinkRow | undefined> {
+  return queryOne<InviteLinkRow>(`SELECT ${LINK_COLUMNS} FROM invite_links WHERE token = $1`, [token]);
 }
 
 /**
- * The group's one active join link, if it has one.
+ * The group's one join link that has not been revoked, if it has one; it
+ * may be past its date.
  *
  * @param groupId - Group whose link is looked up.
- * @returns The live link, or undefined.
+ * @returns The link, or undefined.
  */
 export async function findActiveGroupLink(groupId: string): Promise<InviteLinkRow | undefined> {
   return queryOne<InviteLinkRow>(
@@ -45,42 +55,71 @@ export async function findActiveGroupLink(groupId: string): Promise<InviteLinkRo
 }
 
 /**
- * The caller's active reminder link for one Invited person, if it exists.
+ * Stores a new link. A concurrent create for the same group or profile
+ * loses the partial unique index race with SQLSTATE 23505; callers recover
+ * by re-reading the winner — both requests wanted the same one link.
  *
- * @param inviterId - Who shares the link.
- * @param invitedUserId - The unregistered row it claims.
- * @returns The live link, or undefined.
+ * @param link - The row to insert; groupId is null for a profile link, and
+ *   lifetimeDays null for a link that does not expire.
+ * @returns The stored link, with the expiry the database set.
  */
-export async function findActiveFriendLink(
-  inviterId: string,
-  invitedUserId: string,
-): Promise<InviteLinkRow | undefined> {
-  return queryOne<InviteLinkRow>(
-    `SELECT ${LINK_COLUMNS} FROM invite_links
-      WHERE inviter_id = $1 AND invited_user_id = $2
-        AND kind = 'friend' AND revoked_at IS NULL`,
-    [inviterId, invitedUserId],
+export async function insertInviteLink(link: {
+  token: string;
+  kind: "group" | "profile";
+  inviterId: string;
+  groupId: string | null;
+  lifetimeDays: number | null;
+}): Promise<InviteLinkRow> {
+  return (await queryOne<InviteLinkRow>(
+    `INSERT INTO invite_links (token, kind, inviter_id, group_id, expires_at)
+     VALUES ($1, $2, $3, $4, CASE WHEN $5::int IS NULL THEN NULL ELSE now() + make_interval(days => $5::int) END)
+     RETURNING ${LINK_COLUMNS}`,
+    [link.token, link.kind, link.inviterId, link.groupId, link.lifetimeDays],
+  ))!;
+}
+
+/**
+ * Stores the join link of a live split, which ends when the split does.
+ *
+ * @param link - The token, who started the split, which split, and when it ends.
+ * @param client - The transaction starting the split.
+ */
+export async function insertLiveSplitLink(
+  link: { token: string; inviterId: string; liveSplitId: string; endsAt: string },
+  client: PoolClient,
+): Promise<void> {
+  await execute(
+    `INSERT INTO invite_links (token, kind, inviter_id, live_split_id, expires_at) VALUES ($1, 'live', $2, $3, $4)`,
+    [link.token, link.inviterId, link.liveSplitId, link.endsAt],
+    client,
   );
 }
 
 /**
- * Stores a new link. A concurrent create for the same group or pair loses
- * the partial unique index race with SQLSTATE 23505; callers recover by
- * re-reading the winner — both requests wanted the same one link.
+ * Turns off a live split's join link when it finishes.
  *
- * @param link - The row to insert; null group/invited per the kind's shape.
+ * @param liveSplitId - The split.
+ * @param client - The transaction finishing it.
  */
-export async function insertInviteLink(link: {
-  token: string;
-  kind: "friend" | "group" | "profile";
-  inviterId: string;
-  groupId: string | null;
-  invitedUserId: string | null;
-}): Promise<void> {
+export async function revokeLiveSplitLink(liveSplitId: string, client: PoolClient): Promise<void> {
   await execute(
-    `INSERT INTO invite_links (token, kind, inviter_id, group_id, invited_user_id)
-     VALUES ($1, $2, $3, $4, $5)`,
-    [link.token, link.kind, link.inviterId, link.groupId, link.invitedUserId],
+    `UPDATE invite_links SET revoked_at = now() WHERE live_split_id = $1 AND revoked_at IS NULL`,
+    [liveSplitId],
+    client,
+  );
+}
+
+/**
+ * Revokes one link by its token, and only while it is still active: two
+ * people replacing the same expired link both retire it, and neither can
+ * turn off the fresh one the other just made.
+ *
+ * @param token - The link to turn off.
+ */
+export async function revokeInviteLink(token: string): Promise<void> {
+  await execute(
+    `UPDATE invite_links SET revoked_at = now() WHERE token = $1 AND revoked_at IS NULL`,
+    [token],
   );
 }
 
@@ -114,29 +153,6 @@ export async function revokeProfileLinks(inviterId: string): Promise<void> {
 }
 
 /**
- * Revokes the caller's active friend claim link for one Invited person
- * (§37): unfriending them withdraws the link's promise that joining makes
- * you two friends. Other inviters' links for the same person live on.
- *
- * @param inviterId - Whoever is ending the friendship.
- * @param invitedUserId - The Invited row the link would claim.
- * @param client - The removal's transaction client.
- */
-export async function revokeFriendLinkForPair(
-  inviterId: string,
-  invitedUserId: string,
-  client?: PoolClient,
-): Promise<void> {
-  await execute(
-    `UPDATE invite_links SET revoked_at = now()
-      WHERE kind = 'friend' AND inviter_id = $1 AND invited_user_id = $2
-        AND revoked_at IS NULL`,
-    [inviterId, invitedUserId],
-    client,
-  );
-}
-
-/**
  * Revokes every active link of a group. Old tokens stop resolving at once;
  * a fresh link can be created afterwards.
  *
@@ -148,26 +164,6 @@ export async function revokeGroupLinks(groupId: string, client?: PoolClient): Pr
     `UPDATE invite_links SET revoked_at = now()
       WHERE group_id = $1 AND revoked_at IS NULL`,
     [groupId],
-    client,
-  );
-}
-
-/**
- * Revokes the active friend links that claim one invited row — called once
- * that row is claimed, since a reminder for an identity that no longer
- * exists should stop resolving rather than 404 into confusion.
- *
- * @param invitedUserId - The just-claimed row.
- * @param client - The claim's transaction client.
- */
-export async function revokeFriendLinksFor(
-  invitedUserId: string,
-  client?: PoolClient,
-): Promise<void> {
-  await execute(
-    `UPDATE invite_links SET revoked_at = now()
-      WHERE invited_user_id = $1 AND revoked_at IS NULL`,
-    [invitedUserId],
     client,
   );
 }

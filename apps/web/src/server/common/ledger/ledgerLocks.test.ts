@@ -14,28 +14,28 @@ function clientStub(): PoolClient {
 }
 
 describe("ledger advisory locks", () => {
-  it("sorts and deduplicates group locks", async () => {
+  it("takes deduplicated group locks in one statement, sorted by the database", async () => {
     const client = clientStub();
 
     await lockGroupLedgers(client, ["group-z", "group-a", "group-z"]);
 
-    expect(client.query).toHaveBeenNthCalledWith(1, expect.any(String), ["ledger:group:group-a"]);
-    expect(client.query).toHaveBeenNthCalledWith(2, expect.any(String), ["ledger:group:group-z"]);
+    expect(client.query).toHaveBeenCalledTimes(1);
+    expect(client.query).toHaveBeenCalledWith(expect.stringMatching(/ORDER BY lock_key COLLATE "C"/), [
+      ["ledger:group:group-z", "ledger:group:group-a"],
+    ]);
   });
 
-  it("locks each participant once in deterministic order", async () => {
+  it("locks each participant once", async () => {
     const client = clientStub();
 
     await lockParticipantLedgers(client, ["user-c", "user-a", "user-b", "user-a"]);
 
     expect(vi.mocked(client.query).mock.calls.map((call) => call[1])).toEqual([
-      ["ledger:participant:user-a"],
-      ["ledger:participant:user-b"],
-      ["ledger:participant:user-c"],
+      [["ledger:participant:user-c", "ledger:participant:user-a", "ledger:participant:user-b"]],
     ]);
   });
 
-  it("grows linearly with the cast rather than per pair", async () => {
+  it("grows linearly with the cast rather than per pair, in one round trip", async () => {
     const client = clientStub();
     const cast = Array.from({ length: 100 }, (_unused, index) => `user-${index}`);
 
@@ -43,6 +43,7 @@ describe("ledger advisory locks", () => {
 
     // 100 locks, not the 4,950 a pair set would need — which is more than
     // Postgres's shared lock table holds under the production settings.
-    expect(client.query).toHaveBeenCalledTimes(cast.length);
+    expect(client.query).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(client.query).mock.calls[0][1]).toEqual([cast.map((userId) => `ledger:participant:${userId}`)]);
   });
 });

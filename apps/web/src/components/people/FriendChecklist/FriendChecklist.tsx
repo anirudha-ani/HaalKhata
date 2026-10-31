@@ -65,10 +65,9 @@ export function FriendChecklist({
   /** Whether to focus the search field on mount. */
   autoFocus?: boolean;
   /**
-   * People shown but not selectable, e.g. Invited (unregistered) friends in
-   * an expense picker, who cannot be on a transaction until they sign up.
-   * Shown rather than hidden so "why isn't Rifat here?" never comes up, and
-   * sorted after everyone who can be picked.
+   * People shown but not selectable, e.g. a Deleted member in an expense
+   * picker, who takes no part in anything new. Shown rather than hidden so a
+   * roster still reads whole, and sorted after everyone who can be picked.
    */
   disabledIds?: Set<string>;
   /** Short label rendered on a disabled row saying why. */
@@ -76,6 +75,7 @@ export function FriendChecklist({
 }) {
   const [query, setQuery] = useState("");
   const listRef = useRef<HTMLFieldSetElement>(null);
+  const selected = new Set(selectedIds);
 
   // Pickable rows first, then the rest, each half in its given order.
   const ordered = useMemo(() => {
@@ -123,7 +123,7 @@ export function FriendChecklist({
               >
                 <input
                   type="checkbox"
-                  checked={selectedIds.includes(person.id)}
+                  checked={selected.has(person.id)}
                   disabled={disabled}
                   onChange={() => onToggle(person.id)}
                   className="h-4 w-4 accent-brand-600"

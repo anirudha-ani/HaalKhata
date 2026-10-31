@@ -16,10 +16,11 @@ service ReceiptService {
 }
 
 message ParseReceiptRequest {
+  // A photo prepared to the receipt standard on the device: a JPEG at most
+  // 2576 px on its longer side, upright, at most 8 MB. Anything else is
+  // refused; the server reads only its headers and removes its metadata.
   bytes image = 1;
-  // Advisory only. The server detects the real format from the image bytes,
-  // because browsers report an empty string for HEIC and would otherwise make
-  // a valid iPhone photo unusable.
+  // Advisory only. The server reads the format from the image bytes.
   string media_type = 2;
   // Current disclosure version. The account must also have saved permission.
   string consent_version = 3;
@@ -42,8 +43,8 @@ message GrantConsentRequest {
 message ParsedReceiptItem {
   string name = 1;
   int32 quantity = 2;
-  int32 unit_price_cents = 3;
-  int32 total_cents = 4;
+  int64 unit_price_cents = 3;
+  int64 total_cents = 4;
 }
 
 message ParsedReceipt {
@@ -51,10 +52,10 @@ message ParsedReceipt {
   string date = 2; // YYYY-MM-DD or empty
   string currency = 3;
   repeated ParsedReceiptItem items = 4;
-  int32 subtotal_cents = 5;
-  int32 tax_cents = 6;
-  int32 tip_cents = 7;
-  int32 total_cents = 8;
+  int64 subtotal_cents = 5;
+  int64 tax_cents = 6;
+  int64 tip_cents = 7;
+  int64 total_cents = 8;
 }
 
 message ParseReceiptResponse {

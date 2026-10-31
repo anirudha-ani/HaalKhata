@@ -1,7 +1,7 @@
 /** Unit tests for which expenses count as settled for the viewer. */
 
 import { describe, expect, it } from "vitest";
-import { settledExpenseIds } from "./settledExpenses";
+import { groupScopeKey, settledExpenseIds } from "./settledExpenses";
 
 const VIEWER = "me";
 
@@ -12,10 +12,23 @@ describe("settledExpenseIds", () => {
       { id: "open-trip", groupId: "trip-open", currency: "USD", participantIds: [VIEWER, "ana"] },
     ];
     const nets = new Map([
-      ["trip-done", 0],
-      ["trip-open", -2500],
+      [groupScopeKey("trip-done", "USD"), 0],
+      [groupScopeKey("trip-open", "USD"), -2500],
     ]);
     expect(settledExpenseIds(expenses, VIEWER, nets, new Map())).toEqual(["paid-trip"]);
+  });
+
+  it("reads a group expense against the group's balance in its own currency only", () => {
+    // The group also holds a euro payment from before group payments were
+    // kept to its currency. That balance is real, but it is not this
+    // dollar expense's.
+    const expenses = [
+      { id: "fuel", groupId: "trip", currency: "USD", participantIds: [VIEWER, "ana"] },
+    ];
+    const nets = new Map([[groupScopeKey("trip", "EUR"), 4000]]);
+    expect(settledExpenseIds(expenses, VIEWER, nets, new Map())).toEqual(["fuel"]);
+    nets.set(groupScopeKey("trip", "USD"), -1500);
+    expect(settledExpenseIds(expenses, VIEWER, nets, new Map())).toEqual([]);
   });
 
   it("never singles out one expense of a group that still owes", () => {
@@ -26,7 +39,9 @@ describe("settledExpenseIds", () => {
       { id: "older", groupId: "trip", currency: "USD", participantIds: [VIEWER, "ana"] },
       { id: "newer", groupId: "trip", currency: "USD", participantIds: [VIEWER, "ana"] },
     ];
-    expect(settledExpenseIds(expenses, VIEWER, new Map([["trip", 100]]), new Map())).toEqual([]);
+    expect(
+      settledExpenseIds(expenses, VIEWER, new Map([[groupScopeKey("trip", "USD"), 100]]), new Map()),
+    ).toEqual([]);
   });
 
   it("marks a one-off settled when the pair's one-off balance is zero", () => {
@@ -55,6 +70,11 @@ describe("settledExpenseIds", () => {
       ["bob|USD", 0],
     ]);
     expect(settledExpenseIds(expenses, VIEWER, new Map(), bothSettled)).toEqual(["dinner"]);
+  });
+
+  it("never calls a bill with only the viewer on it settled", () => {
+    const expenses = [{ id: "mine", groupId: "", currency: "USD", participantIds: [VIEWER] }];
+    expect(settledExpenseIds(expenses, VIEWER, new Map(), new Map())).toEqual([]);
   });
 
   it("treats a missing net as zero, not as pending", () => {

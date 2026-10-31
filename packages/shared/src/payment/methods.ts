@@ -116,7 +116,10 @@ export const PAYMENT_METHODS: readonly PaymentMethod[] = [
     takesHandle: true,
     linkable: true,
     linkCarriesAmount: true,
-    handlePattern: /^[A-Za-z0-9._-]{1,40}$/,
+    // Letters and numbers, which is PayPal's own rule. It also keeps "." and
+    // ".." out of a link: a browser would read paypal.me/../2500JPY as
+    // somebody else's page called 2500JPY.
+    handlePattern: /^[A-Za-z0-9]{1,40}$/,
     handleRule: "a PayPal.Me name is letters and numbers, the part after paypal.me/",
     currencies: Object.keys(PAYPAL_CURRENCY_DIGITS),
   },

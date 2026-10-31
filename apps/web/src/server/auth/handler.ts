@@ -1,44 +1,72 @@
 /** Thin AuthService Connect handlers: session-cookie side effects here, logic in auth.usecase. */
 
-import type { ServiceImpl } from "@connectrpc/connect";
+import type { PlainServiceImpl } from "@/server/api/connect/wire/plainService";
 import type { HandlerContext } from "@connectrpc/connect";
 import type { AuthService } from "@haalkhata/protogen/auth/v1/auth_pb";
 import * as auth from "@/server/auth/usecase/account/auth.usecase";
-import * as accountMerge from "@/server/auth/usecase/merge/accountMerge.usecase";
+import * as phoneNumber from "@/server/auth/usecase/phone/setPhone.usecase";
 import * as appleSignIn from "@/server/auth/usecase/apple/appleSignIn.usecase";
+import * as sessions from "@/server/auth/usecase/session/sessions.usecase";
 import { getSignInOptions } from "@/server/auth/usecase/apple/signInOptions.usecase";
 import { deleteAccount } from "@/server/auth/usecase/deletion/accountDeletion.usecase";
 import { setContactDiscovery } from "@/server/auth/usecase/account/contactDiscovery.usecase";
-import { clearSessionCookie, requireUser, runUsecase, setSessionCookie } from "@/server/api/connect/context";
-import { wantsBearerToken } from "@/server/api/connect/credentials";
-import { rateLimitCheck } from "@/server/common/rateLimit/rateLimit";
 import {
+  clearSessionCookie,
+  currentSessionId,
+  requireSignedSession,
+  requireUser,
+  runUsecase,
+  setSessionCookie,
+} from "@/server/api/connect/context";
+import { requireRateLimitedUser, RPC_RATE_LIMITS } from "@/server/api/connect/rateLimit/rpcRateLimit";
+import { wantsBearerToken } from "@/server/api/connect/session/credentials";
+import { describeDevice } from "@/server/api/connect/session/device";
+import { accountRateLimits, addressRateLimits } from "@/server/common/rateLimit/rateLimit";
+import {
+  ANONYMOUS_AUTH_RPCS,
   AUTH_RATE_LIMIT,
   PHONE_CHECK_RATE_LIMIT,
-  PHONE_MERGE_RATE_LIMIT,
+  PHONE_REMOVAL_RATE_LIMIT,
   PHONE_SEND_RATE_LIMIT,
+  RETIRED_PHONE_MERGE_MESSAGE,
 } from "@/server/auth/auth.constants";
 import { ConnectError, Code } from "@connectrpc/connect";
-import { clientIp } from "@/server/auth/request/clientIp";
+import { clientNetwork } from "@/server/auth/request/clientIp";
 import { enforcePhoneSendLimits } from "@/server/auth/request/phoneRateLimit";
 
 /**
- * Enforces the per-IP login/signup rate limit, throwing a ResourceExhausted
- * ConnectError when the caller has exceeded AUTH_RATE_LIMIT attempts/minute.
+ * Paces sign-in, sign-up and account deletion per client address, throwing
+ * a ResourceExhausted ConnectError once the caller has made AUTH_RATE_LIMIT
+ * of them this minute. For the calls made before there is a session it runs
+ * in the request gate, before their bodies are read.
  *
  * @param handlerContext - Connect handler context for the current request.
  * @throws ConnectError with Code.ResourceExhausted when rate-limited.
  */
 function enforceAuthRateLimit(handlerContext: HandlerContext): void {
-  if (!rateLimitCheck(`auth:${clientIp(handlerContext.requestHeader)}`, AUTH_RATE_LIMIT)) {
+  if (!addressRateLimits.check(`auth:${clientNetwork(handlerContext.requestHeader)}`, AUTH_RATE_LIMIT)) {
     throw new ConnectError("too many attempts, please try again later", Code.ResourceExhausted);
   }
 }
 
 /**
- * Enforces one per-account phone bucket. Sends, checks, and merge actions
- * each pace separately so a fumbled code cannot lock the user out of the
- * confirmation; the durable anti-abuse ceilings live in Postgres.
+ * The auth service's request gate, run once the headers are in and before
+ * the body is read: a call made before there is a session is paced per
+ * address, so a flood of them is refused without reading their bodies, and
+ * every other call needs a signed session like the rest of the API.
+ *
+ * @param handlerContext - Connect handler context for the current request.
+ * @throws ConnectError ResourceExhausted when paced, Unauthenticated without a session.
+ */
+export function authRequestGate(handlerContext: HandlerContext): void {
+  if (ANONYMOUS_AUTH_RPCS.has(handlerContext.method.name)) enforceAuthRateLimit(handlerContext);
+  else requireSignedSession(handlerContext);
+}
+
+/**
+ * Enforces one per-account phone bucket. Sends, checks, and removals each
+ * pace separately so a fumbled code cannot lock the user out of removing a
+ * number; the durable anti-abuse ceilings live in Postgres.
  *
  * @param userId - Authenticated caller.
  * @param scope - Which phone operation is being paced.
@@ -47,10 +75,10 @@ function enforceAuthRateLimit(handlerContext: HandlerContext): void {
  */
 function enforcePhoneRateLimit(
   userId: string,
-  scope: "send" | "check" | "merge",
+  scope: "send" | "check" | "remove",
   maxAttempts: number,
 ): void {
-  if (!rateLimitCheck(`phone:${scope}:${userId}`, maxAttempts)) {
+  if (!accountRateLimits.check(`phone:${scope}:${userId}`, maxAttempts)) {
     throw new ConnectError("too many verification attempts, please try again later", Code.ResourceExhausted);
   }
 }
@@ -77,10 +105,9 @@ function deliverSession<Result extends { token: string }>(
 }
 
 /** AuthService implementation; every method delegates to auth.usecase and only manages cookies here. */
-export const authHandler: ServiceImpl<typeof AuthService> = {
+export const authHandler: PlainServiceImpl<typeof AuthService> = {
   /** Returns public provider availability without requiring a signed-in account. */
   async getSignInOptions(_request, handlerContext) {
-    enforceAuthRateLimit(handlerContext);
     return runUsecase(getSignInOptions, handlerContext);
   },
   /** Permanently erases the authenticated account, then expires the browser session. */
@@ -92,50 +119,93 @@ export const authHandler: ServiceImpl<typeof AuthService> = {
   },
   /** Issues a native Apple nonce or a verifier-bound browser challenge. */
   async beginAppleSignIn(request, handlerContext) {
-    enforceAuthRateLimit(handlerContext);
     return runUsecase(() => appleSignIn.beginAppleSignIn(request), handlerContext);
   },
   /** Verifies native Apple proof and delivers the appropriate session credential. */
   async logInWithApple(request, handlerContext) {
-    enforceAuthRateLimit(handlerContext);
-    return deliverSession(handlerContext, await runUsecase(() => appleSignIn.logInWithApple(request), handlerContext));
+    return deliverSession(handlerContext, await runUsecase(() => appleSignIn.logInWithApple(request, describeDevice(handlerContext.requestHeader)), handlerContext));
   },
   /** Redeems a browser callback using the initiating client's private verifier. */
   async completeAppleSignIn(request, handlerContext) {
-    enforceAuthRateLimit(handlerContext);
-    return deliverSession(handlerContext, await runUsecase(() => appleSignIn.completeAppleSignIn(request), handlerContext));
+    return deliverSession(handlerContext, await runUsecase(() => appleSignIn.completeAppleSignIn(request, describeDevice(handlerContext.requestHeader)), handlerContext));
   },
   /** Creates (or claims) an account, then starts a session the way the client carries it. */
   async signUp(request, handlerContext) {
-    enforceAuthRateLimit(handlerContext);
-    return deliverSession(handlerContext, await runUsecase(() => auth.signUp(request), handlerContext));
+    return deliverSession(handlerContext, await runUsecase(() => auth.signUp(request, describeDevice(handlerContext.requestHeader)), handlerContext));
   },
 
   /** Verifies credentials, then starts a session the way the client carries it. */
   async logIn(request, handlerContext) {
-    enforceAuthRateLimit(handlerContext);
-    return deliverSession(handlerContext, await runUsecase(() => auth.logIn(request), handlerContext));
+    return deliverSession(handlerContext, await runUsecase(() => auth.logIn(request, describeDevice(handlerContext.requestHeader)), handlerContext));
   },
 
   /** Creates a short-lived, single-use nonce for a Google ID-token request. */
   async beginGoogleSignIn(_request, handlerContext) {
-    enforceAuthRateLimit(handlerContext);
     return runUsecase(() => auth.beginGoogleSignIn(), handlerContext);
   },
 
   /** Verifies a Google ID token, then starts a session the way the client carries it. */
   async logInWithGoogle(request, handlerContext) {
-    enforceAuthRateLimit(handlerContext);
     return deliverSession(
       handlerContext,
-      await runUsecase(() => auth.logInWithGoogle(request.idToken), handlerContext),
+      await runUsecase(() => auth.logInWithGoogle(request.idToken, describeDevice(handlerContext.requestHeader)), handlerContext),
     );
   },
 
   /** Ends the web session by expiring the session cookie and revoking the token. */
   async logOut(_request, handlerContext) {
-    await runUsecase(async () => auth.logOut(await requireUser(handlerContext)), handlerContext);
+    try {
+      await runUsecase(
+        async () => sessions.endCurrentSession(await requireUser(handlerContext), currentSessionId(handlerContext)),
+        handlerContext,
+      );
+    } catch (failure) {
+      // A session revoked elsewhere takes its dead cookie with it. Any other
+      // failure keeps the cookie: the session is still live, and the retry
+      // that ends it needs the cookie to say which one.
+      if (ConnectError.from(failure).code === Code.Unauthenticated) clearSessionCookie(handlerContext);
+      throw failure;
+    }
     clearSessionCookie(handlerContext);
+    return {};
+  },
+
+  /** Everywhere the caller is signed in. */
+  async listSessions(_request, handlerContext) {
+    return runUsecase(
+      async () =>
+        sessions.listSessions(
+          await requireRateLimitedUser(handlerContext, "list-sessions", RPC_RATE_LIMITS.listSessions),
+          currentSessionId(handlerContext),
+        ),
+      handlerContext,
+    );
+  },
+
+  /** Signs one other device or browser out. */
+  async endSession(request, handlerContext) {
+    await runUsecase(
+      async () =>
+        sessions.endSession(
+          await requireRateLimitedUser(handlerContext, "end-session", RPC_RATE_LIMITS.endSession),
+          request.sessionId,
+          currentSessionId(handlerContext),
+        ),
+      handlerContext,
+    );
+    return {};
+  },
+
+  /** Signs out every device and browser but this one. */
+  async endOtherSessions(_request, handlerContext) {
+    await runUsecase(
+      async () =>
+        sessions.endOtherSessions(
+          await requireRateLimitedUser(handlerContext, "end-other-sessions", RPC_RATE_LIMITS.endOtherSessions),
+          currentSessionId(handlerContext),
+        ),
+      handlerContext,
+    );
     return {};
   },
 
@@ -149,44 +219,37 @@ export const authHandler: ServiceImpl<typeof AuthService> = {
     return runUsecase(async () => auth.updateProfile(await requireUser(handlerContext), request), handlerContext);
   },
 
-  /**
-   * Claims a phone number, or reports what merging would absorb when an
-   * unclaimed invitation already holds it.
-   */
+  /** Sends an SMS code, or checks it and puts the number on the caller's account. */
   async setPhone(request, handlerContext) {
-    const userId = await requireUser(handlerContext);
-    // Inside runUsecase so the durable limiter's own database errors are
-    // sanitized like any other; its ConnectError refusals pass through.
-    return runUsecase(
-      async () =>
-        accountMerge.setPhone(userId, request.phone, request.verificationCode, {
-          // The call that sends an SMS is also limited by destination and by
-          // client address, whoever the account is, durably, in Postgres.
-          beforeSend: async (phone) => {
-            enforcePhoneRateLimit(userId, "send", PHONE_SEND_RATE_LIMIT);
-            await enforcePhoneSendLimits(phone, clientIp(handlerContext.requestHeader));
-          },
-          beforeCheck: () => enforcePhoneRateLimit(userId, "check", PHONE_CHECK_RATE_LIMIT),
-        }),
-      handlerContext,
-    );
+    // All inside runUsecase, the session check included, so a database
+    // failure in it or in the durable limiter is logged and answered
+    // generically like any other; the limiter's refusals pass through.
+    return runUsecase(async () => {
+      const userId = await requireUser(handlerContext);
+      return phoneNumber.setPhone(userId, request.phone, request.verificationCode, {
+        // The call that sends an SMS is also limited by destination and by
+        // client address, whoever the account is, durably, in Postgres.
+        beforeSend: async (phone) => {
+          enforcePhoneRateLimit(userId, "send", PHONE_SEND_RATE_LIMIT);
+          await enforcePhoneSendLimits(phone, clientNetwork(handlerContext.requestHeader));
+        },
+        beforeCheck: () => enforcePhoneRateLimit(userId, "check", PHONE_CHECK_RATE_LIMIT),
+      });
+    }, handlerContext);
   },
 
-  /** Carries out the merge that setPhone previewed. */
-  async confirmPhoneMerge(request, handlerContext) {
-    const userId = await requireUser(handlerContext);
-    enforcePhoneRateLimit(userId, "merge", PHONE_MERGE_RATE_LIMIT);
-    return runUsecase(
-      async () => accountMerge.confirmPhoneMerge(userId, request.mergeToken),
-      handlerContext,
-    );
+  /** Retired: SetPhone never offers a merge, so there is nothing to confirm. */
+  async confirmPhoneMerge() {
+    throw new ConnectError(RETIRED_PHONE_MERGE_MESSAGE, Code.FailedPrecondition);
   },
 
   /** Detaches the caller's phone number; refused when it is their only identifier. */
   async removePhone(_request, handlerContext) {
-    const userId = await requireUser(handlerContext);
-    enforcePhoneRateLimit(userId, "merge", PHONE_MERGE_RATE_LIMIT);
-    return runUsecase(async () => auth.removePhone(userId), handlerContext);
+    return runUsecase(async () => {
+      const userId = await requireUser(handlerContext);
+      enforcePhoneRateLimit(userId, "remove", PHONE_REMOVAL_RATE_LIMIT);
+      return auth.removePhone(userId);
+    }, handlerContext);
   },
 
   /** Marks the caller's first-run flow finished, skipped fields included. */

@@ -4,7 +4,7 @@
 import { QRCodeSVG } from "qrcode.react";
 import { Copy, Share2 } from "lucide-react";
 import { useEffect, useState } from "react";
-import { inviteUrl } from "@haalkhata/shared/invite/invite";
+import { shareableInviteUrl } from "@/lib/invite/inviteLink";
 import { Modal } from "@/components/ui/Modal/Modal";
 import { COPIED_BADGE_MS } from "./constants/inviteShareModal";
 
@@ -37,7 +37,7 @@ export function InviteShareModal({
   share: () => Promise<unknown>;
   onClose: () => void;
 }) {
-  const linkUrl = inviteUrl(token);
+  const linkUrl = shareableInviteUrl(token);
   const [copied, setCopied] = useState(false);
   const [shareError, setShareError] = useState("");
   // The share sheet exists on phones and mostly not on desktops; the copy

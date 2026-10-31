@@ -11,8 +11,8 @@ import { AVATAR_SIZES } from "./constants/avatarSizes";
  * otherwise.
  *
  * The initials are not a legacy path: `avatarUrl` is empty for everyone who
- * was invited rather than signed in, and Google's picture claim is documented
- * as never guaranteed even for those who did. A picture that fails to load —
+ * signed in without Google, and Google's picture claim is documented as
+ * never guaranteed even for those who did. A picture that fails to load —
  * these are hotlinks to Google's CDN and the URLs are not contractually
  * stable — falls back to the same initials rather than a broken image.
  */

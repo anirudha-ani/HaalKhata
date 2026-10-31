@@ -15,8 +15,6 @@ export const REPORTER = "user-reporter-a1b2";
 export const SECOND_REPORTER = "user-reporter-b2c3";
 /** Someone whose display name is an email address. */
 export const EMAIL_NAMED = "user-emailnamed-d4e5";
-/** A merge tombstone that was reported before the merge. */
-export const MERGED = "user-merged-e5f6";
 
 /** The reported comment, expense and group. */
 export const COMMENT_ID = "cmt-reported-0001";
@@ -35,7 +33,6 @@ export const REPORTS = {
   group: "44444444-4444-4444-8444-444444444444",
   profile: "55555555-5555-4555-8555-555555555555",
   spamComment: "66666666-6666-4666-8666-666666666666",
-  merged: "77777777-7777-4777-8777-777777777777",
   oldClosed: "88888888-8888-4888-8888-888888888888",
 } as const;
 
@@ -55,7 +52,6 @@ export const PRIVATE_VALUES = [
   REPORTER,
   SECOND_REPORTER,
   EMAIL_NAMED,
-  MERGED,
   COMMENT_ID,
   SPAM_COMMENT_ID,
   OWN_COMMENT_ID,
@@ -93,10 +89,6 @@ export async function seedModeration(database: Client): Promise<void> {
        ($3, 'second.private@example.com', NULL, 'Second Reporter', '#7c3aed', NULL, 'google-sub-second', now()),
        ($4, 'named.private@example.com', NULL, 'author.typed@example.com', '#857a68', NULL, 'google-sub-named', now())`,
     [AUTHOR, REPORTER, SECOND_REPORTER, EMAIL_NAMED],
-  );
-  await database.query(
-    `INSERT INTO users (id, name, avatar_color, merged_into) VALUES ($1, 'Merged Away', '#857a68', $2)`,
-    [MERGED, AUTHOR],
   );
   await database.query(`INSERT INTO groups (id, name, type, created_by) VALUES ($1, $2, 'trip', $3)`, [
     GROUP_ID,
@@ -182,14 +174,13 @@ export async function seedModeration(database: Client): Promise<void> {
   );
   await database.query(
     `INSERT INTO content_reports (id, reporter_id, reported_user_id, target_kind, target_id, reason, snapshot, status, created_at, resolved_at) VALUES
-       ($1, $9, $11, 'comment', $13, 'harassment', jsonb_build_object('body', $16::text, 'expenseId', $14::text), 'open', now() - interval '3 days', NULL),
-       ($2, $9, $11, 'expense', $14, 'spam', jsonb_build_object('description', $17::text, 'notes', $18::text, 'items', jsonb_build_array($19::text)), 'open', now() - interval '2 days', NULL),
-       ($3, $10, $11, 'comment', $13, 'hate', jsonb_build_object('body', $16::text, 'expenseId', $14::text), 'open', now() - interval '1 day', NULL),
-       ($4, $9, $11, 'group', $15, 'other', jsonb_build_object('name', $20::text), 'open', now() - interval '2 hours', NULL),
-       ($5, $9, $11, 'user', $11, 'harassment', jsonb_build_object('name', $21::text), 'open', now() - interval '1 hour', NULL),
-       ($6, $9, $12, 'comment', $22, 'spam', jsonb_build_object('body', 'Buy cheap followers now', 'expenseId', $14::text), 'open', now() - interval '30 minutes', NULL),
-       ($7, $9, $23, 'user', $23, 'other', jsonb_build_object('name', 'Merged Away'), 'open', now() - interval '10 minutes', NULL),
-       ($8, $10, $11, 'user', $11, 'spam', jsonb_build_object('name', 'Old Name'), 'dismissed', now() - interval '90 days', now() - interval '89 days')`,
+       ($1, $8, $10, 'comment', $12, 'harassment', jsonb_build_object('body', $15::text, 'expenseId', $13::text), 'open', now() - interval '3 days', NULL),
+       ($2, $8, $10, 'expense', $13, 'spam', jsonb_build_object('description', $16::text, 'notes', $17::text, 'items', jsonb_build_array($18::text)), 'open', now() - interval '2 days', NULL),
+       ($3, $9, $10, 'comment', $12, 'hate', jsonb_build_object('body', $15::text, 'expenseId', $13::text), 'open', now() - interval '1 day', NULL),
+       ($4, $8, $10, 'group', $14, 'other', jsonb_build_object('name', $19::text), 'open', now() - interval '2 hours', NULL),
+       ($5, $8, $10, 'user', $10, 'harassment', jsonb_build_object('name', $20::text), 'open', now() - interval '1 hour', NULL),
+       ($6, $8, $11, 'comment', $21, 'spam', jsonb_build_object('body', 'Buy cheap followers now', 'expenseId', $13::text), 'open', now() - interval '30 minutes', NULL),
+       ($7, $9, $10, 'user', $10, 'spam', jsonb_build_object('name', 'Old Name'), 'dismissed', now() - interval '90 days', now() - interval '89 days')`,
     [
       REPORTS.commentFirst,
       REPORTS.expense,
@@ -197,7 +188,6 @@ export async function seedModeration(database: Client): Promise<void> {
       REPORTS.group,
       REPORTS.profile,
       REPORTS.spamComment,
-      REPORTS.merged,
       REPORTS.oldClosed,
       REPORTER,
       SECOND_REPORTER,
@@ -213,7 +203,6 @@ export async function seedModeration(database: Client): Promise<void> {
       REPORTED_WORDS.groupName,
       REPORTED_WORDS.profileName,
       SPAM_COMMENT_ID,
-      MERGED,
     ],
   );
 }

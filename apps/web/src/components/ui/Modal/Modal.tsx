@@ -3,6 +3,7 @@
 
 import { X } from "lucide-react";
 import { useEffect, useRef, type ReactNode } from "react";
+import { useFocusTrap } from "./hooks/useFocusTrap";
 
 /**
  * Renders a dialog shell — a bottom sheet on mobile, a centered card on
@@ -15,6 +16,10 @@ import { useEffect, useRef, type ReactNode } from "react";
  * half typed in it, stays. A click closes it only when it both started and
  * ended on the backdrop, so selecting text and letting go outside the card
  * does not.
+ *
+ * The keyboard stays inside it (see {@link useFocusTrap}). It is not a native
+ * `<dialog>`: `showModal()` lifts one above everything, so an `ErrorPopup`
+ * pinned on the page would sit behind its backdrop, unreadable.
  *
  * A `footer` is pinned under the body instead of scrolling with it. It is
  * for a form taller than a phone screen: an action that has scrolled out of
@@ -48,6 +53,8 @@ export function Modal({
 
   // Whether the press that a click ends began on the backdrop itself.
   const pressedOnBackdrop = useRef(false);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useFocusTrap(dialogRef);
 
   return (
     <div
@@ -61,12 +68,14 @@ export function Modal({
       role="presentation"
     >
       <div
+        ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-label={title}
+        tabIndex={-1}
         // Without a footer the dialog itself scrolls, as it always has. With
         // one it becomes a column: the body scrolls, the footer stays put.
-        className={`max-h-[92dvh] w-full rounded-t-2xl bg-card shadow-xl sm:max-w-md sm:rounded-2xl ${
+        className={`max-h-[92dvh] w-full rounded-t-2xl bg-card shadow-xl outline-none sm:max-w-md sm:rounded-2xl ${
           footer ? "flex flex-col overflow-hidden" : "overflow-y-auto p-5"
         }`}
         onClick={(clickEvent) => clickEvent.stopPropagation()}

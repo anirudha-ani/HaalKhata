@@ -102,12 +102,50 @@ export async function beginOperation(
     throw new UsecaseError("unavailable", "that request is still being processed — try again");
   }
   if (existing.request_fingerprint !== fingerprint) {
-    invalid("operation_id was already used for a different request");
+    throw new UsecaseError("already_exists", "operation_id was already used for a different request");
   }
   if (existing.result_id === null) {
     throw new UsecaseError("unavailable", "that request is still being processed — try again");
   }
   return { replayOf: existing.result_id };
+}
+
+/**
+ * Whether an operation id has already been claimed, so a check that runs
+ * before the transaction can step aside for a retry, which the transaction
+ * then answers by replaying what the first attempt did.
+ *
+ * @param operation - The caller, the RPC, and the client's operation id.
+ * @param client - Any client; a read outside the operation's transaction.
+ * @returns True when the id is non-empty and a claim exists for it.
+ */
+export async function operationClaimed(operation: OperationKey, client: PoolClient): Promise<boolean> {
+  if (operation.operationId === "") return false;
+  return (await findOperation(operation, client)) !== undefined;
+}
+
+/**
+ * The result of an operation that already finished, for a check that runs
+ * before the transaction and could refuse its retry. A reused id with other
+ * contents is refused here too, as {@link beginOperation} would.
+ *
+ * @param operation - The caller, the RPC, and the client's operation id.
+ * @param request - The request payload, for the fingerprint.
+ * @param client - Any client; a read outside the operation's transaction.
+ * @returns The earlier result's id, or null when there is none to replay.
+ */
+export async function finishedOperationResult(
+  operation: OperationKey,
+  request: object,
+  client: PoolClient,
+): Promise<string | null> {
+  if (operation.operationId === "") return null;
+  const existing = await findOperation(operation, client);
+  if (!existing || existing.result_id === null) return null;
+  if (existing.request_fingerprint !== requestFingerprint(request)) {
+    throw new UsecaseError("already_exists", "operation_id was already used for a different request");
+  }
+  return existing.result_id;
 }
 
 /**

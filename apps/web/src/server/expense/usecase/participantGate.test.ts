@@ -1,0 +1,173 @@
+/** Regression tests for who may join a new expense: never a Deleted member, never a blocked person. */
+
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { PoolClient } from "pg";
+import type { UserRow } from "@/server/auth/repo/users.repo";
+
+const { transactionClient } = vi.hoisted(() => ({ transactionClient: {} as PoolClient }));
+
+vi.mock("@/server/safety/repo/safety.repo", () => ({ blockedBetween: vi.fn(async () => false), blockedPairExists: vi.fn(async () => false) }));
+
+// Nobody here is near the ceiling on what one person's expenses may add up to.
+vi.mock("@/server/expense/repo/ledger.repo", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/server/expense/repo/ledger.repo")>()),
+  sumExpenseVolumes: vi.fn(async () => new Map()),
+}));
+vi.mock("@/server/expense/repo/expenses.repo", () => ({
+  findExpenseById: vi.fn(),
+  insertExpense: vi.fn(),
+  loadExpenseChildren: vi.fn(),
+}));
+vi.mock("@/server/group/repo/groups.repo", () => ({
+  findGroupById: vi.fn(),
+  isMember: vi.fn(),
+  listCoMemberIds: vi.fn(),
+  listMembers: vi.fn(),
+}));
+vi.mock("@/server/auth/repo/users.repo", () => ({
+  findUserById: vi.fn(),
+  findUsersByIds: vi.fn(),
+}));
+vi.mock("@/server/social/repo/friendships.repo", () => ({
+  insertFriendships: vi.fn(),
+  listFriendIds: vi.fn(),
+}));
+vi.mock("@/server/social/repo/activity.repo", () => ({ insertActivity: vi.fn() }));
+vi.mock("@/server/social/repo/notifications.repo", () => ({ insertNotifications: vi.fn(), insertNotificationRows: vi.fn() }));
+vi.mock("@/server/common/ledger/operations", () => ({
+  beginOperation: vi.fn().mockResolvedValue({ replayOf: null }),
+  finishOperation: vi.fn(),
+}));
+vi.mock("@/server/common/ledger/ledgerLocks", () => ({
+  lockGroupLedgers: vi.fn(),
+  lockParticipantLedgers: vi.fn(),
+  withLedgerTransaction: vi.fn(
+    (operation: (client: PoolClient) => Promise<unknown>) => operation(transactionClient),
+  ),
+}));
+
+import { blockedPairExists } from "@/server/safety/repo/safety.repo";
+import { DUPLICATE_PAYER_MESSAGE } from "@/server/expense/expense.constants";
+import { createExpense } from "./expense.usecase";
+import { findUserById, findUsersByIds } from "@/server/auth/repo/users.repo";
+import { listFriendIds } from "@/server/social/repo/friendships.repo";
+import { listCoMemberIds } from "@/server/group/repo/groups.repo";
+import { insertExpense, findExpenseById, loadExpenseChildren } from "@/server/expense/repo/expenses.repo";
+import type { ExpenseInput } from "./expense.usecase";
+
+const CALLER = "user-caller";
+const DELETED = "user-deleted-member";
+
+/**
+ * Builds a users row with defaults for the columns a test does not care about.
+ *
+ * @param overrides - Columns to set explicitly.
+ * @returns A complete UserRow.
+ */
+function userRow(overrides: Partial<UserRow> = {}): UserRow {
+  return {
+    id: CALLER,
+    email: "caller@example.com",
+    name: "Caller",
+    avatar_color: "#123456",
+    avatar_url: null,
+    default_currency: "USD",
+    password_hash: null,
+    phone: null,
+    google_sub: "google-caller",
+    onboarded_at: null,
+    phone_verified_at: null,
+    token_version: 0,
+    created_at: "2026-09-01T00:00:00Z",
+    ...overrides,
+  };
+}
+
+/** A one-off split between the caller and one other person. */
+function splitRequest(otherId: string): ExpenseInput {
+  return {
+    groupId: "",
+    description: "Dinner",
+    amountCents: 2000,
+    currency: "USD",
+    category: "food",
+    expenseDate: "2026-09-01",
+    splitType: "equal",
+    notes: "",
+    payers: [{ userId: CALLER, amountCents: 2000 }],
+    splitSpecs: [{ userId: CALLER }, { userId: otherId }],
+    items: [],
+    taxCents: 0,
+    tipCents: 0,
+    operationId: "",
+  } as unknown as ExpenseInput;
+}
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  vi.mocked(findUserById).mockResolvedValue(userRow());
+  vi.mocked(listFriendIds).mockResolvedValue([DELETED, "user-friend"]);
+  vi.mocked(listCoMemberIds).mockResolvedValue([]);
+  vi.mocked(insertExpense).mockResolvedValue("expense-1");
+  vi.mocked(findExpenseById).mockResolvedValue({
+    id: "expense-1",
+    group_id: null,
+    description: "Dinner",
+    amount_cents: 2000,
+    currency: "USD",
+    category: "food",
+    expense_date: "2026-09-01",
+    split_type: "equal",
+    notes: "",
+    created_by: CALLER,
+    created_at: "2026-09-01T00:00:00.000Z",
+    tax_cents: 0,
+    tip_cents: 0,
+    deleted_at: null,
+  } as never);
+  vi.mocked(loadExpenseChildren).mockResolvedValue({
+    payers: new Map(),
+    splits: new Map(),
+    items: new Map(),
+  } as never);
+});
+
+describe("who may join a new expense", () => {
+  it("refuses the Deleted member a deleted account left behind", async () => {
+    // It keeps its shares in old expenses; it takes none in new ones.
+    vi.mocked(findUsersByIds).mockResolvedValue([
+      userRow(),
+      userRow({ id: DELETED, name: "Deleted member", email: null, google_sub: null, deleted_at: "2026-10-01T00:00:00Z" }),
+    ]);
+
+    await expect(createExpense(CALLER, splitRequest(DELETED))).rejects.toMatchObject({
+      code: "invalid_argument",
+      message: expect.stringContaining("Deleted member can't be added to a new expense"),
+    });
+    expect(insertExpense).not.toHaveBeenCalled();
+  });
+
+  it("refuses the same person listed twice among those who paid, instead of failing in the database", async () => {
+    const request = { ...splitRequest("friend"), payers: [{ userId: CALLER, amountCents: 1000 }, { userId: CALLER, amountCents: 1000 }] } as ExpenseInput;
+
+    await expect(createExpense(CALLER, request)).rejects.toMatchObject({ code: "invalid_argument", message: DUPLICATE_PAYER_MESSAGE });
+  });
+
+  it("accepts the same split with somebody who can sign in", async () => {
+    vi.mocked(findUsersByIds).mockResolvedValue([
+      userRow(),
+      userRow({ id: "user-friend", name: "Tanvir", google_sub: "google-friend" }),
+    ]);
+
+    await createExpense(CALLER, splitRequest("user-friend"));
+
+    expect(insertExpense).toHaveBeenCalled();
+  });
+});
+
+it("refuses a new expense with a blocked registered counterparty before writing money", async () => {
+  vi.mocked(findUsersByIds).mockResolvedValue([userRow(), userRow({ id: "user-friend", google_sub: "registered" })]);
+  vi.mocked(blockedPairExists).mockResolvedValueOnce(true);
+  await expect(createExpense(CALLER, splitRequest("user-friend"))).rejects.toMatchObject({ code: "permission_denied" });
+  expect(insertExpense).not.toHaveBeenCalled();
+});

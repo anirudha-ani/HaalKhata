@@ -1,6 +1,6 @@
 /** Minor-unit money formatting/parsing helpers. */
 
-import { minorUnitDigits } from "./money.constants";
+import { COMMA_BEFORE_A_GROUP_PATTERN, minorUnitDigits, THOUSANDS_GROUP_DIGITS } from "./money.constants";
 
 /** Cache of `Intl.NumberFormat` instances keyed by currency code, so formatters are built once per currency. */
 const formatters = new Map<string, Intl.NumberFormat>();
@@ -43,21 +43,30 @@ export function formatMoney(cents: number, currency: string): string {
 /**
  * Parses a user-typed money string into integer minor units.
  * For a 2-digit currency, "12.50" | "12,50" | "12" → 1250; null when not
- * parseable or when it carries more decimals than the currency has.
+ * parseable or when it carries more decimals than the currency has. In a
+ * 3-digit currency "1,234" is refused: it could be 1.234 or 1234, a thousand
+ * times apart, and retyping it costs far less than guessing wrong.
  *
  * @param value - The raw text from a money input field.
  * @param currency - ISO 4217 code whose minor-unit digits bound the
  *   decimals; omitted means 2, the pre-§36 behavior.
- * @returns The amount in minor units, or `null` when empty or malformed.
+ * @returns The amount in minor units, or `null` when empty, malformed, or
+ *   too long to hold exactly (past 2^53 minor units).
  */
 export function parseMoneyInput(value: string, currency?: string): number | null {
   const digits = currency === undefined ? 2 : minorUnitDigits(currency);
-  const normalized = value.trim().replace(",", ".");
+  const trimmed = value.trim();
+  if (digits === THOUSANDS_GROUP_DIGITS && COMMA_BEFORE_A_GROUP_PATTERN.test(trimmed)) return null;
+  const normalized = trimmed.replace(",", ".");
   if (normalized === "") return null;
   const pattern =
     digits === 0 ? /^\d+$/ : new RegExp(String.raw`^\d+(\.\d{0,${digits}})?$`);
   if (!pattern.test(normalized)) return null;
-  return Math.round(parseFloat(normalized) * 10 ** digits);
+  // Digit by digit rather than through a float: "123456789012.34" is
+  // 12345678901234 exactly, and an amount too long to hold exactly is refused.
+  const [whole, fraction = ""] = normalized.split(".");
+  const cents = Number(whole + fraction.padEnd(digits, "0"));
+  return Number.isSafeInteger(cents) ? cents : null;
 }
 
 /**
@@ -71,7 +80,12 @@ export function parseMoneyInput(value: string, currency?: string): number | null
  */
 export function centsToInput(cents: number, currency?: string): string {
   const digits = currency === undefined ? 2 : minorUnitDigits(currency);
-  return (cents / 10 ** digits).toFixed(digits);
+  if (!Number.isSafeInteger(cents)) return (cents / 10 ** digits).toFixed(digits);
+  // Placing the point in the digits keeps a large amount exact, where a
+  // division would round it to the nearest double first.
+  const padded = Math.abs(cents).toString().padStart(digits + 1, "0");
+  const sign = cents < 0 ? "-" : "";
+  return digits === 0 ? `${sign}${padded}` : `${sign}${padded.slice(0, -digits)}.${padded.slice(-digits)}`;
 }
 
 /**

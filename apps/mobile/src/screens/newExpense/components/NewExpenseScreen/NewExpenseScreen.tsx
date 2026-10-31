@@ -26,6 +26,7 @@ export function NewExpenseScreen({
   initialGroupId,
   initialFriendId,
   editExpenseId,
+  openInvite,
 }: {
   /** Group id from the ?group= param, preselecting the group context ("" = none). */
   initialGroupId: string;
@@ -33,6 +34,8 @@ export function NewExpenseScreen({
   initialFriendId: string;
   /** Expense id from the ?edit= param, or "" when creating a new expense. */
   editExpenseId: string;
+  /** Whether a live split was just started, so its invite opens by itself. */
+  openInvite: boolean;
 }) {
   const expenseAPI = useNewExpenseAPI(editExpenseId);
   const router = useRouter();
@@ -76,6 +79,7 @@ export function NewExpenseScreen({
         editExpenseId={editExpenseId}
         initial={initial}
         key={editExpenseId || "new"}
+        openInvite={openInvite}
       />
     </Screen>
   );

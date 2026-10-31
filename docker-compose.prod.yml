@@ -55,11 +55,24 @@ services:
     # to the mutable `latest` tag in production.
     image: ghcr.io/anirudha-ani/haalkhata:${IMAGE_TAG:?set IMAGE_TAG to a deployed commit SHA}
     restart: unless-stopped
+    # A ceiling for the one process a request can make grow, so a runaway
+    # allocation kills web alone (restart brings it back) instead of drawing
+    # the 1 GB droplet down until the kernel's OOM killer picks Postgres.
+    # 640 MB: Node's heap is capped at 384 MB below (NODE_OPTIONS), and the
+    # rest is for what lives outside it, such as request bodies. Receipt
+    # photos arrive prepared by the apps, so nothing here decodes an image;
+    # idle is about 90 MB. No swap beyond it; a fixed number of processes.
+    mem_limit: 640m
+    memswap_limit: 640m
+    pids_limit: 256
     depends_on:
       db:
         condition: service_healthy
     environment:
       NODE_ENV: production
+      # Below mem_limit, so the heap runs out — and the process restarts —
+      # before the container does.
+      NODE_OPTIONS: --max-old-space-size=384
       # Safe only because this stack's Caddyfile overwrites X-Forwarded-For.
       TRUST_PROXY_HEADERS: "true"
       # Required form: production signs in with Google only, so a stack

@@ -18,13 +18,28 @@ service ExpenseService {
   rpc UpdateExpense(UpdateExpenseRequest) returns (Expense);
   rpc ListExpenses(ListExpensesRequest) returns (ListExpensesResponse);
   rpc GetExpense(GetExpenseRequest) returns (GetExpenseResponse);
+  // The one number an open edit form asks for on a timer: whether anyone has
+  // saved a change since it last looked. Open to whoever may read the expense.
+  rpc GetExpenseVersion(GetExpenseVersionRequest) returns (GetExpenseVersionResponse);
   // Creator only. A soft delete: the expense stops counting toward every
   // balance but stays visible everywhere the ledger is shown, marked deleted
   // (Expense.deleted_at), and payments already recorded against it stay on
   // the ledger — so deleting a paid-for expense leaves the payer owed a
   // refund, with the struck-through row explaining why.
   rpc DeleteExpense(DeleteExpenseRequest) returns (google.protobuf.Empty);
+  // Opens an itemized expense for everyone at the table for 30 minutes: a link
+  // anyone can join through, lines they claim for themselves, one summary at
+  // the end. Returns the one already running if there is one.
+  rpc StartLiveSplit(StartLiveSplitRequest) returns (LiveSplit);
+  // Ends a live split early. Only whoever started it may; otherwise it ends by
+  // itself. Lines nobody claimed stay with whoever paid, and everyone on the
+  // expense then hears what they owe.
+  rpc FinishLiveSplit(FinishLiveSplitRequest) returns (google.protobuf.Empty);
   rpc AddComment(AddCommentRequest) returns (Comment);
+  // An expense's comments, a page at a time, going back in time from
+  // GetExpenseResponse.comments_next_cursor. Open to whoever may read the
+  // expense.
+  rpc ListComments(ListCommentsRequest) returns (ListCommentsResponse);
 
   rpc RecordSettlement(RecordSettlementRequest) returns (Settlement);
   // Removes a mistaken payment. Either of the two people on it may; it is a
@@ -35,16 +50,20 @@ service ExpenseService {
   rpc GetGroupBalances(GetGroupBalancesRequest) returns (BalancesResponse);
   rpc GetOverallBalances(google.protobuf.Empty) returns (OverallBalancesResponse);
   rpc GetFriendLedger(GetFriendLedgerRequest) returns (FriendLedgerResponse);
+  // The older lines of a friend statement, a page at a time, from
+  // FriendLedgerResponse.next_cursor. Each line's running balance continues
+  // from the page before it.
+  rpc ListFriendLedgerEntries(ListFriendLedgerEntriesRequest) returns (ListFriendLedgerEntriesResponse);
 }
 
 message Payer {
   string user_id = 1;
-  int32 amount_cents = 2;
+  int64 amount_cents = 2;
 }
 
 message Split {
   string user_id = 1;
-  int32 owed_cents = 2;
+  int64 owed_cents = 2;
 }
 
 // Per-participant input for the chosen split type. Only the field matching
@@ -52,7 +71,7 @@ message Split {
 // (basis points, must sum to 10000), shares -> shares. equal ignores all.
 message SplitSpec {
   string user_id = 1;
-  int32 amount_cents = 2;
+  int64 amount_cents = 2;
   int32 percent_bp = 3;
   int32 shares = 4;
 }
@@ -66,7 +85,7 @@ message ExpenseItem {
   string id = 1;
   string name = 2;
   int32 quantity = 3;
-  int32 total_cents = 4;
+  int64 total_cents = 4;
   repeated ItemAssignment assignments = 5;
 }
 
@@ -74,7 +93,7 @@ message Expense {
   string id = 1;
   string group_id = 2; // empty = one-off (non-group) expense
   string description = 3;
-  int32 amount_cents = 4;
+  int64 amount_cents = 4;
   string currency = 5;
   string category = 6;
   string expense_date = 7; // YYYY-MM-DD
@@ -85,20 +104,25 @@ message Expense {
   repeated Payer payers = 12;
   repeated Split splits = 13;
   repeated ExpenseItem items = 14;
-  int32 tax_cents = 15;
-  int32 tip_cents = 16;
+  int64 tax_cents = 15;
+  int64 tip_cents = 16;
   // When the expense was deleted; empty while it is live. A deleted expense
   // is still returned by list and detail reads so history stays legible —
   // and stays open to comments, since "why was this removed?" is the
   // conversation the kept row exists to host — but contributes nothing to
   // any balance, cannot be edited, and is never reported as settled.
   string deleted_at = 17;
+  // Goes up with every saved change. An open form compares it with
+  // GetExpenseVersion to learn that somebody else saved something.
+  int32 version = 18;
+  // Who saved the latest change; empty until the first edit.
+  string updated_by = 19;
 }
 
 message CreateExpenseRequest {
   string group_id = 1; // empty = one-off
   string description = 2;
-  int32 amount_cents = 3;
+  int64 amount_cents = 3;
   string currency = 4;
   string category = 5;
   string expense_date = 6;
@@ -107,16 +131,43 @@ message CreateExpenseRequest {
   repeated Payer payers = 9;       // must sum to amount_cents
   repeated SplitSpec split_specs = 10;
   repeated ExpenseItem items = 11; // itemized only; ids may be empty
-  int32 tax_cents = 12;            // itemized only
-  int32 tip_cents = 13;            // itemized only
+  int64 tax_cents = 12;            // itemized only
+  int64 tip_cents = 13;            // itemized only
   // Required. A client-generated id (a UUID) naming this one attempt, sent
   // unchanged on every retry of it and replaced only after a success. The
   // server stores at most one expense per (caller, operation_id): a retry
   // of a lost response gets the expense the first attempt created, the
   // same id with a different payload is refused, and a claim is kept for
-  // 24 hours. Ignored inside UpdateExpenseRequest — an update replaces the
-  // row it names and is idempotent by nature.
+  // 24 hours. Inside UpdateExpenseRequest it names one attempt at saving an
+  // edit, so a retry neither saves nor announces it twice; app versions from
+  // before edits carried one leave it empty.
   string operation_id = 14;
+  // Opens a live split with the new expense, so it can start half filled in:
+  // with lines nobody has claimed, or with nothing on it at all. Ignored inside
+  // UpdateExpenseRequest.
+  bool start_live_split = 15;
+}
+
+// An expense open to everyone at the table for a short while.
+message LiveSplit {
+  // The join link's token, to share.
+  string token = 1;
+  // Who started it.
+  string host_id = 2;
+  // When it ends by itself (ISO 8601).
+  string ends_at = 3;
+  // Everyone who has joined, whoever started it included.
+  repeated string people_ids = 4;
+  // Who among them has pressed Save, which their avatar shows.
+  repeated string saved_ids = 5;
+}
+
+message StartLiveSplitRequest {
+  string expense_id = 1;
+}
+
+message FinishLiveSplitRequest {
+  string expense_id = 1;
 }
 
 message UpdateExpenseRequest {
@@ -125,12 +176,45 @@ message UpdateExpenseRequest {
   // Keep a historical percent/shares mode when submitting its unchanged saved
   // allocations as exact. The server rechecks under the ledger lock.
   bool preserve_split_type = 3;
+  // The expense as this form opened it, exactly as the server sent it (or as
+  // the form last caught up with it). The server compares it with `expense`
+  // to see what this person changed and applies only that to the expense as
+  // it stands now, so two people can edit at once. Answers Code.Aborted,
+  // saving nothing, when both changed the same thing to different values;
+  // the client then reads the latest expense and shows the choice. App
+  // versions from before merging leave it unset and replace the whole expense.
+  Expense base = 4;
+}
+
+// Which part of the caller's own list a ListExpenses request reads, when it
+// names no group and no person. Applied by the server, so a narrowed list
+// pages through every expense that matches rather than hiding the loaded
+// rows that do not.
+enum ExpenseListPart {
+  // Every expense the caller pays for or owes on.
+  EXPENSE_LIST_PART_UNSPECIFIED = 0;
+  // Only those outside any group.
+  EXPENSE_LIST_PART_ONE_OFF = 1;
+  // Only those in `part_group_id`.
+  EXPENSE_LIST_PART_GROUP = 2;
 }
 
 message ListExpensesRequest {
   // Exactly one of these; both empty = all expenses involving the caller.
   string group_id = 1;
   string with_user_id = 2; // one-off expenses with this user
+  // Opaque cursor from the previous response's next_cursor; empty starts at
+  // the newest expense. Keyset rather than offset, so expenses added while
+  // you page cannot shift the window and duplicate or skip one.
+  string cursor = 3;
+  // Page size; the server clamps it to a sane maximum. 0 returns one page of
+  // up to 500 with `truncated`, the shape app versions before paging read.
+  int32 limit = 4;
+  // With group_id and with_user_id empty: which part of the caller's own
+  // list to read. Refused alongside either of them.
+  ExpenseListPart part = 5;
+  // The group, with part = EXPENSE_LIST_PART_GROUP.
+  string part_group_id = 6;
 }
 
 message ListExpensesResponse {
@@ -146,13 +230,28 @@ message ListExpensesResponse {
   // a scope still owes, singling out one of its expenses as "settled" would
   // be an attribution the ledger never made.
   repeated string settled_expense_ids = 3;
-  // True when older rows were left off to bound the response; every
-  // balance and settledness figure still read the whole ledger.
-  bool truncated = 4;
+  // Set only for a request with limit 0: true when older rows were left
+  // off. Paging clients read next_cursor instead.
+  bool truncated = 4 [deprecated = true];
+  // Pass back as `cursor` for the next, older page; empty at the oldest.
+  string next_cursor = 5;
+}
+
+message GetExpenseVersionRequest {
+  string expense_id = 1;
+}
+
+message GetExpenseVersionResponse {
+  // Expense.version as it stands now.
+  int32 version = 1;
 }
 
 message GetExpenseRequest {
   string expense_id = 1;
+  // How many of the newest comments to include; the server clamps it to a
+  // sane maximum. 0 includes every comment, as app versions before paging
+  // expect.
+  int32 comment_limit = 2;
 }
 
 message Comment {
@@ -165,6 +264,7 @@ message Comment {
 
 message GetExpenseResponse {
   Expense expense = 1;
+  // The newest comments (all of them for comment_limit 0), oldest first.
   repeated Comment comments = 2;
   repeated common.v1.User users = 3;
   // Who has touched this expense, oldest first. Read from the activity feed
@@ -187,6 +287,20 @@ message GetExpenseResponse {
   // Group lifecycle read with the expense snapshot. Clients must hide edit
   // and delete actions while the group is archived. UNSPECIFIED for one-offs.
   group.v1.GroupStatus group_status = 7;
+  // Why editing this expense would be refused, in words to show in place of
+  // the Edit button; empty when it would not be. Set while somebody on this
+  // group expense has left the group: an edit names only members, and
+  // dropping them would move a balance nothing can settle again.
+  string edit_refusal = 8;
+  // Why deleting this expense would be refused, in words to show in place
+  // of the Delete button; empty when it would not be. Set when deleting would
+  // move the group balance of somebody on it who has left the group.
+  string delete_refusal = 9;
+  // Pass to ListComments for the comments older than `comments`; empty when
+  // there are none.
+  string comments_next_cursor = 10;
+  // The live split running on this expense; unset when there is none.
+  LiveSplit live_split = 11;
 }
 
 // One recorded change to an expense, for the detail view's history line.
@@ -213,6 +327,26 @@ message DeleteSettlementRequest {
 message AddCommentRequest {
   string expense_id = 1;
   string body = 2;
+  // A client-generated id (a UUID) naming one attempt at sending this
+  // comment, sent unchanged on every retry of it. A retry of a lost response
+  // gets the comment the first attempt stored, not a second one. App versions
+  // from before this leave it empty.
+  string operation_id = 3;
+}
+
+message ListCommentsRequest {
+  string expense_id = 1;
+  // From GetExpenseResponse.comments_next_cursor or a previous next_cursor.
+  string cursor = 2;
+  // Page size; the server clamps it to a sane maximum.
+  int32 limit = 3;
+}
+
+message ListCommentsResponse {
+  // The page, oldest first; every one is older than the comments already shown.
+  repeated Comment comments = 1;
+  // Pass back as `cursor` for the comments older still; empty at the first.
+  string next_cursor = 2;
 }
 
 message RecordSettlementRequest {
@@ -226,7 +360,7 @@ message RecordSettlementRequest {
   string group_id = 1;
   // The other person, whichever way the money moved.
   string to_user_id = 2;
-  int32 amount_cents = 3;
+  int64 amount_cents = 3;
   // The currency the money moved in. A group payment is always in the
   // group's currency (a different one is refused); a cross-scope payment
   // pays down only balances in this currency, and a selected scope in
@@ -281,7 +415,7 @@ message Settlement {
   string group_id = 2;
   string from_user_id = 3;
   string to_user_id = 4;
-  int32 amount_cents = 5;
+  int64 amount_cents = 5;
   string currency = 6;
   string method = 7;
   string note = 8;
@@ -300,25 +434,42 @@ message GetGroupBalancesRequest {
 }
 
 message BalancesResponse {
+  // The group's own currency only, kept for clients from before
+  // `by_currency`; `by_currency` carries it too, first.
   repeated common.v1.NetBalance nets = 1;
   // Raw pairwise debts derived from expenses minus settlements.
   repeated common.v1.Debt debts = 2;
   // Min-cash-flow simplification of the same balances.
   repeated common.v1.Debt simplified = 3;
+  // The group's balances in each currency it holds money in, the group's
+  // own currency first (every member listed, even at zero) and then any
+  // other, alphabetically (only those with something outstanding). A group's
+  // rows are in its currency today; a group holding a payment recorded in
+  // another one before that rule keeps it as a balance of its own. Nothing
+  // here is added across currencies.
+  repeated GroupCurrencyBalances by_currency = 4;
+}
+
+// One currency's balances in a group.
+message GroupCurrencyBalances {
+  string currency = 1;
+  repeated common.v1.NetBalance nets = 2;
+  repeated common.v1.Debt debts = 3;
+  repeated common.v1.Debt simplified = 4;
 }
 
 // Totals in one currency across every counterparty.
 message CurrencyTotals {
   string currency = 1;
-  int32 you_owe_cents = 2;
-  int32 owed_to_you_cents = 3;
+  int64 you_owe_cents = 2;
+  int64 owed_to_you_cents = 3;
 }
 
 message OverallBalancesResponse {
   // Totals in the caller's default currency only, kept for older clients;
   // `totals` carries every currency.
-  int32 you_owe_cents = 1;
-  int32 owed_to_you_cents = 2;
+  int64 you_owe_cents = 1;
+  int64 owed_to_you_cents = 2;
   repeated common.v1.CounterpartyBalance counterparties = 3;
   // One entry per currency with anything outstanding, the caller's default
   // first. Never summed across currencies.
@@ -327,6 +478,27 @@ message OverallBalancesResponse {
 
 message GetFriendLedgerRequest {
   string user_id = 1;
+  // Statement lines in `entries`, newest first; the server clamps it to a
+  // sane maximum. 0 returns up to 300 with `truncated`, the shape app
+  // versions before paging read.
+  int32 limit = 2;
+}
+
+message ListFriendLedgerEntriesRequest {
+  string user_id = 1;
+  // From FriendLedgerResponse.next_cursor or a previous next_cursor. It
+  // carries the running balance the page continues from, signed, and is
+  // good only for this caller and this friend.
+  string cursor = 2;
+  // Page size; the server clamps it to a sane maximum.
+  int32 limit = 3;
+}
+
+message ListFriendLedgerEntriesResponse {
+  // Older lines, newest first, each balance continuing from the last page.
+  repeated FriendLedgerEntry entries = 1;
+  // Pass back as `cursor` for the lines older still; empty at the first.
+  string next_cursor = 2;
 }
 
 // One line of the shared history with a friend. Positive cents always mean
@@ -339,11 +511,11 @@ message FriendLedgerEntry {
   string group_id = 5; // empty = one-off
   string group_name = 6;
   // The whole expense, or the amount that changed hands for a settlement.
-  int32 total_cents = 7;
+  int64 total_cents = 7;
   // What this line did to the balance: > 0 = they owe you more.
-  int32 delta_cents = 8;
+  int64 delta_cents = 8;
   // The balance after this line, oldest to newest: > 0 = they owe you.
-  int32 balance_after_cents = 9;
+  int64 balance_after_cents = 9;
   // Full timestamp for lines that record a moment (settlements); empty for
   // expenses, whose `date` is the calendar day the user chose. The moment is
   // stored in UTC, and only the client knows the viewer's timezone — so the
@@ -371,13 +543,18 @@ message FriendLedgerEntry {
   // here was cancelled against one pointing the other way. It has no remove
   // of its own; removing the payment it belongs to removes it too.
   bool offset = 15;
+  // For a settlement line: why removing it would be refused, in words to
+  // show in place of its Remove action; empty when it would not be. Set when
+  // the payment (or any line of its net settlement) is in a group one of the
+  // two has since left: removing it would reopen a balance nothing can settle.
+  string removal_refusal = 16;
 }
 
 // One balance two people share, inside a settle position.
 message SettleScope {
   string group_id = 1; // empty = the pair's one-off slate
   string group_name = 2;
-  int32 net_cents = 3; // > 0 = they owe you here
+  int64 net_cents = 3; // > 0 = they owe you here
   bool simplified = 4;
 }
 
@@ -388,7 +565,7 @@ message SettleScope {
 message SettlePosition {
   string currency = 1;
   // The net across the scopes: > 0 = they owe you.
-  int32 net_cents = 2;
+  int64 net_cents = 2;
   repeated SettleScope scopes = 3;
   // Fingerprint of this position, to send back as
   // RecordSettlementRequest.position_digest.
@@ -398,7 +575,7 @@ message SettlePosition {
 message FriendGroupBalance {
   string group_id = 1;
   string group_name = 2;
-  int32 net_cents = 3; // > 0 = they owe you in this group
+  int64 net_cents = 3; // > 0 = they owe you in this group
   // True when this group simplifies debts, making net_cents the *routed*
   // amount between the pair rather than their direct dealings — possibly
   // zero while the pair's shared history is not, or vice versa. Surfaced so
@@ -421,7 +598,7 @@ message FriendLedgerResponse {
   common.v1.User friend = 1;
   // The net in the caller's default currency only (`currency`), kept for
   // older clients: > 0 = they owe you. `nets` is the whole picture.
-  int32 net_cents = 2;
+  int64 net_cents = 2;
   string currency = 3;
   // Net across everything shared, groups included, one entry per currency
   // with anything outstanding: cents > 0 = they owe you.
@@ -440,9 +617,10 @@ message FriendLedgerResponse {
   // still appears, because "where do I know this person from" is a different
   // question from "where does money move between us".
   repeated MutualGroup mutual_groups = 7;
-  // True when older lines were left off `entries` to bound the response.
+  // Set only for a request with limit 0: true when older lines were left off
+  // `entries`. Paging clients read next_cursor instead.
   // The nets and group balances are computed over everything regardless.
-  bool truncated = 10;
+  bool truncated = 10 [deprecated = true];
   // One entry per currency in which the pair has anything to settle.
   repeated SettlePosition settle_positions = 11;
   // How this person wants to be paid: every payment method of theirs, oldest
@@ -462,4 +640,7 @@ message FriendLedgerResponse {
   // added in place of a removed one is not mistaken for one that is merely
   // new.
   string payee_method_removed_at = 14;
+  // Pass to ListFriendLedgerEntries for the lines older than `entries`;
+  // empty when there are none.
+  string next_cursor = 15;
 }

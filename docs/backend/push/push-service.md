@@ -124,13 +124,13 @@ never calls Expo, so an Expo outage does not take the app down.
 
 | Table | What it holds |
 | --- | --- |
-| `push_devices` | One row per installation: token, platform, label, `token_version`, last seen and last sent |
+| `push_devices` | One row per installation: token, platform, label, `token_version`, `session_id`, last seen and last sent. Ending that session removes the row |
 | `push_preferences` | One row per person who changed a switch |
 | `push_outbox` | Committed bell rows not yet handed to Expo, with the phones already reached |
 | `push_tickets` | Accepted sends whose receipt is unread, with the token each went to |
 | `push_kept_off` | Phones a person removed, kept off until turned on from the phone |
 
-All five cascade from `users`. Erasure and merge clear them explicitly.
+All five cascade from `users`. Account erasure clears them explicitly.
 
 The local run and test flow is in
 [docs/local-push-notifications.md](../../local-push-notifications.md).

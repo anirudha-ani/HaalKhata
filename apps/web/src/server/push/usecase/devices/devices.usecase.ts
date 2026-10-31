@@ -98,20 +98,24 @@ function cleanDisplayField(value: string, maxLength: number, field: string): str
  * person turns notifications on from the phone.
  *
  * @param userId - Authenticated caller.
- * @param sessionVersion - The token version of the session registering.
+ * @param session - The session registering: its id and token version.
  * @param input - The phone's token, installation id, platform, label and app version.
  * @returns The stored phone.
  * @throws UsecaseError (invalid_argument) on a malformed field;
  *   (unauthenticated) when the session was signed out meanwhile;
  *   (failed_precondition) for a removed phone's background registration.
  */
-export async function registerDevice(userId: string, sessionVersion: number, input: RegisterDeviceInput) {
+export async function registerDevice(
+  userId: string,
+  session: { id: string; version: number },
+  input: RegisterDeviceInput,
+) {
   if (!EXPO_PUSH_TOKEN_PATTERN.test(input.expoPushToken)) invalid("that is not a push token this app issues");
   if (!INSTALLATION_ID_PATTERN.test(input.installationId)) invalid("installation id is malformed");
   if (!(PUSH_PLATFORMS as readonly string[]).includes(input.platform)) invalid("platform must be ios or android");
   const label = cleanDisplayField(input.label, MAX_DEVICE_LABEL_LENGTH, "device name");
   const appVersion = cleanDisplayField(input.appVersion, MAX_APP_VERSION_LENGTH, "app version");
-  if (!Number.isSafeInteger(sessionVersion)) throw new UsecaseError("unauthenticated", "session expired");
+  if (!Number.isSafeInteger(session.version)) throw new UsecaseError("unauthenticated", "session expired");
   const stored = await transaction(async (client) => {
     if (input.turnOn) {
       await clearPushInstallationKeptOff(userId, input.installationId, client);
@@ -121,7 +125,8 @@ export async function registerDevice(userId: string, sessionVersion: number, inp
     const device = await upsertPushDevice(
       {
         userId,
-        tokenVersion: sessionVersion,
+        tokenVersion: session.version,
+        sessionId: session.id,
         installationId: input.installationId,
         expoToken: input.expoPushToken,
         platform: input.platform,

@@ -2,7 +2,8 @@
 
 import { describe, expect, it } from "vitest";
 import { allocate } from "./allocate";
-import { SplitError, computeItemizedSplits, computeSplits, itemShareCents } from "./splits";
+import { MAX_ASSIGNMENT_WEIGHT } from "./live/live.constants";
+import { SplitError, computeItemizedSplits, computeSplits, itemShareCents, payerWeights, unclaimedOnPayers } from "./splits";
 
 const sumOwedCents = (splits: { owedCents: number }[]) =>
   splits.reduce((runningTotal, split) => runningTotal + split.owedCents, 0);
@@ -28,6 +29,23 @@ describe("allocate", () => {
 
   it("falls back to an equal split when all weights are zero", () => {
     expect(allocate(90, [0, 0, 0])).toEqual([30, 30, 30]);
+  });
+
+  it("stays largest-remainder exact when amount × weight passes 2^53", () => {
+    // Tax of 77,541,947,541.70 spread over subtotals of 58.7 and 63.8
+    // billion: each product is near 10^25. The second share's leftover is
+    // the larger (6,128,790,760,671 vs 6,126,892,302,736 of 12,255,683,063,407),
+    // so the spare cent is theirs; floating-point division gave it to the first.
+    const result = allocate(7_754_194_754_170, [5_874_367_945_331, 6_381_315_118_076]);
+
+    expect(result).toEqual([3_716_724_140_962, 4_037_470_613_208]);
+    expect(result[0] + result[1]).toBe(7_754_194_754_170);
+  });
+
+  it("spreads the largest single amount evenly to the cent", () => {
+    const result = allocate(10_000_000_000_000, [1, 1, 1]);
+
+    expect(result).toEqual([3_333_333_333_334, 3_333_333_333_333, 3_333_333_333_333]);
   });
 });
 
@@ -209,5 +227,68 @@ describe("itemShareCents", () => {
     for (const split of splits) {
       expect(itemShareCents(uneven, split.userId)).toBe(split.owedCents);
     }
+  });
+});
+
+describe("unclaimedOnPayers", () => {
+  it("puts a line nobody has claimed on whoever paid, and leaves a claimed one alone", () => {
+    const claimed = { name: "Beer", totalCents: 800, assignments: [{ userId: "tomas", weight: 2 }] };
+    const open = { name: "Pizza", totalCents: 2000, assignments: [] };
+
+    expect(unclaimedOnPayers([claimed, open], [{ userId: "sara", amountCents: 3700 }])).toEqual([
+      claimed,
+      { ...open, assignments: [{ userId: "sara", weight: 1 }] },
+    ]);
+  });
+
+  it("shares it by what each person paid, so a second card creates no debt", () => {
+    const payers = [{ userId: "tomas", amountCents: 4000 }, { userId: "sara", amountCents: 6000 }];
+    const [line] = unclaimedOnPayers([{ name: "Pizza", totalCents: 2000, assignments: [] }], payers);
+
+    expect(line.assignments).toEqual([{ userId: "sara", weight: 3 }, { userId: "tomas", weight: 2 }]);
+  });
+
+  it("keeps portions small enough to save, even for an enormous unround bill", () => {
+    const weights = payerWeights([{ userId: "sara", amountCents: 9_999_999_999_991 }, { userId: "tomas", amountCents: 3 }]);
+
+    expect(weights.every((portion) => portion.weight >= 1 && portion.weight <= MAX_ASSIGNMENT_WEIGHT)).toBe(true);
+  });
+});
+
+describe("an item's odd cent", () => {
+  const assignedTo = (...userIds: string[]) => ({
+    name: "Tea",
+    totalCents: 101,
+    assignments: userIds.map((userId) => ({ userId, weight: 1 })),
+  });
+
+  it("does not depend on the order people are listed in", () => {
+    const forwards = computeItemizedSplits([assignedTo("ana", "ben")], 0, 0);
+    const backwards = computeItemizedSplits([assignedTo("ben", "ana")], 0, 0);
+
+    expect(backwards.splits).toEqual(forwards.splits);
+  });
+
+  it("shows the same share on a line whichever way the line was read back", () => {
+    expect(itemShareCents(assignedTo("ana", "ben"), "ana")).toBe(itemShareCents(assignedTo("ben", "ana"), "ana"));
+    expect(itemShareCents(assignedTo("ana", "ben"), "ben")).toBe(itemShareCents(assignedTo("ben", "ana"), "ben"));
+  });
+
+  it("agrees with the saved split, and the line adds up", () => {
+    const item = assignedTo("ben", "ana", "cal");
+    const saved = computeItemizedSplits([item], 0, 0).splits;
+
+    for (const split of saved) expect(itemShareCents(item, split.userId)).toBe(split.owedCents);
+    expect(sumOwedCents(saved)).toBe(101);
+  });
+
+  it("is the same with unequal portions in any order", () => {
+    const portions = (first: string, second: string) => ({
+      name: "Wine",
+      totalCents: 1000,
+      assignments: [{ userId: first, weight: first === "ana" ? 2 : 1 }, { userId: second, weight: second === "ana" ? 2 : 1 }],
+    });
+
+    expect(computeItemizedSplits([portions("ana", "ben")], 0, 0).splits).toEqual(computeItemizedSplits([portions("ben", "ana")], 0, 0).splits);
   });
 });

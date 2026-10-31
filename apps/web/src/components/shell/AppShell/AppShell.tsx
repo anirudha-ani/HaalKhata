@@ -2,11 +2,10 @@
 /** App chrome around authed pages: desktop sidebar, mobile header, and bottom nav. */
 
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
-import { useQueryClient } from "@tanstack/react-query";
+import { usePathname } from "next/navigation";
 import { Bell, CircleUserRound, LogOut, Plus } from "lucide-react";
 import type { ReactNode } from "react";
-import { authClient } from "@/lib/api/connect";
+import { beginSignOut } from "@/lib/auth/signOut";
 import { NAVIGATION_ITEMS, MOBILE_LEFT_NAV, MOBILE_RIGHT_NAV } from "./constants/navigation";
 import { Avatar } from "@/components/ui/Avatar/Avatar";
 import { VerifyPhoneBanner } from "../VerifyPhoneBanner/VerifyPhoneBanner";
@@ -26,16 +25,7 @@ export function AppShell({
   children: ReactNode;
 }) {
   const pathname = usePathname();
-  const router = useRouter();
-  const queryClient = useQueryClient();
   const { currentUser, unreadCount, pendingFriendRequestCount } = useShellData();
-
-  /** Logs the user out, clears all cached queries, and redirects to the login page. */
-  const signOut = async () => {
-    await authClient.logOut({});
-    queryClient.clear();
-    router.push("/login");
-  };
 
   /**
    * Reports whether a navigation destination matches the current route (exactly or as a section prefix).
@@ -118,7 +108,7 @@ export function AppShell({
             </Link>
             <button
               type="button"
-              onClick={signOut}
+              onClick={beginSignOut}
               title="Sign out"
               className="rounded-lg p-2 text-ink-soft hover:bg-paper hover:text-brand-600"
             >

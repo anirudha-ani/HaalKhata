@@ -1,5 +1,7 @@
 /** New/edit expense form: receipt panel, context picker, basics (amount/date/category), payer + split editors, summary, submit. */
 
+import { Radio } from "lucide-react-native";
+import { LiveBar } from "@/components/expense/LiveBar/LiveBar";
 import { ScrollView, StyleSheet, View } from "react-native";
 import { SplitSummary } from "@/components/expense/SplitSummary";
 import { PeoplePicker } from "@/components/people/PeoplePicker";
@@ -9,9 +11,10 @@ import { Chip } from "@/components/ui/Chip";
 import { DateField } from "@/components/ui/DateField";
 import { TextField } from "@/components/ui/TextField";
 import { useErrorToast } from "@/components/ui/ToastProvider";
+import { EditSyncPanel } from "../EditSyncPanel/EditSyncPanel";
 import { centsToInput } from "@haalkhata/shared/money/money";
 import { CATEGORIES } from "@haalkhata/shared/money/money.constants";
-import { spacing } from "@/lib/theme/theme";
+import { colors, spacing } from "@/lib/theme/theme";
 import type { ExpenseFormInitial } from "../../../../utils/initialValues";
 import { previewSplitShares } from "@haalkhata/shared/expense/form/splitForm";
 import { useNewExpense } from "../../hooks/useNewExpense";
@@ -36,6 +39,7 @@ export function ExpenseForm({
   api: expenseAPI,
   initial,
   editExpenseId,
+  openInvite,
 }: {
   /** Query/mutation bundle from useNewExpenseAPI, owned by the screen orchestrator. */
   api: ReturnType<typeof useNewExpenseAPI>;
@@ -43,6 +47,8 @@ export function ExpenseForm({
   initial: ExpenseFormInitial;
   /** Id of the expense being edited, or "" when creating a new one. */
   editExpenseId: string;
+  /** Whether a live split was just started, so its invite opens by itself. */
+  openInvite: boolean;
 }) {
   const form = useNewExpense(expenseAPI, initial, editExpenseId);
   const currency = form.currency;
@@ -93,9 +99,31 @@ export function ExpenseForm({
   return (
     <View style={[styles.form, isExpanded ? styles.formExpanded : null]}>
       <View style={[styles.formColumn, isExpanded ? styles.formColumnExpanded : null]}>
+        {/* The other way to finish a bill: everyone at the table edits it
+            together. It saves what is here and hands out the invite. */}
+        {form.liveSplit ? (
+          <LiveBar
+            description={form.description}
+            expenseId={editExpenseId}
+            liveSplit={form.liveSplit}
+            meId={form.me?.id ?? ""}
+            startSharing={openInvite || form.sharingOnStart}
+            users={form.liveUsers}
+          />
+        ) : (
+          <Button
+            busy={form.isStartingLive}
+            disabled={form.isSaving || form.isReceiptBusy}
+            icon={<Radio color={colors.brand700} size={16} />}
+            label="Split live"
+            onPress={form.startLive}
+            variant="outline"
+          />
+        )}
         {/* Editing cannot re-scan: re-parsing a photo over a saved expense
-            would silently replace its lines. */}
-        {form.isEdit ? null : <ReceiptPanel form={form} />}
+            would silently replace its lines. A live split is the exception,
+            since the receipt can arrive after the bill was opened to the table. */}
+        {form.isEdit && !form.liveSplit ? null : <ReceiptPanel form={form} />}
         {isExpanded ? <SplitSummary layout="panel" {...summaryProps} /> : null}
 
         <PeoplePicker
@@ -160,6 +188,8 @@ export function ExpenseForm({
           placeholder="Notes (optional)"
           value={form.notes}
         />
+
+        <EditSyncPanel form={form} />
 
         <Button
           busy={form.isSaving}

@@ -22,6 +22,7 @@ vi.mock("expo-constants", () => ({
 vi.mock("expo-device", () => ({ modelName: "iPhone 17" }));
 vi.mock("expo-crypto", () => ({ randomUUID: () => "install-1" }));
 vi.mock("expo-secure-store", () => ({
+  WHEN_UNLOCKED_THIS_DEVICE_ONLY: 9,
   getItemAsync: vi.fn(async (storageKey: string) => native.storage.get(storageKey) ?? null),
   setItemAsync: vi.fn(async (storageKey: string, value: string) => void native.storage.set(storageKey, value)),
   deleteItemAsync: vi.fn(async (storageKey: string) => void native.storage.delete(storageKey)),

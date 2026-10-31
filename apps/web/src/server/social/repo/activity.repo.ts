@@ -4,6 +4,7 @@ import type { PoolClient } from "pg";
 import { execute, newId, query } from "@/server/common/db/db";
 import {
   ACTIVITY_CURSOR_ID_PATTERN,
+  ACTIVITY_CURSOR_MICROSECONDS_PATTERN,
   ACTIVITY_CURSOR_TIMESTAMP_PATTERN,
 } from "@/server/social/social.constants";
 
@@ -89,15 +90,26 @@ interface ActivityCursor {
   id: string;
 }
 
+/** A feed row with its time to the microsecond, as only a cursor needs it. */
+type PagedActivityRow = ActivityRow & {
+  /** created_at in UTC to the microsecond; `created_at` itself is cut to milliseconds. */
+  cursor_at: string;
+};
+
 /**
  * Encodes a keyset cursor. The pair is opaque to the client but readable
  * here, which beats base64 for debugging a feed that skipped a row.
  *
- * @param row - The last row of the page just returned.
+ * The time is the row's own, to the microsecond. `created_at` comes back
+ * cut to milliseconds, and a cursor built from it started the next page
+ * after every event later in that millisecond, events written together in
+ * one transaction included.
+ *
+ * @param lastRow - The last row of the page just returned.
  * @returns The cursor string to hand back to the client.
  */
-function encodeCursor(lastRow: ActivityRow): string {
-  return `${lastRow.created_at}|${lastRow.id}`;
+function encodeCursor(lastRow: PagedActivityRow): string {
+  return `${lastRow.cursor_at}|${lastRow.id}`;
 }
 
 /**
@@ -117,8 +129,14 @@ function decodeCursor(cursor: string): ActivityCursor | null {
   ) {
     return null;
   }
-  const parsedTimestamp = new Date(createdAt);
-  if (Number.isNaN(parsedTimestamp.getTime()) || parsedTimestamp.toISOString() !== createdAt) {
+  // A real instant, spelled the canonical way: a Date holds milliseconds, so
+  // the check runs on the cursor time cut to them.
+  const millisecondSpelling = createdAt.replace(ACTIVITY_CURSOR_MICROSECONDS_PATTERN, "$1Z");
+  const parsedTimestamp = new Date(millisecondSpelling);
+  if (
+    Number.isNaN(parsedTimestamp.getTime()) ||
+    parsedTimestamp.toISOString() !== millisecondSpelling
+  ) {
     return null;
   }
   return { createdAt, id: cursorId };
@@ -183,8 +201,10 @@ export async function listActivityPage(
   const window = feedWindow({ ...options, nextPlaceholder: base.values.length + 1 });
   const limitPlaceholder = base.values.length + 1 + window.values.length;
 
-  const rows = await query<ActivityRow>(
-    `SELECT * FROM activity
+  const rows = await query<PagedActivityRow>(
+    `SELECT *,
+            to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS cursor_at
+       FROM activity
      WHERE ${base.clause}${window.clause}
      ORDER BY created_at DESC, id DESC
      LIMIT $${limitPlaceholder}`,

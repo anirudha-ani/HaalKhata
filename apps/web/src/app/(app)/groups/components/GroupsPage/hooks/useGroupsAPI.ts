@@ -12,7 +12,8 @@ import { queryKeys } from "@haalkhata/shared/api/queryKeys";
  *
  * @returns An object with `groups` (group summaries, empty while loading),
  *   `friends` (users available to enrol at creation), `isLoading` for the list
- *   query, and the `createGroup` mutation.
+ *   query, `listError` and `retryList` for a list that failed to load, and the
+ *   `createGroup` mutation.
  */
 export function useGroupsAPI() {
   const queryClient = useQueryClient();
@@ -41,6 +42,9 @@ export function useGroupsAPI() {
     groups: groups.data?.groups ?? [],
     friends: (friends.data?.friends ?? []).flatMap((friend) => (friend.user ? [friend.user] : [])),
     isLoading: groups.isLoading,
+    // Only when there is no list to show: "No groups yet" would be untrue.
+    listError: groups.data ? null : groups.error,
+    retryList: () => void groups.refetch(),
     createGroup,
   };
 }

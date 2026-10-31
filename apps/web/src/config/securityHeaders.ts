@@ -10,6 +10,9 @@ const BASE_CSP_DIRECTIVES = [
   "img-src 'self' data: blob: https://*.googleusercontent.com",
   "style-src 'self' 'unsafe-inline' https://accounts.google.com/gsi/style",
   "connect-src 'self' https://accounts.google.com/gsi/",
+  // The HEIC converter runs in a same-origin Web Worker; with
+  // 'strict-dynamic' in script-src, a worker needs its own source list.
+  "worker-src 'self'",
   "frame-src https://accounts.google.com/gsi/",
 ];
 

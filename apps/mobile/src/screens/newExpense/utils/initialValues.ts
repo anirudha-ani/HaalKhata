@@ -1,7 +1,7 @@
 /** Pure assembly of the expense form's initial state (create + edit). */
 
 import { restoreExpenseSplit } from "@haalkhata/shared/expense/form/restoreSplit";
-import type { Expense } from "@haalkhata/protogen/expense/v1/expense_pb";
+import type { Expense } from "@haalkhata/shared/api/plainMessages";
 import { centsToInput, todayISO } from "@haalkhata/shared/money/money";
 import { draftItemsFromLines, type DraftItem } from "@/lib/expense/itemDraft";
 

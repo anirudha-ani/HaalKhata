@@ -1,23 +1,51 @@
 /** Thin SocialService Connect handlers; logic lives in social.usecase. */
 
-import type { ServiceImpl } from "@connectrpc/connect";
+import type { HandlerContext } from "@connectrpc/connect";
 import type { SocialService } from "@haalkhata/protogen/social/v1/social_pb";
 import { Code, ConnectError } from "@connectrpc/connect";
+import type { PlainServiceImpl } from "@/server/api/connect/wire/plainService";
 import * as social from "@/server/social/usecase/social.usecase";
 import { findContacts } from "@/server/social/usecase/contacts/findContacts.usecase";
 import { sendFriendRequests } from "@/server/social/usecase/contacts/sendFriendRequests.usecase";
-import { requireUser, runUsecase } from "@/server/api/connect/context";
-import { requireRateLimitedUser, RPC_RATE_LIMITS } from "@/server/api/connect/rpcRateLimit";
-import { clientIp } from "@/server/auth/request/clientIp";
-import { rateLimitCheck } from "@/server/common/rateLimit/rateLimit";
-import { INVITE_PREVIEW_RATE_LIMIT } from "@/server/social/social.constants";
+import { requireSignedSession, requireUser, runUsecase } from "@/server/api/connect/context";
+import { requireRateLimitedUser, RPC_RATE_LIMITS } from "@/server/api/connect/rateLimit/rpcRateLimit";
+import { clientNetwork } from "@/server/auth/request/clientIp";
+import { addressRateLimits } from "@/server/common/rateLimit/rateLimit";
+import {
+  ANONYMOUS_SOCIAL_RPCS,
+  INVITE_PREVIEW_RATE_LIMIT,
+  RETIRED_PERSON_INVITE_MESSAGE,
+} from "@/server/social/social.constants";
+
+/**
+ * The social service's request gate, run once the headers are in and before
+ * the body is read. The invite preview a signed-out visitor sees is paced
+ * per address there, so a flood of previews is refused without reading
+ * their bodies; the retired invite calls pass through to refuse in their
+ * handlers; every other call needs a signed session.
+ *
+ * @param context - Connect handler context for the current request.
+ * @throws ConnectError ResourceExhausted when paced, Unauthenticated without a session.
+ */
+export function socialRequestGate(context: HandlerContext): void {
+  if (!ANONYMOUS_SOCIAL_RPCS.has(context.method.name)) {
+    requireSignedSession(context);
+    return;
+  }
+  if (
+    context.method.name === "PreviewInviteLink" &&
+    !addressRateLimits.check(`invite-preview:${clientNetwork(context.requestHeader)}`, INVITE_PREVIEW_RATE_LIMIT)
+  ) {
+    throw new ConnectError("too many requests, please try again later", Code.ResourceExhausted);
+  }
+}
 
 /**
  * ConnectRPC implementation of SocialService. Each method authenticates the
  * caller via {@link requireUser} and delegates to the social usecase inside
  * {@link runUsecase}, which maps UsecaseError to ConnectError.
  */
-export const socialHandler: ServiceImpl<typeof SocialService> = {
+export const socialHandler: PlainServiceImpl<typeof SocialService> = {
   /** Sends a privacy-preserving friend request. */
   async addFriend(request, context) {
     return runUsecase(
@@ -100,12 +128,9 @@ export const socialHandler: ServiceImpl<typeof SocialService> = {
     return {};
   },
 
-  /** The invited person's active reminder link, created on first ask. */
-  async getFriendInviteLink(request, context) {
-    return runUsecase(
-      async () => social.getFriendInviteLink(await requireUser(context), request.userId),
-      context,
-    );
+  /** Retired with one-person invite links; always refused. */
+  async getFriendInviteLink() {
+    throw new ConnectError(RETIRED_PERSON_INVITE_MESSAGE, Code.FailedPrecondition);
   },
 
   /** The group's one active join link, created on first ask; any member may. */
@@ -116,16 +141,9 @@ export const socialHandler: ServiceImpl<typeof SocialService> = {
     );
   },
 
-  /** Creates the Invited contact and returns its claim link to share (§33c). */
-  async inviteContactToSignUp(request, context) {
-    return runUsecase(
-      async () =>
-        social.inviteContactToSignUp(
-          await requireRateLimitedUser(context, "add-friend", RPC_RATE_LIMITS.addFriend),
-          { email: request.email, phone: request.phone },
-        ),
-      context,
-    );
+  /** Retired with one-person invite links; always refused. */
+  async inviteContactToSignUp() {
+    throw new ConnectError(RETIRED_PERSON_INVITE_MESSAGE, Code.FailedPrecondition);
   },
 
   /** The caller's own "add me" link, minted on first ask. */
@@ -160,9 +178,6 @@ export const socialHandler: ServiceImpl<typeof SocialService> = {
    * per-address limit just keeps the endpoint from being a scanner target.
    */
   async previewInviteLink(request, context) {
-    if (!rateLimitCheck(`invite-preview:${clientIp(context.requestHeader)}`, INVITE_PREVIEW_RATE_LIMIT)) {
-      throw new ConnectError("too many requests, please try again later", Code.ResourceExhausted);
-    }
     return runUsecase(() => social.previewInviteLink(request.token), context);
   },
 

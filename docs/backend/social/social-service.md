@@ -24,8 +24,9 @@ SQL in [friendships.repo.ts](../../../apps/web/src/server/social/repo/friendship
 - A **friendship** is symmetric (two rows, one per direction) and is created
   by: accepting a friend request, being added to a group together (the adder
   ↔ the added), sharing a one-off expense (the creator ↔ each participant),
-  inviting an unregistered contact (§33 — immediate, since nobody exists to
-  accept), or accepting an invite link (acceptor ↔ inviter).
+  or joining a group through its invite link (acceptor ↔ inviter). Both
+  sides of every friendship are people who signed up: nothing is created
+  for an email or phone that belongs to nobody.
 - A **friend request** is asymmetric and pending until the recipient acts.
   At most 100 unanswered requests are retained per recipient. Both sides see
   it while it pends: the recipient under `incoming_requests`, the sender
@@ -36,18 +37,17 @@ SQL in [friendships.repo.ts](../../../apps/web/src/server/social/repo/friendship
   somebody else's group can split without a request.
 - Friend-request and friendship writes run under the **friend-request inbox
   advisory lock** of the affected recipients (sorted, before any user row
-  locks — the same order account merges use), so accept/send races cannot
-  recreate a just-consumed request.
+  locks), so accept/send races cannot recreate a just-consumed request.
 
 ## Privacy Invariants
 
-- **AddFriend leaks less than it used to, deliberately more than nothing.**
-  Since §33, an email/phone matching nobody creates an Invited row and an
-  immediate friendship (there is nobody to accept), while registered targets
-  keep the request flow — so the differing outcomes reveal whether an
-  identifier has an account. Frictionless inviting won that trade knowingly;
-  within the registered flow, self/duplicate/pending stay indistinguishable,
-  and the rate limit stands.
+- **AddFriend leaks deliberately more than nothing.** An email/phone that
+  matches nobody is refused out loud (`FailedPrecondition`, and the clients
+  offer the caller's own invite link instead), while an account gets a
+  request — so the differing outcomes reveal whether an identifier has an
+  account. A refusal the person can act on won that trade knowingly; among
+  accounts, self/duplicate/pending/blocked stay indistinguishable, and the
+  rate limit stands.
 - A pending request's sender is shown through the minimal
   `toFriendRequestUser` projection — no contact info, payment handles,
   currency, or registration status until accepted.
@@ -67,45 +67,65 @@ SQL in [friendships.repo.ts](../../../apps/web/src/server/social/repo/friendship
 `FindContacts` deliberately reveals what AddFriend hides: which identifiers
 from the caller's own address book belong to accounts. Only accounts that
 said yes to `AuthService.SetContactDiscovery` take part; a phone matches only
-once verified; merged, deleted, suspended, unregistered rows, the caller and
-either block direction never match. Nothing sent is stored or logged, and an
-unknown number never becomes an Invited row. The one write is a per-account,
+once verified; deleted and suspended accounts, the caller and either block
+direction never match. Nothing sent is stored or logged, and an unknown
+number creates nothing. The one write is a per-account,
 per-UTC-day count in `contact_lookup_usage`, claimed in the same transaction
 as the match. See [Find friends from contacts](../../contact-discovery.md).
 
 ## Invite Links (§33)
 
-A person without an account appears as **Invited** (`registered: false`) and
-can be part of **no transaction** — the expense service refuses unregistered
-participants by name. That one rule is what makes a bearer link safe to
-share: claiming an invite moves friendships and group memberships onto the
-acceptor's account (via the §32 merge machinery, whose money invariant holds
-trivially at zero), never money.
+Nobody is invited by email or phone: a person who has not signed up does not
+exist here, and nothing is made for them. They are reached through a link
+and sign up as themselves; accepting a link never claims or merges anything.
 
-`invite_links` holds three kinds, each with one active link (regenerate =
-revoke + recreate): **friend** (inviter + the Invited row it claims),
-**group** (one join link per group), and **profile** (§33a — the owner's
-own "add me" link). Tokens are 43-char random bearer credentials; every
-unusable token — malformed, revoked, missing, already claimed — gets one
-identical sentence, so the endpoints scan as nothing. Delivery is the
-inviter's own share sheet; the server sends no email or SMS.
+`invite_links` holds two kinds, each with one active link (regenerate =
+revoke + recreate): **group** (one join link per group) and **profile**
+(§33a — the owner's own "add me" link); `chk_invite_links_kind` refuses any
+other. Tokens are 43-char random bearer credentials; every unusable token —
+malformed, revoked, missing, its owner gone — gets one identical sentence,
+so the endpoints scan as nothing. Delivery is the inviter's own share sheet;
+the server sends no email or SMS.
+
+**A group link works for 7 days** (`GROUP_INVITE_LINK_LIFETIME_DAYS` in
+`@haalkhata/shared/invite/invite.constants`; `invite_links.expires_at`, which
+`chk_invite_links_group_expiry` requires on every group link). A link that
+escaped into a chat or a screenshot stops letting people in a week later.
+Asking for the link again returns it unchanged until then, so sharing it
+again never extends it; asking after it has run out revokes that one token
+and mints a new link (two members asking at once both get the same new one,
+since each revokes only the expired token). A link past its date answers
+`FailedPrecondition`, "this invite link has expired", to anyone opening or
+accepting it — still after a new link has replaced it — and the join pages
+say so, with what to do. That tells the holder nothing they did not have; no
+group, inviter or member count comes with it. A link the owner turned off
+before its date keeps the generic `NotFound` sentence. Profile links only
+send a friend request the owner confirms, and have no expiry.
 Known residual: tokens ride in URLs, so they appear in front-proxy access
 logs (operator-visible only); revocation is the remedy — the standard trade
 every shareable-link product makes.
 
-**The profile-kind asymmetry:** accepting a friend or group link acts
-immediately (their blast radius is bounded — an Invited row holds no money,
-a group join is visible to the whole roster), but accepting a profile link
-**sends an ordinary friend request** the owner confirms from Friends. A
-leaked bearer link must not let a stranger attach themselves — and future
-one-off expenses — to the owner; the link removes the typing, not the
-consent.
+Until migration `1793040072450_retire-unregistered-people` there was a
+third kind, **friend**: a link that claimed the placeholder row an inviter
+had made for someone by email or phone, with its friendships and group
+seats. Anyone who could add that email as a friend could mint one, so the
+migration deleted every friend link and placeholder, and dropped
+`invite_links.invited_user_id`. `GetFriendInviteLink` and
+`InviteContactToSignUp` stay in the proto, deprecated, and are always
+refused.
+
+**The profile-kind asymmetry:** accepting a group link acts immediately (a
+group join is visible to the whole roster and bounded by the group's size),
+but accepting a profile link **sends an ordinary friend request** the owner
+confirms from Friends. A leaked bearer link must not let a stranger attach
+themselves — and future one-off expenses — to the owner; the link removes
+the typing, not the consent.
 
 ## Rate Limits (this service)
 
 | RPC | Limit |
 | --- | --- |
-| AddFriend, InviteContactToSignUp | 10/min per account (shared bucket) |
+| AddFriend | 10/min per account |
 | ListFriends | 60/min — **shares the `GetOverallBalances` bucket**, because it computes the same full-ledger aggregate; separate buckets would let one endpoint bypass the other's limit |
 | SendReminder | 10/min per account, plus the 24 h per-pair cooldown |
 | FindContacts | 5/min per account, at most 1,000 identifiers per call and 5,000 per account per UTC day (the daily count is durable, in Postgres) |
@@ -123,14 +143,14 @@ consent.
 5. [ListNotifications](#5-listnotifications)
 6. [MarkNotificationsRead](#6-marknotificationsread)
 7. [SendReminder](#7-sendreminder)
-8. [GetFriendInviteLink](#8-getfriendinvitelink)
+8. [GetFriendInviteLink](#8-getfriendinvitelink) *(retired)*
 9. [CreateGroupInviteLink](#9-creategroupinvitelink)
 10. [RevokeGroupInviteLink](#10-revokegroupinvitelink)
 11. [PreviewInviteLink](#11-previewinvitelink)
 12. [AcceptInviteLink](#12-acceptinvitelink)
 13. [GetProfileInviteLink](#13-getprofileinvitelink)
 14. [RevokeProfileInviteLink](#14-revokeprofileinvitelink)
-15. [InviteContactToSignUp](#15-invitecontacttosignup)
+15. [InviteContactToSignUp](#15-invitecontacttosignup) *(retired)*
 16. [RemoveFriend](#16-removefriend)
 17. [CancelFriendRequest](#17-cancelfriendrequest)
 18. [FindContacts](#18-findcontacts)
@@ -149,19 +169,20 @@ consent.
   national) — the clients present one "email or phone" field and route the
   raw string, so both being set means a client bug, and the server says so
   rather than guessing. The legacy `name` field is ignored.
-- Malformed identifiers are the only user-visible failures
-  (`InvalidArgument` with the format hint).
-- **Registered targets:** no friendship exists until the recipient accepts.
+- Malformed identifiers fail `InvalidArgument` with the format hint.
+- **An account:** no friendship exists until the recipient accepts.
   The request insert and the recipient's `friend_request` notification
   commit together; a duplicate pending request inserts nothing and notifies
   nobody (no notification spam by re-sending). The typed email or phone is
   stored on the request row so ListFriends can echo it back to the sender;
   a `user_id` request stores nothing extra.
-- **Unmatched email/phone (§33):** the Invited row is created on the spot
-  with an immediate two-way friendship — there is nobody to accept, and the
-  row can hold no transactions, so it is a contact-book entry until claimed.
-  The person appears as "Invited" on the caller's next friends refetch.
-- Merged-away accounts (tombstones) are treated as missing.
+- **An email/phone that belongs to nobody:** refused with
+  `FailedPrecondition` "they're not on HaalKhata yet — share your invite
+  link so they can sign up", and **nothing is created**. Both apps answer it
+  beside the form with the caller's own profile link
+  (`NOT_ON_HAALKHATA_COPY.friend` in `@haalkhata/shared/invite/inviteCopy`).
+- A `user_id` that names nobody (a stale picker, a deleted account) is a
+  quiet empty success, like self, duplicate and blocked.
 
 #### Request
 
@@ -177,8 +198,8 @@ consent.
 #### Response
 
 `common.v1.User` — **intentionally empty** (kept for wire compatibility; it
-must carry no target fields, or it would answer "does this address have an
-account?").
+carries no target fields, so a success says nothing about who the account
+is).
 
 ---
 
@@ -196,11 +217,10 @@ account?").
   live dealings with*.
 - `incoming_requests` carries pending senders, visible only to this
   recipient, through the minimal projection (see Privacy Invariants).
-  Senders merged away since requesting are dropped.
 - `outgoing_requests` carries what the caller has sent and is still waiting
   on, oldest first. Each entry has exactly one of `user` (picked by id or
   via profile link, minimal projection) or `identifier` (the email or phone
-  typed, echoed back). Recipients merged away since are dropped.
+  typed, echoed back).
 
 #### Request
 
@@ -398,27 +418,23 @@ account?").
 
 #### Notes
 
-- Returns the Invited person's active reminder link, minting it on first ask
-  (one active link per (inviter, invited) pair; a concurrent ask re-reads
-  the unique-index winner).
-- **Authorization (§33b):** the target must be *unregistered* (a registered
-  person signs in, they don't need a claiming link) and a **friend** of the
-  caller — which for an invited row means one of its actual inviters. Mere
-  co-membership is not enough: a co-member of one group could otherwise
-  mint a link and, via a second account, inherit the row's seats in groups
-  nobody there consented to.
-- Clients compose the URL as `https://haalkhata.app/join/<token>` and hand
-  it to the OS share sheet; the server never builds URLs.
+- **Retired** with one-person invite links (see [Invite Links](#invite-links-33)).
+  It returned a link that claimed the placeholder row made for somebody who
+  had not signed up; no such row exists any more. It stays in the proto,
+  marked deprecated, so an installed app that still calls it gets an answer
+  it can show: always `FailedPrecondition` "invites for one person have been
+  retired — update HaalKhata and share your own invite link or the group's
+  link instead". Nothing is read or written.
 
 #### Request
 
 | Field | Type | Description |
 | --- | --- | --- |
-| user_id | string | The Invited person the link reminds. |
+| user_id | string | Ignored. |
 
 #### Response
 
-**InviteLink:** `{ token }`.
+Never returns; always refused.
 
 ---
 
@@ -432,6 +448,8 @@ account?").
 - The group's one active join link, minted on first ask. **Any member may**
   — the same trust level as adding people directly, and the accept side
   still records who invited whom.
+- The link works for 7 days. Asking again returns the same link until then;
+  after that, a new one (see [Invite Links](#invite-links-33)).
 
 #### Request
 
@@ -441,7 +459,8 @@ account?").
 
 #### Response
 
-**InviteLink:** `{ token }`.
+**InviteLink:** `{ token, expires_at }` — `expires_at` (RFC 3339) is when
+the link stops working, for the share dialog to say ("until Nov 4").
 
 ---
 
@@ -479,8 +498,10 @@ account?").
   Bali Trip" *before* asking anyone to create an account. Possession of the
   unguessable token is the credential; 30/min per client IP keeps the
   endpoint from being a scanning surface.
-- Every dead shape — malformed, unknown, revoked, an invitation already
-  claimed — returns the identical `NotFound` sentence.
+- Every dead shape — malformed, unknown, revoked, a profile link whose owner
+  is gone — returns the identical `NotFound` sentence. A group link past its
+  date returns `FailedPrecondition`, "this invite link has expired"; so does
+  accepting it.
 
 #### Request
 
@@ -494,10 +515,10 @@ account?").
 
 | Field | Type | Description |
 | --- | --- | --- |
-| kind | string | `"friend"` \| `"group"`. |
+| kind | string | `"group"` \| `"profile"`. |
 | inviter_name | string | Who shared the link. |
 | group_name / member_count | string / int32 | Group links only. |
-| invited_name | string | Friend links: the name the invite was created under. |
+| invited_name | string | **Deprecated** with one-person links; always empty. |
 
 ---
 
@@ -509,17 +530,8 @@ account?").
 #### Notes
 
 - Authenticated; 10/min per account. Safe to repeat.
-- **Friend link:** the still-unclaimed invited identity is merged into the
-  caller (friendships and group memberships ride along; no money can exist
-  on it), its reminder links are revoked, and caller ↔ inviter are
-  befriended. **The invite's identifiers are freed, never adopted** (§33b):
-  the phone was the inviter's unverified claim, and the acceptor attaches
-  their own through SetPhone's SMS proof. Every inherited group gets a
-  `member_added` feed event ("claimed X's invitation"), so a roster face
-  never changes silently. A caller who already claimed the row by email
-  match skips the merge; an identity claimed by somebody else — or lost to
-  a racing acceptor — is the same dead link; the inviter's own link is
-  refused.
+- **Nothing is claimed or merged.** The caller joins as the account they
+  signed in with; no link names another row to take over.
 - **Group link:** enrols the caller under the group's ledger lock, befriends
   them with the inviter, and writes a `member_added` feed event ("joined via
   X's invite link") so a new face is explained. Already a member → quiet
@@ -530,9 +542,9 @@ account?").
 - **Profile link (§33a):** sends the owner an ordinary `friend_request`
   (with a notification saying the profile link was used) — never an instant
   friendship; see the asymmetry note above. Already friends or already
-  requested → quiet success.
-- Either way the inviter gets an `invite_accepted` notification — the one
-  moment an invite produces for its sender.
+  requested → quiet success. The owner's own link is refused.
+- A group join also sends the inviter an `invite_accepted` notification —
+  the one moment an invite produces for its sender.
 
 #### Request
 
@@ -597,25 +609,25 @@ account?").
 
 #### Notes
 
-- The one gesture behind the group-add flow's §33c offer ("they're not on
-  HaalKhata yet — send them a sign-up invite?"): finds or creates the
-  Invited contact, befriends the caller with it (which is what authorizes
-  the mint), and returns the claim link to share.
-- Refused (`InvalidArgument`, "already on HaalKhata") when the identifier
-  has a claimed account — that person is added directly, not invited. A
-  deliberate oracle of the addFriend family, scoped to an explicit user
-  gesture and the shared 10/min bucket.
+- **Retired.** It made a placeholder row for a contact who had not signed up
+  and returned the link that claimed it. Nothing is made for such a person
+  any more: the add forms answer an unknown email or phone with the group's
+  join link ([CreateGroupInviteLink](#9-creategroupinvitelink)) or the
+  caller's profile link ([GetProfileInviteLink](#13-getprofileinvitelink)).
+  It stays in the proto, deprecated, and is always refused with
+  `FailedPrecondition` (the same sentence as GetFriendInviteLink). Nothing
+  is read or written.
 
 #### Request
 
 | Field | Type | Description |
 | --- | --- | --- |
-| email | string | Exactly one of email/phone. |
-| phone | string | Any format typed; normalized server-side. |
+| email | string | Ignored. |
+| phone | string | Ignored. |
 
 #### Response
 
-**InviteLink:** `{ token }` — the contact's claim link.
+Never returns; always refused.
 
 ---
 
@@ -636,11 +648,9 @@ account?").
   ledger locks, so the zero check cannot race a concurrent one-off expense
   or settlement. Group writes need no serializing: a group debt lives with
   the group and both memberships either way.
-- **What it touches:** both stored friendship directions, any pending
-  friend requests between the pair, and the caller's active friend claim
-  link for an Invited friend (the link promised "you two are friends when
-  you join", which is exactly what is being withdrawn). Shared history,
-  group co-memberships, and other inviters' links are untouched.
+- **What it touches:** both stored friendship directions and any pending
+  friend requests between the pair. Shared history and group co-memberships
+  are untouched.
 - **Quiet by design**, like RemoveMember: no notification, no feed event.
   They can be re-added later through the normal request flow.
 - `NotFound` when the target is not currently a friend.
@@ -699,9 +709,10 @@ account?").
 #### Notes
 
 - Matches phones and emails from the caller's address book against
-  registered accounts that have not turned discovery off
+  accounts that have not turned discovery off
   (`users.contact_discovery IS NOT FALSE`: findable is the default, and NULL
-  means never answered). Unclaimed invitation rows never match. A phone needs
+  means never answered). Every live row is someone who signed up, and a
+  deleted account's stand-in never matches. A phone needs
   `phone_verified_at`; an email matches the account's own sign-in email.
 - Each entry is measured before it is parsed (over 254 characters is
   dropped), then normalised: phones must carry their country code (no region
@@ -735,7 +746,7 @@ account?").
 
 #### Notes
 
-- One request to each listed account that is live, registered, findable from
+- One request to each listed account that is live, findable from
   contacts (not turned off), not blocked either way, not already a friend, and has no request
   pending in either direction. Everyone else is skipped without saying so.
 - Restricting it to findable accounts keeps the bulk path from being a

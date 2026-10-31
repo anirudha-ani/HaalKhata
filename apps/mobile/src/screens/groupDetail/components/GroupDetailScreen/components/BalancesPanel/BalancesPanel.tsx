@@ -1,7 +1,8 @@
-/** Group balances view: net positions plus pairwise/simplified debts with settle actions. */
+/** Group balances view: net positions plus pairwise/simplified debts with settle actions, per currency. */
 
+import type { Debt, NetBalance } from "@haalkhata/shared/api/plainMessages";
 import type { User } from "@haalkhata/protogen/common/v1/common_pb";
-import type { BalancesResponse } from "@haalkhata/protogen/expense/v1/expense_pb";
+import type { GroupCurrencySection } from "@haalkhata/shared/group/currencyBalances";
 import { ArrowRight, Wand2 } from "lucide-react-native";
 import { StyleSheet, Switch, View } from "react-native";
 import { Text } from "@/components/ui/Text";
@@ -16,13 +17,18 @@ import { colors, radii, spacing } from "@/lib/theme/theme";
  * list of who-owes-whom debts (pairwise or simplified) with an action on every
  * debt the viewer is part of: settle what they owe, record what they are owed.
  *
- * @returns The two balance sections, or null until balances have loaded.
+ * A group's money is in its own currency, but one can still hold a payment
+ * recorded in another before group payments were kept to the group's own.
+ * That is a second set of balances, shown after the first under headings
+ * naming the currency, and settled in that currency — never netted against
+ * the group's own.
+ *
+ * @returns The balance sections, or null until balances have loaded.
  */
 export function BalancesPanel({
-  balances,
+  sections,
   error = "",
   onRetry,
-  currency,
   meId,
   userById,
   simplified,
@@ -31,14 +37,12 @@ export function BalancesPanel({
   onToggleSimplified,
   onSettle,
 }: {
-  /** Balances response for the group; the panel renders nothing until it loads. */
-  balances: BalancesResponse | undefined;
+  /** The group's balances per currency, its own first; nothing renders until they load. */
+  sections: readonly GroupCurrencySection<NetBalance, Debt>[] | undefined;
   /** A failed balance read, displayed beside its retry control. */
   error?: string;
   /** Reloads the group balances after a failed read. */
   onRetry: () => void;
-  /** Currency code all amounts are shown in (the group's currency). */
-  currency: string;
   /** The signed-in user's id, used to label rows as "You" and show settle buttons. */
   meId: string | undefined;
   /** Lookup from user id to User for rendering names and avatars. */
@@ -53,9 +57,10 @@ export function BalancesPanel({
   onToggleSimplified: (value: boolean) => void;
   /**
    * Called when the viewer taps the action on a debt, with the other party,
-   * the amount, and whether this records money *received* rather than paid.
+   * the amount, whether this records money *received* rather than paid, and
+   * the currency the debt is in.
    */
-  onSettle: (user: User, cents: number, received: boolean) => void;
+  onSettle: (user: User, cents: number, received: boolean, currency: string) => void;
 }) {
   if (error) return (
     <View style={styles.section}>
@@ -63,56 +68,68 @@ export function BalancesPanel({
       <Button label="Try again" onPress={onRetry} variant="outline" />
     </View>
   );
-  if (!balances) return null;
-  const debts = simplified ? balances.simplified : balances.debts;
-  // Pairwise debts that survive while every net is zero can only be a loop —
-  // typically left behind by payments recorded while debts were simplified.
-  // Money-wise nobody owes anybody; without a word of explanation the list
-  // looks like outstanding debt, so it gets one.
-  const cancelingLoop =
-    !simplified &&
-    debts.length > 0 &&
-    balances.nets.every((position) => position.netCents === 0);
+  if (!sections) return null;
+  const several = sections.length > 1;
+  /**
+   * A heading, naming the currency once the group holds more than one.
+   *
+   * @param title - The heading's words.
+   * @param currency - The section's currency.
+   * @returns The heading text.
+   */
+  const titled = (title: string, currency: string) => (several ? `${title} · ${currency}` : title);
 
   return (
     <View style={styles.container}>
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>NET POSITIONS</Text>
-        <View style={styles.listCard}>
-          {balances.nets.map((netPosition, index) => {
-            const user = userById.get(netPosition.userId);
-            if (!user) return null;
-            return (
-              <View
-                key={netPosition.userId}
-                style={[styles.row, index > 0 ? styles.rowDivider : null]}
-              >
-                <PersonLink meId={meId} style={styles.rowPerson} userId={user.id}>
-                  <Avatar size="sm" user={user} />
-                  <Text numberOfLines={1} style={styles.rowName}>
-                    {user.id === meId ? "You" : user.name}
-                  </Text>
-                </PersonLink>
-                {netPosition.netCents === 0 ? (
-                  <Text style={styles.rowHint}>settled up</Text>
-                ) : (
-                  <>
-                    <Text style={styles.rowHint}>
-                      {netPosition.netCents > 0 ? "gets back" : "owes"}
-                    </Text>
-                    <Money
-                      cents={netPosition.netCents}
-                      currency={currency}
-                      signed
-                      style={styles.rowAmount}
-                    />
-                  </>
-                )}
-              </View>
-            );
-          })}
+      {several ? (
+        <View style={styles.allSettled}>
+          <Text style={styles.allSettledText}>
+            This group still holds money in{" "}
+            {sections.slice(1).map((section) => section.currency).join(", ")} from a payment
+            recorded before group payments were kept to {sections[0].currency}. Each currency is
+            settled on its own.
+          </Text>
         </View>
-      </View>
+      ) : null}
+      {sections.map((section) => (
+        <View key={`nets-${section.currency}`} style={styles.section}>
+          <Text style={styles.sectionTitle}>{titled("NET POSITIONS", section.currency)}</Text>
+          <View style={styles.listCard}>
+            {section.nets.map((netPosition, index) => {
+              const user = userById.get(netPosition.userId);
+              if (!user) return null;
+              return (
+                <View
+                  key={netPosition.userId}
+                  style={[styles.row, index > 0 ? styles.rowDivider : null]}
+                >
+                  <PersonLink meId={meId} style={styles.rowPerson} userId={user.id}>
+                    <Avatar size="sm" user={user} />
+                    <Text numberOfLines={1} style={styles.rowName}>
+                      {user.id === meId ? "You" : user.name}
+                    </Text>
+                  </PersonLink>
+                  {netPosition.netCents === 0 ? (
+                    <Text style={styles.rowHint}>settled up</Text>
+                  ) : (
+                    <>
+                      <Text style={styles.rowHint}>
+                        {netPosition.netCents > 0 ? "gets back" : "owes"}
+                      </Text>
+                      <Money
+                        cents={netPosition.netCents}
+                        currency={section.currency}
+                        signed
+                        style={styles.rowAmount}
+                      />
+                    </>
+                  )}
+                </View>
+              );
+            })}
+          </View>
+        </View>
+      ))}
 
       <View style={styles.section}>
         {/* The mode gets a real switch with its state written out, not a
@@ -152,70 +169,89 @@ export function BalancesPanel({
           />
         </View>
 
-        <Text style={styles.sectionTitle}>
-          {simplified ? "SIMPLIFIED PAYMENTS" : "WHO OWES WHOM"}
-        </Text>
+        {sections.map((section) => {
+          const debts = simplified ? section.simplified : section.debts;
+          // Pairwise debts that survive while every net is zero can only be a
+          // loop — typically left behind by payments recorded while debts were
+          // simplified. Money-wise nobody owes anybody; without a word of
+          // explanation the list looks like outstanding debt, so it gets one.
+          const cancelingLoop =
+            !simplified &&
+            debts.length > 0 &&
+            section.nets.every((position) => position.netCents === 0);
+          return (
+            <View key={`debts-${section.currency}`} style={styles.section}>
+              <Text style={styles.sectionTitle}>
+                {titled(simplified ? "SIMPLIFIED PAYMENTS" : "WHO OWES WHOM", section.currency)}
+              </Text>
 
-        {cancelingLoop ? (
-          <View style={styles.allSettled}>
-            <Text style={styles.allSettledText}>
-              These debts cancel out around a loop — everyone&apos;s overall position is zero.
-              Turn Simplify debts on above to clear the view.
-            </Text>
-          </View>
-        ) : null}
-
-        {debts.length === 0 ? (
-          <View style={styles.allSettled}>
-            <Text style={styles.allSettledText}>Everyone is settled up 🎉</Text>
-          </View>
-        ) : (
-          <View style={styles.debts}>
-            {debts.map((debt) => {
-              const fromUser = userById.get(debt.fromUserId);
-              const toUser = userById.get(debt.toUserId);
-              if (!fromUser || !toUser) return null;
-              const mine = debt.fromUserId === meId;
-              const owedToMe = debt.toUserId === meId;
-              return (
-                <View key={`${debt.fromUserId}-${debt.toUserId}`} style={styles.debtRow}>
-                  <PersonLink meId={meId} userId={debt.fromUserId}>
-                    <Avatar size="sm" user={fromUser} />
-                  </PersonLink>
-                  <ArrowRight color={colors.inkSoft} size={16} />
-                  <PersonLink meId={meId} userId={debt.toUserId}>
-                    <Avatar size="sm" user={toUser} />
-                  </PersonLink>
-                  <Text numberOfLines={1} style={styles.debtText}>
-                    <Text style={styles.debtName}>{mine ? "You" : fromUser.name}</Text>
-                    <Text style={styles.debtVerb}> owe{mine ? "" : "s"} </Text>
-                    <Text style={styles.debtName}>
-                      {debt.toUserId === meId ? "you" : toUser.name}
-                    </Text>
+              {cancelingLoop ? (
+                <View style={styles.allSettled}>
+                  <Text style={styles.allSettledText}>
+                    These debts cancel out around a loop — everyone&apos;s overall position is zero.
+                    Turn Simplify debts on above to clear the view.
                   </Text>
-                  <Money cents={debt.amountCents} currency={currency} style={styles.rowAmount} />
-                  {/* Both directions, matching the friend screen: a debt you
-                      owe is one to pay, a debt owed to you is one to record
-                      when it lands. Only offering the first left a group
-                      where everyone owes the payer with no action anywhere on
-                      the screen — the ordinary case for whoever picked up
-                      the bill. */}
-                  {/* A loop that nets to zero offers no action: the server
-                      refuses to pay it down, and a button that only ever
-                      produces a refusal is worse than none. */}
-                  {(mine || owedToMe) && !cancelingLoop ? (
-                    <Button
-                      compact
-                      label={mine ? "Settle" : "Record"}
-                      onPress={() => onSettle(mine ? toUser : fromUser, debt.amountCents, !mine)}
-                      variant="positive"
-                    />
-                  ) : null}
                 </View>
-              );
-            })}
-          </View>
-        )}
+              ) : null}
+
+              {debts.length === 0 ? (
+                <View style={styles.allSettled}>
+                  <Text style={styles.allSettledText}>
+                    {several ? `Everyone is settled up in ${section.currency}` : "Everyone is settled up 🎉"}
+                  </Text>
+                </View>
+              ) : (
+                <View style={styles.debts}>
+                  {debts.map((debt) => {
+                    const fromUser = userById.get(debt.fromUserId);
+                    const toUser = userById.get(debt.toUserId);
+                    if (!fromUser || !toUser) return null;
+                    const mine = debt.fromUserId === meId;
+                    const owedToMe = debt.toUserId === meId;
+                    return (
+                      <View key={`${debt.fromUserId}-${debt.toUserId}`} style={styles.debtRow}>
+                        <PersonLink meId={meId} userId={debt.fromUserId}>
+                          <Avatar size="sm" user={fromUser} />
+                        </PersonLink>
+                        <ArrowRight color={colors.inkSoft} size={16} />
+                        <PersonLink meId={meId} userId={debt.toUserId}>
+                          <Avatar size="sm" user={toUser} />
+                        </PersonLink>
+                        <Text numberOfLines={1} style={styles.debtText}>
+                          <Text style={styles.debtName}>{mine ? "You" : fromUser.name}</Text>
+                          <Text style={styles.debtVerb}> owe{mine ? "" : "s"} </Text>
+                          <Text style={styles.debtName}>
+                            {debt.toUserId === meId ? "you" : toUser.name}
+                          </Text>
+                        </Text>
+                        <Money cents={debt.amountCents} currency={section.currency} style={styles.rowAmount} />
+                        {/* Both directions, matching the friend screen: a debt
+                            you owe is one to pay, a debt owed to you is one to
+                            record when it lands. Only offering the first left
+                            a group where everyone owes the payer with no
+                            action anywhere on the screen — the ordinary case
+                            for whoever picked up the bill. */}
+                        {/* A loop that nets to zero offers no action: the
+                            server refuses to pay it down, and a button that
+                            only ever produces a refusal is worse than none. */}
+                        {(mine || owedToMe) && !cancelingLoop ? (
+                          <Button
+                            compact
+                            label={mine ? "Settle" : "Record"}
+                            onPress={() =>
+                              onSettle(mine ? toUser : fromUser, debt.amountCents, !mine, section.currency)
+                            }
+                            variant="positive"
+                          />
+                        ) : null}
+                      </View>
+                    );
+                  })}
+                </View>
+              )}
+            </View>
+          );
+        })}
       </View>
     </View>
   );

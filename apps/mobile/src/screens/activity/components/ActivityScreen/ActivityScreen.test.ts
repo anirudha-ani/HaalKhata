@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 /** A failed read on the activity feed is said in place and never takes away the rows already loaded. */
 
-import { create } from "@bufbuild/protobuf";
+import { createPlain } from "@haalkhata/shared/api/wireNumbers";
 import { ListActivityResponseSchema } from "@haalkhata/protogen/social/v1/social_pb";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, createElement, type ReactNode } from "react";
@@ -39,6 +39,7 @@ vi.mock("@/components/shell/Screen/Screen", () => ({
   Screen: ({ children }: { children: ReactNode }) => createElement("main", null, children),
 }));
 vi.mock("@/components/shell/DetailHeader/DetailHeader", () => ({ DetailHeader: () => null }));
+vi.mock("@/components/ui/Sheet/Sheet", () => ({ Sheet: () => null }));
 vi.mock("@/components/activity/ActivityList", () => ({
   ActivityList: ({ events }: { events: { id: string; message: string }[] }) =>
     createElement("ul", null, ...events.map((event) => createElement("li", { key: event.id }, event.message))),
@@ -50,7 +51,7 @@ vi.mock("@/lib/api/connect", () => ({
   errorMessage: (error: Error) => error.message,
 }));
 
-const FIRST_PAGE = create(ListActivityResponseSchema, {
+const FIRST_PAGE = createPlain(ListActivityResponseSchema, {
   events: [
     { id: "act-1", type: "expense_added", message: "Oni added Firewood", createdAt: "2026-10-20T10:00:00.000Z" },
     { id: "act-2", type: "settlement", message: "Dot paid Oni $15.00", createdAt: "2026-10-19T10:00:00.000Z" },

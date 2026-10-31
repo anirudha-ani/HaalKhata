@@ -36,6 +36,7 @@ vi.mock("@/server/expense/repo/settlements.repo", () => ({
   scopeHasSettlements: vi.fn(),
   // The lock is orthogonal to attribution; run the operation directly. The
   // client handed through is never dereferenced by the mocked insert.
+  lockSettlementPair: vi.fn(),
   withSettlementPairLock: vi.fn(
     (first: string, second: string, operation: (client: PoolClient) => Promise<unknown>) =>
       operation({} as PoolClient),
@@ -58,6 +59,12 @@ vi.mock("./balance.usecase", () => ({
   amountOwed: vi.fn(),
   groupCancelsOut: vi.fn(),
   owedByScope: vi.fn(),
+  sharedActiveGroups: vi.fn(),
+}));
+// The check before the locks reads on a snapshot; here it runs on the mocks.
+vi.mock("@/server/common/db/db", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/server/common/db/db")>()),
+  snapshot: (operation: (client: unknown) => unknown) => operation({}),
 }));
 
 import { recordSettlement } from "./expense.usecase";
@@ -66,7 +73,7 @@ import { listGroupsByUser } from "@/server/group/repo/groups.repo";
 import { insertSettlement } from "@/server/expense/repo/settlements.repo";
 import { insertActivity } from "@/server/social/repo/activity.repo";
 import { insertNotifications } from "@/server/social/repo/notifications.repo";
-import { owedByScope } from "./balance.usecase";
+import { owedByScope, sharedActiveGroups } from "./balance.usecase";
 
 const RECORDER = "user-recorder";
 const OTHER = "user-other";
@@ -84,6 +91,7 @@ function resetRepos(): void {
     async (userId: string) => PEOPLE[userId] as Awaited<ReturnType<typeof findUserById>>,
   );
   vi.mocked(listGroupsByUser).mockResolvedValue([]);
+  vi.mocked(sharedActiveGroups).mockResolvedValue([] as never);
   // The whole debt lives in the pair's one-off ledger, comfortably above the
   // amount settled, so the guards pass and a single one-off row is recorded —
   // which is what these attribution tests inspect.

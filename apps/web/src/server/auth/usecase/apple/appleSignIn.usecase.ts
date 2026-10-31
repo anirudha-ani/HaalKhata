@@ -9,7 +9,8 @@ import { APPLE_AUTHORIZE_URL, APPLE_CHALLENGE_SECONDS, APPLE_HASH_PATTERN,
 import * as appleRepository from "../../repo/apple/appleSignIn.repo";
 import { findUserById, insertUser } from "../../repo/users.repo";
 import { avatarColorFor } from "../account/auth.usecase";
-import { createToken } from "@/server/auth/usecase/session/session";
+import { UNKNOWN_DEVICE, type DeviceDescription } from "@/server/auth/usecase/session/deviceLabel";
+import { startSession } from "@/server/auth/usecase/session/sessions.usecase";
 import { assertAppleSignInConfigured, encryptAppleToken, exchangeAppleCode, verifyAppleIdentity, type AppleIdentity } from "./apple.provider";
 import { toPrivateUser } from "../identity/user.mapper";
 import { providerDisplayName } from "../identity/providerDisplayName";
@@ -63,20 +64,25 @@ async function bindIdentity(identity: AppleIdentity, name: string, clientId: str
   if (user?.apple_sub && user.apple_sub !== identity.subject) {
     throw new UsecaseError("already_exists", "a different Apple account is already linked to that email");
   }
-  const unclaimed = !user || (!user.password_hash && !user.google_sub && !user.apple_sub);
+  // A new account is born with its Apple identity, since a row nobody can
+  // sign in to is refused; an existing one keeps the name its owner chose.
   if (!user) user = await insertUser({ email: identity.email, name: displayName,
-    avatarColor: avatarColorFor(identity.subject), passwordHash: null }, client);
-  await appleRepository.saveAppleIdentity(user.id, identity.subject, unclaimed ? displayName : "",
-    clientId, encryptAppleToken(refreshToken), client);
+    avatarColor: avatarColorFor(identity.subject), passwordHash: null, appleSub: identity.subject }, client);
+  await appleRepository.saveAppleIdentity(user.id, identity.subject, clientId,
+    encryptAppleToken(refreshToken), client);
   return user.id;
 }
 
 /**
  * Exchanges native Apple proof, consumes its challenge, and issues a local session.
  * @param input Native identity token, authorization code and optional first-use name.
+ * @param device What they signed in on.
  * @returns Private profile and session token.
  */
-export async function logInWithApple(input: { idToken: string; authorizationCode: string; name: string }) {
+export async function logInWithApple(
+  input: { idToken: string; authorizationCode: string; name: string },
+  device: DeviceDescription = UNKNOWN_DEVICE,
+) {
   const identity = await verifyAppleIdentity(input.idToken, APPLE_NATIVE_CLIENT_ID);
   const exchanged = await exchangeAppleCode(input.authorizationCode, APPLE_NATIVE_CLIENT_ID);
   const exchangedIdentity = await verifyAppleIdentity(exchanged.identityToken, APPLE_NATIVE_CLIENT_ID);
@@ -90,7 +96,7 @@ export async function logInWithApple(input: { idToken: string; authorizationCode
     }
     return bindIdentity(identity, input.name, challenge.client_id, exchanged.refreshToken, client);
   });
-  return appleSession(userId);
+  return appleSession(userId, device);
 }
 
 /**
@@ -128,24 +134,29 @@ export async function handleAppleCallback(input: { state: string; code: string; 
 /**
  * Redeems a browser callback with proof held only by the initiating client.
  * @param input Callback state and private random verifier.
+ * @param device What they signed in on.
  * @returns Private profile and session token.
  */
-export async function completeAppleSignIn(input: { state: string; verifier: string }) {
+export async function completeAppleSignIn(
+  input: { state: string; verifier: string },
+  device: DeviceDescription = UNKNOWN_DEVICE,
+) {
   if (!APPLE_NONCE_PATTERN.test(input.state) || !APPLE_NONCE_PATTERN.test(input.verifier)) {
     throw new UsecaseError("unauthenticated", "invalid Apple sign-in proof");
   }
   const completed = await appleRepository.consumeAppleBrowserChallenge(appleProofHash(input.state), appleProofHash(input.verifier));
   if (!completed) throw new UsecaseError("unauthenticated", "Apple sign-in expired. Please try again.");
-  return appleSession(completed.user_id);
+  return appleSession(completed.user_id, device);
 }
 
 /**
  * Loads the full profile after a successful native or browser transaction.
  * @param userId Verified local account id.
+ * @param device What they signed in on.
  * @returns Profile and purpose-bound session token.
  */
-async function appleSession(userId: string) {
+async function appleSession(userId: string, device: DeviceDescription) {
   const user = await findUserById(userId);
-  if (!user || user.merged_into) throw new UsecaseError("unauthenticated", "account no longer exists");
-  return { user: toPrivateUser(user), token: createToken(user.id, user.token_version) };
+  if (!user) throw new UsecaseError("unauthenticated", "account no longer exists");
+  return { user: toPrivateUser(user), token: await startSession(user, device) };
 }

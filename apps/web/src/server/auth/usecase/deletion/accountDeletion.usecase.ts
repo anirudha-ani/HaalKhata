@@ -8,7 +8,6 @@ import { eraseAccountData, insertAnonymousLedgerMember, listDeletionGroupMembers
   lockAccountForDeletion, transferDeletionGroupOwnership } from "../../repo/deletion/accountDeletion.repo";
 import { listAppleCredentials } from "../../repo/apple/appleSignIn.repo";
 import { revokeAppleToken } from "../apple/apple.provider";
-import { isRegisteredUser } from "../identity/user.mapper";
 
 /**
  * Permanently erases an account without cancelling another member's shared cents.
@@ -28,7 +27,7 @@ export async function deleteAccount(userId: string, confirmation: string): Promi
     const candidates = await listDeletionGroupMembers(userId, client);
     const transferred = new Set<string>();
     for (const candidate of candidates) {
-      if (!isRegisteredUser(candidate) || transferred.has(candidate.group_id)) continue;
+      if (transferred.has(candidate.group_id)) continue;
       await transferDeletionGroupOwnership(candidate.group_id, candidate.id, DELETED_GROUP_NAME, client);
       transferred.add(candidate.group_id);
     }

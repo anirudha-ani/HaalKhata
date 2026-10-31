@@ -19,11 +19,11 @@ vi.mock("@/server/adminmoderation/usecase/moderation.usecase", () => ({
 vi.mock("@/server/api/connect/context", () => ({
   runUsecase: vi.fn((operation: () => Promise<unknown>) => operation()),
 }));
-vi.mock("@/server/common/rateLimit/rateLimit", () => ({ rateLimitCheck: vi.fn() }));
+vi.mock("@/server/common/rateLimit/rateLimit", () => ({ adminRateLimits: { check: vi.fn() } }));
 
 import { requireAdminSession } from "@/server/adminanalytics/usecase/adminSession.usecase";
 import * as moderation from "@/server/adminmoderation/usecase/moderation.usecase";
-import { rateLimitCheck } from "@/server/common/rateLimit/rateLimit";
+import { adminRateLimits } from "@/server/common/rateLimit/rateLimit";
 import { adminModerationHandler } from "./handler";
 
 const ADMIN_HOST = "admin.haalkhata.app";
@@ -76,7 +76,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   vi.stubEnv("NODE_ENV", "production");
   vi.stubEnv("ADMIN_HOST", ADMIN_HOST);
-  vi.mocked(rateLimitCheck).mockReturnValue(true);
+  vi.mocked(adminRateLimits.check).mockReturnValue(true);
   vi.mocked(requireAdminSession).mockResolvedValue(undefined);
 });
 
@@ -103,7 +103,7 @@ describe("moderation handlers", () => {
       }
     }
     expect(requireAdminSession).not.toHaveBeenCalled();
-    expect(rateLimitCheck).not.toHaveBeenCalled();
+    expect(adminRateLimits.check).not.toHaveBeenCalled();
     expectNothingDone();
   });
 
@@ -116,19 +116,19 @@ describe("moderation handlers", () => {
     for (const result of results) expect(result.status).toBe("rejected");
     expect(requireAdminSession).toHaveBeenCalledTimes(5);
     for (const call of vi.mocked(requireAdminSession).mock.calls) expect(call).toEqual([null]);
-    expect(rateLimitCheck).not.toHaveBeenCalled();
+    expect(adminRateLimits.check).not.toHaveBeenCalled();
     expectNothingDone();
   });
 
   it("are rate-limited once the session is known to be an admin's", async () => {
-    vi.mocked(rateLimitCheck).mockReturnValue(false);
+    vi.mocked(adminRateLimits.check).mockReturnValue(false);
     const results = await callEveryMethod(contextFor());
 
     for (const result of results) {
       expect(result).toMatchObject({ status: "rejected", reason: { code: Code.ResourceExhausted } });
     }
-    expect(rateLimitCheck).toHaveBeenCalledWith("admin-moderation-read", 30);
-    expect(rateLimitCheck).toHaveBeenCalledWith("admin-moderation-write", 30);
+    expect(adminRateLimits.check).toHaveBeenCalledWith("admin-moderation-read", 30);
+    expect(adminRateLimits.check).toHaveBeenCalledWith("admin-moderation-write", 30);
     expectNothingDone();
   });
 

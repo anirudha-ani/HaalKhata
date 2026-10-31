@@ -6,8 +6,58 @@ import { lockFriendRequestInboxes } from "@/server/common/ledger/ledgerLocks";
 import { MAX_PENDING_FRIEND_REQUESTS } from "@/server/social/social.constants";
 
 /**
- * Records a friendship as two symmetric rows (user→friend and friend→user);
- * a no-op for pairs that are already friends.
+ * Befriends one person with each of several others: two symmetric rows per
+ * pair, a no-op for pairs that are already friends, and any pending request
+ * between a pair removed.
+ *
+ * Three statements whatever the count, under every inbox lock taken at once
+ * in the one sorted order. Taking them pair by pair let two batches that
+ * share people in a different order each hold a lock the other wanted.
+ *
+ * @param userId - Id of the person on one side of every friendship.
+ * @param friendIds - Ids of the people on the other side; duplicates,
+ *   empty ids and `userId` itself are ignored.
+ * @param client - Existing transaction client when the friendships must
+ *   commit with the change that implies them.
+ */
+export async function insertFriendships(
+  userId: string,
+  friendIds: string[],
+  client?: PoolClient,
+): Promise<void> {
+  const otherIds = [...new Set(friendIds)].filter((friendId) => friendId !== "" && friendId !== userId);
+  if (otherIds.length === 0) return;
+  const persist = async (transactionClient: PoolClient): Promise<void> => {
+    await lockFriendRequestInboxes(transactionClient, [userId, ...otherIds]);
+    await execute(
+      `DELETE FROM friend_requests
+        WHERE (requester_id = $1 AND recipient_id = ANY($2::text[]))
+           OR (recipient_id = $1 AND requester_id = ANY($2::text[]))`,
+      [userId, otherIds],
+      transactionClient,
+    );
+    await execute(
+      `INSERT INTO friendships (user_id, friend_id)
+       SELECT pair.user_id, pair.friend_id
+         FROM users friend
+         CROSS JOIN LATERAL (VALUES ($1::text, friend.id), (friend.id, $1::text)) AS pair(user_id, friend_id)
+        WHERE friend.id = ANY($2::text[])
+          AND friend.deleted_at IS NULL
+          AND EXISTS (
+                SELECT 1 FROM users usr WHERE usr.id = $1 AND usr.deleted_at IS NULL
+              )
+       ON CONFLICT DO NOTHING`,
+      [userId, otherIds],
+      transactionClient,
+    );
+  };
+  if (client) await persist(client);
+  else await transaction(persist);
+}
+
+/**
+ * Records one friendship as two symmetric rows, through
+ * {@link insertFriendships}.
  *
  * @param userId - Id of one side of the friendship.
  * @param friendId - Id of the other side of the friendship.
@@ -18,33 +68,7 @@ export async function insertFriendship(
   friendId: string,
   client?: PoolClient,
 ): Promise<void> {
-  const persist = async (transactionClient: PoolClient): Promise<void> => {
-    await lockFriendRequestInboxes(transactionClient, [userId, friendId]);
-    await execute(
-      `DELETE FROM friend_requests
-        WHERE (requester_id = $1 AND recipient_id = $2)
-           OR (requester_id = $2 AND recipient_id = $1)`,
-      [userId, friendId],
-      transactionClient,
-    );
-    await execute(
-      `INSERT INTO friendships (user_id, friend_id)
-       SELECT pair.user_id, pair.friend_id
-         FROM (VALUES ($1::text, $2::text), ($2::text, $1::text)) AS pair(user_id, friend_id)
-        WHERE $1 <> $2
-          AND EXISTS (
-                SELECT 1 FROM users usr WHERE usr.id = $1 AND usr.merged_into IS NULL
-              )
-          AND EXISTS (
-                SELECT 1 FROM users usr WHERE usr.id = $2 AND usr.merged_into IS NULL
-              )
-       ON CONFLICT DO NOTHING`,
-      [userId, friendId],
-      transactionClient,
-    );
-  };
-  if (client) await persist(client);
-  else await transaction(persist);
+  await insertFriendships(userId, [friendId], client);
 }
 
 /**
@@ -81,12 +105,14 @@ export async function deleteFriendship(
  * Lists the ids of everyone the given user has an explicit friendship with.
  *
  * @param userId - Id of the user whose friends to look up.
+ * @param client - Transaction client, so a read under a lock stays on its connection.
  * @returns The friend user ids (unordered).
  */
-export async function listFriendIds(userId: string): Promise<string[]> {
+export async function listFriendIds(userId: string, client?: PoolClient): Promise<string[]> {
   const friendshipRows = await query<{ friend_id: string }>(
     `SELECT friend_id FROM friendships WHERE user_id = $1`,
     [userId],
+    client,
   );
   return friendshipRows.map((friendshipRow) => friendshipRow.friend_id);
 }
@@ -126,20 +152,19 @@ export async function insertFriendRequest(
   recipientIdentifier?: string,
 ): Promise<boolean> {
   const persist = async (transactionClient: PoolClient): Promise<boolean> => {
-    // Serialize capacity checks for one recipient and account merges for both
-    // identities. Without the recipient lock, many distinct senders can all
-    // observe 99 rows and exceed the cap; without the requester lock, merging
-    // that account can race this insert and leave a request on its tombstone.
+    // Serialize capacity checks for one recipient, in the shared order every
+    // friendship writer takes. Without the recipient lock, many distinct
+    // senders can all observe 99 rows and exceed the cap.
     await lockFriendRequestInboxes(transactionClient, [requesterId, recipientId]);
     const inserted = await queryOne<{ requester_id: string }>(
       `INSERT INTO friend_requests (requester_id, recipient_id, recipient_identifier)
        SELECT $1, $2, $4::text
         WHERE $1 <> $2
           AND EXISTS (
-                SELECT 1 FROM users usr WHERE usr.id = $1 AND usr.merged_into IS NULL
+                SELECT 1 FROM users usr WHERE usr.id = $1 AND usr.deleted_at IS NULL
               )
           AND EXISTS (
-                SELECT 1 FROM users usr WHERE usr.id = $2 AND usr.merged_into IS NULL
+                SELECT 1 FROM users usr WHERE usr.id = $2 AND usr.deleted_at IS NULL
               )
           AND NOT EXISTS (
                 SELECT 1 FROM friendships WHERE user_id = $1 AND friend_id = $2
@@ -186,11 +211,11 @@ export async function insertFriendRequests(
      SELECT $1, target.recipient_id
        FROM unnest($2::text[]) AS target(recipient_id)
       WHERE EXISTS (
-              SELECT 1 FROM users usr WHERE usr.id = $1 AND usr.merged_into IS NULL
+              SELECT 1 FROM users usr WHERE usr.id = $1 AND usr.deleted_at IS NULL
             )
         AND EXISTS (
               SELECT 1 FROM users usr
-               WHERE usr.id = target.recipient_id AND usr.merged_into IS NULL
+               WHERE usr.id = target.recipient_id AND usr.deleted_at IS NULL
             )
         AND NOT EXISTS (
               SELECT 1 FROM friendships
@@ -252,8 +277,6 @@ export async function listOutgoingFriendRequests(
 
 /**
  * Counts the unanswered requests addressed to one account, for a badge.
- * Senders merged away since requesting are skipped, matching what the
- * incoming list shows.
  *
  * @param recipientId - Account whose inbox to count.
  * @returns The number of pending requests the recipient can act on.
@@ -261,10 +284,8 @@ export async function listOutgoingFriendRequests(
 export async function countIncomingFriendRequests(recipientId: string): Promise<number> {
   const countRow = await queryOne<{ pending_count: number }>(
     `SELECT COUNT(*)::int AS pending_count
-       FROM friend_requests request
-       JOIN users requester
-         ON requester.id = request.requester_id AND requester.merged_into IS NULL
-      WHERE request.recipient_id = $1`,
+       FROM friend_requests
+      WHERE recipient_id = $1`,
     [recipientId],
   );
   return countRow?.pending_count ?? 0;

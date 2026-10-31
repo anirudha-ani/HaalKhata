@@ -1,20 +1,12 @@
 /** Thin ReceiptService Connect handlers; logic lives in receipt.usecase. */
 
-import { Code, ConnectError, type ServiceImpl } from "@connectrpc/connect";
+import type { PlainServiceImpl } from "@/server/api/connect/wire/plainService";
 import type { ReceiptService } from "@haalkhata/protogen/receipt/v1/receipt_pb";
 import { parseReceiptWithConsent, getReceiptProcessingInfo, grantReceiptConsent, revokeReceiptConsent } from "@/server/receipt/usecase/receiptConsent.usecase";
 import { requireUser, runUsecase } from "@/server/api/connect/context";
-import {
-  MAX_CONCURRENT_RECEIPT_PARSES,
-  requireRateLimitedUser,
-  RPC_RATE_LIMITS,
-} from "@/server/api/connect/rpcRateLimit";
-
-/** Number of receipt parsing jobs currently holding image/provider resources. */
-let activeReceiptParses = 0;
 
 /** ReceiptService implementation; authentication happens here, parsing in receipt.usecase. */
-export const receiptHandler: ServiceImpl<typeof ReceiptService> = {
+export const receiptHandler: PlainServiceImpl<typeof ReceiptService> = {
   /** Returns processor disclosure before any photo leaves the device. */
   async getProcessingInfo(_request, handlerContext) {
     return runUsecase(async () => getReceiptProcessingInfo(await requireUser(handlerContext)), handlerContext);
@@ -35,19 +27,20 @@ export const receiptHandler: ServiceImpl<typeof ReceiptService> = {
    * itself is counted (who, when, whether it worked), nothing about the bill.
    */
   async parseReceipt(request, handlerContext) {
-    const userId = await requireRateLimitedUser(
+    // Which scans run, wait or are refused, and what a scan costs the
+    // person's per-minute allowance, is the usecase's: it spends the
+    // allowance only once the scan has a lane. The request's signal stops the
+    // scan when the person goes away.
+    return runUsecase(
+      async () =>
+        parseReceiptWithConsent(
+          await requireUser(handlerContext),
+          request.image,
+          request.consentVersion,
+          request.currency,
+          handlerContext.signal,
+        ),
       handlerContext,
-      "parse-receipt",
-      RPC_RATE_LIMITS.parseReceipt,
     );
-    if (activeReceiptParses >= MAX_CONCURRENT_RECEIPT_PARSES) {
-      throw new ConnectError("receipt parsing is busy, please try again", Code.ResourceExhausted);
-    }
-    activeReceiptParses += 1;
-    try {
-      return await runUsecase(() => parseReceiptWithConsent(userId, request.image, request.consentVersion, request.currency), handlerContext);
-    } finally {
-      activeReceiptParses -= 1;
-    }
   },
 };

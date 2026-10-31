@@ -5,6 +5,8 @@ import { MONEY_KEYS, queryKeys } from "@haalkhata/shared/api/queryKeys";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Code, ConnectError } from "@connectrpc/connect";
+import { LIVE_SPLIT_ENDED_MESSAGE } from "@haalkhata/shared/expense/live/live.constants";
 import { authClient, socialClient } from "@/lib/api/connect";
 
 /**
@@ -15,8 +17,8 @@ import { authClient, socialClient } from "@/lib/api/connect";
  * anyone signs in; accepting does.
  *
  * @param token - The invite token from the URL.
- * @returns The preview and viewer queries, the accept mutation, and whether
- *   a profile link's friend request has gone out.
+ * @returns The preview and viewer queries, the accept mutation, whether a
+ *   profile link's friend request has gone out, and whether the link expired.
  */
 export function useJoin(token: string) {
   const router = useRouter();
@@ -34,6 +36,17 @@ export function useJoin(token: string) {
     retry: false,
   });
 
+  /**
+   * Goes where joining leads. Somebody brand new has first-run setup to do
+   * first, so it is told where they were headed, or they would finish on Home
+   * with no sign of what they joined.
+   *
+   * @param destination - Where joining leads.
+   */
+  const arrive = (destination: string) => {
+    router.push(viewer.data?.onboarded === false ? `/onboarding?next=${encodeURIComponent(destination)}` : destination);
+  };
+
   const [requestSent, setRequestSent] = useState(false);
   const accept = useMutation({
     mutationFn: () => socialClient.acceptInviteLink({ token }),
@@ -45,9 +58,18 @@ export function useJoin(token: string) {
         setRequestSent(true);
         return;
       }
-      router.push(result.groupId ? `/groups/${result.groupId}` : "/friends");
+      if (result.expenseId) {
+        arrive(`/expenses/new?edit=${result.expenseId}`);
+        return;
+      }
+      arrive(result.groupId ? `/groups/${result.groupId}` : "/friends");
     },
   });
 
-  return { preview, viewer, accept, requestSent };
+  // A group link past its date is told apart from one that never worked
+  // (FAILED_PRECONDITION, not NOT_FOUND), so the page can say what to do.
+  const expired = preview.error instanceof ConnectError && preview.error.code === Code.FailedPrecondition;
+  const liveSplitEnded = expired && (preview.error as ConnectError).rawMessage === LIVE_SPLIT_ENDED_MESSAGE;
+
+  return { preview, viewer, accept, requestSent, expired, liveSplitEnded };
 }

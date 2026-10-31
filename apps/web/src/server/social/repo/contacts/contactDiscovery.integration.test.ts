@@ -8,10 +8,11 @@
 
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { Client } from "pg";
+import { testDatabaseName } from "@/server/common/testing/testDatabase";
 
 const ADMIN_URL =
   process.env.MERGE_TEST_ADMIN_URL ?? "postgres://haalkhata:change-me@127.0.0.1:5432/postgres";
-const TEST_DATABASE = "haalkhata_contacts_test";
+const TEST_DATABASE = testDatabaseName("haalkhata_contacts_test");
 const TEST_URL = ADMIN_URL.replace(/\/[^/]*$/, `/${TEST_DATABASE}`);
 
 /** Every number below, keyed by the account that holds it. */
@@ -63,8 +64,7 @@ async function seed(database: Client): Promise<void> {
       ('blocked',    'Blocked',     NULL,                    $8,  now(), '#c73e2e', 'sub-blocked',    TRUE,  NULL),
       ('friend',     'Friend',      NULL,                    $9,  now(), '#c73e2e', 'sub-friend',     TRUE,  NULL),
       ('requested',  'Requested',   'requested@example.com', NULL, NULL, '#c73e2e', 'sub-requested',  TRUE,  NULL),
-      ('asker',      'Asker',       'asker@example.com',     NULL, NULL, '#c73e2e', 'sub-asker',      TRUE,  NULL),
-      ('invited',    'Invited',     'invited@example.com',   NULL, NULL, '#c73e2e', NULL,             NULL,  NULL)`,
+      ('asker',      'Asker',       'asker@example.com',     NULL, NULL, '#c73e2e', 'sub-asker',      TRUE,  NULL)`,
     [
       PHONES.caller,
       PHONES.open,
@@ -76,10 +76,6 @@ async function seed(database: Client): Promise<void> {
       PHONES.blocked,
       PHONES.friend,
     ],
-  );
-  await database.query(
-    `INSERT INTO users (id, name, email, avatar_color, merged_into, contact_discovery)
-     VALUES ('merged', 'Merged', 'merged@example.com', '#c73e2e', 'open', TRUE)`,
   );
   await database.query(
     `INSERT INTO user_blocks (blocker_id, blocked_id) VALUES ('blocker', 'caller'), ('caller', 'blocked')`,
@@ -140,16 +136,14 @@ describe.skipIf(!reachable)("contact discovery against Postgres", () => {
           "open.email@example.com",
           "requested@example.com",
           "asker@example.com",
-          "merged@example.com",
-          "invited@example.com",
+          "nobody@example.com",
         ],
         client,
       ),
     );
     // Never answered is findable by default. Unverified, declined,
-    // suspended, both block directions, the merged tombstone, the caller,
-    // the invited row (nobody signed up for it, so its NULL is not an
-    // answer) and the unknown number never match.
+    // suspended, both block directions, the caller, the unknown number and
+    // the unknown email never match.
     expect(matches.map((match) => match.id)).toEqual([
       "asker",
       "friend",
@@ -200,8 +194,6 @@ describe.skipIf(!reachable)("contact discovery against Postgres", () => {
       "declined",
       "never",
       "suspended",
-      "merged",
-      "invited",
     ]);
     expect(requestable.map((account) => account.id).sort()).toEqual(["never", "open", "open-email"]);
     expect(await repo.findRequestableAccounts("caller", [])).toEqual([]);
@@ -295,34 +287,6 @@ describe.skipIf(!reachable)("contact discovery against Postgres", () => {
       `SELECT COUNT(*)::int AS pending FROM friend_requests WHERE recipient_id = 'popular'`,
     );
     expect(rows[0].pending).toBe(MAX_PENDING_FRIEND_REQUESTS);
-  });
-
-  it("keeps the keeper's answer and today's count when an invite row is absorbed", async () => {
-    await database.query(
-      `INSERT INTO users (id, name, email, avatar_color, google_sub, contact_discovery)
-       VALUES ('keeper', 'Keeper', 'keeper@example.com', '#c73e2e', 'sub-keeper', FALSE)`,
-    );
-    await database.query(
-      `INSERT INTO users (id, name, phone, avatar_color)
-       VALUES ('invite-row', 'Invite Row', '+16175550188', '#c73e2e')`,
-    );
-    await database.query(
-      `INSERT INTO contact_lookup_usage (user_id, usage_day, identifiers_checked) VALUES
-        ('keeper', (now() AT TIME ZONE 'UTC')::date, 40),
-        ('invite-row', (now() AT TIME ZONE 'UTC')::date, 2)`,
-    );
-    const { mergeAccounts } = await import("@/server/auth/repo/merge/accountMerge.repo");
-    await mergeAccounts("keeper", "invite-row", "+16175550188", { adoptPhone: true });
-
-    const { rows } = await database.query(
-      `SELECT id, contact_discovery FROM users WHERE id IN ('keeper', 'invite-row') ORDER BY id`,
-    );
-    expect(rows).toEqual([
-      { id: "invite-row", contact_discovery: null },
-      { id: "keeper", contact_discovery: false },
-    ]);
-    expect(await repo.readLookupUsage("keeper")).toBe(42);
-    expect(await repo.readLookupUsage("invite-row")).toBe(0);
   });
 
   it("removes the count with the account", async () => {

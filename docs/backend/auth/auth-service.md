@@ -1,7 +1,7 @@
 # Auth Service (`auth.v1.AuthService`)
 
-Authentication, sessions, the caller's profile, phone verification, and the
-account merge a phone collision triggers, and permanent account erasure.
+Authentication, sessions, the caller's profile, phone verification and
+transfer, and permanent account erasure.
 
 The Auth Service is essential for:
 
@@ -11,14 +11,11 @@ The Auth Service is essential for:
 - **Sessions:** every auth RPC returns a bearer token for mobile clients and
   sets an HttpOnly session cookie for browsers — never both to the same
   client.
-- **Shadow-user claiming:** an invited person who signs in with the matching
-  email (or verifies the matching phone) inherits the expense history written
-  against their invitation.
 - **Profile:** display name, default currency, onboarding state.
 
 Implementation: [handler.ts](../../../apps/web/src/server/auth/handler.ts) →
 [auth.usecase.ts](../../../apps/web/src/server/auth/usecase/account/auth.usecase.ts),
-[accountMerge.usecase.ts](../../../apps/web/src/server/auth/usecase/merge/accountMerge.usecase.ts),
+[setPhone.usecase.ts](../../../apps/web/src/server/auth/usecase/phone/setPhone.usecase.ts),
 [phoneVerification.ts](../../../apps/web/src/server/auth/usecase/phone/phoneVerification.ts).
 Session mechanics (token format, sliding renewal, revocation, cookie rules)
 are documented once in
@@ -28,50 +25,38 @@ are documented once in
 
 ## The Identity Model
 
-An account (`users` row) can hold email, phone (E.164), Google `sub`, and Apple `sub` — and is **claimed** when it has a password hash or a
-Google or Apple link. Everything else is an *unclaimed invite* (shadow user):
+An account (`users` row) can hold email, phone (E.164), Google `sub`, and
+Apple `sub`. **Nobody exists here before signing up:** every live row has a
+password hash or a linked Google or Apple account, and the database refuses
+any other (`chk_users_can_sign_in`). The only rows without a credential are
+the anonymous stand-ins account deletion leaves:
 
 | State | password_hash | google_sub | apple_sub | Meaning |
 | --- | --- | --- | --- | --- |
-| Shadow | null | null | null | Created by an invite; claimable by whoever proves the identifier |
 | Password account | set | optional | optional | Dev/seeded account |
-| Provider account | optional | set or null | set or null | Claimed by at least one verified provider |
-| Deleted member | null | null | null | Fresh anonymous identity with `deleted_at`; preserves shared cents, cannot authenticate or be claimed |
+| Provider account | optional | set or null | set or null | Signed in with at least one verified provider |
+| Deleted member | null | null | null | Anonymous identity with `deleted_at`; preserves shared cents, cannot authenticate, be added to anything new, or be claimed |
 
-**Claiming paths:**
+**Nothing is claimed or merged.** Adding a friend or a group member by an
+email or phone that belongs to nobody creates nothing (see
+[social](../social/social-service.md) and
+[group](../group/group-service.md)); the person signs up through a link as
+themselves. So there is no row for a sign-up, a verified phone or a link to
+take over:
 
-- **By email:** `SignUp` (dev) with a matching email claims the row; Google
-  sign-in with a matching *verified* email links the row (and, for a shadow
-  row, adopts Google's display name over the local-part placeholder).
-- **By phone:** `SetPhone` + SMS verification. Since the caller already has
-  an account, a colliding shadow row cannot simply be claimed — it must be
-  **merged** into the caller's account (`ConfirmPhoneMerge`), which is why
-  phone gets its own two-RPC flow instead of a field on `UpdateProfile`.
-- **By invite link (§33):** `AcceptInviteLink` merges a still-unclaimed
-  Invited row into the acceptor. A bearer link suffices here because §33
-  rows can hold no transactions — the claim moves friendships and group
-  seats, never money.
+- **Email:** `SignUp` (dev) refuses an email or phone any account already
+  holds, whatever its credential. Google sign-in with a matching *verified*
+  email links Google to that existing account, which keeps its own name;
+  Apple does the same.
+- **Phone:** `SetPhone` + SMS verification writes the number, or moves it off
+  the account that holds it (§34). There is no merge step.
 
-**Recycled-number defense:** possession of a number proves control *today*,
-not when old invitations were written. So a collision never merges silently —
-the caller is shown exactly what they would absorb (names, counts, balances)
-and must confirm.
-
-## Merge Tokens
-
-The pending merge between `SetPhone` and `ConfirmPhoneMerge` is carried by a
-signed stateless token, not a table:
-`<keeperId>.<loserId>.<phone>.<previewFingerprint>.<expiry>.<hmac>` with a
-`phone-merge` purpose prefix (so it can never validate as a session token).
-It binds keeper, loser, and phone — it cannot be replayed to absorb a
-different row — plus a **fingerprint of the previewed history** (name,
-expense count, per-currency nets): `ConfirmPhoneMerge` recomputes the
-preview and refuses on drift, so nobody absorbs materially different
-balances than they were shown. It expires after **10 minutes**. Every failure mode (expired, forged,
-malformed) yields one message: *"that confirmation is no longer valid, please
-try again"*. A token presented by a different account than it was issued to
-is `PermissionDenied` — the merge must land on the account that saw the
-preview.
+Until migration `1793040072450_retire-unregistered-people`, an email or
+phone typed into an add form created a placeholder row that a later sign-up,
+a verified phone or a one-person invite link could claim. That migration
+retired every placeholder and merge tombstone: a row that money or
+authorship pointed at became a Deleted member, every other one was deleted,
+and `users.merged_into` was dropped.
 
 ## Rate Limits (this service)
 
@@ -81,13 +66,13 @@ preview.
 | DeleteAccount | Same 10/min per client IP authentication bucket, plus an authenticated session and explicit confirmation |
 | SetPhone with empty code (the SMS send) | 3/min per account, plus 3/hour + 8/day per destination number (across all accounts) and 20/hour per client IP — the ceilings are **durable** (Postgres `phone_send_events`), surviving restarts and replicas |
 | SetPhone with a code (the check) | 5/min per account, and at most **5 checks per verification** (server-side attempt budget, the same as Twilio's; a resend does not renew it) |
-| ConfirmPhoneMerge, RemovePhone | 5/min per account |
+| RemovePhone | 5/min per account (`PHONE_REMOVAL_RATE_LIMIT`) |
 
 The per-destination limits exist because a per-account limit alone lets
 anyone with several accounts point all of them at one victim number (SMS
 pumping / harassment). Destination keys are a purpose-bound HMAC of the
 number, never the raw number. The buckets are split so a fumbled code
-cannot lock the user out of the merge confirmation.
+cannot lock the user out of removing a number.
 
 ---
 
@@ -101,7 +86,7 @@ cannot lock the user out of the merge confirmation.
 6. [GetMe](#6-getme)
 7. [UpdateProfile](#7-updateprofile)
 8. [SetPhone](#8-setphone)
-9. [ConfirmPhoneMerge](#9-confirmphonemerge)
+9. [ConfirmPhoneMerge](#9-confirmphonemerge) *(retired)*
 10. [RemovePhone](#10-removephone)
 11. [CompleteOnboarding](#11-completeonboarding)
 12. [Apple sign-in](#12-apple-sign-in)
@@ -128,11 +113,9 @@ cannot lock the user out of the merge confirmation.
 - **Password:** 8–1024 chars. The upper bound is a CPU-DoS guard — scrypt has
   no input cap of its own. Hashing is scrypt (random 16-byte salt, 64-byte
   key) on the libuv thread pool; verification is constant-time.
-- **Shadow claiming:** an existing row with that identifier and no credential
-  is *claimed* — name and password written, history kept. A row with a
-  password **or a Google/Apple link** refuses with `AlreadyExists`; treating a
-  passwordless Google account as claimable would let anyone who knows the
-  address take it over through this form.
+- **No takeover:** an identifier any account already holds refuses with
+  `AlreadyExists`, whatever its credential — a passwordless Google account
+  must not be reachable through this form by anyone who knows the address.
 - **Session delivery:** cookie for browsers (`token` comes back empty),
   bearer token in the body for the mobile transport — see conventions.
 
@@ -155,7 +138,7 @@ cannot lock the user out of the merge confirmation.
 
 #### Response
 
-**AuthResponse** — the created (or claimed) user as the caller's private
+**AuthResponse** — the created user as the caller's private
 projection, plus `token` (bearer clients only).
 
 ```json
@@ -180,8 +163,8 @@ projection, plus `token` (bearer clients only).
 
 - **Production-disabled**, like SignUp.
 - Looks the account up by whichever of `email`/`phone` is non-empty.
-- **One generic failure.** Unknown identifier, unclaimed shadow row, wrong
-  password, and an oversized password (rejected *before* scrypt runs — DoS
+- **One generic failure.** Unknown identifier, an account with no password,
+  a wrong password, and an oversized password (rejected *before* scrypt runs — DoS
   guard) all return `Unauthenticated` "invalid email/phone or password".
 - Password check is constant-time against the stored `salt:hash`.
 
@@ -210,8 +193,16 @@ projection, plus `token` (bearer clients only).
   bytes, base64url. The client passes it to Google Identity Services, which
   copies it into the ID token; `LogInWithGoogle` then accepts it **exactly
   once**.
-- Only the SHA-256 **hash** of the nonce is stored (with a 5-minute expiry),
+- Only the SHA-256 **hash** of the nonce is stored (with a 10-minute expiry),
   so a database read can never reveal a still-usable challenge.
+- **The web page keeps its nonce fresh.** The response says how long the
+  nonce lasts (`lifetime_seconds`); the login page renews it at half that
+  while it is in view, at once when it comes back into view stale, and
+  straight after a failed sign-in spent it (`useNonceRenewal`). A click
+  therefore always carries a nonce with at least five minutes left for
+  Google's own steps, two-step prompts included. An earlier nonce stays
+  valid until it expires, so renewing never breaks a sign-in already under
+  way. The mobile app asks for a fresh nonce on every tap.
 - Fails `InvalidArgument` when `GOOGLE_CLIENT_ID` is unset — a misconfigured
   deploy should fail loudly on the first sign-in, not verify tokens against
   an empty audience.
@@ -229,7 +220,8 @@ projection, plus `token` (bearer clients only).
 
 | Field | Type | Description |
 | --- | --- | --- |
-| nonce | string | Base64url, 43 chars; single-use; expires in 5 minutes. |
+| nonce | string | Base64url, 43 chars; single-use; expires in 10 minutes. |
+| lifetime_seconds | int32 | How long the nonce is accepted, from when it was issued (600). |
 
 ---
 
@@ -256,14 +248,19 @@ projection, plus `token` (bearer clients only).
   Workspace-hosted domains are the real guard case.
 - **Three cases, in order:**
   1. `google_sub` already linked → sign in.
-  2. Verified email matches an existing row → **link** the Google account.
-     A shadow row also adopts Google's display name (its own is a
-     placeholder).
+  2. Verified email matches an existing account → **link** the Google
+     account to it. The account keeps the name its owner chose. The link is
+     conditional on the row still being live: an account deletion that
+     commits between the email lookup and the link leaves nothing to link,
+     and the sign-in falls through to case 3 rather than failing
+     (`googleSignInDeletionRace.integration.test.ts`).
   3. Nobody → create the account (name falls back to the email local-part;
      avatar color derived from the email).
 - **TOCTOU:** a concurrent sign-in (double-clicked button, two tabs) losing
   the unique-index race on email/google_sub re-reads the winner instead of
-  surfacing a 500 — both attempts were the same successful sign-in.
+  surfacing a 500 — both attempts were the same successful sign-in. If even
+  the winner is gone by the re-read, the answer is `Unavailable` "signing in
+  was interrupted, please try again".
 - **Avatar refresh:** a changed Google photo is written on every sign-in, not
   only at creation — the URLs are not contractually stable, so a stored,
   never-refreshed one eventually points at nothing.
@@ -310,7 +307,7 @@ projection, plus `token` (bearer clients only).
 
 - Returns the caller's **private** projection: email, phone, and real
   `onboarded` state included (the only endpoint family where they are).
-- `Unauthenticated` when the account row no longer exists (e.g. merged away).
+- `Unauthenticated` when the account row no longer exists (e.g. deleted).
 
 #### Request
 
@@ -373,8 +370,8 @@ projection, plus `token` (bearer clients only).
 **Method:** `SetPhone`
 **Route:** `POST /api/connect/auth.v1.AuthService/SetPhone`
 
-Claims a phone number for the caller's account, or previews the merge a
-collision would require. One RPC, two calls:
+Puts a phone number on the caller's account once an SMS code proves they
+hold it. One RPC, two calls:
 
 | Call | `verification_code` | What happens |
 | --- | --- | --- |
@@ -385,12 +382,11 @@ collision would require. One RPC, two calls:
 
 - **Normalization:** any typed format; normalized to E.164 (`InvalidArgument`
   with a format hint otherwise).
-- After confirmation, three outcomes:
-  1. **Number free (or already the caller's):** written to the account →
-     response carries `user`. A TOCTOU race (someone claims the partial
-     unique index between lookup and update) is re-read and fed through the
-     same decisions below.
-  2. **Held by a claimed account: a TRANSFER, not a refusal (§34).** Numbers
+- After confirmation, two outcomes, and the response carries `user` in both:
+  1. **Number free (or already the caller's):** written to the account. A
+     TOCTOU race (another account takes the partial unique index between
+     lookup and update) is re-read and becomes the transfer below.
+  2. **Held by another account: a TRANSFER, not a refusal (§34).** Numbers
      move — lost SIMs, temporary SIMs — and SMS possession is the definition
      of holding one. One transaction locks both rows (sorted `FOR UPDATE`),
      re-checks the holder still holds it, frees it, attaches it, and
@@ -401,22 +397,16 @@ collision would require. One RPC, two calls:
      (sign-in uses Google or Apple). Refused (`FailedPrecondition`) only when
      the number is the holder's sole identifier, which would strand that
      account.
-  3. **Held by an unclaimed invited row:** nothing changes yet. The response
-     carries `pending_merge` — what merging would absorb — plus a
-     `merge_token` for [ConfirmPhoneMerge](#9-confirmphonemerge).
+- **Nothing is merged.** Every row that can hold a number belongs to somebody
+  who signed up, so verifying a number never absorbs another account or its
+  history; `pending_merge` and `merge_token` are never set.
 - **Verification is stored, not inferred (§35):** every write through this
-  endpoint (and through a confirmed merge's phone adoption) stamps
+  endpoint stamps
   `users.phone_verified_at`, surfaced privately as `User.phone_verified`.
   Numbers written before verification existed carry no stamp; the clients
   show them as unverified, prompt after login, and re-run this same flow on
   the number already held (outcome 1's "already the caller's" branch) to
   earn it. Clearing or transferring the number clears the stamp with it.
-- The preview's balance buckets are per currency and int32-checked before
-  being promised to a client; `net_cents` is the caller's-default-currency
-  bucket only. Counterparty names are capped at 12, and every preview
-  disclosure is logged (it reveals the previous number-holder's counterparty
-  names to whoever holds the number today — the deliberate recycled-number
-  defense, kept auditable).
 - **Provider behavior:** codes are **8 digits**, the Twilio Verify service's
   "Code length" setting, mirrored by `VERIFICATION_CODE_LENGTH` in
   `packages/shared/src/phone/phone.constants.ts`; change both together, and
@@ -463,33 +453,18 @@ collision would require. One RPC, two calls:
 | Field | Type | Description |
 | --- | --- | --- |
 | verification_sent | bool | True after the SMS was accepted by the provider; ask for the code and call again. |
-| user | User | Set when the number was free and simply written. |
-| pending_merge | MergePreview | Set instead when an unclaimed invited row holds the number. |
-| merge_token | string | Signed confirmation token; empty unless `pending_merge` is set. Expires in 10 minutes. |
+| user | User | Set once the code checked out and the number is on the caller's account. |
+| pending_merge | MergePreview | **Deprecated**, never set: there is nothing to merge. |
+| merge_token | string | **Deprecated**, always empty. |
 
-**MergePreview:**
-
-| Field | Type | Description |
-| --- | --- | --- |
-| name | string | Name on the absorbed row (usually what the inviter typed). |
-| expense_count | int32 | Undeleted expenses the row appears in. |
-| net_cents | int32 | Legacy: net in the caller's default currency; positive = it is owed. |
-| nets | repeated CurrencyAmount | The whole picture, per currency. |
-| counterparty_names | repeated string | Who it shares expenses with — **the actual check**: someone who doesn't recognize these names should back out (recycled number). |
-
-**Sample second-call response (collision case):**
+**Sample second-call response:**
 
 ```json
 {
-  "verificationSent": false,
-  "pendingMerge": {
-    "name": "Rifat (invited)",
-    "expenseCount": 4,
-    "netCents": -2350,
-    "nets": [{ "currency": "USD", "cents": -2350 }],
-    "counterpartyNames": ["Tanvir", "Sadia"]
-  },
-  "mergeToken": "1c9e….7a1b….+14155552671.1756694400.rYc…"
+  "user": {
+    "id": "1c9e...", "email": "rifat@example.com", "name": "Rifat",
+    "phone": "+14155552671", "phoneVerified": true, "registered": true
+  }
 }
 ```
 
@@ -502,35 +477,23 @@ collision would require. One RPC, two calls:
 
 #### Notes
 
-- Verifies the merge token (purpose, signature, expiry, **keeper = caller**),
-  then **re-reads and re-checks the loser row** rather than trusting the
-  token: in the seconds since the preview the row could have been claimed by
-  its rightful owner (`AlreadyExists`), merged already (`NotFound`), or its
-  phone changed (`InvalidArgument`, start over). The preview is then
-  **recomputed and compared against the token's fingerprint** — balances
-  that changed inside the ten-minute window refuse with "review it again",
-  so the user only ever absorbs the history they actually read.
-- The merge itself (`mergeAccounts`) runs in one transaction that takes the
-  friend-request inbox locks for both accounts first (sorted — the same
-  order every friend-request writer uses), then row locks. It rewrites every
-  reference from loser to keeper (expenses, payers, splits, item
-  assignments, settlements, comments, activity, group membership,
-  friendships), collapses rows that a merge would make self-referential
-  (self-settlements removed, duplicate splits summed), moves the phone to
-  the keeper, and leaves the loser row as a **tombstone** (`merged_into`
-  set) so old sessions and lookups resolve rather than dangle.
-- Rate-limited with the phone bucket (5/min per account).
+- **Retired.** It merged a placeholder row someone had been invited into
+  with the caller's account; no such row exists any more (see
+  [The Identity Model](#the-identity-model)) and SetPhone never offers a
+  merge. It stays in the proto, marked deprecated, so an installed app that
+  still calls it gets an answer it can show: always `FailedPrecondition`
+  "there is nothing to merge — update HaalKhata and verify your number
+  again". Nothing is read or written.
 
 #### Request
 
 | Field | Type | Description |
 | --- | --- | --- |
-| merge_token | string | The token handed back by SetPhone. |
+| merge_token | string | Ignored. |
 
 #### Response
 
-`common.v1.User` — the caller's account after absorbing the invited row
-(history, balances, and the phone number now theirs).
+Never returns; always refused.
 
 ---
 
@@ -543,13 +506,13 @@ collision would require. One RPC, two calls:
 
 - Detaches the caller's phone number — the release valve for a lost or
   recycled number, without which a number could only ever leave an account
-  by somebody else claiming it.
+  by somebody else verifying it.
 - **Refused** (`InvalidArgument`) when the phone is the account's only
   identifier: the database's `chk_users_has_identifier` requires every live
   row to stay reachable by something, and this check turns that constraint
   into a sentence instead of an internal error.
-- A no-op success when no phone is set. Rate-limited with the merge bucket
-  (5/min per account).
+- A no-op success when no phone is set. Rate-limited in its own bucket
+  (`phone:remove`, 5/min per account).
 
 #### Request
 
@@ -609,7 +572,10 @@ A redirect contains only state and a sanitized status; session issuance requires
 the original client verifier and consumes the completed challenge once. No
 bearer token is put in a redirect URL.
 
-Verified email links an existing account or claims an invite. Apple private
+Verified email links the existing account that holds it (which keeps its
+chosen name); otherwise a new account is created with its Apple identity in
+the same insert, since `chk_users_can_sign_in` refuses a row nobody can sign
+in to. Apple private
 relay addresses are supported. Refresh grants are encrypted with AES-256-GCM
 using the server-only stable `APPLE_TOKEN_ENCRYPTION_KEY`. The original `.p8`
 uses `APPLE_PRIVATE_KEY(_FILE)`. See the
@@ -633,7 +599,7 @@ Safety reports/blocks referencing the account cascade away. Shared financial
 references move to a fresh anonymous member with `deleted_at`; descriptions,
 notes and item labels owned by the account are redacted. Cents and currencies
 are preserved. Group ownership transfers deterministically to a remaining
-claimed member where one exists. The original ID cannot authenticate, and
+member where one exists. The original ID cannot authenticate, and
 clients clear their sessions and private query caches after success.
 
 Backup expiry and reapplying deletion after a restore are operator duties in

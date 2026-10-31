@@ -7,9 +7,11 @@ import { fileURLToPath } from "node:url";
 import { Client } from "pg";
 import { PG_MIGRATE_LOCK_ID, runner } from "node-pg-migrate";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { testDatabaseName } from "@/server/common/testing/testDatabase";
 
 const ADMIN_URL = process.env.MERGE_TEST_ADMIN_URL ?? "postgres://haalkhata:change-me@127.0.0.1:5432/postgres";
-const TEST_URL = ADMIN_URL.replace(/\/[^/]*$/, "/haalkhata_group_status_migration_test");
+const TEST_DATABASE = testDatabaseName("haalkhata_group_status_migration_test");
+const TEST_URL = ADMIN_URL.replace(/\/[^/]*$/, `/${TEST_DATABASE}`);
 const MIGRATIONS_DIRECTORY = fileURLToPath(new URL("../../../../migrations/", import.meta.url));
 const ARCHIVE_MIGRATION = "1791828578557_archive_groups";
 const STATUS_MIGRATION = "1791828578558_add-group-status";
@@ -95,8 +97,8 @@ describe.skipIf(!reachable)("group lifecycle migration deployment order", () => 
   beforeEach(async () => {
     const admin = new Client({ connectionString: ADMIN_URL });
     await admin.connect();
-    await admin.query("DROP DATABASE IF EXISTS haalkhata_group_status_migration_test WITH (FORCE)");
-    await admin.query("CREATE DATABASE haalkhata_group_status_migration_test");
+    await admin.query(`DROP DATABASE IF EXISTS ${TEST_DATABASE} WITH (FORCE)`);
+    await admin.query(`CREATE DATABASE ${TEST_DATABASE}`);
     await admin.end();
     database = new Client({ connectionString: TEST_URL });
     await database.connect();
@@ -106,7 +108,7 @@ describe.skipIf(!reachable)("group lifecycle migration deployment order", () => 
     await database?.end();
     const admin = new Client({ connectionString: ADMIN_URL });
     await admin.connect();
-    await admin.query("DROP DATABASE IF EXISTS haalkhata_group_status_migration_test WITH (FORCE)");
+    await admin.query(`DROP DATABASE IF EXISTS ${TEST_DATABASE} WITH (FORCE)`);
     await admin.end();
   });
 

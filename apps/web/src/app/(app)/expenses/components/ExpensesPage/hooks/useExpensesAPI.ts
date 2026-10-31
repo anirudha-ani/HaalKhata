@@ -1,29 +1,48 @@
 "use client";
-/** Queries for the all-expenses page: me, every expense involving me, group names. */
+/** Queries for the all-expenses page: me, my expenses a page at a time, group names. */
 
-import { useQuery } from "@tanstack/react-query";
-import { authClient, expenseClient, groupClient } from "@/lib/api/connect";
+import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
+import { authClient, errorMessage, expenseClient, groupClient } from "@/lib/api/connect";
 import { queryKeys } from "@haalkhata/shared/api/queryKeys";
+import { EXPENSE_PAGE_SIZE } from "@haalkhata/shared/api/paging";
+import { mergeExpensePages } from "@haalkhata/shared/expense/pages";
+import { scopeFilterRequest, type ExpenseScopeFilter } from "@haalkhata/shared/expense/scopeFilter";
 
 /**
- * Fetches everything the expenses page needs: the signed-in user, every
- * expense they pay for or owe on (groups and one-off alike), the users
- * referenced by those expenses, and the group list for filter chips and row
- * labels.
+ * Fetches everything the expenses page needs: the signed-in user, the
+ * expenses they pay for or owe on (groups and one-off alike) a page at a
+ * time, the users referenced by those expenses, and the group list for
+ * filter chips and row labels.
  *
- * @returns `me`, `expenses` (newest first), `userById`, `groups` (the user's
- *   group summaries), and `isLoading` (true until the expense list arrives).
+ * The scope is applied by the server and is part of the query key, so a
+ * chip pages through every expense in it, and switching chips starts a
+ * fresh list rather than hiding the rows already loaded.
+ *
+ * @param scope - The active scope filter: "all", "oneoff", or a group id.
+ * @returns `me`, `expenses` (loaded so far, newest first), `userById`,
+ *   `settledIds`, `groups` (the user's group summaries), `isLoading` (true
+ *   until the first page arrives), `loadError`/`retry` for a failed first
+ *   page, and `hasMore`/`loadMore`/`isLoadingMore`/`loadMoreError` for the
+ *   next one.
  */
-export function useExpensesAPI() {
+export function useExpensesAPI(scope: ExpenseScopeFilter) {
   const currentUserQuery = useQuery({
     queryKey: queryKeys.me,
     queryFn: () => authClient.getMe({}),
   });
-  // The unfiltered involving-me list; scope narrowing happens client-side so
-  // switching chips is instant rather than a refetch per click.
-  const expensesQuery = useQuery({
-    queryKey: queryKeys.expenses({}),
-    queryFn: () => expenseClient.listExpenses({ groupId: "", withUserId: "" }),
+  const expensesQuery = useInfiniteQuery({
+    queryKey: queryKeys.expenses({ scope }),
+    initialPageParam: "",
+    queryFn: ({ pageParam }) =>
+      expenseClient.listExpenses({
+        groupId: "",
+        withUserId: "",
+        ...scopeFilterRequest(scope),
+        cursor: pageParam,
+        limit: EXPENSE_PAGE_SIZE,
+      }),
+    // An empty cursor means the server has nothing further.
+    getNextPageParam: (lastPage) => lastPage.nextCursor || undefined,
   });
   // Same key as the groups page, so neither pays for the other's visit.
   const groupsQuery = useQuery({
@@ -31,13 +50,21 @@ export function useExpensesAPI() {
     queryFn: () => groupClient.listGroups({}),
   });
 
+  const pages = mergeExpensePages(expensesQuery.data?.pages ?? []);
+  const failure = expensesQuery.error ? errorMessage(expensesQuery.error) : "";
   return {
     me: currentUserQuery.data,
-    expenses: expensesQuery.data?.expenses ?? [],
-    userById: new Map((expensesQuery.data?.users ?? []).map((user) => [user.id, user])),
-    settledIds: new Set(expensesQuery.data?.settledExpenseIds ?? []),
-    truncated: expensesQuery.data?.truncated ?? false,
+    ...pages,
     groups: groupsQuery.data?.groups ?? [],
     isLoading: expensesQuery.isLoading,
+    /** Why the first page did not load; "" when it did. */
+    loadError: expensesQuery.isFetchNextPageError ? "" : failure,
+    /** Reads the list again from the top. */
+    retry: () => void expensesQuery.refetch(),
+    hasMore: expensesQuery.hasNextPage,
+    isLoadingMore: expensesQuery.isFetchingNextPage,
+    loadMore: () => void expensesQuery.fetchNextPage(),
+    /** Why the next page did not load; "" when it did. */
+    loadMoreError: expensesQuery.isFetchNextPageError ? failure : "",
   };
 }

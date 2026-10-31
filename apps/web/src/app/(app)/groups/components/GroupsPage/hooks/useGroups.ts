@@ -9,6 +9,7 @@ import {
   matchesBalanceFilter,
   type GroupBalanceFilterOption,
 } from "@haalkhata/shared/group/balanceFilter";
+import { yourGroupBuckets } from "@haalkhata/shared/group/currencyBalances";
 import { GroupStatus, type GroupArchiveStatus } from "@haalkhata/shared/group/status";
 import { groupsByStatus } from "@haalkhata/shared/group/archiving";
 import { useGroupsAPI } from "./useGroupsAPI";
@@ -80,7 +81,7 @@ export function useGroups() {
       if (terms.length > 0 && !matchesTerms(terms, summary.group?.name, summary.group?.type)) {
         return false;
       }
-      return matchesBalanceFilter(summary.yourNetCents, balance);
+      return matchesBalanceFilter(yourGroupBuckets(summary), balance);
     });
   }, [pathwayGroups, query, balance]);
 

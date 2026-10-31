@@ -1,4 +1,4 @@
-/** All SQL for the users table: insert, lookups, shadow-user claim, profile updates. */
+/** All SQL for the users table: insert, lookups, profile updates. */
 
 import type { PoolClient } from "pg";
 import { execute, newId, query, queryOne } from "@/server/common/db/db";
@@ -15,14 +15,13 @@ export interface UserRow {
   avatar_url: string | null;
   /** ISO 4217 code preselected as the currency for the user's new expenses. */
   default_currency: string;
-  /** scrypt "salt:hash" string; null marks a shadow user who has not registered yet. */
+  /** scrypt "salt:hash" string for a development password account; null otherwise. */
   password_hash: string | null;
   /** Phone number in E.164 (e.g. "+14155552671"); null when the user has no phone. */
   phone: string | null;
   /**
-   * When the number last passed SMS possession (§35); null means never — an
-   * inviter-typed shadow number, a dev password-signup number, or a number
-   * that predates verification. The chk_users_phone_verified_has_phone
+   * When the number last passed SMS possession (§35); null means never — a
+   * dev password-signup number, or a number that predates verification. The chk_users_phone_verified_has_phone
    * constraint keeps it null whenever phone is.
    */
   phone_verified_at: string | null;
@@ -42,8 +41,6 @@ export interface UserRow {
    * true/false = the person's answer. Absent only in legacy test fixtures.
    */
   contact_discovery?: boolean | null;
-  /** Id this row was absorbed into by an account merge; null for a live account. */
-  merged_into: string | null;
   /** Monotonic counter baked into issued tokens; bumping it invalidates outstanding tokens. */
   token_version: number;
   created_at: string;
@@ -52,8 +49,9 @@ export interface UserRow {
 /**
  * Inserts a new users row with a freshly generated id.
  *
- * @param input - Column values for the new user; defaultCurrency falls back to "USD",
- *   a null passwordHash creates a claimable shadow user, and phone is optional.
+ * @param input - Column values for the new user; defaultCurrency falls back to "USD"
+ *   and phone is optional. At least one of passwordHash, googleSub and appleSub
+ *   must be set: chk_users_can_sign_in refuses a row nobody can sign in to.
  * @returns The inserted row.
  */
 export async function insertUser(input: {
@@ -64,11 +62,12 @@ export async function insertUser(input: {
   defaultCurrency?: string;
   phone?: string | null;
   googleSub?: string | null;
+  appleSub?: string | null;
   avatarUrl?: string | null;
 }, client?: PoolClient): Promise<UserRow> {
   const rows = await query<UserRow>(
-    `INSERT INTO users (id, email, name, avatar_color, default_currency, password_hash, phone, google_sub, avatar_url)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+    `INSERT INTO users (id, email, name, avatar_color, default_currency, password_hash, phone, google_sub, apple_sub, avatar_url)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
      RETURNING *`,
     [
       newId(),
@@ -79,6 +78,7 @@ export async function insertUser(input: {
       input.passwordHash,
       input.phone ?? null,
       input.googleSub ?? null,
+      input.appleSub ?? null,
       input.avatarUrl ?? null,
     ],
     client,
@@ -120,7 +120,7 @@ export async function findUserById(userId: string, client?: PoolClient): Promise
 export async function findUserByEmail(email: string): Promise<UserRow | undefined> {
   return queryOne<UserRow>(
     `SELECT usr.* FROM users usr
-      WHERE lower(usr.email) = lower($1) AND usr.merged_into IS NULL AND usr.deleted_at IS NULL`,
+      WHERE lower(usr.email) = lower($1) AND usr.deleted_at IS NULL`,
     [email],
   );
 }
@@ -133,7 +133,7 @@ export async function findUserByEmail(email: string): Promise<UserRow | undefine
  */
 export async function findUserByPhone(phone: string): Promise<UserRow | undefined> {
   return queryOne<UserRow>(
-    `SELECT usr.* FROM users usr WHERE usr.phone = $1 AND usr.merged_into IS NULL AND usr.deleted_at IS NULL`,
+    `SELECT usr.* FROM users usr WHERE usr.phone = $1 AND usr.deleted_at IS NULL`,
     [phone],
   );
 }
@@ -146,31 +146,25 @@ export async function findUserByPhone(phone: string): Promise<UserRow | undefine
  */
 export async function findUserByGoogleSub(googleSub: string): Promise<UserRow | undefined> {
   return queryOne<UserRow>(
-    `SELECT usr.* FROM users usr WHERE usr.google_sub = $1 AND usr.merged_into IS NULL AND usr.deleted_at IS NULL`,
+    `SELECT usr.* FROM users usr WHERE usr.google_sub = $1 AND usr.deleted_at IS NULL`,
     [googleSub],
   );
 }
 
 /**
- * Links a Google account to an existing row, optionally replacing a
- * placeholder display name.
+ * Links a Google account to an existing account, keeping the name its owner
+ * chose — if that account is still there. A sign-in finds the account by
+ * email first and links it second, and a deletion committing in between
+ * takes the row away; the link then changes nothing and says so.
  *
- * An invitee who was never given a name got one derived from their email's
- * local part, which Google can improve on; a name the person chose themselves
- * must survive untouched. Passing an empty `name` leaves the column alone.
- *
- * @param userId - Primary key of the row to link.
+ * @param userId - Primary key of the account to link.
  * @param googleSub - Google's stable per-account identifier.
- * @param name - Replacement display name, or "" to keep the existing one.
+ * @returns The linked account, or undefined when it no longer exists.
  */
-export async function linkGoogleAccount(
-  userId: string,
-  googleSub: string,
-  name: string,
-): Promise<void> {
-  await execute(
-    `UPDATE users SET google_sub = $1, name = COALESCE(NULLIF($2, ''), name) WHERE id = $3`,
-    [googleSub, name, userId],
+export async function linkGoogleAccount(userId: string, googleSub: string): Promise<UserRow | undefined> {
+  return queryOne<UserRow>(
+    `UPDATE users SET google_sub = $1 WHERE id = $2 AND deleted_at IS NULL RETURNING *`,
+    [googleSub, userId],
   );
 }
 
@@ -187,31 +181,12 @@ export async function findUsersByIds(userIds: string[], client?: PoolClient): Pr
 }
 
 /**
- * A shadow user registers: sets name + password on the existing row.
- *
- * @param userId - Primary key of the shadow user's existing row.
- * @param name - Display name chosen at registration.
- * @param passwordHash - scrypt "salt:hash" string for the newly chosen password.
- */
-export async function claimUser(
-  userId: string,
-  name: string,
-  passwordHash: string,
-): Promise<void> {
-  await execute(`UPDATE users SET name = $1, password_hash = $2 WHERE id = $3`, [
-    name,
-    passwordHash,
-    userId,
-  ]);
-}
-
-/**
  * Writes a just-verified phone number onto an account, stamping
  * `phone_verified_at` with it (§35). Every caller sits directly behind an
  * approved SMS code check — the plain claim, the §34 transfer, the removal
  * flow's clear — so the stamp lives here rather than being a flag each call
- * site could forget. Unverified writes (shadow rows, dev signup) go through
- * insertUser and never touch this.
+ * site could forget. The one unverified write (dev signup) goes through
+ * insertUser and never touches this.
  *
  * Callers must have already resolved any collision: `users.phone` carries a
  * partial unique index, so a number still held by another row is rejected by
@@ -246,31 +221,6 @@ export async function markOnboarded(userId: string): Promise<void> {
   await execute(`UPDATE users SET onboarded_at = now() WHERE id = $1 AND onboarded_at IS NULL`, [
     userId,
   ]);
-}
-
-/**
- * Fetches only the current token_version for a user (cheap read used on every
- * authenticated request to validate the bearer token's embedded version).
- *
- * @param userId - Primary key of the user to check.
- * @returns The current token_version, or undefined when the user does not exist.
- */
-export async function findUserTokenVersion(userId: string): Promise<number | undefined> {
-  const versionRow = await queryOne<{ token_version: number }>(
-    `SELECT token_version FROM users WHERE id = $1 AND suspended_at IS NULL`,
-    [userId],
-  );
-  return versionRow?.token_version;
-}
-
-/**
- * Increments the user's token_version, invalidating every bearer token issued
- * before this point (the current sign-out-everywhere behavior).
- *
- * @param userId - Primary key of the user whose tokens are being revoked.
- */
-export async function bumpTokenVersion(userId: string): Promise<void> {
-  await execute(`UPDATE users SET token_version = token_version + 1 WHERE id = $1`, [userId]);
 }
 
 /**

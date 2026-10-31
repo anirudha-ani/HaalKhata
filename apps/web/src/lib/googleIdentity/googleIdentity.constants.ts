@@ -17,6 +17,21 @@ export const GOOGLE_SCRIPT_FAILED_MESSAGE = "Google's sign-in script did not loa
 export const GOOGLE_SDK_MISSING_MESSAGE =
   "Google's sign-in script loaded but did not start. A content blocker may be stopping it";
 
+/**
+ * How far into its life a sign-in nonce is renewed. Halfway, so a click
+ * always carries one with at least half its life left for Google's own
+ * steps — with the server's ten minutes, five, enough for a two-step prompt
+ * on another device. An earlier nonce stays valid until it expires, so
+ * renewing never breaks a sign-in already under way.
+ */
+export const GOOGLE_NONCE_RENEWAL_FRACTION = 0.5;
+
+/**
+ * The lifetime to assume when the server does not say (a deploy from before
+ * it did): the five minutes nonces used to last.
+ */
+export const FALLBACK_GOOGLE_NONCE_LIFETIME_SECONDS = 300;
+
 /** Rendering options for Google's own button, which it draws into our div. */
 export const GOOGLE_BUTTON_OPTIONS = {
   theme: "outline",

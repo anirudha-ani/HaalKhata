@@ -3,6 +3,9 @@
 /** Which grouping of event types the feed is currently showing. */
 export type ActivityFilter = "all" | "expenses" | "payments" | "comments" | "groups";
 
+/** What the month control says when no month is chosen. */
+export const ACTIVITY_ALL_TIME_LABEL = "All time";
+
 /** One filter button: a label and the raw event types it admits. */
 interface ActivityFilterOption {
   /** Filter key held in page state. */

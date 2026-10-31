@@ -3,6 +3,7 @@
 import { redirect } from "next/navigation";
 import type { ReactNode } from "react";
 import { AppShell } from "@/components/shell/AppShell/AppShell";
+import { SignOutGate } from "@/components/shell/SignOutGate/SignOutGate";
 import { sessionUser } from "@/lib/auth/session.server";
 
 /**
@@ -21,5 +22,9 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
   // loop. `onboarded` is stamped even when every field is skipped, so nobody
   // is sent back here twice.
   if (!user.onboarded) redirect("/onboarding");
-  return <AppShell>{children}</AppShell>;
+  return (
+    <SignOutGate>
+      <AppShell>{children}</AppShell>
+    </SignOutGate>
+  );
 }

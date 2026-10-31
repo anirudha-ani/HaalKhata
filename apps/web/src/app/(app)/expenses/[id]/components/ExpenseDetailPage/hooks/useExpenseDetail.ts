@@ -1,11 +1,15 @@
 "use client";
 /** Expense detail data + actions: getExpense query, comment and delete mutations. */
 
-import { useState } from "react";
+import { useRef, useState } from "react";
+import { LIVE_SPLIT_CHECK_INTERVAL_MS } from "@haalkhata/shared/expense/live/live.constants";
 import { useRouter } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { authClient, errorMessage, expenseClient } from "@/lib/api/connect";
+import { newOperationId } from "@/lib/operations/operationId";
 import { FEED_KEYS, MONEY_KEYS, queryKeys } from "@haalkhata/shared/api/queryKeys";
+import { COMMENT_PAGE_SIZE } from "@haalkhata/shared/api/paging";
+import { useEarlierCommentsAPI } from "./useEarlierCommentsAPI";
 
 /**
  * Loads one expense (with its users and comments) and exposes the page's
@@ -13,8 +17,13 @@ import { FEED_KEYS, MONEY_KEYS, queryKeys } from "@haalkhata/shared/api/queryKey
  * money-related queries and navigates back to the group or dashboard).
  *
  * @param expenseId - Id of the expense to load and act on.
+ * The detail carries the newest comments; older ones are read on request,
+ * a page at a time, and `comments` is the whole loaded thread in order.
+ *
  * @returns `me`, the expense `detail` response with `detailError`/`isLoading`,
- *   a `userById` lookup map, comment composer state (`comment`, `setComment`,
+ *   `comments` (earlier pages then the detail's, oldest first) with
+ *   `hasEarlierComments`/`showEarlierComments`/`isLoadingEarlierComments`/
+ *   `earlierCommentsError`, a `userById` lookup map, comment composer state (`comment`, `setComment`,
  *   `submitComment`, `isCommenting`), delete flow state (`confirmingDelete`,
  *   `setConfirmingDelete`, `remove`, `isRemoving`), and the last action `error`.
  */
@@ -31,18 +40,37 @@ export function useExpenseDetail(expenseId: string) {
   });
   const detailQuery = useQuery({
     queryKey: queryKeys.expense(expenseId),
-    queryFn: () => expenseClient.getExpense({ expenseId }),
+    queryFn: () => expenseClient.getExpense({ expenseId, commentLimit: COMMENT_PAGE_SIZE }),
+    // Who has joined and who has saved change by the moment while a split runs.
+    refetchInterval: (query) => (query.state.data?.liveSplit ? LIVE_SPLIT_CHECK_INTERVAL_MS : false),
   });
+  const earlier = useEarlierCommentsAPI(expenseId, detailQuery.data?.commentsNextCursor ?? "");
 
+  // One id per comment being sent: the same words sent again after a failure
+  // are a retry, so a comment whose reply got lost is not stored twice.
+  const commentAttempt = useRef<{ body: string; operationId: string } | null>(null);
   const addComment = useMutation({
-    mutationFn: (body: string) => expenseClient.addComment({ expenseId, body }),
+    mutationFn: (attempt: { body: string; operationId: string }) =>
+      expenseClient.addComment({ expenseId, ...attempt }),
     onSuccess: () => {
+      commentAttempt.current = null;
       setComment("");
       queryClient.invalidateQueries({ queryKey: queryKeys.expense(expenseId) });
       // A comment is a feed event too, so the cached activity list is now stale.
       for (const feedQueryKey of FEED_KEYS) {
         queryClient.invalidateQueries({ queryKey: feedQueryKey });
       }
+    },
+    onError: (mutationError) => setError(errorMessage(mutationError)),
+  });
+
+  const startLive = useMutation({
+    mutationFn: () => expenseClient.startLiveSplit({ expenseId }),
+    onSuccess: async () => {
+      // The form shows the invite once it sees a split running, so it has to
+      // open on a copy that already has one.
+      await queryClient.invalidateQueries({ queryKey: queryKeys.expense(expenseId) });
+      router.push(`/expenses/new?edit=${expenseId}&invite=1`);
     },
     onError: (mutationError) => setError(errorMessage(mutationError)),
   });
@@ -78,13 +106,26 @@ export function useExpenseDetail(expenseId: string) {
     deletion: (detailQuery.data?.history ?? []).find(
       (event) => event.type === "expense_deleted",
     ),
+    comments: [...earlier.comments, ...(detailQuery.data?.comments ?? [])],
+    hasEarlierComments: earlier.hasEarlier,
+    showEarlierComments: earlier.showEarlier,
+    isLoadingEarlierComments: earlier.isLoadingEarlier,
+    earlierCommentsError: earlier.earlierError,
     detailError: detailQuery.error,
     isLoading: detailQuery.isLoading,
     userById,
     comment,
     setComment,
-    submitComment: () => comment.trim() && addComment.mutate(comment),
+    submitComment: () => {
+      if (!comment.trim()) return;
+      if (commentAttempt.current?.body !== comment) {
+        commentAttempt.current = { body: comment, operationId: newOperationId() };
+      }
+      addComment.mutate(commentAttempt.current);
+    },
     isCommenting: addComment.isPending,
+    startLive: () => startLive.mutate(),
+    isStartingLive: startLive.isPending,
     confirmingDelete,
     setConfirmingDelete,
     remove: () => remove.mutate(),

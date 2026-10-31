@@ -4,6 +4,7 @@ import { QueryClient } from "@tanstack/react-query";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { LEGACY_QUERY_CACHE_STORAGE_KEY } from "@/lib/api/queryCache";
 import { completeBrowserSignIn } from "./completeSignIn";
+import { SIGN_OUT_PENDING_STORAGE_KEY } from "./constants/signOut";
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -27,6 +28,15 @@ describe("completeBrowserSignIn", () => {
     // A document replacement bypasses signed-out App Router payloads and
     // replaces the login entry rather than preserving the submitted form.
     expect(replace).toHaveBeenCalledExactlyOnceWith("/dashboard");
+  });
+
+  it("does not let a sign-out left over from an older session end this one", () => {
+    const removeItem = vi.fn();
+    vi.stubGlobal("window", { location: { search: "", replace: vi.fn() }, localStorage: { removeItem } });
+
+    completeBrowserSignIn(new QueryClient());
+
+    expect(removeItem).toHaveBeenCalledWith(SIGN_OUT_PENDING_STORAGE_KEY);
   });
 
   it("preserves the requested in-app destination for the server's session guards", () => {

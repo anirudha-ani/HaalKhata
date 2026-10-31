@@ -1,12 +1,13 @@
 /** Authenticated area layout: redirects signed-out and not-yet-onboarded users, hosts the authed stack. */
 
 import { useQuery } from "@tanstack/react-query";
-import { Redirect, Stack, usePathname } from "expo-router";
+import { Redirect, Stack, useGlobalSearchParams, usePathname } from "expo-router";
 import { PushHost } from "@/components/push/PushHost/PushHost";
 import { Spinner } from "@/components/ui/Spinner";
 import { authClient } from "@/lib/api/connect";
 import { queryKeys } from "@haalkhata/shared/api/queryKeys";
 import { useSession } from "@/lib/api/session";
+import { currentHref } from "@/lib/onboarding/currentHref";
 import { useDeviceSetupGate } from "@/lib/onboarding/hooks/useDeviceSetupGate";
 import { colors } from "@/lib/theme/theme";
 import { useReduceMotion } from "@/lib/motion/hooks/useReduceMotion";
@@ -50,11 +51,12 @@ export default function AppLayout() {
 function OnboardingGate() {
   const reduceMotion = useReduceMotion();
   const pathname = usePathname();
+  const searchParams = useGlobalSearchParams();
   const currentUser = useQuery({ queryKey: queryKeys.me, queryFn: () => authClient.getMe({}) });
   const deviceSetup = useDeviceSetupGate(currentUser.data);
   if (currentUser.isPending || deviceSetup.checking) return <Spinner />;
   if (currentUser.data && (!currentUser.data.onboarded || deviceSetup.due)) {
-    return <Redirect href={{ pathname: "/onboarding", params: { next: pathname } }} />;
+    return <Redirect href={{ pathname: "/onboarding", params: { next: currentHref(pathname, searchParams) } }} />;
   }
   return (
     <>

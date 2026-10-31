@@ -6,7 +6,7 @@ import { EmptyState } from "@/components/ui/EmptyState/EmptyState";
 import { ErrorAlert } from "@/components/ui/ErrorAlert/ErrorAlert";
 import { SearchField } from "@/components/ui/SearchField/SearchField";
 import { ActivityList } from "@/components/activity/ActivityList/ActivityList";
-import { ACTIVITY_FILTERS } from "@haalkhata/shared/activity/filters";
+import { ACTIVITY_ALL_TIME_LABEL, ACTIVITY_FILTERS } from "@haalkhata/shared/activity/filters";
 import { monthLabel } from "@haalkhata/shared/activity/format";
 import type { useActivity } from "../../hooks/useActivity";
 import { FeedFooter } from "./components/FeedFooter/FeedFooter";
@@ -71,7 +71,7 @@ export function ActivityFeed({
             onChange={(event) => activity.setMonth(event.target.value)}
             className="max-w-[45%] shrink-0 rounded-xl border border-line bg-card px-3 py-2.5 text-sm text-ink focus:border-brand-500 focus:outline-none"
           >
-            <option value="">All time</option>
+            <option value="">{ACTIVITY_ALL_TIME_LABEL}</option>
             {activity.months.map((monthKey) => (
               <option key={monthKey} value={monthKey}>
                 {monthLabel(monthKey)}

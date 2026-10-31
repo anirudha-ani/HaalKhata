@@ -1,4 +1,4 @@
-/** Friends screen: four tabs (friends, requests, sent, invited) with an add-friend sheet and settle-up. */
+/** Friends screen: three tabs (friends, requests, sent) with an add-friend sheet and settle-up. */
 
 import { ErrorState } from "@/components/ui/ErrorState";
 import { useRouter } from "expo-router";
@@ -9,6 +9,7 @@ import { NOTICE_FADE_IN } from "@/lib/motion/entrances";
 import { FIND_FRIENDS_COPY } from "@haalkhata/shared/contacts/contactsCopy";
 import { Text } from "@/components/ui/Text";
 import { InviteShareSheet } from "@/components/modals/InviteShareSheet";
+import { NOT_ON_HAALKHATA_COPY } from "@haalkhata/shared/invite/inviteCopy";
 import { ContactDiscoveryPrompt } from "@/components/account/ContactDiscoveryPrompt/ContactDiscoveryPrompt";
 import { SettleUpModal } from "@/components/modals/SettleUpModal";
 import { Screen } from "@/components/shell/Screen/Screen";
@@ -20,22 +21,22 @@ import { colors, fonts, radii, spacing } from "@/lib/theme/theme";
 import { FRIENDS_TABS, type FriendsTab } from "../../constants/friendsTabs";
 import { AddFriendSheet } from "./components/AddFriendSheet/AddFriendSheet";
 import { IncomingRequests } from "./components/IncomingRequests/IncomingRequests";
-import { InvitedFriends } from "./components/InvitedFriends/InvitedFriends";
 import { RegisteredFriends } from "./components/RegisteredFriends/RegisteredFriends";
 import { SentRequests } from "./components/SentRequests/SentRequests";
 import { useFriends } from "./hooks/useFriends";
 
 /**
- * Renders the friends screen as four tabs. Friends: your overall position
+ * Renders the friends screen as three tabs. Friends: your overall position
  * and a searchable list where each row opens that friendship's ledger, with
  * a settle action that works whichever way the money is owed. Requests: what
- * awaits your answer. Sent: what you are waiting on. Invited: people you
- * added who have not joined.
+ * awaits your answer. Sent: what you are waiting on.
  *
  * One list with sections grew past a screen as soon as a few requests were
  * pending; tabs keep each view short and give the pending ones a count you
- * can see without scrolling. Add, accept, decline, cancel and remind report
- * through the screen's toast layer rather than a line inside a form.
+ * can see without scrolling. Add, accept, decline and cancel report through
+ * the screen's toast layer rather than a line inside a form; the one
+ * exception is a contact nobody on HaalKhata has, which the add sheet
+ * answers in place with the invite link to share.
  *
  * @returns The friends screen content, with a spinner while the list loads.
  */
@@ -44,10 +45,9 @@ export function FriendsScreen() {
   const router = useRouter();
   const currency = friendsState.me?.defaultCurrency ?? "USD";
   const counts: Record<FriendsTab, number> = {
-    friends: friendsState.registeredFriends.length,
+    friends: friendsState.friends.length,
     requests: friendsState.incomingRequests.length,
     sent: friendsState.outgoingRequests.length,
-    invited: friendsState.invitedFriends.length,
   };
 
   return (
@@ -109,20 +109,19 @@ export function FriendsScreen() {
           ) : null}
           {friendsState.tab === "requests" ? <IncomingRequests friendsState={friendsState} /> : null}
           {friendsState.tab === "sent" ? <SentRequests friendsState={friendsState} /> : null}
-          {friendsState.tab === "invited" ? <InvitedFriends friendsState={friendsState} /> : null}
           </Animated.View>
         </>
       )}
 
       {friendsState.showAdd ? <AddFriendSheet friendsState={friendsState} /> : null}
 
-      {friendsState.remindShare ? (
+      {friendsState.profileShareToken ? (
         <InviteShareSheet
-          explainer={`This link signs ${friendsState.remindShare.personName} up and claims their invited identity, friendships and group seats included.`}
-          onClose={friendsState.closeRemindShare}
-          share={friendsState.remindShareToSheet}
-          title="Remind them to sign up"
-          token={friendsState.remindShare.token}
+          explainer="Anyone who scans this or opens the link can sign up and send you a friend request."
+          onClose={friendsState.closeProfileShare}
+          share={friendsState.profileShareToSheet}
+          title={NOT_ON_HAALKHATA_COPY.friend.action}
+          token={friendsState.profileShareToken}
         />
       ) : null}
 
