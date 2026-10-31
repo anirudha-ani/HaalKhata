@@ -12,6 +12,7 @@
 import { randomUUID } from "node:crypto";
 import { Client } from "pg";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { previewItemizedShares } from "@haalkhata/shared/expense/form/splitForm";
 import { DELETE_ACCOUNT_CONFIRMATION } from "@/server/auth/accountDeletion.constants";
 import { testDatabaseName } from "@/server/common/testing/testDatabase";
 
@@ -733,6 +734,22 @@ describe.skipIf(!reachable)("a live split, against Postgres", () => {
           splitSpecs: [TOMAS, deletedId].map((userId) => ({ userId, amountCents: 0, percentBp: 0, shares: 0 })),
         }))).rejects.toMatchObject({ code: "invalid_argument" });
       });
+    });
+
+    it("previews a part-claimed bill as exactly what a save stores", async () => {
+      const taxed = { amountCents: 4211, taxCents: 370, tipCents: 141, payers: [{ userId: SARA, amountCents: 4211 }] };
+      const { id, saved } = await openBill([TOMAS], taxed);
+
+      await expenses.updateExpense(TOMAS, id, claim(saved, TOMAS, "Beer"), false, saved);
+
+      const lines = saved.items.map((item) => ({
+        key: item.id,
+        name: item.name,
+        total: String(item.totalCents / 100),
+        assignees: (item.name === "Beer" ? { [TOMAS]: 1 } : {}) as Record<string, number>,
+      }));
+      const paid = { multiPayer: false, singlePayerId: SARA, payerAmounts: {} };
+      expect(previewItemizedShares(lines, 370, 141, "USD", paid)).toEqual(await owed(id));
     });
 
     it("lets a newcomer in past a block between two people already on the bill", async () => {

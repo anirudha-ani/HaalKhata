@@ -11,10 +11,13 @@ import {
   unclaimedUnlessPicked,
   includeInEveryItem,
   itemizedTotals,
+  paidByDraft,
   percentOfItems,
+  previewItemizedShares,
   shareEveryItemWith,
   type DraftLineItem,
 } from "@haalkhata/shared/expense/form/splitForm";
+import { computeUnclaimedSplits } from "@haalkhata/shared/expense/splits";
 
 /**
  * Builds a draft line item with sensible defaults for the fields a test
@@ -268,5 +271,65 @@ describe("withNewcomersTicked", () => {
 
   it("leaves a form where everyone already counts as ticked", () => {
     expect(withNewcomersTicked(null, ["noor"])).toBeNull();
+  });
+});
+
+describe("previewItemizedShares during a live split", () => {
+  const sara = { multiPayer: false, singlePayerId: "sara", payerAmounts: {} };
+  const pizza = draftItem({ key: "pizza", name: "Pizza", total: "20.00", assignees: {} });
+  const beer = draftItem({ key: "beer", name: "Beer", total: "8.00", assignees: {} });
+  const beerForTomas = { ...beer, assignees: { tomas: 1 } };
+
+  it("shows what a part-claimed bill will save, with an unclaimed line on whoever paid", () => {
+    expect(previewItemizedShares([pizza, beerForTomas], 0, 0, "USD", sara)).toEqual({ sara: 2000, tomas: 800 });
+  });
+
+  it("gives tax and tip to each person by their lines, exactly as a save does", () => {
+    const lines = [pizza, beerForTomas];
+    const saved = computeUnclaimedSplits(buildItemsPayload(lines, "USD"), 280, 141, [{ userId: "sara", amountCents: 3221 }]);
+
+    const shares = previewItemizedShares(lines, 280, 141, "USD", sara);
+
+    expect(shares).toEqual(Object.fromEntries(saved.splits.map((split) => [split.userId, split.owedCents])));
+    expect(Object.values(shares).reduce((total, cents) => total + cents, 0)).toBe(3221);
+    expect(shares.tomas).toBeGreaterThan(800);
+  });
+
+  it("puts a bill nobody has claimed on whoever paid, by what each paid", () => {
+    const twoCards = { multiPayer: true, singlePayerId: "sara", payerAmounts: { sara: "20.00", tomas: "8.00" } };
+
+    expect(previewItemizedShares([pizza, beer], 0, 0, "USD", twoCards)).toEqual({ sara: 2000, tomas: 800 });
+  });
+
+  it("fits what each person paid to a total somebody has just changed, as a save does", () => {
+    const stale = { multiPayer: true, singlePayerId: "sara", payerAmounts: { sara: "10.00", tomas: "10.00" } };
+
+    expect(previewItemizedShares([pizza, beer], 0, 0, "USD", stale)).toEqual({ sara: 1400, tomas: 1400 });
+  });
+
+  it("keeps showing what is claimed while a new line has no price yet", () => {
+    const blank = draftItem({ key: "blank", name: "", total: "", assignees: {} });
+
+    expect(previewItemizedShares([pizza, beerForTomas, blank], 0, 0, "USD", sara)).toEqual({ sara: 2000, tomas: 800 });
+  });
+
+  it("previews nothing with nothing to divide", () => {
+    expect(previewItemizedShares([], 0, 0, "USD", sara)).toEqual({});
+  });
+
+  it("outside a live split, still waits for every line to have somebody", () => {
+    expect(previewItemizedShares([pizza, beerForTomas], 0, 0, "USD")).toEqual({});
+  });
+});
+
+describe("paidByDraft", () => {
+  it("gives the whole total to one person who paid", () => {
+    expect(paidByDraft({ multiPayer: false, singlePayerId: "sara", payerAmounts: { tomas: "5.00" } }, 2800, "USD")).toEqual({ sara: 2800 });
+  });
+
+  it("reads what several people paid, leaving out anyone who paid nothing", () => {
+    const paid = { multiPayer: true, singlePayerId: "sara", payerAmounts: { sara: "20.00", tomas: "8.00", noor: "", lena: "0" } };
+
+    expect(paidByDraft(paid, 2800, "USD")).toEqual({ sara: 2000, tomas: 800 });
   });
 });

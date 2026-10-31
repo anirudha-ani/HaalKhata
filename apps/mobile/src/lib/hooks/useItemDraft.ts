@@ -7,7 +7,7 @@ import type { LineState } from "@haalkhata/shared/expense/merge/expenseState";
 import { centsToInput } from "@haalkhata/shared/money/money";
 import { draftCompleteness, draftTotals, unassignedCount, type DraftItem } from "@/lib/expense/itemDraft";
 import { itemizedWarnings } from "@haalkhata/shared/expense/form/itemizedWarnings";
-import { previewItemizedShares } from "@haalkhata/shared/expense/form/splitForm";
+import { previewItemizedShares, type DraftPayers } from "@haalkhata/shared/expense/form/splitForm";
 
 /**
  * Holds a draft's line items with their portion counts, plus the tax and tip
@@ -18,14 +18,15 @@ import { previewItemizedShares } from "@haalkhata/shared/expense/form/splitForm"
  * @param initial - Starting lines (null while a receipt has not been parsed
  *   yet), and the raw tax and tip inputs.
  * @param currency - ISO 4217 code the amounts are typed in.
- * @param allowUnclaimed - A line may have nobody on it: a live split is running on this bill.
+ * @param livePayers - Who paid, when a live split is running on this bill: a
+ *   line may then have nobody on it, and it sits with them.
  * @returns The draft state, its editing helpers, and the derived totals,
  *   per-person preview, warnings, unassigned count, and completeness check.
  */
 export function useItemDraft(
   initial: { items: DraftItem[] | null; tax: string; tip: string },
   currency: string,
-  allowUnclaimed = false,
+  livePayers?: DraftPayers,
 ) {
   const [items, setItems] = useState<DraftItem[] | null>(initial.items);
   const [taxInput, setTaxInput] = useState(initial.tax);
@@ -182,9 +183,9 @@ export function useItemDraft(
     },
     ...totals,
     unassignedCount: unassignedCount(items ?? []),
-    completeness: draftCompleteness(items ?? [], currency, allowUnclaimed),
+    completeness: draftCompleteness(items ?? [], currency, livePayers !== undefined),
     /** What each person currently owes, keyed by user id, in cents. */
-    previewShares: previewItemizedShares(items ?? [], totals.taxCents, totals.tipCents, currency),
+    previewShares: previewItemizedShares(items ?? [], totals.taxCents, totals.tipCents, currency, livePayers),
     /** What still stops the bill adding up, as short sentences. */
     warnings: itemizedWarnings(items ?? [], currency),
   };

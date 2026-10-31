@@ -55,8 +55,10 @@ of splitting, any number of people who paid, and nobody has to settle.
   what was paid moves with it, keeping its proportions, on every kind of split. A
   bill's payers always add up: the save refuses anything else.
 - **Lines may be unclaimed.** While a split runs, a line nobody is on counts against
-  whoever paid, so the ledger is exact at every moment. When it ends those lines stay
-  with whoever paid, and everyone left with nothing to pay comes off the bill.
+  whoever paid, so the ledger is exact at every moment, and the form's summary shows
+  exactly that: what each person would owe if the bill were saved now, tax and tip
+  included. When it ends those lines stay with whoever paid, and everyone left with
+  nothing to pay comes off the bill.
 - **One announcement.** Nothing reaches the feed or anyone's bell while it runs. At
   the end the result goes out once: as a new expense if the split created it, as an
   edit if anything changed, and not at all if nothing did.

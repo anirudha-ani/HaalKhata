@@ -2,7 +2,7 @@
 
 import { nextDraftKey } from "../draftKey";
 import { centsToInput, parseMoneyInput } from "../../money/money";
-import type { DraftLineItem } from "../form/splitForm";
+import { paidByDraft, type DraftLineItem, type DraftPayers } from "../form/splitForm";
 import { describeTheirChanges } from "./describeEdit";
 import { expenseStateOf, type ExpenseState, type ExpenseStateSource, type LineState } from "./expenseState";
 import { mergeExpenseEdit, type EditConflict, type EditPart } from "./mergeExpenseEdit";
@@ -11,7 +11,7 @@ import { mergeExpenseEdit, type EditConflict, type EditPart } from "./mergeExpen
 export type SavedDraftLine = DraftLineItem & { quantity: number };
 
 /** The fields of an open expense form, as both apps hold them. */
-export interface DraftExpenseFields {
+export interface DraftExpenseFields extends DraftPayers {
   description: string;
   category: string;
   date: string;
@@ -21,12 +21,6 @@ export interface DraftExpenseFields {
   totalCents: number | null;
   /** What each person owes as previewed; empty while the split cannot be worked out. */
   previewShares: Record<string, number>;
-  /** Whether several people paid. */
-  multiPayer: boolean;
-  /** Who paid, when one person did. */
-  singlePayerId: string;
-  /** Raw paid amounts by person, when several did. */
-  payerAmounts: Record<string, string>;
   items: readonly DraftLineItem[];
   taxCents: number;
   tipCents: number;
@@ -52,13 +46,7 @@ export function draftExpenseState(fields: DraftExpenseFields): ExpenseState {
     splitType: fields.splitType,
     amountCents: totalCents ?? 0,
     owed: fields.previewShares,
-    payers: fields.multiPayer
-      ? Object.fromEntries(
-          Object.entries(fields.payerAmounts)
-            .map(([userId, value]) => [userId, parseMoneyInput(value, currency) ?? 0] as const)
-            .filter(([, cents]) => cents > 0),
-        )
-      : { [fields.singlePayerId]: totalCents ?? 0 },
+    payers: paidByDraft(fields, totalCents ?? 0, currency),
     lines: itemized
       ? fields.items.map((item) => ({
           id: item.id ?? "",

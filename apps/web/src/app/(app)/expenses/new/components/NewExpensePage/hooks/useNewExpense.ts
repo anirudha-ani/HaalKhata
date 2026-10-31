@@ -395,13 +395,14 @@ export function useNewExpense(
     .filter((person) => checked[person.id])
     .map((person) => person.id);
 
+  const isLive = expenseAPI.editing?.liveSplit !== undefined;
   const splitCheck = isItemized
-    ? checkItemized(items, currency, expenseAPI.editing?.liveSplit !== undefined)
+    ? checkItemized(items, currency, isLive)
     : checkSplit({ splitType, totalCents, participantIds, inputs: splitInputs, currency });
   // Live "what each person owes" figures for the summary, from the same
   // allocator the server runs, so the preview is exactly what gets saved.
   const previewShares = isItemized
-    ? previewItemizedShares(items, taxCents, tipCents, currency)
+    ? previewItemizedShares(items, taxCents, tipCents, currency, isLive ? { multiPayer, singlePayerId, payerAmounts } : undefined)
     : previewSplitShares({ splitType, totalCents, participantIds, inputs: splitInputs, currency });
   const payerCheck = checkPayers(totalCents, multiPayer, payerAmounts, currency);
 

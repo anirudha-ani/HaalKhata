@@ -116,7 +116,7 @@ export function useNewExpense(
   const itemDraft = useItemDraft(
     { items: initial.items, tax: initial.tax, tip: initial.tip },
     currency,
-    expenseAPI.editing?.liveSplit !== undefined,
+    expenseAPI.editing?.liveSplit ? { multiPayer, singlePayerId, payerAmounts } : undefined,
   );
 
   /**

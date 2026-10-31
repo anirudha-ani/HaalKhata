@@ -1,8 +1,9 @@
 /** Pure helpers for the expense form — validation + request assembly. */
 
 import { centsToInput, parseMoneyInput } from "@haalkhata/shared/money/money";
-import { computeItemizedSplits, computeSplits } from "@haalkhata/shared/expense/splits";
+import { computeItemizedSplits, computeSplits, computeUnclaimedSplits } from "@haalkhata/shared/expense/splits";
 import { LIVE_SPLIT_DEFAULT_NAME } from "@haalkhata/shared/expense/live/live.constants";
+import { fitPayers } from "@haalkhata/shared/expense/merge/expenseState";
 
 /** Split modes the form supports. */
 export type FormSplitType = "equal" | "exact" | "percent" | "shares" | "itemized";
@@ -379,6 +380,33 @@ export function buildItemsPayload(items: DraftLineItem[], currency: string) {
   }));
 }
 
+/** Who paid, as an expense form holds it. */
+export interface DraftPayers {
+  /** Whether several people paid. */
+  multiPayer: boolean;
+  /** Who paid, when one person did. */
+  singlePayerId: string;
+  /** Raw paid amounts by person, when several did. */
+  payerAmounts: Record<string, string>;
+}
+
+/**
+ * What each person paid, as a form stands.
+ *
+ * @param draft - Who paid, as the form holds it.
+ * @param totalCents - The total, which one person paying covers.
+ * @param currency - ISO 4217 code the amounts are typed in.
+ * @returns Paid cents by user id, leaving out anyone who paid nothing.
+ */
+export function paidByDraft(draft: DraftPayers, totalCents: number, currency: string): Record<string, number> {
+  if (!draft.multiPayer) return { [draft.singlePayerId]: totalCents };
+  return Object.fromEntries(
+    Object.entries(draft.payerAmounts)
+      .map(([userId, value]) => [userId, parseMoneyInput(value, currency) ?? 0] as const)
+      .filter(([, cents]) => cents > 0),
+  );
+}
+
 /**
  * Computes what each person owes for an itemized draft, for the live preview
  * row under the grid.
@@ -386,12 +414,16 @@ export function buildItemsPayload(items: DraftLineItem[], currency: string) {
  * This calls the very same `computeItemizedSplits` the server uses, so the
  * previewed figures are the figures that will be saved — no second
  * implementation of cent-exact allocation to drift out of sync. An incomplete
- * draft (no items, nothing assigned yet) simply previews nothing.
+ * draft (no items, nothing assigned yet) simply previews nothing. While a live
+ * split runs a line may have nobody on it, so the preview does what a save
+ * does then: such a line sits with whoever paid, what each person paid follows
+ * the total, and tax and tip follow each person's lines.
  *
  * @param items - The draft line items.
  * @param taxCents - Tax in integer cents.
  * @param tipCents - Tip in integer cents.
  * @param currency - ISO 4217 code the item amounts are typed in.
+ * @param livePayers - Who paid, when a live split is running on this bill.
  * @returns Owed cents keyed by user id; empty while the draft is incomplete.
  */
 export function previewItemizedShares(
@@ -399,18 +431,32 @@ export function previewItemizedShares(
   taxCents: number,
   tipCents: number,
   currency: string,
+  livePayers?: DraftPayers,
 ): Record<string, number> {
   try {
-    const { splits } = computeItemizedSplits(
-      buildItemsPayload(items, currency),
-      taxCents,
-      tipCents,
-    );
+    const lines = buildItemsPayload(items, currency);
+    const { totalCents } = itemizedTotals(items, taxCents, tipCents, currency);
+    const { splits } = livePayers
+      ? computeUnclaimedSplits(lines, taxCents, tipCents, fittedPayers(livePayers, totalCents, currency))
+      : computeItemizedSplits(lines, taxCents, tipCents);
     return Object.fromEntries(splits.map((split) => [split.userId, split.owedCents]));
   } catch {
     // Draft not complete enough to allocate yet — checkItemized surfaces why.
     return {};
   }
+}
+
+/**
+ * What each person paid, following the bill's total as it stands.
+ *
+ * @param draft - Who paid, as the form holds it.
+ * @param totalCents - The bill's total.
+ * @param currency - ISO 4217 code the amounts are typed in.
+ * @returns Who paid and how much, adding up to the total.
+ */
+function fittedPayers(draft: DraftPayers, totalCents: number, currency: string) {
+  return Object.entries(fitPayers(paidByDraft(draft, totalCents, currency), totalCents))
+    .map(([userId, amountCents]) => ({ userId, amountCents }));
 }
 
 /**
