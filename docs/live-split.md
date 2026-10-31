@@ -59,6 +59,11 @@ of splitting, any number of people who paid, and nobody has to settle.
   exactly that: what each person would owe if the bill were saved now, tax and tip
   included. When it ends those lines stay with whoever paid, and everyone left with
   nothing to pay comes off the bill.
+- **Ending stops nobody mid-claim.** A split ends on a clock or at the press of a
+  button, not when everyone has finished tapping. For a day after it ends, anyone who
+  was in it can still open the bill and save. What they claimed comes off whoever
+  paid, and everyone else's claims stand. Somebody who claimed nothing stays off the
+  bill and loses sight of it when the day is up.
 - **One announcement.** Nothing reaches the feed or anyone's bell while it runs. At
   the end the result goes out once: as a new expense if the split created it, as an
   edit if anything changed, and not at all if nothing did.
@@ -66,7 +71,7 @@ of splitting, any number of people who paid, and nobody has to settle.
   whoever started it and whoever paid, and whoever starts paying becomes friends with
   everyone on it, because a friendship is what lets them settle.
 - **Who was in it is not kept.** `live_split_people` holds who joined and when they
-  saved, for the avatars, and goes when the split ends.
+  saved, for the avatars and for saving late, and goes a day after the split ends.
 
 ## Run it locally
 
@@ -87,6 +92,10 @@ DATABASE_URL=postgres://haalkhata:change-me@127.0.0.1:5432/hk_live \
 3. Each person lands on the edit form. Save on one, and within 3 seconds the other
    sees their avatar turn saved and their change arrive in the form.
 4. Tap **Finish now** and check the bell on the other accounts.
+
+To see a late save, have one account tap a line and not save, press **Finish now** on
+the account that started it, then press **Save changes** on the first. The claim lands
+and the amount comes off whoever paid.
 
 To see one end by itself without waiting 30 minutes:
 

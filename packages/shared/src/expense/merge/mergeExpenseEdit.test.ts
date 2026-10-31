@@ -384,6 +384,66 @@ describe("money that must still reconcile", () => {
     expect(mergeExpenseEdit(even, shared, even, { live: true }).merged.owed).toEqual(shared.owed);
   });
 
+  describe("once a split has left a line with whoever paid", () => {
+    /**
+     * A bill with one line on it.
+     *
+     * @param shares - Who is on the line.
+     * @param payers - Who paid.
+     * @returns The bill.
+     */
+    const bill = (shares: Record<string, number>, payers: Record<string, number> = { [SARA]: 800 }): ExpenseState => ({
+      ...groceries,
+      splitType: "itemized",
+      amountCents: 800,
+      taxCents: 0,
+      tipCents: 0,
+      lines: [line("beer", "Beer", 800, shares)],
+      owed: { ...payers },
+      payers,
+    });
+
+    it("lets a late claim take the line rather than share it", () => {
+      const { merged, conflicts } = mergeExpenseEdit(bill({}), bill({ [TOMAS]: 1 }), bill({ [SARA]: 1 }));
+
+      expect(conflicts).toEqual([]);
+      expect(merged.lines[0].shares).toEqual({ [TOMAS]: 1 });
+      expect(merged.owed).toEqual({ [TOMAS]: 800 });
+    });
+
+    it("does the same when two people paid, whose portions follow what each paid", () => {
+      const twoCards = { [SARA]: 600, [NOOR]: 200 };
+
+      const { merged } = mergeExpenseEdit(bill({}, twoCards), bill({ [TOMAS]: 1 }, twoCards), bill({ [SARA]: 3, [NOOR]: 1 }, twoCards));
+
+      expect(merged.lines[0].shares).toEqual({ [TOMAS]: 1 });
+    });
+
+    it("leaves it with whoever paid when this person claimed nothing", () => {
+      const { merged } = mergeExpenseEdit(bill({}), bill({}), bill({ [SARA]: 1 }));
+
+      expect(merged.lines[0].shares).toEqual({ [SARA]: 1 });
+    });
+
+    it("shares it with anyone else who claimed it", () => {
+      const { merged } = mergeExpenseEdit(bill({}), bill({ [TOMAS]: 1 }), bill({ [NOOR]: 1 }));
+
+      expect(merged.lines[0].shares).toEqual({ [TOMAS]: 1, [NOOR]: 1 });
+    });
+
+    it("while a split still runs, somebody who paid and claimed a line keeps it", () => {
+      const { merged } = mergeExpenseEdit(bill({}), bill({ [TOMAS]: 1 }), bill({ [SARA]: 1 }), { live: true });
+
+      expect(merged.lines[0].shares).toEqual({ [TOMAS]: 1, [SARA]: 1 });
+    });
+
+    it("keeps an ordinary line the payer is on, which somebody chose", () => {
+      const { merged } = mergeExpenseEdit(bill({ [SARA]: 1 }), bill({ [SARA]: 1, [TOMAS]: 1 }), bill({ [SARA]: 1 }));
+
+      expect(merged.lines[0].shares).toEqual({ [SARA]: 1, [TOMAS]: 1 });
+    });
+  });
+
   it("outside a live split, leaves somebody at nothing on the bill", () => {
     const exact = { ...groceries, splitType: "exact", owed: { [SARA]: 9000, [TOMAS]: 0 } };
 

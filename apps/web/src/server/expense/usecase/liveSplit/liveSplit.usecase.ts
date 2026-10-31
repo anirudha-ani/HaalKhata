@@ -22,6 +22,7 @@ import {
   findRunningLiveSplit,
   insertLiveSplitPerson,
   insertUnsharedPerson,
+  forgetEndedLiveSplitPeople,
   listDueLiveSplitExpenses,
   listLiveSplitPeople,
   markLiveSplitChanged,
@@ -104,12 +105,14 @@ export async function finishLiveSplit(userId: string, expenseId: string): Promis
 }
 
 /**
- * Finishes the live splits past their end. A split that fails is left for the
- * next pass and does not stop the others.
+ * Finishes the live splits past their end, and forgets who was in the ones
+ * that ended long enough ago. A split that fails is left for the next pass and
+ * does not stop the others.
  *
  * @returns How many it finished.
  */
 export async function finishDueLiveSplits(): Promise<number> {
+  await forgetEndedLiveSplitPeople();
   const expenseIds = await listDueLiveSplitExpenses(LIVE_SPLIT_SWEEP_BATCH_SIZE);
   let finished = 0;
   for (const expenseId of expenseIds) {

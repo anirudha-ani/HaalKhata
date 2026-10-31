@@ -206,3 +206,10 @@ export const LIVE_SPLIT_SWEEP_INTERVAL_MS = 30_000;
 
 /** How many live splits one pass of the sweep finishes; the rest go on the next. */
 export const LIVE_SPLIT_SWEEP_BATCH_SIZE = 100;
+
+/**
+ * How long somebody who was in a live split can still save after it ends. A
+ * split ends on a clock, or when its host presses a button, not when everyone
+ * has finished tapping, and a form left open at the table is saved later.
+ */
+export const LIVE_SPLIT_LATE_SAVE_HOURS = 24;

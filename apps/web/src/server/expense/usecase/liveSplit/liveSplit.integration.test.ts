@@ -360,8 +360,10 @@ describe.skipIf(!reachable)("a live split, against Postgres", () => {
     // The link says it is over, and it no longer lets anyone in.
     await expect(social.previewInviteLink(token)).rejects.toMatchObject({ code: "failed_precondition", message: "this live split has ended" });
     await expect(social.acceptInviteLink(LENA, token)).rejects.toMatchObject({ code: "failed_precondition" });
-    // Priya claimed nothing, so she has no reason to see it any more.
-    await expect(read(id, PRIYA)).rejects.toMatchObject({ code: "permission_denied" });
+    // Priya claimed nothing, so they are not on it, and see it only while a form
+    // they left open could still be saved.
+    expect(await owed(id)).not.toHaveProperty(PRIYA);
+    await expect(read(id, PRIYA)).resolves.toBeDefined();
     // It can be edited like any other expense, with nothing announced twice.
     const finished = after.expense! as Saved;
     await expenses.updateExpense(SARA, id, editOf(finished, { notes: "Thanks all" }), false, finished);
@@ -422,6 +424,157 @@ describe.skipIf(!reachable)("a live split, against Postgres", () => {
     expect(after.expense!.notes).toBe("Late");
     expect(after.expense!.items[1].assignments.map((entry) => entry.userId)).toEqual([TOMAS]);
     expect(await database.query(`SELECT 1 FROM live_splits WHERE expense_id = $1 AND finished_at IS NULL`, [id])).toMatchObject({ rowCount: 0 });
+  });
+
+  describe("when somebody saves after it ended", () => {
+    /**
+     * A bill whose split has ended, with everyone's forms still open.
+     *
+     * @param people - Who joined.
+     * @returns The expense's id, and the form everyone still has open.
+     */
+    const endedBill = async (people: string[] = [TOMAS]) => {
+      const { id, saved } = await openBill(people);
+      await live.finishLiveSplit(SARA, id);
+      return { id, opened: saved };
+    };
+
+    it("lands a claim nobody had saved, taking the line off whoever paid", async () => {
+      const { id, opened } = await endedBill();
+      expect(await owed(id)).toEqual({ [SARA]: 3700 });
+
+      await expenses.updateExpense(TOMAS, id, claim(opened, TOMAS, "Beer"), false, opened);
+
+      expect(await owed(id)).toEqual({ [SARA]: 2900, [TOMAS]: 800 });
+    });
+
+    it("lands it when the time ran out and the sweep has not got there yet", async () => {
+      const { id, saved } = await openBill([TOMAS]);
+      await database.query(`UPDATE live_splits SET ends_at = now() - interval '1 second' WHERE expense_id = $1`, [id]);
+
+      await expenses.updateExpense(TOMAS, id, claim(saved, TOMAS, "Beer"), false, saved);
+
+      expect(await owed(id)).toEqual({ [SARA]: 2900, [TOMAS]: 800 });
+      expect((await read(id)).liveSplit).toBeUndefined();
+    });
+
+    it("lets whoever paid save what they had open, with lines still nobody's", async () => {
+      const { id, opened } = await endedBill();
+
+      await expenses.updateExpense(SARA, id, editOf(opened, { notes: "Thanks all" }), false, opened);
+
+      const after = await read(id);
+      expect(after.expense?.notes).toBe("Thanks all");
+      expect(after.expense?.items.map((item) => item.assignments.map((entry) => entry.userId))).toEqual([[SARA], [SARA], [SARA]]);
+    });
+
+    it("lets somebody who already has a share claim one more line", async () => {
+      const { id, saved } = await openBill([TOMAS]);
+      await expenses.updateExpense(TOMAS, id, claim(saved, TOMAS, "Pizza"), false, saved);
+      const opened = (await read(id, TOMAS)).expense! as Saved;
+      await live.finishLiveSplit(SARA, id);
+
+      await expenses.updateExpense(TOMAS, id, claim(opened, TOMAS, "Beer"), false, opened);
+
+      expect(await owed(id)).toEqual({ [SARA]: 900, [TOMAS]: 2800 });
+    });
+
+    it("keeps everyone's claim when several people save one after another", async () => {
+      const { id, opened } = await endedBill([TOMAS, PRIYA]);
+
+      await expenses.updateExpense(TOMAS, id, claim(opened, TOMAS, "Beer"), false, opened);
+      await expenses.updateExpense(PRIYA, id, claim(opened, PRIYA, "Salad"), false, opened);
+
+      expect(await owed(id)).toEqual({ [SARA]: 2000, [TOMAS]: 800, [PRIYA]: 900 });
+    });
+
+    it("shares a line two people both claim", async () => {
+      const { id, opened } = await endedBill([TOMAS, PRIYA]);
+
+      await expenses.updateExpense(TOMAS, id, claim(opened, TOMAS, "Beer"), false, opened);
+      await expenses.updateExpense(PRIYA, id, claim(opened, PRIYA, "Beer"), false, opened);
+
+      expect(await owed(id)).toEqual({ [SARA]: 2900, [TOMAS]: 400, [PRIYA]: 400 });
+    });
+
+    it("leaves somebody off the bill when what they saved has nothing of theirs on it", async () => {
+      const { id, opened } = await endedBill();
+
+      await expenses.updateExpense(TOMAS, id, editOf(opened, { notes: "Good night" }), false, opened);
+
+      expect((await read(id)).expense?.notes).toBe("Good night");
+      expect(await owed(id)).toEqual({ [SARA]: 3700 });
+    });
+
+    it("keeps the bill open to them for a day, and no longer", async () => {
+      const { id, opened } = await endedBill();
+      await expect(expenses.getExpenseVersion(TOMAS, id)).resolves.toBeDefined();
+      await expect(expenses.getExpense(TOMAS, id)).resolves.toBeDefined();
+
+      await database.query(`UPDATE live_splits SET finished_at = now() - interval '25 hours' WHERE expense_id = $1`, [id]);
+
+      await expect(expenses.getExpenseVersion(TOMAS, id)).rejects.toMatchObject({ code: "permission_denied" });
+      await expect(expenses.updateExpense(TOMAS, id, claim(opened, TOMAS, "Beer"), false, opened))
+        .rejects.toMatchObject({ code: "permission_denied" });
+    });
+
+    it("forgets who was in it after that day", async () => {
+      const { id } = await endedBill();
+      const people = () => database.query(
+        `SELECT 1 FROM live_split_people WHERE live_split_id IN (SELECT id FROM live_splits WHERE expense_id = $1)`,
+        [id],
+      );
+      await live.finishDueLiveSplits();
+      expect((await people()).rows).toHaveLength(2);
+
+      await database.query(`UPDATE live_splits SET finished_at = now() - interval '25 hours' WHERE expense_id = $1`, [id]);
+      await live.finishDueLiveSplits();
+
+      expect((await people()).rows).toEqual([]);
+    });
+
+    it("never stores a line with nobody on it, whatever a form says it opened", async () => {
+      const { id } = await endedBill();
+      const stored = (await read(id)).expense! as Saved;
+      const forged = { ...stored, items: stored.items.map((item) => (item.name === "Pizza" ? { ...item, assignments: [] } : item)) };
+      const emptied = editOf(stored, { items: stored.items.map((item) => ({ ...item, assignments: [] })) });
+
+      await expect(expenses.updateExpense(SARA, id, emptied, false, forged)).rejects.toMatchObject({ code: "aborted" });
+
+      const after = await read(id);
+      expect(after.expense?.items.every((item) => item.assignments.length > 0)).toBe(true);
+    });
+
+    it("lands a claim on a group's bill, for anyone still in the group", async () => {
+      const stayed = await stranger("Noor");
+      const left = await stranger("Ines");
+      const { id, saved } = await openBill([stayed, left], { groupId: FLAT });
+      await live.finishLiveSplit(SARA, id);
+      await groups.removeMemberFromGroup(left, { groupId: FLAT, userId: left });
+
+      await expenses.updateExpense(stayed, id, claim(saved, stayed, "Beer"), false, saved);
+
+      expect(await owed(id)).toEqual({ [SARA]: 2900, [stayed]: 800 });
+      await expect(expenses.updateExpense(left, id, claim(saved, left, "Salad"), false, saved))
+        .rejects.toMatchObject({ code: "permission_denied" });
+    });
+
+    it("gives nothing to somebody who was never in it", async () => {
+      const { id, opened } = await endedBill();
+
+      await expect(expenses.updateExpense(PRIYA, id, claim(opened, PRIYA, "Beer"), false, opened))
+        .rejects.toMatchObject({ code: "permission_denied" });
+    });
+
+    it("lets nobody back on past a block made since", async () => {
+      const { id, opened } = await endedBill();
+      await database.query(`INSERT INTO user_blocks (blocker_id, blocked_id) VALUES ($1, $2)`, [SARA, TOMAS]);
+
+      await expect(expenses.updateExpense(TOMAS, id, claim(opened, TOMAS, "Beer"), false, opened))
+        .rejects.toMatchObject({ code: "permission_denied" });
+
+      expect(await owed(id)).toEqual({ [SARA]: 3700 });
+    });
   });
 
   it("opens on a saved receipt, keeps what it already says, and says nothing if nothing changed", async () => {

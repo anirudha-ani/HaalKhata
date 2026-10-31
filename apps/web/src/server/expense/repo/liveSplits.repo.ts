@@ -2,6 +2,7 @@
 
 import type { PoolClient } from "pg";
 import { execute, newId, query, queryOne } from "@/server/common/db/db";
+import { LIVE_SPLIT_LATE_SAVE_HOURS } from "../expense.constants";
 
 /** One row of live_splits, with its link's token and whether its time is up. */
 export interface LiveSplitRow {
@@ -143,19 +144,21 @@ export async function listJoinedSinceLastSave(liveSplitId: string, client: PoolC
 }
 
 /**
- * Whether somebody is in a split still within its time on an expense.
+ * Whether somebody is in a split on an expense, or was in one that ended
+ * within the time a form left open can still save.
  *
  * @param expenseId - The expense.
  * @param userId - The person.
  * @param client - Transaction client; omitted, the pool.
- * @returns True when they have joined it.
+ * @returns True when they joined it.
  */
 export async function isInLiveSplit(expenseId: string, userId: string, client?: PoolClient): Promise<boolean> {
   return (await queryOne(
     `SELECT 1 AS joined FROM live_splits live
        JOIN live_split_people person ON person.live_split_id = live.id
-      WHERE live.expense_id = $1 AND live.finished_at IS NULL AND live.ends_at > now() AND person.user_id = $2`,
-    [expenseId, userId],
+      WHERE live.expense_id = $1 AND person.user_id = $2
+        AND (live.finished_at IS NULL OR live.finished_at > now() - make_interval(hours => $3))`,
+    [expenseId, userId, LIVE_SPLIT_LATE_SAVE_HOURS],
     client,
   )) !== undefined;
 }
@@ -232,14 +235,22 @@ export async function markLiveSplitChanged(liveSplitId: string, client: PoolClie
 }
 
 /**
- * Finishes a split and forgets who was in it.
+ * Finishes a split.
  *
  * @param liveSplitId - The split.
  * @param client - The transaction finishing it.
  */
 export async function markLiveSplitFinished(liveSplitId: string, client: PoolClient): Promise<void> {
   await execute(`UPDATE live_splits SET finished_at = now() WHERE id = $1`, [liveSplitId], client);
-  await execute(`DELETE FROM live_split_people WHERE live_split_id = $1`, [liveSplitId], client);
+}
+
+/** Forgets who was in the splits that ended too long ago for anyone to still save. */
+export async function forgetEndedLiveSplitPeople(): Promise<void> {
+  await execute(
+    `DELETE FROM live_split_people person USING live_splits live
+      WHERE person.live_split_id = live.id AND live.finished_at <= now() - make_interval(hours => $1)`,
+    [LIVE_SPLIT_LATE_SAVE_HOURS],
+  );
 }
 
 /**
