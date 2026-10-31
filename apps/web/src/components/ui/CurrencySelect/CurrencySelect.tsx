@@ -120,7 +120,8 @@ export function CurrencySelect({
             aria-label="Search currencies"
             className="w-full border-b border-line bg-card px-3 py-2 text-sm focus:outline-none"
           />
-          <ul ref={listRef} role="listbox" aria-label={ariaLabel} className="max-h-60 overflow-y-auto py-1">
+          {/* Out of the tab order: browsers would stop on it because it scrolls. */}
+          <ul ref={listRef} role="listbox" aria-label={ariaLabel} tabIndex={-1} className="max-h-60 overflow-y-auto py-1">
             {options.map((info, index) => (
               // The search box keeps focus and answers the keyboard, so the
               // options take clicks alone.
