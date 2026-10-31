@@ -1354,7 +1354,8 @@ async function countLateJoiners(split: LiveSplitRow, expense: ExpenseRow, client
   if (expense.split_type !== "equal" || expense.deleted_at) return;
   const stored = storedExpenseWrite(expense, await loadExpenseChildren([expense.id], client));
   const sharing = stored.splits.filter((split) => split.owedCents > 0).map((split) => split.userId);
-  const lateIds = (await listJoinedSinceLastSave(split.id, client)).filter((userId) => !sharing.includes(userId));
+  const alreadySharing = new Set(sharing);
+  const lateIds = (await listJoinedSinceLastSave(split.id, client)).filter((userId) => !alreadySharing.has(userId));
   if (lateIds.length === 0) return;
   const participantIds = [...new Set([...involvedUserIds(stored), ...lateIds])];
   if (expense.group_id) await lockGroupLedgers(client, [expense.group_id]);

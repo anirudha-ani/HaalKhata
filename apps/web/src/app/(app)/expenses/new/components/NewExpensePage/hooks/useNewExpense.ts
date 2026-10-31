@@ -451,7 +451,8 @@ export function useNewExpense(
    * @param userIds - Everyone on the saved expense.
    */
   const addPeople = (userIds: string[]) => {
-    const newcomers = userIds.filter((userId) => userId !== expenseAPI.me?.id && !(personIds ?? []).includes(userId));
+    const onForm = new Set(personIds);
+    const newcomers = userIds.filter((userId) => userId !== expenseAPI.me?.id && !onForm.has(userId));
     if (newcomers.length === 0 || (groupId && personIds === null)) return;
     setPersonIds((current) => [...new Set([...(current ?? []), ...newcomers])]);
   };
