@@ -30,7 +30,8 @@ export type CreateExpenseInput = PlainNumbers<MessageInitShape<typeof CreateExpe
  *
  * @param editExpenseId - Id of the expense being edited, or "" when creating.
  * @returns `me`, `groups`, `friends`, `editing` (the getExpense response when
- *   editing), a combined `isLoading` flag, the `create`/`update` mutations,
+ *   editing), a combined `isLoading` flag, `loadError` and `retry` for a read
+ *   the form cannot open without, the `create`/`update` mutations,
  *   and for an open edit `savedVersion` (what the server last said, asked
  *   again on a timer while the tab is in view) and `readLatest`.
  */
@@ -124,6 +125,20 @@ export function useNewExpenseAPI(editExpenseId: string) {
     archivedGroups: groupsByStatus(groupsQuery.data?.groups ?? [], GroupStatus.ARCHIVED),
     friends: friendsQuery.data?.friends ?? [],
     editing: editingQuery.data,
+    // Only what the form cannot open without: a background refresh failing
+    // leaves the copy it already has.
+    loadError:
+      (!currentUserQuery.data && currentUserQuery.error) ||
+      (!groupsQuery.data && groupsQuery.error) ||
+      (!friendsQuery.data && friendsQuery.error) ||
+      (editExpenseId !== "" && !editingQuery.data && editingQuery.error) ||
+      null,
+    retry: () => {
+      void currentUserQuery.refetch();
+      void groupsQuery.refetch();
+      void friendsQuery.refetch();
+      if (editExpenseId !== "") void editingQuery.refetch();
+    },
     isLoading:
       currentUserQuery.isLoading ||
       groupsQuery.isLoading ||

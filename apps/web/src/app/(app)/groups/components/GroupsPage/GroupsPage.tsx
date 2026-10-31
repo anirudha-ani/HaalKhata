@@ -4,11 +4,13 @@
 import Link from "next/link";
 import { Plus, Users } from "lucide-react";
 import { EmptyState } from "@/components/ui/EmptyState/EmptyState";
+import { ErrorAlert } from "@/components/ui/ErrorAlert/ErrorAlert";
 import { FriendChecklist } from "@/components/people/FriendChecklist/FriendChecklist";
 import { Modal } from "@/components/ui/Modal/Modal";
 import { Money } from "@/components/ui/Money/Money";
 import { SearchField } from "@/components/ui/SearchField/SearchField";
 import { Spinner } from "@/components/ui/Spinner/Spinner";
+import { errorMessage } from "@/lib/api/connect";
 import { useHydrated } from "@/lib/hooks/useHydrated";
 import { CurrencySelect } from "@/components/ui/CurrencySelect/CurrencySelect";
 import { GROUP_BALANCE_FILTERS, noGroupsMessage } from "@haalkhata/shared/group/balanceFilter";
@@ -61,7 +63,9 @@ export function GroupsPage() {
         ))}
       </div>
 
-      {groupsState.groups.length === 0 && groupsState.status === GroupStatus.ACTIVE ? (
+      {groupsState.listError ? (
+        <ErrorAlert message={`Groups could not be loaded: ${errorMessage(groupsState.listError)}`} onRetry={groupsState.retryList} />
+      ) : groupsState.groups.length === 0 && groupsState.status === GroupStatus.ACTIVE ? (
         <EmptyState
           icon={<Users />}
           title="No groups yet"
