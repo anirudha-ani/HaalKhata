@@ -1,0 +1,73 @@
+{
+  "locale": "en-US",
+  "name": "HaalKhata",
+  "subtitle": "Shared expenses, made simple",
+  "promotionalText": "Snap the bill. Skip the typing. Scan receipts with AI, pick who had what, and split tax and tip. Free and open source. No ads, subscriptions, or paid features.",
+  "description": "Snap the bill. Skip the typing.\n\nGreat dinner. One receipt. Nobody wants to do the math.\n\nHaalKhata makes shared expenses simple: scan the receipt with AI, pick who had what, and see everyone’s share, including tax and tip.\n\nCOMPLETELY FREE AND OPEN SOURCE\nNo ads, subscriptions, in-app purchases, or paid features. The full source code is public, so anyone can see how the app works and help improve it.\n\nSource code: https://github.com/anirudha-ani/HaalKhata\n\nLET AI DO THE TYPING\nTake or choose a receipt photo. AI reads the items, tax, and tip; you review the details before saving. You can always enter a bill yourself.\n\nPICK WHAT YOU HAD\nYour meal, your share. Tap to assign items to the people who had them. Share an appetizer or dessert, and split tax and tip in proportion to each person’s items.\n\nSPLIT TOGETHER\nOpen a live split and share the link. Friends join the same bill, claim their items, and save their part. Everyone can help, without passing one phone around.\n\nFROM DINNER TO THE WEEKEND AWAY\nKeep dinners, roommate bills, and trips organized in groups. Split equally, by exact amounts, percentages, shares, or individual items. Handle multiple payers and keep different currencies separate.\n\nKNOW WHO OWES WHAT\nSee balances with friends and groups, follow comments and changes, and record a settlement after paying outside the app. Spending insights show where your share went. HaalKhata does not transfer money or process payments.\n\nMADE FOR IPHONE AND IPAD\nSign in with Apple or Google. The layout adapts to your screen. Contacts access, AI receipt scanning, phone verification, and notifications are optional. Manage signed-in devices and delete your account in Account settings.\n\nShared expenses, made simple.\n\nPrivacy: https://haalkhata.app/privacy\nSupport: https://haalkhata.app/support",
+  "keywords": "expenses,bills,receipt,split,roommates,travel,groups,friends,balances,settle,shared",
+  "supportUrl": "https://haalkhata.app/support",
+  "marketingUrl": "https://haalkhata.app",
+  "privacyPolicyUrl": "https://haalkhata.app/privacy",
+  "copyright": "2026 Anirudha Paul",
+  "primaryCategory": "FINANCE",
+  "headerArtwork": "creative-v3/creative-assets/header.png",
+  "screenshots": [
+    {
+      "key": "ai",
+      "label": "AI RECEIPT SCANNING",
+      "title": [
+        "Snap the bill.",
+        "Skip the typing."
+      ],
+      "detail": "AI reads the receipt. You choose the split."
+    },
+    {
+      "key": "itemized",
+      "label": "PICK YOUR ITEMS",
+      "title": [
+        "Your meal.",
+        "Your share."
+      ],
+      "detail": "Pick your items. Share the dessert."
+    },
+    {
+      "key": "live",
+      "label": "SPLIT LIVE",
+      "title": [
+        "One bill.",
+        "Everyone joins in."
+      ],
+      "detail": "Friends open the link and pick their items."
+    },
+    {
+      "key": "settle",
+      "label": "SETTLE UP",
+      "title": [
+        "Settle up.",
+        "Your way."
+      ],
+      "detail": "Open Venmo or copy Zelle details.",
+      "secondDetail": "Pay there, then record it here."
+    },
+    {
+      "key": "groups",
+      "label": "YOUR PEOPLE. YOUR PLANS.",
+      "title": [
+        "Dinner. Rent.",
+        "Tahoe weekend."
+      ],
+      "detail": "Keep shared expenses together."
+    },
+    {
+      "key": "balances",
+      "label": "CLEAR BALANCES",
+      "title": [
+        "Who owes what.",
+        "Clear at a glance."
+      ],
+      "detail": "See each person’s balance in one place."
+    }
+  ],
+  "reviewStatus": "Submitted October 31, 2026 at 4:13 PM PDT. App Store Connect confirms Waiting for Review for iOS version 1.0, build 1.0.0 (6). Manual public release selected. All required screenshots and requested header/search artwork processed and previewed.",
+  "searchResultsArtwork": "creative-v3/creative-assets/search-results.png"
+}

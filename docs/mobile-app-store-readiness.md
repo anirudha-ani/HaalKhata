@@ -1,6 +1,11 @@
-<!-- Current iOS release handoff for HaalKhata, updated 2026-10-05. -->
+<!-- Current iOS release handoff for HaalKhata, updated 2026-10-31. -->
 
 # HaalKhata App Store release handoff
+
+Version 1.0, build 1.0.0 (6), was submitted for App Review on October 31, 2026,
+with manual public release selected. For candidate checks, store assets and
+submission evidence, see the [October 31 submission audit](audits/app-store-submission-2026-10-31.md).
+The older implementation and verification results below remain historical.
 
 The release implementation is on `codex/mobile-app-store-release`, created from
 freshly fetched `origin/main` at `4d54949`. Code and local checks are complete;

@@ -1,0 +1,22 @@
+{
+  "approvedSubtitle": "Shared expenses, made simple",
+  "status": "Choose an option before uploading or saving marketing copy.",
+  "options": {
+    "A": {
+      "name": "Concise and factual",
+      "promotionalText": "Split shared expenses, itemize receipts, and track balances with friends and groups. Available on iPhone and iPad.",
+      "description": "Shared expenses, made simple.\n\nHaalKhata helps you track who paid and who owes across shared meals, trips, and household bills.\n\n• Split equally, by exact amounts, percentages, shares, or receipt items.\n• Scan a receipt with AI, then review and assign its items before saving. Manual entry is always available.\n• Open a live split so your group can claim items on the same bill.\n• Keep balances separate for each currency and record settlements after paying outside the app.\n• Follow shared expenses, comments, and optional notifications.\n• View spending insights and manage groups on iPhone and iPad.\n\nSign in with Apple or Google. Contacts, photo scanning, phone verification, payment methods, and notifications are optional.\n\nHaalKhata records expenses and settlements; it does not transfer money.\n\nPrivacy: https://haalkhata.app/privacy\nSupport: https://haalkhata.app/support",
+      "keywords": "expenses,bills,receipt,split,roommates,travel,groups,friends,balances,settle,shared"
+    },
+    "B": {
+      "name": "Feature by feature",
+      "promotionalText": "From itemized receipts to live group splits, keep shared expenses and balances in one place with HaalKhata.",
+      "description": "Shared expenses, made simple.\n\nHaalKhata helps friends, roommates, families, and travel groups keep track of who paid, who owes, and what is settled.\n\nFLEXIBLE SPLITS\nSplit equally, enter exact amounts, or use percentages and shares. Add multiple payers and keep each currency separate.\n\nITEMIZED RECEIPTS\nTake or choose a receipt photo, allow AI processing, and review the extracted items, tax, and tip before saving. Assign items to the people who shared them. You can always enter everything manually.\n\nLIVE SPLITTING\nOpen a live split and invite your group to the same bill. Participants can claim their items and save their part.\n\nGROUPS AND ACTIVITY\nOrganize expenses by group, add comments, and follow changes in Activity. Optional notifications help you keep up with shared bills.\n\nBALANCES AND INSIGHTS\nView balances with friends and groups, explore spending insights, and record settlements after paying outside HaalKhata. The app records payments; it does not transfer money.\n\nIPHONE AND IPAD\nUse a layout that adapts to your screen. Sign in with Apple or Google. Photo scanning, contacts access, phone verification, payment methods, and notifications are optional.\n\nPRIVACY AND ACCOUNT CONTROLS\nReport inappropriate content, block unwanted contact, manage signed-in devices, or delete your account in Account settings.\n\nPrivacy: https://haalkhata.app/privacy\nSupport: https://haalkhata.app/support",
+      "keywords": "expenses,bills,receipt,split,roommates,travel,groups,friends,balances,settle,shared"
+    }
+  },
+  "screenshotCaptionOptions": {
+    "A": ["Shared expenses, made simple", "Itemized receipts", "Split together, live", "Group balances", "Spending insights"],
+    "B": ["Shared expenses, made simple", "Choose your items", "Share the same bill", "See who owes what", "Understand your spending"]
+  }
+}

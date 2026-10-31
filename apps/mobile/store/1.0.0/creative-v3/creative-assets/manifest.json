@@ -1,0 +1,20 @@
+{
+  "status": "Both creative assets uploaded and processed. Header verified in Apple iPhone, iPad portrait, and iPad landscape product-page previews. Search artwork verified in Apple iPhone Search Results preview.",
+  "source": "Approved Bold product story; actual iPad native itemized capture; fictional California receipt",
+  "exports": [
+    {
+      "placement": "header",
+      "filename": "header.png",
+      "width": 3840,
+      "height": 1646,
+      "hasAlpha": false
+    },
+    {
+      "placement": "search-results",
+      "filename": "search-results.png",
+      "width": 3840,
+      "height": 2560,
+      "hasAlpha": false
+    }
+  ]
+}

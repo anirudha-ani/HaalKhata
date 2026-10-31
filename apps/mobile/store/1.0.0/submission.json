@@ -1,0 +1,18 @@
+{
+  "appStoreConnectId": "6822393405",
+  "storeVersion": "1.0",
+  "buildVersion": "1.0.0",
+  "buildNumber": "6",
+  "submissionId": "6326edba-d60f-4f9d-86bb-d0a122c7abd6",
+  "submittedAt": "2026-10-31T16:13:00-07:00",
+  "status": "Waiting for Review",
+  "releaseMode": "Manual",
+  "url": "https://appstoreconnect.apple.com/apps/6822393405/distribution/reviewsubmissions/details/6326edba-d60f-4f9d-86bb-d0a122c7abd6",
+  "assets": {
+    "iphoneScreenshots": 6,
+    "ipadScreenshots": 6,
+    "header": 1,
+    "searchResults": 1
+  },
+  "evidence": "App Store Connect confirmed 1 Item Submitted; submission details show Waiting for Review and 1.0.0 (6)."
+}
