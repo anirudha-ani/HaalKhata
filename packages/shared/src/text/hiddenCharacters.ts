@@ -28,8 +28,24 @@ const DRAWN_FORMAT_PATTERN = /[\u0600-\u0605\u06DD\u070F\u0890\u0891\u08E2\u{110
  */
 const BLANK_LETTER_PATTERN = /[ᅟᅠㅤﾠ⠀]/u;
 
+/**
+ * Marks that draw nothing and do nothing a reader could want: the combining
+ * grapheme joiner and the two Khmer inherent vowels Unicode advises against.
+ */
+const INVISIBLE_MARK_PATTERN = /\u034F|\u17B4|\u17B5/u;
+
+/**
+ * Variation selectors. Alone they draw nothing, so between two letters they
+ * hide a word from anything that reads it ("P" + one + "IN"). They only
+ * mean something after what they vary.
+ */
+const VARIATION_SELECTOR_PATTERN = /[\u180B-\u180D]|\u180F|[\uFE00-\uFE0F]|[\u{E0100}-\u{E01EF}]/u;
+
+/** What a variation selector really varies: an emoji, a Chinese character, a Mongolian letter. */
+const TAKES_SELECTOR_PATTERN = /[\p{Extended_Pictographic}\p{Script=Han}\p{Script=Mongolian}]/u;
+
 /** Any character this module removes somewhere, for the quick way out. */
-const ANY_HIDDEN_PATTERN = /[\p{Cf}ᅟᅠㅤﾠ⠀]/u;
+const ANY_HIDDEN_PATTERN = /[\p{Cf}ᅟᅠㅤﾠ⠀]|\u034F|\u17B4|\u17B5|[\u180B-\u180D]|\u180F|[\uFE00-\uFE0F]|[\u{E0100}-\u{E01EF}]/u;
 
 /**
  * The two joiners. Bengali, Devanagari, Persian and other scripts use them
@@ -51,7 +67,18 @@ const LAST_ASCII_CODE_POINT = 0x7f;
 function takesJoiner(character: string | undefined): boolean {
   if (character === undefined) return false;
   if ((character.codePointAt(0) ?? 0) <= LAST_ASCII_CODE_POINT) return false;
+  if (VARIATION_SELECTOR_PATTERN.test(character)) return true;
   return !/\s/u.test(character) && !ANY_HIDDEN_PATTERN.test(character);
+}
+
+/**
+ * Whether a variation selector does anything where it stands.
+ *
+ * @param previous - The character before it, or undefined at the start.
+ * @returns True after something it can vary.
+ */
+function takesSelector(previous: string | undefined): boolean {
+  return previous !== undefined && TAKES_SELECTOR_PATTERN.test(previous);
 }
 
 /**
@@ -59,10 +86,10 @@ function takesJoiner(character: string | undefined): boolean {
  *
  * @param text - The text as typed, pasted or stored.
  * @param keepJoiners - True for words a person reads (a name, a note), where
- *   a joiner between two letters of a script that uses joiners is kept, and
- *   so are the few format characters that are drawn. False for an identifier
- *   someone copies (an account number, a username, a link), which loses
- *   every format character.
+ *   a joiner between two letters of a script that uses joiners is kept, so is
+ *   a variation selector after what it varies, and so are the few format
+ *   characters that are drawn. False for an identifier someone copies (an
+ *   account number, a username, a link), which loses every format character.
  * @returns The text without hidden characters. What remains is drawn the way
  *   it is stored.
  */
@@ -71,7 +98,8 @@ export function stripHiddenCharacters(text: string, keepJoiners: boolean): strin
   const characters = Array.from(text);
   return characters
     .filter((character, index) => {
-      if (BLANK_LETTER_PATTERN.test(character)) return false;
+      if (BLANK_LETTER_PATTERN.test(character) || INVISIBLE_MARK_PATTERN.test(character)) return false;
+      if (VARIATION_SELECTOR_PATTERN.test(character)) return keepJoiners && takesSelector(characters[index - 1]);
       if (!FORMAT_CHARACTER_PATTERN.test(character)) return true;
       if (keepJoiners && DRAWN_FORMAT_PATTERN.test(character)) return true;
       if (!keepJoiners || !JOINERS.includes(character)) return false;

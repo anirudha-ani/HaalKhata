@@ -180,3 +180,14 @@ export const BANK_DETAIL_KINDS: readonly string[] = [
   "routing_number",
   "swift",
 ];
+
+/**
+ * Letters and digits that read as a Latin letter, lower-cased, for reading a
+ * label the way somebody looking at it would. Greek and Cyrillic capitals
+ * count as the capital they look like, so "ΡΙΝ" reads as "pin".
+ */
+export const LOOKALIKE_LETTERS: Readonly<Record<string, string>> = {
+  а: "a", в: "b", е: "e", к: "k", м: "m", н: "h", о: "o", р: "p", с: "c", т: "t", у: "y", х: "x", і: "i", ј: "j", ѕ: "s",
+  α: "a", β: "b", ε: "e", ι: "i", κ: "k", μ: "m", ν: "n", ο: "o", ρ: "p", τ: "t", υ: "y", χ: "x",
+  "0": "o", "1": "i", "3": "e", "5": "s",
+};

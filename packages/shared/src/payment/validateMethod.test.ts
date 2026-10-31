@@ -2,6 +2,7 @@
 
 import { describe, expect, test } from "vitest";
 import { checkPaymentMethod, firstPaymentMethodError } from "./validateMethod";
+import { SECRET_REFUSAL } from "./payment.constants";
 import type { PaymentMethodFields } from "./types";
 
 /**
@@ -133,6 +134,21 @@ describe("checkPaymentMethod", () => {
       checkPaymentMethod(draftWith({ details: [{ kind: "custom", label: "Pincode", value: "560001" }] }))
         .valid,
     ).toBe(true);
+  });
+
+  test("a hidden mark or a lookalike letter does not get a secret past the name", () => {
+    for (const name of ["P\uFE0FIN", "P\u034FIN", "ΡΙΝ", "P1N"]) {
+      expect(checkPaymentMethod(draftWith({ name })).errors.name).toBe(SECRET_REFUSAL);
+    }
+  });
+
+  test("a name made only of hidden marks counts as no name", () => {
+    expect(checkPaymentMethod(draftWith({ name: "\uFE0F\u034F\u17B4" })).errors.name).toBe("give this method a name");
+  });
+
+  test("a name with an emoji in it is fine, and keeps it", () => {
+    const { method } = checkPaymentMethod(draftWith({ name: "bKash \u2764\uFE0F" }));
+    expect(method.name).toBe("bKash \u2764\uFE0F");
   });
 
   test("stores SWIFT and IBAN compact and in capitals", () => {
