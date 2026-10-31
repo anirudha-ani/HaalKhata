@@ -147,3 +147,10 @@ test('the Expo push token lands as a protected secret file, never in .env, and a
   assert.equal(server.applyConfig('EXPO_ACCESS_TOKEN=\n').status, 0);
   assert.equal(readFileSync(join(server.directory, 'secrets/expo_access_token'), 'utf8'), token);
 });
+
+test('the app has one address: www only leads to it', () => {
+  const caddyfile = readFileSync(join(__dirname, '..', 'Caddyfile'), 'utf8');
+  assert.match(caddyfile, /^haalkhata\.app \{$/m);
+  assert.match(caddyfile, /^www\.haalkhata\.app \{\n\tredir https:\/\/haalkhata\.app\{uri\} permanent\n\}$/m);
+  assert.doesNotMatch(caddyfile, /haalkhata\.app, www\.haalkhata\.app/);
+});

@@ -71,10 +71,18 @@
 	}
 }
 
-haalkhata.app, www.haalkhata.app {
+haalkhata.app {
 	# The app independently enforces a 12 MiB decoded Connect-message limit
 	# (receipt photos); this slightly larger wire cap leaves framing room.
 	import haalkhata 16MB
+}
+
+# One address only. Apple sends people back to the address above, the session
+# cookie belongs to one host, and the app claims links on that host alone. The
+# same app on www signs nobody in, and Safari hides the "www." that would explain
+# why, so www only ever leads here. The path comes along, so old links still work.
+www.haalkhata.app {
+	redir https://haalkhata.app{uri} permanent
 }
 
 # The operator's usage page. Same container as the app: it decides what to

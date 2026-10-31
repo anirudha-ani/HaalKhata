@@ -678,6 +678,10 @@ Things not to break when touching deploy config:
   without the overwrite a caller picks their own rate-limit bucket.
   `TRUST_PROXY_HEADERS=true` belongs only in the same trusted-proxy stack;
   direct deployments must leave it false and use the mount-injected peer IP.
+- **The app has one address.** `www` only redirects to `haalkhata.app`. Apple
+  sends people back to `APP_PUBLIC_URL`, the session cookie belongs to one host,
+  and the phone app claims links on that host alone, so a second address signs
+  nobody in, and Safari hides the `www.` that would explain why.
 - **Don't rewrite `Host`.** `csrfGuard()` compares `Origin` against
   `request.headers.host`; a proxy that rewrites Host 403s every browser POST.
 - **`NEXT_PUBLIC_GOOGLE_CLIENT_ID` is a build arg, not a runtime value.** It
