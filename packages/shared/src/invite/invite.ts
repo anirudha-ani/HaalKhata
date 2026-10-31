@@ -1,20 +1,16 @@
 /** The one spelling of an invite link's URL, shared by both apps' share sheets. */
 
 /**
- * Canonical public origin invite links are shared under. Fixed rather than
- * derived from the current window: a link pasted into WhatsApp must work for
- * someone who has never seen the app, whichever machine it was copied on.
- */
-export const INVITE_ORIGIN = "https://haalkhata.app";
-
-/**
- * Composes the shareable URL for an invite token.
+ * Composes the shareable URL for an invite token. The origin comes from the
+ * app, because a token only means something on the server that minted it: a
+ * staging or self-hosted instance's link must lead back to that instance.
  *
  * @param token - The bearer token minted by the server.
+ * @param origin - The address of the server that minted it.
  * @returns The absolute URL the join page answers at.
  */
-export function inviteUrl(token: string): string {
-  return `${INVITE_ORIGIN}/join/${token}`;
+export function inviteUrl(token: string, origin: string): string {
+  return `${origin}/join/${token}`;
 }
 
 /**
