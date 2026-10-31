@@ -33,6 +33,8 @@ import { insertFriendships, listFriendIds } from "@/server/social/repo/friendshi
 import { assertRoomForAnotherGroup } from "./groupLimit";
 import { insertActivity } from "@/server/social/repo/activity.repo";
 import { insertNotifications } from "@/server/social/repo/notifications.repo";
+import { personNotification } from "@/server/social/usecase/personNotification";
+import { notificationLabel } from "@/server/social/usecase/notificationLabel";
 import {
   currencyAmounts,
   groupIsSettled,
@@ -420,8 +422,7 @@ async function notifyAdded(
     {
       actorId: actor.id,
       type: "added_to_group",
-      title: `${actor.name} added you to "${groupName}"`,
-      body: "",
+      ...personNotification(actor.name, `Added you to "${notificationLabel(groupName)}"`),
       link: `/groups/${groupId}`,
     },
     client,
@@ -512,8 +513,12 @@ export async function addMembers(
       {
         actorId: userId,
         type: "member_added",
-        title: `${actor.name} added ${nameList(enrolled.map((user) => user.name))} to "${group.name}"`,
-        body: "",
+        ...personNotification(
+          actor.name,
+          `Added ${enrolled.length} ${enrolled.length === 1 ? "member" : "members"}`,
+          notificationLabel(group.name),
+          nameList(enrolled.map((user) => user.name)),
+        ),
         link: `/groups/${input.groupId}`,
       },
       client,
@@ -572,8 +577,7 @@ export async function transferOwnership(
       {
         actorId: userId,
         type: "ownership_transferred",
-        title: `${actor.name} made you the owner of "${group.name}"`,
-        body: "",
+        ...personNotification(actor.name, "Made you the group owner", notificationLabel(group.name)),
         link: `/groups/${input.groupId}`,
       },
       client,
@@ -583,8 +587,7 @@ export async function transferOwnership(
       {
         actorId: userId,
         type: "ownership_transferred",
-        title: `${actor.name} made ${newOwner.name} the owner of "${group.name}"`,
-        body: "",
+        ...personNotification(actor.name, "Changed the group owner", notificationLabel(group.name), newOwner.name),
         link: `/groups/${input.groupId}`,
       },
       client,
@@ -643,10 +646,12 @@ export async function setSimplifyDebts(
       {
         actorId: userId,
         type: "simplify_debts",
-        title: input.simplify
-          ? `${actor.name} turned on debt simplification in "${group.name}"`
-          : `${actor.name} turned off debt simplification in "${group.name}"`,
-        body: input.simplify ? "Fewer payments, same balances." : "Debts show person to person again.",
+        ...personNotification(
+          actor.name,
+          input.simplify ? "Turned on simpler payments" : "Turned off simpler payments",
+          notificationLabel(group.name),
+          input.simplify ? "Same balances, fewer payments" : "Debts show person to person",
+        ),
         link: `/groups/${input.groupId}`,
       },
       client,

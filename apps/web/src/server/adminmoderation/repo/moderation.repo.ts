@@ -379,9 +379,8 @@ const NAME_ON_ITS_OWN = String.raw`(SELECT '(^|[ ,"''(“‘])' || regexp_replac
  * - a group: every line in its feed but comments, since every expense,
  *   payment, member and setting line in it names the group and a comment
  *   line does not; every notification linking to the group; and the
- *   notifications about its expenses, whose body opens with the group's
- *   name ("Trip · you owe Ani 600"), while comment notifications on those
- *   expenses, which do not name it, stay;
+ *   notifications about its expenses and their comments, whose bodies name
+ *   the group. The comment's feed line does not name the group and stays;
  * - a profile: everything the person did, since each line opens with their
  *   name, and every other line that names them. A feed line names someone
  *   besides its actor only when that someone is in its audience ("Ani paid
@@ -430,7 +429,7 @@ export async function replaceQuotations(
           (SELECT user_id, '/expenses/' || expense_id FROM comments WHERE id = $2::text)
         WHEN 'expense' THEN link = '/expenses/' || $2::text
         WHEN 'group' THEN link = '/groups/' || $2::text
-          OR (type IN ('expense_added', 'expense_updated', 'expense_deleted')
+          OR (type IN ('expense_added', 'expense_updated', 'expense_deleted', 'comment')
               AND link IN (SELECT '/expenses/' || id FROM expenses WHERE group_id = $2::text))
         WHEN 'user' THEN actor_id = $2::text
           OR ((title ~ ${NAME_ON_ITS_OWN} OR body ~ ${NAME_ON_ITS_OWN})

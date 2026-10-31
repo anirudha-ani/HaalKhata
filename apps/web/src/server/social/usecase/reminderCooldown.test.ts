@@ -210,7 +210,8 @@ describe("reminder cooldown ordering", () => {
   it("says only what is owed when the sender has no payment method", async () => {
     await sendReminder(SENDER_ID, DEBTOR_ID);
     const [, notification] = vi.mocked(insertNotifications).mock.calls[0];
-    expect(notification.body).toBe("You owe $5.00");
+    expect(notification.title).toBe("Sender User");
+    expect(notification.body).toBe("Reminded you: you owe $5.00");
   });
 
   it("names the sender's preferred method and never the identifier behind it", async () => {
@@ -224,7 +225,7 @@ describe("reminder cooldown ordering", () => {
     // Read on the reminder's own transaction, like every other step.
     expect(listPaymentMethodsByUser).toHaveBeenCalledWith(SENDER_ID, transactionClient);
     const [, notification] = vi.mocked(insertNotifications).mock.calls[0];
-    expect(notification.body).toBe("You owe $5.00. Sender prefers Zelle.");
+    expect(notification.body).toBe("Reminded you: you owe $5.00 · Sender prefers Zelle.");
     // A notification is a stored row: the handle must not be copied into it.
     expect(notification.body).not.toContain("sender@example.com");
     expect(notification.body).not.toContain("sender-venmo");
@@ -245,7 +246,7 @@ describe("reminder cooldown ordering", () => {
     await sendReminder(SENDER_ID, DEBTOR_ID);
 
     const [, notification] = vi.mocked(insertNotifications).mock.calls[0];
-    expect(notification.body).toBe("You owe $5.00. Sender takes Zelle.");
+    expect(notification.body).toBe("Reminded you: you owe $5.00 · Sender takes Zelle.");
   });
 
   it("refuses when the only positive position is in a currency they are owed in", async () => {

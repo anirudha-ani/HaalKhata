@@ -165,7 +165,7 @@ export async function seedModeration(database: Client): Promise<void> {
        ('ntf-author-2', $1, $2, 'settlement', 'Author Person paid you', 'Settlement', '/friends/' || $2),
        ('ntf-group-1', $2, $1, 'member_added', 'Reporter Person added you', 'Offensive group name', '/groups/' || $4),
        ('ntf-group-expense-1', $2, $1, 'expense_added', 'Reporter Person added "Groceries"', 'Offensive group name · you owe Reporter Person $6.17', '/expenses/' || $5),
-       ('ntf-group-comment-1', $2, $1, 'comment', 'Reporter Person commented on "Groceries"', 'see you there', '/expenses/' || $5)`,
+       ('ntf-group-comment-1', $2, $1, 'comment', 'Reporter Person', 'Commented on "Groceries" · Offensive group name · see you there', '/expenses/' || $5)`,
     [REPORTER, AUTHOR, EXPENSE_ID, GROUP_ID, GROUP_EXPENSE_ID],
   );
   await database.query(

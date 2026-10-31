@@ -125,8 +125,8 @@ describe.skipIf(!reachable)("contacts usecases against Postgres", () => {
       `SELECT user_id, type, title, actor_id FROM notifications ORDER BY user_id`,
     );
     expect(notifications.rows).toEqual([
-      { user_id: "alice", type: "friend_request", title: "Anirudha sent you a friend request", actor_id: "caller" },
-      { user_id: "bob", type: "friend_request", title: "Anirudha sent you a friend request", actor_id: "caller" },
+      { user_id: "alice", type: "friend_request", title: "Anirudha", actor_id: "caller" },
+      { user_id: "bob", type: "friend_request", title: "Anirudha", actor_id: "caller" },
     ]);
   });
 

@@ -104,8 +104,8 @@ describe("sendFriendRequests", () => {
       {
         actorId: "caller",
         type: "friend_request",
-        title: "Anirudha sent you a friend request",
-        body: "Accept or decline it from Friends.",
+        title: "Anirudha",
+        body: "Sent you a friend request.",
         link: "/friends",
       },
       transactionClient,

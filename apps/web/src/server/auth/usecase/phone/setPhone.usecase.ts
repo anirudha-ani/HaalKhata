@@ -350,8 +350,8 @@ async function transferVerifiedPhone(
       [holder.id],
       {
         type: "phone_transferred",
-        title: `Your number ${phone} now points to a different account`,
-        body: "Someone verified it by SMS — usually a moved or reissued SIM. Still your number? Verify it again from Account to take it back.",
+        title: "Phone number moved",
+        body: `${phone} was verified on another account. Still yours? Verify it again in Account.`,
         link: "/account",
       },
       client,
@@ -360,8 +360,8 @@ async function transferVerifiedPhone(
       [claimantId],
       {
         type: "phone_transferred",
-        title: `${phone} is now on your profile`,
-        body: "It previously pointed to another account; they've been told.",
+        title: "Phone number updated",
+        body: `${phone} is now on your profile. Its previous account has been notified.`,
         link: "/account",
       },
       client,

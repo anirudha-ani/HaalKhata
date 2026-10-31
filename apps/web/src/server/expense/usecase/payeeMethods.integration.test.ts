@@ -264,7 +264,7 @@ describe.skipIf(!reachable)("payee methods on the friend ledger, against Postgre
       `SELECT body FROM notifications WHERE user_id = $1 AND type = 'reminder'`,
       [PAYEE],
     );
-    expect(rows).toEqual([{ body: "You owe $80.00. Pia prefers Zelle." }]);
+    expect(rows).toEqual([{ body: "Reminded you: you owe $80.00 · Pia prefers Zelle." }]);
     expect(rows[0].body).not.toContain("pia@example.com");
   });
 });

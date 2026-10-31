@@ -21,7 +21,8 @@ of sending it, so you can check recipients, wording, badge and links.
      FROM users WHERE email = '<B's email>';
    ```
 3. As A, add an expense that includes B. Within a second the server log
-   prints `push (log provider)`. The line has B's title ("A added …"), body,
+   prints `push (log provider)`. The line has B's title (A's display name), body
+   (for example, `Added expense · you owe $12.00 · Goa trip · "Dinner"`),
    `badge` (B's unread count), `link`, `threadId` and `collapseId`. A
    `push drain` line follows with the counts.
 4. Repeat for a comment, a payment each way, a reminder, a friend request, a
@@ -79,7 +80,7 @@ On the iOS simulator, save a payload and push it:
 ```json
 {
   "Simulator Target Bundle": "com.haalkhata.app",
-  "aps": { "alert": { "title": "Ani added \"Dinner\"", "body": "Goa trip" }, "badge": 1 },
+  "aps": { "alert": { "title": "Ani", "body": "Recorded $25.00 to you · Goa trip" }, "badge": 1 },
   "body": { "notificationId": "local", "link": "/activity", "recipientId": "<signed-in user id>" }
 }
 ```
@@ -90,6 +91,64 @@ xcrun simctl push booted com.haalkhata.app payload.json
 
 Tap it with the app running and killed. A different `recipientId` must do
 nothing: that is a push left over from another account on the same phone.
+
+## 4. iOS copy and layout regression checks
+
+See the [event-by-event copy](backend/push/push-service.md#ios-notification-content).
+Use the real Google or Apple sign-in described in [local auth](local-auth.md)
+for provider tests; simulator APNs payloads exercise layout and tap handling
+only and are not a substitute for Expo/APNs delivery.
+
+1. On a physical iPhone with previews enabled, repeat the expense, comment,
+   group, friendship, reminder and payment flows above. Check a banner, the
+   lock screen, and the expanded notification. Use a full display name such
+   as Radhika Mehrotra: its title must contain only the person's name; the
+   body must begin with the action. Check both ordinary and larger text.
+2. Record payments in both directions. Expect `to you` when the actor paid
+   the reader, and `from you` when the actor recorded receiving the reader's
+   payment. Check a group payment, a one-off payment, and a payment across
+   groups. The amount and direction come before the scope.
+3. Net balances across two groups and one-off expenses. Check partial and
+   full payments. The scope count includes cancelled balances, the remaining
+   debtor is clear, and "settled up" is limited to the payment's currency.
+   Remove the unit through a reversed offset row: the notification must
+   still give the cash payment's original direction and say balances were
+   restored.
+4. Try long display names, group names and expense descriptions, plus emoji
+   and zero-/three-decimal currencies. iOS can shorten long text; it must not
+   hide an action merely because the actor has a long name. The bell retains
+   the full stored message. Check reminders contain no payment identifier,
+   phone-transfer pushes mask the number, and hidden previews disclose no
+   person or amount.
+5. Onboarding's sample banners follow the same name/action format and allow
+   two body lines. The contacts pre-send preview must show both the exact
+   friend-request title and body the server sends.
+
+Automated checks: `pnpm gen`, `pnpm typecheck`, `pnpm lint`, `pnpm test`,
+the corresponding `:mobile` and `:shared` commands, `pnpm test:parity`, and
+`pnpm proto:lint`. Give the web test suite local network access so the HTTP
+and real-Postgres suites run. Payment notification tests exercise the final
+push payload, both directions, distinct scopes, net outcomes and removal.
+
+### Native rendering verified, 2026-10-31
+
+Checked on an isolated iPhone 17e simulator running iOS 27.0, after accepting
+the real iOS **Allow** prompt. A temporary native renderer received the
+current server-composed title/body payloads through `simctl push`; this checks
+system rendering, rather than live Expo/APNs delivery or the app's auth and
+tap-routing flows. It makes no financial or app API writes.
+
+The native banner exposed a remaining issue with long bill/group labels:
+the reader's amount could still be cut off. Expense copy now puts the action
+and money first, followed by the scope and bill label, and omits the repeated
+payer name. Removed-share copy also drops its redundant introduction.
+
+Verified payment directions, expense shares, long names and labels, partial
+net-payment scopes and remaining debt, comments, payment removal and masked
+phone alerts in banners and the lock-screen list. Payment and expense cards
+also retained their useful details at `accessibility-extra-extra-large` text
+size. The QA device's text size was restored after the check; its granted
+permission remains available for later runs.
 
 ## What the tests cover
 

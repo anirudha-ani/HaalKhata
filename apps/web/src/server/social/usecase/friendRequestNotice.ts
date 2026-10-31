@@ -1,6 +1,6 @@
 /** The in-app notification a friend request sends, shared by every way of sending one. */
 
-import { friendRequestTitle } from "@haalkhata/shared/contacts/contactsCopy";
+import { FRIEND_REQUEST_BODY, friendRequestTitle } from "@haalkhata/shared/contacts/contactsCopy";
 
 /** What the recipient of a friend request is told, before any row is written. */
 export interface FriendRequestNotice {
@@ -8,7 +8,7 @@ export interface FriendRequestNotice {
   type: "friend_request";
   /** Headline naming the sender. */
   title: string;
-  /** What the recipient can do about it. */
+  /** The action, separated from the name so it stays visible on iOS. */
   body: string;
   /** Where the notification opens. */
   link: string;
@@ -27,7 +27,7 @@ export function friendRequestNotice(requesterName: string): FriendRequestNotice 
   return {
     type: "friend_request",
     title: friendRequestTitle(requesterName),
-    body: "Accept or decline it from Friends.",
+    body: FRIEND_REQUEST_BODY,
     link: "/friends",
   };
 }

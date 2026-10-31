@@ -352,7 +352,7 @@ describe.skipIf(!reachable)("a live split, against Postgres", () => {
     const after = await read(id);
     expect(after.liveSplit).toBeUndefined();
     expect(await bell(id)).toEqual([
-      { user_id: TOMAS, title: 'Sara added "Dinner"', body: "One-off expense · you owe Sara $20.00" },
+      { user_id: TOMAS, title: "Sara", body: 'Added expense · you owe $20.00 · One-off expense · "Dinner"' },
     ]);
     // The lines nobody claimed are Sara's for good, and no money moved.
     expect(after.expense!.items.map((item) => item.assignments.map((entry) => entry.userId))).toEqual([[TOMAS], [SARA], [SARA]]);

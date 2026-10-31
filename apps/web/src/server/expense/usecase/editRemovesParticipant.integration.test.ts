@@ -142,13 +142,13 @@ describe.skipIf(!reachable)("editing somebody off an expense", () => {
 
     expect(await updateNotices(SARA)).toEqual([
       {
-        body: "Flat 4B · you're no longer on it, so you no longer get back $30.00",
+        body: 'Removed you · you no longer get back $30.00 · Flat 4B · "Electricity"',
         link: `/expenses/${bill.id}`,
       },
     ]);
     expect(await seesFeedLine(SARA)).toBe(true);
     expect(await updateNotices(TOMAS)).toEqual([
-      { body: "Flat 4B · now you get back $30.00", link: `/expenses/${bill.id}` },
+      { body: 'Updated expense · now you get back $30.00 · Flat 4B · "Electricity"', link: `/expenses/${bill.id}` },
     ]);
   });
 
@@ -163,7 +163,7 @@ describe.skipIf(!reachable)("editing somebody off an expense", () => {
     // everyone) stays with the people still on it.
     expect(await updateNotices(SARA)).toEqual([
       {
-        body: "One-off expense · you're no longer on it, so you no longer owe Rahim $30.00",
+        body: 'Removed you · you no longer owe $30.00 · One-off expense · "Electricity"',
         link: `/friends/${RAHIM}`,
       },
     ]);
@@ -177,7 +177,7 @@ describe.skipIf(!reachable)("editing somebody off an expense", () => {
     await updateExpense(SARA, bill.id, { ...billRequest(groupId, SARA, RAHIM), description: "Electricity bill" } as ExpenseInput);
 
     expect(await updateNotices(RAHIM)).toEqual([
-      { body: "Flat 4B · now you owe Sara $30.00", link: `/expenses/${bill.id}` },
+      { body: 'Updated expense · now you owe $30.00 · Flat 4B · "Electricity bill"', link: `/expenses/${bill.id}` },
     ]);
     expect(await updateNotices(TOMAS)).toEqual([]);
   });

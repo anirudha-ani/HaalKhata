@@ -55,6 +55,9 @@ import {
 } from "@/server/expense/repo/settlements.repo";
 import { insertActivity, listActivityForExpense } from "@/server/social/repo/activity.repo";
 import { insertNotificationRows, insertNotifications } from "@/server/social/repo/notifications.repo";
+import { personNotification } from "@/server/social/usecase/personNotification";
+import { notificationLabel } from "@/server/social/usecase/notificationLabel";
+import { settlementLocation, settlementNotification } from "./settlementNotification";
 import {
   computeItemizedSplits,
   computeSplits,
@@ -971,17 +974,14 @@ async function recordExpenseActivity(
     },
     client,
   );
-  // Each reader's bell row (and so their push) says what the expense means
-  // for them: "Goa trip · you owe Ani ৳600". One row per reader, because the
+  // Each reader's bell row (and so their push) names the actor separately
+  // from the action, scope and that reader's money. One row per reader, because the
   // money line is theirs alone, written in one statement while the ledger
   // lock is held.
-  const payerIds = [
-    ...new Set([...write.payers, ...(before?.payers ?? [])].map((payer) => payer.userId)),
-  ];
-  const payerNames = new Map(
-    (await findUsersByIds(payerIds, client)).map((payer) => [payer.id, payer.name] as const),
-  );
-  const scopeName = group ? group.name : "One-off expense";
+  // The actor already owns the title. Keep this person's amount ahead of
+  // free-form labels, without another name consuming the banner's two lines.
+  const payerNames = new Map<string, string>();
+  const scopeName = group ? notificationLabel(group.name) : "One-off expense";
   await insertNotificationRows(
     [...participantIds, ...removedIds]
       .filter((participantId) => participantId !== actorId)
@@ -994,8 +994,13 @@ async function recordExpenseActivity(
           userId: recipientId,
           actorId,
           type: `expense_${verb}`,
-          title: `${actor.name} ${verb} "${write.description}"`,
-          body: moneyLine ? `${scopeName} · ${moneyLine}` : scopeName,
+          ...personNotification(
+            actor.name,
+            removed ? "Removed you" : `${verb[0].toUpperCase()}${verb.slice(1)} expense`,
+            moneyLine,
+            scopeName,
+            `"${notificationLabel(write.description)}"`,
+          ),
           link: removed && !write.groupId ? `/friends/${actorId}` : `/expenses/${expenseId}`,
         };
       }),
@@ -1988,6 +1993,7 @@ export async function addComment(userId: string, expenseId: string, body: string
     invalid(`comment is too long (max ${MAX_COMMENT_LENGTH} characters)`);
   }
   const author = (await findUserById(userId))!;
+  const group = expenseRow.group_id ? await findGroupById(expenseRow.group_id) : undefined;
   const preview =
     trimmed.length > COMMENT_PREVIEW_LENGTH
       ? `${trimmed.slice(0, COMMENT_PREVIEW_LENGTH)}…`
@@ -2032,8 +2038,12 @@ export async function addComment(userId: string, expenseId: string, body: string
       {
         actorId: userId,
         type: "comment",
-        title: `${author.name} commented on "${expenseRow.description}"`,
-        body: preview,
+        ...personNotification(
+          author.name,
+          `Commented on "${notificationLabel(expenseRow.description)}"`,
+          group ? notificationLabel(group.name) : "One-off expense",
+          preview,
+        ),
         link: `/expenses/${expenseId}`,
       },
       client,
@@ -2627,22 +2637,20 @@ async function announceSettlement(
       client,
     );
   }
-  const notifyGroup = groupId ? groupsById.get(groupId) : undefined;
-  const cancelled = netted ? formatMoney(outcome.offsetCents, currency) : "";
-  const nettedBody = !netted
-    ? ""
-    : outcome.remainingCents === 0
-      ? `You two are settled up in ${currency}. ${cancelled} you each owed the other was cancelled, so only the difference was paid.`
-      : `${cancelled} you each owed the other in ${currency} was cancelled. ${payerName} still owes ${creditorName} ${formatMoney(outcome.remainingCents, currency)}.`;
   await insertNotifications(
     [request.toUserId],
     {
       actorId: userId,
       type: "settlement",
-      title: request.received
-        ? `${actor.name} recorded your payment of ${formatMoney(request.amountCents, currency)}`
-        : `${actor.name} recorded a payment of ${formatMoney(request.amountCents, currency)} to you`,
-      body: nettedBody || (notifyGroup ? notifyGroup.name : "Settlement"),
+      ...settlementNotification({
+        actorName: actor.name,
+        amountCents: request.amountCents,
+        currency,
+        paidByReader: request.received === true,
+        location: settlementLocation(stored.rows, groupsById),
+        remainingCents: outcome?.remainingCents,
+        cancelledCents: outcome?.offsetCents,
+      }),
       link: groupId ? `/groups/${groupId}` : `/friends/${userId}`,
     },
     client,
@@ -2817,7 +2825,6 @@ export async function deleteSettlement(userId: string, settlementId: string): Pr
     const cancelledCents = offsetRows
       .filter((portion) => portion.from_user === offsetRows[0].from_user)
       .reduce((running, portion) => running + portion.amount_cents, 0);
-    const cashAmount = formatMoney(cashCents, current.currency);
     // Announced on the same transaction as the removal: the feed rows are
     // the only record of who removed it and when, so they cannot be allowed
     // to go missing while the removal stands. One line per scope touched, so
@@ -2842,22 +2849,20 @@ export async function deleteSettlement(userId: string, settlementId: string): Pr
         client,
       );
     }
-    const notifyGroup =
-      !current.net_settlement_id && current.group_id
-        ? await findGroupById(current.group_id, client)
-        : undefined;
     await insertNotifications(
       [otherUserId],
       {
         actorId: userId,
         type: "settlement_deleted",
-        title: `${actor.name} removed the payment of ${cashAmount}`,
-        body:
-          offsetRows.length > 0
-            ? `The ${formatMoney(cancelledCents, current.currency)} it had cancelled each way is owed again, exactly as before the payment.`
-            : notifyGroup
-              ? notifyGroup.name
-              : "Settlement",
+        ...settlementNotification({
+          actorName: actor.name,
+          amountCents: cashCents,
+          currency: current.currency,
+          paidByReader: cashRows[0]?.from_user === otherUserId,
+          location: settlementLocation(removed, groupsById),
+          removed: true,
+          cancelledCents,
+        }),
         link:
           !current.net_settlement_id && current.group_id
             ? `/groups/${current.group_id}`

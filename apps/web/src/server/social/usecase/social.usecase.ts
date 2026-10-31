@@ -78,6 +78,8 @@ import { denied, invalid, notFound, UsecaseError } from "@/server/common/errors"
 import { transaction } from "@/server/common/db/db";
 import { toFriendRequestUser, toPublicUser } from "@/server/auth/usecase/identity/user.mapper";
 import { friendRequestNotice } from "@/server/social/usecase/friendRequestNotice";
+import { personNotification } from "./personNotification";
+import { notificationLabel } from "./notificationLabel";
 
 /**
  * Adds a friend by id, email, or phone, as a friend request: nothing exists
@@ -274,9 +276,8 @@ export async function respondFriendRequest(
       {
         type: "friend_request",
         actorId: userId,
-        title: `${recipient.name} accepted your friend request`,
-        body: "You can now split one-off expenses together.",
-        link: "/friends",
+        ...personNotification(recipient.name, "Accepted your friend request"),
+        link: `/friends/${userId}`,
       },
       client,
     );
@@ -620,8 +621,7 @@ export async function acceptInviteLink(
         {
           actorId: userId,
           type: "friend_request",
-          title: `${acceptor.name} wants to connect`,
-          body: "They used your profile link. Accept or decline from Friends.",
+          ...personNotification(acceptor.name, "Sent you a friend request", "Via your profile link"),
           link: "/friends",
         },
         client,
@@ -634,7 +634,7 @@ export async function acceptInviteLink(
   if (!group) notFound(DEAD_LINK_MESSAGE);
   if (await isMember(group.id, userId)) return { groupId: group.id, expenseId: "" };
   await joinGroupThroughLink(acceptor, group, link.inviter_id, (await findUserById(link.inviter_id))?.name ?? "a member");
-  await notifyInviteAccepted(link.inviter_id, acceptor.name, `/groups/${group.id}`);
+  await notifyInviteAccepted(link.inviter_id, acceptor, group.name, `/groups/${group.id}`);
   return { groupId: group.id, expenseId: "" };
 }
 
@@ -643,20 +643,22 @@ export async function acceptInviteLink(
  * for its sender.
  *
  * @param inviterId - Who shared the link.
- * @param acceptorName - Who just accepted it.
+ * @param acceptor - Who just accepted it; also used for block filtering.
+ * @param groupName - The group they joined.
  * @param link - Where tapping the notification lands.
  */
 async function notifyInviteAccepted(
   inviterId: string,
-  acceptorName: string,
+  acceptor: UserRow,
+  groupName: string,
   link: string,
 ): Promise<void> {
   await insertNotifications(
     [inviterId],
     {
       type: "invite_accepted",
-      title: `${acceptorName} accepted your invite`,
-      body: "",
+      actorId: acceptor.id,
+      ...personNotification(acceptor.name, `Joined "${notificationLabel(groupName)}"`, "Via your invite"),
       link,
     },
   );
@@ -796,8 +798,7 @@ export async function sendReminder(userId: string, debtorId: string): Promise<vo
       {
         actorId: userId,
         type: "reminder",
-        title: `${sender.name} sent you a reminder`,
-        body: payHint ? `You owe ${owed}. ${payHint}` : `You owe ${owed}`,
+        ...personNotification(sender.name, `Reminded you: you owe ${owed}`, payHint),
         link,
       },
       client,

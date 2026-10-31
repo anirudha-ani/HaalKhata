@@ -2,6 +2,9 @@
 
 import { GROUP_INVITE_LINK_LIFETIME_DAYS } from "@haalkhata/shared/invite/invite.constants";
 
+/** Space for a quoted label, leaving room for the action, scope and money in an iOS message. */
+export const NOTIFICATION_LABEL_MAX_LENGTH = 32;
+
 /**
  * How long before the same person can be reminded about the same debt again.
  * A nudge is welcome; a stream of them is harassment, and the sender is not

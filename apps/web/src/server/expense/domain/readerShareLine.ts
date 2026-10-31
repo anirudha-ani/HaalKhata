@@ -44,7 +44,7 @@ export function readerShareLine(
  * @param before - The expense's payers, splits and currency before the edit.
  * @param readerId - The person who is no longer on it.
  * @param payerNames - Display names of the payers who are known.
- * @returns "you're no longer on it", with what that undid when it moved them.
+ * @returns What is no longer owed, or "you're no longer on it" when they were even.
  */
 export function removedReaderLine(
   before: ExpenseMoney,
@@ -52,7 +52,7 @@ export function removedReaderLine(
   payerNames: Map<string, string>,
 ): string {
   const position = readerPosition(before, readerId, payerNames);
-  return position === "" ? "you're no longer on it" : `you're no longer on it, so you no longer ${position}`;
+  return position === "" ? "you're no longer on it" : `you no longer ${position}`;
 }
 
 /**
