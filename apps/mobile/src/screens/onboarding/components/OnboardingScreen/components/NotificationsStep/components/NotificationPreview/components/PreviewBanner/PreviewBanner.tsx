@@ -24,7 +24,7 @@ export function PreviewBanner({ title, body }: { title: string; body: string }) 
           <Text style={styles.time}>{NOTIFICATIONS_STEP.previewNow}</Text>
         </View>
         <Text numberOfLines={1} style={styles.title}>{title}</Text>
-        <Text numberOfLines={1} style={styles.body}>{body}</Text>
+        <Text numberOfLines={2} style={styles.body}>{body}</Text>
       </View>
     </View>
   );

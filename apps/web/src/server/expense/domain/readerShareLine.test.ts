@@ -60,13 +60,13 @@ describe("readerShareLine", () => {
 describe("removedReaderLine", () => {
   it("tells somebody taken off what they no longer owe, naming the payer", () => {
     expect(removedReaderLine(DINNER, "boba", NAMES)).toBe(
-      `you're no longer on it, so you no longer owe Ani ${formatMoney(60_000, "BDT")}`,
+      `you no longer owe Ani ${formatMoney(60_000, "BDT")}`,
     );
   });
 
   it("tells the payer taken off what they no longer get back", () => {
     expect(removedReaderLine(DINNER, "ani", NAMES)).toBe(
-      `you're no longer on it, so you no longer get back ${formatMoney(180_000, "BDT")}`,
+      `you no longer get back ${formatMoney(180_000, "BDT")}`,
     );
   });
 

@@ -3,6 +3,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { PoolClient } from "pg";
 import type { SettlementRow } from "@/server/expense/repo/settlements.repo";
+import { formatMoney } from "@haalkhata/shared/money/money";
 
 vi.mock("@/server/safety/repo/safety.repo", () => ({ blockedBetween: vi.fn(async () => false), blockedPairExists: vi.fn(async () => false) }));
 
@@ -204,6 +205,17 @@ describe("recordSettlement — activity attribution", () => {
     // notification is the only place that information survives.
     await activityFor(true);
     const [, notification] = vi.mocked(insertNotifications).mock.calls[0];
-    expect(notification.title).toContain("Rita Recorder recorded your payment");
+    expect(notification.title).toBe("Rita Recorder");
+    expect(notification.body).toBe(`Recorded ${formatMoney(500, "USD")} from you · One-off expenses`);
+  });
+
+  it("puts a payment made in the recipient's direction", async () => {
+    await activityFor(false);
+    const [, notification] = vi.mocked(insertNotifications).mock.calls[0];
+    expect(notification).toMatchObject({
+      title: "Rita Recorder",
+      body: `Recorded ${formatMoney(500, "USD")} to you · One-off expenses`,
+      link: `/friends/${RECORDER}`,
+    });
   });
 });

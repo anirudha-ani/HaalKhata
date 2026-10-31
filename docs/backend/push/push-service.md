@@ -8,6 +8,72 @@ Every push is a copy of one in-app notification (a `notifications` row). The
 bell stays the record, and a push is a courtesy on top of it. When a push is
 skipped, delayed or lost, the bell still has the row.
 
+## iOS notification content
+
+The title is the actor's full display name. The body starts with the action
+and its money details, followed by the group or one-off scope and bill label.
+Expense amounts precede free-form labels, which native QA showed can otherwise
+hide the reader's share even within the payload cap. The separate body keeps
+a long actor name from displacing the action and amount. Do not guess a
+first name, repeat the app's name, put a generic
+"Settlement" in the body, or spend the message explaining where to tap.
+
+This follows [Apple's notification guidance](https://developer.apple.com/design/human-interface-guidelines/notifications):
+brief, informative titles; succinct body content; and related content on tap.
+iOS controls the available width and truncation, including at larger text
+sizes. The 120/240-character push limits are payload safeguards, not a claim
+that that many characters fit in a collapsed banner.
+
+The common composition is in `social/usecase/personNotification.ts`. Payment
+copy and scope selection are in `expense/usecase/settlementNotification.ts`.
+User-entered bill/group labels use a 32-code-point
+excerpt, without splitting an emoji sequence, so they cannot consume the
+space needed for the other facts. Actor titles retain their full display
+names. Full labels remain on the linked record and in the activity feed.
+Expense money lines omit the payer's name, so the amount stays readable
+without repeating another person's name. Personal names that are stored remain
+whole, so moderation and account deletion can find and replace them.
+There is no separate client-side rewrite, so existing iPhone builds receive
+the new copy as soon as the server is deployed. Existing bell rows retain
+their original words.
+
+| Event | Title | Body example |
+| --- | --- | --- |
+| Expense added | Radhika Mehrotra | Added expense · you owe $24.00 · Goa trip · "Dinner" |
+| Expense edited | Radhika Mehrotra | Updated expense · now you owe $20.00 · Goa trip · "Dinner" |
+| Expense deleted | Radhika Mehrotra | Deleted expense · Goa trip · "Dinner" |
+| Removed from expense | Radhika Mehrotra | Removed you · you no longer owe $24.00 · Goa trip · "Dinner" |
+| Comment | Radhika Mehrotra | Commented on "Dinner" · Goa trip · I'll cover the tip |
+| Payment recorded by payer | Radhika Mehrotra | Recorded $25.00 to you · Goa trip |
+| Payment recorded by payee | Radhika Mehrotra | Recorded $25.00 from you · Goa trip |
+| Net payment | Radhika Mehrotra | Recorded $25.00 to you · 2 groups + One-off expenses · Settled up in USD |
+| Payment removed | Radhika Mehrotra | Removed $25.00 payment to you · Goa trip · Balances restored |
+| Reminder | Radhika Mehrotra | Reminded you: you owe $25.00 · Radhika prefers Zelle. |
+| Added to group | Radhika Mehrotra | Added you to "Goa trip" |
+| Members added | Radhika Mehrotra | Added 2 members · Goa trip · Priya and Sara |
+| Member joined | Radhika Mehrotra | Joined "Goa trip" |
+| Group ownership | Radhika Mehrotra | Made you the group owner · Goa trip |
+| Simplification | Radhika Mehrotra | Turned on simpler payments · Goa trip · Same balances, fewer payments |
+| Friend request | Radhika Mehrotra | Sent you a friend request. |
+| Friend request accepted | Radhika Mehrotra | Accepted your friend request |
+| Invite accepted | Radhika Mehrotra | Joined "Goa trip" · Via your invite |
+| Security alert | Phone number moved | •••42 was verified on another account. Still yours? Verify it again in Account. |
+
+Amounts use the existing minor-unit formatter, including zero- and
+three-decimal currencies. "Recorded" describes somebody entering an external
+payment; it does not claim HaalKhata transferred funds. Payment scopes come
+from every stored row, including offsets, rather than the page it was entered
+from. Net outcomes name the remaining debtor, or say settled up only in the
+payment's currency. Removal reads the cash direction even if an offset row
+was selected. Method names may appear in reminders; their identifiers never do.
+
+Security alerts have short event titles, and the push builder masks numbers
+in their bodies. Hidden-preview categories, routing data, badges, grouping,
+delivery deduplication and recipient checks continue to apply.
+Comment notifications now name their group, so both moderation paths also
+remove that quotation when a reported group name is removed, before any
+queued push can send it.
+
 Implementation:
 
 - [handler.ts](../../../apps/web/src/server/push/handler.ts): the handler.

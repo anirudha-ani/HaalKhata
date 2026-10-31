@@ -10,6 +10,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { Client } from "pg";
 import { formatMoney } from "@haalkhata/shared/money/money";
+import { notificationLabel } from "@/server/social/usecase/notificationLabel";
 import type { PushMessage, PushProvider } from "@/server/push/usecase/provider/pushTypes";
 import { testDatabaseName } from "@/server/common/testing/testDatabase";
 
@@ -140,12 +141,13 @@ describe.skipIf(!reachable)("push notifications against Postgres", () => {
   /**
    * Adds a one-off dinner Ani paid and Boba owes half of, in the group.
    *
+   * @param description - Bill label, including long labels in layout regressions.
    * @returns The stored expense.
    */
-  async function aniAddsDinner() {
+  async function aniAddsDinner(description = "Dinner") {
     return createExpense(ANI_ID, {
       groupId: GROUP,
-      description: "Dinner",
+      description,
       amountCents: 2400,
       currency: "USD",
       category: "food",
@@ -229,16 +231,41 @@ describe.skipIf(!reachable)("push notifications against Postgres", () => {
     expect(provider.sent).toHaveLength(1);
     expect(provider.sent[0]).toMatchObject({
       to: BOBA_TOKEN,
-      title: 'Ani added "Dinner"',
+      title: "Ani",
       badge: 1,
       threadId: `group-${GROUP}`,
       data: { link: `/expenses/${expense.id}`, recipientId: BOBA_ID },
     });
-    expect(provider.sent[0].body).toBe(`Goa trip · you owe Ani ${formatMoney(1200, "USD")}`);
+    expect(provider.sent[0].body).toBe(`Added expense · you owe ${formatMoney(1200, "USD")} · Goa trip · "Dinner"`);
     expect((await database.query(`SELECT 1 FROM push_outbox`)).rowCount).toBe(0);
     expect((await database.query(`SELECT device_id FROM push_tickets`)).rows).toEqual([{ device_id: device.id }]);
     const stamped = await database.query(`SELECT last_sent_at FROM push_devices WHERE id = $1`, [device.id]);
     expect(stamped.rows[0].last_sent_at).not.toBeNull();
+  });
+
+  it("keeps the group and the reader's amount when a bill has long labels", async () => {
+    await bobaRegistersPhone();
+    const groupName = "Our annual trip with everyone from the old neighbourhood";
+    const description = "Dinner with everyone at the restaurant after the afternoon boat trip";
+    const actorName = "Radhika Mehrotra ".repeat(6).trim();
+    await database.query("UPDATE groups SET name = $1 WHERE id = $2", [groupName, GROUP]);
+    await database.query("UPDATE users SET name = $1 WHERE id = $2", [actorName, ANI_ID]);
+    try {
+      await aniAddsDinner(description);
+      const provider = recordingProvider();
+      await drainPushOutbox(provider);
+      expect(provider.sent).toHaveLength(1);
+      expect(provider.sent[0]).toMatchObject({
+        title: actorName,
+        body: `Added expense · you owe ${formatMoney(1200, "USD")} · ${notificationLabel(groupName)} · "${notificationLabel(description)}"`,
+      });
+      // This is the final push, after its transport cap: neither the scope nor
+      // the reader's money may disappear behind a long expense description.
+      expect(provider.sent[0].body.indexOf(formatMoney(1200, "USD"))).toBeLessThan(provider.sent[0].body.indexOf(notificationLabel(groupName)));
+    } finally {
+      await database.query("UPDATE groups SET name = 'Goa trip' WHERE id = $1", [GROUP]);
+      await database.query("UPDATE users SET name = 'Ani' WHERE id = $1", [ANI_ID]);
+    }
   });
 
   it("retries only the phone that failed, and a stale dead report keeps a re-registered phone", async () => {
@@ -380,8 +407,8 @@ describe.skipIf(!reachable)("push notifications against Postgres", () => {
       `SELECT user_id, title FROM notifications WHERE type = 'simplify_debts' ORDER BY user_id`,
     );
     expect(told.rows).toEqual([
-      { user_id: BOBA_ID, title: 'Ani turned on debt simplification in "Goa trip"' },
-      { user_id: CHAD_ID, title: 'Ani turned on debt simplification in "Goa trip"' },
+      { user_id: BOBA_ID, title: "Ani" },
+      { user_id: CHAD_ID, title: "Ani" },
     ]);
     await setSimplifyDebts(ANI_ID, { groupId: GROUP, simplify: false });
   });
@@ -392,8 +419,8 @@ describe.skipIf(!reachable)("push notifications against Postgres", () => {
       `SELECT user_id, title FROM notifications WHERE type = 'ownership_transferred' ORDER BY user_id`,
     );
     expect(told.rows).toEqual([
-      { user_id: BOBA_ID, title: 'Ani made you the owner of "Goa trip"' },
-      { user_id: CHAD_ID, title: 'Ani made Boba the owner of "Goa trip"' },
+      { user_id: BOBA_ID, title: "Ani" },
+      { user_id: CHAD_ID, title: "Ani" },
     ]);
     await transferOwnership(BOBA_ID, { groupId: GROUP, userId: ANI_ID });
   });

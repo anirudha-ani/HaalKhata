@@ -13,8 +13,8 @@ import { PreviewBanner } from "./components/PreviewBanner/PreviewBanner";
  * Shows an expense added with the reader's share, then a payment, as banners
  * that drop in a beat after the step appears, one after the other (they fade
  * in place under Reduce Motion).
- * The wording follows what the server actually sends: the title names who
- * did what, the second line says what it means for the reader.
+ * The wording follows what the server actually sends: the title names who,
+ * the body says what happened, where, and what it means for the reader.
  *
  * @returns The preview.
  */

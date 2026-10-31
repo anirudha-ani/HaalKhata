@@ -220,7 +220,7 @@ describe.skipIf(!(await databaseReachable()))("moderation against Postgres", () 
       { id: "ntf-author-1", title: "Content removed after moderation", body: "" },
       { id: "ntf-author-2", title: "Author Person paid you", body: "Settlement" },
       { id: "ntf-group-1", title: "Reporter Person added you", body: "Offensive group name" },
-      { id: "ntf-group-comment-1", title: 'Reporter Person commented on "Groceries"', body: "see you there" },
+      { id: "ntf-group-comment-1", title: "Reporter Person", body: 'Commented on "Groceries" · Offensive group name · see you there' },
       { id: "ntf-group-expense-1", title: 'Reporter Person added "Groceries"', body: "Offensive group name · you owe Reporter Person $6.17" },
       { id: "ntf-names-author-1", title: 'Reporter Person added Author Person to "Weekend"', body: "" },
       { id: "ntf-names-author-2", title: 'Second Reporter added "Taxi"', body: "One-off expense · you owe Author Person $3.00" },
@@ -265,12 +265,12 @@ describe.skipIf(!(await databaseReachable()))("moderation against Postgres", () 
       "act-author-3": 'Author Person added "Taxi"',
       "act-reporter-1": "Reporter wrote elsewhere",
     });
-    // An expense notification's body opens with the group's name; a comment
-    // notification on the same expense does not name the group.
+    // Expense and comment notifications both name the group. Their queued
+    // pushes must no longer quote it after the reported name is removed.
     expect(await notificationTitles()).toMatchObject({
       "ntf-group-1": "Content removed after moderation",
       "ntf-group-expense-1": "Content removed after moderation",
-      "ntf-group-comment-1": 'Reporter Person commented on "Groceries"',
+      "ntf-group-comment-1": "Content removed after moderation",
       "ntf-author-2": "Author Person paid you",
     });
   });

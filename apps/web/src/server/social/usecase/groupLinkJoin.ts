@@ -11,6 +11,8 @@ import { blockedPairExists } from "@/server/safety/repo/safety.repo";
 import { insertActivity } from "@/server/social/repo/activity.repo";
 import { insertFriendship } from "@/server/social/repo/friendships.repo";
 import { insertNotifications } from "@/server/social/repo/notifications.repo";
+import { personNotification } from "./personNotification";
+import { notificationLabel } from "./notificationLabel";
 import { DEAD_LINK_MESSAGE } from "@/server/social/social.constants";
 
 /**
@@ -64,8 +66,7 @@ export async function joinGroupThroughLink(
       {
         actorId: userId,
         type: "member_added",
-        title: `${acceptor.name} joined "${group.name}"`,
-        body: "",
+        ...personNotification(acceptor.name, `Joined "${notificationLabel(group.name)}"`),
         link: `/groups/${group.id}`,
       },
       client,

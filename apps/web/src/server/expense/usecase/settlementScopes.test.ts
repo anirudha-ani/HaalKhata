@@ -1,6 +1,7 @@
 /** Unit tests for where a settlement's rows land: scope re-homing, selection, caps. */
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { formatMoney } from "@haalkhata/shared/money/money";
 import type { PoolClient } from "pg";
 import type { SettlementRow } from "@/server/expense/repo/settlements.repo";
 
@@ -229,7 +230,8 @@ describe("recordSettlement — rows land in the scope holding the debt", () => {
     await settle(10_000);
     expect(vi.mocked(insertNotifications)).toHaveBeenCalledTimes(1);
     const [, notification] = vi.mocked(insertNotifications).mock.calls[0];
-    expect(notification.title).toContain("USD 100.00");
+    expect(notification.title).toBe("Petra Payer");
+    expect(notification.body).toBe(`Recorded ${formatMoney(10_000, "USD")} to you · Group goa + One-off expenses`);
   });
 
   it("every insert goes through the pair lock's client", async () => {

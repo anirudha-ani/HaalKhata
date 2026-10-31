@@ -18,6 +18,7 @@
 
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { Client } from "pg";
+import { formatMoney } from "@haalkhata/shared/money/money";
 import { testDatabaseName } from "@/server/common/testing/testDatabase";
 import { asSeparateRequest } from "@/server/common/db/connectionHold";
 
@@ -335,8 +336,8 @@ describe.skipIf(!reachable)("net settlement against Postgres", () => {
     expect(notice.rows).toEqual([
       {
         user_id: OWED,
-        title: "Ani recorded a payment of USD 6.00 to you",
-        body: "USD 211.08 you each owed the other in USD was cancelled. Ani still owes Sam USD 6.69.",
+        title: "Ani",
+        body: `Recorded ${formatMoney(600, "USD")} to you · 2 groups + One-off expenses · They still owe you ${formatMoney(669, "USD")} · ${formatMoney(21108, "USD")} cancelled each way`,
       },
     ]);
 
@@ -440,8 +441,8 @@ describe.skipIf(!reachable)("net settlement against Postgres", () => {
     expect(notice.rows).toEqual([
       {
         user_id: PAYER,
-        title: "Sam removed the payment of USD 6.00",
-        body: "The USD 211.08 it had cancelled each way is owed again, exactly as before the payment.",
+        title: "Sam",
+        body: `Removed ${formatMoney(600, "USD")} payment from you · 2 groups + One-off expenses · Balances restored · ${formatMoney(21108, "USD")} owed again each way`,
       },
     ]);
     // Already removed: a second attempt, through any row, finds nothing to remove.
@@ -462,7 +463,7 @@ describe.skipIf(!reachable)("net settlement against Postgres", () => {
       await database.query(`SELECT body FROM notifications WHERE type = 'settlement' ORDER BY created_at DESC LIMIT 1`)
     ).rows[0].body;
     expect(notice).toBe(
-      "You two are settled up in USD. USD 211.08 you each owed the other was cancelled, so only the difference was paid.",
+      `Recorded ${formatMoney(1269, "USD")} to you · 2 groups + One-off expenses · Settled up in USD · ${formatMoney(21108, "USD")} cancelled each way`,
     );
     // Nothing left to settle in dollars: the dialog has no dollar position to show.
     expect((await getFriendLedger(PAYER, OWED)).settlePositions.map((position) => position.currency)).toEqual(["EUR"]);

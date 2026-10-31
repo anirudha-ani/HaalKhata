@@ -18,7 +18,7 @@ SELECT :'action' = 'list' AS listing, :'action' = 'remove' AS removing,
       -- A comment: its author's comment lines on that expense. An expense: what
       -- links to it, comments included. A group: its feed but comments (every
       -- other line names the group), what links to it, and the notifications
-      -- about its expenses (their body opens with the group's name). A profile:
+      -- about its expenses and their comments (their body names the group). A profile:
       -- what they did (each line opens with their name), and every other line
       -- naming them: feed lines with them in the audience and their name in the
       -- text, and notifications with their name in the text that were sent to
@@ -43,7 +43,7 @@ SELECT :'action' = 'list' AS listing, :'action' = 'remove' AS removing,
             (SELECT user_id, '/expenses/' || expense_id FROM comments WHERE id = :'target_id')
           WHEN 'expense' THEN link = '/expenses/' || :'target_id'
           WHEN 'group' THEN link = '/groups/' || :'target_id'
-            OR (type IN ('expense_added', 'expense_updated', 'expense_deleted')
+            OR (type IN ('expense_added', 'expense_updated', 'expense_deleted', 'comment')
                 AND link IN (SELECT '/expenses/' || id FROM expenses WHERE group_id = :'target_id'))
           WHEN 'user' THEN actor_id = :'target_id'
             OR ((title ~ (SELECT '(^|[ ,"''(“‘])' || regexp_replace(NULLIF(btrim(name), ''), '([.^$*+?()[\]{}|\\])', '\\\1', 'g') || '($|[ ,.:;!?)"''’”])' FROM users WHERE id = :'target_id')

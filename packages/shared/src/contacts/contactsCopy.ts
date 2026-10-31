@@ -5,6 +5,9 @@
 
 import { ContactRelation } from "@haalkhata/protogen/social/v1/social_pb";
 
+/** The action under the sender's name, shared with the pre-send preview. */
+export const FRIEND_REQUEST_BODY = "Sent you a friend request.";
+
 /**
  * Title of the notification a friend request sends. The server writes it and
  * the confirm sheet previews it, so App Review's "show how the message will
@@ -14,7 +17,7 @@ import { ContactRelation } from "@haalkhata/protogen/social/v1/social_pb";
  * @returns The notification title the recipient sees.
  */
 export function friendRequestTitle(senderName: string): string {
-  return `${senderName} sent you a friend request`;
+  return senderName;
 }
 
 /**
@@ -27,7 +30,7 @@ export function friendRequestTitle(senderName: string): string {
  * @returns The line.
  */
 export function addRequestPreview(senderName: string): string {
-  return `Add sends one friend request. They see “${friendRequestTitle(senderName)}”.`;
+  return `Add sends one friend request. They see “${friendRequestTitle(senderName)}” with “${FRIEND_REQUEST_BODY}” below it.`;
 }
 
 /** Shown before the operating system's contacts prompt. */

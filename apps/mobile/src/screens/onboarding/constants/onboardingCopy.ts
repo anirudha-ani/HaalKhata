@@ -76,8 +76,8 @@ export const NOTIFICATIONS_STEP = {
   previewApp: "HAALKHATA",
   previewNow: "now",
   previews: [
-    { title: "Oni added “Dinner at Nando's”", body: "$96.00 · you owe Oni $24.00" },
-    { title: "Dot paid you $40.00", body: "Trip to Yosemite · you're all square" },
+    { title: "Oni", body: 'Added expense · you owe $24.00 · Goa trip · "Dinner"' },
+    { title: "Dot", body: "Recorded $40.00 to you · Trip to Yosemite" },
   ],
 } as const;
 

@@ -6,6 +6,7 @@ import {
   addRequestPreview,
   checkingLabel,
   friendRequestTitle,
+  FRIEND_REQUEST_BODY,
   onHaalKhataAs,
   partialCheckMessage,
   relationAction,
@@ -13,12 +14,13 @@ import {
 
 describe("contacts copy", () => {
   it("previews the exact notification title the server sends", () => {
-    expect(friendRequestTitle("Anirudha")).toBe("Anirudha sent you a friend request");
+    expect(friendRequestTitle("Anirudha")).toBe("Anirudha");
+    expect(FRIEND_REQUEST_BODY).toBe("Sent you a friend request.");
   });
 
   it("quotes that same notification above the people found, before any Add", () => {
     expect(addRequestPreview("Anirudha")).toBe(
-      "Add sends one friend request. They see “Anirudha sent you a friend request”.",
+      "Add sends one friend request. They see “Anirudha” with “Sent you a friend request.” below it.",
     );
   });
 
