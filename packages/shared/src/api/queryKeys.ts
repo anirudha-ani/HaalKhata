@@ -51,6 +51,14 @@ export const queryKeys = {
    * @returns The query key tuple for that expense.
    */
   expense: (expenseId: string) => ["expense", expenseId] as const,
+  /**
+   * Who the caller still owes in an expense's scope. Under the balances
+   * prefix, so a payment refreshes it and a tap on the bill does not.
+   * @param expenseId - The expense.
+   * @param debts - What they owe for this bill, so a change to that reads it again.
+   * @returns The query key tuple.
+   */
+  owedPeople: (expenseId: string, debts: string) => ["balances", "owed-people", expenseId, debts] as const,
   /** The small read an open edit form repeats to learn that somebody saved a change. */
   expenseVersion: (expenseId: string) => ["expense-version", expenseId] as const,
   /**

@@ -10,6 +10,7 @@
 
 import type { UserRow } from "@/server/auth/repo/users.repo";
 import { findUserById } from "@/server/auth/repo/users.repo";
+import { snapshot } from "@/server/common/db/db";
 import { denied, invalid, notFound, UsecaseError } from "@/server/common/errors";
 import { lockExpenseLedger, lockParticipantLedgers, withLedgerTransaction } from "@/server/common/ledger/ledgerLocks";
 import { logError } from "@/server/common/logger";
@@ -31,7 +32,8 @@ import { insertFriendships } from "@/server/social/repo/friendships.repo";
 import type { InviteLinkRow } from "@/server/social/repo/inviteLinks.repo";
 import { DEAD_LINK_MESSAGE } from "@/server/social/social.constants";
 import { joinGroupThroughLink } from "@/server/social/usecase/groupLinkJoin";
-import { assertCanEdit, closeLiveSplit, storedParticipantIds } from "../expense.usecase";
+import { oneOffNetsWith, peopleOwedInGroup } from "../balance.usecase";
+import { assertCanEdit, assertCanTouch, closeLiveSplit, moneyParticipantIds, storedParticipantIds } from "../expense.usecase";
 import { assertCanSplitLive, liveSessionOf, openLiveSession } from "./liveSession";
 
 /**
@@ -121,6 +123,30 @@ export async function finishDueLiveSplits(): Promise<number> {
     }
   }
   return finished;
+}
+
+/**
+ * Everyone a person still owes in an expense's scope and currency, by the
+ * balance: what a bill's Settle buttons need, since a bill alone cannot say
+ * who has been paid.
+ *
+ * @param userId - Authenticated caller; must be allowed to read the expense.
+ * @param expenseId - The expense.
+ * @returns The people.
+ * @throws UsecaseError when the expense is missing or the caller lacks access.
+ */
+export async function listOwedPeople(userId: string, expenseId: string) {
+  const expense = await findExpenseById(expenseId);
+  if (!expense) notFound("expense not found");
+  await assertCanTouch(userId, expense);
+  const groupId = expense.group_id;
+  const userIds = await snapshot(async (client) => {
+    if (groupId) return peopleOwedInGroup(userId, groupId, expense.currency, client);
+    const children = await loadExpenseChildren([expenseId], client, false);
+    const nets = await oneOffNetsWith(userId, moneyParticipantIds(expenseId, children), client);
+    return [...nets].filter(([, cents]) => (cents.get(expense.currency) ?? 0) < 0).map(([personId]) => personId);
+  });
+  return { userIds };
 }
 
 /**

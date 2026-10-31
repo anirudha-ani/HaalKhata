@@ -331,6 +331,29 @@ export async function listSettlementsByGroups(groupIds: readonly string[], clien
 }
 
 /**
+ * One person's live payments in a group, in one currency, either way.
+ *
+ * @param groupId - The group.
+ * @param userId - The person.
+ * @param currency - The currency.
+ * @param client - Snapshot or transaction client; omitted, the pool.
+ * @returns Their settlement rows.
+ */
+export async function listGroupSettlementsInvolving(
+  groupId: string,
+  userId: string,
+  currency: string,
+  client?: PoolClient,
+): Promise<SettlementRow[]> {
+  return query<SettlementRow>(
+    `SELECT * FROM settlements
+      WHERE group_id = $1 AND currency = $3 AND deleted_at IS NULL AND (from_user = $2 OR to_user = $2)`,
+    [groupId, userId, currency],
+    client,
+  );
+}
+
+/**
  * Lists every settlement between two users, in either direction and in any
  * scope (group or one-off), oldest first.
  *

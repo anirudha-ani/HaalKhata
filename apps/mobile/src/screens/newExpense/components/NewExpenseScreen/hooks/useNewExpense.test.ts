@@ -13,8 +13,8 @@ import { buildInitialValues } from "../../../utils/initialValues";
 import { useNewExpense } from "./useNewExpense";
 import type { useNewExpenseAPI } from "./useNewExpenseAPI";
 
-const stubs = vi.hoisted(() => ({ create: vi.fn(), update: vi.fn(), replace: vi.fn(), cameraPermission: vi.fn(), camera: vi.fn(), library: vi.fn(), parse: vi.fn() }));
-vi.mock("expo-router", () => ({ useRouter: () => ({ replace: stubs.replace }) }));
+const stubs = vi.hoisted(() => ({ create: vi.fn(), update: vi.fn(), replace: vi.fn(), dismissTo: vi.fn(), cameraPermission: vi.fn(), camera: vi.fn(), library: vi.fn(), parse: vi.fn() }));
+vi.mock("expo-router", () => ({ useRouter: () => ({ replace: stubs.replace, dismissTo: stubs.dismissTo }) }));
 vi.mock("expo-image-picker", () => ({ requestCameraPermissionsAsync: stubs.cameraPermission, launchCameraAsync: stubs.camera, launchImageLibraryAsync: stubs.library }));
 vi.mock("@/lib/api/connect", () => ({ errorMessage: (error: Error) => error.message }));
 vi.mock("@/lib/api/operationId", () => ({ newOperationId: () => crypto.randomUUID() }));
@@ -92,6 +92,25 @@ it("keeps manual entry available when camera permission is denied", async () => 
   expect(controller.error).toContain("Camera access is disabled"); expect(stubs.camera).not.toHaveBeenCalled();
   act(() => { controller.setDescription("Manual meal"); controller.setAmount("12"); });
   expect(controller.canSubmit).toBe(true); expect(controller.photo).toBeNull();
+});
+
+it("lands on the expense it just made", async () => {
+  await act(async () => root.render(createElement(Harness)));
+  act(() => { controller.setDescription("Dinner"); controller.setAmount("10"); });
+  act(() => controller.submit());
+  act(() => stubs.create.mock.calls[0][1].onSuccess({ id: "made" }));
+  expect(stubs.replace).toHaveBeenCalledWith("/expenses/made");
+});
+
+it("goes back to the bill an edit was opened from", async () => {
+  const saved = createPlain(ExpenseSchema, { id: "saved", description: "Dinner", amountCents: 1000, currency: "USD", splitType: "equal",
+    payers: [{ userId: "alice", amountCents: 1000 }], splits: [{ userId: "alice", owedCents: 500 }, { userId: "friend", owedCents: 500 }] });
+  await act(async () => root.render(createElement(Harness, { saved })));
+  act(() => controller.setDescription("Supper"));
+  act(() => controller.submit());
+  act(() => stubs.update.mock.calls[0][1].onSuccess({ id: "saved" }));
+  expect(stubs.dismissTo).toHaveBeenCalledWith("/expenses/saved");
+  expect(stubs.replace).not.toHaveBeenCalled();
 });
 
 it("preserves manual itemized edits when the photo picker is cancelled", async () => {

@@ -7,7 +7,7 @@ import { MONEY_KEYS, queryKeys } from "@haalkhata/shared/api/queryKeys";
 import { COMMENT_PAGE_SIZE } from "@haalkhata/shared/api/paging";
 import type { Expense } from "@haalkhata/shared/api/plainMessages";
 import { LIVE_SPLIT_CHECK_INTERVAL_MS } from "@haalkhata/shared/expense/live/live.constants";
-import { liveEditRequest, withSavedEdit, type LiveEdit } from "@haalkhata/shared/expense/live/liveEdits";
+import { billDebts, liveEditRequest, withSavedEdit, type LiveEdit } from "@haalkhata/shared/expense/live/liveEdits";
 import { expenseStateOf } from "@haalkhata/shared/expense/merge/expenseState";
 import { authClient, expenseClient } from "@/lib/api/connect";
 import { newOperationId } from "@/lib/api/operationId";
@@ -57,6 +57,20 @@ export function useLiveSplitAPI(expenseId: string) {
     // The key is a new array each render; the id is what identifies it.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [expenseId, heldVersion, savedVersion, queryClient]);
+
+  // From the saved bill rather than the taps on screen, so a read follows the
+  // write. Until it answers, or if it fails, whoever this bill says they owe
+  // stays owed: Settle staying a moment too long harms nobody, and saying
+  // "settled" to somebody who owes would.
+  const owedOnBill = detailQuery.data?.expense && meQuery.data
+    ? billDebts(expenseStateOf(detailQuery.data.expense), meQuery.data.id)
+    : { payerIds: [], key: "" };
+  const owedQuery = useQuery({
+    queryKey: queryKeys.owedPeople(expenseId, owedOnBill.key),
+    queryFn: () => expenseClient.listOwedPeople({ expenseId }),
+    enabled: owedOnBill.key !== "",
+    retry: false,
+  });
 
   /** Marks every figure stale, so whatever is opened next reads what this split did. */
   const markBalancesStale = () => {
@@ -110,6 +124,7 @@ export function useLiveSplitAPI(expenseId: string) {
   return {
     me: meQuery.data,
     detail: detailQuery.data,
+    owedUserIds: owedQuery.data?.userIds ?? owedOnBill.payerIds,
     isLoading: detailQuery.isLoading || meQuery.isLoading,
     accessEnded: accessEnded(detailQuery.error) || accessEnded(versionQuery.error),
     readError: detailQuery.data ? null : detailQuery.error,

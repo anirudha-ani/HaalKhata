@@ -281,23 +281,44 @@ export function liveTotal(state: ExpenseState, userId: string, standing: LiveSta
 /**
  * What a device holds once one of its taps has saved. The answer the server
  * saved comes back as an expense alone, and a tap can change what somebody
- * owes, so where they stood no longer holds until the next full read says so:
+ * owes, so "settled" no longer stands until the next full read says so:
  * somebody with nothing owed who claims a line owes money from that moment.
  *
  * @param current - What the device holds.
  * @param saved - The expense as saved.
  * @returns What it should hold, unchanged when it has already seen something newer.
  */
-export function withSavedEdit<
-  Saved extends { version: number; payers: readonly { userId: string }[] },
-  Detail extends LiveStanding & { expense?: Saved },
->(current: Detail | undefined, saved: Saved): Detail | undefined {
+export function withSavedEdit<Saved extends { version: number }, Detail extends { expense?: Saved; settledForViewer: boolean }>(
+  current: Detail | undefined,
+  saved: Saved,
+): Detail | undefined {
   if (!current?.expense || saved.version < current.expense.version) return current;
+  return { ...current, expense: saved, settledForViewer: false };
+}
+
+/** What one person owes for a bill alone, which says when the balance is worth reading. */
+export interface BillDebts {
+  /** Who they owe for this bill. */
+  payerIds: string[];
+  /** Changes only when what they owe does; "" when they owe nothing for it. */
+  key: string;
+}
+
+/**
+ * What one person owes for a bill. A bill is reread on every tap at the
+ * table, while the balance behind it only matters to somebody who owes on the
+ * bill and only moves for them when that debt does: anything else would have
+ * everyone's phone read it for everyone else's tap.
+ *
+ * @param state - The bill.
+ * @param userId - Who is looking.
+ * @returns Who they owe, and a key for it.
+ */
+export function billDebts(state: ExpenseState, userId: string): BillDebts {
+  const owed = livePayers(state, userId).filter((payer) => payer.owedCents > 0);
   return {
-    ...current,
-    expense: saved,
-    settledForViewer: false,
-    owedUserIds: saved.payers.map((payer) => payer.userId),
+    payerIds: owed.map((payer) => payer.userId),
+    key: owed.map((payer) => `${payer.userId}:${payer.owedCents}`).join(","),
   };
 }
 

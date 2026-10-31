@@ -38,6 +38,9 @@ export const RPC_RATE_LIMITS = {
   // before reading its own rows; someone scrolling a long one reads a few.
   listFriendLedgerEntries: 120,
   listGroups: 60,
+  // Read when a person's own debt on a live split changes, so a burst of
+  // claiming lines stays well inside this.
+  listOwedPeople: 120,
   // Settling up with several friends in a row stays well inside this; each
   // payment locks the groups the two people share.
   recordSettlement: 20,

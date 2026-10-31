@@ -37,6 +37,42 @@ export async function hasUnsettledGroupBalances(groupId: string, client: PoolCli
 }
 
 /**
+ * Everyone's net position in one group, in one currency, added up by
+ * Postgres: how a group's simplified route and whether its debts cancel out
+ * can be read without loading its history.
+ *
+ * @param groupId - The group.
+ * @param currency - The currency.
+ * @param client - Snapshot or transaction client; omitted, the pool.
+ * @returns Person → net cents (> 0 ⇒ owed money); only non-zero nets are present.
+ */
+export async function sumGroupNets(groupId: string, currency: string, client?: PoolClient): Promise<Map<string, number>> {
+  const rows = await query<{ user_id: string; net: number }>(
+    `SELECT movement.user_id, SUM(movement.delta)::bigint AS net
+       FROM (
+         SELECT pay.user_id, pay.amount_cents AS delta
+           FROM expense_payers pay JOIN expenses exp ON exp.id = pay.expense_id
+          WHERE exp.group_id = $1 AND exp.currency = $2 AND exp.deleted_at IS NULL
+         UNION ALL
+         SELECT spl.user_id, -spl.owed_cents
+           FROM expense_splits spl JOIN expenses exp ON exp.id = spl.expense_id
+          WHERE exp.group_id = $1 AND exp.currency = $2 AND exp.deleted_at IS NULL
+         UNION ALL
+         SELECT from_user, amount_cents FROM settlements
+          WHERE group_id = $1 AND currency = $2 AND deleted_at IS NULL
+         UNION ALL
+         SELECT to_user, -amount_cents FROM settlements
+          WHERE group_id = $1 AND currency = $2 AND deleted_at IS NULL
+       ) movement
+      GROUP BY movement.user_id
+     HAVING SUM(movement.delta) <> 0`,
+    [groupId, currency],
+    client,
+  );
+  return new Map(rows.map((entry) => [entry.user_id, entry.net]));
+}
+
+/**
  * A user's net position in each of several groups, per currency, in one
  * query.
  *

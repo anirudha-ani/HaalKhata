@@ -529,7 +529,7 @@ describe.skipIf(!reachable)("a live split, against Postgres", () => {
       await expenses.updateExpense(guest, id, editOf(carded, {
         items: carded.items.map((item) => ({ ...item, assignments: [{ userId: guest, weight: 1 }] })),
       }), false, carded);
-      expect((await read(id, guest)).owedUserIds.sort()).toEqual([SARA, card].sort());
+      expect((await live.listOwedPeople(guest, id)).userIds.sort()).toEqual([SARA, card].sort());
 
       await expenses.recordSettlement(guest, {
         groupId: "",
@@ -541,16 +541,21 @@ describe.skipIf(!reachable)("a live split, against Postgres", () => {
         operationId: randomUUID(),
       } as never);
 
-      const after = await read(id, guest);
-      expect(after.owedUserIds).toEqual([card]);
-      expect(after.settledForViewer).toBe(false);
+      expect((await live.listOwedPeople(guest, id)).userIds).toEqual([card]);
+      expect((await read(id, guest)).settledForViewer).toBe(false);
     });
 
     it("reads a group's debts along the group's route", async () => {
       const { id, saved } = await openBill([TOMAS], { groupId: FLAT });
       await expenses.updateExpense(TOMAS, id, claim(saved, TOMAS, "Beer"), false, saved);
 
-      expect((await read(id, TOMAS)).owedUserIds).toEqual([SARA]);
+      expect((await live.listOwedPeople(TOMAS, id)).userIds).toEqual([SARA]);
+    });
+
+    it("tells nobody who else a stranger to the expense owes", async () => {
+      const { id } = await openBill([TOMAS]);
+
+      await expect(live.listOwedPeople(LENA, id)).rejects.toMatchObject({ code: "permission_denied" });
     });
 
     it("brings a later joiner together with every payer", async () => {

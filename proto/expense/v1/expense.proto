@@ -21,6 +21,10 @@ service ExpenseService {
   // The one number an open edit form asks for on a timer: whether anyone has
   // saved a change since it last looked. Open to whoever may read the expense.
   rpc GetExpenseVersion(GetExpenseVersionRequest) returns (GetExpenseVersionResponse);
+  // Everyone the caller still owes in this expense's scope and currency. Its
+  // own call, not a field of GetExpense: a live split rereads the expense on
+  // every tap, and this only changes when the caller's own debt does.
+  rpc ListOwedPeople(ListOwedPeopleRequest) returns (ListOwedPeopleResponse);
   // Creator only. A soft delete: the expense stops counting toward every
   // balance but stays visible everywhere the ledger is shown, marked deleted
   // (Expense.deleted_at), and payments already recorded against it stay on
@@ -236,6 +240,17 @@ message ListExpensesResponse {
   string next_cursor = 5;
 }
 
+message ListOwedPeopleRequest {
+  string expense_id = 1;
+}
+
+message ListOwedPeopleResponse {
+  // By the balance rather than by this bill: paying one of several payers
+  // takes that person off, which settled_for_viewer, one answer for everybody
+  // on the expense, cannot say.
+  repeated string user_ids = 1;
+}
+
 message GetExpenseVersionRequest {
   string expense_id = 1;
 }
@@ -300,11 +315,6 @@ message GetExpenseResponse {
   string comments_next_cursor = 10;
   // The live split running on this expense; unset when there is none.
   LiveSplit live_split = 11;
-  // Everyone the CALLER still owes in this expense's scope and currency, by
-  // the balance rather than by this bill: paying one of several payers takes
-  // that person off, which settled_for_viewer, one answer for everybody on
-  // the expense, cannot say.
-  repeated string owed_user_ids = 12;
 }
 
 // One recorded change to an expense, for the detail view's history line.

@@ -50,6 +50,11 @@ as long as they like.
 - **A debt runs to particular people.** With several payers each person owes
   whichever payers the ledger's rule names, which is why Settle sits beside each
   payer instead of under the total.
+- **The balance is read when it can have changed.** Every tap at the table rereads
+  the bill on every phone, so who you still owe is its own read (`ListOwedPeople`).
+  It runs only for somebody who owes on the bill, when that debt changes or a
+  payment is recorded. Until it answers, or if it fails, whoever the bill says you
+  owe stays owed, so nobody is told they are settled when they are not.
 - **One announcement.** Nothing reaches the feed or anyone's bell while it runs.
   At the end the result goes out once: as a new expense if the split created it,
   as an edit if it changed one, and not at all if nothing changed.

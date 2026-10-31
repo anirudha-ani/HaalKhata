@@ -447,7 +447,10 @@ with colocated tests. Mobile-specific rules:
   `closeLiveSplit` writes those lines to the payers and announces the result
   once. Nothing is announced before that, so nobody's phone buzzes per tick.
   `live_split_people` is what lets somebody with no share yet read and edit, and
-  is deleted when it ends. See `docs/live-split.md`.
+  is deleted when it ends. A split rereads `GetExpense` on every tap on every
+  phone, so nothing that reads a group's history belongs in it: who a person
+  still owes is `ListOwedPeople`, keyed on their own debt (`billDebts`). See
+  `docs/live-split.md`.
 - **An expense never changes currency.** `updateExpense` keeps the saved
   currency, group expenses included, and refuses an edit naming another;
   the forms work in it when editing (`expenseFormCurrency` puts the saved

@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import type { ExpenseState } from "../merge/expenseState";
 import {
   addLine,
+  billDebts,
   checkPaidAmount,
   lineShareCents,
   liveEditRequest,
@@ -151,6 +152,40 @@ describe("several people paying", () => {
   });
 });
 
+describe("when the balance is worth reading", () => {
+  const twoCards = setOnLine("pizza", PRIYA, true)(setPaid(TOMAS, 1200)(bill));
+
+  it("not for somebody who owes nothing on the bill", () => {
+    expect(billDebts(bill, TOMAS)).toEqual({ payerIds: [], key: "" });
+  });
+
+  it("not for whoever paid", () => {
+    expect(billDebts(twoCards, SARA).key).toBe("");
+  });
+
+  it("for somebody who owes, naming who", () => {
+    expect(billDebts(twoCards, PRIYA).payerIds).toEqual([SARA, TOMAS]);
+  });
+
+  it("not again when somebody else's tap leaves this person's debt alone", () => {
+    const opened = setOnLine("pizza", PRIYA, true)(bill);
+    const afterAnotherTap = setOnLine("beer", TOMAS, true)(opened);
+
+    expect(billDebts(afterAnotherTap, PRIYA).key).toBe(billDebts(opened, PRIYA).key);
+  });
+
+  it("again when somebody else's tap changes which of several payers this person owes", () => {
+    const opened = setOnLine("pizza", PRIYA, true)(setPaid(TOMAS, 1200)(bill));
+    const afterAnotherTap = setOnLine("beer", SARA, true)(opened);
+
+    expect(billDebts(afterAnotherTap, PRIYA).key).not.toBe(billDebts(opened, PRIYA).key);
+  });
+
+  it("again when this person's own debt moves", () => {
+    expect(billDebts(setOnLine("beer", PRIYA, true)(twoCards), PRIYA).key).not.toBe(billDebts(twoCards, PRIYA).key);
+  });
+});
+
 describe("what somebody says they paid", () => {
   it("takes an amount within the bill", () => {
     expect(checkPaidAmount("12.00", bill, "USD")).toEqual({ cents: 1200, message: "" });
@@ -267,22 +302,17 @@ describe("the headline figure", () => {
 });
 
 describe("what a device holds after a tap saves", () => {
-  const payers = [{ userId: "sara" }];
-  const held = { expense: { version: 4, payers }, settledForViewer: true, owedUserIds: [] };
+  const held = { expense: { version: 4 }, settledForViewer: true };
 
   it("no longer takes it as settled: a tap can leave somebody owing", () => {
-    expect(withSavedEdit(held, { version: 5, payers })).toEqual({
-      expense: { version: 5, payers },
-      settledForViewer: false,
-      owedUserIds: ["sara"],
-    });
+    expect(withSavedEdit(held, { version: 5 })).toEqual({ expense: { version: 5 }, settledForViewer: false });
   });
 
   it("keeps a newer copy that arrived first", () => {
-    expect(withSavedEdit(held, { version: 3, payers })).toBe(held);
+    expect(withSavedEdit(held, { version: 3 })).toBe(held);
   });
 
   it("holds nothing if it held nothing", () => {
-    expect(withSavedEdit(undefined, { version: 5, payers })).toBeUndefined();
+    expect(withSavedEdit(undefined, { version: 5 })).toBeUndefined();
   });
 });

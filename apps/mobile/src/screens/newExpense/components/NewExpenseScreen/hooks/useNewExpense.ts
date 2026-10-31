@@ -445,11 +445,15 @@ export function useNewExpense(
     setError("");
     const request = buildRequest(totalCents, itemDraft.items ?? []);
 
-    const onSuccess = () => {
+    // Land on the thing you just made, not on a list: seeing the split it
+    // landed on is the confirmation that matters. An edit goes back to the
+    // bill it was opened from rather than stacking a second copy on top.
+    const onSuccess = (saved: { id: string }) => {
       successFeedback();
       operationIdRef.current = newOperationId();
       lastEditAttempt.current = "";
-      router.replace(groupId ? `/groups/${groupId}` : "/friends");
+      if (editExpenseId) router.dismissTo(`/expenses/${saved.id}`);
+      else router.replace(`/expenses/${saved.id}`);
     };
     if (editExpenseId) {
       const attempt = JSON.stringify([{ ...request, operationId: "" }, preserveSplitType, editSync.base?.version]);

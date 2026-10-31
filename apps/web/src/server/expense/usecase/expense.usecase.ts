@@ -89,7 +89,6 @@ import {
   owedByScope,
   pairScopeDebts,
   sharedActiveGroups,
-  memberDebtsInGroup,
   userNetInGroup,
   userNetInGroups,
 } from "./balance.usecase";
@@ -606,7 +605,7 @@ function involvedUserIds(write: ExpenseWrite): string[] {
  * @param children - Batch-loaded child rows including that expense.
  * @returns Distinct participant user ids.
  */
-function moneyParticipantIds(expenseId: string, children: ExpenseChildren): string[] {
+export function moneyParticipantIds(expenseId: string, children: ExpenseChildren): string[] {
   return [
     ...new Set([
       ...(children.payers.get(expenseId) ?? []).map((payer) => payer.user_id),
@@ -991,7 +990,7 @@ export async function createExpense(userId: string, request: ExpenseInput) {
  * @param expense - The expense row being accessed.
  * @throws UsecaseError (permission_denied) if the caller has no access.
  */
-async function assertCanTouch(userId: string, expense: ExpenseRow): Promise<void> {
+export async function assertCanTouch(userId: string, expense: ExpenseRow): Promise<void> {
   if (expense.group_id) {
     if (!(await isMember(expense.group_id, userId))) {
       denied("you are not a member of this group");
@@ -1230,38 +1229,6 @@ export async function updateExpense(
     await finishOperation(operation, expenseId, client);
   });
   return getExpenseProto(expenseId);
-}
-
-/**
- * Everyone a person still owes in an expense's scope and currency, by the
- * balance. A group's debts are read along its route, so only an itemized bill
- * pays for that read: those are the ones with somebody to settle with on
- * screen.
- *
- * @param userId - The reader.
- * @param expense - The expense.
- * @param participantIds - Who is on it.
- * @param oneOffNetByPair - The reader's one-off nets, read already for a one-off expense.
- * @param client - The read's snapshot.
- * @returns The people.
- */
-async function peopleOwedByViewer(
-  userId: string,
-  expense: ExpenseRow,
-  participantIds: readonly string[],
-  oneOffNetByPair: ReadonlyMap<string, number>,
-  client: PoolClient,
-): Promise<string[]> {
-  if (expense.split_type !== "itemized") return [];
-  if (!expense.group_id) {
-    return participantIds.filter(
-      (participantId) => (oneOffNetByPair.get(oneOffPairKey(participantId, expense.currency)) ?? 0) < 0,
-    );
-  }
-  const debts = await memberDebtsInGroup(userId, expense.group_id, client);
-  return debts
-    .filter((debt) => debt.fromUserId === userId && debt.currency === expense.currency)
-    .map((debt) => debt.toUserId);
 }
 
 /**
@@ -1606,7 +1573,7 @@ export async function getExpense(userId: string, expenseId: string, commentLimit
   // and whether a payment came after it — are read at one instant, so an
   // edit or a payment committing mid-read cannot pair one version's amount
   // with another's shares.
-  const { expenseRow, children, settledForViewer, owedUserIds, hasLaterSettlement, groupStatus, refusals } = await snapshot(
+  const { expenseRow, children, settledForViewer, hasLaterSettlement, groupStatus, refusals } = await snapshot(
     async (client) => {
       // Expenses are never hard-deleted, so the row checked above is still there.
       const current = (await findExpenseById(expenseId, client)) ?? found;
@@ -1630,7 +1597,6 @@ export async function getExpense(userId: string, expenseId: string, commentLimit
           }
         }
       }
-      const owedUserIds = await peopleOwedByViewer(userId, current, participantIds, oneOffNetByPair, client);
       const settled =
         settledExpenseIds(
           [
@@ -1672,7 +1638,6 @@ export async function getExpense(userId: string, expenseId: string, commentLimit
         expenseRow: current,
         children: currentChildren,
         settledForViewer: settled,
-        owedUserIds,
         hasLaterSettlement: laterSettlement,
         groupStatus: scopeGroup ? GROUP_STATUS_PROTO[scopeGroup.status] : GroupStatus.UNSPECIFIED,
         refusals: changeRefusals,
@@ -1715,7 +1680,6 @@ export async function getExpense(userId: string, expenseId: string, commentLimit
 
   return {
     settledForViewer,
-    owedUserIds,
     hasLaterSettlement,
     groupStatus,
     editRefusal: refusals.editRefusal,

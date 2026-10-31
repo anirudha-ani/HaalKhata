@@ -85,7 +85,7 @@ export function useLiveSplit(expenseId: string) {
     /** Where this person stands by the balance. */
     standing: {
       settledForViewer: liveAPI.detail?.settledForViewer ?? false,
-      owedUserIds: liveAPI.detail?.owedUserIds ?? [],
+      owedUserIds: liveAPI.owedUserIds,
     },
     isLoading: liveAPI.isLoading,
     accessEnded: liveAPI.accessEnded,
