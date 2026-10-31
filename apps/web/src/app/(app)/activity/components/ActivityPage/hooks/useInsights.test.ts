@@ -4,7 +4,7 @@
 import { createPlain } from "@haalkhata/shared/api/wireNumbers";
 import { GetInsightsResponseSchema } from "@haalkhata/protogen/personalanalytics/v1/personalanalytics_pb";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, createElement } from "react";
+import { act, createElement, useEffect } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { personalAnalyticsClient } from "@/lib/api/connect";
@@ -33,7 +33,10 @@ let latest: ReturnType<typeof useInsights>;
  * @returns Nothing.
  */
 function Harness({ report }: { report: (state: ReturnType<typeof useInsights>) => void }) {
-  report(useInsights(true));
+  const state = useInsights(true);
+  useEffect(() => {
+    report(state);
+  });
   return null;
 }
 

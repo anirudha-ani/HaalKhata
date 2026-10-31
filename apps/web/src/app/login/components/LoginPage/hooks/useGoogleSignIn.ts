@@ -61,7 +61,10 @@ export function useGoogleSignIn() {
   useEffect(() => {
     if (!isConfigured || !buttonElement) return;
     let cancelled = false;
-    let resizeObserver: ResizeObserver | undefined;
+    let renderButton: (() => void) | undefined;
+    // Watching starts before the script loads: a mobile sheet can open first.
+    const resizeObserver = new ResizeObserver(() => renderButton?.());
+    resizeObserver.observe(buttonElement);
 
     Promise.all([loadGoogleScript(), authClient.beginGoogleSignIn({})])
       .then(([google, challenge]) => {
@@ -75,15 +78,13 @@ export function useGoogleSignIn() {
           },
         });
         /** Renders Google's button at the card width, including when a mobile sheet opens. */
-        const renderButton = () => {
+        renderButton = () => {
           const width = Math.min(400, Math.floor(buttonElement.clientWidth));
           if (!width) return;
           buttonElement.replaceChildren();
           google.accounts.id.renderButton(buttonElement, { ...GOOGLE_BUTTON_OPTIONS, width });
         };
         renderButton();
-        resizeObserver = new ResizeObserver(renderButton);
-        resizeObserver.observe(buttonElement);
         setHeldNonce({ receivedAt: Date.now(), lifetimeSeconds: challenge.lifetimeSeconds });
         setIsLoading(false);
       })
@@ -96,7 +97,7 @@ export function useGoogleSignIn() {
 
     return () => {
       cancelled = true;
-      resizeObserver?.disconnect();
+      resizeObserver.disconnect();
     };
     // `mutate` is referentially stable in React Query, so this runs once per
     // mounted host element rather than on every mutation state change.
