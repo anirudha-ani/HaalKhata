@@ -1,6 +1,6 @@
 /** Minor-unit money formatting/parsing helpers. */
 
-import { minorUnitDigits } from "./money.constants";
+import { COMMA_BEFORE_A_GROUP_PATTERN, minorUnitDigits, THOUSANDS_GROUP_DIGITS } from "./money.constants";
 
 /** Cache of `Intl.NumberFormat` instances keyed by currency code, so formatters are built once per currency. */
 const formatters = new Map<string, Intl.NumberFormat>();
@@ -43,7 +43,9 @@ export function formatMoney(cents: number, currency: string): string {
 /**
  * Parses a user-typed money string into integer minor units.
  * For a 2-digit currency, "12.50" | "12,50" | "12" → 1250; null when not
- * parseable or when it carries more decimals than the currency has.
+ * parseable or when it carries more decimals than the currency has. In a
+ * 3-digit currency "1,234" is refused: it could be 1.234 or 1234, a thousand
+ * times apart, and retyping it costs far less than guessing wrong.
  *
  * @param value - The raw text from a money input field.
  * @param currency - ISO 4217 code whose minor-unit digits bound the
@@ -53,7 +55,9 @@ export function formatMoney(cents: number, currency: string): string {
  */
 export function parseMoneyInput(value: string, currency?: string): number | null {
   const digits = currency === undefined ? 2 : minorUnitDigits(currency);
-  const normalized = value.trim().replace(",", ".");
+  const trimmed = value.trim();
+  if (digits === THOUSANDS_GROUP_DIGITS && COMMA_BEFORE_A_GROUP_PATTERN.test(trimmed)) return null;
+  const normalized = trimmed.replace(",", ".");
   if (normalized === "") return null;
   const pattern =
     digits === 0 ? /^\d+$/ : new RegExp(String.raw`^\d+(\.\d{0,${digits}})?$`);

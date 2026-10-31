@@ -25,6 +25,29 @@ describe("parseMoneyInput", () => {
   });
 });
 
+describe("parseMoneyInput and a comma in a three-decimal currency", () => {
+  it("refuses 1,234 rather than guess between 1.234 and 1234, a thousand times apart", () => {
+    expect(parseMoneyInput("1,234", "KWD")).toBeNull();
+    expect(parseMoneyInput("12,500", "BHD")).toBeNull();
+  });
+
+  it("still reads the two ways of writing it that are not in doubt", () => {
+    expect(parseMoneyInput("1.234", "KWD")).toBe(1234);
+    expect(parseMoneyInput("1234", "KWD")).toBe(1234000);
+  });
+
+  it("still takes a comma as the decimal point where only that makes sense", () => {
+    expect(parseMoneyInput("1,23", "KWD")).toBe(1230);
+    expect(parseMoneyInput("1,2", "KWD")).toBe(1200);
+    expect(parseMoneyInput("1234,500", "KWD")).toBe(1234500);
+  });
+
+  it("does not change a two-decimal currency", () => {
+    expect(parseMoneyInput("12,50", "USD")).toBe(1250);
+    expect(parseMoneyInput("1,234", "USD")).toBeNull();
+  });
+});
+
 describe("parseMoneyInput at scale", () => {
   it("reads large amounts digit for digit, with no float rounding", () => {
     expect(parseMoneyInput("100000000000.00")).toBe(10_000_000_000_000);

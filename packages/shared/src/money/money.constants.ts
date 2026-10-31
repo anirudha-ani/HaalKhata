@@ -109,3 +109,9 @@ export const CATEGORIES = [
   "shopping",
   "health",
 ];
+
+/** Digits in a thousands group, and so the decimals of a currency where a comma before them is in doubt. */
+export const THOUSANDS_GROUP_DIGITS = 3;
+
+/** A comma with one to three digits before it and exactly three after: grouping and decimals look the same. */
+export const COMMA_BEFORE_A_GROUP_PATTERN = /^\d{1,3},\d{3}$/;
