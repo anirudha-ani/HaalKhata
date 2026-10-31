@@ -125,6 +125,30 @@ export async function operationClaimed(operation: OperationKey, client: PoolClie
 }
 
 /**
+ * The result of an operation that already finished, for a check that runs
+ * before the transaction and could refuse its retry. A reused id with other
+ * contents is refused here too, as {@link beginOperation} would.
+ *
+ * @param operation - The caller, the RPC, and the client's operation id.
+ * @param request - The request payload, for the fingerprint.
+ * @param client - Any client; a read outside the operation's transaction.
+ * @returns The earlier result's id, or null when there is none to replay.
+ */
+export async function finishedOperationResult(
+  operation: OperationKey,
+  request: object,
+  client: PoolClient,
+): Promise<string | null> {
+  if (operation.operationId === "") return null;
+  const existing = await findOperation(operation, client);
+  if (!existing || existing.result_id === null) return null;
+  if (existing.request_fingerprint !== requestFingerprint(request)) {
+    throw new UsecaseError("already_exists", "operation_id was already used for a different request");
+  }
+  return existing.result_id;
+}
+
+/**
  * Marks a claimed operation complete with the id of what it produced. A
  * no-op for an empty id, matching {@link beginOperation}.
  *

@@ -120,7 +120,7 @@ import {
   withLedgerTransaction,
 } from "@/server/common/ledger/ledgerLocks";
 import { isRealCalendarDate, normalizeCurrencyCode } from "@/server/common/validation/validation";
-import { beginOperation, finishOperation, operationClaimed } from "@/server/common/ledger/operations";
+import { beginOperation, finishedOperationResult, finishOperation, operationClaimed } from "@/server/common/ledger/operations";
 import type { OperationKey } from "@/server/common/ledger/operations.repo";
 import { toPublicUser } from "@/server/auth/usecase/identity/user.mapper";
 import {
@@ -2639,8 +2639,17 @@ export async function recordSettlement(
   userId: string,
   request: SettlementRequest,
 ) {
-  const context = await prepareSettlement(userId, request);
   const operation = { userId, rpc: "RecordSettlement", operationId: request.operationId ?? "" };
+  // First: a saved payment is answered as saved, whatever has changed since.
+  // Refusing its retry (the other person has left the group, say) would read as
+  // "not recorded", and whoever sees that pays again.
+  const savedId = await snapshot((client) => finishedOperationResult(operation, request, client));
+  if (savedId !== null) {
+    const saved = await findSettlementById(savedId);
+    if (!saved) notFound("payment not found");
+    return toSettlement(saved);
+  }
+  const context = await prepareSettlement(userId, request);
   if (!context.groupId) await refuseUnlessAnythingOwed(context, operation);
 
   // Validation + inserts inside the pair lock, so a concurrent recording of

@@ -258,6 +258,24 @@ describe.skipIf(!reachable)("operation claims never make money writes wait on ea
     expect(await saraPayments()).toBe(before);
   });
 
+  it("answers a retry as saved even after the other person has left the group", async () => {
+    await database.query(`INSERT INTO groups (id, name, currency, created_by) VALUES ('grp-retry', 'Trip', 'USD', $1)`, [TOMAS]);
+    await database.query(`INSERT INTO group_members (group_id, user_id, role) VALUES ('grp-retry', $1, 'owner'), ('grp-retry', $2, 'member')`, [TOMAS, SARA]);
+    await usecase.createExpense(TOMAS, {
+      ...taxi(), groupId: "grp-retry",
+      payers: [{ userId: TOMAS, amountCents: 2000 }],
+      splitSpecs: [TOMAS, SARA].map((userId) => ({ userId, amountCents: 0, percentBp: 0, shares: 0 })),
+    } as unknown as ExpenseInput);
+    const payment = { groupId: "grp-retry", toUserId: TOMAS, amountCents: 1000, currency: "USD", method: "cash", note: "", operationId: randomUUID() };
+    const recorded = await usecase.recordSettlement(SARA, payment);
+    const before = await saraPayments();
+    await database.query(`DELETE FROM group_members WHERE group_id = 'grp-retry' AND user_id = $1`, [TOMAS]);
+
+    await expect(usecase.recordSettlement(SARA, payment)).resolves.toMatchObject({ id: recorded.id });
+
+    expect(await saraPayments()).toBe(before);
+  });
+
   it("marks a reused id with other contents apart from a refusal: it says an earlier attempt was saved", async () => {
     const operationId = randomUUID();
     await saraPaysTomas(100, operationId);
