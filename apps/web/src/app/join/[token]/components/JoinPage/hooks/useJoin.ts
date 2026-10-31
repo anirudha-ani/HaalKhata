@@ -36,6 +36,17 @@ export function useJoin(token: string) {
     retry: false,
   });
 
+  /**
+   * Goes where joining leads. Somebody brand new has first-run setup to do
+   * first, so it is told where they were headed, or they would finish on Home
+   * with no sign of what they joined.
+   *
+   * @param destination - Where joining leads.
+   */
+  const arrive = (destination: string) => {
+    router.push(viewer.data?.onboarded === false ? `/onboarding?next=${encodeURIComponent(destination)}` : destination);
+  };
+
   const [requestSent, setRequestSent] = useState(false);
   const accept = useMutation({
     mutationFn: () => socialClient.acceptInviteLink({ token }),
@@ -48,10 +59,10 @@ export function useJoin(token: string) {
         return;
       }
       if (result.expenseId) {
-        router.push(`/expenses/new?edit=${result.expenseId}`);
+        arrive(`/expenses/new?edit=${result.expenseId}`);
         return;
       }
-      router.push(result.groupId ? `/groups/${result.groupId}` : "/friends");
+      arrive(result.groupId ? `/groups/${result.groupId}` : "/friends");
     },
   });
 

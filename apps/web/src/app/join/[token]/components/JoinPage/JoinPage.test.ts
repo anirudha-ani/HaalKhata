@@ -13,7 +13,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { authClient, socialClient } from "@/lib/api/connect";
 import { JoinPage } from "./JoinPage";
 
-vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn(), replace: vi.fn() }) }));
+const navigation = vi.hoisted(() => ({ push: vi.fn() }));
+vi.mock("next/navigation", () => ({ useRouter: () => ({ push: navigation.push, replace: vi.fn() }) }));
 vi.mock("next/link", () => ({
   default: ({ children, href }: { children: ReactNode; href: string }) => createElement("a", { href }, children),
 }));
@@ -109,6 +110,36 @@ describe("the invite landing page", () => {
     expect(container.textContent).toContain("Ask whoever started it to start another.");
   });
 
+  describe("after joining a bill", () => {
+    /**
+     * Joins a live split as somebody.
+     *
+     * @param onboarded - Whether they have been through first-run setup.
+     */
+    const join = async (onboarded: boolean) => {
+      navigation.push.mockClear();
+      vi.mocked(authClient.getMe).mockResolvedValue(create(UserSchema, { id: "viewer", name: "Sam", onboarded }));
+      vi.mocked(socialClient.previewInviteLink).mockResolvedValue({
+        ...previewOf({ kind: "live", inviterName: "Ari", memberCount: 2, expenseDescription: "Dinner", currency: "USD" }),
+        totalCents: 4400,
+      });
+      vi.mocked(socialClient.acceptInviteLink).mockResolvedValue({ expenseId: "bill-1", groupId: "" } as never);
+      await render();
+      const accept = [...container.querySelectorAll("button")].find((button) => button.textContent === "Join the split");
+      await act(async () => accept?.click());
+    };
+
+    it("opens the bill's form", async () => {
+      await join(true);
+      expect(navigation.push).toHaveBeenCalledExactlyOnceWith("/expenses/new?edit=bill-1");
+    });
+
+    it("carries a brand new person through setup to the bill, not Home", async () => {
+      await join(false);
+      expect(navigation.push).toHaveBeenCalledExactlyOnceWith("/onboarding?next=%2Fexpenses%2Fnew%3Fedit%3Dbill-1");
+    });
+  });
+
   it("says what joining a live split on a group's bill does", async () => {
     vi.mocked(socialClient.previewInviteLink).mockResolvedValue({
       ...previewOf({ kind: "live", inviterName: "Ari", groupName: "Trip", memberCount: 2, expenseDescription: "Dinner", currency: "USD" }),
@@ -118,7 +149,7 @@ describe("the invite landing page", () => {
     await render();
 
     expect(container.textContent).toContain("Ari is splitting “Dinner” live");
-    expect(container.textContent).toContain("$44.00 · 2 people here so far. Claim what you had. Joining adds you to “Trip”.");
+    expect(container.textContent).toContain("$44.00 · 2 people here so far. Join to edit it together. Joining adds you to “Trip”.");
     expect(container.textContent).toContain("Join the split");
   });
 });

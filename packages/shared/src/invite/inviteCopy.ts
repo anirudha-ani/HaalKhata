@@ -84,7 +84,7 @@ export function inviteCopy(preview: InvitePreview) {
     const joinsGroup = preview.groupName ? ` Joining adds you to “${preview.groupName}”.` : "";
     return {
       title: `${preview.inviterName} is splitting “${preview.expenseDescription}” live`,
-      description: `${total} · ${people} Claim what you had.${joinsGroup}`,
+      description: `${total} · ${people} Join to edit it together.${joinsGroup}`,
       action: "Join the split",
       requestSent,
     };

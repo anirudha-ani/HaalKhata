@@ -2,6 +2,7 @@
 /** First-run flow state: profile fields, the phone and its SMS code, then the payment step. */
 
 import { useState } from "react";
+import { onboardingDestination } from "@haalkhata/shared/navigation/onboardingDestination";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { queryKeys } from "@haalkhata/shared/api/queryKeys";
 import { authClient, errorMessage, isRefusal } from "@/lib/api/connect";
@@ -82,14 +83,15 @@ export function useOnboarding() {
   }
 
   /**
-   * Persists completion, then loads a fresh authenticated document. TanStack
+   * Persists completion, then loads a fresh authenticated document, at
+   * whatever this flow interrupted (a bill just joined) or Home. TanStack
    * Query and the App Router maintain separate caches; document navigation
    * reruns the destination's guards against the saved completion state.
    */
   const finish = async () => {
     const completedUser = await authClient.completeOnboarding({});
     queryClient.setQueryData(queryKeys.me, completedUser);
-    window.location.replace("/dashboard");
+    window.location.replace(onboardingDestination(new URLSearchParams(window.location.search).get("next")));
   };
 
   const save = useMutation({
