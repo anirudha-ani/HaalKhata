@@ -194,6 +194,21 @@ export function computeSplits(
 }
 
 /**
+ * Each person's cents of one item, always in order of user id. An item's odd
+ * cent goes by position, and nothing stores the order people were added in:
+ * two forms list them differently and the database returns them in any order.
+ * So the order is fixed here, or saving an unchanged expense could move a cent.
+ *
+ * @param item - The receipt item, with its assignments and weights.
+ * @returns One share per person.
+ */
+function shareOutItem(item: ItemInput): { userId: string; cents: number }[] {
+  const people = [...item.assignments].sort((first, second) => (first.userId < second.userId ? -1 : 1));
+  const shares = allocate(item.totalCents, people.map((assignment) => assignment.weight));
+  return people.map((assignment, index) => ({ userId: assignment.userId, cents: shares[index] }));
+}
+
+/**
  * Itemized split: each person owes the weighted share of their assigned
  * items, plus tax + tip split proportionally to their item subtotal.
  *
@@ -212,9 +227,9 @@ export function computeSplits(
 /**
  * One person's share of a single receipt item, before tax and tip.
  *
- * The same `allocate` call `computeItemizedSplits` makes per item, so the
- * number shown against a line matches the one that fed the stored split
- * exactly — including which cent the largest-remainder rounding handed to whom.
+ * The same sharing out `computeItemizedSplits` does per item, so the number
+ * shown against a line matches the one that fed the stored split exactly —
+ * including which cent the largest-remainder rounding handed to whom.
  * Recomputing it as `total / count` would be right most of the time and
  * quietly wrong on the rows people query.
  *
@@ -228,12 +243,7 @@ export function computeSplits(
  * @returns The share in cents, or null when that person is not on the item.
  */
 export function itemShareCents(item: ItemInput, userId: string): number | null {
-  const index = item.assignments.findIndex((assignment) => assignment.userId === userId);
-  if (index === -1) return null;
-  return allocate(
-    item.totalCents,
-    item.assignments.map((assignment) => assignment.weight),
-  )[index];
+  return shareOutItem(item).find((share) => share.userId === userId)?.cents ?? null;
 }
 
 export function computeItemizedSplits(
@@ -254,13 +264,9 @@ export function computeItemizedSplits(
     if (item.assignments.some((assignment) => assignment.weight <= 0)) {
       throw new SplitError(`item "${item.name}" has a non-positive assignment weight`);
     }
-    const itemShares = allocate(
-      item.totalCents,
-      item.assignments.map((assignment) => assignment.weight),
-    );
-    item.assignments.forEach((assignment, index) => {
-      subtotals.set(assignment.userId, (subtotals.get(assignment.userId) ?? 0) + itemShares[index]);
-    });
+    for (const share of shareOutItem(item)) {
+      subtotals.set(share.userId, (subtotals.get(share.userId) ?? 0) + share.cents);
+    }
   }
 
   const userIds = [...subtotals.keys()].sort();

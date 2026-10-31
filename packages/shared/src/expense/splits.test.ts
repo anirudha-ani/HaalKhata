@@ -3,6 +3,7 @@
 import { describe, expect, it } from "vitest";
 import { allocate } from "./allocate";
 import { MAX_ASSIGNMENT_WEIGHT } from "./live/live.constants";
+import { lineShareCents } from "./live/liveEdits";
 import { SplitError, computeItemizedSplits, computeSplits, itemShareCents, payerWeights, unclaimedOnPayers } from "./splits";
 
 const sumOwedCents = (splits: { owedCents: number }[]) =>
@@ -252,5 +253,49 @@ describe("unclaimedOnPayers", () => {
     const weights = payerWeights([{ userId: "sara", amountCents: 9_999_999_999_991 }, { userId: "tomas", amountCents: 3 }]);
 
     expect(weights.every((portion) => portion.weight >= 1 && portion.weight <= MAX_ASSIGNMENT_WEIGHT)).toBe(true);
+  });
+});
+
+describe("an item's odd cent", () => {
+  const assignedTo = (...userIds: string[]) => ({
+    name: "Tea",
+    totalCents: 101,
+    assignments: userIds.map((userId) => ({ userId, weight: 1 })),
+  });
+
+  it("does not depend on the order people are listed in", () => {
+    const forwards = computeItemizedSplits([assignedTo("ana", "ben")], 0, 0);
+    const backwards = computeItemizedSplits([assignedTo("ben", "ana")], 0, 0);
+
+    expect(backwards.splits).toEqual(forwards.splits);
+  });
+
+  it("shows the same share on a line whichever way the line was read back", () => {
+    expect(itemShareCents(assignedTo("ana", "ben"), "ana")).toBe(itemShareCents(assignedTo("ben", "ana"), "ana"));
+    expect(itemShareCents(assignedTo("ana", "ben"), "ben")).toBe(itemShareCents(assignedTo("ben", "ana"), "ben"));
+  });
+
+  it("agrees with the saved split, and the line adds up", () => {
+    const item = assignedTo("ben", "ana", "cal");
+    const saved = computeItemizedSplits([item], 0, 0).splits;
+
+    for (const split of saved) expect(itemShareCents(item, split.userId)).toBe(split.owedCents);
+    expect(sumOwedCents(saved)).toBe(101);
+  });
+
+  it("is the same with unequal portions in any order", () => {
+    const portions = (first: string, second: string) => ({
+      name: "Wine",
+      totalCents: 1000,
+      assignments: [{ userId: first, weight: first === "ana" ? 2 : 1 }, { userId: second, weight: second === "ana" ? 2 : 1 }],
+    });
+
+    expect(computeItemizedSplits([portions("ana", "ben")], 0, 0).splits).toEqual(computeItemizedSplits([portions("ben", "ana")], 0, 0).splits);
+  });
+
+  it("agrees with what a live split shows for the same line", () => {
+    const line = { id: "tea", name: "Tea", quantity: 1, totalCents: 101, shares: { ben: 1, ana: 1 } };
+
+    expect(lineShareCents(line, "ana")).toBe(itemShareCents(assignedTo("ben", "ana"), "ana"));
   });
 });
