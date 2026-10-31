@@ -1215,9 +1215,14 @@ export async function updateExpense(
   const existing = await loadExpenseForEdit(userId, expenseId, request);
   const existingIds = storedParticipantIds(existing.expense, existing.children);
   const open = await findRunningLiveSplit(expenseId);
+  // A form left open past the end of a split can still name lines nobody had
+  // claimed, and whoever has it need not be on the bill: the merge below gives
+  // those lines back as the split left them, so none is ever stored unclaimed.
+  const openedUnclaimed = base?.items.some((item) => item.assignments.length === 0) ?? false;
+  const notOnIt = existingIds.includes(userId) ? null : existingIds;
   const mine = await buildExpenseWrite(userId, request, existingIds, existing.expense.currency, {
-    allowUnclaimed: open !== undefined,
-    people: open ? [...(await listLiveSplitPeople(open.id)), ...existingIds] : null,
+    allowUnclaimed: open !== undefined || openedUnclaimed,
+    people: open ? [...(await listLiveSplitPeople(open.id)), ...existingIds] : notOnIt,
   });
   const operation = { userId, rpc: "UpdateExpense", operationId: request.operationId ?? "" };
   await withLedgerTransaction(async (client) => {

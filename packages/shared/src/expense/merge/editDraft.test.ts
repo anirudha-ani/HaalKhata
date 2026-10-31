@@ -198,6 +198,28 @@ describe("catching up during a live split", () => {
   });
 });
 
+describe("catching up once a live split has ended", () => {
+  const unclaimed = {
+    ...dinner,
+    splits: [{ userId: SARA, owedCents: 2800 }],
+    items: dinner.items.map((item) => ({ ...item, assignments: [] })),
+  };
+  const ended = { ...unclaimed, items: unclaimed.items.map((item) => ({ ...item, assignments: [{ userId: SARA, weight: 1 }] })) };
+
+  it("keeps a claim this person had not saved, and asks nothing", () => {
+    const form = {
+      ...expenseStateOf(unclaimed),
+      lines: expenseStateOf(unclaimed).lines.map((line) => (line.id === "beer" ? { ...line, shares: { [TOMAS]: 1 } } : line)),
+    };
+
+    const caughtUp = catchUpForm({ base: unclaimed, form, latest: ended, who: "Sara", byMe: false, held: [], live: false });
+
+    expect(caughtUp.conflicts).toEqual([]);
+    expect(caughtUp.merged.lines.find((line) => line.id === "beer")?.shares).toEqual({ [TOMAS]: 1 });
+    expect(caughtUp.merged.lines.find((line) => line.id === "pizza")?.shares).toEqual({ [SARA]: 1 });
+  });
+});
+
 describe("answering a conflict with the saved value", () => {
   const theirs = expenseStateOf({
     ...dinner,

@@ -2,6 +2,7 @@
 
 import { SplitError } from "../splits";
 import {
+  leftWithPayers,
   sameLine,
   sameLineDetails,
   sameMoney,
@@ -118,7 +119,7 @@ export function mergeExpenseEdit(
       }
       if (mineChanged) merged[part] = mine[part];
     }
-    merged.lines = mergeLines(base, mine, theirs, conflicts, theirChanges);
+    merged.lines = mergeLines(base, mine, theirs, options.live === true, conflicts, theirChanges);
   } else {
     const mineMoved = !sameMoney(base, mine);
     const theirsMoved = !sameMoney(base, theirs);
@@ -216,6 +217,7 @@ function payersFor(merged: ExpenseState, conflicts: EditConflict[]): Record<stri
  * @param base - The expense as this person opened it.
  * @param mine - The expense as this person wants it.
  * @param theirs - The expense as it is saved now.
+ * @param live - Whether a live split is running.
  * @param conflicts - Where to record conflicts.
  * @param theirChanges - Where to record what somebody else changed.
  * @returns The merged lines: the saved ones in their order, then this person's new ones.
@@ -224,6 +226,7 @@ function mergeLines(
   base: ExpenseState,
   mine: ExpenseState,
   theirs: ExpenseState,
+  live: boolean,
   conflicts: EditConflict[],
   theirChanges: EditPart[],
 ): LineState[] {
@@ -247,7 +250,8 @@ function mergeLines(
       continue;
     }
     if (mineLine) {
-      lines.push(mergeOneLine(baseLine, mineLine, line, conflicts, theirChanges));
+      const free = !live && isLateClaim(baseLine, mineLine) && leftWithPayers(line, theirs.payers);
+      lines.push(mergeOneLine(baseLine, mineLine, free ? { ...line, shares: {} } : line, conflicts, theirChanges));
     } else if (sameLine(baseLine, line)) {
       // This person removed it and nobody touched it since: it goes.
     } else {
@@ -269,6 +273,19 @@ function mergeLines(
     }
   }
   return lines;
+}
+
+/**
+ * Whether this person put somebody on a line their form opened with nobody on
+ * it. A split that has ended since left such a line with whoever paid, which
+ * nobody chose, so the claim takes the line rather than sharing it with them.
+ *
+ * @param baseLine - The line as this person opened it.
+ * @param mineLine - The line as this person wants it.
+ * @returns True when the line was free and they claimed it.
+ */
+function isLateClaim(baseLine: LineState, mineLine: LineState): boolean {
+  return Object.keys(baseLine.shares).length === 0 && Object.keys(mineLine.shares).length > 0;
 }
 
 /**

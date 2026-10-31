@@ -1,7 +1,7 @@
 /** An expense reduced to what people can change on it, in one shape for the server's rows, its messages and an open form. */
 
 import { allocate } from "../allocate";
-import { computeUnclaimedSplits, type ItemInput } from "../splits";
+import { computeUnclaimedSplits, payerWeights, type ItemInput } from "../splits";
 
 /** One line of a receipt. */
 export interface LineState {
@@ -208,6 +208,19 @@ export function linesToItems(lines: readonly LineState[]): ItemInput[] {
     totalCents: line.totalCents,
     assignments: Object.keys(line.shares).sort().map((userId) => ({ userId, weight: line.shares[userId] })),
   }));
+}
+
+/**
+ * Whether a line sits with whoever paid, in the portions a live split leaves a
+ * line nobody claimed.
+ *
+ * @param line - The line.
+ * @param payers - What each person paid, in cents.
+ * @returns True when it is on them and nobody else, by what each paid.
+ */
+export function leftWithPayers(line: LineState, payers: Record<string, number>): boolean {
+  const portions = payerWeights(Object.entries(payers).map(([userId, amountCents]) => ({ userId, amountCents })));
+  return sameRecord(line.shares, Object.fromEntries(portions.map((portion) => [portion.userId, portion.weight])));
 }
 
 /**

@@ -461,7 +461,11 @@ with colocated tests. Mobile-specific rules:
   `closeLiveSplit` writes those lines to the payers, counts anyone a join put on an
   even split since the last save, takes everyone with nothing to pay off the bill,
   removes a bill never filled in, and announces the result once. Nothing is announced
-  before that. See `docs/live-split.md`.
+  before that. A split ending never costs anyone what they had not saved: for
+  `LIVE_SPLIT_LATE_SAVE_HOURS` after, whoever was in it can still read and save
+  (`isInLiveSplit`, cleared by the sweep), a form that opened a line unclaimed is
+  accepted, and a late claim takes a line the split left with whoever paid
+  (`leftWithPayers`) instead of sharing it. See `docs/live-split.md`.
 - **An expense never changes currency.** `updateExpense` keeps the saved
   currency, group expenses included, and refuses an edit naming another;
   the forms work in it when editing (`expenseFormCurrency` puts the saved
