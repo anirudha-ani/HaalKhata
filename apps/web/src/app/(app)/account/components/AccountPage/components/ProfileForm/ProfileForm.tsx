@@ -42,7 +42,10 @@ export function ProfileForm({ me: currentUser }: { me: User }) {
     <div className="mx-auto max-w-5xl space-y-6">
       <h1 className="text-3xl font-bold">Account</h1>
 
-      <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+      {/* On a wide screen the right column is the taller one, so what follows
+          the columns on a narrow screen sits under the left one instead, with
+          no hole above it. */}
+      <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] xl:grid-rows-[auto_1fr]">
         <div className="min-w-0 space-y-6">
           <form
             className="space-y-4 rounded-2xl border border-line bg-card p-5"
@@ -152,7 +155,7 @@ export function ProfileForm({ me: currentUser }: { me: User }) {
           <PaymentMethodsCard defaultCurrency={currentUser.defaultCurrency || "USD"} />
 
         </div>
-        <div className="min-w-0 space-y-6">
+        <div className="min-w-0 space-y-6 xl:row-span-2">
           {/* The add-me link: the frictionless way for others to find you.
           Accepting it sends you a normal friend request to confirm. */}
           <section className="space-y-3 rounded-2xl border border-line bg-card p-5">
@@ -193,23 +196,24 @@ export function ProfileForm({ me: currentUser }: { me: User }) {
             <LegalLinks layout="rows" />
           </section>
         </div>
-      </div>
+        <div className="min-w-0 space-y-6">
+          <SignedInDevices />
 
-      <SignedInDevices />
-
-      <section className="space-y-4 rounded-2xl border border-line bg-card p-5">
-        <h2 className="text-lg font-semibold">{ACCOUNT_SETTINGS_COPY.access}</h2>
-        <div className="grid items-center gap-2 sm:grid-cols-2">
-          <button
-            type="button"
-            onClick={form.signOut}
-            className="flex w-full items-center justify-center gap-2 rounded-xl border border-line bg-card py-3 font-semibold text-ink-soft hover:border-brand-600 hover:text-brand-600"
-          >
-            <LogOut className="h-4 w-4" /> Sign out
-          </button>
-          <DeleteAccount />
+          <section className="space-y-4 rounded-2xl border border-line bg-card p-5">
+            <h2 className="text-lg font-semibold">{ACCOUNT_SETTINGS_COPY.access}</h2>
+            <div className="grid items-center gap-2 sm:grid-cols-2">
+              <button
+                type="button"
+                onClick={form.signOut}
+                className="flex w-full items-center justify-center gap-2 rounded-xl border border-line bg-card py-3 font-semibold text-ink-soft hover:border-brand-600 hover:text-brand-600"
+              >
+                <LogOut className="h-4 w-4" /> Sign out
+              </button>
+              <DeleteAccount />
+            </div>
+          </section>
         </div>
-      </section>
+      </div>
 
       {form.profileShareToken ? (
         <InviteShareModal
