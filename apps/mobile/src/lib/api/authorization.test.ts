@@ -3,7 +3,7 @@ import { Code, ConnectError, type Interceptor } from "@connectrpc/connect";
 import { beforeEach, expect, it, vi } from "vitest";
 import { SESSION_RENEWAL_HEADER, SESSION_DEVICE_HEADER, SESSION_TRANSPORT_HEADER } from "@haalkhata/shared/auth/sessionRenewal";
 
-const storage = vi.hoisted(() => ({ getItemAsync: vi.fn(), setItemAsync: vi.fn(), deleteItemAsync: vi.fn() }));
+const storage = vi.hoisted(() => ({ WHEN_UNLOCKED_THIS_DEVICE_ONLY: 9, getItemAsync: vi.fn(), setItemAsync: vi.fn(), deleteItemAsync: vi.fn() }));
 const cache = vi.hoisted(() => ({ clearMobileQueryCache: vi.fn() }));
 vi.mock("expo-secure-store", () => storage);
 vi.mock("expo-device", () => ({ modelName: "iPhone 15 Pro" }));

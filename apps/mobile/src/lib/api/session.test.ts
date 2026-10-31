@@ -4,6 +4,8 @@ import { beforeEach, expect, it, vi } from "vitest";
 const storage = vi.hoisted(() => ({ getItemAsync: vi.fn(), setItemAsync: vi.fn(), deleteItemAsync: vi.fn() }));
 vi.mock("expo-secure-store", () => storage);
 vi.mock("./api.constants", () => ({ TOKEN_STORAGE_KEY: "test-session" }));
+const install = vi.hoisted(() => ({ settleThisInstall: vi.fn(async () => undefined), THIS_DEVICE_ONLY: { keychainAccessible: 9 } }));
+vi.mock("./thisInstall", () => install);
 const savedInvite = vi.hoisted(() => ({ clearPendingInvite: vi.fn() }));
 vi.mock("@/lib/invite/pendingInvite", () => savedInvite);
 
@@ -67,7 +69,16 @@ it("continues queued storage work after a failed write", async () => {
   await session.setSessionToken("new-account");
   expect(session.sessionToken()).toBe("new-account");
   expect(storage.deleteItemAsync).toHaveBeenCalledOnce();
-  expect(storage.setItemAsync).toHaveBeenLastCalledWith("test-session", "new-account");
+  expect(storage.setItemAsync).toHaveBeenLastCalledWith("test-session", "new-account", install.THIS_DEVICE_ONLY);
+});
+
+it("settles which install this is before it reads a token", async () => {
+  // A token left by an earlier install must be gone before it can sign anybody in.
+  const session = await import("./session");
+  await session.hydrateSession();
+  const [settled] = install.settleThisInstall.mock.invocationCallOrder;
+  const [read] = storage.getItemAsync.mock.invocationCallOrder;
+  expect(settled).toBeLessThan(read ?? 0);
 });
 
 it("drops a join link saved for the next sign-in when the session ends", async () => {

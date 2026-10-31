@@ -11,6 +11,7 @@ export default defineConfig({
       // render through each test's react-native mock and do nothing else.
       "react-native-reanimated": fileURLToPath(new URL("./src/lib/testing/reanimatedStub.ts", import.meta.url)),
       "expo-haptics": fileURLToPath(new URL("./src/lib/testing/hapticsStub.ts", import.meta.url)),
+      "expo-application": fileURLToPath(new URL("./src/lib/testing/applicationStub.ts", import.meta.url)),
     },
   },
   test: {

@@ -8,6 +8,7 @@ import * as SecureStore from "expo-secure-store";
 import { useSyncExternalStore } from "react";
 import { clearPendingInvite } from "@/lib/invite/pendingInvite";
 import { TOKEN_STORAGE_KEY } from "./api.constants";
+import { settleThisInstall, THIS_DEVICE_ONLY } from "./thisInstall";
 
 /** Snapshot of the session state exposed to React. */
 export interface SessionState {
@@ -68,6 +69,7 @@ export async function hydrateSession(): Promise<void> {
     const startedAt = revision;
     hydration = (async () => {
       let stored: string | null = null;
+      await settleThisInstall();
       try {
         stored = await SecureStore.getItemAsync(TOKEN_STORAGE_KEY);
       } catch {
@@ -87,7 +89,7 @@ export async function hydrateSession(): Promise<void> {
  */
 export async function setSessionToken(token: string): Promise<void> {
   publish({ token, hydrated: true });
-  await persist(() => SecureStore.setItemAsync(TOKEN_STORAGE_KEY, token));
+  await persist(() => SecureStore.setItemAsync(TOKEN_STORAGE_KEY, token, THIS_DEVICE_ONLY));
 }
 
 /**

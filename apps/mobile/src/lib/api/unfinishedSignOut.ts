@@ -14,6 +14,8 @@ import { Code, ConnectError } from "@connectrpc/connect";
 import * as SecureStore from "expo-secure-store";
 import { authClient } from "./connect";
 import { UNFINISHED_SIGN_OUT_STORAGE_KEY } from "./api.constants";
+import { hydrateSession } from "./session";
+import { THIS_DEVICE_ONLY } from "./thisInstall";
 
 /**
  * Keeps a session token whose sign-out did not reach the server.
@@ -21,7 +23,7 @@ import { UNFINISHED_SIGN_OUT_STORAGE_KEY } from "./api.constants";
  * @param token - The bearer token of the session being signed out.
  */
 export async function rememberUnfinishedSignOut(token: string): Promise<void> {
-  await SecureStore.setItemAsync(UNFINISHED_SIGN_OUT_STORAGE_KEY, token);
+  await SecureStore.setItemAsync(UNFINISHED_SIGN_OUT_STORAGE_KEY, token, THIS_DEVICE_ONLY);
 }
 
 /**
@@ -39,8 +41,10 @@ export function sessionAlreadyEnded(failure: unknown): boolean {
  * any time, signed in or out: the call carries the remembered token itself,
  * never the current session's. Kept for next time when the server still
  * cannot be reached; dropped once it answers, including "already ended".
+ * Waits for hydration, which is what hands over a token an earlier install left.
  */
 export async function finishUnfinishedSignOut(): Promise<void> {
+  await hydrateSession();
   const token = await SecureStore.getItemAsync(UNFINISHED_SIGN_OUT_STORAGE_KEY);
   if (!token) return;
   try {

@@ -320,14 +320,20 @@ with colocated tests. Mobile-specific rules:
   the browser, the `x-haalkhata-session` header for mobile, which the
   interceptor stores). `Code.Unauthenticated` clears the session; the `(app)/_layout`
   gate redirects to /login. The server's CSRF guard exempts bearer clients.
+  Save anything session-bearing with `THIS_DEVICE_ONLY` (`src/lib/api/thisInstall.ts`):
+  it stays out of backups and phone transfers. The iOS Keychain outlives the app,
+  so `settleThisInstall` compares the install date kept beside the token before
+  the token is read. A different date means the app was deleted: that token is
+  not restored, and goes through the unfinished sign-out so the server ends it
+  too. An app update keeps the date, so updating never signs anybody out.
 - **Design tokens** come from `src/lib/theme/theme.ts` (the web's globals.css
   palette). No inline hex colors in screens.
 - **Motion and haptics go through `src/lib/motion/`.** Springs and durations
   are tokens in `motion.constants.ts`; entrances and step transitions are the
   prebuilt builders in `entrances.ts`; follow Reduce Motion with
   `useReduceMotion` (a fade, never a jump) and animate on the UI thread.
-  Haptics mark outcomes only (`haptics.ts`). Vitest aliases Reanimated and
-  expo-haptics to stand-ins in `src/lib/testing/`.
+  Haptics mark outcomes only (`haptics.ts`). Vitest aliases Reanimated,
+  expo-haptics and expo-application to stand-ins in `src/lib/testing/`.
 - **Onboarding asks once, after saying why.** The screen before an iOS
   permission alert has one button, Continue; the alert is where people say
   no (App Review 5.1.1(iv)). Device steps (contacts, notifications) run after
