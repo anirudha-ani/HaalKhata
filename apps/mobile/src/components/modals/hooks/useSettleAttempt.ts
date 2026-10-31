@@ -1,7 +1,7 @@
 /** Records a payment so that a lost reply can never become a second payment. */
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { onlineManager, useMutation, useQueryClient } from "@tanstack/react-query";
 import { MONEY_KEYS, queryKeys } from "@haalkhata/shared/api/queryKeys";
 import {
   forgetSettleAttempt,
@@ -12,6 +12,7 @@ import {
   SETTLE_CHECK_INTERVAL_MS,
   SETTLE_CHECKING_MESSAGE,
   SETTLE_MAY_HAVE_LANDED_MESSAGE,
+  SETTLE_OFFLINE_MESSAGE,
   settleAttemptFor,
   settleNotRecordedMessage,
   settleRecordedMessage,
@@ -123,6 +124,11 @@ export function useSettleAttempt(personId: string, onRecorded: () => void) {
    */
   const submit = (request: SettleRequest, label: string) => {
     if (phase !== "ready") return;
+    setNotice("");
+    if (!onlineManager.isOnline()) {
+      setFailure(SETTLE_OFFLINE_MESSAGE);
+      return;
+    }
     const attempt: SettleAttempt<SettleRequest> = {
       request: { ...request, operationId: newOperationId() } as SettleRequest,
       amountLabel: label,
@@ -131,7 +137,6 @@ export function useSettleAttempt(personId: string, onRecorded: () => void) {
     rememberSettleAttempt(personId, attempt);
     setAmountLabel(label);
     setFailure("");
-    setNotice("");
     setPhase("sending");
     send({ attempt, checking: false });
   };

@@ -2,7 +2,7 @@
 /** A lost reply is answered by sending that same request again, and never by a second payment. */
 
 import { Code, ConnectError } from "@connectrpc/connect";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { onlineManager, QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, createElement, useEffect } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -254,6 +254,19 @@ describe("useSettleAttempt", () => {
 
     expect(record).not.toHaveBeenCalled();
     expect(settle.failure).toContain("couldn’t confirm");
+    expect(settleAttemptFor("sara")).toBeNull();
+  });
+
+  it("says plainly that nothing was recorded when the device knows it is offline", async () => {
+    await openDialog();
+    onlineManager.setOnline(false);
+
+    await sendPayment();
+    onlineManager.setOnline(true);
+
+    expect(record).not.toHaveBeenCalled();
+    expect(settle.failure).toContain("offline");
+    expect(settle.busy).toBe(false);
     expect(settleAttemptFor("sara")).toBeNull();
   });
 

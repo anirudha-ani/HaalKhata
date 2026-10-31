@@ -6,6 +6,7 @@
  */
 
 import { API_TIMEOUT_MS } from "@haalkhata/shared/api/timeouts";
+import { isNetworkFailure, NO_CONNECTION_MESSAGE } from "@haalkhata/shared/api/networkFailure";
 import { plainClient } from "@haalkhata/shared/api/plainClient";
 import { SafetyService } from "@haalkhata/protogen/safety/v1/safety_pb";
 import { Code, ConnectError, createClient } from "@connectrpc/connect";
@@ -70,6 +71,7 @@ export const personalAnalyticsClient = plainClient(PersonalAnalyticsService, cre
  *   or a generic fallback when the value is not an `Error`.
  */
 export function errorMessage(error: unknown): string {
+  if (isNetworkFailure(error)) return NO_CONNECTION_MESSAGE;
   if (error instanceof ConnectError) {
     // ConnectError.rawMessage is the human text without the [code] prefix;
     // .message is '[invalid_argument] ...' which we don't want to show users.

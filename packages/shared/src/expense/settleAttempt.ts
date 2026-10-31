@@ -20,6 +20,9 @@ export const SETTLE_CHECK_INTERVAL_MS = 10_000;
  */
 export const SETTLE_ATTEMPT_LIFETIME_MS = 23 * 60 * 60 * 1000;
 
+/** Said when the device knows it has no connection: nothing left it, so there is nothing to find out. */
+export const SETTLE_OFFLINE_MESSAGE = "You’re offline, so this wasn’t recorded. Try again once you’re connected.";
+
 /** Said while an unresolved payment is being asked about. */
 export const SETTLE_CHECKING_MESSAGE = "Checking whether it was recorded…";
 
