@@ -149,8 +149,6 @@ export function ExpenseDetailScreen({ expenseId }: { expenseId: string }) {
         <Text style={styles.amount}>{formatMoney(expense.amountCents, expense.currency)}</Text>
       </View>
 
-      <SafetyActions targetKind="expense" targetId={expense.id} userId={expense.createdBy !== meId ? expense.createdBy : undefined} />
-
       {settled ? (
         <View style={styles.settledCard}>
           <Check color={colors.pos700} size={16} />
@@ -411,7 +409,7 @@ export function ExpenseDetailScreen({ expenseId }: { expenseId: string }) {
                 · {localDateTime(comment.createdAt)}
               </Text>
               <Text style={styles.commentText}>{comment.body}</Text>
-              <SafetyActions targetKind="comment" targetId={comment.id} userId={comment.author?.id !== meId ? comment.author?.id : undefined} />
+              {comment.author?.id !== meId ? <SafetyActions targetKind="comment" targetId={comment.id} /> : null}
             </View>
           </View>
         ))}

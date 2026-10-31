@@ -142,6 +142,11 @@ apps/mobile/                 Expo (React Native) app — @haalkhata/mobile
   exactly what it covers and offers nothing to tick — no checklist that
   widens a group's settle or narrows a person's. Both apps read the same
   `readSettlePositions` in `@haalkhata/shared/expense/settlePosition`.
+- **Report and Block belong to a person.** Both apps offer them in the menu on
+  a person's page, which every name on an expense links to, and on a row of a
+  group's members list. Never put them on an expense or another thing's page. The
+  one exception is Report under somebody else's comment, the only place that can
+  point at those words; it never carries Block.
 - **No Claude co-author or attribution on commits or PRs.** Never add a
   `Co-Authored-By: Claude …` trailer, a "Generated with Claude Code" line, or
   a session link. A commit is authored by the person whose git identity made

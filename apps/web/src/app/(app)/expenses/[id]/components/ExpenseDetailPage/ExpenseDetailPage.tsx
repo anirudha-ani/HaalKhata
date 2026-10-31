@@ -141,8 +141,6 @@ export function ExpenseDetailPage({ expenseId }: { expenseId: string }) {
       {/* The full nothing-pending sentence. On the list this rides as a
           hover tooltip, which phones cannot see — the page every row taps
           through to is where it actually gets read. */}
-      <SafetyActions targetKind="expense" targetId={expense.id} userId={expense.createdBy !== meId ? expense.createdBy : undefined} />
-
       {settled ? (
         <p className="flex items-start gap-2 rounded-2xl border border-pos-600/20 bg-pos-50 px-4 py-3 text-sm font-medium text-pos-700">
           <Check className="mt-0.5 h-4 w-4 shrink-0" />
@@ -441,7 +439,7 @@ export function ExpenseDetailPage({ expenseId }: { expenseId: string }) {
                 · {localDateTime(comment.createdAt)}
               </p>
               <p className="mt-0.5 text-sm whitespace-pre-wrap">{comment.body}</p>
-              <SafetyActions targetKind="comment" targetId={comment.id} userId={comment.author?.id !== meId ? comment.author?.id : undefined} />
+              {comment.author?.id !== meId ? <SafetyActions targetKind="comment" targetId={comment.id} /> : null}
             </div>
           </div>
         ))}
