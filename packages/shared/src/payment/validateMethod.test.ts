@@ -151,6 +151,14 @@ describe("checkPaymentMethod", () => {
     expect(method.name).toBe("bKash \u2764\uFE0F");
   });
 
+  test("a PayPal.Me name is letters and numbers, so it cannot point a link somewhere else", () => {
+    const paypal = (value: string) =>
+      checkPaymentMethod(draftWith({ name: "PayPal", preset: "paypal", currency: "USD", details: [{ kind: "username", label: "", value }] }));
+    expect(paypal("jordanlee").valid).toBe(true);
+    expect(paypal("..").errors.detailRows[0]).toContain("letters and numbers");
+    expect(paypal("...").valid).toBe(false);
+  });
+
   test("stores SWIFT and IBAN compact and in capitals", () => {
     const check = checkPaymentMethod(
       draftWith({
@@ -569,7 +577,7 @@ describe("checkPaymentMethod and what a value may look like", () => {
   test("a built-in app's username has the shape the app issues", () => {
     expect(builtInWith("venmo", "jordan-lee_9").valid).toBe(true);
     expect(builtInWith("cashapp", "$jordanlee").method.details[0]!.value).toBe("jordanlee");
-    expect(builtInWith("paypal", "jordan.lee").valid).toBe(true);
+    expect(builtInWith("paypal", "jordanlee").valid).toBe(true);
     for (const value of ["jordan lee", "jordan/../evil?amount=999", "jordan&amount=1", "j".repeat(31)]) {
       expect(builtInWith("venmo", value).errors.detailRows[0]).toContain("a Venmo username is");
     }
