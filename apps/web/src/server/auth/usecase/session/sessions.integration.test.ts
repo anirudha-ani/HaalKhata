@@ -318,6 +318,18 @@ describe.skipIf(!reachable)("signed-in devices, against Postgres", () => {
     expect(await pushPhones(userId)).toEqual([]);
   });
 
+  it("takes such a phone when everywhere else is signed out, so it stops getting pushes", async () => {
+    const userId = await newPerson();
+    const laptop = await signIn(userId, LAPTOP);
+    const phone = await signIn(userId, PHONE);
+    await pushPhone(userId, phone.id, "never-bound");
+    await database.query(`UPDATE push_devices SET session_id = NULL WHERE user_id = $1`, [userId]);
+
+    await sessions.endOtherSessions(userId, laptop.id);
+
+    expect(await pushPhones(userId)).toEqual([]);
+  });
+
   it("does not take such a phone when only a browser signs out", async () => {
     const userId = await newPerson();
     const laptop = await signIn(userId, LAPTOP);

@@ -114,6 +114,8 @@ export async function endSession(userId: string, sessionId: string, currentSessi
 export async function endOtherSessions(userId: string, currentSessionId: string): Promise<void> {
   await transaction(async (client) => {
     const endedIds = await endOtherSessionRows(userId, currentSessionId, client);
-    await removePushDevicesOfSessions(userId, endedIds, false, client);
+    // Phones bound to no session go too: a phone signed out by this has none
+    // yet. If this phone is one, it registers again when it next opens.
+    await removePushDevicesOfSessions(userId, endedIds, true, client);
   });
 }
