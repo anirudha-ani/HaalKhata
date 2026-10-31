@@ -23,6 +23,7 @@ import { inputClass } from "./constants/onboardingPage";
 export function OnboardingPage() {
   const onboarding = useOnboarding();
   const codeHintId = useId();
+  const nameFieldId = useId();
 
   if (onboarding.isLoading) {
     return <main className="flex min-h-dvh items-center justify-center bg-paper" />;
@@ -113,10 +114,11 @@ export function OnboardingPage() {
                 onboarding.save();
               }}
             >
-              <label className="text-xs font-semibold uppercase tracking-wide text-ink-soft">
+              <label htmlFor={nameFieldId} className="text-xs font-semibold uppercase tracking-wide text-ink-soft">
                 Your name
               </label>
               <input
+                id={nameFieldId}
                 className={inputClass}
                 value={onboarding.name}
                 onChange={(event) => onboarding.setName(event.target.value)}
@@ -125,9 +127,9 @@ export function OnboardingPage() {
                 required
               />
 
-              <label className="mt-2 text-xs font-semibold uppercase tracking-wide text-ink-soft">
+              <p className="mt-2 text-xs font-semibold uppercase tracking-wide text-ink-soft">
                 Phone number
-              </label>
+              </p>
               <PhoneField
                 region={onboarding.region}
                 nationalNumber={onboarding.nationalNumber}
@@ -146,9 +148,9 @@ export function OnboardingPage() {
                 />
               </div>
 
-              <label className="mt-2 text-xs font-semibold uppercase tracking-wide text-ink-soft">
+              <p className="mt-2 text-xs font-semibold uppercase tracking-wide text-ink-soft">
                 Default currency
-              </label>
+              </p>
               <CurrencySelect
                 value={onboarding.currency}
                 onChange={onboarding.setCurrency}

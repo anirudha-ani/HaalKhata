@@ -118,9 +118,9 @@ export function AddPeopleModal({
         )}
 
         <div className="space-y-1.5 border-t border-line pt-4">
-          <label className="block text-sm font-medium">
+          <p className="text-sm font-medium">
             Not on the list?
-          </label>
+          </p>
           <EmailOrPhoneField
             autoFocus={candidates.length === 0}
             contact={contact}

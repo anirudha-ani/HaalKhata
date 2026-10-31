@@ -122,29 +122,27 @@ export function CurrencySelect({
           />
           <ul ref={listRef} role="listbox" aria-label={ariaLabel} className="max-h-60 overflow-y-auto py-1">
             {options.map((info, index) => (
+              // The search box keeps focus and answers the keyboard, so the
+              // options take clicks alone.
               <li
                 key={info.code}
                 role="option"
                 aria-selected={info.code === value}
                 data-active={index === active || undefined}
+                // Keeps focus on the search box so the container's blur
+                // handler cannot close the panel before this click lands.
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => pick(info.code)}
+                className={`flex w-full cursor-pointer items-center gap-2 px-3 py-2 text-left text-sm hover:bg-paper ${
+                  index === active ? "bg-paper" : ""
+                }`}
               >
-                <button
-                  type="button"
-                  // Keeps focus on the search box so the container's blur
-                  // handler cannot close the panel before this click lands.
-                  onMouseDown={(event) => event.preventDefault()}
-                  onClick={() => pick(info.code)}
-                  className={`flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-paper ${
-                    index === active ? "bg-paper" : ""
-                  }`}
-                >
-                  <span className="w-8 shrink-0">{info.symbol}</span>
-                  <span className="font-semibold">{info.code}</span>
-                  <span className="min-w-0 flex-1 truncate text-ink-soft">{info.name}</span>
-                  {info.code === value ? (
-                    <Check className="h-4 w-4 shrink-0 text-brand-600" />
-                  ) : null}
-                </button>
+                <span className="w-8 shrink-0">{info.symbol}</span>
+                <span className="font-semibold">{info.code}</span>
+                <span className="min-w-0 flex-1 truncate text-ink-soft">{info.name}</span>
+                {info.code === value ? (
+                  <Check className="h-4 w-4 shrink-0 text-brand-600" />
+                ) : null}
               </li>
             ))}
             {options.length === 0 ? (
