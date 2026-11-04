@@ -18,7 +18,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Text } from "@/components/ui/Text";
 import { FeedbackPressable } from "@/components/ui/FeedbackPressable/FeedbackPressable";
 import { colors, fonts, radii, spacing } from "@/lib/theme/theme";
-import { TABLET_SHEET_MAX_WIDTH } from "@/lib/layout/constants/layout";
+import { CENTERED_SHEET_MAX_WIDTH } from "@/lib/layout/constants/layout";
 import { useResponsiveLayout } from "@/lib/layout/hooks/useResponsiveLayout";
 import { SHEET_MAX_HEIGHT_RATIO, SHEET_ORIENTATIONS } from "./constants/sheet";
 import { useSheetEntrance } from "./hooks/useSheetEntrance";
@@ -35,7 +35,12 @@ import { useSheetViewport } from "./hooks/useSheetViewport";
  * keyboard and larger text), the title and actions join the scroll instead
  * of squeezing the form to zero height. The form stays mounted throughout.
  *
- * The backdrop fades in while the card rises (or, on iPad, grows), rather
+ * In a large window (an iPad, iPhone Duo open) the sheet is a centred dialog.
+ * A phone gets a bottom sheet held either way: held sideways it is wide but
+ * too short for a centred card to keep its body in view once the keyboard is
+ * up, while a bottom sheet leaves every point above the keyboard to it.
+ *
+ * The backdrop fades in while the card rises (or, centred, grows), rather
  * than the whole modal sliding up together with its dimming.
  *
  * Without `onClose` the sheet cannot be dismissed: no close button, the
@@ -69,11 +74,11 @@ export function Sheet({
   scrollRef?: RefObject<ScrollViewInstance | null>;
 }) {
   const { height: windowHeight } = useWindowDimensions();
-  const { isTablet, fontScale } = useResponsiveLayout();
+  const { isLargeWindow: centered, fontScale } = useResponsiveLayout();
   const insets = useSafeAreaInsets();
-  const topPadding = Math.max(insets.top, isTablet ? spacing.xxl : 0);
-  const bottomPadding = isTablet ? Math.max(insets.bottom, spacing.xxl) : 0;
-  const entrance = useSheetEntrance(isTablet);
+  const topPadding = Math.max(insets.top, centered ? spacing.xxl : 0);
+  const bottomPadding = centered ? Math.max(insets.bottom, spacing.xxl) : 0;
+  const entrance = useSheetEntrance(centered);
   const viewport = useSheetViewport(windowHeight - topPadding - bottomPadding, fontScale);
   const heading = (
     <View key="heading" style={styles.header}>
@@ -98,11 +103,11 @@ export function Sheet({
         behavior={Platform.OS === "ios" ? "padding" : undefined}
         style={[
           styles.backdropContainer,
-          isTablet ? styles.backdropContainerTablet : null,
+          centered ? styles.backdropContainerCentered : null,
           {
             paddingTop: topPadding,
-            paddingLeft: Math.max(insets.left, isTablet ? spacing.xxl : 0),
-            paddingRight: Math.max(insets.right, isTablet ? spacing.xxl : 0),
+            paddingLeft: Math.max(insets.left, centered ? spacing.xxl : 0),
+            paddingRight: Math.max(insets.right, centered ? spacing.xxl : 0),
           },
         ]}
       >
@@ -111,7 +116,7 @@ export function Sheet({
         ) : (
           <View style={styles.backdrop} />
         )}
-        <View onLayout={viewport.onLayout} style={[styles.viewport, isTablet ? styles.viewportTablet : null]}>
+        <View onLayout={viewport.onLayout} style={[styles.viewport, centered ? styles.viewportCentered : null]}>
           <Animated.View
             accessibilityLabel={title}
             accessibilityViewIsModal
@@ -121,7 +126,7 @@ export function Sheet({
                 maxHeight: Math.max(0, Math.min(windowHeight * SHEET_MAX_HEIGHT_RATIO, windowHeight - topPadding - bottomPadding)),
                 paddingBottom: Math.max(insets.bottom, spacing.xxl),
               },
-              isTablet ? styles.sheetTablet : null,
+              centered ? styles.sheetCentered : null,
               entrance,
             ]}
           >
@@ -157,7 +162,7 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: "flex-end",
   },
-  backdropContainerTablet: {
+  backdropContainerCentered: {
     alignItems: "center",
     justifyContent: "center",
     padding: spacing.xxl,
@@ -193,15 +198,15 @@ const styles = StyleSheet.create({
     padding: spacing.xl - 4,
     paddingBottom: spacing.xxl,
   },
-  sheetTablet: {
+  sheetCentered: {
     borderRadius: radii.lg,
-    maxWidth: TABLET_SHEET_MAX_WIDTH,
+    maxWidth: CENTERED_SHEET_MAX_WIDTH,
     width: "100%",
   },
   // The measured space in front of the backdrop. Touches outside the card pass
   // through it to the backdrop behind, which closes the sheet.
   viewport: { flex: 1, justifyContent: "flex-end", pointerEvents: "box-none", width: "100%" },
-  viewportTablet: { alignItems: "center", justifyContent: "center" },
+  viewportCentered: { alignItems: "center", justifyContent: "center" },
   title: {
     color: colors.ink,
     flex: 1,

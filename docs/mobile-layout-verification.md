@@ -55,21 +55,28 @@ For camera/AI and physical-device push checks, follow
   and receipt privacy copy.
 - Reserve more width for balance cards as text grows. Keep complete amounts
   visible and stack dense rows rather than reducing a group name to an ellipsis.
-- Use available window width, including text scale for content columns. Tablet
-  navigation remains a sidebar; narrower windows use bottom navigation.
-- Decide by window width, never by device or orientation. Three widths matter
-  (`src/lib/layout/constants/layout.ts`): 640 points brings the rail and
-  centred sheets (`isTablet`), 768 brings tablet density beside the rail
-  (`isSpacious`: inline friend amounts, paired insight cards, the two-column
-  welcome, wider margins) and 1024 brings two content columns (`isExpanded`).
-  A window between 640 and 768 is a tablet whose content is laid out as on a
-  phone.
+- Use available window width, including text scale for content columns. A
+  large window keeps navigation in a rail; a phone uses bottom navigation.
+- Decide by the window's size, never by device or orientation
+  (`src/lib/layout/constants/layout.ts`). A window at least 640 points wide
+  and 600 tall is large (`isLargeWindow`): it gets the rail, centred sheets and
+  wrapped category chips. A phone held sideways is wide but short, so it keeps
+  bottom tabs and bottom sheets: the rail's five items at a large text size and
+  a centred sheet above the keyboard both need more height than it has. Tablet
+  density (`isSpacious`: inline friend amounts, paired insight cards, the
+  two-column welcome, wider margins) needs 640 points for the content itself,
+  after the rail and the safe-area insets on both sides, so an iPad mini in
+  portrait and iPhone Duo held upright keep a phone's density beside the rail.
+  Two content columns (`isExpanded`) start at 1024 points wide.
 - Keep every side clear of its own safe-area inset. iPhone Duo's status bar
   runs down the right edge on the outer display and on the inner one held wide,
   so `Screen` pads both sides and the bottom tab bar pads each side by that
-  side's inset, never both by the larger one.
+  side's inset, never both by the larger one. The rail sits on the leading side
+  (the right one when the layout runs right to left) and grows by that side's
+  inset.
 - Let category/filter strips scroll when they cannot fit. Keep every option
-  reachable. Expense category chips scroll on phones and wrap on tablets.
+  reachable. Expense category chips scroll on a phone and wrap in a large
+  window.
 - Horizontal strips must not grow to fill vertical space. Use `flexGrow: 0`
   on their ScrollView, and align chip contents to their natural height.
 - Keep a sheet's final action and action error in its `footer`. Its body can
@@ -148,9 +155,10 @@ iPhone Duo folds like a book. Folded, its outer display (466 × 678 points) is a
 compact-width phone; open, its inner display (951 × 669 held wide, 669 × 951
 upright) is regular width. The app gives the outer display the phone layout and
 the inner display the iPad layout. Nothing branches on the device: the window
-widths above decide it, so the layout follows the fold as it opens and closes.
+sizes above decide it, so the layout follows the fold as it opens and closes.
 Closed while the inner display is held upright, the outer display comes up
-sideways (678 × 466) and gets the rail, as any iPhone held sideways does.
+sideways (678 × 466). That is wide enough for the rail but too short for it,
+so it keeps bottom tabs and bottom sheets, as any phone held sideways does.
 
 Folding never rebuilds a screen. Moving the tab bar from the bottom to the side
 leaves the screens where they are in React Navigation's tree, so a draft and an
@@ -202,4 +210,4 @@ focus while a field had it; type into the simulator window instead.
 | Open, inner display upright (669 points) | Rail with phone density beside it, status bar across the top; Friends with each amount under the name, Home, Groups, Expenses, a group's Expenses and Balances, its overflow menu, the settle dialog as a centred card, the expense form, Activity and Insights with the journey tiles two to a row and every other card a full row |
 | Half-open, inner display upright | The same window and layout as fully open; Friends, the settle dialog and the expense form respond. Nothing avoids the fold, so a centred dialog crosses it |
 | Closed from upright, outer display sideways (678 × 466 points) | Rail beside the right-edge status bar; still on Friends after closing; Home, a group, its overflow menu, the expense form; the settle and add-people dialogs fit the short window with their body scrolling under the pinned action. The on-screen keyboard was not checked: the simulator takes typing from the Mac's keyboard |
-| Automated | Outer display upright gets bottom tabs, sideways the rail; inner display the rail held either way; tablet density only from 768 points; the bottom bar pads each side by its own inset and the rail grows by the left one |
+| Automated | One table of windows, each with its insets, for navigation and density in every pose: the cover gets bottom tabs held either way, the inner display the rail; tablet density only with 640 points left for the content; a dialog centres only in a window tall as well as wide; the bottom bar pads each side by its own inset and the rail grows by its own side's, right to left too |

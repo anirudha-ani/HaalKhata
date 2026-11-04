@@ -7,15 +7,18 @@ coverage and automated verification; it is not a physical-device sign-off.
 
 The browser and Expo clients offer the same account, ledger and social
 capabilities. Phone layouts put primary navigation at the bottom. Wider browser
-windows use the desktop sidebar; native iPad windows use a compact navigation
-rail, wider content columns and centered dialogs. Both retain the ledger palette,
-wording, money semantics and action destinations.
+windows use the desktop sidebar; large native windows (an iPad, iPhone Duo open)
+use a compact navigation rail, wider content columns and centered dialogs. Both
+retain the ledger palette, wording, money semantics and action destinations.
 
-Native layout follows **window width**, not the device name. A narrow iPad
-multitasking window uses the compact layout. Rotation must preserve the current
-screen and form state. The 768-point navigation and 1024-point expanded-content
-breakpoints live in `apps/mobile/src/lib/layout/constants/layout.ts`; content
-cards must also shrink to fit the space actually available inside the shell.
+Native layout follows the **window's size**, not the device name. A narrow iPad
+multitasking window and a phone held sideways use the compact layout. Rotation
+and folding must preserve the current screen and form state. The rail and
+centered dialogs need a window at least 640 points wide and 600 tall; tablet
+density needs 640 points for the content itself, after the rail and safe-area
+insets; two content columns start at 1024 points wide. These live in
+`apps/mobile/src/lib/layout/constants/layout.ts`; content cards must also
+shrink to fit the space actually available inside the shell.
 
 ## Coverage checked
 

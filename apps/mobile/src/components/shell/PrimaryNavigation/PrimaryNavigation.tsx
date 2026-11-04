@@ -1,17 +1,17 @@
-/** Responsive primary navigation: bottom tabs on phones and a rail on tablets. */
+/** Responsive primary navigation: bottom tabs on a phone and a rail in a large window. */
 
 import { Tabs, useRouter } from "expo-router";
 import type { LucideIcon } from "lucide-react-native";
-import { StyleSheet, type ColorValue } from "react-native";
+import { I18nManager, StyleSheet, type ColorValue } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AddExpenseTabButton } from "@/components/shell/PrimaryNavigation/components/AddExpenseTabButton/AddExpenseTabButton";
 import {
   ADD_TAB_ITEM,
   LEFT_TAB_ITEMS,
   RIGHT_TAB_ITEMS,
-  TABLET_NAVIGATION_WIDTH,
   type TabItem,
 } from "@/components/shell/PrimaryNavigation/constants/navigation";
+import { navigationInsets } from "@/components/shell/PrimaryNavigation/utils/navigationInsets";
 import { useResponsiveLayout } from "@/lib/layout/hooks/useResponsiveLayout";
 import { FADE_DURATION_MS } from "@/lib/motion/motion.constants";
 import { useShellData } from "@/lib/hooks/useShellData";
@@ -52,26 +52,29 @@ function tabScreen(item: TabItem, badge = 0) {
 }
 
 /**
- * Layout for authenticated primary navigation. Phones use the familiar
- * bottom bar with a raised add button; tablets use a persistent left rail
- * with the same destinations and a conventional add item.
+ * Layout for authenticated primary navigation. A phone, held either way, uses
+ * the familiar bottom bar with a raised add button; a large window (an iPad,
+ * iPhone Duo open) uses a persistent rail on the leading side with the same
+ * destinations and a conventional add item.
  *
- * Each side of the bar keeps clear of its own safe-area inset. The
- * navigator pads both sides by the larger one, which on iPhone Duo's outer
- * display (a vertical status bar down one side) squeezed every tab into the
- * middle. The rail grows by its side's inset so its items keep their width.
+ * Each side of the bar keeps clear of its own safe-area inset rather than
+ * both sides of the larger one (see `navigationInsets`), so iPhone Duo's
+ * status bar down the right edge neither squeezes the tabs nor covers the
+ * rail, left to right or right to left.
  *
  * @returns The bottom-tab navigator.
  */
 export function PrimaryNavigation() {
   const router = useRouter();
-  const { isTablet } = useResponsiveLayout();
+  const { isLargeWindow } = useResponsiveLayout();
   const insets = useSafeAreaInsets();
+  const { navigatorInsets, barStyle } = navigationInsets(insets, isLargeWindow, I18nManager.isRTL);
   // Friend requests waiting for an answer sit on the Friends tab, the way
   // unread notifications sit on the bell.
   const { pendingFriendRequestCount } = useShellData();
   return (
     <Tabs
+      safeAreaInsets={navigatorInsets}
       screenOptions={{
         animation: "fade",
         transitionSpec: { animation: "timing", config: { duration: FADE_DURATION_MS } },
@@ -79,14 +82,12 @@ export function PrimaryNavigation() {
         sceneStyle: { backgroundColor: colors.paper },
         tabBarActiveTintColor: colors.brand600,
         tabBarInactiveTintColor: colors.inkSoft,
-        tabBarItemStyle: isTablet ? styles.railItem : undefined,
+        tabBarItemStyle: isLargeWindow ? styles.railItem : undefined,
         tabBarLabelPosition: "below-icon",
-        tabBarLabelStyle: isTablet ? styles.railLabel : styles.bottomLabel,
-        tabBarPosition: isTablet ? "left" : "bottom",
-        tabBarStyle: isTablet
-          ? [styles.rail, { width: TABLET_NAVIGATION_WIDTH + insets.left }]
-          : [styles.bottomBar, { paddingLeft: insets.left, paddingRight: insets.right }],
-        tabBarVariant: isTablet ? "material" : "uikit",
+        tabBarLabelStyle: isLargeWindow ? styles.railLabel : styles.bottomLabel,
+        tabBarPosition: isLargeWindow ? "left" : "bottom",
+        tabBarStyle: [isLargeWindow ? styles.rail : styles.bottomBar, barStyle],
+        tabBarVariant: isLargeWindow ? "material" : "uikit",
       }}
     >
       {LEFT_TAB_ITEMS.map((item) => tabScreen(item))}
@@ -99,8 +100,8 @@ export function PrimaryNavigation() {
           },
         }}
         options={
-          isTablet
-            ? { tabBarIcon: tabIcon(ADD_TAB_ITEM.icon), title: ADD_TAB_ITEM.label }
+          isLargeWindow
+            ?{ tabBarIcon: tabIcon(ADD_TAB_ITEM.icon), title: ADD_TAB_ITEM.label }
             : { tabBarButton: AddExpenseTabButton, title: ADD_TAB_ITEM.label }
         }
       />
@@ -128,8 +129,9 @@ const styles = StyleSheet.create({
   },
   rail: {
     backgroundColor: colors.card,
-    borderRightColor: colors.line,
-    borderRightWidth: 1,
+    // The content side: the right of a rail on the left, the left of one on the right.
+    borderEndColor: colors.line,
+    borderEndWidth: 1,
     paddingVertical: spacing.xl - spacing.xs,
   },
   railItem: {

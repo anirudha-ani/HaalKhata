@@ -22,7 +22,8 @@ vi.mock("react-native", () => ({
     createElement("div", { role: "dialog", "data-orientations": supportedOrientations.join(",") }, children),
   KeyboardAvoidingView: ({ children, style }: { children: ReactNode; style: object[] }) => {
     const combined = Object.assign({}, ...style);
-    return createElement("div", { "data-safe-top": combined.paddingTop, "data-safe-left": combined.paddingLeft }, children);
+    return createElement("div", { "data-safe-top": combined.paddingTop, "data-safe-left": combined.paddingLeft,
+      "data-centered": combined.justifyContent === "center" }, children);
   },
   ScrollView: ({ children }: { children: ReactNode }) => createElement("section", { "data-scroll": true }, children),
   View: ({ children, style, onLayout }: { children: ReactNode; style?: object | object[]; onLayout?: typeof layout.onLayout }) => {
@@ -54,8 +55,21 @@ describe("resizable sheet", () => {
     render();
     expect(container.querySelector('[role="dialog"]')?.getAttribute("data-orientations")).toContain("landscape-left,landscape-right");
     expect(Number(container.querySelector("[data-max-height]")?.getAttribute("data-max-height"))).toBeLessThanOrEqual(600 - 64);
-    viewport.height = 420; render();
-    expect(Number(container.querySelector("[data-max-height]")?.getAttribute("data-max-height"))).toBeLessThanOrEqual(420 - 64);
+    viewport.height = 700; render();
+    expect(Number(container.querySelector("[data-max-height]")?.getAttribute("data-max-height"))).toBeLessThanOrEqual(700 - 64);
+  });
+  it("centres the dialog only in a window that is tall as well as wide", () => {
+    for (const [width, height, centered] of [
+      [1024, 600, true], // iPad in landscape
+      [669, 951, true], // iPhone Duo open, held upright
+      [951, 669, true], // iPhone Duo open, held wide
+      [667, 375, false], // iPhone SE held sideways: a centred card would vanish behind the keyboard
+      [678, 466, false], // iPhone Duo folded, cover held sideways
+      [390, 844, false], // phone held upright
+    ] as const) {
+      Object.assign(viewport, { width, height }); render();
+      expect(container.querySelector("[data-centered]")?.getAttribute("data-centered")).toBe(String(centered));
+    }
   });
   it("keeps the submit action outside scrolling content in a phone-sized window", () => {
     viewport.width = 390; viewport.height = 844; render();

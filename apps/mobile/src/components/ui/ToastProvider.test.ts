@@ -11,6 +11,7 @@ vi.mock("lucide-react-native", () => ({ CircleAlert: () => null, X: () => null }
 vi.mock("@/lib/motion/hooks/useReduceMotion", () => ({ useReduceMotion: () => true }));
 vi.mock("react-native-safe-area-context", () => ({
   SafeAreaView: ({ children }: { children: ReactNode }) => createElement("main", null, children),
+  useSafeAreaInsets: () => ({ top: 0, right: 0, bottom: 0, left: 0 }),
 }));
 vi.mock("react-native", () => ({
   useWindowDimensions: () => ({ width: 1024, height: 768, fontScale: 1 }),
