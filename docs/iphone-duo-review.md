@@ -34,12 +34,33 @@ Restore the default text size afterward. These layout checks need no provider
 credentials; real provider configuration remains documented in
 [local-auth.md](local-auth.md).
 
+## Sign-in across layout changes
+
+Rotating the open Duo from upright to wide dismissed an open password dialog
+and discarded its draft. The phone and wide welcome layouts previously
+rendered different trees, which also remounted the provider buttons and story
+pager. They now keep one tree and change its styles. Larger text uses the
+stacked layout, and the development button wraps before squeezing the brand.
+
+On the Duo, an unsent `duo-review` draft survived closing, reopening and a live
+text-size change. Typing `-kept` after folding continued in the same field.
+The welcome screen was also checked on iPad mini (A20 Pro), iPadOS 27.2, in
+portrait and landscape at default and accessibility text sizes. All simulated
+text-size settings were restored afterward.
+
+To repeat, sign out of a disposable local account, open Password (dev), type
+an identifier without submitting, and rotate/fold across the wide-layout
+boundary. The dialog must remain open with the same draft and focus. Change
+Text Size while it is open and repeat. The component regression test also
+checks that a pending provider control and the current story step retain their
+state; it does not perform or replace provider authentication.
+
 ## Automated verification
 
 - Web typecheck and lint passed; web tests passed with `pnpm test --maxWorkers=4`
   (1,661 passed, 3 skipped). Limiting workers avoided database integration
   timeouts from competing simulator/build processes.
-- Mobile typecheck, lint and tests passed.
+- Mobile typecheck, lint and all 279 tests passed.
 - Connect parity and protobuf lint passed.
 
 This review does not establish production OAuth, physical-device gestures or
