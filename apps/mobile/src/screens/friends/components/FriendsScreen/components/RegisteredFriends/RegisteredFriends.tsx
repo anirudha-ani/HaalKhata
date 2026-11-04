@@ -37,6 +37,8 @@ export function RegisteredFriends({
 }) {
   const router = useRouter();
   const { isLargeText, isSpacious } = useResponsiveLayout();
+  // Amounts sit beside the name when the row has room for both, under it otherwise.
+  const amountsInline = isSpacious && !isLargeText;
   if (friendsState.friends.length === 0) {
     return (
       <EmptyState
@@ -95,7 +97,7 @@ export function RegisteredFriends({
             const buckets = bucketsOf(friend, currency);
             const lead = leadingBucket(buckets);
             const amounts = (
-              <View style={[styles.amounts, !isSpacious || isLargeText ? styles.amountsStacked : null]}>
+              <View style={[styles.amounts, amountsInline ? null : styles.amountsStacked]}>
                 {buckets.map((bucket) => (
                   <Money
                     cents={bucket.cents}
@@ -118,9 +120,9 @@ export function RegisteredFriends({
                     <Text style={styles.balanceHint}>
                       {positionCaption(buckets)}
                     </Text>
-                    {!isSpacious || isLargeText ? amounts : null}
+                    {amountsInline ? null : amounts}
                   </View>
-                  {isSpacious && !isLargeText ? amounts : null}
+                  {amountsInline ? amounts : null}
                   <ChevronRight color={colors.inkSoft} size={16} />
                 </PersonLink>
                 <View style={styles.rowActions}>
