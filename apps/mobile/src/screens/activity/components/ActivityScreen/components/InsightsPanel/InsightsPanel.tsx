@@ -40,8 +40,8 @@ export function InsightsPanel({
   /** The dashboard's data and controls, from the screen's `useInsights`. */
   state: ReturnType<typeof useInsights>;
 }) {
-  const { isSpacious } = useResponsiveLayout();
-  const half = isSpacious ? styles.half : null;
+  const { isSpacious, isLargeText } = useResponsiveLayout();
+  const half = isSpacious && !isLargeText ? styles.half : null;
 
   return (
     <View style={styles.panel}>
