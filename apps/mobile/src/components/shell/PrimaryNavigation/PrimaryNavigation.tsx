@@ -3,6 +3,7 @@
 import { Tabs, useRouter } from "expo-router";
 import type { LucideIcon } from "lucide-react-native";
 import { StyleSheet, type ColorValue } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AddExpenseTabButton } from "@/components/shell/PrimaryNavigation/components/AddExpenseTabButton/AddExpenseTabButton";
 import {
   ADD_TAB_ITEM,
@@ -55,11 +56,17 @@ function tabScreen(item: TabItem, badge = 0) {
  * bottom bar with a raised add button; tablets use a persistent left rail
  * with the same destinations and a conventional add item.
  *
+ * Each side of the bar keeps clear of its own safe-area inset. The
+ * navigator pads both sides by the larger one, which on iPhone Duo's outer
+ * display (a vertical status bar down one side) squeezed every tab into the
+ * middle. The rail grows by its side's inset so its items keep their width.
+ *
  * @returns The bottom-tab navigator.
  */
 export function PrimaryNavigation() {
   const router = useRouter();
   const { isTablet } = useResponsiveLayout();
+  const insets = useSafeAreaInsets();
   // Friend requests waiting for an answer sit on the Friends tab, the way
   // unread notifications sit on the bell.
   const { pendingFriendRequestCount } = useShellData();
@@ -76,7 +83,9 @@ export function PrimaryNavigation() {
         tabBarLabelPosition: "below-icon",
         tabBarLabelStyle: isTablet ? styles.railLabel : styles.bottomLabel,
         tabBarPosition: isTablet ? "left" : "bottom",
-        tabBarStyle: isTablet ? styles.rail : styles.bottomBar,
+        tabBarStyle: isTablet
+          ? [styles.rail, { width: TABLET_NAVIGATION_WIDTH + insets.left }]
+          : [styles.bottomBar, { paddingLeft: insets.left, paddingRight: insets.right }],
         tabBarVariant: isTablet ? "material" : "uikit",
       }}
     >
@@ -122,7 +131,6 @@ const styles = StyleSheet.create({
     borderRightColor: colors.line,
     borderRightWidth: 1,
     paddingVertical: spacing.xl - spacing.xs,
-    width: TABLET_NAVIGATION_WIDTH,
   },
   railItem: {
     borderRadius: radii.md,

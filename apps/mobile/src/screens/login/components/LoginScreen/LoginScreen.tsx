@@ -31,7 +31,8 @@ import { useLeaveWhenSignedIn } from "./hooks/useLeaveWhenSignedIn";
  * the sign-in panel stays docked at the bottom, so a returning person's
  * thumb lands on "Continue with Apple" without reading a word. On an iPad
  * window wide enough for it, the story and a sign-in card sit side by side;
- * a narrow Split View window gets the phone layout.
+ * a narrow Split View window or iPhone Duo's inner display held upright gets
+ * the phone layout.
  *
  * Somebody signed in is never shown it: once a session exists, from a
  * sign-in here or from before they arrived, a spinner stands in while the
@@ -41,7 +42,7 @@ import { useLeaveWhenSignedIn } from "./hooks/useLeaveWhenSignedIn";
  */
 export function LoginScreen() {
   const leaving = useLeaveWhenSignedIn();
-  const { isTablet, fontScale } = useResponsiveLayout();
+  const { isSpacious, fontScale } = useResponsiveLayout();
   const reduceMotion = useReduceMotion();
   // The space between the brand and the docked panel, measured, so the
   // panel's real height (which differs between builds and text sizes)
@@ -76,7 +77,7 @@ export function LoginScreen() {
     </Animated.View>
   );
 
-  if (isTablet) {
+  if (isSpacious) {
     return (
       <SafeAreaView style={styles.safeArea}>
         <ScrollView contentContainerStyle={styles.tabletScroll}>

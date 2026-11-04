@@ -36,7 +36,7 @@ export function RegisteredFriends({
   currency: string;
 }) {
   const router = useRouter();
-  const { isLargeText, isTablet } = useResponsiveLayout();
+  const { isLargeText, isSpacious } = useResponsiveLayout();
   if (friendsState.friends.length === 0) {
     return (
       <EmptyState
@@ -95,7 +95,7 @@ export function RegisteredFriends({
             const buckets = bucketsOf(friend, currency);
             const lead = leadingBucket(buckets);
             const amounts = (
-              <View style={[styles.amounts, !isTablet || isLargeText ? styles.amountsStacked : null]}>
+              <View style={[styles.amounts, !isSpacious || isLargeText ? styles.amountsStacked : null]}>
                 {buckets.map((bucket) => (
                   <Money
                     cents={bucket.cents}
@@ -118,9 +118,9 @@ export function RegisteredFriends({
                     <Text style={styles.balanceHint}>
                       {positionCaption(buckets)}
                     </Text>
-                    {!isTablet || isLargeText ? amounts : null}
+                    {!isSpacious || isLargeText ? amounts : null}
                   </View>
-                  {isTablet && !isLargeText ? amounts : null}
+                  {isSpacious && !isLargeText ? amounts : null}
                   <ChevronRight color={colors.inkSoft} size={16} />
                 </PersonLink>
                 <View style={styles.rowActions}>

@@ -57,6 +57,17 @@ For camera/AI and physical-device push checks, follow
   visible and stack dense rows rather than reducing a group name to an ellipsis.
 - Use available window width, including text scale for content columns. Tablet
   navigation remains a sidebar; narrower windows use bottom navigation.
+- Decide by window width, never by device or orientation. Three widths matter
+  (`src/lib/layout/constants/layout.ts`): 640 points brings the rail and
+  centred sheets (`isTablet`), 768 brings tablet density beside the rail
+  (`isSpacious`: inline friend amounts, paired insight cards, the two-column
+  welcome, wider margins) and 1024 brings two content columns (`isExpanded`).
+  A window between 640 and 768 is a tablet whose content is laid out as on a
+  phone.
+- Keep every side clear of its own safe-area inset. iPhone Duo's status bar
+  runs down the right edge on the outer display and on the inner one held wide,
+  so `Screen` pads both sides and the bottom tab bar pads each side by that
+  side's inset, never both by the larger one.
 - Let category/filter strips scroll when they cannot fit. Keep every option
   reachable. Expense category chips scroll on phones and wrap on tablets.
 - Horizontal strips must not grow to fill vertical space. Use `flexGrow: 0`
@@ -130,3 +141,65 @@ real SMS/merge delivery; camera/AI receipt processing; external payment-app
 handoffs and push delivery. The phone-verification and merge footer changes
 were reviewed structurally, but those provider journeys were not executed in
 this pass. Not every destructive or provider-dependent action was submitted.
+
+## iPhone Duo
+
+iPhone Duo folds like a book. Folded, its outer display (466 × 678 points) is a
+compact-width phone; open, its inner display (951 × 669 held wide, 669 × 951
+upright) is regular width. The app gives the outer display the phone layout and
+the inner display the iPad layout. Nothing branches on the device: the window
+widths above decide it, so the layout follows the fold as it opens and closes.
+Closed while the inner display is held upright, the outer display comes up
+sideways (678 × 466) and gets the rail, as any iPhone held sideways does.
+
+Folding never rebuilds a screen. Moving the tab bar from the bottom to the side
+leaves the screens where they are in React Navigation's tree, so a draft and an
+open screen carry across the fold.
+
+The status bar is a strip 84 points deep. On the outer display, held either
+way, and on the inner display held wide, it runs down the right edge; with the
+inner display held upright it runs across the top. Content stays clear of it
+wherever it is through the safe-area insets.
+
+### Run it in the simulator
+
+1. Install Xcode 27.1 or later. An app built with an older Xcode runs
+   letterboxed on the Duo. EAS's default image for SDK 58 already uses it.
+2. Install the Duo's own simulator runtime. The ordinary iOS 27.2 runtime does
+   not run it: `xcodebuild -downloadPlatform iOS` installs both, and the Duo's
+   appears in `xcrun simctl runtime list` as an `iPhone19-4` runtime.
+3. Create the device against that runtime, for example
+   `xcrun simctl create "Duo QA" com.apple.CoreSimulator.SimDeviceType.iPhone-Duo com.apple.CoreSimulator.SimRuntime.iOS-27-2-iPhone19-4`,
+   then boot it and install the dev client as for any iPhone
+   (`./dev.sh --mobile-ios`, or `expo run:ios --device <udid>`).
+4. Open, half-open, close and rotate it with the controls under the device in
+   DeviceHub. Neither `simctl` nor XCUITest can change its pose:
+   `XCUIDevice.orientation` has no effect, and `simctl io … screenConfig power`
+   does not fold it and can take SpringBoard down.
+5. Take screenshots of a particular display with
+   `xcrun simctl io <udid> screenshot --display=primary-1 inner.png` (inner)
+   or `--display=primary outer.png` (outer).
+
+If a reboot leaves the Duo listed as unavailable ("runtime profile not found"),
+re-register the runtime from its local copy: delete it with
+`xcrun simctl runtime delete <identifier> --keep-asset`, then run
+`xcodebuild -downloadPlatform iOS -buildVersion <build>` again, which installs
+from the asset already on disk.
+
+When driving the open Duo with XCUITest, tap elements by label. Coordinate
+taps land in the wrong place and swipes and drags do not scroll, held either
+way. To check what is further down a screen, read the frames in
+`app.snapshot()`: it reports every element, including those scrolled out of
+view. `typeText` also failed on the Duo, reporting that nothing had keyboard
+focus while a field had it; type into the simulator window instead.
+
+### Verified on 2026-11-04
+
+| Pose | Checks performed |
+| --- | --- |
+| Folded, outer display upright (466 points) | Bottom tabs with all five labels whole beside the right-edge status bar; screens clear of the status bar; sign-in with the development password |
+| Open, inner display held wide (951 points) | Rail and one column with tablet density; Home, Groups, Expenses, Friends, a group's Expenses and Balances, its overflow menu, a person's page, the settle dialog as a centred card, the expense form, Account, Activity and Insights; all clear of the status bar |
+| Open, inner display upright (669 points) | Rail with phone density beside it, status bar across the top; Friends with each amount under the name, Home, Groups, Expenses, a group's Expenses and Balances, its overflow menu, the settle dialog as a centred card, the expense form, Activity and Insights with the journey tiles two to a row and every other card a full row |
+| Half-open, inner display upright | The same window and layout as fully open; Friends, the settle dialog and the expense form respond. Nothing avoids the fold, so a centred dialog crosses it |
+| Closed from upright, outer display sideways (678 × 466 points) | Rail beside the right-edge status bar; still on Friends after closing; Home, a group, its overflow menu, the expense form; the settle and add-people dialogs fit the short window with their body scrolling under the pinned action. The on-screen keyboard was not checked: the simulator takes typing from the Mac's keyboard |
+| Automated | Outer display upright gets bottom tabs, sideways the rail; inner display the rail held either way; tablet density only from 768 points; the bottom bar pads each side by its own inset and the rail grows by the left one |
