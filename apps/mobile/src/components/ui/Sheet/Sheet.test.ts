@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Sheet } from "./Sheet";
 
 const viewport = vi.hoisted(() => ({ width: 1024, height: 600, fontScale: 1 }));
+const layout = vi.hoisted(() => ({ onLayout: undefined as ((event: { nativeEvent: { layout: { height: number } } }) => void) | undefined }));
 const insets = vi.hoisted(() => ({ top: 24, bottom: 20, left: 0, right: 0 }));
 vi.mock("lucide-react-native", () => ({ X: () => null }));
 vi.mock("react-native-safe-area-context", () => ({
@@ -24,9 +25,10 @@ vi.mock("react-native", () => ({
     return createElement("div", { "data-safe-top": combined.paddingTop, "data-safe-left": combined.paddingLeft }, children);
   },
   ScrollView: ({ children }: { children: ReactNode }) => createElement("section", { "data-scroll": true }, children),
-  View: ({ children, style }: { children: ReactNode; style?: object | object[] }) => {
+  View: ({ children, style, onLayout }: { children: ReactNode; style?: object | object[]; onLayout?: typeof layout.onLayout }) => {
+    if (onLayout) layout.onLayout = onLayout;
     const combined = Object.assign({}, ...(Array.isArray(style) ? style : [style]));
-    return createElement("div", { "data-max-height": combined.maxHeight }, children);
+    return createElement("div", { "data-max-height": combined.maxHeight, "data-pointer-events": combined.pointerEvents }, children);
   },
   Text: ({ children }: { children: ReactNode }) => createElement("span", null, children),
   Pressable: ({ children, onPress }: { children: ReactNode; onPress: () => void }) => createElement("button", { onClick: onPress }, children),
@@ -41,7 +43,7 @@ function render() {
 }
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true); close.mockClear();
-  viewport.width = 1024; viewport.height = 600;
+  viewport.width = 1024; viewport.height = 600; viewport.fontScale = 1; layout.onLayout = undefined;
   Object.assign(insets, { top: 24, bottom: 20, left: 0, right: 0 });
   container = document.createElement("div"); document.body.append(container); root = createRoot(container);
 });
@@ -75,9 +77,34 @@ describe("resizable sheet", () => {
     expect(container.querySelector("[data-safe-left]")?.getAttribute("data-safe-left")).toBe("44");
     expect(Number(container.querySelector("[data-max-height]")?.getAttribute("data-max-height"))).toBeLessThanOrEqual(420 - 96);
   });
+  it("keeps the form mounted and reachable when keyboard, text size and folding leave no room for pinned controls", () => {
+    const input = createElement("input", { defaultValue: "Unsaved note" });
+    const draw = () => act(() => root.render(createElement(Sheet, {
+      title: "Record a payment received", onClose: close,
+      footer: createElement("button", { "data-submit": true }, "Save"), children: input,
+    })));
+    draw();
+    const field = container.querySelector("input")!;
+    field.focus();
+    expect(container.querySelector("[data-submit]")?.closest("[data-scroll]")).toBeNull();
+    // Real available height, after the sideways cover's software keyboard.
+    act(() => layout.onLayout?.({ nativeEvent: { layout: { height: 250 } } }));
+    expect(container.querySelector("[data-scroll]")?.textContent).toContain("Record a payment received");
+    expect(container.querySelector("[data-submit]")?.closest("[data-scroll]")).not.toBeNull();
+    viewport.width = 669; viewport.fontScale = 2; draw();
+    act(() => layout.onLayout?.({ nativeEvent: { layout: { height: 600 } } }));
+    expect(container.querySelector("[data-submit]")?.closest("[data-scroll]")).not.toBeNull();
+    viewport.fontScale = 1; draw();
+    expect(container.querySelector("[data-submit]")?.closest("[data-scroll]")).toBeNull();
+    expect(container.querySelector("input")).toBe(field);
+    expect(document.activeElement).toBe(field);
+    expect(field.value).toBe("Unsaved note");
+  });
   it("preserves backdrop dismissal after resizing", () => {
     render(); viewport.width = 600; render();
     act(() => container.querySelector("button")!.click());
     expect(close).toHaveBeenCalledOnce();
+    // The measured space covers the backdrop: a tap outside the card must pass through it.
+    expect(container.querySelector("[data-pointer-events]")?.getAttribute("data-pointer-events")).toBe("box-none");
   });
 });

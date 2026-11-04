@@ -1,7 +1,7 @@
 /** Bottom-sheet dialog shell (the mobile counterpart of the web's Modal) with backdrop dismissal. */
 
 import { X } from "lucide-react-native";
-import type { ReactNode, RefObject } from "react";
+import { Fragment, type ReactNode, type RefObject } from "react";
 import type { ScrollViewInstance } from "react-native";
 import {
   KeyboardAvoidingView,
@@ -22,6 +22,7 @@ import { TABLET_SHEET_MAX_WIDTH } from "@/lib/layout/constants/layout";
 import { useResponsiveLayout } from "@/lib/layout/hooks/useResponsiveLayout";
 import { SHEET_MAX_HEIGHT_RATIO, SHEET_ORIENTATIONS } from "./constants/sheet";
 import { useSheetEntrance } from "./hooks/useSheetEntrance";
+import { useSheetViewport } from "./hooks/useSheetViewport";
 
 /**
  * Renders a bottom sheet with a titled header, a close button, and
@@ -30,7 +31,9 @@ import { useSheetEntrance } from "./hooks/useSheetEntrance";
  *
  * A `footer` stays pinned under the scrolling content. It is for a form
  * taller than the screen: an action that has scrolled out of reach looks
- * like a form with no way to finish it.
+ * like a form with no way to finish it. In a short viewport (including the
+ * keyboard and larger text), the title and actions join the scroll instead
+ * of squeezing the form to zero height. The form stays mounted throughout.
  *
  * The backdrop fades in while the card rises (or, on iPad, grows), rather
  * than the whole modal sliding up together with its dimming.
@@ -66,11 +69,23 @@ export function Sheet({
   scrollRef?: RefObject<ScrollViewInstance | null>;
 }) {
   const { height: windowHeight } = useWindowDimensions();
-  const { isTablet } = useResponsiveLayout();
+  const { isTablet, fontScale } = useResponsiveLayout();
   const insets = useSafeAreaInsets();
   const topPadding = Math.max(insets.top, isTablet ? spacing.xxl : 0);
   const bottomPadding = isTablet ? Math.max(insets.bottom, spacing.xxl) : 0;
   const entrance = useSheetEntrance(isTablet);
+  const viewport = useSheetViewport(windowHeight - topPadding - bottomPadding, fontScale);
+  const heading = (
+    <View key="heading" style={styles.header}>
+      <Text style={styles.title}>{title}</Text>
+      {onClose ? (
+        <FeedbackPressable accessibilityLabel="Close" hitSlop={8} onPress={onClose} style={styles.closeButton}>
+          <X color={colors.inkSoft} size={20} />
+        </FeedbackPressable>
+      ) : null}
+    </View>
+  );
+  const actions = footer ? <View key="actions" style={styles.footer}>{footer}</View> : null;
   return (
     <Modal
       animationType="fade"
@@ -96,42 +111,34 @@ export function Sheet({
         ) : (
           <View style={styles.backdrop} />
         )}
-        <Animated.View
-          accessibilityLabel={title}
-          accessibilityViewIsModal
-          style={[
-            styles.sheet,
-            {
-              maxHeight: Math.max(0, Math.min(windowHeight * SHEET_MAX_HEIGHT_RATIO, windowHeight - topPadding - bottomPadding)),
-              paddingBottom: Math.max(insets.bottom, spacing.xxl),
-            },
-            isTablet ? styles.sheetTablet : null,
-            entrance,
-          ]}
-        >
-          <View style={styles.header}>
-            <Text style={styles.title}>{title}</Text>
-            {onClose ? (
-              <FeedbackPressable
-                accessibilityLabel="Close"
-                hitSlop={8}
-                onPress={onClose}
-                style={styles.closeButton}
-              >
-                <X color={colors.inkSoft} size={20} />
-              </FeedbackPressable>
-            ) : null}
-          </View>
-          <ScrollView
-            keyboardDismissMode="interactive"
-            keyboardShouldPersistTaps="handled"
-            ref={scrollRef}
-            showsVerticalScrollIndicator={false}
+        <View onLayout={viewport.onLayout} style={[styles.viewport, isTablet ? styles.viewportTablet : null]}>
+          <Animated.View
+            accessibilityLabel={title}
+            accessibilityViewIsModal
+            style={[
+              styles.sheet,
+              {
+                maxHeight: Math.max(0, Math.min(windowHeight * SHEET_MAX_HEIGHT_RATIO, windowHeight - topPadding - bottomPadding)),
+                paddingBottom: Math.max(insets.bottom, spacing.xxl),
+              },
+              isTablet ? styles.sheetTablet : null,
+              entrance,
+            ]}
           >
-            {children}
-          </ScrollView>
-          {footer ? <View style={styles.footer}>{footer}</View> : null}
-        </Animated.View>
+            {viewport.scrollChrome ? null : heading}
+            <ScrollView
+              keyboardDismissMode="interactive"
+              keyboardShouldPersistTaps="handled"
+              ref={scrollRef}
+              showsVerticalScrollIndicator={false}
+            >
+              {viewport.scrollChrome ? heading : null}
+              <Fragment key="body">{children}</Fragment>
+              {viewport.scrollChrome ? actions : null}
+            </ScrollView>
+            {viewport.scrollChrome ? null : actions}
+          </Animated.View>
+        </View>
       </KeyboardAvoidingView>
     </Modal>
   );
@@ -191,6 +198,10 @@ const styles = StyleSheet.create({
     maxWidth: TABLET_SHEET_MAX_WIDTH,
     width: "100%",
   },
+  // The measured space in front of the backdrop. Touches outside the card pass
+  // through it to the backdrop behind, which closes the sheet.
+  viewport: { flex: 1, justifyContent: "flex-end", pointerEvents: "box-none", width: "100%" },
+  viewportTablet: { alignItems: "center", justifyContent: "center" },
   title: {
     color: colors.ink,
     flex: 1,
