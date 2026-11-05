@@ -82,6 +82,10 @@ For camera/AI and physical-device push checks, follow
 - Keep a sheet's final action and action error in its `footer`. Its body can
   scroll independently above the keyboard. Respect the current safe-area
   insets, including the notch and landscape side insets.
+- Keep a dialog off a fold. While a foldable stands half open, `Sheet` puts the
+  dialog wholly on the side of the crease with more room once the safe-area
+  insets are counted out (`clearOfFold`), never across it. Screens are not
+  moved: they lay out across the crease as they would on a flat display.
 - Errors owned by the screen orchestrator pass through `Screen.error`;
   descendants may use `useErrorToast`. Calling that hook above Screen's
   provider cannot reach the visible toast. Open sheets show their own errors
@@ -169,6 +173,25 @@ way, and on the inner display held wide, it runs down the right edge; with the
 inner display held upright it runs across the top. Content stays clear of it
 wherever it is through the safe-area insets.
 
+### The fold
+
+While the Duo stands half open, a dialog sits wholly on one side of the crease.
+iOS 27.1 marks the crease as a reserved "division" region of the window and
+reports the hinge through `UIHingeInteraction`. The app's own Expo module,
+`apps/mobile/modules/haalkhata-fold`, passes both to JavaScript
+(`useFoldRegion`), and `clearOfFold` picks the side: below the crease held
+upright, and left of it held wide, where the status bar down the right edge
+leaves the right half less room.
+
+The hinge decides whether there is a fold; the region only says where. The
+region's active flag trails the hinge by a moment in each direction, so a
+dialog that waited for it would cross the crease just after half-opening and
+stay off centre just after flattening. A flat display reports no fold.
+
+The module is iOS only. On Android, and in a build made before it existed,
+every window counts as unfolded, as before. A change to the module needs a new
+build of the app; Metro's reload does not carry Swift.
+
 ### Run it in the simulator
 
 1. Install Xcode 27.1 or later. An app built with an older Xcode runs
@@ -178,8 +201,12 @@ wherever it is through the safe-area insets.
    appears in `xcrun simctl runtime list` as an `iPhone19-4` runtime.
 3. Create the device against that runtime, for example
    `xcrun simctl create "Duo QA" com.apple.CoreSimulator.SimDeviceType.iPhone-Duo com.apple.CoreSimulator.SimRuntime.iOS-27-2-iPhone19-4`,
-   then boot it and install the dev client as for any iPhone
-   (`./dev.sh --mobile-ios`, or `expo run:ios --device <udid>`).
+   then boot it and install a simulator build of the dev client. Expo's CLI
+   takes the Duo's identifier for a physical iPhone and stops at code signing,
+   so build for a generic simulator from `apps/mobile` with
+   `pnpm run expo run:ios --device generic --output .expo/ios-build --no-bundler`
+   and install it with
+   `xcrun simctl install <udid> .expo/ios-build/HaalKhata.app`.
 4. Open, half-open, close and rotate it with the controls under the device in
    DeviceHub. Neither `simctl` nor XCUITest can change its pose:
    `XCUIDevice.orientation` has no effect, and `simctl io … screenConfig power`
@@ -201,13 +228,15 @@ way. To check what is further down a screen, read the frames in
 view. `typeText` also failed on the Duo, reporting that nothing had keyboard
 focus while a field had it; type into the simulator window instead.
 
-### Verified on 2026-11-04
+### Verified on 2026-11-04 and 2026-11-05
 
 | Pose | Checks performed |
 | --- | --- |
 | Folded, outer display upright (466 points) | Bottom tabs with all five labels whole beside the right-edge status bar; screens clear of the status bar; sign-in with the development password |
 | Open, inner display held wide (951 points) | Rail and one column with tablet density; Home, Groups, Expenses, Friends, a group's Expenses and Balances, its overflow menu, a person's page, the settle dialog as a centred card, the expense form, Account, Activity and Insights; all clear of the status bar |
 | Open, inner display upright (669 points) | Rail with phone density beside it, status bar across the top; Friends with each amount under the name, Home, Groups, Expenses, a group's Expenses and Balances, its overflow menu, the settle dialog as a centred card, the expense form, Activity and Insights with the journey tiles two to a row and every other card a full row |
-| Half-open, inner display upright | The same window and layout as fully open; Friends, the settle dialog and the expense form respond. Nothing avoids the fold, so a centred dialog crosses it |
-| Closed from upright, outer display sideways (678 × 466 points) | Rail beside the right-edge status bar; still on Friends after closing; Home, a group, its overflow menu, the expense form; the settle and add-people dialogs fit the short window with their body scrolling under the pinned action. The on-screen keyboard was not checked: the simulator takes typing from the Mac's keyboard |
-| Automated | One table of windows, each with its insets, for navigation and density in every pose: the cover gets bottom tabs held either way, the inner display the rail; tablet density only with 640 points left for the content; a dialog centres only in a window tall as well as wide; the bottom bar pads each side by its own inset and the rail grows by its own side's, right to left too |
+| Open flat, inner display upright | No fold reported (the hinge fully open, the region inactive); the settle dialog a centred card |
+| Half-open, inner display upright | The same window and layout as fully open; Friends, the settle dialog and the expense form respond. The fold reported as a 40-point band across the window at 455.5 points; the settle dialog, already open, moved wholly below it with its title and Record payment in view and its body scrolling; flattened again, it returned to the middle on the hinge's first report |
+| Half-open, inner display held wide | The fold reported as a 40-point band down the window at 455.5 points; the settle dialog wholly left of it (32 to 439 points), the half the status bar leaves more room on |
+| Closed from upright, outer display sideways (678 × 466 points) | Bottom tabs, all five spread clear of the right-edge status bar with the bar's background running under it; Home; the settle dialog as a bottom sheet clear of the status bar, its body scrolling under the pinned action. The on-screen keyboard was not checked: the simulator takes typing from the Mac's keyboard |
+| Automated | One table of windows, each with its insets, for navigation and density in every pose: the cover gets bottom tabs held either way, the inner display the rail; tablet density only with 640 points left for the content; a dialog centres only in a window tall as well as wide; the bottom bar pads each side by its own inset and the rail grows by its own side's, right to left too; a dialog keeps wholly to the roomier side of a fold, insets counted, and returns to the middle when the fold goes; the fold is asked for again whenever the window changes size, and a failed or missing reader counts as unfolded |

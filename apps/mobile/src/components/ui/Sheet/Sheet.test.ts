@@ -9,6 +9,8 @@ import { Sheet } from "./Sheet";
 const viewport = vi.hoisted(() => ({ width: 1024, height: 600, fontScale: 1 }));
 const layout = vi.hoisted(() => ({ onLayout: undefined as ((event: { nativeEvent: { layout: { height: number } } }) => void) | undefined }));
 const insets = vi.hoisted(() => ({ top: 24, bottom: 20, left: 0, right: 0 }));
+const fold = vi.hoisted(() => ({ region: null as { x: number; y: number; width: number; height: number } | null }));
+vi.mock("@/lib/fold/hooks/useFoldRegion", () => ({ useFoldRegion: () => fold.region }));
 vi.mock("lucide-react-native", () => ({ X: () => null }));
 vi.mock("react-native-safe-area-context", () => ({
   useSafeAreaInsets: () => insets,
@@ -23,6 +25,7 @@ vi.mock("react-native", () => ({
   KeyboardAvoidingView: ({ children, style }: { children: ReactNode; style: object[] }) => {
     const combined = Object.assign({}, ...style);
     return createElement("div", { "data-safe-top": combined.paddingTop, "data-safe-left": combined.paddingLeft,
+      "data-safe-right": combined.paddingRight,
       "data-centered": combined.justifyContent === "center" }, children);
   },
   ScrollView: ({ children }: { children: ReactNode }) => createElement("section", { "data-scroll": true }, children),
@@ -44,7 +47,7 @@ function render() {
 }
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true); close.mockClear();
-  viewport.width = 1024; viewport.height = 600; viewport.fontScale = 1; layout.onLayout = undefined;
+  viewport.width = 1024; viewport.height = 600; viewport.fontScale = 1; layout.onLayout = undefined; fold.region = null;
   Object.assign(insets, { top: 24, bottom: 20, left: 0, right: 0 });
   container = document.createElement("div"); document.body.append(container); root = createRoot(container);
 });
@@ -113,6 +116,26 @@ describe("resizable sheet", () => {
     expect(container.querySelector("input")).toBe(field);
     expect(document.activeElement).toBe(field);
     expect(field.value).toBe("Unsaved note");
+  });
+  it("keeps the dialog off the crease while iPhone Duo stands half open", () => {
+    Object.assign(viewport, { width: 669, height: 951 });
+    Object.assign(insets, { top: 84, bottom: 20, left: 0, right: 0 });
+    render();
+    expect(container.querySelector("[data-safe-top]")?.getAttribute("data-safe-top")).toBe("84");
+    // Held upright and standing like a laptop: the fold runs across the middle.
+    fold.region = { x: 0, y: 455, width: 669, height: 40 }; render();
+    expect(container.querySelector("[data-safe-top]")?.getAttribute("data-safe-top")).toBe(String(455 + 40 + 16));
+    expect(Number(container.querySelector("[data-max-height]")?.getAttribute("data-max-height"))).toBeLessThanOrEqual(951 - 511 - 32);
+    // Held wide and open like a book: the fold runs down the middle, and the
+    // status bar down the right edge leaves the left half more room.
+    Object.assign(viewport, { width: 951, height: 669 });
+    Object.assign(insets, { top: 0, bottom: 20, left: 0, right: 84 });
+    fold.region = { x: 455, y: 0, width: 40, height: 669 }; render();
+    expect(container.querySelector("[data-safe-right]")?.getAttribute("data-safe-right")).toBe(String(951 - 455 + 16));
+    expect(container.querySelector("[data-safe-left]")?.getAttribute("data-safe-left")).toBe("32");
+    // Opened flat again, the dialog returns to the middle.
+    fold.region = null; render();
+    expect(container.querySelector("[data-safe-right]")?.getAttribute("data-safe-right")).toBe("84");
   });
   it("preserves backdrop dismissal after resizing", () => {
     render(); viewport.width = 600; render();

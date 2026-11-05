@@ -18,11 +18,13 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Text } from "@/components/ui/Text";
 import { FeedbackPressable } from "@/components/ui/FeedbackPressable/FeedbackPressable";
 import { colors, fonts, radii, spacing } from "@/lib/theme/theme";
+import { useFoldRegion } from "@/lib/fold/hooks/useFoldRegion";
 import { CENTERED_SHEET_MAX_WIDTH } from "@/lib/layout/constants/layout";
 import { useResponsiveLayout } from "@/lib/layout/hooks/useResponsiveLayout";
 import { SHEET_MAX_HEIGHT_RATIO, SHEET_ORIENTATIONS } from "./constants/sheet";
 import { useSheetEntrance } from "./hooks/useSheetEntrance";
 import { useSheetViewport } from "./hooks/useSheetViewport";
+import { clearOfFold } from "./utils/clearOfFold";
 
 /**
  * Renders a bottom sheet with a titled header, a close button, and
@@ -39,6 +41,8 @@ import { useSheetViewport } from "./hooks/useSheetViewport";
  * A phone gets a bottom sheet held either way: held sideways it is wide but
  * too short for a centred card to keep its body in view once the keyboard is
  * up, while a bottom sheet leaves every point above the keyboard to it.
+ * While a foldable stands half open, the sheet sits wholly on one side of the
+ * fold, never across the crease (see `clearOfFold`).
  *
  * The backdrop fades in while the card rises (or, centred, grows), rather
  * than the whole modal sliding up together with its dimming.
@@ -73,11 +77,12 @@ export function Sheet({
    */
   scrollRef?: RefObject<ScrollViewInstance | null>;
 }) {
-  const { height: windowHeight } = useWindowDimensions();
+  const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const { isLargeWindow: centered, fontScale } = useResponsiveLayout();
   const insets = useSafeAreaInsets();
-  const topPadding = Math.max(insets.top, centered ? spacing.xxl : 0);
-  const bottomPadding = centered ? Math.max(insets.bottom, spacing.xxl) : 0;
+  const clearance = clearOfFold({ width: windowWidth, height: windowHeight }, useFoldRegion(), insets, spacing.lg);
+  const topPadding = Math.max(insets.top, centered ? spacing.xxl : 0, clearance.top);
+  const bottomPadding = Math.max(centered ? Math.max(insets.bottom, spacing.xxl) : 0, clearance.bottom);
   const entrance = useSheetEntrance(centered);
   const viewport = useSheetViewport(windowHeight - topPadding - bottomPadding, fontScale);
   const heading = (
@@ -106,8 +111,8 @@ export function Sheet({
           centered ? styles.backdropContainerCentered : null,
           {
             paddingTop: topPadding,
-            paddingLeft: Math.max(insets.left, centered ? spacing.xxl : 0),
-            paddingRight: Math.max(insets.right, centered ? spacing.xxl : 0),
+            paddingLeft: Math.max(insets.left, centered ? spacing.xxl : 0, clearance.left),
+            paddingRight: Math.max(insets.right, centered ? spacing.xxl : 0, clearance.right),
           },
         ]}
       >
@@ -116,7 +121,15 @@ export function Sheet({
         ) : (
           <View style={styles.backdrop} />
         )}
-        <View onLayout={viewport.onLayout} style={[styles.viewport, centered ? styles.viewportCentered : null]}>
+        <View
+          onLayout={viewport.onLayout}
+          style={[
+            styles.viewport,
+            centered ? styles.viewportCentered : null,
+            // The keyboard owns the container's bottom padding, so room kept below for a fold is a margin.
+            clearance.bottom > 0 ? { marginBottom: clearance.bottom } : null,
+          ]}
+        >
           <Animated.View
             accessibilityLabel={title}
             accessibilityViewIsModal

@@ -73,6 +73,8 @@ apps/mobile/                 Expo (React Native) app — @haalkhata/mobile
   src/components/            ui primitives, shell (tabs/headers), modals, providers
   src/lib/                   api/ (Connect transport + bearer session),
                              theme/ (design tokens), encoding/, polyfills/
+  modules/                   the app's own Expo native modules, autolinked:
+                             haalkhata-fold (iOS: where a foldable display folds)
 ```
 
 ## Layering rules (enforced by ESLint)
@@ -338,7 +340,8 @@ with colocated tests. Mobile-specific rules:
   prebuilt builders in `entrances.ts`; follow Reduce Motion with
   `useReduceMotion` (a fade, never a jump) and animate on the UI thread.
   Haptics mark outcomes only (`haptics.ts`). Vitest aliases Reanimated,
-  expo-haptics and expo-application to stand-ins in `src/lib/testing/`.
+  expo-haptics, expo-application and `expo` itself (whose native-module
+  lookup finds no fold reporter) to stand-ins in `src/lib/testing/`.
 - **Onboarding asks once, after saying why.** The screen before an iOS
   permission alert has one button, Continue; the alert is where people say
   no (App Review 5.1.1(iv)). Device steps (contacts, notifications) run after
