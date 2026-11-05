@@ -8,4 +8,4 @@ To reproduce the PNGs from the repository root with workspace dependencies insta
 
     node scripts/app-store/render-duo-screenshots.mjs
 
-The renderer reads the previously approved copy and receipt illustration, crops the new native views, then verifies pixel dimensions and opacity. The October 31 build 6 submission record is historical; the presence of these files does not establish that Apple has received build 7.
+The renderer reads the previously approved copy and receipt illustration, crops the new native views, then verifies pixel dimensions and opacity. The [November 5 submission receipt](submission.json) records Apple receiving build 7 with these screenshots at 8:52 AM PST. Apple reported **Waiting for Review**. Public release is manual. The [October 31 record](../submission.json) preserves the earlier build 6 submission.
