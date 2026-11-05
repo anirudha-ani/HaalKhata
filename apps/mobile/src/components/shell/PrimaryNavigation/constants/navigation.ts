@@ -31,8 +31,5 @@ export const RIGHT_TAB_ITEMS: TabItem[] = [
   { name: "friends", label: "Friends", icon: Users },
 ];
 
-/** Add-expense destination rendered as a regular item in the tablet rail. */
+/** Add-expense destination rendered as a regular item in the rail. */
 export const ADD_TAB_ITEM: TabItem = { name: "add", label: "Add", icon: Plus };
-
-/** Width of the persistent navigation rail on tablet-sized viewports. */
-export const TABLET_NAVIGATION_WIDTH = 128;

@@ -55,15 +55,37 @@ For camera/AI and physical-device push checks, follow
   and receipt privacy copy.
 - Reserve more width for balance cards as text grows. Keep complete amounts
   visible and stack dense rows rather than reducing a group name to an ellipsis.
-- Use available window width, including text scale for content columns. Tablet
-  navigation remains a sidebar; narrower windows use bottom navigation.
+- Use available window width, including text scale for content columns. A
+  large window keeps navigation in a rail; a phone uses bottom navigation.
+- Decide by the window's size, never by device or orientation
+  (`src/lib/layout/constants/layout.ts`). A window at least 640 points wide
+  and 600 tall is large (`isLargeWindow`): it gets the rail, centred sheets and
+  wrapped category chips. A phone held sideways is wide but short, so it keeps
+  bottom tabs and bottom sheets: the rail's five items at a large text size and
+  a centred sheet above the keyboard both need more height than it has. Tablet
+  density (`isSpacious`: inline friend amounts, paired insight cards, the
+  two-column welcome, wider margins) needs 640 points for the content itself,
+  after the rail and the safe-area insets on both sides, so an iPad mini in
+  portrait and iPhone Duo held upright keep a phone's density beside the rail.
+  Two content columns (`isExpanded`) start at 1024 points wide.
+- Keep every side clear of its own safe-area inset. iPhone Duo's status bar
+  runs down the right edge on the outer display and on the inner one held wide,
+  so `Screen` pads both sides and the bottom tab bar pads each side by that
+  side's inset, never both by the larger one. The rail sits on the leading side
+  (the right one when the layout runs right to left) and grows by that side's
+  inset.
 - Let category/filter strips scroll when they cannot fit. Keep every option
-  reachable. Expense category chips scroll on phones and wrap on tablets.
+  reachable. Expense category chips scroll on a phone and wrap in a large
+  window.
 - Horizontal strips must not grow to fill vertical space. Use `flexGrow: 0`
   on their ScrollView, and align chip contents to their natural height.
 - Keep a sheet's final action and action error in its `footer`. Its body can
   scroll independently above the keyboard. Respect the current safe-area
   insets, including the notch and landscape side insets.
+- Keep a dialog off a fold. While a foldable stands half open, `Sheet` puts the
+  dialog wholly on the side of the crease with more room once the safe-area
+  insets are counted out (`clearOfFold`), never across it. Screens are not
+  moved: they lay out across the crease as they would on a flat display.
 - Errors owned by the screen orchestrator pass through `Screen.error`;
   descendants may use `useErrorToast`. Calling that hook above Screen's
   provider cannot reach the visible toast. Open sheets show their own errors
@@ -130,3 +152,91 @@ real SMS/merge delivery; camera/AI receipt processing; external payment-app
 handoffs and push delivery. The phone-verification and merge footer changes
 were reviewed structurally, but those provider journeys were not executed in
 this pass. Not every destructive or provider-dependent action was submitted.
+
+## iPhone Duo
+
+iPhone Duo folds like a book. Folded, its outer display (466 × 678 points) is a
+compact-width phone; open, its inner display (951 × 669 held wide, 669 × 951
+upright) is regular width. The app gives the outer display the phone layout and
+the inner display the iPad layout. Nothing branches on the device: the window
+sizes above decide it, so the layout follows the fold as it opens and closes.
+Closed while the inner display is held upright, the outer display comes up
+sideways (678 × 466). That is wide enough for the rail but too short for it,
+so it keeps bottom tabs and bottom sheets, as any phone held sideways does.
+
+Folding never rebuilds a screen. Moving the tab bar from the bottom to the side
+leaves the screens where they are in React Navigation's tree, so a draft and an
+open screen carry across the fold.
+
+The status bar is a strip 84 points deep. On the outer display, held either
+way, and on the inner display held wide, it runs down the right edge; with the
+inner display held upright it runs across the top. Content stays clear of it
+wherever it is through the safe-area insets.
+
+### The fold
+
+While the Duo stands half open, a dialog sits wholly on one side of the crease.
+iOS 27.1 marks the crease as a reserved "division" region of the window and
+reports the hinge through `UIHingeInteraction`. The app's own Expo module,
+`apps/mobile/modules/haalkhata-fold`, passes both to JavaScript
+(`useFoldRegion`), and `clearOfFold` picks the side: below the crease held
+upright, and left of it held wide, where the status bar down the right edge
+leaves the right half less room.
+
+The hinge decides whether there is a fold; the region only says where. The
+region's active flag trails the hinge by a moment in each direction, so a
+dialog that waited for it would cross the crease just after half-opening and
+stay off centre just after flattening. A flat display reports no fold.
+
+The module is iOS only. On Android, and in a build made before it existed,
+every window counts as unfolded, as before. A change to the module needs a new
+build of the app; Metro's reload does not carry Swift.
+
+### Run it in the simulator
+
+1. Install Xcode 27.1 or later. An app built with an older Xcode runs
+   letterboxed on the Duo. EAS's default image for SDK 58 already uses it.
+2. Install the Duo's own simulator runtime. The ordinary iOS 27.2 runtime does
+   not run it: `xcodebuild -downloadPlatform iOS` installs both, and the Duo's
+   appears in `xcrun simctl runtime list` as an `iPhone19-4` runtime.
+3. Create the device against that runtime, for example
+   `xcrun simctl create "Duo QA" com.apple.CoreSimulator.SimDeviceType.iPhone-Duo com.apple.CoreSimulator.SimRuntime.iOS-27-2-iPhone19-4`,
+   then boot it and install a simulator build of the dev client. Expo's CLI
+   takes the Duo's identifier for a physical iPhone and stops at code signing,
+   so build for a generic simulator from `apps/mobile` with
+   `pnpm run expo run:ios --device generic --output .expo/ios-build --no-bundler`
+   and install it with
+   `xcrun simctl install <udid> .expo/ios-build/HaalKhata.app`.
+4. Open, half-open, close and rotate it with the controls under the device in
+   DeviceHub. Neither `simctl` nor XCUITest can change its pose:
+   `XCUIDevice.orientation` has no effect, and `simctl io … screenConfig power`
+   does not fold it and can take SpringBoard down.
+5. Take screenshots of a particular display with
+   `xcrun simctl io <udid> screenshot --display=primary-1 inner.png` (inner)
+   or `--display=primary outer.png` (outer).
+
+If a reboot leaves the Duo listed as unavailable ("runtime profile not found"),
+re-register the runtime from its local copy: delete it with
+`xcrun simctl runtime delete <identifier> --keep-asset`, then run
+`xcodebuild -downloadPlatform iOS -buildVersion <build>` again, which installs
+from the asset already on disk.
+
+When driving the open Duo with XCUITest, tap elements by label. Coordinate
+taps land in the wrong place and swipes and drags do not scroll, held either
+way. To check what is further down a screen, read the frames in
+`app.snapshot()`: it reports every element, including those scrolled out of
+view. `typeText` also failed on the Duo, reporting that nothing had keyboard
+focus while a field had it; type into the simulator window instead.
+
+### Verified on 2026-11-04 and 2026-11-05
+
+| Pose | Checks performed |
+| --- | --- |
+| Folded, outer display upright (466 points) | Bottom tabs with all five labels whole beside the right-edge status bar; screens clear of the status bar; sign-in with the development password |
+| Open, inner display held wide (951 points) | Rail and one column with tablet density; Home, Groups, Expenses, Friends, a group's Expenses and Balances, its overflow menu, a person's page, the settle dialog as a centred card, the expense form, Account, Activity and Insights; all clear of the status bar |
+| Open, inner display upright (669 points) | Rail with phone density beside it, status bar across the top; Friends with each amount under the name, Home, Groups, Expenses, a group's Expenses and Balances, its overflow menu, the settle dialog as a centred card, the expense form, Activity and Insights with the journey tiles two to a row and every other card a full row |
+| Open flat, inner display upright | No fold reported (the hinge fully open, the region inactive); the settle dialog a centred card |
+| Half-open, inner display upright | The same window and layout as fully open; Friends, the settle dialog and the expense form respond. The fold reported as a 40-point band across the window at 455.5 points; the settle dialog, already open, moved wholly below it with its title and Record payment in view and its body scrolling; flattened again, it returned to the middle on the hinge's first report |
+| Half-open, inner display held wide | The fold reported as a 40-point band down the window at 455.5 points; the settle dialog wholly left of it (32 to 439 points), the half the status bar leaves more room on |
+| Closed from upright, outer display sideways (678 × 466 points) | Bottom tabs, all five spread clear of the right-edge status bar with the bar's background running under it; Home; the settle dialog as a bottom sheet clear of the status bar, its body scrolling under the pinned action. The on-screen keyboard was not checked: the simulator takes typing from the Mac's keyboard |
+| Automated | One table of windows, each with its insets, for navigation and density in every pose: the cover gets bottom tabs held either way, the inner display the rail; tablet density only with 640 points left for the content; a dialog centres only in a window tall as well as wide; the bottom bar pads each side by its own inset and the rail grows by its own side's, right to left too; a dialog keeps wholly to the roomier side of a fold, insets counted, and returns to the middle when the fold goes; the fold is asked for again whenever the window changes size, and a failed or missing reader counts as unfolded |

@@ -12,7 +12,9 @@ import { revealOffset } from "./utils/revealOffset";
 
 /**
  * Wraps screen content in the app's standard scaffold: a safe-area view on
- * the paper background and a keyboard-friendly scroll view with consistent
+ * the paper background (top and both sides, which keeps content clear of a
+ * landscape camera and of the vertical status bar on iPhone Duo's outer
+ * display) and a keyboard-friendly scroll view with consistent
  * padding. Passing `onRefresh` enables pull-to-refresh. Errors raised by the
  * content surface through the toast layer this scaffold hosts (see
  * `useErrorToast`), pinned over the header and the scroll view alike. A
@@ -36,7 +38,7 @@ export function Screen({
   /** Called on pull-to-refresh; omitting it disables the gesture. */
   onRefresh?: () => void;
 }) {
-  const { isTablet } = useResponsiveLayout();
+  const { isSpacious } = useResponsiveLayout();
   const scrollRef = useRef<ScrollViewInstance>(null);
 
   /**
@@ -68,13 +70,13 @@ export function Screen({
   }, []);
 
   return (
-    <SafeAreaView edges={["top"]} style={styles.safeArea}>
+    <SafeAreaView edges={["top", "left", "right"]} style={styles.safeArea}>
       <ToastProvider error={error}>
       {header}
       <ScrollView
         ref={scrollRef}
         automaticallyAdjustKeyboardInsets
-        contentContainerStyle={[styles.content, isTablet ? styles.contentTablet : null]}
+        contentContainerStyle={[styles.content, isSpacious ? styles.contentSpacious : null]}
         keyboardDismissMode="interactive"
         keyboardShouldPersistTaps="handled"
         refreshControl={
@@ -103,7 +105,7 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.xxl,
     width: "100%",
   },
-  contentTablet: {
+  contentSpacious: {
     padding: spacing.xxl,
     paddingBottom: spacing.xxl * 2,
   },

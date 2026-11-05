@@ -24,10 +24,10 @@ export function JourneyCard({
   /** The person's lifetime figures. */
   journey: Journey;
 }) {
-  const { isTablet } = useResponsiveLayout();
+  const { isSpacious } = useResponsiveLayout();
   const since = memberSinceLabel(journey.memberSince);
   const firstExpense = calendarDayLabel(journey.firstExpenseDate);
-  const tileStyle = isTablet ? styles.tileTablet : styles.tile;
+  const tileStyle = isSpacious ? styles.tileSpacious : styles.tile;
   return (
     <InsightCard
       subtitle={since ? `On HaalKhata since ${since}` : undefined}
@@ -77,7 +77,7 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     minWidth: 0,
   },
-  tileTablet: {
+  tileSpacious: {
     flexBasis: "30%",
     flexGrow: 1,
     minWidth: 0,

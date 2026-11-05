@@ -52,7 +52,7 @@ export function ExpenseForm({
 }) {
   const form = useNewExpense(expenseAPI, initial, editExpenseId);
   const currency = form.currency;
-  const { isExpanded, isTablet, isLargeText } = useResponsiveLayout();
+  const { isExpanded, isLargeWindow, isLargeText } = useResponsiveLayout();
   useErrorToast(form.error);
 
   // The same numbers in two places: a panel beside the form on wide layouts,
@@ -167,7 +167,7 @@ export function ExpenseForm({
               <DateField label="Date" onChange={form.setDate} value={form.date} />
             </View>
           </View>
-          {isTablet ? <View style={[styles.chips, styles.chipsWrapped]}>
+          {isLargeWindow ? <View style={[styles.chips, styles.chipsWrapped]}>
             {categoryChips}
           </View> : <ScrollView horizontal keyboardShouldPersistTaps="handled" contentContainerStyle={styles.chips} style={styles.categoryScroller}>
             {categoryChips}

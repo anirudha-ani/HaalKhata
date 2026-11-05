@@ -31,7 +31,8 @@ import { useLeaveWhenSignedIn } from "./hooks/useLeaveWhenSignedIn";
  * the sign-in panel stays docked at the bottom, so a returning person's
  * thumb lands on "Continue with Apple" without reading a word. On an iPad
  * window wide enough for it, the story and a sign-in card sit side by side;
- * a narrow Split View window gets the phone layout.
+ * a narrow Split View window or iPhone Duo's inner display held upright gets
+ * the phone layout.
  *
  * Somebody signed in is never shown it: once a session exists, from a
  * sign-in here or from before they arrived, a spinner stands in while the
@@ -41,11 +42,12 @@ import { useLeaveWhenSignedIn } from "./hooks/useLeaveWhenSignedIn";
  */
 export function LoginScreen() {
   const leaving = useLeaveWhenSignedIn();
-  const { isTablet, fontScale } = useResponsiveLayout();
+  const { isSpacious, isLargeText, fontScale } = useResponsiveLayout();
+  const sideBySide = isSpacious && !isLargeText;
   const reduceMotion = useReduceMotion();
   // The space between the brand and the docked panel, measured, so the
   // panel's real height (which differs between builds and text sizes)
-  // decides it. The story waits for the measurement rather than jumping.
+  // decides it. Keep the story mounted while that measurement changes.
   const [storyViewport, setStoryViewport] = useState(0);
   // What the headline, the step's words and the dots leave over goes to the
   // illustration, so the whole page fits; past the smallest illustration the
@@ -66,8 +68,8 @@ export function LoginScreen() {
   const brand = (
     <Animated.View entering={dropIn(0, reduceMotion)} style={styles.brand}>
       <Image accessibilityIgnoresInvertColors source={brandIconSource} style={styles.brandIcon} />
-      <View style={styles.flexOne}>
-        <Text accessibilityRole="header" style={styles.wordmark}>HaalKhata</Text>
+      <View style={styles.brandWords}>
+        <Text accessibilityRole="header" adjustsFontSizeToFit minimumFontScale={0.7} numberOfLines={1} style={styles.wordmark}>HaalKhata</Text>
         <Text adjustsFontSizeToFit minimumFontScale={0.7} numberOfLines={1} style={styles.brandTagline}>
           THE SHARED-EXPENSE LEDGER
         </Text>
@@ -76,44 +78,46 @@ export function LoginScreen() {
     </Animated.View>
   );
 
-  if (isTablet) {
-    return (
-      <SafeAreaView style={styles.safeArea}>
-        <ScrollView contentContainerStyle={styles.tabletScroll}>
-          <View style={styles.tabletColumns}>
-            <View style={styles.tabletStory}>
-              {brand}
-              <WelcomeStory illustrationHeight={TABLET_ILLUSTRATION_HEIGHT} showBody />
-            </View>
-            <View style={styles.tabletPanel}>
-              <SignInPanel variant="card" />
-            </View>
-          </View>
-        </ScrollView>
-      </SafeAreaView>
-    );
-  }
-
+  // Keep the same tree through a fold: replacing the phone and tablet trees
+  // dismisses the password dialog and resets an in-flight provider sign-in.
   return (
-    <SafeAreaView edges={["top", "left", "right"]} style={styles.safeArea}>
-      <View style={styles.phoneHeader}>{brand}</View>
+    <SafeAreaView edges={sideBySide ? undefined : ["top", "left", "right"]} style={styles.safeArea}>
       <ScrollView
-        contentContainerStyle={styles.phoneScroll}
-        onLayout={(event) => setStoryViewport(Math.round(event.nativeEvent.layout.height))}
+        contentContainerStyle={sideBySide ? styles.tabletScroll : styles.flexOne}
+        scrollEnabled={sideBySide}
         showsVerticalScrollIndicator={false}
         style={styles.flexOne}
       >
-        {storyViewport > 0 ? <WelcomeStory illustrationHeight={phoneIllustrationHeight} showBody={false} /> : null}
+        <View style={sideBySide ? styles.tabletColumns : styles.flexOne}>
+          <View style={sideBySide ? styles.tabletStory : styles.flexOne}>
+            <View style={sideBySide ? undefined : styles.phoneHeader}>{brand}</View>
+            <ScrollView
+              contentContainerStyle={sideBySide ? undefined : styles.phoneScroll}
+              onLayout={(event) => setStoryViewport(Math.round(event.nativeEvent.layout.height))}
+              scrollEnabled={!sideBySide}
+              showsVerticalScrollIndicator={false}
+              style={sideBySide ? undefined : styles.flexOne}
+            >
+              <WelcomeStory
+                illustrationHeight={sideBySide ? TABLET_ILLUSTRATION_HEIGHT : phoneIllustrationHeight}
+                showBody={sideBySide}
+              />
+            </ScrollView>
+          </View>
+          <View style={sideBySide ? styles.tabletPanel : undefined}>
+            <SignInPanel variant={sideBySide ? "card" : "dock"} />
+          </View>
+        </View>
       </ScrollView>
-      <SignInPanel variant="dock" />
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  brand: { alignItems: "center", flexDirection: "row", gap: spacing.md },
+  brand: { alignItems: "center", flexDirection: "row", flexWrap: "wrap", gap: spacing.md },
   brandIcon: { borderRadius: radii.md, height: 40, width: 40 },
   brandTagline: { color: colors.inkSoft, fontSize: 9, fontWeight: "700", letterSpacing: 1.6, marginTop: 2 },
+  brandWords: { flex: 1, minWidth: 140 },
   flexOne: { flex: 1 },
   leaving: { justifyContent: "center" },
   phoneHeader: { paddingHorizontal: spacing.xl, paddingVertical: spacing.sm },

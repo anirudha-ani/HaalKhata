@@ -24,7 +24,8 @@ import { SplitTypesCard } from "./components/SplitTypesCard/SplitTypesCard";
  * The filters sit together above the charts they change and nowhere else,
  * so every number below them is always about the same period and the same
  * currency. The lifetime card is above them because the period does not
- * touch it. On a tablet the smaller cards pair up two to a row.
+ * touch it. On a tablet with room for it the smaller cards pair up two to a
+ * row; beside the rail on a narrower one they keep a row each.
  *
  * A failure is stated here, in the panel, with a way to try again: a toast
  * would vanish and leave an empty view with no explanation. The period
@@ -39,8 +40,8 @@ export function InsightsPanel({
   /** The dashboard's data and controls, from the screen's `useInsights`. */
   state: ReturnType<typeof useInsights>;
 }) {
-  const { isTablet } = useResponsiveLayout();
-  const half = isTablet ? styles.half : null;
+  const { isSpacious, isLargeText } = useResponsiveLayout();
+  const half = isSpacious && !isLargeText ? styles.half : null;
 
   return (
     <View style={styles.panel}>

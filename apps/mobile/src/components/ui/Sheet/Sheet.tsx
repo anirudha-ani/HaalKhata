@@ -1,7 +1,7 @@
 /** Bottom-sheet dialog shell (the mobile counterpart of the web's Modal) with backdrop dismissal. */
 
 import { X } from "lucide-react-native";
-import type { ReactNode, RefObject } from "react";
+import { Fragment, type ReactNode, type RefObject } from "react";
 import type { ScrollViewInstance } from "react-native";
 import {
   KeyboardAvoidingView,
@@ -18,10 +18,13 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Text } from "@/components/ui/Text";
 import { FeedbackPressable } from "@/components/ui/FeedbackPressable/FeedbackPressable";
 import { colors, fonts, radii, spacing } from "@/lib/theme/theme";
-import { TABLET_SHEET_MAX_WIDTH } from "@/lib/layout/constants/layout";
+import { useFoldRegion } from "@/lib/fold/hooks/useFoldRegion";
+import { CENTERED_SHEET_MAX_WIDTH } from "@/lib/layout/constants/layout";
 import { useResponsiveLayout } from "@/lib/layout/hooks/useResponsiveLayout";
 import { SHEET_MAX_HEIGHT_RATIO, SHEET_ORIENTATIONS } from "./constants/sheet";
 import { useSheetEntrance } from "./hooks/useSheetEntrance";
+import { useSheetViewport } from "./hooks/useSheetViewport";
+import { clearOfFold } from "./utils/clearOfFold";
 
 /**
  * Renders a bottom sheet with a titled header, a close button, and
@@ -30,9 +33,18 @@ import { useSheetEntrance } from "./hooks/useSheetEntrance";
  *
  * A `footer` stays pinned under the scrolling content. It is for a form
  * taller than the screen: an action that has scrolled out of reach looks
- * like a form with no way to finish it.
+ * like a form with no way to finish it. In a short viewport (including the
+ * keyboard and larger text), the title and actions join the scroll instead
+ * of squeezing the form to zero height. The form stays mounted throughout.
  *
- * The backdrop fades in while the card rises (or, on iPad, grows), rather
+ * In a large window (an iPad, iPhone Duo open) the sheet is a centred dialog.
+ * A phone gets a bottom sheet held either way: held sideways it is wide but
+ * too short for a centred card to keep its body in view once the keyboard is
+ * up, while a bottom sheet leaves every point above the keyboard to it.
+ * While a foldable stands half open, the sheet sits wholly on one side of the
+ * fold, never across the crease (see `clearOfFold`).
+ *
+ * The backdrop fades in while the card rises (or, centred, grows), rather
  * than the whole modal sliding up together with its dimming.
  *
  * Without `onClose` the sheet cannot be dismissed: no close button, the
@@ -65,12 +77,25 @@ export function Sheet({
    */
   scrollRef?: RefObject<ScrollViewInstance | null>;
 }) {
-  const { height: windowHeight } = useWindowDimensions();
-  const { isTablet } = useResponsiveLayout();
+  const { width: windowWidth, height: windowHeight } = useWindowDimensions();
+  const { isLargeWindow: centered, fontScale } = useResponsiveLayout();
   const insets = useSafeAreaInsets();
-  const topPadding = Math.max(insets.top, isTablet ? spacing.xxl : 0);
-  const bottomPadding = isTablet ? Math.max(insets.bottom, spacing.xxl) : 0;
-  const entrance = useSheetEntrance(isTablet);
+  const clearance = clearOfFold({ width: windowWidth, height: windowHeight }, useFoldRegion(), insets, spacing.lg);
+  const topPadding = Math.max(insets.top, centered ? spacing.xxl : 0, clearance.top);
+  const bottomPadding = Math.max(centered ? Math.max(insets.bottom, spacing.xxl) : 0, clearance.bottom);
+  const entrance = useSheetEntrance(centered);
+  const viewport = useSheetViewport(windowHeight - topPadding - bottomPadding, fontScale);
+  const heading = (
+    <View key="heading" style={styles.header}>
+      <Text style={styles.title}>{title}</Text>
+      {onClose ? (
+        <FeedbackPressable accessibilityLabel="Close" hitSlop={8} onPress={onClose} style={styles.closeButton}>
+          <X color={colors.inkSoft} size={20} />
+        </FeedbackPressable>
+      ) : null}
+    </View>
+  );
+  const actions = footer ? <View key="actions" style={styles.footer}>{footer}</View> : null;
   return (
     <Modal
       animationType="fade"
@@ -83,11 +108,11 @@ export function Sheet({
         behavior={Platform.OS === "ios" ? "padding" : undefined}
         style={[
           styles.backdropContainer,
-          isTablet ? styles.backdropContainerTablet : null,
+          centered ? styles.backdropContainerCentered : null,
           {
             paddingTop: topPadding,
-            paddingLeft: Math.max(insets.left, isTablet ? spacing.xxl : 0),
-            paddingRight: Math.max(insets.right, isTablet ? spacing.xxl : 0),
+            paddingLeft: Math.max(insets.left, centered ? spacing.xxl : 0, clearance.left),
+            paddingRight: Math.max(insets.right, centered ? spacing.xxl : 0, clearance.right),
           },
         ]}
       >
@@ -96,42 +121,42 @@ export function Sheet({
         ) : (
           <View style={styles.backdrop} />
         )}
-        <Animated.View
-          accessibilityLabel={title}
-          accessibilityViewIsModal
+        <View
+          onLayout={viewport.onLayout}
           style={[
-            styles.sheet,
-            {
-              maxHeight: Math.max(0, Math.min(windowHeight * SHEET_MAX_HEIGHT_RATIO, windowHeight - topPadding - bottomPadding)),
-              paddingBottom: Math.max(insets.bottom, spacing.xxl),
-            },
-            isTablet ? styles.sheetTablet : null,
-            entrance,
+            styles.viewport,
+            centered ? styles.viewportCentered : null,
+            // The keyboard owns the container's bottom padding, so room kept below for a fold is a margin.
+            clearance.bottom > 0 ? { marginBottom: clearance.bottom } : null,
           ]}
         >
-          <View style={styles.header}>
-            <Text style={styles.title}>{title}</Text>
-            {onClose ? (
-              <FeedbackPressable
-                accessibilityLabel="Close"
-                hitSlop={8}
-                onPress={onClose}
-                style={styles.closeButton}
-              >
-                <X color={colors.inkSoft} size={20} />
-              </FeedbackPressable>
-            ) : null}
-          </View>
-          <ScrollView
-            keyboardDismissMode="interactive"
-            keyboardShouldPersistTaps="handled"
-            ref={scrollRef}
-            showsVerticalScrollIndicator={false}
+          <Animated.View
+            accessibilityLabel={title}
+            accessibilityViewIsModal
+            style={[
+              styles.sheet,
+              {
+                maxHeight: Math.max(0, Math.min(windowHeight * SHEET_MAX_HEIGHT_RATIO, windowHeight - topPadding - bottomPadding)),
+                paddingBottom: Math.max(insets.bottom, spacing.xxl),
+              },
+              centered ? styles.sheetCentered : null,
+              entrance,
+            ]}
           >
-            {children}
-          </ScrollView>
-          {footer ? <View style={styles.footer}>{footer}</View> : null}
-        </Animated.View>
+            {viewport.scrollChrome ? null : heading}
+            <ScrollView
+              keyboardDismissMode="interactive"
+              keyboardShouldPersistTaps="handled"
+              ref={scrollRef}
+              showsVerticalScrollIndicator={false}
+            >
+              {viewport.scrollChrome ? heading : null}
+              <Fragment key="body">{children}</Fragment>
+              {viewport.scrollChrome ? actions : null}
+            </ScrollView>
+            {viewport.scrollChrome ? null : actions}
+          </Animated.View>
+        </View>
       </KeyboardAvoidingView>
     </Modal>
   );
@@ -150,7 +175,7 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: "flex-end",
   },
-  backdropContainerTablet: {
+  backdropContainerCentered: {
     alignItems: "center",
     justifyContent: "center",
     padding: spacing.xxl,
@@ -186,11 +211,15 @@ const styles = StyleSheet.create({
     padding: spacing.xl - 4,
     paddingBottom: spacing.xxl,
   },
-  sheetTablet: {
+  sheetCentered: {
     borderRadius: radii.lg,
-    maxWidth: TABLET_SHEET_MAX_WIDTH,
+    maxWidth: CENTERED_SHEET_MAX_WIDTH,
     width: "100%",
   },
+  // The measured space in front of the backdrop. Touches outside the card pass
+  // through it to the backdrop behind, which closes the sheet.
+  viewport: { flex: 1, justifyContent: "flex-end", pointerEvents: "box-none", width: "100%" },
+  viewportCentered: { alignItems: "center", justifyContent: "center" },
   title: {
     color: colors.ink,
     flex: 1,
