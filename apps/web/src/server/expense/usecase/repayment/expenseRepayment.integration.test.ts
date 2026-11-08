@@ -2,7 +2,10 @@
  * Integration test for paying back one expense from its page, against a real
  * Postgres: what the page offers, what the payment accepts, that the two
  * agree, and that the database keeps a payment for an expense in that
- * expense's balance.
+ * expense's balance. Also that it agrees with the other ways of paying the
+ * same debt (a group's settle-up, settling everything with a person), one
+ * after another and at the same moment, and with an edit or a deletion of
+ * the expense at the same moment.
  *
  * Skips itself when no database is reachable, so it is safe in the suite.
  */
@@ -10,7 +13,13 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { Client } from "pg";
 import { testDatabaseName } from "@/server/common/testing/testDatabase";
+import { UsecaseError } from "@/server/common/errors";
+import {
+  EXPENSE_LEDGER_LOCK_PREFIX,
+  PARTICIPANT_LEDGER_LOCK_PREFIX,
+} from "@/server/common/ledger/ledgerLocks.constants";
 import { REPAYMENT_REFUSALS } from "@/server/expense/expense.constants";
+import type { ExpenseInput } from "../expense.usecase";
 
 const ADMIN_URL =
   process.env.MERGE_TEST_ADMIN_URL ?? "postgres://haalkhata:change-me@127.0.0.1:5432/postgres";
@@ -25,6 +34,11 @@ const TRIP_ID = "trip";
 const FLAT_ID = "flat";
 const LOOP_ID = "loop";
 const CAMP_ID = "camp";
+// Eve and Finn share only Beach and their one-off balance, so their tests can
+// settle everything between them without touching anyone else's.
+const EVE_ID = "eve";
+const FINN_ID = "finn";
+const BEACH_ID = "beach";
 
 /**
  * Checks whether the admin database accepts a connection.
@@ -46,6 +60,8 @@ const reachable = await databaseReachable();
 
 describe.skipIf(!reachable)("paying back one expense against Postgres", () => {
   let database: Client;
+  /** Holds a ledger lock while writes queue on it, to choose who goes first. */
+  let blocker: Client;
   let expenses: typeof import("../expense.usecase");
   let balances: typeof import("../balance.usecase");
   let closePool: () => Promise<void>;
@@ -131,6 +147,136 @@ describe.skipIf(!reachable)("paying back one expense against Postgres", () => {
     return detail.repayments[0];
   }
 
+  /**
+   * Settling everything with a person, as their page's dialog sends it: the
+   * whole net in dollars, with the digest of the position on screen.
+   *
+   * @param payerId - Who pays.
+   * @param recipientId - Who is paid.
+   * @returns The arguments to recordSettlement.
+   */
+  async function settleEverything(payerId: string, recipientId: string) {
+    const shown = (await balances.getFriendLedger(payerId, recipientId)).settlePositions.find(
+      (position) => position.currency === "USD",
+    );
+    operation += 1;
+    return [
+      payerId,
+      {
+        groupId: "",
+        toUserId: recipientId,
+        amountCents: Math.abs(shown?.netCents ?? 0),
+        currency: "USD",
+        method: "cash",
+        note: "",
+        scopeGroupIds: [],
+        netAcrossScopes: true,
+        positionDigest: shown?.digest ?? "",
+        operationId: `00000000-0000-4000-8000-${String(operation).padStart(12, "0")}`,
+      },
+    ] as Parameters<typeof expenses.recordSettlement>;
+  }
+
+  /**
+   * What one person owes another in one balance, read from the whole ledger.
+   *
+   * @param debtorId - Who would owe.
+   * @param creditorId - Who would be owed.
+   * @param scopeId - A group id, or "" for the pair's balance outside groups.
+   * @returns Cents owed in dollars; 0 when nothing is.
+   */
+  async function owedIn(debtorId: string, creditorId: string, scopeId: string): Promise<number> {
+    const scopes = await balances.owedByScope(debtorId, creditorId);
+    return scopes.find((scope) => (scope.groupId ?? "") === scopeId && scope.currency === "USD")?.owedCents ?? 0;
+  }
+
+  /**
+   * An edit as an older form sends it: the whole bill, paid by one person
+   * and split evenly.
+   *
+   * @param payerId - Who paid all of it.
+   * @param splitIds - Who shares it evenly.
+   * @param amountCents - The new total.
+   * @param description - Its name.
+   * @returns The edit request.
+   */
+  function evenEdit(payerId: string, splitIds: string[], amountCents: number, description: string): ExpenseInput {
+    operation += 1;
+    return {
+      groupId: BEACH_ID, description, amountCents, currency: "USD",
+      category: "general", expenseDate: "2026-11-01", splitType: "equal", notes: "",
+      payers: [{ userId: payerId, amountCents }],
+      splitSpecs: splitIds.map((userId) => ({ userId, amountCents: 0, percentBp: 0, shares: 0 })),
+      items: [], taxCents: 0, tipCents: 0,
+      operationId: `00000000-0000-4000-8000-${String(operation).padStart(12, "0")}`,
+    } as unknown as ExpenseInput;
+  }
+
+  /**
+   * Every write that lost a race was refused for a reason the person can
+   * read, and none was turned away as busy: busy is how a deadlock, or a
+   * lock held past its limit, reaches the person.
+   *
+   * @param outcomes - The settled writes.
+   */
+  function expectReadableRefusals(outcomes: PromiseSettledResult<unknown>[]): void {
+    for (const outcome of outcomes) {
+      if (outcome.status === "fulfilled") continue;
+      expect(outcome.reason).toBeInstanceOf(UsecaseError);
+      expect((outcome.reason as UsecaseError).code).not.toBe("unavailable");
+    }
+  }
+
+  /**
+   * Waits until this many connections to this test's database are queued on
+   * an advisory lock. Other suites share the server, so the database is part
+   * of the question.
+   *
+   * @param count - How many must be waiting.
+   */
+  async function queuedOnLocks(count: number): Promise<void> {
+    for (let poll = 0; poll < 150; poll++) {
+      const { rows } = await database.query<{ waiting: number }>(
+        `SELECT count(*)::int AS waiting FROM pg_locks
+          WHERE locktype = 'advisory' AND NOT granted
+            AND database = (SELECT oid FROM pg_database WHERE datname = current_database())`,
+      );
+      if (rows[0].waiting >= count) return;
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    throw new Error(`fewer than ${count} writes started waiting on a lock`);
+  }
+
+  /**
+   * Sends writes at the same moment in a chosen order: a lock every one of
+   * them takes is held while they queue on it, each queued before the next
+   * is sent, and then let go. Postgres grants the lock in the order they
+   * queued, so the first write here is the first to run.
+   *
+   * @param lockKey - The ledger lock they all take, by name.
+   * @param writes - The writes, first in line first.
+   * @returns How each one ended, in the same order.
+   */
+  async function inLine(lockKey: string, writes: (() => Promise<unknown>)[]): Promise<PromiseSettledResult<unknown>[]> {
+    await blocker.query("BEGIN");
+    await blocker.query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", [lockKey]);
+    const pending: Promise<PromiseSettledResult<unknown>>[] = [];
+    try {
+      for (const write of writes) {
+        pending.push(
+          write().then(
+            (value): PromiseSettledResult<unknown> => ({ status: "fulfilled", value }),
+            (reason: unknown): PromiseSettledResult<unknown> => ({ status: "rejected", reason }),
+          ),
+        );
+        await queuedOnLocks(pending.length);
+      }
+    } finally {
+      await blocker.query("COMMIT");
+    }
+    return Promise.all(pending);
+  }
+
   beforeAll(async () => {
     const admin = new Client({ connectionString: ADMIN_URL });
     await admin.connect();
@@ -151,18 +297,26 @@ describe.skipIf(!reachable)("paying back one expense against Postgres", () => {
     balances = await import("../balance.usecase");
 
     database = new Client({ connectionString: TEST_URL });
-    await database.connect();
+    blocker = new Client({ connectionString: TEST_URL });
+    await Promise.all([database.connect(), blocker.connect()]);
     await database.query(
       `INSERT INTO users (id, email, name, avatar_color, onboarded_at, google_sub) VALUES
          ($1, 'ana@example.com', 'Ana Alvarez', '#c73e2e', now(), 'google-ana'),
          ($2, 'bob@example.com', 'Bob Brown', '#0f8a5f', now(), 'google-bob'),
          ($3, 'chen@example.com', 'Chen Chow', '#336699', now(), 'google-chen'),
-         ($4, 'dana@example.com', 'Dana Diaz', '#996633', now(), 'google-dana')`,
-      [ANA_ID, BOB_ID, CHEN_ID, DANA_ID],
+         ($4, 'dana@example.com', 'Dana Diaz', '#996633', now(), 'google-dana'),
+         ($5, 'eve@example.com', 'Eve Evans', '#663399', now(), 'google-eve'),
+         ($6, 'finn@example.com', 'Finn Ford', '#339966', now(), 'google-finn')`,
+      [ANA_ID, BOB_ID, CHEN_ID, DANA_ID, EVE_ID, FINN_ID],
     );
     await database.query(
       `INSERT INTO groups (id, name, created_by) VALUES ($1, 'Trip', $4), ($2, 'Flat', $4), ($3, 'Loop', $4)`,
       [TRIP_ID, FLAT_ID, LOOP_ID, ANA_ID],
+    );
+    await database.query(`INSERT INTO groups (id, name, created_by) VALUES ($1, 'Beach', $2)`, [BEACH_ID, FINN_ID]);
+    await database.query(
+      `INSERT INTO group_members (group_id, user_id, role) VALUES ($1, $2, 'owner'), ($1, $3, 'member')`,
+      [BEACH_ID, FINN_ID, EVE_ID],
     );
     await database.query(`UPDATE groups SET simplify_debts = true WHERE id = $1`, [FLAT_ID]);
     await database.query(
@@ -175,6 +329,8 @@ describe.skipIf(!reachable)("paying back one expense against Postgres", () => {
   }, 60_000);
 
   afterAll(async () => {
+    await blocker?.query("ROLLBACK").catch(() => undefined);
+    await blocker?.end();
     await database?.end();
     await closePool?.();
     const admin = new Client({ connectionString: ADMIN_URL });
@@ -513,20 +669,212 @@ describe.skipIf(!reachable)("paying back one expense against Postgres", () => {
     });
   });
 
+  it("agrees with settling everything from the person's page, before, after, and once that is removed", async () => {
+    await storeExpense({
+      id: "beach-dinner",
+      groupId: BEACH_ID,
+      description: "Beach dinner",
+      payers: { [FINN_ID]: 6000 },
+      splits: { [EVE_ID]: 3000, [FINN_ID]: 3000 },
+    });
+    // Outside the group the debt points the other way, so settling everything
+    // nets the two: Eve's cash is her Beach debt less what Finn owes her.
+    await storeExpense({ id: "tickets", groupId: null, description: "Tickets", payers: { [EVE_ID]: 1000 }, splits: { [FINN_ID]: 1000 } });
+    await expenses.recordSettlement(...payBack(EVE_ID, FINN_ID, "beach-dinner", BEACH_ID, 1000));
+    expect(await repaymentOn(EVE_ID, "beach-dinner")).toMatchObject({ owedCents: 3000, paidCents: 1000, payableCents: 2000 });
+
+    // $20 left in Beach less the $10 Finn owes her: $10 changes hands.
+    const everything = await settleEverything(EVE_ID, FINN_ID);
+    expect(everything[1].amountCents).toBe(1000);
+    const netPayment = await expenses.recordSettlement(...everything);
+    expect(await repaymentOn(EVE_ID, "beach-dinner")).toEqual({
+      userId: FINN_ID,
+      owedCents: 3000,
+      paidCents: 1000,
+      payableCents: 0,
+      refusal: "",
+    });
+    const owedAfter = [
+      await owedIn(EVE_ID, FINN_ID, BEACH_ID),
+      await owedIn(EVE_ID, FINN_ID, ""),
+      await owedIn(FINN_ID, EVE_ID, BEACH_ID),
+      await owedIn(FINN_ID, EVE_ID, ""),
+    ];
+    expect(owedAfter).toEqual([0, 0, 0, 0]);
+    await expect(expenses.recordSettlement(...payBack(EVE_ID, FINN_ID, "beach-dinner", BEACH_ID, 100))).rejects.toMatchObject({
+      message: "you don't owe this person anything where this expense is any more",
+    });
+
+    // Removing the settle-up removes all of it, the payment for the bill
+    // stays, and the bill offers its rest again.
+    await expenses.deleteSettlement(FINN_ID, netPayment.id);
+    expect(await repaymentOn(EVE_ID, "beach-dinner")).toMatchObject({ paidCents: 1000, payableCents: 2000 });
+    expect(await owedIn(EVE_ID, FINN_ID, BEACH_ID)).toBe(2000);
+    expect(await owedIn(FINN_ID, EVE_ID, "")).toBe(1000);
+
+    await expenses.recordSettlement(...payBack(EVE_ID, FINN_ID, "beach-dinner", BEACH_ID, 2000));
+    expect(await repaymentOn(EVE_ID, "beach-dinner")).toMatchObject({ paidCents: 3000, payableCents: 0 });
+    const listed = await expenses.listExpenses(EVE_ID, { groupId: BEACH_ID }, { cursor: "", limit: 20 });
+    expect(listed.repaidExpenseIds).toContain("beach-dinner");
+    expect(await owedIn(EVE_ID, FINN_ID, BEACH_ID)).toBe(0);
+    expect(await owedIn(FINN_ID, EVE_ID, "")).toBe(1000);
+  });
+
+  it("offers nothing on a bill once its group was settled from the group's page, and the group what a bill payment left", async () => {
+    await storeExpense({
+      id: "kayak",
+      groupId: BEACH_ID,
+      description: "Kayak",
+      payers: { [FINN_ID]: 4000 },
+      splits: { [EVE_ID]: 2000, [FINN_ID]: 2000 },
+    });
+    await expenses.recordSettlement(...payBack(EVE_ID, FINN_ID, "kayak", BEACH_ID, 500));
+    // The group's page offers what is left there, and refuses a cent more.
+    expect(await owedIn(EVE_ID, FINN_ID, BEACH_ID)).toBe(1500);
+    await expect(expenses.recordSettlement(...payBack(EVE_ID, FINN_ID, "", BEACH_ID, 1501))).rejects.toBeInstanceOf(UsecaseError);
+    await expenses.recordSettlement(...payBack(EVE_ID, FINN_ID, "", BEACH_ID, 1500));
+    expect(await repaymentOn(EVE_ID, "kayak")).toEqual({
+      userId: FINN_ID,
+      owedCents: 2000,
+      paidCents: 500,
+      payableCents: 0,
+      refusal: "",
+    });
+    await expect(expenses.recordSettlement(...payBack(EVE_ID, FINN_ID, "kayak", BEACH_ID, 100))).rejects.toMatchObject({
+      message: "you don't owe this person anything where this expense is any more",
+    });
+    // Neither touched what Finn owes Eve outside the group.
+    expect(await owedIn(FINN_ID, EVE_ID, "")).toBe(1000);
+  });
+
+  it("lets exactly one through when a bill payment, a group settle-up and settling everything pay the same debt at once", async () => {
+    const labels = ["bill", "group", "everything"];
+    // One round with each of the three first in line.
+    for (const first of [0, 1, 2]) {
+      const billId = `hotel-${first}`;
+      await storeExpense({
+        id: billId,
+        groupId: BEACH_ID,
+        description: `Hotel night ${first + 1}`,
+        payers: { [FINN_ID]: 5000 },
+        splits: { [EVE_ID]: 2500, [FINN_ID]: 2500 },
+      });
+      expect(await owedIn(EVE_ID, FINN_ID, BEACH_ID)).toBe(2500);
+      const oneOffBefore = [await owedIn(EVE_ID, FINN_ID, ""), await owedIn(FINN_ID, EVE_ID, "")];
+      // Three dialogs open at once, each read before any is sent.
+      const everything = await settleEverything(EVE_ID, FINN_ID);
+      const writes = [
+        () => expenses.recordSettlement(...payBack(EVE_ID, FINN_ID, billId, BEACH_ID, 2500)),
+        () => expenses.recordSettlement(...payBack(EVE_ID, FINN_ID, "", BEACH_ID, 2500)),
+        () => expenses.recordSettlement(...everything),
+      ];
+      const order = [first, ...[0, 1, 2].filter((index) => index !== first)];
+      const outcomes = await inLine(`${PARTICIPANT_LEDGER_LOCK_PREFIX}${EVE_ID}`, order.map((index) => writes[index]));
+      const winners = order.filter((_index, position) => outcomes[position].status === "fulfilled").map((index) => labels[index]);
+
+      expect(winners).toEqual([labels[first]]);
+      expectReadableRefusals(outcomes);
+      expect(await owedIn(EVE_ID, FINN_ID, BEACH_ID)).toBe(0);
+      expect(await owedIn(FINN_ID, EVE_ID, BEACH_ID)).toBe(0);
+      // Settling everything also squares the balance outside the group; the
+      // other two leave it as it was.
+      const oneOffAfter = [await owedIn(EVE_ID, FINN_ID, ""), await owedIn(FINN_ID, EVE_ID, "")];
+      expect(oneOffAfter).toEqual(labels[first] === "everything" ? [0, 0] : oneOffBefore);
+      expect(await repaymentOn(EVE_ID, billId)).toEqual({
+        userId: FINN_ID,
+        owedCents: 2500,
+        paidCents: labels[first] === "bill" ? 2500 : 0,
+        payableCents: 0,
+        refusal: "",
+      });
+    }
+  });
+
+  it("lands a bill payment and an edit of that bill made at the same moment, whichever goes first", async () => {
+    for (const paymentFirst of [true, false]) {
+      const billId = paymentFirst ? "boat-0" : "boat-1";
+      await storeExpense({
+        id: billId,
+        groupId: BEACH_ID,
+        description: "Boat trip",
+        payers: { [FINN_ID]: 3000 },
+        splits: { [EVE_ID]: 1500, [FINN_ID]: 1500 },
+      });
+      const owedBefore = await owedIn(EVE_ID, FINN_ID, BEACH_ID);
+      const payment = () => expenses.recordSettlement(...payBack(EVE_ID, FINN_ID, billId, BEACH_ID, 1500));
+      const edit = () => expenses.updateExpense(FINN_ID, billId, evenEdit(FINN_ID, [EVE_ID, FINN_ID], 5000, "Boat trip"));
+      const outcomes = await inLine(`${EXPENSE_LEDGER_LOCK_PREFIX}${billId}`, paymentFirst ? [payment, edit] : [edit, payment]);
+
+      expectReadableRefusals(outcomes);
+      expect(outcomes.map((outcome) => outcome.status)).toEqual(["fulfilled", "fulfilled"]);
+      // Either way round, Eve has paid $15 of the $25 her share now is.
+      expect(await repaymentOn(EVE_ID, billId)).toEqual({
+        userId: FINN_ID,
+        owedCents: 2500,
+        paidCents: 1500,
+        payableCents: 1000,
+        refusal: "",
+      });
+      // Beach moves by the same: $15 paid, and $10 more owed after the edit.
+      expect(await owedIn(EVE_ID, FINN_ID, BEACH_ID)).toBe(owedBefore - 1500 + 1000);
+    }
+  });
+
+  it("refuses a bill payment, or keeps it as an ordinary payment, when the bill is deleted at the same moment", async () => {
+    for (const paymentFirst of [true, false]) {
+      const billId = paymentFirst ? "pier-0" : "pier-1";
+      const owedBefore = await owedIn(EVE_ID, FINN_ID, BEACH_ID);
+      await storeExpense({
+        id: billId,
+        groupId: BEACH_ID,
+        description: "Pier fee",
+        payers: { [FINN_ID]: 2000 },
+        splits: { [EVE_ID]: 1000, [FINN_ID]: 1000 },
+      });
+      const payment = () => expenses.recordSettlement(...payBack(EVE_ID, FINN_ID, billId, BEACH_ID, 1000));
+      const removal = () => expenses.deleteExpense(FINN_ID, billId);
+      const [paid, removed] = paymentFirst
+        ? await inLine(`${EXPENSE_LEDGER_LOCK_PREFIX}${billId}`, [payment, removal])
+        : (await inLine(`${EXPENSE_LEDGER_LOCK_PREFIX}${billId}`, [removal, payment])).reverse();
+
+      expectReadableRefusals([paid, removed]);
+      expect(removed.status).toBe("fulfilled");
+      const detail = await expenses.getExpense(EVE_ID, billId);
+      expect(detail.repayments).toEqual([]);
+      if (paymentFirst) {
+        // The money moved, so it still counts in Beach, as any payment does
+        // after the expense it was for is deleted, and the bill still lists it.
+        expect(paid.status).toBe("fulfilled");
+        expect(detail.payments.map((settlement) => settlement.amountCents)).toEqual([1000]);
+        expect(await owedIn(EVE_ID, FINN_ID, BEACH_ID)).toBe(owedBefore - 1000);
+      } else {
+        expect(paid).toMatchObject({ reason: { message: "this expense was deleted, so there is nothing to pay back" } });
+        expect(detail.payments).toEqual([]);
+        expect(await owedIn(EVE_ID, FINN_ID, BEACH_ID)).toBe(owedBefore);
+      }
+    }
+  });
+
   it("reads every balance the expense page reads exactly as the ledger does", async () => {
     // The page reads one balance without the group's whole history; the
     // payment's own guard reads it from the whole history. Every pair, both
     // ways, in every scope this suite built, must agree.
     const { snapshot } = await import("@/server/common/db/db");
     const { findGroupById } = await import("@/server/group/repo/groups.repo");
-    const people = [ANA_ID, BOB_ID, CHEN_ID, DANA_ID];
+    const friends = [ANA_ID, BOB_ID, CHEN_ID];
+    const peopleIn: Record<string, string[]> = {
+      [TRIP_ID]: friends,
+      [FLAT_ID]: friends,
+      [LOOP_ID]: friends,
+      [BEACH_ID]: [EVE_ID, FINN_ID],
+      "": [...friends, DANA_ID, EVE_ID, FINN_ID],
+    };
     await snapshot(async (client) => {
-      for (const scopeId of [TRIP_ID, FLAT_ID, LOOP_ID, ""]) {
+      for (const [scopeId, people] of Object.entries(peopleIn)) {
         const group = scopeId ? ((await findGroupById(scopeId, client)) ?? null) : null;
         for (const debtorId of people) {
           for (const creditorId of people) {
             if (debtorId === creditorId) continue;
-            if (group && (debtorId === DANA_ID || creditorId === DANA_ID)) continue;
             const owing = await balances.owingInScope(debtorId, creditorId, group, "USD", client);
             const ledger = (await balances.owedByScope(debtorId, creditorId, client)).find(
               (scope) => (scope.groupId ?? "") === scopeId && scope.currency === "USD",
