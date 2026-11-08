@@ -20,7 +20,7 @@ import { scopeFilterRequest, type ExpenseScopeFilter } from "@haalkhata/shared/e
  *
  * @param scope - The active scope filter: "all", "oneoff", or a group id.
  * @returns `me`, `expenses` (loaded so far, newest first), `userById`,
- *   `settledIds`, `groups` (the user's group summaries), `isLoading` (true
+ *   `settledIds`, `repaidIds`, `groups` (the user's group summaries), `isLoading` (true
  *   until the first page arrives), `loadError`/`retry` for a failed first
  *   page, and `hasMore`/`loadMore`/`isLoadingMore`/`loadMoreError` for the
  *   next one.

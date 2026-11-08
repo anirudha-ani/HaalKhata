@@ -213,3 +213,30 @@ export const LIVE_SPLIT_SWEEP_BATCH_SIZE = 100;
  * has finished tapping, and a form left open at the table is saved later.
  */
 export const LIVE_SPLIT_LATE_SAVE_HOURS = 24;
+
+/**
+ * Why paying back an expense would be refused, said on its page in place of
+ * the button and by the write that refuses it. Each is from the side of the
+ * person who owes: only they are offered the payment.
+ */
+export const REPAYMENT_REFUSALS = {
+  /** The amounts can still change until the split ends. */
+  liveSplit: "This bill is being split live. Pay it back once the split ends.",
+  /** An archived group takes no payments until it is unarchived. */
+  archived: "This group is archived. Unarchive it to pay anything here.",
+  /** A deleted group's balances are gone with it. */
+  deletedGroup: "This group was deleted, so nothing can be paid in it.",
+  /** A group payment needs both people in the group. */
+  youLeft: "You have left this group, so nothing can be paid in it.",
+  /**
+   * The same, for the person who is owed.
+   *
+   * @param name - Their name.
+   * @returns The sentence.
+   */
+  theyLeft: (name: string) => `${name} has left this group, so nothing can be paid in it.`,
+  /** A pairwise loop that nets to zero is not debt (see groupCancelsOut). */
+  loop: "These debts cancel out around a loop, so everyone here is settled up overall.",
+  /** A simplified group routes what is owed to whoever its balances name. */
+  simplified: "This group simplifies debts, so what you owe here goes to whoever the group's balances name. Settle up on the group's page.",
+} as const;

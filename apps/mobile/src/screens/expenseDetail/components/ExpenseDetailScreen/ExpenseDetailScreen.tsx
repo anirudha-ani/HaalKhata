@@ -1,4 +1,4 @@
-/** Expense detail screen: payers, splits, receipt items, history, comments, and delete flow. */
+/** Expense detail screen: what you owe on it and paying it back, payers, splits, receipt items, history, comments, and delete flow. */
 
 import { ErrorState } from "@/components/ui/ErrorState";
 import { LiveBar } from "@/components/expense/LiveBar/LiveBar";
@@ -24,13 +24,15 @@ import { formatMoney } from "@haalkhata/shared/money/money";
 import { localDateTime } from "@haalkhata/shared/time/localTime";
 import { colors, fonts, radii, spacing } from "@/lib/theme/theme";
 import { useExpenseDetail } from "./hooks/useExpenseDetail";
+import { RepaymentCard } from "./components/RepaymentCard/RepaymentCard";
 import { MAX_COMMENT_LENGTH } from "@haalkhata/shared/text/limits";
 import { GroupStatus } from "@haalkhata/shared/group/status";
 import { ARCHIVED_GROUP_HINT, GROUP_ARCHIVE_ACTIONS } from "@haalkhata/shared/group/archiving";
 
 /**
  * Renders a single expense: header (description, date, category, amount),
- * the nothing-pending banner, edit/delete actions, payer and split
+ * the nothing-pending banner, what the viewer owes on it with a button that
+ * pays it back (and the payments made for it), edit/delete actions, payer and split
  * breakdowns, receipt items (with your share of each) when itemized, notes,
  * the history of edits, the comment thread with a composer, and a delete
  * confirmation sheet.
@@ -181,6 +183,19 @@ export function ExpenseDetailScreen({ expenseId }: { expenseId: string }) {
           />
         </View>
       ) : null}
+
+      {/* Beside the bill's own figure, so its button pays this bill's share
+          and nothing else. First after the banners: for someone who owes,
+          it is what the screen is for. */}
+      <RepaymentCard
+        expense={expense}
+        groupId={expense.groupId && !isArchived ? expense.groupId : ""}
+        meId={meId ?? ""}
+        payments={expenseDetail.detail?.payments ?? []}
+        repayments={expenseDetail.detail?.repayments ?? []}
+        settledForViewer={expenseDetail.detail?.settledForViewer === true}
+        userById={expenseDetail.userById}
+      />
 
       {liveSplit ? (
         <LiveBar

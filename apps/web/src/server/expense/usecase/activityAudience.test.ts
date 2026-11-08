@@ -64,6 +64,8 @@ vi.mock("@/server/expense/repo/comments.repo", () => ({
 vi.mock("@/server/expense/repo/settlements.repo", () => ({
   findSettlementById: vi.fn(),
   insertSettlement: vi.fn(),
+  listExpensePaymentsFor: vi.fn(async () => []),
+  sumExpensePayments: vi.fn(async () => 0),
   listSettlementsByNetSettlement: vi.fn(),
   softDeleteNetSettlement: vi.fn(),
   scopeHasSettlements: vi.fn(),
@@ -101,6 +103,7 @@ vi.mock("./balance.usecase", () => ({
   amountOwed: vi.fn(),
   oneOffNetBetween: vi.fn(),
   owedByScope: vi.fn(),
+  owingInScope: vi.fn(async () => ({ owedCents: 0, loop: false, debtorNetCents: 0 })),
   userNetInGroup: vi.fn(),
 }));
 

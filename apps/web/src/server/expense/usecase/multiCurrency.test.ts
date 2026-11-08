@@ -19,6 +19,7 @@ vi.mock("@/server/common/db/db", async (importOriginal) => ({
   snapshot: (operation: (client: unknown) => unknown) => operation({}),
 }));
 vi.mock("@/server/expense/repo/expenses.repo", () => ({
+  findExpenseDescriptions: vi.fn(async () => new Map()),
   listExpensesBetween: vi.fn(),
   listExpensesByGroups: vi.fn(),
   listExpensesInvolvingUser: vi.fn(),
@@ -364,6 +365,7 @@ describe("balances are kept per currency", () => {
       recorded_by: ALICE,
       deleted_by: null,
       net_settlement_id: null,
+      expense_id: null,
     });
     expect(await owedByScope(ALICE, BOBBY)).toEqual([]);
     expect(await owedByScope(BOBBY, ALICE)).toEqual([

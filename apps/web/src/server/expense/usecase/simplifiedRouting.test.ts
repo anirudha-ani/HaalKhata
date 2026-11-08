@@ -20,6 +20,7 @@ vi.mock("@/server/common/db/db", async (importOriginal) => ({
   snapshot: (operation: (client: unknown) => unknown) => operation({}),
 }));
 vi.mock("@/server/expense/repo/expenses.repo", () => ({
+  findExpenseDescriptions: vi.fn(async () => new Map()),
   listExpensesBetween: vi.fn(),
   listExpensesByGroups: vi.fn(),
   listExpensesInvolvingUser: vi.fn(),
@@ -271,6 +272,7 @@ function recordTripSettlement(fromUser: string, toUser: string, amountCents: num
     recorded_by: fromUser,
     deleted_by: null,
     net_settlement_id: null,
+    expense_id: null,
   });
 }
 

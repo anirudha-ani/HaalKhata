@@ -45,6 +45,12 @@ export interface SettlementRow {
    * refuses to commit them any other way.
    */
   net_settlement_id: string | null;
+  /**
+   * The expense this payment paid back, when it was recorded from that
+   * expense's page; null for a payment made anywhere else. The database
+   * keeps it in the expense's group and currency, and off net settlements.
+   */
+  expense_id: string | null;
 }
 
 /**
@@ -168,13 +174,15 @@ export async function insertSettlement(
     recordedBy: string;
     /** The net settlement this row belongs to; omitted for an ordinary payment. */
     netSettlementId?: string | null;
+    /** The expense this payment pays back; omitted for a payment made anywhere else. */
+    expenseId?: string | null;
   },
   client?: PoolClient,
 ): Promise<SettlementRow> {
   const text = `INSERT INTO settlements
        (id, group_id, from_user, to_user, amount_cents, currency, method, note, recorded_by,
-        net_settlement_id, method_label)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+        net_settlement_id, method_label, expense_id)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
      RETURNING *`;
   const params = [
     newId(),
@@ -188,6 +196,7 @@ export async function insertSettlement(
     input.recordedBy,
     input.netSettlementId ?? null,
     input.methodLabel ?? "",
+    input.expenseId ?? null,
   ];
   if (client) {
     const { rows } = await client.query<SettlementRow>(text, params as never[]);
@@ -357,6 +366,30 @@ export async function listSettlementsBetween(
   );
 }
 
+/**
+ * The live payments between two people in one group, either way.
+ *
+ * @param firstUserId - One of the two people.
+ * @param secondUserId - The other.
+ * @param groupId - The group.
+ * @param client - Snapshot or locked transaction.
+ * @returns The rows, in no particular order.
+ */
+export async function listGroupSettlementsBetween(
+  firstUserId: string,
+  secondUserId: string,
+  groupId: string,
+  client: PoolClient,
+): Promise<SettlementRow[]> {
+  return query<SettlementRow>(
+    `SELECT * FROM settlements
+      WHERE group_id = $3 AND deleted_at IS NULL
+        AND ((from_user = $1 AND to_user = $2) OR (from_user = $2 AND to_user = $1))`,
+    [firstUserId, secondUserId, groupId],
+    client,
+  );
+}
+
 /** A settlement row with its creation time to the microsecond, for statement order. */
 export type ListedSettlementRow = SettlementRow & { created_at_exact: string };
 
@@ -493,6 +526,63 @@ export async function listSettlementsInvolvingUser(
     `SELECT * FROM settlements WHERE (from_user = $1 OR to_user = $1) AND deleted_at IS NULL
      ORDER BY created_at ASC`,
     [userId],
+    client,
+  );
+}
+
+/**
+ * What one person has paid another for one expense: the payments recorded
+ * with that expense's id, removed ones excluded, in its currency.
+ *
+ * @param expenseId - The expense.
+ * @param fromUser - Who paid.
+ * @param toUser - Who was paid.
+ * @param currency - The expense's currency; the database keeps every such
+ *   payment in it, and the sum never mixes currencies regardless.
+ * @param client - Snapshot or transaction client; a payment being recorded
+ *   reads it under the pair's lock.
+ * @returns The total in cents; 0 when there are none.
+ */
+export async function sumExpensePayments(
+  expenseId: string,
+  fromUser: string,
+  toUser: string,
+  currency: string,
+  client: PoolClient,
+): Promise<number> {
+  const summed = await queryOne<{ total: number }>(
+    `SELECT COALESCE(SUM(amount_cents), 0)::bigint AS total FROM settlements
+      WHERE expense_id = $1 AND from_user = $2 AND to_user = $3 AND currency = $4
+        AND deleted_at IS NULL`,
+    [expenseId, fromUser, toUser, currency],
+    client,
+  );
+  return summed?.total ?? 0;
+}
+
+/**
+ * The payments recorded for these expenses that one person is on, either
+ * way, removed ones excluded, oldest first. Only the two people on a payment
+ * ever see it, which is why the person is part of the query rather than a
+ * filter applied afterwards.
+ *
+ * @param expenseIds - The expenses.
+ * @param userId - The person reading them.
+ * @param client - Snapshot client.
+ * @returns The payments; no query is sent for an empty list.
+ */
+export async function listExpensePaymentsFor(
+  expenseIds: readonly string[],
+  userId: string,
+  client: PoolClient,
+): Promise<SettlementRow[]> {
+  if (expenseIds.length === 0) return [];
+  return query<SettlementRow>(
+    `SELECT * FROM settlements
+      WHERE expense_id = ANY($1::text[]) AND (from_user = $2 OR to_user = $2)
+        AND deleted_at IS NULL
+      ORDER BY created_at ASC, id ASC`,
+    [[...new Set(expenseIds)], userId],
     client,
   );
 }

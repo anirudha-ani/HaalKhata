@@ -36,6 +36,7 @@ shrink to fit the space actually available inside the shell.
 | Itemized receipt editing, portions, tax/tip, preview | Present | Present | Shared validation, totals, payloads, warnings and allocation |
 | Receipt scan and processing consent | Browser file input | Native photo/camera input | Same first-use account permission, withdrawal setting, processing disclosure and receipt API |
 | Settlement scope/net settlement and reminders | Present | Present | Same ledger endpoints and shared position/payment helpers |
+| Paying back one expense from its page; "paid back" on list rows | Present | Present | Same `RecordSettlement` with `expense_id`; shared `expense/repayment.ts` wording and limits |
 | Payment-method management and payer details | Present | Present | Shared payment validation, state and formatting |
 | History, comments, activity and notifications | Present | Present | Same expense and social operations |
 | Push notification settings: switches, phones, test, remove | Present | Present | Same PushService operations; shared categories, wording and phone descriptions |

@@ -235,6 +235,12 @@ message ListExpensesResponse {
   bool truncated = 4 [deprecated = true];
   // Pass back as `cursor` for the next, older page; empty at the oldest.
   string next_cursor = 5;
+  // Ids of listed expenses the CALLER has paid back: they owe somebody on
+  // it, and the payments they recorded for it (RecordSettlementRequest.
+  // expense_id) cover what it leaves them owing each of those people.
+  // Unlike settled_expense_ids this is about the one expense, because the
+  // person said which expense each of those payments was for.
+  repeated string repaid_expense_ids = 6;
 }
 
 message GetExpenseVersionRequest {
@@ -301,6 +307,14 @@ message GetExpenseResponse {
   string comments_next_cursor = 10;
   // The live split running on this expense; unset when there is none.
   LiveSplit live_split = 11;
+  // Everyone the caller owes on this expense, with what is left to pay each
+  // of them for it. Empty when the caller owes nobody on it, and for a
+  // deleted expense.
+  repeated Repayment repayments = 12;
+  // Payments recorded for this expense that the caller is on, either way,
+  // oldest first; removed ones are left out. A payment is visible only to
+  // the two people on it, here as everywhere.
+  repeated Settlement payments = 13;
 }
 
 // One recorded change to an expense, for the detail view's history line.
@@ -408,6 +422,15 @@ message RecordSettlementRequest {
   // does not resolve, because the method was removed or was never theirs,
   // never fails the payment: it is recorded from `method` with no name.
   string payment_method_id = 12;
+  // The expense this payment pays back, when it was made from that expense's
+  // page; empty otherwise. The payment still pays down the balance the
+  // expense lives in, like any other, and must name that balance alone (its
+  // group as group_id or the one scope in scope_group_ids, "" for a one-off)
+  // in the expense's currency. The payer must owe the recipient on the
+  // expense, and the amount is at most GetExpenseResponse.repayments'
+  // payable_cents, which the server works out again under its locks. Never
+  // with net_across_scopes.
+  string expense_id = 13;
 }
 
 message Settlement {
@@ -427,6 +450,34 @@ message Settlement {
   // payment was recorded. A copy: renaming or removing the method later does
   // not change it. Empty for cash and for payments recorded without one.
   string method_label = 11;
+  // The expense this payment paid back (RecordSettlementRequest.expense_id);
+  // empty for a payment made anywhere else.
+  string expense_id = 12;
+}
+
+// What the caller owes one person on one expense, and how much of it is
+// still to pay. Viewer-relative, so it lives on GetExpenseResponse.
+message Repayment {
+  // Who the caller owes on this expense: one of the people who paid it.
+  string user_id = 1;
+  // What this expense alone leaves the caller owing them: the same pairwise
+  // reading of payers and splits the balances are built from.
+  int64 owed_cents = 2;
+  // What the caller has paid them for this expense (payments recorded with
+  // its expense_id, removed ones excluded). Can exceed owed_cents after an
+  // edit made the share smaller.
+  int64 paid_cents = 3;
+  // The most a payment for this expense can be now: what is left of
+  // owed_cents, but never more than the caller owes them in the balance the
+  // expense lives in, which is all a payment can pay down. 0 when nothing is
+  // left, when that balance is square, or when a payment would be refused.
+  int64 payable_cents = 4;
+  // Why a payment would be refused while some of owed_cents is unpaid, in
+  // words to show in place of the button: the group is archived, one of the
+  // two has left it, its debts cancel out around a loop, it routes this debt
+  // to somebody else, or the expense is being split live. Empty when nothing
+  // stands in the way, including when the balance is simply square.
+  string refusal = 5;
 }
 
 message GetGroupBalancesRequest {

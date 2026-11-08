@@ -1,4 +1,4 @@
-/** Bottom sheet for settling up: shows exactly which balances a payment settles, takes the amount and how the money moved, shows where to send it, then records it. */
+/** Bottom sheet for settling up or paying back one bill: shows exactly what a payment settles, takes the amount and how the money moved, shows where to send it, then records it. */
 
 import { useQuery } from "@tanstack/react-query";
 import type { User } from "@haalkhata/protogen/common/v1/common_pb";
@@ -23,7 +23,9 @@ import {
   readSettlePositions,
   settleOverLimitMessage,
 } from "@haalkhata/shared/expense/settlePosition";
+import { billOverLimitMessage, billPayableCents } from "@haalkhata/shared/expense/repayment";
 import { colors, radii, spacing } from "@/lib/theme/theme";
+import { BillLine } from "./BillLine";
 import { usePayMethods } from "./hooks/usePayMethods";
 import { useSettleAttempt } from "./hooks/useSettleAttempt";
 import { PayeeMethodDetails } from "./PayeeMethodDetails";
@@ -50,6 +52,10 @@ import { offerPushExplainer } from "@/lib/push/pushStore";
  * - Opened beside one balance — a group's screen, or a single row of where a
  *   balance sits — it settles that balance and nothing else, whatever else
  *   the pair owes each other.
+ * - Opened beside a bill's "You owe" — on the bill's screen — it pays back
+ *   that bill's share: the one row is the bill, the amount is what is left of
+ *   the share (never more than the bill's balance still holds), and the
+ *   payment is recorded in that balance, marked as being for the bill.
  *
  * The balances are not worked out here. The server computes the pair's
  * position with the code that records the settlement and sends it with a
@@ -78,6 +84,7 @@ export function SettleUpModal({
   currency: initialCurrency,
   scopeId,
   received: receivedHint = false,
+  bill,
   onClose,
 }: {
   /** The other person, whichever way the money moved. */
@@ -97,6 +104,18 @@ export function SettleUpModal({
    * the balances being settled point.
    */
   received?: boolean;
+  /**
+   * The bill being paid back, when opened from its screen; `scopeId` must
+   * then be the bill's balance and `currency` its currency.
+   */
+  bill?: {
+    /** The bill's id, sent with the payment. */
+    expenseId: string;
+    /** Its name. */
+    description: string;
+    /** What its screen offers to pay now, from the server's reading of it. */
+    payableCents: number;
+  };
   /** Called when the sheet is dismissed or the settlement is recorded. */
   onClose: () => void;
 }) {
@@ -127,13 +146,19 @@ export function SettleUpModal({
   // Stay on a currency that has something to settle: if the one this opened
   // on has nothing (it was just settled elsewhere), move to one that does
   // instead of presenting an empty form.
+  // A bill is in one currency, so a pay-back never switches.
   const { currencies } = readSettlePositions(positions, chosenCurrency, scopeId);
-  const currency = currencies.includes(chosenCurrency)
+  const currency = bill || currencies.includes(chosenCurrency)
     ? chosenCurrency
     : (currencies[0] ?? chosenCurrency);
   const reading = readSettlePositions(positions, currency, scopeId);
-  const payableCents = Math.abs(reading.netCents);
-  const received = reading.netCents !== 0 ? reading.netCents > 0 : receivedHint;
+  // A pay-back offers what the bill's screen offered, and no more than its
+  // balance holds now that the sheet has read it.
+  const payableCents = bill
+    ? loaded ? billPayableCents(reading, bill.payableCents) : bill.payableCents
+    : Math.abs(reading.netCents);
+  const received = bill ? false : reading.netCents !== 0 ? reading.netCents > 0 : receivedHint;
+  const nothingToSettle = bill ? payableCents === 0 : reading.rows.length === 0;
   const firstName = other.name.split(" ")[0];
   const payMethods = usePayMethods({
     payeeMethods: ledgerQuery.data?.payeeMethods ?? [],
@@ -151,7 +176,7 @@ export function SettleUpModal({
   const amountCents = parseMoneyInput(amount, currency) ?? 0;
   // Said only when there is a payment to make: with nothing owed the
   // methods are not sent at all, and "has not added one" would be untrue.
-  const canPay = loaded && !received && reading.rows.length > 0;
+  const canPay = loaded && !received && !nothingToSettle;
 
   /**
    * Switches the payment's currency: the list, the amount, the methods
@@ -175,7 +200,7 @@ export function SettleUpModal({
       return;
     }
     if (cents > payableCents) {
-      setError(settleOverLimitMessage(reading, currency, firstName));
+      setError(bill ? billOverLimitMessage(payableCents, currency) : settleOverLimitMessage(reading, currency, firstName));
       return;
     }
     setError("");
@@ -198,6 +223,8 @@ export function SettleUpModal({
         netAcrossScopes: reading.everything,
         // What was on screen; the server refuses if it no longer holds.
         positionDigest: reading.digest,
+        // A pay-back names its bill, which the server checks it against.
+        expenseId: bill?.expenseId ?? "",
       },
       formatMoney(cents, currency),
     );
@@ -215,7 +242,7 @@ export function SettleUpModal({
           {settlement.phase === "unsure" ? <Button label="Check again" onPress={settlement.checkAgain} variant="outline" /> : null}
           <Button
             busy={settlement.phase === "sending"}
-            disabled={settlement.busy || !loaded || reading.rows.length === 0}
+            disabled={settlement.busy || !loaded || nothingToSettle}
             label="Record payment"
             onPress={submit}
             variant="positive"
@@ -232,7 +259,7 @@ export function SettleUpModal({
         </View>
       }
       onClose={onClose}
-      title={received ? "Record a payment received" : "Settle up"}
+      title={bill ? "Pay back" : received ? "Record a payment received" : "Settle up"}
     >
       <View style={styles.body}>
         <View style={styles.recipientCard}>
@@ -253,7 +280,7 @@ export function SettleUpModal({
         {/* Currencies are separate ledgers: a payment is in one, and only
             that one's balances are settled. The switch appears only when
             there is something to settle in more than one. */}
-        {currencies.length > 1 ? (
+        {!bill && currencies.length > 1 ? (
           <View style={styles.block}>
             <Text style={styles.blockTitle}>Currency</Text>
             <View style={styles.methods}>
@@ -273,7 +300,7 @@ export function SettleUpModal({
             when it was opened beside a total, the one balance when it was
             opened beside that. Nothing to tick. */}
         <View style={styles.block}>
-          <Text style={styles.blockTitle}>What this settles</Text>
+          <Text style={styles.blockTitle}>{bill ? "What this pays" : "What this settles"}</Text>
           {!loaded && ledgerQuery.isError ? (
             // Said here, with a way to try again: "Loading balances…" under
             // a read that has already failed would never change.
@@ -290,12 +317,19 @@ export function SettleUpModal({
             </View>
           ) : !loaded ? (
             <Text style={styles.placeholder}>Loading balances…</Text>
-          ) : reading.rows.length === 0 ? (
+          ) : nothingToSettle ? (
             <Text style={styles.placeholder}>
               {reading.everything
                 ? `Nothing to settle with ${firstName} right now.`
                 : `Nothing is owed between you and ${firstName} here right now.`}
             </Text>
+          ) : bill ? (
+            <BillLine
+              cents={payableCents}
+              currency={currency}
+              description={bill.description}
+              scopeLabel={reading.rows[0]?.label ?? ""}
+            />
           ) : (
             <>
               <View style={styles.scopeList}>

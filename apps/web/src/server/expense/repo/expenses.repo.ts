@@ -319,6 +319,27 @@ export async function findExpenseById(
 }
 
 /**
+ * The descriptions of several expenses, deleted ones included: what a
+ * payment made for one of them is said to have been for.
+ *
+ * @param expenseIds - The expenses.
+ * @param client - Snapshot client.
+ * @returns Description by expense id; no query is sent for an empty list.
+ */
+export async function findExpenseDescriptions(
+  expenseIds: readonly string[],
+  client: PoolClient,
+): Promise<Map<string, string>> {
+  if (expenseIds.length === 0) return new Map();
+  const rows = await query<{ id: string; description: string }>(
+    `SELECT id, description FROM expenses WHERE id = ANY($1::text[])`,
+    [[...new Set(expenseIds)]],
+    client,
+  );
+  return new Map(rows.map((described) => [described.id, described.description]));
+}
+
+/**
  * Where an expense sits in a list, newest first: by its date, then when it
  * was written (to the microsecond), then its id, so no two share a place.
  */
@@ -497,6 +518,32 @@ export async function listExpensesBetween(
        AND ${expenseInvolvesSql("= $2")}
      ORDER BY expense.expense_date DESC, expense.created_at DESC`,
     [firstUserId, secondUserId, includeDeleted],
+    client,
+  );
+}
+
+/**
+ * The live expenses in one group that two people are both on: the only
+ * expenses that can put either of them in the other's debt there.
+ *
+ * @param firstUserId - One of the two people.
+ * @param secondUserId - The other.
+ * @param groupId - The group.
+ * @param client - Snapshot or locked transaction.
+ * @returns The rows, in no particular order.
+ */
+export async function listGroupExpensesBetween(
+  firstUserId: string,
+  secondUserId: string,
+  groupId: string,
+  client: PoolClient,
+): Promise<ExpenseRow[]> {
+  return query<ExpenseRow>(
+    `SELECT expense.* FROM expenses expense
+      WHERE expense.group_id = $3 AND expense.deleted_at IS NULL
+        AND ${expenseInvolvesSql("= $1")}
+        AND ${expenseInvolvesSql("= $2")}`,
+    [firstUserId, secondUserId, groupId],
     client,
   );
 }
