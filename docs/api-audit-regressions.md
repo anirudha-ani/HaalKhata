@@ -41,3 +41,4 @@ query counts/rows or equivalent plan properties, not machine-dependent timings.
 | Audit ID | Behavior protected | Regression |
 | --- | --- | --- |
 | API-10 | A comment waiting for a group or expense lock must recheck membership before writing. Refused writes leave no comment, operation claim or announcement. Deleted-expense discussion and idempotent replay still work. | `apps/web/src/server/expense/usecase/formerMemberBalance.integration.test.ts` |
+| API-01 | New comment previews, activity audiences and queued pushes exclude former members, including the original creator. Current participants still hear about the comment. | `apps/web/src/server/expense/usecase/formerMemberBalance.integration.test.ts` |

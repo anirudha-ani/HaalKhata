@@ -321,4 +321,33 @@ describe.skipIf(!reachable)("changes that would move a former member's group bal
     expect((await database.query("SELECT id FROM activity WHERE type = 'comment'")).rows).toHaveLength(1);
   });
 
+
+  it("does not announce new comments to a settled participant who left the group", async () => {
+    const { dinner } = await tomasSettlesAndLeaves();
+    await expect(getExpense(TOMAS, dinner.id)).rejects.toMatchObject({ code: "permission_denied" });
+    await addComment(RAHIM, dinner.id, "Private details added after departure", randomUUID());
+    const notices = await database.query<{ user_id: string }>("SELECT user_id FROM notifications WHERE type = 'comment'");
+    expect(notices.rows.map((notice) => notice.user_id)).toEqual([SARA]);
+    const events = await database.query<{ audience: string[] }>("SELECT audience FROM activity WHERE type = 'comment'");
+    expect(events.rows).toHaveLength(1);
+    expect(events.rows[0].audience.sort()).toEqual([RAHIM, SARA].sort());
+    const pushes = await database.query<{ user_id: string }>(
+      "SELECT outbox.user_id FROM push_outbox outbox JOIN notifications notice ON notice.id = outbox.notification_id WHERE notice.type = 'comment'",
+    );
+    expect(pushes.rows.map((push) => push.user_id)).toEqual([SARA]);
+  });
+
+  it("excludes a former creator from comment audiences while keeping current participants", async () => {
+    const dinner = await createExpense(SARA, {
+      ...dinnerRequest(3000),
+      splitSpecs: [RAHIM, TOMAS].map((userId) => ({ userId, amountCents: 1500, percentBp: 0, shares: 0 })),
+    } as unknown as ExpenseInput);
+    await removeMemberFromGroup(SARA, { groupId, userId: SARA });
+    await addComment(RAHIM, dinner.id, "Current members only", randomUUID());
+    const notices = await database.query<{ user_id: string }>("SELECT user_id FROM notifications WHERE type = 'comment'");
+    expect(notices.rows.map((notice) => notice.user_id)).toEqual([TOMAS]);
+    const events = await database.query<{ audience: string[] }>("SELECT audience FROM activity WHERE type = 'comment'");
+    expect(events.rows[0].audience.sort()).toEqual([RAHIM, TOMAS].sort());
+  });
+
 });

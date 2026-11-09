@@ -2070,7 +2070,13 @@ export async function addComment(userId: string, expenseId: string, body: string
     }
     const stored = await insertComment(expenseId, userId, trimmed, client);
     const children = await loadExpenseChildren([expenseId], client);
-    const involved = new Set(storedParticipantIds(current, children));
+    const members = current.group_id
+      ? new Set((await listMembers(current.group_id, client)).map((member) => member.id))
+      : null;
+    // Historical money participants remain on a settled bill after leaving.
+    // New words belong only to people who can still read the conversation.
+    const involved = new Set(storedParticipantIds(current, children)
+      .filter((participantId) => members === null || members.has(participantId)));
 
     // The feed quotes the comment rather than just naming it: "Ani commented on
     // X" tells a reader nothing about whether it is worth opening, and the feed
