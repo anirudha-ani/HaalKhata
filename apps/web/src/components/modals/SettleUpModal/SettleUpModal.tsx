@@ -18,7 +18,7 @@ import {
   readSettlePositions,
   settleOverLimitMessage,
 } from "@haalkhata/shared/expense/settlePosition";
-import { billOverLimitMessage, billPayableCents } from "@haalkhata/shared/expense/repayment";
+import { billOverLimitMessage, billPayableCents, NOTHING_TO_REPAY } from "@haalkhata/shared/expense/repayment";
 import { BillLine } from "./components/BillLine/BillLine";
 import { PayMethodChips } from "./components/PayMethodChips/PayMethodChips";
 import { PayeeMethodDetails } from "./components/PayeeMethodDetails/PayeeMethodDetails";
@@ -293,7 +293,7 @@ export function SettleUpModal({
             </p>
           ) : nothingToSettle ? (
             <p className="rounded-xl border border-dashed border-line px-3 py-2.5 text-sm text-ink-soft">
-              {reading.everything
+              {bill ? NOTHING_TO_REPAY : reading.everything
                 ? `Nothing to settle with ${firstName} right now.`
                 : `Nothing is owed between you and ${firstName} here right now.`}
             </p>

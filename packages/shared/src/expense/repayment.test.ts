@@ -143,7 +143,7 @@ describe("readRepayment", () => {
       state: "square",
       title: "Nothing to pay Ana",
       amountCents: 0,
-      detail: "You and Ana are square in this group",
+      detail: "Nothing more is payable on this bill right now.",
       action: "",
     });
   });

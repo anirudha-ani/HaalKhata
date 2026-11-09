@@ -8,6 +8,9 @@ import { formatMoney } from "../money/money";
 import { expenseDebts } from "./debts";
 import type { SettleReading } from "./settlePosition";
 
+/** Bill-specific wording when the amount available for this payment reaches zero. */
+export const NOTHING_TO_REPAY = "Nothing more is payable on this bill right now.";
+
 /** The money on an expense these helpers read: who paid what, who owes what. */
 export interface ExpenseMoneyLike {
   /** How many cents each person paid toward it. */
@@ -34,9 +37,8 @@ export interface RepaymentLike {
  * Where a repayment stands:
  * - `due`: something is left to pay, and a payment can be made now.
  * - `paid`: the payments made for this expense cover the share.
- * - `square`: some of the share is unpaid, but nothing is owed between the
- *   two in the expense's balance any more (paid some other way, or other
- *   expenses evened it out), so there is nothing to pay.
+ * - `square`: some of the share is unpaid, but the viewer owes this person
+ *   nothing payable here. The balance can be zero or point the other way.
  * - `blocked`: some is unpaid and owed, but a payment would be refused.
  */
 export type RepaymentState = "due" | "paid" | "square" | "blocked";
@@ -156,7 +158,7 @@ export function readRepayment(
         state,
         title: `Nothing to pay ${firstName}`,
         amountCents: 0,
-        detail: `You and ${firstName} are square ${where}`,
+        detail: NOTHING_TO_REPAY,
         action: "",
       };
     case "blocked":
