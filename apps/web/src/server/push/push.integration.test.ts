@@ -391,6 +391,94 @@ describe.skipIf(!reachable)("push notifications against Postgres", () => {
     await expect(bobaRegistersPhone()).resolves.toMatchObject({ label: "iPhone 17" });
   });
 
+
+  /**
+   * Waits for a real blocked database statement before starting the other request.
+   * @param fragment SQL text identifying the expected blocked request.
+   * @returns Resolves after PostgreSQL reports the request waiting for a lock.
+   */
+  async function waitForBlockedRequest(fragment: string): Promise<void> {
+    await expect.poll(async () => {
+      await database.query("SELECT pg_stat_clear_snapshot()");
+      const waiting = await database.query(
+        `SELECT 1 FROM pg_stat_activity WHERE datname = current_database()
+          AND pid <> pg_backend_pid() AND wait_event_type = 'Lock' AND query ILIKE $1`,
+        [`%${fragment}%`],
+      );
+      return waiting.rows.length > 0;
+    }, { timeout: 5000, interval: 10 }).toBe(true);
+  }
+
+  it("refuses background registration queued behind deliberate device removal", async () => {
+    const { removeDevice, listDevices } = await import("@/server/push/usecase/devices/devices.usecase");
+    const phone = await bobaRegistersPhone();
+    let removal: Promise<void> | undefined;
+    let refresh: ReturnType<typeof bobaRegistersPhone> | undefined;
+    await database.query("BEGIN");
+    try {
+      await database.query("LOCK TABLE push_kept_off IN SHARE MODE");
+      removal = removeDevice(BOBA_ID, phone.id);
+      void removal.catch(() => undefined);
+      await waitForBlockedRequest("INSERT INTO push_kept_off");
+      refresh = bobaRegistersPhone();
+      void refresh.catch(() => undefined);
+      await waitForBlockedRequest("pg_advisory_xact_lock");
+    } finally {
+      await database.query("COMMIT");
+    }
+    await expect(removal).resolves.toBeUndefined();
+    await expect(refresh).rejects.toMatchObject({ code: "failed_precondition" });
+    expect((await listDevices(BOBA_ID)).devices).toEqual([]);
+    expect((await database.query("SELECT 1 FROM push_devices WHERE user_id = $1", [BOBA_ID])).rows).toEqual([]);
+  });
+
+  it("removes a registration that was already saving when removal began", async () => {
+    const { removeDevice, listDevices } = await import("@/server/push/usecase/devices/devices.usecase");
+    const phone = await bobaRegistersPhone();
+    let removal: Promise<void> | undefined;
+    let refresh: ReturnType<typeof bobaRegistersPhone> | undefined;
+    await database.query("BEGIN");
+    try {
+      await database.query("LOCK TABLE push_devices IN SHARE MODE");
+      refresh = bobaRegistersPhone();
+      void refresh.catch(() => undefined);
+      await waitForBlockedRequest("DELETE FROM push_devices");
+      removal = removeDevice(BOBA_ID, phone.id);
+      void removal.catch(() => undefined);
+      await waitForBlockedRequest("pg_advisory_xact_lock");
+    } finally {
+      await database.query("COMMIT");
+    }
+    await expect(refresh).resolves.toMatchObject({ id: phone.id });
+    await expect(removal).resolves.toBeUndefined();
+    expect((await listDevices(BOBA_ID)).devices).toEqual([]);
+    await expect(bobaRegistersPhone()).rejects.toMatchObject({ code: "failed_precondition" });
+  });
+
+  it("rolls removal back when storing the opt-out fails", async () => {
+    const { removeDevice, listDevices } = await import("@/server/push/usecase/devices/devices.usecase");
+    const phone = await bobaRegistersPhone();
+    await database.query("ALTER TABLE push_kept_off ADD CONSTRAINT fixture_refuse_opt_out CHECK (user_id <> 'user-boba')");
+    try {
+      await expect(removeDevice(BOBA_ID, phone.id)).rejects.toMatchObject({ code: "23514" });
+      expect((await listDevices(BOBA_ID)).devices.map((device) => device.id)).toEqual([phone.id]);
+    } finally {
+      await database.query("ALTER TABLE push_kept_off DROP CONSTRAINT fixture_refuse_opt_out");
+    }
+  });
+
+  it("withholds opted-out legacy devices from lists, test sends, and queued delivery", async () => {
+    const { listDevices, sendTestPush } = await import("@/server/push/usecase/devices/devices.usecase");
+    const phone = await bobaRegistersPhone();
+    await database.query("INSERT INTO push_kept_off (user_id, installation_id) VALUES ($1, 'install-boba-phone')", [BOBA_ID]);
+    const provider = recordingProvider();
+    expect((await listDevices(BOBA_ID)).devices).toEqual([]);
+    await expect(sendTestPush(BOBA_ID, phone.id, provider)).rejects.toMatchObject({ code: "not_found" });
+    await aniAddsDinner();
+    await drainPushOutbox(provider);
+    expect(provider.sent).toEqual([]);
+  });
+
   it("holds a switch that is off, and still keeps the bell row", async () => {
     await bobaRegistersPhone();
     await updatePreferences(BOBA_ID, { expenses: false, comments: true, payments: true, groups: true, friends: true });
