@@ -2044,7 +2044,6 @@ export async function addComment(userId: string, expenseId: string, body: string
     invalid(`comment is too long (max ${MAX_COMMENT_LENGTH} characters)`);
   }
   const author = (await findUserById(userId))!;
-  const group = expenseRow.group_id ? await findGroupById(expenseRow.group_id) : undefined;
   const preview =
     trimmed.length > COMMENT_PREVIEW_LENGTH
       ? `${trimmed.slice(0, COMMENT_PREVIEW_LENGTH)}…`
@@ -2056,6 +2055,14 @@ export async function addComment(userId: string, expenseId: string, body: string
   const operation = { userId, rpc: "AddComment", operationId };
   const comment = await withLedgerTransaction(async (client) => {
     const claim = await beginOperation(operation, { expenseId, body: trimmed }, client);
+    // Membership changes and expense edits use these same locks. A comment
+    // waiting on either must be authorized against the state that finally wins.
+    await lockExpenseLedger(client, expenseId);
+    const current = await findExpenseById(expenseId, client);
+    if (!current) notFound("expense not found");
+    if (current.group_id) await lockGroupLedgers(client, [current.group_id]);
+    await assertCanTouch(userId, current, client);
+    const group = current.group_id ? await findGroupById(current.group_id, client) : undefined;
     if (claim.replayOf !== null) {
       const earlier = await findCommentById(claim.replayOf, client);
       if (!earlier) notFound("comment not found");
@@ -2063,17 +2070,17 @@ export async function addComment(userId: string, expenseId: string, body: string
     }
     const stored = await insertComment(expenseId, userId, trimmed, client);
     const children = await loadExpenseChildren([expenseId], client);
-    const involved = new Set(storedParticipantIds(expenseRow, children));
+    const involved = new Set(storedParticipantIds(current, children));
 
     // The feed quotes the comment rather than just naming it: "Ani commented on
     // X" tells a reader nothing about whether it is worth opening, and the feed
     // searches over this message, so quoting makes comments findable by content.
     await insertActivity(
       {
-        groupId: expenseRow.group_id,
+        groupId: current.group_id,
         actorId: userId,
         type: "comment",
-        message: `${author.name} commented on "${expenseRow.description}": ${preview}`,
+        message: `${author.name} commented on "${current.description}": ${preview}`,
         link: `/expenses/${expenseId}`,
         // The thread follows its transaction: a comment is announced to the
         // expense's participants (and its author, who may be neither payer nor
@@ -2091,7 +2098,7 @@ export async function addComment(userId: string, expenseId: string, body: string
         type: "comment",
         ...personNotification(
           author.name,
-          `Commented on "${notificationLabel(expenseRow.description)}"`,
+          `Commented on "${notificationLabel(current.description)}"`,
           group ? notificationLabel(group.name) : "One-off expense",
           preview,
         ),

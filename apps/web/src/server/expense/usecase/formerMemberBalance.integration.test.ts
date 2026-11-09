@@ -41,6 +41,7 @@ const reachable = await databaseReachable();
 describe.skipIf(!reachable)("changes that would move a former member's group balance", () => {
   let database: Client;
   let groupId: string;
+  let addComment: typeof import("./expense.usecase").addComment;
   let createExpense: typeof import("./expense.usecase").createExpense;
   let updateExpense: typeof import("./expense.usecase").updateExpense;
   let deleteExpense: typeof import("./expense.usecase").deleteExpense;
@@ -115,7 +116,7 @@ describe.skipIf(!reachable)("changes that would move a former member's group bal
       const cache = globalThis as unknown as { __haalkhataPool?: { end(): Promise<void> } };
       await cache.__haalkhataPool?.end();
     };
-    ({ createExpense, updateExpense, deleteExpense, deleteSettlement, getExpense } = await import("./expense.usecase"));
+    ({ addComment, createExpense, updateExpense, deleteExpense, deleteSettlement, getExpense } = await import("./expense.usecase"));
     ({ getFriendLedger } = await import("./balance.usecase"));
     ({ removeMemberFromGroup } = await import("@/server/group/usecase/group.usecase"));
     database = new Client({ connectionString: TEST_URL });
@@ -271,4 +272,53 @@ describe.skipIf(!reachable)("changes that would move a former member's group bal
 
     expect(ledger.entries.find((entry) => entry.id === between)?.removalRefusal).toBe("");
   });
+
+  it("reauthorizes a queued comment after the group lock admits a removal", async () => {
+    const dinner = await createExpense(SARA, {
+      ...dinnerRequest(0),
+      payers: [{ userId: SARA, amountCents: 3000 }],
+      splitSpecs: [{ userId: SARA, amountCents: 3000, percentBp: 0, shares: 0 }],
+    } as unknown as ExpenseInput);
+    const blocker = new Client({ connectionString: TEST_URL });
+    await blocker.connect();
+    await blocker.query("BEGIN");
+    await blocker.query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", [`ledger:group:${groupId}`]);
+    const operationId = randomUUID();
+    const pending = addComment(TOMAS, dinner.id, "Queued private comment", operationId)
+      .then(() => ({ code: "unexpected_success" }), (failure: unknown) => failure);
+    try {
+      await expect.poll(async () => {
+        const waiting = await database.query<{ count: number }>(
+          `SELECT count(*)::int AS count FROM pg_locks WHERE locktype = 'advisory' AND NOT granted
+             AND database = (SELECT oid FROM pg_database WHERE datname = current_database())`,
+        );
+        return waiting.rows[0].count;
+      }, { timeout: 3000, interval: 20 }).toBeGreaterThan(0);
+      // This is the roster transition made by RemoveMember while holding the
+      // group lock. Tomas has no money on the expense, so removal is permitted.
+      await blocker.query("DELETE FROM group_members WHERE group_id = $1 AND user_id = $2", [groupId, TOMAS]);
+      await blocker.query("COMMIT");
+      expect(await pending).toMatchObject({ code: "permission_denied" });
+      expect((await database.query("SELECT id FROM comments WHERE expense_id = $1", [dinner.id])).rows).toEqual([]);
+      expect((await database.query("SELECT id FROM notifications WHERE type = 'comment'")).rows).toEqual([]);
+      expect((await database.query("SELECT id FROM activity WHERE type = 'comment'")).rows).toEqual([]);
+      expect((await database.query("SELECT operation_id FROM operations WHERE operation_id = $1", [operationId])).rows).toEqual([]);
+    } finally {
+      await blocker.query("ROLLBACK");
+      await pending;
+      await blocker.end();
+    }
+  });
+
+  it("still discusses deleted expenses and replays a comment without announcing twice", async () => {
+    const dinner = await createExpense(SARA, dinnerRequest(3000));
+    await deleteExpense(SARA, dinner.id);
+    const operationId = randomUUID();
+    const first = await addComment(SARA, dinner.id, "Why was this removed?", operationId);
+    const replay = await addComment(SARA, dinner.id, "Why was this removed?", operationId);
+    expect(replay.id).toBe(first.id);
+    expect((await database.query("SELECT id FROM comments WHERE expense_id = $1", [dinner.id])).rows).toHaveLength(1);
+    expect((await database.query("SELECT id FROM activity WHERE type = 'comment'")).rows).toHaveLength(1);
+  });
+
 });
