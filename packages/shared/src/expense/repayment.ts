@@ -192,6 +192,7 @@ export function readRepayment(
  * @param payment - The payment.
  * @param payment.fromUserId - Who paid.
  * @param payment.amountCents - How much.
+ * @param payment.method - Recorded method key.
  * @param payment.methodLabel - The payment method's name, "" for none.
  * @param readerId - Who is reading.
  * @param otherFirstName - The other person's first name.
@@ -199,7 +200,7 @@ export function readRepayment(
  * @returns The line.
  */
 export function expensePaymentLine(
-  payment: { fromUserId: string; amountCents: number; methodLabel: string },
+  payment: { fromUserId: string; amountCents: number; method: string; methodLabel: string },
   readerId: string,
   otherFirstName: string,
   currency: string,
@@ -208,7 +209,9 @@ export function expensePaymentLine(
   const line = payment.fromUserId === readerId
     ? `You paid ${otherFirstName} ${amount}`
     : `${otherFirstName} paid you ${amount}`;
-  return payment.methodLabel ? `${line} via ${payment.methodLabel}` : line;
+  if (payment.methodLabel) return `${line} via ${payment.methodLabel}`;
+  if (payment.method === "cash") return `${line} in cash`;
+  return payment.method === "other" ? `${line} via Other` : line;
 }
 
 /**

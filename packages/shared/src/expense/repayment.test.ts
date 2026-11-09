@@ -162,13 +162,15 @@ describe("readRepayment", () => {
 
 describe("expensePaymentLine", () => {
   it("speaks from the reader's side", () => {
-    const payment = { fromUserId: "bob", amountCents: 1000, methodLabel: "" };
+    const payment = { fromUserId: "bob", amountCents: 1000, method: "", methodLabel: "" };
     expect(expensePaymentLine(payment, "bob", "Ana", "USD")).toBe("You paid Ana $10.00");
+    expect(expensePaymentLine({ ...payment, method: "cash" }, "bob", "Ana", "USD")).toBe("You paid Ana $10.00 in cash");
+    expect(expensePaymentLine({ ...payment, method: "other" }, "bob", "Ana", "USD")).toBe("You paid Ana $10.00 via Other");
     expect(expensePaymentLine(payment, "ana", "Bob", "USD")).toBe("Bob paid you $10.00");
   });
 
   it("names the method the money moved through", () => {
-    const payment = { fromUserId: "bob", amountCents: 1000, methodLabel: "bKash" };
+    const payment = { fromUserId: "bob", amountCents: 1000, method: "", methodLabel: "bKash" };
     expect(expensePaymentLine(payment, "bob", "Ana", "USD")).toBe("You paid Ana $10.00 via bKash");
   });
 });
