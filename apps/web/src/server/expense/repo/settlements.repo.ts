@@ -51,6 +51,8 @@ export interface SettlementRow {
    * keeps it in the expense's group and currency, and off net settlements.
    */
   expense_id: string | null;
+  /** Title shared with both parties when the payment was recorded. */
+  expense_description?: string | null;
 }
 
 /**
@@ -176,13 +178,15 @@ export async function insertSettlement(
     netSettlementId?: string | null;
     /** The expense this payment pays back; omitted for a payment made anywhere else. */
     expenseId?: string | null;
+    /** The authorized bill title at recording time. */
+    expenseDescription?: string;
   },
   client?: PoolClient,
 ): Promise<SettlementRow> {
   const text = `INSERT INTO settlements
        (id, group_id, from_user, to_user, amount_cents, currency, method, note, recorded_by,
-        net_settlement_id, method_label, expense_id)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+        net_settlement_id, method_label, expense_id, expense_description)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
      RETURNING *`;
   const params = [
     newId(),
@@ -197,6 +201,7 @@ export async function insertSettlement(
     input.netSettlementId ?? null,
     input.methodLabel ?? "",
     input.expenseId ?? null,
+    input.expenseDescription ?? null,
   ];
   if (client) {
     const { rows } = await client.query<SettlementRow>(text, params as never[]);

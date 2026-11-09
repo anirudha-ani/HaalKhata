@@ -19,7 +19,6 @@ vi.mock("@/server/common/db/db", async (importOriginal) => ({
   snapshot: (operation: (client: unknown) => unknown) => operation({}),
 }));
 vi.mock("@/server/expense/repo/expenses.repo", () => ({
-  findExpenseDescriptions: vi.fn(async () => new Map()),
   listExpensesBetween: vi.fn(),
   listExpensesByGroups: vi.fn(),
   listExpensesInvolvingUser: vi.fn(),

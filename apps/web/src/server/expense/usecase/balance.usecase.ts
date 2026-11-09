@@ -3,7 +3,6 @@
 import type { PoolClient } from "pg";
 
 import {
-  findExpenseDescriptions,
   listExpensesBetween,
   listGroupExpensesBetween,
   listExpensesBetweenPage,
@@ -1199,23 +1198,12 @@ function expenseLedgerLines(
 }
 
 /**
- * The expenses a set of payments were made for, each once.
- *
- * @param settlements - The payments.
- * @returns Expense ids, for the names a statement gives those payments.
- */
-function paidExpenseIds(settlements: readonly SettlementRow[]): string[] {
-  return [...new Set(settlements.flatMap((settlement) => (settlement.expense_id ? [settlement.expense_id] : [])))];
-}
-
-/**
  * Maps settlement rows to statement movements from the viewer's perspective.
  *
  * @param settlements - Payments between the pair, deleted rows included.
  * @param groupNames - Group labels keyed by id.
  * @param userId - Statement viewer.
  * @param friendName - Other person's display name.
- * @param expenseNames - Descriptions of the expenses payments were made for, by id.
  * @returns One line per stored payment.
  */
 function settlementLedgerLines(
@@ -1223,7 +1211,6 @@ function settlementLedgerLines(
   groupNames: ReadonlyMap<string, string>,
   userId: string,
   friendName: string,
-  expenseNames: ReadonlyMap<string, string>,
 ): FriendLedgerLine[] {
   return settlements.map((settlement) => {
     const paidByYou = settlement.from_user === userId;
@@ -1232,7 +1219,7 @@ function settlementLedgerLines(
     // pointing the other way elsewhere, and the statement says so.
     const offset = settlement.method === OFFSET_SETTLEMENT_METHOD;
     // A payment made from an expense's page says which expense it paid back.
-    const paidExpense = settlement.expense_id ? expenseNames.get(settlement.expense_id) : undefined;
+    const paidExpense = settlement.expense_description ?? undefined;
     return {
       kind: "settlement",
       id: settlement.id,
@@ -1524,10 +1511,9 @@ export async function getFriendLedger(userId: string, friendId: string, limit = 
     const settlements = await listSettlementsBetween(userId, friendId, true, client);
     const historyGroups = await groupsForHistory(expenses, settlements, client);
     const groupNames = new Map([...historyGroups].map(([groupId, group]) => [groupId, group.name]));
-    const expenseNames = await findExpenseDescriptions(paidExpenseIds(settlements), client);
     const lines = [
       ...expenseLedgerLines(expenses, children, groupNames, userId, friendId),
-      ...settlementLedgerLines(settlements, groupNames, userId, friend?.name ?? "", expenseNames),
+      ...settlementLedgerLines(settlements, groupNames, userId, friend?.name ?? ""),
     ];
     const statement = withRunningBalances(lines);
     // The page is a display; the balances above it are computed over
@@ -1801,10 +1787,9 @@ export async function listFriendLedgerEntries(
 
     const historyGroups = await groupsForHistory(rows.expenses, removable, client);
     const groupNames = new Map([...historyGroups].map(([groupId, group]) => [groupId, group.name]));
-    const expenseNames = await findExpenseDescriptions(paidExpenseIds(rows.settlements), client);
     const lines = [
       ...expenseLedgerLines(rows.expenses, rows.children, groupNames, userId, friendId),
-      ...settlementLedgerLines(rows.settlements, groupNames, userId, friend.name, expenseNames),
+      ...settlementLedgerLines(rows.settlements, groupNames, userId, friend.name),
     ].sort((first, second) => compareLedgerLineKeys(second.key, first.key));
 
     // Walk back from the balance the previous page ended at: each line's

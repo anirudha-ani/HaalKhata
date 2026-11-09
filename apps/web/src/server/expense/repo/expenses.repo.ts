@@ -319,27 +319,6 @@ export async function findExpenseById(
 }
 
 /**
- * The descriptions of several expenses, deleted ones included: what a
- * payment made for one of them is said to have been for.
- *
- * @param expenseIds - The expenses.
- * @param client - Snapshot client.
- * @returns Description by expense id; no query is sent for an empty list.
- */
-export async function findExpenseDescriptions(
-  expenseIds: readonly string[],
-  client: PoolClient,
-): Promise<Map<string, string>> {
-  if (expenseIds.length === 0) return new Map();
-  const rows = await query<{ id: string; description: string }>(
-    `SELECT id, description FROM expenses WHERE id = ANY($1::text[])`,
-    [[...new Set(expenseIds)]],
-    client,
-  );
-  return new Map(rows.map((described) => [described.id, described.description]));
-}
-
-/**
  * Where an expense sits in a list, newest first: by its date, then when it
  * was written (to the microsecond), then its id, so no two share a place.
  */

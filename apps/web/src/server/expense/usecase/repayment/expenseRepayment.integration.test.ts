@@ -890,6 +890,24 @@ describe.skipIf(!reachable)("paying back one expense against Postgres", () => {
       }
     });
   });
+  it("keeps the original shared title after a payer loses access and the bill is renamed", async () => {
+    await storeExpense({ id: "private-coffee", groupId: null, description: "Shared coffee",
+      payers: { [ANA_ID]: 1500 }, splits: { [BOB_ID]: 1500 } });
+    const payment = await expenses.recordSettlement(...payBack(BOB_ID, ANA_ID, "private-coffee", "", 1500));
+    await database.query("UPDATE expense_splits SET user_id = $1 WHERE expense_id = $2", [CHEN_ID, "private-coffee"]);
+    await database.query("UPDATE expenses SET description = $1 WHERE id = $2", ["Private follow-up", "private-coffee"]);
+    await expect(expenses.getExpense(BOB_ID, "private-coffee")).rejects.toMatchObject({ code: "permission_denied" });
+    const statement = await balances.getFriendLedger(BOB_ID, ANA_ID);
+    expect(statement.entries.find((entry) => entry.id === payment.id)?.description).toContain("Shared coffee");
+    await expenses.deleteSettlement(BOB_ID, payment.id);
+    const activity = await database.query("SELECT message FROM activity WHERE type = 'settlement_deleted' AND link = $1",
+      ["/expenses/private-coffee"]);
+    expect(activity.rows[0].message).toContain("Shared coffee");
+    const notices = await database.query("SELECT body FROM notifications WHERE type = 'settlement_deleted' AND link = $1",
+      ["/expenses/private-coffee"]);
+    expect(notices.rows[0].body).toContain("Shared coffee");
+  });
+
   it("records a bill while an unrelated shared group is locked", async () => {
     await storeExpense({ id: "uncontended", groupId: TRIP_ID, description: "Lunch",
       payers: { [ANA_ID]: 10000 }, splits: { [BOB_ID]: 10000 } });

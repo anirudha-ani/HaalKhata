@@ -2341,6 +2341,7 @@ async function storeSingleSettlement(
       note: request.note,
       recordedBy: userId,
       expenseId: expense?.id ?? null,
+      expenseDescription: expense?.description,
     },
     client,
   );
@@ -2903,7 +2904,9 @@ export async function deleteSettlement(userId: string, settlementId: string): Pr
     const offsetRows = removed.filter((portion) => portion.method === OFFSET_SETTLEMENT_METHOD);
     // A payment for an expense is never part of a net settlement, so it is
     // removed alone, and both people are told which expense is owed again.
-    const paidExpense = current.expense_id ? await findExpenseById(current.expense_id, client) : undefined;
+    const paidExpense = current.expense_id && current.expense_description
+      ? { id: current.expense_id, description: current.expense_description }
+      : undefined;
     const cashCents = cashRows.reduce((running, portion) => running + portion.amount_cents, 0);
     // Each direction of a net settlement cancels the same amount; one side is it.
     const cancelledCents = offsetRows
