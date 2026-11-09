@@ -180,7 +180,7 @@ export function readRepayment(
             : repayment.paidCents > 0
               ? `${money(repayment.paidCents)} of ${money(repayment.owedCents)} paid back`
               : "Your share of this bill",
-        action: `${repayment.paidCents > 0 ? "Pay the rest" : "Pay back"} ${money(repayment.payableCents)}`,
+        action: `${repayment.paidCents > 0 && repayment.payableCents === leftCents ? "Pay the rest" : "Pay back"} ${money(repayment.payableCents)}`,
       };
   }
 }

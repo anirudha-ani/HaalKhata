@@ -126,9 +126,10 @@ describe("readRepayment", () => {
   });
 
   it("gives both figures when the balance holds less than the share", () => {
-    const view = readRepayment(repayment({ payableCents: 300 }), "Ana", false, "USD");
+    const view = readRepayment(repayment({ paidCents: 200, payableCents: 300 }), "Ana", false, "USD");
     expect(view.amountCents).toBe(300);
-    expect(view.detail).toBe("$10.00 left on this bill · $3.00 still owed outside groups");
+    expect(view.action).toBe("Pay back $3.00");
+    expect(view.detail).toBe("$8.00 left on this bill · $3.00 still owed outside groups");
   });
 
   it("confirms a paid bill with what was paid", () => {
