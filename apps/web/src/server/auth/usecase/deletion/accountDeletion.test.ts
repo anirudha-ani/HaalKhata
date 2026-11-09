@@ -40,3 +40,12 @@ it("ends repeated report churn before any erasure or provider side effect", asyn
   expect(repository.eraseAccountData).not.toHaveBeenCalled();
   expect(provider.revokeAppleToken).not.toHaveBeenCalled();
 });
+
+it("refuses contended bill parents before reading or revoking Apple credentials", async () => {
+  vi.mocked(repository.lockAccountForDeletion).mockRejectedValueOnce({ code: "55P03" });
+  await expect(deleteAccount("caller", "DELETE")).rejects.toMatchObject({ code: "unavailable" });
+  expect(appleRepository.listAppleCredentials).not.toHaveBeenCalled();
+  expect(provider.revokeAppleToken).not.toHaveBeenCalled();
+  expect(repository.insertAnonymousLedgerMember).not.toHaveBeenCalled();
+  expect(repository.eraseAccountData).not.toHaveBeenCalled();
+});

@@ -16,6 +16,12 @@ vi.mock("@/server/expense/repo/settlements.repo", async (importOriginal) => ({
   listScopedSettlementsWithAnyOf: vi.fn(async () => []),
 }));
 
+vi.mock("@/server/expense/repo/movements.repo", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/server/expense/repo/movements.repo")>()),
+  sumScopedPairMovements: vi.fn(async () => []),
+}));
+
+import { sumScopedPairMovements } from "@/server/expense/repo/movements.repo";
 import {
   listScopedExpensesWithAnyOf,
   loadExpenseChildren,
@@ -25,22 +31,29 @@ import { oneOffNetsWith } from "./balance.usecase";
 
 const VIEWER = "viewer";
 
-beforeEach(() => vi.clearAllMocks());
+beforeEach(() => vi.resetAllMocks());
 
 describe("one-off balances with many people", () => {
-  it.each([1, 30])("reads the database three times for %i people", async (peopleCount) => {
+  it.each([1, 30])("reads one aggregate and no historical rows for %i people", async (peopleCount) => {
     const people = Array.from({ length: peopleCount }, (unused, index) => `person-${index}`);
 
+    vi.mocked(sumScopedPairMovements).mockResolvedValue([
+      { group_id: null,currency: "USD",low_user: people[0],high_user: VIEWER,cents: 30 },
+      { group_id: null,currency: "EUR",low_user: people[0],high_user: VIEWER,cents: -17 },
+    ]);
     const nets = await oneOffNetsWith(VIEWER, people);
 
-    expect(listScopedExpensesWithAnyOf).toHaveBeenCalledTimes(1);
-    expect(loadExpenseChildren).toHaveBeenCalledTimes(1);
-    expect(listScopedSettlementsWithAnyOf).toHaveBeenCalledTimes(1);
+    expect(sumScopedPairMovements).toHaveBeenCalledExactlyOnceWith(VIEWER,people,null,undefined);
+    expect(listScopedExpensesWithAnyOf).not.toHaveBeenCalled();
+    expect(loadExpenseChildren).not.toHaveBeenCalled();
+    expect(listScopedSettlementsWithAnyOf).not.toHaveBeenCalled();
+    expect(nets.get(people[0])).toEqual(new Map([["USD",30],["EUR",-17]]));
     expect([...nets.keys()]).toEqual(people);
   });
 
   it("reads nothing when there is nobody to work out", async () => {
     expect(await oneOffNetsWith(VIEWER, [VIEWER])).toEqual(new Map());
     expect(listScopedExpensesWithAnyOf).not.toHaveBeenCalled();
+    expect(sumScopedPairMovements).not.toHaveBeenCalled();
   });
 });

@@ -32,13 +32,26 @@ export async function deletionReportsUnchanged(userId: string, reportIds: string
 }
 
 /**
- * Locks a live account against concurrent provider linking and profile changes.
+ * Locks the account and all bill parents that erasure can rewrite.
+ * Parent locks are acquired without waiting before any provider revocation,
+ * so later child refreshes cannot encounter a parent/child lock inversion.
  * @param userId Authenticated account being deleted.
  * @param client Erasure transaction.
  * @returns Live account or undefined.
  */
 export async function lockAccountForDeletion(userId: string, client: PoolClient) {
-  return queryOne<UserRow>("SELECT * FROM users WHERE id = $1 AND deleted_at IS NULL FOR UPDATE", [userId], client);
+  const account = await queryOne<UserRow>("SELECT * FROM users WHERE id = $1 AND deleted_at IS NULL FOR UPDATE", [userId], client);
+  if (account) {
+    await query(`SELECT id FROM expenses WHERE id IN (
+      SELECT id FROM expenses WHERE created_by = $1 OR deleted_by = $1 OR updated_by = $1
+      UNION SELECT expense_id FROM expense_payers WHERE user_id = $1
+      UNION SELECT expense_id FROM expense_splits WHERE user_id = $1
+      UNION SELECT items.expense_id FROM expense_item_assignments assignments
+        JOIN expense_items items ON items.id = assignments.item_id WHERE assignments.user_id = $1
+      UNION SELECT expense_id FROM live_splits WHERE host_id = $1
+    ) ORDER BY id COLLATE "C" FOR NO KEY UPDATE NOWAIT`, [userId], client);
+  }
+  return account;
 }
 
 /**

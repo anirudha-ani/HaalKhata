@@ -30,10 +30,13 @@ vi.mock("@/server/expense/repo/settlements.repo", () => ({
   listOneOffSettlementsBetween: vi.fn(),
   listScopedSettlementsWithAnyOf: vi.fn(),
   listSettlementsBetween: vi.fn(),
+  listSettlementsBetweenPage: async (...args: Parameters<typeof import("@/server/expense/repo/settlements.repo").listSettlementsBetweenPage>) => (await import("@/server/common/testing/movementRepoMock")).listFixtureSettlementPage(...args),
+  listSettlementsByNetSettlements: vi.fn(async () => []),
   listSettlementsByGroup: vi.fn(),
   listSettlementsByGroups: vi.fn(),
   listSettlementsInvolvingUser: vi.fn(),
 }));
+vi.mock("@/server/expense/repo/movements.repo", async () => import("@/server/common/testing/movementRepoMock"));
 vi.mock("@/server/group/repo/groups.repo", () => ({
   findGroupById: vi.fn(),
   findGroupsByIds: vi.fn(),

@@ -1,5 +1,7 @@
 /** Who owes whom on one expense: read by the server's ledger and by a bill's screen, so both name the same people. */
 
+import { compareLedgerUsers } from "./ledgerOrder";
+
 /** One directed debt: `from` owes `to` a positive number of cents. */
 export interface LedgerEntry {
   /** User id of the debtor (the one who owes). */
@@ -40,11 +42,11 @@ export function expenseDebts(
 
   const creditors = [...netByUser.entries()]
     .filter(([, netAmount]) => netAmount > 0)
-    .sort(([firstUserId], [secondUserId]) => firstUserId.localeCompare(secondUserId))
+    .sort(([firstUserId], [secondUserId]) => compareLedgerUsers(firstUserId, secondUserId))
     .map(([userId, netAmount]) => ({ userId, remainingCents: netAmount }));
   const debtors = [...netByUser.entries()]
     .filter(([, netAmount]) => netAmount < 0)
-    .sort(([firstUserId], [secondUserId]) => firstUserId.localeCompare(secondUserId))
+    .sort(([firstUserId], [secondUserId]) => compareLedgerUsers(firstUserId, secondUserId))
     .map(([userId, netAmount]) => ({ userId, remainingCents: -netAmount }));
 
   const entries: LedgerEntry[] = [];

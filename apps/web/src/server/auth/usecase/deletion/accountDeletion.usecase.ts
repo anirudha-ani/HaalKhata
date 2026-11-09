@@ -1,6 +1,8 @@
 /** Account deletion: explicit confirmation, Apple revocation and transactional data erasure. */
 
 import { lockAccountContentForErasure } from "@/server/common/ledger/accountContentLocks";
+import type { PoolClient } from "pg";
+import { LEDGER_BUSY_ERROR_CODES, LEDGER_BUSY_MESSAGE } from "@/server/common/ledger/ledgerLocks.constants";
 import { newId, transaction } from "@/server/common/db/db";
 import { invalid, UsecaseError } from "@/server/common/errors";
 import { ACCOUNT_ERASURE_ATTEMPTS, ANONYMOUS_MEMBER_COLOR, ANONYMOUS_MEMBER_NAME, DELETE_ACCOUNT_CONFIRMATION,
@@ -25,7 +27,7 @@ export async function deleteAccount(userId: string, confirmation: string): Promi
   const attempt = () => transaction(async (client) => {
     const reports = await lockDeletionReports(userId, client);
     await lockAccountContentForErasure(client, userId);
-    const account = await lockAccountForDeletion(userId, client);
+    const account = await lockDeletionBeforeProviders(userId, client);
     if (!account) throw new UsecaseError("unauthenticated", "account no longer exists");
     if (!await deletionReportsUnchanged(userId, reports, client)) throw new AccountReportsChanged();
     const credentials = await listAppleCredentials(userId, client);
@@ -51,4 +53,22 @@ export async function deleteAccount(userId: string, confirmation: string): Promi
     }
   }
   throw new UsecaseError("unavailable", "Your account changed during deletion. Nothing was deleted. Please try again.");
+}
+
+/**
+ * Refuses a contended bill before any external credential can be revoked.
+ * @param userId Account being erased.
+ * @param client Erasure transaction.
+ * @returns Locked account and its ledger parents, or undefined if it is gone.
+ */
+async function lockDeletionBeforeProviders(userId: string, client: PoolClient) {
+  try {
+    return await lockAccountForDeletion(userId, client);
+  } catch (error) {
+    const code = (error as { code?: unknown } | null)?.code;
+    if (typeof code === "string" && LEDGER_BUSY_ERROR_CODES.has(code)) {
+      throw new UsecaseError("unavailable", LEDGER_BUSY_MESSAGE);
+    }
+    throw error;
+  }
 }

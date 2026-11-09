@@ -64,3 +64,4 @@ API-06 concurrency follow-up: the payment operation claim is kept first, and
 title capture refuses as busy without waiting when account erasure owns the
 content guard. Real PostgreSQL regressions cover both caller and recipient
 erasure, verify claim/payment rollback, and retry after removal completes.
+| API-19 | One-line statements load unrelated members’ full expense history | `apps/web/src/server/auth/usecase/deletion/accountDeletion.test.ts`, `apps/web/src/server/common/db/releaseMigrations.integration.test.ts`, `apps/web/src/server/common/ledger/expenseProjection.integration.test.ts`, `apps/web/src/server/common/ledger/ledgerLocale.test.ts`, `apps/web/src/server/expense/usecase/multiCurrency.test.ts`, `apps/web/src/server/expense/usecase/oneOffNets.test.ts`, `apps/web/src/server/expense/usecase/pairLedgerReads.integration.test.ts`, `apps/web/src/server/expense/usecase/simplifiedRouting.test.ts`, `packages/shared/src/expense/ledgerOrder.test.ts` |

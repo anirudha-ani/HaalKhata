@@ -14,7 +14,7 @@ const TEST_DATABASE = testDatabaseName("haalkhata_release_migration_test");
 const TEST_URL = ADMIN_URL.replace(/\/[^/]*$/, `/${TEST_DATABASE}`);
 const MIGRATIONS_DIRECTORY = fileURLToPath(new URL("../../../../migrations/", import.meta.url));
 const MAIN_LAST_MIGRATION = "1791828578558_add-group-status.sql";
-const RELEASE_SUFFIXES = ["_apple_sign_in.sql", "_anonymous_ledger_members.sql", "_user_safety.sql", "_add-receipt-account-consent.sql", "_add-contact-discovery.sql", "_add-push-notifications.sql", "_track-push-delivery.sql", "_keep-removed-phones-off.sql", "_remember-provider-verification.sql", "_mark-unknown-provider-checks.sql", "_add-receipt-scans.sql", "_add-admin-sessions.sql", "_add-content-report-author-index.sql", "_date-early-accounts-from-creation.sql", "_index-expense-and-payment-authors.sql", "_retire-unregistered-people.sql", "_add-invite-link-expiry.sql", "_widen-money-columns.sql", "_add-expense-version.sql", "_add-live-splits.sql", "_add-user-sessions.sql", "_add-activity-link-index.sql", "_add-live-split-saved.sql", "_add-settlement-expense.sql", "_keep-bill-payment-title.sql", "_page-bill-payments.sql", "_scrub_removed_expense_payment_titles.sql", "_index-notification-links.sql", "_add-reminder-cooldowns.sql"];
+const RELEASE_SUFFIXES = ["_apple_sign_in.sql", "_anonymous_ledger_members.sql", "_user_safety.sql", "_add-receipt-account-consent.sql", "_add-contact-discovery.sql", "_add-push-notifications.sql", "_track-push-delivery.sql", "_keep-removed-phones-off.sql", "_remember-provider-verification.sql", "_mark-unknown-provider-checks.sql", "_add-receipt-scans.sql", "_add-admin-sessions.sql", "_add-content-report-author-index.sql", "_date-early-accounts-from-creation.sql", "_index-expense-and-payment-authors.sql", "_retire-unregistered-people.sql", "_add-invite-link-expiry.sql", "_widen-money-columns.sql", "_add-expense-version.sql", "_add-live-splits.sql", "_add-user-sessions.sql", "_add-activity-link-index.sql", "_add-live-split-saved.sql", "_add-settlement-expense.sql", "_keep-bill-payment-title.sql", "_page-bill-payments.sql", "_scrub_removed_expense_payment_titles.sql", "_index-notification-links.sql", "_add-reminder-cooldowns.sql", "_index-expense-pair-movements.sql"];
 
 /** @returns Whether the isolated integration database can be created. */
 async function databaseReachable(): Promise<boolean> {
@@ -65,6 +65,12 @@ describe.skipIf(!reachable)("mobile release database upgrade", () => {
     await database.query("INSERT INTO users (id, email, name, avatar_color, google_sub) VALUES ($1, $2, $3, $4, $5)",
       ["release-owner", "release-owner@example.com", "Release Owner", "#336699", "release-google-sub"]);
     await database.query("INSERT INTO groups (id, name, created_by) VALUES ($1, $2, $3)", ["release-group", "Existing trip", "release-owner"]);
+    await database.query("INSERT INTO users (id,email,name,avatar_color,google_sub) VALUES ('release-share','release-share@example.com','Existing member','#336699','release-share-google')");
+    await database.query(`INSERT INTO expenses(id,group_id,description,amount_cents,currency,expense_date,split_type,created_by,deleted_at)
+      VALUES ('release-live','release-group','Old bill',1001,'USD','2026-01-01','exact','release-owner',NULL),
+             ('release-deleted','release-group','Removed bill',1001,'USD','2026-01-01','exact','release-owner',now())`);
+    await database.query("INSERT INTO expense_payers(expense_id,user_id,amount_cents) VALUES ('release-live','release-owner',1001),('release-deleted','release-owner',1001)");
+    await database.query("INSERT INTO expense_splits(expense_id,user_id,owed_cents) VALUES ('release-live','release-share',1001),('release-deleted','release-share',1001)");
     const before = await database.query("SELECT id, name, created_by, status FROM groups ORDER BY id");
 
     const applied = await migrate(MIGRATIONS_DIRECTORY);
@@ -72,6 +78,10 @@ describe.skipIf(!reachable)("mobile release database upgrade", () => {
       .toEqual(RELEASE_SUFFIXES.map((suffix) => suffix.slice(1, -4)));
     const after = await database.query("SELECT id, name, created_by, status FROM groups ORDER BY id");
     expect(after.rows).toEqual(before.rows);
+    expect((await database.query(`SELECT expense_id,from_user,to_user,amount_cents::int AS cents,deleted_at IS NOT NULL AS deleted FROM expense_pair_movements ORDER BY expense_id`)).rows).toEqual([
+      { expense_id: "release-deleted", from_user: "release-share", to_user: "release-owner", cents: 1001, deleted: true },
+      { expense_id: "release-live", from_user: "release-share", to_user: "release-owner", cents: 1001, deleted: false },
+    ]);
     const owner = await database.query("SELECT google_sub, apple_sub, deleted_at, suspended_at FROM users WHERE id = $1", ["release-owner"]);
     expect(owner.rows).toEqual([{ google_sub: "release-google-sub", apple_sub: null, deleted_at: null, suspended_at: null }]);
     // Existing accounts start never answered (NULL), which is findable by default.
