@@ -44,13 +44,15 @@ export async function findLinkByToken(token: string): Promise<InviteLinkRow | un
  * may be past its date.
  *
  * @param groupId - Group whose link is looked up.
+ * @param client - Transaction holding the group lock.
  * @returns The link, or undefined.
  */
-export async function findActiveGroupLink(groupId: string): Promise<InviteLinkRow | undefined> {
+export async function findActiveGroupLink(groupId: string, client?: PoolClient): Promise<InviteLinkRow | undefined> {
   return queryOne<InviteLinkRow>(
     `SELECT ${LINK_COLUMNS} FROM invite_links
       WHERE group_id = $1 AND kind = 'group' AND revoked_at IS NULL`,
     [groupId],
+    client,
   );
 }
 
@@ -61,6 +63,7 @@ export async function findActiveGroupLink(groupId: string): Promise<InviteLinkRo
  *
  * @param link - The row to insert; groupId is null for a profile link, and
  *   lifetimeDays null for a link that does not expire.
+ * @param client - Transaction holding the group lock, when minting its link.
  * @returns The stored link, with the expiry the database set.
  */
 export async function insertInviteLink(link: {
@@ -69,12 +72,13 @@ export async function insertInviteLink(link: {
   inviterId: string;
   groupId: string | null;
   lifetimeDays: number | null;
-}): Promise<InviteLinkRow> {
+}, client?: PoolClient): Promise<InviteLinkRow> {
   return (await queryOne<InviteLinkRow>(
     `INSERT INTO invite_links (token, kind, inviter_id, group_id, expires_at)
      VALUES ($1, $2, $3, $4, CASE WHEN $5::int IS NULL THEN NULL ELSE now() + make_interval(days => $5::int) END)
      RETURNING ${LINK_COLUMNS}`,
     [link.token, link.kind, link.inviterId, link.groupId, link.lifetimeDays],
+    client,
   ))!;
 }
 
@@ -115,11 +119,13 @@ export async function revokeLiveSplitLink(liveSplitId: string, client: PoolClien
  * turn off the fresh one the other just made.
  *
  * @param token - The link to turn off.
+ * @param client - Transaction holding the group lock.
  */
-export async function revokeInviteLink(token: string): Promise<void> {
+export async function revokeInviteLink(token: string, client?: PoolClient): Promise<void> {
   await execute(
     `UPDATE invite_links SET revoked_at = now() WHERE token = $1 AND revoked_at IS NULL`,
     [token],
+    client,
   );
 }
 

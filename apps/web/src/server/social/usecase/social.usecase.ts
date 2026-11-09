@@ -38,6 +38,7 @@ import {
   listMembers,
   memberRole,
 } from "@/server/group/repo/groups.repo";
+import { assertGroupActive } from "@/server/group/usecase/groupArchive";
 import { OWNER_ROLE } from "@/server/group/group.constants";
 import { joinLiveSplit, previewLiveSplit } from "@/server/expense/usecase/liveSplit/liveSplit.usecase";
 import { LIVE_SPLIT_ENDED_MESSAGE } from "@haalkhata/shared/expense/live/live.constants";
@@ -46,7 +47,7 @@ import { newInviteToken } from "./inviteToken";
 import { listActivityMonths, listActivityPage } from "@/server/social/repo/activity.repo";
 import { isMember } from "@/server/group/repo/groups.repo";
 import { isUniqueViolation } from "@/server/common/db/db";
-import { lockReminder, withLedgerTransaction } from "@/server/common/ledger/ledgerLocks";
+import { lockGroupLedgers, lockReminder, withLedgerTransaction } from "@/server/common/ledger/ledgerLocks";
 import {
   countUnread,
   findLatestNotificationAt,
@@ -443,24 +444,22 @@ export async function createGroupInviteLink(
   if (!group) notFound("group not found");
   if (!(await isMember(groupId, userId))) denied("you are not a member of this group");
 
-  const existing = await findActiveGroupLink(groupId);
-  if (existing && !existing.expired) return { token: existing.token, expiresAt: existing.expires_at ?? "" };
-  if (existing) await revokeInviteLink(existing.token);
-  try {
+  return withLedgerTransaction(async (client) => {
+    await lockGroupLedgers(client, [groupId]);
+    if (!(await isMember(groupId, userId, client))) denied("you are not a member of this group");
+    await assertGroupActive(groupId, client);
+    const existing = await findActiveGroupLink(groupId, client);
+    if (existing && !existing.expired) return { token: existing.token, expiresAt: existing.expires_at ?? "" };
+    if (existing) await revokeInviteLink(existing.token, client);
     const created = await insertInviteLink({
       token: newInviteToken(),
       kind: "group",
       inviterId: userId,
       groupId,
       lifetimeDays: GROUP_INVITE_LINK_LIFETIME_DAYS,
-    });
+    }, client);
     return { token: created.token, expiresAt: created.expires_at ?? "" };
-  } catch (error) {
-    if (!isUniqueViolation(error)) throw error;
-    const winner = await findActiveGroupLink(groupId);
-    if (winner && !winner.expired) return { token: winner.token, expiresAt: winner.expires_at ?? "" };
-    throw error;
-  }
+  });
 }
 
 /**
@@ -514,7 +513,13 @@ export async function revokeGroupInviteLink(userId: string, groupId: string): Pr
   if ((await memberRole(groupId, userId)) !== OWNER_ROLE) {
     denied("only the group owner can turn off the invite link");
   }
-  await revokeGroupLinks(groupId);
+  await withLedgerTransaction(async (client) => {
+    await lockGroupLedgers(client, [groupId]);
+    if ((await memberRole(groupId, userId, client)) !== OWNER_ROLE) {
+      denied("only the group owner can turn off the invite link");
+    }
+    await revokeGroupLinks(groupId, client);
+  });
 }
 
 /**

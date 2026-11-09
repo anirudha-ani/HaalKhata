@@ -171,6 +171,7 @@ describe("createGroupInviteLink / revokeGroupInviteLink", () => {
       created_by: INVITER,
       created_at: "2026-09-01T00:00:00Z",
       simplify_debts: false,
+      status: "active",
     } as never);
   });
 
@@ -187,6 +188,7 @@ describe("createGroupInviteLink / revokeGroupInviteLink", () => {
     expect(expiresAt).toBe("2026-11-04T10:00:00.000Z");
     expect(insertInviteLink).toHaveBeenCalledWith(
       expect.objectContaining({ kind: "group", groupId: GROUP, lifetimeDays: 7 }),
+      transactionClient,
     );
   });
 
@@ -215,7 +217,7 @@ describe("createGroupInviteLink / revokeGroupInviteLink", () => {
 
     const { token } = await createGroupInviteLink(CALLER, GROUP);
 
-    expect(revokeInviteLink).toHaveBeenCalledWith(TOKEN);
+    expect(revokeInviteLink).toHaveBeenCalledWith(TOKEN, transactionClient);
     expect(token).not.toBe(TOKEN);
   });
 
@@ -236,7 +238,7 @@ describe("createGroupInviteLink / revokeGroupInviteLink", () => {
 
     vi.mocked(memberRole).mockResolvedValue("owner");
     await revokeGroupInviteLink(CALLER, GROUP);
-    expect(revokeGroupLinks).toHaveBeenCalledWith(GROUP);
+    expect(revokeGroupLinks).toHaveBeenCalledWith(GROUP, transactionClient);
   });
 });
 

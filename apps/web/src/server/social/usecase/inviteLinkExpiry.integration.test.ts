@@ -7,6 +7,7 @@
 
 import { Client } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { GROUP_LEDGER_LOCK_PREFIX } from "@/server/common/ledger/ledgerLocks.constants";
 import { testDatabaseName } from "@/server/common/testing/testDatabase";
 
 const ADMIN_URL = process.env.MERGE_TEST_ADMIN_URL ?? "postgres://haalkhata:change-me@127.0.0.1:5432/postgres";
@@ -57,6 +58,22 @@ describe.skipIf(!reachable)("group invite links expire, against Postgres", () =>
     const { rows } = await database.query("SELECT 1 FROM group_members WHERE group_id = $1 AND user_id = $2", [GROUP, personId]);
     return rows.length === 1;
   };
+
+  /**
+   * Waits until a request reaches the held group lock.
+   * @returns When a queued transaction can be changed deterministically.
+   */
+  async function waitForGroupWaiter(): Promise<void> {
+    const deadline = Date.now() + 3000;
+    while (Date.now() < deadline) {
+      const { rows } = await database.query<{ total: number }>(
+        "SELECT count(*)::int AS total FROM pg_locks WHERE locktype = 'advisory' AND NOT granted AND database = (SELECT oid FROM pg_database WHERE datname = current_database())",
+      );
+      if (rows[0].total > 0) return;
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    throw new Error("expected a request waiting on its group lock");
+  }
 
   beforeAll(async () => {
     const admin = new Client({ connectionString: ADMIN_URL });
@@ -186,6 +203,35 @@ describe.skipIf(!reachable)("group invite links expire, against Postgres", () =>
       expect(await joinerIsMember(LATECOMER)).toBe(true);
     } finally {
       await database.query("DELETE FROM user_blocks WHERE blocker_id = $1 AND blocked_id = $2", [OWNER, MEMBER]);
+    }
+  });
+
+  it("refuses a queued mint when its member is removed and the owner revokes links", async () => {
+    await social.revokeGroupInviteLink(OWNER, GROUP);
+    await database.query("BEGIN");
+    await database.query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", [GROUP_LEDGER_LOCK_PREFIX + GROUP]);
+    const mint = social.createGroupInviteLink(MEMBER, GROUP).catch((error: unknown) => error);
+    try {
+      await waitForGroupWaiter();
+      await database.query("DELETE FROM group_members WHERE group_id = $1 AND user_id = $2", [GROUP, MEMBER]);
+      await database.query("UPDATE invite_links SET revoked_at = now() WHERE group_id = $1 AND revoked_at IS NULL", [GROUP]);
+      await database.query("COMMIT");
+      expect(await mint).toMatchObject({ code: "permission_denied" });
+      await social.revokeGroupInviteLink(OWNER, GROUP);
+      const { rows } = await database.query("SELECT 1 FROM invite_links WHERE group_id = $1 AND revoked_at IS NULL", [GROUP]);
+      expect(rows).toHaveLength(0);
+    } finally {
+      await database.query("ROLLBACK");
+      await database.query("INSERT INTO group_members(group_id, user_id) VALUES ($1, $2) ON CONFLICT DO NOTHING", [GROUP, MEMBER]);
+    }
+  });
+
+  it("refuses creating a fresh link on archived history", async () => {
+    await database.query("UPDATE groups SET status = 'archived' WHERE id = $1", [GROUP]);
+    try {
+      await expect(social.createGroupInviteLink(MEMBER, GROUP)).rejects.toMatchObject({ code: "failed_precondition" });
+    } finally {
+      await database.query("UPDATE groups SET status = 'active' WHERE id = $1", [GROUP]);
     }
   });
 
