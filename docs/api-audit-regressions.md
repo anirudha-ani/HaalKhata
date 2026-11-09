@@ -48,3 +48,4 @@ query counts/rows or equivalent plan properties, not machine-dependent timings.
 | API-13 | Concurrent acceptance announces a single group join twice | `apps/web/src/server/social/usecase/inviteLinkExpiry.integration.test.ts`, `apps/web/src/server/social/usecase/inviteLinks.test.ts` |
 | API-04 | A failed live-split join leaves permanent group access | `apps/web/src/server/expense/usecase/liveSplit/liveSplit.integration.test.ts` |
 | API-05 | Direct member addition bypasses a block enforced by invite links | `apps/web/src/server/group/usecase/groupEnrolment.integration.test.ts` |
+| API-14 | Concurrent creation exceeds the per-person 200-group limit | `apps/web/src/server/group/usecase/groupEnrolment.integration.test.ts` |

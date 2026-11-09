@@ -7,7 +7,7 @@
 import { randomUUID } from "node:crypto";
 import { Client } from "pg";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { FRIEND_REQUEST_INBOX_LOCK_PREFIX } from "@/server/common/ledger/ledgerLocks.constants";
+import { FRIEND_REQUEST_INBOX_LOCK_PREFIX, GROUP_ADMISSION_LOCK_PREFIX } from "@/server/common/ledger/ledgerLocks.constants";
 import { testDatabaseName } from "@/server/common/testing/testDatabase";
 
 const ADMIN_URL = process.env.MERGE_TEST_ADMIN_URL ?? "postgres://haalkhata:change-me@127.0.0.1:5432/postgres";
@@ -76,9 +76,10 @@ describe.skipIf(!reachable)("enrolling people in a group", () => {
    *
    * @param locktype - The pg_locks lock type to watch ('advisory', 'transactionid').
    * @param stop - Ends the wait early, e.g. once the request finished without waiting.
+   * @param count - Number of requests that must be waiting.
    * @returns A promise resolving once there is a waiter or the check holds; throws on timeout.
    */
-  async function waitForWaiter(locktype: string, stop: () => boolean = () => false): Promise<void> {
+  async function waitForWaiter(locktype: string, stop: () => boolean = () => false, count = 1): Promise<void> {
     const deadline = Date.now() + 5000;
     while (Date.now() < deadline) {
       if (stop()) return;
@@ -88,7 +89,7 @@ describe.skipIf(!reachable)("enrolling people in a group", () => {
             AND (database IS NULL OR database = (SELECT oid FROM pg_database WHERE datname = current_database()))`,
         [locktype],
       );
-      if (waiting.rows[0].total >= 1) return;
+      if (waiting.rows[0].total >= count) return;
       await new Promise((resolve) => setTimeout(resolve, 10));
     }
     throw new Error(`expected a request waiting on a ${locktype} lock`);
@@ -106,6 +107,17 @@ describe.skipIf(!reachable)("enrolling people in a group", () => {
     return addMembers(callerId, { groupId, userIds }).then(
       () => ({ outcome: "added" as const }),
       (error: unknown) => ({ outcome: "failed" as const, error }),
+    );
+  }
+
+  /**
+   * Seeds the last available seat for a capacity race.
+   * @returns When the prospective member already occupies 199 groups.
+   */
+  async function seedNearCapacity(): Promise<void> {
+    await database.query(
+      "WITH inserted AS (INSERT INTO groups(id, name, created_by) SELECT 'capacity-' || number, 'Previous group', $1 FROM generate_series(1, 199) AS number RETURNING id) INSERT INTO group_members(group_id, user_id, role) SELECT id, $1, 'owner' FROM inserted",
+      [BEN_ID],
     );
   }
 
@@ -293,6 +305,56 @@ describe.skipIf(!reachable)("enrolling people in a group", () => {
       await database.query("ROLLBACK");
       await addition;
       await database.query("DELETE FROM user_blocks WHERE blocker_id = $1 AND blocked_id = $2", [CARA_ID, BEN_ID]);
+    }
+  });
+
+  it("shares the last group-capacity seat between creating and accepting a group link", async () => {
+    await seedNearCapacity();
+    const groupId = await groupOwnedBy(ANA_ID);
+    const social = await import("@/server/social/usecase/social.usecase");
+    const { createGroup } = await import("./group.usecase");
+    const { token } = await social.createGroupInviteLink(ANA_ID, groupId);
+    await database.query("BEGIN");
+    await database.query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", [GROUP_ADMISSION_LOCK_PREFIX + BEN_ID]);
+    const creating = createGroup(BEN_ID, { name: "One last group", type: "other", currency: "USD" });
+    const joining = social.acceptInviteLink(BEN_ID, token);
+    const results = Promise.allSettled([creating, joining]);
+    try {
+      await waitForWaiter("advisory", () => false, 2);
+      await database.query("COMMIT");
+      const outcomes = await results;
+      expect(outcomes.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+      expect(outcomes.filter((result) => result.status === "rejected")).toEqual([
+        expect.objectContaining({ reason: expect.objectContaining({ code: "failed_precondition" }) }),
+      ]);
+      const seats = await database.query("SELECT count(*)::int AS total FROM group_members WHERE user_id = $1", [BEN_ID]);
+      expect(seats.rows[0].total).toBe(200);
+    } finally {
+      await database.query("ROLLBACK");
+      await results;
+    }
+  });
+
+  it("shares the last capacity seat between direct admissions to different groups", async () => {
+    await seedNearCapacity();
+    const firstGroup = await groupOwnedBy(ANA_ID);
+    const secondGroup = await groupOwnedBy(DEV_ID);
+    await database.query("BEGIN");
+    await database.query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", [GROUP_ADMISSION_LOCK_PREFIX + BEN_ID]);
+    const results = Promise.allSettled([
+      addMembers(ANA_ID, { groupId: firstGroup, userIds: [BEN_ID] }),
+      addMembers(DEV_ID, { groupId: secondGroup, userIds: [BEN_ID] }),
+    ]);
+    try {
+      await waitForWaiter("advisory", () => false, 2);
+      await database.query("COMMIT");
+      const outcomes = await results;
+      expect(outcomes.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+      const seats = await database.query("SELECT count(*)::int AS total FROM group_members WHERE user_id = $1", [BEN_ID]);
+      expect(seats.rows[0].total).toBe(200);
+    } finally {
+      await database.query("ROLLBACK");
+      await results;
     }
   });
 

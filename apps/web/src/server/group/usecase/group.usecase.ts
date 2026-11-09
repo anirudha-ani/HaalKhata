@@ -53,7 +53,7 @@ import {
   NOT_ON_HAALKHATA_GROUP_MESSAGE,
   OWNER_ROLE,
 } from "@/server/group/group.constants";
-import { lockGroupLedgers, withLedgerTransaction } from "@/server/common/ledger/ledgerLocks";
+import { lockGroupAdmissions, lockGroupLedgers, withLedgerTransaction } from "@/server/common/ledger/ledgerLocks";
 import { toGroup, toMember } from "./group.mapper";
 
 /**
@@ -301,6 +301,9 @@ export async function createGroup(
   // event announcing it commit together: a group that exists with half its
   // members and no announcement is what a retry would then create twice.
   const group = await withLedgerTransaction(async (client) => {
+    // Acquire the complete cast together so two creators sharing members
+    // cannot lock their own capacities in opposite orders.
+    await lockGroupAdmissions(client, [userId, ...(input.memberIds ?? [])]);
     await assertRoomForAnotherGroup([actor], userId, client);
     const created = await insertGroup({ name, type, currency, createdBy: userId }, client);
     const added = await enrollMembers(userId, created.id, input.memberIds ?? [], client);

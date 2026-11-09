@@ -1,5 +1,8 @@
 /** Namespaces for transaction-scoped Postgres advisory ledger locks, and how long a ledger transaction may wait. */
 
+/** Serializes each person's group-capacity checks after any group lock and before inbox locks. */
+export const GROUP_ADMISSION_LOCK_PREFIX = "group-admission:";
+
 /** Advisory-lock namespace for a group ledger. */
 export const GROUP_LEDGER_LOCK_PREFIX = "ledger:group:";
 
