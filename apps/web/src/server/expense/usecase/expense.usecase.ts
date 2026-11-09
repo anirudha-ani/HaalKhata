@@ -2432,9 +2432,25 @@ function refuseNothingOwed(context: SettlementContext): never {
  */
 async function refuseUnlessAnythingOwed(context: SettlementContext, operation: OperationKey): Promise<void> {
   const owed = await snapshot(async (client) =>
-    (await operationClaimed(operation, client)) ? null : owedByScope(context.payerId, context.creditorId, client),
+    (await operationClaimed(operation, client)) ? null : owedByScope(
+      context.payerId, context.creditorId, client,
+      context.request.scopeGroupIds?.length ? await selectedSettlementGroups(context, client) : undefined,
+    ),
   );
   if (owed !== null && owed.length === 0) refuseNothingOwed(context);
+}
+
+/**
+ * Reads only shared groups a selected-scope payment can affect.
+ * @param context - The normalized request and payment parties.
+ * @param client - Snapshot or ledger transaction client.
+ * @returns Shared active groups, restricted to explicit selections when present.
+ */
+async function selectedSettlementGroups(context: SettlementContext, client: PoolClient) {
+  const selected = context.request.scopeGroupIds ?? [];
+  if (selected.length > 0 && selected.every((scope) => scope === "")) return [];
+  const shared = await sharedActiveGroups(context.payerId, context.creditorId, client);
+  return selected.length ? shared.filter((group) => selected.includes(group.id)) : shared;
 }
 
 /**
@@ -2468,10 +2484,10 @@ async function storeSettlementPortions(
   // so the set is read again under the locks, and one that grew in between
   // is retried from the start rather than settled around.
   const lockedGroupIds = new Set(
-    (await sharedActiveGroups(payerId, creditorId, client)).map((group) => group.id),
+    (await selectedSettlementGroups(context, client)).map((group) => group.id),
   );
   await lockGroupLedgers(client, [...lockedGroupIds]);
-  const sharedUnderLock = await sharedActiveGroups(payerId, creditorId, client);
+  const sharedUnderLock = await selectedSettlementGroups(context, client);
   if (sharedUnderLock.some((group) => !lockedGroupIds.has(group.id))) throw new SharedGroupsChanged();
   // From here every balance is read from exactly these groups, all locked,
   // and each group's history is read once, however many directions or

@@ -287,4 +287,38 @@ describe.skipIf(!reachable)("what recording a payment locks, against Postgres", 
       name: "Room now",
     });
   });
+  it("settles a selected group and the direct slate while another shared group is locked", async () => {
+    // Make a previously solo group shared without changing the payer's count.
+    const busyGroup = `${PAYER}-solo-001`;
+    await database.query("INSERT INTO group_members(group_id,user_id) VALUES($1,$2)", [busyGroup, CREDITOR]);
+    await database.query(`INSERT INTO expenses(id,group_id,description,amount_cents,currency,expense_date,split_type,created_by)
+      VALUES('selected-group',$1,'Selected',2,'USD','2026-11-09','exact',$2),
+            ('selected-direct',NULL,'Direct',2,'USD','2026-11-09','exact',$2)`, [SHARED_GROUP, CREDITOR]);
+    await database.query("INSERT INTO expense_payers(expense_id,user_id,amount_cents) VALUES('selected-group',$1,2),('selected-direct',$1,2)", [CREDITOR]);
+    await database.query("INSERT INTO expense_splits(expense_id,user_id,owed_cents) VALUES('selected-group',$1,2),('selected-direct',$1,2)", [PAYER]);
+    await hold(`ledger:group:${busyGroup}`);
+    try {
+      for (const scopeId of [SHARED_GROUP, ""]) {
+        const result = await recordSettlement(PAYER, {
+          groupId: "", scopeGroupIds: [scopeId], toUserId: CREDITOR,
+          currency: "USD", amountCents: 1, method: "cash", note: "", operationId: randomUUID(),
+        });
+        expect(result.amountCents).toBe(1);
+        expect(result.groupId).toBe(scopeId);
+      }
+    } finally {
+      await blocker.query("ROLLBACK");
+    }
+    // Selected scope locks still serialize against actual changes there.
+    await hold(`ledger:group:${SHARED_GROUP}`);
+    try {
+      await expect(recordSettlement(PAYER, {
+        groupId: "", scopeGroupIds: [SHARED_GROUP], toUserId: CREDITOR,
+        currency: "USD", amountCents: 1, method: "cash", note: "", operationId: randomUUID(),
+      })).rejects.toMatchObject({ code: "unavailable" });
+    } finally {
+      await blocker.query("ROLLBACK");
+    }
+  });
+
 });
