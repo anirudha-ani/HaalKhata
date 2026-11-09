@@ -60,16 +60,17 @@ describe.skipIf(!reachable)("group invite links expire, against Postgres", () =>
   };
 
   /**
-   * Waits until a request reaches the held group lock.
+   * Waits until requests reach the held group lock.
+   * @param count - How many requests must queue.
    * @returns When a queued transaction can be changed deterministically.
    */
-  async function waitForGroupWaiter(): Promise<void> {
+  async function waitForGroupWaiter(count = 1): Promise<void> {
     const deadline = Date.now() + 3000;
     while (Date.now() < deadline) {
       const { rows } = await database.query<{ total: number }>(
         "SELECT count(*)::int AS total FROM pg_locks WHERE locktype = 'advisory' AND NOT granted AND database = (SELECT oid FROM pg_database WHERE datname = current_database())",
       );
-      if (rows[0].total > 0) return;
+      if (rows[0].total >= count) return;
       await new Promise((resolve) => setTimeout(resolve, 10));
     }
     throw new Error("expected a request waiting on its group lock");
@@ -265,6 +266,43 @@ describe.skipIf(!reachable)("group invite links expire, against Postgres", () =>
       expect(await joinerIsMember(LATECOMER)).toBe(false);
     } finally {
       await database.query("ROLLBACK");
+    }
+  });
+
+  it("announces a group admission once when two accepts queue together", async () => {
+    await database.query("DELETE FROM group_members WHERE group_id = $1 AND user_id = $2", [GROUP, LATECOMER]);
+    await database.query("DELETE FROM activity WHERE group_id = $1 AND actor_id = $2", [GROUP, LATECOMER]);
+    await database.query("DELETE FROM notifications WHERE actor_id = $1", [LATECOMER]);
+    const { token } = await social.createGroupInviteLink(OWNER, GROUP);
+    await database.query("BEGIN");
+    await database.query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", [GROUP_LEDGER_LOCK_PREFIX + GROUP]);
+    const first = social.acceptInviteLink(LATECOMER, token);
+    const second = social.acceptInviteLink(LATECOMER, token);
+    try {
+      await waitForGroupWaiter(2);
+      await database.query("COMMIT");
+      await Promise.all([first, second]);
+      const events = await database.query("SELECT 1 FROM activity WHERE group_id = $1 AND actor_id = $2 AND type = 'member_added'", [GROUP, LATECOMER]);
+      const notices = await database.query("SELECT 1 FROM notifications WHERE actor_id = $1 AND type = 'invite_accepted'", [LATECOMER]);
+      expect(events.rows).toHaveLength(1);
+      expect(notices.rows).toHaveLength(1);
+    } finally {
+      await database.query("ROLLBACK");
+    }
+  });
+
+  it("rolls back membership and activity when the inviter notice fails", async () => {
+    await database.query("DELETE FROM group_members WHERE group_id = $1 AND user_id = $2", [GROUP, LATECOMER]);
+    await database.query("DELETE FROM activity WHERE group_id = $1 AND actor_id = $2", [GROUP, LATECOMER]);
+    const { token } = await social.createGroupInviteLink(OWNER, GROUP);
+    await database.query("ALTER TABLE notifications ADD CONSTRAINT test_invite_notice_failure CHECK (type <> 'invite_accepted') NOT VALID");
+    try {
+      await expect(social.acceptInviteLink(LATECOMER, token)).rejects.toThrow(/test_invite_notice_failure/);
+      expect(await joinerIsMember(LATECOMER)).toBe(false);
+      const events = await database.query("SELECT 1 FROM activity WHERE group_id = $1 AND actor_id = $2", [GROUP, LATECOMER]);
+      expect(events.rows).toHaveLength(0);
+    } finally {
+      await database.query("ALTER TABLE notifications DROP CONSTRAINT test_invite_notice_failure");
     }
   });
 

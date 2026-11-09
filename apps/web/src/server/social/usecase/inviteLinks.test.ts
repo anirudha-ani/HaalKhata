@@ -298,7 +298,7 @@ describe("acceptInviteLink", () => {
     );
     vi.mocked(findGroupById).mockResolvedValue({ id: GROUP, name: "Bali Trip" } as never);
     vi.mocked(isMember).mockResolvedValue(false);
-    vi.mocked(listMembers).mockResolvedValue([{ id: CALLER }, { id: INVITER }] as never);
+    vi.mocked(listMembers).mockResolvedValue([{ id: INVITER }] as never);
 
     await expect(acceptInviteLink(CALLER, TOKEN)).resolves.toEqual({ groupId: GROUP, expenseId: "" });
 

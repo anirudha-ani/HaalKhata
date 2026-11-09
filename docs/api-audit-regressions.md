@@ -45,3 +45,4 @@ query counts/rows or equivalent plan properties, not machine-dependent timings.
 | API-12 | A block between two incumbents prevents an unrelated person joining | `apps/web/src/server/social/usecase/inviteLinkExpiry.integration.test.ts` |
 | API-02 | A removed member can finish minting a fresh invite after explicit revocation | `apps/web/src/server/social/usecase/inviteLinkExpiry.integration.test.ts`, `apps/web/src/server/social/usecase/inviteLinks.test.ts` |
 | API-03 | Queued acceptance grants membership after its group invite was revoked | `apps/web/src/server/social/usecase/inviteLinkExpiry.integration.test.ts` |
+| API-13 | Concurrent acceptance announces a single group join twice | `apps/web/src/server/social/usecase/inviteLinkExpiry.integration.test.ts`, `apps/web/src/server/social/usecase/inviteLinks.test.ts` |

@@ -76,7 +76,6 @@ import { transaction } from "@/server/common/db/db";
 import { toFriendRequestUser, toPublicUser } from "@/server/auth/usecase/identity/user.mapper";
 import { friendRequestNotice } from "@/server/social/usecase/friendRequestNotice";
 import { personNotification } from "./personNotification";
-import { notificationLabel } from "./notificationLabel";
 
 /**
  * Adds a friend by id, email, or phone, as a friend request: nothing exists
@@ -611,35 +610,9 @@ export async function acceptInviteLink(
   if (!group) notFound(DEAD_LINK_MESSAGE);
   if (await isMember(group.id, userId)) return { groupId: group.id, expenseId: "" };
   await joinGroupThroughLink(acceptor, group, link.inviter_id, (await findUserById(link.inviter_id))?.name ?? "a member", token);
-  await notifyInviteAccepted(link.inviter_id, acceptor, group.name, `/groups/${group.id}`);
   return { groupId: group.id, expenseId: "" };
 }
 
-/**
- * Tells the inviter their link worked — the one moment an invite produces
- * for its sender.
- *
- * @param inviterId - Who shared the link.
- * @param acceptor - Who just accepted it; also used for block filtering.
- * @param groupName - The group they joined.
- * @param link - Where tapping the notification lands.
- */
-async function notifyInviteAccepted(
-  inviterId: string,
-  acceptor: UserRow,
-  groupName: string,
-  link: string,
-): Promise<void> {
-  await insertNotifications(
-    [inviterId],
-    {
-      type: "invite_accepted",
-      actorId: acceptor.id,
-      ...personNotification(acceptor.name, `Joined "${notificationLabel(groupName)}"`, "Via your invite"),
-      link,
-    },
-  );
-}
 
 /**
  * Ends a friendship (§37), allowed only when the pairwise net with that

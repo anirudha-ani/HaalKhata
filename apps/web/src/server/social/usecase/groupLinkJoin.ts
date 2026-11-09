@@ -4,7 +4,7 @@ import { invalid, notFound } from "@/server/common/errors";
 import { lockGroupLedgers, withLedgerTransaction } from "@/server/common/ledger/ledgerLocks";
 import type { UserRow } from "@/server/auth/repo/users.repo";
 import { MAX_GROUP_MEMBERS } from "@/server/group/group.constants";
-import { addMember, listMembers, type GroupRow } from "@/server/group/repo/groups.repo";
+import { addMember, isMember, listMembers, type GroupRow } from "@/server/group/repo/groups.repo";
 import { assertRoomForAnotherGroup } from "@/server/group/usecase/groupLimit";
 import { blockedBetween, blockedPairExists } from "@/server/safety/repo/safety.repo";
 import { insertActivity } from "@/server/social/repo/activity.repo";
@@ -48,6 +48,7 @@ export async function joinGroupThroughLink(
       if (current.kind !== "group" || current.group_id !== group.id || current.inviter_id !== inviterId) notFound(DEAD_LINK_MESSAGE);
       if (await blockedBetween(userId, inviterId, client)) notFound(DEAD_LINK_MESSAGE);
     }
+    if (await isMember(group.id, userId, client)) return;
     // §33b: a leaked bearer link must not grow a roster without bound.
     if ((await listMembers(group.id, client)).length >= MAX_GROUP_MEMBERS) {
       invalid("this group is full");
@@ -79,5 +80,17 @@ export async function joinGroupThroughLink(
       },
       client,
     );
+    if (linkToken) {
+      await insertNotifications(
+        [inviterId],
+        {
+          type: "invite_accepted",
+          actorId: userId,
+          ...personNotification(acceptor.name, `Joined "${notificationLabel(group.name)}"`, "Via your invite"),
+          link: `/groups/${group.id}`,
+        },
+        client,
+      );
+    }
   });
 }
