@@ -26,6 +26,7 @@ import { findRunningLiveSplit } from "@/server/expense/repo/liveSplits.repo";
 import { sumPaidForExpenses } from "@/server/expense/repo/settlements.repo";
 import { GROUP_STATUS_STORAGE } from "@/server/group/group.constants";
 import { findGroupById, memberIdsAmong } from "@/server/group/repo/groups.repo";
+import { canReadExpense } from "../expenseAccess";
 import { owingInScope } from "../balance.usecase";
 
 /** What one person owes another on one expense, and what is left to pay. */
@@ -144,12 +145,13 @@ export interface ExpensePayment {
 export async function assertExpensePayment(payment: ExpensePayment, client: PoolClient): Promise<ExpenseRow> {
   const expense = await findExpenseById(payment.expenseId, client);
   if (!expense) notFound("expense not found");
+  const children = await loadExpenseChildren([expense.id], client, false);
+  if (!await canReadExpense(payment.payerId, expense, client, children)) notFound("expense not found");
   if (expense.deleted_at) invalid("this expense was deleted, so there is nothing to pay back");
   if (payment.scopeId !== (expense.group_id ?? "")) {
     invalid("a payment for an expense is recorded in that expense's balance");
   }
   if (payment.currency !== expense.currency) invalid(`this expense is in ${expense.currency}, not ${payment.currency}`);
-  const children = await loadExpenseChildren([expense.id], client, false);
   const [repayment] = await expenseRepayments(expense, children, payment.payerId, client, payment.creditorId);
   if (!repayment) invalid("you don't owe this person anything on this expense");
   if (repayment.paidCents >= repayment.owedCents) invalid("you have already paid this expense back");

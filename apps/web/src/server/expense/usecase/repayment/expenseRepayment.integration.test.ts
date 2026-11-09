@@ -908,6 +908,22 @@ describe.skipIf(!reachable)("paying back one expense against Postgres", () => {
     expect(notices.rows[0].body).toContain("Shared coffee");
   });
 
+  it("gives an outsider the same refusal for unknown, private, differently scoped and deleted bills", async () => {
+    await storeExpense({ id: "hidden-bill", groupId: null, description: "Private",
+      payers: { [ANA_ID]: 100 }, splits: { [BOB_ID]: 100 } });
+    for (const [bill, scope, currency] of [
+      ["missing-bill", "", "USD"], ["hidden-bill", "", "EUR"], ["hidden-bill", TRIP_ID, "USD"],
+    ]) {
+      const [actor, request] = payBack(DANA_ID, ANA_ID, bill, scope, 1);
+      await expect(expenses.recordSettlement(actor, { ...request, currency })).rejects.toMatchObject({
+        code: "not_found", message: "expense not found",
+      });
+    }
+    await database.query("UPDATE expenses SET deleted_at = now() WHERE id = $1", ["hidden-bill"]);
+    await expect(expenses.recordSettlement(...payBack(DANA_ID, ANA_ID, "hidden-bill", "", 1)))
+      .rejects.toMatchObject({ code: "not_found", message: "expense not found" });
+  });
+
   it("records a bill while an unrelated shared group is locked", async () => {
     await storeExpense({ id: "uncontended", groupId: TRIP_ID, description: "Lunch",
       payers: { [ANA_ID]: 10000 }, splits: { [BOB_ID]: 10000 } });

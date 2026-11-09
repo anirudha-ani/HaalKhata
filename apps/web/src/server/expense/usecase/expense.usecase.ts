@@ -106,6 +106,7 @@ import {
 } from "@/server/expense/domain/settlementAllocation";
 import { groupScopeKey, oneOffPairKey, settledExpenseIds } from "@/server/expense/domain/settledExpenses";
 import { expensePaymentKey, repaidExpenseIds } from "@/server/expense/domain/repaidExpenses";
+import { canReadExpense } from "./expenseAccess";
 import { assertExpensePayment, expenseRepayments } from "./repayment/expenseRepayment";
 import { readerShareLine, removedReaderLine } from "@/server/expense/domain/readerShareLine";
 import { expenseNetChanges, type PaidAndOwed } from "@/server/expense/domain/balances";
@@ -1074,18 +1075,16 @@ export async function createExpense(userId: string, request: ExpenseInput) {
  *
  * @param userId - Authenticated caller to authorize.
  * @param expense - The expense row being accessed.
+ * @param client - The connection reading protected data.
+ * @param children - Already loaded payers and shares from that connection.
  * @throws UsecaseError (permission_denied) if the caller has no access.
  */
-export async function assertCanTouch(userId: string, expense: ExpenseRow): Promise<void> {
-  if (expense.group_id) {
-    if (!(await isMember(expense.group_id, userId))) {
-      denied("you are not a member of this group");
-    }
-    return;
+export async function assertCanTouch(
+  userId: string, expense: ExpenseRow, client?: PoolClient, children?: ExpenseChildren,
+): Promise<void> {
+  if (!await canReadExpense(userId, expense, client, children)) {
+    denied(expense.group_id ? "you are not a member of this group" : "you are not part of this expense");
   }
-  const children = await loadExpenseChildren([expense.id]);
-  if (storedParticipantIds(expense, children).includes(userId)) return;
-  if (!(await isInLiveSplit(expense.id, userId))) denied("you are not part of this expense");
 }
 
 /**
@@ -1742,21 +1741,16 @@ async function getExpenseProto(expenseId: string) {
  * @throws UsecaseError if the expense is missing or the caller lacks access.
  */
 export async function getExpense(userId: string, expenseId: string, commentLimit = 0) {
-  const found = await findExpenseById(expenseId);
-  // A deleted expense still has a page: the feed line that announced the
-  // deletion links here, and the row explains any payment left behind.
-  if (!found) notFound("expense not found");
-  await assertCanTouch(userId, found);
-
   // The figures on the page — the expense, its shares, whether it is settled
   // and whether a payment came after it — are read at one instant, so an
   // edit or a payment committing mid-read cannot pair one version's amount
   // with another's shares.
   const { expenseRow, children, settledForViewer, hasLaterSettlement, groupStatus, refusals, repayments, payments } = await snapshot(
     async (client) => {
-      // Expenses are never hard-deleted, so the row checked above is still there.
-      const current = (await findExpenseById(expenseId, client)) ?? found;
+      const current = await findExpenseById(expenseId, client);
+      if (!current) notFound("expense not found");
       const currentChildren = await loadExpenseChildren([expenseId], client);
+      await assertCanTouch(userId, current, client, currentChildren);
 
       // The same settledness rule the expense list applies, for this one
       // expense, so the detail page and the row that linked to it can never
