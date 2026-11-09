@@ -19,7 +19,7 @@ vi.mock("@/server/social/repo/friendships.repo", () => ({
 vi.mock("@/server/auth/repo/users.repo", () => ({
   findUserByEmail: vi.fn(),
   findUserById: vi.fn(),
-  findUserByPhone: vi.fn(),
+  findVerifiedUserByPhone: vi.fn(),
   findUsersByIds: vi.fn(),
 }));
 vi.mock("@/server/social/repo/activity.repo", () => ({
@@ -54,7 +54,7 @@ vi.mock("@/server/expense/usecase/balance.usecase", () => ({
 import {
   findUserByEmail,
   findUserById,
-  findUserByPhone,
+  findVerifiedUserByPhone,
   findUsersByIds,
 } from "@/server/auth/repo/users.repo";
 import { getOverallBalances } from "@/server/expense/usecase/balance.usecase";
@@ -146,13 +146,13 @@ describe("addFriend contact lookup", () => {
   });
 
   it("looks a typed phone up in E.164 and refuses it when nobody has it", async () => {
-    vi.mocked(findUserByPhone).mockResolvedValue(undefined);
+    vi.mocked(findVerifiedUserByPhone).mockResolvedValue(undefined);
 
     await expect(addFriend(CALLER, { email: "", phone: "+1 (415) 555-2671" })).rejects.toMatchObject({
       code: "failed_precondition",
     });
 
-    expect(findUserByPhone).toHaveBeenCalledWith("+14155552671");
+    expect(findVerifiedUserByPhone).toHaveBeenCalledWith("+14155552671");
     expect(insertFriendship).not.toHaveBeenCalled();
   });
 

@@ -24,7 +24,7 @@ import type { UserRow } from "@/server/auth/repo/users.repo";
 import {
   findUserByEmail,
   findUserById,
-  findUserByPhone,
+  findVerifiedUserByPhone,
   findUsersByIds,
 } from "@/server/auth/repo/users.repo";
 import { normalizePhone, PHONE_FORMAT_HINT } from "@/server/auth/auth.constants";
@@ -247,7 +247,7 @@ async function resolveInvitee(input: {
   }
   const invitee = email !== ""
     ? await findUserByEmail(email)
-    : await findUserByPhone(assertPhoneShape(phone));
+    : await findVerifiedUserByPhone(assertPhoneShape(phone));
   if (!invitee) throw new UsecaseError("failed_precondition", NOT_ON_HAALKHATA_GROUP_MESSAGE);
   return invitee;
 }

@@ -17,7 +17,7 @@ import type { PoolClient } from "pg";
 import {
   findUserByEmail,
   findUserById,
-  findUserByPhone,
+  findVerifiedUserByPhone,
   findUsersByIds,
   type UserRow,
 } from "@/server/auth/repo/users.repo";
@@ -162,7 +162,7 @@ async function findUserByIdentifier(email: string, phone: string): Promise<UserR
   }
   const normalizedPhone = normalizePhone(phone);
   if (!normalizedPhone) invalid(PHONE_FORMAT_HINT);
-  return findUserByPhone(normalizedPhone);
+  return findVerifiedUserByPhone(normalizedPhone);
 }
 
 /**

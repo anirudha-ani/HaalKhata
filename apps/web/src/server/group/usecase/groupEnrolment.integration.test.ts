@@ -358,4 +358,27 @@ describe.skipIf(!reachable)("enrolling people in a group", () => {
     }
   });
 
+  it("requires verified phone ownership for friend requests and direct group admission", async () => {
+    const groupId = await groupOwnedBy(ANA_ID);
+    const phone = "+12025550184";
+    const social = await import("@/server/social/usecase/social.usecase");
+    await database.query("UPDATE users SET phone = $2, phone_verified_at = NULL WHERE id = $1", [BEN_ID, phone]);
+    try {
+      await expect(social.addFriend(ANA_ID, { email: "", phone })).rejects.toMatchObject({ code: "failed_precondition" });
+      await expect(addMembers(ANA_ID, { groupId, phone })).rejects.toMatchObject({ code: "failed_precondition" });
+      expect(await memberIds(groupId)).toEqual([ANA_ID]);
+
+      await database.query("UPDATE users SET phone_verified_at = now() WHERE id = $1", [BEN_ID]);
+      await expect(addMembers(ANA_ID, { groupId, phone })).resolves.toHaveProperty("added");
+      expect(await memberIds(groupId)).toEqual([ANA_ID, BEN_ID]);
+
+      await database.query("DELETE FROM friendships WHERE user_id = $1 AND friend_id = $2 OR user_id = $2 AND friend_id = $1", [ANA_ID, BEN_ID]);
+      await social.addFriend(ANA_ID, { email: "", phone });
+      const pending = await database.query("SELECT 1 FROM friend_requests WHERE requester_id = $1 AND recipient_id = $2", [ANA_ID, BEN_ID]);
+      expect(pending.rows).toHaveLength(1);
+    } finally {
+      await database.query("UPDATE users SET phone = NULL, phone_verified_at = NULL WHERE id = $1", [BEN_ID]);
+    }
+  });
+
 });
