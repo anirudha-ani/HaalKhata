@@ -48,7 +48,6 @@ import { isUniqueViolation } from "@/server/common/db/db";
 import { lockGroupLedgers, lockReminder, withLedgerTransaction } from "@/server/common/ledger/ledgerLocks";
 import {
   countUnread,
-  findLatestNotificationAt,
   insertNotifications,
   listNotificationsByUser,
   markAllRead,
@@ -64,6 +63,7 @@ import {
   lockFriendRequestInboxes,
   lockParticipantLedgers,
 } from "@/server/common/ledger/ledgerLocks";
+import { findReminderSentAt, recordReminderSent } from "@/server/social/repo/reminderCooldown.repo";
 import { formatMoney } from "@haalkhata/shared/money/money";
 import { safeActivityPath } from "@haalkhata/shared/navigation/activityPath";
 import { listPaymentMethodsByUser } from "@/server/payment/repo/paymentMethods.repo";
@@ -675,7 +675,7 @@ export async function removeFriend(userId: string, friendId: string): Promise<vo
  * Two guards, both server-side because the client is not the party that
  * suffers when they are missing: you can only remind somebody who actually
  * owes you right now, and only once per {@link REMINDER_COOLDOWN_HOURS}. The
- * previous reminder is its own cooldown record — no extra table needed.
+ * cooldown survives clearing notifications, blocking or marking them read.
  *
  * @param userId - Id of the authenticated caller sending the reminder.
  * @param debtorId - Id of the person being reminded.
@@ -696,7 +696,7 @@ export async function sendReminder(userId: string, debtorId: string): Promise<vo
    * @param client - The reminder's transaction, or none for the early check.
    */
   const refuseWithinCooldown = async (client?: PoolClient) => {
-    const lastSentAt = await findLatestNotificationAt(debtorId, "reminder", link, client);
+    const lastSentAt = await findReminderSentAt(userId, debtorId, client);
     if (!lastSentAt) return;
     const elapsedHours = (Date.now() - new Date(lastSentAt).getTime()) / 3_600_000;
     if (elapsedHours < REMINDER_COOLDOWN_HOURS) {
@@ -755,5 +755,6 @@ export async function sendReminder(userId: string, debtorId: string): Promise<vo
       },
       client,
     );
+    await recordReminderSent(userId, debtorId, client);
   });
 }

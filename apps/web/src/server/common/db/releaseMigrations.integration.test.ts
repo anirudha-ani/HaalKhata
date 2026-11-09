@@ -14,7 +14,7 @@ const TEST_DATABASE = testDatabaseName("haalkhata_release_migration_test");
 const TEST_URL = ADMIN_URL.replace(/\/[^/]*$/, `/${TEST_DATABASE}`);
 const MIGRATIONS_DIRECTORY = fileURLToPath(new URL("../../../../migrations/", import.meta.url));
 const MAIN_LAST_MIGRATION = "1791828578558_add-group-status.sql";
-const RELEASE_SUFFIXES = ["_apple_sign_in.sql", "_anonymous_ledger_members.sql", "_user_safety.sql", "_add-receipt-account-consent.sql", "_add-contact-discovery.sql", "_add-push-notifications.sql", "_track-push-delivery.sql", "_keep-removed-phones-off.sql", "_remember-provider-verification.sql", "_mark-unknown-provider-checks.sql", "_add-receipt-scans.sql", "_add-admin-sessions.sql", "_add-content-report-author-index.sql", "_date-early-accounts-from-creation.sql", "_index-expense-and-payment-authors.sql", "_retire-unregistered-people.sql", "_add-invite-link-expiry.sql", "_widen-money-columns.sql", "_add-expense-version.sql", "_add-live-splits.sql", "_add-user-sessions.sql", "_add-activity-link-index.sql", "_add-live-split-saved.sql", "_add-settlement-expense.sql", "_keep-bill-payment-title.sql", "_page-bill-payments.sql", "_scrub_removed_expense_payment_titles.sql", "_index-notification-links.sql"];
+const RELEASE_SUFFIXES = ["_apple_sign_in.sql", "_anonymous_ledger_members.sql", "_user_safety.sql", "_add-receipt-account-consent.sql", "_add-contact-discovery.sql", "_add-push-notifications.sql", "_track-push-delivery.sql", "_keep-removed-phones-off.sql", "_remember-provider-verification.sql", "_mark-unknown-provider-checks.sql", "_add-receipt-scans.sql", "_add-admin-sessions.sql", "_add-content-report-author-index.sql", "_date-early-accounts-from-creation.sql", "_index-expense-and-payment-authors.sql", "_retire-unregistered-people.sql", "_add-invite-link-expiry.sql", "_widen-money-columns.sql", "_add-expense-version.sql", "_add-live-splits.sql", "_add-user-sessions.sql", "_add-activity-link-index.sql", "_add-live-split-saved.sql", "_add-settlement-expense.sql", "_keep-bill-payment-title.sql", "_page-bill-payments.sql", "_scrub_removed_expense_payment_titles.sql", "_index-notification-links.sql", "_add-reminder-cooldowns.sql"];
 
 /** @returns Whether the isolated integration database can be created. */
 async function databaseReachable(): Promise<boolean> {
@@ -84,7 +84,10 @@ describe.skipIf(!reachable)("mobile release database upgrade", () => {
     await database.query("INSERT INTO receipt_consents (user_id, consent_version) VALUES ($1, $2)", ["receipt-consent-owner", "a".repeat(64)]);
     expect((await database.query("SELECT consent_version FROM receipt_consents WHERE user_id = $1", ["receipt-consent-owner"])).rows)
       .toEqual([{ consent_version: "a".repeat(64) }]);
+    await database.query(`INSERT INTO reminder_cooldowns(sender_id, recipient_id, last_sent_at)
+      VALUES ('release-owner', 'receipt-consent-owner', now()), ('receipt-consent-owner', 'release-owner', now())`);
     await database.query("DELETE FROM users WHERE id = $1", ["receipt-consent-owner"]);
+    expect((await database.query("SELECT * FROM reminder_cooldowns")).rows).toEqual([]);
     expect((await database.query("SELECT * FROM receipt_consents")).rows).toEqual([]);
     expect(await migrate(MIGRATIONS_DIRECTORY)).toEqual([]);
     const finalHistory = await database.query<{ name: string }>("SELECT name FROM pgmigrations ORDER BY id");

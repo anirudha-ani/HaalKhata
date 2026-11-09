@@ -8,6 +8,7 @@
  * wait for a connection — along with everything else in the app.
  */
 
+import { readFileSync } from "node:fs";
 import { Client } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { testDatabaseName } from "@/server/common/testing/testDatabase";
@@ -121,4 +122,34 @@ describe.skipIf(!reachable)("a burst bigger than the connection pool, against Po
     );
     expect(rows[0]).toEqual({ friendships: 0, reminders: PAIRS });
   }, 60_000);
+  it("keeps a reminder cooldown when its recipient blocks somebody else", async () => {
+    const safety = await import("@/server/safety/usecase/safety.usecase");
+    await database.query("INSERT INTO friendships(user_id, friend_id) VALUES ('borrower-1', 'left-1'), ('left-1', 'borrower-1')");
+    await safety.blockUser("borrower-1", "left-1");
+    const cleared = await database.query("SELECT 1 FROM notifications WHERE user_id = 'borrower-1' AND type = 'reminder'");
+    expect(cleared.rows).toHaveLength(0);
+    await expect(social.sendReminder("lender-1", "borrower-1")).rejects.toMatchObject({ code: "invalid_argument" });
+    await database.query("UPDATE reminder_cooldowns SET last_sent_at = now() - interval '25 hours' WHERE sender_id = 'lender-1' AND recipient_id = 'borrower-1'");
+    const attempts = await Promise.allSettled([
+      social.sendReminder("lender-1", "borrower-1"),
+      social.sendReminder("lender-1", "borrower-1"),
+    ]);
+    expect(attempts.filter((attempt) => attempt.status === "fulfilled")).toHaveLength(1);
+    expect(attempts.filter((attempt) => attempt.status === "rejected")).toHaveLength(1);
+  });
+
+  it("backfills legacy reminder senders recorded only in their internal link", async () => {
+    await database.query("BEGIN");
+    try {
+      await database.query("DROP TABLE reminder_cooldowns");
+      await database.query("INSERT INTO notifications(id, user_id, type, title, link) VALUES ('legacy-reminder-test', 'borrower-1', 'reminder', 'Legacy reminder', '/friends/lender-1')");
+      const migration = readFileSync(new URL("../../../../migrations/1794230002000_add-reminder-cooldowns.sql", import.meta.url), "utf8").split("-- Down Migration")[0];
+      await database.query(migration);
+      const restored = await database.query("SELECT 1 FROM reminder_cooldowns WHERE sender_id = 'lender-1' AND recipient_id = 'borrower-1'");
+      expect(restored.rows).toHaveLength(1);
+    } finally {
+      await database.query("ROLLBACK");
+    }
+  });
+
 });
