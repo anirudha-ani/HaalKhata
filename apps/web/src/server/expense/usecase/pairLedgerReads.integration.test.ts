@@ -317,4 +317,16 @@ describe.skipIf(!reachable)("how often a pair's group histories are read, agains
     }
     expect(await balances.userNetInGroup(LENA, TRIP)).toEqual(new Map([["USD", 1800]]));
   });
+  it("validates an explicit group payment without hydrating the group twice", async () => {
+    await insertDebt(database, { id: "flat-scoped", groupId: FLAT, amountCents: 19, currency: "USD", paidBy: TOMAS, owedBy: SARA });
+    reads.length = 0;
+    const result = await expenses.recordSettlement(SARA, {
+      groupId: FLAT, toUserId: TOMAS, amountCents: 1, currency: "USD",
+      method: "cash", note: "", operationId: randomUUID(),
+    });
+    expect(result.amountCents).toBe(1);
+    expect(readsUnderLocks("group history")).toBe(0);
+    expect((await balances.getFriendLedger(SARA, TOMAS)).groupBalances.find((scope) => scope.groupId === FLAT)?.netCents).toBe(-18);
+  });
+
 });

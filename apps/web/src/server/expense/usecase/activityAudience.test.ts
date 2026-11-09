@@ -99,15 +99,25 @@ vi.mock("@/server/social/repo/activity.repo", () => ({
   listActivityForExpense: vi.fn(),
 }));
 vi.mock("@/server/social/repo/notifications.repo", () => ({ insertNotifications: vi.fn(), insertNotificationRows: vi.fn() }));
-vi.mock("./balance.usecase", () => ({
-  groupCancelsOut: vi.fn(),
-  amountOwed: vi.fn(),
+vi.mock("./balance.usecase", () => {
+  const amountOwed = vi.fn();
+  const groupCancelsOut = vi.fn();
+  return {
+  groupCancelsOut,
+  owingInScope: vi.fn(async (viewer: string, people: string[], group: { id: string } | null, currency: string, client: unknown) => {
+    const loop = group ? await groupCancelsOut(group.id, currency, client) : false;
+    return new Map(await Promise.all(people.map(async (person) => [person, {
+      owedCents: group ? await amountOwed(viewer, person, group.id, currency, client) : 0,
+      loop, debtorNetCents: 0,
+    }] as const)));
+  }),
+  amountOwed,
   oneOffNetBetween: vi.fn(),
   owedByScope: vi.fn(),
-  owingInScope: vi.fn(async (_viewer, people: string[]) => new Map(people.map((person) => [person, { owedCents: 0, loop: false, debtorNetCents: 0 }]))),
   excludeOpenPairs: vi.fn(async (candidates) => candidates),
   userNetInGroup: vi.fn(),
-}));
+  };
+});
 
 import {
   addComment,

@@ -56,12 +56,23 @@ vi.mock("@/server/social/repo/activity.repo", () => ({
   listActivityForExpense: vi.fn(),
 }));
 vi.mock("@/server/social/repo/notifications.repo", () => ({ insertNotifications: vi.fn(), insertNotificationRows: vi.fn() }));
-vi.mock("./balance.usecase", () => ({
-  amountOwed: vi.fn(),
-  groupCancelsOut: vi.fn(),
+vi.mock("./balance.usecase", () => {
+  const amountOwed = vi.fn();
+  const groupCancelsOut = vi.fn();
+  return {
+  amountOwed,
+  groupCancelsOut,
+  owingInScope: vi.fn(async (viewer: string, people: string[], group: { id: string } | null, currency: string, client: unknown) => {
+    const loop = group ? await groupCancelsOut(group.id, currency, client) : false;
+    return new Map(await Promise.all(people.map(async (person) => [person, {
+      owedCents: group ? await amountOwed(viewer, person, group.id, currency, client) : 0,
+      loop, debtorNetCents: 0,
+    }] as const)));
+  }),
   owedByScope: vi.fn(),
   sharedActiveGroups: vi.fn(),
-}));
+  };
+});
 // The check before the locks reads on a snapshot; here it runs on the mocks.
 vi.mock("@/server/common/db/db", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/server/common/db/db")>()),

@@ -92,8 +92,7 @@ import {
 import { mergeExpenseEdit } from "@haalkhata/shared/expense/merge/mergeExpenseEdit";
 import { EDIT_CONFLICT_MESSAGE } from "@haalkhata/shared/expense/merge/merge.constants";
 import {
-  amountOwed,
-  groupCancelsOut,
+  owingInScope,
   oneOffNetsWith,
   owedByScope,
   pairScopeDebts,
@@ -2320,12 +2319,15 @@ async function storeGroupSettlement(
   }
   // A pairwise loop that nets to zero is not debt. Paying one edge would
   // instead leave the payer owed elsewhere around the loop.
-  if (await groupCancelsOut(groupId, currency, client)) {
+  const group = await findGroupById(groupId, client);
+  if (!group) notFound("group not found");
+  const owing = (await owingInScope(payerId, [creditorId], group, currency, client)).get(creditorId);
+  if (owing?.loop) {
     invalid(
       "these debts cancel out around a loop — everyone here is settled up overall; turn on Simplify debts to clear the view",
     );
   }
-  const outstandingCents = await amountOwed(payerId, creditorId, groupId, currency, client);
+  const outstandingCents = owing?.owedCents ?? 0;
   if (outstandingCents <= 0) {
     // A payment in another currency can only pay down a balance the group
     // already holds in it (one recorded before group payments were kept to
