@@ -5,6 +5,33 @@ import { execute, query, queryOne } from "@/server/common/db/db";
 import type { UserRow } from "../users.repo";
 
 /**
+ * Locks reports that deletion will cascade, before account/content mutations.
+ * The id order matches moderation's report locks.
+ * @param userId Account whose reports will be removed.
+ * @param client Erasure transaction.
+ * @returns Report ids held until commit or rollback.
+ */
+export async function lockDeletionReports(userId: string, client: PoolClient): Promise<string[]> {
+  const reports = await query<{ id: string }>(`SELECT id FROM content_reports
+    WHERE reporter_id = $1 OR reported_user_id = $1 ORDER BY id FOR UPDATE`, [userId], client);
+  return reports.map((report) => report.id);
+}
+
+/**
+ * Detects reports committed before the account row was locked but after the
+ * initial report lock. Its FK lock prevents new reports after this check.
+ * @param userId Account locked for deletion.
+ * @param reportIds Reports already locked by this transaction.
+ * @param client Erasure transaction holding the account row.
+ * @returns Whether all reports the final cascade can touch are locked.
+ */
+export async function deletionReportsUnchanged(userId: string, reportIds: string[], client: PoolClient): Promise<boolean> {
+  return await queryOne(`SELECT id FROM content_reports
+    WHERE (reporter_id = $1 OR reported_user_id = $1) AND NOT (id = ANY($2::text[]))
+    LIMIT 1`, [userId, reportIds], client) === undefined;
+}
+
+/**
  * Locks a live account against concurrent provider linking and profile changes.
  * @param userId Authenticated account being deleted.
  * @param client Erasure transaction.
@@ -81,6 +108,8 @@ export async function eraseAccountData(input: { userId: string; anonymousId: str
   await execute(`UPDATE expense_items SET name = $2 WHERE expense_id IN
     (SELECT id FROM expenses WHERE created_by = $1)`, [input.userId, input.itemName], client);
   await execute("UPDATE expenses SET description = $2, notes = '' WHERE created_by = $1", [input.userId, input.expenseDescription], client);
+  await execute(`UPDATE settlements SET expense_description = $2 WHERE expense_id IN
+    (SELECT id FROM expenses WHERE created_by = $1)`, [input.userId, input.expenseDescription], client);
   await execute("UPDATE groups SET name = $2 WHERE created_by = $1", [input.userId, input.groupName], client);
   await execute("UPDATE settlements SET note = '', method_label = '' WHERE from_user = $1 OR to_user = $1 OR recorded_by = $1", [input.userId], client);
   await execute("UPDATE expense_payers SET user_id = $2 WHERE user_id = $1", identity, client);

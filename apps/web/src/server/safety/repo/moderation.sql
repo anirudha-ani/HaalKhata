@@ -12,6 +12,8 @@ SELECT :'action' = 'list' AS listing, :'action' = 'remove' AS removing,
     WHERE id = :'report_id' FOR UPDATE \gset
   \if :{?target_id}
     \if :removing
+      SELECT pg_advisory_xact_lock(hashtextextended('ledger:expense:' || :'target_id', 0))
+        WHERE :'target_kind' = 'expense';
       -- Replace the feed lines and notifications that quote the content, and no
       -- others, before the content changes: a comment's lines are found through
       -- the comment row. Financial events and amounts stay as they are.
@@ -57,6 +59,8 @@ SELECT :'action' = 'list' AS listing, :'action' = 'remove' AS removing,
       UPDATE expenses SET description = 'Content removed', notes = ''
         WHERE id = :'target_id' AND :'target_kind' = 'expense';
       UPDATE expense_items SET name = 'Item' WHERE expense_id = :'target_id' AND :'target_kind' = 'expense';
+      UPDATE settlements SET expense_description = 'Content removed'
+        WHERE expense_id = :'target_id' AND :'target_kind' = 'expense';
       UPDATE groups SET name = 'Shared group' WHERE id = :'target_id' AND :'target_kind' = 'group';
       UPDATE users SET name = 'Member', avatar_url = NULL WHERE id = :'target_id' AND :'target_kind' = 'user';
       DELETE FROM payment_handles WHERE user_id = :'target_id' AND :'target_kind' = 'user';

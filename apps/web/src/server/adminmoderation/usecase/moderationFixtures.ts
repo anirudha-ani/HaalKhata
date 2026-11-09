@@ -118,6 +118,14 @@ export async function seedModeration(database: Client): Promise<void> {
     [EXPENSE_ID, AUTHOR, REPORTER],
   );
   await database.query(
+    `INSERT INTO settlements (id, group_id, from_user, to_user, amount_cents, currency, recorded_by,
+        expense_id, expense_description, deleted_at) VALUES
+       ('bill-payment-current', $1, $2, $3, 100, 'USD', $2, $4, $6, NULL),
+       ('bill-payment-deleted', $1, $2, $3, 50, 'USD', $2, $4, $6, now()),
+       ('bill-payment-unrelated', $1, $2, $3, 20, 'USD', $2, $5, 'Groceries as paid', NULL)`,
+    [GROUP_ID, REPORTER, AUTHOR, EXPENSE_ID, GROUP_EXPENSE_ID, REPORTED_WORDS.description],
+  );
+  await database.query(
     `INSERT INTO expense_items (id, expense_id, name, total_cents) VALUES ('item-reported-1', $1, $2, 98765)`,
     [EXPENSE_ID, REPORTED_WORDS.item],
   );
@@ -227,5 +235,6 @@ export async function contentState(database: Client) {
     notifications: await read("SELECT id, title, body FROM notifications ORDER BY id"),
     splits: await read("SELECT expense_id, user_id, owed_cents FROM expense_splits ORDER BY expense_id, user_id"),
     payers: await read("SELECT expense_id, user_id, amount_cents FROM expense_payers ORDER BY expense_id, user_id"),
+    payments: await read("SELECT id, expense_id, expense_description, amount_cents, deleted_at IS NOT NULL AS deleted FROM settlements ORDER BY id"),
   };
 }

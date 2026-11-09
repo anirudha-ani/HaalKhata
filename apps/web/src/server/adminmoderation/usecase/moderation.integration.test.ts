@@ -15,6 +15,7 @@
 
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { Client } from "pg";
+import { readFileSync } from "node:fs";
 import {
   AUTHOR,
   COMMENT_ID,
@@ -239,6 +240,15 @@ describe.skipIf(!(await databaseReachable()))("moderation against Postgres", () 
       [EXPENSE_ID],
     );
     expect(expense.rows).toEqual([{ description: "Content removed", notes: "", amount_cents: 98765 }]);
+    expect((await database.query(
+      "SELECT id, expense_description, amount_cents FROM settlements ORDER BY id",
+    )).rows).toEqual([
+      { id: "bill-payment-current", expense_description: "Content removed", amount_cents: 100 },
+      { id: "bill-payment-deleted", expense_description: "Content removed", amount_cents: 50 },
+      { id: "bill-payment-unrelated", expense_description: "Groceries as paid", amount_cents: 20 },
+    ]);
+    const statement = await (await import("@/server/expense/usecase/balance.usecase")).getFriendLedger(REPORTER, AUTHOR, 20);
+    expect(JSON.stringify(statement.entries)).not.toContain(REPORTED_WORDS.description);
     const items = await database.query("SELECT name, total_cents FROM expense_items WHERE expense_id = $1", [
       EXPENSE_ID,
     ]);
@@ -252,6 +262,28 @@ describe.skipIf(!(await databaseReachable()))("moderation against Postgres", () 
       "act-author-3": 'Author Person added "Taxi"',
       "act-group-1": 'Reporter Person added "Groceries" in "Offensive group name"',
     });
+  });
+
+  it("repairs retained historical payment titles when upgrading", async () => {
+    await database.query("BEGIN");
+    try {
+      await database.query("UPDATE settlements SET expense_description = 'Retained private title' WHERE expense_id = $1", [EXPENSE_ID]);
+      await database.query(`INSERT INTO settlements
+        (id, group_id, from_user, to_user, amount_cents, currency, recorded_by, expense_id, expense_description, created_at)
+        SELECT 'newer-shared-title', group_id, from_user, to_user, 1, currency, recorded_by, expense_id,
+          'Title shared after removal', (SELECT max(resolved_at) FROM content_reports WHERE target_id = payment.expense_id) + interval '1 hour' FROM settlements payment WHERE id = $1`, ["bill-payment-current"]);
+      const migration = readFileSync(new URL("../../../../migrations/1794230000000_scrub_removed_expense_payment_titles.sql", import.meta.url), "utf8").split("-- Down Migration")[0];
+      await database.query(migration);
+      await database.query(migration);
+      expect((await database.query("SELECT expense_description FROM settlements WHERE id = 'newer-shared-title'")).rows)
+        .toEqual([{ expense_description: "Title shared after removal" }]);
+      expect((await database.query("SELECT DISTINCT expense_description FROM settlements WHERE expense_id = $1 AND id <> 'newer-shared-title'", [EXPENSE_ID])).rows)
+        .toEqual([{ expense_description: "Content removed" }]);
+      expect((await database.query("SELECT expense_description FROM settlements WHERE id = $1", ["bill-payment-unrelated"])).rows)
+        .toEqual([{ expense_description: "Groceries as paid" }]);
+    } finally {
+      await database.query("ROLLBACK");
+    }
   });
 
   it("renames a group and replaces what names it, and nothing else", async () => {

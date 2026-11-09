@@ -7,6 +7,7 @@ import { isRegisteredUser } from "@/server/auth/usecase/identity/user.mapper";
 import { ExpenseListPart, type CreateExpenseRequest } from "@haalkhata/protogen/expense/v1/expense_pb";
 import type { PlainNumbers } from "@haalkhata/shared/api/wireNumbers";
 import type { PoolClient } from "pg";
+import { lockExpenseTitleForPayment } from "@/server/common/ledger/accountContentLocks";
 import {
   findExpenseById,
   insertExpense,
@@ -2844,7 +2845,12 @@ export async function recordSettlement(
     // A payment for an expense holds the expense still while it checks what
     // the expense leaves owing: an edit, or a live split starting, waits for
     // it. Taken first, as every write to an expense takes it first.
-    if (request.expenseId) await lockExpenseLedger(client, request.expenseId);
+    if (request.expenseId) {
+      // Erasure owns report/account rows. Do not hold the bill while waiting
+      // for its content guard: moderation locks its report before the bill.
+      await lockExpenseTitleForPayment(client, request.expenseId);
+      await lockExpenseLedger(client, request.expenseId);
+    }
     await lockSettlementPair(client, context.payerId, context.creditorId);
     const stored = await storeSettlementPortions(context, client);
     await announceSettlement(context, stored, client);
