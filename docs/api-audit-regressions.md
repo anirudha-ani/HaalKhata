@@ -79,3 +79,22 @@ checks default, direct-only, unknown and duplicate selections, preserves group
 order and metadata, and uses an input-read budget for 50,000 selected ids against
 200 shared groups. Run `pnpm test scopedGroups.test.ts settlementScopes.test.ts`
 locally; the regression measures work rather than machine-dependent elapsed time.
+
+## Native notification cleanup follow-up
+
+Device verification also exposed an indefinite sign-in spinner when iOS never
+answers the notification-settings read used to clear its badge. Account cleanup
+now has a five-second deadline and reports a retryable error at the initiating
+control. It still clears the previous account's notifications before publishing
+a new session. A late native reply cannot resume a timed-out sign-in. If account
+deletion already committed, Retry cleanup repeats only local cleanup, not the
+deletion request.
+
+Run `pnpm test:mobile` for the fake-clock regression in `useLogin.test.ts`, the
+native cleanup tests in `pushStore.test.ts`, and the sign-out/account-deletion
+retry tests. They exercise unresolved native promises, visible error feedback,
+late replies and a successful retry without relying on simulator timing.
+For interactive verification run `./dev.sh --mobile-ios` and sign in normally;
+provider setup is documented in [local-auth.md](local-auth.md), and the password
+form is available only in development builds. No provider credentials or
+production authentication bypass are needed for the regression suite.

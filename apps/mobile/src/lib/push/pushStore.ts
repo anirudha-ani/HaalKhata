@@ -24,7 +24,7 @@ import {
   storedDeviceId,
   type PushPermission,
 } from "./push";
-import { EXPLAINER_SHOWN_STORAGE_KEY, REGISTRATION_REFRESH_MS, REMOVE_DEVICE_TIMEOUT_MS } from "./push.constants";
+import { EXPLAINER_SHOWN_STORAGE_KEY, REGISTRATION_REFRESH_MS, REMOVE_DEVICE_TIMEOUT_MS, PUSH_CLEANUP_TIMEOUT_MS, PUSH_CLEANUP_ERROR } from "./push.constants";
 
 /** What the screens read. */
 export interface PushState {
@@ -228,12 +228,33 @@ export async function forgetThisPhone(): Promise<void> {
 /**
  * Clears what this phone holds for the account that is leaving: the stored
  * device id, the badge and every delivered banner. Used directly after an
- * account deletion, when the server has already removed its phones.
+ * account deletion, when the server has already removed its phones. Native
+ * calls run together so a stuck badge API cannot prevent banner removal.
+ * A timeout or failure is reported to the initiating control; a new session
+ * must not be published until cleanup succeeds. A late native reply cannot
+ * continue the timed-out authentication flow.
+ * @returns Resolves only after every cleanup operation has answered.
+ * @throws Error when cleanup fails or a native promise never answers.
  */
 export async function clearPushTraces(): Promise<void> {
-  await clearDeviceId().catch(() => undefined);
-  await Notifications.setBadgeCountAsync(0).catch(() => false);
-  await Notifications.dismissAllNotificationsAsync().catch(() => undefined);
+  let deadline: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.race([
+      Promise.all([
+        clearDeviceId(),
+        // false means badges are disabled or unsupported, not a retained badge.
+        Notifications.setBadgeCountAsync(0),
+        Notifications.dismissAllNotificationsAsync(),
+      ]),
+      new Promise<never>((_resolve, reject) => {
+        deadline = setTimeout(() => reject(new Error(PUSH_CLEANUP_ERROR)), PUSH_CLEANUP_TIMEOUT_MS);
+      }),
+    ]);
+  } catch {
+    throw new Error(PUSH_CLEANUP_ERROR);
+  } finally {
+    if (deadline !== undefined) clearTimeout(deadline);
+  }
   lastRegisteredAt = 0;
   update({ deviceId: null, error: "", keptOff: false, explainerOpen: false });
 }

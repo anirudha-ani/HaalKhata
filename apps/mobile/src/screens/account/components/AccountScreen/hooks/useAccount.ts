@@ -197,7 +197,13 @@ export function useProfileForm(currentUser: User) {
    */
   const signOut = async () => {
     const token = sessionToken();
-    await forgetThisPhone();
+    setError("");
+    try {
+      await forgetThisPhone();
+    } catch (failure) {
+      setError(errorMessage(failure));
+      return;
+    }
     let reachedServer = true;
     try {
       await authClient.logOut({});
