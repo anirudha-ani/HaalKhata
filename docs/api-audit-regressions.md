@@ -59,3 +59,8 @@ query counts/rows or equivalent plan properties, not machine-dependent timings.
 | API-09 | Financial reminders demand money the settlement API refuses to accept | `apps/web/src/server/expense/usecase/repayment/expenseRepayment.integration.test.ts`, `apps/web/src/server/expense/usecase/simplifiedRouting.test.ts`, `apps/web/src/server/group/usecase/groupArchive.integration.test.ts` |
 | API-17 | An ordinary scoped settlement waits on unrelated groups | `apps/web/src/server/expense/usecase/settlementLocks.integration.test.ts` |
 | API-18 | One-cent group payments rebuild the entire ledger twice under lock | `apps/web/src/server/expense/usecase/activityAudience.test.ts`, `apps/web/src/server/expense/usecase/pairLedgerReads.integration.test.ts`, `apps/web/src/server/expense/usecase/settlementActivity.test.ts`, `apps/web/src/server/expense/usecase/settlementScopes.test.ts` |
+
+API-06 concurrency follow-up: the payment operation claim is kept first, and
+title capture refuses as busy without waiting when account erasure owns the
+content guard. Real PostgreSQL regressions cover both caller and recipient
+erasure, verify claim/payment rollback, and retry after removal completes.

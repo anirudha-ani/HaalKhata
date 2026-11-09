@@ -3,7 +3,8 @@
 import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { execFile } from "node:child_process";
-import { Client } from "pg";
+import { Client, type PoolClient } from "pg";
+import { lockExpenseTitleForPayment } from "./accountContentLocks";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { testDatabaseName } from "../testing/testDatabase";
 
@@ -139,17 +140,42 @@ describe.skipIf(!await reachable())("payment titles during content erasure", () 
       await waiting("DELETE FROM users");
       payment = record(bill.payer, bill.request);
       void payment.catch(() => undefined);
-      await waiting("pg_advisory_xact_lock_shared");
+      await expect(payment).rejects.toMatchObject({ code: "unavailable" });
       moderation = moderate(bill.reportId).then(() => "removed", (error: { code: string }) => error.code);
       await waiting("FROM content_reports");
     } finally {
       await database.query("COMMIT");
     }
     await expect(erasure).resolves.toBeUndefined();
-    await expect(payment).resolves.toMatchObject({ amountCents: 1000 });
+    await expect(record(bill.payer, bill.request)).resolves.toMatchObject({ amountCents: 1000 });
     await expect(moderation).resolves.toBe("not_found");
     expect((await database.query("SELECT expense_description FROM settlements WHERE expense_id = $1", [bill.expenseId])).rows)
       .toEqual([{ expense_description: "Deleted expense" }]);
+  });
+
+  it.each(["caller", "recipient"] as const)("refuses title capture without a lock cycle when the %s is erased", async (role) => {
+    const bill = await fixture();
+    const erased = role === "caller" ? bill.payer : bill.payee;
+    await database.query("UPDATE expenses SET created_by = $2 WHERE id = $1", [bill.expenseId, erased]);
+    await database.query("BEGIN");
+    let erasure: Promise<void> | undefined;
+    try {
+      // The real operation claim takes KEY SHARE on its caller. Erasure of
+      // that caller must not wait in a cycle with this payment's title guard.
+      await database.query(`INSERT INTO operations (user_id, rpc, operation_id, request_fingerprint)
+        VALUES ($1, 'RecordSettlement', $2, 'fixture')`, [bill.payer, bill.request.operationId]);
+      if (role === "recipient") await database.query("SELECT id FROM users WHERE id = $1 FOR KEY SHARE", [erased]);
+      erasure = erase(erased, "DELETE");
+      void erasure.catch(() => undefined);
+      await waiting("FOR UPDATE");
+      await expect(lockExpenseTitleForPayment(database as unknown as PoolClient, bill.expenseId))
+        .rejects.toMatchObject({ code: "unavailable" });
+    } finally {
+      await database.query("ROLLBACK");
+    }
+    await expect(erasure).resolves.toBeUndefined();
+    expect((await database.query("SELECT 1 FROM settlements WHERE expense_id = $1", [bill.expenseId])).rows).toEqual([]);
+    expect((await database.query("SELECT 1 FROM operations WHERE operation_id = $1", [bill.request.operationId])).rows).toEqual([]);
   });
 
   for (const mode of ["account", "moderation", "operator"] as const) {
@@ -170,12 +196,17 @@ describe.skipIf(!await reachable())("payment titles during content erasure", () 
           await waiting(first === "removal" ? "UPDATE expenses SET description" : "INSERT INTO settlements");
           const follower = first === "removal" ? record(bill.payer, bill.request) : remove();
           void follower.catch(() => undefined);
-          outcomes.push(follower);
-          await waiting("pg_advisory_xact_lock");
+          if (mode === "account" && first === "removal") {
+            await expect(follower).rejects.toMatchObject({ code: "unavailable" });
+          } else {
+            outcomes.push(follower);
+            await waiting("pg_advisory_xact_lock");
+          }
         } finally {
           await database.query("COMMIT");
         }
         await Promise.all(outcomes);
+        if (mode === "account" && first === "removal") await record(bill.payer, bill.request);
         const payments = await database.query("SELECT expense_description, amount_cents FROM settlements WHERE expense_id = $1", [bill.expenseId]);
         expect(payments.rows).toEqual([{ expense_description: mode === "account" ? "Deleted expense" : "Content removed", amount_cents: 1000 }]);
       },
