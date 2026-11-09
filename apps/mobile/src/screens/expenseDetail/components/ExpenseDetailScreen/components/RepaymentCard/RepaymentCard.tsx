@@ -58,7 +58,7 @@ export function RepaymentCard({
 }) {
   // The person being paid, not the figures: those are read fresh from the
   // screen on every render, so the sheet never offers a stale amount.
-  const [payingUserId, setPayingUserId] = useState<string | null>(null);
+  const [selectedPerson, setSelectedPerson] = useState<User | null>(null);
   const history = useEarlierPaymentsAPI(expense.id, cursor);
   const firstNameOf = (userId: string) => (userById.get(userId) ?? history.people.get(userId))?.name.split(" ")[0] ?? "them";
 
@@ -69,9 +69,10 @@ export function RepaymentCard({
       view: readRepayment(repayment, firstNameOf(repayment.userId), expense.groupId !== "", expense.currency),
     }))
     .filter(({ view }) => !(settledForViewer && view.state === "square"));
-  if (rows.length === 0 && payments.length === 0) return null;
-  const paying = repayments.find((repayment) => repayment.userId === payingUserId);
-  const payingPerson = paying ? userById.get(paying.userId) : undefined;
+  if (!selectedPerson && rows.length === 0 && payments.length === 0) return null;
+  // Keep an open sheet long enough to explain an edit that removed this debt.
+  const paying = repayments.find((repayment) => repayment.userId === selectedPerson?.id);
+  const payingPerson = selectedPerson && (userById.get(selectedPerson.id) ?? selectedPerson);
 
   return (
     <View style={styles.card}>
@@ -86,7 +87,7 @@ export function RepaymentCard({
                 groupId={groupId}
                 key={repayment.userId}
                 meId={meId}
-                onPay={() => setPayingUserId(repayment.userId)}
+                onPay={() => setSelectedPerson(person)}
                 person={person}
                 view={view}
               />
@@ -108,14 +109,14 @@ export function RepaymentCard({
           ))}
         </View>
       ) : null}
-      {paying && payingPerson ? (
+      {payingPerson ? (
         <SettleUpModal
-          bill={{ expenseId: expense.id, description: expense.description, payableCents: paying.payableCents }}
+          bill={{ expenseId: expense.id, description: expense.description, payableCents: paying?.payableCents ?? 0, refusal: paying?.refusal }}
           currency={expense.currency}
-          onClose={() => setPayingUserId(null)}
+          onClose={() => setSelectedPerson(null)}
           // The bill's own balance: its group, or the pair's outside groups.
           scopeId={expense.groupId}
-          suggestedCents={paying.payableCents}
+          suggestedCents={paying?.payableCents ?? 0}
           to={payingPerson}
         />
       ) : null}

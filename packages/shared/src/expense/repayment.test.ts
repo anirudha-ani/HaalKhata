@@ -3,6 +3,7 @@
 import { describe, expect, it } from "vitest";
 import {
   billOverLimitMessage,
+  billPaymentError,
   billPayableCents,
   creditorsOnExpense,
   expensePaymentLine,
@@ -204,5 +205,16 @@ describe("billPayableCents", () => {
 
   it("names the figure when too much is typed", () => {
     expect(billOverLimitMessage(1000, "USD")).toBe("that's more than the $10.00 left to pay for this bill");
+  });
+});
+
+describe("billPaymentError", () => {
+  it("allows only positive whole cents within the latest payable amount", () => {
+    for (const cents of [0, -1, NaN, 0.5, Number.MAX_SAFE_INTEGER + 1]) {
+      expect(billPaymentError(cents, 1200, "USD")).toBe("Enter a valid amount.");
+    }
+    expect(billPaymentError(1200, 1200, "USD")).toBe("");
+    expect(billPaymentError(1200, 800, "USD")).toBe(billOverLimitMessage(800, "USD"));
+    expect(billPaymentError(1200, 0, "USD")).toBe("Nothing more is payable on this bill right now.");
   });
 });

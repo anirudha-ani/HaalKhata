@@ -3,7 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 import type { User } from "@haalkhata/protogen/common/v1/common_pb";
 import { useState } from "react";
-import { StyleSheet, View } from "react-native";
+import { Linking, StyleSheet, View } from "react-native";
 import { Text } from "@/components/ui/Text";
 import { Avatar } from "@/components/ui/Avatar";
 import { Button } from "@/components/ui/Button";
@@ -23,10 +23,11 @@ import {
   readSettlePositions,
   settleOverLimitMessage,
 } from "@haalkhata/shared/expense/settlePosition";
-import { billOverLimitMessage, billPayableCents, NOTHING_TO_REPAY } from "@haalkhata/shared/expense/repayment";
+import { billOverLimitMessage, billPayableCents, billPaymentError, NOTHING_TO_REPAY } from "@haalkhata/shared/expense/repayment";
 import { colors, radii, spacing } from "@/lib/theme/theme";
 import { BillLine } from "./BillLine";
 import { usePayMethods } from "./hooks/usePayMethods";
+import { useBillPaymentLinkAPI } from "./hooks/useBillPaymentLinkAPI";
 import { useSettleAttempt } from "./hooks/useSettleAttempt";
 import { PayeeMethodDetails } from "./PayeeMethodDetails";
 import { PayMethodChips } from "./PayMethodChips";
@@ -115,6 +116,8 @@ export function SettleUpModal({
     description: string;
     /** What its screen offers to pay now, from the server's reading of it. */
     payableCents: number;
+    /** Why a still-unpaid bill no longer accepts a payment. */
+    refusal?: string;
   };
   /** Called when the sheet is dismissed or the settlement is recorded. */
   onClose: () => void;
@@ -176,7 +179,27 @@ export function SettleUpModal({
   const amountCents = parseMoneyInput(amount, currency) ?? 0;
   // Said only when there is a payment to make: with nothing owed the
   // methods are not sent at all, and "has not added one" would be untrue.
+  const handoff = useBillPaymentLinkAPI(bill?.expenseId ?? "", other.id);
+  const billError = bill && loaded ? billPaymentError(amountCents, payableCents, currency) : "";
+  const billClosed = Boolean(bill && loaded && nothingToSettle);
+  const visibleError = error || settlement.failure || (!billClosed && handoff.error && errorMessage(handoff.error)) || (payableCents > 0 && billError);
   const canPay = loaded && !received && !nothingToSettle;
+  const showInstructions = !bill || (canPay && !visibleError && !handoff.isPending && !settlement.busy);
+
+  /** Editing the transfer cancels any pending handoff for the previous amount or method. */
+  const editTransfer = () => {
+    if (bill) handoff.reset();
+    setError("");
+  };
+
+  /** Checks the latest bill before opening this particular payment link. */
+  const openBillLink = (destination: string) => {
+    if (!canPay || billError || settlement.busy || handoff.isPending) return;
+    setError("");
+    handoff.mutate(amountCents, { onSuccess: () => {
+      void Linking.openURL(destination).catch(() => setError("Could not open the payment app."));
+    } });
+  };
 
   /**
    * Switches the payment's currency: the list, the amount, the methods
@@ -234,28 +257,33 @@ export function SettleUpModal({
     <Sheet
       footer={
         <View style={styles.submitBlock}>
-          {error || settlement.failure ? (
-            <Text accessibilityRole="alert" style={styles.error}>{error || settlement.failure}</Text>
+          {handoff.isPending ? <Text accessibilityLiveRegion="polite">Checking this bill…</Text> : null}
+          {visibleError ? (
+            <Text accessibilityRole="alert" style={styles.error}>{visibleError}</Text>
           ) : null}
           {settlement.notice ? <Text accessibilityLiveRegion="polite" style={styles.recorded}>{settlement.notice}</Text> : null}
           {settlement.status ? <Text accessibilityLiveRegion="polite" style={styles.status}>{settlement.status}</Text> : null}
           {settlement.phase === "unsure" ? <Button label="Check again" onPress={settlement.checkAgain} variant="outline" /> : null}
-          <Button
-            busy={settlement.phase === "sending"}
-            disabled={settlement.busy || !loaded || nothingToSettle}
-            label="Record payment"
-            onPress={submit}
-            variant="positive"
-          />
-          <Text style={styles.submitHint}>
-            {received
-              ? `Logs money ${firstName} has already sent you. It doesn't request anything.`
-              : payMethods.choice === CASH_CHOICE
-                ? "This only updates the balance here. Hand over the cash first."
-                : `This only updates the balance here. Move the money in ${
-                    payMethods.method?.name ?? "your app of choice"
-                  } first.`}
-          </Text>
+          {billClosed ? <Button label="Close" onPress={onClose} variant="outline" /> : <>
+            <Button
+              busy={settlement.phase === "sending"}
+              disabled={settlement.busy || handoff.isPending || !loaded || nothingToSettle || Boolean(billError)}
+              label="Record payment"
+              onPress={submit}
+              variant="positive"
+            />
+            {showInstructions ? (
+              <Text style={styles.submitHint}>
+                {received
+                  ? `Logs money ${firstName} has already sent you. It doesn't request anything.`
+                  : payMethods.choice === CASH_CHOICE
+                    ? "This only updates the balance here. Hand over the cash first."
+                    : `This only updates the balance here. Move the money in ${
+                        payMethods.method?.name ?? "your app of choice"
+                      } first.`}
+              </Text>
+            ) : null}
+          </>}
         </View>
       }
       onClose={onClose}
@@ -319,7 +347,7 @@ export function SettleUpModal({
             <Text style={styles.placeholder}>Loading balances…</Text>
           ) : nothingToSettle ? (
             <Text style={styles.placeholder}>
-              {bill ? NOTHING_TO_REPAY : reading.everything
+              {bill ? bill.refusal || NOTHING_TO_REPAY : reading.everything
                 ? `Nothing to settle with ${firstName} right now.`
                 : `Nothing is owed between you and ${firstName} here right now.`}
             </Text>
@@ -386,81 +414,86 @@ export function SettleUpModal({
           )}
         </View>
 
-        <View style={styles.amountRow}>
-          <View style={styles.amountField}>
-            <TextField
-              keyboardType="decimal-pad"
-              label={`Amount (${currency})`}
-              onChangeText={(text) => {
-                setTypedAmount(text);
-                setAmountEdited(true);
-              }}
-              value={amount}
-            />
+        {!billClosed ? <>
+          <View style={styles.amountRow}>
+            <View style={styles.amountField}>
+              <TextField
+                keyboardType="decimal-pad"
+                label={`Amount (${currency})`}
+                onChangeText={(text) => {
+                  editTransfer();
+                  setTypedAmount(text);
+                  setAmountEdited(true);
+                }}
+                value={amount}
+              />
+            </View>
+            {payableCents > 0 && amountCents !== payableCents ? (
+              <View style={styles.amountAction}>
+                <Button
+                  compact
+                  label="All of it"
+                  onPress={() => { editTransfer(); setAmountEdited(false); }}
+                  variant="outline"
+                />
+              </View>
+            ) : null}
           </View>
-          {payableCents > 0 && amountCents !== payableCents ? (
-            <View style={styles.amountAction}>
-              <Button
-                compact
-                label="All of it"
-                onPress={() => setAmountEdited(false)}
-                variant="outline"
-              />
-            </View>
-          ) : null}
-        </View>
 
-        <View style={styles.block}>
-          <Text style={styles.blockTitle}>How</Text>
-          <PayMethodChips
-            choice={payMethods.choice}
-            onPick={payMethods.pick}
-            others={payMethods.others}
-            usable={payMethods.usable}
+          <View style={styles.block}>
+            <Text style={styles.blockTitle}>How</Text>
+            <PayMethodChips
+              choice={payMethods.choice}
+              onPick={(choice) => { editTransfer(); payMethods.pick(choice); }}
+              others={payMethods.others}
+              usable={payMethods.usable}
+            />
+            {payMethods.ownMethodsError ? (
+              <View accessibilityRole="alert" style={styles.failed}>
+                <Text style={styles.error}>{ownMethodsFailedLine(payMethods.ownMethodsError)}</Text>
+                <Button
+                  compact
+                  label="Try again"
+                  onPress={payMethods.retryOwnMethods}
+                  variant="outline"
+                />
+              </View>
+            ) : null}
+            {/* Why the list is short, said by name and currency, so nobody
+                takes "no bKash here" for "the app does not do bKash". */}
+            {canPay && payMethods.usable.length === 0 ? (
+              <Text style={styles.placeholder}>
+                {payMethods.hasAnyMethod
+                  ? `${firstName} has not added a way to be paid in ${currency}.`
+                  : `${firstName} has not added a way to be paid yet.`}
+              </Text>
+            ) : null}
+          </View>
+
+          {!received && (!bill || !nothingToSettle) && payMethods.method ? (
+            <PayeeMethodDetails
+              amountCents={amountCents}
+              linksAvailable={!bill || (canPay && !billError && !handoff.isPending && !settlement.busy)}
+              onOpen={bill ? openBillLink : undefined}
+              currency={currency}
+              firstName={firstName}
+              // A different method is a different card: its "Copied" marks reset.
+              key={payMethods.method.id}
+              method={payMethods.method}
+              methods={ledgerQuery.data?.payeeMethods ?? []}
+              readAt={ledgerQuery.data?.readAt ?? ""}
+              removedAt={ledgerQuery.data?.payeeMethodRemovedAt ?? ""}
+              note={note}
+            />
+          ) : null}
+
+          <TextField
+            maxLength={MAX_SETTLEMENT_NOTE_LENGTH}
+            onChangeText={(value) => { editTransfer(); setNote(value); }}
+            placeholder="Note (optional)"
+            value={note}
           />
-          {payMethods.ownMethodsError ? (
-            <View accessibilityRole="alert" style={styles.failed}>
-              <Text style={styles.error}>{ownMethodsFailedLine(payMethods.ownMethodsError)}</Text>
-              <Button
-                compact
-                label="Try again"
-                onPress={payMethods.retryOwnMethods}
-                variant="outline"
-              />
-            </View>
-          ) : null}
-          {/* Why the list is short, said by name and currency, so nobody
-              takes "no bKash here" for "the app does not do bKash". */}
-          {canPay && payMethods.usable.length === 0 ? (
-            <Text style={styles.placeholder}>
-              {payMethods.hasAnyMethod
-                ? `${firstName} has not added a way to be paid in ${currency}.`
-                : `${firstName} has not added a way to be paid yet.`}
-            </Text>
-          ) : null}
-        </View>
-
-        {!received && payMethods.method ? (
-          <PayeeMethodDetails
-            amountCents={amountCents}
-            currency={currency}
-            firstName={firstName}
-            // A different method is a different card: its "Copied" marks reset.
-            key={payMethods.method.id}
-            method={payMethods.method}
-            methods={ledgerQuery.data?.payeeMethods ?? []}
-            readAt={ledgerQuery.data?.readAt ?? ""}
-            removedAt={ledgerQuery.data?.payeeMethodRemovedAt ?? ""}
-            note={note}
-          />
-        ) : null}
-
-        <TextField
-          maxLength={MAX_SETTLEMENT_NOTE_LENGTH}
-          onChangeText={setNote}
-          placeholder="Note (optional)"
-          value={note}
-        />
+        </> : null}
 
       </View>
     </Sheet>

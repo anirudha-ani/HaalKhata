@@ -238,3 +238,16 @@ export function billPayableCents(reading: SettleReading, billPayableCents: numbe
 export function billOverLimitMessage(payableCents: number, currency: string): string {
   return `that's more than the ${formatMoney(payableCents, currency)} left to pay for this bill`;
 }
+
+/**
+ * Checks the amount a payment app would receive against the bill's current allowance.
+ * @param amountCents - Amount to send to the external app.
+ * @param payableCents - Latest amount payable to this creditor.
+ * @param currency - Immutable currency of the bill.
+ * @returns A visible refusal or an empty string when the handoff may proceed.
+ */
+export function billPaymentError(amountCents: number, payableCents: number, currency: string): string {
+  if (payableCents <= 0) return NOTHING_TO_REPAY;
+  if (!Number.isSafeInteger(amountCents) || amountCents <= 0) return "Enter a valid amount.";
+  return amountCents > payableCents ? billOverLimitMessage(payableCents, currency) : "";
+}

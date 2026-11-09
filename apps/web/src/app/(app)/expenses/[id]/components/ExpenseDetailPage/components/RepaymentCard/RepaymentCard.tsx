@@ -55,7 +55,7 @@ export function RepaymentCard({
 }) {
   // The person being paid, not the figures: those are read fresh from the
   // page on every render, so the dialog never offers a stale amount.
-  const [payingUserId, setPayingUserId] = useState<string | null>(null);
+  const [selectedPerson, setSelectedPerson] = useState<User | null>(null);
   const history = useEarlierPaymentsAPI(expense.id, cursor);
   const firstNameOf = (userId: string) => (userById.get(userId) ?? history.people.get(userId))?.name.split(" ")[0] ?? "them";
 
@@ -66,9 +66,10 @@ export function RepaymentCard({
       view: readRepayment(repayment, firstNameOf(repayment.userId), expense.groupId !== "", expense.currency),
     }))
     .filter(({ view }) => !(settledForViewer && view.state === "square"));
-  if (rows.length === 0 && payments.length === 0) return null;
-  const paying = repayments.find((repayment) => repayment.userId === payingUserId);
-  const payingPerson = paying ? userById.get(paying.userId) : undefined;
+  if (!selectedPerson && rows.length === 0 && payments.length === 0) return null;
+  // Keep an open sheet long enough to explain an edit that removed this debt.
+  const paying = repayments.find((repayment) => repayment.userId === selectedPerson?.id);
+  const payingPerson = selectedPerson && (userById.get(selectedPerson.id) ?? selectedPerson);
 
   return (
     <section className="rounded-2xl border border-line bg-card p-4">
@@ -87,7 +88,7 @@ export function RepaymentCard({
                 meId={meId}
                 currency={expense.currency}
                 groupHref={groupHref}
-                onPay={() => setPayingUserId(repayment.userId)}
+                onPay={() => setSelectedPerson(person)}
               />
             ) : null,
           )}
@@ -111,15 +112,15 @@ export function RepaymentCard({
           ))}
         </ul>
       ) : null}
-      {paying && payingPerson ? (
+      {payingPerson ? (
         <SettleUpModal
           to={payingPerson}
-          suggestedCents={paying.payableCents}
+          suggestedCents={paying?.payableCents ?? 0}
           currency={expense.currency}
           // The bill's own balance: its group, or the pair's outside groups.
           scopeId={expense.groupId}
-          bill={{ expenseId: expense.id, description: expense.description, payableCents: paying.payableCents }}
-          onClose={() => setPayingUserId(null)}
+          bill={{ expenseId: expense.id, description: expense.description, payableCents: paying?.payableCents ?? 0, refusal: paying?.refusal }}
+          onClose={() => setSelectedPerson(null)}
         />
       ) : null}
     </section>
