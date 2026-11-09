@@ -1,6 +1,7 @@
 /** Parameterized SQL for blocking, authorized report targets, and the moderation queue. */
 
 import type { PoolClient } from "pg";
+import { lockFriendRequestInboxes } from "@/server/common/ledger/ledgerLocks";
 import { execute, newId, query, queryOne } from "@/server/common/db/db";
 import type { UserRow } from "@/server/auth/repo/users.repo";
 
@@ -52,6 +53,7 @@ export async function commentTarget(targetId: string) {
  * @param client Transaction client.
  */
 export async function insertBlock(viewerId: string, targetId: string, client: PoolClient): Promise<void> {
+  await lockFriendRequestInboxes(client, [viewerId, targetId]);
   await execute("INSERT INTO user_blocks (blocker_id, blocked_id) VALUES ($1, $2) ON CONFLICT DO NOTHING", [viewerId, targetId], client);
   await execute(`DELETE FROM friend_requests WHERE (requester_id = $1 AND recipient_id = $2) OR (requester_id = $2 AND recipient_id = $1)`, [viewerId, targetId], client);
   // Legacy rows have no actor metadata; clearing the blocker's notification inbox

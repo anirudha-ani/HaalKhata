@@ -49,3 +49,4 @@ query counts/rows or equivalent plan properties, not machine-dependent timings.
 | API-04 | A failed live-split join leaves permanent group access | `apps/web/src/server/expense/usecase/liveSplit/liveSplit.integration.test.ts` |
 | API-05 | Direct member addition bypasses a block enforced by invite links | `apps/web/src/server/group/usecase/groupEnrolment.integration.test.ts` |
 | API-14 | Concurrent creation exceeds the per-person 200-group limit | `apps/web/src/server/group/usecase/groupEnrolment.integration.test.ts` |
+| API-11 | A blocked friend request can reappear after blocking completes | `apps/web/src/server/social/usecase/contacts/contacts.integration.test.ts` |

@@ -261,6 +261,8 @@ export async function respondFriendRequest(
   if (accept && await blockedBetween(userId, requesterId)) notFound("friend request not found");
   const recipient = accept ? await findUserById(userId) : undefined;
   await transaction(async (client) => {
+    await lockFriendRequestInboxes(client, [requesterId, userId]);
+    if (accept && await blockedBetween(userId, requesterId, client)) notFound("friend request not found");
     if (!(await deleteFriendRequest(requesterId, userId, client))) {
       notFound("friend request not found");
     }

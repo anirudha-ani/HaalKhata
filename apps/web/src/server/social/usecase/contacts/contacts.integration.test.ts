@@ -9,6 +9,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { Client } from "pg";
 import { ContactDiscovery } from "@haalkhata/protogen/common/v1/common_pb";
 import { ContactRelation } from "@haalkhata/protogen/social/v1/social_pb";
+import { FRIEND_REQUEST_INBOX_LOCK_PREFIX } from "@/server/common/ledger/ledgerLocks.constants";
 import { testDatabaseName } from "@/server/common/testing/testDatabase";
 
 const ADMIN_URL =
@@ -41,6 +42,23 @@ describe.skipIf(!reachable)("contacts usecases against Postgres", () => {
   let findContacts: typeof import("./findContacts.usecase").findContacts;
   let sendFriendRequests: typeof import("./sendFriendRequests.usecase").sendFriendRequests;
   let setContactDiscovery: typeof import("@/server/auth/usecase/account/contactDiscovery.usecase").setContactDiscovery;
+
+  /**
+   * Waits until a block and request both reach the held inbox lock.
+   * @param count - Number of waiting requests.
+   * @returns When the competing writes have queued in the intended order.
+   */
+  async function waitForInboxWaiters(count: number): Promise<void> {
+    const deadline = Date.now() + 3000;
+    while (Date.now() < deadline) {
+      const { rows } = await database.query<{ total: number }>(
+        "SELECT count(*)::int AS total FROM pg_locks WHERE locktype = 'advisory' AND NOT granted AND database = (SELECT oid FROM pg_database WHERE datname = current_database())",
+      );
+      if (rows[0].total >= count) return;
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    throw new Error("expected blocked friend-request writes");
+  }
 
   beforeAll(async () => {
     const admin = new Client({ connectionString: ADMIN_URL });
@@ -158,4 +176,38 @@ describe.skipIf(!reachable)("contacts usecases against Postgres", () => {
       (await database.query(`SELECT identifiers_checked FROM contact_lookup_usage WHERE user_id = 'caller'`)).rows,
     ).toEqual([{ identifiers_checked: 4999 }]);
   });
+  it.each(["single", "bulk"])("does not revive a %s request after blocking completes", async (kind) => {
+    const social = await import("../social.usecase");
+    const safety = await import("@/server/safety/usecase/safety.usecase");
+    await database.query("INSERT INTO groups(id, name, created_by) VALUES ('block-race-group', 'Shared group', 'erin') ON CONFLICT DO NOTHING");
+    await database.query("INSERT INTO group_members(group_id, user_id) VALUES ('block-race-group', 'erin'), ('block-race-group', 'caller') ON CONFLICT DO NOTHING");
+    await database.query("BEGIN");
+    await database.query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", [FRIEND_REQUEST_INBOX_LOCK_PREFIX + "caller"]);
+    const blocking = safety.blockUser("erin", "caller");
+    let sending: Promise<unknown> | undefined;
+    try {
+      await waitForInboxWaiters(1);
+      sending = kind === "single"
+        ? social.addFriend("caller", { email: "", phone: "", userId: "erin" })
+        : sendFriendRequests("caller", ["erin"]);
+      await waitForInboxWaiters(2);
+      await database.query("COMMIT");
+      await Promise.all([blocking, sending]);
+      expect((await database.query("SELECT 1 FROM friend_requests WHERE requester_id = 'caller' AND recipient_id = 'erin'")).rows).toHaveLength(0);
+      expect((await social.listFriends("erin")).incomingRequests).toHaveLength(0);
+      expect((await social.listNotifications("erin")).pendingFriendRequestCount).toBe(0);
+      // Old rows from a previous release must also stay invisible.
+      await database.query("INSERT INTO friend_requests(requester_id, recipient_id) VALUES ('caller', 'erin')");
+      expect((await social.listFriends("erin")).incomingRequests).toHaveLength(0);
+      expect((await social.listFriends("caller")).outgoingRequests.some((request) => request.user?.id === "erin")).toBe(false);
+      expect((await social.listNotifications("erin")).pendingFriendRequestCount).toBe(0);
+      await expect(social.respondFriendRequest("erin", "caller", true)).rejects.toMatchObject({ code: "not_found" });
+    } finally {
+      await database.query("ROLLBACK");
+      await Promise.allSettled([blocking, sending]);
+      await database.query("DELETE FROM friend_requests WHERE requester_id = 'caller' AND recipient_id = 'erin'");
+      await safety.unblockUser("erin", "caller");
+    }
+  });
+
 });
