@@ -8,7 +8,7 @@ import { invalid, UsecaseError } from "@/server/common/errors";
 import { ACCOUNT_ERASURE_ATTEMPTS, ANONYMOUS_MEMBER_COLOR, ANONYMOUS_MEMBER_NAME, DELETE_ACCOUNT_CONFIRMATION,
   DELETED_EXPENSE_DESCRIPTION, DELETED_GROUP_NAME, DELETED_ITEM_NAME } from "../../accountDeletion.constants";
 import { deletionReportsUnchanged, lockDeletionReports, eraseAccountData, insertAnonymousLedgerMember, listDeletionGroupMembers,
-  lockAccountForDeletion, transferDeletionGroupOwnership } from "../../repo/deletion/accountDeletion.repo";
+  lockAccountForDeletion, transferDeletionGroupOwnership, flushDeletionConstraints } from "../../repo/deletion/accountDeletion.repo";
 import { listAppleCredentials } from "../../repo/apple/appleSignIn.repo";
 import { revokeAppleToken } from "../apple/apple.provider";
 
@@ -25,24 +25,10 @@ export async function deleteAccount(userId: string, confirmation: string): Promi
   if (confirmation !== DELETE_ACCOUNT_CONFIRMATION) invalid("confirm permanent account deletion");
   /** Locks every report that can cascade before changing the account or its content. */
   const attempt = () => transaction(async (client) => {
-    const reports = await lockDeletionReports(userId, client);
-    await lockAccountContentForErasure(client, userId);
-    const account = await lockDeletionBeforeProviders(userId, client);
-    if (!account) throw new UsecaseError("unauthenticated", "account no longer exists");
-    if (!await deletionReportsUnchanged(userId, reports, client)) throw new AccountReportsChanged();
-    const credentials = await listAppleCredentials(userId, client);
+    const credentials = await prepareDeletionBeforeProviders(userId, client);
     for (const credential of credentials) await revokeAppleToken(credential.client_id, credential.refresh_token_ciphertext);
-    const anonymousId = newId();
-    await insertAnonymousLedgerMember({ id: anonymousId, name: ANONYMOUS_MEMBER_NAME, color: ANONYMOUS_MEMBER_COLOR }, client);
-    const candidates = await listDeletionGroupMembers(userId, client);
-    const transferred = new Set<string>();
-    for (const candidate of candidates) {
-      if (transferred.has(candidate.group_id)) continue;
-      await transferDeletionGroupOwnership(candidate.group_id, candidate.id, DELETED_GROUP_NAME, client);
-      transferred.add(candidate.group_id);
-    }
-    await eraseAccountData({ userId, anonymousId,
-      expenseDescription: DELETED_EXPENSE_DESCRIPTION, itemName: DELETED_ITEM_NAME, groupName: DELETED_GROUP_NAME }, client);
+    // The transaction commits next. No further SQL, including deferred checks,
+    // may introduce a new lock failure after the irreversible provider calls.
   });
   for (let attemptNumber = 0; attemptNumber < ACCOUNT_ERASURE_ATTEMPTS; attemptNumber++) {
     try {
@@ -56,14 +42,34 @@ export async function deleteAccount(userId: string, confirmation: string): Promi
 }
 
 /**
- * Refuses a contended bill before any external credential can be revoked.
+ * Prepares reversible database erasure before external credential revocation.
+ * Parent/revision lock failures and deferred integrity errors happen here;
+ * a later provider failure still rolls back all pending database changes.
  * @param userId Account being erased.
  * @param client Erasure transaction.
- * @returns Locked account and its ledger parents, or undefined if it is gone.
+ * @returns Captured credentials, independent of their pending local deletion.
  */
-async function lockDeletionBeforeProviders(userId: string, client: PoolClient) {
+async function prepareDeletionBeforeProviders(userId: string, client: PoolClient) {
   try {
-    return await lockAccountForDeletion(userId, client);
+    const reports = await lockDeletionReports(userId, client);
+    await lockAccountContentForErasure(client, userId);
+    const account = await lockAccountForDeletion(userId, client);
+    if (!account) throw new UsecaseError("unauthenticated", "account no longer exists");
+    if (!await deletionReportsUnchanged(userId, reports, client)) throw new AccountReportsChanged();
+    const credentials = await listAppleCredentials(userId, client);
+    const anonymousId = newId();
+    await insertAnonymousLedgerMember({ id: anonymousId, name: ANONYMOUS_MEMBER_NAME, color: ANONYMOUS_MEMBER_COLOR }, client);
+    const candidates = await listDeletionGroupMembers(userId, client);
+    const transferred = new Set<string>();
+    for (const candidate of candidates) {
+      if (transferred.has(candidate.group_id)) continue;
+      await transferDeletionGroupOwnership(candidate.group_id, candidate.id, DELETED_GROUP_NAME, client);
+      transferred.add(candidate.group_id);
+    }
+    await eraseAccountData({ userId, anonymousId,
+      expenseDescription: DELETED_EXPENSE_DESCRIPTION, itemName: DELETED_ITEM_NAME, groupName: DELETED_GROUP_NAME }, client);
+    await flushDeletionConstraints(client);
+    return credentials;
   } catch (error) {
     const code = (error as { code?: unknown } | null)?.code;
     if (typeof code === "string" && LEDGER_BUSY_ERROR_CODES.has(code)) {

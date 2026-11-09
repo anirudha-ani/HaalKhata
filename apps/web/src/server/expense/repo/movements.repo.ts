@@ -117,6 +117,9 @@ export async function sumPairHistory(viewerId: string, friendId: string, client:
 
 /**
  * Reads only expenses with an actual pair movement, including deleted explanations.
+ * Each direction is an ordered index seek capped before merging: a pair-wide
+ * OR predicate would read and sort the whole history even for a one-line page.
+ * The cursor compares the index's three keys directly when ranks match.
  * @param viewerId - The reader.
  * @param friendId - The friend.
  * @param before - The last displayed line, or null for the newest page.
@@ -128,11 +131,19 @@ export async function listPairMovementPage(viewerId: string, friendId: string, b
   return query<ListedExpenseRow>(
     `SELECT expense.*,${exactTimeSql("expense.created_at")} AS created_at_exact
        FROM (
-         SELECT expense_id,expense_date,created_at FROM expense_pair_movements
-          WHERE ((from_user=$1 AND to_user=$2) OR (from_user=$2 AND to_user=$1))
-            AND ($3::text IS NULL OR (expense_date COLLATE "C",created_at,$7::int,expense_id COLLATE "C")
-                < ($3::text COLLATE "C",$4::timestamptz,$5::int,$6::text COLLATE "C"))
-          ORDER BY expense_date COLLATE "C" DESC,created_at DESC,expense_id COLLATE "C" DESC LIMIT $8
+         SELECT directional.*
+           FROM (VALUES ($1::text,$2::text),($2::text,$1::text)) AS pair(sender,recipient)
+           CROSS JOIN LATERAL (
+             SELECT expense_id,expense_date,created_at FROM expense_pair_movements
+              WHERE from_user=pair.sender AND to_user=pair.recipient
+                AND ($3::text IS NULL
+                  OR ($5::int > $7::int AND (expense_date COLLATE "C",created_at)
+                        <= ($3::text COLLATE "C",$4::timestamptz))
+                  OR ($5::int = $7::int AND (expense_date COLLATE "C",created_at,expense_id COLLATE "C")
+                        < ($3::text COLLATE "C",$4::timestamptz,$6::text COLLATE "C")))
+              ORDER BY expense_date COLLATE "C" DESC,created_at DESC,expense_id COLLATE "C" DESC LIMIT $8
+           ) directional
+          ORDER BY directional.expense_date COLLATE "C" DESC,directional.created_at DESC,directional.expense_id COLLATE "C" DESC LIMIT $8
        ) movement JOIN expenses expense ON expense.id=movement.expense_id
       ORDER BY movement.expense_date COLLATE "C" DESC,movement.created_at DESC,movement.expense_id COLLATE "C" DESC`,
     [viewerId,friendId,before?.day ?? null,before?.at ?? null,before?.rank ?? null,before?.id ?? null,LEDGER_LINE_RANK.expense,limit],client,

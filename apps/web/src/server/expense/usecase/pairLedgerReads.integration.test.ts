@@ -432,4 +432,35 @@ describe.skipIf(!reachable)("how often a pair's group histories are read, agains
     }
   });
 
+  it("remaps a thousand affected bills and invalidates surviving-pair titles without changing their money", async () => {
+    const accountId = "projection-heavy-account";
+    await database.query(`INSERT INTO users(id,email,name,avatar_color,google_sub) VALUES($1,'projection-heavy@example.com','Heavy fixture','#c73e2e',$1)`,[accountId]);
+    await database.query(`INSERT INTO expenses(id,description,amount_cents,currency,expense_date,split_type,created_by)
+      SELECT 'erase-budget-' || ordinal,'Owned history',1,'USD','2026-10-01','exact',$1 FROM generate_series(1,1000) ordinal`,[accountId]);
+    await database.query(`INSERT INTO expense_payers(expense_id,user_id,amount_cents) SELECT id,$1,1 FROM expenses WHERE id LIKE 'erase-budget-%'`,[accountId]);
+    await database.query(`INSERT INTO expense_splits(expense_id,user_id,owed_cents) SELECT id,$1,1 FROM expenses WHERE id LIKE 'erase-budget-%'`,[SARA]);
+    await insertDebt(database,{ id: "erase-survivor-bill",groupId: null,amountCents: 1,currency: "USD",paidBy: SARA,owedBy: TOMAS });
+    await database.query("UPDATE expenses SET created_by=$1,expense_date='2026-12-01' WHERE id='erase-survivor-bill'",[accountId]);
+    const before = await balances.getFriendLedger(SARA,TOMAS,1);
+    const ledgerRepo = await import("@/server/expense/repo/ledger.repo");
+    const client = database as unknown as import("pg").PoolClient;
+    const unrelated = await ledgerRepo.pairHistoryDigest(TOMAS,LENA,client);
+    const deletion = await import("@/server/auth/usecase/deletion/accountDeletion.usecase");
+    const started = performance.now();
+    await deletion.deleteAccount(accountId,"DELETE");
+    expect(performance.now()-started).toBeLessThan(10_000);
+    const rows = (await database.query(`SELECT movement.to_user,count(*)::int AS count,sum(movement.amount_cents)::text AS cents
+      FROM expense_pair_movements movement WHERE expense_id LIKE 'erase-budget-%' GROUP BY movement.to_user`)).rows;
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ count: 1000,cents: "1000" });
+    expect(rows[0].to_user).not.toBe(accountId);
+    expect((await database.query(`SELECT * FROM ledger_pair_revisions WHERE low_user=$1 OR high_user=$1`,[accountId])).rows).toEqual([]);
+    await expect(balances.listFriendLedgerEntries(SARA,TOMAS,{ cursor: before.nextCursor,limit: 1 })).rejects.toMatchObject({ code: "failed_precondition" });
+    const after = await balances.getFriendLedger(SARA,TOMAS,1);
+    expect(after.nets).toEqual(before.nets);
+    expect(after.entries[0]).toMatchObject({ id: "erase-survivor-bill",description: "Deleted expense",deltaCents: 1 });
+    expect(await ledgerRepo.pairHistoryDigest(TOMAS,LENA,client)).toBe(unrelated);
+    await expect(balances.listFriendLedgerEntries(SARA,TOMAS,{ cursor: after.nextCursor,limit: 1 })).resolves.toMatchObject({ entries: expect.any(Array) });
+  });
+
 });

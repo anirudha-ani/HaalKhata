@@ -148,3 +148,12 @@ export async function eraseAccountData(input: { userId: string; anonymousId: str
   await execute("UPDATE groups SET created_by = $2 WHERE created_by = $1", identity, client);
   await execute("DELETE FROM users WHERE id = $1", [input.userId], client);
 }
+
+/**
+ * Executes all deferred integrity checks while erasure can still roll back
+ * without having revoked external credentials. Only COMMIT follows providers.
+ * @param client Erasure transaction containing every pending database change.
+ */
+export async function flushDeletionConstraints(client: PoolClient): Promise<void> {
+  await execute("SET CONSTRAINTS ALL IMMEDIATE", [], client);
+}

@@ -3,8 +3,7 @@
 import type { PoolClient } from "pg";
 import { execute, newId, query, queryOne } from "@/server/common/db/db";
 import { lockParticipantLedgers, withLedgerTransaction } from "@/server/common/ledger/ledgerLocks";
-import { exactTimeSql, utcDaySql } from "@/server/common/pagination/pagination";
-import { LEDGER_LINE_RANK, OFFSET_SETTLEMENT_METHOD } from "@/server/expense/expense.constants";
+import { exactTimeSql } from "@/server/common/pagination/pagination";
 import type { LedgerLineKey } from "@/server/expense/domain/ledgerOrder";
 
 /** One row of the settlements table (column names mirror SQL). */
@@ -381,6 +380,15 @@ export type ListedSettlementRow = SettlementRow & { created_at_exact: string };
  * scope), going back in time from `before` in the friend statement's order:
  * UTC day, moment written, rank (a cancelled balance before its payment),
  * id. The same order {@link compareLedgerLineKeys} keeps in memory.
+ * UTC day is monotonic in a payment's timestamp, so its ordered index needs
+ * only timestamp, rank and id. An expense cursor's bill date may differ from
+ * its creation day: clamp its moment to that bill day's UTC bounds, excluding
+ * the boundary itself when clamped, to preserve the original day-first order.
+ * Each direction reads at most limit rows before their bounded merge.
+ * Year-zero bill dates sort before every payment; they do not cast to a
+ * PostgreSQL date, whose calendar has no year zero. The literal rank
+ * expression matches idx_settlements_pair_statement, including
+ * when PostgreSQL chooses a generic prepared plan.
  *
  * @param firstUserId - One of the two people.
  * @param secondUserId - The other.
@@ -397,16 +405,29 @@ export async function listSettlementsBetweenPage(
   client: PoolClient,
 ): Promise<ListedSettlementRow[]> {
   return query<ListedSettlementRow>(
-    `SELECT *, ${exactTimeSql("created_at")} AS created_at_exact
-       FROM settlements
-      WHERE ((from_user = $1 AND to_user = $2) OR (from_user = $2 AND to_user = $1))
-        AND ($3::text IS NULL
-             OR (${utcDaySql("created_at")}, created_at,
-                 CASE WHEN method = $7 THEN $8::int ELSE $9::int END, id COLLATE "C")
-                < ($3::text COLLATE "C", $4::timestamptz, $5::int, $6::text COLLATE "C"))
-      ORDER BY ${utcDaySql("created_at")} DESC, created_at DESC,
-               CASE WHEN method = $7 THEN $8::int ELSE $9::int END DESC, id COLLATE "C" DESC
-      LIMIT $10`,
+    `SELECT directional.*, ${exactTimeSql("directional.created_at")} AS created_at_exact
+       FROM (VALUES ($1::text,$2::text),($2::text,$1::text)) AS pair(sender,recipient)
+       CROSS JOIN LATERAL (
+         SELECT (CASE WHEN $3::text >= '0001-01-01' THEN $3::text END)::date AS cursor_day
+       ) boundary
+       CROSS JOIN LATERAL (
+         SELECT * FROM settlements
+          WHERE from_user=pair.sender AND to_user=pair.recipient
+            AND ($3::text IS NULL
+              OR (boundary.cursor_day IS NOT NULL
+                AND (created_at,CASE WHEN method = 'offset' THEN 1 ELSE 2 END,id COLLATE "C")
+                < (greatest(least($4::timestamptz,(boundary.cursor_day+1)::timestamp AT TIME ZONE 'UTC'),
+                            boundary.cursor_day::timestamp AT TIME ZONE 'UTC'),
+                   CASE WHEN $4::timestamptz < boundary.cursor_day::timestamp AT TIME ZONE 'UTC'
+                          OR $4::timestamptz >= (boundary.cursor_day+1)::timestamp AT TIME ZONE 'UTC'
+                        THEN -1 ELSE $5::int END,
+                   $6::text COLLATE "C")))
+          ORDER BY created_at DESC,CASE WHEN method = 'offset' THEN 1 ELSE 2 END DESC,id COLLATE "C" DESC
+          LIMIT $7
+       ) directional
+      ORDER BY directional.created_at DESC,
+               CASE WHEN directional.method = 'offset' THEN 1 ELSE 2 END DESC,directional.id COLLATE "C" DESC
+      LIMIT $7`,
     [
       firstUserId,
       secondUserId,
@@ -414,9 +435,6 @@ export async function listSettlementsBetweenPage(
       before?.at ?? null,
       before?.rank ?? null,
       before?.id ?? null,
-      OFFSET_SETTLEMENT_METHOD,
-      LEDGER_LINE_RANK.offset,
-      LEDGER_LINE_RANK.payment,
       limit,
     ],
     client,

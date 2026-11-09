@@ -2,8 +2,6 @@
 
 import type { PoolClient } from "pg";
 import { query, queryOne } from "@/server/common/db/db";
-import { exactTimeSql } from "@/server/common/pagination/pagination";
-import { expenseInvolvesSql } from "./expenseInvolvement";
 
 /**
  * Checks live movements for a nonzero participant net in any group currency.
@@ -206,51 +204,22 @@ export async function sumExpenseVolumes(
 }
 
 /**
- * A fingerprint of everything that decides two people's statement: each
- * expense they share (its currency, date, moment written, whether it is
- * deleted, and every payer and split on it) and each payment between them
- * (who paid, how much, in what, whether it was removed). It changes when any
- * line is added, edited, moved, removed or restored, and only then; text
- * that moves no money, like a description, is left out.
- *
- * A later page of the statement continues the running balance from where the
- * first page left off. It compares this fingerprint with the one the first
- * page was read with, so it never continues from a history that has since
- * changed. Computed in Postgres; one row reaches the application.
- *
- * @param firstUserId - One of the two people.
- * @param secondUserId - The other.
- * @param client - Snapshot client the page is read on.
- * @returns A hex digest.
+ * Fingerprints compact transactional revisions instead of rescanning history.
+ * A revision belongs to one pair in one scope, so unrelated groups never
+ * contend for a shared per-person counter. The version prefix invalidates
+ * cursors issued before revision tracking was installed.
+ * @param firstUserId - One participant.
+ * @param secondUserId - The other participant.
+ * @param client - The statement's snapshot.
+ * @returns A digest that changes after every statement-affecting write.
  */
-export async function pairHistoryDigest(
-  firstUserId: string,
-  secondUserId: string,
-  client: PoolClient,
-): Promise<string> {
+export async function pairHistoryDigest(firstUserId: string, secondUserId: string, client: PoolClient): Promise<string> {
   const digestRow = await queryOne<{ digest: string }>(
-    `SELECT md5(coalesce(string_agg(line.part, '|' ORDER BY line.part COLLATE "C"), '')) AS digest
-       FROM (
-         SELECT concat_ws(':', 'expense', expense.id, expense.currency, expense.expense_date::text,
-                  ${exactTimeSql("expense.created_at")}, (expense.deleted_at IS NULL)::text,
-                  (SELECT string_agg(payer.user_id || '=' || payer.amount_cents, ','
-                                     ORDER BY payer.user_id COLLATE "C", payer.amount_cents)
-                     FROM expense_payers payer WHERE payer.expense_id = expense.id),
-                  (SELECT string_agg(split.user_id || '=' || split.owed_cents, ','
-                                     ORDER BY split.user_id COLLATE "C", split.owed_cents)
-                     FROM expense_splits split WHERE split.expense_id = expense.id)) AS part
-           FROM expenses expense
-          WHERE ${expenseInvolvesSql("= $1")}
-            AND ${expenseInvolvesSql("= $2")}
-         UNION ALL
-         SELECT concat_ws(':', 'payment', settlement.id, settlement.from_user, settlement.currency,
-                  settlement.amount_cents::text, (settlement.deleted_at IS NULL)::text)
-           FROM settlements settlement
-          WHERE (settlement.from_user = $1 AND settlement.to_user = $2)
-             OR (settlement.from_user = $2 AND settlement.to_user = $1)
-       ) line`,
-    [firstUserId, secondUserId],
-    client,
+    `SELECT 'v2:' || md5(coalesce(string_agg(scope_key || ':' || revision::text, '|' ORDER BY scope_key COLLATE "C"), '')) AS digest
+       FROM ledger_pair_revisions
+      WHERE low_user=least($1::text COLLATE "C",$2::text COLLATE "C")
+        AND high_user=greatest($1::text COLLATE "C",$2::text COLLATE "C")`,
+    [firstUserId,secondUserId],client,
   );
   return digestRow?.digest ?? "";
 }

@@ -4,7 +4,6 @@ import type { PoolClient } from "pg";
 import { listPairMovementPage, sumPairHistory, sumScopeMovements, sumScopedPairMovements, sumUserMovements, type MovementTotal } from "@/server/expense/repo/movements.repo";
 
 import {
-  listExpensesBetweenPage,
   loadExpenseChildren,
   type ExpenseChildren,
   type ExpenseRow,
@@ -1543,16 +1542,6 @@ export async function getFriendLedger(userId: string, friendId: string, limit = 
   });
 }
 
-/** One of the two row streams an older page of a statement is merged from. */
-interface LedgerStream<Row> {
-  /** Rows read so far, newest first. */
-  rows: Row[];
-  /** The oldest position read so far: where its next read starts. */
-  before: LedgerLineKey;
-  /** True once it has returned its last row. */
-  done: boolean;
-}
-
 /** The rows behind one older page of a statement. */
 interface OlderStatementRows {
   /** Expenses that make a line on the page. */
@@ -1591,82 +1580,6 @@ async function readProjectedStatementPage(userId: string, friendId: string, befo
   };
 }
 
-/**
- * Reads the rows of the statement's next `size` lines older than `before`,
- * merging the two keyset streams (expenses, payments) in statement order.
- *
- * A row read from a stream is final in the order once it is at or newer than
- * the frontier: the newest position among the streams not yet finished,
- * since every row still unread from them is older. An expense that moved
- * nothing between the pair makes no line, so the loop reads on until the
- * page has one line more than it shows (to know whether more remain) or
- * both streams end.
- *
- * @param userId - Statement reader.
- * @param friendId - The friend.
- * @param before - The oldest line already shown.
- * @param size - Lines on the page.
- * @param client - Snapshot client.
- * @returns The page's rows, and whether older lines remain.
- */
-async function readOlderStatementRows(
-  userId: string,
-  friendId: string,
-  before: LedgerLineKey,
-  size: number,
-  client: PoolClient,
-): Promise<OlderStatementRows> {
-  const batch = size + 1;
-  const expenseStream: LedgerStream<ListedExpenseRow> = { rows: [], before, done: false };
-  const settlementStream: LedgerStream<ListedSettlementRow> = { rows: [], before, done: false };
-  const children: ExpenseChildren = { payers: new Map(), splits: new Map(), items: new Map() };
-  const lineKeys: { key: LedgerLineKey; expense?: ListedExpenseRow; settlement?: ListedSettlementRow }[] = [];
-
-  for (;;) {
-    const open = [expenseStream, settlementStream].filter((stream) => !stream.done);
-    const frontier = open
-      .map((stream) => stream.before)
-      .sort((first, second) => compareLedgerLineKeys(second, first))[0];
-    const final = frontier
-      ? lineKeys.filter((entry) => compareLedgerLineKeys(entry.key, frontier) >= 0)
-      : lineKeys;
-    if (!frontier || final.length > size) break;
-
-    if (expenseStream.before === frontier && !expenseStream.done) {
-      const rows = await listExpensesBetweenPage(userId, friendId, expenseStream.before, batch, client);
-      const loaded = await loadExpenseChildren(rows.map((expense) => expense.id), client, false);
-      for (const [expenseId, payers] of loaded.payers) children.payers.set(expenseId, payers);
-      for (const [expenseId, splits] of loaded.splits) children.splits.set(expenseId, splits);
-      for (const expense of rows) {
-        const lineKey = expenseLineKey(expense);
-        expenseStream.before = lineKey;
-        if (pairDelta(debtsFromExpenses([expense], children), userId, friendId) !== 0) {
-          lineKeys.push({ key: lineKey, expense });
-        }
-      }
-      expenseStream.rows.push(...rows);
-      expenseStream.done = rows.length < batch;
-    } else {
-      const rows = await listSettlementsBetweenPage(userId, friendId, settlementStream.before, batch, client);
-      for (const settlement of rows) {
-        const lineKey = settlementLineKey(settlement);
-        settlementStream.before = lineKey;
-        lineKeys.push({ key: lineKey, settlement });
-      }
-      settlementStream.rows.push(...rows);
-      settlementStream.done = rows.length < batch;
-    }
-  }
-
-  const ordered = lineKeys.sort((first, second) => compareLedgerLineKeys(second.key, first.key));
-  const page = ordered.slice(0, size);
-  return {
-    expenses: page.flatMap((entry) => (entry.expense ? [entry.expense] : [])),
-    children,
-    settlements: page.flatMap((entry) => (entry.settlement ? [entry.settlement] : [])),
-    hasMore: ordered.length > size,
-  };
-}
 
 /**
  * One older page of the statement with a friend, continuing from where the
@@ -1699,7 +1612,7 @@ export async function listFriendLedgerEntries(
     if ((await pairHistoryDigest(userId, friendId, client)) !== position.historyDigest) {
       throw new UsecaseError("failed_precondition", LEDGER_CHANGED_MESSAGE);
     }
-    const rows = await readOlderStatementRows(userId, friendId, position.after, size, client);
+    const rows = await readProjectedStatementPage(userId, friendId, position.after, size, client);
 
     // A net settlement is removed whole, so a page holding one of its lines
     // needs the rest of it, which may sit on a neighbouring page.

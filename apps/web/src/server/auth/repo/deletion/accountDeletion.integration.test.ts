@@ -115,6 +115,15 @@ describe.skipIf(!await databaseReachable())("permanent account deletion against 
     expect((await database.query("SELECT * FROM users WHERE id = $1", [ACCOUNT_ID])).rows).toEqual([]);
     expect(await sessionUser(originalToken)).toBeNull();
   });
+  it("erases original pair revision keys and retains the anonymous statement", async () => {
+    expect((await database.query("SELECT * FROM ledger_pair_revisions WHERE low_user=$1 OR high_user=$1",[ACCOUNT_ID])).rows).toEqual([]);
+    const anonymous = (await database.query("SELECT id FROM users WHERE deleted_at IS NOT NULL")).rows[0].id;
+    expect((await database.query("SELECT * FROM ledger_pair_revisions WHERE low_user=$1 OR high_user=$1",[anonymous])).rows.length).toBeGreaterThan(0);
+    const movements = await import("@/server/expense/repo/movements.repo");
+    const client = database as unknown as import("pg").PoolClient;
+    expect((await movements.listPairMovementPage(FRIEND_ID,anonymous,null,1,client))).toHaveLength(1);
+    expect((await movements.sumPairHistory(FRIEND_ID,anonymous,client)).map((entry) => entry.currency).sort()).toEqual(["EUR","USD","USD"]);
+  });
   it("preserves every currency's cents under a new identity-free ledger participant", async () => {
     const anonymous = (await database.query("SELECT * FROM users WHERE deleted_at IS NOT NULL")).rows[0];
     expect(anonymous.id).not.toBe(ACCOUNT_ID);
