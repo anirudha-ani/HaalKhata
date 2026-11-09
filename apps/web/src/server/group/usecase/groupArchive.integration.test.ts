@@ -281,7 +281,12 @@ describe.skipIf(!reachable)("group archive against Postgres", () => {
       request.splitSpecs[0].userId = owerId;
       await createExpense(OWNER, request);
     }
-    expect((await getOverallBalances(OWNER)).youOweCents).toBe(1000);
+    expect((await getOverallBalances(OWNER)).youOweCents).toBe(0);
+    expect((await getFriendLedger(OWNER, MEMBER)).netCents).toBe(0);
+    const social = await import("@/server/social/usecase/social.usecase");
+    await expect(social.sendReminder(OWNER, MEMBER)).rejects.toThrow("they don't owe you anything");
+    await database.query("INSERT INTO friendships(user_id,friend_id) VALUES($1,$2),($2,$1) ON CONFLICT DO NOTHING", [OWNER, MEMBER]);
+    await expect(social.removeFriend(OWNER, MEMBER)).resolves.toBeUndefined();
     await setStatus(MEMBER, { groupId, status: GroupStatus.ARCHIVED });
     const balances = await getOverallBalances(OWNER);
     expect(balances.youOweCents).toBe(0);

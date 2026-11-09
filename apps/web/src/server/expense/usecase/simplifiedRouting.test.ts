@@ -44,6 +44,10 @@ vi.mock("@/server/auth/repo/users.repo", () => ({
   findUserById: vi.fn(),
   findUsersByIds: vi.fn(),
 }));
+vi.mock("@/server/expense/repo/ledger.repo", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/server/expense/repo/ledger.repo")>()),
+  unsettledPairwiseCurrencies: async (groupIds: string[]) => groupIds.map((group_id) => ({ group_id, currency: "USD" })),
+}));
 vi.mock("@/server/social/repo/friendships.repo", () => ({ listFriendIds: vi.fn() }));
 vi.mock("@/server/payment/repo/paymentMethods.repo", () => ({
   findMethodRemoval: vi.fn(async () => undefined),

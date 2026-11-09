@@ -669,6 +669,18 @@ describe.skipIf(!reachable)("paying back one expense against Postgres", () => {
     });
   });
 
+  it("excludes a cancelling loop from demands while preserving real debt elsewhere", async () => {
+    // The loop test immediately above stores three settled member nets.
+    // Other fixtures also share Ana and Bob, so compare the loop's scope.
+    const friend = await balances.getFriendLedger(ANA_ID, BOB_ID);
+    expect(friend.groupBalances.some((scope) => scope.groupId === LOOP_ID)).toBe(false);
+    expect(friend.entries.some((line) => line.id === "loop-1")).toBe(true);
+    const before = await balances.netWithUser(ANA_ID, BOB_ID);
+    await storeExpense({ id: "outside-loop", groupId: null, description: "Cash", payers: { [ANA_ID]: 17 }, splits: { [BOB_ID]: 17 } });
+    expect((await balances.netWithUser(ANA_ID, BOB_ID)).get("USD")).toBe((before.get("USD") ?? 0) + 17);
+    expect((await balances.getFriendLedger(ANA_ID, BOB_ID)).netCents).toBe((before.get("USD") ?? 0) + 17);
+  });
+
   it("agrees with settling everything from the person's page, before, after, and once that is removed", async () => {
     await storeExpense({
       id: "beach-dinner",

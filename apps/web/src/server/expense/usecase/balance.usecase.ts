@@ -557,15 +557,20 @@ async function pairNetsForUser(
   const missingGroups = missingIds.length > 0 ? await findGroupsByIds(missingIds, client) : [];
   const inactiveIds = new Set([...groups, ...missingGroups]
     .filter(groupIsInactive).map((group) => group.id));
-  const expenses = allExpenses.filter((expense) => !simplifiedGroupIds.has(expense.group_id ?? "")
-    && !inactiveIds.has(expense.group_id ?? ""));
+  const pairwiseGroups = [...groups, ...missingGroups].filter((group) => !group.simplify_debts && !groupIsInactive(group));
+  const payableScopes = new Set((await unsettledPairwiseCurrencies(pairwiseGroups.map((group) => group.id), client))
+    .map((scope) => friendScopeKey(scope.group_id, scope.currency)));
+  /** Whether this movement belongs to a live payable balance. */
+  const payable = (entry: { group_id: string | null; currency: string }) => !entry.group_id
+    || (!simplifiedGroupIds.has(entry.group_id) && !inactiveIds.has(entry.group_id)
+      && payableScopes.has(friendScopeKey(entry.group_id, entry.currency)));
+  const expenses = allExpenses.filter(payable);
   const children = await loadExpenseChildren(
     expenses.map((expense) => expense.id),
     client,
     false,
   );
-  const settlements = allSettlements.filter((settlement) => !simplifiedGroupIds.has(settlement.group_id ?? "")
-    && !inactiveIds.has(settlement.group_id ?? ""));
+  const settlements = allSettlements.filter(payable);
 
   const netByCounterparty = new Map<string, CurrencyCents>(); // > 0 ⇒ they owe the user
   const accumulate = (currency: string, entry: LedgerEntry) => {
@@ -1435,7 +1440,12 @@ function friendScopeBalances(
     if (group && groupIsInactive(group)) historyNets.delete(scope);
   }
   for (const { group, ledgers: groupLedgerByCurrency } of sharedGroups) {
-    if (!group.simplify_debts) continue;
+    if (!group.simplify_debts) {
+      for (const [currency, ledger] of groupLedgerByCurrency) {
+        if (cancelsOut(ledger)) historyNets.delete(friendScopeKey(group.id, currency));
+      }
+      continue;
+    }
     const currencies = new Set([
       ...groupLedgerByCurrency.keys(),
       ...[...historyNets.keys()].flatMap((scope) => {
