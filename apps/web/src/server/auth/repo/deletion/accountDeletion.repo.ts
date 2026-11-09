@@ -83,13 +83,21 @@ export async function insertAnonymousLedgerMember(participant: { id: string; nam
  * @param input Account id, new anonymous id and replacement labels.
  * @param client Erasure transaction.
  */
-export async function eraseAccountData(input: { userId: string; anonymousId: string; oldName: string;
-  anonymousName: string; expenseDescription: string; itemName: string; groupName: string }, client: PoolClient): Promise<void> {
+export async function eraseAccountData(input: { userId: string; anonymousId: string;
+  expenseDescription: string; itemName: string; groupName: string }, client: PoolClient): Promise<void> {
   const identity = [input.userId, input.anonymousId];
-  await execute(`DELETE FROM notifications WHERE user_id = $1 OR link IN
-    (SELECT link FROM activity WHERE actor_id = $1 OR credit_user_id = $1 OR audience @> jsonb_build_array($1::text))`, [input.userId], client);
-  await execute(`UPDATE notifications SET title = replace(title, $1, $2), body = replace(body, $1, $2)
-    WHERE strpos(title, $1) > 0 OR strpos(body, $1) > 0`, [input.oldName, input.anonymousName], client);
+  // Account and actor references are authoritative. Legacy rows without an
+  // actor may use a specific expense/group event with the same recipient.
+  // Shared navigation paths such as /friends never identify an event.
+  await execute(`DELETE FROM notifications
+    WHERE user_id = $1 OR actor_id = $1 OR link = '/friends/' || $1`, [input.userId], client);
+  await execute(`DELETE FROM notifications notice USING activity event
+    WHERE event.link = notice.link
+      AND (event.link LIKE '/expenses/%' OR event.link LIKE '/groups/%')
+      AND (notice.actor_id IS NULL OR notice.actor_id = event.actor_id)
+      AND event.audience @> jsonb_build_array(notice.user_id)
+      AND (event.actor_id = $1 OR event.credit_user_id = $1 OR event.audience @> jsonb_build_array($1::text))`,
+    [input.userId], client);
   await execute("DELETE FROM activity WHERE actor_id = $1 OR credit_user_id = $1 OR audience @> jsonb_build_array($1::text)", [input.userId], client);
   await execute("DELETE FROM comments WHERE user_id = $1", [input.userId], client);
   await execute("DELETE FROM friendships WHERE user_id = $1 OR friend_id = $1", [input.userId], client);

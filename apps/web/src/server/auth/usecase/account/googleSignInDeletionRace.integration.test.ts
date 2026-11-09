@@ -144,8 +144,6 @@ describe.skipIf(!reachable)("a Google sign-in racing the deletion of the account
       {
         userId: ANA_ID,
         anonymousId: "race-anonymous",
-        oldName: "Ana",
-        anonymousName: "Deleted member",
         expenseDescription: "Expense",
         itemName: "Item",
         groupName: "Group",

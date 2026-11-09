@@ -39,7 +39,7 @@ export async function deleteAccount(userId: string, confirmation: string): Promi
       await transferDeletionGroupOwnership(candidate.group_id, candidate.id, DELETED_GROUP_NAME, client);
       transferred.add(candidate.group_id);
     }
-    await eraseAccountData({ userId, anonymousId, oldName: account.name, anonymousName: ANONYMOUS_MEMBER_NAME,
+    await eraseAccountData({ userId, anonymousId,
       expenseDescription: DELETED_EXPENSE_DESCRIPTION, itemName: DELETED_ITEM_NAME, groupName: DELETED_GROUP_NAME }, client);
   });
   for (let attemptNumber = 0; attemptNumber < ACCOUNT_ERASURE_ATTEMPTS; attemptNumber++) {

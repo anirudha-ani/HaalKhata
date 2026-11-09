@@ -166,4 +166,30 @@ describe.skipIf(!await databaseReachable())("permanent account deletion against 
       expect((await database.query(`SELECT COUNT(*)::int AS count FROM ${table}`)).rows[0].count).toBe(0);
     }
   });
+  it.each(["paid", "a", "Ann"])("leaves unrelated notices intact when deleting the common name %s", async (name) => {
+    const actorId = `deleting-${name}`;
+    await database.query("INSERT INTO users (id, name, avatar_color, google_sub, email) VALUES ($1, $2, '#778899', $1, $1 || '@example.test')", [actorId, name]);
+    await database.query(`INSERT INTO activity (id, actor_id, type, message, audience, link) VALUES
+      ($1, $2, 'other', 'An invitation was accepted', jsonb_build_array($2::text, $3::text), '/friends')`,
+      [`activity-${name}`, actorId, FRIEND_ID]);
+    await database.query(`INSERT INTO activity (id, actor_id, type, message, audience, link) VALUES
+      ($1, $2, 'other', 'An account-specific event', jsonb_build_array($2::text, $3::text), '/groups/shared-group')`,
+      [`group-activity-${name}`, actorId, FRIEND_ID]);
+    await database.query(`INSERT INTO notifications (id, user_id, actor_id, type, title, body, link) VALUES
+      ($1, $2, $2, 'other', 'Finn paid you', 'You were repaid by Ann', '/friends'),
+      ($3, $2, NULL, 'other', 'Ann shared a bill', 'A payment was recorded', '/friends'),
+      ($4, $2, $5, 'other', $6, 'An actor-owned notice', '/friends'),
+      ($7, $2, NULL, 'other', $6, 'A specific person notice', '/friends/' || $5),
+      ($8, $2, $2, 'other', 'Finn paid you', 'A different actor on the same resource', '/groups/shared-group')`,
+      [`unrelated-${name}`, FRIEND_ID, `legacy-unrelated-${name}`, `authored-${name}`, actorId, name, `person-${name}`, `same-resource-${name}`]);
+    const survivingIds = [`unrelated-${name}`, `legacy-unrelated-${name}`, `same-resource-${name}`];
+    const beforeNotices = await database.query("SELECT * FROM notifications WHERE id = ANY($1::text[]) ORDER BY id", [survivingIds]);
+    await deletion(actorId, "DELETE");
+    expect((await database.query("SELECT * FROM notifications WHERE id = ANY($1::text[]) ORDER BY id", [survivingIds])).rows)
+      .toEqual(beforeNotices.rows);
+    expect((await database.query("SELECT id FROM notifications WHERE id = ANY($1::text[])",
+      [[`authored-${name}`, `person-${name}`]])).rows).toEqual([]);
+    await database.query("DELETE FROM notifications WHERE id = ANY($1::text[])", [survivingIds]);
+  });
+
 });
