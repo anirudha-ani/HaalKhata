@@ -60,7 +60,7 @@ vi.mock("@/server/social/repo/friendships.repo", () => ({
 }));
 vi.mock("@/server/expense/repo/comments.repo", () => ({
   insertComment: vi.fn(),
-  listCommentsByExpense: vi.fn(),
+  listCommentPage: vi.fn(),
 }));
 vi.mock("@/server/expense/repo/settlements.repo", () => ({
   findSettlementById: vi.fn(),
@@ -144,7 +144,7 @@ import {
   replaceExpense,
   softDeleteExpense,
 } from "@/server/expense/repo/expenses.repo";
-import { insertComment, listCommentsByExpense } from "@/server/expense/repo/comments.repo";
+import { insertComment, listCommentPage } from "@/server/expense/repo/comments.repo";
 import {
   findSettlementById,
   insertSettlement,
@@ -550,7 +550,7 @@ describe("who hears about a transaction", () => {
   });
 
   it("tells the detail view when a later settlement was recorded against the expense", async () => {
-    vi.mocked(listCommentsByExpense).mockResolvedValue([]);
+    vi.mocked(listCommentPage).mockResolvedValue([]);
     vi.mocked(listActivityForExpense).mockResolvedValue([]);
     vi.mocked(userNetInGroup).mockResolvedValue(new Map());
     vi.mocked(scopeHasSettlements).mockResolvedValue(true);
@@ -578,7 +578,7 @@ describe("who hears about a transaction", () => {
       simplify_debts: true,
       status: "active",
     } as never);
-    vi.mocked(listCommentsByExpense).mockResolvedValue([]);
+    vi.mocked(listCommentPage).mockResolvedValue([]);
     vi.mocked(listActivityForExpense).mockResolvedValue([]);
     vi.mocked(userNetInGroup).mockResolvedValue(new Map());
 
@@ -594,7 +594,7 @@ describe("who hears about a transaction", () => {
   });
 
   it("reports no later settlement while the scope has none", async () => {
-    vi.mocked(listCommentsByExpense).mockResolvedValue([]);
+    vi.mocked(listCommentPage).mockResolvedValue([]);
     vi.mocked(listActivityForExpense).mockResolvedValue([]);
     vi.mocked(userNetInGroup).mockResolvedValue(new Map());
 
@@ -626,7 +626,7 @@ describe("who hears about a transaction", () => {
       ...(await findExpenseById("expense-1"))!,
       deleted_at: "2026-08-10T00:00:00Z",
     });
-    vi.mocked(listCommentsByExpense).mockResolvedValue([]);
+    vi.mocked(listCommentPage).mockResolvedValue([]);
     vi.mocked(listActivityForExpense).mockResolvedValue([]);
     vi.mocked(userNetInGroup).mockResolvedValue(new Map());
 

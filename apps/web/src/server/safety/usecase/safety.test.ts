@@ -3,11 +3,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("../repo/safety.repo", () => ({ visibleUser: vi.fn(), insertBlock: vi.fn(), removeBlock: vi.fn(), listBlocks: vi.fn(), commentTarget: vi.fn(), insertReport: vi.fn() }));
 vi.mock("@/server/common/db/db", () => ({ transaction: async (work: (client: object) => unknown) => work({}) }));
-vi.mock("@/server/expense/usecase/expense.usecase", () => ({ getExpense: vi.fn() }));
+vi.mock("./reportableExpense", () => ({ reportableExpense: vi.fn() }));
 vi.mock("@/server/group/repo/groups.repo", () => ({ isMember: vi.fn(), findGroupById: vi.fn() }));
 vi.mock("@/server/auth/repo/users.repo", () => ({ findUserById: vi.fn() }));
 import * as repository from "../repo/safety.repo";
-import { getExpense } from "@/server/expense/usecase/expense.usecase";
+import { reportableExpense } from "./reportableExpense";
 import { blockUser, reportContent } from "./safety.usecase";
 import { assertSafeText } from "./contentFilter";
 
@@ -27,7 +27,7 @@ describe("authorized safety actions", () => {
   });
   it("does not save reports when expense authorization fails", async () => {
     vi.mocked(repository.commentTarget).mockResolvedValue({ user_id: "author", expense_id: "private-expense", body: "Original content" });
-    vi.mocked(getExpense).mockRejectedValue(new Error("access denied"));
+    vi.mocked(reportableExpense).mockRejectedValue(new Error("access denied"));
     await expect(reportContent("viewer", { targetKind: "comment", targetId: "comment", reason: "harassment" })).rejects.toThrow("access denied");
     expect(repository.insertReport).not.toHaveBeenCalled();
   });

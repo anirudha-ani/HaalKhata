@@ -6,7 +6,7 @@ import { transaction } from "@/server/common/db/db";
 import { findUserById } from "@/server/auth/repo/users.repo";
 import { toPublicUser } from "@/server/auth/usecase/identity/user.mapper";
 import { findGroupById, isMember } from "@/server/group/repo/groups.repo";
-import { getExpense } from "@/server/expense/usecase/expense.usecase";
+import { reportableExpense } from "./reportableExpense";
 import * as safety from "../repo/safety.repo";
 
 /**
@@ -51,12 +51,10 @@ export async function reportContent(viewerId: string, input: { targetKind: strin
   if (input.targetKind === "comment") {
     const comment = await safety.commentTarget(input.targetId);
     if (!comment) notFound("comment not found");
-    await getExpense(viewerId, comment.expense_id);
+    await reportableExpense(viewerId, comment.expense_id);
     target = { author_id: comment.user_id, snapshot: { body: comment.body, expenseId: comment.expense_id } };
   } else if (input.targetKind === "expense") {
-    const detail = await getExpense(viewerId, input.targetId);
-    target = { author_id: detail.expense.createdBy, snapshot: { description: detail.expense.description, notes: detail.expense.notes,
-      items: detail.expense.items.map((item) => item.name) } };
+    target = await reportableExpense(viewerId, input.targetId, true);
   } else if (input.targetKind === "group") {
     if (!await isMember(input.targetId, viewerId)) notFound("group not found");
     const group = await findGroupById(input.targetId);

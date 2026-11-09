@@ -1,5 +1,6 @@
 /** All SQL for the activity table (audience-scoped feed events). */
 
+import { exactTimeSql } from "@/server/common/pagination/pagination";
 import type { PoolClient } from "pg";
 import { execute, newId, query } from "@/server/common/db/db";
 import {
@@ -247,26 +248,25 @@ export async function listActivityMonths(scope: {
   return rows.map((monthRow) => monthRow.month);
 }
 
+/** Activity with its exact database time for a stable history cursor. */
+export interface ListedExpenseActivityRow extends ActivityRow {
+  created_at_exact: string;
+}
+
 /**
- * Every recorded change to one expense, oldest first.
- *
- * Matched on `link` rather than a foreign key because that is what ties an
- * activity row to an expense in this schema — `insertActivity` writes
- * `/expenses/<id>` for both the added and updated events. An exact equality
- * match, not a LIKE, so it cannot collide with another row.
- *
- * Deletions are excluded by construction: their link points at the group or
- * the friends list, since the expense they describe no longer has a page.
- *
- * @param expenseId - Expense whose history to read.
- * @returns Activity rows for that expense, oldest first.
+ * Reads one indexed page of edit events, newest first.
+ * @param expenseId - Authorized expense.
+ * @param before - Older-page boundary, or null for newest events.
+ * @param limit - Fixed page size plus lookahead.
+ * @param client - Optional permission-check snapshot.
+ * @returns At most limit rows without scanning earlier history.
  */
-export async function listActivityForExpense(expenseId: string): Promise<ActivityRow[]> {
-  return query<ActivityRow>(
-    `SELECT * FROM activity
-      WHERE link = $1
-        AND type IN ('expense_added', 'expense_updated', 'expense_deleted')
-      ORDER BY created_at ASC, id ASC`,
-    [`/expenses/${expenseId}`],
+export async function listActivityForExpense(expenseId: string, before: { at: string; id: string } | null, limit: number, client?: PoolClient): Promise<ListedExpenseActivityRow[]> {
+  return query<ListedExpenseActivityRow>(
+    `SELECT *, ${exactTimeSql("created_at")} AS created_at_exact FROM activity
+      WHERE link=$1 AND type IN ('expense_added','expense_updated','expense_deleted')
+        AND ($2::timestamptz IS NULL OR (created_at,id COLLATE "C") < ($2::timestamptz,$3::text COLLATE "C"))
+      ORDER BY created_at DESC,id COLLATE "C" DESC LIMIT $4`,
+    [`/expenses/${expenseId}`,before?.at ?? null,before?.id ?? null,limit],client,
   );
 }

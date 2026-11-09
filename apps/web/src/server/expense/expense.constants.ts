@@ -150,6 +150,9 @@ export const COMMENT_PAGE_SIZE = 30;
 /** Most comments one page may hold. */
 export const MAX_COMMENT_PAGE_SIZE = 100;
 
+/** Raw rows inspected before sparse visibility switches to distinct-author seeks. */
+export const COMMENT_SCAN_MULTIPLIER = 4;
+
 /**
  * Text bounds on the expense write path. Defined once in the shared package
  * and re-exported here, so both clients cap their inputs at exactly what the

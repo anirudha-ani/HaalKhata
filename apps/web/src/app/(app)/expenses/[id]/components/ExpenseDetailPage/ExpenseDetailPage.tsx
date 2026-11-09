@@ -5,7 +5,7 @@ import { SafetyActions } from "@/components/safety/SafetyActions/SafetyActions";
 import Link from "next/link";
 import { Check, ChevronUp, Lock, Pencil, Radio, Send, Trash2 } from "lucide-react";
 import { ErrorAlert } from "@/components/ui/ErrorAlert/ErrorAlert";
-import { SHOW_EARLIER_COMMENTS_LABEL } from "@haalkhata/shared/api/paging";
+import { SHOW_EARLIER_COMMENTS_LABEL, SHOW_EARLIER_HISTORY_LABEL } from "@haalkhata/shared/api/paging";
 import { Avatar } from "@/components/ui/Avatar/Avatar";
 import { AvatarStack } from "@/components/ui/AvatarStack/AvatarStack";
 import { LiveBar } from "@/components/expense/LiveBar/LiveBar";
@@ -43,6 +43,7 @@ export function ExpenseDetailPage({ expenseId }: { expenseId: string }) {
   const hydrated = useHydrated();
   // A failed page is said above the button that retries it, pushing it down.
   const earlierRef = useRevealWhenShown<HTMLButtonElement>(expenseDetail.earlierCommentsError !== "");
+  const historyRef = useRevealWhenShown<HTMLButtonElement>(expenseDetail.earlierHistoryError !== "");
 
   if (!hydrated || expenseDetail.isLoading) return <Spinner label="Loading expense…" />;
   const expense = expenseDetail.detail?.expense;
@@ -372,15 +373,22 @@ export function ExpenseDetailPage({ expenseId }: { expenseId: string }) {
           on every page to say "nothing has happened", which is noise. The
           creation line is included once there IS an edit, because "edited"
           only means something next to when it was made. */}
-      {expenseDetail.changes.length > 0 ? (
+      {expenseDetail.changes.length > 0 || expenseDetail.hasEarlierHistory ? (
         <section className="rounded-2xl border border-line bg-card p-4">
           <h2 className="mb-2 text-xs font-semibold tracking-wide text-ink-soft uppercase">
             History
           </h2>
+          {expenseDetail.earlierHistoryError ? <ErrorAlert message={`Couldn't load earlier changes: ${expenseDetail.earlierHistoryError}`} /> : null}
+          {expenseDetail.hasEarlierHistory ? (
+            <button ref={historyRef} type="button" onClick={expenseDetail.showEarlierHistory} disabled={expenseDetail.isLoadingEarlierHistory}
+              className="mb-3 w-full scroll-my-5 rounded-xl border border-line py-2.5 text-sm font-semibold text-ink-soft disabled:opacity-50">
+              {expenseDetail.isLoadingEarlierHistory ? "Loading…" : SHOW_EARLIER_HISTORY_LABEL}
+            </button>
+          ) : null}
           <ul className="space-y-1.5">
-            {expenseDetail.detail?.history.map((event, index) => (
+            {expenseDetail.history.map((event, index) => (
               <li
-                key={`${event.type}-${event.createdAt}-${index}`}
+                key={event.id || `${event.type}-${event.createdAt}-${index}`}
                 className="flex items-center gap-2 text-sm text-ink-soft"
               >
                 {event.actor ? (

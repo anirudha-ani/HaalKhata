@@ -38,7 +38,6 @@ import {
   findCommentById,
   insertComment,
   listCommentPage,
-  listCommentsByExpense,
   type CommentKey,
   type CommentRow,
 } from "@/server/expense/repo/comments.repo";
@@ -56,7 +55,7 @@ import {
   withSettlementPairLock,
   type SettlementRow,
 } from "@/server/expense/repo/settlements.repo";
-import { insertActivity, listActivityForExpense } from "@/server/social/repo/activity.repo";
+import { insertActivity } from "@/server/social/repo/activity.repo";
 import { insertNotificationRows, insertNotifications } from "@/server/social/repo/notifications.repo";
 import { personNotification } from "@/server/social/usecase/personNotification";
 import { notificationLabel } from "@/server/social/usecase/notificationLabel";
@@ -109,6 +108,7 @@ import {
 import { groupScopeKey, oneOffPairKey, settledExpenseIds } from "@/server/expense/domain/settledExpenses";
 import { expensePaymentKey, repaidExpenseIds } from "@/server/expense/domain/repaidExpenses";
 import { BILL_PAYMENT_PAGE_SIZE } from "@haalkhata/shared/api/paging";
+import { readExpenseHistory } from "./history/expenseHistory";
 import { canReadExpense } from "./expenseAccess";
 import { assertExpensePayment, expenseRepayments } from "./repayment/expenseRepayment";
 import { readerShareLine, removedReaderLine } from "@/server/expense/domain/readerShareLine";
@@ -1732,8 +1732,7 @@ async function getExpenseProto(expenseId: string) {
  *
  * @param userId - Authenticated caller; must be allowed to view the expense.
  * @param expenseId - Id of the expense to fetch.
- * @param commentLimit - How many of the newest comments to include; 0
- *   includes them all, as app versions from before paging expect.
+ * @param commentLimit - Newest comments to include; 0 selects a bounded default.
  * @returns The expense (deleted ones included, marked by `deletedAt`), its
  *   newest comments (with authors) and the cursor for older ones, and
  *   referenced users.
@@ -1744,7 +1743,7 @@ export async function getExpense(userId: string, expenseId: string, commentLimit
   // and whether a payment came after it — are read at one instant, so an
   // edit or a payment committing mid-read cannot pair one version's amount
   // with another's shares.
-  const { expenseRow, children, settledForViewer, hasLaterSettlement, groupStatus, refusals, repayments, paymentPage } = await snapshot(
+  const { expenseRow, children, settledForViewer, hasLaterSettlement, groupStatus, refusals, repayments, paymentPage, historyPage, commentPage } = await snapshot(
     async (client) => {
       const current = await findExpenseById(expenseId, client);
       if (!current) notFound("expense not found");
@@ -1809,25 +1808,19 @@ export async function getExpense(userId: string, expenseId: string, commentLimit
         refusals: changeRefusals,
         repayments: viewerRepayments,
         paymentPage: viewerPayments,
+        historyPage: await readExpenseHistory(expenseId, "", client),
+        commentPage: await readCommentPage(expenseId, userId, null, commentLimit, client),
       };
     },
   );
 
-  // Words, not figures: comments and the edit history are read afterwards.
-  const commentPage = commentLimit > 0
-    ? await readCommentPage(expenseId, userId, null, commentLimit)
-    : { rows: await listCommentsByExpense(expenseId, userId), nextCursor: "" };
+  // Comment bodies and their block filtering share the permission snapshot.
   const comments = commentPage.rows;
-  // The people to resolve are the comment authors AND whoever touched the
-  // expense, looked up together so the history does not cost a second round
-  // trip for a set that mostly overlaps.
-  const events = await listActivityForExpense(expenseId);
   const peopleById = new Map(
     (
       await findUsersByIds([
         ...new Set([
           ...comments.map((comment) => comment.user_id),
-          ...events.map((event) => event.actor_id),
         ]),
       ])
     ).map((user) => [user.id, user]),
@@ -1844,6 +1837,7 @@ export async function getExpense(userId: string, expenseId: string, commentLimit
   const usersById = new Map(
     [
       ...(await usersReferenced([expenseRow], children)),
+      ...historyPage.history.flatMap((event) => event.actor ? [event.actor] : []),
       ...(await findUsersByIds([...new Set([...(session?.peopleIds ?? []), ...paymentPeopleIds])])).map(toPublicUser),
     ].map((person) => [person.id, person]),
   );
@@ -1867,11 +1861,10 @@ export async function getExpense(userId: string, expenseId: string, commentLimit
           savedIds: session.savedIds,
         }
       : undefined,
-    history: events.map((event) => ({
-      actor: publicUserById(event.actor_id),
-      type: event.type,
-      createdAt: event.created_at,
-    })),
+    history: historyPage.history,
+    historyNextCursor: historyPage.nextCursor,
+    historyTruncated: historyPage.nextCursor !== "",
+    commentsTruncated: commentPage.nextCursor !== "",
     repayments,
     payments: paymentPage.rows.map(toSettlement),
     paymentsNextCursor: paymentPage.nextCursor,
@@ -1931,25 +1924,27 @@ export async function listComments(
   expenseId: string,
   page: { cursor: string; limit: number },
 ) {
-  const found = await findExpenseById(expenseId);
-  if (!found) notFound("expense not found");
-  await assertCanTouch(userId, found);
-  const before = page.cursor ? decodeTimeCursor(page.cursor) : null;
-  const commentPage = await readCommentPage(expenseId, userId, before, page.limit);
-  const authors = new Map(
-    (await findUsersByIds([...new Set(commentPage.rows.map((comment) => comment.user_id))])).map(
-      (author) => [author.id, author] as const,
-    ),
-  );
-  return {
-    comments: commentPage.rows.map((comment) =>
-      toCommentMessage(comment, (authorId) => {
-        const author = authors.get(authorId);
-        return author ? toPublicUser(author) : undefined;
-      }),
-    ),
-    nextCursor: commentPage.nextCursor,
-  };
+  return snapshot(async (client) => {
+    const found = await findExpenseById(expenseId, client);
+    if (!found) notFound("expense not found");
+    await assertCanTouch(userId, found, client);
+    const before = page.cursor ? decodeTimeCursor(page.cursor) : null;
+    const commentPage = await readCommentPage(expenseId, userId, before, page.limit, client);
+    const authors = new Map(
+      (await findUsersByIds([...new Set(commentPage.rows.map((comment) => comment.user_id))], client)).map(
+        (author) => [author.id, author] as const,
+      ),
+    );
+    return {
+      comments: commentPage.rows.map((comment) =>
+        toCommentMessage(comment, (authorId) => {
+          const author = authors.get(authorId);
+          return author ? toPublicUser(author) : undefined;
+        }),
+      ),
+      nextCursor: commentPage.nextCursor,
+    };
+  });
 }
 
 /**
@@ -1960,6 +1955,7 @@ export async function listComments(
  * @param viewerId - The reader, for leaving out comments across a block.
  * @param before - The oldest comment already shown; null starts at the newest.
  * @param limit - The requested page size, clamped to the comment limits.
+ * @param client - Snapshot that established the reader's permission.
  * @returns The page oldest first, and the cursor for older comments ("" when none).
  */
 async function readCommentPage(
@@ -1967,10 +1963,11 @@ async function readCommentPage(
   viewerId: string,
   before: CommentKey | null,
   limit: number,
+  client: PoolClient,
 ): Promise<{ rows: CommentRow[]; nextCursor: string }> {
   const size = pageSize(limit, COMMENT_PAGE_SIZE, MAX_COMMENT_PAGE_SIZE);
   // One row past the page says whether there are older comments.
-  const newestFirst = await listCommentPage(expenseId, viewerId, before, size + 1);
+  const newestFirst = await listCommentPage(expenseId, viewerId, before, size + 1, client);
   const hasMore = newestFirst.length > size;
   const page = hasMore ? newestFirst.slice(0, size) : newestFirst;
   const oldest = page.at(-1);

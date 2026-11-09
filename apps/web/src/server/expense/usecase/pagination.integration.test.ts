@@ -744,4 +744,45 @@ describe.skipIf(!reachable)("paged lists, against Postgres", () => {
       ).rejects.toMatchObject({ code: "invalid_argument" });
     });
   });
+  describe("bounded expense comments and edit history", () => {
+    it("defaults to bounded detail pages, reaches all tied edit events, and reports one comment without hydrating its thread", async () => {
+      await database.query(`INSERT INTO comments(id,expense_id,user_id,body,created_at)
+        SELECT 'budget-comment-' || ordinal,'exp-plain-01',$1,'Original reported content','2026-10-01T00:00:00Z'
+        FROM generate_series(1,600) ordinal`, [FRIEND]);
+      await database.query(`INSERT INTO activity(id,group_id,actor_id,type,message,link,audience,created_at)
+        SELECT 'budget-event-' || lpad(ordinal::text,4,'0'),'grp-usd',$1,'expense_updated','Updated bill','/expenses/exp-plain-01',$2::jsonb,'2026-10-01T00:00:00.123456Z'
+        FROM generate_series(1,300) ordinal`, [READER,JSON.stringify([READER,FRIEND])]);
+      const history = await import("./history/expenseHistory");
+      const safety = await import("@/server/safety/usecase/safety.usecase");
+      pageReads.length = 0;
+      const detail = await expenseUsecase.getExpense(READER, "exp-plain-01");
+      expect(detail.comments).toHaveLength(30);
+      expect(detail.history).toHaveLength(30);
+      expect(detail.commentsTruncated).toBe(true);
+      expect(detail.historyTruncated).toBe(true);
+      expect(pageReads.filter((read) => /FROM activity/.test(read.sql)).map((read) => read.rows)).toEqual([31]);
+      const pages = [detail.history.map((event) => event.id)];
+      let cursor = detail.historyNextCursor;
+      while (cursor) {
+        pageReads.length = 0;
+        const page = await history.listExpenseHistory(READER,"exp-plain-01",cursor);
+        expect(page.history.length).toBeGreaterThan(0);
+        expect(page.history.length).toBeLessThanOrEqual(30);
+        expect(pageReads.length).toBeLessThanOrEqual(4);
+        expect(pageReads.reduce((total,read) => total + read.rows,0)).toBeLessThanOrEqual(34);
+        pages.unshift(page.history.map((event) => event.id));
+        cursor = page.nextCursor;
+      }
+      expect(pages.flat()).toEqual(Array.from({ length: 300 }, (_entry,index) => `budget-event-${String(index+1).padStart(4,"0")}`));
+      await expect(history.listExpenseHistory(OUTSIDER,"exp-plain-01",detail.historyNextCursor)).rejects.toMatchObject({ code: "permission_denied" });
+      await expect(history.listExpenseHistory(READER,"exp-plain-02",detail.historyNextCursor)).rejects.toMatchObject({ code: "invalid_argument" });
+      await expect(history.listExpenseHistory(READER,"exp-plain-01","invalid")).rejects.toMatchObject({ code: "invalid_argument" });
+      pageReads.length = 0;
+      await safety.reportContent(READER,{ targetKind: "comment", targetId: "budget-comment-1", reason: "spam" });
+      expect(pageReads.reduce((total,read) => total + read.rows,0)).toBeLessThanOrEqual(3);
+      expect(pageReads.some((read) => /FROM activity/.test(read.sql))).toBe(false);
+      expect((await database.query("SELECT snapshot FROM content_reports WHERE reporter_id=$1 AND target_id='budget-comment-1'",[READER])).rows[0].snapshot).toEqual({ body: "Original reported content", expenseId: "exp-plain-01" });
+    });
+  });
+
 });

@@ -18,6 +18,8 @@ service ExpenseService {
   rpc UpdateExpense(UpdateExpenseRequest) returns (Expense);
   rpc ListExpenses(ListExpensesRequest) returns (ListExpensesResponse);
   rpc GetExpense(GetExpenseRequest) returns (GetExpenseResponse);
+  // Earlier edits of a visible bill, with a fixed bounded page size.
+  rpc ListExpenseHistory(ListExpenseHistoryRequest) returns (ListExpenseHistoryResponse);
   // Older payments on this bill involving the authenticated reader.
   rpc ListExpensePayments(ListExpensePaymentsRequest) returns (ListExpensePaymentsResponse);
   // The one number an open edit form asks for on a timer: whether anyone has
@@ -257,8 +259,7 @@ message GetExpenseVersionResponse {
 message GetExpenseRequest {
   string expense_id = 1;
   // How many of the newest comments to include; the server clamps it to a
-  // sane maximum. 0 includes every comment, as app versions before paging
-  // expect.
+  // sane maximum. 0 selects the bounded default page.
   int32 comment_limit = 2;
 }
 
@@ -272,10 +273,10 @@ message Comment {
 
 message GetExpenseResponse {
   Expense expense = 1;
-  // The newest comments (all of them for comment_limit 0), oldest first.
+  // The newest bounded comment page, oldest first.
   repeated Comment comments = 2;
   repeated common.v1.User users = 3;
-  // Who has touched this expense, oldest first. Read from the activity feed
+  // The newest bounded page of changes, oldest first. Read from the activity feed
   // rather than stored on the expense: the feed already records every change,
   // so a second source of truth would only be one that could disagree.
   repeated ExpenseEvent history = 4;
@@ -319,6 +320,23 @@ message GetExpenseResponse {
   repeated Settlement payments = 13;
   // Cursor for older payments visible to this reader.
   string payments_next_cursor = 14;
+  // Pass to ListExpenseHistory for earlier changes; empty at the beginning.
+  string history_next_cursor = 15;
+  // More comments exist than this response contains, including default reads.
+  bool comments_truncated = 16;
+  // More edit events exist than this response contains.
+  bool history_truncated = 17;
+}
+
+message ListExpenseHistoryRequest {
+  string expense_id = 1;
+  // From GetExpenseResponse.history_next_cursor or a previous next_cursor.
+  string cursor = 2;
+}
+
+message ListExpenseHistoryResponse {
+  repeated ExpenseEvent history = 1;
+  string next_cursor = 2;
 }
 
 // One recorded change to an expense, for the detail view's history line.
@@ -326,12 +344,14 @@ message GetExpenseResponse {
 // Deliberately not social.v1.ActivityEvent: that carries a pre-rendered
 // message repeating the description and amount, both of which are already on
 // screen here, and importing it would tie the expense contract to the social
-// one for three fields.
+// one for a small history row.
 message ExpenseEvent {
   common.v1.User actor = 1;
   // expense_added | expense_updated | expense_deleted
   string type = 2;
   string created_at = 3;
+  // Stable identity for rows sharing a timestamp.
+  string id = 4;
 }
 
 message DeleteExpenseRequest {

@@ -15,7 +15,7 @@ import { Button } from "@/components/ui/Button";
 import { Money } from "@/components/ui/Money";
 import { Sheet } from "@/components/ui/Sheet/Sheet";
 import { ShowMoreFooter } from "@/components/ui/ShowMoreFooter/ShowMoreFooter";
-import { SHOW_EARLIER_COMMENTS_LABEL } from "@haalkhata/shared/api/paging";
+import { SHOW_EARLIER_COMMENTS_LABEL, SHOW_EARLIER_HISTORY_LABEL } from "@haalkhata/shared/api/paging";
 import { Spinner } from "@/components/ui/Spinner";
 import { errorMessage } from "@/lib/api/connect";
 import { settledStatus } from "@haalkhata/shared/expense/settledStatus";
@@ -367,11 +367,14 @@ export function ExpenseDetailScreen({ expenseId }: { expenseId: string }) {
           on every screen to say "nothing has happened", which is noise. The
           creation line is included once there IS an edit, because "edited"
           only means something next to when it was made. */}
-      {expenseDetail.changes.length > 0 ? (
+      {expenseDetail.changes.length > 0 || expenseDetail.hasEarlierHistory ? (
         <View style={styles.breakdownCard}>
           <Text style={styles.cardTitle}>HISTORY</Text>
-          {expenseDetail.detail?.history.map((event, index) => (
-            <View key={`${event.type}-${event.createdAt}-${index}`} style={styles.historyRow}>
+          <ShowMoreFooter direction="earlier" error={expenseDetail.earlierHistoryError}
+            hasMore={expenseDetail.hasEarlierHistory} isLoadingMore={expenseDetail.isLoadingEarlierHistory}
+            label={SHOW_EARLIER_HISTORY_LABEL} onShowMore={expenseDetail.showEarlierHistory} />
+          {expenseDetail.history.map((event, index) => (
+            <View key={event.id || `${event.type}-${event.createdAt}-${index}`} style={styles.historyRow}>
               {event.actor ? (
                 <PersonLink meId={meId} style={styles.historyActor} userId={event.actor.id}>
                   <Avatar size="sm" user={event.actor} />
