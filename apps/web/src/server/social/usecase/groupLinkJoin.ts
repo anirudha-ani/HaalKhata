@@ -6,8 +6,9 @@ import { lockGroupLedgers, withLedgerTransaction } from "@/server/common/ledger/
 import type { UserRow } from "@/server/auth/repo/users.repo";
 import { MAX_GROUP_MEMBERS } from "@/server/group/group.constants";
 import { addMember, isMember, listMembers, type GroupRow } from "@/server/group/repo/groups.repo";
+import { blockedNewGroupPairs } from "@/server/group/usecase/groupAdmission";
 import { assertRoomForAnotherGroup } from "@/server/group/usecase/groupLimit";
-import { blockedBetween, blockedPairExists } from "@/server/safety/repo/safety.repo";
+import { blockedBetween } from "@/server/safety/repo/safety.repo";
 import { insertActivity } from "@/server/social/repo/activity.repo";
 import { insertFriendship } from "@/server/social/repo/friendships.repo";
 import { insertNotifications } from "@/server/social/repo/notifications.repo";
@@ -45,13 +46,9 @@ export async function joinGroupThroughLink(
   const admit = async (transactionClient: PoolClient): Promise<void> => {
     await lockGroupLedgers(transactionClient, [group.id]);
     const existingIds = (await listMembers(group.id, transactionClient)).map((member) => member.id);
-    if (await blockedPairExists([userId, ...existingIds], existingIds, transactionClient)) {
-      notFound(DEAD_LINK_MESSAGE);
-    }
     if (linkToken) {
       const current = await loadActiveLink(linkToken, transactionClient);
       if (current.kind !== "group" || current.group_id !== group.id || current.inviter_id !== inviterId) notFound(DEAD_LINK_MESSAGE);
-      if (await blockedBetween(userId, inviterId, transactionClient)) notFound(DEAD_LINK_MESSAGE);
     }
     if (await isMember(group.id, userId, transactionClient)) return;
     // §33b: a leaked bearer link must not grow a roster without bound.
@@ -59,6 +56,8 @@ export async function joinGroupThroughLink(
       invalid("this group is full");
     }
     await assertRoomForAnotherGroup([acceptor], userId, transactionClient);
+    if (await blockedNewGroupPairs(existingIds, [userId], transactionClient, inviterId)) notFound(DEAD_LINK_MESSAGE);
+    if (await blockedBetween(userId, inviterId, transactionClient)) notFound(DEAD_LINK_MESSAGE);
     await addMember(group.id, userId, "member", transactionClient);
     if (inviterId !== userId) await insertFriendship(userId, inviterId, transactionClient);
     const audience = (await listMembers(group.id, transactionClient)).map((member) => member.id);

@@ -7,6 +7,7 @@
 import { randomUUID } from "node:crypto";
 import { Client } from "pg";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { FRIEND_REQUEST_INBOX_LOCK_PREFIX } from "@/server/common/ledger/ledgerLocks.constants";
 import { testDatabaseName } from "@/server/common/testing/testDatabase";
 
 const ADMIN_URL = process.env.MERGE_TEST_ADMIN_URL ?? "postgres://haalkhata:change-me@127.0.0.1:5432/postgres";
@@ -240,4 +241,59 @@ describe.skipIf(!reachable)("enrolling people in a group", () => {
     );
     expect(notified.map((notification) => notification.user_id)).toEqual([BEN_ID, CARA_ID]);
   });
+  it("applies incumbent blocks to direct adds and exempts only existing relationships", async () => {
+    const groupId = await groupOwnedBy(ANA_ID);
+    await addMembers(ANA_ID, { groupId, userIds: [CARA_ID] });
+    const social = await import("@/server/social/usecase/social.usecase");
+    const { token } = await social.createGroupInviteLink(ANA_ID, groupId);
+    await database.query("INSERT INTO user_blocks(blocker_id, blocked_id) VALUES ($1, $2)", [CARA_ID, BEN_ID]);
+    try {
+      await expect(addMembers(ANA_ID, { groupId, userIds: [BEN_ID] })).rejects.toMatchObject({ code: "permission_denied" });
+      await expect(social.acceptInviteLink(BEN_ID, token)).rejects.toMatchObject({ code: "not_found" });
+      expect(await memberIds(groupId)).toEqual([ANA_ID, CARA_ID]);
+      await database.query("DELETE FROM user_blocks WHERE blocker_id = $1 AND blocked_id = $2", [CARA_ID, BEN_ID]);
+      await database.query("INSERT INTO user_blocks(blocker_id, blocked_id) VALUES ($1, $2)", [CARA_ID, ANA_ID]);
+      await addMembers(ANA_ID, { groupId, userIds: [BEN_ID] });
+      expect(await memberIds(groupId)).toEqual([ANA_ID, BEN_ID, CARA_ID]);
+    } finally {
+      await database.query("DELETE FROM user_blocks WHERE blocker_id = $1", [CARA_ID]);
+    }
+  });
+
+  it("checks a former inviter as a new member when they try their own group link", async () => {
+    const groupId = await groupOwnedBy(ANA_ID);
+    await addMembers(ANA_ID, { groupId, userIds: [CARA_ID] });
+    const social = await import("@/server/social/usecase/social.usecase");
+    const groups = await import("./group.usecase");
+    const { token } = await social.createGroupInviteLink(CARA_ID, groupId);
+    await groups.removeMemberFromGroup(ANA_ID, { groupId, userId: CARA_ID });
+    await database.query("INSERT INTO user_blocks(blocker_id, blocked_id) VALUES ($1, $2)", [ANA_ID, CARA_ID]);
+    try {
+      await expect(social.acceptInviteLink(CARA_ID, token)).rejects.toMatchObject({ code: "not_found" });
+      expect(await memberIds(groupId)).toEqual([ANA_ID]);
+    } finally {
+      await database.query("DELETE FROM user_blocks WHERE blocker_id = $1 AND blocked_id = $2", [ANA_ID, CARA_ID]);
+    }
+  });
+
+  it("refuses a block committed while admission waits for the candidate inbox", async () => {
+    const groupId = await groupOwnedBy(ANA_ID);
+    await addMembers(ANA_ID, { groupId, userIds: [CARA_ID] });
+    await database.query("BEGIN");
+    await database.query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", [FRIEND_REQUEST_INBOX_LOCK_PREFIX + BEN_ID]);
+    const addition = attemptAdd(ANA_ID, groupId, [BEN_ID]);
+    try {
+      await waitForWaiter("advisory");
+      // Commit a block holding the candidate inbox that admission needs.
+      await database.query("INSERT INTO user_blocks(blocker_id, blocked_id) VALUES ($1, $2)", [CARA_ID, BEN_ID]);
+      await database.query("COMMIT");
+      expect(await addition).toMatchObject({ outcome: "failed", error: { code: "permission_denied" } });
+      expect(await memberIds(groupId)).toEqual([ANA_ID, CARA_ID]);
+    } finally {
+      await database.query("ROLLBACK");
+      await addition;
+      await database.query("DELETE FROM user_blocks WHERE blocker_id = $1 AND blocked_id = $2", [CARA_ID, BEN_ID]);
+    }
+  });
+
 });

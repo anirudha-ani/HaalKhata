@@ -30,6 +30,7 @@ import {
 import { normalizePhone, PHONE_FORMAT_HINT } from "@/server/auth/auth.constants";
 import { isEmailAddress } from "@haalkhata/shared/email/email";
 import { insertFriendships, listFriendIds } from "@/server/social/repo/friendships.repo";
+import { blockedNewGroupPairs } from "./groupAdmission";
 import { assertRoomForAnotherGroup } from "./groupLimit";
 import { insertActivity } from "@/server/social/repo/activity.repo";
 import { insertNotifications } from "@/server/social/repo/notifications.repo";
@@ -211,6 +212,7 @@ async function enrollMembers(
   // transaction, so it is all or nothing and holds the group's lock no
   // longer for a hundred people than for one.
   const addedIds = added.map((user) => user.id);
+  if (await blockedNewGroupPairs([...existingIds], addedIds, client, callerId)) denied("a blocked person cannot be added");
   await insertMembers(groupId, addedIds, MEMBER_ROLE, client);
   await insertFriendships(callerId, addedIds, client);
   return added;
@@ -468,7 +470,6 @@ export async function addMembers(
   assertMemberIdCount(candidateIds);
   if (candidateIds.length === 0) invalid("pick somebody to add");
   await assertCanAdd(userId, candidateIds);
-  if (await blockedPairExists([...candidateIds, userId])) denied("a blocked person cannot be added");
   const actor = (await findUserById(userId))!;
 
   // Under the group's ledger lock: a settlement being validated in this
