@@ -192,7 +192,8 @@ message ListActivityResponse {
   // Months ("YYYY-MM", newest first) that actually contain activity, for the
   // filter — an open date picker would offer thousands of empty months.
   // Reflects the group scope but not the month filter, so the control does
-  // not erase its own options.
+  // not erase its own options. Included on the first page only. Clients keep
+  // that first page's options while loading cursor continuation pages.
   repeated string months = 3;
 }
 

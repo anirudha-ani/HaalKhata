@@ -285,6 +285,8 @@ is).
   to one calendar month; `months` in the response lists only months that
   actually contain activity in this scope — and reflects the group scope but
   **not** the month filter, so the control never erases its own options.
+  Months are returned on the first page. Both clients keep those options
+  when appending older pages, which skip the full-history month query.
 - **`inbound`** (settlements only) is computed per viewer at read time — the
   same row is money arriving for one person and money leaving for the other,
   and without it the UI cannot tell "you were paid" from "you paid".

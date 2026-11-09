@@ -347,7 +347,7 @@ export async function listActivity(
 
   const [page, months] = await Promise.all([
     listActivityPage(scope, { limit, cursor: options.cursor ?? "", month: options.month ?? "" }),
-    listActivityMonths(scope),
+    options.cursor ? Promise.resolve([]) : listActivityMonths(scope),
   ]);
 
   const actors = new Map(
