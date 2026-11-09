@@ -91,9 +91,10 @@ export async function insertReport(viewerId: string, input: { targetKind: string
 /**
  * Checks all prospective participants in one indexed lookup.
  * @param userIds Accounts about to share a new expense/group.
+ * @param client Transaction holding the applicable admission locks.
  * @param existingIds Existing expense participants whose history may still be corrected.
  * @returns Whether any new pair has blocked contact.
  */
-export async function blockedPairExists(userIds: string[], existingIds: string[] = []): Promise<boolean> {
-  return Boolean(await queryOne("SELECT 1 FROM user_blocks WHERE blocker_id = ANY($1::text[]) AND blocked_id = ANY($1::text[]) AND NOT (blocker_id = ANY($2::text[]) AND blocked_id = ANY($2::text[])) LIMIT 1", [userIds, existingIds]));
+export async function blockedPairExists(userIds: string[], existingIds: string[] = [], client?: PoolClient): Promise<boolean> {
+  return Boolean(await queryOne("SELECT 1 FROM user_blocks WHERE blocker_id = ANY($1::text[]) AND blocked_id = ANY($1::text[]) AND NOT (blocker_id = ANY($2::text[]) AND blocked_id = ANY($2::text[])) LIMIT 1", [userIds, existingIds], client));
 }

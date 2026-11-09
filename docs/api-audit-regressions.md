@@ -46,3 +46,4 @@ query counts/rows or equivalent plan properties, not machine-dependent timings.
 | API-02 | A removed member can finish minting a fresh invite after explicit revocation | `apps/web/src/server/social/usecase/inviteLinkExpiry.integration.test.ts`, `apps/web/src/server/social/usecase/inviteLinks.test.ts` |
 | API-03 | Queued acceptance grants membership after its group invite was revoked | `apps/web/src/server/social/usecase/inviteLinkExpiry.integration.test.ts` |
 | API-13 | Concurrent acceptance announces a single group join twice | `apps/web/src/server/social/usecase/inviteLinkExpiry.integration.test.ts`, `apps/web/src/server/social/usecase/inviteLinks.test.ts` |
+| API-04 | A failed live-split join leaves permanent group access | `apps/web/src/server/expense/usecase/liveSplit/liveSplit.integration.test.ts` |

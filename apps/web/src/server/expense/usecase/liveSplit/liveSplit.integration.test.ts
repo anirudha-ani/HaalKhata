@@ -14,6 +14,7 @@ import { Client } from "pg";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { previewItemizedShares } from "@haalkhata/shared/expense/form/splitForm";
 import { DELETE_ACCOUNT_CONFIRMATION } from "@/server/auth/accountDeletion.constants";
+import { EXPENSE_LEDGER_LOCK_PREFIX } from "@/server/common/ledger/ledgerLocks.constants";
 import { testDatabaseName } from "@/server/common/testing/testDatabase";
 
 const ADMIN_URL = process.env.MERGE_TEST_ADMIN_URL ?? "postgres://haalkhata:change-me@127.0.0.1:5432/postgres";
@@ -185,6 +186,22 @@ describe.skipIf(!reachable)("a live split, against Postgres", () => {
     );
     return userId;
   };
+
+  /**
+   * Waits for live mutations to queue on an expense lock.
+   * @param count - Number of waiting requests.
+   */
+  async function waitForExpenseWaiters(count: number): Promise<void> {
+    const deadline = Date.now() + 3000;
+    while (Date.now() < deadline) {
+      const { rows } = await database.query<{ total: number }>(
+        "SELECT count(*)::int AS total FROM pg_locks WHERE locktype = 'advisory' AND NOT granted AND database = (SELECT oid FROM pg_database WHERE datname = current_database())",
+      );
+      if (rows[0].total >= count) return;
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    throw new Error("expected requests waiting on the expense lock");
+  }
 
   beforeAll(async () => {
     const admin = new Client({ connectionString: ADMIN_URL });
@@ -1200,4 +1217,34 @@ describe.skipIf(!reachable)("a live split, against Postgres", () => {
     await expect(social.previewInviteLink(token)).rejects.toMatchObject({ code: "failed_precondition" });
     expect((await read(id)).liveSplit).toBeUndefined();
   });
+  it("leaves no group membership or announcement when the host finishes before a queued join", async () => {
+    const guest = await stranger("Queued guest");
+    const { id: expenseId, token } = await openBill([], { groupId: FLAT });
+    await database.query("BEGIN");
+    await database.query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", [EXPENSE_LEDGER_LOCK_PREFIX + expenseId]);
+    const finish = live.finishLiveSplit(SARA, expenseId);
+    let acceptance: Promise<unknown> | undefined;
+    try {
+      await waitForExpenseWaiters(1);
+      acceptance = social.acceptInviteLink(guest, token).catch((error: unknown) => error);
+      await waitForExpenseWaiters(2);
+      const before = await database.query("SELECT 1 FROM group_members WHERE group_id = $1 AND user_id = $2", [FLAT, guest]);
+      expect(before.rows).toHaveLength(0);
+      await database.query("COMMIT");
+      await finish;
+      expect(await acceptance).toMatchObject({ code: "failed_precondition" });
+      const membership = await database.query("SELECT 1 FROM group_members WHERE group_id = $1 AND user_id = $2", [FLAT, guest]);
+      const friendships = await database.query("SELECT 1 FROM friendships WHERE user_id = $1 OR friend_id = $1", [guest]);
+      const events = await database.query("SELECT 1 FROM activity WHERE actor_id = $1", [guest]);
+      const notices = await database.query("SELECT 1 FROM notifications WHERE actor_id = $1", [guest]);
+      expect(membership.rows).toHaveLength(0);
+      expect(friendships.rows).toHaveLength(0);
+      expect(events.rows).toHaveLength(0);
+      expect(notices.rows).toHaveLength(0);
+    } finally {
+      await database.query("ROLLBACK");
+      await Promise.allSettled([finish, acceptance]);
+    }
+  });
+
 });

@@ -1,5 +1,6 @@
 /** Joining a group through somebody's link, which a group's own link and a live split on a group bill both do. */
 
+import type { PoolClient } from "pg";
 import { invalid, notFound } from "@/server/common/errors";
 import { lockGroupLedgers, withLedgerTransaction } from "@/server/common/ledger/ledgerLocks";
 import type { UserRow } from "@/server/auth/repo/users.repo";
@@ -24,6 +25,7 @@ import { DEAD_LINK_MESSAGE } from "@/server/social/social.constants";
  * @param inviterId - Who shared the link.
  * @param inviterName - Their name, for the feed.
  * @param linkToken - A group link to validate under its group lock.
+ * @param client - Existing live-join transaction holding the expense lock.
  * @throws UsecaseError (not_found) when somebody in the group has blocked them
  *   or they have blocked somebody in it, or (invalid_argument) when it is full.
  */
@@ -33,30 +35,33 @@ export async function joinGroupThroughLink(
   inviterId: string,
   inviterName: string,
   linkToken?: string,
+  client?: PoolClient,
 ): Promise<void> {
   const userId = acceptor.id;
-  const existingIds = (await listMembers(group.id)).map((member) => member.id);
-  if (await blockedPairExists([userId, ...existingIds], existingIds)) {
-    notFound(DEAD_LINK_MESSAGE);
-  }
-  // Under the group's ledger lock like every roster change: a settlement
-  // being validated sees the roster before or after the join, never mid-way.
-  await withLedgerTransaction(async (client) => {
-    await lockGroupLedgers(client, [group.id]);
-    if (linkToken) {
-      const current = await loadActiveLink(linkToken, client);
-      if (current.kind !== "group" || current.group_id !== group.id || current.inviter_id !== inviterId) notFound(DEAD_LINK_MESSAGE);
-      if (await blockedBetween(userId, inviterId, client)) notFound(DEAD_LINK_MESSAGE);
+  /**
+   * Enrols and announces on the caller's transaction.
+   * @param transactionClient - The transaction holding any expense lock first.
+   */
+  const admit = async (transactionClient: PoolClient): Promise<void> => {
+    await lockGroupLedgers(transactionClient, [group.id]);
+    const existingIds = (await listMembers(group.id, transactionClient)).map((member) => member.id);
+    if (await blockedPairExists([userId, ...existingIds], existingIds, transactionClient)) {
+      notFound(DEAD_LINK_MESSAGE);
     }
-    if (await isMember(group.id, userId, client)) return;
+    if (linkToken) {
+      const current = await loadActiveLink(linkToken, transactionClient);
+      if (current.kind !== "group" || current.group_id !== group.id || current.inviter_id !== inviterId) notFound(DEAD_LINK_MESSAGE);
+      if (await blockedBetween(userId, inviterId, transactionClient)) notFound(DEAD_LINK_MESSAGE);
+    }
+    if (await isMember(group.id, userId, transactionClient)) return;
     // §33b: a leaked bearer link must not grow a roster without bound.
-    if ((await listMembers(group.id, client)).length >= MAX_GROUP_MEMBERS) {
+    if ((await listMembers(group.id, transactionClient)).length >= MAX_GROUP_MEMBERS) {
       invalid("this group is full");
     }
-    await assertRoomForAnotherGroup([acceptor], userId, client);
-    await addMember(group.id, userId, "member", client);
-    if (inviterId !== userId) await insertFriendship(userId, inviterId, client);
-    const audience = (await listMembers(group.id, client)).map((member) => member.id);
+    await assertRoomForAnotherGroup([acceptor], userId, transactionClient);
+    await addMember(group.id, userId, "member", transactionClient);
+    if (inviterId !== userId) await insertFriendship(userId, inviterId, transactionClient);
+    const audience = (await listMembers(group.id, transactionClient)).map((member) => member.id);
     await insertActivity(
       {
         groupId: group.id,
@@ -66,7 +71,7 @@ export async function joinGroupThroughLink(
         link: `/groups/${group.id}`,
         audience,
       },
-      client,
+      transactionClient,
     );
     // The rest of the roster hears who joined; the inviter is told by the
     // "accepted your invite" notice instead.
@@ -78,7 +83,7 @@ export async function joinGroupThroughLink(
         ...personNotification(acceptor.name, `Joined "${notificationLabel(group.name)}"`),
         link: `/groups/${group.id}`,
       },
-      client,
+      transactionClient,
     );
     if (linkToken) {
       await insertNotifications(
@@ -89,8 +94,10 @@ export async function joinGroupThroughLink(
           ...personNotification(acceptor.name, `Joined "${notificationLabel(group.name)}"`, "Via your invite"),
           link: `/groups/${group.id}`,
         },
-        client,
+        transactionClient,
       );
     }
-  });
+  };
+  if (client) await admit(client);
+  else await withLedgerTransaction(admit);
 }
