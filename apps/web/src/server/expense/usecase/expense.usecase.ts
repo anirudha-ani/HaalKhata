@@ -60,6 +60,7 @@ import { insertNotificationRows, insertNotifications } from "@/server/social/rep
 import { personNotification } from "@/server/social/usecase/personNotification";
 import { notificationLabel } from "@/server/social/usecase/notificationLabel";
 import { settlementLocation, settlementNotification } from "./settlementNotification";
+import { filterSettlementGroups } from "./settlement/scopedGroups";
 import {
   computeItemizedSplits,
   computeSplits,
@@ -2449,7 +2450,7 @@ async function selectedSettlementGroups(context: SettlementContext, client: Pool
   const selected = context.request.scopeGroupIds ?? [];
   if (selected.length > 0 && selected.every((scope) => scope === "")) return [];
   const shared = await sharedActiveGroups(context.payerId, context.creditorId, client);
-  return selected.length ? shared.filter((group) => selected.includes(group.id)) : shared;
+  return filterSettlementGroups(shared, selected);
 }
 
 /**
