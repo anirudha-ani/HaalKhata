@@ -890,4 +890,16 @@ describe.skipIf(!reachable)("paying back one expense against Postgres", () => {
       }
     });
   });
+  it("records a bill while an unrelated shared group is locked", async () => {
+    await storeExpense({ id: "uncontended", groupId: TRIP_ID, description: "Lunch",
+      payers: { [ANA_ID]: 10000 }, splits: { [BOB_ID]: 10000 } });
+    await blocker.query("BEGIN");
+    try {
+      await blocker.query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", ["ledger:group:" + FLAT_ID]);
+      const payment = await expenses.recordSettlement(...payBack(BOB_ID, ANA_ID, "uncontended", TRIP_ID, 1));
+      expect(payment.expenseId).toBe("uncontended");
+    } finally {
+      await blocker.query("ROLLBACK");
+    }
+  });
 });

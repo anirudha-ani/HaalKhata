@@ -2283,7 +2283,6 @@ async function storeGroupSettlement(
   if (!callerIsMember || !recipientIsMember) {
     denied("both people must be members of the group");
   }
-  const expense = await checkExpensePayment(context, groupId, client);
   // A pairwise loop that nets to zero is not debt. Paying one edge would
   // instead leave the payer owed elsewhere around the loop.
   if (await groupCancelsOut(groupId, currency, client)) {
@@ -2311,6 +2310,24 @@ async function storeGroupSettlement(
       } (${formatMoney(outstandingCents, currency)})`,
     );
   }
+  return storeSingleSettlement(context, groupId, client);
+}
+
+/**
+ * Stores a validated payment in its one locked scope.
+ * @param context - Authorized payment and parties.
+ * @param groupId - The locked group, or null for the pair's direct balance.
+ * @param client - Ledger transaction.
+ * @param expense - Bill the payment was recorded for, if named.
+ * @returns The payment and its announcement context.
+ */
+async function storeSingleSettlement(
+  context: SettlementContext,
+  groupId: string | null,
+  client: PoolClient,
+  expense?: ExpenseRow,
+): Promise<StoredSettlement> {
+  const { request, userId, payerId, creditorId, currency } = context;
   const { method, methodLabel } = await resolveSettlementMethod(request, creditorId, client);
   const stored = await insertSettlement(
     {
@@ -2328,35 +2345,6 @@ async function storeGroupSettlement(
     client,
   );
   return { rows: [stored], netOutcome: null, expense };
-}
-
-/**
- * For a payment that names an expense, refuses anything that expense's page
- * would not have offered (see {@link assertExpensePayment}); for any other
- * payment, does nothing. Called once the payment's locks are held.
- *
- * @param context - The prepared settlement.
- * @param scopeId - The one balance the payment names: a group id, or "".
- * @param client - The payment's locked transaction.
- * @returns The expense it pays back, or undefined for any other payment.
- */
-async function checkExpensePayment(
-  context: SettlementContext,
-  scopeId: string,
-  client: PoolClient,
-): Promise<ExpenseRow | undefined> {
-  if (!context.request.expenseId) return undefined;
-  return assertExpensePayment(
-    {
-      expenseId: context.request.expenseId,
-      payerId: context.payerId,
-      creditorId: context.creditorId,
-      scopeId,
-      currency: context.currency,
-      amountCents: context.request.amountCents,
-    },
-    client,
-  );
 }
 
 /**
@@ -2427,6 +2415,14 @@ async function storeSettlementPortions(
   client: PoolClient,
 ): Promise<StoredSettlement> {
   const { userId, request, payerId, creditorId, groupId, currency } = context;
+  if (request.expenseId) {
+    const scopeId = groupId ?? request.scopeGroupIds?.[0] ?? "";
+    if (scopeId) await lockGroupLedgers(client, [scopeId]);
+    const expense = await assertExpensePayment({
+      expenseId: request.expenseId, payerId, creditorId, scopeId, currency, amountCents: request.amountCents,
+    }, client);
+    return storeSingleSettlement(context, scopeId || null, client, expense);
+  }
   if (groupId) return storeGroupSettlement(context, client);
 
   // Lock the groups the two share, the only groups a payment between them
@@ -2446,8 +2442,6 @@ async function storeSettlementPortions(
   // scopes the payment looks at: everyone else's writes to them wait while
   // it does.
   if (request.netAcrossScopes) return storeNetSettlement(context, sharedUnderLock, client);
-  // Exactly one scope is named when the payment is for an expense.
-  const expense = await checkExpensePayment(context, request.scopeGroupIds?.[0] ?? "", client);
   const selection = new Set(request.scopeGroupIds ?? []);
   // The client chooses scopes, never amounts. Re-read current server balances
   // so a stale selection cannot double-record a payment.
@@ -2498,13 +2492,12 @@ async function storeSettlementPortions(
           methodLabel,
           note: request.note,
           recordedBy: userId,
-          expenseId: expense?.id ?? null,
         },
         client,
       ),
     );
   }
-  return { rows, netOutcome: null, expense };
+  return { rows, netOutcome: null };
 }
 
 /**
