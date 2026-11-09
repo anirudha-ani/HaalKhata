@@ -532,28 +532,27 @@ export async function sumPaidForExpenses(expenseIds: readonly string[], userId: 
 }
 
 /**
- * The payments recorded for these expenses that one person is on, either
- * way, removed ones excluded, oldest first. Only the two people on a payment
- * ever see it, which is why the person is part of the query rather than a
- * filter applied afterwards.
- *
- * @param expenseIds - The expenses.
- * @param userId - The person reading them.
- * @param client - Snapshot client.
- * @returns The payments; no query is sent for an empty list.
+ * Reads the newest payments involving this reader before an exact time and id.
+ * Each side uses its own index and contributes at most a page to the merge.
+ * @param expenseId - The bill.
+ * @param userId - The authenticated reader.
+ * @param before - Oldest payment already shown.
+ * @param limit - A page plus one row to detect more history.
+ * @param client - The authorized bill snapshot.
+ * @returns Rows newest first with an exact timestamp for the next cursor.
  */
 export async function listExpensePaymentsFor(
-  expenseIds: readonly string[],
-  userId: string,
-  client: PoolClient,
-): Promise<SettlementRow[]> {
-  if (expenseIds.length === 0) return [];
-  return query<SettlementRow>(
-    `SELECT * FROM settlements
-      WHERE expense_id = ANY($1::text[]) AND (from_user = $2 OR to_user = $2)
-        AND deleted_at IS NULL
-      ORDER BY created_at ASC, id ASC`,
-    [[...new Set(expenseIds)], userId],
-    client,
+  expenseId: string, userId: string, before: { createdAt: string; id: string } | null, limit: number, client: PoolClient,
+) {
+  const seek = before ? "AND (created_at, id) < ($4::timestamptz, $5::text)" : "";
+  return query<SettlementRow & { created_at_exact: string }>(
+    `SELECT payments.*, ${exactTimeSql("payments.created_at")} AS created_at_exact FROM (
+       (SELECT * FROM settlements WHERE expense_id = $1 AND from_user = $2 AND deleted_at IS NULL
+          ${seek} ORDER BY created_at DESC, id DESC LIMIT $3)
+       UNION ALL
+       (SELECT * FROM settlements WHERE expense_id = $1 AND to_user = $2 AND deleted_at IS NULL
+          ${seek} ORDER BY created_at DESC, id DESC LIMIT $3)
+     ) payments ORDER BY created_at DESC, id DESC LIMIT $3`,
+    before ? [expenseId, userId, limit, before.createdAt, before.id] : [expenseId, userId, limit], client,
   );
 }

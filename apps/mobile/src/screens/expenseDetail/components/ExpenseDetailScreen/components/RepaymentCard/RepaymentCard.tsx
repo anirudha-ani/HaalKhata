@@ -4,10 +4,13 @@ import { useState } from "react";
 import { StyleSheet, View } from "react-native";
 import type { User } from "@haalkhata/protogen/common/v1/common_pb";
 import type { Expense, Repayment, Settlement } from "@haalkhata/shared/api/plainMessages";
+import { SHOW_OLDER_PAYMENTS_LABEL } from "@haalkhata/shared/api/paging";
 import { readRepayment } from "@haalkhata/shared/expense/repayment";
 import { SettleUpModal } from "@/components/modals/SettleUpModal";
+import { Button } from "@/components/ui/Button";
 import { Text } from "@/components/ui/Text";
 import { colors, radii, spacing } from "@/lib/theme/theme";
+import { useEarlierPaymentsAPI } from "./hooks/useEarlierPaymentsAPI";
 import { PaymentLine } from "./components/PaymentLine/PaymentLine";
 import { RepaymentRow } from "./components/RepaymentRow/RepaymentRow";
 
@@ -30,6 +33,7 @@ export function RepaymentCard({
   expense,
   repayments,
   payments,
+  cursor,
   userById,
   meId,
   settledForViewer,
@@ -41,6 +45,8 @@ export function RepaymentCard({
   repayments: readonly Repayment[];
   /** Payments made for it that the reader is on, oldest first. */
   payments: readonly Settlement[];
+  /** Continuation for payments older than this page. */
+  cursor: string;
   /** Everyone the screen names, by id. */
   userById: ReadonlyMap<string, User>;
   /** The reader's id. */
@@ -53,7 +59,8 @@ export function RepaymentCard({
   // The person being paid, not the figures: those are read fresh from the
   // screen on every render, so the sheet never offers a stale amount.
   const [payingUserId, setPayingUserId] = useState<string | null>(null);
-  const firstNameOf = (userId: string) => userById.get(userId)?.name.split(" ")[0] ?? "them";
+  const history = useEarlierPaymentsAPI(expense.id, cursor);
+  const firstNameOf = (userId: string) => (userById.get(userId) ?? history.people.get(userId))?.name.split(" ")[0] ?? "them";
 
   const rows = repayments
     .map((repayment) => ({
@@ -89,7 +96,9 @@ export function RepaymentCard({
       ) : null}
       {payments.length > 0 ? (
         <View style={[styles.payments, rows.length > 0 ? styles.paymentsDivided : null]}>
-          {payments.map((payment) => (
+          {history.hasMore ? <Button label={SHOW_OLDER_PAYMENTS_LABEL} onPress={history.load} disabled={history.loading} variant="outline" /> : null}
+          {history.error ? <Text accessibilityRole="alert">{history.error}</Text> : null}
+          {[...history.payments, ...payments].map((payment) => (
             <PaymentLine
               key={payment.id}
               meId={meId}

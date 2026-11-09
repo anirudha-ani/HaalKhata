@@ -4,8 +4,10 @@
 import { useState } from "react";
 import type { User } from "@haalkhata/protogen/common/v1/common_pb";
 import type { Expense, Repayment, Settlement } from "@haalkhata/shared/api/plainMessages";
+import { SHOW_OLDER_PAYMENTS_LABEL } from "@haalkhata/shared/api/paging";
 import { readRepayment } from "@haalkhata/shared/expense/repayment";
 import { SettleUpModal } from "@/components/modals/SettleUpModal/SettleUpModal";
+import { useEarlierPaymentsAPI } from "./hooks/useEarlierPaymentsAPI";
 import { PaymentLine } from "./components/PaymentLine/PaymentLine";
 import { RepaymentRow } from "./components/RepaymentRow/RepaymentRow";
 
@@ -28,6 +30,7 @@ export function RepaymentCard({
   expense,
   repayments,
   payments,
+  cursor,
   userById,
   meId,
   settledForViewer,
@@ -39,6 +42,8 @@ export function RepaymentCard({
   repayments: readonly Repayment[];
   /** Payments made for it that the reader is on, oldest first. */
   payments: readonly Settlement[];
+  /** Continuation for payments older than this page. */
+  cursor: string;
   /** Everyone the page names, by id. */
   userById: ReadonlyMap<string, User>;
   /** The reader's id. */
@@ -51,7 +56,8 @@ export function RepaymentCard({
   // The person being paid, not the figures: those are read fresh from the
   // page on every render, so the dialog never offers a stale amount.
   const [payingUserId, setPayingUserId] = useState<string | null>(null);
-  const firstNameOf = (userId: string) => userById.get(userId)?.name.split(" ")[0] ?? "them";
+  const history = useEarlierPaymentsAPI(expense.id, cursor);
+  const firstNameOf = (userId: string) => (userById.get(userId) ?? history.people.get(userId))?.name.split(" ")[0] ?? "them";
 
   const rows = repayments
     .map((repayment) => ({
@@ -89,7 +95,13 @@ export function RepaymentCard({
       ) : null}
       {payments.length > 0 ? (
         <ul className={`space-y-1.5 ${rows.length > 0 ? "mt-4 border-t border-line pt-3" : ""}`}>
-          {payments.map((payment) => (
+          {history.hasMore ? (
+            <li><button type="button" className="min-h-11 text-sm font-semibold text-brand-700" disabled={history.loading} onClick={history.load}>
+              {SHOW_OLDER_PAYMENTS_LABEL}
+            </button></li>
+          ) : null}
+          {history.error ? <li role="alert" className="text-sm text-brand-700">{history.error}</li> : null}
+          {[...history.payments, ...payments].map((payment) => (
             <PaymentLine
               key={payment.id}
               payment={payment}

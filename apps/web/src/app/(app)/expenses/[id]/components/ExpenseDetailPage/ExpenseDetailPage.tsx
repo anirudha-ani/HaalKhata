@@ -181,6 +181,7 @@ export function ExpenseDetailPage({ expenseId }: { expenseId: string }) {
         expense={expense}
         repayments={expenseDetail.detail?.repayments ?? []}
         payments={expenseDetail.detail?.payments ?? []}
+        cursor={expenseDetail.detail?.paymentsNextCursor ?? ""}
         userById={expenseDetail.userById}
         meId={meId ?? ""}
         settledForViewer={expenseDetail.detail?.settledForViewer === true}

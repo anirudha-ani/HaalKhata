@@ -192,6 +192,7 @@ export function ExpenseDetailScreen({ expenseId }: { expenseId: string }) {
         groupId={expense.groupId && !isArchived ? expense.groupId : ""}
         meId={meId ?? ""}
         payments={expenseDetail.detail?.payments ?? []}
+        cursor={expenseDetail.detail?.paymentsNextCursor ?? ""}
         repayments={expenseDetail.detail?.repayments ?? []}
         settledForViewer={expenseDetail.detail?.settledForViewer === true}
         userById={expenseDetail.userById}

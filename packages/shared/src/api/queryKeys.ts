@@ -67,6 +67,8 @@ export const queryKeys = {
    */
   earlierComments: (expenseId: string, cursor: string) =>
     ["expense", expenseId, "comments", cursor] as const,
+  /** Older payments on a bill, anchored to the oldest row already in its detail. */
+  earlierPayments: (expenseId: string, cursor: string) => ["expense", expenseId, "payments", cursor] as const,
   /** The user's net balances across all groups and friends. */
   overallBalances: ["balances", "overall"] as const,
   /** The user's friends list. */

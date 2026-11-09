@@ -46,6 +46,7 @@ import {
   insertNetSettlement,
   insertSettlement,
   listExpensePaymentsFor,
+  sumPaidForExpenses,
   listSettlementsByNetSettlement,
   softDeleteNetSettlement,
   scopeHasSettlements,
@@ -107,6 +108,7 @@ import {
 } from "@/server/expense/domain/settlementAllocation";
 import { groupScopeKey, oneOffPairKey, settledExpenseIds } from "@/server/expense/domain/settledExpenses";
 import { expensePaymentKey, repaidExpenseIds } from "@/server/expense/domain/repaidExpenses";
+import { BILL_PAYMENT_PAGE_SIZE } from "@haalkhata/shared/api/paging";
 import { canReadExpense } from "./expenseAccess";
 import { assertExpensePayment, expenseRepayments } from "./repayment/expenseRepayment";
 import { readerShareLine, removedReaderLine } from "@/server/expense/domain/readerShareLine";
@@ -1669,10 +1671,8 @@ export async function listExpenses(
     // payments they recorded for it by name.
     const paidByKey = new Map<string, number>();
     const livePageIds = participants.map((expense) => expense.id);
-    for (const payment of await listExpensePaymentsFor(livePageIds, userId, client)) {
-      if (payment.from_user !== userId || !payment.expense_id) continue;
-      const paymentKey = expensePaymentKey(payment.expense_id, payment.to_user);
-      paidByKey.set(paymentKey, (paidByKey.get(paymentKey) ?? 0) + payment.amount_cents);
+    for (const payment of await sumPaidForExpenses(livePageIds, userId, client)) {
+      paidByKey.set(expensePaymentKey(payment.expense_id, payment.to_user), payment.total);
     }
     const settledIds = await excludeOpenPairs(
       settledExpenseIds(participants, userId, viewerNetByGroupScope, oneOffNetByPair), participants, userId, client,
@@ -1744,7 +1744,7 @@ export async function getExpense(userId: string, expenseId: string, commentLimit
   // and whether a payment came after it — are read at one instant, so an
   // edit or a payment committing mid-read cannot pair one version's amount
   // with another's shares.
-  const { expenseRow, children, settledForViewer, hasLaterSettlement, groupStatus, refusals, repayments, payments } = await snapshot(
+  const { expenseRow, children, settledForViewer, hasLaterSettlement, groupStatus, refusals, repayments, paymentPage } = await snapshot(
     async (client) => {
       const current = await findExpenseById(expenseId, client);
       if (!current) notFound("expense not found");
@@ -1799,7 +1799,7 @@ export async function getExpense(userId: string, expenseId: string, commentLimit
       // What the viewer owes on it and can pay back, read by the function the
       // payment checks itself against, and the payments for it they are on.
       const viewerRepayments = await expenseRepayments(current, currentChildren, userId, client);
-      const viewerPayments = await listExpensePaymentsFor([expenseId], userId, client);
+      const viewerPayments = await readBillPaymentPage(expenseId, userId, "", client);
       return {
         expenseRow: current,
         children: currentChildren,
@@ -1808,7 +1808,7 @@ export async function getExpense(userId: string, expenseId: string, commentLimit
         groupStatus: scopeGroup ? GROUP_STATUS_PROTO[scopeGroup.status] : GroupStatus.UNSPECIFIED,
         refusals: changeRefusals,
         repayments: viewerRepayments,
-        payments: viewerPayments,
+        paymentPage: viewerPayments,
       };
     },
   );
@@ -1840,7 +1840,7 @@ export async function getExpense(userId: string, expenseId: string, commentLimit
 
   const session = await liveSessionOf(expenseId);
   // A payment can name somebody an edit has since taken off the expense.
-  const paymentPeopleIds = payments.flatMap((payment) => [payment.from_user, payment.to_user]);
+  const paymentPeopleIds = paymentPage.rows.flatMap((payment) => [payment.from_user, payment.to_user]);
   const usersById = new Map(
     [
       ...(await usersReferenced([expenseRow], children)),
@@ -1873,8 +1873,45 @@ export async function getExpense(userId: string, expenseId: string, commentLimit
       createdAt: event.created_at,
     })),
     repayments,
-    payments: payments.map(toSettlement),
+    payments: paymentPage.rows.map(toSettlement),
+    paymentsNextCursor: paymentPage.nextCursor,
   };
+}
+
+/**
+ * Reads the next page of payments in the same snapshot as the permission check.
+ * @param expenseId - Bill visible to the caller.
+ * @param viewerId - Authenticated party to the payment.
+ * @param cursor - Oldest payment already shown, or empty for the latest page.
+ * @param client - Snapshot connection.
+ * @returns The page in reading order and its continuation.
+ */
+async function readBillPaymentPage(expenseId: string, viewerId: string, cursor: string, client: PoolClient) {
+  const before = cursor ? decodeTimeCursor(cursor, expenseId) : null;
+  const rows = await listExpensePaymentsFor(expenseId, viewerId, before, BILL_PAYMENT_PAGE_SIZE + 1, client);
+  const page = rows.slice(0, BILL_PAYMENT_PAGE_SIZE);
+  const oldest = page.at(-1);
+  return {
+    rows: page.reverse(),
+    nextCursor: rows.length > page.length && oldest ? encodeCursor([expenseId, oldest.created_at_exact, oldest.id]) : "",
+  };
+}
+
+/**
+ * @param viewerId - Authenticated reader.
+ * @param expenseId - Bill to authorize.
+ * @param cursor - Oldest payment already shown.
+ * @returns Earlier payments and the names needed to display them.
+ */
+export async function listExpensePayments(viewerId: string, expenseId: string, cursor: string) {
+  const page = await snapshot(async (client) => {
+    const expense = await findExpenseById(expenseId, client);
+    if (!expense) notFound("expense not found");
+    await assertCanTouch(viewerId, expense, client);
+    return readBillPaymentPage(expenseId, viewerId, cursor, client);
+  });
+  const people = new Set(page.rows.flatMap((payment) => [payment.from_user, payment.to_user]));
+  return { payments: page.rows.map(toSettlement), users: (await findUsersByIds([...people])).map(toPublicUser), nextCursor: page.nextCursor };
 }
 
 /**
@@ -1897,7 +1934,7 @@ export async function listComments(
   const found = await findExpenseById(expenseId);
   if (!found) notFound("expense not found");
   await assertCanTouch(userId, found);
-  const before = page.cursor ? decodeCommentCursor(page.cursor) : null;
+  const before = page.cursor ? decodeTimeCursor(page.cursor) : null;
   const commentPage = await readCommentPage(expenseId, userId, before, page.limit);
   const authors = new Map(
     (await findUsersByIds([...new Set(commentPage.rows.map((comment) => comment.user_id))])).map(
@@ -1944,18 +1981,19 @@ async function readCommentPage(
 }
 
 /**
- * Reads a comment cursor back into a position in the thread.
+ * Reads an exact timestamp and row ID from a comment or payment cursor.
  *
  * @param cursor - The client's cursor.
- * @returns The oldest comment already shown.
- * @throws UsecaseError (invalid_argument) when the cursor is not one of a thread's.
+ * @param expenseId - The bill a payment cursor must belong to; omitted for comment cursors.
+ * @returns The oldest row already shown.
+ * @throws UsecaseError (invalid_argument) when the cursor has no valid row position.
  */
-function decodeCommentCursor(cursor: string): CommentKey {
-  const parts = decodeCursor(cursor, 2);
-  if (!parts) invalid(STALE_CURSOR_MESSAGE);
-  const [createdAt, commentId] = parts;
-  if (!isExactTimestamp(createdAt) || !isCursorValue(commentId)) invalid(STALE_CURSOR_MESSAGE);
-  return { createdAt, id: commentId };
+function decodeTimeCursor(cursor: string, expenseId?: string): CommentKey {
+  const parts = decodeCursor(cursor, expenseId ? 3 : 2);
+  if (!parts || (expenseId && parts[0] !== expenseId)) invalid(STALE_CURSOR_MESSAGE);
+  const [createdAt, rowId] = parts.slice(-2);
+  if (!isExactTimestamp(createdAt) || !isCursorValue(rowId)) invalid(STALE_CURSOR_MESSAGE);
+  return { createdAt, id: rowId };
 }
 
 /**

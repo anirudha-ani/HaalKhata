@@ -973,4 +973,25 @@ describe.skipIf(!reachable)("paying back one expense against Postgres", () => {
       reads.mockRestore();
     }
   });
+
+  it("pages payment history through tied timestamps and totals all outgoing payments for the list badge", async () => {
+    await storeExpense({ id: "paged-bill", groupId: TRIP_ID, description: "Shared trip",
+      payers: { [ANA_ID]: 35 }, splits: { [BOB_ID]: 35 } });
+    await database.query(`INSERT INTO settlements
+      (id, expense_id, group_id, from_user, to_user, amount_cents, currency, method, recorded_by, created_at)
+      SELECT 'history-' || number, 'paged-bill', $1, $2, $3, 1, 'USD', 'cash', $2, now()
+      FROM generate_series(1, 35) AS number`, [TRIP_ID, BOB_ID, ANA_ID]);
+    const recent = await expenses.getExpense(BOB_ID, "paged-bill");
+    expect(recent.payments).toHaveLength(30);
+    await storeExpense({ id: "another-paged-bill", groupId: TRIP_ID, description: "Another trip",
+      payers: { [ANA_ID]: 1 }, splits: { [BOB_ID]: 1 } });
+    await expect(expenses.listExpensePayments(BOB_ID, "another-paged-bill", recent.paymentsNextCursor))
+      .rejects.toMatchObject({ code: "invalid_argument" });
+    const older = await expenses.listExpensePayments(BOB_ID, "paged-bill", recent.paymentsNextCursor);
+    expect(older.nextCursor).toBe("");
+    expect(new Set([...recent.payments, ...older.payments].map((payment) => payment.id)).size).toBe(35);
+    expect((await expenses.listExpensePayments(CHEN_ID, "paged-bill", recent.paymentsNextCursor)).payments).toEqual([]);
+    const list = await expenses.listExpenses(BOB_ID, { groupId: TRIP_ID }, { cursor: "", limit: 50 });
+    expect(list.repaidExpenseIds).toContain("paged-bill");
+  });
 });

@@ -18,6 +18,8 @@ service ExpenseService {
   rpc UpdateExpense(UpdateExpenseRequest) returns (Expense);
   rpc ListExpenses(ListExpensesRequest) returns (ListExpensesResponse);
   rpc GetExpense(GetExpenseRequest) returns (GetExpenseResponse);
+  // Older payments on this bill involving the authenticated reader.
+  rpc ListExpensePayments(ListExpensePaymentsRequest) returns (ListExpensePaymentsResponse);
   // The one number an open edit form asks for on a timer: whether anyone has
   // saved a change since it last looked. Open to whoever may read the expense.
   rpc GetExpenseVersion(GetExpenseVersionRequest) returns (GetExpenseVersionResponse);
@@ -311,10 +313,12 @@ message GetExpenseResponse {
   // of them for it. Empty when the caller owes nobody on it, and for a
   // deleted expense.
   repeated Repayment repayments = 12;
-  // Payments recorded for this expense that the caller is on, either way,
+  // The newest page of payments for this expense involving the caller,
   // oldest first; removed ones are left out. A payment is visible only to
-  // the two people on it, here as everywhere.
+  // the two people on it, here and in ListExpensePayments.
   repeated Settlement payments = 13;
+  // Cursor for older payments visible to this reader.
+  string payments_next_cursor = 14;
 }
 
 // One recorded change to an expense, for the detail view's history line.
@@ -354,6 +358,17 @@ message ListCommentsRequest {
   string cursor = 2;
   // Page size; the server clamps it to a sane maximum.
   int32 limit = 3;
+}
+
+message ListExpensePaymentsRequest {
+  string expense_id = 1;
+  string cursor = 2;
+}
+
+message ListExpensePaymentsResponse {
+  repeated Settlement payments = 1;
+  repeated common.v1.User users = 2;
+  string next_cursor = 3;
 }
 
 message ListCommentsResponse {
