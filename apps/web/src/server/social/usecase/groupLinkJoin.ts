@@ -33,7 +33,8 @@ export async function joinGroupThroughLink(
   inviterName: string,
 ): Promise<void> {
   const userId = acceptor.id;
-  if (await blockedPairExists([userId, ...(await listMembers(group.id)).map((member) => member.id)])) {
+  const existingIds = (await listMembers(group.id)).map((member) => member.id);
+  if (await blockedPairExists([userId, ...existingIds], existingIds)) {
     notFound(DEAD_LINK_MESSAGE);
   }
   // Under the group's ledger lock like every roster change: a settlement

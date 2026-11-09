@@ -178,4 +178,15 @@ describe.skipIf(!reachable)("group invite links expire, against Postgres", () =>
     expect(rows[0].expires_at).toBeNull();
     await expect(social.previewInviteLink(token)).resolves.toMatchObject({ kind: "profile" });
   });
+  it("admits an unrelated person when only existing members block each other", async () => {
+    const { token } = await social.createGroupInviteLink(OWNER, GROUP);
+    await database.query("INSERT INTO user_blocks (blocker_id, blocked_id) VALUES ($1, $2)", [OWNER, MEMBER]);
+    try {
+      await expect(social.acceptInviteLink(LATECOMER, token)).resolves.toEqual({ groupId: GROUP, expenseId: "" });
+      expect(await joinerIsMember(LATECOMER)).toBe(true);
+    } finally {
+      await database.query("DELETE FROM user_blocks WHERE blocker_id = $1 AND blocked_id = $2", [OWNER, MEMBER]);
+    }
+  });
+
 });
