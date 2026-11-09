@@ -334,13 +334,15 @@ export async function listSettlementsByGroup(
  * Loads live payments for many group ledger scopes with one statement.
  * @param groupIds - Group scopes whose balances are being assembled.
  * @param client - Snapshot or ledger transaction client.
+ * @param viewerId - Restrict to rows involving this person when supplied.
  * @returns Live group payments; no query is sent for an empty scope list.
  */
-export async function listSettlementsByGroups(groupIds: readonly string[], client?: PoolClient): Promise<SettlementRow[]> {
+export async function listSettlementsByGroups(groupIds: readonly string[], client?: PoolClient, viewerId?: string): Promise<SettlementRow[]> {
   if (groupIds.length === 0) return [];
   return query<SettlementRow>(
-    "SELECT * FROM settlements WHERE group_id = ANY($1::text[]) AND deleted_at IS NULL",
-    [[...new Set(groupIds)]], client,
+    `SELECT * FROM settlements WHERE group_id = ANY($1::text[]) AND deleted_at IS NULL
+       ${viewerId ? "AND (from_user = $2 OR to_user = $2)" : ""}`,
+    viewerId ? [groupIds, viewerId] : [groupIds], client,
   );
 }
 

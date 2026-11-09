@@ -105,6 +105,7 @@ vi.mock("./balance.usecase", () => ({
   oneOffNetBetween: vi.fn(),
   owedByScope: vi.fn(),
   owingInScope: vi.fn(async (_viewer, people: string[]) => new Map(people.map((person) => [person, { owedCents: 0, loop: false, debtorNetCents: 0 }]))),
+  excludeOpenPairs: vi.fn(async (candidates) => candidates),
   userNetInGroup: vi.fn(),
 }));
 

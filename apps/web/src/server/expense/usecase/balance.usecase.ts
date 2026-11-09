@@ -55,6 +55,7 @@ import {
   hasUnsettledGroupBalances,
   pairHistoryDigest,
   sumGroupNets,
+  unsettledPairwiseCurrencies,
   sumUserNetByGroup,
 } from "@/server/expense/repo/ledger.repo";
 import { snapshot } from "@/server/common/db/db";
@@ -215,16 +216,18 @@ async function groupLedger(groupId: string, client?: PoolClient): Promise<Curren
  * Loads multiple groups' ledgers in a fixed number of queries, without receipt data.
  * @param groupIds - Group scopes to assemble.
  * @param client - Snapshot or locked transaction shared by every statement.
+ * @param viewerId - Limit to this person’s movements for pairwise balances.
  * @returns Each requested group's ledgers per currency.
  */
 async function groupLedgers(
   groupIds: readonly string[],
   client?: PoolClient,
+  viewerId?: string,
 ): Promise<Map<string, CurrencyLedgers>> {
   if (groupIds.length === 0) return new Map();
-  const expenses = await listExpensesByGroups(groupIds, client);
+  const expenses = await listExpensesByGroups(groupIds, client, viewerId);
   const children = await loadExpenseChildren(expenses.map((expense) => expense.id), client, false);
-  const settlements = await listSettlementsByGroups(groupIds, client);
+  const settlements = await listSettlementsByGroups(groupIds, client, viewerId);
   const expensesByGroup = new Map<string, ExpenseRow[]>();
   const settlementsByGroup = new Map<string, SettlementRow[]>();
   for (const expense of expenses) {
@@ -663,6 +666,36 @@ async function pairNetsInScope(
     }
   }
   return new Map(counterpartyIds.map((person) => [person, netsByCounterparty.get(person) ?? new Map()]));
+}
+
+/**
+ * Filters bills whose viewer has zero net but still has a payable pairwise edge.
+ * @param candidates - Bills that passed the scope-net check.
+ * @param bills - Bills on this page.
+ * @param viewerId - Person reading the page.
+ * @param client - The page snapshot.
+ * @returns Bills whose balance is settled for this viewer.
+ */
+export async function excludeOpenPairs(
+  candidates: string[], bills: readonly { id: string; groupId: string; currency: string }[],
+  viewerId: string, client: PoolClient,
+): Promise<string[]> {
+  const pending = new Set(candidates);
+  const groups = bills.filter((bill) => bill.groupId && pending.has(bill.id));
+  if (!groups.length) return candidates;
+  const currencies = await unsettledPairwiseCurrencies([...new Set(groups.map((bill) => bill.groupId))], client);
+  const ledgers = await groupLedgers([...new Set(currencies.map((scope) => scope.group_id))], client, viewerId);
+  const open = new Set<string>();
+  for (const scope of currencies) {
+    const entries = ledgers.get(scope.group_id)?.get(scope.currency) ?? [];
+    if (entries.some((entry) => entry.from === viewerId || entry.to === viewerId)) {
+      open.add(friendScopeKey(scope.group_id, scope.currency));
+    }
+  }
+  for (const bill of groups) {
+    if (open.has(friendScopeKey(bill.groupId, bill.currency))) pending.delete(bill.id);
+  }
+  return [...pending];
 }
 
 /**

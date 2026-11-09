@@ -37,6 +37,37 @@ export async function hasUnsettledGroupBalances(groupId: string, client: PoolCli
 }
 
 /**
+ * Finds group currencies with any outstanding member net, omitting cancelling loops.
+ * @param groupIds - Groups under consideration.
+ * @param client - Snapshot or transaction client.
+ * @returns Unsettled group and currency pairs.
+ */
+export async function unsettledPairwiseCurrencies(groupIds: string[], client: PoolClient) {
+  if (!groupIds.length) return [];
+  return query<{ group_id: string; currency: string }>(
+    `SELECT DISTINCT movement.group_id, movement.currency FROM (
+       SELECT exp.group_id, pay.user_id, exp.currency, pay.amount_cents AS delta
+         FROM expense_payers pay JOIN expenses exp ON exp.id = pay.expense_id
+        WHERE exp.group_id = ANY($1::text[]) AND exp.deleted_at IS NULL
+       UNION ALL
+       SELECT exp.group_id, spl.user_id, exp.currency, -spl.owed_cents
+         FROM expense_splits spl JOIN expenses exp ON exp.id = spl.expense_id
+        WHERE exp.group_id = ANY($1::text[]) AND exp.deleted_at IS NULL
+       UNION ALL
+       SELECT group_id, from_user, currency, amount_cents FROM settlements
+        WHERE group_id = ANY($1::text[]) AND deleted_at IS NULL
+       UNION ALL
+       SELECT group_id, to_user, currency, -amount_cents FROM settlements
+        WHERE group_id = ANY($1::text[]) AND deleted_at IS NULL
+     ) movement
+     JOIN groups ON groups.id = movement.group_id
+     WHERE NOT groups.simplify_debts
+     GROUP BY movement.group_id, movement.user_id, movement.currency
+     HAVING SUM(movement.delta) <> 0`, [groupIds], client,
+  );
+}
+
+/**
  * A user's net position in each of several groups, per currency, in one
  * query.
  *

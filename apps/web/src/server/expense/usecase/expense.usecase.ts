@@ -98,6 +98,7 @@ import {
   sharedActiveGroups,
   userNetInGroup,
   userNetInGroups,
+  excludeOpenPairs,
 } from "./balance.usecase";
 import {
   allocateSettlement,
@@ -1673,7 +1674,10 @@ export async function listExpenses(
       const paymentKey = expensePaymentKey(payment.expense_id, payment.to_user);
       paidByKey.set(paymentKey, (paidByKey.get(paymentKey) ?? 0) + payment.amount_cents);
     }
-    return { rows, children, hasMore, nextCursor, participants, viewerNetByGroupScope, oneOffNetByPair, paidByKey };
+    const settledIds = await excludeOpenPairs(
+      settledExpenseIds(participants, userId, viewerNetByGroupScope, oneOffNetByPair), participants, userId, client,
+    );
+    return { rows, children, hasMore, nextCursor, settledIds, paidByKey };
   });
 
   return {
@@ -1681,12 +1685,7 @@ export async function listExpenses(
     // Names and avatars, not figures: read once the snapshot's connection is
     // back in the pool.
     users: await usersReferenced(listed.rows, listed.children),
-    settledExpenseIds: settledExpenseIds(
-      listed.participants,
-      userId,
-      listed.viewerNetByGroupScope,
-      listed.oneOffNetByPair,
-    ),
+    settledExpenseIds: listed.settledIds,
     repaidExpenseIds: repaidExpenseIds(
       listed.rows.map((expenseRow) => {
         const { payers, splits } = toExpense(expenseRow, listed.children);
@@ -1770,20 +1769,10 @@ export async function getExpense(userId: string, expenseId: string, commentLimit
           }
         }
       }
-      const settled =
-        settledExpenseIds(
-          [
-            {
-              id: expenseId,
-              groupId: current.group_id ?? "",
-              currency: current.currency,
-              participantIds,
-            },
-          ],
-          userId,
-          viewerNetByGroupScope,
-          oneOffNetByPair,
-        ).length === 1;
+      const bill = { id: expenseId, groupId: current.group_id ?? "", currency: current.currency, participantIds };
+      const settled = (await excludeOpenPairs(
+        settledExpenseIds([bill], userId, viewerNetByGroupScope, oneOffNetByPair), [bill], userId, client,
+      )).length > 0;
 
       // Whether a payment postdates this expense in its scope, so the detail
       // view can warn that an edit or a delete will rebalance against it.

@@ -924,6 +924,22 @@ describe.skipIf(!reachable)("paying back one expense against Postgres", () => {
       .rejects.toMatchObject({ code: "not_found", message: "expense not found" });
   });
 
+  it("keeps a payable edge visible when the viewer's group net is zero", async () => {
+    const group = "two-opposing-edges";
+    await database.query("INSERT INTO groups (id, name, created_by) VALUES ($1, 'Tickets', $2)", [group, ANA_ID]);
+    await database.query("INSERT INTO group_members (group_id, user_id) SELECT $1, unnest($2::text[])",
+      [group, [ANA_ID, BOB_ID, CHEN_ID]]);
+    await storeExpense({ id: "tickets-out", groupId: group, description: "Tickets",
+      payers: { [ANA_ID]: 2200 }, splits: { [BOB_ID]: 2200 } });
+    await storeExpense({ id: "tickets-in", groupId: group, description: "Dinner",
+      payers: { [BOB_ID]: 2200 }, splits: { [CHEN_ID]: 2200 } });
+    const detail = await expenses.getExpense(BOB_ID, "tickets-out");
+    expect(detail.repayments[0]?.payableCents).toBe(2200);
+    expect(detail.settledForViewer).toBe(false);
+    const list = await expenses.listExpenses(BOB_ID, { groupId: group }, { cursor: "", limit: 20 });
+    expect(list.settledExpenseIds).toEqual([]);
+  });
+
   it("records a bill while an unrelated shared group is locked", async () => {
     await storeExpense({ id: "uncontended", groupId: TRIP_ID, description: "Lunch",
       payers: { [ANA_ID]: 10000 }, splits: { [BOB_ID]: 10000 } });

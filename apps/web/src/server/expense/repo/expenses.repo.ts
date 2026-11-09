@@ -410,13 +410,15 @@ export async function listExpensePage(
  * Loads live expense parents for all requested ledger scopes at once.
  * @param groupIds - Group scopes whose balances are being assembled.
  * @param client - Snapshot or ledger transaction client.
+ * @param viewerId - Restrict to rows involving this person when supplied.
  * @returns Live group expenses; no query is sent for an empty scope list.
  */
-export async function listExpensesByGroups(groupIds: readonly string[], client?: PoolClient): Promise<ExpenseRow[]> {
+export async function listExpensesByGroups(groupIds: readonly string[], client?: PoolClient, viewerId?: string): Promise<ExpenseRow[]> {
   if (groupIds.length === 0) return [];
   return query<ExpenseRow>(
-    "SELECT * FROM expenses WHERE group_id = ANY($1::text[]) AND deleted_at IS NULL",
-    [[...new Set(groupIds)]], client,
+    `SELECT expense.* FROM expenses expense WHERE group_id = ANY($1::text[]) AND deleted_at IS NULL
+       ${viewerId ? "AND " + expenseInvolvesSql("= $2") : ""}`,
+    viewerId ? [groupIds, viewerId] : [groupIds], client,
   );
 }
 
