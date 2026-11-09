@@ -24,7 +24,7 @@ export interface InviteLinkRow {
 }
 
 const LINK_COLUMNS = `token, kind, inviter_id, group_id, live_split_id, expires_at,
-  (expires_at IS NOT NULL AND expires_at <= COALESCE(revoked_at, now())) AS expired,
+  (expires_at IS NOT NULL AND expires_at <= COALESCE(revoked_at, clock_timestamp())) AS expired,
   (revoked_at IS NOT NULL) AS revoked`;
 
 /**
@@ -33,10 +33,11 @@ const LINK_COLUMNS = `token, kind, inviter_id, group_id, live_split_id, expires_
  * treats a link turned off before its date like a made-up token.
  *
  * @param token - The token from the shared URL.
+ * @param client - Transaction performing credential validation.
  * @returns The link, or undefined.
  */
-export async function findLinkByToken(token: string): Promise<InviteLinkRow | undefined> {
-  return queryOne<InviteLinkRow>(`SELECT ${LINK_COLUMNS} FROM invite_links WHERE token = $1`, [token]);
+export async function findLinkByToken(token: string, client?: PoolClient): Promise<InviteLinkRow | undefined> {
+  return queryOne<InviteLinkRow>(`SELECT ${LINK_COLUMNS} FROM invite_links WHERE token = $1`, [token], client);
 }
 
 /**

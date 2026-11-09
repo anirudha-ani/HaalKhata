@@ -44,3 +44,4 @@ query counts/rows or equivalent plan properties, not machine-dependent timings.
 | API-01 | New comment previews, activity audiences and queued pushes exclude former members, including the original creator. Current participants still hear about the comment. | `apps/web/src/server/expense/usecase/formerMemberBalance.integration.test.ts` |
 | API-12 | A block between two incumbents prevents an unrelated person joining | `apps/web/src/server/social/usecase/inviteLinkExpiry.integration.test.ts` |
 | API-02 | A removed member can finish minting a fresh invite after explicit revocation | `apps/web/src/server/social/usecase/inviteLinkExpiry.integration.test.ts`, `apps/web/src/server/social/usecase/inviteLinks.test.ts` |
+| API-03 | Queued acceptance grants membership after its group invite was revoked | `apps/web/src/server/social/usecase/inviteLinkExpiry.integration.test.ts` |

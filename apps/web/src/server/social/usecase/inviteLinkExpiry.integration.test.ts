@@ -235,4 +235,37 @@ describe.skipIf(!reachable)("group invite links expire, against Postgres", () =>
     }
   });
 
+  it("refuses a queued acceptance when its link is revoked under the group lock", async () => {
+    await database.query("DELETE FROM group_members WHERE group_id = $1 AND user_id = $2", [GROUP, LATECOMER]);
+    const { token } = await social.createGroupInviteLink(OWNER, GROUP);
+    await database.query("BEGIN");
+    await database.query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", [GROUP_LEDGER_LOCK_PREFIX + GROUP]);
+    const acceptance = social.acceptInviteLink(LATECOMER, token).catch((error: unknown) => error);
+    try {
+      await waitForGroupWaiter();
+      await database.query("UPDATE invite_links SET revoked_at = clock_timestamp() WHERE token = $1", [token]);
+      await database.query("COMMIT");
+      expect(await acceptance).toMatchObject({ code: "not_found" });
+      expect(await joinerIsMember(LATECOMER)).toBe(false);
+    } finally {
+      await database.query("ROLLBACK");
+    }
+  });
+
+  it("checks link expiry using current time after waiting for the group lock", async () => {
+    const { token } = await social.createGroupInviteLink(OWNER, GROUP);
+    await database.query("BEGIN");
+    await database.query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", [GROUP_LEDGER_LOCK_PREFIX + GROUP]);
+    const acceptance = social.acceptInviteLink(LATECOMER, token).catch((error: unknown) => error);
+    try {
+      await waitForGroupWaiter();
+      await database.query("UPDATE invite_links SET expires_at = clock_timestamp() WHERE token = $1", [token]);
+      await database.query("COMMIT");
+      expect(await acceptance).toMatchObject({ code: "failed_precondition" });
+      expect(await joinerIsMember(LATECOMER)).toBe(false);
+    } finally {
+      await database.query("ROLLBACK");
+    }
+  });
+
 });

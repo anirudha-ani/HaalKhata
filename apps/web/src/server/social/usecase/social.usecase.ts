@@ -25,13 +25,11 @@ import { normalizePhone, PHONE_FORMAT_HINT } from "@/server/auth/auth.constants"
 import { isEmailAddress } from "@haalkhata/shared/email/email";
 import {
   findActiveGroupLink,
-  findLinkByToken,
   findActiveProfileLink,
   insertInviteLink,
   revokeGroupLinks,
   revokeInviteLink,
   revokeProfileLinks,
-  type InviteLinkRow,
 } from "@/server/social/repo/inviteLinks.repo";
 import {
   findGroupById,
@@ -41,7 +39,7 @@ import {
 import { assertGroupActive } from "@/server/group/usecase/groupArchive";
 import { OWNER_ROLE } from "@/server/group/group.constants";
 import { joinLiveSplit, previewLiveSplit } from "@/server/expense/usecase/liveSplit/liveSplit.usecase";
-import { LIVE_SPLIT_ENDED_MESSAGE } from "@haalkhata/shared/expense/live/live.constants";
+import { loadActiveLink } from "./activeInviteLink";
 import { joinGroupThroughLink } from "./groupLinkJoin";
 import { newInviteToken } from "./inviteToken";
 import { listActivityMonths, listActivityPage } from "@/server/social/repo/activity.repo";
@@ -58,8 +56,6 @@ import {
 import {
   ACTIVITY_PAGE_SIZE,
   DEAD_LINK_MESSAGE,
-  EXPIRED_LINK_MESSAGE,
-  INVITE_LINK_TOKEN_PATTERN,
   MAX_ACTIVITY_PAGE_SIZE,
   NOT_ON_HAALKHATA_MESSAGE,
   REMINDER_COOLDOWN_HOURS,
@@ -558,30 +554,6 @@ export async function previewInviteLink(token: string) {
   };
 }
 
-/**
- * Resolves a presented token to its live link, with one generic refusal for
- * every dead shape and its own for a group link past its date, including
- * one already replaced by a new link. Saying it expired tells the holder
- * nothing they did not have: the token is theirs, and no group, inviter or
- * member count is given with it. A link its owner turned off before its date
- * gets the generic refusal, like a token nobody made.
- *
- * @param token - The token from the shared URL.
- * @returns The active link row.
- * @throws UsecaseError (not_found) for a missing, malformed or turned-off
- *   token; (failed_precondition) for one that has expired.
- */
-async function loadActiveLink(token: string): Promise<InviteLinkRow> {
-  if (!INVITE_LINK_TOKEN_PATTERN.test(token)) notFound(DEAD_LINK_MESSAGE);
-  const link = await findLinkByToken(token);
-  if (!link) notFound(DEAD_LINK_MESSAGE);
-  if (link.kind === "live" && (link.expired || link.revoked)) {
-    throw new UsecaseError("failed_precondition", LIVE_SPLIT_ENDED_MESSAGE);
-  }
-  if (link.expired) throw new UsecaseError("failed_precondition", EXPIRED_LINK_MESSAGE);
-  if (link.revoked) notFound(DEAD_LINK_MESSAGE);
-  return link;
-}
 
 /**
  * Accepts an invite link as the signed-in caller. Nothing is claimed or
@@ -638,7 +610,7 @@ export async function acceptInviteLink(
   const group = await findGroupById(link.group_id!);
   if (!group) notFound(DEAD_LINK_MESSAGE);
   if (await isMember(group.id, userId)) return { groupId: group.id, expenseId: "" };
-  await joinGroupThroughLink(acceptor, group, link.inviter_id, (await findUserById(link.inviter_id))?.name ?? "a member");
+  await joinGroupThroughLink(acceptor, group, link.inviter_id, (await findUserById(link.inviter_id))?.name ?? "a member", token);
   await notifyInviteAccepted(link.inviter_id, acceptor, group.name, `/groups/${group.id}`);
   return { groupId: group.id, expenseId: "" };
 }
