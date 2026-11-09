@@ -48,6 +48,7 @@ vi.mock("@/server/group/repo/groups.repo", () => ({
   listCoMemberIds: vi.fn(),
   listGroupsByUser: vi.fn(),
   listMembers: vi.fn(),
+  memberIdsAmong: vi.fn(async (_group, people: string[]) => new Set(people)),
 }));
 vi.mock("@/server/auth/repo/users.repo", () => ({
   findUserById: vi.fn(),
@@ -64,6 +65,8 @@ vi.mock("@/server/expense/repo/comments.repo", () => ({
 vi.mock("@/server/expense/repo/settlements.repo", () => ({
   findSettlementById: vi.fn(),
   insertSettlement: vi.fn(),
+  listExpensePaymentsFor: vi.fn(async () => []),
+  sumPaidForExpenses: vi.fn(async () => []),
   listSettlementsByNetSettlement: vi.fn(),
   softDeleteNetSettlement: vi.fn(),
   scopeHasSettlements: vi.fn(),
@@ -101,6 +104,8 @@ vi.mock("./balance.usecase", () => ({
   amountOwed: vi.fn(),
   oneOffNetBetween: vi.fn(),
   owedByScope: vi.fn(),
+  owingInScope: vi.fn(async (_viewer, people: string[]) => new Map(people.map((person) => [person, { owedCents: 0, loop: false, debtorNetCents: 0 }]))),
+  excludeOpenPairs: vi.fn(async (candidates) => candidates),
   userNetInGroup: vi.fn(),
 }));
 

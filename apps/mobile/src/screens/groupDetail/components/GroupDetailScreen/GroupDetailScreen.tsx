@@ -261,6 +261,7 @@ export function GroupDetailScreen({
             expenses={groupDetail.expenses.expenses}
             meId={groupDetail.me?.id}
             settledIds={groupDetail.expenses.settledIds}
+            repaidIds={groupDetail.expenses.repaidIds}
             userById={groupDetail.userById}
           />
           <ShowMoreFooter

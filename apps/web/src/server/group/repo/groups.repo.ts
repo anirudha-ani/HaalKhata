@@ -294,6 +294,21 @@ export async function removeMember(
 }
 
 /**
+ * Checks a set of people's membership without loading profiles or the rest of the roster.
+ * @param groupId - The group being checked.
+ * @param people - Participants whose membership matters to this operation.
+ * @param client - The snapshot or locked transaction.
+ * @returns Which of the requested people are currently members.
+ */
+export async function memberIdsAmong(groupId: string, people: string[], client: PoolClient): Promise<Set<string>> {
+  const members = await query<{ user_id: string }>(
+    "SELECT user_id FROM group_members WHERE group_id = $1 AND user_id = ANY($2::text[])",
+    [groupId, people], client,
+  );
+  return new Set(members.map((member) => member.user_id));
+}
+
+/**
  * Checks whether a user is currently a member of a group.
  *
  * @param groupId - Id of the group to check.

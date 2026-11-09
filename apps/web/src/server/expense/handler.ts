@@ -98,6 +98,11 @@ export const expenseHandler: PlainServiceImpl<typeof ExpenseService> = {
     return {};
   },
 
+  /** Older payments on this expense that involve the authenticated reader. */
+  async listExpensePayments(request, context) {
+    return runUsecase(async () => expenses.listExpensePayments(await requireUser(context), request.expenseId, request.cursor), context);
+  },
+
   /** Older comments on an expense, a page at a time. */
   async listComments(request, context) {
     return runUsecase(

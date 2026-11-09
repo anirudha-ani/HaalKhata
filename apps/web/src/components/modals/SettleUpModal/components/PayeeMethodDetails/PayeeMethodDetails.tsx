@@ -32,6 +32,8 @@ export function PayeeMethodDetails({
   readAt,
   removedAt,
   firstName,
+  linksAvailable,
+  onOpen,
   amountCents,
   currency,
   note,
@@ -48,6 +50,10 @@ export function PayeeMethodDetails({
   firstName: string;
   /** The amount being paid, for an app link that can carry it. */
   amountCents: number;
+  /** Whether an external transfer is available for this amount. */
+  linksAvailable: boolean;
+  /** Validates a bill payment before opening its destination. */
+  onOpen?: (url: string) => void;
   /** The currency being paid in, which decides whether a link may carry the amount. */
   currency: string;
   /** The payment note, for an app link that can carry it. */
@@ -96,13 +102,14 @@ export function PayeeMethodDetails({
         ))}
       </ul>
 
-      <OwnerLinks
+      {linksAvailable ? <OwnerLinks
+        onOpen={onOpen}
         links={method.details
           .filter((detail) => detail.kind === "link")
           .map((detail) => detail.value)}
-      />
+      /> : null}
 
-      {appLink ? <AppLink link={appLink} /> : null}
+      {linksAvailable && appLink ? <AppLink link={appLink} onOpen={onOpen} /> : null}
 
       {method.note ? (
         <p className="rounded-lg bg-card px-3 py-2 text-sm">

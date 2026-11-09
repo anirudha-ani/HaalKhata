@@ -37,6 +37,37 @@ export async function hasUnsettledGroupBalances(groupId: string, client: PoolCli
 }
 
 /**
+ * Finds group currencies with any outstanding member net, omitting cancelling loops.
+ * @param groupIds - Groups under consideration.
+ * @param client - Snapshot or transaction client.
+ * @returns Unsettled group and currency pairs.
+ */
+export async function unsettledPairwiseCurrencies(groupIds: string[], client: PoolClient) {
+  if (!groupIds.length) return [];
+  return query<{ group_id: string; currency: string }>(
+    `SELECT DISTINCT movement.group_id, movement.currency FROM (
+       SELECT exp.group_id, pay.user_id, exp.currency, pay.amount_cents AS delta
+         FROM expense_payers pay JOIN expenses exp ON exp.id = pay.expense_id
+        WHERE exp.group_id = ANY($1::text[]) AND exp.deleted_at IS NULL
+       UNION ALL
+       SELECT exp.group_id, spl.user_id, exp.currency, -spl.owed_cents
+         FROM expense_splits spl JOIN expenses exp ON exp.id = spl.expense_id
+        WHERE exp.group_id = ANY($1::text[]) AND exp.deleted_at IS NULL
+       UNION ALL
+       SELECT group_id, from_user, currency, amount_cents FROM settlements
+        WHERE group_id = ANY($1::text[]) AND deleted_at IS NULL
+       UNION ALL
+       SELECT group_id, to_user, currency, -amount_cents FROM settlements
+        WHERE group_id = ANY($1::text[]) AND deleted_at IS NULL
+     ) movement
+     JOIN groups ON groups.id = movement.group_id
+     WHERE NOT groups.simplify_debts
+     GROUP BY movement.group_id, movement.user_id, movement.currency
+     HAVING SUM(movement.delta) <> 0`, [groupIds], client,
+  );
+}
+
+/**
  * A user's net position in each of several groups, per currency, in one
  * query.
  *
@@ -94,6 +125,49 @@ export async function sumUserNetByGroup(
     nets.set(entry.group_id, byCurrency);
   }
   return nets;
+}
+
+/**
+ * Every member's net in one group in one currency, in one query: what they
+ * paid − what they owe + payments they made − payments they received, over
+ * live rows, past members included. The same nets a walk of the group's
+ * ledger gives (see {@link sumUserNetByGroup}), so a simplified group's
+ * route, worked out from these, is the route its page shows, and a pairwise
+ * group whose nets are all zero is a loop that cancels out.
+ *
+ * @param groupId - The group.
+ * @param currency - The currency.
+ * @param client - Snapshot or locked transaction.
+ * @returns Person id → net cents (> 0 ⇒ owed money); only non-zero nets.
+ */
+export async function sumGroupNets(
+  groupId: string,
+  currency: string,
+  client: PoolClient,
+): Promise<Map<string, number>> {
+  const rows = await query<{ user_id: string; net: number }>(
+    `SELECT movement.user_id, SUM(movement.delta)::bigint AS net
+       FROM (
+         SELECT pay.user_id, pay.amount_cents AS delta
+           FROM expense_payers pay JOIN expenses exp ON exp.id = pay.expense_id
+          WHERE exp.group_id = $1 AND exp.currency = $2 AND exp.deleted_at IS NULL
+         UNION ALL
+         SELECT spl.user_id, -spl.owed_cents
+           FROM expense_splits spl JOIN expenses exp ON exp.id = spl.expense_id
+          WHERE exp.group_id = $1 AND exp.currency = $2 AND exp.deleted_at IS NULL
+         UNION ALL
+         SELECT from_user, amount_cents FROM settlements
+          WHERE group_id = $1 AND currency = $2 AND deleted_at IS NULL
+         UNION ALL
+         SELECT to_user, -amount_cents FROM settlements
+          WHERE group_id = $1 AND currency = $2 AND deleted_at IS NULL
+       ) movement
+      GROUP BY movement.user_id
+     HAVING SUM(movement.delta) <> 0`,
+    [groupId, currency],
+    client,
+  );
+  return new Map(rows.map((member) => [member.user_id, member.net]));
 }
 
 /**

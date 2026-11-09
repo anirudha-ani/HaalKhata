@@ -36,6 +36,7 @@ shrink to fit the space actually available inside the shell.
 | Itemized receipt editing, portions, tax/tip, preview | Present | Present | Shared validation, totals, payloads, warnings and allocation |
 | Receipt scan and processing consent | Browser file input | Native photo/camera input | Same first-use account permission, withdrawal setting, processing disclosure and receipt API |
 | Settlement scope/net settlement and reminders | Present | Present | Same ledger endpoints and shared position/payment helpers |
+| Paying back one expense from its page; "paid back" on list rows | Present | Present | Same `RecordSettlement` with `expense_id`; shared `expense/repayment.ts` wording and limits |
 | Payment-method management and payer details | Present | Present | Shared payment validation, state and formatting |
 | History, comments, activity and notifications | Present | Present | Same expense and social operations |
 | Push notification settings: switches, phones, test, remove | Present | Present | Same PushService operations; shared categories, wording and phone descriptions |
@@ -136,3 +137,26 @@ local accounts; this does not complete physical-device integration coverage.
 
 See [the October 15 workflow audit](audits/mobile-flows-2026-10-15.md) for the
 local API/security checks, fixes and explicit remaining native-device coverage.
+
+## Verify paying back a bill locally
+
+Run `./dev.sh --mobile-ios` with the development configuration in
+`docs/local-auth.md`. Open the web app at localhost:3000 and the native
+client on the same backend. Use local test accounts and ledger entries.
+
+1. Have Ana pay a $30 bill for Bob. Give Ana a USD Venmo method. As Bob,
+   enter $45 in Pay back. Both clients explain the $30 limit and hide the
+   external action. Open the sheet for $30 again and record $10 from another
+   device. Press Open Venmo on the original device. The sheet should show
+   the updated $20 limit and stay in the app.
+2. Record a valid partial payment using Cash. Check the bill history, list
+   and remaining amount. If an opposite expense caps the next payment below
+   the unpaid share, the button says Pay back. Changing the Duo hinge or
+   rotating the iPad while the sheet is open preserves the entered amount.
+3. On a one-off bill, remove the payer from the split after their payment,
+   then rename the bill. Their statement and the activity from removing the
+   payment retain the original title.
+
+The Postgres repayment suite also exercises simultaneous payments, access
+checks, large bills and earlier history pages. With local Postgres running,
+use `pnpm --filter @haalkhata/web exec vitest run src/server/expense/usecase/repayment/expenseRepayment.integration.test.ts`.

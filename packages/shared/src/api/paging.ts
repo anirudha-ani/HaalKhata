@@ -3,6 +3,9 @@
 /** Expenses one page of any expense list asks for. */
 export const EXPENSE_PAGE_SIZE = 50;
 
+/** Bill payments returned in one history page. */
+export const BILL_PAYMENT_PAGE_SIZE = 30;
+
 /** Lines one page of a friend statement asks for. */
 export const STATEMENT_PAGE_SIZE = 50;
 
@@ -29,6 +32,9 @@ export const SHOW_MORE_LABEL = "Show me more";
 
 /** What the button under a friend statement says. */
 export const SHOW_OLDER_LINES_LABEL = "Show older lines";
+
+/** What the button above an expense's payment history says. */
+export const SHOW_OLDER_PAYMENTS_LABEL = "Show older payments";
 
 /** What the button above an expense's comments says. */
 export const SHOW_EARLIER_COMMENTS_LABEL = "Show earlier comments";

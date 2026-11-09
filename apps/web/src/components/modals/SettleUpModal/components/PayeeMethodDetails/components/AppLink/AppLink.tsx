@@ -1,6 +1,7 @@
 "use client";
 /** The "Open Venmo" button of a built-in app, with the line that says what the link can and cannot do. */
 
+import { PaymentLink } from "../PaymentLink/PaymentLink";
 import { ExternalLink } from "lucide-react";
 import type { AppPaymentLink } from "@haalkhata/shared/payment/appLink";
 
@@ -18,22 +19,24 @@ import type { AppPaymentLink } from "@haalkhata/shared/payment/appLink";
  */
 export function AppLink({
   link,
+  onOpen,
 }: {
+  /** Checks a bill payment before opening the destination. */
+  onOpen?: (url: string) => void;
   /** The app's link and the line that goes with it. */
   link: AppPaymentLink;
 }) {
   return (
     <>
       {link.url ? (
-        <a
-          href={link.url}
-          target="_blank"
-          rel="noopener noreferrer"
+        <PaymentLink
+          url={link.url}
+          onOpen={onOpen}
           className="flex min-h-11 items-center justify-center gap-1.5 rounded-lg bg-brand-600 text-sm font-semibold text-white hover:bg-brand-700"
         >
           <ExternalLink className="h-4 w-4" aria-hidden="true" />
           Open {link.label}
-        </a>
+        </PaymentLink>
       ) : null}
       <p className="text-xs text-ink-soft">{link.hint}</p>
     </>

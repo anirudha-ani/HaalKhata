@@ -45,6 +45,14 @@ export interface SettlementRow {
    * refuses to commit them any other way.
    */
   net_settlement_id: string | null;
+  /**
+   * The expense this payment paid back, when it was recorded from that
+   * expense's page; null for a payment made anywhere else. The database
+   * keeps it in the expense's group and currency, and off net settlements.
+   */
+  expense_id: string | null;
+  /** Title shared with both parties when the payment was recorded. */
+  expense_description?: string | null;
 }
 
 /**
@@ -168,13 +176,17 @@ export async function insertSettlement(
     recordedBy: string;
     /** The net settlement this row belongs to; omitted for an ordinary payment. */
     netSettlementId?: string | null;
+    /** The expense this payment pays back; omitted for a payment made anywhere else. */
+    expenseId?: string | null;
+    /** The authorized bill title at recording time. */
+    expenseDescription?: string;
   },
   client?: PoolClient,
 ): Promise<SettlementRow> {
   const text = `INSERT INTO settlements
        (id, group_id, from_user, to_user, amount_cents, currency, method, note, recorded_by,
-        net_settlement_id, method_label)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+        net_settlement_id, method_label, expense_id, expense_description)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
      RETURNING *`;
   const params = [
     newId(),
@@ -188,6 +200,8 @@ export async function insertSettlement(
     input.recordedBy,
     input.netSettlementId ?? null,
     input.methodLabel ?? "",
+    input.expenseId ?? null,
+    input.expenseDescription ?? null,
   ];
   if (client) {
     const { rows } = await client.query<SettlementRow>(text, params as never[]);
@@ -320,13 +334,15 @@ export async function listSettlementsByGroup(
  * Loads live payments for many group ledger scopes with one statement.
  * @param groupIds - Group scopes whose balances are being assembled.
  * @param client - Snapshot or ledger transaction client.
+ * @param viewerId - Restrict to rows involving this person when supplied.
  * @returns Live group payments; no query is sent for an empty scope list.
  */
-export async function listSettlementsByGroups(groupIds: readonly string[], client?: PoolClient): Promise<SettlementRow[]> {
+export async function listSettlementsByGroups(groupIds: readonly string[], client?: PoolClient, viewerId?: string): Promise<SettlementRow[]> {
   if (groupIds.length === 0) return [];
   return query<SettlementRow>(
-    "SELECT * FROM settlements WHERE group_id = ANY($1::text[]) AND deleted_at IS NULL",
-    [[...new Set(groupIds)]], client,
+    `SELECT * FROM settlements WHERE group_id = ANY($1::text[]) AND deleted_at IS NULL
+       ${viewerId ? "AND (from_user = $2 OR to_user = $2)" : ""}`,
+    viewerId ? [groupIds, viewerId] : [groupIds], client,
   );
 }
 
@@ -453,27 +469,28 @@ export async function listOneOffSettlementsBetween(
 }
 
 /**
- * Lists the live one-off settlements between the user and any of the given
- * people, either direction, oldest first: the settlement side of every one
- * of those pairs' one-off ledgers, from one read.
+ * Lists live settlements in one scope between the user and any of the given
+ * people, either direction, oldest first.
  *
  * @param userId - The person on every settlement.
  * @param otherUserIds - The people on the other side.
  * @param client - Snapshot or transaction client; omitted, the pool.
+ * @param groupId - The group to read, or null for one-off expenses.
  * @returns The settlement rows; no query is sent for an empty list of people.
  */
-export async function listOneOffSettlementsWithAnyOf(
+export async function listScopedSettlementsWithAnyOf(
   userId: string,
   otherUserIds: readonly string[],
   client?: PoolClient,
+  groupId: string | null = null,
 ): Promise<SettlementRow[]> {
   if (otherUserIds.length === 0) return [];
   return query<SettlementRow>(
     `SELECT * FROM settlements
-     WHERE group_id IS NULL AND deleted_at IS NULL
+     WHERE group_id ${groupId === null ? "IS NULL" : "= $3"} AND deleted_at IS NULL
        AND ((from_user = $1 AND to_user = ANY($2::text[])) OR (to_user = $1 AND from_user = ANY($2::text[])))
      ORDER BY created_at ASC`,
-    [userId, [...new Set(otherUserIds)]],
+    groupId === null ? [userId, otherUserIds] : [userId, otherUserIds, groupId],
     client,
   );
 }
@@ -494,5 +511,48 @@ export async function listSettlementsInvolvingUser(
      ORDER BY created_at ASC`,
     [userId],
     client,
+  );
+}
+
+/**
+ * Totals outgoing bill payments per bill and creditor without loading payment history.
+ * Each bill has an immutable currency, enforced on its linked payments by the database.
+ * @param expenseIds - Bills being shown.
+ * @param userId - Payer.
+ * @param client - Snapshot or locked transaction.
+ * @returns One total for each bill and recipient with an active payment.
+ */
+export async function sumPaidForExpenses(expenseIds: readonly string[], userId: string, client: PoolClient) {
+  if (!expenseIds.length) return [];
+  return query<{ expense_id: string; to_user: string; total: number }>(
+    `SELECT expense_id, to_user, SUM(amount_cents)::bigint AS total FROM settlements
+     WHERE expense_id = ANY($1::text[]) AND from_user = $2 AND deleted_at IS NULL
+     GROUP BY expense_id, to_user`, [expenseIds, userId], client,
+  );
+}
+
+/**
+ * Reads the newest payments involving this reader before an exact time and id.
+ * Each side uses its own index and contributes at most a page to the merge.
+ * @param expenseId - The bill.
+ * @param userId - The authenticated reader.
+ * @param before - Oldest payment already shown.
+ * @param limit - A page plus one row to detect more history.
+ * @param client - The authorized bill snapshot.
+ * @returns Rows newest first with an exact timestamp for the next cursor.
+ */
+export async function listExpensePaymentsFor(
+  expenseId: string, userId: string, before: { createdAt: string; id: string } | null, limit: number, client: PoolClient,
+) {
+  const seek = before ? "AND (created_at, id) < ($4::timestamptz, $5::text)" : "";
+  return query<SettlementRow & { created_at_exact: string }>(
+    `SELECT payments.*, ${exactTimeSql("payments.created_at")} AS created_at_exact FROM (
+       (SELECT * FROM settlements WHERE expense_id = $1 AND from_user = $2 AND deleted_at IS NULL
+          ${seek} ORDER BY created_at DESC, id DESC LIMIT $3)
+       UNION ALL
+       (SELECT * FROM settlements WHERE expense_id = $1 AND to_user = $2 AND deleted_at IS NULL
+          ${seek} ORDER BY created_at DESC, id DESC LIMIT $3)
+     ) payments ORDER BY created_at DESC, id DESC LIMIT $3`,
+    before ? [expenseId, userId, limit, before.createdAt, before.id] : [expenseId, userId, limit], client,
   );
 }

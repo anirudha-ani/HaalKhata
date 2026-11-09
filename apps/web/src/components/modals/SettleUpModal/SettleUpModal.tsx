@@ -1,5 +1,5 @@
 "use client";
-/** Modal for settling up: shows exactly which balances a payment settles, takes the amount and how the money moved, shows where to send it, then records it. */
+/** Modal for settling up or paying back one bill: shows exactly what a payment settles, takes the amount and how the money moved, shows where to send it, then records it. */
 
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -18,9 +18,12 @@ import {
   readSettlePositions,
   settleOverLimitMessage,
 } from "@haalkhata/shared/expense/settlePosition";
+import { billOverLimitMessage, billPayableCents, billPaymentError, NOTHING_TO_REPAY } from "@haalkhata/shared/expense/repayment";
+import { BillLine } from "./components/BillLine/BillLine";
 import { PayMethodChips } from "./components/PayMethodChips/PayMethodChips";
 import { PayeeMethodDetails } from "./components/PayeeMethodDetails/PayeeMethodDetails";
 import { usePayMethods } from "./hooks/usePayMethods";
+import { useBillPaymentLinkAPI } from "./hooks/useBillPaymentLinkAPI";
 import { useSettleAttempt } from "./hooks/useSettleAttempt";
 
 /**
@@ -43,6 +46,10 @@ import { useSettleAttempt } from "./hooks/useSettleAttempt";
  * - Opened beside one balance — a group's page, or a single row of where a
  *   balance sits — it settles that balance and nothing else, whatever else
  *   the pair owes each other.
+ * - Opened beside a bill's "You owe" — on the bill's page — it pays back
+ *   that bill's share: the one row is the bill, the amount is what is left of
+ *   the share (never more than the bill's balance still holds), and the
+ *   payment is recorded in that balance, marked as being for the bill.
  *
  * The balances are not worked out here. The server computes the pair's
  * position with the code that records the settlement and sends it with a
@@ -71,6 +78,7 @@ export function SettleUpModal({
   currency: initialCurrency,
   scopeId,
   received: receivedHint = false,
+  bill,
   onClose,
 }: {
   /** The other person, whichever way the money moved. */
@@ -90,6 +98,20 @@ export function SettleUpModal({
    * the balances being settled point.
    */
   received?: boolean;
+  /**
+   * The bill being paid back, when opened from its page; `scopeId` must then
+   * be the bill's balance and `currency` its currency.
+   */
+  bill?: {
+    /** The bill's id, sent with the payment. */
+    expenseId: string;
+    /** Its name. */
+    description: string;
+    /** What its page offers to pay now, from the server's reading of it. */
+    payableCents: number;
+    /** Why a still-unpaid bill no longer accepts a payment. */
+    refusal?: string;
+  };
   /** Called when the modal is dismissed or the settlement is recorded. */
   onClose: () => void;
 }) {
@@ -115,13 +137,19 @@ export function SettleUpModal({
   // Stay on a currency that has something to settle: if the one this opened
   // on has nothing (it was just settled elsewhere), move to one that does
   // instead of presenting an empty form.
+  // A bill is in one currency, so a pay-back never switches.
   const { currencies } = readSettlePositions(positions, chosenCurrency, scopeId);
-  const currency = currencies.includes(chosenCurrency)
+  const currency = bill || currencies.includes(chosenCurrency)
     ? chosenCurrency
     : (currencies[0] ?? chosenCurrency);
   const reading = readSettlePositions(positions, currency, scopeId);
-  const payableCents = Math.abs(reading.netCents);
-  const received = reading.netCents !== 0 ? reading.netCents > 0 : receivedHint;
+  // A pay-back offers what the bill's page offered, and no more than its
+  // balance holds now that the dialog has read it.
+  const payableCents = bill
+    ? loaded ? billPayableCents(reading, bill.payableCents) : bill.payableCents
+    : Math.abs(reading.netCents);
+  const received = bill ? false : reading.netCents !== 0 ? reading.netCents > 0 : receivedHint;
+  const nothingToSettle = bill ? payableCents === 0 : reading.rows.length === 0;
   const firstName = other.name.split(" ")[0];
   const payMethods = usePayMethods({
     payeeMethods: ledgerQuery.data?.payeeMethods ?? [],
@@ -139,7 +167,27 @@ export function SettleUpModal({
   const amountCents = parseMoneyInput(amount, currency) ?? 0;
   // Said only when there is a payment to make: with nothing owed the
   // methods are not sent at all, and "has not added one" would be untrue.
-  const canPay = loaded && !received && reading.rows.length > 0;
+  const handoff = useBillPaymentLinkAPI(bill?.expenseId ?? "", other.id);
+  const billError = bill && loaded ? billPaymentError(amountCents, payableCents, currency) : "";
+  const billClosed = Boolean(bill && loaded && nothingToSettle);
+  const visibleError = error || settlement.failure || (!billClosed && handoff.error && errorMessage(handoff.error)) || (payableCents > 0 && billError);
+  const canPay = loaded && !received && !nothingToSettle;
+  const showInstructions = !bill || (canPay && !visibleError && !handoff.isPending && !settlement.busy);
+
+  /** Editing the transfer cancels any pending handoff for the previous amount or method. */
+  const editTransfer = () => {
+    if (bill) handoff.reset();
+    setError("");
+  };
+
+  /** Checks the latest bill before opening this particular payment link. */
+  const openBillLink = (destination: string) => {
+    if (!canPay || billError || settlement.busy || handoff.isPending) return;
+    setError("");
+    handoff.mutate(amountCents, { onSuccess: () => {
+      window.location.assign(destination);
+    } });
+  };
 
   /**
    * Switches the payment's currency: the list, the amount, the methods
@@ -163,7 +211,7 @@ export function SettleUpModal({
       return;
     }
     if (cents > payableCents) {
-      setError(settleOverLimitMessage(reading, currency, firstName));
+      setError(bill ? billOverLimitMessage(payableCents, currency) : settleOverLimitMessage(reading, currency, firstName));
       return;
     }
     setError("");
@@ -186,13 +234,15 @@ export function SettleUpModal({
         netAcrossScopes: reading.everything,
         // What was on screen; the server refuses if it no longer holds.
         positionDigest: reading.digest,
+        // A pay-back names its bill, which the server checks it against.
+        expenseId: bill?.expenseId ?? "",
       },
       formatMoney(cents, currency),
     );
   };
 
   return (
-    <Modal title={received ? "Record a payment received" : "Settle up"} onClose={onClose}>
+    <Modal title={bill ? "Pay back" : received ? "Record a payment received" : "Settle up"} onClose={onClose}>
       <div className="space-y-4">
         <div className="flex items-center gap-3 rounded-xl bg-paper p-3">
           <Avatar user={other} />
@@ -214,7 +264,7 @@ export function SettleUpModal({
         {/* Currencies are separate ledgers: a payment is in one, and only
             that one's balances are settled. The switch appears only when
             there is something to settle in more than one. */}
-        {currencies.length > 1 ? (
+        {!bill && currencies.length > 1 ? (
           <div className="space-y-2">
             <p className="text-sm font-medium">Currency</p>
             <div className="flex flex-wrap gap-1.5">
@@ -241,7 +291,7 @@ export function SettleUpModal({
             when it was opened beside a total, the one balance when it was
             opened beside that. Nothing to tick. */}
         <div className="space-y-2">
-          <p className="text-sm font-medium">What this settles</p>
+          <p className="text-sm font-medium">{bill ? "What this pays" : "What this settles"}</p>
           {!loaded && ledgerQuery.isError ? (
             // Said here, with a way to try again: "Loading balances…" under
             // a read that has already failed would never change.
@@ -264,12 +314,19 @@ export function SettleUpModal({
             <p className="rounded-xl border border-dashed border-line px-3 py-2.5 text-sm text-ink-soft">
               Loading balances…
             </p>
-          ) : reading.rows.length === 0 ? (
+          ) : nothingToSettle ? (
             <p className="rounded-xl border border-dashed border-line px-3 py-2.5 text-sm text-ink-soft">
-              {reading.everything
+              {bill ? bill.refusal || NOTHING_TO_REPAY : reading.everything
                 ? `Nothing to settle with ${firstName} right now.`
                 : `Nothing is owed between you and ${firstName} here right now.`}
             </p>
+          ) : bill ? (
+            <BillLine
+              description={bill.description}
+              scopeLabel={reading.rows[0]?.label ?? ""}
+              cents={payableCents}
+              currency={currency}
+            />
           ) : (
             <>
               <ul className="divide-y divide-line rounded-xl border border-line bg-paper">
@@ -316,91 +373,97 @@ export function SettleUpModal({
           )}
         </div>
 
-        <label className="block text-sm font-medium">
-          Amount ({currency})
-          <div className="mt-1 flex gap-2">
-            <input
-              type="text"
-              inputMode="decimal"
-              value={amount}
-              onChange={(changeEvent) => {
-                setTypedAmount(changeEvent.target.value);
-                setAmountEdited(true);
-              }}
-              className="min-w-0 flex-1 rounded-xl border border-line bg-card px-3 py-2.5 text-lg tabular-nums focus:border-brand-500 focus:outline-none"
+        {!billClosed ? <>
+          <label className="block text-sm font-medium">
+            Amount ({currency})
+            <div className="mt-1 flex gap-2">
+              <input
+                type="text"
+                inputMode="decimal"
+                value={amount}
+                onChange={(changeEvent) => {
+                  editTransfer();
+                  setTypedAmount(changeEvent.target.value);
+                  setAmountEdited(true);
+                }}
+                className="min-w-0 flex-1 rounded-xl border border-line bg-card px-3 py-2.5 text-lg tabular-nums focus:border-brand-500 focus:outline-none"
+              />
+              {payableCents > 0 && amountCents !== payableCents ? (
+                <button
+                  type="button"
+                  onClick={() => { editTransfer(); setAmountEdited(false); }}
+                  className="shrink-0 rounded-xl border border-line px-3 text-sm font-medium text-ink-soft hover:border-brand-500 hover:text-brand-700"
+                >
+                  All of it
+                </button>
+              ) : null}
+            </div>
+          </label>
+
+          <div className="space-y-2">
+            <p className="text-sm font-medium">How</p>
+            <PayMethodChips
+              usable={payMethods.usable}
+              others={payMethods.others}
+              choice={payMethods.choice}
+              onPick={(choice) => { editTransfer(); payMethods.pick(choice); }}
             />
-            {payableCents > 0 && amountCents !== payableCents ? (
-              <button
-                type="button"
-                onClick={() => setAmountEdited(false)}
-                className="shrink-0 rounded-xl border border-line px-3 text-sm font-medium text-ink-soft hover:border-brand-500 hover:text-brand-700"
-              >
-                All of it
-              </button>
+            {payMethods.ownMethodsError ? (
+              <div role="alert" className="space-y-1 text-sm">
+                <p className="font-medium text-brand-600">
+                  {ownMethodsFailedLine(payMethods.ownMethodsError)}
+                </p>
+                <button
+                  type="button"
+                  onClick={payMethods.retryOwnMethods}
+                  className="font-semibold text-brand-600 underline"
+                >
+                  Try again
+                </button>
+              </div>
+            ) : null}
+            {/* Why the list is short, said by name and currency, so nobody
+                takes "no bKash here" for "the app does not do bKash". */}
+            {canPay && payMethods.usable.length === 0 ? (
+              <p className="rounded-xl border border-dashed border-line px-3 py-2.5 text-sm text-ink-soft">
+                {payMethods.hasAnyMethod
+                  ? `${firstName} has not added a way to be paid in ${currency}.`
+                  : `${firstName} has not added a way to be paid yet.`}
+              </p>
             ) : null}
           </div>
-        </label>
 
-        <div className="space-y-2">
-          <p className="text-sm font-medium">How</p>
-          <PayMethodChips
-            usable={payMethods.usable}
-            others={payMethods.others}
-            choice={payMethods.choice}
-            onPick={payMethods.pick}
-          />
-          {payMethods.ownMethodsError ? (
-            <div role="alert" className="space-y-1 text-sm">
-              <p className="font-medium text-brand-600">
-                {ownMethodsFailedLine(payMethods.ownMethodsError)}
-              </p>
-              <button
-                type="button"
-                onClick={payMethods.retryOwnMethods}
-                className="font-semibold text-brand-600 underline"
-              >
-                Try again
-              </button>
-            </div>
+          {!received && (!bill || !nothingToSettle) && payMethods.method ? (
+            <PayeeMethodDetails
+              // A different method is a different card: its "Copied" marks reset.
+              key={payMethods.method.id}
+              method={payMethods.method}
+              methods={ledgerQuery.data?.payeeMethods ?? []}
+              readAt={ledgerQuery.data?.readAt ?? ""}
+              removedAt={ledgerQuery.data?.payeeMethodRemovedAt ?? ""}
+              firstName={firstName}
+              amountCents={amountCents}
+              linksAvailable={!bill || (canPay && !billError && !handoff.isPending && !settlement.busy)}
+              onOpen={bill ? openBillLink : undefined}
+              currency={currency}
+              note={note}
+            />
           ) : null}
-          {/* Why the list is short, said by name and currency, so nobody
-              takes "no bKash here" for "the app does not do bKash". */}
-          {canPay && payMethods.usable.length === 0 ? (
-            <p className="rounded-xl border border-dashed border-line px-3 py-2.5 text-sm text-ink-soft">
-              {payMethods.hasAnyMethod
-                ? `${firstName} has not added a way to be paid in ${currency}.`
-                : `${firstName} has not added a way to be paid yet.`}
-            </p>
-          ) : null}
-        </div>
 
-        {!received && payMethods.method ? (
-          <PayeeMethodDetails
-            // A different method is a different card: its "Copied" marks reset.
-            key={payMethods.method.id}
-            method={payMethods.method}
-            methods={ledgerQuery.data?.payeeMethods ?? []}
-            readAt={ledgerQuery.data?.readAt ?? ""}
-            removedAt={ledgerQuery.data?.payeeMethodRemovedAt ?? ""}
-            firstName={firstName}
-            amountCents={amountCents}
-            currency={currency}
-            note={note}
+          <input
+            type="text"
+            placeholder="Note (optional)"
+            aria-label="Note"
+            maxLength={MAX_SETTLEMENT_NOTE_LENGTH}
+            value={note}
+            onChange={(changeEvent) => { editTransfer(); setNote(changeEvent.target.value); }}
+            className="w-full rounded-xl border border-line bg-card px-3 py-2.5 text-sm focus:border-brand-500 focus:outline-none"
           />
-        ) : null}
 
-        <input
-          type="text"
-          placeholder="Note (optional)"
-          aria-label="Note"
-          maxLength={MAX_SETTLEMENT_NOTE_LENGTH}
-          value={note}
-          onChange={(changeEvent) => setNote(changeEvent.target.value)}
-          className="w-full rounded-xl border border-line bg-card px-3 py-2.5 text-sm focus:border-brand-500 focus:outline-none"
-        />
-
-        {error || settlement.failure ? (
-          <p role="alert" className="text-sm text-brand-600">{error || settlement.failure}</p>
+        </> : null}
+        {handoff.isPending ? <p role="status">Checking this bill…</p> : null}
+        {visibleError ? (
+          <p role="alert" className="text-sm text-brand-600">{visibleError}</p>
         ) : null}
         {settlement.notice ? <p role="status" className="text-sm font-medium text-pos-700">{settlement.notice}</p> : null}
         {settlement.status ? (
@@ -414,33 +477,37 @@ export function SettleUpModal({
           </div>
         ) : null}
 
-        <div className="space-y-1.5">
-          <button
-            type="button"
-            onClick={submit}
-            disabled={settlement.busy || !loaded || reading.rows.length === 0}
-            className="w-full rounded-xl bg-pos-600 py-3 font-semibold text-white transition-colors hover:bg-pos-700 disabled:opacity-50"
-          >
-            {settlement.phase === "sending" ? "Recording…" : "Record payment"}
-          </button>
-          {/* Said plainly: this app is a ledger, not a payment processor. The
-              received direction is a log of money that already arrived, so
-              telling the user to "move the money first" would be nonsense. */}
-          <p className="text-center text-xs text-ink-soft">
-            {received ? (
-              <>
-                Logs money {firstName} has already sent you. It doesn&apos;t request anything.
-              </>
-            ) : payMethods.choice === CASH_CHOICE ? (
-              <>This only updates the balance here. Hand over the cash first.</>
-            ) : (
-              <>
-                This only updates the balance here. Move the money in{" "}
-                {payMethods.method?.name ?? "your app of choice"} first.
-              </>
-            )}
-          </p>
-        </div>
+        {billClosed ? <button type="button" className="min-h-11 w-full rounded-xl border border-line" onClick={onClose}>Close</button> : (
+          <div className="space-y-1.5">
+            <button
+              type="button"
+              onClick={submit}
+              disabled={settlement.busy || handoff.isPending || !loaded || nothingToSettle || Boolean(billError)}
+              className="w-full rounded-xl bg-pos-600 py-3 font-semibold text-white transition-colors hover:bg-pos-700 disabled:opacity-50"
+            >
+              {settlement.phase === "sending" ? "Recording…" : "Record payment"}
+            </button>
+            {/* Said plainly: this app is a ledger, not a payment processor. The
+                received direction is a log of money that already arrived, so
+                telling the user to "move the money first" would be nonsense. */}
+            {showInstructions ? (
+              <p className="text-center text-xs text-ink-soft">
+                {received ? (
+                  <>
+                    Logs money {firstName} has already sent you. It doesn&apos;t request anything.
+                  </>
+                ) : payMethods.choice === CASH_CHOICE ? (
+                  <>This only updates the balance here. Hand over the cash first.</>
+                ) : (
+                  <>
+                    This only updates the balance here. Move the money in{" "}
+                    {payMethods.method?.name ?? "your app of choice"} first.
+                  </>
+                )}
+              </p>
+            ) : null}
+          </div>
+        )}
       </div>
     </Modal>
   );

@@ -1,5 +1,5 @@
 "use client";
-/** Expense detail page: payers, splits, receipt items, comments, and delete flow. */
+/** Expense detail page: what you owe on it and paying it back, payers, splits, receipt items, comments, and delete flow. */
 
 import { SafetyActions } from "@/components/safety/SafetyActions/SafetyActions";
 import Link from "next/link";
@@ -22,13 +22,15 @@ import { localDateTime } from "@haalkhata/shared/time/localTime";
 import { itemShareCents } from "@haalkhata/shared/expense/splits";
 import { ITEM_AVATAR_SLOTS } from "./constants/expenseDetailPage";
 import { useExpenseDetail } from "./hooks/useExpenseDetail";
+import { RepaymentCard } from "./components/RepaymentCard/RepaymentCard";
 import { MAX_COMMENT_LENGTH } from "@haalkhata/shared/text/limits";
 import { GroupStatus } from "@haalkhata/shared/group/status";
 import { ARCHIVED_GROUP_HINT, GROUP_ARCHIVE_ACTIONS } from "@haalkhata/shared/group/archiving";
 
 /**
  * Renders a single expense: header (description, date, category, amount),
- * edit/delete actions, payer and split breakdowns, receipt items when
+ * what the viewer owes on it with a button that pays it back (and the
+ * payments made for it), edit/delete actions, payer and split breakdowns, receipt items when
  * itemized, notes, the comment thread with a composer, and a delete
  * confirmation modal.
  *
@@ -171,6 +173,20 @@ export function ExpenseDetailPage({ expenseId }: { expenseId: string }) {
           </Link>
         </div>
       ) : null}
+
+      {/* Beside the bill's own figure, so its button pays this bill's share
+          and nothing else. First after the banners: for someone who owes,
+          it is what the page is for. */}
+      <RepaymentCard
+        expense={expense}
+        repayments={expenseDetail.detail?.repayments ?? []}
+        payments={expenseDetail.detail?.payments ?? []}
+        cursor={expenseDetail.detail?.paymentsNextCursor ?? ""}
+        userById={expenseDetail.userById}
+        meId={meId ?? ""}
+        settledForViewer={expenseDetail.detail?.settledForViewer === true}
+        groupHref={expense.groupId && !isArchived ? `/groups/${expense.groupId}` : ""}
+      />
 
       {liveSplit ? (
         <LiveBar

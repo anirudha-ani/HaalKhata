@@ -508,6 +508,18 @@ with colocated tests. Mobile-specific rules:
   rate limit or a network error does not. A new operation id means a new
   payment, so mint one only for one. Attempts stop being sent at 23 hours because
   the server forgets a claim at 24. They live in memory, like every figure.
+- **A payment can be for one expense.** "Pay back" on an expense's page records
+  an ordinary settlement in that expense's balance (its group, or the pair's
+  one-off slate) with `expense_id` set, so the page and the list can say "paid
+  back"; every balance reads it like any other payment. The database keeps such
+  a payment in its expense's group and currency and off net settlements
+  (`trg_settlement_expense_scope`). What the page offers
+  (`GetExpenseResponse.repayments`) and what the write accepts both come from
+  `expenseRepayments` in `expense/usecase/repayment/`, which batches the payees
+  through `owingInScope`. Bill payments keep the title shared when they were
+  recorded. Their write locks only the bill, the pair and its group. It takes
+  the expense's lock first, as every expense write does. The button sits beside
+  the bill's own figure, so it pays that bill's share and nothing else.
 - **A payment locks only what it can touch, and never waits for long.**
   Recording a payment between two people locks the active groups they share
   (`sharedActiveGroups`), never every group either is in, reads that set

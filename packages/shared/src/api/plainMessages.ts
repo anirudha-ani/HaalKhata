@@ -39,6 +39,8 @@ export type ListExpensesResponse = PlainNumbers<expense.ListExpensesResponse>;
 export type GetExpenseResponse = PlainNumbers<expense.GetExpenseResponse>;
 /** A recorded payment. */
 export type Settlement = PlainNumbers<expense.Settlement>;
+/** What the caller owes one person on one expense, and what is left to pay. */
+export type Repayment = PlainNumbers<expense.Repayment>;
 /** One line of the statement with a friend. */
 export type FriendLedgerEntry = PlainNumbers<expense.FriendLedgerEntry>;
 /** Everything shown on a friend's page. */

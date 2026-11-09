@@ -51,6 +51,7 @@ export function ExpensesResults({
           emptyHint=""
           groupNameById={listState.groupNameById}
           settledIds={listState.settledIds}
+          repaidIds={listState.repaidIds}
         />
       )}
       <LoadMoreFooter
