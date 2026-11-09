@@ -8,19 +8,19 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/server/expense/repo/expenses.repo", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/server/expense/repo/expenses.repo")>()),
-  listOneOffExpensesWithAnyOf: vi.fn(async () => []),
+  listScopedExpensesWithAnyOf: vi.fn(async () => []),
   loadExpenseChildren: vi.fn(async () => ({ payers: new Map(), splits: new Map(), items: new Map() })),
 }));
 vi.mock("@/server/expense/repo/settlements.repo", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/server/expense/repo/settlements.repo")>()),
-  listOneOffSettlementsWithAnyOf: vi.fn(async () => []),
+  listScopedSettlementsWithAnyOf: vi.fn(async () => []),
 }));
 
 import {
-  listOneOffExpensesWithAnyOf,
+  listScopedExpensesWithAnyOf,
   loadExpenseChildren,
 } from "@/server/expense/repo/expenses.repo";
-import { listOneOffSettlementsWithAnyOf } from "@/server/expense/repo/settlements.repo";
+import { listScopedSettlementsWithAnyOf } from "@/server/expense/repo/settlements.repo";
 import { oneOffNetsWith } from "./balance.usecase";
 
 const VIEWER = "viewer";
@@ -33,14 +33,14 @@ describe("one-off balances with many people", () => {
 
     const nets = await oneOffNetsWith(VIEWER, people);
 
-    expect(listOneOffExpensesWithAnyOf).toHaveBeenCalledTimes(1);
+    expect(listScopedExpensesWithAnyOf).toHaveBeenCalledTimes(1);
     expect(loadExpenseChildren).toHaveBeenCalledTimes(1);
-    expect(listOneOffSettlementsWithAnyOf).toHaveBeenCalledTimes(1);
+    expect(listScopedSettlementsWithAnyOf).toHaveBeenCalledTimes(1);
     expect([...nets.keys()]).toEqual(people);
   });
 
   it("reads nothing when there is nobody to work out", async () => {
     expect(await oneOffNetsWith(VIEWER, [VIEWER])).toEqual(new Map());
-    expect(listOneOffExpensesWithAnyOf).not.toHaveBeenCalled();
+    expect(listScopedExpensesWithAnyOf).not.toHaveBeenCalled();
   });
 });

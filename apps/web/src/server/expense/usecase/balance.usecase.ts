@@ -4,21 +4,19 @@ import type { PoolClient } from "pg";
 
 import {
   listExpensesBetween,
-  listGroupExpensesBetween,
   listExpensesBetweenPage,
   listExpensesByGroups,
   listExpensesInvolvingUser,
   listOneOffExpensesBetween,
-  listOneOffExpensesWithAnyOf,
+  listScopedExpensesWithAnyOf,
   loadExpenseChildren,
   type ExpenseChildren,
   type ExpenseRow,
   type ListedExpenseRow,
 } from "@/server/expense/repo/expenses.repo";
 import {
-  listGroupSettlementsBetween,
   listOneOffSettlementsBetween,
-  listOneOffSettlementsWithAnyOf,
+  listScopedSettlementsWithAnyOf,
   listSettlementsBetween,
   listSettlementsBetweenPage,
   listSettlementsByGroups,
@@ -631,47 +629,40 @@ export async function oneOffNetsWith(
   otherUserIds: readonly string[],
   client?: PoolClient,
 ): Promise<Map<string, CurrencyCents>> {
+  return pairNetsInScope(userId, otherUserIds, null, client);
+}
+
+/**
+ * Computes all requested pairwise balances from one set of expenses and payments.
+ * @param userId - The viewer.
+ * @param otherUserIds - People sharing those balances.
+ * @param groupId - Group, or null for direct expenses.
+ * @param client - Snapshot or locked transaction.
+ * @returns Signed net by counterparty and currency, positive when the viewer is owed.
+ */
+async function pairNetsInScope(
+  userId: string, otherUserIds: readonly string[], groupId: string | null, client?: PoolClient,
+): Promise<Map<string, CurrencyCents>> {
   const counterpartyIds = [...new Set(otherUserIds)].filter((otherUserId) => otherUserId !== userId);
   const netsByCounterparty = new Map<string, CurrencyCents>();
   if (counterpartyIds.length === 0) return netsByCounterparty;
-  const expenses = await listOneOffExpensesWithAnyOf(userId, counterpartyIds, client);
+  const expenses = await listScopedExpensesWithAnyOf(userId, counterpartyIds, client, groupId);
   const children = await loadExpenseChildren(
     expenses.map((expense) => expense.id),
     client,
     false,
   );
-  const settlements = await listOneOffSettlementsWithAnyOf(userId, counterpartyIds, client);
-  for (const otherUserId of counterpartyIds) {
-    const shared = expenses.filter((expense) => participatesIn(expense.id, children, otherUserId));
-    const between = settlements.filter(
-      (settlement) => settlement.from_user === otherUserId || settlement.to_user === otherUserId,
-    );
-    const nets: CurrencyCents = new Map();
-    for (const [currency, entries] of ledgersByCurrency(shared, children, between)) {
-      addCents(
-        nets,
-        currency,
-        owedInEntries(entries, otherUserId, userId) - owedInEntries(entries, userId, otherUserId),
-      );
+  const settlements = await listScopedSettlementsWithAnyOf(userId, counterpartyIds, client, groupId);
+  for (const [currency, entries] of ledgersByCurrency(expenses, children, settlements)) {
+    for (const entry of entries) {
+      if (entry.from !== userId && entry.to !== userId) continue;
+      const person = entry.from === userId ? entry.to : entry.from;
+      const nets = netsByCounterparty.get(person) ?? new Map<string, number>();
+      addCents(nets, currency, entry.from === userId ? -entry.amountCents : entry.amountCents);
+      netsByCounterparty.set(person, nets);
     }
-    netsByCounterparty.set(otherUserId, nets);
   }
-  return netsByCounterparty;
-}
-
-/**
- * Whether someone pays toward or owes a share of one expense.
- *
- * @param expenseId - The expense.
- * @param children - Its payer and split rows.
- * @param userId - The person.
- * @returns True when they are among its payers or owers.
- */
-function participatesIn(expenseId: string, children: ExpenseChildren, userId: string): boolean {
-  return (
-    (children.payers.get(expenseId) ?? []).some((payer) => payer.user_id === userId) ||
-    (children.splits.get(expenseId) ?? []).some((split) => split.user_id === userId)
-  );
+  return new Map(counterpartyIds.map((person) => [person, netsByCounterparty.get(person) ?? new Map()]));
 }
 
 /**
@@ -838,7 +829,7 @@ export interface ScopeOwing {
  * group is the caller's to check first.
  *
  * @param debtorId - Who would pay.
- * @param creditorId - Who would be paid.
+ * @param creditorIds - The people the expense leaves the viewer owing.
  * @param group - The group, or null for the pair's balance outside groups.
  * @param currency - The currency.
  * @param client - Snapshot or locked transaction.
@@ -846,30 +837,21 @@ export interface ScopeOwing {
  */
 export async function owingInScope(
   debtorId: string,
-  creditorId: string,
+  creditorIds: readonly string[],
   group: GroupRow | null,
   currency: string,
   client: PoolClient,
-): Promise<ScopeOwing> {
-  if (!group) {
-    const oneOff = (await owedByScope(debtorId, creditorId, client, [])).find(
-      (scope) => scope.groupId === null && scope.currency === currency,
-    );
-    return { owedCents: oneOff?.owedCents ?? 0, loop: false, debtorNetCents: 0 };
-  }
-  const nets = await sumGroupNets(group.id, currency, client);
+): Promise<Map<string, ScopeOwing>> {
+  const nets = group ? await sumGroupNets(group.id, currency, client) : new Map<string, number>();
   const debtorNetCents = nets.get(debtorId) ?? 0;
-  if (group.simplify_debts) {
-    return { owedCents: owedInEntries(simplifyDebts(nets), debtorId, creditorId), loop: false, debtorNetCents };
-  }
-  const pairExpenses = await listGroupExpensesBetween(debtorId, creditorId, group.id, client);
-  const children = await loadExpenseChildren(pairExpenses.map((expense) => expense.id), client, false);
-  const pairSettlements = await listGroupSettlementsBetween(debtorId, creditorId, group.id, client);
-  const pairLedger = ledgersByCurrency(pairExpenses, children, pairSettlements).get(currency) ?? [];
-  const owedCents = owedInEntries(pairLedger, debtorId, creditorId);
-  // Debt between them while every net in the group is zero: a loop.
-  const loop = owedCents > 0 && nets.size === 0;
-  return { owedCents: loop ? 0 : owedCents, loop, debtorNetCents };
+  const simplified = group?.simplify_debts ? simplifyDebts(nets) : undefined;
+  const pairs = simplified ? undefined : await pairNetsInScope(debtorId, creditorIds, group?.id ?? null, client);
+  return new Map(creditorIds.map((person) => {
+    const debt = simplified ? owedInEntries(simplified, debtorId, person)
+      : Math.max(0, -(pairs?.get(person)?.get(currency) ?? 0));
+    const loop = Boolean(group && !simplified && debt > 0 && nets.size === 0);
+    return [person, { owedCents: loop ? 0 : debt, loop, debtorNetCents }];
+  }));
 }
 
 /**

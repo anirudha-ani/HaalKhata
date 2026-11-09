@@ -23,12 +23,12 @@ vi.mock("@/server/expense/repo/expenses.repo", () => ({
   listExpensesByGroups: vi.fn(),
   listExpensesInvolvingUser: vi.fn(),
   listOneOffExpensesBetween: vi.fn(),
-  listOneOffExpensesWithAnyOf: vi.fn(),
+  listScopedExpensesWithAnyOf: vi.fn(),
   loadExpenseChildren: vi.fn(),
 }));
 vi.mock("@/server/expense/repo/settlements.repo", () => ({
   listOneOffSettlementsBetween: vi.fn(),
-  listOneOffSettlementsWithAnyOf: vi.fn(),
+  listScopedSettlementsWithAnyOf: vi.fn(),
   listSettlementsBetween: vi.fn(),
   listSettlementsByGroup: vi.fn(),
   listSettlementsByGroups: vi.fn(),
@@ -62,12 +62,12 @@ import {
   listExpensesBetween,
   listExpensesInvolvingUser,
   listOneOffExpensesBetween,
-  listOneOffExpensesWithAnyOf,
+  listScopedExpensesWithAnyOf,
   loadExpenseChildren,
 } from "@/server/expense/repo/expenses.repo";
 import {
   listOneOffSettlementsBetween,
-  listOneOffSettlementsWithAnyOf,
+  listScopedSettlementsWithAnyOf,
   listSettlementsBetween,
   listSettlementsInvolvingUser,
 } from "@/server/expense/repo/settlements.repo";
@@ -167,7 +167,7 @@ beforeEach(() => {
   vi.mocked(listExpensesInvolvingUser).mockResolvedValue([dollars, euros]);
   vi.mocked(listExpensesBetween).mockResolvedValue([dollars, euros]);
   vi.mocked(listOneOffExpensesBetween).mockResolvedValue([dollars, euros]);
-  vi.mocked(listOneOffExpensesWithAnyOf).mockResolvedValue([dollars, euros]);
+  vi.mocked(listScopedExpensesWithAnyOf).mockResolvedValue([dollars, euros]);
   vi.mocked(loadExpenseChildren).mockImplementation(async () => ({
     payers: payersByExpense,
     splits: splitsByExpense,
@@ -176,7 +176,7 @@ beforeEach(() => {
   vi.mocked(listSettlementsInvolvingUser).mockImplementation(async () => settlementRows);
   vi.mocked(listSettlementsBetween).mockImplementation(async () => settlementRows);
   vi.mocked(listOneOffSettlementsBetween).mockImplementation(async () => settlementRows);
-  vi.mocked(listOneOffSettlementsWithAnyOf).mockImplementation(async () => settlementRows);
+  vi.mocked(listScopedSettlementsWithAnyOf).mockImplementation(async () => settlementRows);
   // Everyone has one payment method, named after its owner, so a test can
   // tell whose methods a ledger carried.
   vi.mocked(listPaymentMethodsByUser).mockImplementation(async (ownerId: string) => [

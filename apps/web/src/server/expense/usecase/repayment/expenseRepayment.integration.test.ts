@@ -10,7 +10,7 @@
  * Skips itself when no database is reachable, so it is safe in the suite.
  */
 
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { Client } from "pg";
 import { testDatabaseName } from "@/server/common/testing/testDatabase";
 import { UsecaseError } from "@/server/common/errors";
@@ -875,7 +875,7 @@ describe.skipIf(!reachable)("paying back one expense against Postgres", () => {
         for (const debtorId of people) {
           for (const creditorId of people) {
             if (debtorId === creditorId) continue;
-            const owing = await balances.owingInScope(debtorId, creditorId, group, "USD", client);
+            const owing = (await balances.owingInScope(debtorId, [creditorId], group, "USD", client)).get(creditorId)!;
             const ledger = (await balances.owedByScope(debtorId, creditorId, client)).find(
               (scope) => (scope.groupId ?? "") === scopeId && scope.currency === "USD",
             );
@@ -918,6 +918,27 @@ describe.skipIf(!reachable)("paying back one expense against Postgres", () => {
       expect(payment.expenseId).toBe("uncontended");
     } finally {
       await blocker.query("ROLLBACK");
+    }
+  });
+
+  it("reads 99 creditors with a bounded number of database calls", async () => {
+    const group = "large-bill-group";
+    const people = Array.from({ length: 99 }, (_unused, index) => `large-payee-${index}`);
+    await database.query("INSERT INTO groups (id, name, created_by) VALUES ($1, 'Trip', $2)", [group, BOB_ID]);
+    await database.query(`INSERT INTO users (id, email, name, avatar_color, google_sub)
+      SELECT person, person || '@example.test', person, '#996633', person FROM unnest($1::text[]) AS person`, [people]);
+    await database.query("INSERT INTO group_members (group_id, user_id) SELECT $1, unnest($2::text[])", [group, [BOB_ID, ...people]]);
+    await storeExpense({ id: "many-payers", groupId: group, description: "Shared trip",
+      payers: Object.fromEntries(people.map((person) => [person, 100])), splits: { [BOB_ID]: 9900 } });
+    const reads = vi.spyOn(Client.prototype, "query");
+    try {
+      const detail = await expenses.getExpense(BOB_ID, "many-payers");
+      expect(detail.repayments).toHaveLength(99);
+      expect(detail.repayments.every((repayment) => repayment.payableCents === 100)).toBe(true);
+      expect(reads.mock.calls.length).toBeGreaterThan(0);
+      expect(reads.mock.calls.length).toBeLessThan(45);
+    } finally {
+      reads.mockRestore();
     }
   });
 });

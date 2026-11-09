@@ -445,27 +445,29 @@ export async function listOneOffExpensesBetween(
 }
 
 /**
- * Live one-off (non-group) expenses the user shares with any of the given
+ * Live expenses in one scope that the user shares with any of the given
  * people, for working out every one of those pair balances from one read
  * instead of one read per person.
  *
  * @param userId - The person every expense must include.
  * @param otherUserIds - People at least one of whom each expense must include too.
  * @param client - Snapshot or transaction client; omitted, the pool.
+ * @param groupId - The group to read, or null for one-off expenses.
  * @returns The expenses; no query is sent for an empty list of people.
  */
-export async function listOneOffExpensesWithAnyOf(
+export async function listScopedExpensesWithAnyOf(
   userId: string,
   otherUserIds: readonly string[],
   client?: PoolClient,
+  groupId: string | null = null,
 ): Promise<ExpenseRow[]> {
   if (otherUserIds.length === 0) return [];
   return query<ExpenseRow>(
     `SELECT expense.* FROM expenses expense
-     WHERE expense.group_id IS NULL AND expense.deleted_at IS NULL
+     WHERE expense.group_id ${groupId === null ? "IS NULL" : "= $3"} AND expense.deleted_at IS NULL
        AND ${expenseInvolvesSql("= $1")}
        AND ${expenseInvolvesSql("= ANY($2::text[])")}`,
-    [userId, [...new Set(otherUserIds)]],
+    groupId === null ? [userId, otherUserIds] : [userId, otherUserIds, groupId],
     client,
   );
 }
@@ -497,32 +499,6 @@ export async function listExpensesBetween(
        AND ${expenseInvolvesSql("= $2")}
      ORDER BY expense.expense_date DESC, expense.created_at DESC`,
     [firstUserId, secondUserId, includeDeleted],
-    client,
-  );
-}
-
-/**
- * The live expenses in one group that two people are both on: the only
- * expenses that can put either of them in the other's debt there.
- *
- * @param firstUserId - One of the two people.
- * @param secondUserId - The other.
- * @param groupId - The group.
- * @param client - Snapshot or locked transaction.
- * @returns The rows, in no particular order.
- */
-export async function listGroupExpensesBetween(
-  firstUserId: string,
-  secondUserId: string,
-  groupId: string,
-  client: PoolClient,
-): Promise<ExpenseRow[]> {
-  return query<ExpenseRow>(
-    `SELECT expense.* FROM expenses expense
-      WHERE expense.group_id = $3 AND expense.deleted_at IS NULL
-        AND ${expenseInvolvesSql("= $1")}
-        AND ${expenseInvolvesSql("= $2")}`,
-    [firstUserId, secondUserId, groupId],
     client,
   );
 }

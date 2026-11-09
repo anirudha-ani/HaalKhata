@@ -10,11 +10,10 @@ import { GroupStatus } from "@haalkhata/protogen/group/v1/group_pb";
 import {
   billOverLimitMessage,
   creditorsOnExpense,
-  owedOnExpense,
   payableOnExpense,
   type ExpenseMoneyLike,
 } from "@haalkhata/shared/expense/repayment";
-import { findUserById } from "@/server/auth/repo/users.repo";
+import { findUsersByIds } from "@/server/auth/repo/users.repo";
 import { invalid, notFound } from "@/server/common/errors";
 import { REPAYMENT_REFUSALS } from "@/server/expense/expense.constants";
 import {
@@ -24,9 +23,9 @@ import {
   type ExpenseRow,
 } from "@/server/expense/repo/expenses.repo";
 import { findRunningLiveSplit } from "@/server/expense/repo/liveSplits.repo";
-import { sumExpensePayments } from "@/server/expense/repo/settlements.repo";
+import { sumPaidForExpenses } from "@/server/expense/repo/settlements.repo";
 import { GROUP_STATUS_STORAGE } from "@/server/group/group.constants";
-import { findGroupById, isMember, type GroupRow } from "@/server/group/repo/groups.repo";
+import { findGroupById, memberIdsAmong } from "@/server/group/repo/groups.repo";
 import { owingInScope } from "../balance.usecase";
 
 /** What one person owes another on one expense, and what is left to pay. */
@@ -64,103 +63,53 @@ function moneyOf(expenseId: string, children: ExpenseChildren): ExpenseMoneyLike
 }
 
 /**
- * Why a group would refuse a payment between these two that is still owed
- * in it, or "" when nothing stands in the way: the group is deleted,
- * archived, or has lost one of the two.
- *
- * Only asked once the balance says something is owed. Archiving and leaving
- * both need the balance settled first, so asking before would refuse what is
- * simply square ("unarchive it to pay" for a bill nobody owes anything on).
- *
- * @param group - The expense's group, or null for one outside groups.
- * @param debtorId - Who would pay.
- * @param creditorId - Who would be paid.
+ * Reads repayment limits for the bill in a single snapshot, batching work across payees.
+ * The write supplies its recipient to check the same limit under the ledger locks.
+ * @param expense - Bill at the time of the read.
+ * @param children - Its payers and splits.
+ * @param viewerId - Person who would pay.
  * @param client - Snapshot or locked transaction.
- * @returns The refusal, or "".
- */
-async function groupRefusal(
-  group: GroupRow | null,
-  debtorId: string,
-  creditorId: string,
-  client: PoolClient,
-): Promise<string> {
-  if (group === null) return "";
-  if (group.status === GROUP_STATUS_STORAGE[GroupStatus.DELETED]) return REPAYMENT_REFUSALS.deletedGroup;
-  if (group.status !== GROUP_STATUS_STORAGE[GroupStatus.ACTIVE]) return REPAYMENT_REFUSALS.archived;
-  if (!(await isMember(group.id, debtorId, client))) return REPAYMENT_REFUSALS.youLeft;
-  if (!(await isMember(group.id, creditorId, client))) {
-    return REPAYMENT_REFUSALS.theyLeft((await findUserById(creditorId, client))?.name ?? "The person you owe");
-  }
-  return "";
-}
-
-/**
- * What one person owes another on one expense, what they have paid for it,
- * and what a payment for it can be now.
- *
- * The payment can be at most what is left of the share, and at most what
- * the debtor still owes the creditor in the expense's balance, since that is
- * all a payment can pay down. When some of the share is unpaid but that
- * balance is square (paid some other way, or evened out by other expenses)
- * nothing is payable and there is no refusal: there is simply nothing to pay.
- *
- * @param expense - The expense, as read on `client`.
- * @param children - Its child rows, read on `client`.
- * @param debtorId - Who would pay.
- * @param creditorId - Who would be paid.
- * @param client - Snapshot for a page, or the payment's locked transaction.
- * @returns The repayment.
- */
-export async function expenseRepayment(
-  expense: ExpenseRow,
-  children: ExpenseChildren,
-  debtorId: string,
-  creditorId: string,
-  client: PoolClient,
-): Promise<ExpenseRepayment> {
-  const owedCents = owedOnExpense(moneyOf(expense.id, children), debtorId, creditorId);
-  const paidCents = await sumExpensePayments(expense.id, debtorId, creditorId, expense.currency, client);
-  const settled = { userId: creditorId, owedCents, paidCents, payableCents: 0, refusal: "" };
-  if (expense.deleted_at || owedCents <= paidCents) return settled;
-  // While a split runs its amounts can still change, so nothing is paid yet.
-  if (await findRunningLiveSplit(expense.id, client)) return { ...settled, refusal: REPAYMENT_REFUSALS.liveSplit };
-  const group = expense.group_id ? await findGroupById(expense.group_id, client) : null;
-  if (group === undefined) return { ...settled, refusal: REPAYMENT_REFUSALS.deletedGroup };
-  const owing = await owingInScope(debtorId, creditorId, group, expense.currency, client);
-  if (owing.loop) return { ...settled, refusal: REPAYMENT_REFUSALS.loop };
-  // A simplified group can route this debt to somebody else entirely: square
-  // with the payer while still owing the group. That is not square, and the
-  // way to pay is the group's page.
-  const routedElsewhere = owing.owedCents <= 0 && Boolean(group?.simplify_debts) && owing.debtorNetCents < 0;
-  if (owing.owedCents <= 0 && !routedElsewhere) return settled;
-  const refusal = await groupRefusal(group, debtorId, creditorId, client);
-  if (refusal) return { ...settled, refusal };
-  if (routedElsewhere) return { ...settled, refusal: REPAYMENT_REFUSALS.simplified };
-  return { ...settled, payableCents: payableOnExpense(owedCents, paidCents, owing.owedCents) };
-}
-
-/**
- * Everyone the viewer owes on an expense, with what is left to pay each.
- *
- * @param expense - The expense, as read on `client`.
- * @param children - Its child rows, read on `client`.
- * @param viewerId - The caller.
- * @param client - The page's snapshot.
- * @returns One repayment per person owed; empty for a deleted expense.
+ * @param recipient - Only this creditor, when validating one payment.
+ * @returns Repayment rows in bill order.
  */
 export async function expenseRepayments(
-  expense: ExpenseRow,
-  children: ExpenseChildren,
-  viewerId: string,
-  client: PoolClient,
+  expense: ExpenseRow, children: ExpenseChildren, viewerId: string, client: PoolClient, recipient?: string,
 ): Promise<ExpenseRepayment[]> {
   if (expense.deleted_at) return [];
-  const repayments: ExpenseRepayment[] = [];
-  // One at a time: they share the snapshot's one connection.
-  for (const creditor of creditorsOnExpense(moneyOf(expense.id, children), viewerId)) {
-    repayments.push(await expenseRepayment(expense, children, viewerId, creditor.userId, client));
+  const people = creditorsOnExpense(moneyOf(expense.id, children), viewerId)
+    .filter((person) => !recipient || person.userId === recipient);
+  if (!people.length) return [];
+  const paid = new Map((await sumPaidForExpenses([expense.id], viewerId, client))
+    .map((repayment) => [repayment.to_user, repayment.total]));
+  const rows = people.map(({ userId, owedCents }) => ({
+    userId, owedCents, paidCents: paid.get(userId) ?? 0, payableCents: 0, refusal: "",
+  }));
+  const unpaid = rows.filter((repayment) => repayment.paidCents < repayment.owedCents);
+  if (!unpaid.length) return rows;
+  const live = await findRunningLiveSplit(expense.id, client);
+  const group = expense.group_id ? await findGroupById(expense.group_id, client) : null;
+  if (live || group === undefined) {
+    for (const repayment of unpaid) repayment.refusal = live ? REPAYMENT_REFUSALS.liveSplit : REPAYMENT_REFUSALS.deletedGroup;
+    return rows;
   }
-  return repayments;
+  const creditors = unpaid.map((repayment) => repayment.userId);
+  const positions = await owingInScope(viewerId, creditors, group, expense.currency, client);
+  const members = group ? await memberIdsAmong(group.id, [viewerId, ...creditors], client) : undefined;
+  const missing = members ? creditors.filter((person) => !members.has(person)) : [];
+  const names = new Map((missing.length ? await findUsersByIds(missing, client) : []).map((user) => [user.id, user.name]));
+  for (const repayment of unpaid) {
+    const owing = positions.get(repayment.userId)!;
+    const rerouted = Boolean(group?.simplify_debts && owing.debtorNetCents < 0 && owing.owedCents === 0);
+    if (owing.loop) repayment.refusal = REPAYMENT_REFUSALS.loop;
+    else if (!owing.owedCents && !rerouted) continue;
+    else if (group?.status === GROUP_STATUS_STORAGE[GroupStatus.DELETED]) repayment.refusal = REPAYMENT_REFUSALS.deletedGroup;
+    else if (group && group.status !== GROUP_STATUS_STORAGE[GroupStatus.ACTIVE]) repayment.refusal = REPAYMENT_REFUSALS.archived;
+    else if (members && !members.has(viewerId)) repayment.refusal = REPAYMENT_REFUSALS.youLeft;
+    else if (members && !members.has(repayment.userId)) repayment.refusal = REPAYMENT_REFUSALS.theyLeft(names.get(repayment.userId) ?? "The person you owe");
+    else if (rerouted) repayment.refusal = REPAYMENT_REFUSALS.simplified;
+    else repayment.payableCents = payableOnExpense(repayment.owedCents, repayment.paidCents, owing.owedCents);
+  }
+  return rows;
 }
 
 /** A payment for an expense, as the write about to store it sees it. */
@@ -201,8 +150,8 @@ export async function assertExpensePayment(payment: ExpensePayment, client: Pool
   }
   if (payment.currency !== expense.currency) invalid(`this expense is in ${expense.currency}, not ${payment.currency}`);
   const children = await loadExpenseChildren([expense.id], client, false);
-  const repayment = await expenseRepayment(expense, children, payment.payerId, payment.creditorId, client);
-  if (repayment.owedCents === 0) invalid("you don't owe this person anything on this expense");
+  const [repayment] = await expenseRepayments(expense, children, payment.payerId, client, payment.creditorId);
+  if (!repayment) invalid("you don't owe this person anything on this expense");
   if (repayment.paidCents >= repayment.owedCents) invalid("you have already paid this expense back");
   if (repayment.refusal) invalid(repayment.refusal);
   if (repayment.payableCents === 0) {

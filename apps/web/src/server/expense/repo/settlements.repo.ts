@@ -371,30 +371,6 @@ export async function listSettlementsBetween(
   );
 }
 
-/**
- * The live payments between two people in one group, either way.
- *
- * @param firstUserId - One of the two people.
- * @param secondUserId - The other.
- * @param groupId - The group.
- * @param client - Snapshot or locked transaction.
- * @returns The rows, in no particular order.
- */
-export async function listGroupSettlementsBetween(
-  firstUserId: string,
-  secondUserId: string,
-  groupId: string,
-  client: PoolClient,
-): Promise<SettlementRow[]> {
-  return query<SettlementRow>(
-    `SELECT * FROM settlements
-      WHERE group_id = $3 AND deleted_at IS NULL
-        AND ((from_user = $1 AND to_user = $2) OR (from_user = $2 AND to_user = $1))`,
-    [firstUserId, secondUserId, groupId],
-    client,
-  );
-}
-
 /** A settlement row with its creation time to the microsecond, for statement order. */
 export type ListedSettlementRow = SettlementRow & { created_at_exact: string };
 
@@ -491,27 +467,28 @@ export async function listOneOffSettlementsBetween(
 }
 
 /**
- * Lists the live one-off settlements between the user and any of the given
- * people, either direction, oldest first: the settlement side of every one
- * of those pairs' one-off ledgers, from one read.
+ * Lists live settlements in one scope between the user and any of the given
+ * people, either direction, oldest first.
  *
  * @param userId - The person on every settlement.
  * @param otherUserIds - The people on the other side.
  * @param client - Snapshot or transaction client; omitted, the pool.
+ * @param groupId - The group to read, or null for one-off expenses.
  * @returns The settlement rows; no query is sent for an empty list of people.
  */
-export async function listOneOffSettlementsWithAnyOf(
+export async function listScopedSettlementsWithAnyOf(
   userId: string,
   otherUserIds: readonly string[],
   client?: PoolClient,
+  groupId: string | null = null,
 ): Promise<SettlementRow[]> {
   if (otherUserIds.length === 0) return [];
   return query<SettlementRow>(
     `SELECT * FROM settlements
-     WHERE group_id IS NULL AND deleted_at IS NULL
+     WHERE group_id ${groupId === null ? "IS NULL" : "= $3"} AND deleted_at IS NULL
        AND ((from_user = $1 AND to_user = ANY($2::text[])) OR (to_user = $1 AND from_user = ANY($2::text[])))
      ORDER BY created_at ASC`,
-    [userId, [...new Set(otherUserIds)]],
+    groupId === null ? [userId, otherUserIds] : [userId, otherUserIds, groupId],
     client,
   );
 }
@@ -536,33 +513,20 @@ export async function listSettlementsInvolvingUser(
 }
 
 /**
- * What one person has paid another for one expense: the payments recorded
- * with that expense's id, removed ones excluded, in its currency.
- *
- * @param expenseId - The expense.
- * @param fromUser - Who paid.
- * @param toUser - Who was paid.
- * @param currency - The expense's currency; the database keeps every such
- *   payment in it, and the sum never mixes currencies regardless.
- * @param client - Snapshot or transaction client; a payment being recorded
- *   reads it under the pair's lock.
- * @returns The total in cents; 0 when there are none.
+ * Totals outgoing bill payments per bill and creditor without loading payment history.
+ * Each bill has an immutable currency, enforced on its linked payments by the database.
+ * @param expenseIds - Bills being shown.
+ * @param userId - Payer.
+ * @param client - Snapshot or locked transaction.
+ * @returns One total for each bill and recipient with an active payment.
  */
-export async function sumExpensePayments(
-  expenseId: string,
-  fromUser: string,
-  toUser: string,
-  currency: string,
-  client: PoolClient,
-): Promise<number> {
-  const summed = await queryOne<{ total: number }>(
-    `SELECT COALESCE(SUM(amount_cents), 0)::bigint AS total FROM settlements
-      WHERE expense_id = $1 AND from_user = $2 AND to_user = $3 AND currency = $4
-        AND deleted_at IS NULL`,
-    [expenseId, fromUser, toUser, currency],
-    client,
+export async function sumPaidForExpenses(expenseIds: readonly string[], userId: string, client: PoolClient) {
+  if (!expenseIds.length) return [];
+  return query<{ expense_id: string; to_user: string; total: number }>(
+    `SELECT expense_id, to_user, SUM(amount_cents)::bigint AS total FROM settlements
+     WHERE expense_id = ANY($1::text[]) AND from_user = $2 AND deleted_at IS NULL
+     GROUP BY expense_id, to_user`, [expenseIds, userId], client,
   );
-  return summed?.total ?? 0;
 }
 
 /**

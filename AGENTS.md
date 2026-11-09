@@ -515,8 +515,9 @@ with colocated tests. Mobile-specific rules:
   a payment in its expense's group and currency and off net settlements
   (`trg_settlement_expense_scope`). What the page offers
   (`GetExpenseResponse.repayments`) and what the write accepts both come from
-  `expenseRepayment` in `expense/usecase/repayment/`, which reads the balance
-  through `owingInScope`, never the group's whole history. The write takes
+  `expenseRepayments` in `expense/usecase/repayment/`, which batches the payees
+  through `owingInScope`. Bill payments keep the title shared when they were
+  recorded. Their write locks only the bill, the pair and its group. It takes
   the expense's lock first, as every expense write does. The button sits beside
   the bill's own figure, so it pays that bill's share and nothing else.
 - **A payment locks only what it can touch, and never waits for long.**
