@@ -13,17 +13,17 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
-    "eslint": "^10.13.0",
+    "eslint": "^10.14.0",
     "typescript": "^6.0.3",
-    "typescript-eslint": "^8.72.0",
-    "vitest": "^5.0.5"
+    "typescript-eslint": "^8.72.2",
+    "vitest": "^5.1.0"
   },
   "dependencies": {
-    "@bufbuild/protobuf": "^2.16.0",
-    "@connectrpc/connect": "^2.2.0",
+    "@bufbuild/protobuf": "^2.17.0",
+    "@connectrpc/connect": "^2.3.0",
     "@haalkhata/protogen": "workspace:*",
     "currency-codes": "^2.2.0",
     "currency-symbol-map": "^5.1.0",
-    "libphonenumber-js": "^1.13.15"
+    "libphonenumber-js": "^1.13.16"
   }
 }
