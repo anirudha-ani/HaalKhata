@@ -7,13 +7,18 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { TextField } from "@/components/ui/TextField";
 import { FontScaleProvider } from "@/lib/layout/FontScaleProvider";
 import { Screen } from "./Screen";
+import { DetailHeader } from "../DetailHeader/DetailHeader";
 
 const viewport = vi.hoisted(() => ({ width: 390, height: 844, fontScale: 1 }));
+const device = vi.hoisted(() => ({ isDuo: false }));
+vi.mock("@/lib/layout/constants/device", () => ({ get IS_IPHONE_DUO() { return device.isDuo; } }));
+vi.mock("../DetailHeader/DetailHeader", () => ({ DetailHeader: () => null }));
 vi.mock("@/components/ui/ToastProvider", () => ({
   ToastProvider: ({ children }: { children: ReactNode }) => children,
 }));
 vi.mock("react-native-safe-area-context", () => ({
-  SafeAreaView: ({ children }: { children: ReactNode }) => createElement("main", null, children),
+  SafeAreaView: ({ children, edges }: { children: ReactNode; edges: string[] }) =>
+    createElement("main", { "data-safe-edges": edges.join(",") }, children),
   useSafeAreaInsets: () => ({ top: 0, right: 0, bottom: 0, left: 0 }),
 }));
 vi.mock("react-native", () => ({
@@ -44,8 +49,25 @@ function DraftForm() {
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   viewport.width = 390; viewport.fontScale = 1;
+  device.isDuo = false;
   container = document.createElement("div"); document.body.append(container);
   root = createRoot(container);
+});
+
+it("lets Duo's native detail header consume the top inset while preserving other screens", () => {
+  for (const [isDuo, detail, edges] of [
+    [true, true, "left,right"],
+    [true, false, "top,left,right"],
+    [false, true, "top,left,right"],
+    [false, false, "top,left,right"],
+  ] as const) {
+    device.isDuo = isDuo;
+    act(() => root.render(createElement(Screen, {
+      header: detail ? createElement(DetailHeader, { title: "Account" }) : undefined,
+      children: "Content",
+    })));
+    expect(container.querySelector("main")?.getAttribute("data-safe-edges")).toBe(edges);
+  }
 });
 afterEach(() => { act(() => root.unmount()); container.remove(); vi.unstubAllGlobals(); });
 

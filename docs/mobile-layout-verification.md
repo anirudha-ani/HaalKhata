@@ -26,10 +26,22 @@ missing features. Never seed a production database for layout testing.
    create a group with a seeded friend, add a small expense, record its payment
    and verify the balances and Activity. This only records synthetic ledger
    entries; it must not involve an external payment or a real recipient.
+
 7. Enable Reduce Motion in the simulator's Accessibility menu, switch primary
    tabs and detail tabs, open/close sheets, and trigger a validation error.
    Controls should still acknowledge a press, with fades replacing movement.
    Restore text size and motion settings after the pass.
+
+For Duo, check the wide login with the sign-in card centered in the visible
+screen and the story scrolling independently. Fold with a password draft open
+and verify it survives. Open Account or an expense and check the system Back
+button beside the status bar, swipe back, then repeat unfolded and rotated.
+These adjustments require the iPhone Duo model identity; other iPhones and
+iPads retain the existing login layout, headers, tabs and icons. Include an
+ordinary iPhone and an iPad in the same check. Development password login needs
+no AI or sign-in provider secrets; provider setup is in `docs/local-auth.md`.
+Rebuild the dev client after changing `modules/haalkhata-fold`: Metro alone
+cannot update its native Duo identity check.
 
 The native app must point to the same development backend as the seed command.
 When starting Metro separately, use `EXPO_PUBLIC_API_URL=http://127.0.0.1:3000`
@@ -158,8 +170,9 @@ this pass. Not every destructive or provider-dependent action was submitted.
 iPhone Duo folds like a book. Folded, its outer display (466 × 678 points) is a
 compact-width phone; open, its inner display (951 × 669 held wide, 669 × 951
 upright) is regular width. The app gives the outer display the phone layout and
-the inner display the iPad layout. Nothing branches on the device: the window
-sizes above decide it, so the layout follows the fold as it opens and closes.
+the inner display the tablet layout. Window sizes decide content density and
+tab placement, so the layout follows the fold as it opens and closes. Only
+Duo's native detail header and wide login scrolling use its device identity.
 Closed while the inner display is held upright, the outer display comes up
 sideways (678 × 466). That is wide enough for the rail but too short for it,
 so it keeps bottom tabs and bottom sheets, as any phone held sideways does.

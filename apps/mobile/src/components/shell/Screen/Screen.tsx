@@ -1,12 +1,14 @@
 /** Scrollable screen container: safe area, paper background, padding, pull-to-refresh, and the error toast layer. */
 
-import { useCallback, useRef, type ReactNode } from "react";
+import { isValidElement, useCallback, useRef, type ReactNode } from "react";
 import { RefreshControl, ScrollView, StyleSheet, type HostInstance, type ScrollViewInstance } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { SCREEN_CONTENT_MAX_WIDTH } from "@/lib/layout/constants/layout";
+import { IS_IPHONE_DUO } from "@/lib/layout/constants/device";
 import { useResponsiveLayout } from "@/lib/layout/hooks/useResponsiveLayout";
 import { ToastProvider } from "@/components/ui/ToastProvider";
 import { colors, spacing } from "@/lib/theme/theme";
+import { DetailHeader } from "../DetailHeader/DetailHeader";
 import { ScreenRevealContext } from "./hooks/useRevealWhenShown";
 import { revealOffset } from "./utils/revealOffset";
 
@@ -40,6 +42,8 @@ export function Screen({
 }) {
   const { isSpacious } = useResponsiveLayout();
   const scrollRef = useRef<ScrollViewInstance>(null);
+  // UIKit already consumes the top inset above Duo's native detail header.
+  const nativeHeader = IS_IPHONE_DUO && isValidElement(header) && header.type === DetailHeader;
 
   /**
    * Scrolls just far enough that `target` sits inside the visible part of
@@ -70,7 +74,7 @@ export function Screen({
   }, []);
 
   return (
-    <SafeAreaView edges={["top", "left", "right"]} style={styles.safeArea}>
+    <SafeAreaView edges={nativeHeader ? ["left", "right"] : ["top", "left", "right"]} style={styles.safeArea}>
       <ToastProvider error={error}>
       {header}
       <ScrollView

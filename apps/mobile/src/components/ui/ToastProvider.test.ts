@@ -7,6 +7,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { Screen } from "@/components/shell/Screen/Screen";
 import { useToast } from "./ToastProvider";
 
+vi.mock("@/components/shell/DetailHeader/DetailHeader", () => ({ DetailHeader: () => null }));
 vi.mock("lucide-react-native", () => ({ CircleAlert: () => null, X: () => null }));
 vi.mock("@/lib/motion/hooks/useReduceMotion", () => ({ useReduceMotion: () => true }));
 vi.mock("react-native-safe-area-context", () => ({

@@ -8,6 +8,7 @@ import { LoginScreen } from "./LoginScreen";
 
 const layout = vi.hoisted(() => ({ isSpacious: false, isLargeText: false, fontScale: 1 }));
 vi.mock("@/lib/layout/hooks/useResponsiveLayout", () => ({ useResponsiveLayout: () => layout }));
+vi.mock("@/lib/layout/constants/device", () => ({ IS_IPHONE_DUO: true }));
 vi.mock("./hooks/useLeaveWhenSignedIn", () => ({ useLeaveWhenSignedIn: () => false }));
 vi.mock("@/lib/motion/hooks/useReduceMotion", () => ({ useReduceMotion: () => true }));
 vi.mock("@/lib/motion/entrances", () => ({ dropIn: () => undefined }));

@@ -15,6 +15,9 @@ import UIKit
 /// Sent whenever the hinge reports, with the fold as it is afterwards.
 private let foldChangeEvent = "onFoldChange"
 
+/// Hardware identity of iPhone Duo, including its simulator runtime.
+private let duoModelIdentifier = "iPhone19,4"
+
 public final class FoldModule: Module {
   /// The hinge interaction, on the window React Native lays out in.
   private var hingeInteraction: UIInteraction?
@@ -24,6 +27,19 @@ public final class FoldModule: Module {
 
   public func definition() -> ModuleDefinition {
     Name("HaalKhataFold")
+
+    Constant("isDuo") {
+      #if targetEnvironment(simulator)
+      return ProcessInfo.processInfo.environment["SIMULATOR_MODEL_IDENTIFIER"] == duoModelIdentifier
+      #else
+      var systemInfo = utsname()
+      uname(&systemInfo)
+      let identifier = withUnsafePointer(to: &systemInfo.machine) {
+        $0.withMemoryRebound(to: CChar.self, capacity: 1) { String(cString: $0) }
+      }
+      return identifier == duoModelIdentifier
+      #endif
+    }
 
     Events(foldChangeEvent)
 

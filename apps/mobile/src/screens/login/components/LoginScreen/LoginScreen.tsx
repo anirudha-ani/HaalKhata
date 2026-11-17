@@ -9,6 +9,7 @@ import { Text } from "@/components/ui/Text";
 import { dropIn } from "@/lib/motion/entrances";
 import { useReduceMotion } from "@/lib/motion/hooks/useReduceMotion";
 import { useResponsiveLayout } from "@/lib/layout/hooks/useResponsiveLayout";
+import { IS_IPHONE_DUO } from "@/lib/layout/constants/device";
 import { colors, fonts, radii, spacing } from "@/lib/theme/theme";
 import brandIconSource from "../../../../../assets/icon.png";
 import {
@@ -44,6 +45,7 @@ export function LoginScreen() {
   const leaving = useLeaveWhenSignedIn();
   const { isSpacious, isLargeText, fontScale } = useResponsiveLayout();
   const sideBySide = isSpacious && !isLargeText;
+  const duoColumns = IS_IPHONE_DUO && sideBySide;
   const reduceMotion = useReduceMotion();
   // The space between the brand and the docked panel, measured, so the
   // panel's real height (which differs between builds and text sizes)
@@ -83,20 +85,20 @@ export function LoginScreen() {
   return (
     <SafeAreaView edges={sideBySide ? undefined : ["top", "left", "right"]} style={styles.safeArea}>
       <ScrollView
-        contentContainerStyle={sideBySide ? styles.tabletScroll : styles.flexOne}
-        scrollEnabled={sideBySide}
+        contentContainerStyle={sideBySide ? [styles.tabletScroll, duoColumns && styles.duoViewport] : styles.flexOne}
+        scrollEnabled={sideBySide && !duoColumns}
         showsVerticalScrollIndicator={false}
         style={styles.flexOne}
       >
-        <View style={sideBySide ? styles.tabletColumns : styles.flexOne}>
-          <View style={sideBySide ? styles.tabletStory : styles.flexOne}>
+        <View style={sideBySide ? [styles.tabletColumns, duoColumns && styles.flexOne] : styles.flexOne}>
+          <View style={sideBySide ? [styles.tabletStory, duoColumns && styles.duoStory] : styles.flexOne}>
             <View style={sideBySide ? undefined : styles.phoneHeader}>{brand}</View>
             <ScrollView
               contentContainerStyle={sideBySide ? undefined : styles.phoneScroll}
               onLayout={(event) => setStoryViewport(Math.round(event.nativeEvent.layout.height))}
-              scrollEnabled={!sideBySide}
-              showsVerticalScrollIndicator={false}
-              style={sideBySide ? undefined : styles.flexOne}
+              scrollEnabled={!sideBySide || duoColumns}
+              showsVerticalScrollIndicator={duoColumns}
+              style={sideBySide && !duoColumns ? undefined : styles.flexOne}
             >
               <WelcomeStory
                 illustrationHeight={sideBySide ? TABLET_ILLUSTRATION_HEIGHT : phoneIllustrationHeight}
@@ -118,6 +120,8 @@ const styles = StyleSheet.create({
   brandIcon: { borderRadius: radii.md, height: 40, width: 40 },
   brandTagline: { color: colors.inkSoft, fontSize: 9, fontWeight: "700", letterSpacing: 1.6, marginTop: 2 },
   brandWords: { flex: 1, minWidth: 140 },
+  duoStory: { alignSelf: "stretch", gap: spacing.lg },
+  duoViewport: { flex: 1 },
   flexOne: { flex: 1 },
   leaving: { justifyContent: "center" },
   phoneHeader: { paddingHorizontal: spacing.xl, paddingVertical: spacing.sm },
