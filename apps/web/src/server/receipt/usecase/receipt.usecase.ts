@@ -343,8 +343,8 @@ function extractJsonObject(text: string): string {
  * production, OpenRouter. Swapping the underlying model (Gemini, Claude,
  * anything else) is a change to COMPATIBLE_AI_MODEL, not a code change.
  *
- * When COMPATIBLE_AI_ZDR is set, the request carries `zdr: true`, which
- * restricts routing to endpoints holding a zero-data-retention policy. Since
+ * When COMPATIBLE_AI_ZDR is set, provider preferences request ZDR and deny
+ * training. Safety retention also depends on the OpenRouter account settings. Since
  * receipts are other people's financial records and this is the only hop where
  * they leave our server, prefer *also* enforcing ZDR account-wide in
  * OpenRouter — that fails closed if a request ever omits the flag.
@@ -378,7 +378,7 @@ const compatibleProvider: Provider = {
         },
         // OpenRouter-specific, so only sent when explicitly enabled — a
         // stricter OpenAI-compatible server may reject an unknown body key.
-        ...(COMPATIBLE_AI.zeroDataRetention ? { zdr: true } : {}),
+        ...(COMPATIBLE_AI.zeroDataRetention ? { provider: { zdr: true, data_collection: "deny" } } : {}),
         messages: [
           {
             role: "user",

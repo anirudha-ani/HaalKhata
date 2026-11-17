@@ -127,8 +127,9 @@ export const COMPATIBLE_AI = {
   /** Model identifier as the endpoint names it. */
   model: process.env.COMPATIBLE_AI_MODEL ?? "",
   /**
-   * Whether to request zero data retention. Adds `zdr: true` to the request
-   * body, which routes only to endpoints carrying a zero-retention policy.
+   * Whether to request zero data retention and deny training through the
+   * request body's `provider` preferences. Safety retention is governed by
+   * the OpenRouter account/guardrail settings too; see docs/local-receipt-scanning.md.
    *
    * Opt-in because the field is OpenRouter-specific: a stricter
    * OpenAI-compatible server could reject an unrecognized body key. Prefer
