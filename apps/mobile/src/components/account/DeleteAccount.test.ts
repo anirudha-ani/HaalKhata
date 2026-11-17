@@ -9,6 +9,8 @@ import { act, createElement, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { authClient, expenseClient } from "@/lib/api/connect";
+import { clearPushTraces } from "@/lib/push/pushStore";
+import { clearSession } from "@/lib/api/session";
 import { DeleteAccount } from "./DeleteAccount";
 
 const navigation = vi.hoisted(() => ({ push: vi.fn(), replace: vi.fn(), refresh: vi.fn() }));
@@ -179,4 +181,44 @@ describe("account deletion balance review", () => {
     await click("Delete anyway");
     expect(authClient.deleteAccount).toHaveBeenCalledExactlyOnceWith({ confirmation: "DELETE" });
   });
+});
+
+it("retries only local cleanup after the server has already deleted the account", async () => {
+  vi.mocked(authClient.deleteAccount).mockResolvedValueOnce({} as never);
+  vi.mocked(clearPushTraces).mockRejectedValueOnce(new Error("Previous notifications could not be cleared. Please try again."));
+  await click("Delete account");
+  typeConfirmation("DELETE");
+  await click("Delete anyway");
+  expect(container.querySelector('[role="alert"]')?.textContent).toContain("Your account was deleted.");
+  expect(button("Retry cleanup").disabled).toBe(false);
+  expect(container.textContent).not.toContain("Keep my account");
+  expect(clearSession).not.toHaveBeenCalled();
+  expect(navigation.replace).not.toHaveBeenCalled();
+  const balanceReads = vi.mocked(expenseClient.getOverallBalances).mock.calls.length;
+  await click("Close");
+  await click("Finish clearing this phone");
+  expect(button("Retry cleanup").disabled).toBe(false);
+  expect(container.querySelector("input")).toBeNull();
+  expect(expenseClient.getOverallBalances).toHaveBeenCalledTimes(balanceReads);
+  vi.mocked(clearPushTraces).mockResolvedValueOnce(undefined);
+  await click("Retry cleanup");
+  expect(authClient.deleteAccount).toHaveBeenCalledTimes(1);
+  expect(clearPushTraces).toHaveBeenCalledTimes(2);
+  expect(clearSession).toHaveBeenCalledOnce();
+  expect(navigation.replace).toHaveBeenCalledWith("/login");
+});
+
+it("shows committed deletion while native cleanup is still pending", async () => {
+  vi.mocked(authClient.deleteAccount).mockResolvedValueOnce({} as never);
+  let finish!: () => void;
+  vi.mocked(clearPushTraces).mockReturnValueOnce(new Promise<void>((resolve) => { finish = resolve; }));
+  await click("Delete account");
+  typeConfirmation("DELETE");
+  await click("Delete anyway");
+  expect(container.textContent).toContain("Your account has been deleted");
+  expect(container.textContent).not.toContain("Keep my account");
+  expect(clearSession).not.toHaveBeenCalled();
+  await act(async () => { finish(); });
+  await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
+  expect(navigation.replace).toHaveBeenCalledWith("/login");
 });

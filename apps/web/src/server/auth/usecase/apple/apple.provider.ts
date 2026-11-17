@@ -117,7 +117,7 @@ export function encryptAppleToken(token: string): string {
 }
 
 /**
- * Revokes Apple authorization before its local account credentials are erased.
+ * Revokes Apple authorization before the prepared local erasure commits.
  * @param clientId Original token audience.
  * @param encryptedToken Stored authenticated ciphertext.
  * @returns Resolves after Apple's successful or already-revoked response.

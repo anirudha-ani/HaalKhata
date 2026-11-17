@@ -2,6 +2,7 @@
 
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { Client } from "pg";
+import { readFileSync } from "node:fs";
 import { testDatabaseName } from "@/server/common/testing/testDatabase";
 
 const ADMIN_URL = process.env.MERGE_TEST_ADMIN_URL ?? "postgres://haalkhata:change-me@127.0.0.1:5432/postgres";
@@ -43,6 +44,12 @@ async function seed(database: Client): Promise<void> {
     VALUES ('payment', $2, $1, 100, 'USD', $1, 'Private payment note', 'cash', 'Private Member checking', 'net-payment'),
       ('offset-first', $1, $2, 50, 'USD', $1, '', 'offset', '', 'net-payment'),
       ('offset-second', $2, $1, 50, 'USD', $1, '', 'offset', '', 'net-payment')`, [ACCOUNT_ID, FRIEND_ID]);
+  await database.query(`INSERT INTO settlements
+    (id, group_id, from_user, to_user, amount_cents, currency, recorded_by, expense_id, expense_description, deleted_at)
+    VALUES ('bill-payment', 'shared-group', $2, $1, 50, 'USD', $2, 'dollars', 'Private receipt', NULL),
+      ('bill-payment-removed', 'shared-group', $2, $1, 20, 'USD', $2, 'dollars', 'Old private title', now()),
+      ('bill-payment-other', 'shared-group', $1, $2, 10, 'EUR', $2, 'euros', 'Dinner as paid', NULL)`,
+    [ACCOUNT_ID, FRIEND_ID]);
   await database.query("INSERT INTO comments (id, expense_id, user_id, body) VALUES ('private-comment', 'dollars', $1, 'Private comment'), ('friend-comment', 'dollars', $2, 'Thanks')", [ACCOUNT_ID, FRIEND_ID]);
   await database.query("INSERT INTO friendships (user_id, friend_id) VALUES ($1, $2), ($2, $1)", [ACCOUNT_ID, FRIEND_ID]);
   await database.query("INSERT INTO friend_requests (requester_id, recipient_id) VALUES ($1, $2)", [ACCOUNT_ID, FRIEND_ID]);
@@ -108,6 +115,15 @@ describe.skipIf(!await databaseReachable())("permanent account deletion against 
     expect((await database.query("SELECT * FROM users WHERE id = $1", [ACCOUNT_ID])).rows).toEqual([]);
     expect(await sessionUser(originalToken)).toBeNull();
   });
+  it("erases original pair revision keys and retains the anonymous statement", async () => {
+    expect((await database.query("SELECT * FROM ledger_pair_revisions WHERE low_user=$1 OR high_user=$1",[ACCOUNT_ID])).rows).toEqual([]);
+    const anonymous = (await database.query("SELECT id FROM users WHERE deleted_at IS NOT NULL")).rows[0].id;
+    expect((await database.query("SELECT * FROM ledger_pair_revisions WHERE low_user=$1 OR high_user=$1",[anonymous])).rows.length).toBeGreaterThan(0);
+    const movements = await import("@/server/expense/repo/movements.repo");
+    const client = database as unknown as import("pg").PoolClient;
+    expect((await movements.listPairMovementPage(FRIEND_ID,anonymous,null,1,client))).toHaveLength(1);
+    expect((await movements.sumPairHistory(FRIEND_ID,anonymous,client)).map((entry) => entry.currency).sort()).toEqual(["EUR","USD","USD"]);
+  });
   it("preserves every currency's cents under a new identity-free ledger participant", async () => {
     const anonymous = (await database.query("SELECT * FROM users WHERE deleted_at IS NOT NULL")).rows[0];
     expect(anonymous.id).not.toBe(ACCOUNT_ID);
@@ -118,11 +134,40 @@ describe.skipIf(!await databaseReachable())("permanent account deletion against 
     // The last edit of somebody else's expense stays attributed, to nobody in particular.
     expect((await database.query("SELECT updated_by FROM expenses WHERE id = 'euros'")).rows[0].updated_by).toBe(anonymous.id);
   });
+  it("repairs retained historical payment titles when upgrading", async () => {
+    await database.query("BEGIN");
+    try {
+      await database.query("UPDATE settlements SET expense_description = 'Retained private title' WHERE expense_id = $1", ["dollars"]);
+      await database.query(`INSERT INTO settlements
+        (id, group_id, from_user, to_user, amount_cents, currency, recorded_by, expense_id, expense_description, created_at)
+        SELECT 'newer-shared-title', group_id, from_user, to_user, 1, currency, recorded_by, expense_id,
+          'Title shared after removal', (SELECT deleted_at FROM users WHERE id = payment.to_user) + interval '1 hour' FROM settlements payment WHERE id = $1`, ["bill-payment"]);
+      const migration = readFileSync(new URL("../../../../../migrations/1794230000000_scrub_removed_expense_payment_titles.sql", import.meta.url), "utf8").split("-- Down Migration")[0];
+      await database.query(migration);
+      await database.query(migration);
+      expect((await database.query("SELECT expense_description FROM settlements WHERE id = 'newer-shared-title'")).rows)
+        .toEqual([{ expense_description: "Title shared after removal" }]);
+      expect((await database.query("SELECT DISTINCT expense_description FROM settlements WHERE expense_id = $1 AND id <> 'newer-shared-title'", ["dollars"])).rows)
+        .toEqual([{ expense_description: "Deleted expense" }]);
+      expect((await database.query("SELECT expense_description FROM settlements WHERE id = $1", ["bill-payment-other"])).rows)
+        .toEqual([{ expense_description: "Dinner as paid" }]);
+    } finally {
+      await database.query("ROLLBACK");
+    }
+  });
+
   it("erases personal content and transfers ownership without deleting the surviving member's comment", async () => {
     expect((await database.query("SELECT created_by, name FROM groups WHERE id = 'shared-group'")).rows[0]).toEqual({ created_by: FRIEND_ID, name: "Shared group" });
     expect((await database.query("SELECT role FROM group_members WHERE user_id = $1", [FRIEND_ID])).rows[0].role).toBe("owner");
     expect((await database.query("SELECT description, notes FROM expenses WHERE id = 'dollars'")).rows[0]).toEqual({ description: "Deleted expense", notes: "" });
     expect((await database.query("SELECT name FROM expense_items WHERE id = 'receipt-item'")).rows[0].name).toBe("Deleted item");
+    expect((await database.query(
+      "SELECT id, expense_description, amount_cents FROM settlements WHERE expense_id IS NOT NULL ORDER BY id",
+    )).rows).toEqual([
+      { id: "bill-payment", expense_description: "Deleted expense", amount_cents: 50 },
+      { id: "bill-payment-other", expense_description: "Dinner as paid", amount_cents: 10 },
+      { id: "bill-payment-removed", expense_description: "Deleted expense", amount_cents: 20 },
+    ]);
     expect((await database.query("SELECT id FROM comments")).rows).toEqual([{ id: "friend-comment" }]);
     expect((await database.query("SELECT COUNT(*)::int AS count FROM settlements WHERE net_settlement_id = 'net-payment'")).rows[0].count).toBe(3);
     expect((await database.query("SELECT note, method_label FROM settlements WHERE id = 'payment'")).rows[0]).toEqual({ note: "", method_label: "" });
@@ -130,4 +175,30 @@ describe.skipIf(!await databaseReachable())("permanent account deletion against 
       expect((await database.query(`SELECT COUNT(*)::int AS count FROM ${table}`)).rows[0].count).toBe(0);
     }
   });
+  it.each(["paid", "a", "Ann"])("leaves unrelated notices intact when deleting the common name %s", async (name) => {
+    const actorId = `deleting-${name}`;
+    await database.query("INSERT INTO users (id, name, avatar_color, google_sub, email) VALUES ($1, $2, '#778899', $1, $1 || '@example.test')", [actorId, name]);
+    await database.query(`INSERT INTO activity (id, actor_id, type, message, audience, link) VALUES
+      ($1, $2, 'other', 'An invitation was accepted', jsonb_build_array($2::text, $3::text), '/friends')`,
+      [`activity-${name}`, actorId, FRIEND_ID]);
+    await database.query(`INSERT INTO activity (id, actor_id, type, message, audience, link) VALUES
+      ($1, $2, 'other', 'An account-specific event', jsonb_build_array($2::text, $3::text), '/groups/shared-group')`,
+      [`group-activity-${name}`, actorId, FRIEND_ID]);
+    await database.query(`INSERT INTO notifications (id, user_id, actor_id, type, title, body, link) VALUES
+      ($1, $2, $2, 'other', 'Finn paid you', 'You were repaid by Ann', '/friends'),
+      ($3, $2, NULL, 'other', 'Ann shared a bill', 'A payment was recorded', '/friends'),
+      ($4, $2, $5, 'other', $6, 'An actor-owned notice', '/friends'),
+      ($7, $2, NULL, 'other', $6, 'A specific person notice', '/friends/' || $5),
+      ($8, $2, $2, 'other', 'Finn paid you', 'A different actor on the same resource', '/groups/shared-group')`,
+      [`unrelated-${name}`, FRIEND_ID, `legacy-unrelated-${name}`, `authored-${name}`, actorId, name, `person-${name}`, `same-resource-${name}`]);
+    const survivingIds = [`unrelated-${name}`, `legacy-unrelated-${name}`, `same-resource-${name}`];
+    const beforeNotices = await database.query("SELECT * FROM notifications WHERE id = ANY($1::text[]) ORDER BY id", [survivingIds]);
+    await deletion(actorId, "DELETE");
+    expect((await database.query("SELECT * FROM notifications WHERE id = ANY($1::text[]) ORDER BY id", [survivingIds])).rows)
+      .toEqual(beforeNotices.rows);
+    expect((await database.query("SELECT id FROM notifications WHERE id = ANY($1::text[])",
+      [[`authored-${name}`, `person-${name}`]])).rows).toEqual([]);
+    await database.query("DELETE FROM notifications WHERE id = ANY($1::text[])", [survivingIds]);
+  });
+
 });

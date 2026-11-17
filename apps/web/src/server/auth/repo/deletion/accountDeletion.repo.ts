@@ -5,13 +5,53 @@ import { execute, query, queryOne } from "@/server/common/db/db";
 import type { UserRow } from "../users.repo";
 
 /**
- * Locks a live account against concurrent provider linking and profile changes.
+ * Locks reports that deletion will cascade, before account/content mutations.
+ * The id order matches moderation's report locks.
+ * @param userId Account whose reports will be removed.
+ * @param client Erasure transaction.
+ * @returns Report ids held until commit or rollback.
+ */
+export async function lockDeletionReports(userId: string, client: PoolClient): Promise<string[]> {
+  const reports = await query<{ id: string }>(`SELECT id FROM content_reports
+    WHERE reporter_id = $1 OR reported_user_id = $1 ORDER BY id FOR UPDATE`, [userId], client);
+  return reports.map((report) => report.id);
+}
+
+/**
+ * Detects reports committed before the account row was locked but after the
+ * initial report lock. Its FK lock prevents new reports after this check.
+ * @param userId Account locked for deletion.
+ * @param reportIds Reports already locked by this transaction.
+ * @param client Erasure transaction holding the account row.
+ * @returns Whether all reports the final cascade can touch are locked.
+ */
+export async function deletionReportsUnchanged(userId: string, reportIds: string[], client: PoolClient): Promise<boolean> {
+  return await queryOne(`SELECT id FROM content_reports
+    WHERE (reporter_id = $1 OR reported_user_id = $1) AND NOT (id = ANY($2::text[]))
+    LIMIT 1`, [userId, reportIds], client) === undefined;
+}
+
+/**
+ * Locks the account and all bill parents that erasure can rewrite.
+ * Parent locks are acquired without waiting before any provider revocation,
+ * so later child refreshes cannot encounter a parent/child lock inversion.
  * @param userId Authenticated account being deleted.
  * @param client Erasure transaction.
  * @returns Live account or undefined.
  */
 export async function lockAccountForDeletion(userId: string, client: PoolClient) {
-  return queryOne<UserRow>("SELECT * FROM users WHERE id = $1 AND deleted_at IS NULL FOR UPDATE", [userId], client);
+  const account = await queryOne<UserRow>("SELECT * FROM users WHERE id = $1 AND deleted_at IS NULL FOR UPDATE", [userId], client);
+  if (account) {
+    await query(`SELECT id FROM expenses WHERE id IN (
+      SELECT id FROM expenses WHERE created_by = $1 OR deleted_by = $1 OR updated_by = $1
+      UNION SELECT expense_id FROM expense_payers WHERE user_id = $1
+      UNION SELECT expense_id FROM expense_splits WHERE user_id = $1
+      UNION SELECT items.expense_id FROM expense_item_assignments assignments
+        JOIN expense_items items ON items.id = assignments.item_id WHERE assignments.user_id = $1
+      UNION SELECT expense_id FROM live_splits WHERE host_id = $1
+    ) ORDER BY id COLLATE "C" FOR NO KEY UPDATE NOWAIT`, [userId], client);
+  }
+  return account;
 }
 
 /**
@@ -56,13 +96,21 @@ export async function insertAnonymousLedgerMember(participant: { id: string; nam
  * @param input Account id, new anonymous id and replacement labels.
  * @param client Erasure transaction.
  */
-export async function eraseAccountData(input: { userId: string; anonymousId: string; oldName: string;
-  anonymousName: string; expenseDescription: string; itemName: string; groupName: string }, client: PoolClient): Promise<void> {
+export async function eraseAccountData(input: { userId: string; anonymousId: string;
+  expenseDescription: string; itemName: string; groupName: string }, client: PoolClient): Promise<void> {
   const identity = [input.userId, input.anonymousId];
-  await execute(`DELETE FROM notifications WHERE user_id = $1 OR link IN
-    (SELECT link FROM activity WHERE actor_id = $1 OR credit_user_id = $1 OR audience @> jsonb_build_array($1::text))`, [input.userId], client);
-  await execute(`UPDATE notifications SET title = replace(title, $1, $2), body = replace(body, $1, $2)
-    WHERE strpos(title, $1) > 0 OR strpos(body, $1) > 0`, [input.oldName, input.anonymousName], client);
+  // Account and actor references are authoritative. Legacy rows without an
+  // actor may use a specific expense/group event with the same recipient.
+  // Shared navigation paths such as /friends never identify an event.
+  await execute(`DELETE FROM notifications
+    WHERE user_id = $1 OR actor_id = $1 OR link = '/friends/' || $1`, [input.userId], client);
+  await execute(`DELETE FROM notifications notice USING activity event
+    WHERE event.link = notice.link
+      AND (event.link LIKE '/expenses/%' OR event.link LIKE '/groups/%')
+      AND (notice.actor_id IS NULL OR notice.actor_id = event.actor_id)
+      AND event.audience @> jsonb_build_array(notice.user_id)
+      AND (event.actor_id = $1 OR event.credit_user_id = $1 OR event.audience @> jsonb_build_array($1::text))`,
+    [input.userId], client);
   await execute("DELETE FROM activity WHERE actor_id = $1 OR credit_user_id = $1 OR audience @> jsonb_build_array($1::text)", [input.userId], client);
   await execute("DELETE FROM comments WHERE user_id = $1", [input.userId], client);
   await execute("DELETE FROM friendships WHERE user_id = $1 OR friend_id = $1", [input.userId], client);
@@ -81,6 +129,8 @@ export async function eraseAccountData(input: { userId: string; anonymousId: str
   await execute(`UPDATE expense_items SET name = $2 WHERE expense_id IN
     (SELECT id FROM expenses WHERE created_by = $1)`, [input.userId, input.itemName], client);
   await execute("UPDATE expenses SET description = $2, notes = '' WHERE created_by = $1", [input.userId, input.expenseDescription], client);
+  await execute(`UPDATE settlements SET expense_description = $2 WHERE expense_id IN
+    (SELECT id FROM expenses WHERE created_by = $1)`, [input.userId, input.expenseDescription], client);
   await execute("UPDATE groups SET name = $2 WHERE created_by = $1", [input.userId, input.groupName], client);
   await execute("UPDATE settlements SET note = '', method_label = '' WHERE from_user = $1 OR to_user = $1 OR recorded_by = $1", [input.userId], client);
   await execute("UPDATE expense_payers SET user_id = $2 WHERE user_id = $1", identity, client);
@@ -97,4 +147,13 @@ export async function eraseAccountData(input: { userId: string; anonymousId: str
   await execute("UPDATE settlements SET deleted_by = $2 WHERE deleted_by = $1", identity, client);
   await execute("UPDATE groups SET created_by = $2 WHERE created_by = $1", identity, client);
   await execute("DELETE FROM users WHERE id = $1", [input.userId], client);
+}
+
+/**
+ * Executes all deferred integrity checks while erasure can still roll back
+ * without having revoked external credentials. Only COMMIT follows providers.
+ * @param client Erasure transaction containing every pending database change.
+ */
+export async function flushDeletionConstraints(client: PoolClient): Promise<void> {
+  await execute("SET CONSTRAINTS ALL IMMEDIATE", [], client);
 }

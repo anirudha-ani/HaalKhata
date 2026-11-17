@@ -32,7 +32,7 @@ vi.mock("@/server/group/repo/groups.repo", () => ({
 vi.mock("@/server/auth/repo/users.repo", () => ({
   findUserByEmail: vi.fn(),
   findUserById: vi.fn(),
-  findUserByPhone: vi.fn(),
+  findVerifiedUserByPhone: vi.fn(),
   findUsersByIds: vi.fn(),
 }));
 vi.mock("@/server/social/repo/friendships.repo", () => ({

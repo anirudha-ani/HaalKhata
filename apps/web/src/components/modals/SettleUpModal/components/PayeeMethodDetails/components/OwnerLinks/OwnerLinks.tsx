@@ -1,6 +1,7 @@
 "use client";
 /** Buttons for the payment links a method's owner typed, each named by the site it opens. */
 
+import { PaymentLink } from "../PaymentLink/PaymentLink";
 import { ExternalLink } from "lucide-react";
 import { linkHost } from "@haalkhata/shared/payment/formatMethod";
 
@@ -16,7 +17,10 @@ import { linkHost } from "@haalkhata/shared/payment/formatMethod";
  */
 export function OwnerLinks({
   links,
+  onOpen,
 }: {
+  /** Checks a bill payment before opening the destination. */
+  onOpen?: (url: string) => void;
   /** The values of the method's link details. */
   links: readonly string[];
 }) {
@@ -24,11 +28,10 @@ export function OwnerLinks({
   return [...new Set(links)]
     .filter((link) => linkHost(link) !== "")
     .map((link) => (
-      <a
+      <PaymentLink
         key={link}
-        href={link}
-        target="_blank"
-        rel="noopener noreferrer"
+        url={link}
+        onOpen={onOpen}
         className="flex min-h-11 items-center justify-center gap-1.5 rounded-lg bg-brand-600 px-3 py-2 text-sm font-semibold text-white hover:bg-brand-700"
       >
         <ExternalLink className="h-4 w-4 shrink-0" aria-hidden="true" />
@@ -36,6 +39,6 @@ export function OwnerLinks({
             says whose site it is: "paypal.com.pay.example" cut to
             "paypal.com.pay…" would name the wrong one. */}
         <span className="min-w-0 break-all">Open {linkHost(link)}</span>
-      </a>
+      </PaymentLink>
     ));
 }

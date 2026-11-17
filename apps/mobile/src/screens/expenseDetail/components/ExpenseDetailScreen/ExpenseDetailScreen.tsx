@@ -1,4 +1,4 @@
-/** Expense detail screen: payers, splits, receipt items, history, comments, and delete flow. */
+/** Expense detail screen: what you owe on it and paying it back, payers, splits, receipt items, history, comments, and delete flow. */
 
 import { ErrorState } from "@/components/ui/ErrorState";
 import { LiveBar } from "@/components/expense/LiveBar/LiveBar";
@@ -15,7 +15,7 @@ import { Button } from "@/components/ui/Button";
 import { Money } from "@/components/ui/Money";
 import { Sheet } from "@/components/ui/Sheet/Sheet";
 import { ShowMoreFooter } from "@/components/ui/ShowMoreFooter/ShowMoreFooter";
-import { SHOW_EARLIER_COMMENTS_LABEL } from "@haalkhata/shared/api/paging";
+import { SHOW_EARLIER_COMMENTS_LABEL, SHOW_EARLIER_HISTORY_LABEL } from "@haalkhata/shared/api/paging";
 import { Spinner } from "@/components/ui/Spinner";
 import { errorMessage } from "@/lib/api/connect";
 import { settledStatus } from "@haalkhata/shared/expense/settledStatus";
@@ -24,13 +24,15 @@ import { formatMoney } from "@haalkhata/shared/money/money";
 import { localDateTime } from "@haalkhata/shared/time/localTime";
 import { colors, fonts, radii, spacing } from "@/lib/theme/theme";
 import { useExpenseDetail } from "./hooks/useExpenseDetail";
+import { RepaymentCard } from "./components/RepaymentCard/RepaymentCard";
 import { MAX_COMMENT_LENGTH } from "@haalkhata/shared/text/limits";
 import { GroupStatus } from "@haalkhata/shared/group/status";
 import { ARCHIVED_GROUP_HINT, GROUP_ARCHIVE_ACTIONS } from "@haalkhata/shared/group/archiving";
 
 /**
  * Renders a single expense: header (description, date, category, amount),
- * the nothing-pending banner, edit/delete actions, payer and split
+ * the nothing-pending banner, what the viewer owes on it with a button that
+ * pays it back (and the payments made for it), edit/delete actions, payer and split
  * breakdowns, receipt items (with your share of each) when itemized, notes,
  * the history of edits, the comment thread with a composer, and a delete
  * confirmation sheet.
@@ -181,6 +183,20 @@ export function ExpenseDetailScreen({ expenseId }: { expenseId: string }) {
           />
         </View>
       ) : null}
+
+      {/* Beside the bill's own figure, so its button pays this bill's share
+          and nothing else. First after the banners: for someone who owes,
+          it is what the screen is for. */}
+      <RepaymentCard
+        expense={expense}
+        groupId={expense.groupId && !isArchived ? expense.groupId : ""}
+        meId={meId ?? ""}
+        payments={expenseDetail.detail?.payments ?? []}
+        cursor={expenseDetail.detail?.paymentsNextCursor ?? ""}
+        repayments={expenseDetail.detail?.repayments ?? []}
+        settledForViewer={expenseDetail.detail?.settledForViewer === true}
+        userById={expenseDetail.userById}
+      />
 
       {liveSplit ? (
         <LiveBar
@@ -351,11 +367,14 @@ export function ExpenseDetailScreen({ expenseId }: { expenseId: string }) {
           on every screen to say "nothing has happened", which is noise. The
           creation line is included once there IS an edit, because "edited"
           only means something next to when it was made. */}
-      {expenseDetail.changes.length > 0 ? (
+      {expenseDetail.changes.length > 0 || expenseDetail.hasEarlierHistory ? (
         <View style={styles.breakdownCard}>
           <Text style={styles.cardTitle}>HISTORY</Text>
-          {expenseDetail.detail?.history.map((event, index) => (
-            <View key={`${event.type}-${event.createdAt}-${index}`} style={styles.historyRow}>
+          <ShowMoreFooter direction="earlier" error={expenseDetail.earlierHistoryError}
+            hasMore={expenseDetail.hasEarlierHistory} isLoadingMore={expenseDetail.isLoadingEarlierHistory}
+            label={SHOW_EARLIER_HISTORY_LABEL} onShowMore={expenseDetail.showEarlierHistory} />
+          {expenseDetail.history.map((event, index) => (
+            <View key={event.id || `${event.type}-${event.createdAt}-${index}`} style={styles.historyRow}>
               {event.actor ? (
                 <PersonLink meId={meId} style={styles.historyActor} userId={event.actor.id}>
                   <Avatar size="sm" user={event.actor} />

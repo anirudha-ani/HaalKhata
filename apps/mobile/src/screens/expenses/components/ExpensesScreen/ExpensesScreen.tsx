@@ -124,6 +124,7 @@ export function ExpensesScreen() {
                 groupNameById={listState.groupNameById}
                 meId={listState.me?.id}
                 settledIds={listState.settledIds}
+                repaidIds={listState.repaidIds}
                 userById={listState.userById}
               />
             )}

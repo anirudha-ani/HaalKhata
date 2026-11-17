@@ -12,3 +12,6 @@ export const DELETED_EXPENSE_DESCRIPTION = "Deleted expense";
 export const DELETED_ITEM_NAME = "Deleted item";
 /** Replacement for group names authored by the deleted account. */
 export const DELETED_GROUP_NAME = "Shared group";
+
+/** Bound retries when a new report commits as account erasure locks its references. */
+export const ACCOUNT_ERASURE_ATTEMPTS = 3;

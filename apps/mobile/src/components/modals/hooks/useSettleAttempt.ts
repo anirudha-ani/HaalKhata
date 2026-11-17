@@ -77,8 +77,12 @@ export function useSettleAttempt(personId: string, onRecorded: () => void) {
     },
     onError: (error, { attempt, checking }) => {
       errorFeedback();
-      // The balances may not be what the dialog shows any more.
+      // The balances may not be what the dialog shows any more, nor what is
+      // left on the bill a pay-back was for.
       void queryClient.invalidateQueries({ queryKey: queryKeys.friendLedger(personId) });
+      if (attempt.request.expenseId) {
+        void queryClient.invalidateQueries({ queryKey: queryKeys.expense(attempt.request.expenseId) });
+      }
       const reading = readSettleFailure(error);
       if (reading === "unknown") {
         setPhase(checking ? "unsure" : "checking");

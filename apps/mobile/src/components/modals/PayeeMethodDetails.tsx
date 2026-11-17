@@ -51,6 +51,8 @@ export function PayeeMethodDetails({
   readAt,
   removedAt,
   firstName,
+  linksAvailable,
+  onOpen,
   amountCents,
   currency,
   note,
@@ -67,6 +69,10 @@ export function PayeeMethodDetails({
   firstName: string;
   /** The amount being paid, for an app link that can carry it. */
   amountCents: number;
+  /** Whether this amount can be handed off to a payment app. */
+  linksAvailable: boolean;
+  /** Validates the bill before opening the link. */
+  onOpen?: (url: string) => void;
   /** The currency being paid in, which decides whether a link may carry the amount. */
   currency: string;
   /** The payment note, for an app link that can carry it. */
@@ -121,7 +127,8 @@ export function PayeeMethodDetails({
   const openLink = async (link: string) => {
     setLinkFailed(false);
     try {
-      await Linking.openURL(link);
+      if (onOpen) onOpen(link);
+      else await Linking.openURL(link);
     } catch {
       setLinkFailed(true);
     }
@@ -210,7 +217,7 @@ export function PayeeMethodDetails({
         ))}
       </View>
 
-      {ownerLinks.map((link) => (
+      {linksAvailable && ownerLinks.map((link) => (
         <Button
           icon={<ExternalLink color={colors.white} size={16} />}
           key={link}
@@ -219,7 +226,7 @@ export function PayeeMethodDetails({
         />
       ))}
 
-      {appLink ? (
+      {linksAvailable && appLink ? (
         <>
           {appLink.url ? (
             <Button

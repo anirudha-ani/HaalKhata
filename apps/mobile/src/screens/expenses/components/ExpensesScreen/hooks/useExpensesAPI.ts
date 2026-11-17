@@ -21,7 +21,7 @@ import { usePullToRefresh } from "@/lib/hooks/usePullToRefresh";
  *
  * @param scope - The active scope: "all", "oneoff", or a group id.
  * @returns `me`, `expenses` (every loaded one, newest first), `userById`,
- *   `settledIds`, `groups` (the user's group summaries), `isLoading` (true
+ *   `settledIds`, `repaidIds`, `groups` (the user's group summaries), `isLoading` (true
  *   until the scope's first page arrives), `listError` for a failed first
  *   read, `hasMore`/`isLoadingMore`/`loadMore` with the `loadMoreError`
  *   beside that control, and `refresh`/`isRefreshing` for pull-to-refresh.
@@ -67,6 +67,7 @@ export function useExpensesAPI(scope: ExpenseScopeFilter) {
     expenses: merged.expenses,
     userById: merged.userById,
     settledIds: merged.settledIds,
+    repaidIds: merged.repaidIds,
     groups: groupsQuery.data?.groups ?? [],
     isLoading: expensesQuery.isLoading,
     listError:

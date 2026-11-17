@@ -4,6 +4,7 @@ import { Code, ConnectError } from "@connectrpc/connect";
 import type { PlainServiceImpl } from "@/server/api/connect/wire/plainService";
 import type { ExpenseService } from "@haalkhata/protogen/expense/v1/expense_pb";
 import * as expenses from "@/server/expense/usecase/expense.usecase";
+import { listExpenseHistory } from "@/server/expense/usecase/history/expenseHistory";
 import * as balances from "@/server/expense/usecase/balance.usecase";
 import * as liveSplits from "@/server/expense/usecase/liveSplit/liveSplit.usecase";
 import { requireUser, runUsecase } from "@/server/api/connect/context";
@@ -96,6 +97,16 @@ export const expenseHandler: PlainServiceImpl<typeof ExpenseService> = {
   async finishLiveSplit(request, context) {
     await runUsecase(async () => liveSplits.finishLiveSplit(await requireUser(context), request.expenseId), context);
     return {};
+  },
+
+  /** Older payments on this expense that involve the authenticated reader. */
+  async listExpensePayments(request, context) {
+    return runUsecase(async () => expenses.listExpensePayments(await requireUser(context), request.expenseId, request.cursor), context);
+  },
+
+  /** Older edits, authorized without rebuilding an expense's financial detail. */
+  async listExpenseHistory(request, context) {
+    return runUsecase(async () => listExpenseHistory(await requireUser(context), request.expenseId, request.cursor), context);
   },
 
   /** Older comments on an expense, a page at a time. */

@@ -48,6 +48,7 @@ vi.mock("@/server/group/repo/groups.repo", () => ({
   listCoMemberIds: vi.fn(),
   listGroupsByUser: vi.fn(),
   listMembers: vi.fn(),
+  memberIdsAmong: vi.fn(async (_group, people: string[]) => new Set(people)),
 }));
 vi.mock("@/server/auth/repo/users.repo", () => ({
   findUserById: vi.fn(),
@@ -59,11 +60,13 @@ vi.mock("@/server/social/repo/friendships.repo", () => ({
 }));
 vi.mock("@/server/expense/repo/comments.repo", () => ({
   insertComment: vi.fn(),
-  listCommentsByExpense: vi.fn(),
+  listCommentPage: vi.fn(),
 }));
 vi.mock("@/server/expense/repo/settlements.repo", () => ({
   findSettlementById: vi.fn(),
   insertSettlement: vi.fn(),
+  listExpensePaymentsFor: vi.fn(async () => []),
+  sumPaidForExpenses: vi.fn(async () => []),
   listSettlementsByNetSettlement: vi.fn(),
   softDeleteNetSettlement: vi.fn(),
   scopeHasSettlements: vi.fn(),
@@ -96,13 +99,25 @@ vi.mock("@/server/social/repo/activity.repo", () => ({
   listActivityForExpense: vi.fn(),
 }));
 vi.mock("@/server/social/repo/notifications.repo", () => ({ insertNotifications: vi.fn(), insertNotificationRows: vi.fn() }));
-vi.mock("./balance.usecase", () => ({
-  groupCancelsOut: vi.fn(),
-  amountOwed: vi.fn(),
+vi.mock("./balance.usecase", () => {
+  const amountOwed = vi.fn();
+  const groupCancelsOut = vi.fn();
+  return {
+  groupCancelsOut,
+  owingInScope: vi.fn(async (viewer: string, people: string[], group: { id: string } | null, currency: string, client: unknown) => {
+    const loop = group ? await groupCancelsOut(group.id, currency, client) : false;
+    return new Map(await Promise.all(people.map(async (person) => [person, {
+      owedCents: group ? await amountOwed(viewer, person, group.id, currency, client) : 0,
+      loop, debtorNetCents: 0,
+    }] as const)));
+  }),
+  amountOwed,
   oneOffNetBetween: vi.fn(),
   owedByScope: vi.fn(),
+  excludeOpenPairs: vi.fn(async (candidates) => candidates),
   userNetInGroup: vi.fn(),
-}));
+  };
+});
 
 import {
   addComment,
@@ -129,7 +144,7 @@ import {
   replaceExpense,
   softDeleteExpense,
 } from "@/server/expense/repo/expenses.repo";
-import { insertComment, listCommentsByExpense } from "@/server/expense/repo/comments.repo";
+import { insertComment, listCommentPage } from "@/server/expense/repo/comments.repo";
 import {
   findSettlementById,
   insertSettlement,
@@ -535,7 +550,7 @@ describe("who hears about a transaction", () => {
   });
 
   it("tells the detail view when a later settlement was recorded against the expense", async () => {
-    vi.mocked(listCommentsByExpense).mockResolvedValue([]);
+    vi.mocked(listCommentPage).mockResolvedValue([]);
     vi.mocked(listActivityForExpense).mockResolvedValue([]);
     vi.mocked(userNetInGroup).mockResolvedValue(new Map());
     vi.mocked(scopeHasSettlements).mockResolvedValue(true);
@@ -563,7 +578,7 @@ describe("who hears about a transaction", () => {
       simplify_debts: true,
       status: "active",
     } as never);
-    vi.mocked(listCommentsByExpense).mockResolvedValue([]);
+    vi.mocked(listCommentPage).mockResolvedValue([]);
     vi.mocked(listActivityForExpense).mockResolvedValue([]);
     vi.mocked(userNetInGroup).mockResolvedValue(new Map());
 
@@ -579,7 +594,7 @@ describe("who hears about a transaction", () => {
   });
 
   it("reports no later settlement while the scope has none", async () => {
-    vi.mocked(listCommentsByExpense).mockResolvedValue([]);
+    vi.mocked(listCommentPage).mockResolvedValue([]);
     vi.mocked(listActivityForExpense).mockResolvedValue([]);
     vi.mocked(userNetInGroup).mockResolvedValue(new Map());
 
@@ -611,7 +626,7 @@ describe("who hears about a transaction", () => {
       ...(await findExpenseById("expense-1"))!,
       deleted_at: "2026-08-10T00:00:00Z",
     });
-    vi.mocked(listCommentsByExpense).mockResolvedValue([]);
+    vi.mocked(listCommentPage).mockResolvedValue([]);
     vi.mocked(listActivityForExpense).mockResolvedValue([]);
     vi.mocked(userNetInGroup).mockResolvedValue(new Map());
 

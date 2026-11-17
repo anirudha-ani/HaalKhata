@@ -1,6 +1,7 @@
 /** The cap on how many groups one person can be in, checked wherever somebody joins a group. */
 
 import type { PoolClient } from "pg";
+import { lockGroupAdmissions } from "@/server/common/ledger/ledgerLocks";
 import { UsecaseError } from "@/server/common/errors";
 import {
   MAX_GROUPS_PER_PERSON,
@@ -32,6 +33,7 @@ export async function assertRoomForAnotherGroup(
   callerId: string,
   client: PoolClient,
 ): Promise<void> {
+  await lockGroupAdmissions(client, joiners.map((joiner) => joiner.id));
   const counts = await countGroupMemberships(joiners.map((joiner) => joiner.id), client);
   const full = joiners.find((joiner) => (counts.get(joiner.id) ?? 0) >= MAX_GROUPS_PER_PERSON);
   if (!full) return;

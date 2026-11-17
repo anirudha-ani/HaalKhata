@@ -11,20 +11,24 @@ export interface MergedExpensePages {
   userById: Map<string, User>;
   /** Ids of loaded expenses with nothing pending for the viewer. */
   settledIds: Set<string>;
+  /** Ids of loaded expenses the viewer has paid back. */
+  repaidIds: Set<string>;
 }
 
 /**
- * Joins the loaded pages of an expense list. Each page names the people and
- * the settled expenses of its own rows, so those are joined too.
+ * Joins the loaded pages of an expense list. Each page names the people,
+ * the settled expenses and the paid-back expenses of its own rows, so those
+ * are joined too.
  *
  * @param pages - The pages, newest first, as an infinite query holds them.
- * @returns The expenses, the people they name, and which are settled.
+ * @returns The expenses, the people they name, and which are settled or paid back.
  */
 export function mergeExpensePages(pages: readonly ListExpensesResponse[]): MergedExpensePages {
   return {
     expenses: pages.flatMap((page) => page.expenses),
     userById: new Map(pages.flatMap((page) => page.users.map((user) => [user.id, user] as const))),
     settledIds: new Set(pages.flatMap((page) => page.settledExpenseIds)),
+    repaidIds: new Set(pages.flatMap((page) => page.repaidExpenseIds)),
   };
 }
 

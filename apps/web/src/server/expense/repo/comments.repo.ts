@@ -3,6 +3,7 @@
 import type { PoolClient } from "pg";
 import { newId, query, queryOne } from "@/server/common/db/db";
 import { exactTimeSql } from "@/server/common/pagination/pagination";
+import { COMMENT_SCAN_MULTIPLIER } from "../expense.constants";
 
 /** One row of the comments table (column names mirror SQL). */
 export interface CommentRow {
@@ -83,7 +84,11 @@ export type PagedCommentRow = CommentRow & { created_at_exact: string };
 /**
  * One page of an expense's comments, going back in time: the newest first,
  * starting just before `before`. Comments across a block either way are
- * left out, as in {@link listCommentsByExpense}.
+ * left out, as in {@link listCommentsByExpense}. A bounded raw window serves
+ * ordinary pages. If too few comments are visible, index seeks enumerate
+ * distinct historical authors and read one bounded page per visible author.
+ * This scales with authors rather than an arbitrarily long blocked thread;
+ * authors who left a group remain discoverable from the comments themselves.
  *
  * @param expenseId - Id of the expense whose comments to list.
  * @param viewerId - The reader.
@@ -100,16 +105,40 @@ export async function listCommentPage(
   client?: PoolClient,
 ): Promise<PagedCommentRow[]> {
   return query<PagedCommentRow>(
-    `SELECT comments.*, ${exactTimeSql("comments.created_at")} AS created_at_exact
-       FROM comments
-      WHERE expense_id = $1
-        AND NOT EXISTS (SELECT 1 FROM user_blocks
-                         WHERE (blocker_id = $2 AND blocked_id = comments.user_id)
-                            OR (blocker_id = comments.user_id AND blocked_id = $2))
-        AND ($3::timestamptz IS NULL OR (comments.created_at, comments.id) < ($3::timestamptz, $4))
-      ORDER BY comments.created_at DESC, comments.id DESC
-      LIMIT $5`,
-    [expenseId, viewerId, before?.createdAt ?? null, before?.id ?? null, limit],
+    `WITH RECURSIVE recent AS MATERIALIZED (
+       SELECT comments.* FROM comments WHERE expense_id = $1
+         AND ($3::timestamptz IS NULL OR (created_at, id) < ($3::timestamptz, $4))
+       ORDER BY created_at DESC, id DESC LIMIT $6
+     ), visible_recent AS MATERIALIZED (
+       SELECT * FROM recent WHERE NOT EXISTS (SELECT 1 FROM user_blocks
+         WHERE (blocker_id = $2 AND blocked_id = recent.user_id)
+            OR (blocker_id = recent.user_id AND blocked_id = $2))
+     ), fallback AS (
+       SELECT (SELECT count(*) FROM recent) = $6
+          AND (SELECT count(*) FROM visible_recent) < $5 AS needed
+     ), authors AS (
+       (SELECT user_id FROM comments WHERE expense_id = $1 AND (SELECT needed FROM fallback)
+          ORDER BY user_id LIMIT 1)
+       UNION ALL
+       SELECT following.user_id FROM authors CROSS JOIN LATERAL (
+         SELECT user_id FROM comments WHERE expense_id = $1 AND user_id > authors.user_id
+           ORDER BY user_id LIMIT 1
+       ) following
+     ), visible_authors AS (
+       SELECT user_id FROM authors WHERE NOT EXISTS (SELECT 1 FROM user_blocks
+         WHERE (blocker_id = $2 AND blocked_id = authors.user_id)
+            OR (blocker_id = authors.user_id AND blocked_id = $2))
+     ), candidates AS (
+       SELECT * FROM visible_recent WHERE NOT (SELECT needed FROM fallback)
+       UNION ALL
+       SELECT older.* FROM visible_authors CROSS JOIN LATERAL (
+         SELECT comments.* FROM comments WHERE expense_id = $1 AND user_id = visible_authors.user_id
+           AND ($3::timestamptz IS NULL OR (created_at, id) < ($3::timestamptz, $4))
+         ORDER BY created_at DESC, id DESC LIMIT $5
+       ) older
+     ) SELECT *, ${exactTimeSql("created_at")} AS created_at_exact FROM candidates
+       ORDER BY created_at DESC, id DESC LIMIT $5`,
+    [expenseId, viewerId, before?.createdAt ?? null, before?.id ?? null, limit, limit * COMMENT_SCAN_MULTIPLIER],
     client,
   );
 }

@@ -73,5 +73,6 @@ export function toSettlement(settlementRow: SettlementRow) {
     note: settlementRow.note,
     createdAt: settlementRow.created_at,
     recordedByUserId: settlementRow.recorded_by,
+    expenseId: settlementRow.expense_id ?? "",
   };
 }

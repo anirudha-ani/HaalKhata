@@ -23,17 +23,20 @@ vi.mock("@/server/expense/repo/expenses.repo", () => ({
   listExpensesByGroups: vi.fn(),
   listExpensesInvolvingUser: vi.fn(),
   listOneOffExpensesBetween: vi.fn(),
-  listOneOffExpensesWithAnyOf: vi.fn(),
+  listScopedExpensesWithAnyOf: vi.fn(),
   loadExpenseChildren: vi.fn(),
 }));
 vi.mock("@/server/expense/repo/settlements.repo", () => ({
   listOneOffSettlementsBetween: vi.fn(),
-  listOneOffSettlementsWithAnyOf: vi.fn(),
+  listScopedSettlementsWithAnyOf: vi.fn(),
   listSettlementsBetween: vi.fn(),
+  listSettlementsBetweenPage: async (...args: Parameters<typeof import("@/server/expense/repo/settlements.repo").listSettlementsBetweenPage>) => (await import("@/server/common/testing/movementRepoMock")).listFixtureSettlementPage(...args),
+  listSettlementsByNetSettlements: vi.fn(async () => []),
   listSettlementsByGroup: vi.fn(),
   listSettlementsByGroups: vi.fn(),
   listSettlementsInvolvingUser: vi.fn(),
 }));
+vi.mock("@/server/expense/repo/movements.repo", async () => import("@/server/common/testing/movementRepoMock"));
 vi.mock("@/server/group/repo/groups.repo", () => ({
   findGroupById: vi.fn(),
   findGroupsByIds: vi.fn(),
@@ -62,12 +65,12 @@ import {
   listExpensesBetween,
   listExpensesInvolvingUser,
   listOneOffExpensesBetween,
-  listOneOffExpensesWithAnyOf,
+  listScopedExpensesWithAnyOf,
   loadExpenseChildren,
 } from "@/server/expense/repo/expenses.repo";
 import {
   listOneOffSettlementsBetween,
-  listOneOffSettlementsWithAnyOf,
+  listScopedSettlementsWithAnyOf,
   listSettlementsBetween,
   listSettlementsInvolvingUser,
 } from "@/server/expense/repo/settlements.repo";
@@ -167,7 +170,7 @@ beforeEach(() => {
   vi.mocked(listExpensesInvolvingUser).mockResolvedValue([dollars, euros]);
   vi.mocked(listExpensesBetween).mockResolvedValue([dollars, euros]);
   vi.mocked(listOneOffExpensesBetween).mockResolvedValue([dollars, euros]);
-  vi.mocked(listOneOffExpensesWithAnyOf).mockResolvedValue([dollars, euros]);
+  vi.mocked(listScopedExpensesWithAnyOf).mockResolvedValue([dollars, euros]);
   vi.mocked(loadExpenseChildren).mockImplementation(async () => ({
     payers: payersByExpense,
     splits: splitsByExpense,
@@ -176,7 +179,7 @@ beforeEach(() => {
   vi.mocked(listSettlementsInvolvingUser).mockImplementation(async () => settlementRows);
   vi.mocked(listSettlementsBetween).mockImplementation(async () => settlementRows);
   vi.mocked(listOneOffSettlementsBetween).mockImplementation(async () => settlementRows);
-  vi.mocked(listOneOffSettlementsWithAnyOf).mockImplementation(async () => settlementRows);
+  vi.mocked(listScopedSettlementsWithAnyOf).mockImplementation(async () => settlementRows);
   // Everyone has one payment method, named after its owner, so a test can
   // tell whose methods a ledger carried.
   vi.mocked(listPaymentMethodsByUser).mockImplementation(async (ownerId: string) => [
@@ -364,6 +367,7 @@ describe("balances are kept per currency", () => {
       recorded_by: ALICE,
       deleted_by: null,
       net_settlement_id: null,
+      expense_id: null,
     });
     expect(await owedByScope(ALICE, BOBBY)).toEqual([]);
     expect(await owedByScope(BOBBY, ALICE)).toEqual([

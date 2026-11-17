@@ -2,6 +2,7 @@
 
 import type { PoolClient } from "pg";
 import { execute, newId, query, queryOne } from "@/server/common/db/db";
+import { PUSH_DEVICES_LOCK_PREFIX } from "../push.constants";
 
 /** A row from push_devices (column names mirror SQL). */
 export interface PushDeviceRow {
@@ -27,7 +28,21 @@ export interface PushDeviceRow {
  * Expects push_devices as `device` and users as `owner`.
  */
 const LIVE_DEVICE_CONDITION = `device.token_version = owner.token_version
-  AND owner.deleted_at IS NULL AND owner.suspended_at IS NULL`;
+  AND owner.deleted_at IS NULL AND owner.suspended_at IS NULL
+  AND NOT EXISTS (
+    SELECT 1 FROM push_kept_off removed
+     WHERE removed.user_id = device.user_id AND removed.installation_id = device.installation_id)`;
+
+/**
+ * Serializes the account's device registry before its opt-out or capacity is read.
+ * All installations share this lock because they also share the device limit.
+ * @param userId Owner of the registry.
+ * @param client Registration or removal transaction.
+ * @returns Resolves when this account's other registry mutation finishes.
+ */
+export async function lockPushDevices(userId: string, client: PoolClient): Promise<void> {
+  await execute("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", [`${PUSH_DEVICES_LOCK_PREFIX}${userId}`], client);
+}
 
 /**
  * Records a phone for a user, or refreshes it. One row per installation: a
@@ -203,12 +218,14 @@ export async function findLivePushDevice(userId: string, deviceId: string): Prom
  *
  * @param userId - Owner; a phone of anyone else is left alone.
  * @param deviceId - The phone.
+ * @param client Removal transaction holding the registry lock.
  * @returns The removed phone's installation id, or undefined when it was not the user's.
  */
-export async function deletePushDevice(userId: string, deviceId: string): Promise<string | undefined> {
+export async function deletePushDevice(userId: string, deviceId: string, client: PoolClient): Promise<string | undefined> {
   const removed = await queryOne<{ installation_id: string }>(
     `DELETE FROM push_devices WHERE id = $1 AND user_id = $2 RETURNING installation_id`,
     [deviceId, userId],
+    client,
   );
   return removed?.installation_id;
 }
@@ -219,12 +236,14 @@ export async function deletePushDevice(userId: string, deviceId: string): Promis
  *
  * @param userId - The person who removed the phone.
  * @param installationId - The phone's installation.
+ * @param client Removal transaction holding the registry lock.
  */
-export async function keepPushInstallationOff(userId: string, installationId: string): Promise<void> {
+export async function keepPushInstallationOff(userId: string, installationId: string, client: PoolClient): Promise<void> {
   await execute(
     `INSERT INTO push_kept_off (user_id, installation_id) VALUES ($1, $2)
      ON CONFLICT (user_id, installation_id) DO UPDATE SET removed_at = now()`,
     [userId, installationId],
+    client,
   );
 }
 

@@ -181,11 +181,6 @@ export async function joinLiveSplit(acceptor: UserRow, link: InviteLinkRow): Pro
   const alreadyHere = [split.host_id, ...storedParticipantIds(expense, await loadExpenseChildren([expenseId]))];
   if (await blockedPairExists([userId, ...alreadyHere], alreadyHere)) notFound(DEAD_LINK_MESSAGE);
 
-  if (expense.group_id && !(await isMember(expense.group_id, userId))) {
-    const group = await findGroupById(expense.group_id);
-    if (!group) notFound("group not found");
-    await joinGroupThroughLink(acceptor, group, link.inviter_id, (await findUserById(link.inviter_id))?.name ?? "a member");
-  }
 
   await withLedgerTransaction(async (client) => {
     await lockExpenseLedger(client, expenseId);
@@ -193,6 +188,16 @@ export async function joinLiveSplit(acceptor: UserRow, link: InviteLinkRow): Pro
     if (!session || session.split.id !== split.id) throw new UsecaseError("failed_precondition", LIVE_SPLIT_ENDED_MESSAGE);
     if (session.peopleIds.includes(userId)) return;
     if (session.peopleIds.length >= MAX_EXPENSE_PARTICIPANTS) invalid("this live split is full");
+    const current = await findExpenseById(expenseId, client);
+    if (!current || current.deleted_at) throw new UsecaseError("failed_precondition", LIVE_SPLIT_ENDED_MESSAGE);
+    const currentIds = [session.split.host_id, ...storedParticipantIds(current, await loadExpenseChildren([expenseId], client))];
+    if (await blockedPairExists([userId, ...currentIds], currentIds, client)) notFound(DEAD_LINK_MESSAGE);
+    if (current.group_id && !(await isMember(current.group_id, userId, client))) {
+      const group = await findGroupById(current.group_id, client);
+      if (!group) notFound("group not found");
+      const inviter = await findUserById(link.inviter_id, client);
+      await joinGroupThroughLink(acceptor, group, link.inviter_id, inviter?.name ?? "a member", undefined, client);
+    }
     if (!expense.group_id) {
       const children = await loadExpenseChildren([expenseId], client);
       const payerIds = (children.payers.get(expenseId) ?? []).map((payer) => payer.user_id);

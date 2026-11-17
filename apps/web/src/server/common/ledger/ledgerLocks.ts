@@ -7,6 +7,7 @@ import {
   EXPENSE_LEDGER_LOCK_PREFIX,
   FRIEND_REQUEST_INBOX_LOCK_PREFIX,
   GROUP_LEDGER_LOCK_PREFIX,
+  GROUP_ADMISSION_LOCK_PREFIX,
   LEDGER_BUSY_MESSAGE,
   LEDGER_LOCK_TIMEOUT_MS,
   LEDGER_STATEMENT_TIMEOUT_MS,
@@ -55,6 +56,17 @@ export async function lockGroupLedgers(client: PoolClient, groupIds: string[]): 
     client,
     groupIds.filter(Boolean).map((groupId) => `${GROUP_LEDGER_LOCK_PREFIX}${groupId}`),
   );
+}
+
+/**
+ * Serializes admissions sharing any prospective member across different groups.
+ * Take after existing group locks and before inbox locks. A creator takes the
+ * complete cast together before separately checking their own and others' caps.
+ * @param client - The admission transaction.
+ * @param userIds - All prospective members, acquired in stable order.
+ */
+export async function lockGroupAdmissions(client: PoolClient, userIds: string[]): Promise<void> {
+  await acquireKeys(client, userIds.filter(Boolean).map((userId) => GROUP_ADMISSION_LOCK_PREFIX + userId));
 }
 
 /**

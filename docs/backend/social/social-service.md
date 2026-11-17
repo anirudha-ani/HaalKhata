@@ -285,6 +285,8 @@ is).
   to one calendar month; `months` in the response lists only months that
   actually contain activity in this scope — and reflects the group scope but
   **not** the month filter, so the control never erases its own options.
+  Months are returned on the first page. Both clients keep those options
+  when appending older pages, which skip the full-history month query.
 - **`inbound`** (settlements only) is computed per viewer at read time — the
   same row is money arriving for one person and money leaving for the other,
   and without it the UI cannot tell "you were paid" from "you paid".
@@ -380,9 +382,10 @@ is).
   1. The debtor must currently owe the caller (per currency — a dollar owed
      is not cancelled by a euro owed the other way), on the same routed
      numbers the dashboard shows.
-  2. **24 h cooldown per (sender, debtor) pair.** The previous reminder
-     notification is itself the cooldown record — no extra table. The
-     check-then-insert runs in one transaction under the
+  2. **24 h cooldown per (sender, debtor) pair.** A durable
+     `reminder_cooldowns` row records the latest send, so clearing the
+     notification inbox cannot reset the allowance. The cooldown and
+     notification commit in one transaction under the
      `reminder:<sender>:<debtor>` advisory lock, otherwise ten concurrent
      sends all read "no previous reminder" before any commits.
 - Ordering of the guards is deliberate: the cooldown (one indexed lookup)

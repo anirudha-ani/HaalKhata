@@ -7,7 +7,7 @@
 
 import { randomUUID } from "node:crypto";
 import { Client } from "pg";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { testDatabaseName } from "@/server/common/testing/testDatabase";
 
 const ADMIN_URL = process.env.MERGE_TEST_ADMIN_URL ?? "postgres://haalkhata:change-me@127.0.0.1:5432/postgres";
@@ -114,4 +114,35 @@ describe.skipIf(!reachable)("activity feed paging against Postgres", () => {
     expect(await pageThrough(2)).toEqual(EVENTS.map((event) => event.id));
     expect(await pageThrough(3)).toEqual(EVENTS.map((event) => event.id));
   });
+  it("loads visible months once while older pages keep their bounded query", async () => {
+    const { listActivity } = await import("../usecase/social.usecase");
+    await database.query("INSERT INTO users(id, email, name, avatar_color, google_sub) VALUES ('paging-blocked', 'paging-blocked@example.com', 'Blocked actor', '#336699', 'google-paging-blocked')");
+    await database.query("INSERT INTO user_blocks(blocker_id, blocked_id) VALUES ($1, 'paging-blocked')", [VIEWER]);
+    await database.query(
+      `INSERT INTO activity(id, actor_id, type, message, audience, created_at)
+       VALUES ($1, $3, 'other', 'Private', '[]'::jsonb, '2026-09-01'),
+              ($2, 'paging-blocked', 'other', 'Blocked', jsonb_build_array($3::text), '2026-08-01')`,
+      [randomUUID(), randomUUID(), VIEWER],
+    );
+    const statements = vi.spyOn(Client.prototype, "query");
+    try {
+      const first = await listActivity(VIEWER, { limit: 1 });
+      expect(first.months).toEqual(["2026-10"]);
+      expect(first.events).toHaveLength(1);
+      expect(first.nextCursor).not.toBe("");
+      expect(statements.mock.calls.filter(([query]) => typeof query === "string" && query.includes("SELECT DISTINCT to_char"))).toHaveLength(1);
+      statements.mockClear();
+      const next = await listActivity(VIEWER, { limit: 1, cursor: first.nextCursor });
+      expect(next.events).toHaveLength(1);
+      expect(next.events[0].id).not.toBe(first.events[0].id);
+      expect(next.months).toEqual([]);
+      expect(statements.mock.calls.filter(([query]) => typeof query === "string" && query.includes("SELECT DISTINCT to_char"))).toHaveLength(0);
+      const filtered = await listActivity(VIEWER, { limit: 1, month: "2026-09" });
+      expect(filtered.events).toHaveLength(0);
+      expect(filtered.months).toEqual(["2026-10"]);
+    } finally {
+      statements.mockRestore();
+    }
+  });
+
 });

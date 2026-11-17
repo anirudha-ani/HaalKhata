@@ -41,6 +41,8 @@ export interface SettlementNotice {
   /** Only net settlements have a known remaining overall amount. */
   remainingCents?: number;
   cancelledCents?: number;
+  /** The expense the payment was for, when it was paid back from that expense's page. */
+  expenseName?: string;
 }
 
 /**
@@ -53,9 +55,10 @@ export interface SettlementNotice {
 export function settlementNotification(notice: SettlementNotice): NotificationWords {
   const amount = formatMoney(notice.amountCents, notice.currency);
   const direction = notice.paidByReader ? "from you" : "to you";
+  const forExpense = notice.expenseName ? ` for "${notificationLabel(notice.expenseName)}"` : "";
   const action = notice.removed
-    ? `Removed ${amount} payment ${direction}`
-    : `Recorded ${amount} ${direction}`;
+    ? `Removed ${amount} payment ${direction}${forExpense}`
+    : `Recorded ${amount} ${direction}${forExpense}`;
   const outcome = notice.removed
     ? "Balances restored"
     : notice.remainingCents === undefined ? ""

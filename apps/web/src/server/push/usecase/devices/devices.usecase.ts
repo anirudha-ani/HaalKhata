@@ -26,6 +26,7 @@ import {
   isPushInstallationKeptOff,
   keepPushInstallationOff,
   listLivePushDevices,
+  lockPushDevices,
   markPushDevicesSent,
   type PushDeviceRow,
   upsertPushDevice,
@@ -117,6 +118,7 @@ export async function registerDevice(
   const appVersion = cleanDisplayField(input.appVersion, MAX_APP_VERSION_LENGTH, "app version");
   if (!Number.isSafeInteger(session.version)) throw new UsecaseError("unauthenticated", "session expired");
   const stored = await transaction(async (client) => {
+    await lockPushDevices(userId, client);
     if (input.turnOn) {
       await clearPushInstallationKeptOff(userId, input.installationId, client);
     } else if (await isPushInstallationKeptOff(userId, input.installationId, client)) {
@@ -166,9 +168,12 @@ export async function listDevices(userId: string) {
  * @throws UsecaseError (not_found) when it is not one of the caller's.
  */
 export async function removeDevice(userId: string, deviceId: string, signingOut = false): Promise<void> {
-  const installationId = await deletePushDevice(userId, deviceId);
-  if (installationId === undefined) notFound("that phone is not connected to your account");
-  if (!signingOut) await keepPushInstallationOff(userId, installationId);
+  await transaction(async (client) => {
+    await lockPushDevices(userId, client);
+    const installationId = await deletePushDevice(userId, deviceId, client);
+    if (installationId === undefined) notFound("that phone is not connected to your account");
+    if (!signingOut) await keepPushInstallationOff(userId, installationId, client);
+  });
 }
 
 /**

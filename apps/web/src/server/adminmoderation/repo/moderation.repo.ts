@@ -325,6 +325,11 @@ export async function blankExpenseText(
     [expenseId, replacement.itemName],
     client,
   );
+  await execute(
+    "UPDATE settlements SET expense_description = $2 WHERE expense_id = $1",
+    [expenseId, replacement.description],
+    client,
+  );
 }
 
 /**

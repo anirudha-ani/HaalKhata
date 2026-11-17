@@ -197,6 +197,7 @@ export function GroupDetailPage({
               userById={groupDetail.userById}
               emptyHint="Add the first expense or scan a receipt to get this ledger going."
               settledIds={groupDetail.expenses.settledIds}
+              repaidIds={groupDetail.expenses.repaidIds}
             />
             <LoadMoreFooter
               hasMore={groupDetail.expensesHasMore}

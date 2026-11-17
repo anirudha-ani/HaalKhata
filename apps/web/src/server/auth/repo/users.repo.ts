@@ -139,6 +139,18 @@ export async function findUserByPhone(phone: string): Promise<UserRow | undefine
 }
 
 /**
+ * Resolves a recipient only after they proved ownership of their phone.
+ * @param phone - Canonical E.164 recipient number.
+ * @returns Its current verified account, or undefined for legacy ownership.
+ */
+export async function findVerifiedUserByPhone(phone: string): Promise<UserRow | undefined> {
+  return queryOne<UserRow>(
+    "SELECT usr.* FROM users usr WHERE usr.phone = $1 AND usr.phone_verified_at IS NOT NULL AND usr.deleted_at IS NULL",
+    [phone],
+  );
+}
+
+/**
  * Looks a user up by their Google account id (the ID token's `sub` claim).
  *
  * @param googleSub - Google's stable per-account identifier.

@@ -17,7 +17,7 @@ import type { PoolClient } from "pg";
 import {
   findUserByEmail,
   findUserById,
-  findUserByPhone,
+  findVerifiedUserByPhone,
   findUsersByIds,
   type UserRow,
 } from "@/server/auth/repo/users.repo";
@@ -25,31 +25,29 @@ import { normalizePhone, PHONE_FORMAT_HINT } from "@/server/auth/auth.constants"
 import { isEmailAddress } from "@haalkhata/shared/email/email";
 import {
   findActiveGroupLink,
-  findLinkByToken,
   findActiveProfileLink,
   insertInviteLink,
   revokeGroupLinks,
   revokeInviteLink,
   revokeProfileLinks,
-  type InviteLinkRow,
 } from "@/server/social/repo/inviteLinks.repo";
 import {
   findGroupById,
   listMembers,
   memberRole,
 } from "@/server/group/repo/groups.repo";
+import { assertGroupActive } from "@/server/group/usecase/groupArchive";
 import { OWNER_ROLE } from "@/server/group/group.constants";
 import { joinLiveSplit, previewLiveSplit } from "@/server/expense/usecase/liveSplit/liveSplit.usecase";
-import { LIVE_SPLIT_ENDED_MESSAGE } from "@haalkhata/shared/expense/live/live.constants";
+import { loadActiveLink } from "./activeInviteLink";
 import { joinGroupThroughLink } from "./groupLinkJoin";
 import { newInviteToken } from "./inviteToken";
 import { listActivityMonths, listActivityPage } from "@/server/social/repo/activity.repo";
 import { isMember } from "@/server/group/repo/groups.repo";
 import { isUniqueViolation } from "@/server/common/db/db";
-import { lockReminder, withLedgerTransaction } from "@/server/common/ledger/ledgerLocks";
+import { lockGroupLedgers, lockReminder, withLedgerTransaction } from "@/server/common/ledger/ledgerLocks";
 import {
   countUnread,
-  findLatestNotificationAt,
   insertNotifications,
   listNotificationsByUser,
   markAllRead,
@@ -57,8 +55,6 @@ import {
 import {
   ACTIVITY_PAGE_SIZE,
   DEAD_LINK_MESSAGE,
-  EXPIRED_LINK_MESSAGE,
-  INVITE_LINK_TOKEN_PATTERN,
   MAX_ACTIVITY_PAGE_SIZE,
   NOT_ON_HAALKHATA_MESSAGE,
   REMINDER_COOLDOWN_HOURS,
@@ -67,6 +63,7 @@ import {
   lockFriendRequestInboxes,
   lockParticipantLedgers,
 } from "@/server/common/ledger/ledgerLocks";
+import { findReminderSentAt, recordReminderSent } from "@/server/social/repo/reminderCooldown.repo";
 import { formatMoney } from "@haalkhata/shared/money/money";
 import { safeActivityPath } from "@haalkhata/shared/navigation/activityPath";
 import { listPaymentMethodsByUser } from "@/server/payment/repo/paymentMethods.repo";
@@ -79,7 +76,6 @@ import { transaction } from "@/server/common/db/db";
 import { toFriendRequestUser, toPublicUser } from "@/server/auth/usecase/identity/user.mapper";
 import { friendRequestNotice } from "@/server/social/usecase/friendRequestNotice";
 import { personNotification } from "./personNotification";
-import { notificationLabel } from "./notificationLabel";
 
 /**
  * Adds a friend by id, email, or phone, as a friend request: nothing exists
@@ -166,7 +162,7 @@ async function findUserByIdentifier(email: string, phone: string): Promise<UserR
   }
   const normalizedPhone = normalizePhone(phone);
   if (!normalizedPhone) invalid(PHONE_FORMAT_HINT);
-  return findUserByPhone(normalizedPhone);
+  return findVerifiedUserByPhone(normalizedPhone);
 }
 
 /**
@@ -265,6 +261,8 @@ export async function respondFriendRequest(
   if (accept && await blockedBetween(userId, requesterId)) notFound("friend request not found");
   const recipient = accept ? await findUserById(userId) : undefined;
   await transaction(async (client) => {
+    await lockFriendRequestInboxes(client, [requesterId, userId]);
+    if (accept && await blockedBetween(userId, requesterId, client)) notFound("friend request not found");
     if (!(await deleteFriendRequest(requesterId, userId, client))) {
       notFound("friend request not found");
     }
@@ -349,7 +347,7 @@ export async function listActivity(
 
   const [page, months] = await Promise.all([
     listActivityPage(scope, { limit, cursor: options.cursor ?? "", month: options.month ?? "" }),
-    listActivityMonths(scope),
+    options.cursor ? Promise.resolve([]) : listActivityMonths(scope),
   ]);
 
   const actors = new Map(
@@ -443,24 +441,22 @@ export async function createGroupInviteLink(
   if (!group) notFound("group not found");
   if (!(await isMember(groupId, userId))) denied("you are not a member of this group");
 
-  const existing = await findActiveGroupLink(groupId);
-  if (existing && !existing.expired) return { token: existing.token, expiresAt: existing.expires_at ?? "" };
-  if (existing) await revokeInviteLink(existing.token);
-  try {
+  return withLedgerTransaction(async (client) => {
+    await lockGroupLedgers(client, [groupId]);
+    if (!(await isMember(groupId, userId, client))) denied("you are not a member of this group");
+    await assertGroupActive(groupId, client);
+    const existing = await findActiveGroupLink(groupId, client);
+    if (existing && !existing.expired) return { token: existing.token, expiresAt: existing.expires_at ?? "" };
+    if (existing) await revokeInviteLink(existing.token, client);
     const created = await insertInviteLink({
       token: newInviteToken(),
       kind: "group",
       inviterId: userId,
       groupId,
       lifetimeDays: GROUP_INVITE_LINK_LIFETIME_DAYS,
-    });
+    }, client);
     return { token: created.token, expiresAt: created.expires_at ?? "" };
-  } catch (error) {
-    if (!isUniqueViolation(error)) throw error;
-    const winner = await findActiveGroupLink(groupId);
-    if (winner && !winner.expired) return { token: winner.token, expiresAt: winner.expires_at ?? "" };
-    throw error;
-  }
+  });
 }
 
 /**
@@ -514,7 +510,13 @@ export async function revokeGroupInviteLink(userId: string, groupId: string): Pr
   if ((await memberRole(groupId, userId)) !== OWNER_ROLE) {
     denied("only the group owner can turn off the invite link");
   }
-  await revokeGroupLinks(groupId);
+  await withLedgerTransaction(async (client) => {
+    await lockGroupLedgers(client, [groupId]);
+    if ((await memberRole(groupId, userId, client)) !== OWNER_ROLE) {
+      denied("only the group owner can turn off the invite link");
+    }
+    await revokeGroupLinks(groupId, client);
+  });
 }
 
 /**
@@ -553,30 +555,6 @@ export async function previewInviteLink(token: string) {
   };
 }
 
-/**
- * Resolves a presented token to its live link, with one generic refusal for
- * every dead shape and its own for a group link past its date, including
- * one already replaced by a new link. Saying it expired tells the holder
- * nothing they did not have: the token is theirs, and no group, inviter or
- * member count is given with it. A link its owner turned off before its date
- * gets the generic refusal, like a token nobody made.
- *
- * @param token - The token from the shared URL.
- * @returns The active link row.
- * @throws UsecaseError (not_found) for a missing, malformed or turned-off
- *   token; (failed_precondition) for one that has expired.
- */
-async function loadActiveLink(token: string): Promise<InviteLinkRow> {
-  if (!INVITE_LINK_TOKEN_PATTERN.test(token)) notFound(DEAD_LINK_MESSAGE);
-  const link = await findLinkByToken(token);
-  if (!link) notFound(DEAD_LINK_MESSAGE);
-  if (link.kind === "live" && (link.expired || link.revoked)) {
-    throw new UsecaseError("failed_precondition", LIVE_SPLIT_ENDED_MESSAGE);
-  }
-  if (link.expired) throw new UsecaseError("failed_precondition", EXPIRED_LINK_MESSAGE);
-  if (link.revoked) notFound(DEAD_LINK_MESSAGE);
-  return link;
-}
 
 /**
  * Accepts an invite link as the signed-in caller. Nothing is claimed or
@@ -633,36 +611,10 @@ export async function acceptInviteLink(
   const group = await findGroupById(link.group_id!);
   if (!group) notFound(DEAD_LINK_MESSAGE);
   if (await isMember(group.id, userId)) return { groupId: group.id, expenseId: "" };
-  await joinGroupThroughLink(acceptor, group, link.inviter_id, (await findUserById(link.inviter_id))?.name ?? "a member");
-  await notifyInviteAccepted(link.inviter_id, acceptor, group.name, `/groups/${group.id}`);
+  await joinGroupThroughLink(acceptor, group, link.inviter_id, (await findUserById(link.inviter_id))?.name ?? "a member", token);
   return { groupId: group.id, expenseId: "" };
 }
 
-/**
- * Tells the inviter their link worked — the one moment an invite produces
- * for its sender.
- *
- * @param inviterId - Who shared the link.
- * @param acceptor - Who just accepted it; also used for block filtering.
- * @param groupName - The group they joined.
- * @param link - Where tapping the notification lands.
- */
-async function notifyInviteAccepted(
-  inviterId: string,
-  acceptor: UserRow,
-  groupName: string,
-  link: string,
-): Promise<void> {
-  await insertNotifications(
-    [inviterId],
-    {
-      type: "invite_accepted",
-      actorId: acceptor.id,
-      ...personNotification(acceptor.name, `Joined "${notificationLabel(groupName)}"`, "Via your invite"),
-      link,
-    },
-  );
-}
 
 /**
  * Ends a friendship (§37), allowed only when the pairwise net with that
@@ -723,7 +675,7 @@ export async function removeFriend(userId: string, friendId: string): Promise<vo
  * Two guards, both server-side because the client is not the party that
  * suffers when they are missing: you can only remind somebody who actually
  * owes you right now, and only once per {@link REMINDER_COOLDOWN_HOURS}. The
- * previous reminder is its own cooldown record — no extra table needed.
+ * cooldown survives clearing notifications, blocking or marking them read.
  *
  * @param userId - Id of the authenticated caller sending the reminder.
  * @param debtorId - Id of the person being reminded.
@@ -744,7 +696,7 @@ export async function sendReminder(userId: string, debtorId: string): Promise<vo
    * @param client - The reminder's transaction, or none for the early check.
    */
   const refuseWithinCooldown = async (client?: PoolClient) => {
-    const lastSentAt = await findLatestNotificationAt(debtorId, "reminder", link, client);
+    const lastSentAt = await findReminderSentAt(userId, debtorId, client);
     if (!lastSentAt) return;
     const elapsedHours = (Date.now() - new Date(lastSentAt).getTime()) / 3_600_000;
     if (elapsedHours < REMINDER_COOLDOWN_HOURS) {
@@ -803,5 +755,6 @@ export async function sendReminder(userId: string, debtorId: string): Promise<vo
       },
       client,
     );
+    await recordReminderSent(userId, debtorId, client);
   });
 }

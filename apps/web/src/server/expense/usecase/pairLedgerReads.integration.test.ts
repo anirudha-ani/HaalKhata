@@ -15,6 +15,7 @@
  * Skips itself when no database is reachable, so it is safe in the suite.
  */
 
+import { expenseDebts } from "@haalkhata/shared/expense/debts";
 import { randomUUID } from "node:crypto";
 import { Client } from "pg";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
@@ -34,15 +35,53 @@ const TRIP = "grp-trip";
 const FLAT_EXPENSES = 2000;
 
 /** What the reads under test did, in order: each history read, group list read and group lock. */
-const { reads } = vi.hoisted(() => ({ reads: [] as string[] }));
+const { reads, rowBudgets } = vi.hoisted(() => ({ reads: [] as string[], rowBudgets: { expenses: [] as number[], children: [] as number[], totals: [] as number[], scopedTotals: [] as number[], userTotals: [] as number[] } }));
 
 vi.mock("@/server/expense/repo/expenses.repo", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/server/expense/repo/expenses.repo")>();
   return {
     ...actual,
+    loadExpenseChildren: async (...args: Parameters<typeof actual.loadExpenseChildren>) => {
+      rowBudgets.children.push(args[0].length);
+      return actual.loadExpenseChildren(...args);
+    },
+    listExpensesInvolvingUser: async (...args: Parameters<typeof actual.listExpensesInvolvingUser>) => {
+      reads.push("personal history");
+      return actual.listExpensesInvolvingUser(...args);
+    },
+    listScopedExpensesWithAnyOf: async (...args: Parameters<typeof actual.listScopedExpensesWithAnyOf>) => {
+      reads.push("pair history");
+      return actual.listScopedExpensesWithAnyOf(...args);
+    },
     listExpensesByGroups: async (...args: Parameters<typeof actual.listExpensesByGroups>) => {
       reads.push("group history");
       return actual.listExpensesByGroups(...args);
+    },
+  };
+});
+vi.mock("@/server/expense/repo/movements.repo", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/server/expense/repo/movements.repo")>();
+  return {
+    ...actual,
+    sumUserMovements: async (...args: Parameters<typeof actual.sumUserMovements>) => {
+      const rows = await actual.sumUserMovements(...args);
+      rowBudgets.userTotals.push(rows.length);
+      return rows;
+    },
+    sumScopedPairMovements: async (...args: Parameters<typeof actual.sumScopedPairMovements>) => {
+      const rows = await actual.sumScopedPairMovements(...args);
+      rowBudgets.scopedTotals.push(rows.length);
+      return rows;
+    },
+    sumScopeMovements: async (...args: Parameters<typeof actual.sumScopeMovements>) => {
+      const rows = await actual.sumScopeMovements(...args);
+      rowBudgets.totals.push(rows.length);
+      return rows;
+    },
+    listPairMovementPage: async (...args: Parameters<typeof actual.listPairMovementPage>) => {
+      const rows = await actual.listPairMovementPage(...args);
+      rowBudgets.expenses.push(rows.length);
+      return rows;
     },
   };
 });
@@ -223,6 +262,7 @@ describe.skipIf(!reachable)("how often a pair's group histories are read, agains
 
   beforeEach(() => {
     reads.length = 0;
+    for (const budget of Object.values(rowBudgets)) budget.length = 0;
   });
 
   afterAll(async () => {
@@ -234,10 +274,15 @@ describe.skipIf(!reachable)("how often a pair's group histories are read, agains
     await admin.end();
   });
 
-  it("reads the shared groups' histories once for the friend page, balances and settle dialog together", async () => {
-    const ledger = await balances.getFriendLedger(SARA, TOMAS);
+  it("bounds friend-page hydration independently of the two-thousand-bill history", async () => {
+    const ledger = await balances.getFriendLedger(SARA, TOMAS, 1);
+    expect(ledger.entries).toHaveLength(1);
+    expect(ledger.nextCursor).not.toBe("");
+    expect(rowBudgets.expenses).toEqual([2]);
+    expect(rowBudgets.children).toEqual([1]);
+    expect(Math.max(...rowBudgets.totals)).toBeLessThanOrEqual(3);
 
-    expect(reads.filter((read) => read === "group history")).toHaveLength(1);
+    expect(reads.filter((read) => read === "group history")).toHaveLength(0);
     expect(await saraSeesInDollars()).toMatchObject({
       netCents: -200_500,
       scopes: ["direct 2500", `${FLAT} -200000`, `${TRIP} -3000`],
@@ -246,14 +291,33 @@ describe.skipIf(!reachable)("how often a pair's group histories are read, agains
       .toEqual(["direct EUR 700", "direct USD 2500", `${FLAT} USD -200000`, `${TRIP} USD -3000`]);
   });
 
+  it("uses bounded aggregates for the dashboard, reminder and requested scope pairs", async () => {
+    const overall = await balances.getOverallBalances(SARA);
+    const tomas = overall.counterparties.find((entry) => entry.user?.id === TOMAS);
+    expect(tomas?.balances).toEqual([{ currency: "USD",cents: -200_500 },{ currency: "EUR",cents: 700 }]);
+    expect(await balances.netWithUser(SARA,TOMAS)).toEqual(new Map([["USD",-200_500],["EUR",700]]));
+    const direct = await balances.oneOffNetsWith(SARA,[TOMAS,LENA,TOMAS,SARA]);
+    expect(direct.get(TOMAS)).toEqual(new Map([["USD",2500],["EUR",700]]));
+    expect(direct.get(LENA)).toEqual(new Map());
+    expect(direct.size).toBe(2);
+    expect(reads).not.toContain("personal history");
+    expect(reads).not.toContain("pair history");
+    expect(rowBudgets.children).toEqual([]);
+    expect(rowBudgets.userTotals).toEqual([4,4]);
+    expect(rowBudgets.scopedTotals).toEqual([2]);
+  });
+
   it("shows an expense's page without reading its group's history", async () => {
     const page = await expenses.getExpense(SARA, "flat-1");
 
     expect(page.expense?.id).toBe("flat-1");
     expect(reads).not.toContain("group history");
+    expect(reads).not.toContain("pair history");
+    expect(rowBudgets.children).toEqual([1]);
+    expect(rowBudgets.scopedTotals.every((count) => count <= 1)).toBe(true);
   });
 
-  it("settles on the net reading each shared group's history once while holding their locks", async () => {
+  it("settles on the net without hydrating group histories while holding their locks", async () => {
     const shown = await saraSeesInDollars();
     reads.length = 0;
 
@@ -269,13 +333,13 @@ describe.skipIf(!reachable)("how often a pair's group histories are read, agains
       operationId: randomUUID(),
     });
 
-    expect(readsUnderLocks("group history")).toBe(1);
+    expect(readsUnderLocks("group history")).toBe(0);
     // The one read of who shares which group, to check the set did not grow.
     expect(readsUnderLocks("group list")).toBe(2);
     expect(await saraSeesInDollars()).toEqual({ netCents: 0, scopes: [], digest: "" });
   });
 
-  it("pays a balance in one scope reading it once too", async () => {
+  it("pays a balance in one scope using aggregate rows", async () => {
     await insertDebt(database, { id: "flat-boiler", groupId: FLAT, amountCents: 4000, currency: "USD", paidBy: TOMAS, owedBy: SARA });
     reads.length = 0;
 
@@ -290,7 +354,7 @@ describe.skipIf(!reachable)("how often a pair's group histories are read, agains
       operationId: randomUUID(),
     });
 
-    expect(readsUnderLocks("group history")).toBe(1);
+    expect(readsUnderLocks("group history")).toBe(0);
     expect(readsUnderLocks("group list")).toBe(2);
     expect(await saraSeesInDollars()).toEqual({ netCents: 0, scopes: [], digest: "" });
   });
@@ -317,4 +381,86 @@ describe.skipIf(!reachable)("how often a pair's group histories are read, agains
     }
     expect(await balances.userNetInGroup(LENA, TRIP)).toEqual(new Map([["USD", 1800]]));
   });
+  it("validates an explicit group payment without hydrating the group twice", async () => {
+    await insertDebt(database, { id: "flat-scoped", groupId: FLAT, amountCents: 19, currency: "USD", paidBy: TOMAS, owedBy: SARA });
+    reads.length = 0;
+    const result = await expenses.recordSettlement(SARA, {
+      groupId: FLAT, toUserId: TOMAS, amountCents: 1, currency: "USD",
+      method: "cash", note: "", operationId: randomUUID(),
+    });
+    expect(result.amountCents).toBe(1);
+    expect(reads).not.toContain("pair history");
+    expect(rowBudgets.children).toEqual([]);
+    expect(rowBudgets.scopedTotals).toEqual([1]);
+    expect(readsUnderLocks("group history")).toBe(0);
+    expect((await balances.getFriendLedger(SARA, TOMAS)).groupBalances.find((scope) => scope.groupId === FLAT)?.netCents).toBe(-18);
+  });
+
+  it("keeps SQL contributions identical to the shared allocator through bulk writes and edits", async () => {
+    const people = ["person-a", "person-A", "person-b", "person-z", "person-é", "person_1"];
+    await database.query("BEGIN");
+    try {
+      await database.query(`INSERT INTO users(id,email,name,avatar_color,google_sub) SELECT person,md5(person) || '@projection.example','Projection','#c73e2e',person FROM unnest($1::text[]) person`, [people]);
+      for (let scenario = 0; scenario < 40; scenario++) {
+        const expenseId = `projection-${scenario}`;
+        const total = scenario === 39 ? 10_000_000_000_000 : 101 + scenario;
+        const paid = people.map((userId, index) => ({ userId, amountCents: index === scenario % people.length ? Math.floor(total / 3) : index === (scenario + 1) % people.length ? total - Math.floor(total / 3) : 0 }));
+        const owed = people.map((userId, index) => ({ userId, amountCents: index === (scenario + 2) % people.length ? Math.floor(total / 2) : index === (scenario + 3) % people.length ? total - Math.floor(total / 2) : 0 }));
+        await database.query(`INSERT INTO expenses(id,description,amount_cents,currency,expense_date,split_type,created_by) VALUES($1,$1,$2,'USD','2026-10-01','exact',$3)`, [expenseId,total,people[0]]);
+        await database.query(`INSERT INTO expense_payers(expense_id,user_id,amount_cents) SELECT $1,person,cents FROM unnest($2::text[],$3::bigint[]) AS amounts(person,cents)`, [expenseId,people,paid.map((entry) => entry.amountCents)]);
+        await database.query(`INSERT INTO expense_splits(expense_id,user_id,owed_cents) SELECT $1,person,cents FROM unnest($2::text[],$3::bigint[]) AS amounts(person,cents)`, [expenseId,people,owed.map((entry) => entry.amountCents)]);
+        /** Reads the stored directed contributions in a stable comparison order. */
+        const projected = async () => (await database.query(`SELECT from_user AS "from",to_user AS "to",amount_cents AS "amountCents" FROM expense_pair_movements WHERE expense_id=$1`, [expenseId])).rows.map((entry) => ({ ...entry, amountCents: Number(entry.amountCents) })).sort((first, second) => `${first.from}|${first.to}`.localeCompare(`${second.from}|${second.to}`));
+        /** Normalizes the independent shared allocator for comparison. */
+        const expected = () => expenseDebts(paid,owed).sort((first, second) => `${first.from}|${first.to}`.localeCompare(`${second.from}|${second.to}`));
+        expect(await projected()).toEqual(expected());
+        // A live joiner at zero moves nothing; removing shares during a live
+        // edit leaves exactly the matching the existing allocator makes.
+        owed[scenario % people.length].amountCents += 1;
+        await database.query(`UPDATE expense_splits SET owed_cents=$3 WHERE expense_id=$1 AND user_id=$2`, [expenseId,owed[scenario % people.length].userId,owed[scenario % people.length].amountCents]);
+        expect(await projected()).toEqual(expected());
+        await database.query(`UPDATE expenses SET deleted_at=now(),expense_date='2026-10-02' WHERE id=$1`, [expenseId]);
+        expect(await projected()).toEqual(expected());
+        expect((await database.query(`SELECT bool_and(deleted_at IS NOT NULL AND expense_date='2026-10-02') AS retained FROM expense_pair_movements WHERE expense_id=$1`, [expenseId])).rows[0].retained).toBe(true);
+        // The migration backfill calls this exact function, which must be
+        // idempotent for both active and historical bills.
+        await database.query(`SELECT refresh_expense_pair_movements($1)`, [expenseId]);
+        expect(await projected()).toEqual(expected());
+      }
+    } finally {
+      await database.query("ROLLBACK");
+    }
+  });
+
+  it("remaps a thousand affected bills and invalidates surviving-pair titles without changing their money", async () => {
+    const accountId = "projection-heavy-account";
+    await database.query(`INSERT INTO users(id,email,name,avatar_color,google_sub) VALUES($1,'projection-heavy@example.com','Heavy fixture','#c73e2e',$1)`,[accountId]);
+    await database.query(`INSERT INTO expenses(id,description,amount_cents,currency,expense_date,split_type,created_by)
+      SELECT 'erase-budget-' || ordinal,'Owned history',1,'USD','2026-10-01','exact',$1 FROM generate_series(1,1000) ordinal`,[accountId]);
+    await database.query(`INSERT INTO expense_payers(expense_id,user_id,amount_cents) SELECT id,$1,1 FROM expenses WHERE id LIKE 'erase-budget-%'`,[accountId]);
+    await database.query(`INSERT INTO expense_splits(expense_id,user_id,owed_cents) SELECT id,$1,1 FROM expenses WHERE id LIKE 'erase-budget-%'`,[SARA]);
+    await insertDebt(database,{ id: "erase-survivor-bill",groupId: null,amountCents: 1,currency: "USD",paidBy: SARA,owedBy: TOMAS });
+    await database.query("UPDATE expenses SET created_by=$1,expense_date='2026-12-01' WHERE id='erase-survivor-bill'",[accountId]);
+    const before = await balances.getFriendLedger(SARA,TOMAS,1);
+    const ledgerRepo = await import("@/server/expense/repo/ledger.repo");
+    const client = database as unknown as import("pg").PoolClient;
+    const unrelated = await ledgerRepo.pairHistoryDigest(TOMAS,LENA,client);
+    const deletion = await import("@/server/auth/usecase/deletion/accountDeletion.usecase");
+    const started = performance.now();
+    await deletion.deleteAccount(accountId,"DELETE");
+    expect(performance.now()-started).toBeLessThan(10_000);
+    const rows = (await database.query(`SELECT movement.to_user,count(*)::int AS count,sum(movement.amount_cents)::text AS cents
+      FROM expense_pair_movements movement WHERE expense_id LIKE 'erase-budget-%' GROUP BY movement.to_user`)).rows;
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ count: 1000,cents: "1000" });
+    expect(rows[0].to_user).not.toBe(accountId);
+    expect((await database.query(`SELECT * FROM ledger_pair_revisions WHERE low_user=$1 OR high_user=$1`,[accountId])).rows).toEqual([]);
+    await expect(balances.listFriendLedgerEntries(SARA,TOMAS,{ cursor: before.nextCursor,limit: 1 })).rejects.toMatchObject({ code: "failed_precondition" });
+    const after = await balances.getFriendLedger(SARA,TOMAS,1);
+    expect(after.nets).toEqual(before.nets);
+    expect(after.entries[0]).toMatchObject({ id: "erase-survivor-bill",description: "Deleted expense",deltaCents: 1 });
+    expect(await ledgerRepo.pairHistoryDigest(TOMAS,LENA,client)).toBe(unrelated);
+    await expect(balances.listFriendLedgerEntries(SARA,TOMAS,{ cursor: after.nextCursor,limit: 1 })).resolves.toMatchObject({ entries: expect.any(Array) });
+  });
+
 });

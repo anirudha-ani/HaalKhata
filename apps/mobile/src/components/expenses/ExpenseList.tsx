@@ -1,4 +1,4 @@
-/** Expense list rows: category, payer summary, and your lent/borrowed net per expense. */
+/** Expense list rows: category, payer summary, and your lent/borrowed net per expense, or that you paid it back. */
 
 import type { Expense } from "@haalkhata/shared/api/plainMessages";
 import type { User } from "@haalkhata/protogen/common/v1/common_pb";
@@ -28,6 +28,7 @@ export function ExpenseList({
   emptyHint,
   groupNameById,
   settledIds,
+  repaidIds,
 }: {
   /** Expenses to render, newest-first as returned by the server. */
   expenses: Expense[];
@@ -51,6 +52,12 @@ export function ExpenseList({
    * here" — and mute the amount into history.
    */
   settledIds?: Set<string>;
+  /**
+   * Ids of expenses the viewer has paid back from the expense's screen: the
+   * payments they recorded for it cover their share. Those rows say "paid
+   * back" in place of "you borrowed", and mute the amount into history.
+   */
+  repaidIds?: Set<string>;
 }) {
   const router = useRouter();
   const { isLargeText } = useResponsiveLayout();
@@ -108,6 +115,9 @@ export function ExpenseList({
         const status = settled
           ? settledStatus(myNet > 0, expense.groupId !== "", otherFirstNames)
           : null;
+        // Said about this expense alone, so it outranks the balance-wide
+        // state: the viewer named this expense when paying.
+        const repaid = !deleted && myNet < 0 && (repaidIds?.has(expense.id) ?? false);
 
         return (
           <Pressable
@@ -157,6 +167,14 @@ export function ExpenseList({
                 <Text style={styles.netNone}>no longer counts</Text>
               ) : myNet === 0 ? (
                 <Text style={styles.netNone}>{evenExpenseLabel(expense, meId)}</Text>
+              ) : repaid ? (
+                <>
+                  <View style={styles.settledRow}>
+                    <Check color={colors.pos600} size={12} />
+                    <Text style={styles.settledLabel}>paid back</Text>
+                  </View>
+                  <Money cents={myNet} currency={expense.currency} style={styles.netMuted} />
+                </>
               ) : status ? (
                 <>
                   {/* The state, not a verdict on the expense: "settled" here

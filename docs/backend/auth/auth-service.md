@@ -589,9 +589,24 @@ capabilities, grouped IDs, key files and deploy variables.
 is always the authenticated caller; a user ID cannot be supplied by the client.
 
 [accountDeletion.usecase.ts](../../../apps/web/src/server/auth/usecase/deletion/accountDeletion.usecase.ts)
-locks the account, revokes its encrypted Apple grants and erases personal data
-within one database transaction. A provider failure leaves the local account
-intact and retryable. Outstanding balances never prevent deletion.
+locks the account and prepares all personal-data erasure in one database
+transaction, retaining the encrypted Apple grants in memory. It then runs
+`SET CONSTRAINTS ALL IMMEDIATE` before revoking those captured grants. Only
+`COMMIT` follows the provider calls: database lock failures and deferred
+integrity checks happen while every local change is still reversible. A
+provider failure rolls the pending database erasure back. Outstanding balances
+never prevent deletion.
+
+Apple and PostgreSQL do not share an atomic commit. A lost provider response
+or failure of the final database commit can leave external revocation ahead
+of local deletion; retrying deletion remains necessary in that case. The
+ordering removes avoidable database-work failures after revocation, without
+claiming distributed atomicity.
+
+Local regression: with PostgreSQL running, execute
+`MODERATION_TEST_CONTAINER=haalkhata-db-1 pnpm test deletionOrdering.integration.test.ts`.
+It verifies provider-failure rollback, deferred-check failure before revocation,
+and a revision-lock cycle that must fail before any provider call.
 
 The original user row, credentials, personal notification/activity history,
 comments, payment handles, pending requests and invite links are removed.

@@ -1,7 +1,8 @@
 /** Tests for this phone's push state: when it registers, when it asks, and what sign-out leaves behind. */
 
+import { PUSH_CLEANUP_ERROR, PUSH_CLEANUP_TIMEOUT_MS } from "./push.constants";
 import { Code, ConnectError } from "@connectrpc/connect";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const native = vi.hoisted(() => ({
   storage: new Map<string, string>(),
@@ -229,5 +230,37 @@ describe("forgetThisPhone", () => {
     await expect(store.forgetThisPhone()).resolves.toBeUndefined();
     expect(native.dismissAllNotificationsAsync).toHaveBeenCalledOnce();
     expect(native.storage.has("haalkhata-push-device")).toBe(false);
+  });
+});
+
+afterEach(() => { vi.useRealTimers(); });
+
+describe("clearPushTraces deadline", () => {
+  it.each(["badge", "banners"] as const)("refuses a stuck %s operation and permits a complete retry", async (operation) => {
+    vi.useFakeTimers();
+    const pending = operation === "badge" ? native.setBadgeCountAsync : native.dismissAllNotificationsAsync;
+    pending.mockReturnValueOnce(new Promise(() => {}));
+    const store = await freshStore();
+    const clearing = store.clearPushTraces().catch((failure: Error) => failure);
+    expect(native.setBadgeCountAsync).toHaveBeenCalledWith(0);
+    expect(native.dismissAllNotificationsAsync).toHaveBeenCalledOnce();
+    await vi.advanceTimersByTimeAsync(PUSH_CLEANUP_TIMEOUT_MS);
+    expect(await clearing).toMatchObject({ message: PUSH_CLEANUP_ERROR });
+    await expect(store.clearPushTraces()).resolves.toBeUndefined();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("reports a rejected native cleanup rather than silently crossing the account boundary", async () => {
+    native.dismissAllNotificationsAsync.mockRejectedValueOnce(new Error("Native service failed"));
+    const store = await freshStore();
+    await expect(store.clearPushTraces()).rejects.toThrow(PUSH_CLEANUP_ERROR);
+    await expect(store.clearPushTraces()).resolves.toBeUndefined();
+  });
+
+  it("accepts disabled or unsupported badges after every cleanup operation answers", async () => {
+    native.setBadgeCountAsync.mockResolvedValueOnce(false);
+    const store = await freshStore();
+    await expect(store.clearPushTraces()).resolves.toBeUndefined();
+    expect(native.dismissAllNotificationsAsync).toHaveBeenCalledOnce();
   });
 });

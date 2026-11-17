@@ -306,6 +306,7 @@ friendship inbox lock at once — the one global order).
 11. [GetFriendLedger](#11-getfriendledger)
 12. [ListFriendLedgerEntries](#12-listfriendledgerentries)
 13. [ListComments](#13-listcomments)
+14. [ListExpensePayments](#14-listexpensepayments)
 
 ### Paging
 
@@ -486,10 +487,10 @@ created.
   against a since-deleted expense keeps the row that explains it. Balance
   math reads its own deleted-excluded queries.
 - **`settled_expense_ids`** — ids with *nothing pending for the caller*:
-  - Settlements pay down a **scope's** balance, never a specific expense, so
-    "settled" honestly means "the scope it lives in owes nothing involving
-    you". A group expense qualifies when the caller's net in that group is
-    zero; while the group still owes, none of its expenses are singled out.
+  - Payments, including ones recorded for a bill, reduce the scope balance.
+    A zero net settles a simplified group. In a pairwise group the caller can
+    owe one member and be owed the same amount by another: those edges stay
+    open unless every member’s net in that currency is zero (a cancelling loop).
   - A one-off qualifies when the caller's pair balance **in the expense's
     currency** with *every* other participant is zero.
   - A scope that nets to zero with no payment recorded (two expenses cancel)
@@ -576,6 +577,9 @@ created.
 | comments_next_cursor | string | With `comment_limit`: where the older comments start; empty when none. |
 | users | repeated User | Everyone referenced by the expense. |
 | history | repeated ExpenseEvent | `{actor, type, created_at}`, oldest first. |
+| repayments | repeated Repayment | Per creditor: this bill’s share, amount already paid, current payable amount and any refusal. |
+| payments | repeated Settlement | Newest 30 active bill payments involving the caller, ordered oldest first. |
+| payments_next_cursor | string | Pass to ListExpensePayments for older payments; empty at the beginning. |
 | settled_for_viewer | bool | See notes. |
 | has_later_settlement | bool | See notes. |
 
@@ -1047,3 +1051,16 @@ per scope; callers only use the response to confirm the recording):
 | --- | --- | --- |
 | comments | repeated Comment | Oldest first. |
 | next_cursor | string | Where older comments start; empty at the first comment. |
+
+
+### 14. ListExpensePayments
+
+**Route:** `POST /api/connect/expense.v1.ExpenseService/ListExpensePayments`
+
+Send `expense_id` and the `payments_next_cursor` from GetExpense (or the
+previous page’s `next_cursor`). Each page contains up to 30 older payments
+in chronological order, the public `users` referenced on that page, and
+`next_cursor`. An empty continuation means there are no older payments.
+Each request checks current access to the bill and only returns payments
+where the caller is the sender or recipient. Removing a payment removes it
+from the history and from the totals used for bill repayment badges.

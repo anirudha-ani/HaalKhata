@@ -3,6 +3,7 @@
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import { LIVE_SPLIT_CHECK_INTERVAL_MS } from "@haalkhata/shared/expense/live/live.constants";
+import { useEarlierHistoryAPI } from "./useEarlierHistoryAPI";
 import { useRef, useState } from "react";
 import { authClient, errorMessage, expenseClient } from "@/lib/api/connect";
 import { newOperationId } from "@/lib/api/operationId";
@@ -68,6 +69,9 @@ export function useExpenseDetail(expenseId: string) {
     : [];
   const earlierFirstReadFailed = earlierQuery.isError && !earlierQuery.data;
 
+  const earlierHistory = useEarlierHistoryAPI(expenseId, detailQuery.data?.historyNextCursor ?? "");
+  const history = [...earlierHistory.history, ...(detailQuery.data?.history ?? [])];
+
   // One id per comment being sent: the same words sent again after a failure
   // are a retry, so a comment whose reply got lost is not stored twice.
   const commentAttempt = useRef<{ body: string; operationId: string } | null>(null);
@@ -111,11 +115,16 @@ export function useExpenseDetail(expenseId: string) {
   });
 
   /** Every user referenced by the expense, keyed by user id for fast lookup. */
-  const userById = new Map((detailQuery.data?.users ?? []).map((user) => [user.id, user]));
+  const userById = new Map([...(detailQuery.data?.users ?? []), ...history.flatMap((event) => event.actor ? [event.actor] : [])].map((user) => [user.id, user]));
 
   return {
     me: currentUserQuery.data,
     detail: detailQuery.data,
+    history,
+    hasEarlierHistory: earlierHistory.hasEarlier,
+    showEarlierHistory: earlierHistory.showEarlier,
+    isLoadingEarlierHistory: earlierHistory.isLoadingEarlier,
+    earlierHistoryError: earlierHistory.earlierError,
     /** The loaded thread, oldest first: earlier pages, then the detail's newest comments. */
     comments: [...earlierComments, ...(detailQuery.data?.comments ?? [])],
     /** Whether older comments than the loaded ones exist. */
@@ -142,11 +151,11 @@ export function useExpenseDetail(expenseId: string) {
      * is worth showing at all. Every expense has a creation event; only a
      * later change makes the section say anything.
      */
-    changes: (detailQuery.data?.history ?? []).filter(
+    changes: history.filter(
       (event) => event.type === "expense_updated" || event.type === "expense_deleted",
     ),
     /** The deletion event when the expense has been deleted: who did it, and when. */
-    deletion: (detailQuery.data?.history ?? []).find(
+    deletion: history.find(
       (event) => event.type === "expense_deleted",
     ),
     detailError: detailQuery.error,

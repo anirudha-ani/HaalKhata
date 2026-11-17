@@ -1,5 +1,8 @@
 /** Push domain constants: delivery service endpoints, batch sizes, timing and limits. */
 
+/** Serializes one account's device registrations and deliberate removals. */
+export const PUSH_DEVICES_LOCK_PREFIX = "push-devices:";
+
 /** Expo's send endpoint; one request carries at most {@link PUSH_BATCH_SIZE} messages. */
 export const EXPO_PUSH_SEND_URL = "https://exp.host/--/api/v2/push/send";
 

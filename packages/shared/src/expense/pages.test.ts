@@ -11,13 +11,20 @@ import { firstStatementPage, mergeExpensePages, statementEntries } from "./pages
  * @param expenseIds - The page's expenses, newest first.
  * @param userIds - The people it names.
  * @param settledExpenseIds - Its settled expenses.
+ * @param repaidExpenseIds - Its paid-back expenses.
  * @returns The page.
  */
-function expensePage(expenseIds: string[], userIds: string[], settledExpenseIds: string[]) {
+function expensePage(
+  expenseIds: string[],
+  userIds: string[],
+  settledExpenseIds: string[],
+  repaidExpenseIds: string[] = [],
+) {
   return {
     expenses: expenseIds.map((expenseId) => ({ id: expenseId }) as Expense),
     users: userIds.map((userId) => ({ id: userId, name: userId }) as User),
     settledExpenseIds,
+    repaidExpenseIds,
   } as unknown as ListExpensesResponse;
 }
 
@@ -40,8 +47,21 @@ describe("mergeExpensePages", () => {
     expect(merged.settledIds).toEqual(new Set(["exp-3", "exp-1"]));
   });
 
+  it("joins the paid-back marks of each page", () => {
+    const merged = mergeExpensePages([
+      expensePage(["exp-3", "exp-2"], [], [], ["exp-2"]),
+      expensePage(["exp-1"], [], [], ["exp-1"]),
+    ]);
+    expect(merged.repaidIds).toEqual(new Set(["exp-2", "exp-1"]));
+  });
+
   it("is empty before anything has loaded", () => {
-    expect(mergeExpensePages([])).toEqual({ expenses: [], userById: new Map(), settledIds: new Set() });
+    expect(mergeExpensePages([])).toEqual({
+      expenses: [],
+      userById: new Map(),
+      settledIds: new Set(),
+      repaidIds: new Set(),
+    });
   });
 });
 

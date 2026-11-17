@@ -20,7 +20,7 @@ vi.mock("@/server/social/repo/friendships.repo", () => ({
 vi.mock("@/server/auth/repo/users.repo", () => ({
   findUserByEmail: vi.fn(),
   findUserById: vi.fn(),
-  findUserByPhone: vi.fn(),
+  findVerifiedUserByPhone: vi.fn(),
   findUsersByIds: vi.fn(),
 }));
 vi.mock("@/server/social/repo/activity.repo", () => ({
@@ -33,7 +33,6 @@ vi.mock("@/server/group/repo/groups.repo", () => ({
 }));
 vi.mock("@/server/social/repo/notifications.repo", () => ({
   countUnread: vi.fn(),
-  findLatestNotificationAt: vi.fn(),
   insertNotifications: vi.fn(),
   listNotificationsByUser: vi.fn(),
   markAllRead: vi.fn(),
@@ -55,9 +54,14 @@ vi.mock("@/server/common/ledger/ledgerLocks", () => ({
 
 import { findUserById } from "@/server/auth/repo/users.repo";
 import {
-  findLatestNotificationAt,
   insertNotifications,
 } from "@/server/social/repo/notifications.repo";
+vi.mock("@/server/social/repo/reminderCooldown.repo", () => ({
+  findReminderSentAt: vi.fn(),
+  recordReminderSent: vi.fn(),
+}));
+
+import { findReminderSentAt, recordReminderSent } from "@/server/social/repo/reminderCooldown.repo";
 import { netWithUser } from "@/server/expense/usecase/balance.usecase";
 import {
   listPaymentMethodsByUser,
@@ -126,7 +130,7 @@ function methodRow(
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(findUserById).mockImplementation(async (userId) => userRow(userId));
-  vi.mocked(findLatestNotificationAt).mockResolvedValue(undefined);
+  vi.mocked(findReminderSentAt).mockResolvedValue(undefined);
   vi.mocked(netWithUser).mockResolvedValue(new Map([["USD", 500]]));
   vi.mocked(insertNotifications).mockResolvedValue(undefined);
   vi.mocked(listPaymentMethodsByUser).mockResolvedValue([]);
@@ -134,14 +138,13 @@ beforeEach(() => {
 
 describe("reminder cooldown ordering", () => {
   it("rejects an active cooldown without computing the ledger", async () => {
-    vi.mocked(findLatestNotificationAt).mockResolvedValue(new Date().toISOString());
+    vi.mocked(findReminderSentAt).mockResolvedValue(new Date().toISOString());
 
     await expect(sendReminder(SENDER_ID, DEBTOR_ID)).rejects.toThrow(/already reminded/);
 
-    expect(findLatestNotificationAt).toHaveBeenCalledExactlyOnceWith(
+    expect(findReminderSentAt).toHaveBeenCalledExactlyOnceWith(
+      SENDER_ID,
       DEBTOR_ID,
-      "reminder",
-      `/friends/${SENDER_ID}`,
       undefined,
     );
     expect(netWithUser).not.toHaveBeenCalled();
@@ -162,7 +165,7 @@ describe("reminder cooldown ordering", () => {
   it("computes the balance only after the cooldown lookup passes", async () => {
     await sendReminder(SENDER_ID, DEBTOR_ID);
 
-    const cooldownOrder = vi.mocked(findLatestNotificationAt).mock.invocationCallOrder[0];
+    const cooldownOrder = vi.mocked(findReminderSentAt).mock.invocationCallOrder[0];
     const ledgerOrder = vi.mocked(netWithUser).mock.invocationCallOrder[0];
     expect(cooldownOrder).toBeLessThan(ledgerOrder);
     expect(insertNotifications).toHaveBeenCalledTimes(1);
@@ -175,14 +178,14 @@ describe("reminder cooldown ordering", () => {
     // same client.
     await sendReminder(SENDER_ID, DEBTOR_ID);
 
+    expect(recordReminderSent).toHaveBeenCalledWith(SENDER_ID, DEBTOR_ID, transactionClient);
     expect(lockReminder).toHaveBeenCalledWith(transactionClient, SENDER_ID, DEBTOR_ID);
     const lockOrder = vi.mocked(lockReminder).mock.invocationCallOrder[0];
-    const lockedCooldownOrder = vi.mocked(findLatestNotificationAt).mock.invocationCallOrder[1];
+    const lockedCooldownOrder = vi.mocked(findReminderSentAt).mock.invocationCallOrder[1];
     expect(lockOrder).toBeLessThan(lockedCooldownOrder);
-    expect(findLatestNotificationAt).toHaveBeenLastCalledWith(
+    expect(findReminderSentAt).toHaveBeenLastCalledWith(
+      SENDER_ID,
       DEBTOR_ID,
-      "reminder",
-      `/friends/${SENDER_ID}`,
       transactionClient,
     );
     expect(insertNotifications).toHaveBeenCalledWith(

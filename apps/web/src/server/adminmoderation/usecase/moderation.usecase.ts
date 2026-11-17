@@ -11,6 +11,7 @@
  */
 
 import type { PoolClient } from "pg";
+import { lockExpenseLedger } from "@/server/common/ledger/ledgerLocks";
 import { invalid, notFound, UsecaseError } from "@/server/common/errors";
 import { logEvent } from "@/server/common/logger";
 import { snapshot, transaction } from "@/server/common/db/db";
@@ -167,6 +168,7 @@ export async function removeReportedContent(reportId: string): Promise<void> {
   const targetKind = await transaction(async (client) => {
     const report = await lockOpenReport(reportId, client);
     const targetId = report.target_id;
+    if (report.target_kind === "expense") await lockExpenseLedger(client, targetId);
     // First, while a comment's row still says which lines quote it.
     await replaceQuotations(
       { kind: report.target_kind, id: targetId },

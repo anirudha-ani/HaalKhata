@@ -22,3 +22,9 @@ export const TOKEN_RETRY_DELAYS_MS = [2_000, 8_000] as const;
 
 /** Sign-out waits at most this long for the server to forget this phone. */
 export const REMOVE_DEVICE_TIMEOUT_MS = 2_000;
+
+/** Native account cleanup must return an outcome instead of holding authentication forever. */
+export const PUSH_CLEANUP_TIMEOUT_MS = 5_000;
+
+/** A failed native cleanup keeps the next session unpublished until the person retries. */
+export const PUSH_CLEANUP_ERROR = "This phone couldn't clear its previous notifications. Please try again.";

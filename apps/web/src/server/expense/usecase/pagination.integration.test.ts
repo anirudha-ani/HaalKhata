@@ -13,10 +13,28 @@
  * Skips itself when no database is reachable, so it is safe in the suite.
  */
 
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { Client } from "pg";
 import { ExpenseListPart } from "@haalkhata/protogen/expense/v1/expense_pb";
 import { testDatabaseName } from "@/server/common/testing/testDatabase";
+
+const { pageReads } = vi.hoisted(() => ({ pageReads: [] as { sql: string; values?: readonly unknown[]; rows: number }[] }));
+vi.mock("@/server/common/db/db", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/server/common/db/db")>();
+  return {
+    ...actual,
+    query: async (...args: Parameters<typeof actual.query>) => {
+      const result = await actual.query(...args);
+      pageReads.push({ sql: args[0], values: args[1], rows: result.length });
+      return result;
+    },
+    queryOne: async (...args: Parameters<typeof actual.queryOne>) => {
+      const result = await actual.queryOne(...args);
+      pageReads.push({ sql: args[0], values: args[1], rows: result ? 1 : 0 });
+      return result;
+    },
+  };
+});
 
 const ADMIN_URL =
   process.env.MERGE_TEST_ADMIN_URL ?? "postgres://haalkhata:change-me@127.0.0.1:5432/postgres";
@@ -448,6 +466,44 @@ describe.skipIf(!reachable)("paged lists, against Postgres", () => {
       }
     });
 
+    it("keeps each one-line continuation and its revision check bounded across 1,200 empty pair movements", async () => {
+    // A long run of co-involvement without a movement between this pair.
+    // Pagination must skip it in the index, not hydrate then discard it.
+    await database.query(`INSERT INTO expenses(id,group_id,description,amount_cents,currency,expense_date,split_type,created_by,created_at)
+      SELECT 'quiet-budget-' || ordinal,'grp-usd','No pair movement',3000,'USD','2026-09-12','exact',$1,'2026-09-12T10:00:00Z'
+      FROM generate_series(1,1200) ordinal`, [THIRD]);
+    await database.query(`INSERT INTO expense_payers(expense_id,user_id,amount_cents)
+      SELECT id,$1,3000 FROM expenses WHERE id LIKE 'quiet-budget-%'`, [THIRD]);
+    await database.query(`INSERT INTO expense_splits(expense_id,user_id,owed_cents)
+      SELECT expense.id,person,1000 FROM expenses expense CROSS JOIN unnest($1::text[]) person
+      WHERE expense.id LIKE 'quiet-budget-%'`, [[READER,FRIEND,THIRD]]);
+
+      try {
+      let cursor = (await balanceUsecase.getFriendLedger(READER, FRIEND, 1)).nextCursor;
+      let pages = 0;
+      while (cursor) {
+        pageReads.length = 0;
+        const page = await balanceUsecase.listFriendLedgerEntries(READER, FRIEND, { cursor, limit: 1 });
+        expect(page.entries).toHaveLength(1);
+        expect(pageReads.length).toBeLessThanOrEqual(12);
+        expect(pageReads.reduce((total, read) => total + read.rows, 0)).toBeLessThanOrEqual(30);
+        const digest = pageReads.find((read) => /AS digest/.test(read.sql));
+        expect(digest).toBeDefined();
+        const plan = (await database.query(`EXPLAIN (ANALYZE, FORMAT JSON) ${digest!.sql}`, [...(digest!.values ?? [])])).rows[0]["QUERY PLAN"][0].Plan;
+        /** Counts tuples actually visited across the checksum plan. */
+        const visited = (node: { "Actual Rows": number; "Actual Loops": number; Plans?: typeof node[] }): number => node["Actual Rows"] * node["Actual Loops"] + (node.Plans ?? []).reduce((total, child) => total + visited(child), 0);
+        expect(visited(plan)).toBeLessThanOrEqual(12);
+        cursor = page.nextCursor;
+        pages++;
+      }
+      expect(pages).toBeGreaterThan(10);
+      } finally {
+        await database.query("DELETE FROM expense_payers WHERE expense_id LIKE 'quiet-budget-%'");
+        await database.query("DELETE FROM expense_splits WHERE expense_id LIKE 'quiet-budget-%'");
+        await database.query("DELETE FROM expenses WHERE id LIKE 'quiet-budget-%'");
+      }
+    });
+
     it("keeps one strict order: moment to the microsecond, payment after expense, ids byte by byte", async () => {
       const lineIds = (await statementInPages(2)).map((entry) => entry.id);
       const tieOrder = lineIds.filter((lineId) => lineId.startsWith("tie"));
@@ -495,13 +551,13 @@ describe.skipIf(!reachable)("paged lists, against Postgres", () => {
       }
     });
 
-    it("refuses to continue once a line has changed, and not for words alone", async () => {
+    it("invalidates old pages after amount, metadata, deletion and backdated changes", async () => {
       const { nextCursor } = await balanceUsecase.getFriendLedger(READER, FRIEND, 2);
       const next = () => balanceUsecase.listFriendLedgerEntries(READER, FRIEND, { cursor: nextCursor, limit: 2 });
 
-      // A description moves no money: the page still continues.
+      // A changed title must not leave already loaded pages mixed with old metadata.
       await database.query("UPDATE expenses SET description = 'Groceries' WHERE id = 'exp-plain-02'");
-      await expect(next()).resolves.toMatchObject({ entries: expect.any(Array) });
+      await expect(next()).rejects.toMatchObject({ code: "failed_precondition" });
 
       // A share moved on an old line: every balance after it moved too.
       await database.query(
@@ -517,7 +573,7 @@ describe.skipIf(!reachable)("paged lists, against Postgres", () => {
       await database.query(
         "UPDATE expense_splits SET owed_cents = 1001 WHERE expense_id = 'exp-plain-02'",
       );
-      await expect(next()).resolves.toMatchObject({ entries: expect.any(Array) });
+      await expect(next()).rejects.toMatchObject({ code: "failed_precondition" });
 
       // Deleting an old line, or writing one into the past, is a change too.
       await database.query("UPDATE expenses SET deleted_at = now() WHERE id = 'exp-plain-03'");
@@ -537,6 +593,56 @@ describe.skipIf(!reachable)("paged lists, against Postgres", () => {
       // A statement read afresh pages again, and still adds up.
       const whole = await balanceUsecase.getFriendLedger(READER, FRIEND);
       expect(await statementInPages(4)).toEqual(whole.entries);
+    });
+  });
+
+  describe("transactional statement revisions", () => {
+    it("invalidates metadata and zero/nonzero changes while keeping unrelated scopes independent", async () => {
+      const ledgerRepo = await import("@/server/expense/repo/ledger.repo");
+      const readDigest = () => ledgerRepo.pairHistoryDigest(READER, FRIEND, database as unknown as import("pg").PoolClient);
+      await database.query("BEGIN");
+      try {
+        let previous = await readDigest();
+        for (const statement of [
+          "UPDATE expenses SET amount_cents=amount_cents+1 WHERE id='exp-plain-02'",
+          "UPDATE expenses SET expense_date='2026-08-01' WHERE id='exp-plain-02'",
+          "UPDATE settlements SET method_label='Updated transfer method' WHERE id='pay-same-moment'",
+          "UPDATE settlements SET deleted_at=now() WHERE id='pay-same-moment'",
+          "UPDATE settlements SET deleted_at=NULL WHERE id='pay-same-moment'",
+          "UPDATE expense_splits SET owed_cents=0 WHERE expense_id='exp-plain-02'",
+          "UPDATE expense_splits SET owed_cents=1001 WHERE expense_id='exp-plain-02'",
+        ]) {
+          await database.query(statement);
+          const current = await readDigest();
+          expect(current).not.toBe(previous);
+          previous = current;
+        }
+        // Erasure replaces a participant id. Contributions and invalidation
+        // follow the replacement, while the surviving pair keeps its bill.
+        await database.query(`UPDATE expense_splits SET user_id=$1 WHERE expense_id='exp-quiet-0' AND user_id=$2`, [OUTSIDER,FRIEND]);
+        expect((await database.query(`SELECT count(*)::int AS count FROM expense_pair_movements WHERE expense_id='exp-quiet-0' AND from_user=$1`, [OUTSIDER])).rows[0].count).toBe(1);
+      } finally {
+        await database.query("ROLLBACK");
+      }
+    });
+
+    it("does not queue unrelated group revisions behind the same pair's other group", async () => {
+      const locker = new Client({ connectionString: TEST_URL });
+      await locker.connect();
+      try {
+        await locker.query("BEGIN");
+        await locker.query(`SELECT * FROM ledger_pair_revisions WHERE low_user=least($1,$2) AND high_user=greatest($1,$2) AND scope_key='grp-usd' FOR UPDATE`, [READER,FRIEND]);
+        await database.query("BEGIN");
+        try {
+          await database.query("SET LOCAL lock_timeout='250ms'");
+          await expect(database.query("UPDATE expenses SET description='Independent euro edit' WHERE id='exp-euro-0'")).resolves.toBeDefined();
+        } finally {
+          await database.query("ROLLBACK");
+        }
+      } finally {
+        await locker.query("ROLLBACK");
+        await locker.end();
+      }
     });
   });
 
@@ -638,4 +744,45 @@ describe.skipIf(!reachable)("paged lists, against Postgres", () => {
       ).rejects.toMatchObject({ code: "invalid_argument" });
     });
   });
+  describe("bounded expense comments and edit history", () => {
+    it("defaults to bounded detail pages, reaches all tied edit events, and reports one comment without hydrating its thread", async () => {
+      await database.query(`INSERT INTO comments(id,expense_id,user_id,body,created_at)
+        SELECT 'budget-comment-' || ordinal,'exp-plain-01',$1,'Original reported content','2026-10-01T00:00:00Z'
+        FROM generate_series(1,600) ordinal`, [FRIEND]);
+      await database.query(`INSERT INTO activity(id,group_id,actor_id,type,message,link,audience,created_at)
+        SELECT 'budget-event-' || lpad(ordinal::text,4,'0'),'grp-usd',$1,'expense_updated','Updated bill','/expenses/exp-plain-01',$2::jsonb,'2026-10-01T00:00:00.123456Z'
+        FROM generate_series(1,300) ordinal`, [READER,JSON.stringify([READER,FRIEND])]);
+      const history = await import("./history/expenseHistory");
+      const safety = await import("@/server/safety/usecase/safety.usecase");
+      pageReads.length = 0;
+      const detail = await expenseUsecase.getExpense(READER, "exp-plain-01");
+      expect(detail.comments).toHaveLength(30);
+      expect(detail.history).toHaveLength(30);
+      expect(detail.commentsTruncated).toBe(true);
+      expect(detail.historyTruncated).toBe(true);
+      expect(pageReads.filter((read) => /FROM activity/.test(read.sql)).map((read) => read.rows)).toEqual([31]);
+      const pages = [detail.history.map((event) => event.id)];
+      let cursor = detail.historyNextCursor;
+      while (cursor) {
+        pageReads.length = 0;
+        const page = await history.listExpenseHistory(READER,"exp-plain-01",cursor);
+        expect(page.history.length).toBeGreaterThan(0);
+        expect(page.history.length).toBeLessThanOrEqual(30);
+        expect(pageReads.length).toBeLessThanOrEqual(4);
+        expect(pageReads.reduce((total,read) => total + read.rows,0)).toBeLessThanOrEqual(34);
+        pages.unshift(page.history.map((event) => event.id));
+        cursor = page.nextCursor;
+      }
+      expect(pages.flat()).toEqual(Array.from({ length: 300 }, (_entry,index) => `budget-event-${String(index+1).padStart(4,"0")}`));
+      await expect(history.listExpenseHistory(OUTSIDER,"exp-plain-01",detail.historyNextCursor)).rejects.toMatchObject({ code: "permission_denied" });
+      await expect(history.listExpenseHistory(READER,"exp-plain-02",detail.historyNextCursor)).rejects.toMatchObject({ code: "invalid_argument" });
+      await expect(history.listExpenseHistory(READER,"exp-plain-01","invalid")).rejects.toMatchObject({ code: "invalid_argument" });
+      pageReads.length = 0;
+      await safety.reportContent(READER,{ targetKind: "comment", targetId: "budget-comment-1", reason: "spam" });
+      expect(pageReads.reduce((total,read) => total + read.rows,0)).toBeLessThanOrEqual(3);
+      expect(pageReads.some((read) => /FROM activity/.test(read.sql))).toBe(false);
+      expect((await database.query("SELECT snapshot FROM content_reports WHERE reporter_id=$1 AND target_id='budget-comment-1'",[READER])).rows[0].snapshot).toEqual({ body: "Original reported content", expenseId: "exp-plain-01" });
+    });
+  });
+
 });

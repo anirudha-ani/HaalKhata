@@ -90,4 +90,18 @@ describe("payment notifications on iOS", () => {
       `Removed ${formatMoney(600, "USD")} payment from you · Goa trip · Balances restored · ${formatMoney(21108, "USD")} owed again each way`,
     );
   });
+
+  it("names the bill a payment paid back", () => {
+    expect(settlementNotification({
+      actorName: "Radhika", amountCents: 1250, currency: "USD", paidByReader: false,
+      location: "Goa trip", expenseName: "Beach shack dinner",
+    }).body).toBe(`Recorded ${formatMoney(1250, "USD")} to you for "Beach shack dinner" · Goa trip`);
+  });
+
+  it("names the bill when a payment for it is removed", () => {
+    expect(settlementNotification({
+      actorName: "Radhika", amountCents: 1250, currency: "USD", paidByReader: true,
+      location: "One-off expenses", removed: true, expenseName: "Taxi",
+    }).body).toBe(`Removed ${formatMoney(1250, "USD")} payment from you for "Taxi" · One-off expenses · Balances restored`);
+  });
 });

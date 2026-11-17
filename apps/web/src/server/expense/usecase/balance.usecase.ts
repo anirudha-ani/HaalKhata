@@ -1,27 +1,17 @@
 /** Balance business logic: builds group/user ledgers from repos and applies the domain balance math. */
 
 import type { PoolClient } from "pg";
+import { listPairMovementPage, sumPairHistory, sumScopeMovements, sumScopedPairMovements, sumUserMovements, type MovementTotal } from "@/server/expense/repo/movements.repo";
 
 import {
-  listExpensesBetween,
-  listExpensesBetweenPage,
-  listExpensesByGroups,
-  listExpensesInvolvingUser,
-  listOneOffExpensesBetween,
-  listOneOffExpensesWithAnyOf,
   loadExpenseChildren,
   type ExpenseChildren,
   type ExpenseRow,
   type ListedExpenseRow,
 } from "@/server/expense/repo/expenses.repo";
 import {
-  listOneOffSettlementsBetween,
-  listOneOffSettlementsWithAnyOf,
-  listSettlementsBetween,
   listSettlementsBetweenPage,
-  listSettlementsByGroups,
   listSettlementsByNetSettlements,
-  listSettlementsInvolvingUser,
   type ListedSettlementRow,
   type SettlementRow,
 } from "@/server/expense/repo/settlements.repo";
@@ -39,7 +29,6 @@ import { findUserById, findUsersByIds } from "@/server/auth/repo/users.repo";
 import {
   expenseDebts,
   netBalances,
-  pairwiseBalances,
   simplifyDebts,
   type LedgerEntry,
 } from "../domain/balances";
@@ -54,6 +43,8 @@ import { listFriendIds } from "@/server/social/repo/friendships.repo";
 import {
   hasUnsettledGroupBalances,
   pairHistoryDigest,
+  sumGroupNets,
+  unsettledPairwiseCurrencies,
   sumUserNetByGroup,
 } from "@/server/expense/repo/ledger.repo";
 import { snapshot } from "@/server/common/db/db";
@@ -126,48 +117,6 @@ export function currencyAmounts(
 }
 
 /**
- * Builds one pairwise ledger per currency from mixed rows. Every expense and
- * settlement carries its own currency, and a ledger only makes sense within
- * one: netting a euro expense against a dollar payment would be netting
- * nothing against nothing.
- *
- * @param expenses - Expense rows of any currency.
- * @param children - Their payer/split rows.
- * @param settlements - Settlement rows of any currency.
- * @returns Normalized pairwise entries per currency.
- */
-function ledgersByCurrency(
-  expenses: ExpenseRow[],
-  children: ExpenseChildren,
-  settlements: SettlementRow[],
-): Map<string, LedgerEntry[]> {
-  const currencies = new Set([
-    ...expenses.map((expense) => expense.currency),
-    ...settlements.map((settlement) => settlement.currency),
-  ]);
-  const ledgers = new Map<string, LedgerEntry[]>();
-  for (const currency of currencies) {
-    ledgers.set(
-      currency,
-      pairwiseBalances(
-        debtsFromExpenses(
-          expenses.filter((expense) => expense.currency === currency),
-          children,
-        ),
-        settlements
-          .filter((settlement) => settlement.currency === currency)
-          .map((settlement) => ({
-            from: settlement.from_user,
-            to: settlement.to_user,
-            amountCents: settlement.amount_cents,
-          })),
-      ),
-    );
-  }
-  return ledgers;
-}
-
-/**
  * Converts a batch of expenses (with their loaded children) into directed
  * pairwise debts, one call to {@link expenseDebts} per expense.
  *
@@ -214,33 +163,35 @@ async function groupLedger(groupId: string, client?: PoolClient): Promise<Curren
  * Loads multiple groups' ledgers in a fixed number of queries, without receipt data.
  * @param groupIds - Group scopes to assemble.
  * @param client - Snapshot or locked transaction shared by every statement.
+ * @param viewerId - Limit to this person’s movements for pairwise balances.
  * @returns Each requested group's ledgers per currency.
  */
 async function groupLedgers(
   groupIds: readonly string[],
   client?: PoolClient,
+  viewerId?: string,
 ): Promise<Map<string, CurrencyLedgers>> {
-  if (groupIds.length === 0) return new Map();
-  const expenses = await listExpensesByGroups(groupIds, client);
-  const children = await loadExpenseChildren(expenses.map((expense) => expense.id), client, false);
-  const settlements = await listSettlementsByGroups(groupIds, client);
-  const expensesByGroup = new Map<string, ExpenseRow[]>();
-  const settlementsByGroup = new Map<string, SettlementRow[]>();
-  for (const expense of expenses) {
-    if (!expense.group_id) continue;
-    const rows = expensesByGroup.get(expense.group_id) ?? [];
-    rows.push(expense);
-    expensesByGroup.set(expense.group_id, rows);
+  const movements = await sumScopeMovements(groupIds, client, viewerId);
+  return new Map(groupIds.map((groupId) => [groupId, movementLedgers(movements.filter((entry) => entry.group_id === groupId))]));
+}
+
+/**
+ * Converts bounded database pair totals to the domain's directed debts.
+ * @param movements - Nonzero signed totals per scope and pair.
+ * @returns Currency ledgers in deterministic pair order.
+ */
+function movementLedgers(movements: MovementTotal[]): CurrencyLedgers {
+  const result: CurrencyLedgers = new Map();
+  for (const entry of [...movements].sort((first, second) => `${first.low_user}|${first.high_user}`.localeCompare(`${second.low_user}|${second.high_user}`))) {
+    const ledger = result.get(entry.currency) ?? [];
+    ledger.push({
+      from: entry.cents > 0 ? entry.low_user : entry.high_user,
+      to: entry.cents > 0 ? entry.high_user : entry.low_user,
+      amountCents: Math.abs(entry.cents),
+    });
+    result.set(entry.currency, ledger);
   }
-  for (const settlement of settlements) {
-    if (!settlement.group_id) continue;
-    const rows = settlementsByGroup.get(settlement.group_id) ?? [];
-    rows.push(settlement);
-    settlementsByGroup.set(settlement.group_id, rows);
-  }
-  return new Map(groupIds.map((groupId) => [groupId, ledgersByCurrency(
-    expensesByGroup.get(groupId) ?? [], children, settlementsByGroup.get(groupId) ?? [],
-  )]));
+  return result;
 }
 
 /**
@@ -539,29 +490,16 @@ async function pairNetsForUser(
   client: PoolClient,
 ): Promise<Map<string, CurrencyCents>> {
   const groups = await listGroupsByUser(userId, client);
-  const simplifiedGroupIds = new Set(
-    groups.filter((group) => group.simplify_debts).map((group) => group.id),
-  );
-
-  const allExpenses = await listExpensesInvolvingUser(userId, client);
-  const allSettlements = await listSettlementsInvolvingUser(userId, client);
-  // A former member's history can still name groups they no longer list.
+  const totals = await sumUserMovements(userId, client);
+  // Former scopes still contribute history, but only active pairwise scopes
+  // with unsettled member nets may contribute an amount payable today.
   const knownIds = new Set(groups.map((group) => group.id));
-  const missingIds = [...new Set([...allExpenses, ...allSettlements].flatMap(
-    (entry) => entry.group_id && !knownIds.has(entry.group_id) ? [entry.group_id] : [],
-  ))];
+  const missingIds = [...new Set(totals.flatMap((entry) => entry.group_id && !knownIds.has(entry.group_id) ? [entry.group_id] : []))];
   const missingGroups = missingIds.length > 0 ? await findGroupsByIds(missingIds, client) : [];
-  const inactiveIds = new Set([...groups, ...missingGroups]
-    .filter(groupIsInactive).map((group) => group.id));
-  const expenses = allExpenses.filter((expense) => !simplifiedGroupIds.has(expense.group_id ?? "")
-    && !inactiveIds.has(expense.group_id ?? ""));
-  const children = await loadExpenseChildren(
-    expenses.map((expense) => expense.id),
-    client,
-    false,
-  );
-  const settlements = allSettlements.filter((settlement) => !simplifiedGroupIds.has(settlement.group_id ?? "")
-    && !inactiveIds.has(settlement.group_id ?? ""));
+  const pairwiseGroups = [...groups, ...missingGroups].filter((group) => !group.simplify_debts && !groupIsInactive(group));
+  const payableScopes = new Set((await unsettledPairwiseCurrencies(pairwiseGroups.map((group) => group.id), client))
+    .map((scope) => friendScopeKey(scope.group_id, scope.currency)));
+  const payableTotals = totals.filter((entry) => !entry.group_id || payableScopes.has(friendScopeKey(entry.group_id, entry.currency)));
 
   const netByCounterparty = new Map<string, CurrencyCents>(); // > 0 ⇒ they owe the user
   const accumulate = (currency: string, entry: LedgerEntry) => {
@@ -572,7 +510,7 @@ async function pairNetsForUser(
     addCents(buckets, currency, entry.from === userId ? -entry.amountCents : entry.amountCents);
     netByCounterparty.set(counterpartyId, buckets);
   };
-  for (const [currency, ledger] of ledgersByCurrency(expenses, children, settlements)) {
+  for (const [currency, ledger] of movementLedgers(payableTotals)) {
     for (const entry of ledger) accumulate(currency, entry);
   }
   const routedGroups = groups.filter((group) => group.simplify_debts && !groupIsInactive(group));
@@ -594,7 +532,7 @@ async function pairNetsForUser(
 /**
  * Reads what one user owes another out of a normalized pairwise ledger.
  *
- * @param entries - Pairwise entries from {@link pairwiseBalances}.
+ * @param entries - Normalized pairwise entries.
  * @param payerId - The user who would be paying.
  * @param creditorId - The user who would be receiving.
  * @returns Cents payer owes creditor in these entries; 0 when nothing or reversed.
@@ -612,11 +550,8 @@ function owedInEntries(entries: LedgerEntry[], payerId: string, creditorId: stri
  * against one-off settlement rows, group scopes excluded entirely. The
  * one-off counterpart of {@link userNetInGroup}.
  *
- * Three reads in all, whatever the number of people: the shared expenses,
- * their payer and split rows, and the settlements. Each pair is then worked
- * out in memory from its own rows alone, exactly as a read per pair would
- * (a pair's balance never depends on anyone else's rows). It used to be
- * three reads per person, run one after another on a held connection.
+ * One SQL aggregate returns each requested pair and currency. No historical
+ * expense, payer or split rows are hydrated, however long the direct slate.
  *
  * @param userId - The viewer.
  * @param otherUserIds - The counterparties; duplicates and the viewer are ignored.
@@ -628,47 +563,64 @@ export async function oneOffNetsWith(
   otherUserIds: readonly string[],
   client?: PoolClient,
 ): Promise<Map<string, CurrencyCents>> {
-  const counterpartyIds = [...new Set(otherUserIds)].filter((otherUserId) => otherUserId !== userId);
-  const netsByCounterparty = new Map<string, CurrencyCents>();
-  if (counterpartyIds.length === 0) return netsByCounterparty;
-  const expenses = await listOneOffExpensesWithAnyOf(userId, counterpartyIds, client);
-  const children = await loadExpenseChildren(
-    expenses.map((expense) => expense.id),
-    client,
-    false,
-  );
-  const settlements = await listOneOffSettlementsWithAnyOf(userId, counterpartyIds, client);
-  for (const otherUserId of counterpartyIds) {
-    const shared = expenses.filter((expense) => participatesIn(expense.id, children, otherUserId));
-    const between = settlements.filter(
-      (settlement) => settlement.from_user === otherUserId || settlement.to_user === otherUserId,
-    );
-    const nets: CurrencyCents = new Map();
-    for (const [currency, entries] of ledgersByCurrency(shared, children, between)) {
-      addCents(
-        nets,
-        currency,
-        owedInEntries(entries, otherUserId, userId) - owedInEntries(entries, userId, otherUserId),
-      );
-    }
-    netsByCounterparty.set(otherUserId, nets);
-  }
-  return netsByCounterparty;
+  return pairNetsInScope(userId, otherUserIds, null, client);
 }
 
 /**
- * Whether someone pays toward or owes a share of one expense.
- *
- * @param expenseId - The expense.
- * @param children - Its payer and split rows.
- * @param userId - The person.
- * @returns True when they are among its payers or owers.
+ * Computes all requested pairwise balances from bounded SQL totals.
+ * @param userId - The viewer.
+ * @param otherUserIds - People sharing those balances.
+ * @param groupId - Group, or null for direct expenses.
+ * @param client - Snapshot or locked transaction.
+ * @returns Signed net by counterparty and currency, positive when the viewer is owed.
  */
-function participatesIn(expenseId: string, children: ExpenseChildren, userId: string): boolean {
-  return (
-    (children.payers.get(expenseId) ?? []).some((payer) => payer.user_id === userId) ||
-    (children.splits.get(expenseId) ?? []).some((split) => split.user_id === userId)
-  );
+async function pairNetsInScope(
+  userId: string, otherUserIds: readonly string[], groupId: string | null, client?: PoolClient,
+): Promise<Map<string, CurrencyCents>> {
+  const counterpartyIds = [...new Set(otherUserIds)].filter((otherUserId) => otherUserId !== userId);
+  const netsByCounterparty = new Map<string, CurrencyCents>();
+  if (counterpartyIds.length === 0) return netsByCounterparty;
+  const totals = await sumScopedPairMovements(userId, counterpartyIds, groupId, client);
+  for (const [currency, entries] of movementLedgers(totals)) {
+    for (const entry of entries) {
+      if (entry.from !== userId && entry.to !== userId) continue;
+      const person = entry.from === userId ? entry.to : entry.from;
+      const nets = netsByCounterparty.get(person) ?? new Map<string, number>();
+      addCents(nets, currency, entry.from === userId ? -entry.amountCents : entry.amountCents);
+      netsByCounterparty.set(person, nets);
+    }
+  }
+  return new Map(counterpartyIds.map((person) => [person, netsByCounterparty.get(person) ?? new Map()]));
+}
+
+/**
+ * Filters bills whose viewer has zero net but still has a payable pairwise edge.
+ * @param candidates - Bills that passed the scope-net check.
+ * @param bills - Bills on this page.
+ * @param viewerId - Person reading the page.
+ * @param client - The page snapshot.
+ * @returns Bills whose balance is settled for this viewer.
+ */
+export async function excludeOpenPairs(
+  candidates: string[], bills: readonly { id: string; groupId: string; currency: string }[],
+  viewerId: string, client: PoolClient,
+): Promise<string[]> {
+  const pending = new Set(candidates);
+  const groups = bills.filter((bill) => bill.groupId && pending.has(bill.id));
+  if (!groups.length) return candidates;
+  const currencies = await unsettledPairwiseCurrencies([...new Set(groups.map((bill) => bill.groupId))], client);
+  const ledgers = await groupLedgers([...new Set(currencies.map((scope) => scope.group_id))], client, viewerId);
+  const open = new Set<string>();
+  for (const scope of currencies) {
+    const entries = ledgers.get(scope.group_id)?.get(scope.currency) ?? [];
+    if (entries.some((entry) => entry.from === viewerId || entry.to === viewerId)) {
+      open.add(friendScopeKey(scope.group_id, scope.currency));
+    }
+  }
+  for (const bill of groups) {
+    if (open.has(friendScopeKey(bill.groupId, bill.currency))) pending.delete(bill.id);
+  }
+  return [...pending];
 }
 
 /**
@@ -727,17 +679,11 @@ async function loadPairLedgers(
   client?: PoolClient,
   sharedGroups?: readonly GroupRow[],
 ): Promise<PairLedgers> {
-  const oneOffExpenses = await listOneOffExpensesBetween(firstId, secondId, client);
-  const children = await loadExpenseChildren(
-    oneOffExpenses.map((expense) => expense.id),
-    client,
-    false,
-  );
-  const oneOffSettlements = await listOneOffSettlementsBetween(firstId, secondId, client);
+  const oneOff = movementLedgers(await sumScopeMovements(null, client, firstId, secondId));
   const groups = sharedGroups ?? (await sharedActiveGroups(firstId, secondId, client));
   const ledgers = await groupLedgers(groups.map((group) => group.id), client);
   return {
-    oneOff: ledgersByCurrency(oneOffExpenses, children, oneOffSettlements),
+    oneOff,
     groups: groups.map((group) => ({ group, ledgers: ledgers.get(group.id) ?? new Map() })),
   };
 }
@@ -806,6 +752,58 @@ export async function owedByScope(
     payerId,
     creditorId,
   );
+}
+
+/** What one person owes another in one balance, and why it may be nothing. */
+export interface ScopeOwing {
+  /** Cents owed along the balance's route; 0 when nothing is, or it points the other way. */
+  owedCents: number;
+  /** True when a pairwise group's debts cancel out around a loop, so nothing in it is owed. */
+  loop: boolean;
+  /** The debtor's net in the group in this currency (< 0 ⇒ they owe in it); 0 outside groups. */
+  debtorNetCents: number;
+}
+
+/**
+ * What one person owes another in one balance, in one currency: a group's,
+ * along the route the group takes, or the pair's own outside groups. The
+ * same figure {@link owedByScope} gives for that scope, read without the
+ * group's whole history, because an expense's page asks it on every visit:
+ *
+ * - Outside groups: the pair's one-off ledger, which holds their rows alone.
+ * - A pairwise group: the expenses both are on and the payments between
+ *   them there. A pair's pairwise balance is built from nobody else's rows.
+ * - A simplified group: the route over every member's net, which Postgres
+ *   adds up (see sumGroupNets). Simplification reads nets and nothing else.
+ *
+ * A pairwise group whose nets are all zero cancels out around a loop and
+ * owes nothing, as in owedByScope. Whether both are members of an active
+ * group is the caller's to check first.
+ *
+ * @param debtorId - Who would pay.
+ * @param creditorIds - The people the expense leaves the viewer owing.
+ * @param group - The group, or null for the pair's balance outside groups.
+ * @param currency - The currency.
+ * @param client - Snapshot or locked transaction.
+ * @returns What is owed, whether the group is a cancelling loop, and the debtor's net there.
+ */
+export async function owingInScope(
+  debtorId: string,
+  creditorIds: readonly string[],
+  group: GroupRow | null,
+  currency: string,
+  client: PoolClient,
+): Promise<Map<string, ScopeOwing>> {
+  const nets = group ? await sumGroupNets(group.id, currency, client) : new Map<string, number>();
+  const debtorNetCents = nets.get(debtorId) ?? 0;
+  const simplified = group?.simplify_debts ? simplifyDebts(nets) : undefined;
+  const pairs = simplified ? undefined : await pairNetsInScope(debtorId, creditorIds, group?.id ?? null, client);
+  return new Map(creditorIds.map((person) => {
+    const debt = simplified ? owedInEntries(simplified, debtorId, person)
+      : Math.max(0, -(pairs?.get(person)?.get(currency) ?? 0));
+    const loop = Boolean(group && !simplified && debt > 0 && nets.size === 0);
+    return [person, { owedCents: loop ? 0 : debt, loop, debtorNetCents }];
+  }));
 }
 
 /**
@@ -1154,6 +1152,8 @@ function settlementLedgerLines(
     // An offset moved no money; it cancelled this balance against one
     // pointing the other way elsewhere, and the statement says so.
     const offset = settlement.method === OFFSET_SETTLEMENT_METHOD;
+    // A payment made from an expense's page says which expense it paid back.
+    const paidExpense = settlement.expense_description ?? undefined;
     return {
       kind: "settlement",
       id: settlement.id,
@@ -1164,7 +1164,11 @@ function settlementLedgerLines(
         ? paidByYou
           ? `Cancelled: what you owed ${friendName}`
           : `Cancelled: what ${friendName} owed you`
-        : `${paidByYou ? "You paid" : `${friendName} paid you`}${
+        : `${
+            paidExpense === undefined
+              ? paidByYou ? "You paid" : `${friendName} paid you`
+              : paidByYou ? `You paid back "${paidExpense}"` : `${friendName} paid you back for "${paidExpense}"`
+          }${
             // How the money moved, when the payment named a method.
             settlement.method_label ? ` via ${settlement.method_label}` : ""
           }`,
@@ -1235,39 +1239,7 @@ interface StatementLine {
   balanceAfterCents: number;
 }
 
-/**
- * Sorts the whole history oldest-first and attaches one running balance per
- * currency to each line.
- *
- * @param lines - Every expense and settlement movement between the pair.
- * @returns The lines with their balances, newest first.
- */
-function withRunningBalances(lines: FriendLedgerLine[]): StatementLine[] {
-  const runningByCurrency = new Map<string, number>();
-  return [...lines]
-    .sort((first, second) => compareLedgerLineKeys(first.key, second.key))
-    .map((line) => {
-      const runningCents = (runningByCurrency.get(line.currency) ?? 0) + line.deltaCents;
-      runningByCurrency.set(line.currency, runningCents);
-      return { line, balanceAfterCents: runningCents };
-    })
-    .reverse();
-}
 
-/**
- * The running balance per currency after every line given: what a page
- * that ends just above them hands the next one.
- *
- * @param olderLines - The lines older than the last one shown.
- * @returns Currency → cents (> 0 ⇒ the friend owes the reader).
- */
-function balancesAfter(olderLines: StatementLine[]): Map<string, number> {
-  const balances = new Map<string, number>();
-  for (const { line } of olderLines) {
-    balances.set(line.currency, (balances.get(line.currency) ?? 0) + line.deltaCents);
-  }
-  return balances;
-}
 
 /**
  * Maps a statement line to its proto entry.
@@ -1311,20 +1283,6 @@ function friendScopeKey(groupId: string, currency: string): string {
   return `${groupId}|${currency}`;
 }
 
-/**
- * Totals raw statement history by scope and currency.
- *
- * @param lines - Statement movements.
- * @returns Composite scope key to net cents.
- */
-function historyNetsByScope(lines: FriendLedgerLine[]): Map<string, number> {
-  const nets = new Map<string, number>();
-  for (const line of lines) {
-    const scope = friendScopeKey(line.groupId, line.currency);
-    nets.set(scope, (nets.get(scope) ?? 0) + line.deltaCents);
-  }
-  return nets;
-}
 
 /**
  * Replaces raw history with the routed edge for simplified mutual groups.
@@ -1350,7 +1308,12 @@ function friendScopeBalances(
     if (group && groupIsInactive(group)) historyNets.delete(scope);
   }
   for (const { group, ledgers: groupLedgerByCurrency } of sharedGroups) {
-    if (!group.simplify_debts) continue;
+    if (!group.simplify_debts) {
+      for (const [currency, ledger] of groupLedgerByCurrency) {
+        if (cancelsOut(ledger)) historyNets.delete(friendScopeKey(group.id, currency));
+      }
+      continue;
+    }
     const currencies = new Set([
       ...groupLedgerByCurrency.keys(),
       ...[...historyNets.keys()].flatMap((scope) => {
@@ -1432,36 +1395,41 @@ export async function getFriendLedger(userId: string, friendId: string, limit = 
   // many statements, and a settlement committing between two of them would
   // otherwise return a response whose parts describe different ledgers.
   return snapshot(async (client) => {
-    const expenses = await listExpensesBetween(userId, friendId, true, client);
-    const children = await loadExpenseChildren(
-      expenses.map((expense) => expense.id),
-      client,
-      false,
-    );
-    const settlements = await listSettlementsBetween(userId, friendId, true, client);
-    const historyGroups = await groupsForHistory(expenses, settlements, client);
-    const groupNames = new Map([...historyGroups].map(([groupId, group]) => [groupId, group.name]));
-    const lines = [
-      ...expenseLedgerLines(expenses, children, groupNames, userId, friendId),
-      ...settlementLedgerLines(settlements, groupNames, userId, friend?.name ?? ""),
-    ];
-    const statement = withRunningBalances(lines);
-    // The page is a display; the balances above it are computed over
-    // everything. An app from before paging asked for no size and gets the
-    // old cap, told when lines were left off.
     const legacy = limit <= 0;
     const size = legacy ? LEDGER_DISPLAY_LIMIT : pageSize(limit, LEDGER_PAGE_SIZE, MAX_LEDGER_PAGE_SIZE);
-    const shownLines = statement.slice(0, size);
-    const hasMore = statement.length > size;
+    const page = await readProjectedStatementPage(userId, friendId, null, size, client);
+    const history = await sumPairHistory(userId, friendId, client);
+    const pageUnitIds = page.settlements.flatMap((payment) => payment.net_settlement_id ? [payment.net_settlement_id] : []);
+    const unitRows = await listSettlementsByNetSettlements(pageUnitIds, client);
+    const pageIds = new Set(page.settlements.map((payment) => payment.id));
+    const settlements = [...page.settlements, ...unitRows.filter((payment) => !pageIds.has(payment.id))];
+    const groupIds = [...new Set([...history, ...page.expenses, ...settlements].flatMap((entry) => entry.group_id ? [entry.group_id] : []))];
+    const historyGroups = new Map((groupIds.length ? await findGroupsByIds(groupIds, client) : []).map((group) => [group.id, group]));
+    const groupNames = new Map([...historyGroups].map(([groupId, group]) => [groupId, group.name]));
+    const lines = [
+      ...expenseLedgerLines(page.expenses, page.children, groupNames, userId, friendId),
+      ...settlementLedgerLines(page.settlements, groupNames, userId, friend?.name ?? ""),
+    ].sort((first, second) => compareLedgerLineKeys(second.key, first.key));
+    const running: CurrencyCents = new Map();
+    const netByScope = new Map<string, number>();
+    for (const entry of history) {
+      addCents(running, entry.currency, entry.cents);
+      netByScope.set(friendScopeKey(entry.group_id ?? "", entry.currency), entry.cents);
+    }
+    const statement = lines.map((line) => {
+      const balanceAfterCents = running.get(line.currency) ?? 0;
+      running.set(line.currency, balanceAfterCents - line.deltaCents);
+      return { line, balanceAfterCents };
+    });
+    const shownLines = statement;
+    const hasMore = page.hasMore;
     const nextCursor = hasMore
       ? encodeLedgerCursor(userId, friendId, {
           after: shownLines[shownLines.length - 1].line.key,
-          balances: balancesAfter(statement.slice(size)),
+          balances: running,
           historyDigest: await pairHistoryDigest(userId, friendId, client),
         })
       : "";
-
-    const netByScope = historyNetsByScope(lines);
 
     // Relationship context, not balance context: which groups both belong to
     // (settled ones included — "where do I know them from" is not "where does
@@ -1574,16 +1542,6 @@ export async function getFriendLedger(userId: string, friendId: string, limit = 
   });
 }
 
-/** One of the two row streams an older page of a statement is merged from. */
-interface LedgerStream<Row> {
-  /** Rows read so far, newest first. */
-  rows: Row[];
-  /** The oldest position read so far: where its next read starts. */
-  before: LedgerLineKey;
-  /** True once it has returned its last row. */
-  done: boolean;
-}
-
 /** The rows behind one older page of a statement. */
 interface OlderStatementRows {
   /** Expenses that make a line on the page. */
@@ -1597,81 +1555,31 @@ interface OlderStatementRows {
 }
 
 /**
- * Reads the rows of the statement's next `size` lines older than `before`,
- * merging the two keyset streams (expenses, payments) in statement order.
- *
- * A row read from a stream is final in the order once it is at or newer than
- * the frontier: the newest position among the streams not yet finished,
- * since every row still unread from them is older. An expense that moved
- * nothing between the pair makes no line, so the loop reads on until the
- * page has one line more than it shows (to know whether more remain) or
- * both streams end.
- *
- * @param userId - Statement reader.
- * @param friendId - The friend.
- * @param before - The oldest line already shown.
- * @param size - Lines on the page.
+ * Merges two bounded indexed streams of meaningful expense and payment rows.
+ * @param userId - Reader.
+ * @param friendId - Other person.
+ * @param before - Last visible position, or null for the first page.
+ * @param size - Requested page size.
  * @param client - Snapshot client.
- * @returns The page's rows, and whether older lines remain.
+ * @returns The page and whether either stream has an older line.
  */
-async function readOlderStatementRows(
-  userId: string,
-  friendId: string,
-  before: LedgerLineKey,
-  size: number,
-  client: PoolClient,
-): Promise<OlderStatementRows> {
-  const batch = size + 1;
-  const expenseStream: LedgerStream<ListedExpenseRow> = { rows: [], before, done: false };
-  const settlementStream: LedgerStream<ListedSettlementRow> = { rows: [], before, done: false };
-  const children: ExpenseChildren = { payers: new Map(), splits: new Map(), items: new Map() };
-  const lineKeys: { key: LedgerLineKey; expense?: ListedExpenseRow; settlement?: ListedSettlementRow }[] = [];
-
-  for (;;) {
-    const open = [expenseStream, settlementStream].filter((stream) => !stream.done);
-    const frontier = open
-      .map((stream) => stream.before)
-      .sort((first, second) => compareLedgerLineKeys(second, first))[0];
-    const final = frontier
-      ? lineKeys.filter((entry) => compareLedgerLineKeys(entry.key, frontier) >= 0)
-      : lineKeys;
-    if (!frontier || final.length > size) break;
-
-    if (expenseStream.before === frontier && !expenseStream.done) {
-      const rows = await listExpensesBetweenPage(userId, friendId, expenseStream.before, batch, client);
-      const loaded = await loadExpenseChildren(rows.map((expense) => expense.id), client, false);
-      for (const [expenseId, payers] of loaded.payers) children.payers.set(expenseId, payers);
-      for (const [expenseId, splits] of loaded.splits) children.splits.set(expenseId, splits);
-      for (const expense of rows) {
-        const lineKey = expenseLineKey(expense);
-        expenseStream.before = lineKey;
-        if (pairDelta(debtsFromExpenses([expense], children), userId, friendId) !== 0) {
-          lineKeys.push({ key: lineKey, expense });
-        }
-      }
-      expenseStream.rows.push(...rows);
-      expenseStream.done = rows.length < batch;
-    } else {
-      const rows = await listSettlementsBetweenPage(userId, friendId, settlementStream.before, batch, client);
-      for (const settlement of rows) {
-        const lineKey = settlementLineKey(settlement);
-        settlementStream.before = lineKey;
-        lineKeys.push({ key: lineKey, settlement });
-      }
-      settlementStream.rows.push(...rows);
-      settlementStream.done = rows.length < batch;
-    }
-  }
-
-  const ordered = lineKeys.sort((first, second) => compareLedgerLineKeys(second.key, first.key));
+async function readProjectedStatementPage(userId: string, friendId: string, before: LedgerLineKey | null, size: number, client: PoolClient): Promise<OlderStatementRows> {
+  const expenses = await listPairMovementPage(userId, friendId, before, size + 1, client);
+  const settlements = await listSettlementsBetweenPage(userId, friendId, before, size + 1, client);
+  const ordered = [
+    ...expenses.map((expense) => ({ key: expenseLineKey(expense), expense, settlement: undefined })),
+    ...settlements.map((settlement) => ({ key: settlementLineKey(settlement), expense: undefined, settlement })),
+  ].sort((first, second) => compareLedgerLineKeys(second.key, first.key));
   const page = ordered.slice(0, size);
+  const expensePage = page.flatMap((entry) => entry.expense ? [entry.expense] : []);
   return {
-    expenses: page.flatMap((entry) => (entry.expense ? [entry.expense] : [])),
-    children,
-    settlements: page.flatMap((entry) => (entry.settlement ? [entry.settlement] : [])),
+    expenses: expensePage,
+    children: await loadExpenseChildren(expensePage.map((expense) => expense.id), client, false),
+    settlements: page.flatMap((entry) => entry.settlement ? [entry.settlement] : []),
     hasMore: ordered.length > size,
   };
 }
+
 
 /**
  * One older page of the statement with a friend, continuing from where the
@@ -1704,7 +1612,7 @@ export async function listFriendLedgerEntries(
     if ((await pairHistoryDigest(userId, friendId, client)) !== position.historyDigest) {
       throw new UsecaseError("failed_precondition", LEDGER_CHANGED_MESSAGE);
     }
-    const rows = await readOlderStatementRows(userId, friendId, position.after, size, client);
+    const rows = await readProjectedStatementPage(userId, friendId, position.after, size, client);
 
     // A net settlement is removed whole, so a page holding one of its lines
     // needs the rest of it, which may sit on a neighbouring page.

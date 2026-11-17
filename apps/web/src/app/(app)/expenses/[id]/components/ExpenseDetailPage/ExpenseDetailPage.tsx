@@ -1,11 +1,11 @@
 "use client";
-/** Expense detail page: payers, splits, receipt items, comments, and delete flow. */
+/** Expense detail page: what you owe on it and paying it back, payers, splits, receipt items, comments, and delete flow. */
 
 import { SafetyActions } from "@/components/safety/SafetyActions/SafetyActions";
 import Link from "next/link";
 import { Check, ChevronUp, Lock, Pencil, Radio, Send, Trash2 } from "lucide-react";
 import { ErrorAlert } from "@/components/ui/ErrorAlert/ErrorAlert";
-import { SHOW_EARLIER_COMMENTS_LABEL } from "@haalkhata/shared/api/paging";
+import { SHOW_EARLIER_COMMENTS_LABEL, SHOW_EARLIER_HISTORY_LABEL } from "@haalkhata/shared/api/paging";
 import { Avatar } from "@/components/ui/Avatar/Avatar";
 import { AvatarStack } from "@/components/ui/AvatarStack/AvatarStack";
 import { LiveBar } from "@/components/expense/LiveBar/LiveBar";
@@ -22,13 +22,15 @@ import { localDateTime } from "@haalkhata/shared/time/localTime";
 import { itemShareCents } from "@haalkhata/shared/expense/splits";
 import { ITEM_AVATAR_SLOTS } from "./constants/expenseDetailPage";
 import { useExpenseDetail } from "./hooks/useExpenseDetail";
+import { RepaymentCard } from "./components/RepaymentCard/RepaymentCard";
 import { MAX_COMMENT_LENGTH } from "@haalkhata/shared/text/limits";
 import { GroupStatus } from "@haalkhata/shared/group/status";
 import { ARCHIVED_GROUP_HINT, GROUP_ARCHIVE_ACTIONS } from "@haalkhata/shared/group/archiving";
 
 /**
  * Renders a single expense: header (description, date, category, amount),
- * edit/delete actions, payer and split breakdowns, receipt items when
+ * what the viewer owes on it with a button that pays it back (and the
+ * payments made for it), edit/delete actions, payer and split breakdowns, receipt items when
  * itemized, notes, the comment thread with a composer, and a delete
  * confirmation modal.
  *
@@ -41,6 +43,7 @@ export function ExpenseDetailPage({ expenseId }: { expenseId: string }) {
   const hydrated = useHydrated();
   // A failed page is said above the button that retries it, pushing it down.
   const earlierRef = useRevealWhenShown<HTMLButtonElement>(expenseDetail.earlierCommentsError !== "");
+  const historyRef = useRevealWhenShown<HTMLButtonElement>(expenseDetail.earlierHistoryError !== "");
 
   if (!hydrated || expenseDetail.isLoading) return <Spinner label="Loading expense…" />;
   const expense = expenseDetail.detail?.expense;
@@ -171,6 +174,20 @@ export function ExpenseDetailPage({ expenseId }: { expenseId: string }) {
           </Link>
         </div>
       ) : null}
+
+      {/* Beside the bill's own figure, so its button pays this bill's share
+          and nothing else. First after the banners: for someone who owes,
+          it is what the page is for. */}
+      <RepaymentCard
+        expense={expense}
+        repayments={expenseDetail.detail?.repayments ?? []}
+        payments={expenseDetail.detail?.payments ?? []}
+        cursor={expenseDetail.detail?.paymentsNextCursor ?? ""}
+        userById={expenseDetail.userById}
+        meId={meId ?? ""}
+        settledForViewer={expenseDetail.detail?.settledForViewer === true}
+        groupHref={expense.groupId && !isArchived ? `/groups/${expense.groupId}` : ""}
+      />
 
       {liveSplit ? (
         <LiveBar
@@ -356,15 +373,22 @@ export function ExpenseDetailPage({ expenseId }: { expenseId: string }) {
           on every page to say "nothing has happened", which is noise. The
           creation line is included once there IS an edit, because "edited"
           only means something next to when it was made. */}
-      {expenseDetail.changes.length > 0 ? (
+      {expenseDetail.changes.length > 0 || expenseDetail.hasEarlierHistory ? (
         <section className="rounded-2xl border border-line bg-card p-4">
           <h2 className="mb-2 text-xs font-semibold tracking-wide text-ink-soft uppercase">
             History
           </h2>
+          {expenseDetail.earlierHistoryError ? <ErrorAlert message={`Couldn't load earlier changes: ${expenseDetail.earlierHistoryError}`} /> : null}
+          {expenseDetail.hasEarlierHistory ? (
+            <button ref={historyRef} type="button" onClick={expenseDetail.showEarlierHistory} disabled={expenseDetail.isLoadingEarlierHistory}
+              className="mb-3 w-full scroll-my-5 rounded-xl border border-line py-2.5 text-sm font-semibold text-ink-soft disabled:opacity-50">
+              {expenseDetail.isLoadingEarlierHistory ? "Loading…" : SHOW_EARLIER_HISTORY_LABEL}
+            </button>
+          ) : null}
           <ul className="space-y-1.5">
-            {expenseDetail.detail?.history.map((event, index) => (
+            {expenseDetail.history.map((event, index) => (
               <li
-                key={`${event.type}-${event.createdAt}-${index}`}
+                key={event.id || `${event.type}-${event.createdAt}-${index}`}
                 className="flex items-center gap-2 text-sm text-ink-soft"
               >
                 {event.actor ? (

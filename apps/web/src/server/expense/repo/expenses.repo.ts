@@ -410,13 +410,15 @@ export async function listExpensePage(
  * Loads live expense parents for all requested ledger scopes at once.
  * @param groupIds - Group scopes whose balances are being assembled.
  * @param client - Snapshot or ledger transaction client.
+ * @param viewerId - Restrict to rows involving this person when supplied.
  * @returns Live group expenses; no query is sent for an empty scope list.
  */
-export async function listExpensesByGroups(groupIds: readonly string[], client?: PoolClient): Promise<ExpenseRow[]> {
+export async function listExpensesByGroups(groupIds: readonly string[], client?: PoolClient, viewerId?: string): Promise<ExpenseRow[]> {
   if (groupIds.length === 0) return [];
   return query<ExpenseRow>(
-    "SELECT * FROM expenses WHERE group_id = ANY($1::text[]) AND deleted_at IS NULL",
-    [[...new Set(groupIds)]], client,
+    `SELECT expense.* FROM expenses expense WHERE group_id = ANY($1::text[]) AND deleted_at IS NULL
+       ${viewerId ? "AND " + expenseInvolvesSql("= $2") : ""}`,
+    viewerId ? [groupIds, viewerId] : [groupIds], client,
   );
 }
 
@@ -445,27 +447,29 @@ export async function listOneOffExpensesBetween(
 }
 
 /**
- * Live one-off (non-group) expenses the user shares with any of the given
+ * Live expenses in one scope that the user shares with any of the given
  * people, for working out every one of those pair balances from one read
  * instead of one read per person.
  *
  * @param userId - The person every expense must include.
  * @param otherUserIds - People at least one of whom each expense must include too.
  * @param client - Snapshot or transaction client; omitted, the pool.
+ * @param groupId - The group to read, or null for one-off expenses.
  * @returns The expenses; no query is sent for an empty list of people.
  */
-export async function listOneOffExpensesWithAnyOf(
+export async function listScopedExpensesWithAnyOf(
   userId: string,
   otherUserIds: readonly string[],
   client?: PoolClient,
+  groupId: string | null = null,
 ): Promise<ExpenseRow[]> {
   if (otherUserIds.length === 0) return [];
   return query<ExpenseRow>(
     `SELECT expense.* FROM expenses expense
-     WHERE expense.group_id IS NULL AND expense.deleted_at IS NULL
+     WHERE expense.group_id ${groupId === null ? "IS NULL" : "= $3"} AND expense.deleted_at IS NULL
        AND ${expenseInvolvesSql("= $1")}
        AND ${expenseInvolvesSql("= ANY($2::text[])")}`,
-    [userId, [...new Set(otherUserIds)]],
+    groupId === null ? [userId, otherUserIds] : [userId, otherUserIds, groupId],
     client,
   );
 }

@@ -21,15 +21,16 @@ export function DeleteAccount() {
   const deletion = useDeleteAccountAPI(open);
   const review = deletion.balanceReview;
   return <View>
-    <Button label="Delete account" variant="ghost" onPress={() => { setConfirmation(""); deletion.reset(); setOpen(true); }} />
-    {open ? <Sheet title="Permanently delete your account" onClose={() => { if (!deletion.isPending) setOpen(false); }}
+    <Button label={deletion.deletedOnServer ? "Finish clearing this phone" : "Delete account"} variant="ghost" onPress={() => { setConfirmation(""); deletion.reset(); setOpen(true); }} />
+    {open ? <Sheet title={deletion.deletedOnServer ? "Finish clearing this phone" : "Permanently delete your account"} onClose={() => { if (!deletion.isPending) setOpen(false); }}
       footer={<View style={styles.actions}>
         {deletion.error ? <Text accessibilityRole="alert" style={styles.error}>{deletion.error}</Text> : null}
-        <Button label={review.deleteLabel} variant="outline" disabled={confirmation !== ACCOUNT_DELETION_CONFIRMATION} busy={deletion.isPending}
+        <Button label={deletion.deletedOnServer ? "Retry cleanup" : review.deleteLabel} variant="outline"
+          disabled={!deletion.deletedOnServer && confirmation !== ACCOUNT_DELETION_CONFIRMATION} busy={deletion.isPending}
           onPress={() => deletion.remove(confirmation)} />
-        <Button label="Keep my account" variant="ghost" disabled={deletion.isPending} onPress={() => setOpen(false)} />
+        <Button label={deletion.deletedOnServer ? "Close" : "Keep my account"} variant="ghost" disabled={deletion.isPending} onPress={() => setOpen(false)} />
       </View>}>
-      <View style={styles.content}>
+      {deletion.deletedOnServer ? <Text style={styles.text}>Your account has been deleted. Finish clearing its notifications and local session from this phone.</Text> : <View style={styles.content}>
         <View accessibilityLabel="Balances before deletion" style={styles.balances}>
           <Text accessibilityRole="header" style={styles.heading}>Your outstanding balances</Text>
           <Text accessibilityRole={review.status === "unavailable" ? "alert" : undefined}
@@ -48,7 +49,7 @@ export function DeleteAccount() {
         <Text style={styles.text}>{SHARED_LEDGER_ERASURE_MESSAGE}</Text>
         <TextField accessibilityLabel="Type DELETE to confirm" autoCapitalize="characters" autoCorrect={false}
           placeholder="Type DELETE to confirm" value={confirmation} onChangeText={setConfirmation} editable={!deletion.isPending} />
-      </View>
+      </View>}
     </Sheet> : null}
   </View>;
 }

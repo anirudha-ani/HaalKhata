@@ -6,6 +6,7 @@ import type { PushDeviceRow } from "@/server/push/repo/pushDevices.repo";
 const repo = vi.hoisted(() => ({
   transaction: vi.fn(async (operation: (client: unknown) => Promise<unknown>) => operation({})),
   upsertPushDevice: vi.fn(),
+  lockPushDevices: vi.fn(),
   evictOldestPushDevices: vi.fn(),
   listLivePushDevices: vi.fn(),
   findLivePushDevice: vi.fn(),
@@ -22,6 +23,7 @@ const repo = vi.hoisted(() => ({
 vi.mock("@/server/common/db/db", () => ({ transaction: repo.transaction }));
 vi.mock("@/server/push/repo/pushDevices.repo", () => ({
   upsertPushDevice: repo.upsertPushDevice,
+  lockPushDevices: repo.lockPushDevices,
   evictOldestPushDevices: repo.evictOldestPushDevices,
   listLivePushDevices: repo.listLivePushDevices,
   findLivePushDevice: repo.findLivePushDevice,
@@ -149,7 +151,7 @@ describe("removeDevice", () => {
   it("keeps a phone the person removed off until it is turned on there", async () => {
     repo.deletePushDevice.mockResolvedValue("install-1");
     await removeDevice("user-a", "dev-1");
-    expect(repo.keepPushInstallationOff).toHaveBeenCalledWith("user-a", "install-1");
+    expect(repo.keepPushInstallationOff).toHaveBeenCalledWith("user-a", "install-1", expect.anything());
   });
 
   it("keeps nothing off when the phone removes itself at sign-out", async () => {

@@ -1,5 +1,5 @@
 "use client";
-/** Expense list rows: category, payer summary, and your lent/borrowed net per expense. */
+/** Expense list rows: category, payer summary, and your lent/borrowed net per expense, or that you paid it back. */
 
 import Link from "next/link";
 import { Check, ReceiptText } from "lucide-react";
@@ -25,6 +25,7 @@ export function ExpenseList({
   emptyHint,
   groupNameById,
   settledIds,
+  repaidIds,
 }: {
   /** Expenses to render, newest-first as returned by the server. */
   expenses: Expense[];
@@ -48,6 +49,12 @@ export function ExpenseList({
    * here" — and mute the amount into history.
    */
   settledIds?: Set<string>;
+  /**
+   * Ids of expenses the viewer has paid back from the expense's page: the
+   * payments they recorded for it cover their share. Those rows say "paid
+   * back" in place of "you borrowed", and mute the amount into history.
+   */
+  repaidIds?: Set<string>;
 }) {
   if (expenses.length === 0) {
     return <EmptyState icon={<ReceiptText />} title="No expenses yet" hint={emptyHint} />;
@@ -94,6 +101,9 @@ export function ExpenseList({
         const status = settled
           ? settledStatus(myNet > 0, expense.groupId !== "", otherFirstNames)
           : null;
+        // Said about this expense alone, so it outranks the balance-wide
+        // state: the viewer named this expense when paying.
+        const repaid = !deleted && myNet < 0 && (repaidIds?.has(expense.id) ?? false);
         return (
           <li key={expense.id}>
             <Link
@@ -139,6 +149,17 @@ export function ExpenseList({
                   <span className="text-xs text-ink-soft">no longer counts</span>
                 ) : myNet === 0 ? (
                   <span className="text-xs text-ink-soft">{evenExpenseLabel(expense, meId)}</span>
+                ) : repaid ? (
+                  <>
+                    <p className="flex items-center justify-end gap-1 text-xs font-medium text-pos-600">
+                      <Check className="h-3.5 w-3.5 shrink-0" /> paid back
+                    </p>
+                    <Money
+                      cents={myNet}
+                      currency={expense.currency}
+                      className="text-sm font-semibold text-ink-soft"
+                    />
+                  </>
                 ) : status ? (
                   <>
                     {/* The state, not a verdict on the expense: "settled"

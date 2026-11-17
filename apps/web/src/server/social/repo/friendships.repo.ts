@@ -42,6 +42,8 @@ export async function insertFriendships(
          FROM users friend
          CROSS JOIN LATERAL (VALUES ($1::text, friend.id), (friend.id, $1::text)) AS pair(user_id, friend_id)
         WHERE friend.id = ANY($2::text[])
+          AND NOT EXISTS (SELECT 1 FROM user_blocks
+                 WHERE (blocker_id = $1 AND blocked_id = friend.id) OR (blocker_id = friend.id AND blocked_id = $1))
           AND friend.deleted_at IS NULL
           AND EXISTS (
                 SELECT 1 FROM users usr WHERE usr.id = $1 AND usr.deleted_at IS NULL
@@ -169,6 +171,10 @@ export async function insertFriendRequest(
           AND NOT EXISTS (
                 SELECT 1 FROM friendships WHERE user_id = $1 AND friend_id = $2
               )
+          AND NOT EXISTS (
+                SELECT 1 FROM user_blocks
+                 WHERE (blocker_id = $1 AND blocked_id = $2) OR (blocker_id = $2 AND blocked_id = $1)
+              )
           AND (SELECT COUNT(*) FROM friend_requests WHERE recipient_id = $2) < $3
        ON CONFLICT DO NOTHING
        RETURNING requester_id`,
@@ -221,6 +227,11 @@ export async function insertFriendRequests(
               SELECT 1 FROM friendships
                WHERE user_id = $1 AND friend_id = target.recipient_id
             )
+        AND NOT EXISTS (
+              SELECT 1 FROM user_blocks
+               WHERE (blocker_id = $1 AND blocked_id = target.recipient_id)
+                  OR (blocker_id = target.recipient_id AND blocked_id = $1)
+            )
         AND (SELECT COUNT(*) FROM friend_requests
               WHERE recipient_id = target.recipient_id) < $3
      ON CONFLICT DO NOTHING
@@ -241,6 +252,9 @@ export async function listIncomingFriendRequestIds(recipientId: string): Promise
   const requestRows = await query<{ requester_id: string }>(
     `SELECT requester_id FROM friend_requests
       WHERE recipient_id = $1
+        AND NOT EXISTS (SELECT 1 FROM user_blocks
+             WHERE (blocker_id = $1 AND blocked_id = friend_requests.requester_id)
+                OR (blocker_id = friend_requests.requester_id AND blocked_id = $1))
       ORDER BY created_at, requester_id
       LIMIT $2`,
     [recipientId, MAX_PENDING_FRIEND_REQUESTS],
@@ -269,6 +283,9 @@ export async function listOutgoingFriendRequests(
     `SELECT recipient_id, recipient_identifier, created_at
        FROM friend_requests
       WHERE requester_id = $1
+        AND NOT EXISTS (SELECT 1 FROM user_blocks
+             WHERE (blocker_id = $1 AND blocked_id = friend_requests.recipient_id)
+                OR (blocker_id = friend_requests.recipient_id AND blocked_id = $1))
       ORDER BY created_at, recipient_id
       LIMIT $2`,
     [requesterId, MAX_PENDING_FRIEND_REQUESTS],
@@ -285,7 +302,10 @@ export async function countIncomingFriendRequests(recipientId: string): Promise<
   const countRow = await queryOne<{ pending_count: number }>(
     `SELECT COUNT(*)::int AS pending_count
        FROM friend_requests
-      WHERE recipient_id = $1`,
+      WHERE recipient_id = $1
+        AND NOT EXISTS (SELECT 1 FROM user_blocks
+             WHERE (blocker_id = $1 AND blocked_id = friend_requests.requester_id)
+                OR (blocker_id = friend_requests.requester_id AND blocked_id = $1))`,
     [recipientId],
   );
   return countRow?.pending_count ?? 0;

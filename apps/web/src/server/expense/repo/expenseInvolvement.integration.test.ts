@@ -179,7 +179,7 @@ describe.skipIf(!reachable)("which expenses a person is on, against Postgres", (
     expect(idsOf(await expenses.listOneOffExpensesBetween(TOMAS, SARA))).toEqual(
       expected((expense) => !expense.deleted && expense.groupId === null && both(expense)),
     );
-    expect(idsOf(await expenses.listOneOffExpensesWithAnyOf(SARA, [RAHIM, LENA]))).toEqual(
+    expect(idsOf(await expenses.listScopedExpensesWithAnyOf(SARA, [RAHIM, LENA]))).toEqual(
       expected(
         (expense) =>
           !expense.deleted && expense.groupId === null && isOn(expense, SARA) && (isOn(expense, RAHIM) || isOn(expense, LENA)),
@@ -247,7 +247,7 @@ describe.skipIf(!reachable)("which expenses a person is on, against Postgres", (
       ["every expense Sara is on", () => expenses.listExpensesInvolvingUser(SARA, client)],
       ["what Sara and Tomas share", () => expenses.listExpensesBetween(SARA, TOMAS, true, client)],
       ["their one-offs", () => expenses.listOneOffExpensesBetween(SARA, TOMAS, client)],
-      ["Sara with any of two people", () => expenses.listOneOffExpensesWithAnyOf(SARA, [RAHIM, LENA], client)],
+      ["Sara with any of two people", () => expenses.listScopedExpensesWithAnyOf(SARA, [RAHIM, LENA], client)],
       ["a page of Sara's expenses", () => expenses.listExpensePage({ kind: "user", userId: SARA }, null, 50, client)],
       ["a page of their statement", () => expenses.listExpensesBetweenPage(SARA, TOMAS, null, 50, client)],
       ["their statement's fingerprint", () => ledger.pairHistoryDigest(SARA, TOMAS, client)],

@@ -2,7 +2,8 @@
 
 import { readDeletionBalanceReview } from "@haalkhata/shared/account/deletionBalances";
 import { queryKeys } from "@haalkhata/shared/api/queryKeys";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useRef, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import { authClient, expenseClient, errorMessage } from "@/lib/api/connect";
 import { clearSession } from "@/lib/api/session";
@@ -16,19 +17,33 @@ import { clearPushTraces } from "@/lib/push/pushStore";
  */
 export function useDeleteAccountAPI(open: boolean) {
   const router = useRouter();
+  const queryClient = useQueryClient();
+  const committed = useRef(false);
+  const [deletedOnServer, setDeletedOnServer] = useState(false);
   const balances = useQuery({
     queryKey: queryKeys.overallBalances,
     queryFn: ({ signal }) => expenseClient.getOverallBalances({}, { signal }),
-    enabled: open,
+    enabled: open && !deletedOnServer,
     staleTime: 0,
     retry: false,
   });
   const deletion = useMutation({
-    mutationFn: (confirmation: string) => authClient.deleteAccount({ confirmation }),
-    onSuccess: async () => { await clearPushTraces(); await clearSession(); await clearMobileQueryCache(); router.replace("/login"); },
+    mutationFn: async (confirmation: string) => {
+      if (!committed.current) {
+        await authClient.deleteAccount({ confirmation });
+        committed.current = true;
+        setDeletedOnServer(true);
+        await queryClient.cancelQueries({ queryKey: queryKeys.overallBalances, exact: true });
+      }
+      await clearPushTraces();
+      await clearSession();
+      await clearMobileQueryCache();
+    },
+    onSuccess: () => router.replace("/login"),
   });
   return { remove: deletion.mutate, isPending: deletion.isPending,
-    error: deletion.error ? errorMessage(deletion.error) : "", reset: deletion.reset,
+    error: deletion.error ? `${deletedOnServer ? "Your account was deleted. " : ""}${errorMessage(deletion.error)}` : "",
+    deletedOnServer, reset: deletion.reset,
     balanceReview: readDeletionBalanceReview({ totals: balances.data?.totals,
       loading: !balances.isPaused && (balances.isPending || balances.isFetching), failed: balances.isError || balances.isPaused }),
     retryBalances: () => { void balances.refetch(); },

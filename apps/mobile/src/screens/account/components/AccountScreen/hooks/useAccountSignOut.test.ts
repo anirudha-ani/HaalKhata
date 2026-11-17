@@ -40,11 +40,14 @@ import { useProfileForm } from "./useAccount";
 let root: Root;
 let container: HTMLDivElement;
 let signOut: () => Promise<void>;
+let shownError = "";
 
 /** Renders the hook and exposes its sign-out action. */
 function Probe() {
-  signOut = useProfileForm(create(UserSchema, { id: "user-a", name: "Ani", defaultCurrency: "USD" })).signOut;
-  return null;
+  const form = useProfileForm(create(UserSchema, { id: "user-a", name: "Ani", defaultCurrency: "USD" }));
+  signOut = form.signOut;
+  shownError = form.error;
+  return createElement("p", { role: "alert" }, form.error);
 }
 
 beforeEach(async () => {
@@ -93,4 +96,17 @@ it("keeps nothing and says nothing when LogOut succeeds", async () => {
   await act(async () => signOut());
   expect(order.remember).not.toHaveBeenCalled();
   expect(order.alert).not.toHaveBeenCalled();
+});
+
+it("keeps sign-out retryable and exposes a cleanup failure through the account error", async () => {
+  order.forget.mockRejectedValueOnce(new Error("Notification cleanup timed out. Please try again."));
+  await act(async () => signOut());
+  expect(order.logOut).not.toHaveBeenCalled();
+  expect(order.replace).not.toHaveBeenCalled();
+  expect(shownError).toContain("Please try again");
+  expect(container.querySelector('[role="alert"]')?.textContent).toContain("Notification cleanup timed out");
+  await act(async () => signOut());
+  expect(shownError).toBe("");
+  expect(order.calls).toEqual(["forgetThisPhone", "logOut", "clearSession", "clearCache"]);
+  expect(order.replace).toHaveBeenCalledWith("/login");
 });

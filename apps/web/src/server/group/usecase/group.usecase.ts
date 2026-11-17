@@ -24,12 +24,13 @@ import type { UserRow } from "@/server/auth/repo/users.repo";
 import {
   findUserByEmail,
   findUserById,
-  findUserByPhone,
+  findVerifiedUserByPhone,
   findUsersByIds,
 } from "@/server/auth/repo/users.repo";
 import { normalizePhone, PHONE_FORMAT_HINT } from "@/server/auth/auth.constants";
 import { isEmailAddress } from "@haalkhata/shared/email/email";
 import { insertFriendships, listFriendIds } from "@/server/social/repo/friendships.repo";
+import { blockedNewGroupPairs } from "./groupAdmission";
 import { assertRoomForAnotherGroup } from "./groupLimit";
 import { insertActivity } from "@/server/social/repo/activity.repo";
 import { insertNotifications } from "@/server/social/repo/notifications.repo";
@@ -52,7 +53,7 @@ import {
   NOT_ON_HAALKHATA_GROUP_MESSAGE,
   OWNER_ROLE,
 } from "@/server/group/group.constants";
-import { lockGroupLedgers, withLedgerTransaction } from "@/server/common/ledger/ledgerLocks";
+import { lockGroupAdmissions, lockGroupLedgers, withLedgerTransaction } from "@/server/common/ledger/ledgerLocks";
 import { toGroup, toMember } from "./group.mapper";
 
 /**
@@ -211,6 +212,7 @@ async function enrollMembers(
   // transaction, so it is all or nothing and holds the group's lock no
   // longer for a hundred people than for one.
   const addedIds = added.map((user) => user.id);
+  if (await blockedNewGroupPairs([...existingIds], addedIds, client, callerId)) denied("a blocked person cannot be added");
   await insertMembers(groupId, addedIds, MEMBER_ROLE, client);
   await insertFriendships(callerId, addedIds, client);
   return added;
@@ -245,7 +247,7 @@ async function resolveInvitee(input: {
   }
   const invitee = email !== ""
     ? await findUserByEmail(email)
-    : await findUserByPhone(assertPhoneShape(phone));
+    : await findVerifiedUserByPhone(assertPhoneShape(phone));
   if (!invitee) throw new UsecaseError("failed_precondition", NOT_ON_HAALKHATA_GROUP_MESSAGE);
   return invitee;
 }
@@ -299,6 +301,9 @@ export async function createGroup(
   // event announcing it commit together: a group that exists with half its
   // members and no announcement is what a retry would then create twice.
   const group = await withLedgerTransaction(async (client) => {
+    // Acquire the complete cast together so two creators sharing members
+    // cannot lock their own capacities in opposite orders.
+    await lockGroupAdmissions(client, [userId, ...(input.memberIds ?? [])]);
     await assertRoomForAnotherGroup([actor], userId, client);
     const created = await insertGroup({ name, type, currency, createdBy: userId }, client);
     const added = await enrollMembers(userId, created.id, input.memberIds ?? [], client);
@@ -468,7 +473,6 @@ export async function addMembers(
   assertMemberIdCount(candidateIds);
   if (candidateIds.length === 0) invalid("pick somebody to add");
   await assertCanAdd(userId, candidateIds);
-  if (await blockedPairExists([...candidateIds, userId])) denied("a blocked person cannot be added");
   const actor = (await findUserById(userId))!;
 
   // Under the group's ledger lock: a settlement being validated in this

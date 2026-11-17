@@ -64,8 +64,8 @@ export function useActivity() {
     [activity.data],
   );
 
-  // Months come from the newest page: every page carries the same list, and
-  // the first one is present as soon as anything has loaded.
+  // The first page carries the month options. Keep them while older pages
+  // append events without repeating the full-history metadata query.
   const months = activity.data?.pages[0]?.months ?? [];
 
   // The feed message is pre-rendered server-side and already contains the

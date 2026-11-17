@@ -47,6 +47,7 @@ describe("queryKeys", () => {
       queryKeys.friendLedger("id-1"),
       queryKeys.friendStatement("id-1"),
       queryKeys.earlierComments("id-1", "cursor"),
+      queryKeys.earlierExpenseHistory("id-1", "cursor"),
       queryKeys.activity(),
       queryKeys.activityFeed(),
       queryKeys.notifications,
@@ -73,6 +74,13 @@ describe("queryKeys", () => {
     // …and each sits under the prefix the other is invalidated by.
     expect(queryKeys.friendStatement("id-1").slice(0, 3)).toEqual([...queryKeys.friendLedger("id-1")]);
     expect(queryKeys.earlierComments("id-1", "c").slice(0, 2)).toEqual([...queryKeys.expense("id-1")]);
+  });
+
+  test("older expense history resets with its boundary and invalidates with its detail", () => {
+    const first = queryKeys.earlierExpenseHistory("bill", "first");
+    expect(first.slice(0, 2)).toEqual(queryKeys.expense("bill"));
+    expect(hash(first)).not.toBe(hash(queryKeys.earlierExpenseHistory("bill", "second")));
+    expect(hash(first)).not.toBe(hash(queryKeys.earlierComments("bill", "first")));
   });
 
   test("each scope of the expenses page is its own paged list", () => {
