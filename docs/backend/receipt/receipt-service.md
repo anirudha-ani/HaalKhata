@@ -37,11 +37,13 @@ to `COMPATIBLE_AI_MODEL`, not code.
 - Structured output is requested via `json_schema` (strict) so the model is
   constrained to the shape, not just "some JSON"; models without
   `json_schema` support fail visibly with the provider's error in the log.
-- `COMPATIBLE_AI_ZDR=true` adds OpenRouter's `zdr: true` (routes only to
-  zero-data-retention endpoints). Opt-in because a stricter
-  OpenAI-compatible server could reject the unknown key; account-wide ZDR in
-  OpenRouter is recommended *as well* — that fails closed if a request ever
-  omits the flag.
+- `COMPATIBLE_AI_ZDR=true` adds OpenRouter's
+  `provider: { zdr: true, data_collection: "deny" }`. These fields belong inside
+  `provider`, not at the top level. ZDR routing follows the account's safety-retention
+  settings; it does not guarantee that providers never retain content. Training
+  endpoints are excluded. Opt-in because other compatible servers may reject these
+  preferences. Review the account settings described in
+  [local receipt scanning](../../local-receipt-scanning.md) before production use.
 - Provider hardening: 90 s timeout, responses read with a streaming **1 MiB
   byte cap** (Content-Length is checked but the running count stays
   authoritative against dishonest headers), JSON extracted by
@@ -284,7 +286,7 @@ account. It rejects stale terms with `FailedPrecondition`. `RevokeConsent({})`
 deletes that account's permission. Both return updated `ReceiptProcessingInfo`.
 Account → AI receipt scanning exposes withdrawal on web, phone and tablet.
 
-The version covers recipient wording, gateway host, OpenRouter model provider,
+The version covers the exact displayed disclosure, gateway host, OpenRouter model provider,
 provider chain and retention settings. Routine model-version upgrades with the
 same recipients do not reset permission. The server reads saved permission for
 every parse, so another device's cached allowance cannot bypass withdrawal.

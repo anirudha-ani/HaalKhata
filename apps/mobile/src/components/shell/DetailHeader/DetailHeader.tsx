@@ -8,6 +8,8 @@ import { FeedbackPressable } from "@/components/ui/FeedbackPressable/FeedbackPre
 import { Text } from "@/components/ui/Text";
 import { HEADER_TITLE_MIN_SCALE, SCREEN_CONTENT_MAX_WIDTH } from "@/lib/layout/constants/layout";
 import { colors, fonts, radii, spacing } from "@/lib/theme/theme";
+import { IS_IPHONE_DUO } from "@/lib/layout/constants/device";
+import { DuoDetailHeader } from "./components/DuoDetailHeader/DuoDetailHeader";
 
 /**
  * Renders the chrome above pushed (non-tab) screens: a back chevron, the
@@ -35,6 +37,7 @@ export function DetailHeader({
   right?: ReactNode;
 }) {
   const router = useRouter();
+  if (IS_IPHONE_DUO) return <DuoDetailHeader title={title} subtitle={subtitle} leading={leading} right={right} />;
   return (
     <View style={styles.header}>
       <View style={styles.headerContent}>

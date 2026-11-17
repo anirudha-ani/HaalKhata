@@ -33,6 +33,34 @@ beforeEach(() => {
 });
 afterEach(() => { vi.clearAllMocks(); vi.unstubAllEnvs(); });
 
+it("explains the recipients, visible personal data, purpose and manual alternative before consent", async () => {
+  const information = await getReceiptProcessingInfo("first-account");
+  expect(information.disclosure).toContain("OpenRouter and Google (Gemini)");
+  expect(information.disclosure).toContain("including all visible text");
+  expect(information.disclosure).toContain("names, addresses, phone numbers or payment details");
+  expect(information.disclosure).toContain("extract the merchant, date, items, prices, tax and tip");
+  expect(information.disclosure).toContain("manually without sharing a photo");
+  expect(information.consentGranted).toBe(false);
+  expect(scanReceipt).not.toHaveBeenCalled();
+});
+it("requires renewed permission from accounts that accepted a previous disclosure", async () => {
+  vi.stubEnv("RECEIPT_AI_PROVIDERS", "compatible");
+  // A previously issued production consent fingerprint.
+  const previousVersion = "a68b126de39897c212415b931c6d5d27aac40c6f78896480dee86501d92e280c";
+  state.saved.set("first-account", previousVersion);
+  const information = await getReceiptProcessingInfo("first-account");
+  expect(information.consentGranted).toBe(false);
+  for (const version of [previousVersion, information.consentVersion]) {
+    await expect(parseReceiptWithConsent("first-account", new Uint8Array([1]), version))
+      .rejects.toMatchObject({ code: "failed_precondition" });
+  }
+  await expect(grantReceiptConsent("first-account", previousVersion)).rejects.toMatchObject({ code: "failed_precondition" });
+  expect(scanReceipt).not.toHaveBeenCalled();
+  await grantReceiptConsent("first-account", information.consentVersion);
+  await parseReceiptWithConsent("first-account", new Uint8Array([1]), information.consentVersion);
+  expect(scanReceipt).toHaveBeenCalledOnce();
+});
+
 it("does not treat knowledge of the public version as account permission", async () => {
   const information = await getReceiptProcessingInfo("first-account");
   expect(information.consentGranted).toBe(false);

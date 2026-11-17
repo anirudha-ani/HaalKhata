@@ -10,15 +10,24 @@ For real extraction, set `RECEIPT_AI_PROVIDERS=compatible`,
 `RECEIPT_AI_PROCESSORS=OpenRouter and Google (Gemini)` and
 `COMPATIBLE_AI_ZDR=true` in the root `.env`, and supply your own
 `COMPATIBLE_AI_API_KEY`. Restart after changes. Confirm the actual provider/account
-retention settings before relying on them. Local `mock` parsing can exercise the
+retention settings before relying on them: disable OpenRouter input/output logging
+and input/output reuse, review the Google safety-retention setting, and record the
+endpoint's actual retention policy. `provider.zdr: true` follows that account setting;
+it does not by itself exclude safety-retention endpoints. The server also sends
+`provider.data_collection: "deny"` to exclude training endpoints. See
+[OpenRouter's retention controls](https://openrouter.ai/docs/guides/features/zdr).
+Local `mock` parsing can exercise the
 permission flow without a paid provider, but cannot verify real extraction.
 Never add the mock provider to production routing.
 
 1. Sign in normally, open Account → AI receipt scanning, and withdraw any existing
    permission. Sign in to the same account on web and mobile for cross-device tests.
 2. Create an expense and select a photo: it is only prepared locally. Tap
-   **Itemize with AI**. The first-use prompt names the processors and describes
-   future scans on this account. **Enter manually**, close, and back/Escape all
+   **Itemize with AI**. The prompt must name OpenRouter and Google (Gemini), explain
+   that the entire selected photo and visible text are sent to extract merchant,
+   date, items, prices, tax and tip, and mention names, addresses, phone numbers and
+   payment details that could be visible. It describes future scans on this account.
+   **Enter manually**, close, and back/Escape all
    dismiss without granting permission or uploading a photo.
 3. Request the scan again and select **Allow AI scanning**. Permission saves first,
    then the selected image is parsed into a draft. Review and save separately.
@@ -31,6 +40,11 @@ Never add the mock provider to production routing.
    the same provider does not ask again. Changes to provider/routing/retention do.
 7. Disconnect the backend: permission checks/saves/withdrawal must show an error;
    no new photo is uploaded without a successful permission check.
+8. On iPad and iPhone, including landscape and larger text, check that the full
+   disclosure can be read, both choices are reachable, and Privacy policy opens
+   without signing in. Verify `/privacy` names the production processors, explains
+   data collection, retention and withdrawal, and states the equal-protection
+   requirement. Capture the prompt for App Review using a fictional receipt.
 
 Browser network inspection should show GetProcessingInfo, then GrantConsent only
 when you explicitly allow, then ParseReceipt. Later scans omit GrantConsent.

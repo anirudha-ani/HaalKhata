@@ -11,6 +11,10 @@ import { currentHref } from "@/lib/onboarding/currentHref";
 import { useDeviceSetupGate } from "@/lib/onboarding/hooks/useDeviceSetupGate";
 import { colors } from "@/lib/theme/theme";
 import { useReduceMotion } from "@/lib/motion/hooks/useReduceMotion";
+import { IS_IPHONE_DUO } from "@/lib/layout/constants/device";
+
+/** Give Duo's system Back control a destination when a detail opens from a cold link. */
+export const unstable_settings = IS_IPHONE_DUO ? { anchor: "(tabs)" } : {};
 
 /**
  * Layout for every authenticated route: waits for session hydration,

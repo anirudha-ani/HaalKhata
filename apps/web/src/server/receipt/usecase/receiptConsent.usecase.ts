@@ -25,14 +25,16 @@ export function receiptProcessingInfo() {
     (gatewayHost === "openrouter.ai" && modelProvider === "google" ? "OpenRouter and Google (Gemini)" :
       gatewayHost === "openrouter.ai" ? `OpenRouter and ${modelProvider || "its configured AI provider"}` :
         gatewayHost || "the local demonstration parser");
-  // Preserve the established sharing-terms fingerprint when only presentation copy changes.
-  const consentTerms = `Receipt photos you choose to scan and their contents will be sent to ${processors} to extract items, tax and tip. ` +
-    "Photos may contain personal or payment information; remove sensitive details first. " +
-    "HaalKhata does not save receipt images on its server. Review the extracted items before saving.";
-  const consentVersion = crypto.createHash("sha256").update(JSON.stringify({ disclosure: consentTerms, gatewayHost, modelProvider,
+  const disclosure = `With your permission, HaalKhata sends the receipt photo you select, including all visible text, to ${processors} ` +
+    "for AI to extract the merchant, date, items, prices, tax and tip. " +
+    "The photo may include names, addresses, phone numbers or payment details. Crop or cover anything you do not want to share before scanning. " +
+    "HaalKhata does not save receipt photos on its server. Providers may retain data for safety or legal requirements; see the privacy policy. " +
+    "You can enter expenses manually without sharing a photo.";
+  // Bind permission to the exact disclosure displayed to the user.
+  const consentVersion = crypto.createHash("sha256").update(JSON.stringify({ disclosure, gatewayHost, modelProvider,
     zeroDataRetention: COMPATIBLE_AI.zeroDataRetention,
     providers: process.env.RECEIPT_AI_PROVIDERS ?? "compatible,mock" })).digest("hex");
-  return { disclosure: `Receipt photos are shared with ${processors} for AI scanning.`, consentVersion };
+  return { disclosure, consentVersion };
 }
 
 /** @param userId Signed-in account. @returns Current disclosure and its saved permission status. */
