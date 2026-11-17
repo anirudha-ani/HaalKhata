@@ -1,6 +1,6 @@
 {
   "kidsAgeBand": null,
-  "ageRatingOverride": "NONE",
+  "ageRatingOverrideV2": "THIRTEEN_PLUS",
   "koreaAgeRatingOverride": "NONE",
   "parentalControls": false,
   "ageAssurance": false,

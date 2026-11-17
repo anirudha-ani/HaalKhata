@@ -2,9 +2,11 @@
 
 # App Store release assets
 
-Version 1.0, build 1.0.0 (6), was submitted on October 31, 2026 at 4:13 PM PDT.
-Apple reported **Waiting for Review**. Public release is manual. The dated record
-is in [submission.json](1.0.0/submission.json); it is not a live status feed.
+Version 1.0, build 1.0.0 (7), was submitted on November 5, 2026 at 8:52 AM PST.
+Apple reported **Waiting for Review**. Public release is manual. The [build 7
+receipt](1.0.0/build-7-duo/submission.json) records that submission. The original
+[build 6 receipt](1.0.0/submission.json) is retained for the October 31 submission
+that was withdrawn before build 7 was sent. These are dated records.
 
 ## Submitted assets
 
@@ -12,6 +14,7 @@ Paths below are relative to `1.0.0/`.
 
 | Placement | Files | Dimensions |
 | --- | --- | --- |
+| iPhone Duo, outer and inner displays | [Six build 7 screenshots](1.0.0/build-7-duo/screenshots/) | 1398 x 2034, 2007 x 2853, 2853 x 2007 |
 | iPhone, medium display | `creative-v3/iphone-medium/01-ai.png` through `06-balances.png` | 1206 x 2622 |
 | iPad, 13-inch display | `creative-v3/ipad/01-ai.png` through `06-balances.png` | 2064 x 2752 |
 | Product-page header | `creative-v3/creative-assets/header.png` | 3840 x 1646 |

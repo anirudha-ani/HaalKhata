@@ -1,0 +1,50 @@
+{
+  "version": "1.0.0",
+  "build": "7",
+  "locale": "en-US",
+  "device": "iPhone Duo",
+  "screenshots": [
+    {
+      "file": "01-ai.png",
+      "width": 1398,
+      "height": 2034,
+      "display": "outer",
+      "sha256": "c3bd8e3541a6fc75811a85fbe03c73dc259bc548562fbc0d64275acd90bd3859"
+    },
+    {
+      "file": "02-itemized.png",
+      "width": 2007,
+      "height": 2853,
+      "display": "inner",
+      "sha256": "ce6632f22b3b7a3a63cab9e2f82ff86fe103cc3cbf9eec98f1d4889ec32468e0"
+    },
+    {
+      "file": "03-live.png",
+      "width": 2007,
+      "height": 2853,
+      "display": "inner",
+      "sha256": "58130e33f9f681ecb59c37dff14288ce532da9e6f151591a9ab3bdff8be7b224"
+    },
+    {
+      "file": "04-settle.png",
+      "width": 2007,
+      "height": 2853,
+      "display": "inner",
+      "sha256": "b9b0b7d0d2972abeaa45581dcf2fd924403a487f73b04f70ed94203249cbafda"
+    },
+    {
+      "file": "05-groups.png",
+      "width": 2853,
+      "height": 2007,
+      "display": "inner",
+      "sha256": "73d9dbfdba03ced30d41b648272a18bb0e54b59a7c8575eed6252fb876048acd"
+    },
+    {
+      "file": "06-balances.png",
+      "width": 1398,
+      "height": 2034,
+      "display": "outer",
+      "sha256": "b2bcd6b290e932067467cbd286fd1074be120ae1052fe7e01a356bc4c08a3333"
+    }
+  ]
+}

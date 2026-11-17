@@ -1,0 +1,14 @@
+{
+  "appStoreConnectId": "6822393405",
+  "storeVersion": "1.0",
+  "buildVersion": "1.0.0",
+  "buildNumber": "7",
+  "submissionId": "34365e2e-c808-4702-baa5-d6c65ec18466",
+  "submittedAt": "2026-11-05T08:52:00-08:00",
+  "statusAtSubmission": "Waiting for Review",
+  "releaseMode": "Manual",
+  "url": "https://appstoreconnect.apple.com/apps/6822393405/distribution/reviewsubmissions/details/34365e2e-c808-4702-baa5-d6c65ec18466",
+  "replacesSubmissionId": "6326edba-d60f-4f9d-86bb-d0a122c7abd6",
+  "duoScreenshotManifest": "manifest.json",
+  "evidence": "App Store Connect confirmed 1 Item Submitted. The new receipt lists iOS App 1.0, build 1.0.0 (7), Waiting for Review. The saved version showed manual release selected and both automatic release options unselected."
+}
